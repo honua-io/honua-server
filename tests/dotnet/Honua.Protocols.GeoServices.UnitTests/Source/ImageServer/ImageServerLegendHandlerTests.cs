@@ -119,6 +119,22 @@ public class ImageServerLegendHandlerTests
         }
     }
 
+    // Esri's legend layer names its renderer in legendType (#5238).
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public async Task GetLegendAsync_NamesRendererType()
+    {
+        SetupSuccessfulLegend(min: 0, max: 100);
+        var context = CreateImageServerContext();
+        var result = await _handler.GetLegendAsync(context, 1, CancellationToken.None);
+        result.Should().BeOfType<JsonHttpResult<LegendResponse>>().Which.Value!.Layers[0].LegendType.Should().Be("Stretched");
+
+        const string rule =
+            """{"rasterFunction":"Colormap","rasterFunctionArguments":{"Colorramp":{"type":"algorithmic","fromColor":[0,0,0],"toColor":[255,255,255],"algorithm":"esriHSVAlgorithm"}}}""";
+        var colormapResult = await _handler.GetLegendAsync(CreateImageServerContext(), 1, CancellationToken.None, rule);
+        colormapResult.Should().BeOfType<JsonHttpResult<LegendResponse>>().Which.Value!.Layers[0].LegendType.Should().Be("Colormap");
+    }
+
     [UnitTest]
     [Operation(Operations.Metadata)]
     public async Task GetLegendAsync_UniformRaster_CollapsesToSingleClass()
