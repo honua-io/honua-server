@@ -97,6 +97,32 @@ def verify_pixels(image: bytes, time_index: int) -> None:
     print(f"ImageServer slice {time_index}: all RGBA values, north-up orientation and nodata alpha passed")
 
 
+def verify_soap_dimensions() -> None:
+    """SOAP GetMultidimensionalInfo must list StdTime only (OLE days 45292, 45293)."""
+    envelope = (
+        '<?xml version="1.0" encoding="utf-8" ?><soap:Envelope '
+        'xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" '
+        'xmlns:tns="http://www.esri.com/schemas/ArcGIS/10.8"><soap:Body>'
+        '<tns:GetMultidimensionalInfo></tns:GetMultidimensionalInfo></soap:Body></soap:Envelope>'
+    )
+    req = urllib.request.Request(
+        BASE_URL + "/services/browser_compat/ImageServer",
+        data=envelope.encode(),
+        headers={"X-API-Key": API_KEY, "Content-Type": "text/xml; charset=utf-8",
+                 "SOAPAction": "http://www.esri.com/schemas/ArcGIS/10.8/GetMultidimensionalInfo"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=30) as response:
+        text = response.read().decode()
+    for expected in ("StdTime", "45292", "45293"):
+        if expected not in text:
+            raise RuntimeError(f"SOAP GetMultidimensionalInfo missing {expected}: {text[:500]}")
+    for horizontal in ("latitude", "longitude"):
+        if horizontal in text:
+            raise RuntimeError(f"SOAP GetMultidimensionalInfo advertises horizontal axis {horizontal}")
+    print("SOAP GetMultidimensionalInfo: StdTime only, OLE 45292/45293")
+
+
 def main() -> None:
     status, body, _ = request(
         "/api/v1/admin/multidim-coverages",
@@ -172,10 +198,22 @@ def main() -> None:
     if not any(variable.get("name") == "sea_surface_temperature" for variable in variables):
         raise RuntimeError(f"scanned variable missing from ImageServer metadata: {variables}")
 
+    # #6492: horizontal axes are the raster grid, not slice dimensions. Only
+    # StdTime is advertised, with the two authored instants.
+    variable = next(v for v in variables if v.get("name") == "sea_surface_temperature")
+    names = [d.get("name") for d in variable.get("dimensions", [])]
+    if names != ["StdTime"]:
+        raise RuntimeError(f"expected advertised dimensions ['StdTime'], got {names}")
+    std_time = variable["dimensions"][0]
+    if std_time.get("values") != [1704067200000, 1704153600000]:
+        raise RuntimeError(f"unexpected StdTime values: {std_time}")
+    verify_soap_dimensions()
+
     images = []
     for time_index, timestamp in enumerate((1704067200000, 1704153600000)):
+        # Clients select slices by the advertised dimension name (StdTime).
         definition = json.dumps([{
-            "variableName": "sea_surface_temperature", "dimensionName": "time", "values": [timestamp]
+            "variableName": "sea_surface_temperature", "dimensionName": "StdTime", "values": [timestamp]
         }], separators=(",", ":"))
         query = urllib.parse.urlencode({
             "f": "image", "format": "png", "bbox": "-122.525,37.675,-122.325,37.875",
