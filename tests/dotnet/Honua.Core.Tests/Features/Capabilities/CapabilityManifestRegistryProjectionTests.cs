@@ -84,13 +84,14 @@ public sealed class CapabilityManifestRegistryProjectionTests
 
     [Trait("Tier", "Fast")]
     [Theory]
-    [InlineData("serve.geoservices-imageserver")]
-    [InlineData("serve.wmts")]
-    [InlineData("serve.ogc-api-coverages")]
-    public void Registry_LifecycleOnlyPreviews_RemainEnabledWithoutOptIn(string id)
+    [InlineData("serve.geoservices-imageserver", CapabilityMaturity.Implemented)]
+    [InlineData("serve.wmts", CapabilityMaturity.Preview)]
+    [InlineData("serve.ogc-api-coverages", CapabilityMaturity.Preview)]
+    public void Registry_LifecycleOnlyPreviews_RemainEnabledWithoutOptIn(string id, CapabilityMaturity expected)
     {
+        // ImageServer moved Preview -> Implemented on 2026-10-24; its gating is unchanged.
         var descriptor = Registry.Find(id)!;
-        descriptor.Maturity.Should().Be(CapabilityMaturity.Preview);
+        descriptor.Maturity.Should().Be(expected);
         descriptor.RequiresOptIn.Should().BeFalse();
         Registry.Resolve(id, CapabilityGateContext.Default).Enabled.Should().BeTrue();
     }
@@ -141,7 +142,8 @@ public sealed class CapabilityManifestRegistryProjectionTests
         "alerts.geofence",
         "realtime.feature-streams",
         "serve.sensorthings",
-        "serve.geoservices-imageserver",
+        // serve.geoservices-imageserver is GA in 2026.1 (2026-10-24 operator ruling), so it is
+        // absent here and Registry_InReleaseManifestDescriptors_StayImplemented asserts it.
         "serve.wmts",
         "serve.ogc-api-coverages",
     ];

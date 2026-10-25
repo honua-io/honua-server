@@ -195,7 +195,8 @@ never re-enters the `/services/` shape.
 ## WMTS operations
 
 WMTS is **Preview in 2026.1**, including its OGC, MapServer and ImageServer
-routes. Conformance results below describe tested behavior; non-security parity work is
+routes (the 2026-10-24 ruling promoted the ImageServer REST surface to GA but
+left WMTS Preview). Conformance results below describe tested behavior; non-security parity work is
 deferred to release/2026.2.
 
 | Operation | Notes |

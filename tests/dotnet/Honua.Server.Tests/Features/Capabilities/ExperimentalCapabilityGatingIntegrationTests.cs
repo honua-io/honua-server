@@ -113,7 +113,7 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
             }
 
             // codeql[cs/linq/missed-select]: asserts each in-release preview capability stayed available
-            foreach (var previewId in new[] { "serve.geoservices-imageserver", "serve.wmts", "serve.ogc-api-coverages" })
+            foreach (var previewId in new[] { "serve.wmts", "serve.ogc-api-coverages" })
             {
                 var preview = GetCapability(root, previewId);
                 preview.GetProperty("lifecycle").GetString().Should().Be("preview");
@@ -121,6 +121,14 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
                 preview.GetProperty("available").GetBoolean().Should().BeTrue();
                 AssertNotLifecycleDisabled(preview);
             }
+
+            // ImageServer is GA in 2026.1 (2026-10-24 operator ruling): same default availability,
+            // no opt-in, now reported as implemented.
+            var imageServer = GetCapability(root, "serve.geoservices-imageserver");
+            imageServer.GetProperty("lifecycle").GetString().Should().Be("implemented");
+            imageServer.GetProperty("optInRequired").GetBoolean().Should().BeFalse();
+            imageServer.GetProperty("available").GetBoolean().Should().BeTrue();
+            AssertNotLifecycleDisabled(imageServer);
 
             // In-release capabilities are unaffected by the flip — still served.
             HasCapability(root, "query.features").Should().BeTrue();
@@ -192,7 +200,8 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
                 var capability = document.RootElement.GetProperty("capabilities")
                     .EnumerateArray()
                     .Single(item => item.GetProperty("id").GetString() == id);
-                capability.GetProperty("lifecycle").GetString().Should().Be("preview");
+                capability.GetProperty("lifecycle").GetString().Should().Be(
+                    id is "serve.geoservices-imageserver" ? "implemented" : "preview");
                 capability.GetProperty("optInRequired").GetBoolean().Should().Be(
                     id is not ("serve.geoservices-imageserver" or "serve.wmts" or "serve.ogc-api-coverages"));
             }
@@ -469,6 +478,7 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
     [InlineData("GET", "/ogc/services/preview/wmts")]
     [InlineData("GET", "/ogc/coverages")]
     [InlineData("GET", "/edr")]
+    // The ImageServer cases are GA since 2026-10-24 and must still serve by default (not 404).
     public async Task PreviewRasterRoutes_RetainTheirExistingAvailability(string method, string path)
     {
         var fixture = CreateFixture(experimentalGlobalEnabled: false);

@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:72ab8be85b7f02daf7292107dc50299c2a3fcba00a6a6b7cf386cf17e524080b",
+  "bundleDigest": "sha256:6e617c2961f6042ce69c59583c049254f1f5b93952e3487d075615324da66ed1",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -2249,7 +2249,7 @@
     {
       "id": "guides/deploy/upgrade-and-rollback",
       "path": "guides/deploy/upgrade-and-rollback.md",
-      "documentDigest": "sha256:995ddbca3ea6942bb87e5228b31f915b5c4ee7f77bd3bc2836644116bb05a2b4",
+      "documentDigest": "sha256:e1f7a36823daaafaf18787824ea460337314df9c8534e90ef775dbcda070d981",
       "metadata": {
         "type": "guide",
         "title": "Upgrade and roll back",
@@ -5356,7 +5356,7 @@
     {
       "id": "okf/capabilities/README",
       "path": "okf/capabilities/README.md",
-      "documentDigest": "sha256:c4fe5de8144e62d703525e08d378e38fc10e3ba9fb9d32f556d9008fd38a3c50",
+      "documentDigest": "sha256:fa989eaf75d4e2b7e0885e30a03b5adb38da617391d31f8ae303f2e2a6c740e7",
       "metadata": {
         "type": "index",
         "title": "Capability concepts",
@@ -5933,7 +5933,7 @@
     {
       "id": "okf/capabilities/discovery.capability-manifest",
       "path": "okf/capabilities/discovery.capability-manifest.md",
-      "documentDigest": "sha256:9855173969d665e4a179ebf2fd5c83963bcbbc2e71d10c5234260b4e900d0d5b",
+      "documentDigest": "sha256:a9785e4ddd59e5b0f7b04e7249ac43443b3c329dfc27a25581b24ff5f3dc783f",
       "metadata": {
         "type": "capability",
         "title": "Capability Manifest",
@@ -6817,7 +6817,7 @@
     {
       "id": "okf/capabilities/serve.geoservices-imageserver",
       "path": "okf/capabilities/serve.geoservices-imageserver.md",
-      "documentDigest": "sha256:a7b0403dcff23a29c8ae9737dc6602c56218c239c134e8631adcd43dccb85d28",
+      "documentDigest": "sha256:547ac177e8c3d7e232087e0a5067061b6cfdc9c3960861a948a31488bfae2ad8",
       "metadata": {
         "type": "capability",
         "title": "ImageServer",
@@ -7589,7 +7589,7 @@
     {
       "id": "reference/compatibility/geoservices-parity",
       "path": "reference/compatibility/geoservices-parity.md",
-      "documentDigest": "sha256:1b060e5a6d20c29b64fb82fdac2986c7c5e8bb7fd86960652c42ecd24daf5cdf",
+      "documentDigest": "sha256:e0f7b6c2857d6621fc97526864c53c90ed957af2e7a6bbd8e84716f30439c421",
       "metadata": {
         "type": "reference",
         "title": "GeoServices REST parity",
@@ -7945,7 +7945,7 @@
     {
       "id": "reference/protocols/geoservices-rest",
       "path": "reference/protocols/geoservices-rest.md",
-      "documentDigest": "sha256:fddefaff4019a360499d2fd4ef5458e27c86502b4ac840993467619f1a38426f",
+      "documentDigest": "sha256:68bc2f813e354e367194a9545a1903562b8c78cb84d27aea04b9684dc3c8a4f3",
       "metadata": {
         "type": "reference",
         "title": "GeoServices REST (ArcGIS-compatible)",
@@ -8053,7 +8053,7 @@
     {
       "id": "reference/protocols/wms-wfs-wcs-wmts",
       "path": "reference/protocols/wms-wfs-wcs-wmts.md",
-      "documentDigest": "sha256:89dfa408c1b9ead722625c738e0f0a00196a363ec6c98f3ab163410cfd726067",
+      "documentDigest": "sha256:5045beafcb760e46b86c06f45a5c3bf5e33b28e9fb419e555c27fcd9c1142b9d",
       "metadata": {
         "type": "reference",
         "title": "WMS, WFS, WCS, WMTS (classic OGC)",

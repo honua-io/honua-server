@@ -712,7 +712,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 2,
-      "provingTestCount": 51,
+      "provingTestCount": 53,
       "maturity": {
         "implemented": 2
       },
@@ -1817,11 +1817,12 @@
       "displayName": "ImageServer",
       "category": "Serve",
       "edition": "Community",
-      "status": "preview",
+      "status": null,
       "entryCount": 143,
       "provingTestCount": 486,
       "maturity": {
-        "preview": 143
+        "implemented": 139,
+        "preview": 4
       },
       "noSurface": null,
       "cite": [],

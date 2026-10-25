@@ -317,9 +317,12 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             // SensorThings uses the same canonical opt-in gate as its route registration;
             // it must never be present at runtime while absent from capability discovery.
             ("serve.sensorthings", "realtime", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Preview),
-            // ImageServer and WMTS are Preview in 2026.1 under the 2026-09-03
-            // operator ruling (honua-release#266 / #264).
-            ("serve.geoservices-imageserver", "raster", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Preview),
+            // ImageServer is GA (Implemented) in 2026.1 under the 2026-10-24 operator
+            // ruling, which supersedes the 2026-09-03 Preview ruling for ImageServer
+            // only (honua-release#266 / #264); #5238, #6492 and #3558 were pulled into
+            // 2026.1. It already serves by default, so only the maturity changes.
+            // WMTS and OGC API Coverages stay Preview in 2026.1 under the 2026-09-03 ruling.
+            ("serve.geoservices-imageserver", "raster", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Implemented),
             ("serve.wmts", "raster", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Preview),
             ("serve.ogc-api-coverages", "raster", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Preview),
             // Customer alerting ships as Preview in 2026.1 by operator ruling

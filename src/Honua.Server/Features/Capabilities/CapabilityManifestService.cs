@@ -490,7 +490,7 @@ internal sealed class CapabilityManifestService(
                 maturity: CapabilityMaturity.Preview,
                 configured: options.ExperimentalCapabilityFlags.IsExperimentalEnabled("serve.sensorthings")),
             Capability("serve.geoservices-imageserver", "raster", context,
-                maturity: CapabilityMaturity.Preview),
+                maturity: CapabilityMaturity.Implemented),
             Capability("serve.wmts", "raster", context,
                 maturity: CapabilityMaturity.Preview),
             Capability("serve.ogc-api-coverages", "raster", context,

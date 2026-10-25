@@ -152,10 +152,12 @@ the nested evaluation, dispatch, delivery-channel, and operations settings.
 
 ### Preview raster and coverage surfaces
 
-ImageServer, WMTS, OGC API Coverages, and EDR are Preview in 2026.1. Their
+WMTS, OGC API Coverages, and EDR are Preview in 2026.1. Their
 capability manifests and evidence catalogs now agree on that lifecycle.
-ImageServer, WMTS, and Coverages retain their existing default availability;
+WMTS and Coverages retain their existing default availability;
 Preview is a release maturity statement and does not itself disable their routes.
+ImageServer was Preview under the 2026-09-03 ruling and is GA (Implemented) in
+2026.1 under the 2026-10-24 operator ruling; its default availability is unchanged.
 EDR retains its existing explicit opt-in through
 `Capabilities:Experimental:serve.ogc-api-edr:Enabled=true` (or the global experimental switch).
 Existing authorization and entitlement checks still apply. CITE and functional

@@ -1145,7 +1145,7 @@
           "esriPaths": [
             "/ImageServer"
           ],
-          "notes": "ImageServer and its WMTS surface are Preview in 2026.1 under the 2026-09-03 operator ruling. Layer-scoped route. Responses are cached with the ImageServerMetadata output-cache policy."
+          "notes": "ImageServer is GA in 2026.1 under the 2026-10-24 operator ruling, which supersedes the 2026-09-03 Preview ruling for ImageServer only; its WMTS surface stays Preview. Layer-scoped route. Responses are cached with the ImageServerMetadata output-cache policy."
         },
         {
           "name": "Raster Catalog Item",

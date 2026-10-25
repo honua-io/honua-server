@@ -16,7 +16,7 @@ Serve raster imagery and coverage metadata through the Esri GeoServices ImageSer
 | Capability key | `serve.geoservices-imageserver` |
 | Category | Serve |
 | Edition | Community |
-| Surface maturity | 143 preview |
+| Surface maturity | 139 implemented, 4 preview |
 | Registry entries | 143 |
 | Proving tests | 486 |
 

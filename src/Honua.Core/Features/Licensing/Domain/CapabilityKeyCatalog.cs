@@ -150,7 +150,7 @@ public static class CapabilityKeyCatalog
         new("serve.geoservices-mapserver", "MapServer", Categories.Serve,
             HonuaEdition.Community, "Serve map images, identify, and export through the Esri GeoServices MapServer surface."),
         new("serve.geoservices-imageserver", "ImageServer", Categories.Serve,
-            HonuaEdition.Community, "Serve raster imagery and coverage metadata through the Esri GeoServices ImageServer surface.", Status: PreviewStatus),
+            HonuaEdition.Community, "Serve raster imagery and coverage metadata through the Esri GeoServices ImageServer surface."),
         new("serve.geoservices-geometry-service", "Geometry Service", Categories.Serve,
             HonuaEdition.Community, "Server-side geometry operations (project, buffer, simplify, union, and related utilities) through the Esri GeometryServer surface."),
         new("serve.geoservices-geocodeserver", "GeocodeServer Discovery", Categories.Serve,
