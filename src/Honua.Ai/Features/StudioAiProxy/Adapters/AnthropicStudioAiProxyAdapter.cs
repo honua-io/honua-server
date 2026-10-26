@@ -118,7 +118,7 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter
 
         if (requestError is not null)
         {
-            StudioAiProxyLog.ProviderRequestFailed(_logger, ProviderLabel, requestError);
+            StudioAiProxyLog.ProviderRequestFailed(_logger, ProviderLabel, "send", requestError.GetType().Name);
             yield return Error(model, "Provider request failed.");
             yield break;
         }
@@ -126,7 +126,7 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter
         using var successResponse = response!;
         if (!successResponse.IsSuccessStatusCode)
         {
-            var (body, bodyTimedOut, bodyFailure, _) = await StudioAiProxyHttpStreamHelpers
+            var (_, bodyTimedOut, bodyFailure, _) = await StudioAiProxyHttpStreamHelpers
                 .ReadErrorBodySafeAsync(successResponse.Content, timeoutCts.Token, cancellationToken)
                 .ConfigureAwait(false);
             if (bodyTimedOut)
@@ -138,12 +138,12 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter
 
             if (bodyFailure is not null)
             {
-                StudioAiProxyLog.ProviderRequestFailed(_logger, ProviderLabel, bodyFailure);
+                StudioAiProxyLog.ProviderRequestFailed(_logger, ProviderLabel, "error-body", bodyFailure.GetType().Name);
                 yield return Error(model, "Provider response failed.", stopwatch.ElapsedMilliseconds);
                 yield break;
             }
 
-            StudioAiProxyLog.ProviderHttpError(_logger, ProviderLabel, (int)successResponse.StatusCode, Truncate(body, 500));
+            StudioAiProxyLog.ProviderHttpError(_logger, ProviderLabel, (int)successResponse.StatusCode);
             yield return Error(model, $"Provider returned HTTP {(int)successResponse.StatusCode}.");
             yield break;
         }
@@ -160,7 +160,7 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter
 
         if (openFailure is not null)
         {
-            StudioAiProxyLog.ProviderRequestFailed(_logger, ProviderLabel, openFailure);
+            StudioAiProxyLog.ProviderRequestFailed(_logger, ProviderLabel, "open-stream", openFailure.GetType().Name);
             yield return Error(model, "Provider response failed.", stopwatch.ElapsedMilliseconds);
             yield break;
         }
@@ -192,7 +192,7 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter
 
             if (ioError is not null)
             {
-                StudioAiProxyLog.ProviderRequestFailed(_logger, ProviderLabel, ioError);
+                StudioAiProxyLog.ProviderRequestFailed(_logger, ProviderLabel, "read-stream", ioError.GetType().Name);
                 yield return Error(model, "Provider stream ended unexpectedly.", stopwatch.ElapsedMilliseconds);
                 yield break;
             }
@@ -222,7 +222,7 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter
             catch (JsonException ex)
             {
                 parseFailed = true;
-                StudioAiProxyLog.ProviderResponseParseFailed(_logger, ProviderLabel, ex);
+                StudioAiProxyLog.ProviderResponseParseFailed(_logger, ProviderLabel, ex.GetType().Name);
             }
 
             if (parseFailed || frame is null)
@@ -509,5 +509,4 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter
         LatencyMs = latencyMs
     };
 
-    private static string Truncate(string value, int max) => value.Length <= max ? value : value[..max];
 }
