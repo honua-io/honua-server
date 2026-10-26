@@ -1318,29 +1318,25 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
     }
 
     /// <summary>
-    /// Applies the configured per-operation and per-request edit limits, as FeatureServer
-    /// applyEdits does, before any read or write.
+    /// Applies the shared <see cref="EditLimitPolicy"/> (the same policy FeatureServer applyEdits
+    /// and OData <c>$batch</c> use) before any read or write.
     /// </summary>
     private static void EnsureEditLimits(FeatureEditBatch editBatch, EditLimits editLimits)
     {
         var creates = editBatch.Creates.IsDefault ? 0 : editBatch.Creates.Length;
         var updates = editBatch.Updates.IsDefault ? 0 : editBatch.Updates.Length;
         var deletes = editBatch.Deletes.IsDefault ? 0 : editBatch.Deletes.Length;
-        if (creates > editLimits.MaxFeaturesPerEdit ||
-            updates > editLimits.MaxFeaturesPerEdit ||
-            deletes > editLimits.MaxFeaturesPerEdit)
+        if (EditLimitPolicy.Evaluate(new EditCounts(creates, updates, deletes), editLimits) is not { } violation)
         {
-            throw new RpcException(new Status(
-                StatusCode.InvalidArgument,
-                $"Too many features in a single edit operation. Maximum per operation: {editLimits.MaxFeaturesPerEdit.ToString(System.Globalization.CultureInfo.InvariantCulture)}."));
+            return;
         }
 
-        if (creates + updates + deletes > editLimits.MaxEditsPerTransaction)
-        {
-            throw new RpcException(new Status(
-                StatusCode.InvalidArgument,
-                $"Too many edits in a single request. Maximum per request: {editLimits.MaxEditsPerTransaction.ToString(System.Globalization.CultureInfo.InvariantCulture)}."));
-        }
+        var limit = violation.Limit.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        throw new RpcException(new Status(
+            StatusCode.InvalidArgument,
+            violation.Kind == EditLimitViolationKind.FeaturesPerOperation
+                ? $"Too many features in a single edit operation. Maximum per operation: {limit}."
+                : $"Too many edits in a single request. Maximum per request: {limit}."));
     }
 
     private static async Task EnsureReadAccessAsync(
