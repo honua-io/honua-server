@@ -44,7 +44,7 @@ drift.
 | --- | --- | --- | --- |
 | `docker/Dockerfile.functions` | build + runtime | `mcr.microsoft.com/azure-functions/dotnet-isolated:4.1055.250-1-dotnet-isolated9.0-appservice` | `@sha256:7016df2bb4661dc68697303b395760fa1b2de15181a2f551e9268bf53d4d08b2` |
 | `docker/Dockerfile.functions.aot` | build + runtime | `mcr.microsoft.com/azure-functions/dotnet-isolated:4.1055.250-1-dotnet-isolated9.0-appservice` | `@sha256:7016df2bb4661dc68697303b395760fa1b2de15181a2f551e9268bf53d4d08b2` |
-| `docker/Dockerfile.lambda` | runtime | `public.ecr.aws/lambda/provided:al2023` | `@sha256:9b3ad8941296d16bffb52819b30ccc4c9b54db5fafac6f93737e034ba007c618` |
+| `docker/Dockerfile.lambda` | runtime | `public.ecr.aws/lambda/provided:al2023` | `@sha256:612c98f126c2a95e77a016d56fed50a83055e11d636132ee6ebdd461f01b9617` |
 | `docker/Dockerfile.lambda(.aot)` | adapter | `public.ecr.aws/awsguru/aws-lambda-adapter:0.9.1` | `@sha256:46d6625e68cbbdd2efab4a20245977664513f13ffef47915b000d431adcea0b4` |
 
 The Functions images were previously the only platform-published Dockerfiles
