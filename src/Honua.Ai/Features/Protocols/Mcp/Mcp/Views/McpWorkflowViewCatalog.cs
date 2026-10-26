@@ -102,7 +102,7 @@ internal static class McpWorkflowViewCatalog
             + "layer, verify access, apply canonical style and render, run bounded geoprocessing, compose and save "
             + "Studio maps/dashboards, then submit a publication and poll its status. Select this view to receive "
             + "only the descriptors that path needs; the full paginated catalog is an explicit escape hatch.",
-        Revision = "setup.v5",
+        Revision = "setup.v6",
         Stages =
         [
             new McpWorkflowViewStageDefinition
@@ -209,6 +209,12 @@ internal static class McpWorkflowViewCatalog
                     McpWorkflowViewMemberRule.Exact("honua_studio_remove_interaction"),
                     McpWorkflowViewMemberRule.Exact("honua_studio_add_control"),
                     McpWorkflowViewMemberRule.Exact("honua_studio_remove_control"),
+
+                    // Map and app package composition. Listing grants no authority: both tools
+                    // still refuse an anonymous caller (unauthenticated), which an installed client
+                    // that resolves tools from the listing can now actually exercise.
+                    McpWorkflowViewMemberRule.Exact("honua_create_map_package"),
+                    McpWorkflowViewMemberRule.Exact("honua_create_app_package"),
                 ],
 
                 // Publication submit belongs to the publication stage below even
