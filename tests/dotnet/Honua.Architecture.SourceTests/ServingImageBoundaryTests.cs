@@ -66,14 +66,45 @@ public sealed class ServingImageBoundaryTests
         nightly.Should().NotContain("load: true", "local image stores can discard attestation manifests");
         nightly.Should().Contain("nightly-aot-${tag_name#nightly-}",
             "dated and SHA AOT compatibility tags must retain their established infix naming");
-        nightly.Should().Contain("actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2", Exactly.Thrice(),
-            "canonical, Lambda and Functions indexes must receive GitHub provenance");
-        nightly.Should().Contain("attestations: write", Exactly.Thrice());
-        nightly.Should().Contain("id-token: write", Exactly.Thrice());
+        nightly.Should().Contain("actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2", Exactly.Times(4),
+            "canonical, Lambda and Functions indexes, and the Lambda serving child, must receive GitHub provenance");
+        nightly.Should().Contain("attestations: write", Exactly.Times(4));
+        nightly.Should().Contain("id-token: write", Exactly.Times(4));
         nightly.Should().Contain("subject-digest: ${{ steps.manifest.outputs.subject_digest }}", Exactly.Twice(),
             "attestations must bind the final pushed manifest digest rather than a mutable tag");
-        nightly.Should().Contain("push-to-registry: true", Exactly.Thrice(),
-            "gh attestation verify oci://... requires the provenance to be available with the image");
+        nightly.Should().Contain("push-to-registry: true", Exactly.Times(5),
+            "gh attestation verify oci://... requires the provenance and SBOM to be available with the image");
+    }
+
+    [ArchitectureTest]
+    public void NightlyLambda_ShouldAttestTheVerifiedServingChildForReleaseLocks()
+    {
+        // Release locks pin awsLambdaDigest, the runnable per-architecture child, and the
+        // honua-release post-gate collector looks up GitHub attestations for exactly that
+        // digest (it cannot reach the BuildKit evidence index from the child).
+        var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
+        var nightly = File.ReadAllText(Path.Join(repositoryRoot, ".github/workflows/nightly-container-build.yml"))
+            .ReplaceLineEndings("\n");
+        var start = nightly.IndexOf("\n  build-lambda-aot:\n", StringComparison.Ordinal);
+        var end = nightly.IndexOf("\n  manifest-lambda-aot:\n", StringComparison.Ordinal);
+        start.Should().BeGreaterThan(-1);
+        end.Should().BeGreaterThan(start);
+        var job = nightly[start..end];
+
+        job.Should().Contain("attestations: write");
+        job.Should().Contain("id-token: write");
+        job.Should().Contain("provenance: mode=max");
+        job.Should().Contain("sbom: true");
+        job.Should().Contain("echo \"serving_child_digest=${serving_child##*@}\" >> \"$GITHUB_OUTPUT\"",
+            "the attested subject is the child the boundary verifier inspected");
+        job.Should().Contain("subject-digest: ${{ steps.verified.outputs.serving_child_digest }}", Exactly.Twice());
+        job.Should().Contain("uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0");
+        job.Should().Contain("format: cyclonedx-json",
+            "actions/attest labels SPDX as .../Document/v2.3, which the collector does not accept");
+        var verify = job.IndexOf("--require-attestations", StringComparison.Ordinal);
+        verify.Should().BeGreaterThan(-1);
+        job.IndexOf("uses: actions/attest-build-provenance@", StringComparison.Ordinal).Should().BeGreaterThan(verify);
+        job.IndexOf("uses: actions/attest-sbom@", StringComparison.Ordinal).Should().BeGreaterThan(verify);
     }
 
     [ArchitectureTest]
