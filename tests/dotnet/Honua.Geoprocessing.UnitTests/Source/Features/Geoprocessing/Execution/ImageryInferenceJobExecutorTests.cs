@@ -14,7 +14,6 @@ using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
-using Honua.Core.Features.Security;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Admission;
 using Honua.Core.Features.Security;
