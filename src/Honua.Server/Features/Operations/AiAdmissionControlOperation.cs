@@ -114,7 +114,7 @@ internal static class AiAdmissionControlOperation
 }
 
 internal sealed class AiAdmissionControlExecutor(string operationId, IServiceProvider services)
-    : IOperationExecutor, IOperationRequestPreparer
+    : Honua.Core.Features.Operations.Abstractions.IOperationExecutor, IOperationRequestPreparer
 {
     // Scoped operation executors can still serve concurrent submissions (for example one
     // MCP batch). Bind immutable commands to exact prepared request objects, never shared

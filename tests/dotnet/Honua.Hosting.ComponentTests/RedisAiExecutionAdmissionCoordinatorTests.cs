@@ -148,7 +148,7 @@ public sealed class RedisAiExecutionAdmissionCoordinatorTests(AiAdmissionRedisFi
         => new(provider.GetRequiredService<IServiceScopeFactory>(), Options.Create(new AiExecutionAdmissionOptions { DeploymentId = deployment }),
             TimeProvider.System, NullLogger<AiExecutionAdmissionCoordinator>.Instance);
 
-    private static async Task<(IAiExecutionPermit? Permit, string? Code)> AttemptAsync(IAiExecutionAdmission coordinator, AiExecutionContext context)
+    private static async Task<(IAiExecutionPermit? Permit, string? Code)> AttemptAsync(AiExecutionAdmissionCoordinator coordinator, AiExecutionContext context)
     {
         try
         {
