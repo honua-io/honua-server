@@ -154,7 +154,7 @@ jobs:
 
       - name: Configure AWS credentials for ECR
         if: ${{ env.PUBLISH_IMAGES == 'true' && env.ECR_REGION != '' }}
-        uses: aws-actions/configure-aws-credentials@254c19bd240aabef8777f48595e9d2d7b972184b # v6
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6
         with:
           role-to-assume: arn:aws:iam::585192672263:role/honua-server-gha-ecr-publish
           aws-region: ${{ env.ECR_REGION }}
@@ -604,7 +604,7 @@ jobs:
 
       - name: Configure AWS credentials for ECR
         if: ${{ env.ECR_REGION != '' }}
-        uses: aws-actions/configure-aws-credentials@254c19bd240aabef8777f48595e9d2d7b972184b # v6
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6
         with:
           role-to-assume: arn:aws:iam::585192672263:role/honua-server-gha-ecr-publish
           aws-region: ${{ env.ECR_REGION }}
