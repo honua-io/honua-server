@@ -22,6 +22,9 @@ namespace Honua.Geoprocessing.Inference;
 /// </remarks>
 internal sealed class ImageryInferenceOptions
 {
+    /// <summary>Operator approvals for model data disclosure; classification is an operator workload assertion, not content detection.</summary>
+    public Honua.Core.Features.Security.AiDisclosurePolicyOptions Disclosure { get; set; } = new();
+
     /// <summary>Configuration section the options bind from.</summary>
     public const string SectionName = "Geoprocessing:ImageryInference";
 

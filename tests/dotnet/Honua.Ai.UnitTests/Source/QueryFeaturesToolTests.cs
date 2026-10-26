@@ -267,6 +267,47 @@ public sealed class QueryFeaturesToolTests
             .AddPublication("pub-parcels", ServiceId, "res-parcels", layerIndex: 0, storageBindingId: "bind-parcels")
             .Build();
 
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_query_features")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task QueryFeatures_JsonTypedAttribute_IsEmittedAsJsonNotItsText()
+    {
+        // An imported dataset keeps its source attributes in a jsonb column; the mapped
+        // reader hands that value over as a JsonElement.
+        using var properties = JsonDocument.Parse("""{"gid":1,"name":"alpha","rank":10}""");
+        var reader = Substitute.For<IFeatureReader>();
+        reader.QueryAsync(StorageLayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(new QueryResult<Feature>
+            {
+                TotalCount = 1,
+                Items =
+                [
+                    new Feature
+                    {
+                        Id = 1,
+                        Geometry = null,
+                        Attributes = ImmutableDictionary<string, object?>.Empty.Add("name", properties.RootElement.Clone())
+                    }
+                ]
+            });
+
+        var response = await DispatchAsync(reader, QueryFeaturesTool.ToolName,
+            $$"""{"serviceId":"{{ServiceId}}","layerId":0,"returnGeometry":false}""");
+
+        var structured = SuccessfulContent(response);
+        foreach (var value in new[]
+                 {
+                     structured.GetProperty("features")[0].GetProperty("attributes").GetProperty("name"),
+                     structured.GetProperty("geojson").GetProperty("features")[0].GetProperty("properties").GetProperty("name")
+                 })
+        {
+            value.ValueKind.Should().Be(JsonValueKind.Object);
+            value.GetProperty("gid").GetInt32().Should().Be(1);
+            value.GetProperty("name").GetString().Should().Be("alpha");
+        }
+    }
+
     private static QueryResult<Feature> FeatureWithHiddenValue()
         => new()
         {

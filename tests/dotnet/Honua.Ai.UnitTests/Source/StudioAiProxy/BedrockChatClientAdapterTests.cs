@@ -15,6 +15,16 @@ namespace Honua.Server.Tests.Features.StudioAiProxy;
 public sealed class BedrockChatClientAdapterTests
 {
     [UnitTest]
+    public void CreateConfiguration_PinsRegionalSdkDestinationAndIgnoresAmbientEndpointOverrides()
+    {
+        var config = BedrockChatClientAdapter.CreateConfiguration("", null);
+        config.IgnoreConfiguredEndpointUrls.Should().BeTrue();
+        config.AllowAutoRedirect.Should().BeFalse();
+        config.RegionEndpoint.SystemName.Should().Be(Honua.Ai.StudioAiProxy.StudioAiProxyConfiguration.DefaultBedrockRegion);
+        BedrockChatClientAdapter.CreateConfiguration("eu-west-1", null).RegionEndpoint.SystemName.Should().Be("eu-west-1");
+    }
+
+    [UnitTest]
     public async Task GetResponseAsync_NestedToolHistory_PreservesJsonValuesInBedrockRequest()
     {
         var runtime = Substitute.For<IAmazonBedrockRuntime>();

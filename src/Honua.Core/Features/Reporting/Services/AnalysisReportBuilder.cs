@@ -101,7 +101,9 @@ internal sealed class AnalysisReportBuilder : IAnalysisReportBuilder
                 // Intentional broad catch: the optional LLM narrative pass must never fail the
                 // whole report; the failure is logged and the report falls back to the
                 // deterministic slot text rather than being swallowed silently.
-                AnalysisReportLog.NarrativeFallback(_logger, draft.TemplateId, ex.GetType().Name, ex.Message);
+                // Provider exceptions may contain echoed prompts, credentials or response bodies.
+                // Record the failure category without retaining arbitrary provider text.
+                AnalysisReportLog.NarrativeFallback(_logger, draft.TemplateId, ex.GetType().Name);
                 narrativeMode = NarrativeMode.FallbackFromLlmError;
             }
         }

@@ -207,6 +207,8 @@ jobs:
           python3 -m unittest discover -s scripts/certification -p 'test_producer_context.py'
           python3 -m unittest discover -s scripts/certification -p 'test_generate_protocol_harness_fragment.py'
           python3 -m unittest discover -s scripts/certification -p 'test_harness_context.py'
+          # Fails when a manifest input (e.g. the core client fixture) moves without its digest.
+          python3 -m unittest discover -s scripts/certification -p 'test_sdk_protocol_fixture.py'
 
       - name: Verify CITE normalization and supplemental HTTP controls
         run: python3 -m unittest discover -s scripts/conformance/cite/tests -p 'test_*.py'

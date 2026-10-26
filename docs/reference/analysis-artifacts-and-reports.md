@@ -69,6 +69,19 @@ reason rather than leaving you to infer it from the log.
 Fetch `/reports/{jobId}` when something is going to read the result; fetch `/render`
 when a person is going to look at it.
 
+### Optional generated narratives
+
+When `Reporting:Narrative:Enabled` is enabled, configure
+`Reporting:Narrative:Endpoint` with the provider's final HTTPS API base URL.
+The reporting client does not follow redirects; redirect and other unsuccessful
+responses retain deterministic report text. Operators using a redirecting URL
+must replace it with the final API URL before upgrading.
+
+Narrative fallback logs identify the template and exception type. They omit
+provider response bodies and arbitrary exception messages, which can contain
+private report context. Successful narratives and the existing cache behavior
+are unchanged.
+
 ## Related pages
 
 - [Run geoprocessing](../guides/query-analyze/run-geoprocessing.md)

@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using Honua.Ai.StudioAiProxy.Abstractions;
 using Honua.Ai.StudioAiProxy.Domain;
+using Honua.Core.Features.Security;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -214,7 +215,22 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
             return $"Provider '{providerName}' does not support tool calls.";
         }
 
+        if (!DisclosureAllowed(request, providerName, providerOptions))
+        {
+            return "AI disclosure is not approved for the selected provider, destination, model and workload.";
+        }
+
         return null;
+    }
+
+    private bool DisclosureAllowed(StudioAiChatRequest request, string provider, StudioAiProxyProviderOptions options)
+    {
+        var destination = string.Equals(options.Kind, StudioAiProxyConfiguration.BedrockKind, StringComparison.OrdinalIgnoreCase)
+            ? "aws-bedrock:" + (string.IsNullOrWhiteSpace(options.Region) ? StudioAiProxyConfiguration.DefaultBedrockRegion : options.Region)
+            : options.Endpoint;
+        var model = string.IsNullOrWhiteSpace(request.Model) ? options.Model : request.Model;
+        return AiDisclosurePolicy.IsAllowed(_configuration.Disclosure,
+            new AiDisclosureRequest(provider, options.Kind, destination, model!, "studio-chat"));
     }
 
     private static int JsonCharacterCount(JsonElement value)
@@ -233,6 +249,7 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(summary);
 
+        cancellationToken.ThrowIfCancellationRequested();
         var providerName = ResolveProviderName(request)!;
         var providerOptions = _configuration.GetProvider(providerName)!;
         var adapter = _adaptersByKind[providerOptions.Kind];
@@ -241,6 +258,22 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
         summary.Provider = providerName;
         summary.Kind = providerOptions.Kind;
         summary.Model = model;
+
+        // Enforce again for non-HTTP service callers before creating/enumerating an adapter.
+        if (!DisclosureAllowed(request, providerName, providerOptions))
+        {
+            summary.Succeeded = false;
+            summary.StopReason = StudioAiStopReason.Error;
+            summary.ErrorMessage = "AI disclosure is not approved for this workload.";
+            yield return new StudioAiChatEvent
+            {
+                Type = StudioAiChatEventType.Error,
+                Model = model,
+                ErrorCode = "studio_ai/disclosure_denied",
+                ErrorMessage = summary.ErrorMessage
+            };
+            yield break;
+        }
 
         StudioAiProxyLog.ChatRequested(_logger, providerName, providerOptions.Kind, model);
 

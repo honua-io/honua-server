@@ -219,6 +219,10 @@ public sealed class StudioAiProxyPromptBudgetTests
     {
         Enabled = true,
         DefaultProvider = ProviderName,
+        Disclosure = new()
+        {
+            Approvals = [new() { Provider = ProviderName, Kind = "openai", Destination = "https://llm.example.com/v1", Model = "scripted-model", UseCase = "studio-chat", DataClassification = "unclassified" }]
+        },
         MaxPromptCharacters = maxPromptCharacters,
         Providers =
         {

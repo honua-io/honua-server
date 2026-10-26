@@ -2,12 +2,12 @@
   "schema": "honua.sdk-protocol-fixture/v1",
   "coreFixture": {
     "path": "docs/gis/data/client-certification-fixture.v1.json",
-    "sha256": "c8a8dc5faa88e1b0250a920622b3b1771d103aa0b91a238539f64cd6e6b35bcb"
+    "sha256": "90ea11a6168e532fce01d53cc33e166c9af1182cd15a9becced3675d05ae4732"
   },
   "inputs": [
     {
       "path": "docker/routing/init-routing.sql",
-      "sha256": "07f0157a6c28de18eba539ca9881788904fb26a2d918f2551b877abf75e09af9"
+      "sha256": "eac8f620e47107a86bf6390f2b0a15c25c60f049d37a026f5e926ad068b4eb4c"
     },
     {
       "path": "tests/seed/sdk-protocol-v1/geocoder.csv",

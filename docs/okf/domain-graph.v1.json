@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:8c2a746c070e2de8fa3e72cce4cb23df14f0f9343a038ae7292ad5eeb523a80b",
+  "bundleDigest": "sha256:94cf071395c37fdd6d2252a63c68151dd1eaa569ecb88995b71c001f4145a621",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -7551,7 +7551,7 @@
     {
       "id": "reference/analysis-artifacts-and-reports",
       "path": "reference/analysis-artifacts-and-reports.md",
-      "documentDigest": "sha256:2cf17cd86da5e708c615683de88b552259d74adeeb524a6344830c546742c53b",
+      "documentDigest": "sha256:331ccdb5a41cae0cc01cbc12633d05202ba3fa0af02db5d3a9abbbbe62760b93",
       "metadata": {
         "type": "reference",
         "title": "Analysis content, artifacts, and reports",
@@ -7640,6 +7640,17 @@
         "resource": "honua://capability/serve.ogc-api-features"
       },
       "humanDocument": "https://github.com/honua-io/honua-server/blob/trunk/docs/reference/compatibility/ogc-conformance.md"
+    },
+    {
+      "id": "reference/configuration/ai-disclosure-policy",
+      "path": "reference/configuration/ai-disclosure-policy.md",
+      "documentDigest": "sha256:24b23e383fffedb168c6da7f04eb7da2373615ca0e97513701c1ad6877fa651b",
+      "metadata": {
+        "type": "reference",
+        "title": "AI model disclosure approvals",
+        "description": "Operator approval configuration, migration and limits for AI model data transfers."
+      },
+      "humanDocument": "https://github.com/honua-io/honua-server/blob/trunk/docs/reference/configuration/ai-disclosure-policy.md"
     },
     {
       "id": "reference/configuration/data-sources/README",
@@ -7746,7 +7757,7 @@
     {
       "id": "reference/configuration/environment-variables",
       "path": "reference/configuration/environment-variables.md",
-      "documentDigest": "sha256:68bd29308e658e34a0db73fd8c05b951598910b2cb1f0350479ada5b8de58343",
+      "documentDigest": "sha256:5753c3466a2efbed2d02a0950ebab83e9ee12ce9eed3710012bc9727804ce07f",
       "metadata": {
         "type": "reference",
         "title": "Environment variables",
@@ -15612,6 +15623,11 @@
       "source": "reference/configuration/environment-variables",
       "relation": "links_to",
       "target": "guides/secure/tls-and-mtls"
+    },
+    {
+      "source": "reference/configuration/environment-variables",
+      "relation": "links_to",
+      "target": "reference/configuration/ai-disclosure-policy"
     },
     {
       "source": "reference/configuration/environment-variables",

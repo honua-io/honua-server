@@ -88,6 +88,12 @@ public sealed class StudioAiCertificationEndpointTests
             {
                 ["HONUA_ADMIN_PASSWORD"] = adminKey,
                 ["StudioAiProxy:Enabled"] = "true",
+                ["StudioAiProxy:Disclosure:Approvals:0:Provider"] = "fixture",
+                ["StudioAiProxy:Disclosure:Approvals:0:Kind"] = kind,
+                ["StudioAiProxy:Disclosure:Approvals:0:Destination"] = kind == "bedrock" ? "aws-bedrock:" + StudioAiProxyConfiguration.DefaultBedrockRegion : "https://fixture.invalid/v1",
+                ["StudioAiProxy:Disclosure:Approvals:0:Model"] = "fixture-model",
+                ["StudioAiProxy:Disclosure:Approvals:0:UseCase"] = "studio-chat",
+                ["StudioAiProxy:Disclosure:Approvals:0:DataClassification"] = "unclassified",
                 ["StudioAiProxy:DefaultProvider"] = "fixture",
                 ["StudioAiProxy:Providers:fixture:Kind"] = kind,
                 ["StudioAiProxy:Providers:fixture:Endpoint"] = "https://fixture.invalid/v1",

@@ -12,6 +12,7 @@ using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Security;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.ControlPlane;
 using Honua.Geoprocessing;
@@ -1263,7 +1264,19 @@ public sealed class ImageryInferenceJobExecutorTests
             Endpoint = endpoint,
             ApiKey = apiKey,
             DefaultModel = defaultModel,
-            TimeoutSeconds = 30
+            TimeoutSeconds = 30,
+            Disclosure = new()
+            {
+                Approvals = new[] { "landcover-v2", "fallback-model" }.Select(model => new AiDisclosureApproval
+                {
+                    Provider = provider,
+                    Kind = "http",
+                    Destination = endpoint,
+                    Model = model,
+                    UseCase = "imagery-inference",
+                    DataClassification = "unclassified"
+                }).ToList()
+            }
         };
         var inferenceMonitor = Substitute.For<IOptionsMonitor<ImageryInferenceOptions>>();
         inferenceMonitor.CurrentValue.Returns(inferenceOptions);
