@@ -356,7 +356,11 @@ internal static partial class ImageServerSoapEndpoints
             return service.ErrorResult;
         }
 
-        var srid = service.Extent!.Value.Srid ?? SpatialConstants.DefaultSrid;
+        // GetServiceInfo describes a registered coverage's grid (#6493), so the
+        // catalog geometry must carry that same CRS rather than the base mosaic's.
+        var coverageGrid = await ReadCoverageGridAsync(
+            request.HttpContext, service.Resolution.LayerId, cancellationToken).ConfigureAwait(false);
+        var srid = (coverageGrid?.Extent ?? service.Extent!.Value).Srid ?? SpatialConstants.DefaultSrid;
         var maskedFields = await ReadCatalogMasksAsync(
             request.HttpContext, service.Resolution.LayerId, cancellationToken).ConfigureAwait(false);
         return CreateSoapResponse(

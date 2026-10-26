@@ -563,10 +563,52 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.GetServiceInfo)]
+    [InterfaceOperation(TestProtocols.ImageServer, "GetView")]
+    [InterfaceOperation(TestProtocols.ImageServer, "GetFields")]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task CoverageBackedLayer_ViewAndFieldsDescribeTheCoverageGrid()
+    {
+        await UseCoverageBackedFixtureAsync();
+        // Give the base mosaic a different CRS so a handler that still describes it
+        // cannot agree with the coverage-backed GetServiceInfo by accident.
+        var store = _fixture.GetService<IRasterStore>();
+        var rasters = await store.ListRastersAsync(WebAppFixture.TestLayerId, CancellationToken.None);
+        var projected = rasters.Select(raster => raster with
+        {
+            Srid = 3857,
+            Extent = raster.Extent!.Value with { Srid = 3857 },
+        }).ToArray();
+        store.ListRastersAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(projected);
+
+        var view = await PostSoapAsync($"""<GetView xmlns="{ArcGisNamespace}" />""");
+        var fields = await PostSoapAsync($"""<GetFields xmlns="{ArcGisNamespace}" />""");
+        var info = await PostSoapAsync($"""<GetServiceInfo xmlns="{ArcGisNamespace}" />""");
+        view.Status.Should().Be(HttpStatusCode.OK, view.Body);
+        fields.Status.Should().Be(HttpStatusCode.OK, fields.Body);
+        info.Status.Should().Be(HttpStatusCode.OK, info.Body);
+
+        var result = Element(view.Document, "Result");
+        var extent = Child(result, "Extent");
+        double.Parse(Child(extent, "XMax").Value, CultureInfo.InvariantCulture).Should().Be(0.14);
+        double.Parse(Child(extent, "YMax").Value, CultureInfo.InvariantCulture).Should().Be(0.15);
+        Child(result, "BandCount").Value.Should().Be("1");
+        Child(result, "PixelType").Value.Should().Be("F32");
+        XElement.DeepEquals(extent, Element(info.Document, "Extent"))
+            .Should().BeTrue("GetView and GetServiceInfo describe the same coverage grid");
+
+        var reference = Child(Element(fields.Document, "GeometryDef"), "SpatialReference");
+        XElement.DeepEquals(reference, Child(Element(info.Document, "Extent"), "SpatialReference"))
+            .Should().BeTrue("GetFields describes the same coverage CRS as GetServiceInfo");
+        Child(reference, "WKID").Value.Should().Be("4326");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetServiceInfo)]
     [InterfaceOperation(TestProtocols.ImageServer, "GetMultidimensionalInfo")]
     [Endpoint("POST /services/{serviceId}/ImageServer")]
     public async Task MultidimensionalInfoAndSupportsTime_MatchRest()
     {
+        await UseCoverageBackedFixtureAsync();
         var service = ServicePath();
         using var restInfo = await _fixture.Client.GetAsync($"{service}?f=json");
         using var restMultidim = await _fixture.Client.GetAsync($"{service}/multidimensionalInfo?f=json");
@@ -1054,10 +1096,16 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
     private static XElement MultidimensionalPropertyValue(XElement set, string key)
         => Child(Child(set, "PropertyArray").Elements().Single(property => Child(property, "Key").Value == key), "Value");
 
-    private static async Task<WebAppFixture> CreateFixtureAsync(bool enableTileCache)
+    /// <summary>
+    /// The default fixture serves only the three-band RGB mosaic. A registered
+    /// multidimensional coverage replaces the service raster description (#6493), so
+    /// mosaic facts (bands, statistics, histograms, extent) and coverage facts are
+    /// asserted against separate layer shapes.
+    /// </summary>
+    private static async Task<WebAppFixture> CreateFixtureAsync(bool enableTileCache, bool registerCoverage = false)
     {
         var rasterStore = CreateRasterStore();
-        var coverageStore = CreateCoverageStore();
+        var coverageStore = CreateCoverageStore(registerCoverage);
         var fixture = new WebAppFixture().ConfigureServices(services =>
         {
             services.RemoveAll<IRasterStore>();
@@ -1290,7 +1338,13 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
         return store;
     }
 
-    private static IMultidimensionalCoverageStore CreateCoverageStore()
+    private async Task UseCoverageBackedFixtureAsync()
+    {
+        await _fixture.DisposeAsync();
+        _fixture = await CreateFixtureAsync(enableTileCache: false, registerCoverage: true);
+    }
+
+    private static IMultidimensionalCoverageStore CreateCoverageStore(bool registerCoverage)
     {
         var metadata = new MultidimensionalCoverageMetadata
         {
@@ -1336,7 +1390,7 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
         };
         var store = Substitute.For<IMultidimensionalCoverageStore>();
         store.ListByLayerAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns(call => call.ArgAt<int>(0) == WebAppFixture.TestLayerId
+            .Returns(call => registerCoverage && call.ArgAt<int>(0) == WebAppFixture.TestLayerId
                 ? new[] { registration }
                 : Array.Empty<MultidimensionalCoverageRegistration>());
         return store;

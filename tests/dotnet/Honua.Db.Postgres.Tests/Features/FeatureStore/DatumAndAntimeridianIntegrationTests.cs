@@ -33,10 +33,13 @@ public sealed class DatumAndAntimeridianIntegrationTests(PostgresFixture fixture
         "MULTIPOLYGON(((170 0, 180 0, 180 10, 170 10, 170 0)),((-180 0, -170 0, -170 10, -180 10, -180 0)))";
 
     private const double WebMercatorExtent = 20037508.342789244;
+    // Returns a boolean, not the geometry: Honua registers no Npgsql geometry type handler,
+    // so a bare geometry column cannot be read. PROJ 7 images (PostGIS 16-3.4, 17-3.5) resolve
+    // us_noaa_conus.tif through the legacy NADCON "conus" file, so the probe succeeds there.
     private const string NadconProbe =
         "SELECT ST_TransformPipeline(ST_SetSRID(ST_MakePoint(-100, 40), 4267), " +
         "'+proj=pipeline +step +proj=unitconvert +xy_in=deg +xy_out=rad +step +proj=hgridshift " +
-        "+grids=us_noaa_conus.tif +step +proj=unitconvert +xy_in=rad +xy_out=deg', 4269)";
+        "+grids=us_noaa_conus.tif +step +proj=unitconvert +xy_in=rad +xy_out=deg', 4269) IS NOT NULL";
 
     [IntegrationTest]
     public async Task PacificMultipolygon_IsOnlyInTilesThatMeetIt()

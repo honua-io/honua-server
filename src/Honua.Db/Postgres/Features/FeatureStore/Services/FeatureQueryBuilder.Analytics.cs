@@ -215,7 +215,10 @@ internal sealed partial class FeatureQueryBuilder
                 sql.Append(" FROM src ORDER BY cluster_id NULLS LAST, \"objectId\"");
             }
 
-            return new CoreParameterizedQuery(sql.ToString(), parameters);
+            // LLVM JIT compiles every expression in the plane, tile and label-merge
+            // CTEs before the first row, including branches an unsplit extent never
+            // runs. On 100K points that compilation took longer than the clustering.
+            return new CoreParameterizedQuery(sql.ToString(), parameters) { DisableJit = true };
         }
         finally
         {
