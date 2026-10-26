@@ -1691,7 +1691,7 @@ jobs:
       # Dockerfile. Read-only: a native-tools-only export would evict that
       # workflow's managed publish layers. A cache miss builds cold as before.
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
 
       - name: Log in to GHCR for build cache
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
