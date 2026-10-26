@@ -178,8 +178,18 @@ jobs:
             # One build per candidate: a queued or running candidate run already covers it.
             active="$(gh run list --repo "${GITHUB_REPOSITORY}" --workflow nightly-container-build.yml \
               --branch "${tag}" --limit 20 --json status --jq '[.[] | select(.status != "completed")] | length')"
+            # A candidate that a run on its tag already imaged is not rebuilt. Each re-dispatch files
+            # its checks on the candidate sha again, and the release resolver judges a lane by its
+            # latest attempt: 8cb074f7 was imaged on 2026-10-23 (run 39876804619), then three nightly
+            # re-dispatches failed only in mirror-base-images (Public ECR 429) and kept the imaged,
+            # certified sha out of the release candidate (honua-io/honua-release#952).
+            imaged="$(gh run list --repo "${GITHUB_REPOSITORY}" --workflow nightly-container-build.yml \
+              --branch "${tag}" --limit 20 --json status,conclusion,headSha \
+              --jq "[.[] | select(.status == \"completed\" and .conclusion == \"success\" and .headSha == \"${CANDIDATE_SHA}\")] | length")"
             if [ "${active}" != 0 ]; then
               echo "::notice::a Nightly Container Build run on ${tag} is already queued or running; not dispatching another."
+            elif [ "${imaged}" != 0 ]; then
+              echo "::notice::a Nightly Container Build run on ${tag} already imaged ${CANDIDATE_SHA}; not rebuilding it."
             else
               gh workflow run nightly-container-build.yml --repo "${GITHUB_REPOSITORY}" --ref "${tag}"
               echo "::notice::trunk head ${GITHUB_SHA} is not the newest certified sha ${CANDIDATE_SHA}; re-dispatched this workflow at ${tag} so the image, labels and provenance all name ${CANDIDATE_SHA}."
@@ -268,7 +278,17 @@ jobs:
         run: |
           set -euo pipefail
           mirror() {
-            local src="$1" dst="$2"
+            local src="$1" dst="$2" current
+            # The source is digest-pinned and imagetools copies its index byte for byte, so a
+            # destination tag already at that digest holds exactly these bytes. Skipping it keeps an
+            # upstream outage out of the run: Public ECR answered 429 on every attempt for the Lambda
+            # adapter in runs 39940535619, 40083981239 and 40184295976, although GHCR already held
+            # sha256:46d6625e... from run 39876804619, and every image build was skipped.
+            current="$(docker buildx imagetools inspect "$dst" --format '{{json .Manifest}}' 2>/dev/null | jq -r '.digest // empty' || true)"
+            if [ -n "$current" ] && [ "$current" = "${src##*@}" ]; then
+              echo "already mirrored $src -> $dst"
+              return 0
+            fi
             for attempt in 1 2 3 4 5; do
               if docker buildx imagetools create --tag "$dst" "$src"; then
                 echo "mirrored $src -> $dst"

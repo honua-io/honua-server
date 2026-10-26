@@ -294,9 +294,12 @@ public sealed class StudioAiProxyConfigurationValidator : ConfigurationValidator
             return;
         }
 
-        // anthropic must be HTTPS; openai-compatible may point at a plain-HTTP localhost endpoint
-        // (Ollama/vLLM/LM Studio), so only require HTTPS for the hosted Anthropic API shape.
-        var requireHttps = string.Equals(kind, StudioAiProxyConfiguration.AnthropicKind, StringComparison.OrdinalIgnoreCase);
+        // Local OpenAI-compatible runtimes may use HTTP. Every remote provider must use
+        // HTTPS, including private-network hosts; local development is a loopback exception.
+        var allowLocalHttp = string.Equals(kind, StudioAiProxyConfiguration.OpenAiKind, StringComparison.OrdinalIgnoreCase)
+            && Uri.TryCreate(provider.Endpoint, UriKind.Absolute, out var endpoint)
+            && endpoint.IsLoopback;
+        var requireHttps = !allowLocalHttp;
 
         if (string.IsNullOrWhiteSpace(provider.Endpoint))
         {

@@ -41,5 +41,9 @@ License. Licensor: Honua Geo Inc.
   rewrite would therefore break startup or block the gate for no functional change.
   Those files are Honua-authored and covered by the repository LICENSE regardless of
   the comment text; new migrations use the FCL header.
+- The same rule covers hash-pinned migration contracts that are not journaled. The
+  attachment preamble (`src/Honua.Server/MigrationContracts/attachment-schema-preamble.v1.sql.template`)
+  is pinned by SHA-256 in `ServerCoreSchemaMigrations` and keeps its v1 ELv2 header bytes;
+  a header change there makes every non-default-schema attachment migration refuse to load.
 - Capacity metering must stay on the license-validated code path to remain covered by the
   Limitations clause.

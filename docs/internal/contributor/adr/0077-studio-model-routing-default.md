@@ -151,6 +151,10 @@ ADR is what makes that ticket a correctness item rather than an enhancement.
 - Nothing about ADR-0076's retirement of the generation families is reopened.
 - Bedrock direct-from-browser stays out of scope. The proxy is the answer there.
 
+## Provider transport
+
+Remote OpenAI-compatible and Anthropic endpoints require HTTPS. OpenAI-compatible local runtimes may use HTTP only on loopback (`localhost`, `127.0.0.1`, or `::1`). Private-network model hosts require TLS. The shared provider HTTP client does not follow redirects; configure the final API endpoint directly. Operators migrating a remote HTTP endpoint must configure HTTPS before enabling the proxy. Bedrock continues to use its regional runtime and IAM configuration.
+
 ## Provider failure diagnostics
 
 Studio proxy log events 6752, 6754 and 6755 retain provider identity, HTTP status where available, exception type and fixed execution phase only. Response bodies and exception payloads are omitted. Operators should use these fields to distinguish HTTP, transport and parsing failures; client error and cancellation behavior is unchanged.

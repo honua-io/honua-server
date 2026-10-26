@@ -269,7 +269,7 @@ public sealed class OperationDispatcher : IOperationInvoker
         }
         catch (OperationCanceledException)
         {
-            await PersistPreActuationCancellationAsync(envelope).ConfigureAwait(false);
+            await PersistPreActuationCancellationAsync(envelope, invocationContext).ConfigureAwait(false);
             throw;
         }
         catch (OperationNotFoundException)
@@ -320,7 +320,7 @@ public sealed class OperationDispatcher : IOperationInvoker
         }
         catch (OperationCanceledException)
         {
-            await PersistPreActuationCancellationAsync(envelope).ConfigureAwait(false);
+            await PersistPreActuationCancellationAsync(envelope, invocationContext).ConfigureAwait(false);
             throw;
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
@@ -365,7 +365,7 @@ public sealed class OperationDispatcher : IOperationInvoker
             }
             catch (OperationCanceledException)
             {
-                await PersistPreActuationCancellationAsync(envelope).ConfigureAwait(false);
+                await PersistPreActuationCancellationAsync(envelope, invocationContext).ConfigureAwait(false);
                 throw;
             }
             catch (CapabilityUnavailableException)
@@ -599,7 +599,9 @@ public sealed class OperationDispatcher : IOperationInvoker
         return failed;
     }
 
-    private async Task PersistPreActuationCancellationAsync(OperationHandle envelope)
+    private async Task PersistPreActuationCancellationAsync(
+        OperationHandle envelope,
+        OperationPolicyContext invocationContext)
     {
         var cancelled = envelope with
         {
@@ -617,6 +619,10 @@ public sealed class OperationDispatcher : IOperationInvoker
                         OperationInstanceId = cancelled.OperationInstanceId,
                         CorrelationId = cancelled.CorrelationId,
                         AuthorizationOutcome = cancelled.AuthorizationOutcome,
+                        // The cancellation row belongs to the same invocation as the accepted
+                        // row; dropping the submitting principal recorded an authenticated
+                        // caller (for example an MCP tool call) as anonymous.
+                        PrincipalId = invocationContext.PrincipalId,
                     },
                     "operation.cancelled",
                     AuditOutcome.Failure,
