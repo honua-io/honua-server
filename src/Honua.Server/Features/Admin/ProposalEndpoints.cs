@@ -2,6 +2,8 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Core.Features.AuditLog.Abstractions;
+using Honua.Core.Exceptions;
+using Honua.ControlPlane;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Capabilities;
@@ -264,7 +266,7 @@ internal static class ProposalEndpoints
                 ? Results.NotFound()
                 : Results.Json(ToDetail(resolved), ProposalJsonContext.Default.ProposalDetailResponse);
         }
-        catch (InvalidOperationException ex)
+        catch (InvalidOperationException ex) when (ex is not ServiceUnavailableException)
         {
             return Results.Problem(detail: ex.Message, statusCode: StatusCodes.Status409Conflict);
         }
@@ -355,6 +357,10 @@ internal static class ProposalEndpoints
         if (!string.IsNullOrWhiteSpace(proposal.RequestedBy) &&
             approverIdentities.Contains(proposal.RequestedBy, StringComparer.OrdinalIgnoreCase))
         {
+            await OperationApprovalDenialRecorder.RecordAsync(
+                context.RequestServices.GetRequiredService<IServiceScopeFactory>(),
+                proposal, actor!, OperationApprovalDenialReason.SelfApproval, context.RequestAborted)
+                .ConfigureAwait(false);
             return Results.Problem(
                 detail: "Separation of duties: the requester of a proposal cannot approve it.",
                 statusCode: StatusCodes.Status403Forbidden);

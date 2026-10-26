@@ -33,4 +33,17 @@ different paths.[^contract]
 
 In [publish and share](../../guides/workflows/publish-share-map.md), identify the approved version, decision, and active result. A workflow requiring approval must retain that boundary across a fresh [session](session.md) or recovery.
 
+A refused self-approval at REST preflight or invalid evidence decision before
+the gateway claims execution retains a minimal
+`operation.approval_denied` audit event joined to the accessible proposal and
+its correlation identifier. The event records the deciding actor and a fixed
+reason code, without the proposal payload or evidence text. It leaves the
+proposal state unchanged and does not invoke its actuator. If durable audit
+storage cannot accept that event, the request returns service unavailable
+instead of claiming that a receipt was retained. Caller cancellation propagates
+without a receipt guarantee. Missing proposals and callers without approval
+permission do not create this proposal decision join. Failures after the execution
+claim retain their existing compensation and `operation.apply_failed` audit
+boundary; they do not also emit this pre-claim denial event.
+
 [^contract]: [Source contract](../../guides/connect/ai-agents-mcp.md).
