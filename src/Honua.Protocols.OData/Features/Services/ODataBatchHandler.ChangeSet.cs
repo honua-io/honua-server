@@ -487,27 +487,15 @@ internal sealed partial class ODataBatchHandler
         var addCount = createRequests.Values.Sum(list => list.Count);
         var updateCount = updateRequests.Values.Sum(list => list.Count);
         var deleteCount = deleteRequests.Values.Sum(list => list.Count);
-        var totalCount = addCount + updateCount + deleteCount;
 
         // OData $batch change-set writes are Community (#1591). They still flow through the
         // shared edit processor, validation, authz, event, and telemetry paths below.
 
-        if (addCount > _editLimits.MaxFeaturesPerEdit ||
-            updateCount > _editLimits.MaxFeaturesPerEdit ||
-            deleteCount > _editLimits.MaxFeaturesPerEdit)
+        if (EditLimitPolicy.Evaluate(new EditCounts(addCount, updateCount, deleteCount), _editLimits) is { } limitViolation)
         {
-            var message = $"Too many features in a single edit operation. Maximum per operation: {_editLimits.MaxFeaturesPerEdit}.";
-            foreach (var request in requests.Where(r => !responses.Any(resp => resp.Id == r.Id)))
-            {
-                responses.Add(CreateErrorResponse(request.Id, 400, "InvalidRequest", message));
-            }
-
-            return responses.ToImmutableArray();
-        }
-
-        if (totalCount > _editLimits.MaxEditsPerTransaction)
-        {
-            var message = $"Too many edits in a single request. Maximum per request: {_editLimits.MaxEditsPerTransaction}.";
+            var message = limitViolation.Kind == EditLimitViolationKind.FeaturesPerOperation
+                ? $"Too many features in a single edit operation. Maximum per operation: {limitViolation.Limit}."
+                : $"Too many edits in a single request. Maximum per request: {limitViolation.Limit}.";
             foreach (var request in requests.Where(r => !responses.Any(resp => resp.Id == r.Id)))
             {
                 responses.Add(CreateErrorResponse(request.Id, 400, "InvalidRequest", message));

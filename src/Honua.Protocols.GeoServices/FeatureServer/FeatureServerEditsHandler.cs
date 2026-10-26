@@ -507,28 +507,19 @@ internal sealed class FeatureServerEditsHandler(
     /// </summary>
     private static IResult? ValidateEditLimits(ApplyEditsRequest request, Honua.Core.Configuration.EditLimits editLimits, HttpContext context)
     {
-        var addCount = request.Adds?.Length ?? 0;
-        var updateCount = request.Updates?.Length ?? 0;
-        var deleteCount = request.Deletes?.Length ?? 0;
-        var totalCount = addCount + updateCount + deleteCount;
-
-        if (addCount > editLimits.MaxFeaturesPerEdit ||
-            updateCount > editLimits.MaxFeaturesPerEdit ||
-            deleteCount > editLimits.MaxFeaturesPerEdit)
+        var violation = EditLimitPolicy.Evaluate(
+            new EditCounts(request.Adds?.Length ?? 0, request.Updates?.Length ?? 0, request.Deletes?.Length ?? 0),
+            editLimits);
+        return violation switch
         {
-            return StandardErrorHelpers.CreateBadRequest(context,
+            null => null,
+            { Kind: EditLimitViolationKind.FeaturesPerOperation } => StandardErrorHelpers.CreateBadRequest(context,
                 "Too many features in a single edit operation",
-                [$"Maximum per operation: {editLimits.MaxFeaturesPerEdit}"]);
-        }
-
-        if (totalCount > editLimits.MaxEditsPerTransaction)
-        {
-            return StandardErrorHelpers.CreateBadRequest(context,
+                [$"Maximum per operation: {violation.Value.Limit}"]),
+            _ => StandardErrorHelpers.CreateBadRequest(context,
                 "Too many edits in a single request",
-                [$"Maximum per request: {editLimits.MaxEditsPerTransaction}"]);
-        }
-
-        return null;
+                [$"Maximum per request: {violation.Value.Limit}"])
+        };
     }
 
     private static int? ResolveStorageLayerIdV2(
