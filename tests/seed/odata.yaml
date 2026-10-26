@@ -123,7 +123,10 @@ sql:
           'Cities service for OData integration tests',
           4326,
           ARRAY['JSON', 'GeoJSON'],
-          ARRAY['Query', 'Extract'],
+          -- The OData contract tests exercise create/update/delete and $batch edits.
+          -- Declared capabilities are enforced on OData writes since #6594, so the
+          -- service must declare the edit kinds it is used for.
+          ARRAY['Query', 'Extract', 'Create', 'Update', 'Delete'],
           ST_MakeEnvelope(-125.0, 30.0, -100.0, 50.0, 4326)
       )
       ON CONFLICT (service_name) DO UPDATE SET

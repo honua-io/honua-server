@@ -23,6 +23,11 @@ deployment or production data is touched by that rehearsal.
 
 ## Frozen deployment configuration
 
+GP is Preview for 2026.1. Until an operator sets `GP_CANARY_URL`, scheduled runs
+skip `geometry-buffer` and a `canary-not-configured` job records a notice; no
+interval evidence is produced and no streak can start. A manual dispatch still
+runs `geometry-buffer` and fails closed on missing configuration.
+
 The operator configures these repository values before the first interval:
 
 | Setting | Required value |

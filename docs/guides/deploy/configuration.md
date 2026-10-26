@@ -103,3 +103,10 @@ A successful admin upload persists `<LicensePath>.uploaded`, which startup reads
 - [Environment variable reference](../../reference/configuration/environment-variables.md)
 - [Deploy with Docker Compose](docker-compose.md)
 - [Deploy on Kubernetes](kubernetes.md)
+
+
+## AI model invocation limits
+
+Configure a stable deployment identity and initialize a durable admission policy before enabling
+model calls. Follow [AI invocation admission](../../reference/configuration/ai-execution-admission.md)
+for both PostgreSQL and Redis, operator controls, secure defaults and migration.

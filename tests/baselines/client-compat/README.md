@@ -103,6 +103,10 @@ any of these hold:
 7. An `expected-pairs.json` entry has no committed baseline, even when the
    current run produced evidence — bootstrap real baselines via
    `scripts/client-compat/refresh-baselines.sh` before the gate releases.
+8. A baseline `pass` stays `pass` but its `measured_count` changed, or its
+   `measured_delta` grew beyond the case's explicit
+   `measured_delta_tolerance` (#6514). A changed count is a behavior change
+   until a reviewed baseline bump attributes it.
 
 When a CI lane exits non-zero, its artifact should still contain
 `lane-exit-code.txt` and `compose.log`. Those files are diagnostic only; the
@@ -129,6 +133,27 @@ special handling.
 The baseline-bump cadence is scheduled quarterly via `/schedule`. Don't bump
 baselines as part of an unrelated feature PR — that hides regressions inside
 unrelated review.
+
+### Reviewed measured-count reconciliation (2026-10-26)
+
+Condition 8 arrived after most envelopes here were captured (2026-05-07 to
+2026-08-29), so 36 passing cases carried counts from an older fixture and
+server. Only those cases' `measured_count` and `notes` were bumped, from
+nightly run 40335248083 at `4cdb0847d6`; statuses and every other case are
+unchanged. Each change is attributed to the commit that caused it:
+
+| Change | Cases | Cause |
+|---|---|---|
+| Collections / feature types 4-8 -> 11, services 5 -> 12, admin services 6 -> 8, authenticated WFS layers 7 -> 14, portal search 9 -> 12 | `CERT-DISC-01/02`, `CERT-CONN-01`, `CERT-AUTH-02`, `CERT-PRTL-SRCH-01`, `JS-EXT-OL-COLL-01`, `NB-*-COLL/CONF/CAP/OWS/AUT` | Fixture growth: WFS-T scratch layers 10-12 (#3684), authenticated mirrors (#3682), `cert_relations` layers 20-22 (#5300) |
+| OGC API Features conformance 26 -> 21 | `js` `CERT-DISC-01`, `NB-OWS-OAF-CONF-01` | Six unevidenced CQL2 extension classes withdrawn by the exact-candidate evidence gate (#4240); Part 4 `update` added (#5147) |
+| OGC API Maps conformance 10 -> 11 | `js` `CERT-DISC-01` | `conf/styled-map` (#1413) |
+| Collection links 13 -> 14 | `py-owslib` `CERT-DISC-02` | `queryables` link and CRS84 `storageCrs` (#5040) |
+| WFS CRS options 2 -> 5, CRS spellings 4 -> 11 | `py-owslib` `CERT-DISC-02`, `NB-OWS-WFS-CRS-02` | CRS84 identifiers advertised (#3641) |
+| Attribute fields 14 -> 15, 15 -> 16 | `js`/`py-geopandas` WFS `CERT-SCHM-01` | `eo:cloud_cover` fixture column (`aa20e7e3d1`); Arrow schema includes geometry `shape` (#4750) |
+| Paging 1 -> 2 | `js` `CERT-PAGE-02` | Case now measures page size, rejecting empty pages (#6309) |
+| STAC item assets 1 -> 2 | `NB-STAC-ITEM-01` | COG asset published by the seed (`88407d7d5b`) |
+| Legend PNG bytes 3904 -> 4320, 509 -> 995 | `NB-OWS-WMS-CAP-04`, `NB-OWS-WMTS-CAP-05` | Shared swatch legend replaces the 256x256 world-tile legend; optional LegendURL size dropped (#5747) |
+| WMTS tile bytes 558 -> 546 | `CERT-RNDR-01`, `NB-OWS-WMTS-TILE-04` | PNG encoder output; tile content is now asserted by authored-style pixels (#6312) |
 
 ### Reviewed OpenLayers WFS false-positive correction (#6304)
 

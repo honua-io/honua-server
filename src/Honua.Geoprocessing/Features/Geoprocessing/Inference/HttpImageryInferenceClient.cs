@@ -2,8 +2,9 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Text.Json;
-using Honua.Core.Features.Security;
 using Honua.Core.Features.Security.Abstractions;
+using Honua.Core.Features.Security.Admission;
+using Honua.Core.Features.Security;
 
 namespace Honua.Geoprocessing.Inference;
 
@@ -49,17 +50,20 @@ internal sealed partial class HttpImageryInferenceClient : IImageryInferenceClie
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<HttpImageryInferenceClient> _logger;
     private readonly ISecretProvider? _secretProvider;
+    private readonly IAiExecutionAdmission? _admission;
 
     public HttpImageryInferenceClient(
         IHttpClientFactory httpClientFactory,
         ILogger<HttpImageryInferenceClient> logger,
-        ISecretProvider? secretProvider = null)
+        ISecretProvider? secretProvider = null,
+        IAiExecutionAdmission? admission = null)
     {
         ArgumentNullException.ThrowIfNull(httpClientFactory);
         ArgumentNullException.ThrowIfNull(logger);
         _httpClientFactory = httpClientFactory;
         _logger = logger;
         _secretProvider = secretProvider;
+        _admission = admission;
     }
 
     public string Provider => ProviderId;
@@ -101,6 +105,27 @@ internal sealed partial class HttpImageryInferenceClient : IImageryInferenceClie
             throw new ImageryInferenceException("AI disclosure is not approved for the selected imagery provider, destination, model and workload.");
         }
 
+        if (_admission is null || request.ExecutionContext is not { IsValid: true, UseCase: "imagery-inference" } executionContext)
+            throw new ImageryInferenceException("AI invocation requires a trusted durable job owner and initialized admission policy.");
+        IAiExecutionPermit permit;
+        try
+        {
+            permit = await _admission.AcquireAsync(executionContext, cancellationToken).ConfigureAwait(false);
+        }
+        catch (AiAdmissionException)
+        {
+            throw new ImageryInferenceException("AI invocation admission is unavailable or denied.");
+        }
+        await using var ownedPermit = permit;
+        try
+        {
+            await permit.BeginInvocationAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (AiAdmissionException)
+        {
+            throw new ImageryInferenceException("AI invocation admission is no longer current.");
+        }
+        cancellationToken = permit.Token;
         var apiKey = await ResolveApiKeyAsync(options, cancellationToken).ConfigureAwait(false);
 
         using var message = new HttpRequestMessage(HttpMethod.Post, endpoint)
@@ -129,9 +154,14 @@ internal sealed partial class HttpImageryInferenceClient : IImageryInferenceClie
         try
         {
             var client = _httpClientFactory.CreateClient(HttpClientName);
+            await permit.AuthorizeSendAsync(cancellationToken).ConfigureAwait(false);
             response = await client
                 .SendAsync(message, HttpCompletionOption.ResponseHeadersRead, timeoutCts.Token)
                 .ConfigureAwait(false);
+        }
+        catch (AiAdmissionException)
+        {
+            throw new ImageryInferenceException("AI invocation admission is no longer current.");
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {

@@ -7,6 +7,7 @@ using System.Text.Json;
 using Honua.Ai.StudioAiProxy.Abstractions;
 using Honua.Ai.StudioAiProxy.Adapters.Bedrock;
 using Honua.Ai.StudioAiProxy.Domain;
+using Honua.Core.Features.Security.Admission;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 
@@ -55,10 +56,12 @@ internal sealed class BedrockStudioAiProxyAdapter : IStudioAiProxyAdapter
     public async IAsyncEnumerable<StudioAiChatEvent> StreamAsync(
         StudioAiProxyProviderOptions options,
         StudioAiChatRequest request,
+        IAiExecutionPermit permit,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(request);
+        await permit.EnsureCurrentAsync(cancellationToken).ConfigureAwait(false);
 
         var model = string.IsNullOrWhiteSpace(request.Model) ? options.Model : request.Model!;
         string? apiKey = null;
@@ -89,6 +92,7 @@ internal sealed class BedrockStudioAiProxyAdapter : IStudioAiProxyAdapter
 
         yield return new StudioAiChatEvent { Type = StudioAiChatEventType.MessageStart, Model = model };
 
+        await permit.AuthorizeSendAsync(cancellationToken).ConfigureAwait(false);
         var enumerator = client.GetStreamingResponseAsync(messages, chatOptions, timeoutCts.Token).GetAsyncEnumerator(timeoutCts.Token);
         int? promptTokens = null;
         int? completionTokens = null;

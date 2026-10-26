@@ -1,20 +1,20 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Net;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
-using System.Text;
-using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.Json;
+using System.Text;
 using FluentAssertions;
-using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.Protocols.Mcp.Tools;
-using Honua.Ai.StudioAiProxy;
+using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.StudioAiProxy.Abstractions;
 using Honua.Ai.StudioAiProxy.Domain;
+using Honua.Ai.StudioAiProxy;
 using Honua.ControlPlane;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.ControlPlane.Abstractions;
@@ -25,15 +25,17 @@ using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Security.Abstractions;
+using Honua.Core.Features.Security.Admission;
 using Honua.Infrastructure.Authentication;
 using Honua.Server.Features.Operations;
-using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Security;
+using Honua.TestKit;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Org.BouncyCastle.Crypto.Parameters;
 using Org.BouncyCastle.Crypto.Signers;
@@ -976,11 +978,13 @@ public sealed class ProposalEvidenceSecurityJourneyTests(
         builder.UseEnvironment("Test");
         builder.UseSetting("HONUA_DEV_AUTH", "false");
         builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+        builder.ConfigureServices(services => services.AddSingleton<IAiExecutionAdmission, RecordingAiAdmission>());
         builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(
             new Dictionary<string, string?>
             {
                 ["MultiTenancy:MultiTenantAdminRoles:0"] = "admin",
                 ["MultiTenancy:MultiTenantAdminRoles:1"] = "scoped-api-key",
+                ["AiExecutionAdmission:DeploymentId"] = "test-deployment",
                 ["StudioAiProxy:Enabled"] = "true",
                 ["StudioAiProxy:Disclosure:Approvals:0:Provider"] = Provider,
                 ["StudioAiProxy:Disclosure:Approvals:0:Kind"] = StudioAiProxyConfiguration.OpenAiKind,
@@ -1002,6 +1006,7 @@ public sealed class ProposalEvidenceSecurityJourneyTests(
 
     private void ConfigureServices(IServiceCollection services)
     {
+        services.AddSingleton<IAiExecutionAdmission, RecordingAiAdmission>();
         var auditDescriptor = services.Last(descriptor => descriptor.ServiceType == typeof(IAuditLog));
         services.RemoveAll<IAuditLog>();
         services.AddScoped<IAuditLog>(provider => new FaultSwitchAuditLog(
@@ -1055,6 +1060,7 @@ public sealed class ProposalEvidenceSecurityJourneyTests(
         public async IAsyncEnumerable<StudioAiChatEvent> StreamAsync(
             StudioAiProxyProviderOptions options,
             StudioAiChatRequest request,
+            IAiExecutionPermit permit,
             [EnumeratorCancellation] CancellationToken cancellationToken)
         {
             var toolName = request.ToolChoice!.ToolName!;

@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Ai.StudioAiProxy.Domain;
+using Honua.Core.Features.Security.Admission;
 
 namespace Honua.Ai.StudioAiProxy.Abstractions;
 
@@ -27,6 +28,14 @@ public interface IStudioAiProxyService
     /// way to change the HTTP status after the first byte is written).
     /// </summary>
     string? ValidateRequest(StudioAiChatRequest request);
+
+    /// <summary>Admits a validated request before committing HTTP streaming headers.</summary>
+    Task<StudioAiPreparedCall> PrepareChatAsync(StudioAiChatRequest request, AiExecutionContext? executionContext,
+        CancellationToken cancellationToken);
+
+    /// <summary>Consumes one prepared request exactly once; its permit remains owned through iterator disposal.</summary>
+    IAsyncEnumerable<StudioAiChatEvent> StreamPreparedChatAsync(StudioAiPreparedCall prepared,
+        StudioAiProxyCallSummary summary, CancellationToken cancellationToken);
 
     /// <summary>
     /// Streams one chat turn. <paramref name="summary"/> is populated in place as the stream

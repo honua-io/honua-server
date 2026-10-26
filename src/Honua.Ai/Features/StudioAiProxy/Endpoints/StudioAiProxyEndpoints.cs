@@ -3,16 +3,19 @@
 
 using System.Text.Json;
 using System.Text;
-using Honua.Ai.StudioAiProxy;
+using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.StudioAiProxy.Abstractions;
 using Honua.Ai.StudioAiProxy.Domain;
+using Honua.Ai.StudioAiProxy;
 using Honua.Core.Features.AuditLog.Abstractions;
-using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Core.Features.Security.Admission;
+using Honua.Core.Features.Studio.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.RateLimiting;
+using Honua.Infrastructure.Security.Admission;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Studio.Ai;
@@ -52,7 +55,11 @@ internal static class StudioAiProxyEndpoints
             .Produces(StatusCodes.Status200OK, contentType: "text/event-stream")
             .Produces(StatusCodes.Status400BadRequest)
             .Produces(StatusCodes.Status413PayloadTooLarge)
-            .Produces(StatusCodes.Status415UnsupportedMediaType);
+            .Produces(StatusCodes.Status415UnsupportedMediaType)
+            .Produces(StatusCodes.Status403Forbidden)
+            .Produces(StatusCodes.Status404NotFound)
+            .Produces(StatusCodes.Status429TooManyRequests)
+            .Produces(StatusCodes.Status503ServiceUnavailable);
     }
 
     private static async Task<IResult> HandleGetCapabilities(
@@ -139,6 +146,37 @@ internal static class StudioAiProxyEndpoints
             return BadRequest(context, validationError);
         }
 
+        var contextFactory = context.RequestServices.GetRequiredService<AiExecutionContextFactory>();
+        var executionContext = contextFactory.ForPrincipal(context.User, "studio-chat");
+        if (executionContext is null)
+            return Results.Forbid();
+        if (context.Request.Headers.TryGetValue(McpSessionManager.SessionHeaderName, out var sessionHeader))
+        {
+            var binding = McpAuthorizationHelper.ResolveSessionBindingKey(context);
+            if (sessionHeader.Count != 1 || string.IsNullOrWhiteSpace(sessionHeader[0]) || binding is null)
+                return Results.Forbid();
+            var sessionId = sessionHeader[0]!;
+            var manager = context.RequestServices.GetService<McpSessionManager>();
+            var validation = manager is null ? McpSessionValidation.Unknown
+                : await manager.ValidateAccessAsync(sessionId, binding, cancellationToken).ConfigureAwait(false);
+            if (validation != McpSessionValidation.Valid)
+                return validation == McpSessionValidation.Unknown ? Results.NotFound() : Results.Forbid();
+            executionContext = contextFactory.ForPrincipal(context.User, "studio-chat", "mcp-session:" + sessionId);
+        }
+        StudioAiPreparedCall prepared;
+        try
+        {
+            prepared = await service.PrepareChatAsync(domainRequest, executionContext, cancellationToken).ConfigureAwait(false);
+        }
+        catch (AiAdmissionException ex)
+        {
+            context.Response.Headers.RetryAfter = ex.RetryAfterSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            return Results.Problem(statusCode: ex.Code is "budget_exceeded" or "concurrency_exceeded" or "ledger_full"
+                ? StatusCodes.Status429TooManyRequests : StatusCodes.Status503ServiceUnavailable,
+                title: "AI invocation admission is unavailable or denied.");
+        }
+        await using var preparedOwner = prepared;
+
         // Past this point the request names a real, configured provider, so it is safe to commit the
         // SSE response headers: nothing beyond here can still downgrade this into a JSON 4xx (SSE has
         // no way to change the status code after the first byte is written).
@@ -155,7 +193,7 @@ internal static class StudioAiProxyEndpoints
         try
         {
             await foreach (var evt in service
-                .StreamChatAsync(domainRequest, summary, context.RequestAborted)
+                .StreamPreparedChatAsync(prepared, summary, context.RequestAborted)
                 .ConfigureAwait(false))
             {
                 await WriteSseEventAsync(response, EventName(evt.Type), evt, context.RequestAborted).ConfigureAwait(false);
@@ -176,6 +214,7 @@ internal static class StudioAiProxyEndpoints
         }
         finally
         {
+            await prepared.DisposeAsync().ConfigureAwait(false);
             // Always audit exactly once per call, even on client disconnect — use CancellationToken.None
             // so an aborted request's audit write is not itself cancelled.
             await RecordAuditAsync(auditLog, context, summary, startedAt, CancellationToken.None).ConfigureAwait(false);

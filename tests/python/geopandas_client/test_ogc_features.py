@@ -35,6 +35,17 @@ from shared.cert_envelope import (
 
 from .conftest import CaseTimer, record_fail, record_pass, row_identities
 
+
+def assert_oapif_storage_crs(crs: CRS) -> None:
+    """The client must resolve the advertised storageCrs: WGS 84 in lon/lat order.
+
+    pyproj CRS equality compares the full definition, axis order included, so an
+    EPSG:4326 (latitude-first) result fails here just as a wrong datum does.
+    """
+    expected = CRS.from_user_input(fixture.OAPIF_STORAGE_CRS)
+    assert crs == expected, f"expected {expected.to_string()}, got {crs.to_string()}"
+    assert crs.axis_info[0].direction == "east"
+
 pytestmark = pytest.mark.geopandas_client
 
 EPSG_4326_URI = "http://www.opengis.net/def/crs/EPSG/0/4326"
@@ -255,7 +266,7 @@ def test_disc02_single_collection_metadata(
     assert info["driver"] == "OAPIF"
     assert info["layer_name"] == geopandas_collection_id
     assert info["features"] == fixture.TOTAL_FEATURES
-    assert CRS.from_user_input(info["crs"]).to_epsg() == fixture.STORAGE_CRS_EPSG
+    assert_oapif_storage_crs(CRS.from_user_input(info["crs"]))
 
     record_pass(
         ogc_features_evidence,
@@ -509,14 +520,17 @@ def test_geom02_crs_is_wgs84(
     frame = pyogrio.read_dataframe(oapif_dsn, layer=geopandas_collection_id)
 
     assert frame.crs is not None
-    assert frame.crs.to_epsg() == fixture.STORAGE_CRS_EPSG
+    assert_oapif_storage_crs(frame.crs)
 
     record_pass(
         ogc_features_evidence,
         "CERT-GEOM-02",
         timer,
         measured_count=fixture.STORAGE_CRS_EPSG,
-        notes=f"gdf.crs={frame.crs.to_string()} (EPSG:{frame.crs.to_epsg()}).",
+        notes=(
+            f"gdf.crs={frame.crs.to_string()}: WGS 84 longitude/latitude, as advertised "
+            f"by storageCrs over EPSG:{fixture.STORAGE_CRS_EPSG} storage."
+        ),
     )
 
 
@@ -1311,7 +1325,7 @@ def test_nb_io02_geoparquet_round_trip(
 
     assert len(reloaded) == len(frame)
     assert reloaded.crs is not None
-    assert reloaded.crs.to_epsg() == fixture.STORAGE_CRS_EPSG
+    assert_oapif_storage_crs(reloaded.crs)
     assert reloaded["count"].tolist() == frame["count"].tolist()
     assert str(reloaded["created_at"].dtype) == str(frame["created_at"].dtype)
 
@@ -1322,7 +1336,7 @@ def test_nb_io02_geoparquet_round_trip(
         measured_count=len(reloaded),
         notes=(
             f"GeoParquet round trip preserved {len(reloaded)} rows, "
-            f"EPSG:{reloaded.crs.to_epsg()} and the "
+            f"{reloaded.crs.to_string()} and the "
             f"{frame['created_at'].dtype} timestamp dtype."
         ),
     )

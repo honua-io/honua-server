@@ -1,8 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Data;
 using System.Data.Common;
+using System.Data;
 using System.Globalization;
 using Honua.Core.Configuration;
 using Honua.Core.Exceptions;
@@ -12,9 +12,9 @@ using Honua.Core.Features.Infrastructure.Crs;
 using Honua.Core.Features.Tiles;
 using Honua.Db.Postgres.Features.FeatureStore.Services;
 using Honua.Db.Postgres.Features.Raster;
-using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Formats;
+using Honua.TestKit;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.ObjectPool;
 using Npgsql;

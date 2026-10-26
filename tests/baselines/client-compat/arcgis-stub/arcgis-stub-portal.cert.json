@@ -30,7 +30,7 @@
       "test_case_id": "CERT-PRTL-SRCH-01",
       "status": "pass",
       "duration_ms": null,
-      "measured_count": 9,
+      "measured_count": 12,
       "measured_delta": null,
       "notes": "total/start/num/nextStart/results paging shape",
       "evidence_ref": ""

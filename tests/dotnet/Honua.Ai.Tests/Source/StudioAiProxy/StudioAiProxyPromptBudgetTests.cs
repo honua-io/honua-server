@@ -3,15 +3,17 @@
 
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.Protocols.Mcp.Models;
 using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.Ai.Protocols.Mcp.Views;
-using Honua.Ai.StudioAiProxy;
+using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.StudioAiProxy.Abstractions;
 using Honua.Ai.StudioAiProxy.Domain;
+using Honua.Ai.StudioAiProxy;
+using Honua.Core.Features.Security.Admission;
 using Honua.Server.Tests.Features.Protocols.Mcp;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Security;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Xunit.Abstractions;
@@ -242,7 +244,7 @@ public sealed class StudioAiProxyPromptBudgetTests
             Options.Create(configuration),
             [new ConfiguredAdapter()],
             new StudioAiTranscriptSigner(Options.Create(configuration), TimeProvider.System),
-            NullLogger<StudioAiProxyService>.Instance);
+            NullLogger<StudioAiProxyService>.Instance, new RecordingAiAdmission());
 
     private sealed class ConfiguredAdapter : IStudioAiProxyAdapter
     {
@@ -253,6 +255,7 @@ public sealed class StudioAiProxyPromptBudgetTests
         public IAsyncEnumerable<StudioAiChatEvent> StreamAsync(
             StudioAiProxyProviderOptions options,
             StudioAiChatRequest request,
+            IAiExecutionPermit permit,
             CancellationToken cancellationToken)
             => throw new NotSupportedException("Validation-only adapter.");
     }

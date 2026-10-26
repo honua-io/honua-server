@@ -4,13 +4,14 @@
 using System.Net;
 using System.Runtime.CompilerServices;
 using FluentAssertions;
-using Honua.Ai.StudioAiProxy;
 using Honua.Ai.StudioAiProxy.Abstractions;
-using Honua.Ai.StudioAiProxy.Adapters;
 using Honua.Ai.StudioAiProxy.Adapters.Bedrock;
+using Honua.Ai.StudioAiProxy.Adapters;
 using Honua.Ai.StudioAiProxy.Domain;
+using Honua.Ai.StudioAiProxy;
 using Honua.Server.Tests.Features.StudioAiProxy.Fakes;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Security;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 
@@ -96,7 +97,7 @@ public sealed class StudioAiProxyLoggingPrivacyTests
         };
         var request = new StudioAiChatRequest { Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = Canary }] };
         var events = new List<StudioAiChatEvent>();
-        await foreach (var item in adapter.StreamAsync(options, request, CancellationToken.None))
+        await foreach (var item in adapter.StreamAsync(options, request, RecordingAiAdmission.TransportPermit(), CancellationToken.None))
         {
             events.Add(item);
         }
