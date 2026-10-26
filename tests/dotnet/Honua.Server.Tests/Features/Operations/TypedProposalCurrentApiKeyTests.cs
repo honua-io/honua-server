@@ -96,7 +96,7 @@ public sealed class TypedProposalCurrentApiKeyTests(RedisFixture redis) : IAsync
             $"/api/v1/admin/proposals/{proposal.ProposalId}/approve", null);
         first.StatusCode.Should().Be(HttpStatusCode.OK, await first.Content.ReadAsStringAsync());
         _executor.Calls.Should().Be(1);
-        _executor.LastPrincipal.Should().Be($"ApiKey:api-key:{proposer.Record.Id:D}");
+        _executor.LastPrincipal.Should().Be($"apikey:api-key:{proposer.Record.Id:D}");
         using HttpResponseMessage replay = await Client(approver.Key).PostAsync(
             $"/api/v1/admin/proposals/{proposal.ProposalId}/approve", null);
         replay.StatusCode.Should().Be(HttpStatusCode.Conflict);
@@ -126,7 +126,7 @@ public sealed class TypedProposalCurrentApiKeyTests(RedisFixture redis) : IAsync
         string id = body.RootElement.GetProperty("data").GetProperty("proposalId").GetString()!;
         OperationProposal proposal = (await _proposals.GetAsync(id, CancellationToken.None))!;
         proposal.Evidence.Should().BeNull("this is the actual typed REST mapper, without model evidence");
-        proposal.RequestedBy.Should().Be($"ApiKey:api-key:{proposer.Record.Id:D}");
+        proposal.RequestedBy.Should().Be($"apikey:api-key:{proposer.Record.Id:D}");
         proposal.Status.Should().Be(OperationProposalStatus.AwaitingApproval);
         proposal.OperationId.Should().Be("service.publish");
         proposal.SealedPlanHash.Should().NotBeNullOrWhiteSpace();
