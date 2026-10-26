@@ -291,6 +291,32 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
+      # The Lambda images COPY the AWS Lambda Web Adapter from Public ECR. Anonymous
+      # Public ECR pulls from shared runner IPs hit "429 toomanyrequests: Data limit
+      # exceeded" (scheduled runs 39228446917 and 40298273178). Nightly Container Build
+      # already mirrors the exact digest-pinned adapter into GHCR, so pull it from there
+      # by the same digest the Dockerfile pins, and fall back to the Public ECR source
+      # only when the mirror does not hold that digest. Same bytes either way.
+      - name: Resolve Lambda Web Adapter source
+        id: lambda_adapter
+        shell: bash
+        run: |
+          set -euo pipefail
+          tab="$(printf '\tX')"; tab="${tab%X}"
+          src="$(scripts/ci/base-image-mirrors.sh | awk -F"${tab}" '$1 == "lambda-adapter-0.9.1" { print $2 }')"
+          if [ -z "$src" ]; then
+            echo "::error::scripts/ci/base-image-mirrors.sh has no lambda-adapter-0.9.1 entry"
+            exit 1
+          fi
+          mirror="ghcr.io/${{ github.repository }}-base:lambda-adapter-0.9.1@${src##*@}"
+          if docker buildx imagetools inspect "$mirror" >/dev/null 2>&1; then
+            echo "Using GHCR mirror $mirror"
+            echo "image=$mirror" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::GHCR mirror $mirror is unavailable; pulling $src from Public ECR"
+            echo "image=$src" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build native-AOT platform candidate by digest
         id: aot_candidate
         if: ${{ env.PUBLISH_IMAGES == 'true' && contains(matrix.image_key, 'aot') }}
@@ -303,6 +329,7 @@ jobs:
           # excludes .git, so without this the image reports a null deployment revision.
           build-args: |
             HONUA_GIT_SHA=${{ github.sha }}
+            LAMBDA_ADAPTER_IMAGE=${{ steps.lambda_adapter.outputs.image }}
           outputs: type=image,name=${{ steps.targets.outputs.scan_image }},push-by-digest=true,name-canonical=true,push=true
           labels: ${{ steps.meta.outputs.labels }}
           secrets: |
@@ -384,6 +411,7 @@ jobs:
           # null — the exact evidence binding the revision plumbing exists to provide.
           build-args: |
             HONUA_GIT_SHA=${{ github.sha }}
+            LAMBDA_ADAPTER_IMAGE=${{ steps.lambda_adapter.outputs.image }}
           secrets: |
             github_actor=${{ github.actor }}
             github_token=${{ github.token }}
@@ -404,6 +432,7 @@ jobs:
           # Kept identical to the publish step so the scanned image is the image that ships.
           build-args: |
             HONUA_GIT_SHA=${{ github.sha }}
+            LAMBDA_ADAPTER_IMAGE=${{ steps.lambda_adapter.outputs.image }}
           secrets: |
             github_actor=${{ github.actor }}
             github_token=${{ github.token }}
