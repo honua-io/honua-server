@@ -83,8 +83,8 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.12'
       - run: python3 -m pip install PyYAML==6.0.2
@@ -98,7 +98,7 @@ jobs:
     outputs:
       sarif-created: ${{ steps.sarif.outputs.created }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up .NET CI
         uses: ./.github/actions/setup-dotnet-ci
@@ -309,7 +309,7 @@ jobs:
 
       - name: Upload worker certification results
         if: always()
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: worker-gdal-certification
           path: |
@@ -318,7 +318,7 @@ jobs:
           if-no-files-found: warn
 
       - name: Create worker vulnerability report
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: image
           image-ref: honua-worker-gdal:boundary
@@ -336,7 +336,7 @@ jobs:
       # the source offer. Review the artifact when the base image changes.
       - name: Report worker image licenses
         if: always()
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: honua-worker-gdal:boundary
           scanners: license
@@ -346,7 +346,7 @@ jobs:
 
       - name: Upload worker image license report
         if: always() && hashFiles('trivy-worker-gdal-licenses.txt') != ''
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: trivy-worker-gdal-licenses-${{ github.sha }}
           path: trivy-worker-gdal-licenses.txt
@@ -360,7 +360,7 @@ jobs:
 
       - name: Retain worker scan report
         if: always() && steps.sarif.outputs.created == 'true'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: trivy-worker-gdal-${{ github.sha }}
           path: trivy-worker-gdal.sarif
@@ -368,7 +368,7 @@ jobs:
           retention-days: 14
 
       - name: Enforce worker vulnerability policy
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: image
           image-ref: honua-worker-gdal:boundary
@@ -386,7 +386,7 @@ jobs:
 
       - name: Retain exact tested worker publication bundle
         if: github.event_name == 'workflow_dispatch'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: worker-publication-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts/worker-publication/
@@ -411,8 +411,8 @@ jobs:
     env:
       PUBLISH_NIGHTLY: ${{ inputs.publish_nightly }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/download-artifact@v8
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: worker-publication-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts/worker-publication
@@ -443,7 +443,7 @@ jobs:
           python3 scripts/ci/worker_publication.py finish
       - name: Retain publication identity and provenance
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: worker-nightly-publication-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
@@ -468,12 +468,12 @@ jobs:
       security-events: write
     steps:
       - name: Download worker scan report
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: trivy-worker-gdal-${{ github.sha }}
 
       - name: Upload worker scan results
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         with:
           sarif_file: trivy-worker-gdal.sarif
           category: worker-gdal

@@ -53,17 +53,17 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Node.js
         if: inputs.node-version != ''
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ inputs.node-version }}
 
       - name: Cache npm
         if: inputs.node-version != ''
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.npm
           key: ${{ github.repository }}-${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
@@ -79,13 +79,13 @@ jobs:
         # SDK PR gate. This workflow already wires its own caller-agnostic NuGet cache
         # and GitHub Packages auth in the `Cache NuGet` / `Configure GitHub Packages`
         # steps below, so nothing here is missing.
-        uses: actions/setup-dotnet@v6
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: ${{ inputs.dotnet-version }}
 
       - name: Setup Python
         if: inputs.python-version != ''
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: ${{ inputs.python-version }}
           cache: 'pip'
@@ -94,7 +94,7 @@ jobs:
       # branch cache, but never create a branch-scoped duplicate from a PR ref.
       - name: Restore NuGet cache
         if: inputs.dotnet-version != ''
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.nuget/packages
           key: ${{ github.repository }}-${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', '**/packages.lock.json') }}
@@ -124,7 +124,7 @@ jobs:
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ github.event.repository.name }}-sdk-pr-gate-${{ github.run_id }}-test-results
           path: |

@@ -21,6 +21,6 @@
     "typescript": "^5.3.0"
   },
   "overrides": {
-    "dompurify": "3.4.16"
+    "dompurify": "3.4.17"
   }
 }

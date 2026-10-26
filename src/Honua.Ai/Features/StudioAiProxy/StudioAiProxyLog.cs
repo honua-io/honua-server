@@ -27,8 +27,8 @@ internal static partial class StudioAiProxyLog
     [LoggerMessage(
         EventId = 6752,
         Level = LogLevel.Warning,
-        Message = "Studio AI proxy provider returned non-success status: Provider={Provider}, Status={StatusCode}, Body={ErrorBody}")]
-    public static partial void ProviderHttpError(ILogger logger, string provider, int statusCode, string errorBody);
+        Message = "Studio AI proxy provider returned non-success status: Provider={Provider}, Status={StatusCode}")]
+    public static partial void ProviderHttpError(ILogger logger, string provider, int statusCode);
 
     [LoggerMessage(
         EventId = 6753,
@@ -39,14 +39,14 @@ internal static partial class StudioAiProxyLog
     [LoggerMessage(
         EventId = 6754,
         Level = LogLevel.Warning,
-        Message = "Studio AI proxy request failed (network/transport): Provider={Provider}")]
-    public static partial void ProviderRequestFailed(ILogger logger, string provider, Exception exception);
+        Message = "Studio AI proxy request failed (network/transport): Provider={Provider}, Phase={Phase}, FailureType={FailureType}")]
+    public static partial void ProviderRequestFailed(ILogger logger, string provider, string phase, string failureType);
 
     [LoggerMessage(
         EventId = 6755,
         Level = LogLevel.Warning,
-        Message = "Studio AI proxy response could not be parsed: Provider={Provider}")]
-    public static partial void ProviderResponseParseFailed(ILogger logger, string provider, Exception exception);
+        Message = "Studio AI proxy response could not be parsed: Provider={Provider}, FailureType={FailureType}")]
+    public static partial void ProviderResponseParseFailed(ILogger logger, string provider, string failureType);
 
     [LoggerMessage(
         EventId = 6756,

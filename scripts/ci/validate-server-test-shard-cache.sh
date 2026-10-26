@@ -228,10 +228,11 @@ fi
 
 workflow="${REPO_ROOT}/.github/workflows/ci.yml"
 grep -Fq 'name: Server Tests (${{ matrix.shard_name }})' "${workflow}"
-# Major-version-agnostic on purpose: this proves the shard cache still uses the
-# restore/save actions; a Dependabot major bump must not fail router validation.
-grep -Eq 'actions/cache/restore@v[0-9]+' "${workflow}"
-grep -Eq 'actions/cache/save@v[0-9]+' "${workflow}"
+# Ref-agnostic on purpose: this proves the shard cache still uses the restore/save
+# actions, pinned by tag or by full commit SHA; a Dependabot bump must not fail
+# router validation.
+grep -Eq 'actions/cache/restore@(v[0-9]+|[0-9a-f]{40})' "${workflow}"
+grep -Eq 'actions/cache/save@(v[0-9]+|[0-9a-f]{40})' "${workflow}"
 grep -Fq "steps.shard-cache-materialize.outputs.restored != 'true'" "${workflow}"
 
 # Structural assertions on the shard-cache steps. Parsing beats grepping here:

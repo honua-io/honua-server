@@ -36,7 +36,7 @@ jobs:
       packages: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
@@ -142,7 +142,7 @@ jobs:
           popd >/dev/null
 
       - name: Upload package artifacts
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: honua-core-${{ github.run_id }}-packages
           path: nupkgs/*.nupkg
@@ -167,7 +167,7 @@ jobs:
       packages: write
     steps:
       - name: Download package artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: honua-core-${{ github.run_id }}-packages
           path: nupkgs
@@ -178,7 +178,7 @@ jobs:
         # runs `dotnet nuget push` over downloaded artifacts — it restores nothing,
         # so the composite's NuGet cache would be pure overhead. (`package-smoke`,
         # which does restore, already uses the composite.)
-        uses: actions/setup-dotnet@v6
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
