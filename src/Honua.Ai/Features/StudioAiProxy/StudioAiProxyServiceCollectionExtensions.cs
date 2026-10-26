@@ -50,7 +50,8 @@ internal static class StudioAiProxyServiceCollectionExtensions
         services.AddResilientHttpClient(
             "studio-ai-proxy",
             "studio-ai-proxy",
-            HttpResiliencePolicies.FastApiDefaults);
+            HttpResiliencePolicies.FastApiDefaults,
+            configureHandler: () => new HttpClientHandler { AllowAutoRedirect = false });
         services.TryAddSingleton<StudioAiProxyApiKeyResolver>();
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<StudioAiTranscriptSigner>();
