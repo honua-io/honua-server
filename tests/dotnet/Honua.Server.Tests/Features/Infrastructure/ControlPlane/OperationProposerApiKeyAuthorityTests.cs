@@ -123,9 +123,12 @@ public sealed class OperationProposerApiKeyAuthorityTests
         var store = Substitute.For<IOperationProposalStore>();
         var proposal = new OperationProposal
         {
-            ProposalId = "synthetic", Kind = OperationClass.ServicePublish,
-            Status = OperationProposalStatus.AwaitingApproval, RequestedBy = actor,
-            CreatedAt = Now, UpdatedAt = Now,
+            ProposalId = "synthetic",
+            Kind = OperationClass.ServicePublish,
+            Status = OperationProposalStatus.AwaitingApproval,
+            RequestedBy = actor,
+            CreatedAt = Now,
+            UpdatedAt = Now,
             Plan = new OperationProposalPlan { Summary = "synthetic" },
             Audit = new OperationAuditInfo { OperationInstanceId = "synthetic-instance", CorrelationId = "synthetic-correlation", Reason = "test" }
         };

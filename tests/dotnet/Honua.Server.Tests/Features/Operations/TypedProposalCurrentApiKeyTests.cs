@@ -251,7 +251,8 @@ public sealed class TypedProposalCurrentApiKeyTests(RedisFixture redis) : IAsync
         using HttpResponseMessage response = await Client(proposer.Key).PostAsJsonAsync(
             "/api/v1/operations/service.publish/submit", new
             {
-                connectionId = Guid.NewGuid().ToString("D"), serviceName = "synthetic",
+                connectionId = Guid.NewGuid().ToString("D"),
+                serviceName = "synthetic",
                 parameters = new { schema = "public", table = "synthetic", layerName = "Synthetic" }
             });
         response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
@@ -332,8 +333,12 @@ public sealed class TypedProposalCurrentApiKeyTests(RedisFixture redis) : IAsync
             LastPrincipal = context.PrincipalId;
             return Task.FromResult(new OperationHandle
             {
-                OperationId = OperationId, OperationInstanceId = context.OperationInstanceId!, CorrelationId = context.CorrelationId!,
-                Status = OperationHandleStatus.Completed, CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow
+                OperationId = OperationId,
+                OperationInstanceId = context.OperationInstanceId!,
+                CorrelationId = context.CorrelationId!,
+                Status = OperationHandleStatus.Completed,
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow
             });
         }
         public Task<OperationStatus> GetStatusAsync(OperationHandle handle, CancellationToken cancellationToken = default)
