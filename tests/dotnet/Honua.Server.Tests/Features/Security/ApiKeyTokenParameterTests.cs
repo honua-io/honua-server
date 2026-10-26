@@ -31,6 +31,8 @@ namespace Honua.Server.Tests.Features.Security;
 /// <c>token</c> query parameter, the <c>token</c> form field, and
 /// <c>X-Esri-Authorization: Bearer</c> — and carries exactly the authority it carries in
 /// the <c>X-API-Key</c> header: never more, and recorded as an API-key credential.
+/// Because URLs leak, a key with administrative authority is never accepted from the
+/// <c>token</c> query parameter; it must use a header transport.
 /// </summary>
 [Collection("Database")]
 [SecurityTest]
@@ -51,6 +53,10 @@ public sealed class ApiKeyTokenParameterTests : IAsyncLifetime
 
     private const string BootstrapKey = "bootstrap";
     private const string ManagedKey = "managed";
+
+    // A non-admin grant that reads the protected layer. Administrative keys are refused in
+    // the token query parameter, so query-string cases use a read-scoped key instead.
+    private const string ReadTestServiceGrant = "read:" + WebAppFixture.TestServiceId;
 
     // Fixed managed-format credentials. Issuance is "hnua_" plus base64url, and base64url
     // can contain "--". "/*" is the other SQL-comment alternative the same heuristic flags.
@@ -82,12 +88,21 @@ public sealed class ApiKeyTokenParameterTests : IAsyncLifetime
         {
             foreach (var transport in new[] { QueryTransport, FormTransport, EsriHeaderTransport })
             {
+                // The bootstrap key is always an admin credential and is refused in the URL.
+                if (keyKind == BootstrapKey && transport == QueryTransport)
+                {
+                    continue;
+                }
+
                 data.Add(keyKind, transport);
             }
         }
 
         return data;
     }
+
+    private static IReadOnlyList<string> PermissionsFor(string transport)
+        => transport == QueryTransport ? [ReadTestServiceGrant] : ["admin:*"];
 
     public async Task InitializeAsync()
     {
@@ -105,14 +120,13 @@ public sealed class ApiKeyTokenParameterTests : IAsyncLifetime
     /// key's user, not answer 498.
     /// </summary>
     [IntegrationTheory]
-    [InlineData(BootstrapKey, QueryTransport)]
     [InlineData(ManagedKey, QueryTransport)]
     [InlineData(BootstrapKey, EsriHeaderTransport)]
     [InlineData(ManagedKey, EsriHeaderTransport)]
     [Endpoint("GET /sharing/rest/portals/self")]
     public async Task PortalsSelf_ApiKeyPresentedAsToken_DescribesTheKeyUser(string keyKind, string transport)
     {
-        var key = await CreateKeyAsync(keyKind, ["admin:*"]);
+        var key = await CreateKeyAsync(keyKind, PermissionsFor(transport));
         using var client = _fixture.CreateClient();
         var expectedUser = await PortalSelfUsernameViaXApiKeyAsync(client, key);
 
@@ -137,7 +151,7 @@ public sealed class ApiKeyTokenParameterTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task ProtectedQuery_ApiKeyPresentedAsToken_AnswersAsXApiKeyDoes(string keyKind, string transport)
     {
-        var key = await CreateKeyAsync(keyKind, ["admin:*"]);
+        var key = await CreateKeyAsync(keyKind, PermissionsFor(transport));
         using var client = _fixture.CreateClient();
 
         using var anonymous = await client.GetAsync($"{ProtectedQueryPath}?{CountParameters}");
@@ -154,18 +168,16 @@ public sealed class ApiKeyTokenParameterTests : IAsyncLifetime
 
     /// <summary>
     /// The <c>token</c> query parameter is also the only credential carrier some clients of
-    /// the OGC services have. A key presented there sees the protected feature types exactly
-    /// as the same key in <c>X-API-Key</c> does, not the anonymous view.
+    /// the OGC services have. A non-admin key presented there sees the protected feature types
+    /// exactly as the same key in <c>X-API-Key</c> does, not the anonymous view.
     /// </summary>
-    [IntegrationTheory]
-    [InlineData(BootstrapKey)]
-    [InlineData(ManagedKey)]
+    [IntegrationTest]
     [Protocol(TestProtocols.Wfs20)]
     [Endpoint("GET /wfs")]
     [InterfaceOperation(TestProtocols.Wfs20, "GetCapabilities")]
-    public async Task WfsCapabilities_ApiKeyInTokenParameter_ListsWhatXApiKeyLists(string keyKind)
+    public async Task WfsCapabilities_ApiKeyInTokenParameter_ListsWhatXApiKeyLists()
     {
-        var key = await CreateKeyAsync(keyKind, ["admin:*"]);
+        var key = await CreateKeyAsync(ManagedKey, [ReadTestServiceGrant]);
         using var client = _fixture.CreateClient();
 
         var anonymous = await ReadWfsFeatureTypesAsync(client, WfsCapabilitiesPath, apiKeyHeader: null);
@@ -182,8 +194,62 @@ public sealed class ApiKeyTokenParameterTests : IAsyncLifetime
 
         viaToken.Should().BeEquivalentTo(
             expected,
-            "a {0} API key in the token parameter must list what X-API-Key lists",
+            "a non-admin API key in the token parameter must list what X-API-Key lists");
+    }
+
+    /// <summary>
+    /// An admin key in the WFS <c>token</c> parameter is not a credential: the response is the
+    /// anonymous view, while the same key in <c>X-API-Key</c> still sees the protected types.
+    /// </summary>
+    [IntegrationTheory]
+    [InlineData(BootstrapKey)]
+    [InlineData(ManagedKey)]
+    [Protocol(TestProtocols.Wfs20)]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs20, "GetCapabilities")]
+    public async Task WfsCapabilities_AdminApiKeyInTokenParameter_IsRefused(string keyKind)
+    {
+        var key = await CreateKeyAsync(keyKind, ["admin:*"]);
+        using var client = _fixture.CreateClient();
+
+        var anonymous = await ReadWfsFeatureTypesAsync(client, WfsCapabilitiesPath, apiKeyHeader: null);
+        var viaHeader = await ReadWfsFeatureTypesAsync(client, WfsCapabilitiesPath, apiKeyHeader: key);
+        viaHeader.Should().NotBeSubsetOf(anonymous, "the admin key works in X-API-Key");
+
+        var viaToken = await ReadWfsFeatureTypesAsync(
+            client,
+            $"{WfsCapabilitiesPath}&token={Uri.EscapeDataString(key)}",
+            apiKeyHeader: null);
+
+        viaToken.Should().BeEquivalentTo(
+            anonymous,
+            "a {0} admin API key in the token parameter must be refused",
             keyKind);
+    }
+
+    /// <summary>
+    /// A key with administrative authority is never accepted from the URL. On GeoServices paths
+    /// it is an invalid token (498); the same key in a header transport still works.
+    /// </summary>
+    [IntegrationTheory]
+    [InlineData(BootstrapKey)]
+    [InlineData(ManagedKey)]
+    [Endpoint("GET /sharing/rest/portals/self")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task AdminApiKeyInTokenQueryParameter_IsRefusedAsInvalidToken(string keyKind)
+    {
+        var key = await CreateKeyAsync(keyKind, ["admin:*"]);
+        using var client = _fixture.CreateClient();
+
+        foreach (var (path, parameters) in new[] { (PortalSelfPath, "f=json"), (ProtectedQueryPath, CountParameters) })
+        {
+            using var response = await SendAsync(client, HttpMethod.Get, path, parameters, key, QueryTransport);
+            var body = await response.Content.ReadAsStringAsync();
+            ReadErrorCode(body).Should().Be(498, "an admin key in the URL must be refused: {0}", body);
+        }
+
+        using var viaHeader = await SendAsync(client, HttpMethod.Get, ProtectedQueryPath, CountParameters, key, EsriHeaderTransport);
+        (await ReadCountAsync(viaHeader)).Should().NotBeNull("header transports are unaffected");
     }
 
     /// <summary>
@@ -348,9 +414,66 @@ public sealed class ApiKeyTokenParameterTests : IAsyncLifetime
     {
         using var client = _fixture.CreateClient();
 
-        using var response = await client.GetAsync($"/api/v1/admin/api-keys?token={Uri.EscapeDataString(AdminPassword)}");
+        var managedAdminKey = await CreateKeyAsync(ManagedKey, ["admin:*"]);
 
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        foreach (var key in new[] { AdminPassword, managedAdminKey })
+        {
+            using var response = await client.GetAsync($"/api/v1/admin/api-keys?token={Uri.EscapeDataString(key)}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        }
+    }
+
+    /// <summary>
+    /// RFC 6750 §2.3: a response to a request whose credential travelled in the URI query is
+    /// <c>Cache-Control: private</c>. The shared credentialed-response policy still adds
+    /// <c>no-store</c>, which wins; the token never reaches a shared cache keyed by its URL.
+    /// </summary>
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task ProtectedQuery_ApiKeyInTokenParameter_ResponseIsPrivateAndNotStored()
+    {
+        var key = await CreateKeyAsync(ManagedKey, [ReadTestServiceGrant]);
+        using var client = _fixture.CreateClient();
+
+        using var viaQuery = await SendAsync(client, HttpMethod.Get, ProtectedQueryPath, CountParameters, key, QueryTransport);
+
+        (await ReadCountAsync(viaQuery)).Should().NotBeNull();
+        var cacheControl = viaQuery.Headers.CacheControl;
+        cacheControl.Should().NotBeNull();
+        cacheControl!.Private.Should().BeTrue("RFC 6750 §2.3 requires private for URI-carried credentials");
+        cacheControl.NoStore.Should().BeTrue("credentialed responses are never stored");
+        cacheControl.Public.Should().BeFalse();
+    }
+
+    /// <summary>
+    /// A key's referrer restriction applies on the <c>token</c> query transport exactly as on
+    /// <c>X-API-Key</c>: the URL alone is not enough when the key names its allowed origins.
+    /// </summary>
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task ProtectedQuery_ReferrerRestrictedKeyInTokenParameter_IsEnforced()
+    {
+        var store = _fixture.Services.GetRequiredService<IAdminApiKeyStore>();
+        var created = await store.CreateAsync(ManagedKeyName, [ReadTestServiceGrant],
+            DateTimeOffset.UtcNow.AddMinutes(10), "test",
+            new AdminApiKeyRestrictions(["https://maps.example.com"], null), CancellationToken.None);
+        using var client = _fixture.CreateClient();
+        var url = $"{ProtectedQueryPath}?{CountParameters}&token={Uri.EscapeDataString(created.Key)}";
+
+        using var fromAllowedPage = new HttpRequestMessage(HttpMethod.Get, url);
+        fromAllowedPage.Headers.Referrer = new Uri("https://maps.example.com/viewer/index.html");
+        using var fromOtherPage = new HttpRequestMessage(HttpMethod.Get, url);
+        fromOtherPage.Headers.Referrer = new Uri("https://attacker.example.net/");
+        using var withoutReferrer = new HttpRequestMessage(HttpMethod.Get, url);
+
+        using var allowed = await client.SendAsync(fromAllowedPage);
+        using var other = await client.SendAsync(fromOtherPage);
+        using var missing = await client.SendAsync(withoutReferrer);
+
+        (await ReadCountAsync(allowed)).Should().BeGreaterThan(0);
+        (await ReadCountAsync(other)).Should().BeNull("the key is restricted to https://maps.example.com");
+        (await ReadCountAsync(missing)).Should().BeNull("a referrer-restricted key needs an Origin or Referer");
     }
 
     private async Task<string> CreateKeyAsync(string keyKind, IReadOnlyList<string> permissions)
@@ -378,7 +501,7 @@ public sealed class ApiKeyTokenParameterTests : IAsyncLifetime
         memory.RegisterKnownMaterial(
             keyMaterial,
             name: "fixed-managed-key",
-            permissions: ["admin:*"],
+            permissions: [ReadTestServiceGrant],
             expiresAt: DateTimeOffset.UtcNow.AddMinutes(10),
             createdBy: "test");
     }

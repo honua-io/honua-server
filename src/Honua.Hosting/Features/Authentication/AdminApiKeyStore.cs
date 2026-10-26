@@ -5,6 +5,7 @@ using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.Extensions.Hosting;
 using StackExchange.Redis;
 
@@ -19,6 +20,19 @@ internal interface IAdminApiKeyStore
         IReadOnlyList<string> permissions,
         DateTimeOffset? expiresAt,
         string? createdBy,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Mints a key with optional request restrictions. Restrictions are stored with the key in
+    /// the same write, so the key never exists unrestricted; null or empty lists leave it
+    /// unrestricted.
+    /// </summary>
+    Task<AdminApiKeyCreateResult> CreateAsync(
+        string name,
+        IReadOnlyList<string> permissions,
+        DateTimeOffset? expiresAt,
+        string? createdBy,
+        AdminApiKeyRestrictions? restrictions,
         CancellationToken cancellationToken);
 
     Task<AdminApiKeyRecord?> GetAsync(Guid id, CancellationToken cancellationToken);
@@ -42,7 +56,27 @@ internal sealed record AdminApiKeyRecord(
     DateTimeOffset? LastUsedAt,
     DateTimeOffset? RotatedAt,
     DateTimeOffset? RevokedAt,
-    string? CreatedBy);
+    string? CreatedBy,
+    // Optional request restrictions (null = unrestricted). Omitted from JSON when null so a
+    // record without restrictions serializes byte-for-byte as it did before they existed:
+    // the Redis store's conditional usage write compares those bytes.
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? AllowedReferrers = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? AllowedIpRanges = null);
+
+/// <summary>
+/// Optional request restrictions for a managed API key, already validated and canonicalized
+/// by <see cref="ApiKeyRequestRestrictions"/>. See that type for the matching rules.
+/// </summary>
+/// <param name="AllowedReferrers">Origin patterns the request's Origin/Referer must match.</param>
+/// <param name="AllowedIpRanges">CIDR ranges the client address must fall in.</param>
+internal sealed record AdminApiKeyRestrictions(
+    IReadOnlyList<string>? AllowedReferrers,
+    IReadOnlyList<string>? AllowedIpRanges)
+{
+    /// <summary>Null for an empty list, so "no entries" and "not set" are stored alike.</summary>
+    internal static IReadOnlyList<string>? Normalize(IReadOnlyList<string>? values)
+        => values is { Count: > 0 } ? values.ToArray() : null;
+}
 
 internal sealed record AdminApiKeyCreateResult(AdminApiKeyRecord Record, string Key);
 
@@ -73,6 +107,15 @@ internal sealed class InMemoryAdminApiKeyStore(TimeProvider? timeProvider = null
         DateTimeOffset? expiresAt,
         string? createdBy,
         CancellationToken cancellationToken)
+        => CreateAsync(name, permissions, expiresAt, createdBy, restrictions: null, cancellationToken);
+
+    public Task<AdminApiKeyCreateResult> CreateAsync(
+        string name,
+        IReadOnlyList<string> permissions,
+        DateTimeOffset? expiresAt,
+        string? createdBy,
+        AdminApiKeyRestrictions? restrictions,
+        CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -90,7 +133,9 @@ internal sealed class InMemoryAdminApiKeyStore(TimeProvider? timeProvider = null
             LastUsedAt: null,
             RotatedAt: null,
             RevokedAt: null,
-            createdBy);
+            createdBy,
+            AdminApiKeyRestrictions.Normalize(restrictions?.AllowedReferrers),
+            AdminApiKeyRestrictions.Normalize(restrictions?.AllowedIpRanges));
 
         if (!_keys.TryAdd(record.Id, record))
         {
@@ -224,14 +269,15 @@ internal sealed class InMemoryAdminApiKeyStore(TimeProvider? timeProvider = null
     /// <summary>
     /// Stores caller-supplied key material. Tests use this to present a fixed credential
     /// whose bytes trip content heuristics (for example "--" or "/*"). Issuance stays on
-    /// <see cref="CreateAsync"/>.
+    /// <see cref="CreateAsync(string, IReadOnlyList{string}, DateTimeOffset?, string?, AdminApiKeyRestrictions?, CancellationToken)"/>.
     /// </summary>
     internal AdminApiKeyCreateResult RegisterKnownMaterial(
         string keyMaterial,
         string name,
         IReadOnlyList<string> permissions,
         DateTimeOffset? expiresAt,
-        string? createdBy)
+        string? createdBy,
+        AdminApiKeyRestrictions? restrictions = null)
     {
         if (string.IsNullOrWhiteSpace(keyMaterial))
         {
@@ -251,7 +297,9 @@ internal sealed class InMemoryAdminApiKeyStore(TimeProvider? timeProvider = null
             LastUsedAt: null,
             RotatedAt: null,
             RevokedAt: null,
-            createdBy);
+            createdBy,
+            AdminApiKeyRestrictions.Normalize(restrictions?.AllowedReferrers),
+            AdminApiKeyRestrictions.Normalize(restrictions?.AllowedIpRanges));
 
         if (!_keys.TryAdd(record.Id, record))
         {
@@ -320,12 +368,16 @@ internal sealed class RedisAdminApiKeyStore(IConnectionMultiplexer redis, TimePr
         return values.Select(Read).Where(static value => value is not null).Cast<AdminApiKeyRecord>().OrderBy(key => key.CreatedAt).ToArray();
     }
 
-    public async Task<AdminApiKeyCreateResult> CreateAsync(string name, IReadOnlyList<string> permissions, DateTimeOffset? expiresAt, string? createdBy, CancellationToken cancellationToken)
+    public Task<AdminApiKeyCreateResult> CreateAsync(string name, IReadOnlyList<string> permissions, DateTimeOffset? expiresAt, string? createdBy, CancellationToken cancellationToken)
+        => CreateAsync(name, permissions, expiresAt, createdBy, restrictions: null, cancellationToken);
+
+    public async Task<AdminApiKeyCreateResult> CreateAsync(string name, IReadOnlyList<string> permissions, DateTimeOffset? expiresAt, string? createdBy, AdminApiKeyRestrictions? restrictions, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var now = _timeProvider.GetUtcNow();
         var key = InMemoryAdminApiKeyStore.GenerateForDurableStore();
-        var record = new AdminApiKeyRecord(Guid.NewGuid(), name, key[..Math.Min(12, key.Length)], SHA256.HashData(Encoding.UTF8.GetBytes(key)), permissions.Select(p => p.Trim()).Where(p => p.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).DefaultIfEmpty("admin:*").ToArray(), now, now, expiresAt, null, null, null, createdBy);
+        var record = new AdminApiKeyRecord(Guid.NewGuid(), name, key[..Math.Min(12, key.Length)], SHA256.HashData(Encoding.UTF8.GetBytes(key)), permissions.Select(p => p.Trim()).Where(p => p.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).DefaultIfEmpty("admin:*").ToArray(), now, now, expiresAt, null, null, null, createdBy,
+            AdminApiKeyRestrictions.Normalize(restrictions?.AllowedReferrers), AdminApiKeyRestrictions.Normalize(restrictions?.AllowedIpRanges));
         await _database.StringSetAsync(BuildKey(record.Id), JsonSerializer.Serialize(record, AdminApiKeyStoreJsonContext.Default.AdminApiKeyRecord), ResolveTtl(record), When.NotExists).ConfigureAwait(false);
         await PinApprovedExpiryAsync(_database, BuildKey(record.Id), record).ConfigureAwait(false);
         await WriteHashIndexAsync(record).ConfigureAwait(false);
@@ -473,7 +525,9 @@ internal sealed class RedisAdminApiKeyStore(IConnectionMultiplexer redis, TimePr
         latest.ExpiresAt == compared.ExpiresAt &&
         latest.RotatedAt == compared.RotatedAt &&
         latest.RevokedAt == compared.RevokedAt &&
-        string.Equals(latest.CreatedBy, compared.CreatedBy, StringComparison.Ordinal);
+        string.Equals(latest.CreatedBy, compared.CreatedBy, StringComparison.Ordinal) &&
+        (latest.AllowedReferrers ?? []).SequenceEqual(compared.AllowedReferrers ?? [], StringComparer.Ordinal) &&
+        (latest.AllowedIpRanges ?? []).SequenceEqual(compared.AllowedIpRanges ?? [], StringComparer.Ordinal);
 
     /// <summary>
     /// Builds <c>hash → id</c> entries for registry ids no instance has indexed yet: a record

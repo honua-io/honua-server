@@ -445,6 +445,9 @@ sql:
           created_by TEXT
       );
   - "CREATE UNIQUE INDEX IF NOT EXISTS ux_admin_api_keys_key_hash ON honua.admin_api_keys (key_hash);"
+  # Migration 139: optional per-key referrer and IP restrictions; NULL = unrestricted.
+  - "ALTER TABLE honua.admin_api_keys ADD COLUMN IF NOT EXISTS allowed_referrers TEXT[];"
+  - "ALTER TABLE honua.admin_api_keys ADD COLUMN IF NOT EXISTS allowed_ip_ranges TEXT[];"
   - |
       CREATE TABLE IF NOT EXISTS honua.analysis_content_items (
           item_id            TEXT        PRIMARY KEY,

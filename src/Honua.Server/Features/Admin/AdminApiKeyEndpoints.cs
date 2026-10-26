@@ -73,7 +73,8 @@ internal static partial class AdminApiKeyEndpoints
             [FromServices] ILogger<AdminApiKeyEndpointsLog> logger,
             HttpContext context)
     {
-        if (!TryValidateCreateRequest(request, out var permissions, out var validationMessage))
+        if (!TryValidateCreateRequest(request, out var permissions, out var validationMessage) ||
+            !TryValidateRestrictions(request, out var restrictions, out validationMessage))
         {
             return TypedResults.BadRequest(ApiResponse<object>.Failure(validationMessage));
         }
@@ -83,6 +84,7 @@ internal static partial class AdminApiKeyEndpoints
             permissions,
             request.ExpiresAt,
             ResolveCreator(context),
+            restrictions,
             context.RequestAborted);
 
         LogApiKeyCreated(logger, result.Record.Id, result.Record.Name);
@@ -222,6 +224,72 @@ internal static partial class AdminApiKeyEndpoints
         return true;
     }
 
+    private static bool TryValidateRestrictions(
+        CreateAdminApiKeyRequest request,
+        out AdminApiKeyRestrictions? restrictions,
+        out string validationMessage)
+    {
+        restrictions = null;
+        if (!TryNormalizeList(request.AllowedReferrers, "allowedReferrers",
+                "an origin such as 'https://app.example.com' or 'https://*.example.com' (no path)",
+                ApiKeyRequestRestrictions.TryNormalizeReferrerPattern, out var referrers, out validationMessage) ||
+            !TryNormalizeList(request.AllowedIpRanges, "allowedIpRanges",
+                "a CIDR range such as '203.0.113.0/24' or '2001:db8::/32', or a single IP address",
+                ApiKeyRequestRestrictions.TryNormalizeIpRange, out var ranges, out validationMessage))
+        {
+            return false;
+        }
+
+        if (referrers is not null || ranges is not null)
+        {
+            restrictions = new AdminApiKeyRestrictions(referrers, ranges);
+        }
+
+        return true;
+    }
+
+    private delegate bool Normalizer(string? value, out string normalized);
+
+    private static bool TryNormalizeList(
+        IReadOnlyList<string>? values,
+        string field,
+        string expected,
+        Normalizer normalize,
+        out IReadOnlyList<string>? normalized,
+        out string validationMessage)
+    {
+        normalized = null;
+        validationMessage = string.Empty;
+        if (values is not { Count: > 0 })
+        {
+            return true;
+        }
+
+        if (values.Count > ApiKeyRequestRestrictions.MaxEntries)
+        {
+            validationMessage = $"Validation failed: {field} accepts at most {ApiKeyRequestRestrictions.MaxEntries} entries";
+            return false;
+        }
+
+        var result = new List<string>(values.Count);
+        foreach (var value in values)
+        {
+            if (!normalize(value, out var entry))
+            {
+                validationMessage = $"Validation failed: each {field} entry must be {expected}";
+                return false;
+            }
+
+            if (!result.Contains(entry, StringComparer.Ordinal))
+            {
+                result.Add(entry);
+            }
+        }
+
+        normalized = result;
+        return true;
+    }
+
     private static AdminApiKeyResponse ToResponse(AdminApiKeyRecord record) => new()
     {
         Id = record.Id,
@@ -236,6 +304,8 @@ internal static partial class AdminApiKeyEndpoints
         RotatedAt = record.RotatedAt,
         RevokedAt = record.RevokedAt,
         CreatedBy = record.CreatedBy,
+        AllowedReferrers = record.AllowedReferrers,
+        AllowedIpRanges = record.AllowedIpRanges,
     };
 
     private static string GetStatus(AdminApiKeyRecord record)

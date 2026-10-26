@@ -35,6 +35,7 @@ internal sealed class ApiKeyAuthenticationHandler(
     private const string AuthFailureMessageKey = "AuthFailureMessage";
     private const string AuthRealm = "Honua Admin";
     private const string AdminAuthenticationNotConfigured = "Admin authentication not configured";
+    private const string RequestNotPermittedMessage = "This API key is not permitted from this origin or network.";
     private static readonly Guid DevelopmentBypassActorId = new("00000000-0000-0000-0000-000000000001");
     private static readonly Guid BootstrapAdminActorId = new("00000000-0000-0000-0000-000000000002");
 
@@ -83,6 +84,7 @@ internal sealed class ApiKeyAuthenticationHandler(
             providedApiKey,
             Scheme.Name,
             _dependencies,
+            ApiKeyRequestContext.From(Context),
             Logger,
             Context.RequestAborted);
         switch (validation.Rejection)
@@ -100,6 +102,10 @@ internal sealed class ApiKeyAuthenticationHandler(
             case ApiKeyRejection.CredentialStoreUnavailable:
                 Context.Items[AuthFailureMessageKey] = "credential store unavailable";
                 return AuthenticateResult.Fail("credential store unavailable");
+            case ApiKeyRejection.RequestNotPermitted:
+                // Refusal already logged by ValidateApiKeyAsync with the key id and restriction.
+                Context.Items[AuthFailureMessageKey] = RequestNotPermittedMessage;
+                return AuthenticateResult.Fail(RequestNotPermittedMessage);
             default:
                 AuthenticationLog.InvalidApiKeyProvided(Logger);
                 return AuthenticateResult.Fail("Invalid API key");
@@ -116,10 +122,30 @@ internal sealed class ApiKeyAuthenticationHandler(
     /// <c>X-API-Key</c> header yields: same roles, permission claims and credential kind.
     /// Rejections are returned rather than logged so each caller reports its own transport.
     /// </remarks>
+    internal static Task<ApiKeyValidation> ValidateApiKeyAsync(
+        string providedApiKey,
+        string schemeName,
+        ApiKeyAuthenticationDependencies dependencies,
+        ILogger logger,
+        CancellationToken cancellationToken)
+        // No request context: a key with referrer or IP restrictions fails closed.
+        => ValidateApiKeyAsync(providedApiKey, schemeName, dependencies, request: null, logger, cancellationToken);
+
+    /// <summary>
+    /// Validates a presented API key and enforces the managed key's optional referrer and IP
+    /// restrictions against <paramref name="request"/>.
+    /// </summary>
+    /// <remarks>
+    /// Restrictions apply only to managed keys that configure them; the bootstrap
+    /// <c>HONUA_ADMIN_PASSWORD</c> key has none. A key whose restrictions the request does
+    /// not satisfy is refused with <see cref="ApiKeyRejection.RequestNotPermitted"/> and does
+    /// not fall through to the bootstrap comparison.
+    /// </remarks>
     internal static async Task<ApiKeyValidation> ValidateApiKeyAsync(
         string providedApiKey,
         string schemeName,
         ApiKeyAuthenticationDependencies dependencies,
+        ApiKeyRequestContext? request,
         ILogger logger,
         CancellationToken cancellationToken)
     {
@@ -133,6 +159,13 @@ internal sealed class ApiKeyAuthenticationHandler(
                 var storedKey = await dependencies.AdminApiKeyStore.ValidateAsync(providedApiKey, cancellationToken);
                 if (storedKey is not null)
                 {
+                    var violation = ApiKeyRequestRestrictions.Evaluate(storedKey.Record, request);
+                    if (violation != ApiKeyRestrictionViolation.None)
+                    {
+                        AuthenticationLog.ApiKeyRequestRestrictionRefused(logger, storedKey.Record.Id, violation);
+                        return new ApiKeyValidation(null, ApiKeyRejection.RequestNotPermitted);
+                    }
+
                     AuthenticationLog.ApiKeyAuthenticationSuccessful(logger);
                     return new ApiKeyValidation(
                         CreateSuccessfulAuthenticationResult(
@@ -580,7 +613,7 @@ internal sealed class ApiKeyAuthenticationHandler(
 }
 
 /// <summary>
-/// Why <see cref="ApiKeyAuthenticationHandler.ValidateApiKeyAsync"/> refused a presented key.
+/// Why <c>ApiKeyAuthenticationHandler.ValidateApiKeyAsync</c> refused a presented key.
 /// </summary>
 internal enum ApiKeyRejection
 {
@@ -601,10 +634,15 @@ internal enum ApiKeyRejection
     /// Callers fail the request; they must not treat this as an invalid key or an unhandled error.
     /// </summary>
     CredentialStoreUnavailable,
+
+    /// <summary>
+    /// The key is valid but its referrer or IP restrictions do not admit this request.
+    /// </summary>
+    RequestNotPermitted,
 }
 
 /// <summary>
-/// Outcome of <see cref="ApiKeyAuthenticationHandler.ValidateApiKeyAsync"/>: the success
+/// Outcome of <c>ApiKeyAuthenticationHandler.ValidateApiKeyAsync</c>: the success
 /// result carrying the key's own principal, or the reason it was refused.
 /// </summary>
 internal readonly record struct ApiKeyValidation(AuthenticateResult? Success, ApiKeyRejection Rejection);

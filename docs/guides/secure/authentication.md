@@ -72,6 +72,54 @@ session, or an approved operation. An `admin:write` key such as `ci-publisher` a
 gets `403` on those routes. Keep credential management out of CI keys; the route list
 is in [Credential and identity management](../../reference/admin-api/users-roles-licensing.md#credential-and-identity-management).
 
+#### Restrict keys used from browsers or in URLs
+
+A key that ships in a web page, a desktop project file, or the `token` query
+parameter will eventually be seen by someone else: URLs land in browser history,
+proxy and CDN logs, and `Referer` headers. Give such keys the narrowest grants
+that work and add request restrictions when you create them:
+
+```json
+{
+  "name": "public-map-viewer",
+  "permissions": ["read:basemaps"],
+  "allowedReferrers": ["https://maps.example.com", "https://*.example.org"],
+  "allowedIpRanges": ["203.0.113.0/24", "2001:db8::/32"]
+}
+```
+
+- `allowedReferrers` lists origins (`scheme://host[:port]`, no path). A request is
+  accepted only when its `Origin` header — or, if there is none, its `Referer`
+  reduced to an origin — matches an entry. `https://*.example.org` matches any
+  subdomain of `example.org` but not `example.org` itself; list both if you need
+  both. Scheme and port must match. With a referrer list set, a request carrying
+  neither header is refused.
+- `allowedIpRanges` lists CIDR ranges or single addresses (IPv4 and IPv6). The
+  client address is the one Honua resolves after trusted-proxy handling, so behind a
+  load balancer set `ForwardedHeaders__Enabled=true` and list the proxy in
+  `ForwardedHeaders__KnownProxies__0`; otherwise every request appears to come from
+  the proxy. A CIDR with bits
+  set past its prefix, such as `203.0.113.7/24`, is rejected.
+- Both lists are optional; a key with neither is unrestricted, as every key created
+  before this feature is. When both are set, a request must satisfy both. Entries are
+  normalized (lowercase, default ports dropped) and returned on the key's metadata.
+- Restrictions apply on every transport the key is accepted on: `X-API-Key`,
+  `Authorization`/`X-Esri-Authorization: Bearer`, the form `token` field and the
+  `token` query parameter. The bootstrap `HONUA_ADMIN_PASSWORD` key is never
+  restricted.
+- A restricted key cannot be exchanged for a portal token (`generateToken` or the
+  OAuth2 `client_credentials` fallback), because the token would not carry the key's
+  restrictions.
+- Refusals answer like an invalid key (`401`, or the Esri `498` invalid-token error on
+  GeoServices routes) and are logged at Warning with event id `4118`, naming the key
+  id and the failed restriction but never the key.
+
+Referrer restrictions stop other websites from using a key inside a browser; they do
+not stop a non-browser client, which can send any `Origin` or `Referer`. Treat them
+as abuse prevention, pair them with IP restrictions where the callers' networks are
+known, and keep keys used this way read-only. Restrictions are set when a key is
+created; to change them, create a replacement key and revoke the old one.
+
 Credential expiry denies authentication while preserving the managed key's
 metadata, so administrators can still inspect its expired or revoked status.
 Redis retains this metadata for 3,650 days after expiry, or after the latest
@@ -220,7 +268,7 @@ they remain valid until revoked or expired. Revoke tokens that may have been iss
 from constrained keys and require affected clients to authenticate again. Upgrade
 all token-issuance nodes before resuming those exchanges.
 
-The response is `{ "token": "...", "expires": ..., "ssl": true }`. Tokens are opaque, cached server-side (Redis when enabled), and bound either to the supplied referer (`client=referer`, the default) or to the request's client IP (`client=ip` or `client=requestip`, the Esri SDK default for IP-bound tokens) — a mismatched binding fails validation. Use them on `/rest/services/...` via `?token=`, `Authorization: Bearer`, `X-Esri-Authorization: Bearer`, or a form-encoded POST `token` field. An API key is accepted on the same transports, on the GeoServices surfaces and on every other surface that honours the `token` query parameter (OGC services included), so a client that sends a key as its `token` works without custom headers. The key keeps its own scope, exactly as in `X-API-Key`, and is recorded as an API-key credential; the Admin API still requires `X-API-Key`. Issuance is HTTPS-only by default; expiry is clamped to `Authentication__PortalToken__MaxExpirationMinutes` (default 14400) **and to the expiry of the credential the token was issued from**, so a key that expires in five minutes never yields a ten-day token. The issued token is also tied to that credential for its whole life: revoking or rotating the API key it came from, or rotating the admin password, stops it on the next request without needing the token value. The credential is re-read at most once per `Authentication__PortalToken__SourceRevalidationSeconds` (default 10) per instance, which is also the worst-case delay before a revocation takes effect; set it to `0` to re-read on every request. Tokens issued before an upgrade to this behaviour carry no credential reference and are refused — affected clients simply call `generateToken` again. An opt-in OAuth2 bridge (`/sharing/rest/oauth2/*`) brokers named-user sign-in to your OIDC provider. It needs `Oidc__Enabled=true`, a valid provider (`Oidc__Generic__Enabled`, `Oidc__Generic__Authority`, `Oidc__Generic__ClientId`, and that provider's client secret), and every client redirect registered in `Authentication__PortalToken__OAuth2__AllowedRedirectUris`. The callback validates the IdP token with the OIDC verifier whenever that bridge is configured. `Authentication__PortalCredentialVerifier__UseOidc` is not required for the bridge; it still selects OIDC for `generateToken` password checks. After the redirect URI has been accepted, a later authorization failure is returned to it as `error` and `state`, not as a JSON body on the callback.
+The response is `{ "token": "...", "expires": ..., "ssl": true }`. Tokens are opaque, cached server-side (Redis when enabled), and bound either to the supplied referer (`client=referer`, the default) or to the request's client IP (`client=ip` or `client=requestip`, the Esri SDK default for IP-bound tokens) — a mismatched binding fails validation. Use them on `/rest/services/...` via `?token=`, `Authorization: Bearer`, `X-Esri-Authorization: Bearer`, or a form-encoded POST `token` field. An API key is accepted on the same transports, on the GeoServices surfaces and on every other surface that honours the `token` query parameter (OGC services included), so a client that sends a key as its `token` works without custom headers. The key keeps its own scope, exactly as in `X-API-Key`, and is recorded as an API-key credential; the Admin API still requires `X-API-Key`. A key with administrative authority is refused in the `token` query parameter (send it in a header), and a key's referrer and IP restrictions apply on this transport too, so restrict any key you hand to clients that can only use `?token=` (see [Restrict keys used from browsers or in URLs](#restrict-keys-used-from-browsers-or-in-urls)). Per RFC 6750 §2.3, every response to a request authenticated by a `token` query parameter carries `Cache-Control: private` (credentialed responses are additionally `no-store`), so shared caches and CDNs do not store responses keyed by a URL that contains the credential. Issuance is HTTPS-only by default; expiry is clamped to `Authentication__PortalToken__MaxExpirationMinutes` (default 14400) **and to the expiry of the credential the token was issued from**, so a key that expires in five minutes never yields a ten-day token. The issued token is also tied to that credential for its whole life: revoking or rotating the API key it came from, or rotating the admin password, stops it on the next request without needing the token value. The credential is re-read at most once per `Authentication__PortalToken__SourceRevalidationSeconds` (default 10) per instance, which is also the worst-case delay before a revocation takes effect; set it to `0` to re-read on every request. Tokens issued before an upgrade to this behaviour carry no credential reference and are refused — affected clients simply call `generateToken` again. An opt-in OAuth2 bridge (`/sharing/rest/oauth2/*`) brokers named-user sign-in to your OIDC provider. It needs `Oidc__Enabled=true`, a valid provider (`Oidc__Generic__Enabled`, `Oidc__Generic__Authority`, `Oidc__Generic__ClientId`, and that provider's client secret), and every client redirect registered in `Authentication__PortalToken__OAuth2__AllowedRedirectUris`. The callback validates the IdP token with the OIDC verifier whenever that bridge is configured. `Authentication__PortalCredentialVerifier__UseOidc` is not required for the bridge; it still selects OIDC for `generateToken` password checks. After the redirect URI has been accepted, a later authorization failure is returned to it as `error` and `state`, not as a JSON body on the callback.
 
 Named-user OAuth authorization-code tokens for registered native redirects (loopback
 HTTP URLs or custom app schemes) work with `Authorization: Bearer` without a

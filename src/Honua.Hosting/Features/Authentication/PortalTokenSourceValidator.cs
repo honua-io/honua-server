@@ -174,6 +174,13 @@ internal sealed class PortalTokenSourceValidator(
             return null;
         }
 
+        // A restricted key cannot be exchanged for a token (ManagedKeyExchangeAuthority), so a
+        // token minted before restrictions existed on the key must not outlive them either.
+        if (ApiKeyRequestRestrictions.IsRestricted(record))
+        {
+            return null;
+        }
+
         return PortalCredentialSourceVersion.ForManagedKey(record);
     }
 

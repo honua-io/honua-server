@@ -104,7 +104,7 @@ internal sealed class AdminPortalCredentialVerifier(
         // This bridge mints token roles, not API-key permission, layer-write, or
         // approved-operation claims. Refuse credentials whose authority it cannot
         // preserve rather than widening scoped keys (#4577).
-        var roles = ManagedKeyExchangeAuthority.ResolveTokenRoles(record.Permissions);
+        var roles = ManagedKeyExchangeAuthority.ResolveTokenRoles(record);
         if (roles is null)
         {
             return null;
