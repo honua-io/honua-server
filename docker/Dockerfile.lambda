@@ -6,6 +6,10 @@
 # docs/internal/security/code-scanning-2026-Q2-remediation.md.
 ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:0d99ebf1ccad15037b5c98c9fe8979d6b8dbac23812feae2277a0b277b5c5ffa
 ARG LAMBDA_RUNTIME_IMAGE=public.ecr.aws/lambda/provided:al2023@sha256:9b3ad8941296d16bffb52819b30ccc4c9b54db5fafac6f93737e034ba007c618
+# CI may point this at the GHCR mirror of the same digest (see deploy-platform-images.yml).
+ARG LAMBDA_ADAPTER_IMAGE=public.ecr.aws/awsguru/aws-lambda-adapter:0.9.1@sha256:46d6625e68cbbdd2efab4a20245977664513f13ffef47915b000d431adcea0b4
+
+FROM ${LAMBDA_ADAPTER_IMAGE} AS lambda-adapter
 
 FROM ${DOTNET_SDK_IMAGE} AS build
 WORKDIR /src
@@ -120,7 +124,7 @@ ARG HONUA_GIT_SHA=
 LABEL org.opencontainers.image.revision="${HONUA_GIT_SHA}"
 ENV HONUA_GIT_SHA=${HONUA_GIT_SHA}
 
-COPY --from=public.ecr.aws/awsguru/aws-lambda-adapter:0.9.1@sha256:46d6625e68cbbdd2efab4a20245977664513f13ffef47915b000d431adcea0b4 /lambda-adapter /opt/extensions/lambda-adapter
+COPY --from=lambda-adapter /lambda-adapter /opt/extensions/lambda-adapter
 
 WORKDIR /var/task
 COPY --from=build /app /var/task
