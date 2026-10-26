@@ -41,8 +41,9 @@ reason code, without the proposal payload or evidence text. It leaves the
 proposal state unchanged and does not invoke its actuator. If durable audit
 storage cannot accept that event, the request returns service unavailable
 instead of claiming that a receipt was retained. Caller cancellation propagates
-without a receipt guarantee. Missing proposals and callers without approval
-permission do not create this proposal decision join. Failures after the execution
+without a receipt guarantee. The approval API checks proposal access before this decision receipt is
+created. Missing proposals and API callers without approval permission do not
+create this proposal decision join. Failures after the execution
 claim retain their existing compensation and `operation.apply_failed` audit
 boundary; they do not also emit this pre-claim denial event.
 
