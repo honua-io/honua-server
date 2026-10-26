@@ -4,6 +4,16 @@ on:
   schedule:
     # One nightly security lane for dependency, filesystem, and container scans.
     - cron: '0 2 * * *'
+  # Dependency changes run only the NuGet vulnerability gate; every other job is nightly/dispatch.
+  pull_request:
+    paths:
+      - 'Directory.Packages.props'
+      - 'Directory.Build.props'
+      - '**/*.csproj'
+      - '**/packages.lock.json'
+      - 'scripts/ci/check-nuget-vulnerabilities.py'
+      - 'scripts/ci/check-nuget-vulnerabilities.test.py'
+      - '.github/workflows/security-nightly.yml'
   workflow_dispatch:
     inputs:
       include_transitive:
@@ -120,8 +130,14 @@ jobs:
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
+      - name: Verify vulnerability gate parser
+        run: python3 scripts/ci/check-nuget-vulnerabilities.test.py
+
+      # NuGet audit is disabled for this restore only: under TreatWarningsAsErrors a new
+      # advisory of any severity would fail restore before the gate below could apply its
+      # High/Critical policy and report Moderate findings.
       - name: Restore
-        run: dotnet restore Honua.sln
+        run: scripts/ci/dotnet-restore-retry.sh Honua.sln -p:NuGetAudit=false
 
       - name: Scan for vulnerable NuGet packages
         id: nuget-scan
@@ -135,44 +151,38 @@ jobs:
             include_flag+=(--include-transitive)
           fi
 
-          if dotnet list package --vulnerable "${include_flag[@]}" > vulnerability-report.txt 2>&1; then
-            echo "scan_result=success" >> "$GITHUB_OUTPUT"
-          else
-            echo "scan_result=failure" >> "$GITHUB_OUTPUT"
-          fi
+          # Advisory data comes from nuget.org; GitHub Packages publishes none and only adds an
+          # authenticated round trip that can fail the listing.
+          dotnet list Honua.sln package --vulnerable "${include_flag[@]}" \
+            --source https://api.nuget.org/v3/index.json --format json > vulnerability-report.json
 
-          cat vulnerability-report.txt
+          # High/Critical fail; Moderate/Low are reported only. Advisories with no upstream
+          # fix are risk-accepted once, as <NuGetAuditSuppress> in Directory.Build.props,
+          # and the parser reads that list rather than keeping a copy here.
+          status=0
+          python3 scripts/ci/check-nuget-vulnerabilities.py vulnerability-report.json \
+            --props Directory.Build.props --summary-json vulnerability-summary.json || status=$?
 
-          # Advisories explicitly risk-accepted because there is NO upstream fix.
-          # Keep in sync with the NuGetAuditSuppress entries in Directory.Build.props
-          # and the .trivyignore file. `dotnet list package --vulnerable` does not
-          # honor NuGetAuditSuppress, so the accepted rows are filtered here before the
-          # gate. Only no-patched-version advisories belong here; anything with a fix
-          # must be bumped, not allowlisted.
-          #   GHSA-2m69-gcr7-jv3q — SQLitePCLRaw.lib.e_sqlite3 <= 2.1.11 (no patched version)
-          ALLOWLISTED_ADVISORIES="GHSA-2m69-gcr7-jv3q"
-
-          grep -vE "${ALLOWLISTED_ADVISORIES}" vulnerability-report.txt > vulnerability-report.gated.txt || true
-
-          if grep -E "(High|Critical)" vulnerability-report.gated.txt; then
+          if [ "$status" -eq 1 ]; then
             echo "vulnerable_packages=true" >> "$GITHUB_OUTPUT"
-            echo "::error::High or Critical vulnerabilities found in NuGet packages (excluding risk-accepted advisories)"
-            exit 1
+          else
+            echo "vulnerable_packages=false" >> "$GITHUB_OUTPUT"
           fi
-
-          echo "vulnerable_packages=false" >> "$GITHUB_OUTPUT"
-          echo "No high or critical NuGet vulnerabilities found (excluding risk-accepted advisories)"
+          exit "$status"
 
       - name: Upload vulnerability report
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: nuget-vulnerability-report-${{ github.run_number }}
-          path: vulnerability-report.txt
+          path: |
+            vulnerability-report.json
+            vulnerability-summary.json
+          if-no-files-found: warn
           retention-days: 30
 
       - name: Create issue on vulnerabilities
-        if: steps.nuget-scan.outputs.vulnerable_packages == 'true'
+        if: github.event_name != 'pull_request' && steps.nuget-scan.outputs.vulnerable_packages == 'true'
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
@@ -216,7 +226,7 @@ jobs:
             }
 
   trivy-filesystem-scan:
-    if: inputs.existing_image == ''
+    if: github.event_name != 'pull_request' && inputs.existing_image == ''
     name: Trivy Filesystem Scan
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -265,7 +275,7 @@ jobs:
           exit-code: '1'
 
   third-party-notices-check:
-    if: inputs.existing_image == ''
+    if: github.event_name != 'pull_request' && inputs.existing_image == ''
     name: Third-party notices are current
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -279,7 +289,7 @@ jobs:
         run: python3 scripts/ci/generate-third-party-notices.py --check
 
   container-security-scan:
-    if: inputs.existing_image == ''
+    if: github.event_name != 'pull_request' && inputs.existing_image == ''
     name: Container Security Scan (${{ matrix.variant }})
     runs-on: ubuntu-latest
     timeout-minutes: ${{ matrix.timeout_minutes }}
