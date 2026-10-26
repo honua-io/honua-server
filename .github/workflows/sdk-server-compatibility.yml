@@ -246,6 +246,26 @@ jobs:
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
+      # honua-sdk-dotnet pins an exact SDK and workload set in global.json
+      # (honua-sdk-dotnet#444) and its own CI provisions that tuple with
+      # scripts/ci/prepare-dotnet-toolchain.py before any build. The smoke app
+      # references the SDK project, so MSBuild reads that global.json too; on
+      # the runner's newer ambient SDK the pinned workload set is missing and
+      # evaluation fails before any server call. Provision the toolchain the SDK
+      # checkout declares. Older SDK refs carry no global.json and keep the
+      # ambient SDK.
+      - name: Setup .NET SDK pinned by honua-sdk-dotnet
+        if: hashFiles('sdk/honua-sdk-dotnet/global.json') != ''
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: sdk/honua-sdk-dotnet/global.json
+
+      - name: Provision honua-sdk-dotnet workload set
+        if: hashFiles('sdk/honua-sdk-dotnet/scripts/ci/prepare-dotnet-toolchain.py') != ''
+        shell: bash
+        working-directory: sdk/honua-sdk-dotnet
+        run: python3 scripts/ci/prepare-dotnet-toolchain.py
+
       - name: Configure GitHub Packages for .NET SDK
         shell: bash
         run: |

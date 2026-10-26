@@ -22,7 +22,12 @@ MIGRATION_EVIDENCE_FILE="$RESULTS_DIR/migration-automation.json"
 MIGRATION_SERVER_BASE_URL="${HONUA_SDK_MIGRATION_SERVER_BASE_URL:-http://localhost:5001}"
 MIGRATION_GEOSERVER_URL="${HONUA_SDK_MIGRATION_GEOSERVER_URL:-http://127.0.0.1:5011/geoserver/rest}"
 MIGRATION_GEOSERVER_FIXTURE="${HONUA_SDK_MIGRATION_GEOSERVER_FIXTURE:-tests/dotnet/Honua.Db.Postgres.Tests/Features/Import/Fixtures/GeoServer/CatalogApplySlice.json}"
-MIGRATION_ARCGIS_SERVICE_URL="${HONUA_SDK_MIGRATION_ARCGIS_SERVICE_URL:-https://sampleserver6.arcgisonline.com/arcgis/rest/services/ServiceRequest/FeatureServer}"
+# The JS ArcGIS import surface must reach Completed, so its source layer must be
+# one a single-layer import can migrate at full fidelity. ServiceRequest layer 0
+# declares a composite relationship, which single-layer import deliberately
+# reports as NeedsReview since #4834 (#4864). Wildfire layer 0 has the same
+# point/Web Mercator/attachments shape and declares no relationships.
+MIGRATION_ARCGIS_SERVICE_URL="${HONUA_SDK_MIGRATION_ARCGIS_SERVICE_URL:-https://sampleserver6.arcgisonline.com/arcgis/rest/services/Wildfire/FeatureServer}"
 MIGRATION_AUTOMATION_REQUIRED="${HONUA_SDK_MIGRATION_AUTOMATION_REQUIRED:-true}"
 MIGRATION_SERVER_IMAGE="${HONUA_SDK_MIGRATION_SERVER_IMAGE:-}"
 COMPAT_SERVER_LABEL="${HONUA_SDK_COMPAT_SERVER_LABEL:-unknown-server}"
@@ -712,6 +717,20 @@ require_dir "$DOTNET_DIR" "honua-sdk-dotnet"
 
     smoke_dir="$(mktemp -d)"
     trap 'rm -rf "$smoke_dir"' EXIT
+    # The smoke app references the SDK project, so MSBuild also honours the
+    # SDK checkout's global.json (exact SDK + workloadVersion since
+    # honua-sdk-dotnet#444). The dotnet host resolves global.json from the
+    # working directory, so build and run from a smoke dir that carries the
+    # same pin; otherwise the ambient SDK evaluates the SDK project against a
+    # workload set it does not have.
+    case "$DOTNET_DIR" in
+        /*) dotnet_global_json="$DOTNET_DIR/global.json" ;;
+        *) dotnet_global_json="$ROOT_DIR/$DOTNET_DIR/global.json" ;;
+    esac
+    if [[ -f "$dotnet_global_json" ]]; then
+        cp "$dotnet_global_json" "$smoke_dir/global.json"
+    fi
+    cd "$smoke_dir"
     dotnet new console --framework net10.0 --output "$smoke_dir" >/dev/null
     smoke_project="$(find "$smoke_dir" -maxdepth 1 -name '*.csproj' -print -quit)"
     dotnet add "$smoke_project" reference "$dotnet_admin_project" >/dev/null
