@@ -1,3 +1,8 @@
+---
+type: reference
+title: "AI model disclosure approvals"
+description: "Operator approval configuration, migration and limits for AI model data transfers."
+---
 # AI model disclosure approvals
 
 Remote Studio chat, report narrative enrichment and imagery inference require an explicit operator approval for the effective provider, adapter kind, destination, model, use case and workload data classification. Missing or mismatched approvals deny transfer before invoking a provider. There are no wildcard approvals. The Studio capabilities `Configured` flag continues to describe credential/model readiness; it does not mean external disclosure has been approved. Administrators' chat model overrides and imagery jobs' model inputs must match too.
