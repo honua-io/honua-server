@@ -20,7 +20,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Npgsql;
 
-namespace Honua.Server.Tests.Features.Operations;
+namespace Honua.Server.Tests.Features.OperationsToolset;
 
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]

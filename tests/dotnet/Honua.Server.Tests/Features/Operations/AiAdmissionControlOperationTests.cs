@@ -18,7 +18,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 
-namespace Honua.Server.Tests.Features.Operations;
+namespace Honua.Server.Tests.Features.OperationsToolset;
 
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Update)]
