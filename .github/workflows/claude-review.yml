@@ -546,8 +546,10 @@ jobs:
               the authoritative review checklist — read them and apply them.
 
             Review scope: judge only this diff. Apply the BLOCKING vs WARNING
-            split that `CLAUDE.md` already defines under "Architecture
-            Enforcement" and "Critical Rules".
+            split that `CLAUDE.md` defines under "Architecture Enforcement:
+            review rules (BLOCKING / WARNING)", and the invariants under
+            "Protocol Adapter Architecture". The full rubric with examples is
+            docs/internal/contributor/architecture-criteria.md.
 
             Treat as BLOCKING: correctness bugs the diff introduces, security
             problems, and anything `CLAUDE.md` marks BLOCKING (dependency

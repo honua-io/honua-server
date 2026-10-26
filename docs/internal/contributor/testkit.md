@@ -326,6 +326,28 @@ Filter on tier directly: `dotnet test --filter "Tier=Fast"` (or `Integration` / 
 [Endpoint("POST /rest/services/{id}/FeatureServer/{layerId}/addFeatures")]
 ```
 
+### Interface Operation Coverage
+
+Some logical operations are not fully represented by route metadata. Examples are WFS/WMS
+dispatch operations, OData option and payload operation families, and gRPC methods. For these,
+also add `[InterfaceOperation]` so the test maps to `OperationRegistry`:
+
+```csharp
+[Collection("Database")]
+[Protocol(Protocols.Wfs20)]
+public class Wfs20EndpointsTests
+{
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(Protocols.Wfs20, "GetFeature")]
+    public async Task Wfs_GetFeature_ReturnsFeatureCollection() { }
+}
+```
+
+The architecture tests fail hard below 100% coverage. `ApiSurfaceCoverageTests` checks HTTP
+routes (`EndpointRegistry`), and `OperationCoverageTests` checks operations (`OperationRegistry`).
+
 ## HTTP Assertions
 
 ```csharp
@@ -413,6 +435,31 @@ dotnet test --filter "Protocol=Health"
 # Run with coverage
 dotnet test /p:CollectCoverage=true /p:CoverletOutputFormat=cobertura
 ```
+
+## Scale Tests (Multi-Node + Redis)
+
+The `[ScaleTest]` tier runs against a multi-node stack behind nginx.
+
+1. **Export the stack credentials.** The scale stack runs the non-relaxed `ScaleTest`
+   environment and ships no defaults. Set:
+   - `HONUA_ADMIN_PASSWORD`;
+   - `HONUA_SCALE_TEST_ENCRYPTION_KEY` (32 or more characters);
+   - `HONUA_SCALE_TEST_ENCRYPTION_SALT` (base64);
+   - `HONUA_SCALE_TEST_GRAFANA_PASSWORD`, if you use the `monitoring` profile.
+2. **Start the stack**:
+   `docker compose -f docker/scale-test/compose.yml up --build --scale honua=3`.
+3. **Point the tests at it**: set `HONUA_SCALE_TEST_BASE_URL=http://localhost:8080`,
+   `HONUA_SCALE_TEST_REDIS=localhost:6379` and
+   `HONUA_SCALE_TEST_ADMIN_API_KEY="$HONUA_ADMIN_PASSWORD"`.
+4. **For replica-state scale tests** (create, extract, sync, unregister), also set
+   `HONUA_SCALE_TEST_SERVICE_ID=<service-name>`.
+5. **If the default ports are busy**, override them with `HONUA_SCALE_TEST_HTTP_PORT=18080`,
+   `HONUA_SCALE_TEST_REDIS_PORT=6380` and `HONUA_SCALE_TEST_POSTGRES_PORT=55434`.
+6. **Run only the scale tests**:
+   `dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj --filter Category=Scale`.
+
+The tests expect `docker/scale-test/nginx/scale-test.conf` to emit `X-Instance-ID` for
+`/rest/`, `/ogc/` and `/odata/`.
 
 ## End-to-End Operator Eval Harness
 
