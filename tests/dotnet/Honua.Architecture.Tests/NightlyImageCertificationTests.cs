@@ -122,6 +122,8 @@ public sealed partial class NightlyImageCertificationTests
             "only a trunk run whose head is not the candidate hands off");
         route.Should().Contain("if [ \"${mode}\" != redirect ] && [ \"${CANDIDATE_SHA}\" != \"${GITHUB_SHA}\" ]; then");
         route.Should().Contain("select(.status != \"completed\")", "a queued or running candidate build is not duplicated");
+        route.Should().Contain("elif [ \"${imaged}\" != 0 ]; then",
+            "a candidate already imaged on its tag is not rebuilt, so a later failed attempt cannot file red checks on it");
 
         // A candidate-tag run images exactly its own commit, re-proving certification.
         var selectStep = select[select.IndexOf("id: select", StringComparison.Ordinal)..select.IndexOf("id: route", StringComparison.Ordinal)];
@@ -213,6 +215,9 @@ public sealed partial class NightlyImageCertificationTests
                 $"{job} verifies and promotes from the staged tooling");
         }
 
+        Job(nightly, "mirror-base-images").Should().Contain(
+            "if [ -n \"$current\" ] && [ \"$current\" = \"${src##*@}\" ]; then",
+            "a mirror tag already at the pinned digest is not pulled from the upstream registry again");
         Job(nightly, "mirror-base-images").Should().Contain(
             "scripts/ci/base-image-mirrors.sh --verify \"${RUNNER_TEMP}/nightly-container-build.yml\"",
             "the running workflow consumes the mirror tags; the candidate's Dockerfiles produce them");
