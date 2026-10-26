@@ -550,6 +550,24 @@ public sealed class StudioAiProxyEndpointsTests : IAsyncLifetime
         admission.Sent.Should().Be(1);
     }
 
+    [IntegrationTheory]
+    [InlineData("budget_exceeded", HttpStatusCode.TooManyRequests)]
+    [InlineData("uninitialized", HttpStatusCode.ServiceUnavailable)]
+    [Endpoint("POST /api/v1/studio/ai/chat")]
+    public async Task PostChat_AdmissionDenied_ReturnsProblemBeforeSseOrProviderSend(string code, HttpStatusCode expectedStatus)
+    {
+        var admission = (RecordingAiAdmission)_fixture.Services.GetRequiredService<IAiExecutionAdmission>();
+        admission.DenialCode = code;
+        using var client = _fixture.CreateAdminClient();
+        using var response = await client.PostAsJsonAsync("/api/v1/studio/ai/chat", new
+        { messages = new[] { new { role = "user", content = "test" } } });
+        response.StatusCode.Should().Be(expectedStatus);
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+        response.Headers.RetryAfter.Should().NotBeNull();
+        admission.Sent.Should().Be(0);
+        _audit.Recorded.Should().NotContain(entry => entry.Action == "studio_ai.chat");
+    }
+
     private static void ConfigureHost(IWebHostBuilder builder, bool endUserAuthorizationEnabled)
     {
         // WebAppFixture's common host settings enable a dev-auth bypass
