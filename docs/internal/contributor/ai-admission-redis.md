@@ -84,9 +84,9 @@ Shared configuration, policy fields, typed controls and migration are documented
 
 The `AI Admission Contract` workflow runs bounded feature tests on one Docker-capable runner:
 Server reporting and the canonical admission controls/toolset, Core reporting builder/configuration,
-accepted Studio prompt-budget compatibility, and the PostgreSQL admission store. Project filters run
+accepted Studio prompt-budget and certification endpoint compatibility, and the PostgreSQL admission store. Project filters run
 sequentially in Release with warnings treated as errors. TRX tripwires require positive execution,
-zero skipped cases, at least the existing two prompt-budget and sixteen PostgreSQL cases, and passing
+zero skipped cases, at least two prompt-budget, three certification endpoint and sixteen PostgreSQL cases, and passing
 results for each named contract class. The artifact includes the tested commit and raw TRX files.
 
 Redis backend and multi-coordinator proofs remain in the Hosting Components shard. The focused

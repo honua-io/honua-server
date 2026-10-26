@@ -77,9 +77,9 @@ public sealed class RedisAiExecutionAdmissionRoutingTests
             ["no-appendfsync-on-rewrite"] = "no",
             ["maxmemory-policy"] = "noeviction"
         };
-        server.ConfigGetAsync(Arg.Any<string>(), Arg.Any<CommandFlags>()).Returns(call =>
+        server.ConfigGetAsync(Arg.Any<RedisValue>(), Arg.Any<CommandFlags>()).Returns(call =>
         {
-            var name = call.ArgAt<string>(0);
+            var name = call.ArgAt<RedisValue>(0).ToString();
             return Task.FromResult(new[] { new KeyValuePair<string, string>(name, settings[name]) });
         });
         server.InfoAsync("server").Returns(Task.FromResult(Info(("run_id", new string('a', 40)))));

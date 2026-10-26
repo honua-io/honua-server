@@ -21,6 +21,7 @@ on:
       - 'tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj'
       - 'tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj'
       - 'tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj'
+      - 'tests/dotnet/Honua.Ai.ComponentTests/**'
       - 'tests/dotnet/Honua.Db.Postgres.Tests/Honua.Postgres.Tests.csproj'
       - 'tests/dotnet/Honua.TestKit.Core/Security/**'
       - 'tests/dotnet/Honua.TestKit.Core/Honua.TestKit.Core.csproj'
@@ -109,6 +110,14 @@ jobs:
             --logger 'trx;LogFileName=prompt-budget.trx' --results-directory ai-admission-results
           python3 scripts/ci/assert-trx-executed.py --label 'AI prompt budget' \
             --trx ai-admission-results/prompt-budget.trx --min-passed 2 --max-skipped 0
+      - name: Studio certification endpoint compatibility
+        run: |
+          dotnet test tests/dotnet/Honua.Ai.ComponentTests/Honua.Ai.ComponentTests.csproj \
+            --configuration Release -m:1 /p:TreatWarningsAsErrors=true \
+            --filter 'FullyQualifiedName~StudioAiCertificationEndpointTests' \
+            --logger 'trx;LogFileName=ai-components.trx' --results-directory ai-admission-results
+          python3 scripts/ci/assert-trx-executed.py --label 'AI certification endpoints' \
+            --trx ai-admission-results/ai-components.trx --min-passed 3 --max-skipped 0
       - name: Combined PostgreSQL admission scopes and lifecycle
         run: |
           dotnet test tests/dotnet/Honua.Db.Postgres.Tests/Honua.Postgres.Tests.csproj \
@@ -130,6 +139,7 @@ jobs:
                          'AnalysisReportEvalPipelineTests', 'RenderGoldenTests'],
               'core-reporting': ['AnalysisReportBuilderTests', 'ReportingConfigurationValidatorTests'],
               'prompt-budget': ['StudioAiProxyPromptBudgetTests'],
+              'ai-components': ['StudioAiCertificationEndpointTests'],
               'postgres': ['PostgresAiExecutionAdmissionStoreTests'],
           }
           ns = {'t': 'http://microsoft.com/schemas/VisualStudio/TeamTest/2010'}
