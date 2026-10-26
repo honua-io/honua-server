@@ -114,7 +114,7 @@ public sealed class StudioAiProxyConfigurationTests
         result.Succeeded.Should().BeTrue(because: "a local OpenAI-compatible endpoint (Ollama/vLLM) need not be HTTPS");
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData("http://127.0.0.1:8000/v1", true)]
     [InlineData("http://[::1]:8000/v1", true)]
     [InlineData("https://provider.example/v1", true)]
