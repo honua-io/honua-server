@@ -163,15 +163,16 @@ jobs:
       #   - No AI/agent attribution in the PR's commits or body (fleet rule 1;
       #     source honua-flow agents/fleet-rules.md). Agent harnesses append
       #     Co-Authored-By / "Generated with" lines by default, so the prose rule
-      #     is enforced here. Commits come from the API; the body via env, never
-      #     interpolated into the script.
+      #     is enforced here. Commits and the PR body are read from the API at
+      #     run time, so a rerun after editing the body sees the current text.
+      #     Body edits alone do not start a run (no `edited` trigger on this
+      #     heavy workflow); the next push or rerun re-checks.
       #   - The canonical instruction file stays a budgeted digest with an
       #     unmodified generated fleet block and no dangling repo paths.
       - name: Verify commit attribution and agent instructions
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-          PR_BODY: ${{ github.event.pull_request.body }}
         run: |
           python3 scripts/ci/check-commit-attribution.py --self-test
           if [[ -n "${PR_NUMBER}" ]]; then
