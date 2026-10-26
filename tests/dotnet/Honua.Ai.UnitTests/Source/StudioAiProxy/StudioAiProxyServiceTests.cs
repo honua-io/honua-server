@@ -8,6 +8,7 @@ using Honua.Ai.StudioAiProxy;
 using Honua.Ai.StudioAiProxy.Abstractions;
 using Honua.Ai.StudioAiProxy.Adapters;
 using Honua.Ai.StudioAiProxy.Domain;
+using Honua.Core.Features.Security;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -635,6 +636,38 @@ public sealed class StudioAiProxyServiceTests
         return events;
     }
 
+    [UnitTest]
+    public async Task StreamChatAsync_UnapprovedDisclosure_DoesNotInvokeAdapter()
+    {
+        var config = ConfigWithOneAnthropicProvider("claude", true);
+        config.Disclosure.Approvals.Clear();
+        var adapter = new FakeAdapter(StudioAiProxyConfiguration.AnthropicKind, true);
+        var service = CreateService(config, adapter);
+        service.ValidateRequest(Request()).Should().Contain("disclosure");
+        var summary = new StudioAiProxyCallSummary();
+        var events = await CollectAsync(service, Request(), summary);
+        events.Should().ContainSingle().Which.ErrorCode.Should().Be("studio_ai/disclosure_denied");
+        adapter.CallCount.Should().Be(0);
+        summary.Succeeded.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public async Task StreamChatAsync_ModelOverrideOutsideApproval_DoesNotInvokeAdapter()
+    {
+        var config = ConfigWithOneAnthropicProvider("claude", true);
+        var adapter = new FakeAdapter(StudioAiProxyConfiguration.AnthropicKind, true);
+        var service = CreateService(config, adapter);
+        var request = new StudioAiChatRequest
+        {
+            Model = "unapproved-admin-model",
+            Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "sensitive context" }]
+        };
+        service.ValidateRequest(request).Should().Contain("disclosure");
+        var events = await CollectAsync(service, request, new());
+        events.Should().ContainSingle().Which.ErrorCode.Should().Be("studio_ai/disclosure_denied");
+        adapter.CallCount.Should().Be(0);
+    }
+
     private static StudioAiProxyService CreateService(StudioAiProxyConfiguration configuration, params IStudioAiProxyAdapter[] adapters)
         => new(
             Options.Create(configuration),
@@ -663,6 +696,10 @@ public sealed class StudioAiProxyServiceTests
     {
         Enabled = true,
         DefaultProvider = isDefault ? name : string.Empty,
+        Disclosure = new()
+        {
+            Approvals = [new() { Provider = name, Kind = "anthropic", Destination = "https://api.anthropic.com", Model = "claude-sonnet-4-5", UseCase = "studio-chat", DataClassification = "unclassified" }]
+        },
         Providers =
         {
             [name] = new StudioAiProxyProviderOptions
@@ -681,6 +718,10 @@ public sealed class StudioAiProxyServiceTests
     {
         Enabled = true,
         DefaultProvider = "provider",
+        Disclosure = new()
+        {
+            Approvals = [new() { Provider = "provider", Kind = kind, Destination = kind == "bedrock" ? "aws-bedrock:" + StudioAiProxyConfiguration.DefaultBedrockRegion : "https://provider.example", Model = "provider-model", UseCase = "studio-chat", DataClassification = "unclassified" }]
+        },
         Providers =
         {
             ["provider"] = new StudioAiProxyProviderOptions
@@ -713,12 +754,16 @@ public sealed class StudioAiProxyServiceTests
         }
 
         public string Kind { get; }
+        public int CallCount { get; private set; }
 
         public bool IsConfigured(string providerName, StudioAiProxyProviderOptions options) => _isConfigured;
 
         public IAsyncEnumerable<StudioAiChatEvent> StreamAsync(
             StudioAiProxyProviderOptions options, StudioAiChatRequest request, CancellationToken cancellationToken)
-            => _stream is null ? Events() : _stream(request);
+        {
+            CallCount++;
+            return _stream is null ? Events() : _stream(request);
+        }
     }
 
     private sealed class TrackingAdapter(string kind, StudioAiChatEvent[] events) : IStudioAiProxyAdapter

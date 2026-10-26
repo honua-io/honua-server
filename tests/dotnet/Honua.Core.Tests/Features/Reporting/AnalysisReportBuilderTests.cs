@@ -11,6 +11,7 @@ using Honua.Core.Features.Reporting.Services;
 using Honua.Core.Features.Reporting.Templates;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
@@ -258,11 +259,54 @@ public sealed class AnalysisReportBuilderTests
         }
     }
 
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public async Task BuildAsync_WhenProviderExceptionContainsSensitiveText_LogsOnlyFailureType()
+    {
+        const string canary = "FAKE_PROVIDER_PROMPT_AND_KEY_CANARY";
+        var logger = new RecordingLogger();
+        var provider = new ThrowingLlmNarrativeProvider(new InvalidOperationException(canary));
+        var builder = CreateBuilder(out _, narrativeEnabled: true, llmProvider: provider, logger: logger);
+
+        var report = await builder.BuildAsync("job-private", BuildBufferPackage(), CancellationToken.None);
+
+        report.NarrativeMode.Should().Be(NarrativeMode.FallbackFromLlmError);
+        logger.Messages.Should().ContainSingle().Which.Should().Contain(nameof(InvalidOperationException));
+        string.Join("\n", logger.Messages).Should().NotContain(canary);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public async Task BuildAsync_WhenCallerCancels_DoesNotFallBackOrLogFailure()
+    {
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        var logger = new RecordingLogger();
+        var provider = new ThrowingLlmNarrativeProvider(new OperationCanceledException(cancellation.Token));
+        var builder = CreateBuilder(out _, narrativeEnabled: true, llmProvider: provider, logger: logger);
+
+        var act = () => builder.BuildAsync("job-cancelled", BuildBufferPackage(), cancellation.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        logger.Messages.Should().BeEmpty();
+    }
+
+    private sealed class RecordingLogger : ILogger<AnalysisReportBuilder>
+    {
+        public List<string> Messages { get; } = [];
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter)
+            => Messages.Add(formatter(state, exception) + exception);
+    }
+
     private static AnalysisReportBuilder CreateBuilder(
         out AnalysisReportTemplateRegistry registry,
         bool narrativeEnabled,
         INarrativeProvider? llmProvider,
-        int? maxTableRows = null)
+        int? maxTableRows = null,
+        ILogger<AnalysisReportBuilder>? logger = null)
     {
         var templates = new IAnalysisReportTemplate[]
         {
@@ -288,7 +332,7 @@ public sealed class AnalysisReportBuilderTests
             deterministic,
             options,
             new FixedTimeProvider(_fixedInstant),
-            NullLogger<AnalysisReportBuilder>.Instance,
+            logger ?? NullLogger<AnalysisReportBuilder>.Instance,
             llmProvider);
     }
 

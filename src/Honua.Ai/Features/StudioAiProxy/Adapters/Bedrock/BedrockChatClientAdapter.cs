@@ -51,13 +51,24 @@ internal sealed class BedrockChatClientAdapter : IChatClient
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(modelId);
 
+        var config = CreateConfiguration(region, apiKey);
+
+        var runtime = new AmazonBedrockRuntimeClient(config);
+        return new BedrockChatClientAdapter(runtime, modelId, ownsRuntime: true);
+    }
+
+    // Shared with the SDK construction path so tests inspect the effective destination config.
+    internal static AmazonBedrockRuntimeConfig CreateConfiguration(string region, string? apiKey)
+    {
         var effectiveRegion = string.IsNullOrWhiteSpace(region)
             ? StudioAiProxyConfiguration.DefaultBedrockRegion
             : region;
 
         var config = new AmazonBedrockRuntimeConfig
         {
-            RegionEndpoint = RegionEndpoint.GetBySystemName(effectiveRegion)
+            RegionEndpoint = RegionEndpoint.GetBySystemName(effectiveRegion),
+            IgnoreConfiguredEndpointUrls = true,
+            AllowAutoRedirect = false
         };
 
         if (!string.IsNullOrWhiteSpace(apiKey))
@@ -68,8 +79,7 @@ internal sealed class BedrockChatClientAdapter : IChatClient
             config.AuthSchemePreference = ["httpBearerAuth"];
         }
 
-        var runtime = new AmazonBedrockRuntimeClient(config);
-        return new BedrockChatClientAdapter(runtime, modelId, ownsRuntime: true);
+        return config;
     }
 
     public async Task<ChatResponse> GetResponseAsync(

@@ -46,7 +46,8 @@ internal static class ReportingServiceCollectionExtensions
             services.AddResilientHttpClient(
                 "reporting-narrative",
                 "reporting-narrative",
-                HttpResiliencePolicies.FastApiDefaults);
+                HttpResiliencePolicies.FastApiDefaults,
+                configureHandler: () => new HttpClientHandler { AllowAutoRedirect = false });
             services.TryAddSingleton<INarrativeProvider, OpenAiNarrativeProvider>();
         }
 
