@@ -65,6 +65,70 @@ public sealed class PostgresAiExecutionAdmissionStoreTests(PostgresFixture fixtu
         (await CountAttemptsAsync()).Should().Be(3);
     }
 
+    [IntegrationTheory]
+    [InlineData("deployment", false)]
+    [InlineData("actor", false)]
+    [InlineData("cohort", false)]
+    [InlineData("workflow", false)]
+    [InlineData("deployment", true)]
+    [InlineData("actor", true)]
+    [InlineData("cohort", true)]
+    [InlineData("workflow", true)]
+    public async Task TryAcquire_EachScopeIndependentlyBindsAcrossPools(string scope, bool concurrency)
+    {
+        // Exactly one dimension binds. A missing predicate for any individual scope
+        // permits multiple winners and fails that scope's independent regression.
+        var policy = new AiAdmissionPolicy
+        {
+            DeploymentAttempts = 100, ActorAttempts = 100, CohortAttempts = 100, WorkflowAttempts = 100,
+            DeploymentConcurrency = 100, ActorConcurrency = 100, CohortConcurrency = 100, WorkflowConcurrency = 100
+        };
+        policy = (scope, concurrency) switch
+        {
+            ("deployment", false) => policy with { DeploymentAttempts = 1 },
+            ("actor", false) => policy with { ActorAttempts = 1 },
+            ("cohort", false) => policy with { CohortAttempts = 1 },
+            ("workflow", false) => policy with { WorkflowAttempts = 1 },
+            ("deployment", true) => policy with { DeploymentConcurrency = 1 },
+            ("actor", true) => policy with { ActorConcurrency = 1 },
+            ("cohort", true) => policy with { CohortConcurrency = 1 },
+            ("workflow", true) => policy with { WorkflowConcurrency = 1 },
+            _ => throw new ArgumentOutOfRangeException(nameof(scope))
+        };
+        AiExecutionContext ScopeContext(int index) => AiExecutionContext.Create("deployment",
+            scope is "actor" or "cohort" ? "shared-actor" : $"actor-{index}",
+            scope == "cohort" || index % 2 == 0 ? "studio-chat" : "reporting-narrative",
+            scope == "workflow" ? "shared-workflow" : $"workflow-{index}");
+        var first = Store();
+        var second = Store();
+        await InitializeAndResumeAsync(first, policy);
+        var barrier = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var tasks = Enumerable.Range(0, 20).Select(async index =>
+        {
+            await barrier.Task;
+            return await (index % 2 == 0 ? first : second).TryAcquireAsync(
+                ScopeContext(index), Guid.NewGuid(), CancellationToken.None);
+        }).ToArray();
+        barrier.SetResult();
+        var results = await Task.WhenAll(tasks);
+        var winner = results.Should().ContainSingle(result => result.Granted).Subject;
+        var code = concurrency ? "concurrency_exceeded" : "budget_exceeded";
+        results.Where(result => !result.Granted).Should().OnlyContain(result => result.Code == code);
+        (await CountAttemptsAsync()).Should().Be(1, "denied contenders cannot partially debit any scope");
+        await second.ReleaseAsync(winner.Reservation!, CancellationToken.None);
+        var afterRelease = await first.TryAcquireAsync(ScopeContext(0), Guid.NewGuid(), CancellationToken.None);
+        if (concurrency)
+        {
+            afterRelease.Granted.Should().BeTrue("release restores concurrency capacity");
+            (await CountAttemptsAsync()).Should().Be(2);
+        }
+        else
+        {
+            afterRelease.Code.Should().Be("budget_exceeded", "release never refunds an invocation attempt");
+            (await CountAttemptsAsync()).Should().Be(1);
+        }
+    }
+
     [IntegrationTest]
     public async Task ReleaseAndStoreRestart_KeepAttemptChargeAndOtherReservations()
     {
