@@ -921,7 +921,13 @@ internal sealed class McpDataAccessSurface
         var resourceFamily = handler.ResolveFamily(parameters.Uri);
         try
         {
-            var maxChars = parameters.MaxChars ?? _limits.MaxResourceReadChars;
+            // A read without a cursor returns the whole resource, bounded by the hard
+            // MaxResourceReadChars ceiling, so a spec-only MCP client (resources/read has no
+            // cursor in the protocol) receives one complete document, never a JSON fragment.
+            // A client continuing with a cursor keeps the configured page size, and an explicit
+            // maxChars still opts into smaller pages.
+            var maxChars = parameters.MaxChars
+                ?? (string.IsNullOrEmpty(parameters.Cursor) ? McpPagination.MaxResourceReadChars : _limits.MaxResourceReadChars);
             if (maxChars <= 0 || maxChars > McpPagination.MaxResourceReadChars)
             {
                 throw new GeoprocessingValidationException(
