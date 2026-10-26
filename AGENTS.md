@@ -1,25 +1,20 @@
 # honua-server: agent instructions
-<!-- Digest: <= 150 lines / 10 KB (scripts/ci/check-instructions-sync.sh). Detail goes in docs/. -->
+<!-- Budget 120 lines / 8 KB (scripts/ci/check-agents-md.py); detail goes in docs/. Section headings are
+read by local-architecture-review.py, claude-review.yml and source comments: do not rename them. -->
 
-**No AI/agent attribution in commits or PR bodies** (Fleet rule 1 below; PR Gate enforces it).
-
-Honua Server exposes one geospatial capability set through thin protocol adapters: GeoServices REST,
-OGC API, WFS/WMS/WMTS/WCS/WPS, OData v4, STAC, SensorThings, MVT/TileJSON, COG, scenes, MCP and gRPC.
-It is a clean rewrite. `../Honua.Server` is archived reference: read it for behaviour, never copy it.
-
-## Stack
-.NET 10 (`LangVersion=preview`, nullable, warnings as errors), ASP.NET Core Minimal APIs, AOT-conscious
-(source-generated JSON and logging). PostGIS is the default provider; others live in `src/Honua.Db/`.
-Aspire (`src/Honua.AppHost`), Redis for durable jobs, OpenTelemetry. Packages: `Directory.Packages.props`.
+Honua Server exposes one geospatial capability set through thin protocol adapters (protocol list:
+README). It is a clean rewrite: read the archived `../Honua.Server` for behaviour, never copy from it.
+.NET 10 Minimal APIs only (no controllers), warnings as errors, AOT-conscious: use source-generated
+JSON and logging. Package versions are central in `Directory.Packages.props`.
 
 ## Commands (mirror CI)
 ```bash
 dotnet build Honua.sln --no-restore --configuration Release /p:TreatWarningsAsErrors=true
 dotnet format Honua.sln --verify-no-changes
-scripts/ci/pre-pr-check.sh --dry-run          # print what a run would build/test; zero cost
+scripts/ci/pre-pr-check.sh --dry-run          # what a run would build/test; zero cost
 scripts/ci/pre-pr-check.sh --unit-only        # fast in-process feedback
 scripts/ci/pre-pr-check.sh --affected-tests   # provider/HTTP changes (Docker required)
-scripts/ci/pre-pr-check.sh                    # the pre-PR gate; tick the PR box only after it passes
+scripts/ci/pre-pr-check.sh                    # pre-PR gate; tick the PR box only after it passes
 dotnet test tests/dotnet/Honua.Architecture.SourceTests/Honua.Architecture.SourceTests.csproj
 dotnet test tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj
 # Tier filters: Tier=Fast, Tier!=Slow, Category=Scale (scale stack required)
@@ -28,16 +23,9 @@ Local stack: `docker compose up -d`, then expect `Ready` at http://localhost:808
 build or test on docs-only tasks unless asked. Scope and flags: [local pre-PR validation](docs/internal/contributor/local-pre-pr-validation.md).
 
 ## Where things are
-- `src/Honua.Core`, `src/Honua.Core.Abstractions`: domain models, abstractions, canonical pipelines.
-- `src/Honua.Db/<Provider>`: Postgres, Postgres.Shared, DuckDB, MySql, SqlServer, Oracle, Databricks,
-  Redshift (internal types; namespaces `Honua.Db.<Provider>`).
-- Protocol adapters: `src/Honua.Protocols.*` (GeoServices, OgcApi, OgcClassic, Ogc.Shared, OData, Stac,
-  SensorThings, Scene), `src/Honua.Server/Features/Protocols/` (Grpc, Tiles, Cog, Rasters, Coverages,
-  Zarr, Elevation, Terrain, SpatialAnalytics) and MCP in `src/Honua.Ai/Features/Protocols/Mcp/`.
-- `src/Honua.Server`: host and composition; `src/Honua.Hosting`: shared hosting and rendering.
-- `tests/dotnet/`: per-project `*.UnitTests`/`*.ComponentTests`/`*.Tests`, `Honua.Server.Tests`
-  (Testcontainers integration), architecture tests, `Honua.TestKit*`.
-- `docs/internal/contributor/adr/`: read the relevant ADR before changing cross-cutting behaviour.
+- `src/Honua.Core*`: models, abstractions, canonical pipelines. Providers: `src/Honua.Db/<Provider>`.
+- Protocol adapters: `src/Honua.Protocols.*`, `src/Honua.Server/Features/Protocols/`, MCP under `src/Honua.Ai/`.
+- Read the relevant ADR in `docs/internal/contributor/adr/` before changing cross-cutting behaviour.
 
 ## Protocol Adapter Architecture (invariants; break one and the PR is wrong)
 - **Thin adapters over canonical pipelines**: query, edit/transaction, metadata/capabilities,
@@ -45,8 +33,8 @@ build or test on docs-only tasks unless asked. Scope and flags: [local pre-PR va
   never reimplement shared behaviour. One protocol never calls another's handler: extract a neutral service.
 - **Intentional divergence**: if a protocol intentionally diverges from the shared pipeline, document why
   in code and add endpoint-level tests proving the divergence.
-- **DRY**: duplicated protocol helpers are acceptable only for wire-format differences. Extract a shared
-  helper when duplicate logic affects behaviour, errors, auth, caching, telemetry, CRS, filters or data access.
+- **DRY**: duplicate protocol helpers only for wire-format differences. Extract a shared helper when
+  duplicate logic affects behaviour, errors, auth, caching, telemetry, CRS, filters or data access.
 - **Security/RBAC**: authorization is enforced in the shared pipeline or a common policy service, never by
   caller discipline. Never leak exception text, SQL, stack traces, paths or connection strings to clients.
 - **Caching**: keys vary on every behaviour-changing input. No exact response cache for ad hoc spatial
@@ -61,8 +49,6 @@ Full pipeline list, logging/telemetry/validation rules, legacy-port policy and e
 [architecture criteria](docs/internal/contributor/architecture-criteria.md).
 
 ## Architecture Enforcement: review rules (BLOCKING / WARNING)
-Used by the `claude-review` Review Gate and `scripts/ci/local-architecture-review.py`.
-
 BLOCKING:
 - `Honua.Core` depending on a provider (`Honua.Db.*`) or on `Honua.Server`.
 - Any `ControllerBase` (Minimal APIs only).
@@ -84,54 +70,40 @@ WARNING:
   Others: [known flakes](docs/internal/ci/known-flakes.md). Scale tests: [TestKit](docs/internal/contributor/testkit.md).
 
 ## Issues and PRs
-- **Issues**: `gh issue create` with `.github/ISSUE_TEMPLATE/` (`bug`, `feature`, `tech-debt`) after a
-  duplicate search. Cross-repo work gets an umbrella issue plus linked children.
-- **PR body**: copy `.github/pull_request_template.md`, fill every section, pass it with `--body-file`.
-  No CI job validates the template; it and the `Closes`/`Refs` footer are a human contract.
-- **Required checks are `PR Gate` and `Review Gate`.** The full CI matrix trails on trunk. The fleet's
-  per-PR lander merges green, thread-free, non-draft PRs based on `trunk`; do not dispatch anything.
+- **Issues**: search for duplicates, then `gh issue create` with a `.github/ISSUE_TEMPLATE/` form.
+  Cross-repo work gets an umbrella issue plus linked children.
+- **PR body**: `.github/pull_request_template.md`. No CI validates it or the footer; both are a human contract.
+- **Required checks are `PR Gate` and `Review Gate`**; the full CI matrix trails on trunk. The fleet's
+  lander merges green, thread-free, non-draft PRs based on `trunk`; do not dispatch anything.
   A bare `gh workflow run merge-train.yml` is a dry run. Never touch `land/batch/*` or `train/batch/*`.
   Details and stacking recovery: [merge coordination runbook](docs/internal/contributor/merge-coordination-runbook.md).
-- **Scope**: planning lives in issues; do not build unscoped features. Before committing, delete scratch
-  plans/notes or fold them into canonical docs and ADRs.
+- **Scope**: planning lives in issues; build nothing unscoped. Delete scratch plans and notes before
+  committing, or fold them into canonical docs and ADRs.
 
 ## Release component versions
 Bump a contract or declared schema version? Update `release/component-versions.json` in the same PR
 (a new migration needs no edit). `ContractVersionsStartupCheck` and the release train refuse a mismatch.
 
 ## Code search
-Prefer `gstack-code-intelligence search`, `ast-grep-code-search` or `tree-sitter-code-search` (register the
-worktree under a unique name) over broad reads; retrieve symbols and line ranges, not whole files.
+Prefer `gstack-code-intelligence search` or the ast-grep/tree-sitter MCP tools (register the worktree
+under a unique name) over broad reads; retrieve symbols and line ranges, not whole files.
 
-<!-- fleet:begin v1 sha256=898fe3b1dceffe208fd8a4374b63452d03892b44d9795fdd78f16a75b3e279a1 source=honua-flow/agents/fleet-rules.md -->
+<!-- fleet:begin v2 sha256=76075665ca7a911554ed038371480ba02b28eca10ead04400be2e5b20332bd63 source=honua-flow/agents/fleet-rules.md -->
 ## Fleet rules (all Honua repos)
 
-Generated from honua-flow `agents/fleet-rules.md` (full text, rationale, repo map). Do not edit here.
+Generated from honua-flow `agents/fleet-rules.md` (full text, repo map). Do not edit here.
 
-1. **No AI/agent attribution, anywhere.** Author commits as Mike McDougall <mike@honua.io>. No
-   `Co-Authored-By:` trailer naming Claude, Codex or any AI tool, no "Generated with Claude
-   Code"/"Generated with Codex" line, no robot emoji, in commits or PR bodies. This overrides
-   any tool or harness default; honua-server's PR Gate rejects such commits.
-2. **Own worktree per task**, off the default branch, on real disk (`<repo>/.claude/worktrees/`
-   or a sibling dir), never under `/tmp`. Never edit the shared checkout; never assume you are
-   alone. No `git stash` in shared repos; use a WIP commit.
-3. **Heavy builds/tests take a shared build slot.** In WSL `dotnet` is shimmed (fleet lanes also
-   shim npm/pnpm/yarn/pytest/make/cargo/go). Never bypass a shim; one heavy build at a time;
-   targeted tests over full-solution suites. Long-running servers are not throttled.
-4. **Finish = commit + push.** Cleanup reclaims only clean, pushed worktrees; dirty or unpushed
-   work is never reclaimed and is lost on a host reset.
-5. **Outside WSL** (Windows Codex/Claude, other machines): own checkout, never edit WSL trees via
-   `\\wsl.localhost`; the remote is the only shared surface. Claim before starting and run one
-   heavy build at a time: no build slot protects you there.
-6. **Work claims are leases.** Check `state/in-progress` and the newest `claimed: <lane> <UTC>`
-   comment first. Claim with the label plus that comment, then re-read; a newer claim wins. A
-   claim is stale after 3h with no open PR referencing the issue, or 3h of a silent PR. Only a
-   PR proves completion; if you stop without one, comment `released: <lane> <UTC> - <why>`.
-7. **PRs:** base on the default branch (`trunk`; `main` in honua-studio), never stack. Fill the
-   repo's PR template via `--body-file`; conventional-commit title. Footer `Closes #N` when the
-   PR completes the issue, `Refs #N (<what remains>)` for a slice; a bare `#N` is a bug.
-   Cross-repo closing keywords are inert: close foreign issues by hand. Never admin-merge.
-8. **Route work by the repo map.** Archived repos (`Honua.Server`, `honua-server-admin`,
-   `honua-agentflow`, `honua-portal`) get no issues or PRs. Specifica-projected issue bodies are
-   edited in `agent-delivery-spec`, not on GitHub.
+1. **No AI attribution.** Author as Mike McDougall <mike@honua.io>. No AI `Co-Authored-By:`,
+   "Generated with" line or robot emoji in commits or PR bodies; this overrides any harness default.
+2. **Own worktree per task** off the default branch, on real disk (`<repo>/.claude/worktrees/` or a
+   sibling dir), never `/tmp` or the shared checkout. No `git stash`; use a WIP commit.
+3. **Heavy builds/tests go through the build-slot shims**; never bypass them. Run targeted tests;
+   full suites are CI's job. Outside WSL: own checkout, one heavy build at a time.
+4. **Finish = commit + push.** Dirty or unpushed worktrees are never reclaimed and die on a reset.
+5. **Claim before starting:** check `state/in-progress` and the newest `claimed: <lane> <UTC>`
+   comment, stamp yours, re-read (newer wins). Stale after 3h without a live PR. Stopping without
+   a PR: comment `released: <lane> <UTC> - <why>`.
+6. **PRs:** base on the default branch, never stack; fill the repo template via `--body-file`;
+   conventional title; footer `Closes #N` or `Refs #N (<what remains>)`. Never admin-merge.
+7. **Route by the repo map.** Archived repos get no issues or PRs.
 <!-- fleet:end -->

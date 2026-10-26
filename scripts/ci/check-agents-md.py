@@ -3,7 +3,7 @@
 
 AGENTS.md is loaded into every agent session, so it is a budgeted digest. Detail lives in
 docs/ and is linked from it. This script fails when any of the following holds:
-  - AGENTS.md exceeds 150 lines or 10240 bytes;
+  - AGENTS.md exceeds 120 lines or 8192 bytes;
   - the generated fleet block (`<!-- fleet:begin vN sha256=... -->` ... `<!-- fleet:end -->`,
     source: honua-flow agents/fleet-rules.md) is missing, or its body does not hash to the
     sha256 in its begin marker (it was hand-edited instead of regenerated);
@@ -23,8 +23,8 @@ import sys
 import tempfile
 from pathlib import Path
 
-MAX_LINES = 150
-MAX_BYTES = 10240
+MAX_LINES = 120
+MAX_BYTES = 8192
 BEGIN_RE = re.compile(r"^<!-- fleet:begin v(\d+) sha256=([0-9a-f]{64})(?: [^>]*)? -->$")
 END_LINE = "<!-- fleet:end -->"
 INLINE_CODE = re.compile(r"`([^`\n]+)`")

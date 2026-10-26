@@ -40,7 +40,7 @@ if [[ ! -L CLAUDE.md ]] &&
   exit 1
 fi
 
-# AGENTS.md is a budgeted digest: <= 150 lines / 10 KB, an unmodified generated
+# AGENTS.md is a budgeted digest: <= 120 lines / 8 KB, an unmodified generated
 # fleet block (honua-flow agents/fleet-rules.md), and no references to repo paths
 # that do not exist. See scripts/ci/check-agents-md.py.
 python3 "$(dirname "${BASH_SOURCE[0]}")/check-agents-md.py" --root .
