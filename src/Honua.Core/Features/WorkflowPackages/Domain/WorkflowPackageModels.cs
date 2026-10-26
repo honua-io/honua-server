@@ -61,7 +61,7 @@ public sealed record WorkflowPackage
     /// <summary>
     /// Opaque metadata carried with the package draft.
     /// </summary>
-    public IReadOnlyDictionary<string, string> Metadata { get; init; } = new Dictionary<string, string>();
+    public IReadOnlyDictionary<string, string> Metadata { get; init => field = value ?? new Dictionary<string, string>(); } = new Dictionary<string, string>();
 }
 
 /// <summary>
@@ -128,7 +128,7 @@ public sealed record WorkflowGraph
     /// <summary>
     /// Directed edges between graph nodes.
     /// </summary>
-    public IReadOnlyList<WorkflowEdge> Edges { get; init; } = [];
+    public IReadOnlyList<WorkflowEdge> Edges { get; init => field = value ?? []; } = [];
 
     /// <summary>
     /// Optional schedule hints attached to the graph draft.
@@ -141,9 +141,10 @@ public sealed record WorkflowGraph
     public string? WorkerProfile { get; init; }
 
     /// <summary>
-    /// Opaque editor metadata. Runtime validation ignores these values.
+    /// Opaque editor metadata. Runtime validation ignores these values. Never null: an omitted or
+    /// null value reads as empty (source-generated JSON assigns <c>default</c> to omitted members).
     /// </summary>
-    public IReadOnlyDictionary<string, string> EditorMetadata { get; init; } = new Dictionary<string, string>();
+    public IReadOnlyDictionary<string, string> EditorMetadata { get; init => field = value ?? new Dictionary<string, string>(); } = new Dictionary<string, string>();
 }
 
 /// <summary>
@@ -164,7 +165,7 @@ public sealed record WorkflowNode
     /// <summary>
     /// Parameter values represented as strings for AOT-safe transport.
     /// </summary>
-    public IReadOnlyDictionary<string, string> Parameters { get; init; } = new Dictionary<string, string>();
+    public IReadOnlyDictionary<string, string> Parameters { get; init => field = value ?? new Dictionary<string, string>(); } = new Dictionary<string, string>();
 
     /// <summary>
     /// Optional per-node worker profile override.
@@ -174,7 +175,7 @@ public sealed record WorkflowNode
     /// <summary>
     /// Opaque node metadata.
     /// </summary>
-    public IReadOnlyDictionary<string, string> Metadata { get; init; } = new Dictionary<string, string>();
+    public IReadOnlyDictionary<string, string> Metadata { get; init => field = value ?? new Dictionary<string, string>(); } = new Dictionary<string, string>();
 }
 
 /// <summary>
