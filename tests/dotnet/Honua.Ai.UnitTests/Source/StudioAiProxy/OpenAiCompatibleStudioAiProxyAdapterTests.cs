@@ -1,6 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.TestKit.Security;
+using Honua.Core.Features.Security.Admission;
 using System.Net;
 using System.Diagnostics;
 using System.Text;
@@ -112,6 +114,7 @@ public sealed class OpenAiCompatibleStudioAiProxyAdapterTests
             NullLogger<OpenAiCompatibleStudioAiProxyAdapter>.Instance);
         var request = new StudioAiChatRequest
         {
+            ExecutionContext = RecordingAiAdmission.Context(),
             Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "hi" }],
             Tools =
             [
@@ -207,6 +210,7 @@ public sealed class OpenAiCompatibleStudioAiProxyAdapterTests
             NullLogger<OpenAiCompatibleStudioAiProxyAdapter>.Instance);
         var request = new StudioAiChatRequest
         {
+            ExecutionContext = RecordingAiAdmission.Context(),
             Messages =
             [
                 new StudioAiMessage
@@ -283,6 +287,7 @@ public sealed class OpenAiCompatibleStudioAiProxyAdapterTests
 
         var request = new StudioAiChatRequest
         {
+            ExecutionContext = RecordingAiAdmission.Context(),
             System = "You are a GIS analyst.",
             Messages =
             [
@@ -319,6 +324,7 @@ public sealed class OpenAiCompatibleStudioAiProxyAdapterTests
 
         var request = new StudioAiChatRequest
         {
+            ExecutionContext = RecordingAiAdmission.Context(),
             Messages =
             [
                 new StudioAiMessage { Role = StudioAiRole.User, Content = "list open incidents" },
@@ -355,6 +361,7 @@ public sealed class OpenAiCompatibleStudioAiProxyAdapterTests
 
         var request = new StudioAiChatRequest
         {
+            ExecutionContext = RecordingAiAdmission.Context(),
             Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "list open incidents" }],
             Tools =
             [
@@ -427,7 +434,7 @@ public sealed class OpenAiCompatibleStudioAiProxyAdapterTests
         StudioAiChatRequest request)
     {
         List<StudioAiChatEvent> events = [];
-        await foreach (var evt in adapter.StreamAsync(options, request, CancellationToken.None))
+        await foreach (var evt in adapter.StreamAsync(options, request, RecordingAiAdmission.TransportPermit(), CancellationToken.None))
         {
             events.Add(evt);
         }

@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Infrastructure.Security.Admission;
 using Honua.ControlPlane;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Policy;
@@ -31,6 +32,7 @@ internal static class OperationsServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
         ArgumentNullException.ThrowIfNull(environment);
+        services.AddAiExecutionAdmission(configuration);
 
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<OperationLineageAttestationStore>();

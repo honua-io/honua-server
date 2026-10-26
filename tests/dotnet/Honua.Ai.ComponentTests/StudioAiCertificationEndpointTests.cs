@@ -1,6 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.TestKit.Security;
+using Honua.Core.Features.Security.Admission;
 using System.Net;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
@@ -87,6 +89,7 @@ public sealed class StudioAiCertificationEndpointTests
             builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["HONUA_ADMIN_PASSWORD"] = adminKey,
+                ["AiExecutionAdmission:DeploymentId"] = "test-deployment",
                 ["StudioAiProxy:Enabled"] = "true",
                 ["StudioAiProxy:Disclosure:Approvals:0:Provider"] = "fixture",
                 ["StudioAiProxy:Disclosure:Approvals:0:Kind"] = kind,
@@ -103,6 +106,7 @@ public sealed class StudioAiCertificationEndpointTests
                 ["StudioAiProxy:TranscriptSigning:PrivateKeyReference"] = "secret://fixture-signing-key",
                 ["StudioAiProxy:TranscriptSigning:LifetimeSeconds"] = "900"
             });
+            builder.Services.AddSingleton<IAiExecutionAdmission, RecordingAiAdmission>();
             builder.Services.AddSingleton(secrets);
             builder.Services.AddSingleton(factory);
             builder.Services.AddStudioAiProxy(builder.Configuration);

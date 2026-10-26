@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.Security.Admission;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
@@ -55,10 +56,12 @@ internal sealed class BedrockStudioAiProxyAdapter : IStudioAiProxyAdapter
     public async IAsyncEnumerable<StudioAiChatEvent> StreamAsync(
         StudioAiProxyProviderOptions options,
         StudioAiChatRequest request,
+        IAiExecutionPermit permit,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(request);
+        await permit.EnsureCurrentAsync(cancellationToken).ConfigureAwait(false);
 
         var model = string.IsNullOrWhiteSpace(request.Model) ? options.Model : request.Model!;
         string? apiKey = null;
@@ -89,6 +92,7 @@ internal sealed class BedrockStudioAiProxyAdapter : IStudioAiProxyAdapter
 
         yield return new StudioAiChatEvent { Type = StudioAiChatEventType.MessageStart, Model = model };
 
+        await permit.AuthorizeSendAsync(cancellationToken).ConfigureAwait(false);
         var enumerator = client.GetStreamingResponseAsync(messages, chatOptions, timeoutCts.Token).GetAsyncEnumerator(timeoutCts.Token);
         int? promptTokens = null;
         int? completionTokens = null;

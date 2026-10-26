@@ -35,7 +35,7 @@ public sealed class AiAdmissionException : Exception
     {
         Code = code is "invalid_context" or "invalid_policy" or "uninitialized" or "unavailable"
             or "stopped" or "recovering" or "budget_exceeded" or "concurrency_exceeded"
-            or "ledger_full" or "duplicate_attempt" or "duplicate_invocation" or "invalidated"
+            or "ledger_full" or "disclosure_denied" or "duplicate_attempt" or "duplicate_invocation" or "invalidated"
             ? code : "unavailable";
         RetryAfterSeconds = Math.Clamp(retryAfterSeconds, 1, AiAdmissionPolicy.MaximumWindowSeconds);
     }

@@ -1,6 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.TestKit.Security;
+using Honua.Core.Features.Security.Admission;
 using System.Runtime.CompilerServices;
 using FluentAssertions;
 using System.Text.Json;
@@ -86,6 +88,7 @@ public sealed class StudioAiProxyServiceTests
 
         var error = service.ValidateRequest(new StudioAiChatRequest
         {
+            ExecutionContext = RecordingAiAdmission.Context(),
             Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "hi" }]
         });
 
@@ -98,7 +101,8 @@ public sealed class StudioAiProxyServiceTests
     {
         var service = CreateService(ConfigWithOneAnthropicProvider("claude", isDefault: true), new FakeAdapter(StudioAiProxyConfiguration.AnthropicKind, true));
 
-        var error = service.ValidateRequest(new StudioAiChatRequest { Messages = [] });
+        var error = service.ValidateRequest(new StudioAiChatRequest {
+            ExecutionContext = RecordingAiAdmission.Context(), Messages = [] });
 
         error.Should().NotBeNull();
     }
@@ -110,6 +114,7 @@ public sealed class StudioAiProxyServiceTests
 
         var error = service.ValidateRequest(new StudioAiChatRequest
         {
+            ExecutionContext = RecordingAiAdmission.Context(),
             Provider = "does-not-exist",
             Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "hi" }]
         });
@@ -124,6 +129,7 @@ public sealed class StudioAiProxyServiceTests
 
         var error = service.ValidateRequest(new StudioAiChatRequest
         {
+            ExecutionContext = RecordingAiAdmission.Context(),
             Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "hi" }]
         });
 
@@ -139,6 +145,7 @@ public sealed class StudioAiProxyServiceTests
 
         var error = service.ValidateRequest(new StudioAiChatRequest
         {
+            ExecutionContext = RecordingAiAdmission.Context(),
             Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "hi" }],
             Tools = [new StudioAiToolDefinition { Name = "tool" }]
         });
@@ -155,6 +162,7 @@ public sealed class StudioAiProxyServiceTests
 
         var error = service.ValidateRequest(new StudioAiChatRequest
         {
+            ExecutionContext = RecordingAiAdmission.Context(),
             Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "way too long for the limit" }]
         });
 
@@ -170,6 +178,7 @@ public sealed class StudioAiProxyServiceTests
 
         var error = service.ValidateRequest(new StudioAiChatRequest
         {
+            ExecutionContext = RecordingAiAdmission.Context(),
             Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "hi" }],
             Tools =
             [
@@ -194,6 +203,7 @@ public sealed class StudioAiProxyServiceTests
 
         var error = service.ValidateRequest(new StudioAiChatRequest
         {
+            ExecutionContext = RecordingAiAdmission.Context(),
             Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "hi" }],
             Tools =
             [
@@ -223,6 +233,7 @@ public sealed class StudioAiProxyServiceTests
 
         var error = service.ValidateRequest(new StudioAiChatRequest
         {
+            ExecutionContext = RecordingAiAdmission.Context(),
             Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "hi" }],
             Tools =
             [
@@ -248,6 +259,7 @@ public sealed class StudioAiProxyServiceTests
 
         var error = service.ValidateRequest(new StudioAiChatRequest
         {
+            ExecutionContext = RecordingAiAdmission.Context(),
             Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "hi" }],
             Tools = Enumerable.Range(0, 129)
                 .Select(index => new StudioAiToolDefinition
@@ -268,6 +280,7 @@ public sealed class StudioAiProxyServiceTests
 
         var error = service.ValidateRequest(new StudioAiChatRequest
         {
+            ExecutionContext = RecordingAiAdmission.Context(),
             Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "hi" }]
         });
 
@@ -291,7 +304,8 @@ public sealed class StudioAiProxyServiceTests
         var service = CreateService(ConfigWithOneAnthropicProvider("claude", isDefault: true), adapter);
 
         var summary = new StudioAiProxyCallSummary();
-        var request = new StudioAiChatRequest { Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "hi" }] };
+        var request = new StudioAiChatRequest {
+            ExecutionContext = RecordingAiAdmission.Context(), Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "hi" }] };
         var events = await CollectAsync(service, request, summary);
 
         events.Should().HaveCount(3);
@@ -313,7 +327,8 @@ public sealed class StudioAiProxyServiceTests
         var service = CreateService(ConfigWithOneAnthropicProvider("claude", isDefault: true), adapter);
 
         var summary = new StudioAiProxyCallSummary();
-        var request = new StudioAiChatRequest { Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "hi" }] };
+        var request = new StudioAiChatRequest {
+            ExecutionContext = RecordingAiAdmission.Context(), Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "hi" }] };
         await CollectAsync(service, request, summary);
 
         summary.Succeeded.Should().BeFalse();
@@ -328,7 +343,8 @@ public sealed class StudioAiProxyServiceTests
         var service = CreateService(ConfigWithOneAnthropicProvider("claude", isDefault: true), adapter);
 
         var summary = new StudioAiProxyCallSummary();
-        var request = new StudioAiChatRequest { Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "hi" }] };
+        var request = new StudioAiChatRequest {
+            ExecutionContext = RecordingAiAdmission.Context(), Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "hi" }] };
         var events = await CollectAsync(service, request, summary);
 
         events.Should().ContainSingle(e => e.Type == StudioAiChatEventType.Error);
@@ -343,7 +359,8 @@ public sealed class StudioAiProxyServiceTests
         var service = CreateService(ConfigWithOneAnthropicProvider("claude", isDefault: true), adapter);
 
         var summary = new StudioAiProxyCallSummary();
-        var request = new StudioAiChatRequest { Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "hi" }] };
+        var request = new StudioAiChatRequest {
+            ExecutionContext = RecordingAiAdmission.Context(), Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "hi" }] };
         var events = await CollectAsync(service, request, summary);
 
         events.Last().Type.Should().Be(StudioAiChatEventType.Error);
@@ -395,10 +412,11 @@ public sealed class StudioAiProxyServiceTests
             Options.Create(config),
             [adapter],
             new StudioAiTranscriptSigner(Options.Create(config), TimeProvider.System, secrets),
-            NullLogger<StudioAiProxyService>.Instance);
+            NullLogger<StudioAiProxyService>.Instance, new RecordingAiAdmission());
         var summary = new StudioAiProxyCallSummary();
         var request = new StudioAiChatRequest
         {
+            ExecutionContext = RecordingAiAdmission.Context(),
             Certification = new StudioAiTranscriptCertification
             {
                 CandidateId = "candidate-7",
@@ -565,11 +583,13 @@ public sealed class StudioAiProxyServiceTests
 
     private static StudioAiChatRequest Request() => new()
     {
+        ExecutionContext = RecordingAiAdmission.Context(),
         Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "hi" }]
     };
 
     private static StudioAiChatRequest CertifiedRequest() => new()
     {
+        ExecutionContext = RecordingAiAdmission.Context(),
         Certification = new StudioAiTranscriptCertification
         {
             CandidateId = "candidate-7",
@@ -659,6 +679,7 @@ public sealed class StudioAiProxyServiceTests
         var service = CreateService(config, adapter);
         var request = new StudioAiChatRequest
         {
+            ExecutionContext = RecordingAiAdmission.Context(),
             Model = "unapproved-admin-model",
             Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "sensitive context" }]
         };
@@ -668,12 +689,114 @@ public sealed class StudioAiProxyServiceTests
         adapter.CallCount.Should().Be(0);
     }
 
+    [UnitTest]
+    public async Task PrepareChatAsync_DeniedBudget_InvokesNoAdapterOrCredentialResolver()
+    {
+        var config = ConfigWithOneAnthropicProvider("claude", true);
+        config.Providers["claude"].ApiKey = "secret://provider";
+        var secrets = Substitute.For<ISecretProvider>();
+        var clients = Substitute.For<IHttpClientFactory>();
+        var adapter = new AnthropicStudioAiProxyAdapter(clients, new StudioAiProxyApiKeyResolver(secrets),
+            NullLogger<AnthropicStudioAiProxyAdapter>.Instance);
+        var admission = new RecordingAiAdmission { DenialCode = "budget_exceeded" };
+        var service = new StudioAiProxyService(Options.Create(config), [adapter],
+            new StudioAiTranscriptSigner(Options.Create(config), TimeProvider.System),
+            NullLogger<StudioAiProxyService>.Instance, admission);
+        await FluentActions.Awaiting(() => service.PrepareChatAsync(Request(), RecordingAiAdmission.Context(), default))
+            .Should().ThrowAsync<AiAdmissionException>();
+        clients.ReceivedCalls().Should().BeEmpty();
+        secrets.ReceivedCalls().Should().BeEmpty();
+    }
+
+    [UnitTest]
+    public async Task PreparedCall_BindsAcceptedRequestAndCannotBeStreamedTwice()
+    {
+        var service = CreateService(ConfigWithOneAnthropicProvider("claude", true), new FakeAdapter("anthropic", true));
+        var bytes = System.Text.Encoding.UTF8.GetBytes("{ \"messages\": [] }");
+        var request = new StudioAiChatRequest
+        {
+            ExecutionContext = RecordingAiAdmission.Context(),
+            AcceptedRequestJson = bytes,
+            Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "hi" }]
+        };
+        await using var prepared = await service.PrepareChatAsync(request, request.ExecutionContext, default);
+        prepared.Request.Should().BeSameAs(request);
+        prepared.Request.AcceptedRequestJson.Should().BeSameAs(bytes);
+        var first = new List<StudioAiChatEvent>();
+        await foreach (var evt in service.StreamPreparedChatAsync(prepared, new(), default)) first.Add(evt);
+        var second = new List<StudioAiChatEvent>();
+        await foreach (var evt in service.StreamPreparedChatAsync(prepared, new(), default)) second.Add(evt);
+        second.Should().ContainSingle().Which.ErrorCode.Should().Be("studio_ai/admission_duplicate_invocation");
+    }
+
+    [UnitTest]
+    public async Task StreamPreparedChatAsync_LaterStreamingCancellation_ReachesBlockedProviderAndReleases()
+    {
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var adapter = new BlockingAdapter(entered);
+        var admission = new RecordingAiAdmission();
+        var config = ConfigWithOneAnthropicProvider("claude", true);
+        var service = new StudioAiProxyService(Options.Create(config), [adapter],
+            new StudioAiTranscriptSigner(Options.Create(config), TimeProvider.System),
+            NullLogger<StudioAiProxyService>.Instance, admission);
+        await using var prepared = await service.PrepareChatAsync(Request(), RecordingAiAdmission.Context(), CancellationToken.None);
+        using var streamCancellation = new CancellationTokenSource();
+        await using var stream = service.StreamPreparedChatAsync(prepared, new(), streamCancellation.Token).GetAsyncEnumerator();
+        var blocked = stream.MoveNextAsync().AsTask();
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        await streamCancellation.CancelAsync();
+        await FluentActions.Awaiting(() => blocked.WaitAsync(TimeSpan.FromSeconds(2))).Should().ThrowAsync<OperationCanceledException>();
+        admission.Released.Should().Be(1);
+    }
+
+    [UnitTest]
+    public async Task StreamPreparedChatAsync_BlockedHttpBody_HoldsPermitAndHonorsLaterStreamCancellation()
+    {
+        await using var endpoint = new LoopbackModelEndpoint(holdBody: true);
+        using var client = new HttpClient();
+        var clients = Substitute.For<IHttpClientFactory>();
+        clients.CreateClient(Arg.Any<string>()).Returns(client);
+        var config = ConfigWithOneAnthropicProvider("claude", true);
+        config.Providers["claude"].Kind = "openai";
+        config.Providers["claude"].Endpoint = endpoint.Address.ToString();
+        config.Providers["claude"].ApiKey = "";
+        var adapter = new OpenAiCompatibleStudioAiProxyAdapter(clients, new StudioAiProxyApiKeyResolver(),
+            NullLogger<OpenAiCompatibleStudioAiProxyAdapter>.Instance);
+        var admission = new RecordingAiAdmission();
+        var service = new StudioAiProxyService(Options.Create(config), [adapter],
+            new StudioAiTranscriptSigner(Options.Create(config), TimeProvider.System),
+            NullLogger<StudioAiProxyService>.Instance, admission);
+        await using var prepared = await service.PrepareChatAsync(Request(), RecordingAiAdmission.Context(), CancellationToken.None);
+        using var streamCancellation = new CancellationTokenSource();
+        await using var stream = service.StreamPreparedChatAsync(prepared, new(), streamCancellation.Token).GetAsyncEnumerator();
+        var blocked = stream.MoveNextAsync().AsTask();
+        await endpoint.BodyOpened.Task.WaitAsync(TimeSpan.FromSeconds(3));
+        admission.Released.Should().Be(0, "response headers do not complete the model invocation");
+        await streamCancellation.CancelAsync();
+        await FluentActions.Awaiting(() => blocked.WaitAsync(TimeSpan.FromSeconds(3))).Should().ThrowAsync<OperationCanceledException>();
+        admission.Released.Should().Be(1);
+        endpoint.Requests.Should().Be(1);
+    }
+
+    private sealed class BlockingAdapter(TaskCompletionSource entered) : IStudioAiProxyAdapter
+    {
+        public string Kind => "anthropic";
+        public bool IsConfigured(string name, StudioAiProxyProviderOptions options) => true;
+        public async IAsyncEnumerable<StudioAiChatEvent> StreamAsync(StudioAiProxyProviderOptions options,
+            StudioAiChatRequest request, IAiExecutionPermit permit, [EnumeratorCancellation] CancellationToken cancellationToken)
+        {
+            entered.TrySetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            yield break;
+        }
+    }
+
     private static StudioAiProxyService CreateService(StudioAiProxyConfiguration configuration, params IStudioAiProxyAdapter[] adapters)
         => new(
             Options.Create(configuration),
             adapters,
             new StudioAiTranscriptSigner(Options.Create(configuration), TimeProvider.System),
-            NullLogger<StudioAiProxyService>.Instance);
+            NullLogger<StudioAiProxyService>.Instance, new RecordingAiAdmission());
 
     private static StudioAiProxyService CreateSigningService(
         StudioAiProxyConfiguration configuration,
@@ -689,7 +812,7 @@ public sealed class StudioAiProxyServiceTests
             Options.Create(configuration),
             adapters,
             new StudioAiTranscriptSigner(Options.Create(configuration), TimeProvider.System, secrets),
-            NullLogger<StudioAiProxyService>.Instance);
+            NullLogger<StudioAiProxyService>.Instance, new RecordingAiAdmission());
     }
 
     private static StudioAiProxyConfiguration ConfigWithOneAnthropicProvider(string name, bool isDefault) => new()
@@ -738,6 +861,7 @@ public sealed class StudioAiProxyServiceTests
 
     private static StudioAiChatRequest ValidRequest() => new()
     {
+        ExecutionContext = RecordingAiAdmission.Context(),
         Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "hi" }]
     };
 
@@ -759,7 +883,7 @@ public sealed class StudioAiProxyServiceTests
         public bool IsConfigured(string providerName, StudioAiProxyProviderOptions options) => _isConfigured;
 
         public IAsyncEnumerable<StudioAiChatEvent> StreamAsync(
-            StudioAiProxyProviderOptions options, StudioAiChatRequest request, CancellationToken cancellationToken)
+            StudioAiProxyProviderOptions options, StudioAiChatRequest request, IAiExecutionPermit permit, CancellationToken cancellationToken)
         {
             CallCount++;
             return _stream is null ? Events() : _stream(request);
@@ -777,6 +901,7 @@ public sealed class StudioAiProxyServiceTests
         public IAsyncEnumerable<StudioAiChatEvent> StreamAsync(
             StudioAiProxyProviderOptions options,
             StudioAiChatRequest request,
+            IAiExecutionPermit permit,
             CancellationToken cancellationToken) => Stream(cancellationToken);
 
         private async IAsyncEnumerable<StudioAiChatEvent> Stream(

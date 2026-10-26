@@ -14,6 +14,9 @@ using Honua.ControlPlane;
 using Honua.Core.Features.Shared.Models;
 using Honua.Geoprocessing.Inference;
 using Honua.Infrastructure.Rendering;
+using Honua.Infrastructure.Security;
+using Honua.Infrastructure.Security.Admission;
+using Honua.Core.Features.Orchestration.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Geoprocessing.Execution;
@@ -63,19 +66,25 @@ internal sealed partial class ImageryInferenceJobExecutor : IProcessExecutor
     private readonly FrozenDictionary<string, IImageryInferenceClient> _clients;
     private readonly ILogger<ImageryInferenceJobExecutor> _logger;
     private readonly IReadOnlyList<ICloudRangeReader> _rangeReaders;
+    private readonly AiExecutionContextFactory? _contextFactory;
+    private readonly IWorkflowRunStore? _workflowRuns;
 
     public ImageryInferenceJobExecutor(
         IOptionsMonitor<ImageryInferenceOptions> inferenceOptions,
         IOptionsMonitor<GeoprocessingExecutorOptions> executorOptions,
         IEnumerable<IImageryInferenceClient> clients,
         ILogger<ImageryInferenceJobExecutor> logger,
-        IEnumerable<ICloudRangeReader>? rangeReaders = null)
+        IEnumerable<ICloudRangeReader>? rangeReaders = null,
+        AiExecutionContextFactory? contextFactory = null,
+        IWorkflowRunStore? workflowRuns = null)
     {
         ArgumentNullException.ThrowIfNull(inferenceOptions);
         ArgumentNullException.ThrowIfNull(executorOptions);
         ArgumentNullException.ThrowIfNull(clients);
         ArgumentNullException.ThrowIfNull(logger);
 
+        _contextFactory = contextFactory;
+        _workflowRuns = workflowRuns;
         _inferenceOptions = inferenceOptions;
         _executorOptions = executorOptions;
         _clients = clients.ToFrozenDictionary(c => c.Provider, StringComparer.OrdinalIgnoreCase);
@@ -170,8 +179,19 @@ internal sealed partial class ImageryInferenceJobExecutor : IProcessExecutor
             Log.InvalidInputs(_logger, job.OperationId, inputError);
             return JobExecutionResult.Failed($"Invalid imagery.classify inputs: {inputError}");
         }
+        string? verifiedRun = null;
+        if (_workflowRuns is not null && parameters.TryGetValue("orchestration.runId", out var runId)
+            && !string.IsNullOrWhiteSpace(runId))
+        {
+            var run = await _workflowRuns.GetAsync(runId, cancellationToken).ConfigureAwait(false);
+            var submitter = job.Audit.SubmitterSecurityContext;
+            if (run is not null && JobOwnershipSecurity.MatchesSubmitter(run.Audit, submitter?.OwnerActorId, submitter?.TenantId)
+                && run.StepStates.Any(step => string.Equals(step.JobId, job.OperationId, StringComparison.Ordinal)))
+                verifiedRun = "run:" + run.RunId;
+        }
         var request = new ImageryInferenceRequest
         {
+            ExecutionContext = _contextFactory?.ForJob(job, context.OperationId, verifiedRun),
             Model = inputs.Model,
             Task = inputs.Task,
             ImageBytes = inputs.SourceBytes,

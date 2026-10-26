@@ -10,6 +10,7 @@ using Honua.Core.Features.Reporting.Abstractions;
 using Honua.Core.Features.Reporting.Domain;
 using Honua.Geoprocessing;
 using Honua.ServiceDefaults;
+using Honua.Infrastructure.Security.Admission;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -58,6 +59,7 @@ internal sealed class AnalysisReportService : IAnalysisReportService
     private readonly IMemoryCache _cache;
     private readonly ReportingConfiguration _configuration;
     private readonly ILogger<AnalysisReportService> _logger;
+    private readonly AiExecutionContextFactory? _contextFactory;
 
     public AnalysisReportService(
         IGeoprocessingJobService jobService,
@@ -66,8 +68,10 @@ internal sealed class AnalysisReportService : IAnalysisReportService
         IEnumerable<IAnalysisReportRenderer> renderers,
         IMemoryCache cache,
         IOptions<ReportingConfiguration> configuration,
-        ILogger<AnalysisReportService> logger)
+        ILogger<AnalysisReportService> logger,
+        AiExecutionContextFactory? contextFactory = null)
     {
+        _contextFactory = contextFactory;
         _jobService = jobService;
         _builder = builder;
         _store = store;
@@ -113,9 +117,12 @@ internal sealed class AnalysisReportService : IAnalysisReportService
             await _store.RemoveAsync(jobId, cancellationToken).ConfigureAwait(false);
         }
 
-        var report = await _builder
-            .BuildAsync(jobId, package, cancellationToken)
-            .ConfigureAwait(false);
+        // The service read authorizes both the current caller and the actual durable job identity.
+        var executionContext = _contextFactory is null ? null : _contextFactory.ForPrincipal(principal,
+            "reporting-narrative", "job:" + (await _jobService.GetJobAsync(jobId, principal, cancellationToken).ConfigureAwait(false)).OperationId);
+        var report = executionContext is null
+            ? await _builder.BuildAsync(jobId, package, cancellationToken).ConfigureAwait(false)
+            : await _builder.BuildAsync(jobId, package, executionContext, cancellationToken).ConfigureAwait(false);
 
         await _store.StoreAsync(report, cancellationToken).ConfigureAwait(false);
 

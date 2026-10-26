@@ -68,7 +68,9 @@ internal sealed class BedrockChatClientAdapter : IChatClient
         {
             RegionEndpoint = RegionEndpoint.GetBySystemName(effectiveRegion),
             IgnoreConfiguredEndpointUrls = true,
-            AllowAutoRedirect = false
+            AllowAutoRedirect = false,
+            MaxErrorRetry = 0,
+            MaxStaleConnectionRetries = 0
         };
 
         if (!string.IsNullOrWhiteSpace(apiKey))
@@ -130,7 +132,8 @@ internal sealed class BedrockChatClientAdapter : IChatClient
         // by content-block index; accumulate per-index and emit a FunctionCallContent on stop.
         Dictionary<int, ToolUseAccumulator> toolUses = [];
 
-        await foreach (var streamEvent in response.Stream.WithCancellation(cancellationToken).ConfigureAwait(false))
+        using var stream = response.Stream;
+        await foreach (var streamEvent in stream.WithCancellation(cancellationToken).ConfigureAwait(false))
         {
             switch (streamEvent)
             {

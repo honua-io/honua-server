@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Infrastructure.Security.Admission;
 using Honua.Core.Features.Infrastructure.Resilience;
 using Honua.Core.Features.Reporting;
 using Honua.Core.Features.Reporting.Abstractions;
@@ -27,6 +28,7 @@ internal static class ReportingServiceCollectionExtensions
         IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(services);
+        services.AddAiExecutionAdmission(configuration);
         ArgumentNullException.ThrowIfNull(configuration);
 
         var section = configuration.GetSection(ReportingConfiguration.SectionName);
@@ -46,7 +48,7 @@ internal static class ReportingServiceCollectionExtensions
             services.AddResilientHttpClient(
                 "reporting-narrative",
                 "reporting-narrative",
-                HttpResiliencePolicies.FastApiDefaults,
+                HttpResiliencePolicies.FastApiDefaults with { MaxRetryAttempts = 0 },
                 configureHandler: () => new HttpClientHandler { AllowAutoRedirect = false });
             services.TryAddSingleton<INarrativeProvider, OpenAiNarrativeProvider>();
         }

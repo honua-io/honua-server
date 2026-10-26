@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Infrastructure.Security.Admission;
 using System.Diagnostics.CodeAnalysis;
 using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.ControlPlane.Abstractions;
@@ -242,6 +243,8 @@ internal static class GeoprocessingServiceCollectionExtensions
         // adapter, which speaks Honua's own JSON inference contract (implemented
         // by a model server directly or by a thin gateway in front of one), is the
         // supported backend in this build.
+        services.AddAiExecutionAdmission(configuration);
+
         services
             .AddOptions<Inference.ImageryInferenceOptions>()
             .Bind(configuration.GetSection(Inference.ImageryInferenceOptions.SectionName));

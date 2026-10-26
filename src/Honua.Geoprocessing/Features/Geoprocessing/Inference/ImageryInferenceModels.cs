@@ -1,6 +1,9 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Text.Json.Serialization;
+using Honua.Core.Features.Security.Admission;
+
 namespace Honua.Geoprocessing.Inference;
 
 /// <summary>
@@ -10,6 +13,10 @@ namespace Honua.Geoprocessing.Inference;
 /// </summary>
 internal sealed record ImageryInferenceRequest
 {
+    /// <summary>Server-validated durable owner and job/run scope; never sent to the model provider.</summary>
+    [JsonIgnore]
+    public AiExecutionContext? ExecutionContext { get; init; }
+
     /// <summary>Model reference passed verbatim to the backend.</summary>
     public required string Model { get; init; }
 

@@ -1,6 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.TestKit.Security;
+using Honua.Core.Features.Security.Admission;
 using System.Net;
 using System.Net.Http.Json;
 using System.Runtime.CompilerServices;
@@ -159,9 +161,11 @@ public sealed class StudioAiEnvTranscriptSigningHostTests : IAsyncLifetime
         builder.UseEnvironment("Test");
         builder.UseSetting("HONUA_DEV_AUTH", "false");
         builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+        builder.ConfigureServices(services => services.AddSingleton<IAiExecutionAdmission, RecordingAiAdmission>());
         builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(
             new Dictionary<string, string?>
             {
+                ["AiExecutionAdmission:DeploymentId"] = "test-deployment",
                 ["StudioAiProxy:Enabled"] = "true",
                 ["StudioAiProxy:Disclosure:Approvals:0:Provider"] = ProviderName,
                 ["StudioAiProxy:Disclosure:Approvals:0:Kind"] = StudioAiProxyConfiguration.OpenAiKind,
@@ -188,6 +192,7 @@ public sealed class StudioAiEnvTranscriptSigningHostTests : IAsyncLifetime
         public async IAsyncEnumerable<StudioAiChatEvent> StreamAsync(
             StudioAiProxyProviderOptions options,
             StudioAiChatRequest request,
+            IAiExecutionPermit permit,
             [EnumeratorCancellation] CancellationToken cancellationToken)
         {
             yield return new StudioAiChatEvent { Type = StudioAiChatEventType.MessageStart, Model = options.Model };

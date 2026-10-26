@@ -75,3 +75,53 @@ records refuse before mutation; Unicode identifiers within these bounds remain s
 Redis persistence and replication limits: [persistence](https://redis.io/docs/latest/management/persistence/)
 and [replication](https://redis.io/docs/latest/manual/replication/). These are substrate limitations,
 not installed deployment qualification evidence.
+
+
+## Invocation integration and migration
+
+AI model calls now require `AiExecutionAdmission:DeploymentId`, a stable deployment identity,
+and an initialized, authorized admission ledger. `AiExecutionAdmission:Backend` accepts `auto`
+(default), `postgres`, or `redis`. Auto selects a registered PostgreSQL store first, otherwise
+Redis. Selection is pinned for the process; an unavailable selected store never falls back to
+another authority or a memory counter. PostgreSQL requires migration 140. Keep the deployment
+identity stable across replicas and restarts; changing it creates a different budget authority.
+Missing configuration denies model calls while deterministic, disabled and cached report paths
+continue without a charge. Provider credentials and disclosure approval remain separate gates.
+
+Use the typed AI execution initialize, update, stop and resume operations through the existing
+operation pipeline. Initialization is stopped and quarantined; startup never initializes or
+resumes authority. Updates require stopped, drained state and the expected generation, revision
+and epoch. Built-in policy may authorize a full administrator directly: an operation's
+`OperatorGate` designation does not establish a separate human approval in every deployment.
+No model content, credential or bearer token belongs in control reasons or audit metadata.
+
+The server derives actor identity from durably revalidatable, scheme/issuer-qualified ownership,
+not a display name or caller budget ID. Chat validates a supplied MCP session against the current
+strong session binding; omission still charges deployment, actor and actor/use-case cohort.
+Reporting uses the authorized job returned by the job service. Imagery uses captured durable job
+ownership, validates the executing job ID, and only adds a run scope after server-side run ownership
+and job membership verification. Older imagery jobs without durable ownership cannot invoke a model.
+Workflow scopes are namespaced and shared across actors; changing sessions cannot reset outer limits.
+These checks do not claim to infer payload sensitivity or validate an operator's classification label.
+
+A permit charges once, owns one send, and stays held through response/body disposal. It polls the
+same authoritative generation and epoch at most one second apart and links stop, deadline and
+caller cancellation. A check also occurs immediately before send. Cleanup uses an independent,
+bounded cancellation token; expiry conservatively drains abandoned reservations. Cancellation is
+best effort at the remote service and does not prove remote execution or billing has stopped.
+Automatic model POST retries are disabled in the HTTP pipelines and both Bedrock SDK retry
+settings. Explicit application/job retries require fresh permits and consume another attempt.
+
+HTTP request JSON is unchanged. New execution context fields on internal request/domain models
+are excluded from JSON and supplied by trusted server code. Direct C# consumers of the Studio
+service must provide trusted context to preparation (or the existing request API); adapters now
+require an explicit permit. Prepared calls are single-use and preserve the accepted request and
+transcript bytes. Chat admission occurs before SSE headers where possible: budget/concurrency
+and ledger capacity denials return 429; unavailable, stopped or uninitialized authority returns
+503, with a bounded Retry-After. Existing unauthorized/invalid session handling remains separate.
+Reporting admission denial yields deterministic narrative fallback without a provider call;
+imagery returns a sanitized inference failure. Reporting cache hits do not acquire a permit.
+
+Installed failover, restore/rollback recovery, remote cancellation and end-to-end operational
+qualification remain pending. The control implementation and local tests do not establish those
+claims or full AI-authority compliance.

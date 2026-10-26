@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Infrastructure.Security.Admission;
 using Honua.Ai.StudioAiProxy.Abstractions;
 using Honua.Ai.StudioAiProxy.Adapters;
 using Honua.Ai.StudioAiProxy.Adapters.Bedrock;
@@ -22,6 +23,7 @@ internal static class StudioAiProxyServiceCollectionExtensions
 {
     public static IServiceCollection AddStudioAiProxy(this IServiceCollection services, IConfiguration configuration)
     {
+        services.AddAiExecutionAdmission(configuration);
         var section = configuration.GetSection(StudioAiProxyConfiguration.SectionName);
 
         services.AddOptions<StudioAiProxyConfiguration>()
@@ -50,7 +52,7 @@ internal static class StudioAiProxyServiceCollectionExtensions
         services.AddResilientHttpClient(
             "studio-ai-proxy",
             "studio-ai-proxy",
-            HttpResiliencePolicies.FastApiDefaults,
+            HttpResiliencePolicies.FastApiDefaults with { MaxRetryAttempts = 0 },
             configureHandler: () => new HttpClientHandler { AllowAutoRedirect = false });
         services.TryAddSingleton<StudioAiProxyApiKeyResolver>();
         services.TryAddSingleton(TimeProvider.System);

@@ -20,8 +20,29 @@ public sealed class BedrockChatClientAdapterTests
         var config = BedrockChatClientAdapter.CreateConfiguration("", null);
         config.IgnoreConfiguredEndpointUrls.Should().BeTrue();
         config.AllowAutoRedirect.Should().BeFalse();
+        config.MaxErrorRetry.Should().Be(0);
+        config.MaxStaleConnectionRetries.Should().Be(0);
         config.RegionEndpoint.SystemName.Should().Be(Honua.Ai.StudioAiProxy.StudioAiProxyConfiguration.DefaultBedrockRegion);
         BedrockChatClientAdapter.CreateConfiguration("eu-west-1", null).RegionEndpoint.SystemName.Should().Be("eu-west-1");
+    }
+
+    [UnitTest]
+    public async Task CreateConfiguration_Transient503_SendsOneActualSdkModelPost()
+    {
+        await using var endpoint = new Honua.TestKit.Security.LoopbackModelEndpoint();
+        var config = BedrockChatClientAdapter.CreateConfiguration("us-west-2", null);
+        // Only the test destination changes: use the production SDK retry settings and local static credentials.
+        config.ServiceURL = endpoint.Address.GetLeftPart(UriPartial.Authority);
+        config.AuthenticationRegion = "us-west-2";
+        using var runtime = new AmazonBedrockRuntimeClient(new Amazon.Runtime.BasicAWSCredentials("test", "test"), config);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await FluentActions.Awaiting(async () =>
+            await runtime.ConverseStreamAsync(new ConverseStreamRequest
+            {
+                ModelId = "test-model",
+                Messages = [new Message { Role = ConversationRole.User, Content = [new ContentBlock { Text = "test" }] }]
+            }, timeout.Token)).Should().ThrowAsync<Amazon.Runtime.AmazonServiceException>();
+        endpoint.Requests.Should().Be(1, "one permit must not hide SDK retries on a transient model failure");
     }
 
     [UnitTest]

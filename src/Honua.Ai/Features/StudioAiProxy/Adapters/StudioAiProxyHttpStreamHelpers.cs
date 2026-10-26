@@ -1,6 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.Security.Admission;
+
 namespace Honua.Ai.StudioAiProxy.Adapters;
 
 /// <summary>
@@ -23,10 +25,12 @@ internal static class StudioAiProxyHttpStreamHelpers
         HttpClient client,
         HttpRequestMessage request,
         CancellationToken linkedToken,
-        CancellationToken callerToken)
+        CancellationToken callerToken,
+        IAiExecutionPermit permit)
     {
         try
         {
+            await permit.AuthorizeSendAsync(linkedToken).ConfigureAwait(false);
             var response = await client
                 .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, linkedToken)
                 .ConfigureAwait(false);

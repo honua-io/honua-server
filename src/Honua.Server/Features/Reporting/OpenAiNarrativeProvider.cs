@@ -9,6 +9,7 @@ using Honua.Core.Features.Reporting;
 using Honua.Core.Features.Reporting.Abstractions;
 using Honua.Core.Features.Reporting.Domain;
 using Honua.Core.Features.Security;
+using Honua.Core.Features.Security.Admission;
 using Honua.Server.Features.Reporting.Models;
 using Honua.Server.Features.Reporting.Prompts;
 using Microsoft.Extensions.Caching.Memory;
@@ -31,13 +32,16 @@ internal sealed class OpenAiNarrativeProvider : INarrativeProvider
     private readonly IMemoryCache _cache;
     private readonly ReportingNarrativeConfiguration _configuration;
     private readonly ILogger<OpenAiNarrativeProvider> _logger;
+    private readonly IAiExecutionAdmission? _admission;
 
     public OpenAiNarrativeProvider(
         IHttpClientFactory httpClientFactory,
         IMemoryCache cache,
         IOptions<ReportingConfiguration> options,
-        ILogger<OpenAiNarrativeProvider> logger)
+        ILogger<OpenAiNarrativeProvider> logger,
+        IAiExecutionAdmission? admission = null)
     {
+        _admission = admission;
         _httpClientFactory = httpClientFactory;
         _cache = cache;
         _configuration = options.Value.Narrative;
@@ -75,7 +79,29 @@ internal sealed class OpenAiNarrativeProvider : INarrativeProvider
             return cached;
         }
 
-        var fill = await CallProviderAsync(promptJson, cancellationToken).ConfigureAwait(false);
+        if (_admission is null || draft.ExecutionContext is not { IsValid: true, UseCase: "reporting-narrative" } executionContext)
+            return NarrativeFill.Empty;
+
+        IAiExecutionPermit permit;
+        try
+        {
+            permit = await _admission.AcquireAsync(executionContext, cancellationToken).ConfigureAwait(false);
+        }
+        catch (AiAdmissionException)
+        {
+            return NarrativeFill.Empty;
+        }
+        await using var ownedPermit = permit;
+        NarrativeFill fill;
+        try
+        {
+            await permit.BeginInvocationAsync(cancellationToken).ConfigureAwait(false);
+            fill = await CallProviderAsync(promptJson, permit, permit.Token).ConfigureAwait(false);
+        }
+        catch (AiAdmissionException)
+        {
+            return NarrativeFill.Empty;
+        }
         if (fill.SlotText.Count > 0)
         {
             var ttl = TimeSpan.FromHours(Math.Max(1, _configuration.CacheTtlHours));
@@ -84,8 +110,9 @@ internal sealed class OpenAiNarrativeProvider : INarrativeProvider
         return fill;
     }
 
-    private async Task<NarrativeFill> CallProviderAsync(string promptJson, CancellationToken cancellationToken)
+    private async Task<NarrativeFill> CallProviderAsync(string promptJson, IAiExecutionPermit permit, CancellationToken cancellationToken)
     {
+        await permit.EnsureCurrentAsync(cancellationToken).ConfigureAwait(false);
         var client = _httpClientFactory.CreateClient(HttpClientName);
         client.Timeout = TimeSpan.FromSeconds(Math.Max(5, _configuration.TimeoutSeconds));
 
@@ -108,6 +135,7 @@ internal sealed class OpenAiNarrativeProvider : INarrativeProvider
         var requestJson = JsonSerializer.Serialize(chatRequest, ReportingJsonContext.Default.ReportingOpenAiChatRequest);
         httpRequest.Content = new StringContent(requestJson, Encoding.UTF8, "application/json");
 
+        await permit.AuthorizeSendAsync(cancellationToken).ConfigureAwait(false);
         using var response = await client.SendAsync(httpRequest, cancellationToken).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {

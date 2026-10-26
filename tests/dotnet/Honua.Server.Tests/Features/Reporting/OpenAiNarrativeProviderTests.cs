@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Net;
+using Honua.TestKit.Security;
 using System.Net.Sockets;
 using System.Text;
 using FluentAssertions;
@@ -58,7 +59,8 @@ public sealed class OpenAiNarrativeProviderTests
         });
         using var client = new HttpClient(handler);
         using var cache = new MemoryCache(new MemoryCacheOptions());
-        var provider = CreateProvider(client, cache);
+        var admission = new RecordingAiAdmission();
+        var provider = CreateProvider(client, cache, admission: admission);
 
         var first = await provider.GenerateAsync(CreateDraft(), CancellationToken.None);
         var second = await provider.GenerateAsync(CreateDraft(), CancellationToken.None);
@@ -66,6 +68,9 @@ public sealed class OpenAiNarrativeProviderTests
         first.SlotText["summary"].Should().Be("Approved narrative");
         second.Should().BeSameAs(first);
         handler.RequestCount.Should().Be(1);
+        admission.Acquired.Should().Be(1);
+        admission.Sent.Should().Be(1);
+        admission.Released.Should().Be(1);
     }
 
     [UnitTest]
@@ -172,12 +177,41 @@ public sealed class OpenAiNarrativeProviderTests
         handler.RequestCount.Should().Be(1);
     }
 
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public async Task GenerateAsync_DeniedAdmission_KeepsDeterministicWithoutProviderRequest()
+    {
+        using var handler = new ResponseHandler(() => throw new InvalidOperationException("must not send"));
+        using var client = new HttpClient(handler);
+        using var cache = new MemoryCache(new MemoryCacheOptions());
+        var admission = new RecordingAiAdmission { DenialCode = "budget_exceeded" };
+        var provider = CreateProvider(client, cache, admission: admission);
+        (await provider.GenerateAsync(CreateDraft(), default)).SlotText.Should().BeEmpty();
+        handler.RequestCount.Should().Be(0);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public async Task AddAnalysisReporting_Transient503_SendsOneActualModelPost()
+    {
+        await using var endpoint = new LoopbackModelEndpoint();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAnalysisReporting(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        { ["Reporting:Narrative:Enabled"] = "true" }).Build());
+        using var provider = services.BuildServiceProvider();
+        using var client = provider.GetRequiredService<IHttpClientFactory>().CreateClient("reporting-narrative");
+        using var response = await client.PostAsync(endpoint.Address, new StringContent("model request"));
+        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        endpoint.Requests.Should().Be(1);
+    }
+
     private static AiDisclosurePolicyOptions ApprovedDisclosure() => new()
     {
         Approvals = [new() { Provider = "openai", Kind = "openai", Destination = "https://api.openai.com/v1", Model = "gpt-4o-mini", UseCase = "reporting-narrative", DataClassification = "unclassified" }]
     };
 
-    private static OpenAiNarrativeProvider CreateProvider(HttpClient client, IMemoryCache cache, AiDisclosurePolicyOptions? disclosure = null)
+    private static OpenAiNarrativeProvider CreateProvider(HttpClient client, IMemoryCache cache, AiDisclosurePolicyOptions? disclosure = null, RecordingAiAdmission? admission = null)
         => new(new ClientFactory(client), cache, Options.Create(new ReportingConfiguration
         {
             Narrative = new ReportingNarrativeConfiguration
@@ -186,10 +220,11 @@ public sealed class OpenAiNarrativeProviderTests
                 ApiKey = "fake-api-key",
                 Disclosure = disclosure ?? ApprovedDisclosure()
             }
-        }), NullLogger<OpenAiNarrativeProvider>.Instance);
+        }), NullLogger<OpenAiNarrativeProvider>.Instance, admission ?? new RecordingAiAdmission());
 
     private static AnalysisReportDraft CreateDraft() => new()
     {
+        ExecutionContext = RecordingAiAdmission.Context("reporting-narrative"),
         TemplateId = "privacy-test",
         TemplateVersion = "1.0.0",
         ProcessId = "analytics.buffer-aggregate",

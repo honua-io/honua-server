@@ -1,6 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.TestKit.Security;
+using Honua.Core.Features.Security.Admission;
 using System.IdentityModel.Tokens.Jwt;
 using System.Net;
 using System.Net.Http.Headers;
@@ -534,10 +536,12 @@ public sealed class StudioAiProxyEndpointsTests : IAsyncLifetime
         builder.UseSetting("Oidc:Generic:ClientId", Audience);
         builder.UseSetting("Oidc:Generic:DisplayName", "Studio test IdP");
 
+        builder.ConfigureServices(services => services.AddSingleton<IAiExecutionAdmission, RecordingAiAdmission>());
         builder.ConfigureAppConfiguration((_, configBuilder) =>
         {
             configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
             {
+                ["AiExecutionAdmission:DeploymentId"] = "test-deployment",
                 ["StudioAiProxy:Enabled"] = "true",
                 ["StudioAiProxy:DefaultProvider"] = ProviderName,
                 [$"StudioAiProxy:Providers:{ProviderName}:Kind"] = "openai",

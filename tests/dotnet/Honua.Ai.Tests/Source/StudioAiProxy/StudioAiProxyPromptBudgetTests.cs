@@ -1,6 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.TestKit.Security;
+using Honua.Core.Features.Security.Admission;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Ai.Protocols.Mcp;
@@ -242,7 +244,7 @@ public sealed class StudioAiProxyPromptBudgetTests
             Options.Create(configuration),
             [new ConfiguredAdapter()],
             new StudioAiTranscriptSigner(Options.Create(configuration), TimeProvider.System),
-            NullLogger<StudioAiProxyService>.Instance);
+            NullLogger<StudioAiProxyService>.Instance, new RecordingAiAdmission());
 
     private sealed class ConfiguredAdapter : IStudioAiProxyAdapter
     {
@@ -253,6 +255,7 @@ public sealed class StudioAiProxyPromptBudgetTests
         public IAsyncEnumerable<StudioAiChatEvent> StreamAsync(
             StudioAiProxyProviderOptions options,
             StudioAiChatRequest request,
+            IAiExecutionPermit permit,
             CancellationToken cancellationToken)
             => throw new NotSupportedException("Validation-only adapter.");
     }

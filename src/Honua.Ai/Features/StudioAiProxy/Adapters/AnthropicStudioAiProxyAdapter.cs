@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.Security.Admission;
 using System.Buffers;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
@@ -58,10 +59,12 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter
     public async IAsyncEnumerable<StudioAiChatEvent> StreamAsync(
         StudioAiProxyProviderOptions options,
         StudioAiChatRequest request,
+        IAiExecutionPermit permit,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(request);
+        await permit.EnsureCurrentAsync(cancellationToken).ConfigureAwait(false);
 
         var model = string.IsNullOrWhiteSpace(request.Model) ? options.Model : request.Model!;
         string? apiKey = null;
@@ -103,7 +106,7 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter
         var stopwatch = Stopwatch.StartNew();
 
         var (response, sendTimedOut, requestError) = await StudioAiProxyHttpStreamHelpers
-            .SendSafeAsync(client, httpRequest, timeoutCts.Token, cancellationToken)
+            .SendSafeAsync(client, httpRequest, timeoutCts.Token, cancellationToken, permit)
             .ConfigureAwait(false);
 
         if (sendTimedOut)

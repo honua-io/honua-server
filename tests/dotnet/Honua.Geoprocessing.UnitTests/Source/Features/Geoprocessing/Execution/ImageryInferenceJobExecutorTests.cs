@@ -1,6 +1,10 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.TestKit.Security;
+using Honua.Core.Features.Security.Admission;
+using Honua.Infrastructure.Security.Admission;
+using Honua.Core.Features.Authorization.Domain;
 using System.Buffers.Binary;
 using System.Net;
 using System.Text;
@@ -1227,6 +1231,12 @@ public sealed class ImageryInferenceJobExecutorTests
 
         return new ExecutionJobRecord
         {
+            Audit = new OperationAuditInfo
+            {
+                RequestedBy = "ApiKey:api-key:11111111-1111-1111-1111-111111111111",
+                SubmitterSecurityContext = new JobSecurityContext(null, null, [])
+                { OwnerActorId = "ApiKey:api-key:11111111-1111-1111-1111-111111111111" }
+            },
             OperationId = "op-slot",
             Status = ExecutionJobStatus.Succeeded,
             CreatedAt = DateTimeOffset.UtcNow,
@@ -1295,14 +1305,14 @@ public sealed class ImageryInferenceJobExecutorTests
         var client = new HttpImageryInferenceClient(
             httpClientFactory,
             NullLogger<HttpImageryInferenceClient>.Instance,
-            secretProvider);
+            secretProvider, new RecordingAiAdmission());
 
         return new ImageryInferenceJobExecutor(
             inferenceMonitor,
             executorMonitor,
             [client],
             NullLogger<ImageryInferenceJobExecutor>.Instance,
-            rangeReaders);
+            rangeReaders, new AiExecutionContextFactory(Options.Create(new AiExecutionAdmissionOptions { DeploymentId = "test-deployment" })));
     }
 
     private static IJobExecutionContext CreateContext(string operationId)
@@ -1311,7 +1321,7 @@ public sealed class ImageryInferenceJobExecutorTests
     private static IJobExecutionContext CreateContext(string operationId, out CapturedArtifact published)
     {
         var context = Substitute.For<IJobExecutionContext>();
-        context.OperationId.Returns(operationId);
+        context.OperationId.Returns("op-test");
 
         var box = new CapturedArtifact(null);
         context
@@ -1353,6 +1363,12 @@ public sealed class ImageryInferenceJobExecutorTests
 
         return new ExecutionJobRecord
         {
+            Audit = new OperationAuditInfo
+            {
+                RequestedBy = "ApiKey:api-key:11111111-1111-1111-1111-111111111111",
+                SubmitterSecurityContext = new JobSecurityContext(null, null, [])
+                { OwnerActorId = "ApiKey:api-key:11111111-1111-1111-1111-111111111111" }
+            },
             OperationId = "op-test",
             Status = ExecutionJobStatus.Running,
             CreatedAt = DateTimeOffset.UtcNow,

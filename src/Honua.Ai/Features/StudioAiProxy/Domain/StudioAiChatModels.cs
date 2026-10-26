@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Text.Json;
+using Honua.Core.Features.Security.Admission;
 using System.Text.Json.Serialization;
 using System.Text;
 
@@ -156,6 +157,10 @@ public sealed class StudioAiToolChoice
 /// </summary>
 public sealed class StudioAiChatRequest
 {
+    /// <summary>Server-built admission identity for trusted programmatic calls, never caller JSON.</summary>
+    [JsonIgnore]
+    public AiExecutionContext? ExecutionContext { get; init; }
+
     internal byte[]? AcceptedRequestJson { get; init; }
 
     /// <summary>Release-certification bindings that require a signed transcript.</summary>
