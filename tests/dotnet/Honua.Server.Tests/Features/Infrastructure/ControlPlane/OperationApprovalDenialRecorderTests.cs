@@ -53,6 +53,7 @@ public sealed class OperationApprovalDenialRecorderTests
     [InlineData("null")]
     [InlineData("empty")]
     [InlineData("throw")]
+    [InlineData("uncancelled-cancel")]
     [InlineData("nonpersisted")]
     [InlineData("missing")]
     public async Task RecordAsync_UnavailableSink_ThrowsSafeTypedException(string mode)
@@ -119,6 +120,7 @@ public sealed class OperationApprovalDenialRecorderTests
             Event = auditEvent;
             onWrite?.Invoke(cancellationToken);
             if (mode == "throw") throw new InvalidOperationException(Canary);
+            if (mode == "uncancelled-cancel") throw new OperationCanceledException(Canary);
             return Task.FromResult<string?>(mode switch { "null" => null, "empty" => " ", _ => "receipt" });
         }
         public void Dispose() => Disposed = true;

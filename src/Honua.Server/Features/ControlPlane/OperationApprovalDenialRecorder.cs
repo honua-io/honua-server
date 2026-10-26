@@ -54,7 +54,7 @@ internal static class OperationApprovalDenialRecorder
             cancellationToken.ThrowIfCancellationRequested();
             if (string.IsNullOrWhiteSpace(receipt)) throw new ServiceUnavailableException(UnavailableMessage);
         }
-        catch (OperationCanceledException) { throw; }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // The global exception boundary logs the exception. Never retain a sink error as an inner exception.
