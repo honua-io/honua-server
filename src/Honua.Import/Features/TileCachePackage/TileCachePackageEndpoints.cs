@@ -13,7 +13,7 @@ using Microsoft.Extensions.Options;
 namespace Honua.Import.TileCachePackage;
 
 /// <summary>
-/// Admin import endpoint + public serving binding for Esri tile/vector-tile cache
+/// Admin import endpoint + serving binding for Esri tile/vector-tile cache
 /// packages (<c>.tpk</c>/<c>.tpkx</c>/<c>.vtpk</c>) (#1269).
 ///
 /// The importer ingests a prebuilt package into Honua's tile catalog; the serving
@@ -43,7 +43,11 @@ internal static class TileCachePackageEndpoints
             .WithSummary("Import an Esri tile/vector-tile cache package (.tpk/.tpkx/.vtpk) into Honua's tile catalog and bind it to a served tileset")
             .DisableAntiforgery();
 
-        // Public serving binding. Imported caches serve through these tile routes.
+        // Serving binding. Each request binds the cache to the layer it was written for and
+        // requires that layer's read authorization (ImportedTileCacheAccess), so a public
+        // layer's cache stays anonymous and a protected layer's cache does not. A denied or
+        // unbound cache answers exactly like a missing one: the cache id is derivable from
+        // non-secret inputs, so a distinct 401/403 would confirm the cache exists.
         var serveGroup = app.MapGroup("/tiles/imported")
             .WithTags("TileCachePackageServe");
 
@@ -163,7 +167,8 @@ internal static class TileCachePackageEndpoints
         var cancellationToken = context.RequestAborted;
         var reader = context.RequestServices.GetRequiredService<IImportedTileCacheReader>();
         var info = await reader.GetTileCacheAsync(tileCacheId, cancellationToken).ConfigureAwait(false);
-        if (info is null)
+        if (info is null ||
+            !await ImportedTileCacheAccess.CanReadAsync(context, info.LayerIdentifier, cancellationToken).ConfigureAwait(false))
         {
             return Results.NotFound();
         }
@@ -201,6 +206,13 @@ internal static class TileCachePackageEndpoints
         }
 
         var reader = context.RequestServices.GetRequiredService<IImportedTileCacheReader>();
+        var info = await reader.GetTileCacheAsync(tileCacheId, cancellationToken).ConfigureAwait(false);
+        if (info is null ||
+            !await ImportedTileCacheAccess.CanReadAsync(context, info.LayerIdentifier, cancellationToken).ConfigureAwait(false))
+        {
+            return Results.NotFound();
+        }
+
         var tile = await reader.GetTileAsync(tileCacheId, z, x, y, cancellationToken).ConfigureAwait(false);
         if (tile is null)
         {

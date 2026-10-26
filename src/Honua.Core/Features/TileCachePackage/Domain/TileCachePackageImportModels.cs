@@ -17,7 +17,9 @@ public sealed record TileCachePackageImportRequest
     /// <summary>
     /// Logical tileset identifier the imported tiles bind to. Becomes the
     /// catalog layer identifier and the address segment served tiles are fetched
-    /// under. Required.
+    /// under. Required. Tiles are served only when it names one published layer
+    /// (its collection id, publication id or resource id), and only to callers
+    /// allowed to read that layer.
     /// </summary>
     public required string TilesetId { get; init; }
 
