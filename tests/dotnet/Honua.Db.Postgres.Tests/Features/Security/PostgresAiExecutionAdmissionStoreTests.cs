@@ -219,7 +219,7 @@ public sealed class PostgresAiExecutionAdmissionStoreTests(PostgresFixture fixtu
 
     private PostgresAiExecutionAdmissionStore Store()
     {
-        var source = NpgsqlDataSource.Create(fixture.DataSource.ConnectionString);
+        var source = NpgsqlDataSource.Create(fixture.ConnectionString);
         _sources.Add(source);
         return new(new TestConnections(source), _schema);
     }
