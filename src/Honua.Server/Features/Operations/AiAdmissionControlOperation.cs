@@ -21,6 +21,8 @@ namespace Honua.Server.Features.Operations;
 internal static class AiAdmissionControlOperation
 {
     internal const string ActorPin = "__aiAcceptedActorId";
+    private static readonly string[] InputParameterNames = ["deploymentId", "expectedGeneration", "expectedRevision", "expectedEpoch", "policy"];
+    private static readonly string[] ExpectedStateParameterNames = ["expectedGeneration", "expectedRevision", "expectedEpoch"];
     internal static readonly IReadOnlyDictionary<string, AiAdmissionControlAction> Actions =
         new Dictionary<string, AiAdmissionControlAction>(StringComparer.Ordinal)
         {
@@ -52,7 +54,7 @@ internal static class AiAdmissionControlOperation
             Determinism = OperationDeterminism.RuntimeDynamic,
             SupportsDryRun = false
         },
-        InputSchema = new[] { "deploymentId", "expectedGeneration", "expectedRevision", "expectedEpoch", "policy" }
+        InputSchema = InputParameterNames
             .Select(name => new OperationParameterDescriptor
             {
                 Name = name,
@@ -88,7 +90,7 @@ internal static class AiAdmissionControlOperation
         }
         else if (parameters.ContainsKey("policy"))
             throw new ArgumentException("This AI admission action does not change policy.");
-        var expectedCount = new[] { "expectedGeneration", "expectedRevision", "expectedEpoch" }.Count(parameters.ContainsKey);
+        var expectedCount = ExpectedStateParameterNames.Count(parameters.ContainsKey);
         if (expectedCount is not (0 or 3))
             throw new ArgumentException("Supply the complete AI admission expected-state tuple or omit it.");
         if (expectedCount == 3)
