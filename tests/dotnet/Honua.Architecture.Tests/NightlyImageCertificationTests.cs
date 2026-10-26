@@ -108,21 +108,18 @@ public sealed partial class NightlyImageCertificationTests
         var select = Job(nightly, "select-candidate");
 
         // Hand-off: a trunk run whose head is not the candidate tags it and re-dispatches.
-        select.Should().Contain("actions: write");
-        select.Should().Contain("contents: write");
         select.Should().Contain("mode: ${{ steps.route.outputs.mode }}");
         select.Should().Contain("publish: ${{ steps.route.outputs.publish }}");
-        var route = select[select.IndexOf("id: route", StringComparison.Ordinal)..];
-        route.Should().Contain("tag=\"nightly-candidate-${CANDIDATE_SHA:0:7}\"");
-        route.Should().Contain("-f ref=\"refs/tags/${tag}\" -f sha=\"${CANDIDATE_SHA}\"");
-        route.Should().Contain("gh workflow run nightly-container-build.yml --repo \"${GITHUB_REPOSITORY}\" --ref \"${tag}\"");
+        var route = Step(select, "Route the build to a run at the selected sha");
+        var handoff = Step(select, "Tag the selected sha and re-dispatch this workflow at it");
+        handoff.Should().Contain("tag=\"nightly-candidate-${CANDIDATE_SHA:0:7}\"");
         route.Should().Contain("refs/tags/nightly-candidate-*) mode=build-candidate ;;",
             "a candidate-tag run builds and never re-dispatches, so the hand-off cannot loop");
         route.Should().Contain("if [ \"${CANDIDATE_SHA}\" = \"${GITHUB_SHA}\" ]; then mode=build-trunk; else mode=redirect; fi",
             "only a trunk run whose head is not the candidate hands off");
         route.Should().Contain("if [ \"${mode}\" != redirect ] && [ \"${CANDIDATE_SHA}\" != \"${GITHUB_SHA}\" ]; then");
-        route.Should().Contain("select(.status != \"completed\")", "a queued or running candidate build is not duplicated");
-        route.Should().Contain("elif [ \"${imaged}\" != 0 ]; then",
+        handoff.Should().Contain("select(.status != \"completed\")", "a queued or running candidate build is not duplicated");
+        handoff.Should().Contain("elif [ \"${imaged}\" != 0 ]; then",
             "a candidate already imaged on its tag is not rebuilt, so a later failed attempt cannot file red checks on it");
 
         // A candidate-tag run images exactly its own commit, re-proving certification.
@@ -130,9 +127,53 @@ public sealed partial class NightlyImageCertificationTests
         selectStep.Should().Contain("\"refs/tags/nightly-candidate-${GITHUB_SHA:0:7}\"");
         selectStep.Should().Contain("--sha \"${GITHUB_SHA}\"");
 
-        // Only the selector may write; every other job keeps contents: read.
-        nightly.Should().Contain("      contents: write\n", Exactly.Once());
-        nightly.Should().Contain("      actions: write\n", Exactly.Once());
+        // honua-io/honua-server#6613 (founder decision D10): the Actions token cannot create a
+        // candidate tag whose workflow files differ from trunk head (403, it can never hold
+        // `workflows`). It is read-only in every job; the two hand-off writes use a short-lived,
+        // repository-scoped GitHub App token, and a missing app fails by name, never by fallback.
+        Regex.IsMatch(nightly, @"^\s+(contents|actions): write$", RegexOptions.Multiline).Should().BeFalse(
+            "no job grants the Actions token a write to contents or actions");
+        select.Should().Contain("      actions: read\n      checks: read\n      contents: read\n");
+
+        var require = Step(select, "Require the release GitHub App for the candidate hand-off");
+        var mint = Step(select, "Mint the release GitHub App token for the candidate hand-off");
+        foreach (var step in new[] { require, mint, handoff })
+        {
+            step.Should().Contain("        if: steps.route.outputs.mode == 'redirect'\n",
+                "only a hand-off needs the app; trunk-head, candidate-tag and proof runs never touch it");
+        }
+
+        select.IndexOf(require, StringComparison.Ordinal).Should().BeLessThan(select.IndexOf(mint, StringComparison.Ordinal));
+        select.IndexOf(mint, StringComparison.Ordinal).Should().BeLessThan(select.IndexOf(handoff, StringComparison.Ordinal));
+        require.Should().Contain("HAS_APP_ID: ${{ secrets.HONUA_RELEASE_APP_ID != '' }}");
+        require.Should().Contain("HAS_APP_PRIVATE_KEY: ${{ secrets.HONUA_RELEASE_APP_PRIVATE_KEY != '' }}");
+        require.Should().Contain("missing+=(HONUA_RELEASE_APP_ID)");
+        require.Should().Contain("missing+=(HONUA_RELEASE_APP_PRIVATE_KEY)");
+        require.Should().Contain("::error::Nightly candidate hand-off needs the honua-release GitHub App");
+        require.Should().Contain("Contents: write, Workflows: write and Actions: write; install it on honua-server only",
+            "the failure names the exact setup the founder must perform");
+        require.Should().Contain("exit 1");
+        require.Should().NotContain("secrets.HONUA_RELEASE_APP_PRIVATE_KEY }}", "the key never enters the guard's environment");
+
+        mint.Should().Contain("id: handoff-token");
+        mint.Should().Contain("uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0");
+        mint.Should().Contain("app-id: ${{ secrets.HONUA_RELEASE_APP_ID }}");
+        mint.Should().Contain("private-key: ${{ secrets.HONUA_RELEASE_APP_PRIVATE_KEY }}");
+        mint.Should().Contain("repositories: honua-server\n");
+        mint.Should().Contain("permission-contents: write\n");
+        mint.Should().Contain("permission-workflows: write\n");
+        mint.Should().Contain("permission-actions: write\n");
+        Regex.Count(mint, @"permission-[a-z-]+:").Should().Be(3, "the token is scoped to exactly the hand-off's writes");
+        mint.Should().NotContain("continue-on-error");
+
+        // Reads use the Actions token; only the tag create and the dispatch use the app token.
+        handoff.Should().Contain("GH_TOKEN: ${{ github.token }}");
+        handoff.Should().Contain("HANDOFF_TOKEN: ${{ steps.handoff-token.outputs.token }}");
+        handoff.Should().Contain("GH_TOKEN=\"${HANDOFF_TOKEN}\" gh api -X POST \"repos/${GITHUB_REPOSITORY}/git/refs\" \\\n              -f ref=\"refs/tags/${tag}\" -f sha=\"${CANDIDATE_SHA}\"");
+        handoff.Should().Contain("GH_TOKEN=\"${HANDOFF_TOKEN}\" gh workflow run nightly-container-build.yml --repo \"${GITHUB_REPOSITORY}\" --ref \"${tag}\"");
+        Regex.Count(handoff, @"gh api -X POST").Should().Be(1);
+        Regex.Count(handoff, @"gh workflow run").Should().Be(1);
+        route.Should().NotContain("GH_TOKEN", "routing decides the mode and holds no token");
 
         // Candidate-tag runs share trunk base mirrors, one build per candidate sha.
         nightly.Should().Contain("!startsWith(github.ref, 'refs/tags/nightly-candidate-')) && format('/proof-{0}', github.run_id)");
@@ -390,6 +431,14 @@ public sealed partial class NightlyImageCertificationTests
         start.Should().BeGreaterThan(-1, $"job '{jobId}' must exist");
         var next = NextJob().Match(workflow, start + jobId.Length + 4);
         return next.Success ? workflow[(start + 1)..next.Index] : workflow[(start + 1)..];
+    }
+
+    private static string Step(string job, string name)
+    {
+        var start = job.IndexOf($"\n      - name: {name}\n", StringComparison.Ordinal);
+        start.Should().BeGreaterThan(-1, $"step '{name}' must exist");
+        var next = job.IndexOf("\n      - name: ", start + 1, StringComparison.Ordinal);
+        return next > -1 ? job[(start + 1)..(next + 1)] : job[(start + 1)..];
     }
 
     private static string JobName(string workflow, string jobId)
