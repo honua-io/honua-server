@@ -778,7 +778,23 @@ jobs:
           HONUA_REQUIRE_GDAL_CLI: "true"
         run: |
           set -euo pipefail
-          sudo apt-get update -qq
+          # The apt mirror occasionally stalls on a gate runner and this step has
+          # burned its whole 10-minute budget with no output (2026-10-26, three
+          # runs on two branches). Bound every apt call and retry it instead of
+          # letting one stalled mirror fail the gate.
+          apt_retry() {
+            local attempt
+            for attempt in 1 2 3; do
+              if timeout 150 sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 "$@"; then
+                return 0
+              fi
+              echo "::warning::apt-get $1 attempt ${attempt} failed or stalled; retrying"
+              sleep 10
+            done
+            echo "::error::apt-get $1 failed after 3 bounded attempts"
+            return 1
+          }
+          apt_retry update -qq
           # Category=GDAL is the whole [GdalCliFact] set, not just the gdaldem /
           # ogr2ogr cases. It also selects the two proximity correctness proofs:
           # Distance_... shells out to the gdal_proximity.py utility, and
@@ -788,7 +804,7 @@ jobs:
           # installs for this identical test surface and prefer the distro interpreter
           # that owns the apt-installed modules. (GITHUB_PATH only affects LATER steps,
           # so the PATH edit has to be an export inside this one.)
-          sudo apt-get install -yqq gdal-bin python3-gdal python3-numpy python3-scipy
+          apt_retry install -yqq gdal-bin python3-gdal python3-numpy python3-scipy
           export PATH="/usr/bin:${PATH}"
           /usr/bin/python3 -c 'from osgeo import gdal; from scipy import ndimage; import numpy'
           for tool in gdaldem ogr2ogr gdal_translate gdalinfo gdal_proximity.py python3; do
