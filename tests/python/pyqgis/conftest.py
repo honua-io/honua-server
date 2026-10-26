@@ -96,6 +96,16 @@ class PyQgisCompatibilityRuntime:
     server_config_revision: str
 
 
+# Protocol version stamped on each envelope. WFS is certified on 2.0.0 (the
+# nightly validator enforces it); a COG has no protocol version, so its envelope
+# names the GeoTIFF container the gdal provider reads.
+_PROTOCOL_VERSIONS = {
+    "wfs": "2.0.0",
+    "ogc-features": "1.0",
+    "cog": "GeoTIFF",
+}
+
+
 # ---------------------------------------------------------------------------
 # Certification evidence writer (envelope-based)
 # ---------------------------------------------------------------------------
@@ -204,7 +214,7 @@ class CertificationEvidenceCollector:
             "client_lane": "desktop-qgis",
             "client_version": self.client_version,
             "protocol": self.protocol,
-            "protocol_version": "2.0.0" if self.protocol == "wfs" else "1.0",
+            "protocol_version": _PROTOCOL_VERSIONS.get(self.protocol, "1.0"),
             "environment": env,
             "results": [
                 {
@@ -329,6 +339,7 @@ def _discover_wfs_typename(base_url: str) -> str | None:
 
 _oapif_evidence: CertificationEvidenceCollector | None = None
 _wfs_evidence: CertificationEvidenceCollector | None = None
+_cog_evidence: CertificationEvidenceCollector | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -470,6 +481,20 @@ def wfs_evidence(
             pyqgis_runtime, qgis_version, "wfs"
         )
     return _wfs_evidence
+
+
+@pytest.fixture(scope="session")
+def cog_evidence(
+    pyqgis_runtime: PyQgisCompatibilityRuntime,
+    qgis_version: str,
+) -> CertificationEvidenceCollector:
+    """Session-scoped COG range-read certification evidence collector."""
+    global _cog_evidence
+    if _cog_evidence is None:
+        _cog_evidence = CertificationEvidenceCollector(
+            pyqgis_runtime, qgis_version, "cog"
+        )
+    return _cog_evidence
 
 
 @pytest.fixture(scope="session")
@@ -692,6 +717,7 @@ def render_layer_headless_with_symbol(
 def _write_cert_evidence(
     oapif_evidence: CertificationEvidenceCollector,
     wfs_evidence: CertificationEvidenceCollector,
+    cog_evidence: CertificationEvidenceCollector,
 ) -> Generator[None, None, None]:
     """Persist .cert.json envelopes at session teardown.
 
@@ -714,6 +740,10 @@ def _write_cert_evidence(
     if wfs_evidence.has_records:
         path = results_dir / f"{run_id}-desktop-qgis-wfs{suffix}.cert.json"
         wfs_evidence.write_envelope(path)
+
+    if cog_evidence.has_records:
+        path = results_dir / f"{run_id}-desktop-qgis-cog{suffix}.cert.json"
+        cog_evidence.write_envelope(path)
 
 
 # ---------------------------------------------------------------------------
@@ -753,6 +783,8 @@ def _collector_for_item(item: pytest.Item) -> CertificationEvidenceCollector | N
         return _oapif_evidence
     if "wfs" in module:
         return _wfs_evidence
+    if "cog" in module:
+        return _cog_evidence
     return None
 
 
