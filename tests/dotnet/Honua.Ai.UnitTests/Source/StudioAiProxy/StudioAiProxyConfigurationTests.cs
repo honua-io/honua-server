@@ -4,6 +4,8 @@
 using FluentAssertions;
 using Honua.Ai.StudioAiProxy;
 using Honua.TestKit.Attributes;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.StudioAiProxy;
 
@@ -110,6 +112,48 @@ public sealed class StudioAiProxyConfigurationTests
         var result = validator.Validate(name: null, options);
 
         result.Succeeded.Should().BeTrue(because: "a local OpenAI-compatible endpoint (Ollama/vLLM) need not be HTTPS");
+    }
+
+    [Theory]
+    [InlineData("http://127.0.0.1:8000/v1", true)]
+    [InlineData("http://[::1]:8000/v1", true)]
+    [InlineData("https://provider.example/v1", true)]
+    [InlineData("http://provider.example/v1", false)]
+    [InlineData("http://10.0.0.5:8000/v1", false)]
+    [InlineData("http://localhost.provider.example/v1", false)]
+    [InlineData("http://localhost@provider.example/v1", false)]
+    [InlineData("ftp://localhost/v1", false)]
+    [InlineData("/v1", false)]
+    public void Validate_OpenAiProvider_RequiresHttpsExceptLoopback(string endpoint, bool allowed)
+    {
+        var options = ConfigWith("model", new StudioAiProxyProviderOptions
+        {
+            Kind = StudioAiProxyConfiguration.OpenAiKind,
+            Endpoint = endpoint,
+            Model = "model"
+        });
+
+        var result = new StudioAiProxyConfigurationValidator().Validate(name: null, options);
+
+        result.Succeeded.Should().Be(allowed);
+    }
+
+    [UnitTest]
+    public void AddStudioAiProxy_ProviderHttpClient_DoesNotFollowRedirects()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddStudioAiProxy(new ConfigurationBuilder().Build());
+        using var provider = services.BuildServiceProvider();
+        var handler = provider.GetRequiredService<IHttpMessageHandlerFactory>()
+            .CreateHandler("studio-ai-proxy");
+        while (handler is DelegatingHandler delegating)
+        {
+            handler = delegating.InnerHandler!;
+        }
+
+        handler.Should().BeOfType<HttpClientHandler>()
+            .Which.AllowAutoRedirect.Should().BeFalse();
     }
 
     [UnitTest]
