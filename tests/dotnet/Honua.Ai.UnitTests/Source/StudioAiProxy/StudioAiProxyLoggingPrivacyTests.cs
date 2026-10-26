@@ -88,7 +88,11 @@ public sealed class StudioAiProxyLoggingPrivacyTests
     {
         var options = new StudioAiProxyProviderOptions
         {
-            Endpoint = "https://provider.example/v1", Model = "model", ApiKey = "test-key", ApiKeyFromEnvironment = true, Region = "us-west-2"
+            Endpoint = "https://provider.example/v1",
+            Model = "model",
+            ApiKey = "test-key",
+            ApiKeyFromEnvironment = true,
+            Region = "us-west-2"
         };
         var request = new StudioAiChatRequest { Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = Canary }] };
         var events = new List<StudioAiChatEvent>();
