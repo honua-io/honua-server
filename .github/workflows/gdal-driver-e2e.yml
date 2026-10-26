@@ -149,15 +149,31 @@ jobs:
             exit 1
           fi
 
-          # Confirm CRS metadata survived the round-trip. The seed uses
-          # EPSG:4326; ogrinfo prints the SRS authority + code in the layer
-          # metadata block.
-          if ! docker run --rm \
+          # Confirm CRS metadata survived the round-trip. The seed stores
+          # SRID 4326 (longitude/latitude ordinates), which honua-server
+          # advertises as storageCrs OGC:CRS84 since #5040 so clients keep
+          # lon/lat order. GDAL's OAPIF driver adopts that storageCrs, so the
+          # GeoPackage layer must carry OGC:CRS84 with a 1,2 axis mapping.
+          # An EPSG:4326 (lat/lon) layer here would mean the axis-order fix
+          # regressed, so it is deliberately not accepted.
+          storage_crs=$(curl -fsS \
+            "${GDAL_E2E_BASE_URL}${GDAL_E2E_OAPIF_PATH}/collections/${GDAL_E2E_COLLECTION_ID}" \
+            | jq -r '.storageCrs // empty')
+          echo "Advertised storageCrs: ${storage_crs:-<none>}"
+          if [ "$storage_crs" != "http://www.opengis.net/def/crs/OGC/1.3/CRS84" ]; then
+            echo "::error::Collection storageCrs is '${storage_crs}', expected OGC:CRS84 for the SRID 4326 seed"
+            exit 1
+          fi
+          docker run --rm \
             -v "${PWD}/tests/TestResults/gdal:/out" \
             "$GDAL_IMAGE" \
-            ogrinfo -ro -al -so /out/out.gpkg \
-            | grep -E 'AUTHORITY\["EPSG","4326"\]|ID\["EPSG",4326\]' >/dev/null; then
-            echo "::error::Round-tripped GeoPackage lost EPSG:4326 CRS metadata"
+            ogrinfo -ro -al -so /out/out.gpkg > tests/TestResults/gdal/gpkg-ogrinfo.txt
+          if ! grep -E 'AUTHORITY\["OGC","CRS84"\]|ID\["OGC","CRS84"\]' tests/TestResults/gdal/gpkg-ogrinfo.txt >/dev/null; then
+            echo "::error::Round-tripped GeoPackage lost OGC:CRS84 (WGS 84 lon/lat) CRS metadata"
+            exit 1
+          fi
+          if ! grep -E '^Data axis to CRS axis mapping: 1,2$' tests/TestResults/gdal/gpkg-ogrinfo.txt >/dev/null; then
+            echo "::error::Round-tripped GeoPackage does not keep longitude/latitude axis order"
             exit 1
           fi
 
@@ -177,7 +193,7 @@ jobs:
             echo "Acceptance evidence:"
             echo ""
             echo "- \`ogrinfo\` listed the seeded collection (see \`ogrinfo.txt\`)."
-            echo "- \`ogr2ogr\` round-tripped the collection to GeoPackage with matching feature count and EPSG:4326 CRS."
+            echo "- \`ogr2ogr\` round-tripped the collection to GeoPackage with matching feature count and OGC:CRS84 (WGS 84 lon/lat) CRS."
           } > tests/TestResults/gdal/summary.md
 
       - name: Upload GDAL E2E evidence
