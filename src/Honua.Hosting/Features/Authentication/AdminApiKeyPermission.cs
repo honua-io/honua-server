@@ -184,6 +184,47 @@ internal static class AdminApiKeyPermission
         return IsSafeMethod(httpMethod);
     }
 
+    /// <summary>
+    /// Determines whether a principal may create, rotate or revoke credentials or change
+    /// identity authority (API keys, user roles, OAuth clients). This is stricter than
+    /// admin write: <c>admin:write</c> and <c>admin:manage</c> keys administer the server
+    /// and keep read access to credentials, but creating, rotating or revoking them needs
+    /// full-admin authority.
+    /// </summary>
+    /// <remarks>
+    /// Admitted: an explicit full-admin grant (<c>admin</c>, <c>*</c>, <c>admin:*</c>);
+    /// an <c>admin</c>-role principal with no permission claims (bootstrap password,
+    /// client certificate, human admin session); or a server-minted approved-operation
+    /// credential bound to exactly this method and path.
+    /// </remarks>
+    /// <param name="principal">The authenticated principal.</param>
+    /// <param name="httpMethod">The request HTTP method.</param>
+    /// <param name="requestPath">The request path.</param>
+    /// <returns><see langword="true"/> when the principal holds credential-management authority.</returns>
+    internal static bool HasCredentialManagementAuthority(ClaimsPrincipal principal, string? httpMethod, string? requestPath)
+    {
+        ArgumentNullException.ThrowIfNull(principal);
+
+        var permissions = principal.FindAll(PermissionClaimType).Select(claim => claim.Value?.Trim()).ToList();
+        if (permissions.Count == 0)
+        {
+            return principal.IsInRole("admin");
+        }
+
+        if (!string.IsNullOrWhiteSpace(httpMethod)
+            && requestPath?.StartsWith(AdminApiPathPrefix, StringComparison.Ordinal) == true)
+        {
+            var expectedGrant = CreateApprovedOperationGrant(httpMethod, requestPath);
+            if (permissions.Any(grant => string.Equals(grant, expectedGrant, StringComparison.Ordinal)))
+            {
+                return true;
+            }
+        }
+
+        return permissions.Any(grant =>
+            FullAdminGrants.Any(full => string.Equals(grant, full, StringComparison.OrdinalIgnoreCase)));
+    }
+
     /// <summary>Creates the internal grant carried by a short-lived approved-operation credential.</summary>
     internal static string CreateApprovedOperationGrant(string httpMethod, string requestPath)
     {

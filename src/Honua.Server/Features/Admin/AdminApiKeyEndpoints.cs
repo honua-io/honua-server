@@ -34,17 +34,22 @@ internal static partial class AdminApiKeyEndpoints
             .WithDisplayName("List Admin API Keys")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
 
+        // Issuing, rotating or revoking keys needs full-admin credential authority; general
+        // admin write (admin:write, admin:manage) keeps the read routes only.
         group.MapPost("/", HandleCreateApiKey)
             .WithDisplayName("Create Admin API Key")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            .RequireAdminCredentialManagementAuthorization();
 
         group.MapPost("/{id:guid}/rotate", HandleRotateApiKey)
             .WithDisplayName("Rotate Admin API Key")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            .RequireAdminCredentialManagementAuthorization();
 
         group.MapPost("/{id:guid}/revoke", HandleRevokeApiKey)
             .WithDisplayName("Revoke Admin API Key")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            .RequireAdminCredentialManagementAuthorization();
 
         group.MapGet("/{id:guid}/effective-permissions", HandleGetEffectivePermissions)
             .WithDisplayName("Get Admin API Key Effective Permissions")

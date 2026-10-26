@@ -35,9 +35,12 @@ internal static partial class OAuthClientEndpoints
             .WithDisplayName("List OAuth Clients")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
 
+        // Registering or deleting a client issues or removes a credential, so general admin
+        // write is not enough.
         clients.MapPost("/", HandleCreateClient)
             .WithDisplayName("Register OAuth Client")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            .RequireAdminCredentialManagementAuthorization();
 
         clients.MapGet("/{id:guid}", HandleGetClient)
             .WithDisplayName("Get OAuth Client")
@@ -45,7 +48,8 @@ internal static partial class OAuthClientEndpoints
 
         clients.MapDelete("/{id:guid}", HandleDeleteClient)
             .WithDisplayName("Delete OAuth Client")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Delete }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Delete }))
+            .RequireAdminCredentialManagementAuthorization();
 
         var scopes = endpoints.MapGroup("/api/v{version:apiVersion}/admin/oauth-scopes")
             .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
