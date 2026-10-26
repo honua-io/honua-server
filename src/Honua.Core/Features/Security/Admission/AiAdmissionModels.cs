@@ -82,9 +82,13 @@ public sealed record AiAdmissionPolicy
     /// <summary>Additional verified workflow active reservation limit.</summary>
     public int WorkflowConcurrency { get; init; } = 1;
 
+    /// <summary>Explicit mandatory financial policy; null retains legacy attempt-only behavior.</summary>
+    public AiFinancialPolicy? Financial { get; init; }
+
     /// <summary>Whether policy values fit the finite, supported accounting horizon and state bounds.</summary>
     public bool IsValid => WindowSeconds is > 0 and <= MaximumWindowSeconds
         && MaxOperationSeconds is > 0 and <= MaximumOperationSeconds
+        && (Financial is null || Financial.IsValid)
         && new[] { DeploymentAttempts, ActorAttempts, CohortAttempts, WorkflowAttempts,
             DeploymentConcurrency, ActorConcurrency, CohortConcurrency, WorkflowConcurrency }
             .All(value => value is > 0 and <= MaximumLedgerEntries);
@@ -96,7 +100,10 @@ public sealed record AiAdmissionState(string DeploymentId, AiAdmissionPolicy Pol
 
 /// <summary>Single-use server-generated reservation, retained until response/body disposal.</summary>
 public sealed record AiAdmissionReservation(string DeploymentId, Guid AttemptId, Guid Generation, long Epoch,
-    DateTimeOffset DeadlineUtc, DateTimeOffset LeaseExpiresUtc);
+    DateTimeOffset DeadlineUtc, DateTimeOffset LeaseExpiresUtc, AiFinancialReservation? Financial = null);
+
+/// <summary>Immutable request and original price-basis binding for retained financial liability.</summary>
+public sealed record AiFinancialReservation(string RequestDigest, string BasisDigest);
 
 /// <summary>Sanitized result of atomic multi-scope admission.</summary>
 public sealed record AiAdmissionDecision(string Code, AiAdmissionReservation? Reservation = null, int RetryAfterSeconds = 1)

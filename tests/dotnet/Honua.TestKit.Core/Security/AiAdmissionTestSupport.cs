@@ -21,6 +21,18 @@ public sealed class RecordingAiAdmission : IAiExecutionAdmission
         return Task.FromResult<IAiExecutionPermit>(new Permit(this, cancellationToken));
     }
 
+    public AiFinancialPriceBasis? FinancialBasis { get; set; }
+    public Task<AiFinancialPriceBasis?> GetFinancialBasisAsync(AiExecutionContext context, CancellationToken cancellationToken)
+        => Task.FromResult(FinancialBasis);
+    public AiFinancialRequest? FinancialRequest { get; private set; }
+    public List<AiFinancialUsage> FinancialUsage { get; } = [];
+    public bool Financial { get; set; }
+    public Task<IAiExecutionPermit> AcquireAsync(AiExecutionContext context, AiFinancialRequest request, CancellationToken cancellationToken)
+    {
+        FinancialRequest = request;
+        return AcquireAsync(context, cancellationToken);
+    }
+
     public static AiExecutionContext Context(string useCase = "studio-chat")
         => AiExecutionContext.Create("test-deployment", "ApiKey:api-key:11111111-1111-1111-1111-111111111111", useCase);
 
@@ -33,6 +45,12 @@ public sealed class RecordingAiAdmission : IAiExecutionAdmission
         private int _sent;
         private int _released;
         public CancellationToken Token => token;
+        public bool HasFinancialReservation => owner.Financial;
+        public Task RecordFinancialUsageAsync(AiFinancialUsage usage, CancellationToken cancellationToken)
+        {
+            owner.FinancialUsage.Add(usage);
+            return Task.CompletedTask;
+        }
         public Task BeginInvocationAsync(CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();

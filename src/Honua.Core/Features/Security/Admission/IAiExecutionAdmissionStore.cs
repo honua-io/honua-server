@@ -11,6 +11,15 @@ public interface IAiExecutionAdmissionStore
     /// <remarks>Attempt IDs are generated internally. Ambiguous commit outcomes deny; never retry under a fresh ID.</remarks>
     Task<AiAdmissionDecision> TryAcquireAsync(AiExecutionContext context, Guid attemptId, CancellationToken cancellationToken);
 
+    /// <summary>Atomically reserves attempts, concurrency and all applicable financial scopes under one policy lock.</summary>
+    Task<AiAdmissionDecision> TryAcquireAsync(AiExecutionContext context, Guid attemptId, AiFinancialRequest request, CancellationToken cancellationToken);
+
+    /// <summary>Durably claims the exact financial invocation once; ambiguous results never authorize a send.</summary>
+    Task<bool> CommitFinancialSendAsync(AiAdmissionReservation reservation, CancellationToken cancellationToken);
+
+    /// <summary>Settles original supported transport usage without requiring current epoch or send authority.</summary>
+    Task<string> SettleFinancialAsync(AiAdmissionReservation reservation, AiFinancialUsage usage, CancellationToken cancellationToken);
+
     /// <summary>Checks authoritative stop/epoch, deadline and release state. Missing or unavailable state returns false.</summary>
     Task<bool> IsCurrentAsync(AiAdmissionReservation reservation, CancellationToken cancellationToken);
 

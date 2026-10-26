@@ -22,7 +22,7 @@ namespace Honua.Server.Tests.Features.OperationsToolset;
 
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Update)]
-public sealed class AiAdmissionControlOperationTests
+public sealed partial class AiAdmissionControlOperationTests
 {
     private const string Stop = "admin.ai.admission.stop";
     private static readonly AiAdmissionState State = new("deployment", new AiAdmissionPolicy(), Guid.NewGuid(), 1, 2, false, DateTimeOffset.UtcNow);

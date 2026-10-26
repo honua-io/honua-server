@@ -8,6 +8,12 @@ public interface IAiExecutionAdmission
 {
     /// <summary>Acquires a single-use permit, or fails closed with a sanitized admission exception.</summary>
     Task<IAiExecutionPermit> AcquireAsync(AiExecutionContext context, CancellationToken cancellationToken);
+
+    /// <summary>Reads the selected authoritative price basis for request preparation; acquisition revalidates it atomically.</summary>
+    Task<AiFinancialPriceBasis?> GetFinancialBasisAsync(AiExecutionContext context, CancellationToken cancellationToken);
+
+    /// <summary>Acquires against the same authority with exact owned Reporting payload and route bounds.</summary>
+    Task<IAiExecutionPermit> AcquireAsync(AiExecutionContext context, AiFinancialRequest request, CancellationToken cancellationToken);
 }
 
 /// <summary>One charged model invocation, owned through complete response/body disposal.</summary>
@@ -15,6 +21,12 @@ public interface IAiExecutionPermit : IAsyncDisposable
 {
     /// <summary>Caller cancellation linked with authoritative stop, generation/epoch loss and the fixed deadline.</summary>
     CancellationToken Token { get; }
+
+    /// <summary>Whether this invocation retains a monetary and token reservation.</summary>
+    bool HasFinancialReservation { get; }
+
+    /// <summary>Records transport-observed supported usage against the original reservation, independently of cancellation.</summary>
+    Task RecordFinancialUsageAsync(AiFinancialUsage usage, CancellationToken cancellationToken);
 
     /// <summary>Claims this permit exactly once and checks current authority before credential preparation.</summary>
     Task BeginInvocationAsync(CancellationToken cancellationToken);
@@ -35,6 +47,8 @@ public sealed class AiAdmissionException : Exception
     {
         Code = code is "invalid_context" or "invalid_policy" or "uninitialized" or "unavailable"
             or "stopped" or "recovering" or "budget_exceeded" or "concurrency_exceeded"
+            or "financial_unsupported" or "financial_basis_invalid" or "financial_basis_expired"
+            or "financial_budget_exceeded" or "financial_ledger_full" or "financial_stop"
             or "ledger_full" or "disclosure_denied" or "duplicate_attempt" or "duplicate_invocation" or "invalidated"
             ? code : "unavailable";
         RetryAfterSeconds = Math.Clamp(retryAfterSeconds, 1, AiAdmissionPolicy.MaximumWindowSeconds);

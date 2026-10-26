@@ -211,6 +211,43 @@ public sealed class OpenAiNarrativeProviderTests
         endpoint.Requests.Should().Be(1);
     }
 
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public async Task GenerateAsync_ConfigurationChangesDuringClientCreation_SendsOriginalFrozenModelAndRoute()
+    {
+        using var handler = new ResponseHandler(() => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""{"choices":[{"message":{"content":"{\"slots\":{\"summary\":\"Approved narrative\"}}"}}]}""")
+        });
+        using var client = new HttpClient(handler);
+        using var cache = new MemoryCache(new MemoryCacheOptions());
+        var configuration = new ReportingConfiguration
+        {
+            Narrative = new ReportingNarrativeConfiguration
+            {
+                Enabled = true,
+                ApiKey = "fake-api-key",
+                Disclosure = ApprovedDisclosure()
+            }
+        };
+        var factory = new ClientFactory(client, () =>
+        {
+            configuration.Narrative.Model = "changed-after-admission";
+            configuration.Narrative.Endpoint = "https://changed.invalid/v1";
+            configuration.Narrative.ApiKey = "changed-route-key-canary";
+            configuration.Narrative.Disclosure.Approvals.Clear();
+        });
+        var provider = new OpenAiNarrativeProvider(factory, cache, Options.Create(configuration),
+            NullLogger<OpenAiNarrativeProvider>.Instance, new RecordingAiAdmission());
+
+        (await provider.GenerateAsync(CreateDraft(), default)).SlotText.Should().NotBeEmpty();
+
+        handler.RequestBody.Should().Contain("\"model\":\"gpt-4o-mini\"").And.NotContain("changed-after-admission");
+        handler.RequestUri.Should().Be("https://api.openai.com/v1/chat/completions");
+        handler.Authorization.Should().Be("Bearer fake-api-key");
+        handler.RequestBody.Should().NotContain("fake-api-key").And.NotContain("changed-route-key-canary");
+    }
+
     private static AiDisclosurePolicyOptions ApprovedDisclosure() => new()
     {
         Approvals = [new() { Provider = "openai", Kind = "openai", Destination = "https://api.openai.com/v1", Model = "gpt-4o-mini", UseCase = "reporting-narrative", DataClassification = "unclassified" }]
@@ -239,19 +276,29 @@ public sealed class OpenAiNarrativeProviderTests
         SourcePackage = ReportingFixtures.BufferAggregatePackage()
     };
 
-    private sealed class ClientFactory(HttpClient client) : IHttpClientFactory
+    private sealed class ClientFactory(HttpClient client, Action? beforeCreate = null) : IHttpClientFactory
     {
-        public HttpClient CreateClient(string name) => client;
+        public HttpClient CreateClient(string name)
+        {
+            beforeCreate?.Invoke();
+            return client;
+        }
     }
 
     private sealed class ResponseHandler(Func<HttpResponseMessage> response) : HttpMessageHandler
     {
         public int RequestCount { get; private set; }
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        public string? RequestBody { get; private set; }
+        public string? RequestUri { get; private set; }
+        public string? Authorization { get; private set; }
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             RequestCount++;
             cancellationToken.ThrowIfCancellationRequested();
-            return Task.FromResult(response());
+            RequestUri = request.RequestUri?.AbsoluteUri;
+            Authorization = request.Headers.Authorization?.ToString();
+            RequestBody = request.Content is null ? null : await request.Content.ReadAsStringAsync(cancellationToken);
+            return response();
         }
     }
 }

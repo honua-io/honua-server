@@ -55,6 +55,10 @@ public static class AiExecutionAdmissionRegistration
         public static UnavailableStore Instance { get; } = new();
         public Task<AiAdmissionDecision> TryAcquireAsync(AiExecutionContext context, Guid attemptId, CancellationToken cancellationToken)
             => Task.FromResult(new AiAdmissionDecision("unavailable"));
+        public Task<AiAdmissionDecision> TryAcquireAsync(AiExecutionContext context, Guid attemptId, AiFinancialRequest request, CancellationToken cancellationToken)
+            => Task.FromResult(new AiAdmissionDecision("unavailable"));
+        public Task<bool> CommitFinancialSendAsync(AiAdmissionReservation reservation, CancellationToken cancellationToken) => Task.FromResult(false);
+        public Task<string> SettleFinancialAsync(AiAdmissionReservation reservation, AiFinancialUsage usage, CancellationToken cancellationToken) => Task.FromResult("unavailable");
         public Task<bool> IsCurrentAsync(AiAdmissionReservation reservation, CancellationToken cancellationToken) => Task.FromResult(false);
         public Task ReleaseAsync(AiAdmissionReservation reservation, CancellationToken cancellationToken) => Task.CompletedTask;
         public Task<AiAdmissionState?> GetStateAsync(string deploymentId, CancellationToken cancellationToken)
