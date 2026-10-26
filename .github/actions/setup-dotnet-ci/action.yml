@@ -42,7 +42,7 @@ runs:
         printf 'DOTNET_INSTALL_DIR=%s/honua-managed-sdk/%s\n' "${RUNNER_TEMP}" "${EXPECTED_DOTNET_SDK}" >> "${GITHUB_ENV}"
 
     - name: Setup .NET
-      uses: actions/setup-dotnet@v6.0.0
+      uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
       with:
         dotnet-version: ${{ inputs.artifact-sdk-version || inputs.dotnet-version }}
 
@@ -101,7 +101,7 @@ runs:
     # because github.ref still identifies the workflow's default-branch policy.
     - name: Cache NuGet packages (trunk read/write)
       if: github.ref == 'refs/heads/trunk' && inputs.nuget-cache-read-only != 'true'
-      uses: actions/cache@v5
+      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
       with:
         path: ~/.nuget/packages
         key: ${{ github.repository }}-${{ runner.os }}-nuget-${{ hashFiles('Directory.Packages.props', 'NuGet.config', 'global.json') }}-${{ hashFiles('**/*.csproj') }}
@@ -111,7 +111,7 @@ runs:
 
     - name: Restore NuGet packages (non-trunk read-only)
       if: github.ref != 'refs/heads/trunk' || inputs.nuget-cache-read-only == 'true'
-      uses: actions/cache/restore@v5
+      uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
       with:
         path: ~/.nuget/packages
         key: ${{ github.repository }}-${{ runner.os }}-nuget-${{ hashFiles('Directory.Packages.props', 'NuGet.config', 'global.json') }}-${{ hashFiles('**/*.csproj') }}
@@ -129,7 +129,7 @@ runs:
     # confirming the restored binary payload fits the hosted runner disk budget.
     - name: Cache .NET build outputs
       if: inputs.enable-build-cache == 'true'
-      uses: actions/cache@v5
+      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
       with:
         path: |
           **/bin

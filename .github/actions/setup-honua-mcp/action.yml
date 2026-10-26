@@ -38,7 +38,7 @@ runs:
     # sdk_ref: forward-compatible with a future workflow_dispatch input.
     # Without that trigger the expression always resolves to 'trunk'.
     - name: Checkout honua-sdk-js
-      uses: actions/checkout@v5
+      uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       with:
         repository: honua-io/honua-sdk-js
         path: honua-sdk-js
@@ -72,7 +72,7 @@ runs:
 
     - name: Setup Python
       if: steps.check-scripts.outputs.cert == 'true' || steps.check-scripts.outputs.smoke == 'true'
-      uses: actions/setup-python@v6
+      uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
       with:
         python-version: ${{ inputs.python-version }}
 
@@ -90,7 +90,7 @@ runs:
 
     - name: Setup Node.js
       if: steps.check-scripts.outputs.cert == 'true' || steps.check-scripts.outputs.smoke == 'true'
-      uses: actions/setup-node@v6
+      uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
       with:
         node-version: ${{ inputs.node-version }}
         cache: 'npm'
