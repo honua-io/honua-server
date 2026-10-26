@@ -58,7 +58,7 @@ jobs:
           from pathlib import Path
           text = Path('artifacts/inspector-pagination-controls/controls.tap').read_text()
           counts = {key: int(value) for key, value in re.findall(r'^# (tests|pass|fail|skipped|cancelled) (\d+)$', text, re.M)}
-          assert counts.get('tests', 0) >= 17, counts
+          assert counts.get('tests', 0) >= 24, counts
           assert counts.get('pass') == counts['tests'], counts
           assert all(counts.get(key) == 0 for key in ('fail', 'skipped', 'cancelled')), counts
           lock = json.loads(Path('.mcp-client/certification/package-lock.json').read_text())

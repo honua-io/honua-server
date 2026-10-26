@@ -5,7 +5,13 @@ import { request as httpsRequest } from 'node:https';
 import { createHash } from 'node:crypto';
 import { gunzipSync, inflateSync, brotliDecompressSync } from 'node:zlib';
 
-export const INSPECTOR_PAGINATION_CONTRACT = 'honua.inspector-pagination-observer/v1';
+export const INSPECTOR_PAGINATION_CONTRACT = 'honua.inspector-pagination-observer/v2';
+// The candidate's real resources/list fits on one default page, so it cannot
+// prove cursor traversal. The authenticated explicit full tools/list export
+// spans several real default pages; observe that chain without changing sizes.
+export const INSPECTOR_PAGINATION_METHOD = 'tools/list';
+export const INSPECTOR_PAGINATION_VIEW = 'full';
+const VIEW_KEY = 'honua.io/workflow-view';
 const LIMIT = 4 * 1024 * 1024;
 const sha256 = (value) => 'sha256:' + createHash('sha256').update(value).digest('hex');
 const fail = () => { throw new Error('Inspector pagination wire proof failed.'); };
@@ -36,7 +42,7 @@ function prove(pages, output, inspectorVersion, sourceSha) {
   if (!/^2\.\d+\.\d+$/.test(inspectorVersion) || !/^[a-f0-9]{40}$/.test(sourceSha)
     || pages.length < 2 || pages.length > 100) fail();
   const seen = new Set();
-  const uris = [];
+  const names = [];
   const ids = new Set();
   let expected;
   let decodedBytes = 0;
@@ -48,11 +54,12 @@ function prove(pages, output, inspectorVersion, sourceSha) {
     ids.add(`${typeof page.id}:${page.id}`);
     const bytes = decodedBody(page);
     if (bytes.length > LIMIT || (decodedBytes += bytes.length) > 4 * LIMIT) fail();
+    if (page.view !== INSPECTOR_PAGINATION_VIEW || page.viewOverride || !page.authenticated) fail();
     const result = responseFor(bytes, page.contentType, page.id);
-    if (!Array.isArray(result.resources) || result.resources.length === 0) fail();
-    for (const resource of result.resources) {
-      if (!resource || typeof resource.uri !== 'string' || !resource.uri || uris.includes(resource.uri)) fail();
-      uris.push(resource.uri);
+    if (!Array.isArray(result.tools) || result.tools.length === 0) fail();
+    for (const tool of result.tools) {
+      if (!tool || typeof tool.name !== 'string' || !tool.name || names.includes(tool.name)) fail();
+      names.push(tool.name);
     }
     const next = result.nextCursor;
     if (next !== undefined) {
@@ -62,11 +69,12 @@ function prove(pages, output, inspectorVersion, sourceSha) {
     expected = next;
   }
   const returned = output?.result ?? output;
-  if (!Array.isArray(returned?.resources)
-    || JSON.stringify(returned.resources.map((item) => item.uri)) !== JSON.stringify(uris)) fail();
+  if (!Array.isArray(returned?.tools)
+    || JSON.stringify(returned.tools.map((item) => item?.name)) !== JSON.stringify(names)) fail();
   return { schema: INSPECTOR_PAGINATION_CONTRACT, canonicalClient: 'MCP Inspector', inspectorVersion,
-    sourceSha, pageCount: pages.length, cursorHandoffCount: seen.size, resourceCount: uris.length,
-    resourceUrisSha256: sha256(JSON.stringify(uris)), sessionSha256: sha256(session ?? 'stateless'),
+    sourceSha, method: INSPECTOR_PAGINATION_METHOD, workflowView: INSPECTOR_PAGINATION_VIEW, authenticated: true,
+    pageCount: pages.length, cursorHandoffCount: seen.size, toolCount: names.length,
+    toolNamesSha256: sha256(JSON.stringify(names)), sessionSha256: sha256(session ?? 'stateless'),
     complete: true, clientResultMatchesWire: true };
 }
 
@@ -96,8 +104,13 @@ export async function observeInspectorPagination({ endpoint, invoke, inspectorVe
       }
       const body = Buffer.concat(chunks);
       const message = incoming.method === 'POST' ? JSON.parse(body) : undefined;
-      const page = message?.method === 'resources/list' ? {
+      // Only presence of a credential is retained; its value never leaves the request.
+      const credential = [incoming.headers['x-api-key'], incoming.headers.authorization]
+        .some((value) => typeof value === 'string' && value.trim() !== '');
+      const page = message?.method === INSPECTOR_PAGINATION_METHOD ? {
         id: message.id, cursor: message.params?.cursor, session: incoming.headers['mcp-session-id'],
+        view: message.params?._meta?.[VIEW_KEY], viewOverride: message.params?.view !== undefined,
+        authenticated: credential,
         complete: false, failed: false, contentType: '', contentEncoding: '', bytes: Buffer.alloc(0),
       } : undefined;
       if (page) { pages.push(page); if (pages.length > 100) fail(); }
