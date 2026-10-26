@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Globalization;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Npgsql;
 using CoreParameterizedQuery = Honua.Core.Features.FeatureStore.Domain.ParameterizedQuery;
 
@@ -22,7 +23,11 @@ internal sealed partial class FeatureDataAccess
         try
         {
             await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+            await using var transaction = query.DisableJit
+                ? await BeginJitFreeTransactionAsync(connection, cancellationToken).ConfigureAwait(false)
+                : null;
             await using var command = CreateSafeCommand(connection, query.Sql);
+            command.Transaction = transaction;
 
             command.Parameters.AddWithValue(layerId);
             foreach (var param in query.WhereParameters)
@@ -65,6 +70,12 @@ internal sealed partial class FeatureDataAccess
                 rows.Add(row);
             }
 
+            if (transaction != null)
+            {
+                await reader.DisposeAsync().ConfigureAwait(false);
+                await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
+            }
+
             stopwatch.Stop();
             _cacheManager.RecordQueryMetrics("statistics", stopwatch.ElapsedMilliseconds, rows.Count);
             RecordPerformanceQuery("statistics", layerId, stopwatch.ElapsedMilliseconds, rows.Count);
@@ -76,6 +87,29 @@ internal sealed partial class FeatureDataAccess
         {
             stopwatch.Stop();
             _cacheManager.RecordQueryMetrics("statistics_error", stopwatch.ElapsedMilliseconds);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Opens a read transaction with <c>jit = off</c>. LOCAL keeps the setting inside
+    /// this statement's transaction and out of the pooled session.
+    /// </summary>
+    private static async Task<NpgsqlTransaction> BeginJitFreeTransactionAsync(
+        NpgsqlConnection connection, CancellationToken cancellationToken)
+    {
+        var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await using var settings = connection.CreateCommand();
+            settings.Transaction = transaction;
+            settings.CommandText = "SET LOCAL jit = off";
+            await settings.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            return transaction;
+        }
+        catch
+        {
+            await transaction.DisposeAsync().ConfigureAwait(false);
             throw;
         }
     }
