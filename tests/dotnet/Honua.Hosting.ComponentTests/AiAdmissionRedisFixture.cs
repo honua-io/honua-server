@@ -19,4 +19,4 @@ public sealed class AiAdmissionRedisFixture : IAsyncLifetime
 
 /// <summary>Serializes authority configuration tests on their dedicated Redis instance.</summary>
 [CollectionDefinition(AiAdmissionRedisFixture.CollectionName)]
-public sealed class AiAdmissionRedisCollection : ICollectionFixture<AiAdmissionRedisFixture>;
+public sealed class AiAdmissionRedisTestGroup : ICollectionFixture<AiAdmissionRedisFixture>;
