@@ -48,9 +48,9 @@
       "test_case_id": "CERT-DISC-01",
       "status": "pass",
       "duration_ms": 7,
-      "measured_count": 26,
+      "measured_count": 21,
       "measured_delta": null,
-      "notes": "26 conformance classes returned",
+      "notes": "21 conformance classes returned",
       "evidence_ref": ""
     },
     {
@@ -111,9 +111,9 @@
       "test_case_id": "CERT-PAGE-02",
       "status": "pass",
       "duration_ms": 12,
-      "measured_count": 1,
+      "measured_count": 2,
       "measured_delta": null,
-      "notes": "offset=2 returned different feature set",
+      "notes": "Two nonempty2-feature pages have unique IDs and zero overlap at offset=2",
       "evidence_ref": ""
     },
     {
@@ -265,9 +265,9 @@
       "test_case_id": "JS-EXT-OL-COLL-01",
       "status": "pass",
       "duration_ms": 3,
-      "measured_count": 4,
+      "measured_count": 11,
       "measured_delta": null,
-      "notes": "4 collections discovered",
+      "notes": "11 collections discovered",
       "evidence_ref": ""
     },
     {

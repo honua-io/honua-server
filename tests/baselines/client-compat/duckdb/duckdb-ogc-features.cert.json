@@ -44,9 +44,9 @@
       "test_case_id": "CERT-AUTH-02",
       "status": "pass",
       "duration_ms": 41,
-      "measured_count": 6,
+      "measured_count": 8,
       "measured_delta": null,
-      "notes": "GET /api/v1/admin/services with X-API-Key -> 200, 6 services. Honua's control plane uses an API key, not HTTP Basic and not a bearer login flow; HTTP Basic against the same path returns 401 on this deployment. DuckDB httpfs could not range-read the admin document (IO Error: Short read for HTTP GET to 'http://honua:5000/api/v1/admin/services': requested range bytes=0-1514 (1515 bytes), but received 1514 bytes); authenticated access proven over httpx instead.",
+      "notes": "GET /api/v1/admin/services with X-API-Key -> 200, 8 services. Honua's control plane uses an API key, not HTTP Basic and not a bearer login flow; HTTP Basic against the same path returns 401 on this deployment. DuckDB httpfs admin read returned success=True.",
       "evidence_ref": "http://honua:5000/api/v1/admin/services",
       "client_identity": "httpx"
     },
@@ -54,9 +54,9 @@
       "test_case_id": "CERT-DISC-01",
       "status": "pass",
       "duration_ms": 0,
-      "measured_count": 5,
+      "measured_count": 11,
       "measured_delta": null,
-      "notes": "read_json_auto over /ogc/features/collections listed 5 collections: ['0', '2000', '2001', '2002', '3000'].",
+      "notes": "read_json_auto over /ogc/features/collections listed 11 collections: ['0', '10', '11', '12', '20', '2000', '2001', '2002', '21', '22', '3000'].",
       "evidence_ref": "http://honua:5000/ogc/features/collections"
     },
     {
