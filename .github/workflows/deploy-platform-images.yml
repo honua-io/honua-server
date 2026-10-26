@@ -294,7 +294,7 @@ jobs:
       - name: Build native-AOT platform candidate by digest
         id: aot_candidate
         if: ${{ env.PUBLISH_IMAGES == 'true' && contains(matrix.image_key, 'aot') }}
-        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
           context: .
           file: ${{ matrix.dockerfile }}
@@ -370,7 +370,7 @@ jobs:
       - name: Build and push JIT platform image
         id: build
         if: ${{ env.PUBLISH_IMAGES == 'true' && contains(matrix.image_key, 'aot') == false }}
-        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
           context: .
           file: ${{ matrix.dockerfile }}
@@ -394,7 +394,7 @@ jobs:
 
       - name: Build local image for security scan
         if: ${{ env.PUBLISH_IMAGES != 'true' }}
-        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
           context: .
           file: ${{ matrix.dockerfile }}
