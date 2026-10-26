@@ -15,6 +15,9 @@ namespace Honua.Ai.StudioAiProxy;
 /// </summary>
 public sealed class StudioAiProxyConfiguration
 {
+    /// <summary>Operator approvals for model data disclosure; classification is an operator workload assertion, not content detection.</summary>
+    public Honua.Core.Features.Security.AiDisclosurePolicyOptions Disclosure { get; set; } = new();
+
     /// <summary>The configuration section name.</summary>
     public const string SectionName = "StudioAiProxy";
 

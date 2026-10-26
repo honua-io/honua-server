@@ -8,6 +8,7 @@ using System.Text.Json;
 using Honua.Core.Features.Reporting;
 using Honua.Core.Features.Reporting.Abstractions;
 using Honua.Core.Features.Reporting.Domain;
+using Honua.Core.Features.Security;
 using Honua.Server.Features.Reporting.Models;
 using Honua.Server.Features.Reporting.Prompts;
 using Microsoft.Extensions.Caching.Memory;
@@ -51,7 +52,16 @@ internal sealed class OpenAiNarrativeProvider : INarrativeProvider
     {
         ArgumentNullException.ThrowIfNull(draft);
 
+        cancellationToken.ThrowIfCancellationRequested();
+
         if (!_configuration.Enabled || draft.NarrativeSlots.Count == 0)
+        {
+            return NarrativeFill.Empty;
+        }
+
+        // Evaluate the current options snapshot before payload creation or cache access.
+        if (!AiDisclosurePolicy.IsAllowed(_configuration.Disclosure,
+            new AiDisclosureRequest(_configuration.Provider, "openai", _configuration.Endpoint, _configuration.Model, "reporting-narrative")))
         {
             return NarrativeFill.Empty;
         }

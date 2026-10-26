@@ -397,3 +397,7 @@ lane independently reads full 10,000-row responses with PyArrow and GeoPandas an
 checks footer row-group bounds, IDs, values, nulls, CRS and bbox covering. Required
 consumer executions retain the existing no-skip receipt policy. Import byte guards
 and accepted multi-row-group imports are unchanged.
+
+## AI disclosure approvals
+
+Enabled remote AI transfers require exact operator approval rules. See [AI model disclosure approvals](ai-disclosure-policy.md) for configuration, secure defaults, migration and classification limits.

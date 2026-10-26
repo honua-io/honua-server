@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Text.Json;
+using Honua.Core.Features.Security;
 using Honua.Core.Features.Security.Abstractions;
 
 namespace Honua.Geoprocessing.Inference;
@@ -91,6 +92,13 @@ internal sealed partial class HttpImageryInferenceClient : IImageryInferenceClie
                 "the configured inference endpoint uses plaintext http:// to a non-loopback host; " +
                 "the API key and the full source raster would travel unencrypted. Use an https:// endpoint " +
                 "(plain http is permitted only for loopback development backends).");
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!AiDisclosurePolicy.IsAllowed(options.Disclosure,
+            new AiDisclosureRequest(options.Provider, ProviderId, options.Endpoint, request.Model, "imagery-inference")))
+        {
+            throw new ImageryInferenceException("AI disclosure is not approved for the selected imagery provider, destination, model and workload.");
         }
 
         var apiKey = await ResolveApiKeyAsync(options, cancellationToken).ConfigureAwait(false);

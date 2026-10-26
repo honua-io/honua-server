@@ -163,6 +163,12 @@ public sealed class StudioAiEnvTranscriptSigningHostTests : IAsyncLifetime
             new Dictionary<string, string?>
             {
                 ["StudioAiProxy:Enabled"] = "true",
+                ["StudioAiProxy:Disclosure:Approvals:0:Provider"] = ProviderName,
+                ["StudioAiProxy:Disclosure:Approvals:0:Kind"] = StudioAiProxyConfiguration.OpenAiKind,
+                ["StudioAiProxy:Disclosure:Approvals:0:Destination"] = "https://deterministic.invalid/v1",
+                ["StudioAiProxy:Disclosure:Approvals:0:Model"] = Model,
+                ["StudioAiProxy:Disclosure:Approvals:0:UseCase"] = "studio-chat",
+                ["StudioAiProxy:Disclosure:Approvals:0:DataClassification"] = "unclassified",
                 ["StudioAiProxy:DefaultProvider"] = ProviderName,
                 [$"StudioAiProxy:Providers:{ProviderName}:Kind"] = StudioAiProxyConfiguration.OpenAiKind,
                 [$"StudioAiProxy:Providers:{ProviderName}:Endpoint"] = "https://deterministic.invalid/v1",

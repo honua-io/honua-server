@@ -7,6 +7,7 @@ using System.Text;
 using FluentAssertions;
 using Honua.Core.Features.Reporting;
 using Honua.Core.Features.Reporting.Domain;
+using Honua.Core.Features.Security;
 using Honua.Server.Features.Reporting;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -140,10 +141,50 @@ public sealed class OpenAiNarrativeProviderTests
         }
     }
 
-    private static OpenAiNarrativeProvider CreateProvider(HttpClient client, IMemoryCache cache)
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public async Task GenerateAsync_UnapprovedDisclosure_ReturnsEmptyWithoutProviderCall()
+    {
+        using var handler = new ResponseHandler(() => throw new InvalidOperationException("must not call"));
+        using var client = new HttpClient(handler);
+        using var cache = new MemoryCache(new MemoryCacheOptions());
+        var provider = CreateProvider(client, cache, new AiDisclosurePolicyOptions());
+        var fill = await provider.GenerateAsync(CreateDraft(), CancellationToken.None);
+        fill.SlotText.Should().BeEmpty();
+        handler.RequestCount.Should().Be(0);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public async Task GenerateAsync_ApprovalRemovedAfterCachedResult_DoesNotReturnCachedModelText()
+    {
+        using var handler = new ResponseHandler(() => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""{"choices":[{"message":{"content":"{\"slots\":{\"summary\":\"Approved narrative\"}}"}}]}""")
+        });
+        using var client = new HttpClient(handler);
+        using var cache = new MemoryCache(new MemoryCacheOptions());
+        var policy = ApprovedDisclosure();
+        var provider = CreateProvider(client, cache, policy);
+        (await provider.GenerateAsync(CreateDraft(), CancellationToken.None)).SlotText.Should().NotBeEmpty();
+        policy.Approvals.Clear();
+        (await provider.GenerateAsync(CreateDraft(), CancellationToken.None)).SlotText.Should().BeEmpty();
+        handler.RequestCount.Should().Be(1);
+    }
+
+    private static AiDisclosurePolicyOptions ApprovedDisclosure() => new()
+    {
+        Approvals = [new() { Provider = "openai", Kind = "openai", Destination = "https://api.openai.com/v1", Model = "gpt-4o-mini", UseCase = "reporting-narrative", DataClassification = "unclassified" }]
+    };
+
+    private static OpenAiNarrativeProvider CreateProvider(HttpClient client, IMemoryCache cache, AiDisclosurePolicyOptions? disclosure = null)
         => new(new ClientFactory(client), cache, Options.Create(new ReportingConfiguration
         {
-            Narrative = new ReportingNarrativeConfiguration { Enabled = true, ApiKey = "fake-api-key" }
+            Narrative = new ReportingNarrativeConfiguration
+            {
+                Enabled = true, ApiKey = "fake-api-key",
+                Disclosure = disclosure ?? ApprovedDisclosure()
+            }
         }), NullLogger<OpenAiNarrativeProvider>.Instance);
 
     private static AnalysisReportDraft CreateDraft() => new()
