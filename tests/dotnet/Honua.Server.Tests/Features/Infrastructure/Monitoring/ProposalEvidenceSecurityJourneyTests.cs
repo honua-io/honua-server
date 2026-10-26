@@ -200,7 +200,7 @@ public sealed class ProposalEvidenceSecurityJourneyTests(
         var approverClient = CreateClient(approver.Key, TenantA);
         using var approval = await approverClient.PostAsync(
             $"/api/v1/admin/proposals/{proposal.Proposal.ProposalId}/approve", null);
-        approval.StatusCode.Should().Be(HttpStatusCode.OK);
+        approval.StatusCode.Should().Be(HttpStatusCode.OK, await approval.Content.ReadAsStringAsync());
 
         var persisted = await _proposals.GetAsync(proposal.Proposal.ProposalId);
         persisted.Should().NotBeNull();
@@ -1001,6 +1001,9 @@ public sealed class ProposalEvidenceSecurityJourneyTests(
         services.AddSingleton<IGuardrailLadder>(new JourneyGuardrailLadder());
         services.RemoveAll<IOperationProposalEvidenceValidator>();
         services.AddSingleton<IOperationProposalEvidenceValidator, OperationProposalEvidenceValidator>();
+        // This fixture composes Redis/control-plane services explicitly rather than
+        // entering Program's Redis configuration branch. Keep its real authority helper too.
+        services.TryAddSingleton<OperationProposerApiKeyAuthority>();
         services.RemoveAll<IOperationGateway>();
         services.AddSingleton<IOperationGateway, OperationGateway>();
     }
