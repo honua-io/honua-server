@@ -2,24 +2,26 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.IdentityModel.Tokens.Jwt;
-using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Net;
 using System.Security.Claims;
-using System.Text;
 using System.Text.Json;
+using System.Text;
 using FluentAssertions;
 using Honua.Core.Features.AuditLog.Abstractions;
+using Honua.Core.Features.Security.Admission;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.RateLimiting;
-using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Security;
+using Honua.TestKit;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
 
 namespace Honua.Server.Tests.Features.StudioAi;
@@ -513,6 +515,59 @@ public sealed class StudioAiProxyEndpointsTests : IAsyncLifetime
         body.Should().NotContain("event: transcript_provenance");
     }
 
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/studio/ai/chat")]
+    [Endpoint("POST /mcp")]
+    [InterfaceOperation(TestProtocols.Mcp, "initialize")]
+    public async Task PostChat_SuppliedSession_BindsToVerifiedOwnerBeforeAdmissionOrSse()
+    {
+        await using var fixture = await CreateEndUserFixtureAsync(new CapturingAuditLog());
+        using var owner = CreateBearerClient(fixture, CreateToken("session-owner", tenantId: "tenant"));
+        using var other = CreateBearerClient(fixture, CreateToken("different-owner", tenantId: "tenant"));
+        using var initialized = await owner.SendAsync(BuildMcpRequest(
+            """{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"admission-test","version":"1"}}}"""));
+        initialized.StatusCode.Should().Be(HttpStatusCode.OK);
+        var session = initialized.Headers.GetValues("Mcp-Session-Id").Single();
+        var admission = (RecordingAiAdmission)fixture.Services.GetRequiredService<IAiExecutionAdmission>();
+        var before = admission.Acquired;
+        other.DefaultRequestHeaders.Add("Mcp-Session-Id", session);
+        using var mismatch = await other.PostAsJsonAsync("/api/v1/studio/ai/chat", new
+        { messages = new[] { new { role = "user", content = "test" } } });
+        mismatch.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        admission.Acquired.Should().Be(before);
+        admission.Sent.Should().Be(0);
+        other.DefaultRequestHeaders.Remove("Mcp-Session-Id");
+        other.DefaultRequestHeaders.Add("Mcp-Session-Id", "unknown-session");
+        using var unknown = await other.PostAsJsonAsync("/api/v1/studio/ai/chat", new
+        { messages = new[] { new { role = "user", content = "test" } } });
+        unknown.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        admission.Acquired.Should().Be(before);
+        owner.DefaultRequestHeaders.Add("Mcp-Session-Id", session);
+        using var accepted = await owner.PostAsJsonAsync("/api/v1/studio/ai/chat", new
+        { messages = new[] { new { role = "user", content = "test" } } });
+        accepted.StatusCode.Should().Be(HttpStatusCode.OK);
+        admission.Acquired.Should().Be(before + 1);
+        admission.Sent.Should().Be(1);
+    }
+
+    [IntegrationTheory]
+    [InlineData("budget_exceeded", HttpStatusCode.TooManyRequests)]
+    [InlineData("uninitialized", HttpStatusCode.ServiceUnavailable)]
+    [Endpoint("POST /api/v1/studio/ai/chat")]
+    public async Task PostChat_AdmissionDenied_ReturnsProblemBeforeSseOrProviderSend(string code, HttpStatusCode expectedStatus)
+    {
+        var admission = (RecordingAiAdmission)_fixture.Services.GetRequiredService<IAiExecutionAdmission>();
+        admission.DenialCode = code;
+        using var client = _fixture.CreateAdminClient();
+        using var response = await client.PostAsJsonAsync("/api/v1/studio/ai/chat", new
+        { messages = new[] { new { role = "user", content = "test" } } });
+        response.StatusCode.Should().Be(expectedStatus);
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+        response.Headers.RetryAfter.Should().NotBeNull();
+        admission.Sent.Should().Be(0);
+        _audit.Recorded.Should().NotContain(entry => entry.Action == "studio_ai.chat");
+    }
+
     private static void ConfigureHost(IWebHostBuilder builder, bool endUserAuthorizationEnabled)
     {
         // WebAppFixture's common host settings enable a dev-auth bypass
@@ -534,10 +589,12 @@ public sealed class StudioAiProxyEndpointsTests : IAsyncLifetime
         builder.UseSetting("Oidc:Generic:ClientId", Audience);
         builder.UseSetting("Oidc:Generic:DisplayName", "Studio test IdP");
 
+        builder.ConfigureServices(services => services.AddSingleton<IAiExecutionAdmission, RecordingAiAdmission>());
         builder.ConfigureAppConfiguration((_, configBuilder) =>
         {
             configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
             {
+                ["AiExecutionAdmission:DeploymentId"] = "test-deployment",
                 ["StudioAiProxy:Enabled"] = "true",
                 ["StudioAiProxy:DefaultProvider"] = ProviderName,
                 [$"StudioAiProxy:Providers:{ProviderName}:Kind"] = "openai",

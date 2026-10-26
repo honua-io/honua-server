@@ -4,11 +4,12 @@
 using System.Buffers;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using System.Text;
 using System.Text.Json;
+using System.Text;
 using Honua.Ai.StudioAiProxy.Abstractions;
 using Honua.Ai.StudioAiProxy.Adapters.Models;
 using Honua.Ai.StudioAiProxy.Domain;
+using Honua.Core.Features.Security.Admission;
 using Microsoft.Extensions.Logging;
 
 namespace Honua.Ai.StudioAiProxy.Adapters;
@@ -58,10 +59,12 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter
     public async IAsyncEnumerable<StudioAiChatEvent> StreamAsync(
         StudioAiProxyProviderOptions options,
         StudioAiChatRequest request,
+        IAiExecutionPermit permit,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(request);
+        await permit.EnsureCurrentAsync(cancellationToken).ConfigureAwait(false);
 
         var model = string.IsNullOrWhiteSpace(request.Model) ? options.Model : request.Model!;
         string? apiKey = null;
@@ -103,7 +106,7 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter
         var stopwatch = Stopwatch.StartNew();
 
         var (response, sendTimedOut, requestError) = await StudioAiProxyHttpStreamHelpers
-            .SendSafeAsync(client, httpRequest, timeoutCts.Token, cancellationToken)
+            .SendSafeAsync(client, httpRequest, permit, timeoutCts.Token, cancellationToken)
             .ConfigureAwait(false);
 
         if (sendTimedOut)

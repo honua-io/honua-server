@@ -4,17 +4,17 @@
 using System.Net;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
+using System.Text;
 using FluentAssertions;
-using Honua.Ai.StudioAiProxy;
 using Honua.Ai.StudioAiProxy.Adapters.Bedrock;
 using Honua.Ai.StudioAiProxy.Domain;
-using Honua.Core.Features.Security.Abstractions;
-using Honua.TestKit.Hosting;
-using Honua.Core.Features.AuditLog;
+using Honua.Ai.StudioAiProxy;
 using Honua.Core.Features.AuditLog.Abstractions;
+using Honua.Core.Features.AuditLog;
 using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Security.Abstractions;
+using Honua.Core.Features.Security.Admission;
 using Honua.Core.Features.Studio;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Middleware;
@@ -22,6 +22,8 @@ using Honua.Infrastructure.MultiTenancy;
 using Honua.Server.Features.Studio.Ai;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Hosting;
+using Honua.TestKit.Security;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
@@ -87,6 +89,7 @@ public sealed class StudioAiCertificationEndpointTests
             builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["HONUA_ADMIN_PASSWORD"] = adminKey,
+                ["AiExecutionAdmission:DeploymentId"] = "test-deployment",
                 ["StudioAiProxy:Enabled"] = "true",
                 ["StudioAiProxy:Disclosure:Approvals:0:Provider"] = "fixture",
                 ["StudioAiProxy:Disclosure:Approvals:0:Kind"] = kind,
@@ -103,6 +106,7 @@ public sealed class StudioAiCertificationEndpointTests
                 ["StudioAiProxy:TranscriptSigning:PrivateKeyReference"] = "secret://fixture-signing-key",
                 ["StudioAiProxy:TranscriptSigning:LifetimeSeconds"] = "900"
             });
+            builder.Services.AddSingleton<IAiExecutionAdmission, RecordingAiAdmission>();
             builder.Services.AddSingleton(secrets);
             builder.Services.AddSingleton(factory);
             builder.Services.AddStudioAiProxy(builder.Configuration);

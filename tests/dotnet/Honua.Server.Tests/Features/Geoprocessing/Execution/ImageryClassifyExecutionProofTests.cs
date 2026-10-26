@@ -2,24 +2,28 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Diagnostics;
-using System.Text;
 using System.Text.Json;
+using System.Text;
 using FluentAssertions;
+using Honua.ControlPlane;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
-using Honua.ControlPlane;
-using Honua.Geoprocessing;
+using Honua.Core.Features.Security.Admission;
 using Honua.Geoprocessing.Execution;
 using Honua.Geoprocessing.Inference;
+using Honua.Geoprocessing;
+using Honua.Infrastructure.Security.Admission;
+using Honua.TestKit.Security;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NSubstitute;
-using Xunit;
 using Xunit.Sdk;
+using Xunit;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
@@ -242,8 +246,9 @@ public sealed class ImageryClassifyExecutionProofTests : IAsyncLifetime
         return new ImageryInferenceJobExecutor(
             inferenceMonitor,
             executorMonitor,
-            [new HttpImageryInferenceClient(httpClientFactory, NullLogger<HttpImageryInferenceClient>.Instance)],
-            NullLogger<ImageryInferenceJobExecutor>.Instance);
+            [new HttpImageryInferenceClient(httpClientFactory, NullLogger<HttpImageryInferenceClient>.Instance, admission: new RecordingAiAdmission())],
+            NullLogger<ImageryInferenceJobExecutor>.Instance,
+            contextFactory: new AiExecutionContextFactory(Options.Create(new AiExecutionAdmissionOptions { DeploymentId = "test-deployment" })));
     }
 
     private static ExecutionJobRecord CreateJobRecord(byte[] scene, string model)
@@ -251,6 +256,12 @@ public sealed class ImageryClassifyExecutionProofTests : IAsyncLifetime
         var prefix = $"{ExecutionJobParameterKeys.GeoprocessingStepInputPrefix}0.";
         return new ExecutionJobRecord
         {
+            Audit = new OperationAuditInfo
+            {
+                RequestedBy = "ApiKey:api-key:11111111-1111-1111-1111-111111111111",
+                SubmitterSecurityContext = new JobSecurityContext(null, null, [])
+                { OwnerActorId = "ApiKey:api-key:11111111-1111-1111-1111-111111111111" }
+            },
             OperationId = "op-imagery-classify-proof",
             Status = ExecutionJobStatus.Running,
             CreatedAt = DateTimeOffset.UtcNow,

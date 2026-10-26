@@ -4,11 +4,13 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using FluentAssertions;
-using Honua.Ai.StudioAiProxy;
-using Honua.Ai.StudioAiProxy.Adapters;
 using Honua.Ai.StudioAiProxy.Adapters.Bedrock;
+using Honua.Ai.StudioAiProxy.Adapters;
 using Honua.Ai.StudioAiProxy.Domain;
+using Honua.Ai.StudioAiProxy;
+using Honua.Core.Features.Security.Admission;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Security;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -91,6 +93,7 @@ public sealed class BedrockStudioAiProxyAdapterTests
             NullLogger<BedrockStudioAiProxyAdapter>.Instance);
         var request = new StudioAiChatRequest
         {
+            ExecutionContext = RecordingAiAdmission.Context(),
             Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "hi" }],
             Tools =
             [
@@ -205,7 +208,7 @@ public sealed class BedrockStudioAiProxyAdapterTests
         StudioAiChatRequest request)
     {
         List<StudioAiChatEvent> events = [];
-        await foreach (var evt in adapter.StreamAsync(options, request, CancellationToken.None))
+        await foreach (var evt in adapter.StreamAsync(options, request, RecordingAiAdmission.TransportPermit(), CancellationToken.None))
         {
             events.Add(evt);
         }

@@ -8,9 +8,10 @@ using Honua.Core.Features.Operations.Services;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Hosting;
+using Honua.Infrastructure.Security.Admission;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
@@ -31,6 +32,7 @@ internal static class OperationsServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
         ArgumentNullException.ThrowIfNull(environment);
+        services.AddAiExecutionAdmission(configuration);
 
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<OperationLineageAttestationStore>();
@@ -128,6 +130,17 @@ internal static class OperationsServiceCollectionExtensions
             new OperationCatalog(
                 sp.GetServices<IOperationDescriptorProvider>(),
                 sp.GetRequiredService<TimeProvider>()));
+
+        if (!services.Any(descriptor => descriptor.ServiceType == typeof(AiAdmissionControlRegistrationMarker)))
+        {
+            services.AddSingleton<AiAdmissionControlRegistrationMarker>();
+            services.TryAddSingleton<IHttpContextAccessor, HttpContextAccessor>();
+            foreach (var controlId in AiAdmissionControlOperation.Actions.Keys)
+            {
+                services.AddDeferredOperationExecutor(controlId, provider => new AiAdmissionControlExecutor(controlId, provider));
+                services.AddSingleton<IOperationApprovalRequestMapper>(new AiAdmissionControlApprovalMapper(controlId));
+            }
+        }
 
         services.TryAddDeferredOperationExecutor<StylePresetExecutor>(StylePresetOperation.OperationId);
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IOperationApprovalRequestMapper, StylePresetApprovalMapper>());
@@ -308,6 +321,13 @@ internal static class OperationsServiceCollectionExtensions
     [
         ServicePublishOperation.OperationId,
         StylePresetOperation.OperationId,
+        // Only direct policy-allowed controls use a transient generic envelope here.
+        // Their actual ledger mutation and replay/audit receipt remain atomic and durable.
+        // RequireApproval still needs the existing durable proposal infrastructure.
+        "admin.ai.admission.initialize",
+        "admin.ai.admission.policy-update",
+        "admin.ai.admission.stop",
+        "admin.ai.admission.resume",
     ];
 
     /// <summary>
@@ -330,6 +350,8 @@ internal static class OperationsServiceCollectionExtensions
     /// repeated <see cref="AddOperationsToolset"/> calls stay idempotent without
     /// <c>TryAddEnumerable</c> (which cannot hold factory descriptors).
     /// </summary>
+    internal sealed class AiAdmissionControlRegistrationMarker;
+
     internal sealed class LegacyAdapterRegistrationMarker;
 
     internal sealed class AdminConnectImportRegistrationMarker;

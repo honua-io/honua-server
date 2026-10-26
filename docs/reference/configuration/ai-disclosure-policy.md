@@ -56,3 +56,7 @@ Disabled AI features and deterministic reports continue to work. Existing remote
 Studio and reporting use startup options snapshots. Imagery captures one options snapshot at job start; updated configuration applies to subsequent jobs. For immediate withdrawal, cancel or drain in-flight work and restart with the reviewed policy. Review approvals after changing providers, models, endpoints, workload inputs or provider terms. Forbidden, missing or stale qualification evidence remains unresolved; these deterministic gates alone do not establish framework alignment or installed deployment qualification. Installed deployment and live revocation qualification remain pending.
 
 Implementation: [shared evaluator](../../../src/Honua.Core/Features/Security/AiDisclosurePolicy.cs), [Studio dispatch](../../../src/Honua.Ai/Features/StudioAiProxy/StudioAiProxyService.cs), [imagery transfer](../../../src/Honua.Geoprocessing/Features/Geoprocessing/Inference/HttpImageryInferenceClient.cs), [report narrative](../../../src/Honua.Server/Features/Reporting/OpenAiNarrativeProvider.cs).
+
+
+Model calls also require [AI invocation admission](ai-execution-admission.md). Disclosure approval
+does not initialize a budget ledger or authorize a stopped generation.

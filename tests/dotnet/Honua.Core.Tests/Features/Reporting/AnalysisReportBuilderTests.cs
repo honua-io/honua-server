@@ -4,15 +4,15 @@
 using System.Globalization;
 using FluentAssertions;
 using Honua.Core.Features.Geoprocessing.Domain;
-using Honua.Core.Features.Reporting;
 using Honua.Core.Features.Reporting.Abstractions;
 using Honua.Core.Features.Reporting.Domain;
 using Honua.Core.Features.Reporting.Services;
 using Honua.Core.Features.Reporting.Templates;
+using Honua.Core.Features.Reporting;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Core.Tests.Features.Reporting;

@@ -635,7 +635,10 @@
         "src/Honua.Hosting/Honua.Hosting.csproj",
         "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj"
       ],
-      "resources": [],
+      "resources": [
+        "docker",
+        "redis"
+      ],
       "isolated": false,
       "coverageRequired": true
     },

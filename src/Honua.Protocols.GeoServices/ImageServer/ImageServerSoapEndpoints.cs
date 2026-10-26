@@ -3,8 +3,8 @@
 
 using System.Collections.Immutable;
 using System.Globalization;
-using System.Text;
 using System.Text.Json;
+using System.Text;
 using System.Xml.Linq;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -16,12 +16,12 @@ using Honua.Protocols.GeoServices.ImageServer.Handlers;
 using Honua.Protocols.GeoServices.ImageServer.Models;
 using Honua.Protocols.GeoServices.ImageServer.Raster;
 using Honua.Protocols.GeoServices.ImageServer.Services;
-using static Honua.Protocols.GeoServices.Soap.ArcGisSoapProtocol;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using Microsoft.OpenApi;
 using SkiaSharp;
+using static Honua.Protocols.GeoServices.Soap.ArcGisSoapProtocol;
 
 namespace Honua.Protocols.GeoServices.ImageServer;
 

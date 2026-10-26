@@ -2,10 +2,11 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Runtime.CompilerServices;
-using System.Text;
 using System.Text.Json;
+using System.Text;
 using Honua.Ai.StudioAiProxy.Abstractions;
 using Honua.Ai.StudioAiProxy.Domain;
+using Honua.Core.Features.Security.Admission;
 using Honua.Core.Features.Security;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -32,13 +33,16 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
     private readonly Dictionary<string, IStudioAiProxyAdapter> _adaptersByKind;
     private readonly ILogger<StudioAiProxyService> _logger;
     private readonly StudioAiTranscriptSigner _transcriptSigner;
+    private readonly IAiExecutionAdmission? _admission;
 
     public StudioAiProxyService(
         IOptions<StudioAiProxyConfiguration> options,
         IEnumerable<IStudioAiProxyAdapter> adapters,
         StudioAiTranscriptSigner transcriptSigner,
-        ILogger<StudioAiProxyService> logger)
+        ILogger<StudioAiProxyService> logger,
+        IAiExecutionAdmission? admission = null)
     {
+        _admission = admission;
         _configuration = options.Value;
         _adaptersByKind = adapters
             .GroupBy(a => a.Kind, StringComparer.OrdinalIgnoreCase)
@@ -241,11 +245,108 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
     private static int JsonCharacterCount(JsonElement? value)
         => value is null ? 0 : JsonCharacterCount(value.Value);
 
-    public async IAsyncEnumerable<StudioAiChatEvent> StreamChatAsync(
-        StudioAiChatRequest request,
-        StudioAiProxyCallSummary summary,
+    public async Task<StudioAiPreparedCall> PrepareChatAsync(StudioAiChatRequest request,
+        AiExecutionContext? executionContext, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (ValidateRequest(request) is { } validationError)
+            throw new AiAdmissionException(validationError.StartsWith("AI disclosure", StringComparison.Ordinal)
+                ? "disclosure_denied" : "invalid_context");
+        if (executionContext is not { IsValid: true, UseCase: "studio-chat" })
+            throw new AiAdmissionException("invalid_context");
+        if (_admission is null)
+            throw new AiAdmissionException("unavailable");
+        var permit = await _admission.AcquireAsync(executionContext, cancellationToken).ConfigureAwait(false);
+        return new StudioAiPreparedCall(request, executionContext, permit);
+    }
+
+    public async IAsyncEnumerable<StudioAiChatEvent> StreamChatAsync(StudioAiChatRequest request,
+        StudioAiProxyCallSummary summary, [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        StudioAiPreparedCall? prepared = null;
+        AiAdmissionException? denied = null;
+        try
+        {
+            prepared = await PrepareChatAsync(request, request.ExecutionContext, cancellationToken).ConfigureAwait(false);
+        }
+        catch (AiAdmissionException ex) { denied = ex; }
+        if (denied is not null)
+        {
+            yield return AdmissionError(summary, denied.Code);
+            yield break;
+        }
+        await using var owned = prepared!;
+        await foreach (var evt in StreamPreparedChatAsync(prepared!, summary, cancellationToken).ConfigureAwait(false))
+            yield return evt;
+    }
+
+    public async IAsyncEnumerable<StudioAiChatEvent> StreamPreparedChatAsync(StudioAiPreparedCall prepared,
+        StudioAiProxyCallSummary summary, [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        if (!prepared.TryClaim())
+        {
+            yield return AdmissionError(summary, "duplicate_invocation");
+            yield break;
+        }
+        await using var owned = prepared;
+        var beginFailure = await BeginPermitSafeAsync(prepared.Permit, cancellationToken).ConfigureAwait(false);
+        if (beginFailure is not null)
+        {
+            yield return AdmissionError(summary, beginFailure);
+            yield break;
+        }
+        using var streaming = CancellationTokenSource.CreateLinkedTokenSource(prepared.Permit.Token, cancellationToken);
+        var enumerator = StreamPreparedCoreAsync(prepared, summary, streaming.Token).GetAsyncEnumerator(streaming.Token);
+        try
+        {
+            while (true)
+            {
+                var (more, failure) = await MoveNextSafeAsync(enumerator, cancellationToken).ConfigureAwait(false);
+                if (failure is not null)
+                {
+                    yield return AdmissionError(summary, failure is AiAdmissionException rejected ? rejected.Code
+                        : prepared.Permit.Token.IsCancellationRequested ? "invalidated" : "unavailable");
+                    yield break;
+                }
+                if (!more) break;
+                yield return enumerator.Current;
+            }
+        }
+        finally
+        {
+            await enumerator.DisposeAsync().ConfigureAwait(false);
+        }
+    }
+
+    private static async Task<string?> BeginPermitSafeAsync(IAiExecutionPermit permit, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await permit.BeginInvocationAsync(cancellationToken).ConfigureAwait(false);
+            return null;
+        }
+        catch (AiAdmissionException ex) { return ex.Code; }
+    }
+
+    private static StudioAiChatEvent AdmissionError(StudioAiProxyCallSummary summary, string code)
+    {
+        summary.Succeeded = false;
+        summary.StopReason = StudioAiStopReason.Cancelled;
+        summary.ErrorMessage = "AI invocation admission is unavailable or no longer current.";
+        return new StudioAiChatEvent
+        {
+            Type = StudioAiChatEventType.Error,
+            ErrorCode = code == "disclosure_denied" ? "studio_ai/disclosure_denied" : "studio_ai/admission_" + code,
+            ErrorMessage = summary.ErrorMessage
+        };
+    }
+
+    private async IAsyncEnumerable<StudioAiChatEvent> StreamPreparedCoreAsync(
+        StudioAiPreparedCall prepared, StudioAiProxyCallSummary summary,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
+        var request = prepared.Request;
+
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(summary);
 
@@ -297,7 +398,7 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
             }
         }
 
-        var enumerator = adapter.StreamAsync(providerOptions, request, cancellationToken).GetAsyncEnumerator(cancellationToken);
+        var enumerator = adapter.StreamAsync(providerOptions, request, prepared.Permit, cancellationToken).GetAsyncEnumerator(cancellationToken);
         var validator = new StudioAiStreamGrammarValidator();
         StudioAiChatEvent? successfulTerminal = null;
         var transcriptEvents = signingKey is null ? null : new List<StudioAiChatEvent>();
@@ -314,6 +415,11 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
                 var (hasNext, failure) = await MoveNextSafeAsync(enumerator, cancellationToken).ConfigureAwait(false);
                 if (failure is not null)
                 {
+                    if (failure is AiAdmissionException denied)
+                    {
+                        yield return AdmissionError(summary, denied.Code);
+                        yield break;
+                    }
                     summary.Succeeded = false;
                     summary.ErrorMessage = "Adapter failed unexpectedly.";
                     summary.StopReason = StudioAiStopReason.Error;

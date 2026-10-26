@@ -4,6 +4,7 @@
 using FluentAssertions;
 using Honua.Ai.StudioAiProxy;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Security;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -136,6 +137,21 @@ public sealed class StudioAiProxyConfigurationTests
         var result = new StudioAiProxyConfigurationValidator().Validate(name: null, options);
 
         result.Succeeded.Should().Be(allowed);
+    }
+
+    [UnitTest]
+    public async Task AddStudioAiProxy_Transient503_SendsOneActualModelPost()
+    {
+        await using var endpoint = new LoopbackModelEndpoint();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddStudioAiProxy(new ConfigurationBuilder().Build());
+        using var provider = services.BuildServiceProvider();
+        using var client = provider.GetRequiredService<IHttpClientFactory>().CreateClient("studio-ai-proxy");
+        using var content = new StringContent("model request");
+        using var response = await client.PostAsync(endpoint.Address, content);
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.ServiceUnavailable);
+        endpoint.Requests.Should().Be(1, "a transient model POST must not be silently retried under one permit");
     }
 
     [UnitTest]

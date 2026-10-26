@@ -4,11 +4,13 @@
 using System.Diagnostics;
 using System.Text;
 using FluentAssertions;
-using Honua.Ai.StudioAiProxy;
 using Honua.Ai.StudioAiProxy.Adapters;
 using Honua.Ai.StudioAiProxy.Domain;
+using Honua.Ai.StudioAiProxy;
+using Honua.Core.Features.Security.Admission;
 using Honua.Server.Tests.Features.StudioAiProxy.Fakes;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Security;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.StudioAiProxy;
@@ -42,6 +44,7 @@ public sealed class StudioAiProxyLatencyTests
 
         var request = new StudioAiChatRequest
         {
+            ExecutionContext = RecordingAiAdmission.Context(),
             Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "stream a long answer" }]
         };
 
@@ -70,7 +73,7 @@ public sealed class StudioAiProxyLatencyTests
             NullLogger<OpenAiCompatibleStudioAiProxyAdapter>.Instance);
 
         var textDeltaCount = 0;
-        await foreach (var evt in adapter.StreamAsync(options, request, CancellationToken.None))
+        await foreach (var evt in adapter.StreamAsync(options, request, RecordingAiAdmission.TransportPermit(), CancellationToken.None))
         {
             if (evt.Type == StudioAiChatEventType.TextDelta)
             {
