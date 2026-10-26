@@ -9,6 +9,7 @@ using Honua.Infrastructure.Security.Admission;
 using Honua.TestKit.Attributes;
 using NSubstitute;
 using StackExchange.Redis;
+using TestProtocols = Honua.TestKit.Constants.ProtocolNames;
 
 namespace Honua.Hosting.ComponentTests;
 
