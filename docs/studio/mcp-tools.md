@@ -10,7 +10,7 @@ The server publishes 20 typed Studio tools through `/mcp`.
 This tool plane is executable independently of the browser Studio preview.
 The `configure` and `setup` workflow views both include these tools. The
 `setup_and_publish` and `dashboard_scaffolding` prompts select `configure`
-because that view also carries the closed admin roster. `setup` (`setup.v5`)
+because that view also carries the closed admin roster. `setup` (`setup.v6`)
 is the bounded terminal path and is what stamps `_meta["honua.studio"].view`.
 
 | Tool | Semantics |

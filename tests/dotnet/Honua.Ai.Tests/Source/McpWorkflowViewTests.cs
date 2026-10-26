@@ -126,7 +126,31 @@ public sealed class McpWorkflowViewTests
         full.Names.Should().Contain("honua_geocode_address");
         view.Names.Should().NotContain("honua_geocode_address");
         view.Names.Should().NotContain("honua_solve_route");
-        view.Names.Should().NotContain("honua_create_app_package");
+    }
+
+    [UnitTest]
+    public async Task SetupView_ListsPackageCompositionToAnonymousCallersWithoutGrantingIt()
+    {
+        // Listing is discovery only: an installed client that resolves tools from the listing
+        // (MCP Inspector) can now send the call, and the server still refuses it anonymously.
+        var surface = BuildFullSurface();
+        var anonymous = await ListToolsAsync(surface, McpWorkflowViewCatalog.SetupViewName, McpTestFactory.AnonymousHttpContext());
+
+        anonymous.Names.Should().Contain(["honua_create_map_package", "honua_create_app_package"]);
+        McpWorkflowViewCatalog.Setup.Revision.Should().Be("setup.v6");
+
+        foreach (var name in new[] { "honua_create_map_package", "honua_create_app_package" })
+        {
+            var response = await DispatchAsync(
+                surface,
+                "{\"jsonrpc\":\"2.0\",\"id\":\"anon\",\"method\":\"tools/call\",\"params\":{\"name\":\"" + name + "\",\"arguments\":{}}}",
+                McpTestFactory.AnonymousHttpContext());
+
+            var refused = response!.Error is not null
+                ? response.Error.Data!.Code
+                : response.Result!.Value.GetProperty("structuredContent").GetProperty("code").GetString();
+            refused.Should().Be("unauthenticated", name);
+        }
     }
 
     [UnitTest]
@@ -180,7 +204,7 @@ public sealed class McpWorkflowViewTests
             "honua_studio_propose_publication",
             "honua_supported_operation_kinds",
         ]);
-        view.Names.Should().HaveCount(39);
+        view.Names.Should().HaveCount(41);
 
         var stages = view.Meta.GetProperty("stages").EnumerateArray().ToArray();
         stages.Select(s => s.GetProperty("id").GetString()).Should().Equal(
@@ -678,7 +702,7 @@ public sealed class McpWorkflowViewTests
 
         after.Names.Should().NotContain("honua_op_import_geojson")
             .And.NotContain("honua_op_service_promote");
-        after.Names.Should().HaveCount(39);
+        after.Names.Should().HaveCount(41);
 
         // Removing the operation drops it again, still with no edit.
         var removed = await ListToolsAsync(BuildFullSurface(), McpWorkflowViewCatalog.SetupViewName);
@@ -711,7 +735,7 @@ public sealed class McpWorkflowViewTests
 
         var baseline = McpWorkflowViewProjector.Project(McpWorkflowViewCatalog.Setup, BuildCatalogEntries());
         names.Should().Equal(baseline.Members.Select(m => m.ToolName));
-        names.Should().HaveCount(39);
+        names.Should().HaveCount(41);
     }
 
     [UnitTest]
@@ -749,7 +773,7 @@ public sealed class McpWorkflowViewTests
 
         response!.Error.Should().BeNull();
         var tools = response.Result!.Value.GetProperty("tools");
-        tools.GetArrayLength().Should().Be(39);
+        tools.GetArrayLength().Should().Be(41);
         tools.EnumerateArray().Select(t => t.GetProperty("name").GetString())
             .Should().NotContain(name => name!.StartsWith("honua_op_import_", StringComparison.Ordinal));
     }
