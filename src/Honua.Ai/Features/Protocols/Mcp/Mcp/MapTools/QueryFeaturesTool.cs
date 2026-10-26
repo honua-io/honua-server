@@ -572,9 +572,16 @@ internal sealed class QueryFeaturesTool : IMcpTool
         }
     }
 
-    private static JsonValue? ToJsonValue(object? value) => value switch
+    /// <summary>
+    /// Maps a feature attribute to JSON. A JSON-typed column (for example the jsonb
+    /// <c>properties</c> column of an imported dataset) arrives as a <see cref="JsonElement"/>
+    /// and is emitted as that JSON value, as the GeoJSON writers do, never as its raw text.
+    /// </summary>
+    private static JsonNode? ToJsonValue(object? value) => value switch
     {
         null => null,
+        JsonElement { ValueKind: JsonValueKind.Null or JsonValueKind.Undefined } => null,
+        JsonElement element => JsonNode.Parse(element.GetRawText()),
         string s => JsonValue.Create(s),
         bool b => JsonValue.Create(b),
         int i => JsonValue.Create(i),
