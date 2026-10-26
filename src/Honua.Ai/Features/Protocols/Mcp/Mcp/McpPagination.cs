@@ -36,14 +36,17 @@ internal static class McpPagination
     public const int DefaultListPageSize = 12;
 
     /// <summary>
-    /// Default maximum number of characters returned per <c>resources/read</c>
-    /// page. Sized large enough that ordinary resource documents are returned in
-    /// a single response (no <c>nextCursor</c>) and only genuinely large
-    /// job-results/catalog payloads are chunked.
+    /// Default page size, in characters, for a <c>resources/read</c> continued with a
+    /// <c>cursor</c>. A read without a cursor returns the whole resource up to
+    /// <see cref="MaxResourceReadChars"/>, because MCP <c>resources/read</c> defines no
+    /// cursor and a spec-only client must receive a complete document.
     /// </summary>
     public const int DefaultMaxResourceReadChars = 64_000;
 
-    /// <summary>Largest explicit per-request resource-read opt-up.</summary>
+    /// <summary>
+    /// Hard ceiling for one <c>resources/read</c> response: the whole-resource read without a
+    /// cursor and the largest explicit <c>maxChars</c> opt-up.
+    /// </summary>
     public const int MaxResourceReadChars = 1_000_000;
 
     private const string ListCursorPrefix = "l1:";
