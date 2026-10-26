@@ -70,12 +70,16 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
-      # actions: write re-dispatches this workflow at the candidate tag (`gh workflow run`).
-      # contents: write creates the refs/tags/nightly-candidate-<sha7> lightweight tag.
-      # Only this job holds them; every build job keeps contents: read.
-      actions: write
+      # The Actions token only reads here: run lists, check runs and the tag lookup.
+      # The two writes of a hand-off (creating refs/tags/nightly-candidate-<sha7> and
+      # re-dispatching this workflow at it) use a short-lived HONUA_RELEASE_APP
+      # installation token minted in this job (honua-io/honua-server#6613). The Actions
+      # token cannot create that ref once the candidate's workflow files differ from
+      # trunk head's: the API demands the `workflows` permission, which GITHUB_TOKEN
+      # can never hold, and answers 403 "Resource not accessible by integration".
+      actions: read
       checks: read
-      contents: write
+      contents: read
     outputs:
       sha: ${{ steps.select.outputs.sha }}
       sha7: ${{ steps.select.outputs.sha7 }}
@@ -142,7 +146,6 @@ jobs:
       - name: Route the build to a run at the selected sha
         id: route
         env:
-          GH_TOKEN: ${{ github.token }}
           CANDIDATE_SHA: ${{ steps.select.outputs.sha }}
         run: |
           set -euo pipefail
@@ -157,56 +160,99 @@ jobs:
             echo "::error::selected candidate ${CANDIDATE_SHA} is not this run's commit ${GITHUB_SHA} on ${GITHUB_REF}; refusing to build an image whose provenance would name a different sha."
             exit 1
           fi
-          if [ "${mode}" = redirect ]; then
-            tag="nightly-candidate-${CANDIDATE_SHA:0:7}"
-            # Create the lightweight tag, or accept an existing one only when it already
-            # names the selected sha (a sha7 collision or a moved tag refuses).
-            if existing="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${tag}" --jq '.object.sha' 2>"${RUNNER_TEMP}/tag-lookup.err")"; then
-              if [ "${existing}" != "${CANDIDATE_SHA}" ]; then
-                echo "::error::tag ${tag} already names ${existing}, not the selected ${CANDIDATE_SHA}; remove or correct it, then re-dispatch."
-                exit 1
-              fi
-              echo "Tag ${tag} already names ${CANDIDATE_SHA}."
-            elif grep -q 'HTTP 404' "${RUNNER_TEMP}/tag-lookup.err"; then
-              gh api -X POST "repos/${GITHUB_REPOSITORY}/git/refs" \
-                -f ref="refs/tags/${tag}" -f sha="${CANDIDATE_SHA}" --jq '.ref'
-            else
-              cat "${RUNNER_TEMP}/tag-lookup.err" >&2
-              echo "::error::could not read tag ${tag}."
-              exit 1
-            fi
-            # One build per candidate: a queued or running candidate run already covers it.
-            active="$(gh run list --repo "${GITHUB_REPOSITORY}" --workflow nightly-container-build.yml \
-              --branch "${tag}" --limit 20 --json status --jq '[.[] | select(.status != "completed")] | length')"
-            # A candidate that a run on its tag already imaged is not rebuilt. Each re-dispatch files
-            # its checks on the candidate sha again, and the release resolver judges a lane by its
-            # latest attempt: 8cb074f7 was imaged on 2026-10-23 (run 39876804619), then three nightly
-            # re-dispatches failed only in mirror-base-images (Public ECR 429) and kept the imaged,
-            # certified sha out of the release candidate (honua-io/honua-release#952).
-            imaged="$(gh run list --repo "${GITHUB_REPOSITORY}" --workflow nightly-container-build.yml \
-              --branch "${tag}" --limit 20 --json status,conclusion,headSha \
-              --jq "[.[] | select(.status == \"completed\" and .conclusion == \"success\" and .headSha == \"${CANDIDATE_SHA}\")] | length")"
-            if [ "${active}" != 0 ]; then
-              echo "::notice::a Nightly Container Build run on ${tag} is already queued or running; not dispatching another."
-            elif [ "${imaged}" != 0 ]; then
-              echo "::notice::a Nightly Container Build run on ${tag} already imaged ${CANDIDATE_SHA}; not rebuilding it."
-            else
-              gh workflow run nightly-container-build.yml --repo "${GITHUB_REPOSITORY}" --ref "${tag}"
-              echo "::notice::trunk head ${GITHUB_SHA} is not the newest certified sha ${CANDIDATE_SHA}; re-dispatched this workflow at ${tag} so the image, labels and provenance all name ${CANDIDATE_SHA}."
-            fi
-            {
-              echo "### Nightly candidate hand-off"
-              echo
-              echo "Trunk head \`${GITHUB_SHA}\` is not the selected certified sha \`${CANDIDATE_SHA}\`."
-              echo "The build runs in a separate Nightly Container Build run on tag \`${tag}\`; this run publishes nothing."
-            } >> "${GITHUB_STEP_SUMMARY}"
-          fi
           case "${mode}" in build-trunk|build-candidate) publish=true ;; *) publish=false ;; esac
           echo "Nightly route: mode=${mode} publish=${publish} candidate=${CANDIDATE_SHA} run=${GITHUB_SHA} ref=${GITHUB_REF}"
           {
             echo "mode=${mode}"
             echo "publish=${publish}"
           } >> "$GITHUB_OUTPUT"
+
+      # A hand-off needs the honua-release GitHub App. Its absence is a setup defect, so
+      # the run fails here and names it; there is no fallback to the Actions token, which
+      # is the 403 this replaces (honua-io/honua-server#6613).
+      - name: Require the release GitHub App for the candidate hand-off
+        if: steps.route.outputs.mode == 'redirect'
+        env:
+          HAS_APP_ID: ${{ secrets.HONUA_RELEASE_APP_ID != '' }}
+          HAS_APP_PRIVATE_KEY: ${{ secrets.HONUA_RELEASE_APP_PRIVATE_KEY != '' }}
+        run: |
+          set -euo pipefail
+          missing=()
+          [ "${HAS_APP_ID}" = true ] || missing+=(HONUA_RELEASE_APP_ID)
+          [ "${HAS_APP_PRIVATE_KEY}" = true ] || missing+=(HONUA_RELEASE_APP_PRIVATE_KEY)
+          if [ "${#missing[@]}" -ne 0 ]; then
+            echo "::error::Nightly candidate hand-off needs the honua-release GitHub App, but repository secret(s) ${missing[*]} are not set. Setup: create a GitHub App on the honua-io org with repository permissions Contents: write, Workflows: write and Actions: write; install it on honua-server only; then add its App ID as HONUA_RELEASE_APP_ID and its private key (PEM) as HONUA_RELEASE_APP_PRIVATE_KEY in honua-server's Actions secrets. See honua-io/honua-server#6613. The Actions token is not used as a fallback: it cannot create this tag."
+            exit 1
+          fi
+
+      # Scoped to honua-server and to exactly the three permissions the hand-off uses.
+      # The token is revoked when the job ends.
+      - name: Mint the release GitHub App token for the candidate hand-off
+        id: handoff-token
+        if: steps.route.outputs.mode == 'redirect'
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ secrets.HONUA_RELEASE_APP_ID }}
+          private-key: ${{ secrets.HONUA_RELEASE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: honua-server
+          # contents + workflows: create a tag ref whose commit's workflow files differ
+          # from trunk head's. actions: POST .../actions/workflows/{id}/dispatches.
+          permission-contents: write
+          permission-workflows: write
+          permission-actions: write
+
+      - name: Tag the selected sha and re-dispatch this workflow at it
+        if: steps.route.outputs.mode == 'redirect'
+        env:
+          # Reads use the Actions token; only the tag create and the dispatch use the App token.
+          GH_TOKEN: ${{ github.token }}
+          HANDOFF_TOKEN: ${{ steps.handoff-token.outputs.token }}
+          CANDIDATE_SHA: ${{ steps.select.outputs.sha }}
+        run: |
+          set -euo pipefail
+          tag="nightly-candidate-${CANDIDATE_SHA:0:7}"
+          # Create the lightweight tag, or accept an existing one only when it already
+          # names the selected sha (a sha7 collision or a moved tag refuses).
+          if existing="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${tag}" --jq '.object.sha' 2>"${RUNNER_TEMP}/tag-lookup.err")"; then
+            if [ "${existing}" != "${CANDIDATE_SHA}" ]; then
+              echo "::error::tag ${tag} already names ${existing}, not the selected ${CANDIDATE_SHA}; remove or correct it, then re-dispatch."
+              exit 1
+            fi
+            echo "Tag ${tag} already names ${CANDIDATE_SHA}."
+          elif grep -q 'HTTP 404' "${RUNNER_TEMP}/tag-lookup.err"; then
+            GH_TOKEN="${HANDOFF_TOKEN}" gh api -X POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+              -f ref="refs/tags/${tag}" -f sha="${CANDIDATE_SHA}" --jq '.ref'
+          else
+            cat "${RUNNER_TEMP}/tag-lookup.err" >&2
+            echo "::error::could not read tag ${tag}."
+            exit 1
+          fi
+          # One build per candidate: a queued or running candidate run already covers it.
+          active="$(gh run list --repo "${GITHUB_REPOSITORY}" --workflow nightly-container-build.yml \
+            --branch "${tag}" --limit 20 --json status --jq '[.[] | select(.status != "completed")] | length')"
+          # A candidate that a run on its tag already imaged is not rebuilt. Each re-dispatch files
+          # its checks on the candidate sha again, and the release resolver judges a lane by its
+          # latest attempt: 8cb074f7 was imaged on 2026-10-23 (run 39876804619), then three nightly
+          # re-dispatches failed only in mirror-base-images (Public ECR 429) and kept the imaged,
+          # certified sha out of the release candidate (honua-io/honua-release#952).
+          imaged="$(gh run list --repo "${GITHUB_REPOSITORY}" --workflow nightly-container-build.yml \
+            --branch "${tag}" --limit 20 --json status,conclusion,headSha \
+            --jq "[.[] | select(.status == \"completed\" and .conclusion == \"success\" and .headSha == \"${CANDIDATE_SHA}\")] | length")"
+          if [ "${active}" != 0 ]; then
+            echo "::notice::a Nightly Container Build run on ${tag} is already queued or running; not dispatching another."
+          elif [ "${imaged}" != 0 ]; then
+            echo "::notice::a Nightly Container Build run on ${tag} already imaged ${CANDIDATE_SHA}; not rebuilding it."
+          else
+            GH_TOKEN="${HANDOFF_TOKEN}" gh workflow run nightly-container-build.yml --repo "${GITHUB_REPOSITORY}" --ref "${tag}"
+            echo "::notice::trunk head ${GITHUB_SHA} is not the newest certified sha ${CANDIDATE_SHA}; re-dispatched this workflow at ${tag} so the image, labels and provenance all name ${CANDIDATE_SHA}."
+          fi
+          {
+            echo "### Nightly candidate hand-off"
+            echo
+            echo "Trunk head \`${GITHUB_SHA}\` is not the selected certified sha \`${CANDIDATE_SHA}\`."
+            echo "The build runs in a separate Nightly Container Build run on tag \`${tag}\`; this run publishes nothing."
+          } >> "${GITHUB_STEP_SUMMARY}"
 
   mirror-base-images:
     name: Mirror .NET base images (MCR -> GHCR)
