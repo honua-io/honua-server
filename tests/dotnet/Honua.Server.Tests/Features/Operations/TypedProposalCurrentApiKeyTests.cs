@@ -39,6 +39,7 @@ public sealed class TypedProposalCurrentApiKeyTests(RedisFixture redis) : IAsync
     private LookupSwitchStore _lookup = null!;
     private readonly ConcurrentQueue<string> _audit = new();
     private readonly RecordingLogs _logs = new();
+    private string _denialAuditMode = "ok";
     private const string Canary = "synthetic-private-store-error-canary";
     private IOperationProposalStore _proposals = null!;
 
@@ -70,7 +71,7 @@ public sealed class TypedProposalCurrentApiKeyTests(RedisFixture redis) : IAsync
             var auditDescriptor = services.Last(descriptor => descriptor.ServiceType == typeof(IAuditLog));
             services.RemoveAll<IAuditLog>();
             services.AddScoped<IAuditLog>(provider => new CapturingAudit(
-                ResolveDescriptor<IAuditLog>(provider, auditDescriptor), _audit));
+                ResolveDescriptor<IAuditLog>(provider, auditDescriptor), _audit, () => _denialAuditMode));
             services.AddLogging(logging => logging.AddProvider(_logs));
             services.RemoveAll<CanonicalExecutor>();
             services.AddSingleton<CanonicalExecutor>(_executor);
@@ -102,6 +103,7 @@ public sealed class TypedProposalCurrentApiKeyTests(RedisFixture redis) : IAsync
         response.StatusCode.Should().Be(HttpStatusCode.Conflict);
         _executor.Calls.Should().Be(0);
         persisted!.Status.Should().Be(OperationProposalStatus.AwaitingApproval);
+        await AssertDenialAuditAsync(proposal, approver.Record.Id.ToString("D"), "current_authority");
     }
 
     [IntegrationTest]
@@ -121,6 +123,8 @@ public sealed class TypedProposalCurrentApiKeyTests(RedisFixture redis) : IAsync
             $"/api/v1/admin/proposals/{proposal.ProposalId}/approve", null);
         replay.StatusCode.Should().Be(HttpStatusCode.Conflict);
         _executor.Calls.Should().Be(1);
+        (await ReadAuditsAsync(proposal.ProposalId)).Should()
+            .NotContain(entry => entry.Action == "operation.approval_denied");
     }
 
     [IntegrationTheory]
@@ -150,6 +154,9 @@ public sealed class TypedProposalCurrentApiKeyTests(RedisFixture redis) : IAsync
         _executor.Calls.Should().Be(0);
         (await _proposals.GetAsync(proposal.ProposalId, CancellationToken.None))!.Status
             .Should().Be(OperationProposalStatus.AwaitingApproval);
+        await AssertDenialAuditAsync(proposal, approver.Record.Id.ToString("D"), "current_authority");
+        _audit.Should().OnlyContain(message => !message.Contains(Canary));
+        _logs.Messages.Should().OnlyContain(message => !message.Contains(Canary));
     }
 
     [IntegrationTheory]
@@ -182,6 +189,9 @@ public sealed class TypedProposalCurrentApiKeyTests(RedisFixture redis) : IAsync
         _logs.Messages.Should().OnlyContain(message => !message.Contains(Canary));
         _audit.Should().NotBeEmpty();
         _audit.Should().OnlyContain(message => !message.Contains(Canary));
+        var audits = await ReadAuditsAsync(proposal.ProposalId);
+        audits.Should().ContainSingle(entry => entry.Action == "operation.apply_failed");
+        audits.Should().NotContain(entry => entry.Action == "operation.approval_denied");
     }
 
     [IntegrationTest]
@@ -206,6 +216,8 @@ public sealed class TypedProposalCurrentApiKeyTests(RedisFixture redis) : IAsync
         _executor.Calls.Should().Be(0);
         (await _proposals.GetAsync(proposal.ProposalId, CancellationToken.None))!.Status
             .Should().Be(OperationProposalStatus.Cancelled);
+        (await ReadAuditsAsync(proposal.ProposalId)).Should()
+            .NotContain(entry => entry.Action == "operation.approval_denied");
     }
 
     [IntegrationTest]
@@ -244,6 +256,49 @@ public sealed class TypedProposalCurrentApiKeyTests(RedisFixture redis) : IAsync
         HttpClient client = _fixture.CreateClient(value => value.DefaultRequestHeaders.Add("X-API-Key", key));
         _clients.Add(client);
         return client;
+    }
+
+    [IntegrationTheory]
+    [InlineData("null")]
+    [InlineData("throw")]
+    [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
+    public async Task CurrentAuthorityRefused_AuditUnavailable_ReturnsSafe503BeforeClaim(string mode)
+    {
+        var proposer = await CreateKeyAsync("audit-unavailable-proposer");
+        var approver = await CreateKeyAsync("audit-unavailable-approver");
+        var proposal = await SubmitAsync(proposer);
+        await _keys.RevokeAsync(proposer.Record.Id, CancellationToken.None);
+        _denialAuditMode = mode;
+        using var response = await Client(approver.Key).PostAsync(
+            $"/api/v1/admin/proposals/{proposal.ProposalId}/approve", null);
+        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable, await response.Content.ReadAsStringAsync());
+        (await response.Content.ReadAsStringAsync()).Should().NotContain(Canary);
+        _executor.Calls.Should().Be(0);
+        (await _proposals.GetAsync(proposal.ProposalId, CancellationToken.None))!.Status
+            .Should().Be(OperationProposalStatus.AwaitingApproval);
+        (await ReadAuditsAsync(proposal.ProposalId)).Should()
+            .NotContain(entry => entry.Action == "operation.approval_denied");
+        _logs.Messages.Should().OnlyContain(message => !message.Contains(Canary));
+    }
+
+    private async Task<IReadOnlyList<AuditEventRecord>> ReadAuditsAsync(string proposalId)
+    {
+        await using var scope = _fixture.Services.CreateAsyncScope();
+        var page = await scope.ServiceProvider.GetRequiredService<IAuditLogReader>().ListAsync(
+            new AuditLogFilter { ResourceId = proposalId, PageSize = 20 });
+        return page.Items;
+    }
+
+    private async Task AssertDenialAuditAsync(OperationProposal proposal, string actor, string reason)
+    {
+        var denial = (await ReadAuditsAsync(proposal.ProposalId)).Should()
+            .ContainSingle(entry => entry.Action == "operation.approval_denied").Subject;
+        denial.Actor.Should().Be(actor);
+        denial.CorrelationId.Should().Be(proposal.Audit.CorrelationId ?? proposal.ProposalId);
+        denial.Outcome.Should().Be(AuditOutcome.Denied);
+        using var details = JsonDocument.Parse(denial.Details);
+        details.RootElement.GetProperty("reason").GetString().Should().Be(reason);
+        JsonSerializer.Serialize(denial).Should().NotContain(Canary);
     }
 
     private async Task<OperationProposal> SubmitAsync(AdminApiKeyCreateResult proposer)
@@ -294,12 +349,17 @@ public sealed class TypedProposalCurrentApiKeyTests(RedisFixture redis) : IAsync
         public Task<AdminApiKeyValidationResult?> ValidateAsync(string key, CancellationToken token) => inner.ValidateAsync(key, token);
     }
 
-    private sealed class CapturingAudit(IAuditLog inner, ConcurrentQueue<string> events) : IAuditLog
+    private sealed class CapturingAudit(IAuditLog inner, ConcurrentQueue<string> events, Func<string> mode) : IAuditLog
     {
         public bool IsPersisted => inner.IsPersisted;
         public Task<string?> RecordAsync(AuditEvent entry, CancellationToken token = default)
         {
             events.Enqueue(JsonSerializer.Serialize(entry));
+            if (entry.Action == "operation.approval_denied")
+            {
+                if (mode() == "throw") throw new InvalidOperationException(Canary);
+                if (mode() == "null") return Task.FromResult<string?>(null);
+            }
             return inner.RecordAsync(entry, token);
         }
     }

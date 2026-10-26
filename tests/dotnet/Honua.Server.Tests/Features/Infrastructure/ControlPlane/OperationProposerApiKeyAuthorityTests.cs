@@ -6,6 +6,7 @@ using Honua.ControlPlane;
 using Honua.Infrastructure.Authentication;
 using Honua.TestKit.Attributes;
 using NSubstitute;
+using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Abstractions;
@@ -118,7 +119,7 @@ public sealed class OperationProposerApiKeyAuthorityTests
     [UnitTheory]
     [InlineData("apikey:api-key:99424c41-981a-44f2-90b6-b864f0e60957")]
     [InlineData("apikey:subject:malformed")]
-    public async Task Gateway_MissingAuthorityHelper_DeniesBeforeClaimOrScope(string actor)
+    public async Task Gateway_MissingAuthorityHelper_DeniesBeforeClaimWithAuditReceipt(string actor)
     {
         var store = Substitute.For<IOperationProposalStore>();
         var proposal = new OperationProposal
@@ -133,14 +134,22 @@ public sealed class OperationProposerApiKeyAuthorityTests
             Audit = new OperationAuditInfo { OperationInstanceId = "synthetic-instance", CorrelationId = "synthetic-correlation", Reason = "test" }
         };
         store.GetAsync("synthetic", Arg.Any<CancellationToken>()).Returns(Task.FromResult<OperationProposal?>(proposal));
-        var scopes = Substitute.For<IServiceScopeFactory>();
+        var audit = Substitute.For<IAuditLog>();
+        audit.IsPersisted.Returns(true);
+        audit.RecordAsync(Arg.Any<AuditEvent>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<string?>("synthetic-receipt"));
+        await using var services = new ServiceCollection().AddScoped<IAuditLog>(_ => audit)
+            .BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+        var scopes = services.GetRequiredService<IServiceScopeFactory>();
         var gateway = new OperationGateway(Substitute.For<IGuardrailLadder>(), store, [], scopes,
             Substitute.For<IProposalNotifier>(), NullLogger<OperationGateway>.Instance);
         var act = () => gateway.ApplyApprovedProposalAsync("synthetic", "distinct-approver");
         var error = (await act.Should().ThrowAsync<InvalidOperationException>()).Which;
         error.Message.Should().Be(OperationProposerApiKeyAuthority.Refusal);
         error.InnerException.Should().BeNull();
-        scopes.DidNotReceive().CreateScope();
+        await audit.Received(1).RecordAsync(Arg.Is<AuditEvent>(entry =>
+            entry.Action == "operation.approval_denied" && entry.ResourceId == proposal.ProposalId),
+            Arg.Any<CancellationToken>());
         store.ReceivedCalls().Should().OnlyContain(call => call.GetMethodInfo().Name == nameof(IOperationProposalStore.GetAsync));
     }
 

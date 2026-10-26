@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Core.Features.AuditLog.Abstractions;
+using Honua.Core.Exceptions;
 using Honua.Alerts.Ops;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.Authorization.Domain;
@@ -280,22 +281,45 @@ internal sealed partial class OperationGateway : IOperationGateway
         // approval entry point can execute a proposal on its own requester's say-so (#4901).
         if (IsRequester(proposal.RequestedBy, approval))
         {
+            await OperationApprovalDenialRecorder.RecordAsync(
+                _scopeFactory, proposal, approvedBy, OperationApprovalDenialReason.SelfApproval, cancellationToken)
+                .ConfigureAwait(false);
             throw new InvalidOperationException(
                 "Separation of duties: the requester of a proposal cannot approve it.");
         }
 
-        await ValidateCurrentProposerAsync(proposal.RequestedBy, cancellationToken).ConfigureAwait(false);
-
-        if (proposal.Evidence is not null)
+        try
         {
-            if (!hasApprovalContext || _evidenceValidator is null)
-            {
-                throw new InvalidOperationException(
-                    "Evidence-bound proposals require the authenticated approval validation boundary.");
-            }
-
-            await _evidenceValidator.ValidateApprovalAsync(proposal, approval, cancellationToken)
+            await ValidateCurrentProposerAsync(proposal.RequestedBy, cancellationToken).ConfigureAwait(false);
+        }
+        catch (InvalidOperationException ex) when (ex is not ServiceUnavailableException)
+        {
+            await OperationApprovalDenialRecorder.RecordAsync(
+                _scopeFactory, proposal, approvedBy, OperationApprovalDenialReason.CurrentAuthority, cancellationToken)
                 .ConfigureAwait(false);
+            throw;
+        }
+
+        try
+        {
+            if (proposal.Evidence is not null)
+            {
+                if (!hasApprovalContext || _evidenceValidator is null)
+                {
+                    throw new InvalidOperationException(
+                        "Evidence-bound proposals require the authenticated approval validation boundary.");
+                }
+
+                await _evidenceValidator.ValidateApprovalAsync(proposal, approval, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+        }
+        catch (InvalidOperationException ex) when (ex is not ServiceUnavailableException)
+        {
+            await OperationApprovalDenialRecorder.RecordAsync(
+                _scopeFactory, proposal, approvedBy, OperationApprovalDenialReason.EvidenceInvalid, cancellationToken)
+                .ConfigureAwait(false);
+            throw;
         }
 
         // Atomically claim the proposal before invoking the executor.

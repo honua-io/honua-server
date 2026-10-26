@@ -189,6 +189,30 @@ public sealed class ProposalEvidenceSecurityJourneyTests(
         MutationCount.Should().Be(0);
     }
 
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
+    public async Task ApproveProposal_InvalidEvidenceAndUnavailableAudit_Returns503BeforeExecution()
+    {
+        var before = MutationCount;
+        var context = await CreateProposalAsync(ProposeDeployOperationTool.ToolName);
+        var changed = context.Proposal with
+        {
+            Evidence = context.Proposal.Evidence! with { DescriptorRevision = "invalid-for-audit-test" }
+        };
+        (await _proposals.TrySetAsync(changed)).Should().BeTrue();
+        var approver = await CreateKeyAsync($"audit-outage-approver-{Guid.NewGuid():N}", ["admin:*"]);
+        _auditFailure.FailWrites = true;
+        using var response = await CreateClient(approver.Key, TenantA).PostAsync(
+            $"/api/v1/admin/proposals/{changed.ProposalId}/approve", null);
+        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable, await response.Content.ReadAsStringAsync());
+        MutationCount.Should().Be(before);
+        (await _proposals.GetAsync(changed.ProposalId))!.Status.Should().Be(OperationProposalStatus.AwaitingApproval);
+        using var scope = _fixture.Services.CreateScope();
+        var audits = await scope.ServiceProvider.GetRequiredService<IAuditLogReader>().ListAsync(
+            new AuditLogFilter { ResourceId = changed.ProposalId, PageSize = 20 });
+        audits.Items.Should().NotContain(item => item.Action == "operation.approval_denied");
+    }
+
     private async Task RunAllowedAsync(
         string toolName,
         OperationClass operationClass,
@@ -346,6 +370,14 @@ public sealed class ProposalEvidenceSecurityJourneyTests(
             $"/api/v1/admin/proposals/{changed.ProposalId}/approve", null);
         response.StatusCode.Should().Be(HttpStatusCode.Conflict);
         MutationCount.Should().Be(before);
+        using var auditScope = _fixture.Services.CreateScope();
+        var audits = await auditScope.ServiceProvider.GetRequiredService<IAuditLogReader>().ListAsync(
+            new AuditLogFilter { ResourceId = changed.ProposalId, PageSize = 20 });
+        var denial = audits.Items.Should().ContainSingle(item => item.Action == "operation.approval_denied").Subject;
+        denial.Outcome.Should().Be(AuditOutcome.Denied);
+        denial.CorrelationId.Should().Be(changed.Audit.CorrelationId ?? changed.ProposalId);
+        using var details = JsonDocument.Parse(denial.Details);
+        details.RootElement.GetProperty("reason").GetString().Should().Be("evidence_invalid");
         receipts.Add(ToReceipt(scenario, "rejected-at-approval", changed, 0));
     }
 
