@@ -39,6 +39,7 @@ internal sealed partial class OperationGateway : IOperationGateway
     private readonly IProposalNotifier _notifier;
     private readonly ILogger<OperationGateway> _logger;
     private readonly IOperationProposalEvidenceValidator? _evidenceValidator;
+    private readonly OperationProposerApiKeyAuthority? _proposerKeyAuthority;
 
     public OperationGateway(
         IGuardrailLadder ladder,
@@ -47,7 +48,8 @@ internal sealed partial class OperationGateway : IOperationGateway
         IServiceScopeFactory scopeFactory,
         IProposalNotifier notifier,
         ILogger<OperationGateway> logger,
-        IOperationProposalEvidenceValidator? evidenceValidator = null)
+        IOperationProposalEvidenceValidator? evidenceValidator = null,
+        OperationProposerApiKeyAuthority? proposerKeyAuthority = null)
     {
         ArgumentNullException.ThrowIfNull(executors);
         _ladder = ladder;
@@ -56,6 +58,7 @@ internal sealed partial class OperationGateway : IOperationGateway
         _notifier = notifier;
         _logger = logger;
         _evidenceValidator = evidenceValidator;
+        _proposerKeyAuthority = proposerKeyAuthority;
     }
 
     public async Task<OperationGatewayResult> RouteAsync(
@@ -281,6 +284,8 @@ internal sealed partial class OperationGateway : IOperationGateway
                 "Separation of duties: the requester of a proposal cannot approve it.");
         }
 
+        await ValidateCurrentProposerAsync(proposal.RequestedBy, cancellationToken).ConfigureAwait(false);
+
         if (proposal.Evidence is not null)
         {
             if (!hasApprovalContext || _evidenceValidator is null)
@@ -327,6 +332,8 @@ internal sealed partial class OperationGateway : IOperationGateway
             OperationHandle handle;
             try
             {
+                // Recheck after claim/scope/replay preparation, immediately before canonical dispatch.
+                await ValidateCurrentProposerAsync(proposal.RequestedBy, cancellationToken).ConfigureAwait(false);
                 handle = await invoker.SubmitAsync(
                     replay?.Request ?? new OperationRequest
                     {
@@ -421,6 +428,15 @@ internal sealed partial class OperationGateway : IOperationGateway
             .ConfigureAwait(false);
         await _notifier.NotifyResolvedAsync(resolved, cancellationToken).ConfigureAwait(false);
         return resolved;
+    }
+
+    private async Task ValidateCurrentProposerAsync(string? actor, CancellationToken cancellationToken)
+    {
+        if (!OperationProposerApiKeyAuthority.IsApiKeyActor(actor)) return;
+        cancellationToken.ThrowIfCancellationRequested();
+        if (_proposerKeyAuthority is null)
+            throw new InvalidOperationException(OperationProposerApiKeyAuthority.Refusal);
+        await _proposerKeyAuthority.ValidateAsync(actor, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<OperationProposal?> RejectProposalAsync(

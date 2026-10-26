@@ -1,7 +1,6 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text.Json;
 using Honua.Ai.Protocols.Mcp;
@@ -24,6 +23,8 @@ internal sealed class OperationProposalEvidenceValidator(
     IAdminApiKeyStore apiKeys,
     TimeProvider timeProvider) : IOperationProposalEvidenceValidator
 {
+    private readonly OperationProposerApiKeyAuthority _proposerAuthority = new(timeProvider, apiKeys);
+
     public async Task ValidateApprovalAsync(
         OperationProposal proposal,
         OperationProposalApprovalContext approval,
@@ -46,32 +47,9 @@ internal sealed class OperationProposalEvidenceValidator(
             throw new InvalidOperationException("The proposal evidence has expired.");
         }
 
-        if (!TryParseApiKeyActor(proposal.RequestedBy, out var proposerKeyId))
-        {
-            throw new InvalidOperationException(
-                "The proposer authority cannot be revalidated at approval time.");
-        }
-
-        var proposer = await apiKeys.GetAsync(proposerKeyId, cancellationToken).ConfigureAwait(false);
-        var now = timeProvider.GetUtcNow();
-        if (proposer is null || proposer.RevokedAt is not null || proposer.ExpiresAt <= now)
-        {
-            throw new InvalidOperationException("The proposer is no longer authorized.");
-        }
-
-        var proposerIdentity = new ClaimsIdentity(
-            proposer.Permissions.Select(permission =>
-                new Claim(AdminApiKeyPermission.PermissionClaimType, permission)),
-            authenticationType: "proposal-evidence-revalidation",
-            nameType: ClaimTypes.Name,
-            roleType: ClaimTypes.Role);
-        proposerIdentity.AddClaim(new Claim(ClaimTypes.Role, "admin"));
-        if (!AdminApiKeyPermission.IsAuthorized(new ClaimsPrincipal(proposerIdentity), HttpMethods.Post)
-            || !string.Equals(evidence.AuthorizationDecision, "admin-policy-authorized", StringComparison.Ordinal))
-        {
-            throw new InvalidOperationException(
-                "The proposer no longer has the authority sealed into the proposal.");
-        }
+        await _proposerAuthority.ValidateAsync(proposal.RequestedBy, cancellationToken).ConfigureAwait(false);
+        if (!string.Equals(evidence.AuthorizationDecision, "admin-policy-authorized", StringComparison.Ordinal))
+            throw new InvalidOperationException("The proposer no longer has the authority sealed into the proposal.");
 
         var tool = services.GetServices<IMcpTool>().SingleOrDefault(candidate =>
             string.Equals(candidate.Name, evidence.ToolName, StringComparison.Ordinal));
@@ -177,14 +155,6 @@ internal sealed class OperationProposalEvidenceValidator(
         {
             throw new InvalidOperationException("The governing operation policy revision has changed.");
         }
-    }
-
-    private static bool TryParseApiKeyActor(string? actor, out Guid id)
-    {
-        id = default;
-        const string marker = ":api-key:";
-        var markerIndex = actor?.IndexOf(marker, StringComparison.OrdinalIgnoreCase) ?? -1;
-        return markerIndex > 0 && Guid.TryParse(actor![(markerIndex + marker.Length)..], out id);
     }
 
     private static bool FixedTimeHexEquals(string actual, byte[] expected)
