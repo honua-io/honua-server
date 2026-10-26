@@ -21,6 +21,9 @@ public interface IAiExecutionPermit : IAsyncDisposable
 
     /// <summary>Rechecks current authority immediately before a model send; this does not charge another attempt.</summary>
     Task EnsureCurrentAsync(CancellationToken cancellationToken);
+
+    /// <summary>Authorizes exactly one actual provider send after invocation start and an authoritative check.</summary>
+    Task AuthorizeSendAsync(CancellationToken cancellationToken);
 }
 
 /// <summary>Sanitized invocation admission failure without actor, prompt, destination or credential details.</summary>
