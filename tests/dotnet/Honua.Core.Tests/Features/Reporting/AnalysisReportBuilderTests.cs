@@ -298,7 +298,7 @@ public sealed class AnalysisReportBuilderTests
         public bool IsEnabled(LogLevel logLevel) => true;
         public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
             Func<TState, Exception?, string> formatter)
-            => Messages.Add(formatter(state, exception) + exception?.ToString());
+            => Messages.Add(formatter(state, exception) + exception);
     }
 
     private static AnalysisReportBuilder CreateBuilder(

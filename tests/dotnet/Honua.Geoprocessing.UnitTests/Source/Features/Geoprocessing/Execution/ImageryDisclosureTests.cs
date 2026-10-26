@@ -22,8 +22,9 @@ public sealed class ImageryDisclosureTests
     public async Task InferAsync_UnapprovedOrOverriddenModel_SendsNoPayloadAndResolvesNoSecret()
     {
         var handler = new CountingHandler();
+        using var httpClient = new HttpClient(handler);
         var factory = Substitute.For<IHttpClientFactory>();
-        factory.CreateClient(Arg.Any<string>()).Returns(new HttpClient(handler));
+        factory.CreateClient(Arg.Any<string>()).Returns(httpClient);
         var secrets = Substitute.For<ISecretProvider>();
         var client = new HttpImageryInferenceClient(factory, NullLogger<HttpImageryInferenceClient>.Instance, secrets, new RecordingAiAdmission());
         var options = new ImageryInferenceOptions { Provider = "http", Endpoint = "https://inference.example/v1", ApiKey = "secret:imagery" };
@@ -48,8 +49,9 @@ public sealed class ImageryDisclosureTests
     public async Task InferAsync_ExplicitApproval_SubmitsPayload()
     {
         var handler = new CountingHandler();
+        using var httpClient = new HttpClient(handler);
         var factory = Substitute.For<IHttpClientFactory>();
-        factory.CreateClient(Arg.Any<string>()).Returns(new HttpClient(handler));
+        factory.CreateClient(Arg.Any<string>()).Returns(httpClient);
         var client = new HttpImageryInferenceClient(factory, NullLogger<HttpImageryInferenceClient>.Instance, admission: new RecordingAiAdmission());
         var options = new ImageryInferenceOptions { Provider = "http", Endpoint = "https://inference.example/v1" };
         options.Disclosure.Approvals.Add(new AiDisclosureApproval

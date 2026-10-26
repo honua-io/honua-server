@@ -120,7 +120,11 @@ public sealed class OpenAiNarrativeProviderTests
                     await stream.WriteAsync(Encoding.ASCII.GetBytes(response), cancellation.Token);
                 }
             }
-            catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
+            catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+            {
+                // Listener cancellation is the expected fixture shutdown path.
+                return;
+            }
         }, cancellation.Token);
         try
         {
