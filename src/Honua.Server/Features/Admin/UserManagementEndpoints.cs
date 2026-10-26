@@ -72,13 +72,17 @@ internal static partial class UserManagementEndpoints
             .WithDisplayName("Get User")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
 
+        // Granting roles or removing identities changes identity authority, so general admin
+        // write is not enough.
         group.MapPut("/{id}/roles", HandleUpdateUserRoles)
             .WithDisplayName("Update User Roles")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }))
+            .RequireAdminCredentialManagementAuthorization();
 
         group.MapDelete("/{id}", HandleDeleteUser)
             .WithDisplayName("Deprovision User")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Delete }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Delete }))
+            .RequireAdminCredentialManagementAuthorization();
 
         group.MapGet("/{id}/effective-permissions", HandleGetEffectivePermissions)
             .WithDisplayName("Get User Effective Permissions")

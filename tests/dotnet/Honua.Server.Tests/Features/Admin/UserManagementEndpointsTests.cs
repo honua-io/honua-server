@@ -166,6 +166,34 @@ public class UserManagementEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("PUT /api/v1/admin/users/{id}/roles")]
+    [Endpoint("DELETE /api/v1/admin/users/{id}")]
+    public async Task OperationalWriteKey_CannotGrantRolesOrDeleteUsers()
+    {
+        // Changing user roles or deprovisioning a user requires full-admin credential
+        // authority; an admin:write operational key gets 403 and keeps read access.
+        var keyResponse = await _client.PostAsJsonAsync(
+            "/api/v1/admin/api-keys",
+            new CreateAdminApiKeyRequest { Name = "operational-identity-key", Permissions = ["admin:read", "admin:write", "read:*"] },
+            _jsonOptions);
+        Assert.Equal(HttpStatusCode.Created, keyResponse.StatusCode);
+        var operational = JsonSerializer.Deserialize<ApiResponse<AdminApiKeySecretResponse>>(
+            await keyResponse.Content.ReadAsStringAsync(), _jsonOptions)!.Data!;
+        using var operationalClient = _fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", operational.Key));
+
+        var grant = await operationalClient.PutAsJsonAsync(
+            "/api/v1/admin/users/user-1/roles", new UpdateUserRolesRequest { Roles = ["admin"] }, _jsonOptions);
+        var delete = await operationalClient.DeleteAsync("/api/v1/admin/users/user-2");
+
+        Assert.Equal(HttpStatusCode.Forbidden, grant.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, delete.StatusCode);
+        var user = await _client.GetFromJsonAsync<ApiResponse<UserResponse>>("/api/v1/admin/users/user-1", _jsonOptions);
+        Assert.DoesNotContain("admin", user!.Data!.Roles);
+        Assert.Equal(HttpStatusCode.OK, (await _client.GetAsync("/api/v1/admin/users/user-2")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await operationalClient.GetAsync("/api/v1/admin/users")).StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("PUT /api/v1/admin/users/{id}/roles")]
     public async Task UpdateUserRoles_NonExistentUser_ReturnsNotFound()
     {
         var request = new UpdateUserRolesRequest { Roles = ["viewer"] };

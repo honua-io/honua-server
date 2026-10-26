@@ -231,6 +231,88 @@ public sealed class AdminApiKeyEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/api-keys")]
+    [Endpoint("POST /api/v1/admin/api-keys/{id}/rotate")]
+    [Endpoint("POST /api/v1/admin/api-keys/{id}/revoke")]
+    public async Task OperationalWriteKey_CannotManageCredentials()
+    {
+        // The installer's operational key (admin:read, admin:write, read:*) has general
+        // admin write. Creating, rotating and revoking keys requires full-admin authority,
+        // so each of those requests returns 403 and leaves the key store unchanged.
+        var operational = await CreateApiKeyAsync("installer-operational-key", permissions: ["admin:read", "admin:write", "read:*"]);
+        var fullAdmin = await CreateApiKeyAsync("existing-full-admin-key", permissions: ["admin:*"]);
+        using var operationalClient = CreateApiKeyClient(operational.Key);
+
+        foreach (var requested in new[] { new[] { "admin:approve" }, new[] { "admin:read", "admin:write", "read:*" }, new[] { "admin:*" } })
+        {
+            var create = await operationalClient.PostAsJsonAsync(
+                "/api/v1/admin/api-keys",
+                new CreateAdminApiKeyRequest { Name = "operational-child", Permissions = requested },
+                _jsonOptions);
+            Assert.Equal(HttpStatusCode.Forbidden, create.StatusCode);
+        }
+
+        var rotateFullAdmin = await operationalClient.PostAsync($"/api/v1/admin/api-keys/{fullAdmin.ApiKey.Id}/rotate", content: null);
+        Assert.Equal(HttpStatusCode.Forbidden, rotateFullAdmin.StatusCode);
+
+        var revokeFullAdmin = await operationalClient.PostAsync($"/api/v1/admin/api-keys/{fullAdmin.ApiKey.Id}/revoke", content: null);
+        Assert.Equal(HttpStatusCode.Forbidden, revokeFullAdmin.StatusCode);
+
+        // Nothing was created or changed: the full-admin key still authenticates with its
+        // original secret, and the operational key keeps its read and general write role.
+        using var fullAdminClient = CreateApiKeyClient(fullAdmin.Key);
+        Assert.Equal(HttpStatusCode.OK, (await fullAdminClient.GetAsync("/api/v1/admin/api-keys")).StatusCode);
+        var list = await _client.GetStringAsync("/api/v1/admin/api-keys");
+        Assert.DoesNotContain("operational-child", list, StringComparison.Ordinal);
+        Assert.Equal(HttpStatusCode.OK, (await operationalClient.GetAsync("/api/v1/admin/api-keys")).StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/api-keys")]
+    [Endpoint("POST /api/v1/admin/api-keys/{id}/rotate")]
+    [Endpoint("POST /api/v1/admin/api-keys/{id}/revoke")]
+    public async Task FullAdminKeyAndBootstrap_RetainCredentialManagement()
+    {
+        var fullAdmin = await CreateApiKeyAsync("credential-manager-full-admin", permissions: ["admin:*"]);
+        using var fullAdminClient = CreateApiKeyClient(fullAdmin.Key);
+
+        var minted = await fullAdminClient.PostAsJsonAsync(
+            "/api/v1/admin/api-keys",
+            new CreateAdminApiKeyRequest { Name = "minted-by-full-admin", Permissions = ["admin:approve"] },
+            _jsonOptions);
+        Assert.Equal(HttpStatusCode.Created, minted.StatusCode);
+        var mintedKey = JsonSerializer.Deserialize<ApiResponse<AdminApiKeySecretResponse>>(
+            await minted.Content.ReadAsStringAsync(), _jsonOptions)!.Data!;
+
+        Assert.Equal(HttpStatusCode.OK, (await fullAdminClient.PostAsync($"/api/v1/admin/api-keys/{mintedKey.ApiKey.Id}/rotate", null)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await _client.PostAsync($"/api/v1/admin/api-keys/{mintedKey.ApiKey.Id}/revoke", null)).StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/api-keys")]
+    public async Task ApprovedOperationKey_ForKeyCreation_MayCreateOnlyThroughItsExactOperation()
+    {
+        var store = _fixture.Services.GetRequiredService<IAdminApiKeyStore>();
+        var issued = await store.CreateAsync(
+            "approved-operation:create-key",
+            AdminApiKeyPermission.CreateApprovedOperationGrants("POST", "/api/v1/admin/api-keys", "public"),
+            DateTimeOffset.UtcNow.AddMinutes(5),
+            "test-requester",
+            CancellationToken.None);
+        var other = await CreateApiKeyAsync("approved-operation-rotate-target", permissions: ["admin:read"]);
+        using var operationClient = CreateApiKeyClient(issued.Key);
+
+        var create = await operationClient.PostAsJsonAsync(
+            "/api/v1/admin/api-keys",
+            new CreateAdminApiKeyRequest { Name = "approved-create", Permissions = ["admin:read"] },
+            _jsonOptions);
+        var rotate = await operationClient.PostAsync($"/api/v1/admin/api-keys/{other.ApiKey.Id}/rotate", null);
+
+        Assert.Equal(HttpStatusCode.Created, create.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, rotate.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/api-keys")]
     public async Task CreateApiKey_WithNullPermissions_ReturnsBadRequest()
     {
         string[] payloads =
