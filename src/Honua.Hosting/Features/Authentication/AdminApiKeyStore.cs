@@ -594,18 +594,31 @@ internal sealed class RedisAdminApiKeyStore(IConnectionMultiplexer redis, TimePr
 /// Backfills the admin API-key hash index off the request path. Authentication reads one
 /// hash entry; this loop is what catches records written before that index existed.
 /// </summary>
-internal sealed class RedisAdminApiKeyIndexMaintenance : BackgroundService
+internal sealed partial class RedisAdminApiKeyIndexMaintenance : BackgroundService
 {
-    private static readonly TimeSpan Interval = TimeSpan.FromMinutes(1);
+    private static readonly TimeSpan DefaultInterval = TimeSpan.FromMinutes(1);
     private readonly IAdminApiKeyStore _store;
+    private readonly ILogger<RedisAdminApiKeyIndexMaintenance> _logger;
+    private readonly TimeSpan _interval;
 
     /// <summary>
     /// Creates the maintenance loop.
     /// </summary>
     /// <param name="store">The registered admin API-key store.</param>
-    public RedisAdminApiKeyIndexMaintenance(IAdminApiKeyStore store)
+    /// <param name="logger">Logger for failed backfill ticks.</param>
+    public RedisAdminApiKeyIndexMaintenance(IAdminApiKeyStore store, ILogger<RedisAdminApiKeyIndexMaintenance> logger)
+        : this(store, logger, DefaultInterval)
+    {
+    }
+
+    internal RedisAdminApiKeyIndexMaintenance(
+        IAdminApiKeyStore store,
+        ILogger<RedisAdminApiKeyIndexMaintenance> logger,
+        TimeSpan interval)
     {
         _store = store;
+        _logger = logger;
+        _interval = interval;
     }
 
     /// <inheritdoc />
@@ -626,18 +639,20 @@ internal sealed class RedisAdminApiKeyIndexMaintenance : BackgroundService
             {
                 break;
             }
-            catch (RedisException)
+            // Intentional catch-all (honua-server#6558, same rule as #4815). An exception that
+            // escapes ExecuteAsync stops the whole serving host under
+            // BackgroundServiceExceptionBehavior.StopHost. After a Lambda freeze/thaw,
+            // StackExchange.Redis abandons the commands it had in flight as TaskCanceledException
+            // (not RedisException or TimeoutException), and that exception alone took the demo
+            // cell's serving process down. A missed backfill tick is retried on the next one.
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
-                // The next tick retries. A registry backfill must not take the host down.
-            }
-            catch (TimeoutException)
-            {
-                // Redis command timeouts are TimeoutException, not RedisException. The next tick retries.
+                LogReconcileFailed(_logger, ex.GetType().Name, ex);
             }
 
             try
             {
-                await Task.Delay(Interval, stoppingToken).ConfigureAwait(false);
+                await Task.Delay(_interval, stoppingToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -645,4 +660,8 @@ internal sealed class RedisAdminApiKeyIndexMaintenance : BackgroundService
             }
         }
     }
+
+    [LoggerMessage(EventId = 4148, Level = LogLevel.Warning,
+        Message = "Admin API-key hash index backfill failed ({ExceptionType}); retrying on the next tick")]
+    private static partial void LogReconcileFailed(ILogger logger, string exceptionType, Exception exception);
 }

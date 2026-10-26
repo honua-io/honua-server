@@ -1010,6 +1010,12 @@ builder.Services.AddSingleton<Honua.Infrastructure.Authentication.IAdminApiKeySt
     return new Honua.Infrastructure.Authentication.InMemoryAdminApiKeyStore(sp.GetService<TimeProvider>());
 });
 builder.Services.AddHostedService<Honua.Infrastructure.Authentication.RedisAdminApiKeyIndexMaintenance>();
+// A Lambda sandbox freezes between invocations, so a host that starts stopping there stays a
+// listener-less zombie for minutes. Exit after a short drain so Lambda recycles it (#6558).
+if (Honua.Infrastructure.Hosting.LambdaHostStopExitGuard.IsAwsLambda(Environment.GetEnvironmentVariable))
+{
+    builder.Services.AddHostedService<Honua.Infrastructure.Hosting.LambdaHostStopExitGuard>();
+}
 // Embed governance (#1191): authoritative embed key issuance/scoping, policy
 // evaluation, rate accounting, and redacted analytics ingestion. In-memory
 // defaults; durable providers can replace these via TryAdd later.
