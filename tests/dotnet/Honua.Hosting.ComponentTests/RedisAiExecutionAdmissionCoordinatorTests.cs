@@ -10,6 +10,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
+using TestOperations = Honua.TestKit.Constants.Operations;
 using TestProtocols = Honua.TestKit.Constants.ProtocolNames;
 
 namespace Honua.Hosting.ComponentTests;
@@ -17,6 +18,7 @@ namespace Honua.Hosting.ComponentTests;
 /// <summary>Independent coordinator instances share Redis accounting and authoritative cancellation.</summary>
 [Collection(AiAdmissionRedisFixture.CollectionName)]
 [Protocol(TestProtocols.TestQuality)]
+[Operation(TestOperations.SecurityTesting)]
 public sealed class RedisAiExecutionAdmissionCoordinatorTests(AiAdmissionRedisFixture fixture)
 {
     [IntegrationTest]

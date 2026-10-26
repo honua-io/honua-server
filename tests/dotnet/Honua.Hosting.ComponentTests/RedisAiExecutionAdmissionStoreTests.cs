@@ -8,6 +8,7 @@ using Honua.Core.Features.Security.Admission;
 using Honua.Infrastructure.Security.Admission;
 using Honua.TestKit.Attributes;
 using StackExchange.Redis;
+using TestOperations = Honua.TestKit.Constants.Operations;
 using TestProtocols = Honua.TestKit.Constants.ProtocolNames;
 
 namespace Honua.Hosting.ComponentTests;
@@ -15,6 +16,7 @@ namespace Honua.Hosting.ComponentTests;
 /// <summary>Real Redis proofs for atomic shared admission, fencing and explicit stopped recovery.</summary>
 [Collection(AiAdmissionRedisFixture.CollectionName)]
 [Protocol(TestProtocols.TestQuality)]
+[Operation(TestOperations.SecurityTesting)]
 public sealed class RedisAiExecutionAdmissionStoreTests(AiAdmissionRedisFixture fixture)
 {
     [IntegrationTest]

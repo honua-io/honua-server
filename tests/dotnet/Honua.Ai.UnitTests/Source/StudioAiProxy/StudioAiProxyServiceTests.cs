@@ -731,7 +731,10 @@ public sealed class StudioAiProxyServiceTests
     [UnitTest]
     public async Task PreparedCall_BindsAcceptedRequestAndCannotBeStreamedTwice()
     {
-        var service = CreateService(ConfigWithOneAnthropicProvider("claude", true), new FakeAdapter("anthropic", true));
+        var adapter = new FakeAdapter("anthropic", true, _ => Events(
+            new StudioAiChatEvent { Type = StudioAiChatEventType.MessageStart, Model = "claude-sonnet-4-5" },
+            new StudioAiChatEvent { Type = StudioAiChatEventType.MessageStop, StopReason = StudioAiStopReason.EndTurn }));
+        var service = CreateService(ConfigWithOneAnthropicProvider("claude", true), adapter);
         var bytes = System.Text.Encoding.UTF8.GetBytes("{ \"messages\": [] }");
         var request = new StudioAiChatRequest
         {
@@ -744,9 +747,13 @@ public sealed class StudioAiProxyServiceTests
         prepared.Request.AcceptedRequestJson.Should().BeSameAs(bytes);
         var first = new List<StudioAiChatEvent>();
         await foreach (var evt in service.StreamPreparedChatAsync(prepared, new(), default)) first.Add(evt);
+        first.Should().NotContain(evt => evt.Type == StudioAiChatEventType.Error);
+        first.Should().Contain(evt => evt.Type == StudioAiChatEventType.MessageStop);
+        adapter.CallCount.Should().Be(1);
         var second = new List<StudioAiChatEvent>();
         await foreach (var evt in service.StreamPreparedChatAsync(prepared, new(), default)) second.Add(evt);
         second.Should().ContainSingle().Which.ErrorCode.Should().Be("studio_ai/admission_duplicate_invocation");
+        adapter.CallCount.Should().Be(1, "a repeated prepared invocation must not reach the adapter again");
     }
 
     [UnitTest]

@@ -148,7 +148,8 @@ public sealed class StudioAiProxyConfigurationTests
         services.AddStudioAiProxy(new ConfigurationBuilder().Build());
         using var provider = services.BuildServiceProvider();
         using var client = provider.GetRequiredService<IHttpClientFactory>().CreateClient("studio-ai-proxy");
-        using var response = await client.PostAsync(endpoint.Address, new StringContent("model request"));
+        using var content = new StringContent("model request");
+        using var response = await client.PostAsync(endpoint.Address, content);
         response.StatusCode.Should().Be(System.Net.HttpStatusCode.ServiceUnavailable);
         endpoint.Requests.Should().Be(1, "a transient model POST must not be silently retried under one permit");
     }

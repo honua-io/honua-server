@@ -205,7 +205,8 @@ public sealed class OpenAiNarrativeProviderTests
         { ["Reporting:Narrative:Enabled"] = "true" }).Build());
         using var provider = services.BuildServiceProvider();
         using var client = provider.GetRequiredService<IHttpClientFactory>().CreateClient("reporting-narrative");
-        using var response = await client.PostAsync(endpoint.Address, new StringContent("model request"));
+        using var content = new StringContent("model request");
+        using var response = await client.PostAsync(endpoint.Address, content);
         response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
         endpoint.Requests.Should().Be(1);
     }
