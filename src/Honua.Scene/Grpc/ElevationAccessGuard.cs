@@ -14,7 +14,7 @@ namespace Honua.Scene.Grpc;
 /// <see cref="LayerValidationHelpers.ValidateLayerWithAccessV2Async(HttpContext, int, AccessScope, string?, CancellationToken)"/>
 /// at <see cref="AccessScope.Read"/> before querying; without this guard the gRPC
 /// path would return elevation values for a layer the HTTP surface rejects,
-/// violating the cross-protocol authorization rule (CLAUDE.md "Security/RBAC").
+/// violating the cross-protocol authorization rule (AGENTS.md "Security/RBAC").
 /// </summary>
 /// <remarks>
 /// Resolution and policy evaluation are delegated to the shared

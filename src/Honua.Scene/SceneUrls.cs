@@ -10,7 +10,7 @@ namespace Honua.Scene;
 /// 3D Tiles asset surface, the HTTP discovery surface, and the gRPC scene
 /// metadata stay in lockstep. If the scene route prefix or the tileset filename
 /// ever changes it changes here once instead of drifting across the call sites
-/// that emit client-facing links (CLAUDE.md DRY rule for behaviour-bearing
+/// that emit client-facing links (AGENTS.md DRY rule for behaviour-bearing
 /// link/URL shape).
 /// </summary>
 public static class SceneUrls

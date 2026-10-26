@@ -101,7 +101,7 @@ internal sealed partial class HonuaSceneGrpcService : Proto.SceneService.SceneSe
 
         var count = request.PageSize;
 
-        // Intentional protocol divergence (documented per CLAUDE.md "If a protocol
+        // Intentional protocol divergence (documented per AGENTS.md "If a protocol
         // intentionally diverges ... document why in code and add direct
         // endpoint-level tests"): the proto comments page_size's zero as
         // "server default", but the scene catalog is a small, bounded set of

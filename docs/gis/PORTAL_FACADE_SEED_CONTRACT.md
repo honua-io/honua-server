@@ -8,7 +8,7 @@ This document is the **server-owned contract** that downstream consumers — the
 licensed ArcGIS Pro / Field Maps evidence runs — target when validating that a
 packaged Esri client can discover and open Honua content as Portal items.
 
-Per the repo ownership split (`CLAUDE.md`): **honua-server owns the seed +
+Per the repo ownership split (`AGENTS.md`): **honua-server owns the seed +
 bootstrap contract and the release-proof interop; the SDK repos own the
 client-side implementation.** This is that contract.
 

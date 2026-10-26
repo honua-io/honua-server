@@ -76,7 +76,7 @@ Snowflake, and Databricks each follow exactly this layout under `src/Honua.<X>/`
    translator. This caps CQL2/FES/OData `$filter` push-down for warehouse layers
    — a real GA hardening item, not a per-provider bug.
 2. **Interactive map rendering is the hard cost/latency gate.** Per
-   `CLAUDE.md`, ad-hoc spatial requests (arbitrary bbox/geometry/distance) are
+   `AGENTS.md`, ad-hoc spatial requests (arbitrary bbox/geometry/distance) are
    explicitly **not** response-cached — keys are too high-cardinality. Warehouse
    backends with per-TB-scanned billing and second-scale async query models
    (Athena, BigQuery on-demand) are fine for export/analysis but expensive and
@@ -219,7 +219,7 @@ per-TB-scanned cost caveat as Athena for interactive rendering.
   tests) plus a GCP credential connection driver.
 - **Decision:** **Keep parked.** The blocker is **GTM, not feasibility** — the
   current motion is AWS/Azure customer-operated and "no Google support now"
-  (CLAUDE.md repo stance + #951). Promote only on a named buyer / partnership;
+  (AGENTS.md repo stance + #951). Promote only on a named buyer / partnership;
   if promoted, split into its own implementation ticket with official-source
   review and service-publishing acceptance criteria per #951.
 
