@@ -101,9 +101,10 @@ internal sealed class OpenAiNarrativeProvider : INarrativeProvider
         using var response = await client.SendAsync(httpRequest, cancellationToken).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
-            var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            // Error bodies can echo private prompts or credentials. Do not read them
+            // into exception messages that may reach reporting fallback diagnostics.
             throw new InvalidOperationException(
-                $"Reporting narrative provider returned HTTP {(int)response.StatusCode}: {body}");
+                $"Reporting narrative provider returned HTTP {(int)response.StatusCode}.");
         }
 
         var responseJson = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
