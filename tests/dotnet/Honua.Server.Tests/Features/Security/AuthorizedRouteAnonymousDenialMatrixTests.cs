@@ -8,6 +8,8 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.TestKit;
+using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Routing.Patterns;
 
@@ -19,11 +21,16 @@ namespace Honua.Server.Tests.Features.Security;
 /// requested with no credentials against a host with the development auth bypass disabled, and must
 /// answer <c>401 Unauthorized</c> (or, on ArcGIS REST/Portal sharing routes, the protocol-native
 /// HTTP 200 <c>error.code 499</c> "token required" envelope). The denominator is the live endpoint data source, so a new protected
-/// route is covered automatically and a route whose metadata is not actually enforced fails here.
+/// route is covered automatically, method-agnostic routes are requested with both GET and POST, and a
+/// route whose metadata is not actually enforced fails here.
 /// </summary>
 [Collection("Database")]
+[SecurityTest]
+[Protocol(TestProtocols.TestQuality)]
+[Operation(Operations.Security)]
 public sealed class AuthorizedRouteAnonymousDenialMatrixTests : IAsyncLifetime
 {
+    private const string GrpcContentType = "application/grpc";
     private const string AdminPassword = "anonymous-denial-matrix-key";
 
     private readonly WebAppFixture _fixture = new WebAppFixture()
@@ -40,12 +47,25 @@ public sealed class AuthorizedRouteAnonymousDenialMatrixTests : IAsyncLifetime
     /// <inheritdoc />
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
-    [Fact]
-    [Trait("Category", "Integration")]
+    // Cross-cutting: the denominator is every endpoint-authorized route in the live route table. The
+    // [Endpoint] entries name representative routes this test drives that have no other anonymous proof:
+    // the SignalR admin hub (method-agnostic) and the introspection route (ArcGIS 499 envelope).
+    [IntegrationTest]
+    [Endpoint("GET /hubs/admin")]
+    [Endpoint("POST /sharing/rest/oauth2/introspect")]
     public async Task EveryAuthorizedRoute_AnonymousCaller_Returns401()
     {
+        // Method-agnostic endpoints (no HttpMethodMetadata: SignalR hub transport and negotiate, /metrics)
+        // are expanded into concrete GET and POST requests, not skipped. The gRPC unimplemented-method
+        // catch-all only matches gRPC requests, so it is sent as an application/grpc POST.
         var routes = RouteAuthorizationInventoryGuardTests.ClassifyDeployedRoutes(_fixture.Services)
-            .Where(entry => entry.Classification == "authorized" && entry.Method != "ANY")
+            .Where(entry => entry.Classification == "authorized")
+            .SelectMany(entry => entry.Method != "ANY"
+                ? new[] { entry }
+                : IsGrpcUnimplementedCatchAll(entry.Pattern)
+                    ? new[] { entry with { Method = "POST", AcceptsContentType = GrpcContentType } }
+                    : new[] { entry with { Method = "GET" }, entry with { Method = "POST" } })
+            .Distinct()
             .ToArray();
         routes.Should().NotBeEmpty();
 
@@ -105,6 +125,9 @@ public sealed class AuthorizedRouteAnonymousDenialMatrixTests : IAsyncLifetime
         }
     }
 
+    private static bool IsGrpcUnimplementedCatchAll(string pattern)
+        => pattern.Contains(":grpcunimplemented}", StringComparison.Ordinal);
+
     /// <summary>
     /// Builds a request body in the content type the endpoint accepts, so routing selects the endpoint and
     /// authorization runs instead of a 415 from content-type matching.
@@ -114,6 +137,13 @@ public sealed class AuthorizedRouteAnonymousDenialMatrixTests : IAsyncLifetime
         if (acceptsContentType is not null && acceptsContentType.StartsWith("multipart/", StringComparison.OrdinalIgnoreCase))
         {
             return new MultipartFormDataContent { { new StringContent("matrix"), "field" } };
+        }
+
+        if (string.Equals(acceptsContentType, GrpcContentType, StringComparison.Ordinal))
+        {
+            var grpc = new ByteArrayContent([0, 0, 0, 0, 0]);
+            grpc.Headers.ContentType = new MediaTypeHeaderValue(GrpcContentType);
+            return grpc;
         }
 
         if (acceptsContentType is not null && !acceptsContentType.Contains('*', StringComparison.Ordinal))
@@ -172,7 +202,7 @@ public sealed class AuthorizedRouteAnonymousDenialMatrixTests : IAsyncLifetime
                 "guid" => Guid.Parse("00000000-0000-0000-0000-000000000001").ToString("D", CultureInfo.InvariantCulture),
                 "apiversion" => "1",
                 "bool" => "true",
-                "alpha" or "nonfile" => "matrix",
+                "alpha" or "nonfile" or "grpcunimplemented" => "matrix",
                 _ when constraint.StartsWith("minlength", StringComparison.Ordinal) || constraint.StartsWith("maxlength", StringComparison.Ordinal) => value,
                 _ => null,
             };

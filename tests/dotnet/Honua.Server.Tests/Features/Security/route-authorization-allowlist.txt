@@ -199,6 +199,9 @@ anonymous POST /elevation/{datasetId}/line-of-sight
 anonymous POST /elevation/{datasetId}/slice
 anonymous POST /elevation/{datasetId}/sun-shadow
 anonymous POST /elevation/{datasetId}/viewshed
+anonymous POST /internal/control-plane/backstop/sweep
+anonymous POST /internal/control-plane/events/batch-job-state-change
+anonymous POST /internal/control-plane/scheduled-tick
 anonymous POST /oauth/token
 anonymous POST /odata/$batch
 anonymous POST /odata/Features

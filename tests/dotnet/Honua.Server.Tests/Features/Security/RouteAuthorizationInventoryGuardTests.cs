@@ -1,8 +1,10 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Text.RegularExpressions;
 using FluentAssertions;
 using Honua.TestKit;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Metadata;
@@ -27,6 +29,8 @@ namespace Honua.Server.Tests.Features.Security;
 /// PR that adds it and its review diff names the route.
 /// </summary>
 /// <remarks>
+/// The inventory is the union of a Poll-mode (on-prem) host and an Event-mode (cloud) host, because the
+/// control-plane event and scheduled-tick routes are mapped only under <c>ControlPlane:TriggerMode=Event</c>.
 /// The check is exact in both directions: an unlisted unprotected route fails, and a listed
 /// route that is no longer deployed or now carries authorization metadata fails as stale.
 /// Regenerate the file after an intended change with
@@ -43,19 +47,54 @@ public sealed class RouteAuthorizationInventoryGuardTests : IAsyncLifetime
     private const string AnonymousClass = "anonymous";
     private const string NoneClass = "none";
 
+    /// <summary>A route only the <c>ControlPlane:TriggerMode=Event</c> host maps; proves that host really runs in Event mode.</summary>
+    private const string EventModeSentinelRoute = "/internal/control-plane/scheduled-tick";
+
+    /// <summary>
+    /// Event-mode routes the runtime inventory cannot see (see
+    /// <see cref="EventModeControlPlaneMappingSection_RegistersOnlyTheReviewedRoutes"/>). They are part of
+    /// the expected allow-list content so the stale check keeps them.
+    /// </summary>
+    private static readonly string[] StaticallyReviewedEventModeRoutes =
+    [
+        "anonymous POST /internal/control-plane/backstop/sweep",
+        "anonymous POST /internal/control-plane/events/batch-job-state-change",
+    ];
+
+    /// <summary>Default host: <c>ControlPlane:TriggerMode=Poll</c> (on-prem).</summary>
     private readonly WebAppFixture _fixture = new();
 
-    /// <inheritdoc />
-    public Task InitializeAsync() => _fixture.InitializeAsync();
+    /// <summary>
+    /// Cloud host: <c>ControlPlane:TriggerMode=Event</c>. <c>MapControlPlaneEventEndpoints</c> and
+    /// <c>MapScheduledTickEndpoints</c> register routes only in this mode, so the inventory is the union
+    /// of both supported deployment shapes.
+    /// </summary>
+    private readonly WebAppFixture _eventModeFixture = new WebAppFixture()
+        .ConfigureWebHost(builder => builder.UseSetting("ControlPlane:TriggerMode", "Event"));
 
     /// <inheritdoc />
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public async Task InitializeAsync()
+    {
+        await _fixture.InitializeAsync();
+        await _eventModeFixture.InitializeAsync();
+    }
+
+    /// <inheritdoc />
+    public async Task DisposeAsync()
+    {
+        await _eventModeFixture.DisposeAsync();
+        await _fixture.DisposeAsync();
+    }
 
     [Fact]
     [Trait("Category", "Architecture")]
     public void EveryRouteWithoutAuthorizationMetadata_IsOnTheCommittedAllowList()
     {
-        var inventory = ClassifyDeployedRoutes(_fixture.Services);
+        var pollInventory = ClassifyDeployedRoutes(_fixture.Services);
+        var eventInventory = ClassifyDeployedRoutes(_eventModeFixture.Services);
+        eventInventory.Should().Contain(entry => entry.Pattern == EventModeSentinelRoute,
+            "the Event-mode host must map the event-only control-plane routes, or this guard would not see them");
+        var inventory = pollInventory.Union(eventInventory).ToArray();
         inventory.Should().NotBeEmpty("the host must register routes for this guard to mean anything");
         inventory.Should().Contain(entry => entry.Classification == "authorized",
             "authorization metadata must be visible on the endpoint data source; if none is, the classifier is broken");
@@ -69,6 +108,7 @@ public sealed class RouteAuthorizationInventoryGuardTests : IAsyncLifetime
         var unprotected = inventory
             .Where(entry => entry.Classification != "authorized")
             .Select(entry => entry.AllowListLine)
+            .Concat(StaticallyReviewedEventModeRoutes)
             .ToHashSet(StringComparer.Ordinal);
 
         if (string.Equals(Environment.GetEnvironmentVariable(UpdateEnvironmentVariable), "1", StringComparison.Ordinal))
@@ -129,6 +169,51 @@ public sealed class RouteAuthorizationInventoryGuardTests : IAsyncLifetime
                 UnverifiedMarker,
                 index + 1);
         }
+    }
+
+    /// <summary>
+    /// <c>MapControlPlaneEventEndpoints</c> maps its routes only when <c>ControlPlane:TriggerMode=Event</c>
+    /// <b>and</b> the connected-Redis control-plane reconcile graph is composed (it reads
+    /// <c>IOptions&lt;ControlPlaneTriggerOptions&gt;</c>, bound only on that path in <c>Program.cs</c>), so even
+    /// the Event-mode test host (no Redis) cannot inventory them at runtime. Until a Redis-backed host is
+    /// added, pin that mapping section to an explicit route list: a new route there fails here and must
+    /// be reviewed and added both to this list and to the allow-list.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "Architecture")]
+    public void EventModeControlPlaneMappingSection_RegistersOnlyTheReviewedRoutes()
+    {
+        var reviewed = StaticallyReviewedEventModeRoutes;
+
+        var source = File.ReadAllText(Path.Join(
+            RepositoryRoot(), "src", "Honua.Server", "Features", "ControlPlane", "ControlPlaneEventEndpoints.cs"));
+        source.Should().Contain("MapGroup(\"/internal/control-plane\")", "the reviewed list assumes this group prefix");
+        source.Should().Contain(".AllowAnonymous()", "the reviewed routes are anonymous at routing and token-checked in-handler");
+
+        var mapped = Regex.Matches(source, @"\.Map(Get|Post|Put|Patch|Delete)\(\s*""(?<route>[^""]+)""")
+            .Select(match => $"anonymous {match.Groups[1].Value.ToUpperInvariant()} /internal/control-plane{match.Groups["route"].Value}")
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        mapped.Should().Equal(reviewed,
+            "every route registered by MapControlPlaneEventEndpoints must be reviewed; update this list and {0}", AllowListFileName);
+
+        var allowList = ReadAllowList();
+        reviewed.Should().AllSatisfy(line => allowList.Should().Contain(line,
+            "Event-mode routes the runtime inventory cannot see are still listed in {0}", AllowListFileName));
+        Regex.Count(source, @"CheckAuthorization\(").Should().BeGreaterThan(reviewed.Length,
+            "each handler (plus the helper definition) must run the shared-secret token check");
+    }
+
+    private static string RepositoryRoot()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null && !File.Exists(Path.Join(directory.FullName, "Honua.sln")))
+        {
+            directory = directory.Parent;
+        }
+
+        directory.Should().NotBeNull("the repository root (Honua.sln) must be reachable from the test output directory");
+        return directory!.FullName;
     }
 
     /// <summary>
@@ -209,14 +294,7 @@ public sealed class RouteAuthorizationInventoryGuardTests : IAsyncLifetime
     /// </summary>
     private static void WriteAllowList(IEnumerable<string> lines)
     {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory is not null && !File.Exists(Path.Join(directory.FullName, "Honua.sln")))
-        {
-            directory = directory.Parent;
-        }
-
-        directory.Should().NotBeNull("the allow-list is regenerated in the source tree next to this test");
-        var target = Path.Join(directory!.FullName, "tests", "dotnet", "Honua.Server.Tests", "Features", "Security", AllowListFileName);
+        var target = Path.Join(RepositoryRoot(), "tests", "dotnet", "Honua.Server.Tests", "Features", "Security", AllowListFileName);
         var existing = File.ReadAllLines(target);
         var header = existing.TakeWhile(line => !IsEntry(line)).ToList();
         var annotations = new Dictionary<string, List<string>>(StringComparer.Ordinal);
