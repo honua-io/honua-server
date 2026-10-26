@@ -4,6 +4,16 @@ on:
   schedule:
     # One nightly security lane for dependency, filesystem, and container scans.
     - cron: '0 2 * * *'
+  # Dependency changes run only the NuGet vulnerability gate; every other job is nightly/dispatch.
+  pull_request:
+    paths:
+      - 'Directory.Packages.props'
+      - 'Directory.Build.props'
+      - '**/*.csproj'
+      - '**/packages.lock.json'
+      - 'scripts/ci/check-nuget-vulnerabilities.py'
+      - 'scripts/ci/check-nuget-vulnerabilities.test.py'
+      - '.github/workflows/security-nightly.yml'
   workflow_dispatch:
     inputs:
       include_transitive:
@@ -113,15 +123,21 @@ jobs:
       issues: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet-ci
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
+      - name: Verify vulnerability gate parser
+        run: python3 scripts/ci/check-nuget-vulnerabilities.test.py
+
+      # NuGet audit is disabled for this restore only: under TreatWarningsAsErrors a new
+      # advisory of any severity would fail restore before the gate below could apply its
+      # High/Critical policy and report Moderate findings.
       - name: Restore
-        run: dotnet restore Honua.sln
+        run: scripts/ci/dotnet-restore-retry.sh Honua.sln -p:NuGetAudit=false
 
       - name: Scan for vulnerable NuGet packages
         id: nuget-scan
@@ -135,45 +151,39 @@ jobs:
             include_flag+=(--include-transitive)
           fi
 
-          if dotnet list package --vulnerable "${include_flag[@]}" > vulnerability-report.txt 2>&1; then
-            echo "scan_result=success" >> "$GITHUB_OUTPUT"
-          else
-            echo "scan_result=failure" >> "$GITHUB_OUTPUT"
-          fi
+          # Advisory data comes from nuget.org; GitHub Packages publishes none and only adds an
+          # authenticated round trip that can fail the listing.
+          dotnet list Honua.sln package --vulnerable "${include_flag[@]}" \
+            --source https://api.nuget.org/v3/index.json --format json > vulnerability-report.json
 
-          cat vulnerability-report.txt
+          # High/Critical fail; Moderate/Low are reported only. Advisories with no upstream
+          # fix are risk-accepted once, as <NuGetAuditSuppress> in Directory.Build.props,
+          # and the parser reads that list rather than keeping a copy here.
+          status=0
+          python3 scripts/ci/check-nuget-vulnerabilities.py vulnerability-report.json \
+            --props Directory.Build.props --summary-json vulnerability-summary.json || status=$?
 
-          # Advisories explicitly risk-accepted because there is NO upstream fix.
-          # Keep in sync with the NuGetAuditSuppress entries in Directory.Build.props
-          # and the .trivyignore file. `dotnet list package --vulnerable` does not
-          # honor NuGetAuditSuppress, so the accepted rows are filtered here before the
-          # gate. Only no-patched-version advisories belong here; anything with a fix
-          # must be bumped, not allowlisted.
-          #   GHSA-2m69-gcr7-jv3q — SQLitePCLRaw.lib.e_sqlite3 <= 2.1.11 (no patched version)
-          ALLOWLISTED_ADVISORIES="GHSA-2m69-gcr7-jv3q"
-
-          grep -vE "${ALLOWLISTED_ADVISORIES}" vulnerability-report.txt > vulnerability-report.gated.txt || true
-
-          if grep -E "(High|Critical)" vulnerability-report.gated.txt; then
+          if [ "$status" -eq 1 ]; then
             echo "vulnerable_packages=true" >> "$GITHUB_OUTPUT"
-            echo "::error::High or Critical vulnerabilities found in NuGet packages (excluding risk-accepted advisories)"
-            exit 1
+          else
+            echo "vulnerable_packages=false" >> "$GITHUB_OUTPUT"
           fi
-
-          echo "vulnerable_packages=false" >> "$GITHUB_OUTPUT"
-          echo "No high or critical NuGet vulnerabilities found (excluding risk-accepted advisories)"
+          exit "$status"
 
       - name: Upload vulnerability report
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: nuget-vulnerability-report-${{ github.run_number }}
-          path: vulnerability-report.txt
+          path: |
+            vulnerability-report.json
+            vulnerability-summary.json
+          if-no-files-found: warn
           retention-days: 30
 
       - name: Create issue on vulnerabilities
-        if: steps.nuget-scan.outputs.vulnerable_packages == 'true'
-        uses: actions/github-script@v9
+        if: github.event_name != 'pull_request' && steps.nuget-scan.outputs.vulnerable_packages == 'true'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             const title = 'Security Alert: High/Critical vulnerabilities detected';
@@ -216,7 +226,7 @@ jobs:
             }
 
   trivy-filesystem-scan:
-    if: inputs.existing_image == ''
+    if: github.event_name != 'pull_request' && inputs.existing_image == ''
     name: Trivy Filesystem Scan
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -226,7 +236,7 @@ jobs:
       security-events: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # Restrict SARIF generation to HIGH/CRITICAL so the GitHub Security tab carries
       # only actionable findings. The SARIF artifact uploaded below is generated by this
@@ -242,13 +252,13 @@ jobs:
           severity: HIGH,CRITICAL
 
       - name: Upload filesystem SARIF to GitHub Code Scanning
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         if: always() && hashFiles('trivy-filesystem-results.sarif') != ''
         with:
           sarif_file: trivy-filesystem-results.sarif
 
       - name: Upload filesystem Trivy results
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always() && hashFiles('trivy-filesystem-results.sarif') != ''
         with:
           name: trivy-filesystem-results-${{ github.run_number }}
@@ -265,7 +275,7 @@ jobs:
           exit-code: '1'
 
   third-party-notices-check:
-    if: inputs.existing_image == ''
+    if: github.event_name != 'pull_request' && inputs.existing_image == ''
     name: Third-party notices are current
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -273,13 +283,13 @@ jobs:
       contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Verify THIRD-PARTY-NOTICES.md matches Directory.Packages.props
         run: python3 scripts/ci/generate-third-party-notices.py --check
 
   container-security-scan:
-    if: inputs.existing_image == ''
+    if: github.event_name != 'pull_request' && inputs.existing_image == ''
     name: Container Security Scan (${{ matrix.variant }})
     runs-on: ubuntu-latest
     timeout-minutes: ${{ matrix.timeout_minutes }}
@@ -308,7 +318,7 @@ jobs:
       security-events: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4
@@ -331,7 +341,7 @@ jobs:
           failure-threshold: error
 
       - name: Upload Hadolint SARIF to GitHub Code Scanning
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         if: always() && hashFiles(format('hadolint-results-{0}.sarif', matrix.variant)) != ''
         with:
           sarif_file: hadolint-results-${{ matrix.variant }}.sarif
@@ -385,7 +395,7 @@ jobs:
           trivyignores: ${{ matrix.trivyignore }}
 
       - name: Upload container Trivy SARIF to GitHub Code Scanning
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         if: always() && hashFiles(format('trivy-container-results-{0}.sarif', matrix.variant)) != ''
         with:
           sarif_file: trivy-container-results-${{ matrix.variant }}.sarif
@@ -417,7 +427,7 @@ jobs:
 
       - name: Upload image license report
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: trivy-licenses-${{ matrix.variant }}
           path: trivy-licenses-${{ matrix.variant }}.txt
@@ -628,7 +638,7 @@ jobs:
           } > container-security-report-${{ matrix.variant }}.md
 
       - name: Upload container security artifacts
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: container-security-results-${{ matrix.variant }}-${{ github.run_number }}

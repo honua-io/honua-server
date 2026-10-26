@@ -84,7 +84,7 @@ public sealed partial class NightlyImageCertificationTests
         nightly.Should().Contain("annotations: ${{ steps.meta.outputs.annotations }}", Exactly.Times(4));
         nightly.Should().Contain("--annotation \"index:org.opencontainers.image.revision=${CANDIDATE_SHA}\"", Exactly.Times(3),
             "every published multi-arch index is annotated with the candidate sha");
-        nightly.Should().Contain("uses: actions/checkout@v7", Exactly.Times(6),
+        nightly.Should().Contain("uses: actions/checkout@", Exactly.Times(6),
             "only the selector itself checks out the workflow revision; every build checks out the candidate");
         nightly.Should().Contain($"ref: {CandidateSha}", Exactly.Times(5));
 

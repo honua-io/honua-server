@@ -52,7 +52,7 @@ jobs:
     steps:
       - name: Shed superseded review event
         id: stale
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             // A superseded event is shed NEUTRALLY: the step succeeds, records one
@@ -110,7 +110,7 @@ jobs:
       - name: Resolve every event to one pull request
         id: target
         if: steps.stale.outputs.superseded != 'true'
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           result-encoding: string
           script: |
@@ -149,7 +149,7 @@ jobs:
     steps:
       - name: Shed superseded review subject
         id: subject
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           PR: ${{ needs.resolve.outputs.pr }}
         with:
@@ -221,7 +221,7 @@ jobs:
       - name: Attest current PR head
         id: attest
         if: steps.subject.outputs.superseded != 'true'
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           REVIEW_FIRST_POLICY_DIGEST: ${{ steps.policy.outputs.measurement_policy_digest }}
           REVIEW_FIRST_POLICY_SHA: ${{ steps.policy.outputs.policy_sha }}

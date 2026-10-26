@@ -27,7 +27,7 @@ jobs:
       id-token: write
       attestations: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Compute complete production native inputs
         id: inputs
         run: python3 scripts/ci/native-tools-image.py identity --output "${RUNNER_TEMP}/native-tools-inputs.json" --github-output "$GITHUB_OUTPUT"
@@ -81,7 +81,7 @@ jobs:
           receipt.write_text(json.dumps(data, indent=2, sort_keys=True) + '\n')
           PY
       - name: Retain input and immutable digest evidence
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: native-tools-publication-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/native-tools-inputs.json

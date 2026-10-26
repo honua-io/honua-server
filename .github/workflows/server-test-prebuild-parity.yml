@@ -85,7 +85,7 @@ jobs:
 
       - id: resolve
         name: Resolve current exact head and completed observer
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           SOURCE_RUN_ID: ${{ github.event.workflow_run.id || inputs.run_id }}
           SOURCE_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt || inputs.run_attempt }}
@@ -278,7 +278,7 @@ jobs:
 
       - name: Retain the exact parity plan
         if: steps.resolve.outputs.eligible == 'true'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: server-test-prebuild-parity-plan-${{ steps.resolve.outputs.pr }}-${{ steps.resolve.outputs.head_sha }}-attempt-${{ github.run_attempt }}
           path: evidence/
@@ -347,7 +347,7 @@ jobs:
             --metrics metrics/baseline-${{ matrix.identity }}.json \
             --identity '${{ matrix.identity }}' --filter "${FILTER}" \
             --job-start-epoch-ms '${{ steps.timing.outputs.job_start_ms }}'
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: server-test-prebuild-parity-baseline-${{ matrix.identity }}-${{ github.run_attempt }}
           path: metrics/
@@ -462,7 +462,7 @@ jobs:
               artifact_download_ms:$download_ms}' \
             metrics/candidate-${{ matrix.identity }}.json > metrics/candidate-updated.json
           mv metrics/candidate-updated.json metrics/candidate-${{ matrix.identity }}.json
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: server-test-prebuild-parity-candidate-${{ matrix.identity }}-${{ github.run_attempt }}
           path: metrics/
@@ -485,7 +485,7 @@ jobs:
           path: policy
           persist-credentials: false
           fetch-depth: 1
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: server-test-prebuild-parity-*-${{ github.run_attempt }}
           path: evidence/current
@@ -550,7 +550,7 @@ jobs:
           path: evidence/parity-observation.json
           retention-days: ${{ needs.plan.outputs.receipt_retention_days }}
           if-no-files-found: error
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: server-test-prebuild-parity-evidence-${{ needs.plan.outputs.pr }}-${{ needs.plan.outputs.head_sha }}-attempt-${{ github.run_attempt }}
           path: evidence/

@@ -111,15 +111,17 @@ class NormalizationContractTests(unittest.TestCase):
             run(consumer=consumer)
 
     def test_missing_credential_gate_is_rejected(self) -> None:
-        consumer = SOURCES["consumer"].replace(
-            "          env.NORMALIZATION_CREDENTIAL_PRESENT == 'true' &&\n"
-            "          steps.artifact.outputs.same_repository == 'true' &&\n"
-            "          steps.compare.outputs.change_count != '0'\n"
-            "        uses: actions/github-script@v9",
-            "          steps.artifact.outputs.same_repository == 'true' &&\n"
-            "          steps.compare.outputs.change_count != '0'\n"
-            "        uses: actions/github-script@v9",
+        # Match the github-script ref by prefix so a SHA pin or Dependabot bump cannot
+        # turn this replacement into a silent no-op.
+        consumer, substitutions = re.subn(
+            r"          env\.NORMALIZATION_CREDENTIAL_PRESENT == 'true' &&\n"
+            r"(          steps\.artifact\.outputs\.same_repository == 'true' &&\n"
+            r"          steps\.compare\.outputs\.change_count != '0'\n"
+            r"        uses: actions/github-script@)",
+            r"\1",
+            SOURCES["consumer"],
         )
+        self.assertGreater(substitutions, 0, "fixture drift: the credential gate text moved")
         with self.assertRaisesRegex(AssertionError, "NORMALIZATION_CREDENTIAL_PRESENT"):
             run(consumer=consumer)
 
