@@ -284,7 +284,7 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
                     summary.Succeeded = false;
                     summary.ErrorMessage = "Adapter failed unexpectedly.";
                     summary.StopReason = StudioAiStopReason.Error;
-                    StudioAiProxyLog.ProviderRequestFailed(_logger, providerName, failure);
+                    StudioAiProxyLog.ProviderRequestFailed(_logger, providerName, "adapter-stream", failure.GetType().Name);
                     yield return new StudioAiChatEvent
                     {
                         Type = StudioAiChatEventType.Error,
