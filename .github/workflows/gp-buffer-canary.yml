@@ -69,8 +69,25 @@ jobs:
           path: artifacts/gp-canary-rehearsal/
           if-no-files-found: error
           retention-days: 30
+  # GP is Preview for 2026.1 and no candidate GP deployment is configured yet.
+  # Scheduled intervals only run once an operator sets GP_CANARY_URL (see
+  # docs/internal/ci/gp-canary-evidence.md); until then the schedule records an
+  # explicit not-configured notice instead of a failure receipt that cannot
+  # count toward any streak. A manual dispatch still runs the canary and fails
+  # closed on missing configuration.
+  canary-not-configured:
+    if: github.event_name == 'schedule' && vars.GP_CANARY_URL == ''
+    needs: harness-checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Record that no GP candidate deployment is configured
+        run: |
+          msg="GP Candidate Canary skipped: GP_CANARY_URL is not configured (GP is Preview; no candidate deployment to probe). No interval evidence was produced."
+          echo "::notice::${msg}"
+          echo "${msg}" >> "$GITHUB_STEP_SUMMARY"
   geometry-buffer:
-    if: github.event_name != 'pull_request'
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'schedule' && vars.GP_CANARY_URL != '')
     needs: harness-checks
     runs-on: ubuntu-latest
     timeout-minutes: 10
