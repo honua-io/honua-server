@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:352b7a2af71e281f3225aa9278e5e307697a9b713c9e4b08e98e1a775b48a429",
+  "bundleDigest": "sha256:f780bf000b281f6b99b6b5bb76699cdc3e1c67a8742f7f2f39993f235fb65d43",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -2060,7 +2060,7 @@
     {
       "id": "guides/connect/ai-agents-mcp",
       "path": "guides/connect/ai-agents-mcp.md",
-      "documentDigest": "sha256:85008ed752ae371383f5a0c2abf3e19b1c79f0aa9def0c4cb5534e0e1bd847c9",
+      "documentDigest": "sha256:277d2cb398db3040d176150d3b4a064c624517bdd8e1b95ed89e5a23c43f4ef7",
       "metadata": {
         "type": "guide",
         "title": "Connect AI agents to Honua over MCP",
@@ -2249,7 +2249,7 @@
     {
       "id": "guides/deploy/upgrade-and-rollback",
       "path": "guides/deploy/upgrade-and-rollback.md",
-      "documentDigest": "sha256:e1f7a36823daaafaf18787824ea460337314df9c8534e90ef775dbcda070d981",
+      "documentDigest": "sha256:0e3a1ad90336e17fa5bc26642fa8cf06ee23a2ad0ef20dca129c930f58c357d2",
       "metadata": {
         "type": "guide",
         "title": "Upgrade and roll back",
@@ -2638,7 +2638,7 @@
     {
       "id": "guides/secure/authentication",
       "path": "guides/secure/authentication.md",
-      "documentDigest": "sha256:a16ace1dd6b569e0395776a5ea4d5f269c176f9d864d54a0affd1835520058dc",
+      "documentDigest": "sha256:fa9665d446aac1806cf3d5b2128ed06e21b1c49c303205144754260a3b8f6d9f",
       "metadata": {
         "type": "guide",
         "title": "Authenticate clients",
@@ -7539,7 +7539,7 @@
     {
       "id": "reference/admin-api/users-roles-licensing",
       "path": "reference/admin-api/users-roles-licensing.md",
-      "documentDigest": "sha256:5be564689a9d942139ba18dbb23f947317b6f3e500c1eb8f4cf236a539270137",
+      "documentDigest": "sha256:34d89a31d0d7e58c75e54a3e4e1db0eb444491192c96abfcd572ab3f5ebeef27",
       "metadata": {
         "type": "reference",
         "title": "Users, roles, and licensing",
@@ -8269,7 +8269,7 @@
     {
       "id": "studio/mcp-tools",
       "path": "studio/mcp-tools.md",
-      "documentDigest": "sha256:a683ea0f0696d6b4ea336d17887f79bcd9956c286519ebabb784f0cddfedefc2",
+      "documentDigest": "sha256:8f56b48d0ef60839fb6ed1c9b9a0717073a988deba07a8b5e1e0b451692d1904",
       "metadata": {
         "type": "guide",
         "title": "Studio MCP tools",
@@ -11704,6 +11704,11 @@
       "source": "guides/deploy/upgrade-and-rollback",
       "relation": "links_to",
       "target": "guides/deploy/monitoring"
+    },
+    {
+      "source": "guides/deploy/upgrade-and-rollback",
+      "relation": "links_to",
+      "target": "reference/admin-api/users-roles-licensing"
     },
     {
       "source": "guides/deploy/upgrade-and-rollback",
@@ -16863,7 +16868,7 @@
       "validation": "openapi_method_and_path",
       "runtimeDiscoveryRequired": true,
       "executionVerified": false,
-      "contractDigest": "sha256:3e6d3c44fd11c653f7e5ad2e900ae3fb894094f14a7810b3c5b630eb1e9ba1cf"
+      "contractDigest": "sha256:13d10331b2bfc77edc80ea68dc0eb20197340795ba2483441ad0d36960e0a845"
     },
     {
       "workflow": "guides/workflows/design-studio",
@@ -16927,7 +16932,7 @@
       "validation": "openapi_method_and_path",
       "runtimeDiscoveryRequired": true,
       "executionVerified": false,
-      "contractDigest": "sha256:3e6d3c44fd11c653f7e5ad2e900ae3fb894094f14a7810b3c5b630eb1e9ba1cf"
+      "contractDigest": "sha256:13d10331b2bfc77edc80ea68dc0eb20197340795ba2483441ad0d36960e0a845"
     },
     {
       "workflow": "guides/workflows/import-data",
@@ -16937,7 +16942,7 @@
       "validation": "openapi_method_and_path",
       "runtimeDiscoveryRequired": true,
       "executionVerified": false,
-      "contractDigest": "sha256:3e6d3c44fd11c653f7e5ad2e900ae3fb894094f14a7810b3c5b630eb1e9ba1cf"
+      "contractDigest": "sha256:13d10331b2bfc77edc80ea68dc0eb20197340795ba2483441ad0d36960e0a845"
     },
     {
       "workflow": "guides/workflows/import-data",
