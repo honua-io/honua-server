@@ -45,8 +45,14 @@ public sealed class PostgresAiExecutionAdmissionStoreTests(PostgresFixture fixtu
         var second = Store();
         await InitializeAndResumeAsync(first, new AiAdmissionPolicy
         {
-            DeploymentAttempts = 3, ActorAttempts = 2, CohortAttempts = 2, WorkflowAttempts = 1,
-            DeploymentConcurrency = 3, ActorConcurrency = 2, CohortConcurrency = 2, WorkflowConcurrency = 1
+            DeploymentAttempts = 3,
+            ActorAttempts = 2,
+            CohortAttempts = 2,
+            WorkflowAttempts = 1,
+            DeploymentConcurrency = 3,
+            ActorConcurrency = 2,
+            CohortConcurrency = 2,
+            WorkflowConcurrency = 1
         });
         var barrier = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var tasks = Enumerable.Range(0, 20).Select(async index =>
@@ -80,8 +86,14 @@ public sealed class PostgresAiExecutionAdmissionStoreTests(PostgresFixture fixtu
         // permits multiple winners and fails that scope's independent regression.
         var policy = new AiAdmissionPolicy
         {
-            DeploymentAttempts = 100, ActorAttempts = 100, CohortAttempts = 100, WorkflowAttempts = 100,
-            DeploymentConcurrency = 100, ActorConcurrency = 100, CohortConcurrency = 100, WorkflowConcurrency = 100
+            DeploymentAttempts = 100,
+            ActorAttempts = 100,
+            CohortAttempts = 100,
+            WorkflowAttempts = 100,
+            DeploymentConcurrency = 100,
+            ActorConcurrency = 100,
+            CohortConcurrency = 100,
+            WorkflowConcurrency = 100
         };
         policy = (scope, concurrency) switch
         {
@@ -194,7 +206,10 @@ public sealed class PostgresAiExecutionAdmissionStoreTests(PostgresFixture fixtu
         var port = ((IPEndPoint)listener.LocalEndpoint).Port;
         var config = new NpgsqlConnectionStringBuilder(fixture.DataSource.ConnectionString)
         {
-            Host = "127.0.0.1", Port = port, Timeout = 1, Pooling = false
+            Host = "127.0.0.1",
+            Port = port,
+            Timeout = 1,
+            Pooling = false
         };
         listener.Stop();
         await using var unavailableSource = NpgsqlDataSource.Create(config.ConnectionString);

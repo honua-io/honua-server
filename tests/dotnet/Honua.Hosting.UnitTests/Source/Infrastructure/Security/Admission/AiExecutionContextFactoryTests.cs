@@ -46,12 +46,16 @@ public sealed class AiExecutionContextFactoryTests
         const string owner = "ApiKey:api-key:11111111-1111-1111-1111-111111111111";
         var job = new ExecutionJobRecord
         {
-            OperationId = "job-one", Status = ExecutionJobStatus.Running,
-            CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow,
+            OperationId = "job-one",
+            Status = ExecutionJobStatus.Running,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
             Spec = new ExecutionJobSpec
             {
-                Kind = ExecutionJobKind.Geoprocessing, TargetKind = BatchComputeTargetKind.KubernetesJob,
-                Backend = "local", WorkloadName = "imagery"
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                Backend = "local",
+                WorkloadName = "imagery"
             },
             Audit = new OperationAuditInfo
             {

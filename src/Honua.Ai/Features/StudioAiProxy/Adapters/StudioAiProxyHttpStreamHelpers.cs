@@ -24,9 +24,9 @@ internal static class StudioAiProxyHttpStreamHelpers
     public static async Task<(HttpResponseMessage? Response, bool TimedOut, HttpRequestException? RequestError)> SendSafeAsync(
         HttpClient client,
         HttpRequestMessage request,
+        IAiExecutionPermit permit,
         CancellationToken linkedToken,
-        CancellationToken callerToken,
-        IAiExecutionPermit permit)
+        CancellationToken callerToken)
     {
         try
         {

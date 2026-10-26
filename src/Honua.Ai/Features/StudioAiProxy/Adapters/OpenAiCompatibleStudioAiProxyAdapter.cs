@@ -94,7 +94,7 @@ internal sealed class OpenAiCompatibleStudioAiProxyAdapter : IStudioAiProxyAdapt
         var stopwatch = Stopwatch.StartNew();
 
         var (response, sendTimedOut, requestError) = await StudioAiProxyHttpStreamHelpers
-            .SendSafeAsync(client, httpRequest, timeoutCts.Token, cancellationToken, permit)
+            .SendSafeAsync(client, httpRequest, permit, timeoutCts.Token, cancellationToken)
             .ConfigureAwait(false);
 
         if (sendTimedOut)

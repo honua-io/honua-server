@@ -116,7 +116,8 @@ public sealed class AiAdmissionControlHostTests
             var stale = await SubmitAsync(admin, "resume", new Dictionary<string, string?>
             {
                 ["expectedGeneration"] = details.GetProperty("generation").GetString(),
-                ["expectedRevision"] = "99", ["expectedEpoch"] = "1"
+                ["expectedRevision"] = "99",
+                ["expectedEpoch"] = "1"
             });
             stale.Handle.GetProperty("status").GetString().Should().Be("Denied");
             stale.Handle.GetProperty("reason").GetString().Should().Be("stale_control");

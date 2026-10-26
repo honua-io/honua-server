@@ -32,7 +32,9 @@ internal static class AiAdmissionControlOperation
 
     internal static OperationDescriptor Descriptor(string id) => new()
     {
-        OperationId = id, ProviderId = ServicePublishOperation.ProviderId, Category = "admin",
+        OperationId = id,
+        ProviderId = ServicePublishOperation.ProviderId,
+        Category = "admin",
         Title = Actions[id] switch
         {
             AiAdmissionControlAction.Initialize => "Initialize AI request budgets",
@@ -41,17 +43,20 @@ internal static class AiAdmissionControlOperation
             _ => "Resume model invocations"
         },
         Description = "Controls durable AI invocation attempts without resetting accounting.",
-        ExecutionKind = OperationExecutionKind.Synchronous, ApprovalModel = OperationApprovalModel.OperatorGate,
+        ExecutionKind = OperationExecutionKind.Synchronous,
+        ApprovalModel = OperationApprovalModel.OperatorGate,
         Policy = new OperationPolicyMetadata
         {
             BlastRadiusClass = OperationBlastRadiusClass.DeploymentScope,
             SideEffectClass = OperationSideEffectClass.MutatesMetadata,
-            Determinism = OperationDeterminism.RuntimeDynamic, SupportsDryRun = false
+            Determinism = OperationDeterminism.RuntimeDynamic,
+            SupportsDryRun = false
         },
         InputSchema = new[] { "deploymentId", "expectedGeneration", "expectedRevision", "expectedEpoch", "policy" }
             .Select(name => new OperationParameterDescriptor
             {
-                Name = name, Title = name,
+                Name = name,
+                Title = name,
                 Required = name == "policy" && Actions[id] is AiAdmissionControlAction.Initialize or AiAdmissionControlAction.UpdatePolicy,
                 Schema = new WorkflowSchemaDefinition { Type = WorkflowSchemaValueType.Text }
             }).ToArray(),
@@ -198,9 +203,13 @@ internal sealed class AiAdmissionControlExecutor(string operationId, IServicePro
         }
         return new OperationHandle
         {
-            OperationId = OperationId, OperationInstanceId = context.OperationInstanceId!, CorrelationId = context.CorrelationId!,
+            OperationId = OperationId,
+            OperationInstanceId = context.OperationInstanceId!,
+            CorrelationId = context.CorrelationId!,
             Status = succeeded ? OperationHandleStatus.Completed : OperationHandleStatus.Denied,
-            CreatedAt = now, UpdatedAt = now, Reason = result.Code,
+            CreatedAt = now,
+            UpdatedAt = now,
+            Reason = result.Code,
             Result = new OperationResultSummary { Summary = "AI admission control: " + result.Code, Details = details }
         };
     }
@@ -208,9 +217,15 @@ internal sealed class AiAdmissionControlExecutor(string operationId, IServicePro
     public Task<OperationStatus> GetStatusAsync(OperationHandle handle, CancellationToken cancellationToken = default)
         => Task.FromResult(new OperationStatus
         {
-            OperationId = handle.OperationId, OperationInstanceId = handle.OperationInstanceId,
-            CorrelationId = handle.CorrelationId, Status = handle.Status, CreatedAt = handle.CreatedAt,
-            UpdatedAt = handle.UpdatedAt, Result = handle.Result, Reason = handle.Reason, EvidenceRefs = handle.EvidenceRefs
+            OperationId = handle.OperationId,
+            OperationInstanceId = handle.OperationInstanceId,
+            CorrelationId = handle.CorrelationId,
+            Status = handle.Status,
+            CreatedAt = handle.CreatedAt,
+            UpdatedAt = handle.UpdatedAt,
+            Result = handle.Result,
+            Reason = handle.Reason,
+            EvidenceRefs = handle.EvidenceRefs
         });
 }
 

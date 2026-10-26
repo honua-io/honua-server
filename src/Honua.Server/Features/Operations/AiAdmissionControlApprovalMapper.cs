@@ -24,11 +24,20 @@ internal sealed class AiAdmissionControlApprovalMapper(string operationId) : IOp
             AdminApiOperationApprovalJsonContext.Default.AdminApiOperationApprovalPayload);
         return new OperationGatewayRequest
         {
-            OperationId = OperationId, OperationInstanceId = context.OperationInstanceId, Kind = OperationClass.AdminConfigChange,
-            RequestedBy = context.PrincipalId, Reason = decision.Reason, CorrelationId = context.CorrelationId,
-            IdempotencyKey = context.IdempotencyKey, ExecutionPayload = payload,
-            Plan = new OperationProposalPlan { Summary = "Apply " + OperationId + " to the accepted deployment and policy epoch.",
-                RiskLevel = ProposalRiskLevel.High, ExecutionPayload = payload }
+            OperationId = OperationId,
+            OperationInstanceId = context.OperationInstanceId,
+            Kind = OperationClass.AdminConfigChange,
+            RequestedBy = context.PrincipalId,
+            Reason = decision.Reason,
+            CorrelationId = context.CorrelationId,
+            IdempotencyKey = context.IdempotencyKey,
+            ExecutionPayload = payload,
+            Plan = new OperationProposalPlan
+            {
+                Summary = "Apply " + OperationId + " to the accepted deployment and policy epoch.",
+                RiskLevel = ProposalRiskLevel.High,
+                ExecutionPayload = payload
+            }
         };
     }
 
@@ -45,7 +54,9 @@ internal sealed class AiAdmissionControlApprovalMapper(string operationId) : IOp
             throw new InvalidOperationException("AI admission sealed requester mismatch.");
         return new OperationApprovalReplayMapping
         {
-            Request = payload.ToOperationRequest(), TenantId = payload.TenantId, SchemaName = payload.SchemaName
+            Request = payload.ToOperationRequest(),
+            TenantId = payload.TenantId,
+            SchemaName = payload.SchemaName
         };
     }
 }

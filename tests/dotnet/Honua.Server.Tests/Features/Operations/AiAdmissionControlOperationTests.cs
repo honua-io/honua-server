@@ -121,11 +121,16 @@ public sealed class AiAdmissionControlOperationTests
         var now = DateTimeOffset.UtcNow;
         var proposal = new OperationProposal
         {
-            ProposalId = "proposal", OperationId = Stop, Kind = OperationClass.AdminConfigChange,
-            Status = OperationProposalStatus.Executing, RequestedBy = context.PrincipalId, Plan = mapped.Plan!,
+            ProposalId = "proposal",
+            OperationId = Stop,
+            Kind = OperationClass.AdminConfigChange,
+            Status = OperationProposalStatus.Executing,
+            RequestedBy = context.PrincipalId,
+            Plan = mapped.Plan!,
             SealedPlanHash = OperationApprovalPlanSeal.Compute(mapped.Plan!),
             Audit = new OperationAuditInfo { OperationInstanceId = context.OperationInstanceId },
-            CreatedAt = now, UpdatedAt = now
+            CreatedAt = now,
+            UpdatedAt = now
         };
         var proposals = Substitute.For<IOperationProposalStore>();
         proposals.GetAsync("proposal", Arg.Any<CancellationToken>()).Returns(proposal);

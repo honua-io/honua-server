@@ -101,8 +101,11 @@ public sealed class StudioAiProxyServiceTests
     {
         var service = CreateService(ConfigWithOneAnthropicProvider("claude", isDefault: true), new FakeAdapter(StudioAiProxyConfiguration.AnthropicKind, true));
 
-        var error = service.ValidateRequest(new StudioAiChatRequest {
-            ExecutionContext = RecordingAiAdmission.Context(), Messages = [] });
+        var error = service.ValidateRequest(new StudioAiChatRequest
+        {
+            ExecutionContext = RecordingAiAdmission.Context(),
+            Messages = []
+        });
 
         error.Should().NotBeNull();
     }
@@ -304,8 +307,11 @@ public sealed class StudioAiProxyServiceTests
         var service = CreateService(ConfigWithOneAnthropicProvider("claude", isDefault: true), adapter);
 
         var summary = new StudioAiProxyCallSummary();
-        var request = new StudioAiChatRequest {
-            ExecutionContext = RecordingAiAdmission.Context(), Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "hi" }] };
+        var request = new StudioAiChatRequest
+        {
+            ExecutionContext = RecordingAiAdmission.Context(),
+            Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "hi" }]
+        };
         var events = await CollectAsync(service, request, summary);
 
         events.Should().HaveCount(3);
@@ -327,8 +333,11 @@ public sealed class StudioAiProxyServiceTests
         var service = CreateService(ConfigWithOneAnthropicProvider("claude", isDefault: true), adapter);
 
         var summary = new StudioAiProxyCallSummary();
-        var request = new StudioAiChatRequest {
-            ExecutionContext = RecordingAiAdmission.Context(), Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "hi" }] };
+        var request = new StudioAiChatRequest
+        {
+            ExecutionContext = RecordingAiAdmission.Context(),
+            Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "hi" }]
+        };
         await CollectAsync(service, request, summary);
 
         summary.Succeeded.Should().BeFalse();
@@ -343,8 +352,11 @@ public sealed class StudioAiProxyServiceTests
         var service = CreateService(ConfigWithOneAnthropicProvider("claude", isDefault: true), adapter);
 
         var summary = new StudioAiProxyCallSummary();
-        var request = new StudioAiChatRequest {
-            ExecutionContext = RecordingAiAdmission.Context(), Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "hi" }] };
+        var request = new StudioAiChatRequest
+        {
+            ExecutionContext = RecordingAiAdmission.Context(),
+            Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "hi" }]
+        };
         var events = await CollectAsync(service, request, summary);
 
         events.Should().ContainSingle(e => e.Type == StudioAiChatEventType.Error);
@@ -359,8 +371,11 @@ public sealed class StudioAiProxyServiceTests
         var service = CreateService(ConfigWithOneAnthropicProvider("claude", isDefault: true), adapter);
 
         var summary = new StudioAiProxyCallSummary();
-        var request = new StudioAiChatRequest {
-            ExecutionContext = RecordingAiAdmission.Context(), Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "hi" }] };
+        var request = new StudioAiChatRequest
+        {
+            ExecutionContext = RecordingAiAdmission.Context(),
+            Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "hi" }]
+        };
         var events = await CollectAsync(service, request, summary);
 
         events.Last().Type.Should().Be(StudioAiChatEventType.Error);

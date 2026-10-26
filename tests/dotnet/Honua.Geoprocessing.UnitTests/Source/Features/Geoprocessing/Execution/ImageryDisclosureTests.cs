@@ -76,13 +76,20 @@ public sealed class ImageryDisclosureTests
         var options = new ImageryInferenceOptions { Provider = "http", Endpoint = "https://inference.example/v1", ApiKey = "secret:imagery" };
         options.Disclosure.Approvals.Add(new AiDisclosureApproval
         {
-            Provider = "http", Kind = "http", Destination = options.Endpoint, Model = "approved-model",
-            UseCase = "imagery-inference", DataClassification = "unclassified"
+            Provider = "http",
+            Kind = "http",
+            Destination = options.Endpoint,
+            Model = "approved-model",
+            UseCase = "imagery-inference",
+            DataClassification = "unclassified"
         });
         var request = new ImageryInferenceRequest
         {
-            ExecutionContext = RecordingAiAdmission.Context("imagery-inference"), Model = "approved-model",
-            Task = "classification", ImageBytes = [1, 2, 3], MaxArtifactBytes = 1024
+            ExecutionContext = RecordingAiAdmission.Context("imagery-inference"),
+            Model = "approved-model",
+            Task = "classification",
+            ImageBytes = [1, 2, 3],
+            MaxArtifactBytes = 1024
         };
         await FluentActions.Awaiting(() => client.InferAsync(options, request, default))
             .Should().ThrowAsync<ImageryInferenceException>();

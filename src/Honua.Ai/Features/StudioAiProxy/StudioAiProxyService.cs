@@ -296,7 +296,7 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
             yield break;
         }
         using var streaming = CancellationTokenSource.CreateLinkedTokenSource(prepared.Permit.Token, cancellationToken);
-        var enumerator = StreamPreparedCoreAsync(prepared, summary, streaming.Token).GetAsyncEnumerator();
+        var enumerator = StreamPreparedCoreAsync(prepared, summary, streaming.Token).GetAsyncEnumerator(streaming.Token);
         try
         {
             while (true)
@@ -333,8 +333,12 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
         summary.Succeeded = false;
         summary.StopReason = StudioAiStopReason.Cancelled;
         summary.ErrorMessage = "AI invocation admission is unavailable or no longer current.";
-        return new StudioAiChatEvent { Type = StudioAiChatEventType.Error, ErrorCode = code == "disclosure_denied" ? "studio_ai/disclosure_denied" : "studio_ai/admission_" + code,
-            ErrorMessage = summary.ErrorMessage };
+        return new StudioAiChatEvent
+        {
+            Type = StudioAiChatEventType.Error,
+            ErrorCode = code == "disclosure_denied" ? "studio_ai/disclosure_denied" : "studio_ai/admission_" + code,
+            ErrorMessage = summary.ErrorMessage
+        };
     }
 
     private async IAsyncEnumerable<StudioAiChatEvent> StreamPreparedCoreAsync(

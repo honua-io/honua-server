@@ -33,7 +33,8 @@ public sealed class RedisAiExecutionAdmissionRoutingTests
         var deadline = DateTimeOffset.UtcNow.AddMinutes(1).ToUnixTimeMilliseconds();
         var json = JsonSerializer.Serialize(new
         {
-            code = "admitted", reservation = new { generation = generation.ToString("N"), epoch = 2, deadline, lease = deadline + 30_000 }
+            code = "admitted",
+            reservation = new { generation = generation.ToString("N"), epoch = 2, deadline, lease = deadline + 30_000 }
         });
         database.ScriptEvaluateAsync(Arg.Any<string>(), Arg.Any<RedisKey[]>(), Arg.Any<RedisValue[]>(), Arg.Any<CommandFlags>())
             .Returns(Task.FromResult(RedisResult.Create((RedisValue)json)));
@@ -71,7 +72,10 @@ public sealed class RedisAiExecutionAdmissionRoutingTests
     {
         var settings = new Dictionary<string, string>
         {
-            ["appendonly"] = "yes", ["appendfsync"] = "always", ["no-appendfsync-on-rewrite"] = "no", ["maxmemory-policy"] = "noeviction"
+            ["appendonly"] = "yes",
+            ["appendfsync"] = "always",
+            ["no-appendfsync-on-rewrite"] = "no",
+            ["maxmemory-policy"] = "noeviction"
         };
         server.ConfigGetAsync(Arg.Any<string>(), Arg.Any<CommandFlags>()).Returns(call =>
         {

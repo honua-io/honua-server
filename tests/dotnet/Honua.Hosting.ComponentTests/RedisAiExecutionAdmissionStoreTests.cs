@@ -390,9 +390,15 @@ public sealed class RedisAiExecutionAdmissionStoreTests(AiAdmissionRedisFixture 
     private static string AttemptJson(AiAdmissionState state, AiExecutionContext context, long admitted, bool released)
         => JsonSerializer.Serialize(new
         {
-            generation = state.Generation.ToString("N"), epoch = state.Epoch, actor = context.ActorKey,
-            useCase = context.UseCase, workflow = context.WorkflowKey, admitted,
-            deadline = admitted + 1000, lease = admitted + 31_000, released
+            generation = state.Generation.ToString("N"),
+            epoch = state.Epoch,
+            actor = context.ActorKey,
+            useCase = context.UseCase,
+            workflow = context.WorkflowKey,
+            admitted,
+            deadline = admitted + 1000,
+            lease = admitted + 31_000,
+            released
         });
 
     private static async Task<DateTimeOffset> ServerTimeAsync(ConnectionMultiplexer connection)
@@ -413,8 +419,14 @@ public sealed class RedisAiExecutionAdmissionStoreTests(AiAdmissionRedisFixture 
     private static AiExecutionContext Context() => AiExecutionContext.Create(Guid.NewGuid().ToString("N"), "canonical-actor", "studio-chat", "verified-session");
     private static AiAdmissionPolicy Unlimited() => new()
     {
-        DeploymentAttempts = 100, ActorAttempts = 100, CohortAttempts = 100, WorkflowAttempts = 100,
-        DeploymentConcurrency = 100, ActorConcurrency = 100, CohortConcurrency = 100, WorkflowConcurrency = 100
+        DeploymentAttempts = 100,
+        ActorAttempts = 100,
+        CohortAttempts = 100,
+        WorkflowAttempts = 100,
+        DeploymentConcurrency = 100,
+        ActorConcurrency = 100,
+        CohortConcurrency = 100,
+        WorkflowConcurrency = 100
     };
     private static AiAdmissionControlCommand Initialize(string deployment) => new(deployment, AiAdmissionControlAction.Initialize,
         Guid.Empty, 0, 0, "trusted-admin", Guid.NewGuid().ToString("N"), "correlation", Unlimited());
