@@ -48,6 +48,8 @@ public static class OperationScopeMapping
                 "studio.draft.delete" or "studio.draft.validate" or "studio.draft.preview-plan" or
                 "studio.content.reopen-version" or "studio.content.create-publication-request" or
                 "studio.content.rollback" => ResolveStudioOperation(request.OperationId),
+            "admin.ai.admission.initialize" or "admin.ai.admission.policy-update" or
+                "admin.ai.admission.stop" or "admin.ai.admission.resume" => OperatorOperation.Update,
             "admin.layer.publish" => OperatorOperation.Publish,
             "admin.connections.create" or "admin.import.upload" or "admin.import.upload-url" or
                 "admin.import.upload-object" => OperatorOperation.Create,
