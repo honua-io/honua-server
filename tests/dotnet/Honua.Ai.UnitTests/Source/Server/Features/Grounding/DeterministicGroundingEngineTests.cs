@@ -219,6 +219,27 @@ public sealed class DeterministicGroundingEngineTests
     }
 
     [UnitTest]
+    public void ScoreLayers_TwoResourcesOverOneStorageLayer_RankThatLayerOnce()
+    {
+        // A feature dataset and its imagery dataset resolve to the same storage layer,
+        // as on the certification seed (layer 1): the ranking must list ID "1" once.
+        var request = new GroundingRequest { Goal = "Buffer mixed geometry test layer" };
+        var layers = new List<LayerCandidate>
+        {
+            new(1, "Mixed Geometry Test Layer", "Mixed geometry fixture"),
+            new(1, "Mixed Geometry Test Layer imagery", "Mixed geometry fixture"),
+            new(2, "Geometry test", null)
+        };
+
+        var results = _engine.ScoreLayers(request, layers);
+
+        results.Select(c => c.Id).Should().OnlyHaveUniqueItems();
+        results.Where(c => c.Id == "1").Should().ContainSingle()
+            .Which.DisplayName.Should().Be("Mixed Geometry Test Layer");
+        results.Should().BeInDescendingOrder(c => c.Score);
+    }
+
+    [UnitTest]
     public void ScoreLayers_EmptyInputs_ReturnsEmpty()
     {
         var request = new GroundingRequest { Goal = "Anything" };
