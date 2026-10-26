@@ -2,9 +2,15 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Net;
+using System.Collections.Concurrent;
+using Honua.ControlPlane;
+using Honua.Core.Features.AuditLog;
+using Honua.Core.Features.AuditLog.Abstractions;
+using Microsoft.Extensions.Logging;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
+using FluentAssertions.Execution;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Operations.Domain;
@@ -30,6 +36,10 @@ public sealed class TypedProposalCurrentApiKeyTests(RedisFixture redis) : IAsync
     private readonly CountingPublishExecutor _executor = new();
     private readonly List<HttpClient> _clients = [];
     private IAdminApiKeyStore _keys = null!;
+    private LookupSwitchStore _lookup = null!;
+    private readonly ConcurrentQueue<string> _audit = new();
+    private readonly RecordingLogs _logs = new();
+    private const string Canary = "synthetic-private-store-error-canary";
     private IOperationProposalStore _proposals = null!;
 
     public async Task InitializeAsync()
@@ -53,6 +63,15 @@ public sealed class TypedProposalCurrentApiKeyTests(RedisFixture redis) : IAsync
         {
             // The real descriptor, policy, mapper, dispatcher, durable stores, gateway,
             // authentication and approval routes remain composed. Never publish a cloud asset.
+            var keyDescriptor = services.Last(descriptor => descriptor.ServiceType == typeof(IAdminApiKeyStore));
+            services.RemoveAll<IAdminApiKeyStore>();
+            services.AddSingleton<IAdminApiKeyStore>(provider => _lookup = new LookupSwitchStore(
+                ResolveDescriptor<IAdminApiKeyStore>(provider, keyDescriptor)));
+            var auditDescriptor = services.Last(descriptor => descriptor.ServiceType == typeof(IAuditLog));
+            services.RemoveAll<IAuditLog>();
+            services.AddScoped<IAuditLog>(provider => new CapturingAudit(
+                ResolveDescriptor<IAuditLog>(provider, auditDescriptor), _audit));
+            services.AddLogging(logging => logging.AddProvider(_logs));
             services.RemoveAll<CanonicalExecutor>();
             services.AddSingleton<CanonicalExecutor>(_executor);
         });
@@ -78,9 +97,10 @@ public sealed class TypedProposalCurrentApiKeyTests(RedisFixture redis) : IAsync
         await _keys.RevokeAsync(proposer.Record.Id, CancellationToken.None);
         using HttpResponseMessage response = await Client(approver.Key).PostAsync(
             $"/api/v1/admin/proposals/{proposal.ProposalId}/approve", null);
+        var persisted = await _proposals.GetAsync(proposal.ProposalId, CancellationToken.None);
+        using var assertions = new AssertionScope();
         response.StatusCode.Should().Be(HttpStatusCode.Conflict);
         _executor.Calls.Should().Be(0);
-        var persisted = await _proposals.GetAsync(proposal.ProposalId, CancellationToken.None);
         persisted!.Status.Should().Be(OperationProposalStatus.AwaitingApproval);
     }
 
@@ -100,6 +120,119 @@ public sealed class TypedProposalCurrentApiKeyTests(RedisFixture redis) : IAsync
         using HttpResponseMessage replay = await Client(approver.Key).PostAsync(
             $"/api/v1/admin/proposals/{proposal.ProposalId}/approve", null);
         replay.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        _executor.Calls.Should().Be(1);
+    }
+
+    [IntegrationTheory]
+    [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
+    [InlineData("missing")]
+    [InlineData("expired")]
+    [InlineData("read-only")]
+    [InlineData("outage")]
+    public async Task CurrentKeyLookupDenies_ApprovalCannotUseSealedOldAuthority(string state)
+    {
+        var proposer = await CreateKeyAsync("changed-proposer");
+        var approver = await CreateKeyAsync("changed-approver");
+        OperationProposal proposal = await SubmitAsync(proposer);
+        _lookup.Target = proposer.Record.Id;
+        _lookup.Transform = record => state switch
+        {
+            "missing" => null,
+            "expired" => record! with { ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(-1) },
+            "read-only" => record! with { Permissions = ["admin:read"] },
+            _ => record
+        };
+        if (state == "outage") _lookup.OnRead = (_, _) => throw new InvalidOperationException(Canary);
+        using HttpResponseMessage response = await Client(approver.Key).PostAsync(
+            $"/api/v1/admin/proposals/{proposal.ProposalId}/approve", null);
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await response.Content.ReadAsStringAsync()).Should().NotContain(Canary);
+        _executor.Calls.Should().Be(0);
+        (await _proposals.GetAsync(proposal.ProposalId, CancellationToken.None))!.Status
+            .Should().Be(OperationProposalStatus.AwaitingApproval);
+    }
+
+    [IntegrationTheory]
+    [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AfterClaimAuthorityLoss_FailsDurablyBeforeEffectWithoutRawErrors(bool outage)
+    {
+        var proposer = await CreateKeyAsync("claim-proposer");
+        var approver = await CreateKeyAsync("claim-approver");
+        OperationProposal proposal = await SubmitAsync(proposer);
+        _lookup.Target = proposer.Record.Id;
+        _lookup.OnRead = async (count, token) =>
+        {
+            if (count != 2) return;
+            (await _proposals.GetAsync(proposal.ProposalId, token))!.Status.Should().Be(OperationProposalStatus.Executing);
+            if (outage) throw new InvalidOperationException(Canary);
+            await _keys.RevokeAsync(proposer.Record.Id, token);
+        };
+        using HttpResponseMessage response = await Client(approver.Key).PostAsync(
+            $"/api/v1/admin/proposals/{proposal.ProposalId}/approve", null);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        _lookup.Reads.Should().Be(2);
+        _executor.Calls.Should().Be(0);
+        var persisted = (await _proposals.GetAsync(proposal.ProposalId, CancellationToken.None))!;
+        persisted.Status.Should().Be(OperationProposalStatus.Failed);
+        (await response.Content.ReadAsStringAsync()).Should().NotContain(Canary);
+        JsonSerializer.Serialize(persisted).Should().NotContain(Canary);
+        _logs.Messages.Should().Contain(message => message.Contains(OperationProposerApiKeyAuthority.Refusal));
+        _logs.Messages.Should().OnlyContain(message => !message.Contains(Canary));
+        _audit.Should().NotBeEmpty();
+        _audit.Should().OnlyContain(message => !message.Contains(Canary));
+    }
+
+    [IntegrationTest]
+    public async Task AfterClaimCallerCancellation_CompensatesWithoutEffect()
+    {
+        var proposer = await CreateKeyAsync("cancel-proposer");
+        OperationProposal proposal = await SubmitAsync(proposer);
+        using var cancellation = new CancellationTokenSource();
+        _lookup.Target = proposer.Record.Id;
+        _lookup.OnRead = async (count, token) =>
+        {
+            if (count != 2) return;
+            (await _proposals.GetAsync(proposal.ProposalId, token))!.Status.Should().Be(OperationProposalStatus.Executing);
+            cancellation.Cancel();
+            token.ThrowIfCancellationRequested();
+        };
+        // The real route created the proposal above; direct gateway cancellation lets the
+        // test retain an observer after the caller's cancellation, rather than assert on a closed socket.
+        var gateway = _fixture.Services.GetRequiredService<IOperationGateway>();
+        var act = () => gateway.ApplyApprovedProposalAsync(proposal.ProposalId, "separate-cancellation-test-approver", cancellation.Token);
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        _executor.Calls.Should().Be(0);
+        (await _proposals.GetAsync(proposal.ProposalId, CancellationToken.None))!.Status
+            .Should().Be(OperationProposalStatus.Cancelled);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
+    public async Task SameProposer_CannotApproveTypedProposal()
+    {
+        var proposer = await CreateKeyAsync("self-proposer");
+        OperationProposal proposal = await SubmitAsync(proposer);
+        using HttpResponseMessage response = await Client(proposer.Key).PostAsync(
+            $"/api/v1/admin/proposals/{proposal.ProposalId}/approve", null);
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        _executor.Calls.Should().Be(0);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
+    public async Task ExistingRotationSemantics_ActiveSameIdCanStillBeApproved()
+    {
+        var proposer = await CreateKeyAsync("rotate-proposer");
+        var approver = await CreateKeyAsync("rotate-approver");
+        OperationProposal proposal = await SubmitAsync(proposer);
+        var rotated = await _keys.RotateAsync(proposer.Record.Id, CancellationToken.None);
+        rotated.Should().NotBeNull();
+        rotated!.Record.Id.Should().Be(proposer.Record.Id);
+        using HttpResponseMessage response = await Client(approver.Key).PostAsync(
+            $"/api/v1/admin/proposals/{proposal.ProposalId}/approve", null);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
         _executor.Calls.Should().Be(1);
     }
 
@@ -132,6 +265,56 @@ public sealed class TypedProposalCurrentApiKeyTests(RedisFixture redis) : IAsync
         proposal.SealedPlanHash.Should().NotBeNullOrWhiteSpace();
         _executor.Calls.Should().Be(0);
         return proposal;
+    }
+
+    private static T ResolveDescriptor<T>(IServiceProvider provider, ServiceDescriptor descriptor) where T : class
+        => descriptor.ImplementationInstance as T ?? descriptor.ImplementationFactory?.Invoke(provider) as T
+            ?? (T)ActivatorUtilities.CreateInstance(provider, descriptor.ImplementationType!);
+
+    private sealed class LookupSwitchStore(IAdminApiKeyStore inner) : IAdminApiKeyStore
+    {
+        internal Guid Target { get; set; }
+        internal int Reads { get; private set; }
+        internal Func<int, CancellationToken, Task>? OnRead { get; set; }
+        internal Func<AdminApiKeyRecord?, AdminApiKeyRecord?>? Transform { get; set; }
+        public async Task<AdminApiKeyRecord?> GetAsync(Guid id, CancellationToken token)
+        {
+            if (id != Target) return await inner.GetAsync(id, token);
+            Reads++;
+            if (OnRead is { } callback) await callback(Reads, token);
+            var record = await inner.GetAsync(id, token);
+            return Transform is { } transform ? transform(record) : record;
+        }
+        public Task<IReadOnlyList<AdminApiKeyRecord>> ListAsync(CancellationToken token) => inner.ListAsync(token);
+        public Task<AdminApiKeyCreateResult> CreateAsync(string name, IReadOnlyList<string> permissions, DateTimeOffset? expires,
+            string? createdBy, CancellationToken token) => inner.CreateAsync(name, permissions, expires, createdBy, token);
+        public Task<AdminApiKeyCreateResult?> RotateAsync(Guid id, CancellationToken token) => inner.RotateAsync(id, token);
+        public Task<AdminApiKeyRecord?> RevokeAsync(Guid id, CancellationToken token) => inner.RevokeAsync(id, token);
+        public Task<AdminApiKeyValidationResult?> ValidateAsync(string key, CancellationToken token) => inner.ValidateAsync(key, token);
+    }
+
+    private sealed class CapturingAudit(IAuditLog inner, ConcurrentQueue<string> events) : IAuditLog
+    {
+        public bool IsPersisted => inner.IsPersisted;
+        public Task<string?> RecordAsync(AuditEvent entry, CancellationToken token = default)
+        {
+            events.Enqueue(JsonSerializer.Serialize(entry));
+            return inner.RecordAsync(entry, token);
+        }
+    }
+
+    private sealed class RecordingLogs : ILoggerProvider
+    {
+        internal ConcurrentQueue<string> Messages { get; } = new();
+        public ILogger CreateLogger(string categoryName) => new Recorder(Messages);
+        public void Dispose() { }
+        private sealed class Recorder(ConcurrentQueue<string> messages) : ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+            public bool IsEnabled(LogLevel logLevel) => true;
+            public void Log<TState>(LogLevel level, EventId id, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+                => messages.Enqueue(formatter(state, exception) + " " + exception);
+        }
     }
 
     private sealed class CountingPublishExecutor : CanonicalExecutor
