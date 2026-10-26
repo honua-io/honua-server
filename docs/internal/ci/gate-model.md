@@ -288,7 +288,7 @@ the query silently disables the Claude identity.
 
 **It never runs from the pull request it reviews.** It triggers on `workflow_run`
 (completed `PR Gate`) and on `issue_comment`, both of which execute the
-default-branch copy, so the workflow, the prompt and the `CLAUDE.md` the reviewer
+default-branch copy, so the workflow, the prompt and the `AGENTS.md` the reviewer
 follows all come from trunk. A `pull_request` trigger would hand a candidate its
 own reviewer definition plus the secrets and `id-token: write` — enough to attest
 to itself and to exfiltrate the credentials. `review-gate.yml` uses

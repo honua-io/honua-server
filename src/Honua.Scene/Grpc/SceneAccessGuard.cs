@@ -15,7 +15,7 @@ namespace Honua.Scene.Grpc;
 /// HTTP and I3S scene surfaces. Both serve the same on-disk tilesets; without
 /// this guard the gRPC path would return scene metadata and raw tile bytes to
 /// anonymous or unauthorized callers that the HTTP surface rejects, violating
-/// the cross-protocol authorization rule (CLAUDE.md "Security/RBAC").
+/// the cross-protocol authorization rule (AGENTS.md "Security/RBAC").
 /// </summary>
 internal static class SceneAccessGuard
 {
