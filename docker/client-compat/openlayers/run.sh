@@ -18,12 +18,18 @@ done
 mkdir -p /output
 lane_status=0
 
-# OpenLayers Vitest suite.
+# OpenLayers Vitest suite. Scoped to tests/js/openlayers: an unscoped
+# `vitest run` also collects the feature-server, map-server and mcp suites,
+# which are raw-HTTP server integration tests bound to the ci.yml fixture
+# (HONUA_SERVICE_ID=test_service, layer 0, mixed layer 1, HONUA_API_KEY). Run
+# here against browser_compat/2000 without the admin key they fail on fixture
+# and credential mismatches, not on client behaviour, and they emit no lane
+# evidence. They stay required in ci.yml "JavaScript Integration Tests".
 if [[ -f tests/js/package.json ]]; then
     pushd tests/js >/dev/null
     npm install --no-audit --no-fund --prefer-offline
     HONUA_BASE_URL="${HONUA_BASE_URL}" \
-        npx vitest run --reporter=default || lane_status=1
+        npx vitest run --dir openlayers --reporter=default || lane_status=1
     HONUA_BASE_URL="${HONUA_BASE_URL}" npm run test:openlayers:render || lane_status=1
     popd >/dev/null
 

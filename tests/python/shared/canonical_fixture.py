@@ -48,6 +48,11 @@ SUBSET_BBOX = (-122.4950, 37.7050, -122.4550, 37.7350)
 SUBSET_BBOX_FEATURE_COUNT = 3
 
 STORAGE_CRS_EPSG = 4326
+
+# OGC API Features advertises EPSG:4326 storage as OGC:CRS84 (longitude, latitude)
+# so a client's default CRS matches the ordinates it receives (#5040). EPSG:4326
+# declares latitude first, so clients that honour storageCrs report CRS84, not 4326.
+OAPIF_STORAGE_CRS = "OGC:CRS84"
 PROJECTED_CRS_EPSG = 3857
 
 # Attribute schema exposed to feature clients. `objectid` is the feature id

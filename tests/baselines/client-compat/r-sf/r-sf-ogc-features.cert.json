@@ -55,9 +55,9 @@
       "test_case_id": "CERT-DISC-01",
       "status": "pass",
       "duration_ms": 73,
-      "measured_count": 5,
+      "measured_count": 11,
       "measured_delta": null,
-      "notes": "sf::st_layers() over the GDAL OAPIF driver (/collections listing) listed 5 feature type(s)/collection(s); certification target resolved to '0'.",
+      "notes": "sf::st_layers() over the GDAL OAPIF driver (/collections listing) listed 11 feature type(s)/collection(s); certification target resolved to '0'.",
       "evidence_ref": ""
     },
     {
@@ -488,9 +488,9 @@
       "test_case_id": "NB-RSF-AUT-03",
       "status": "pass",
       "duration_ms": 103,
-      "measured_count": 5,
+      "measured_count": 11,
       "measured_delta": null,
-      "notes": "GDAL_HTTP_HEADERS carried 'X-API-Key: <admin key>' through sf::st_layers() on the OAPIF DSN: 5 layer(s) listed and the certification target '0' is present. Proves the credential path works through the sf/GDAL stack, not just httr.",
+      "notes": "GDAL_HTTP_HEADERS carried 'X-API-Key: <admin key>' through sf::st_layers() on the OAPIF DSN: 11 layer(s) listed and the certification target '0' is present. Proves the credential path works through the sf/GDAL stack, not just httr.",
       "evidence_ref": ""
     },
     {

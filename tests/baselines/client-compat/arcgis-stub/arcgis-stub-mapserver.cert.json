@@ -48,7 +48,7 @@
       "test_case_id": "CERT-DISC-01",
       "status": "pass",
       "duration_ms": null,
-      "measured_count": 5,
+      "measured_count": 12,
       "measured_delta": null,
       "notes": "",
       "evidence_ref": ""

@@ -54,9 +54,9 @@
       "test_case_id": "CERT-DISC-01",
       "status": "pass",
       "duration_ms": 81,
-      "measured_count": 5,
+      "measured_count": 11,
       "measured_delta": null,
-      "notes": "pyogrio.list_layers discovered 5 collections: ['2000', '2001', '2002', '3000', '0'].",
+      "notes": "pyogrio.list_layers discovered 11 collections: ['2000', '2001', '2002', '20', '21', '22', '3000', '0', '10', '11', '12'].",
       "evidence_ref": ""
     },
     {
