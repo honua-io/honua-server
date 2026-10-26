@@ -66,9 +66,9 @@ internal static partial class FeatureServerEndpoints
     /// The whole upload must be checked here because under manual review the conflicting rows never
     /// reach <c>FeatureServerEditsHandler</c> — and if every row conflicts it is not called at all —
     /// so its own limit checks would let an oversized payload through while still persisting one
-    /// durable conflict per edit. The per-operation counting mirrors
-    /// <c>FeatureServerEditsHandler.ValidateEditLimits</c>, which applies <c>MaxFeaturesPerEdit</c>
-    /// separately to adds/updates/deletes; a combined per-layer count would reject uploads the shared
+    /// durable conflict per edit. The per-operation check is the shared <c>EditLimitPolicy</c>
+    /// that <c>FeatureServerEditsHandler.ValidateEditLimits</c> also uses, which applies
+    /// <c>MaxFeaturesPerEdit</c> separately to adds/updates/deletes; a combined per-layer count would reject uploads the shared
     /// pipeline accepts (#2430).
     /// </remarks>
     internal static string? ValidateUploadEditLimits(
@@ -105,9 +105,8 @@ internal static partial class FeatureServerEndpoints
                 }
             }
 
-            if (adds > editLimits.MaxFeaturesPerEdit ||
-                updates > editLimits.MaxFeaturesPerEdit ||
-                deletes > editLimits.MaxFeaturesPerEdit)
+            if (EditLimitPolicy.Evaluate(new EditCounts(adds, updates, deletes), editLimits) is
+                { Kind: EditLimitViolationKind.FeaturesPerOperation })
             {
                 return $"Uploaded replica edits exceed the maximum of {editLimits.MaxFeaturesPerEdit} features per operation.";
             }

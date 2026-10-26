@@ -300,6 +300,19 @@ public sealed class TestMetadataV2GraphBuilder
         return this;
     }
 
+    public TestMetadataV2GraphBuilder WithPublicationCapabilities(string publicationId, params string[] capabilities)
+    {
+        ArgumentNullException.ThrowIfNull(capabilities);
+        var index = _publications.FindIndex(publication => publication.Metadata.Id == publicationId);
+        if (index < 0)
+        {
+            throw new ArgumentException($"Publication '{publicationId}' was not added.", nameof(publicationId));
+        }
+
+        _publications[index] = _publications[index] with { Capabilities = capabilities };
+        return this;
+    }
+
     public TestMetadataV2GraphBuilder AddStorageBinding(
         string id,
         string resourceId,

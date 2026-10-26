@@ -433,7 +433,7 @@ internal sealed partial class Wfs20Handler
             var descriptor = ResolveTransactionFeatureTypeDescriptor(descriptors, featureElement.Name.LocalName);
             var validationError = await ValidateTransactionLayerWriteAccessAsync(
                 context,
-                descriptor.StorageLayerId,
+                descriptor,
                 AuthorizationOperation.Insert,
                 validatedLayerIds,
                 cancellationToken).ConfigureAwait(false);
@@ -494,7 +494,7 @@ internal sealed partial class Wfs20Handler
         var descriptor = ResolveTransactionFeatureTypeDescriptor(descriptors, typeName);
         var validationError = await ValidateTransactionLayerWriteAccessAsync(
             context,
-            descriptor.StorageLayerId,
+            descriptor,
             AuthorizationOperation.Update,
             validatedLayerIds,
             cancellationToken).ConfigureAwait(false);
@@ -592,7 +592,7 @@ internal sealed partial class Wfs20Handler
         var descriptor = ResolveTransactionFeatureTypeDescriptor(descriptors, typeName);
         var validationError = await ValidateTransactionLayerWriteAccessAsync(
             context,
-            descriptor.StorageLayerId,
+            descriptor,
             AuthorizationOperation.Delete,
             validatedLayerIds,
             cancellationToken).ConfigureAwait(false);
@@ -679,7 +679,7 @@ internal sealed partial class Wfs20Handler
         // Replace modifies an existing feature, so it authorizes as an Update (BH3-001/BH3-014).
         var validationError = await ValidateTransactionLayerWriteAccessAsync(
             context,
-            descriptor.StorageLayerId,
+            descriptor,
             AuthorizationOperation.Update,
             validatedLayerIds,
             cancellationToken).ConfigureAwait(false);
@@ -785,7 +785,7 @@ internal sealed partial class Wfs20Handler
     }
 
 
-    private async Task<Feature> BuildTransactionUpdatedFeatureAsync(
+    internal async Task<Feature> BuildTransactionUpdatedFeatureAsync(
         Feature existing,
         MetadataV2Resource resource,
         TransactionFeatureChanges changes,
@@ -794,6 +794,18 @@ internal sealed partial class Wfs20Handler
         // The shared feature writer currently replaces both geometry and attributes; it
         // does not carry EditUpdateMode through to the provider. Materialize the merged
         // row here so a property-only WFS-T update cannot clear omitted fields or geometry.
+        // Only the submitted changes are checked against the update contract (read-only
+        // fields); untouched stored values are carried through unchanged.
+        var changesResult = _mutationValidator.ValidateAttributes(
+            resource,
+            changes.Attributes,
+            ValidationExtensions.AttributeValidationMode.Strict,
+            isUpdate: true);
+        if (!changesResult.IsValid)
+        {
+            throw new ArgumentException(changesResult.ErrorMessage ?? "Invalid attributes.");
+        }
+
         var mergedAttributes = existing.Attributes.ToBuilder();
         foreach (var (name, value) in changes.Attributes)
         {
@@ -1167,11 +1179,12 @@ internal sealed partial class Wfs20Handler
 
     private static async Task<IResult?> ValidateTransactionLayerWriteAccessAsync(
         HttpContext context,
-        int layerId,
+        WfsFeatureTypeDescriptor descriptor,
         AuthorizationOperation operation,
         HashSet<(int LayerId, AuthorizationOperation Operation)> validatedLayerIds,
         CancellationToken cancellationToken)
     {
+        var layerId = descriptor.StorageLayerId;
         if (!validatedLayerIds.Add((layerId, operation)))
         {
             return null;
@@ -1188,20 +1201,36 @@ internal sealed partial class Wfs20Handler
             return layerValidation.ErrorResult;
         }
 
-        if (IsAnonymousWriteAllowed(context, layerValidation.Resource!, layerValidation.Service))
+        if (!IsAnonymousWriteAllowed(context, layerValidation.Resource!, layerValidation.Service))
         {
-            return null;
+            // Per-operation authorization (BH3-001/BH3-014): each WFS-T action type is gated on its
+            // specific operation so an insert-only grantee cannot Update/Delete via a Transaction and
+            // vice-versa. Replace maps to Update since it modifies an existing feature.
+            var rbacError = await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
+                context,
+                layerValidation.Resource!,
+                layerValidation.Service,
+                operation,
+                cancellationToken).ConfigureAwait(false);
+            if (rbacError != null)
+            {
+                return rbacError;
+            }
         }
 
-        // Per-operation authorization (BH3-001/BH3-014): each WFS-T action type is gated on its
-        // specific operation so an insert-only grantee cannot Update/Delete via a Transaction and
-        // vice-versa. Replace maps to Update since it modifies an existing feature.
-        return await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
-            context,
-            layerValidation.Resource!,
-            layerValidation.Service,
-            operation,
-            cancellationToken).ConfigureAwait(false);
+        // Declared capabilities of the advertised feature type's publication bound every
+        // Transaction action, including on anonymously writable layers (SEC-5).
+        var undeclared = LayerValidationHelpers.FindUndeclaredEditCapability(
+            descriptor.Service,
+            descriptor.Publication,
+            operation);
+        return undeclared is null
+            ? null
+            : Wfs20ErrorResults.CreateForbidden(
+                context,
+                "OperationNotSupported",
+                LayerValidationHelpers.DescribeUndeclaredEditCapability(undeclared),
+                "Transaction");
     }
 
 
@@ -2927,7 +2956,7 @@ internal sealed partial class Wfs20Handler
         byte[]? Geometry,
         ImmutableDictionary<string, object?> Attributes);
 
-    private readonly record struct TransactionFeatureChanges(
+    internal readonly record struct TransactionFeatureChanges(
         bool GeometrySpecified,
         byte[]? Geometry,
         ImmutableDictionary<string, object?> Attributes);
