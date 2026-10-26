@@ -19,16 +19,22 @@ def get_honua_rules() -> str:
             with open(agents_md_path, 'r', encoding='utf-8') as f:
                 content = f.read()
 
-            # Extract Critical Rules section (same as CI does)
-            match = re.search(r'## Critical Rules.*?(?=## Phase-Based Development)', content, re.DOTALL)
+            # Extract the invariants and review rules (the sections the claude-review
+            # Review Gate applies): "## Protocol Adapter Architecture" through
+            # "## Architecture Enforcement: review rules", up to "## Tests".
+            match = re.search(
+                r'^## Protocol Adapter Architecture.*?(?=^## Tests\b)',
+                content,
+                re.DOTALL | re.MULTILINE,
+            )
             if match:
                 rules_section = match.group(0)
                 return f"# Architecture Rules from AGENTS.md\n\n{rules_section}"
 
         # Fallback if AGENTS.md not found or section not found
-        return """# Honua Architecture Rules (Fallback)
+        return """# Honua Architecture Rules (Fallback; full rubric: docs/internal/contributor/architecture-criteria.md)
 
-## Critical Rules
+## Architecture Enforcement: review rules (BLOCKING / WARNING)
 
 ### Quality Standards
 - **Warnings as errors**: All builds must pass with TreatWarningsAsErrors=true

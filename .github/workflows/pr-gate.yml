@@ -158,6 +158,28 @@ jobs:
           python3 scripts/ci/validate-tracked-file-encoding.py
           python3 scripts/ci/validate-tracked-file-encoding.test.py
 
+      # Admission tier, seconds, and deliberately ahead of the documentation
+      # exit: an agent-instruction or PR-body edit is exactly what these police.
+      #   - No AI/agent attribution in the PR's commits or body (fleet rule 1;
+      #     source honua-flow agents/fleet-rules.md). Agent harnesses append
+      #     Co-Authored-By / "Generated with" lines by default, so the prose rule
+      #     is enforced here. Commits come from the API; the body via env, never
+      #     interpolated into the script.
+      #   - The canonical instruction file stays a budgeted digest with an
+      #     unmodified generated fleet block and no dangling repo paths.
+      - name: Verify commit attribution and agent instructions
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          python3 scripts/ci/check-commit-attribution.py --self-test
+          if [[ -n "${PR_NUMBER}" ]]; then
+            python3 scripts/ci/check-commit-attribution.py --pr "${PR_NUMBER}" --repo "${GITHUB_REPOSITORY}"
+          fi
+          python3 scripts/ci/check-agents-md.py --self-test
+          bash scripts/ci/check-instructions-sync.sh
+
       - name: Validate modular test inventory and isolation
         run: |
           python3 scripts/ci/test-projects.py validate
@@ -1038,8 +1060,9 @@ jobs:
       # trigger (see its header). So without this step nothing validates the
       # selector on the pull request that changes it: an under-scoped edit
       # would make selection and aggregation both green and land, and only the
-      # trailing workflow would discover the broken fixture. AGENTS.md already
-      # treats a diff touching the selectors as unable to scope itself; the
+      # trailing workflow would discover the broken fixture. The local pre-PR
+      # gate (scripts/ci/pre-pr-check.sh) already treats a diff touching the
+      # selectors as unable to scope itself; the
       # same reasoning applies to a lane consuming its own PR-authored
       # selector. Offline (no network, no dotnet), so it costs seconds.
       #
