@@ -40,10 +40,6 @@ internal sealed partial class LambdaHostStopExitGuard : IHostedService, IDisposa
     /// <summary>Time the in-flight invocation gets to drain before the process exits.</summary>
     internal static readonly TimeSpan DefaultDrainGrace = TimeSpan.FromSeconds(10);
 
-    // Roots the armed timer. Host disposal can drop this service while the stop is still stalled,
-    // and the exit must still fire.
-    private static ITimer? s_armedExit;
-
     private readonly IHostApplicationLifetime _lifetime;
     private readonly ILogger<LambdaHostStopExitGuard> _logger;
     private readonly TimeProvider _timeProvider;
@@ -110,11 +106,15 @@ internal sealed partial class LambdaHostStopExitGuard : IHostedService, IDisposa
         }
 
         LogArmed(_logger, _drainGrace.TotalSeconds);
-        s_armedExit = _timeProvider.CreateTimer(
-            static state => ((LambdaHostStopExitGuard)state!).ExitStalledProcess(),
-            this,
-            _drainGrace,
-            Timeout.InfiniteTimeSpan);
+        _ = ExitAfterDrainGraceAsync();
+    }
+
+    // A pending delay is rooted by the runtime timer queue, so the exit still fires after host
+    // disposal drops this service while the stop is stalled.
+    private async Task ExitAfterDrainGraceAsync()
+    {
+        await Task.Delay(_drainGrace, _timeProvider).ConfigureAwait(false);
+        ExitStalledProcess();
     }
 
     private void ExitStalledProcess()
