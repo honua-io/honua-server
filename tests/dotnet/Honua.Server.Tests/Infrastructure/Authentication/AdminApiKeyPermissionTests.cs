@@ -4,6 +4,7 @@
 using System.Security.Claims;
 using FluentAssertions;
 using Honua.Infrastructure.Authentication;
+using Honua.TestKit.Attributes;
 using Xunit;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
@@ -158,7 +159,7 @@ public sealed class AdminApiKeyPermissionTests
         act().Should().BeTrue();
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData("admin")]
     [InlineData("*")]
     [InlineData("admin:*")]
@@ -168,7 +169,7 @@ public sealed class AdminApiKeyPermissionTests
             .Should().BeTrue();
     }
 
-    [Fact]
+    [UnitTest]
     public void HasCredentialManagementAuthority_AdminRoleWithoutGrants_IsTrue()
     {
         // Bootstrap password, client certificate and human admin sessions authenticate
@@ -177,7 +178,7 @@ public sealed class AdminApiKeyPermissionTests
             .Should().BeTrue();
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData("admin:write")]
     [InlineData("admin:manage")]
     [InlineData("admin:read")]
@@ -190,7 +191,7 @@ public sealed class AdminApiKeyPermissionTests
             .Should().BeFalse();
     }
 
-    [Fact]
+    [UnitTest]
     public void HasCredentialManagementAuthority_InstallerOperationalKey_IsFalse()
     {
         var installerKey = AdminPrincipal("admin:read", "admin:write", "read:*");
@@ -200,7 +201,7 @@ public sealed class AdminApiKeyPermissionTests
             .Should().BeFalse();
     }
 
-    [Fact]
+    [UnitTest]
     public void HasCredentialManagementAuthority_ExactApprovedOperationGrant_IsTrueOnlyForThatOperation()
     {
         var grants = AdminApiKeyPermission.CreateApprovedOperationGrants("POST", "/api/v1/admin/api-keys", "public");
@@ -214,7 +215,7 @@ public sealed class AdminApiKeyPermissionTests
             .Should().BeFalse();
     }
 
-    [Fact]
+    [UnitTest]
     public void HasCredentialManagementAuthority_NonAdminPrincipalWithoutGrants_IsFalse()
     {
         var principal = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Role, "viewer")], authenticationType: "Test"));
