@@ -72,7 +72,7 @@ jobs:
       input_digests: ${{ steps.digests.outputs.value }}
       freshness_epoch: ${{ steps.freshness.outputs.value }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
@@ -208,7 +208,7 @@ jobs:
     steps:
       # No `fetch-depth: 0` here: only `detect` diffs base..head. A build leg
       # needs the build context, not the history.
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: env.IMPACTED == 'true'
 
       - name: Restore exact verification marker
@@ -217,7 +217,7 @@ jobs:
         # Evidence reuse is optional. Cache outages or corrupt archives must
         # fall through to the authoritative build-and-verify path below.
         continue-on-error: true
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.MARKER_PATH }}
           key: honua-serving-image-verification-v3-${{ env.FRESHNESS_EPOCH }}-${{ runner.os }}-${{ runner.arch }}-${{ matrix.variant }}-${{ env.INPUT_DIGEST }}
@@ -317,7 +317,7 @@ jobs:
 
       - name: Upload native migration refusal evidence
         if: always() && env.IMPACTED == 'true' && steps.reuse.outputs.skip != 'true' && matrix.variant == 'generic'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: native-migration-refusal-${{ github.sha }}
           path: native-migration-refusal-evidence/
@@ -338,7 +338,7 @@ jobs:
         # A cache-service failure after successful verification must not turn
         # optional future reuse into a failure of the current verification.
         continue-on-error: true
-        uses: actions/cache/save@v6
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.MARKER_PATH }}
           key: honua-serving-image-verification-v3-${{ env.FRESHNESS_EPOCH }}-${{ runner.os }}-${{ runner.arch }}-${{ matrix.variant }}-${{ env.INPUT_DIGEST }}

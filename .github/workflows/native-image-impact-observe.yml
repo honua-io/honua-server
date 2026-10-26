@@ -50,7 +50,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Checkout trusted observer policy
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
           path: policy
@@ -59,7 +59,7 @@ jobs:
 
       - id: collect
         name: Resolve canonical exact-head PR Gate subject
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           SOURCE_RUN_ID: ${{ github.event.workflow_run.id || inputs.run_id }}
           SOURCE_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt || inputs.run_attempt }}
@@ -150,7 +150,7 @@ jobs:
 
       - name: Checkout candidate tree as inert data
         if: steps.collect.outputs.skip != 'true'
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ steps.collect.outputs.head_repository }}
           ref: ${{ steps.collect.outputs.head_sha }}
@@ -249,7 +249,7 @@ jobs:
       - id: recheck
         name: Recheck exact PR identity before retaining evidence
         if: steps.collect.outputs.skip != 'true'
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           SOURCE_RUN_ID: ${{ steps.collect.outputs.run_id }}
           SOURCE_RUN_ATTEMPT: ${{ steps.collect.outputs.run_attempt }}

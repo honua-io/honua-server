@@ -137,7 +137,7 @@ jobs:
           echo '5e6b28f4c29b82b799190e9e92083c7aca38b879afc7e242bee4320a711e195f  package-lock.json' | sha256sum -c -
           npm ci --ignore-scripts
           ln -s "${GITHUB_WORKSPACE}/.mcp-client/certification/node_modules" "${GITHUB_WORKSPACE}/scripts/qualification/mcp/node_modules"
-      - uses: docker/login-action@v4
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -146,7 +146,7 @@ jobs:
         run: scripts/qualification/gp-lifecycle-harness.sh
       - name: Retain scenario receipts, including findings
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: gp-lifecycle-receipts-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts/gp-lifecycle/*.json
@@ -160,7 +160,7 @@ jobs:
           sha256sum "artifacts/gp-lifecycle-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.tar.gz" > "artifacts/gp-lifecycle-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.tar.gz.sha256"
       - name: Retain immutable lifecycle evidence pack
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: gp-lifecycle-evidence-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts/gp-lifecycle-${{ github.run_id }}-${{ github.run_attempt }}.tar.gz*

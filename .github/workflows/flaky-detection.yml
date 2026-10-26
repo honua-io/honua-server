@@ -78,7 +78,7 @@ jobs:
       iterations: ${{ steps.plan.outputs.iterations }}
       expect_shards: ${{ steps.plan.outputs.expect_shards }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - id: plan
         name: Choose this run's selections
@@ -231,7 +231,7 @@ jobs:
       PGUSER: honua
       PGPASSWORD: ci-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # Same reclamation the production shards do: the modular test topology
       # pushes some shards past the runner's free-disk limit.
@@ -324,7 +324,7 @@ jobs:
 
       - name: Upload shard flake evidence
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: flaky-detection-${{ matrix.suffix }}
           path: |
@@ -344,10 +344,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Download shard flake evidence
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: flaky-detection-*
           path: flake-evidence
@@ -382,7 +382,7 @@ jobs:
       # only MISSING evidence does (above).
       - name: Upload flake report
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: flaky-detection-report
           path: |

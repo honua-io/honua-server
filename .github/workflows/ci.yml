@@ -155,7 +155,7 @@ jobs:
 
       - name: Check PR Template Compliance
         if: github.event_name == 'pull_request'
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             const { data: pr } = await github.rest.pulls.get({
@@ -313,7 +313,7 @@ jobs:
 
       - name: Fail fast on conflicted or stale PR branches
         if: github.event_name == 'pull_request'
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             const owner = context.repo.owner;
@@ -366,7 +366,7 @@ jobs:
       full_ci: ${{ steps.filter.outputs.full_ci }}
       postgres_matrix: ${{ steps.filter.outputs.postgres_matrix }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
@@ -603,7 +603,7 @@ jobs:
       descriptor: ${{ steps.compute.outputs.descriptor }}
       matrix_include: ${{ steps.compute.outputs.matrix_include }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
@@ -695,7 +695,7 @@ jobs:
     needs: changes
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Validate workflow and shard routing metadata
         run: |
@@ -731,7 +731,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Canonical Instruction Check
         run: bash scripts/ci/check-instructions-sync.sh
@@ -854,7 +854,7 @@ jobs:
 
       - name: Upload producer source inventory observations
         if: always() && vars.HONUA_SOURCE_INVENTORY_PILOT != 'false'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         timeout-minutes: 3
         with:
           name: source-inventory-pilot-${{ github.run_attempt }}
@@ -870,7 +870,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet-ci
         with:
@@ -937,7 +937,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # The server family runs TierTraitEnforcementTests, which compares the
           # baseline with HEAD's first parent. Checkout's default depth 1 omits it.
@@ -1023,7 +1023,7 @@ jobs:
         run: scripts/ci/run-foundation-family.sh run ${{ matrix.family }}
 
       - name: Upload foundation family test results
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         timeout-minutes: 3
         with:
@@ -1037,7 +1037,7 @@ jobs:
       # coverage (as before the split), but the artifact is uploaded per family
       # so the fan-in job below can merge whatever exists without special-casing.
       - name: Upload foundation family coverage (cobertura)
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         timeout-minutes: 3
         with:
@@ -1065,7 +1065,7 @@ jobs:
     steps:
       # Needed for scripts/ci/run-foundation-family.sh, which supplies the
       # expected trx count the parity check below asserts against.
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # continue-on-error: a family that died before its upload step leaves no
       # artifact to download, and that must surface as the family's own failure
@@ -1075,7 +1075,7 @@ jobs:
       # merged set is short, so an artifact-service error cannot land a green
       # `.NET Foundation Tests` on top of missing results.
       - name: Download family test results
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         continue-on-error: true
         with:
           pattern: foundation-test-results-*
@@ -1119,7 +1119,7 @@ jobs:
       # coverage is aggregated across families in one place rather than being
       # scattered by the split.
       - name: Upload foundation test results
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         timeout-minutes: 5
         with:
@@ -1129,7 +1129,7 @@ jobs:
           retention-days: 7
 
       - name: Upload foundation coverage (cobertura)
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         timeout-minutes: 5
         with:
@@ -1143,7 +1143,7 @@ jobs:
       # now the merged set from every family.
       - name: Upload coverage to Codecov
         if: ${{ always() && env.CODECOV_TOKEN != '' }}
-        uses: codecov/codecov-action@v7
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         with:
@@ -1224,7 +1224,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # Reclaim runner disk while .NET setup and cache planning run. The
       # modular topology (8 protocol
@@ -1311,7 +1311,7 @@ jobs:
         if: steps.shard-cache-plan.outputs.restore_enabled == 'true'
         id: shard-cache-download
         continue-on-error: true
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ steps.shard-cache-plan.outputs.payload_dir }}
           key: ${{ steps.shard-cache-plan.outputs.cache_key }}
@@ -1326,7 +1326,7 @@ jobs:
         if: steps.shard-cache-plan.outputs.restore_enabled == 'true' && steps.shard-cache-plan.outputs.cache_writer != 'true' && steps.shard-cache-download.outputs.cache-hit != 'true'
         id: shard-cache-download-retry
         continue-on-error: true
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ steps.shard-cache-plan.outputs.payload_dir }}
           key: ${{ steps.shard-cache-plan.outputs.cache_key }}
@@ -1392,7 +1392,7 @@ jobs:
         if: steps.shard-cache-package.outcome == 'success'
         id: shard-cache-save
         continue-on-error: true
-        uses: actions/cache/save@v6
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ steps.shard-cache-plan.outputs.payload_dir }}
           key: ${{ steps.shard-cache-plan.outputs.cache_key }}
@@ -1587,7 +1587,7 @@ jobs:
 
       - name: Upload Operator Eval Report
         if: ${{ always() && matrix.upload_operator_eval_report }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: operator-eval-report
           path: tests/TestResults/eval-report.json
@@ -1604,7 +1604,7 @@ jobs:
 
       - name: Upload shard test results
         if: ${{ always() }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         timeout-minutes: 3
         with:
           name: server-test-results-${{ matrix.artifact_suffix }}
@@ -1643,7 +1643,7 @@ jobs:
       # reporting them skipped with a green exit code (#3271).
       HONUA_REQUIRE_GDAL_CLI: "true"
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet-ci
@@ -1785,7 +1785,7 @@ jobs:
 
       - name: Upload Worker GDAL test results
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         timeout-minutes: 3
         with:
           name: worker-gdal-test-results
@@ -1805,7 +1805,7 @@ jobs:
       TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX: ""
       HONUA_TEST_CONFIGURATION: Release
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet-ci
@@ -1813,7 +1813,7 @@ jobs:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Setup Python
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
@@ -1863,7 +1863,7 @@ jobs:
         working-directory: tests/python
 
       - name: Upload Python test results
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         timeout-minutes: 3
         with:
@@ -1882,10 +1882,10 @@ jobs:
     needs: changes
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
@@ -1966,10 +1966,10 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Python
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -1984,7 +1984,7 @@ jobs:
           post-seed-yaml: tests/seed/browser-compat.yaml
 
       - name: Setup Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
@@ -2004,7 +2004,7 @@ jobs:
       # be resolved on a hit as well as a miss. On a hit, `playwright install` finds the
       # expected browser revision already present and skips the download.
       - name: Cache Playwright browsers
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ hashFiles('tests/js/package-lock.json') }}
@@ -2065,7 +2065,7 @@ jobs:
             echo "(could not query feature counts — DB unreachable?)"
 
       - name: Upload JavaScript test diagnostics
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: javascript-integration-results
@@ -2075,7 +2075,7 @@ jobs:
           retention-days: 7
 
       - name: Upload OpenLayers Evidence
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: openlayers-compat-results
@@ -2106,10 +2106,10 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Python
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -2126,7 +2126,7 @@ jobs:
         run: bash tests/seed/apply-yaml-seed.sh tests/seed/admin-sample-feature-server.yaml
 
       - name: Setup Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
@@ -2164,7 +2164,7 @@ jobs:
       # be resolved on a hit as well as a miss. On a hit, `playwright install` finds the
       # expected browser revision already present and skips the download.
       - name: Cache Playwright browsers
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ hashFiles('tests/js-browser/package-lock.json') }}
@@ -2191,7 +2191,7 @@ jobs:
           HONUA_API_KEY: "ci-admin-password"
 
       - name: Upload test artifacts
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: esri-leaflet-browser-results
@@ -2222,10 +2222,10 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Python
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -2240,7 +2240,7 @@ jobs:
           post-seed-yaml: tests/seed/browser-compat.yaml
 
       - name: Setup Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
@@ -2278,7 +2278,7 @@ jobs:
       # be resolved on a hit as well as a miss. On a hit, `playwright install` finds the
       # expected browser revision already present and skips the download.
       - name: Cache Playwright browsers
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ hashFiles('tests/js-browser/package-lock.json') }}
@@ -2305,7 +2305,7 @@ jobs:
 
       - name: Upload test artifacts
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: maplibre-compat-results
           path: |
@@ -2316,7 +2316,7 @@ jobs:
       # Startup failures happen before Playwright can produce test results.
       - name: Upload MapLibre server startup log
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: maplibre-server-startup-log
           path: ${{ runner.temp }}/honua-server-setup.log
@@ -2362,7 +2362,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # Design: skip-if-absent is intentional for cross-repo coordination.
       # Test code lives in honua-sdk-js; this repo provides only CI jobs,
@@ -2430,7 +2430,7 @@ jobs:
 
       - name: Upload certification artifact
         if: always() && steps.setup.outputs.cert-available == 'true' && steps.setup.outputs.cert-artifact-available == 'true'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: mcp-certification-${{ matrix.transport }}
           path: |
@@ -2462,7 +2462,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Honua MCP environment
         id: setup
@@ -2500,7 +2500,7 @@ jobs:
 
       - name: Configure AWS credentials for Bedrock smoke
         if: steps.bedrock.outputs.available == 'true'
-        uses: aws-actions/configure-aws-credentials@v6
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           aws-access-key-id: ${{ secrets.BEDROCK_AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.BEDROCK_AWS_SECRET_ACCESS_KEY }}
@@ -2522,7 +2522,7 @@ jobs:
 
       - name: Upload LLM smoke transcripts
         if: always() && steps.setup.outputs.smoke-available == 'true'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: mcp-llm-smoke-transcripts
           path: |
@@ -2560,7 +2560,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet-ci
@@ -2645,7 +2645,7 @@ jobs:
           exit "${rc}"
 
       - name: Upload Postgres coverage (cobertura)
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: ${{ always() && matrix.collect_coverage }}
         timeout-minutes: 3
         with:
@@ -2656,7 +2656,7 @@ jobs:
 
       - name: Upload Postgres coverage to Codecov
         if: ${{ always() && matrix.collect_coverage && env.CODECOV_TOKEN != '' }}
-        uses: codecov/codecov-action@v7
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         with:
@@ -2673,7 +2673,7 @@ jobs:
     needs: changes
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet-ci
@@ -2783,7 +2783,7 @@ jobs:
     needs: [build, changes, core-package-compatibility, postgres-compat]
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet-ci
@@ -2857,7 +2857,7 @@ jobs:
           --health-retries 5
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Pre-pull BuildKit image with retries
         timeout-minutes: 3
@@ -2875,10 +2875,10 @@ jobs:
 
       - name: Set up Docker Buildx
         timeout-minutes: 3
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Log in to GHCR for build cache
-        uses: docker/login-action@v4
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -2887,7 +2887,7 @@ jobs:
       - name: Build Docker image
         id: docker_build
         timeout-minutes: 20
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: ./Dockerfile
@@ -2916,7 +2916,7 @@ jobs:
       - name: Generate SBOM (SPDX JSON) for honua-server:test
         id: sbom
         timeout-minutes: 3
-        uses: anchore/sbom-action@v0
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
           image: honua-server:test
           format: spdx-json
@@ -2932,7 +2932,7 @@ jobs:
       - name: Trivy image scan (full CI, HIGH/CRITICAL, fixed only)
         id: trivy_image
         timeout-minutes: 5
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: image
           image-ref: honua-server:test
@@ -2949,7 +2949,7 @@ jobs:
         id: trivy_fs
         if: always()
         timeout-minutes: 5
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: fs
           scan-ref: .
@@ -3028,7 +3028,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Resolve Console image
         id: console_image
@@ -3081,7 +3081,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # TierTraitEnforcementTests compares the baseline with HEAD's first parent.
           fetch-depth: 2
