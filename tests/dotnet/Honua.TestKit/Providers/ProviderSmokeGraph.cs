@@ -45,6 +45,21 @@ public static class ProviderSmokeGraph
     private const string BindingId = "binding-smoke";
 
     /// <summary>
+    /// Edit capabilities the smoke service declares. Since #4234 a FeatureServer
+    /// applyEdits that the service does not declare is rejected with a 400 before it
+    /// reaches the provider's writer. The read-only-provider smoke tests exist to prove
+    /// the provider-level rejection (the documented 405), so the service must declare
+    /// edits for those requests to reach <c>ReadOnlyFeatureWriter</c>. Declaring them does
+    /// not make any provider writable: that is decided by the provider, not the metadata.
+    /// </summary>
+    private static readonly string[] _declaredCapabilities = ["Query", "Create", "Update", "Delete"];
+
+    private static IReadOnlyDictionary<string, JsonElement> ServiceOptions => new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+    {
+        ["capabilities"] = JsonSerializer.SerializeToElement(_declaredCapabilities),
+    };
+
+    /// <summary>
     /// Builds the Metadata v2 graph for a provider-smoke fixture.
     /// </summary>
     /// <param name="locator">
@@ -156,7 +171,8 @@ public static class ProviderSmokeGraph
                 ServiceName,
                 route: "/ogc/features",
                 protocols: MetadataV2ServiceProtocols.All,
-                accessPolicy: anonymous)
+                accessPolicy: anonymous,
+                options: ServiceOptions)
             // OGC API Features + OGC API Tiles (Tiles addresses
             // /ogc/tiles/collections/{collectionId}/tiles/... for the same collection id).
             .AddPublication(
