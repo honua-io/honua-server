@@ -69,7 +69,7 @@ jobs:
           echo "Admission passed; exact-head review has not released format verification yet."
           exit 1
 
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1
         with:
           fetch-depth: 2
@@ -137,7 +137,7 @@ jobs:
       # computation force-fulls and the optimization silently never fires. Two
       # commits is a couple of extra seconds of fetch; do not lower it, and do
       # not raise it to 0 (full history on this repo is minutes).
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 2
 
@@ -207,6 +207,8 @@ jobs:
           python3 -m unittest discover -s scripts/certification -p 'test_producer_context.py'
           python3 -m unittest discover -s scripts/certification -p 'test_generate_protocol_harness_fragment.py'
           python3 -m unittest discover -s scripts/certification -p 'test_harness_context.py'
+          # Fails when a manifest input (e.g. the core client fixture) moves without its digest.
+          python3 -m unittest discover -s scripts/certification -p 'test_sdk_protocol_fixture.py'
 
       - name: Verify CITE normalization and supplemental HTTP controls
         run: python3 -m unittest discover -s scripts/conformance/cite/tests -p 'test_*.py'
@@ -249,7 +251,7 @@ jobs:
       # fails attempt 2 closed instead of relying only on its run number.
       - name: Revalidate exact-head review before verification
         if: env.REVIEW_FIRST_MODE == 'enforce' && github.event_name == 'pull_request' && github.run_attempt > 1
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             const head = context.payload.pull_request?.head?.sha;
@@ -333,7 +335,7 @@ jobs:
 
       - name: Set up Python for the public installation proof
         if: steps.public-install.outputs.smoke == 'true'
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.11'
 
@@ -344,7 +346,7 @@ jobs:
 
       - name: Upload public installation evidence
         if: always() && steps.public-install.outputs.smoke == 'true'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: docs-public-install
           path: artifacts/docs-validation/public-install/receipt.json
@@ -456,7 +458,7 @@ jobs:
 
       - name: Revalidate exact-head review before success
         if: env.REVIEW_FIRST_MODE == 'enforce' && github.event_name == 'pull_request' && github.run_attempt > 1
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             const head = context.payload.pull_request?.head?.sha;
@@ -479,13 +481,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 75
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 2
 
       - name: Revalidate exact-head review before verification
         if: env.REVIEW_FIRST_MODE == 'enforce' && github.event_name == 'pull_request' && github.run_attempt > 1
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             const head = context.payload.pull_request?.head?.sha;
@@ -569,7 +571,7 @@ jobs:
 
       - name: Upload remote source execution proof
         if: always() && needs.pr-gate.outputs.docs_only != 'true' && needs.pr-gate.outputs.generated_only != 'true'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: remote-source-execution-proof
           path: tests/TestResults/remote-source-execution-proof.trx
@@ -825,7 +827,7 @@ jobs:
 
       - name: Upload imagery classify execution proof
         if: always() && needs.pr-gate.outputs.docs_only != 'true' && needs.pr-gate.outputs.generated_only != 'true'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: imagery-classify-execution-proof
           path: tests/TestResults/imagery-classify-execution-proof.trx
@@ -874,7 +876,7 @@ jobs:
 
       - name: Upload import and independent vector export fidelity evidence
         if: always() && needs.pr-gate.outputs.docs_only != 'true' && needs.pr-gate.outputs.generated_only != 'true'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: import-export-fidelity-proof
           path: tests/TestResults/import-export-fidelity/
@@ -882,7 +884,7 @@ jobs:
 
       - name: Upload point-cloud execution proof
         if: always() && needs.pr-gate.outputs.docs_only != 'true' && needs.pr-gate.outputs.generated_only != 'true'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: pdal-execution-proof
           path: |
@@ -891,7 +893,7 @@ jobs:
 
       - name: Upload raster execution proof
         if: always() && needs.pr-gate.outputs.docs_only != 'true' && needs.pr-gate.outputs.generated_only != 'true'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: raster-execution-proof
           path: |
@@ -901,7 +903,7 @@ jobs:
 
       - name: Upload layer execution proof
         if: always() && needs.pr-gate.outputs.docs_only != 'true' && needs.pr-gate.outputs.generated_only != 'true'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: layer-execution-proof
           path: tests/TestResults/layer-execution-proof.trx
@@ -909,7 +911,7 @@ jobs:
 
       - name: Upload protocol-tier execution proof
         if: always() && needs.pr-gate.outputs.generated_only != 'true'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: protocol-tier-execution-proof
           path: tests/TestResults/protocol-tier-execution-proof.trx
@@ -923,7 +925,7 @@ jobs:
 
       - name: Upload copy-features execution proof
         if: always() && needs.pr-gate.outputs.docs_only != 'true' && needs.pr-gate.outputs.generated_only != 'true'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: copy-features-execution-proof
           path: tests/TestResults/copy-features-execution-proof.trx
@@ -940,7 +942,7 @@ jobs:
 
       - name: Revalidate exact-head review before success
         if: env.REVIEW_FIRST_MODE == 'enforce' && github.event_name == 'pull_request' && github.run_attempt > 1
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             const head = context.payload.pull_request?.head?.sha;
@@ -1048,7 +1050,7 @@ jobs:
       # checked-out ref is refs/pull/N/merge and its FIRST PARENT is the current
       # tip of the base branch, which is the diff base both the router and the
       # affected-projects closure are computed against.
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 2
 
@@ -1113,7 +1115,7 @@ jobs:
 
       - name: Upload selection receipt
         if: always() && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: pr-gate-affected-shards-selection
           path: ${{ runner.temp }}/affected-shards.json
@@ -1163,7 +1165,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Start freeing disk space
         run: scripts/ci/server-test-shard-free-disk.sh
@@ -1226,7 +1228,7 @@ jobs:
       # infrastructure, not as a shard red.
       - name: Upload affected shard results
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         timeout-minutes: 3
         with:
           name: pr-gate-affected-shard-${{ matrix.artifact_suffix }}
@@ -1245,7 +1247,7 @@ jobs:
       - name: Download affected shard receipts
         if: always()
         continue-on-error: true
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: pr-gate-affected-shard-*
           path: shard-results
@@ -1387,7 +1389,7 @@ jobs:
 
       # fetch-depth 2: refs/pull/N/merge's first parent is the target-branch
       # tip, exactly what scripts/ci/pr-touches-ci-surface.sh diffs against.
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: env.REVIEW_FIRST_MODE != 'enforce' || github.run_attempt > 1
         with:
           fetch-depth: 2
@@ -1441,7 +1443,7 @@ jobs:
 
       # fetch-depth 2: refs/pull/N/merge's first parent is the target-branch tip,
       # which is what "added by this change" is measured against.
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1
         with:
           fetch-depth: 2
@@ -1514,7 +1516,7 @@ jobs:
 
       - name: Upload N-1 receipt
         if: ${{ !cancelled() && steps.n1.conclusion != 'skipped' }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: n1-reader-compat-receipt
           path: ${{ runner.temp }}/n1-reader-compat/
@@ -1585,7 +1587,7 @@ jobs:
       # which review evidence could be dismissed while format was still running.
       - name: Revalidate exact-head review before success
         if: env.REVIEW_FIRST_MODE == 'enforce' && github.event_name == 'pull_request' && github.run_attempt > 1
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             const head = context.payload.pull_request?.head?.sha;

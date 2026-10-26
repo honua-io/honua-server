@@ -11,6 +11,7 @@ using Honua.Core.Features.Reporting.Templates;
 using Honua.Core.Features.Reporting;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;

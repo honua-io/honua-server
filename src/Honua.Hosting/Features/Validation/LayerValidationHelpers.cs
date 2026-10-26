@@ -1139,16 +1139,51 @@ internal static class LayerValidationHelpers
         MetadataV2ValidationResult validation,
         AuthorizationOperation? operation)
     {
-        if (validation.Service is null || operation is not { } requested)
+        if (operation is not { } requested)
         {
             return null;
         }
 
-        var capability = MapToEditCapability(requested);
+        var capability = FindUndeclaredEditCapability(validation.Service, validation.Publication, requested);
         return capability is null
             ? null
-            : ValidateDeclaredEditCapability(context, validation.Service, validation.Publication, capability);
+            : ValidateDeclaredEditCapability(context, validation.Service!, validation.Publication, capability);
     }
+
+    /// <summary>
+    /// Shared declared-capability check for every edit surface (FeatureServer, OGC API
+    /// Features, OData, gRPC, WFS-T). Returns the edit capability token the publication's
+    /// declared capability set omits for <paramref name="operation"/>; protocol adapters map
+    /// a non-null result onto their own failure shape.
+    /// </summary>
+    /// <param name="service">Service hosting the publication, when resolved.</param>
+    /// <param name="publication">Publication being written through, when resolved.</param>
+    /// <param name="operation">Authorization operation the caller is performing.</param>
+    /// <returns>The undeclared capability token, or null when the operation is not a feature
+    /// mutation, when the capability is declared, or when the metadata declares no
+    /// capabilities at all (unspecified keeps the legacy behaviour).</returns>
+    internal static string? FindUndeclaredEditCapability(
+        MetadataV2Service? service,
+        MetadataV2Publication? publication,
+        AuthorizationOperation operation)
+    {
+        if (service is null || MapToEditCapability(operation) is not { } capability)
+        {
+            return null;
+        }
+
+        return MetadataV2EditCapabilities.SupportsDeclared(service, publication, capability) == false
+            ? capability
+            : null;
+    }
+
+    /// <summary>
+    /// Client-facing message for an edit whose capability the publication does not declare.
+    /// </summary>
+    /// <param name="capability">The undeclared capability token.</param>
+    /// <returns>The error message shared by every edit surface.</returns>
+    internal static string DescribeUndeclaredEditCapability(string capability)
+        => $"{capability} edits are not enabled for this collection.";
 
     /// <summary>
     /// Rejects a mutation whose edit kind the supplied publication does not declare.
@@ -1180,7 +1215,7 @@ internal static class LayerValidationHelpers
         context.Response.Headers.Allow = "GET, HEAD, OPTIONS";
         return StandardErrorHelpers.CreateMethodNotAllowed(
             context,
-            $"{capability} edits are not enabled for this collection.",
+            DescribeUndeclaredEditCapability(capability),
             [$"Declare the {capability} capability on the publication before submitting {capability.ToLowerInvariant()} edits."]);
     }
 
@@ -1394,6 +1429,20 @@ internal static class LayerValidationHelpers
                 validation.Resource,
                 validation.Service,
                 canonicalError);
+        }
+
+        // Declared capabilities bound single-entity writes here exactly as they bound the
+        // OGC API Features surface above (SEC-5). Callers that pass no operation (for example
+        // the geoprocessing sink) keep the coarse any-write behaviour.
+        var capabilityError = ValidateDeclaredEditCapability(context, validation, operation);
+        if (capabilityError != null)
+        {
+            return new MetadataV2ValidationResult(
+                false,
+                validation.Publication,
+                validation.Resource,
+                validation.Service,
+                capabilityError);
         }
 
         return validation;

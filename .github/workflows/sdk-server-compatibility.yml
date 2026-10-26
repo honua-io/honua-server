@@ -57,7 +57,7 @@ jobs:
       matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
       - name: Checkout honua-server
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Validate matrix and capability classification
         shell: bash
@@ -134,7 +134,7 @@ jobs:
 
     steps:
       - name: Checkout compatibility workflow source
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
           path: compatibility-source
@@ -150,7 +150,7 @@ jobs:
           chmod +x "$RUNNER_TEMP/run-sdk-server-compatibility.sh"
 
       - name: Checkout honua-server target
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ matrix.server_checkout_ref }}
           fetch-depth: 0
@@ -184,7 +184,7 @@ jobs:
           }
 
       - name: Setup Python
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -214,28 +214,28 @@ jobs:
           Authentication__PortalToken__RequireHttps: 'false'
 
       - name: Checkout honua-sdk-js
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: honua-io/honua-sdk-js
           path: sdk/honua-sdk-js
           ref: ${{ matrix.sdk_js_ref }}
 
       - name: Checkout honua-sdk-python
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: honua-io/honua-sdk-python
           path: sdk/honua-sdk-python
           ref: ${{ matrix.sdk_python_ref }}
 
       - name: Checkout honua-sdk-dotnet
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: honua-io/honua-sdk-dotnet
           path: sdk/honua-sdk-dotnet
           ref: ${{ matrix.sdk_dotnet_ref }}
 
       - name: Setup Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
@@ -625,7 +625,7 @@ jobs:
 
       - name: Upload SDK compatibility cell evidence
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: sdk-compat-result-${{ matrix.server_label }}-${{ matrix.sdk_label }}-${{ github.run_id }}
           path: |
@@ -674,7 +674,7 @@ jobs:
           --health-retries 5
     steps:
       - name: Checkout certification producer
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Reject coordinate drift
         shell: bash
@@ -708,12 +708,12 @@ jobs:
           git show "$SERVER_SOURCE_SHA:tests/seed/base-schema.sql" > "$RUNNER_TEMP/sdk-release-base-schema.sql"
 
       - name: Setup Python
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Setup Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           registry-url: https://registry.npmjs.org
@@ -749,7 +749,7 @@ jobs:
 
       - name: Upload normalized fragment, report, and traces
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: sdk-release-certification-${{ github.run_id }}
           path: |
@@ -782,12 +782,12 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout honua-server
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
 
       - name: Download compatibility results
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: sdk-compat-result-*-${{ github.run_id }}
           path: sdk-compat-results
@@ -808,7 +808,7 @@ jobs:
 
       - name: Upload SDK compatibility table
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: sdk-compatibility-matrix-${{ github.run_id }}
           path: |

@@ -57,6 +57,9 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Update="Features/Security/route-authorization-allowlist.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <None Update="xunit.runner.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>

@@ -86,7 +86,7 @@ jobs:
       publish: ${{ steps.route.outputs.publish }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Self-test the certified-candidate selector
         run: python3 scripts/ci/select-certified-nightly-sha.test.py
@@ -249,7 +249,7 @@ jobs:
 
       # The candidate's Dockerfiles define the base pins to mirror.
       - name: Checkout certified candidate
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.select-candidate.outputs.sha }}
 
@@ -362,7 +362,7 @@ jobs:
           fi
 
       - name: Checkout certified candidate
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.select-candidate.outputs.sha }}
 
@@ -521,7 +521,7 @@ jobs:
           fi
 
       - name: Checkout certified candidate
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.select-candidate.outputs.sha }}
 
@@ -633,7 +633,7 @@ jobs:
             --authfile "$HOME/.docker/config.json"
 
       - name: Upload Lambda immutable attestation references
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: lambda-attestations-${{ matrix.arch }}
           path: ${{ runner.temp }}/lambda-attestations-${{ matrix.arch }}.json
@@ -743,7 +743,7 @@ jobs:
           fi
 
       - name: Checkout certified candidate
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.select-candidate.outputs.sha }}
 
@@ -841,7 +841,7 @@ jobs:
             --authfile "$HOME/.docker/config.json"
 
       - name: Upload Functions immutable attestation references
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: functions-attestations-amd64
           path: ${{ runner.temp }}/functions-attestations-amd64.json
@@ -878,7 +878,7 @@ jobs:
           fi
 
       - name: Checkout certified candidate
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.select-candidate.outputs.sha }}
 
