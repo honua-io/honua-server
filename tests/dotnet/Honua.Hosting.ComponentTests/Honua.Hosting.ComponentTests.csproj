@@ -22,6 +22,7 @@
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <ProjectReference Include="../../../src/Honua.Hosting/Honua.Hosting.csproj" />
     <ProjectReference Include="../Honua.TestKit.Core/Honua.TestKit.Core.csproj" />
+    <PackageReference Include="Testcontainers.Redis" />
   </ItemGroup>
   <ItemGroup>
     <None Include="../Shared/RunnerConfig/component.xunit.runner.json" Link="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
