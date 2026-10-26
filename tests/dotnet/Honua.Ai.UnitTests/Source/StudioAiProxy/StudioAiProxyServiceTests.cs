@@ -567,7 +567,9 @@ public sealed class StudioAiProxyServiceTests
             StudioAiProxyConfiguration.AnthropicKind, true, _ => Events(start, stop)));
         var summary = new StudioAiProxyCallSummary();
 
-        var events = await CollectAsync(service, CertifiedRequest(), summary);
+        var request = CertifiedRequest();
+        service.ValidateRequest(request).Should().BeNull("provenance limits require a valid certified request");
+        var events = await CollectAsync(service, request, summary);
 
         events.Should().ContainSingle(evt => evt.Type == StudioAiChatEventType.Error
             && evt.ErrorCode == "studio_ai/provider_output_too_large");
@@ -587,7 +589,9 @@ public sealed class StudioAiProxyServiceTests
             StudioAiProxyConfiguration.AnthropicKind, true, _ => Events(start, stop)));
         var summary = new StudioAiProxyCallSummary();
 
-        var events = await CollectAsync(service, CertifiedRequest(), summary);
+        var request = CertifiedRequest();
+        service.ValidateRequest(request).Should().BeNull("provenance limits require a valid certified request");
+        var events = await CollectAsync(service, request, summary);
 
         events.Should().ContainSingle(evt => evt.Type == StudioAiChatEventType.Error
             && evt.ErrorCode == "studio_ai/provider_output_too_large");
@@ -608,6 +612,7 @@ public sealed class StudioAiProxyServiceTests
         Certification = new StudioAiTranscriptCertification
         {
             CandidateId = "candidate-7",
+            TenantId = "tenant-7",
             ReleaseId = "release-9",
             EndpointIdentity = "candidate-proxy",
             ActionId = "compose-map",
