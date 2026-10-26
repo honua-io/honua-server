@@ -24,11 +24,26 @@ internal static class ManagedKeyExchangeAuthority
     /// <summary>
     /// Resolves the roles a portal token exchanged from a managed key may carry.
     /// </summary>
-    /// <param name="permissions">The validated key record's permission grants.</param>
+    /// <param name="record">The validated key record.</param>
     /// <returns>
-    /// The admin role for a full-admin key; <see langword="null"/> when the key's
-    /// authority cannot be preserved by a token and the exchange must be refused.
+    /// The admin role for an unrestricted full-admin key; <see langword="null"/> when the
+    /// key's authority or its referrer/IP restrictions cannot be preserved by a token and the
+    /// exchange must be refused.
     /// </returns>
+    public static IReadOnlyList<string>? ResolveTokenRoles(AdminApiKeyRecord record)
+    {
+        ArgumentNullException.ThrowIfNull(record);
+
+        // A portal token is checked against the binding chosen at issuance, not the key's
+        // referrer/IP restrictions, so exchanging a restricted key would shed them.
+        return ApiKeyRequestRestrictions.IsRestricted(record) ? null : ResolveTokenRoles(record.Permissions);
+    }
+
+    /// <summary>
+    /// Resolves the roles a portal token exchanged from a key with these grants may carry.
+    /// </summary>
+    /// <param name="permissions">The validated key record's permission grants.</param>
+    /// <returns>The admin role for a full-admin key; otherwise <see langword="null"/>.</returns>
     public static IReadOnlyList<string>? ResolveTokenRoles(IReadOnlyList<string> permissions)
     {
         // Same grant grammar and approved-operation precedence as the API-key

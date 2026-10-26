@@ -34,6 +34,22 @@ public sealed class CreateAdminApiKeyRequest
     /// Optional UTC expiration time for the key.
     /// </summary>
     public DateTimeOffset? ExpiresAt { get; init; }
+
+    /// <summary>
+    /// Optional origin allow-list. Each entry is <c>scheme://host[:port]</c>, optionally with a
+    /// leading <c>*.</c> label that matches any subdomain (not the bare domain). When set, a
+    /// request is accepted only if its <c>Origin</c> header (or, failing that, its
+    /// <c>Referer</c> reduced to an origin) matches an entry; a request with neither header is
+    /// refused. Recommended for keys used from browsers or in the <c>token</c> query parameter.
+    /// </summary>
+    public IReadOnlyList<string>? AllowedReferrers { get; init; }
+
+    /// <summary>
+    /// Optional client IP allow-list in CIDR notation (<c>203.0.113.0/24</c>,
+    /// <c>2001:db8::/32</c>) or single addresses. When set, a request is accepted only from an
+    /// address in one of the ranges, as resolved behind the configured trusted proxies.
+    /// </summary>
+    public IReadOnlyList<string>? AllowedIpRanges { get; init; }
 }
 
 /// <summary>
@@ -100,6 +116,16 @@ public sealed class AdminApiKeyResponse
     /// Authenticated principal that created the key when available.
     /// </summary>
     public string? CreatedBy { get; init; }
+
+    /// <summary>
+    /// Origin patterns the request must match; absent when the key has no referrer restriction.
+    /// </summary>
+    public IReadOnlyList<string>? AllowedReferrers { get; init; }
+
+    /// <summary>
+    /// CIDR ranges the client address must fall in; absent when the key has no IP restriction.
+    /// </summary>
+    public IReadOnlyList<string>? AllowedIpRanges { get; init; }
 }
 
 /// <summary>

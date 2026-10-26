@@ -140,7 +140,7 @@ internal sealed class PortalOAuthTokenService(
             // cannot hold, is refused rather than having its permission labels
             // turned into roles. Refusal happens before federation so the key is not
             // disclosed to the IdP.
-            var keyRoles = ManagedKeyExchangeAuthority.ResolveTokenRoles(validation.Record.Permissions);
+            var keyRoles = ManagedKeyExchangeAuthority.ResolveTokenRoles(validation.Record);
             if (keyRoles is null)
             {
                 return PortalOAuthTokenResult.Failure(

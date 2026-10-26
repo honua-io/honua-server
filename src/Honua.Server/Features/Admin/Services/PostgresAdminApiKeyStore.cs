@@ -24,7 +24,8 @@ internal sealed class PostgresAdminApiKeyStore(
     internal const string TableName = "admin_api_keys";
 
     private const string Columns =
-        "id, name, key_prefix, key_hash, permissions, created_at, updated_at, expires_at, last_used_at, rotated_at, revoked_at, created_by";
+        "id, name, key_prefix, key_hash, permissions, created_at, updated_at, expires_at, last_used_at, rotated_at, revoked_at, created_by, " +
+        "allowed_referrers, allowed_ip_ranges";
 
     private const int DisplayPrefixLength = 12;
     private const int WriteAttempts = 16;
@@ -49,23 +50,35 @@ internal sealed class PostgresAdminApiKeyStore(
         return result;
     }
 
+    public Task<AdminApiKeyCreateResult> CreateAsync(
+        string name,
+        IReadOnlyList<string> permissions,
+        DateTimeOffset? expiresAt,
+        string? createdBy,
+        CancellationToken cancellationToken)
+        => CreateAsync(name, permissions, expiresAt, createdBy, restrictions: null, cancellationToken);
+
     public async Task<AdminApiKeyCreateResult> CreateAsync(
         string name,
         IReadOnlyList<string> permissions,
         DateTimeOffset? expiresAt,
         string? createdBy,
+        AdminApiKeyRestrictions? restrictions,
         CancellationToken cancellationToken)
     {
         var now = _timeProvider.GetUtcNow();
         var key = InMemoryAdminApiKeyStore.GenerateForDurableStore();
         var record = new AdminApiKeyRecord(
             Guid.NewGuid(), name, DisplayPrefix(key), HashKey(key), NormalizePermissions(permissions),
-            now, now, expiresAt, null, null, null, createdBy);
+            now, now, expiresAt, null, null, null, createdBy,
+            AdminApiKeyRestrictions.Normalize(restrictions?.AllowedReferrers),
+            AdminApiKeyRestrictions.Normalize(restrictions?.AllowedIpRanges));
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand($"""
             INSERT INTO {_table} ({Columns})
-            VALUES (@id, @name, @prefix, @hash, @permissions, @created, @updated, @expires, NULL, NULL, NULL, @createdBy)
+            VALUES (@id, @name, @prefix, @hash, @permissions, @created, @updated, @expires, NULL, NULL, NULL, @createdBy,
+                    @allowedReferrers, @allowedIpRanges)
             """, connection);
         command.Parameters.AddWithValue("id", record.Id);
         command.Parameters.AddWithValue("name", record.Name);
@@ -79,6 +92,8 @@ internal sealed class PostgresAdminApiKeyStore(
         command.Parameters.AddWithValue("updated", record.UpdatedAt);
         command.Parameters.Add(new NpgsqlParameter("expires", NpgsqlDbType.TimestampTz) { Value = (object?)record.ExpiresAt ?? DBNull.Value });
         command.Parameters.Add(new NpgsqlParameter("createdBy", NpgsqlDbType.Text) { Value = (object?)record.CreatedBy ?? DBNull.Value });
+        command.Parameters.Add(TextArrayOrNull("allowedReferrers", record.AllowedReferrers));
+        command.Parameters.Add(TextArrayOrNull("allowedIpRanges", record.AllowedIpRanges));
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         return new AdminApiKeyCreateResult(record, key);
     }
@@ -214,7 +229,12 @@ internal sealed class PostgresAdminApiKeyStore(
         reader.IsDBNull(8) ? null : reader.GetFieldValue<DateTimeOffset>(8),
         reader.IsDBNull(9) ? null : reader.GetFieldValue<DateTimeOffset>(9),
         reader.IsDBNull(10) ? null : reader.GetFieldValue<DateTimeOffset>(10),
-        reader.IsDBNull(11) ? null : reader.GetString(11));
+        reader.IsDBNull(11) ? null : reader.GetString(11),
+        reader.IsDBNull(12) ? null : reader.GetFieldValue<string[]>(12),
+        reader.IsDBNull(13) ? null : reader.GetFieldValue<string[]>(13));
+
+    private static NpgsqlParameter TextArrayOrNull(string name, IReadOnlyList<string>? values)
+        => new(name, NpgsqlDbType.Array | NpgsqlDbType.Text) { Value = values is { Count: > 0 } ? values.ToArray() : DBNull.Value };
 
     private static string Qualify(string? schema)
     {

@@ -83,4 +83,15 @@ internal static partial class PortalTokenLog
         Message = "Portal token {TokenHash} refused: the credential it was issued from is no " +
                   "longer valid, or its provenance could not be confirmed.")]
     public static partial void SourceCredentialNoLongerValid(ILogger logger, string tokenHash);
+
+    /// <summary>
+    /// Emitted when a valid API key carrying administrative authority is presented in the
+    /// <c>token</c> query parameter. Query-string API keys are accepted wherever portal tokens
+    /// are, but admin-bearing keys must use a header transport because URLs leak into browser
+    /// history, proxy logs and <c>Referer</c> headers; the value is not logged.
+    /// </summary>
+    [LoggerMessage(EventId = 7011, Level = LogLevel.Warning,
+        Message = "API key with administrative authority refused: it was presented in the token " +
+                  "query parameter. Send administrative keys in the X-API-Key header.")]
+    public static partial void QueryStringAdminApiKeyRefused(ILogger logger);
 }

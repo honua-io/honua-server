@@ -497,16 +497,99 @@ public sealed class AdminApiKeyEndpointsTests : IAsyncLifetime
         }
     }
 
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/api-keys")]
+    [Endpoint("GET /api/v1/admin/api-keys")]
+    public async Task CreateApiKey_WithReferrerRestriction_IsNormalizedListedAndEnforced()
+    {
+        var response = await _client.PostAsJsonAsync(
+            "/api/v1/admin/api-keys",
+            new CreateAdminApiKeyRequest
+            {
+                Name = "browser-restricted-key",
+                Permissions = ["admin:read"],
+                AllowedReferrers = ["HTTPS://Console.Example.com/", "https://*.example.org", "https://console.example.com"],
+            },
+            _jsonOptions);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var created = JsonSerializer.Deserialize<ApiResponse<AdminApiKeySecretResponse>>(
+            await response.Content.ReadAsStringAsync(), _jsonOptions)!.Data!;
+        Assert.Equal(new[] { "https://console.example.com", "https://*.example.org" }, created.ApiKey.AllowedReferrers);
+        Assert.Null(created.ApiKey.AllowedIpRanges);
+
+        Assert.Equal(HttpStatusCode.OK, await ListWithKeyAsync(created.Key, origin: "https://console.example.com"));
+        Assert.Equal(HttpStatusCode.OK, await ListWithKeyAsync(created.Key, origin: "https://ops.example.org"));
+        Assert.Equal(HttpStatusCode.Unauthorized, await ListWithKeyAsync(created.Key, origin: "https://evil.example.net"));
+        Assert.Equal(HttpStatusCode.Unauthorized, await ListWithKeyAsync(created.Key, origin: null));
+
+        var list = JsonSerializer.Deserialize<ApiResponse<AdminApiKeyResponse[]>>(
+            await _client.GetStringAsync("/api/v1/admin/api-keys"), _jsonOptions);
+        var listed = Assert.Single(list!.Data!, key => key.Id == created.ApiKey.Id);
+        Assert.Equal(created.ApiKey.AllowedReferrers, listed.AllowedReferrers);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/api-keys")]
+    [Endpoint("GET /api/v1/admin/api-keys")]
+    public async Task CreateApiKey_WithIpRestriction_RefusesClientsOutsideTheRange()
+    {
+        // 192.0.2.0/24 is TEST-NET-1: the in-process test client is never inside it.
+        var created = await CreateApiKeyAsync("network-restricted-key", permissions: ["admin:read"],
+            allowedIpRanges: ["192.0.2.0/24"]);
+        var unrestricted = await CreateApiKeyAsync("unrestricted-key", permissions: ["admin:read"]);
+
+        Assert.Equal(new[] { "192.0.2.0/24" }, created.ApiKey.AllowedIpRanges);
+        Assert.Equal(HttpStatusCode.Unauthorized, await ListWithKeyAsync(created.Key, origin: null));
+        Assert.Equal(HttpStatusCode.OK, await ListWithKeyAsync(unrestricted.Key, origin: null));
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/api-keys")]
+    public async Task CreateApiKey_WithMalformedRestriction_ReturnsBadRequest()
+    {
+        var invalid = new[]
+        {
+            new CreateAdminApiKeyRequest { Name = "bad-referrer", AllowedReferrers = ["https://app.example.com/path"] },
+            new CreateAdminApiKeyRequest { Name = "bad-referrer", AllowedReferrers = ["app.example.com"] },
+            new CreateAdminApiKeyRequest { Name = "bad-referrer", AllowedReferrers = ["https://*.com"] },
+            new CreateAdminApiKeyRequest { Name = "bad-range", AllowedIpRanges = ["203.0.113.7/24"] },
+            new CreateAdminApiKeyRequest { Name = "bad-range", AllowedIpRanges = ["not-an-ip"] },
+            new CreateAdminApiKeyRequest { Name = "too-many", AllowedIpRanges = Enumerable.Range(0, 51).Select(i => $"10.0.{i}.0/24").ToArray() },
+        };
+
+        foreach (var request in invalid)
+        {
+            var response = await _client.PostAsJsonAsync("/api/v1/admin/api-keys", request, _jsonOptions);
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        }
+    }
+
+    private async Task<HttpStatusCode> ListWithKeyAsync(string key, string? origin)
+    {
+        using var client = _fixture.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/api-keys");
+        request.Headers.Add("X-API-Key", key);
+        if (origin is not null)
+        {
+            request.Headers.Add("Origin", origin);
+        }
+
+        using var response = await client.SendAsync(request);
+        return response.StatusCode;
+    }
+
     private async Task<AdminApiKeySecretResponse> CreateApiKeyAsync(
         string name,
         DateTimeOffset? expiresAt = null,
-        IReadOnlyList<string>? permissions = null)
+        IReadOnlyList<string>? permissions = null,
+        IReadOnlyList<string>? allowedIpRanges = null)
     {
         var request = new CreateAdminApiKeyRequest
         {
             Name = name,
             ExpiresAt = expiresAt,
             Permissions = permissions ?? [],
+            AllowedIpRanges = allowedIpRanges,
         };
 
         var response = await _client.PostAsJsonAsync("/api/v1/admin/api-keys", request, _jsonOptions);

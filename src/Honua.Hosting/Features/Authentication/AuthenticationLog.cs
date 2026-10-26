@@ -211,4 +211,15 @@ internal static partial class AuthenticationLog
         Level = LogLevel.Warning,
         Message = "Credential management denied for {Method} request: principal lacks full-admin credential authority")]
     public static partial void CredentialManagementDenied(ILogger logger, string method);
+
+    /// <summary>
+    /// Logs when a valid managed API key is refused because the request does not satisfy the
+    /// key's referrer (Origin/Referer) or client-IP restrictions. Only the key identifier and
+    /// the failed restriction are logged, never the key material.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 4118,
+        Level = LogLevel.Warning,
+        Message = "API key {ApiKeyId} refused: the request does not satisfy the key's {Restriction} restriction")]
+    public static partial void ApiKeyRequestRestrictionRefused(ILogger logger, Guid apiKeyId, ApiKeyRestrictionViolation restriction);
 }

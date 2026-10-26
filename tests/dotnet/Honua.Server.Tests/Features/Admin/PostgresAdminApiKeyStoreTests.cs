@@ -25,12 +25,15 @@ public sealed class PostgresAdminApiKeyStoreTests(DatabaseFixtureAdapter databas
     public async Task InitializeAsync()
     {
         await database.CreateSchemaUnderLockAsync(_schema);
-        await using var stream = typeof(PostgresAdminApiKeyStore).Assembly.GetManifestResourceStream(
-            "Honua.Server.Migrations.136_CreateAdminApiKeys.sql")
-            ?? throw new InvalidOperationException("Admin API key migration resource is missing.");
-        using var reader = new StreamReader(stream);
-        var migration = await reader.ReadToEndAsync();
-        await database.ExecuteDdlUnderLockAsync(migration.Replace("$HonuaSchema$", _schema, StringComparison.Ordinal));
+        foreach (var script in new[] { "136_CreateAdminApiKeys.sql", "139_AddAdminApiKeyRestrictions.sql" })
+        {
+            await using var stream = typeof(PostgresAdminApiKeyStore).Assembly.GetManifestResourceStream(
+                "Honua.Server.Migrations." + script)
+                ?? throw new InvalidOperationException($"Admin API key migration resource {script} is missing.");
+            using var reader = new StreamReader(stream);
+            var migration = await reader.ReadToEndAsync();
+            await database.ExecuteDdlUnderLockAsync(migration.Replace("$HonuaSchema$", _schema, StringComparison.Ordinal));
+        }
     }
 
     public Task DisposeAsync() => database.DropSchemaAsync(_schema);
@@ -64,6 +67,35 @@ public sealed class PostgresAdminApiKeyStoreTests(DatabaseFixtureAdapter databas
         revoked!.RevokedAt.Should().NotBeNull();
         (await instanceB.ValidateAsync(rotated.Key, CancellationToken.None)).Should().BeNull();
         (await instanceB.RotateAsync(created.Record.Id, CancellationToken.None)).Should().BeNull();
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/api-keys")]
+    [Endpoint("POST /api/v1/admin/api-keys/{id}/rotate")]
+    public async Task Restrictions_RoundTripAcrossInstances_AndSurviveRotation()
+    {
+        var instanceA = new PostgresAdminApiKeyStore(database.DataSource, TimeProvider.System, _schema);
+        var instanceB = new PostgresAdminApiKeyStore(database.DataSource, TimeProvider.System, _schema);
+
+        var restricted = await instanceA.CreateAsync(
+            "browser-key", ["read:catalog"], null, "test",
+            new Honua.Infrastructure.Authentication.AdminApiKeyRestrictions(
+                ["https://*.example.com"], ["203.0.113.0/24", "2001:db8::/32"]),
+            CancellationToken.None);
+        var unrestricted = await instanceA.CreateAsync("server-key", ["read:catalog"], null, "test", CancellationToken.None);
+
+        var validated = (await instanceB.ValidateAsync(restricted.Key, CancellationToken.None))!.Record;
+        validated.AllowedReferrers.Should().Equal("https://*.example.com");
+        validated.AllowedIpRanges.Should().Equal("203.0.113.0/24", "2001:db8::/32");
+
+        var plain = (await instanceB.GetAsync(unrestricted.Record.Id, CancellationToken.None))!;
+        plain.AllowedReferrers.Should().BeNull("existing and unrestricted keys keep NULL columns");
+        plain.AllowedIpRanges.Should().BeNull();
+
+        var rotated = await instanceB.RotateAsync(restricted.Record.Id, CancellationToken.None);
+        rotated!.Record.AllowedReferrers.Should().Equal("https://*.example.com");
+        (await instanceA.ListAsync(CancellationToken.None))
+            .Single(key => key.Id == restricted.Record.Id).AllowedIpRanges.Should().HaveCount(2);
     }
 
     [IntegrationTest]

@@ -25578,6 +25578,28 @@
             "format": "date-time",
             "nullable": true,
             "description": "Optional UTC expiration time."
+          },
+          "allowedReferrers": {
+            "type": "array",
+            "nullable": true,
+            "maxItems": 50,
+            "description": "Optional origin allow-list. When set, a request using the key is accepted only if its Origin header (or, when absent, its Referer reduced to scheme://host[:port]) matches an entry; a request with neither header is refused. Entries are origins without a path; a leading `*.` label matches any subdomain but not the bare domain. Recommended for keys used from browsers or in the `token` query parameter. Not a substitute for IP restrictions: non-browser clients can set these headers.",
+            "items": {
+              "type": "string",
+              "maxLength": 255,
+              "description": "Origin pattern, e.g. `https://app.example.com` or `https://*.example.com`."
+            }
+          },
+          "allowedIpRanges": {
+            "type": "array",
+            "nullable": true,
+            "maxItems": 50,
+            "description": "Optional client IP allow-list. When set, a request using the key is accepted only from an address inside one of the ranges, as resolved behind the configured trusted proxies (ForwardedHeaders:KnownProxies). Entries are CIDR ranges or single addresses; a CIDR with bits set past its prefix is rejected.",
+            "items": {
+              "type": "string",
+              "maxLength": 255,
+              "description": "CIDR range or address, e.g. `203.0.113.0/24`, `2001:db8::/32`."
+            }
           }
         }
       },
@@ -25650,6 +25672,20 @@
           "createdBy": {
             "type": "string",
             "nullable": true
+          },
+          "allowedReferrers": {
+            "type": "array",
+            "description": "Normalized origin patterns the request must match; omitted when the key has no referrer restriction.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "allowedIpRanges": {
+            "type": "array",
+            "description": "Normalized CIDR ranges the client address must fall in; omitted when the key has no IP restriction.",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },

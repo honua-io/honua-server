@@ -55,7 +55,7 @@ internal static partial class SqlServerFeatureQueryBuilder
         sb.Append(" FROM ").Append(mapping.QuotedTableReference);
         sb.Append(" WHERE 1=1");
 
-        AppendWhereClause(sb, query, parameters);
+        AppendWhereClause(sb, mapping, attributeColumns, query, parameters);
         AppendObjectIdsFilter(sb, mapping, query, parameters);
         AppendSpatialFilter(sb, mapping, query, parameters);
         if (query.Distinct)
@@ -67,7 +67,7 @@ internal static partial class SqlServerFeatureQueryBuilder
         }
         else
         {
-            AppendOrderByClause(sb, query);
+            AppendOrderByClause(sb, mapping, attributeColumns, query);
         }
 
         AppendPagination(sb, mapping, query, parameters, suppressPrimaryKeyTiebreaker: query.Distinct);
@@ -84,6 +84,8 @@ internal static partial class SqlServerFeatureQueryBuilder
     /// <summary>
     /// Builds a count for <paramref name="query"/>. When <see cref="FeatureQuery.Distinct"/> is set,
     /// the count is the number of distinct projected attribute tuples, not the raw row count.
+    /// WHERE fields must be the primary key, the geometry column, or one of
+    /// <paramref name="attributeColumns"/>; a <see langword="null"/> list admits no attributes.
     /// </summary>
     public static ParameterizedQuery BuildCountQuery(
         SqlServerLayerMapping mapping,
@@ -96,13 +98,14 @@ internal static partial class SqlServerFeatureQueryBuilder
 
         var sb = new StringBuilder();
         var parameters = new List<object>();
+        var declaredAttributes = attributeColumns ?? [];
 
         if (!query.Distinct)
         {
             sb.Append("SELECT COUNT_BIG(*) FROM ").Append(mapping.QuotedTableReference);
             sb.Append(" WHERE 1=1");
 
-            AppendWhereClause(sb, query, parameters);
+            AppendWhereClause(sb, mapping, declaredAttributes, query, parameters);
             AppendObjectIdsFilter(sb, mapping, query, parameters);
             AppendSpatialFilter(sb, mapping, query, parameters);
 
@@ -125,7 +128,7 @@ internal static partial class SqlServerFeatureQueryBuilder
         sb.Append(" FROM ").Append(mapping.QuotedTableReference);
         sb.Append(" WHERE 1=1");
 
-        AppendWhereClause(sb, query, parameters);
+        AppendWhereClause(sb, mapping, declaredAttributes, query, parameters);
         AppendObjectIdsFilter(sb, mapping, query, parameters);
         AppendSpatialFilter(sb, mapping, query, parameters);
         sb.Append(") AS distinct_values");
@@ -135,11 +138,16 @@ internal static partial class SqlServerFeatureQueryBuilder
 
     /// <summary>
     /// Builds a SELECT that returns the primary key for matching rows. Used for object-id
-    /// listings when only identifiers are needed.
+    /// listings when only identifiers are needed. WHERE and ORDER BY fields must be declared on
+    /// the layer (primary key, geometry, or <paramref name="attributeColumns"/>).
     /// </summary>
-    public static ParameterizedQuery BuildObjectIdsQuery(SqlServerLayerMapping mapping, FeatureQuery query)
+    public static ParameterizedQuery BuildObjectIdsQuery(
+        SqlServerLayerMapping mapping,
+        FeatureQuery query,
+        IReadOnlyList<string>? attributeColumns = null)
     {
         ArgumentNullException.ThrowIfNull(mapping);
+        var declaredAttributes = attributeColumns ?? [];
         query = NormalizeConstraints(query, translationOfWhere: null, translationProved: false, mapping.PrimaryKeyColumn);
         GuardUnsupportedTemporalFilter(query);
 
@@ -150,10 +158,10 @@ internal static partial class SqlServerFeatureQueryBuilder
         sb.Append(" FROM ").Append(mapping.QuotedTableReference);
         sb.Append(" WHERE 1=1");
 
-        AppendWhereClause(sb, query, parameters);
+        AppendWhereClause(sb, mapping, declaredAttributes, query, parameters);
         AppendObjectIdsFilter(sb, mapping, query, parameters);
         AppendSpatialFilter(sb, mapping, query, parameters);
-        AppendOrderByClause(sb, query);
+        AppendOrderByClause(sb, mapping, declaredAttributes, query);
         AppendPagination(sb, mapping, query, parameters);
 
         return new ParameterizedQuery(sb.ToString(), parameters);
@@ -164,9 +172,13 @@ internal static partial class SqlServerFeatureQueryBuilder
     /// <c>geography::EnvelopeAggregate</c> (both SQL Server 2012+). The corner extraction
     /// uses geometry-typed <c>STX</c>/<c>STY</c> properties for planar layers and
     /// geography-typed <c>Long</c>/<c>Lat</c> properties for geodetic layers, since SQL Server
-    /// exposes a different point coordinate API per spatial type.
+    /// exposes a different point coordinate API per spatial type. WHERE fields must be declared on
+    /// the layer (primary key, geometry, or <paramref name="attributeColumns"/>).
     /// </summary>
-    public static ParameterizedQuery BuildExtentQuery(SqlServerLayerMapping mapping, FeatureQuery? query)
+    public static ParameterizedQuery BuildExtentQuery(
+        SqlServerLayerMapping mapping,
+        FeatureQuery? query,
+        IReadOnlyList<string>? attributeColumns = null)
     {
         ArgumentNullException.ThrowIfNull(mapping);
 
@@ -194,7 +206,7 @@ internal static partial class SqlServerFeatureQueryBuilder
 
         var effective = NormalizeConstraints(query ?? new FeatureQuery(), translationOfWhere: null, translationProved: false, mapping.PrimaryKeyColumn);
         GuardUnsupportedTemporalFilter(effective);
-        AppendWhereClause(sb, effective, parameters);
+        AppendWhereClause(sb, mapping, attributeColumns ?? [], effective, parameters);
         AppendObjectIdsFilter(sb, mapping, effective, parameters);
         AppendSpatialFilter(sb, mapping, effective, parameters);
 
@@ -285,7 +297,12 @@ internal static partial class SqlServerFeatureQueryBuilder
         }
     }
 
-    private static void AppendWhereClause(StringBuilder sb, FeatureQuery query, List<object> parameters)
+    private static void AppendWhereClause(
+        StringBuilder sb,
+        SqlServerLayerMapping mapping,
+        IReadOnlyList<string> attributeColumns,
+        FeatureQuery query,
+        List<object> parameters)
     {
         if (query.TextSearch is { } search)
         {
@@ -312,7 +329,7 @@ internal static partial class SqlServerFeatureQueryBuilder
                     "Submit the additional constraints through provider-neutral FeatureQuery properties.");
             }
 
-            var parameterized = ParseAndParameterizeWhereClause(query.Where!.Trim(), parameters);
+            var parameterized = ParseAndParameterizeWhereClause(query.Where!.Trim(), mapping, attributeColumns, parameters);
             sb.Append(" AND (").Append(parameterized).Append(')');
             return;
         }
@@ -498,7 +515,11 @@ internal static partial class SqlServerFeatureQueryBuilder
             : $"geometry::STGeomFromWKB({wkbParam}, {sridLiteral})";
     }
 
-    private static void AppendOrderByClause(StringBuilder sb, FeatureQuery query)
+    private static void AppendOrderByClause(
+        StringBuilder sb,
+        SqlServerLayerMapping mapping,
+        IReadOnlyList<string> attributeColumns,
+        FeatureQuery query)
     {
         if (!query.OrderBy.HasValue || query.OrderBy.Value.IsDefaultOrEmpty)
         {
@@ -509,7 +530,10 @@ internal static partial class SqlServerFeatureQueryBuilder
         foreach (var orderBy in query.OrderBy.Value)
         {
             var direction = orderBy.Ascending ? "ASC" : "DESC";
-            clauses.Add($"{SqlServerIdentifier.QuoteAttribute(orderBy.Field)} {direction}");
+            // Syntax first, so unsafe names keep their identifier error; then the layer allow-list.
+            _ = SqlServerIdentifier.QuoteAttribute(orderBy.Field);
+            var field = ResolveDeclaredField(mapping, attributeColumns, orderBy.Field, "ORDER BY");
+            clauses.Add($"{SqlServerIdentifier.QuoteAttribute(field)} {direction}");
         }
 
         sb.Append(" ORDER BY ").Append(string.Join(", ", clauses));
@@ -586,7 +610,11 @@ internal static partial class SqlServerFeatureQueryBuilder
         }
     }
 
-    private static string ParseAndParameterizeWhereClause(string whereClause, List<object> parameters)
+    private static string ParseAndParameterizeWhereClause(
+        string whereClause,
+        SqlServerLayerMapping mapping,
+        IReadOnlyList<string> attributeColumns,
+        List<object> parameters)
     {
         var expressions = WhereClauseSplitter.SplitOnAnd(whereClause);
         if (expressions.Count == 0)
@@ -617,6 +645,7 @@ internal static partial class SqlServerFeatureQueryBuilder
             {
                 var field = nullMatch.Groups["field"].Value;
                 SqlServerIdentifier.EnsureValid(field, "WHERE column");
+                field = ResolveDeclaredField(mapping, attributeColumns, field, "WHERE");
                 var notToken = nullMatch.Groups["not"].Value;
                 var notClause = string.IsNullOrWhiteSpace(notToken) ? string.Empty : "NOT ";
                 rendered.Add($"{SqlServerIdentifier.Quote(field)} IS {notClause}NULL");
@@ -628,6 +657,7 @@ internal static partial class SqlServerFeatureQueryBuilder
             {
                 var field = inMatch.Groups["field"].Value;
                 SqlServerIdentifier.EnsureValid(field, "WHERE column");
+                field = ResolveDeclaredField(mapping, attributeColumns, field, "WHERE");
                 var placeholders = new List<string>();
                 foreach (Match valueMatch in InValueRegex().Matches(inMatch.Groups["values"].Value))
                 {
@@ -643,6 +673,7 @@ internal static partial class SqlServerFeatureQueryBuilder
             {
                 var field = compMatch.Groups["field"].Value;
                 SqlServerIdentifier.EnsureValid(field, "WHERE column");
+                field = ResolveDeclaredField(mapping, attributeColumns, field, "WHERE");
                 var op = NormalizeOperator(compMatch.Groups["op"].Value);
                 var value = ParseValueToken(compMatch.Groups["value"].Value);
 
@@ -656,6 +687,32 @@ internal static partial class SqlServerFeatureQueryBuilder
         }
 
         return string.Join(" AND ", rendered);
+    }
+
+    // Reject field references that are not declared on the published layer (mirrors the MySQL
+    // and DuckDB providers). Without this guard any column of the backing table, including
+    // unpublished ones, could be probed through WHERE or ORDER BY, and a typo would surface as
+    // a SqlException (HTTP 500) instead of a client error. Returns the declared spelling.
+    private static string ResolveDeclaredField(
+        SqlServerLayerMapping mapping,
+        IReadOnlyList<string> attributeColumns,
+        string field,
+        string clause)
+    {
+        if (mapping.PrimaryKeyColumn.Equals(field, StringComparison.OrdinalIgnoreCase))
+        {
+            return mapping.PrimaryKeyColumn;
+        }
+
+        if (mapping.GeometryColumn is { } geometryColumn &&
+            geometryColumn.Equals(field, StringComparison.OrdinalIgnoreCase))
+        {
+            return geometryColumn;
+        }
+
+        var declared = attributeColumns.FirstOrDefault(column => column.Equals(field, StringComparison.OrdinalIgnoreCase));
+        return declared ?? throw new ArgumentException(
+            $"{clause} field '{field}' is not declared on layer {mapping.LayerId}.");
     }
 
 

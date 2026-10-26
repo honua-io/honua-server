@@ -29,6 +29,12 @@ namespace Honua.Infrastructure.Authentication;
 public static class PortalTokenAuthenticationExtensions
 {
     internal static readonly object AuthenticationFailureKey = new();
+
+    /// <summary>
+    /// <see cref="HttpContext.Items"/> marker set when the accepted portal token or API key was
+    /// read from the <c>token</c> query parameter.
+    /// </summary>
+    internal static readonly object QueryCredentialKey = new();
     /// <summary>
     /// Authentication scheme name for ArcGIS-compatible portal tokens.
     /// </summary>
@@ -281,6 +287,18 @@ internal sealed class PortalTokenAuthenticationMiddleware(
             if (result.Succeeded && result.Principal is not null)
             {
                 context.User = result.Principal;
+                if (context.Items.ContainsKey(PortalTokenAuthenticationExtensions.QueryCredentialKey))
+                {
+                    // RFC 6750 §2.3: a response to a request whose credential was in the URI
+                    // must be Cache-Control: private. OnStarting runs after the endpoint (and
+                    // any endpoint-registered callback) has set its own policy, so the merge
+                    // sees the final value on every route, tiles and OGC included.
+                    context.Response.OnStarting(static state =>
+                    {
+                        Honua.Infrastructure.Caching.UriCredentialResponseCachePolicy.Apply(((HttpContext)state).Response);
+                        return Task.CompletedTask;
+                    }, context);
+                }
             }
             else if (!result.Succeeded && result.Failure is not null && IsGeoServicesPortalRequest(context))
             {
