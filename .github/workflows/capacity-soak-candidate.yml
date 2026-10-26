@@ -84,7 +84,7 @@ env:
   SOAK_DB_NAME: honua_soak
   SOAK_DB_USER: honua
   SOAK_DB_PORT: '5432'
-  SOAK_DB_PASSWORD: soak-candidate-db-password
+  # SOAK_DB_PASSWORD is minted per run in the soak job (see "Mint a throwaway database password").
   # Per-run, not a repository literal: a credential checked in here is a public value, and
   # production startup validation refuses every credential literal this repository ships.
   SOAK_ADMIN_PASSWORD: 'Capacity-Soak-${{ github.run_id }}-${{ github.run_attempt }}-Aa1!'
@@ -418,6 +418,19 @@ jobs:
           rm -f "$RUNNER_TEMP/license/soak.key"
           echo "::add-mask::$trusted"
           echo "trusted_key=$trusted" >> "$GITHUB_OUTPUT"
+
+      - name: Mint a throwaway database password for this run
+        run: |
+          set -euo pipefail
+          # Since #5077 the Production startup policy refuses every credential literal this
+          # repository ships, so the old literal SOAK_DB_PASSWORD in this file reached the
+          # server through ConnectionStrings__DefaultConnection and every candidate exited before
+          # readiness (honua-server run 40355678030, candidate 8cb074f7). The disposable Postgres
+          # gets a per-run secret instead; the refusal stays.
+          SOAK_DB_PASSWORD="$(openssl rand -hex 24)"
+          echo "::add-mask::$SOAK_DB_PASSWORD"
+          # Every later step (substrate start, seeding, republish) reads it from the job environment.
+          echo "SOAK_DB_PASSWORD=$SOAK_DB_PASSWORD" >> "$GITHUB_ENV"
 
       - name: Mint a throwaway key-ring certificate for this run
         run: |
