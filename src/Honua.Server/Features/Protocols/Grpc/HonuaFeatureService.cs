@@ -51,6 +51,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
     private readonly ILogger<HonuaFeatureService> _logger;
     private readonly GrpcApplyEditsIdempotencyStore _idempotencyStore;
     private readonly GeometryLimits _geometryLimits;
+    private readonly EditLimits _editLimits;
     private readonly int _streamBatchSize;
 
     public HonuaFeatureService(
@@ -102,6 +103,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         _spatialReferenceResolver = spatialReferenceResolver;
         _mutationEventService = mutationEventService;
         _geometryLimits = limitsOptions?.Value?.Geometry ?? new GeometryLimits();
+        _editLimits = limitsOptions?.Value?.Edits ?? new EditLimits();
         _streamBatchSize = Math.Max(grpcOptions?.Value?.StreamBatchSize ?? 1000, 1);
         _logger = logger;
         _idempotencyStore = idempotencyStore;
@@ -300,6 +302,8 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         }
 
         await EnsureWriteAccessAsync(context, layer.Service, layer.Resource, editBatch).ConfigureAwait(false);
+        EnsureDeclaredEditCapabilities(layer.Service, layer.Publication, editBatch);
+        EnsureEditLimits(editBatch, _editLimits);
         editBatch = await ValidateGrpcMutationsAsync(layer.Resource, editBatch, context.CancellationToken)
             .ConfigureAwait(false);
 
@@ -1284,6 +1288,58 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
                 context.CancellationToken).ConfigureAwait(false);
 
             ThrowIfAccessDenied(decision);
+        }
+    }
+
+    /// <summary>
+    /// Rejects an edit kind the publication's declared capabilities omit (SEC-5), matching
+    /// the FeatureServer and OGC API Features surfaces. Metadata that declares no
+    /// capabilities keeps the legacy behaviour.
+    /// </summary>
+    private static void EnsureDeclaredEditCapabilities(
+        MetadataV2Service service,
+        MetadataV2Publication publication,
+        FeatureEditBatch editBatch)
+    {
+        Check(!editBatch.Creates.IsDefaultOrEmpty, AuthorizationOperation.Insert);
+        Check(!editBatch.Updates.IsDefaultOrEmpty, AuthorizationOperation.Update);
+        Check(!editBatch.Deletes.IsDefaultOrEmpty, AuthorizationOperation.Delete);
+
+        void Check(bool present, AuthorizationOperation operation)
+        {
+            if (present &&
+                LayerValidationHelpers.FindUndeclaredEditCapability(service, publication, operation) is { } capability)
+            {
+                throw new RpcException(new Status(
+                    StatusCode.FailedPrecondition,
+                    LayerValidationHelpers.DescribeUndeclaredEditCapability(capability)));
+            }
+        }
+    }
+
+    /// <summary>
+    /// Applies the configured per-operation and per-request edit limits, as FeatureServer
+    /// applyEdits does, before any read or write.
+    /// </summary>
+    private static void EnsureEditLimits(FeatureEditBatch editBatch, EditLimits editLimits)
+    {
+        var creates = editBatch.Creates.IsDefault ? 0 : editBatch.Creates.Length;
+        var updates = editBatch.Updates.IsDefault ? 0 : editBatch.Updates.Length;
+        var deletes = editBatch.Deletes.IsDefault ? 0 : editBatch.Deletes.Length;
+        if (creates > editLimits.MaxFeaturesPerEdit ||
+            updates > editLimits.MaxFeaturesPerEdit ||
+            deletes > editLimits.MaxFeaturesPerEdit)
+        {
+            throw new RpcException(new Status(
+                StatusCode.InvalidArgument,
+                $"Too many features in a single edit operation. Maximum per operation: {editLimits.MaxFeaturesPerEdit.ToString(System.Globalization.CultureInfo.InvariantCulture)}."));
+        }
+
+        if (creates + updates + deletes > editLimits.MaxEditsPerTransaction)
+        {
+            throw new RpcException(new Status(
+                StatusCode.InvalidArgument,
+                $"Too many edits in a single request. Maximum per request: {editLimits.MaxEditsPerTransaction.ToString(System.Globalization.CultureInfo.InvariantCulture)}."));
         }
     }
 
