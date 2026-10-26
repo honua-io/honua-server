@@ -756,9 +756,7 @@ none GET /static/{serviceId}/{center}/{dimensions}.{format}
 none GET /temp/{fileId}
 none GET /terrain/{datasetId}/tile.json
 none GET /terrain/{datasetId}/{z:int}/{x:int}/{y:int}.png
-# UNVERIFIED src/Honua.Import/Features/TileCachePackage/TileCachePackageEndpoints.cs - reads honua.tile_caches by derivable id with no tenant or layer access check
 none GET /tiles/imported/{tileCacheId}
-# UNVERIFIED src/Honua.Import/Features/TileCachePackage/TileCachePackageEndpoints.cs - reads honua.tile_caches by derivable id with no tenant or layer access check
 none GET /tiles/imported/{tileCacheId}/{z:int}/{x:int}/{y:int}
 none GET /tiles/{layerId:int}/h3/{z:int}/{x:int}/{y:int}.mvt
 none GET /tiles/{layerId:int}/tile.json
