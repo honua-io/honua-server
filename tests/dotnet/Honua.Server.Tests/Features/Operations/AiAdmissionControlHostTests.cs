@@ -70,17 +70,20 @@ public sealed class AiAdmissionControlHostTests
         try
         {
             using var anonymous = fixture.CreateClient();
-            var response = await SubmitAsync(anonymous, "initialize", PolicyParameters());
-            response.Status.Should().BeOneOf(HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden);
+            using var response = await PostControlAsync(anonymous, "initialize", PolicyParameters());
+            response.StatusCode.Should().BeOneOf(HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden);
             using var admin = Admin(fixture);
             using var create = await admin.PostAsync("/api/v1/admin/api-keys", JsonContent("""{"name":"admission-reader","permissions":["admin:read"]}"""));
             create.StatusCode.Should().Be(HttpStatusCode.Created);
             using var body = JsonDocument.Parse(await create.Content.ReadAsStringAsync());
             var key = body.RootElement.GetProperty("data").GetProperty("key").GetString()!;
             using var reader = fixture.CreateClient(client => client.DefaultRequestHeaders.Add("X-API-Key", key));
-            var denied = await SubmitAsync(reader, "initialize", PolicyParameters());
-            denied.Status.Should().Be(HttpStatusCode.Forbidden);
+            using var denied = await PostControlAsync(reader, "initialize", PolicyParameters());
+            denied.StatusCode.Should().Be(HttpStatusCode.Forbidden);
             (await CountControlEventsAsync(fixture)).Should().Be(0);
+            using var scope = fixture.Services.CreateScope();
+            (await scope.ServiceProvider.GetRequiredService<IAiExecutionAdmissionStore>()
+                .GetStateAsync(Deployment, CancellationToken.None)).Should().BeNull();
         }
         finally { await fixture.DisposeAsync(); }
     }
@@ -177,11 +180,16 @@ public sealed class AiAdmissionControlHostTests
 
     private static async Task<(HttpStatusCode Status, JsonElement Handle)> SubmitAsync(HttpClient client, string action, Dictionary<string, string?> parameters)
     {
-        using var response = await client.PostAsync("/api/v1/operations/admin.ai.admission." + action + "/submit",
-            JsonContent(JsonSerializer.Serialize(new { parameters })));
+        using var response = await PostControlAsync(client, action, parameters);
         using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var handle = body.RootElement.TryGetProperty("data", out var data) ? data.Clone() : default;
         return (response.StatusCode, handle);
+    }
+
+    private static async Task<HttpResponseMessage> PostControlAsync(HttpClient client, string action, Dictionary<string, string?> parameters)
+    {
+        using var content = JsonContent(JsonSerializer.Serialize(new { parameters }));
+        return await client.PostAsync("/api/v1/operations/admin.ai.admission." + action + "/submit", content);
     }
 
     private static async Task<long> CountControlEventsAsync(WebAppFixture fixture)
