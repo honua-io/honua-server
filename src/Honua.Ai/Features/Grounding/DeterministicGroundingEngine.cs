@@ -236,19 +236,7 @@ internal sealed class DeterministicGroundingEngine : IGroundingEngine
     /// first, which is the best-ranked by the deterministic comparer.
     /// </summary>
     private static List<GroundingCandidate> KeepBestPerId(List<GroundingCandidate> sorted)
-    {
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-        var unique = new List<GroundingCandidate>(sorted.Count);
-        foreach (var candidate in sorted)
-        {
-            if (seen.Add(candidate.Id))
-            {
-                unique.Add(candidate);
-            }
-        }
-
-        return unique;
-    }
+        => sorted.DistinctBy(candidate => candidate.Id, StringComparer.Ordinal).ToList();
 
     public IReadOnlyList<GroundingCandidate> ScoreServices(
         GroundingRequest request,
