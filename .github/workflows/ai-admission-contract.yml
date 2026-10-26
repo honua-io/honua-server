@@ -1,0 +1,155 @@
+name: AI Admission Contract
+
+# Bounded AI proof omitted by the capped PR affected-shard detector. This adds
+# evidence; it does not replace PR Gate, alter required contexts, or widen its cap.
+on:
+  pull_request:
+    branches: [trunk]
+    paths:
+      - '.github/workflows/ai-admission-contract.yml'
+      - '.github/actions/setup-dotnet-ci/**'
+      - 'scripts/ci/assert-trx-executed.py'
+      - 'Directory.Build.*'
+      - 'Directory.Packages.props'
+      - 'global.json'
+      - 'src/Honua.Server/Honua.Server.csproj'
+      - 'src/Honua.Ai/Honua.Ai.csproj'
+      - 'src/Honua.Core/Honua.Core.csproj'
+      - 'src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj'
+      - 'src/Honua.Hosting/Honua.Hosting.csproj'
+      - 'src/Honua.Db/Postgres/Honua.Postgres.csproj'
+      - 'tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj'
+      - 'tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj'
+      - 'tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj'
+      - 'tests/dotnet/Honua.Db.Postgres.Tests/Honua.Postgres.Tests.csproj'
+      - 'tests/dotnet/Honua.TestKit.Core/Security/**'
+      - 'tests/dotnet/Honua.TestKit.Core/Honua.TestKit.Core.csproj'
+      - 'tests/dotnet/Honua.TestKit/**'
+      - 'tests/dotnet/Honua.TestKit.Postgres/**'
+      - 'tests/dotnet/Honua.TestKit.Redis/**'
+      - 'tests/dotnet/Honua.TestKit.Abstractions/**'
+      - 'src/Honua.Core/Features/Security/Admission/**'
+      - 'src/Honua.Core/Features/Reporting/**'
+      - 'src/Honua.Hosting/Features/Security/**'
+      - 'src/Honua.Db/Postgres/Features/Security/Admission/**'
+      - 'src/Honua.Server/Migrations/140_CreateAiExecutionAdmission.sql'
+      - 'src/Honua.Ai/Features/StudioAiProxy/**'
+      - 'src/Honua.Server/Features/Operations/AiAdmissionControl*.cs'
+      - 'src/Honua.Server/Features/Operations/OperationsServiceCollectionExtensions.cs'
+      - 'src/Honua.Server/Features/Reporting/**'
+      - 'tests/dotnet/Honua.Db.Postgres.Tests/Features/Security/PostgresAiExecutionAdmissionStoreTests.cs'
+      - 'tests/dotnet/Honua.Core.Tests/Features/Reporting/**'
+      - 'tests/dotnet/Honua.Server.Tests/Features/Reporting/**'
+      - 'tests/dotnet/Honua.Server.Tests/Features/Operations/AiAdmissionControl*.cs'
+      - 'tests/dotnet/Honua.Server.Tests/Features/Operations/OperationsToolsetTests.cs'
+      - 'tests/dotnet/Honua.Ai.Tests/Source/StudioAiProxy/StudioAiProxyPromptBudgetTests.cs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: ai-admission-contract-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_VERSION: '10.0.x'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_NOLOGO: true
+  HONUA_TEST_CONFIGURATION: Release
+  TESTCONTAINERS_RYUK_CONTAINER_IMAGE: 'mirror.gcr.io/testcontainers/ryuk:0.14.0@sha256:7c1a8a9a47c780ed0f983770a662f80deb115d95cce3e2daa3d12115b8cd28f0'
+
+jobs:
+  contract:
+    name: AI admission / reporting, controls and durable accounting
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Free disk space for the shared Server test closure
+        run: |
+          sudo rm -rf /usr/local/lib/android || true
+          sudo rm -rf /usr/share/swift || true
+          sudo rm -rf /usr/local/.ghcup || true
+          sudo rm -rf /opt/hostedtoolcache/CodeQL || true
+          df -h / || true
+      - uses: ./.github/actions/setup-dotnet-ci
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+          nuget-cache-read-only: 'true'
+      - name: Verify Docker test substrate and bind candidate identity
+        run: |
+          docker version
+          git rev-parse HEAD | tee ai-admission-candidate.txt
+      - name: Server reporting and canonical admission controls
+        run: |
+          dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
+            --configuration Release -m:1 /p:TreatWarningsAsErrors=true \
+            --filter 'FullyQualifiedName~Features.Reporting|FullyQualifiedName~AiAdmissionControl|FullyQualifiedName~OperationsToolsetTests' \
+            --logger 'trx;LogFileName=server.trx' --results-directory ai-admission-results
+          python3 scripts/ci/assert-trx-executed.py --label 'AI server reporting and controls' \
+            --trx ai-admission-results/server.trx --min-passed 1 --max-skipped 0
+      - name: Core reporting builder and configuration compatibility
+        run: |
+          dotnet test tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj \
+            --configuration Release -m:1 /p:TreatWarningsAsErrors=true \
+            --filter 'FullyQualifiedName~Features.Reporting' \
+            --logger 'trx;LogFileName=core-reporting.trx' --results-directory ai-admission-results
+          python3 scripts/ci/assert-trx-executed.py --label 'AI Core reporting' \
+            --trx ai-admission-results/core-reporting.trx --min-passed 1 --max-skipped 0
+      - name: Accepted Studio prompt-budget compatibility
+        run: |
+          dotnet test tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj \
+            --configuration Release -m:1 /p:TreatWarningsAsErrors=true \
+            --filter 'FullyQualifiedName~StudioAiProxyPromptBudgetTests' \
+            --logger 'trx;LogFileName=prompt-budget.trx' --results-directory ai-admission-results
+          python3 scripts/ci/assert-trx-executed.py --label 'AI prompt budget' \
+            --trx ai-admission-results/prompt-budget.trx --min-passed 2 --max-skipped 0
+      - name: Combined PostgreSQL admission scopes and lifecycle
+        run: |
+          dotnet test tests/dotnet/Honua.Db.Postgres.Tests/Honua.Postgres.Tests.csproj \
+            --configuration Release -m:1 /p:TreatWarningsAsErrors=true \
+            --filter 'FullyQualifiedName~PostgresAiExecutionAdmissionStoreTests' \
+            --logger 'trx;LogFileName=postgres.trx' --results-directory ai-admission-results
+          python3 scripts/ci/assert-trx-executed.py --label 'AI PostgreSQL authority' \
+            --trx ai-admission-results/postgres.trx --min-passed 16 --max-skipped 0
+      - name: Require each named contract class to execute and pass
+        run: |
+          python3 - <<'PY'
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+          required = {
+              'server': ['AiAdmissionControlOperationTests', 'AiAdmissionControlHostTests',
+                         'OperationsToolsetTests', 'OpenAiNarrativeProviderTests',
+                         'ReportingServiceCollectionExtensionsTests', 'AnalysisReportServiceTests',
+                         'AnalysisReportEndpointsTests', 'AnalysisReportEndpointsHappyPathTests',
+                         'AnalysisReportEvalPipelineTests', 'RenderGoldenTests'],
+              'core-reporting': ['AnalysisReportBuilderTests', 'ReportingConfigurationValidatorTests'],
+              'prompt-budget': ['StudioAiProxyPromptBudgetTests'],
+              'postgres': ['PostgresAiExecutionAdmissionStoreTests'],
+          }
+          ns = {'t': 'http://microsoft.com/schemas/VisualStudio/TeamTest/2010'}
+          for lane, classes in required.items():
+              root = ET.parse(Path('ai-admission-results') / (lane + '.trx')).getroot()
+              results = root.findall('t:Results/t:UnitTestResult', ns)
+              definitions = root.findall('t:TestDefinitions/t:UnitTest', ns)
+              for name in classes:
+                  ids = {test.attrib['id'] for test in definitions
+                         if test.find('t:TestMethod', ns).attrib['className'].split('.')[-1] == name}
+                  actual = [result for result in results if result.attrib['testId'] in ids]
+                  if not actual or any(result.attrib['outcome'] != 'Passed' for result in actual):
+                      raise SystemExit(f'Required contract class did not execute and pass: {lane} {name} ({len(actual)} results)')
+                  print(lane, name, len(actual), 'passed')
+          PY
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: ai-admission-contract-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ai-admission-results/
+            ai-admission-candidate.txt
+          if-no-files-found: error

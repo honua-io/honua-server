@@ -79,3 +79,16 @@ not installed deployment qualification evidence.
 
 Shared configuration, policy fields, typed controls and migration are documented in
 [AI invocation admission](../../reference/configuration/ai-execution-admission.md).
+
+## Focused CI evidence
+
+The `AI Admission Contract` workflow runs bounded feature tests on one Docker-capable runner:
+Server reporting and the canonical admission controls/toolset, Core reporting builder/configuration,
+accepted Studio prompt-budget compatibility, and the PostgreSQL admission store. Project filters run
+sequentially in Release with warnings treated as errors. TRX tripwires require positive execution,
+zero skipped cases, at least the existing two prompt-budget and sixteen PostgreSQL cases, and passing
+results for each named contract class. The artifact includes the tested commit and raw TRX files.
+
+Redis backend and multi-coordinator proofs remain in the Hosting Components shard. The focused
+workflow adds evidence for tests omitted by the capped affected-shard detector; it does not replace
+PR Gate, architecture or other required checks, and it does not establish installed qualification.
