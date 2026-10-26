@@ -416,6 +416,13 @@ jobs:
       # FORBIDDEN licenses to CRITICAL and RESTRICTED (GPL, LGPL) to HIGH; the worker
       # images, which carry GDAL's LGPL/GPL system libraries as separate processes,
       # are scanned in worker-gdal-image.yml with a report-only posture.
+      #
+      # The gate has two parts. FORBIDDEN licenses fail anywhere in the image, OS
+      # packages included. RESTRICTED licenses fail only in application (library)
+      # packages, which is what runs in-process. The Ubuntu base image's own OS
+      # packages (bash, apt, coreutils, glibc, ...) are GPL/LGPL system programs and
+      # dynamically linked system libraries; every Linux base carries them, so they
+      # stay in the uploaded report instead of failing the gate.
       - name: Report image licenses
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -433,11 +440,21 @@ jobs:
           path: trivy-licenses-${{ matrix.variant }}.txt
           retention-days: 30
 
-      - name: Fail on restricted or forbidden licenses in the serving image
+      - name: Fail on forbidden licenses anywhere in the serving image
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: ${{ env.IMAGE_NAME }}:${{ matrix.image_tag }}
           scanners: license
+          format: table
+          severity: CRITICAL
+          exit-code: '1'
+
+      - name: Fail on restricted or forbidden licenses in in-process application packages
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE_NAME }}:${{ matrix.image_tag }}
+          scanners: license
+          vuln-type: library
           format: table
           severity: HIGH,CRITICAL
           exit-code: '1'
