@@ -515,6 +515,41 @@ public sealed class StudioAiProxyEndpointsTests : IAsyncLifetime
         body.Should().NotContain("event: transcript_provenance");
     }
 
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/studio/ai/chat")]
+    [Endpoint("POST /mcp")]
+    [InterfaceOperation(TestProtocols.Mcp, "initialize")]
+    public async Task PostChat_SuppliedSession_BindsToVerifiedOwnerBeforeAdmissionOrSse()
+    {
+        await using var fixture = await CreateEndUserFixtureAsync(new CapturingAuditLog());
+        using var owner = CreateBearerClient(fixture, CreateToken("session-owner", tenantId: "tenant"));
+        using var other = CreateBearerClient(fixture, CreateToken("different-owner", tenantId: "tenant"));
+        using var initialized = await owner.SendAsync(BuildMcpRequest(
+            """{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"admission-test","version":"1"}}}"""));
+        initialized.StatusCode.Should().Be(HttpStatusCode.OK);
+        var session = initialized.Headers.GetValues("Mcp-Session-Id").Single();
+        var admission = (RecordingAiAdmission)fixture.Services.GetRequiredService<IAiExecutionAdmission>();
+        var before = admission.Acquired;
+        other.DefaultRequestHeaders.Add("Mcp-Session-Id", session);
+        using var mismatch = await other.PostAsJsonAsync("/api/v1/studio/ai/chat", new
+        { messages = new[] { new { role = "user", content = "test" } } });
+        mismatch.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        admission.Acquired.Should().Be(before);
+        admission.Sent.Should().Be(0);
+        other.DefaultRequestHeaders.Remove("Mcp-Session-Id");
+        other.DefaultRequestHeaders.Add("Mcp-Session-Id", "unknown-session");
+        using var unknown = await other.PostAsJsonAsync("/api/v1/studio/ai/chat", new
+        { messages = new[] { new { role = "user", content = "test" } } });
+        unknown.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        admission.Acquired.Should().Be(before);
+        owner.DefaultRequestHeaders.Add("Mcp-Session-Id", session);
+        using var accepted = await owner.PostAsJsonAsync("/api/v1/studio/ai/chat", new
+        { messages = new[] { new { role = "user", content = "test" } } });
+        accepted.StatusCode.Should().Be(HttpStatusCode.OK);
+        admission.Acquired.Should().Be(before + 1);
+        admission.Sent.Should().Be(1);
+    }
+
     private static void ConfigureHost(IWebHostBuilder builder, bool endUserAuthorizationEnabled)
     {
         // WebAppFixture's common host settings enable a dev-auth bypass

@@ -68,6 +68,31 @@ public sealed class ImageryDisclosureTests
         handler.Payload.Should().Contain("approved-model").And.Contain("AQID");
     }
 
+    [UnitTest]
+    public async Task InferAsync_AdmissionDenied_ResolvesNoCredentialAndCreatesNoProviderClient()
+    {
+        var factory = Substitute.For<IHttpClientFactory>();
+        var secrets = Substitute.For<ISecretProvider>();
+        var admission = new RecordingAiAdmission { DenialCode = "budget_exceeded" };
+        var client = new HttpImageryInferenceClient(factory, NullLogger<HttpImageryInferenceClient>.Instance, secrets, admission);
+        var options = new ImageryInferenceOptions { Provider = "http", Endpoint = "https://inference.example/v1", ApiKey = "secret:imagery" };
+        options.Disclosure.Approvals.Add(new AiDisclosureApproval
+        {
+            Provider = "http", Kind = "http", Destination = options.Endpoint, Model = "approved-model",
+            UseCase = "imagery-inference", DataClassification = "unclassified"
+        });
+        var request = new ImageryInferenceRequest
+        {
+            ExecutionContext = RecordingAiAdmission.Context("imagery-inference"), Model = "approved-model",
+            Task = "classification", ImageBytes = [1, 2, 3], MaxArtifactBytes = 1024
+        };
+        await FluentActions.Awaiting(() => client.InferAsync(options, request, default))
+            .Should().ThrowAsync<ImageryInferenceException>();
+        factory.DidNotReceive().CreateClient(Arg.Any<string>());
+        secrets.ReceivedCalls().Should().BeEmpty();
+        admission.Sent.Should().Be(0);
+    }
+
     private sealed class CountingHandler : HttpMessageHandler
     {
         public int Calls { get; private set; }

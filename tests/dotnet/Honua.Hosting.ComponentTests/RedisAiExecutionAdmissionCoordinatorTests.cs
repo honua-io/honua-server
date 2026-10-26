@@ -10,6 +10,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
+using TestProtocols = Honua.TestKit.Constants.ProtocolNames;
 
 namespace Honua.Hosting.ComponentTests;
 

@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:04a56754c2f54b06bcbbde0be36b6868841271198c6fdd8fa5f9af1125fb0bb8",
+  "bundleDigest": "sha256:4da140b4f03901fb4ffaf9752663289b02525c272d623d319f20faa33f2eafdb",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -2156,7 +2156,7 @@
     {
       "id": "guides/deploy/configuration",
       "path": "guides/deploy/configuration.md",
-      "documentDigest": "sha256:9742db48da0b2f73c204a92dfb965d0b6c58a289f383a03529964bfde7fb2c90",
+      "documentDigest": "sha256:b8161c72247f2659b12a5219f3f34125ab65b11487227339d048cff5bed18fea",
       "metadata": {
         "type": "guide",
         "title": "Configure Honua Server",
@@ -7644,13 +7644,24 @@
     {
       "id": "reference/configuration/ai-disclosure-policy",
       "path": "reference/configuration/ai-disclosure-policy.md",
-      "documentDigest": "sha256:24b23e383fffedb168c6da7f04eb7da2373615ca0e97513701c1ad6877fa651b",
+      "documentDigest": "sha256:6aed3cbb17e8b8ae4de9362f7fab7bc9ca7dbb6b9c3826b932800b69992155e2",
       "metadata": {
         "type": "reference",
         "title": "AI model disclosure approvals",
         "description": "Operator approval configuration, migration and limits for AI model data transfers."
       },
       "humanDocument": "https://github.com/honua-io/honua-server/blob/trunk/docs/reference/configuration/ai-disclosure-policy.md"
+    },
+    {
+      "id": "reference/configuration/ai-execution-admission",
+      "path": "reference/configuration/ai-execution-admission.md",
+      "documentDigest": "sha256:be3f48a2b7b0685e4a3f9e62137b7028dd4f436af4d9d577137585d03eaa4442",
+      "metadata": {
+        "type": "reference",
+        "title": "AI invocation admission",
+        "description": "Durable attempt limits, trusted execution identity, operator controls and migration for model calls."
+      },
+      "humanDocument": "https://github.com/honua-io/honua-server/blob/trunk/docs/reference/configuration/ai-execution-admission.md"
     },
     {
       "id": "reference/configuration/data-sources/README",
@@ -7757,7 +7768,7 @@
     {
       "id": "reference/configuration/environment-variables",
       "path": "reference/configuration/environment-variables.md",
-      "documentDigest": "sha256:5753c3466a2efbed2d02a0950ebab83e9ee12ce9eed3710012bc9727804ce07f",
+      "documentDigest": "sha256:d87e649fb91443c370fee0d01b9f4604ca9c6ac7356e062273ab648848149a37",
       "metadata": {
         "type": "reference",
         "title": "Environment variables",
@@ -11468,6 +11479,11 @@
       "source": "guides/deploy/configuration",
       "relation": "links_to",
       "target": "guides/deploy/kubernetes"
+    },
+    {
+      "source": "guides/deploy/configuration",
+      "relation": "links_to",
+      "target": "reference/configuration/ai-execution-admission"
     },
     {
       "source": "guides/deploy/configuration",
@@ -15500,6 +15516,16 @@
       "target": "reference/versioning-and-support"
     },
     {
+      "source": "reference/configuration/ai-disclosure-policy",
+      "relation": "links_to",
+      "target": "reference/configuration/ai-execution-admission"
+    },
+    {
+      "source": "reference/configuration/ai-execution-admission",
+      "relation": "links_to",
+      "target": "reference/configuration/ai-disclosure-policy"
+    },
+    {
       "source": "reference/configuration/data-sources/README",
       "relation": "links_to",
       "target": "reference/configuration/data-sources/databricks"
@@ -15628,6 +15654,11 @@
       "source": "reference/configuration/environment-variables",
       "relation": "links_to",
       "target": "reference/configuration/ai-disclosure-policy"
+    },
+    {
+      "source": "reference/configuration/environment-variables",
+      "relation": "links_to",
+      "target": "reference/configuration/ai-execution-admission"
     },
     {
       "source": "reference/configuration/environment-variables",
@@ -16625,6 +16656,10 @@
     {
       "source": "internal/demo/README",
       "target": "internal/demo/demo-honua-io-capability-runbook"
+    },
+    {
+      "source": "reference/configuration/ai-execution-admission",
+      "target": "internal/contributor/ai-admission-redis"
     }
   ],
   "workflows": {

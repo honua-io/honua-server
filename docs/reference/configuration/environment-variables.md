@@ -401,3 +401,11 @@ and accepted multi-row-group imports are unchanged.
 ## AI disclosure approvals
 
 Enabled remote AI transfers require exact operator approval rules. See [AI model disclosure approvals](ai-disclosure-policy.md) for configuration, secure defaults, migration and classification limits.
+
+
+## AI invocation admission
+
+Model calls require `AiExecutionAdmission__DeploymentId` (empty by default).
+`AiExecutionAdmission__Backend` accepts `auto` (default), `postgres` or `redis`.
+See [AI invocation admission](ai-execution-admission.md) for authoritative backend selection,
+policy fields, typed initialize/update/stop/resume controls and migration. Missing authority denies model calls.
