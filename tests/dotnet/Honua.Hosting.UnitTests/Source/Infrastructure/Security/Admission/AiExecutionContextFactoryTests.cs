@@ -3,6 +3,8 @@
 
 using System.Security.Claims;
 using FluentAssertions;
+using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Security.Admission;
 using Honua.Infrastructure.Security.Admission;
 using Honua.TestKit.Attributes;
@@ -36,6 +38,32 @@ public sealed class AiExecutionContextFactoryTests
     {
         new AiExecutionContextFactory(Options.Create(new AiExecutionAdmissionOptions()))
             .ForPrincipal(Principal("issuer", "subject", "token"), "studio-chat").Should().BeNull();
+    }
+
+    [UnitTest]
+    public void ForJob_LegacyOwnerOrDifferentExecutingJob_DeniesIdentity()
+    {
+        const string owner = "ApiKey:api-key:11111111-1111-1111-1111-111111111111";
+        var job = new ExecutionJobRecord
+        {
+            OperationId = "job-one", Status = ExecutionJobStatus.Running,
+            CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow,
+            Spec = new ExecutionJobSpec
+            {
+                Kind = ExecutionJobKind.Geoprocessing, TargetKind = BatchComputeTargetKind.KubernetesJob,
+                Backend = "local", WorkloadName = "imagery"
+            },
+            Audit = new OperationAuditInfo
+            {
+                RequestedBy = owner,
+                SubmitterSecurityContext = new JobSecurityContext(null, null, []) { OwnerActorId = owner }
+            }
+        };
+        Factory.ForJob(job, "job-one")!.WorkflowKey.Should().Be(
+            AiExecutionContext.Create("deployment", owner, "imagery-inference", "job:job-one").WorkflowKey);
+        Factory.ForJob(job, "different-job").Should().BeNull();
+        Factory.ForJob(job with { Audit = new OperationAuditInfo { RequestedBy = owner } }, "job-one").Should().BeNull();
+        Factory.ForJob(job with { Audit = job.Audit with { RequestedBy = "different-actor" } }, "job-one").Should().BeNull();
     }
 
     private static ClaimsPrincipal Principal(string issuer, string subject, string token) => new(new ClaimsIdentity([

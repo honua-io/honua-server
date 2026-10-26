@@ -1,16 +1,16 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Diagnostics;
 using System.Diagnostics.Metrics;
+using System.Diagnostics;
 using System.Security.Claims;
 using Honua.Core.Features.Authorization.Domain;
-using Honua.Core.Features.Reporting;
 using Honua.Core.Features.Reporting.Abstractions;
 using Honua.Core.Features.Reporting.Domain;
+using Honua.Core.Features.Reporting;
 using Honua.Geoprocessing;
-using Honua.ServiceDefaults;
 using Honua.Infrastructure.Security.Admission;
+using Honua.ServiceDefaults;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;

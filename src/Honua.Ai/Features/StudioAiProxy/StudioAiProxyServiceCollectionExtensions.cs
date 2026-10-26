@@ -1,14 +1,14 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using Honua.Infrastructure.Security.Admission;
 using Honua.Ai.StudioAiProxy.Abstractions;
-using Honua.Ai.StudioAiProxy.Adapters;
 using Honua.Ai.StudioAiProxy.Adapters.Bedrock;
+using Honua.Ai.StudioAiProxy.Adapters;
 using Honua.Core.Features.Infrastructure.Resilience;
+using Honua.Infrastructure.Security.Admission;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Ai.StudioAiProxy;

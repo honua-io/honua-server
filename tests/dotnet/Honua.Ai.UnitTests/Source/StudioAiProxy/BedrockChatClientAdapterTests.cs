@@ -1,8 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using Amazon.BedrockRuntime;
 using Amazon.BedrockRuntime.Model;
+using Amazon.BedrockRuntime;
 using FluentAssertions;
 using Honua.Ai.StudioAiProxy.Adapters.Bedrock;
 using Honua.TestKit.Attributes;

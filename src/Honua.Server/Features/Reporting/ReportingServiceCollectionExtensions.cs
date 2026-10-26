@@ -1,10 +1,10 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using Honua.Infrastructure.Security.Admission;
 using Honua.Core.Features.Infrastructure.Resilience;
-using Honua.Core.Features.Reporting;
 using Honua.Core.Features.Reporting.Abstractions;
+using Honua.Core.Features.Reporting;
+using Honua.Infrastructure.Security.Admission;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Features.Reporting;

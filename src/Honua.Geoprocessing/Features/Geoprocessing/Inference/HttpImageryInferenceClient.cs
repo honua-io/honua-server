@@ -2,9 +2,9 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Text.Json;
-using Honua.Core.Features.Security;
-using Honua.Core.Features.Security.Admission;
 using Honua.Core.Features.Security.Abstractions;
+using Honua.Core.Features.Security.Admission;
+using Honua.Core.Features.Security;
 
 namespace Honua.Geoprocessing.Inference;
 

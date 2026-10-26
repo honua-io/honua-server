@@ -1,16 +1,16 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Data;
 using System.Data.Common;
-using System.Net;
+using System.Data;
 using System.Net.Sockets;
+using System.Net;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Security.Admission;
 using Honua.Db.Postgres.Features.Security.Admission;
-using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Honua.TestKit;
 using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.Security;

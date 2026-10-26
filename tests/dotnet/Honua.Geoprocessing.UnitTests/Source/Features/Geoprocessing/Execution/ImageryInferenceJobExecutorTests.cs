@@ -1,28 +1,28 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using Honua.TestKit.Security;
-using Honua.Core.Features.Security.Admission;
-using Honua.Infrastructure.Security.Admission;
-using Honua.Core.Features.Authorization.Domain;
 using System.Buffers.Binary;
 using System.Net;
-using System.Text;
 using System.Text.Json;
+using System.Text;
 using FluentAssertions;
+using Honua.ControlPlane;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
-using Honua.Core.Features.Security;
 using Honua.Core.Features.Security.Abstractions;
-using Honua.ControlPlane;
-using Honua.Geoprocessing;
+using Honua.Core.Features.Security.Admission;
+using Honua.Core.Features.Security;
 using Honua.Geoprocessing.Execution;
 using Honua.Geoprocessing.Inference;
+using Honua.Geoprocessing;
+using Honua.Infrastructure.Security.Admission;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Security;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -44,6 +44,8 @@ public sealed class ImageryInferenceJobExecutorTests
     // A real, minimally-valid GeoTIFF fixture scene: 64x64 pixels at 10m, origin
     // (500000, 4600000), EPSG:32610. Built byte-by-byte so the executor's IFD
     // parse and georeferencing checks run against genuine GeoTIFF structure.
+    private const string TestOperationId = "op-test";
+
     private static readonly byte[] SourceGeoTiff =
         BuildGeoTiff(width: 64, height: 64, originX: 500000, originY: 4600000, pixelSize: 10, epsg: 32610);
 
@@ -68,7 +70,7 @@ public sealed class ImageryInferenceJobExecutorTests
     public async Task ExecuteAsync_UnsupportedProcessId_FailsWithClassifiedMessage()
     {
         var executor = CreateExecutor(new StubHttpHandler(_ => RasterResponse(ClassifiedGeoTiff)), provider: "http");
-        var context = CreateContext("op-wrong-id");
+        var context = CreateContext(TestOperationId);
 
         var record = CreateJobRecord(processId: "geometry.buffer");
 
@@ -83,7 +85,7 @@ public sealed class ImageryInferenceJobExecutorTests
     public async Task ExecuteAsync_NoBackendConfigured_FailsWithClearUnavailableMessage()
     {
         var executor = CreateExecutor(new StubHttpHandler(_ => RasterResponse(ClassifiedGeoTiff)), provider: "");
-        var context = CreateContext("op-not-configured");
+        var context = CreateContext(TestOperationId);
 
         var record = CreateJobRecord();
 
@@ -100,7 +102,7 @@ public sealed class ImageryInferenceJobExecutorTests
     public async Task ExecuteAsync_RecognizedUnsupportedProvider_FailsClearly()
     {
         var executor = CreateExecutor(new StubHttpHandler(_ => RasterResponse(ClassifiedGeoTiff)), provider: "sagemaker");
-        var context = CreateContext("op-sagemaker");
+        var context = CreateContext(TestOperationId);
 
         var record = CreateJobRecord();
 
@@ -117,7 +119,7 @@ public sealed class ImageryInferenceJobExecutorTests
     public async Task ExecuteAsync_UnknownProvider_FailsWithSupportedProviderList()
     {
         var executor = CreateExecutor(new StubHttpHandler(_ => RasterResponse(ClassifiedGeoTiff)), provider: "mystery-ml");
-        var context = CreateContext("op-unknown");
+        var context = CreateContext(TestOperationId);
 
         var record = CreateJobRecord();
 
@@ -143,7 +145,7 @@ public sealed class ImageryInferenceJobExecutorTests
     {
         var handler = new StubHttpHandler(_ => RasterResponse(ClassifiedGeoTiff));
         var executor = CreateExecutor(handler, provider: "http", apiKey: "test-key");
-        var context = CreateContext("op-raster", out var published);
+        var context = CreateContext(TestOperationId, out var published);
 
         var record = CreateJobRecord();
 
@@ -176,7 +178,7 @@ public sealed class ImageryInferenceJobExecutorTests
             handler,
             provider: "http",
             rangeReaders: [rangeReader]);
-        var context = CreateContext("op-referenced-source", out _);
+        var context = CreateContext(TestOperationId, out _);
         var record = CreateJobRecord();
         var parameters = (Dictionary<string, string>)record.Spec.Parameters;
         parameters.Remove(ExecutionJobParameterKeys.GeoprocessingStepInputPrefix + "0.source");
@@ -223,7 +225,7 @@ public sealed class ImageryInferenceJobExecutorTests
         var handler = new StubHttpHandler(_ => JsonResponse(
             $$"""{"outputType":"features","features":{{featureCollection}}}"""));
         var executor = CreateExecutor(handler, provider: "http");
-        var context = CreateContext("op-features", out var published);
+        var context = CreateContext(TestOperationId, out var published);
 
         var record = CreateJobRecord(task: "detection", confidenceThreshold: "0.5");
 
@@ -251,7 +253,7 @@ public sealed class ImageryInferenceJobExecutorTests
                 Content = new StringContent("model exploded at /var/models/secret-path", Encoding.UTF8, "text/plain")
             });
         var executor = CreateExecutor(handler, provider: "http", apiKey: "super-secret-key");
-        var context = CreateContext("op-500");
+        var context = CreateContext(TestOperationId);
 
         var record = CreateJobRecord();
 
@@ -279,7 +281,7 @@ public sealed class ImageryInferenceJobExecutorTests
             .Returns("resolved-from-store");
         var executor = CreateExecutor(
             handler, provider: "http", apiKey: "secret://inference/api-key", secretProvider: secretProvider);
-        var context = CreateContext("op-secret", out _);
+        var context = CreateContext(TestOperationId, out _);
 
         var record = CreateJobRecord();
 
@@ -293,7 +295,7 @@ public sealed class ImageryInferenceJobExecutorTests
     public async Task ExecuteAsync_MissingModel_FailsCleanly()
     {
         var executor = CreateExecutor(new StubHttpHandler(_ => RasterResponse(ClassifiedGeoTiff)), provider: "http");
-        var context = CreateContext("op-no-model");
+        var context = CreateContext(TestOperationId);
 
         var record = CreateJobRecord(omitModel: true);
 
@@ -309,7 +311,7 @@ public sealed class ImageryInferenceJobExecutorTests
     {
         var handler = new StubHttpHandler(_ => RasterResponse(ClassifiedGeoTiff));
         var executor = CreateExecutor(handler, provider: "http", defaultModel: "fallback-model");
-        var context = CreateContext("op-default-model", out _);
+        var context = CreateContext(TestOperationId, out _);
 
         var record = CreateJobRecord(omitModel: true);
 
@@ -325,7 +327,7 @@ public sealed class ImageryInferenceJobExecutorTests
     {
         var handler = new StubHttpHandler(_ => RasterResponse(ClassifiedGeoTiff));
         var executor = CreateExecutor(handler, provider: "http");
-        var context = CreateContext("op-bad-source");
+        var context = CreateContext(TestOperationId);
 
         var record = CreateJobRecord(source: Convert.ToBase64String("not a tiff"u8.ToArray()));
 
@@ -343,7 +345,7 @@ public sealed class ImageryInferenceJobExecutorTests
         // landed as a fake "GeoTIFF" artifact.
         var pngBytes = new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A };
         var executor = CreateExecutor(new StubHttpHandler(_ => RasterResponse(pngBytes)), provider: "http");
-        var context = CreateContext("op-png");
+        var context = CreateContext(TestOperationId);
 
         var record = CreateJobRecord();
 
@@ -364,7 +366,7 @@ public sealed class ImageryInferenceJobExecutorTests
         var executor = CreateExecutor(
             handler, provider: "http", apiKey: "super-secret-key",
             endpoint: "http://inference.example.com/v1/infer");
-        var context = CreateContext("op-plaintext");
+        var context = CreateContext(TestOperationId);
 
         var result = await executor.ExecuteAsync(CreateJobRecord(), context, CancellationToken.None);
 
@@ -382,7 +384,7 @@ public sealed class ImageryInferenceJobExecutorTests
         var handler = new StubHttpHandler(_ => RasterResponse(ClassifiedGeoTiff));
         var executor = CreateExecutor(
             handler, provider: "http", endpoint: "http://127.0.0.1:8000/infer");
-        var context = CreateContext("op-loopback", out _);
+        var context = CreateContext(TestOperationId, out _);
 
         var result = await executor.ExecuteAsync(CreateJobRecord(), context, CancellationToken.None);
 
@@ -397,7 +399,7 @@ public sealed class ImageryInferenceJobExecutorTests
         // catch the missing model/CRS tags.
         var executor = CreateExecutor(
             new StubHttpHandler(_ => RasterResponse(UnreferencedTiff)), provider: "http");
-        var context = CreateContext("op-unreferenced");
+        var context = CreateContext(TestOperationId);
 
         var result = await executor.ExecuteAsync(CreateJobRecord(), context, CancellationToken.None);
 
@@ -414,7 +416,7 @@ public sealed class ImageryInferenceJobExecutorTests
         // advertises georeferencing preservation.
         var executor = CreateExecutor(
             new StubHttpHandler(_ => RasterResponse(MislocatedGeoTiff)), provider: "http");
-        var context = CreateContext("op-mislocated");
+        var context = CreateContext(TestOperationId);
 
         var result = await executor.ExecuteAsync(CreateJobRecord(), context, CancellationToken.None);
 
@@ -432,7 +434,7 @@ public sealed class ImageryInferenceJobExecutorTests
             new StubHttpHandler(_ => JsonResponse(
                 """{"outputType":"features","features":{"type":"FeatureCollection","features":"not-an-array"}}""")),
             provider: "http");
-        var context = CreateContext("op-malformed-fc");
+        var context = CreateContext(TestOperationId);
 
         var result = await executor.ExecuteAsync(
             CreateJobRecord(task: "detection"), context, CancellationToken.None);
@@ -450,7 +452,7 @@ public sealed class ImageryInferenceJobExecutorTests
         // return any georeferenced raster, so it is refused up front.
         var handler = new StubHttpHandler(_ => RasterResponse(ClassifiedGeoTiff));
         var executor = CreateExecutor(handler, provider: "http");
-        var context = CreateContext("op-unreferenced-source");
+        var context = CreateContext(TestOperationId);
 
         var record = CreateJobRecord(source: Convert.ToBase64String(UnreferencedTiff));
 
@@ -466,7 +468,7 @@ public sealed class ImageryInferenceJobExecutorTests
     {
         var handler = new StubHttpHandler(_ => RasterResponse(ClassifiedGeoTiff));
         var executor = CreateExecutor(handler, provider: "http");
-        var context = CreateContext("op-source-crs", out _);
+        var context = CreateContext(TestOperationId, out _);
 
         var result = await executor.ExecuteAsync(CreateJobRecord(), context, CancellationToken.None);
 
@@ -487,7 +489,7 @@ public sealed class ImageryInferenceJobExecutorTests
             new StubHttpHandler(_ => JsonResponse(
                 """{"outputType":"features","features":{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[500123.0,4600456.0]},"properties":{"class":"building"}}]}}""")),
             provider: "http");
-        var context = CreateContext("op-projected-features");
+        var context = CreateContext(TestOperationId);
 
         var result = await executor.ExecuteAsync(
             CreateJobRecord(task: "detection"), context, CancellationToken.None);
@@ -508,7 +510,7 @@ public sealed class ImageryInferenceJobExecutorTests
             tiepointI: 8, tiepointJ: 8);
         var executor = CreateExecutor(
             new StubHttpHandler(_ => RasterResponse(offsetEquivalent)), provider: "http");
-        var context = CreateContext("op-tiepoint-offset", out _);
+        var context = CreateContext(TestOperationId, out _);
 
         var result = await executor.ExecuteAsync(CreateJobRecord(), context, CancellationToken.None);
 
@@ -527,7 +529,7 @@ public sealed class ImageryInferenceJobExecutorTests
             scaleX: 20, scaleY: -20, shearX: 5, shearY: 5, epsg: 32610);
         var executor = CreateExecutor(
             new StubHttpHandler(_ => RasterResponse(rotated)), provider: "http");
-        var context = CreateContext("op-rotated");
+        var context = CreateContext(TestOperationId);
 
         var result = await executor.ExecuteAsync(CreateJobRecord(), context, CancellationToken.None);
 
@@ -546,7 +548,7 @@ public sealed class ImageryInferenceJobExecutorTests
             scaleX: 20, scaleY: 20, shearX: 0, shearY: 0, epsg: 32610);
         var executor = CreateExecutor(
             new StubHttpHandler(_ => RasterResponse(flipped)), provider: "http");
-        var context = CreateContext("op-flipped");
+        var context = CreateContext(TestOperationId);
 
         var result = await executor.ExecuteAsync(CreateJobRecord(), context, CancellationToken.None);
 
@@ -565,7 +567,7 @@ public sealed class ImageryInferenceJobExecutorTests
             scaleX: 20, scaleY: -20, shearX: 0, shearY: 0, epsg: 32610);
         var executor = CreateExecutor(
             new StubHttpHandler(_ => RasterResponse(matrixForm)), provider: "http");
-        var context = CreateContext("op-matrix", out _);
+        var context = CreateContext(TestOperationId, out _);
 
         var result = await executor.ExecuteAsync(CreateJobRecord(), context, CancellationToken.None);
 
@@ -583,7 +585,7 @@ public sealed class ImageryInferenceJobExecutorTests
             epsg: 32610, withRasterData: false);
         var executor = CreateExecutor(
             new StubHttpHandler(_ => RasterResponse(headerOnly)), provider: "http");
-        var context = CreateContext("op-header-only");
+        var context = CreateContext(TestOperationId);
 
         var result = await executor.ExecuteAsync(CreateJobRecord(), context, CancellationToken.None);
 
@@ -601,7 +603,7 @@ public sealed class ImageryInferenceJobExecutorTests
             width: 32, height: 32, originX: 500004, originY: 4600000, pixelSize: 20, epsg: 32610);
         var executor = CreateExecutor(
             new StubHttpHandler(_ => RasterResponse(shifted)), provider: "http");
-        var context = CreateContext("op-subpixel-shift");
+        var context = CreateContext(TestOperationId);
 
         var result = await executor.ExecuteAsync(CreateJobRecord(), context, CancellationToken.None);
 
@@ -624,7 +626,7 @@ public sealed class ImageryInferenceJobExecutorTests
             return redirect;
         });
         var executor = CreateExecutor(handler, provider: "http", apiKey: "super-secret-key");
-        var context = CreateContext("op-redirect");
+        var context = CreateContext(TestOperationId);
 
         var result = await executor.ExecuteAsync(CreateJobRecord(), context, CancellationToken.None);
 
@@ -645,7 +647,7 @@ public sealed class ImageryInferenceJobExecutorTests
         Array.Resize(ref truncated, truncated.Length - 512);
         var executor = CreateExecutor(
             new StubHttpHandler(_ => RasterResponse(truncated)), provider: "http");
-        var context = CreateContext("op-truncated");
+        var context = CreateContext(TestOperationId);
 
         var result = await executor.ExecuteAsync(CreateJobRecord(), context, CancellationToken.None);
 
@@ -664,7 +666,7 @@ public sealed class ImageryInferenceJobExecutorTests
             width: 1, height: 1, originX: 500000, originY: 4600000, pixelSize: 1000, epsg: 32610);
         var executor = CreateExecutor(
             new StubHttpHandler(_ => RasterResponse(coarse)), provider: "http");
-        var context = CreateContext("op-coarse");
+        var context = CreateContext(TestOperationId);
 
         var result = await executor.ExecuteAsync(CreateJobRecord(), context, CancellationToken.None);
 
@@ -685,7 +687,7 @@ public sealed class ImageryInferenceJobExecutorTests
             epsg: 32610, rasterType: 2);
         var executor = CreateExecutor(
             new StubHttpHandler(_ => RasterResponse(pixelIsPoint)), provider: "http");
-        var context = CreateContext("op-pixel-is-point");
+        var context = CreateContext(TestOperationId);
 
         var result = await executor.ExecuteAsync(CreateJobRecord(), context, CancellationToken.None);
 
@@ -705,7 +707,7 @@ public sealed class ImageryInferenceJobExecutorTests
             epsg: 32610, rasterType: 2);
         var executor = CreateExecutor(
             new StubHttpHandler(_ => RasterResponse(equivalent)), provider: "http");
-        var context = CreateContext("op-pixel-is-point-equivalent", out _);
+        var context = CreateContext(TestOperationId, out _);
 
         var result = await executor.ExecuteAsync(CreateJobRecord(), context, CancellationToken.None);
 
@@ -723,7 +725,7 @@ public sealed class ImageryInferenceJobExecutorTests
             epsg: 32610, truncateAfterFirstStrip: true);
         var executor = CreateExecutor(
             new StubHttpHandler(_ => RasterResponse(multiStrip)), provider: "http");
-        var context = CreateContext("op-multistrip-truncated");
+        var context = CreateContext(TestOperationId);
 
         var result = await executor.ExecuteAsync(CreateJobRecord(), context, CancellationToken.None);
 
@@ -740,7 +742,7 @@ public sealed class ImageryInferenceJobExecutorTests
             epsg: 32610, truncateAfterFirstStrip: false);
         var executor = CreateExecutor(
             new StubHttpHandler(_ => RasterResponse(multiStrip)), provider: "http");
-        var context = CreateContext("op-multistrip-ok", out _);
+        var context = CreateContext(TestOperationId, out _);
 
         var result = await executor.ExecuteAsync(CreateJobRecord(), context, CancellationToken.None);
 
@@ -758,7 +760,7 @@ public sealed class ImageryInferenceJobExecutorTests
             new StubHttpHandler(_ => JsonResponse(
                 """{"outputType":"features","features":{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[10.0,20.0]},"properties":{"class":"building"}}]}}""")),
             provider: "http");
-        var context = CreateContext("op-off-footprint");
+        var context = CreateContext(TestOperationId);
 
         var result = await executor.ExecuteAsync(
             CreateJobRecord(task: "detection"), context, CancellationToken.None);
@@ -777,7 +779,7 @@ public sealed class ImageryInferenceJobExecutorTests
             new StubHttpHandler(_ => JsonResponse(
                 """{"outputType":"features","features":{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[-122.4,37.8]},"properties":{"class":"building"}}]}}""")),
             provider: "http");
-        var context = CreateContext("op-on-footprint", out _);
+        var context = CreateContext(TestOperationId, out _);
 
         var result = await executor.ExecuteAsync(
             CreateJobRecord(task: "detection"), context, CancellationToken.None);
@@ -795,7 +797,7 @@ public sealed class ImageryInferenceJobExecutorTests
             width: 64, height: 64, originX: 500000, originY: 4600000, pixelSize: 10, epsg: 32767);
         var handler = new StubHttpHandler(_ => RasterResponse(ClassifiedGeoTiff));
         var executor = CreateExecutor(handler, provider: "http");
-        var context = CreateContext("op-user-defined-crs");
+        var context = CreateContext(TestOperationId);
 
         var record = CreateJobRecord(source: Convert.ToBase64String(userDefined));
 
@@ -818,7 +820,7 @@ public sealed class ImageryInferenceJobExecutorTests
                 + padding
                 + "\",\"features\":[]}}")),
             provider: "http", maxArtifactBytes: 1024);
-        var context = CreateContext("op-huge-features");
+        var context = CreateContext(TestOperationId);
 
         var result = await executor.ExecuteAsync(
             CreateJobRecord(task: "detection"), context, CancellationToken.None);
@@ -846,7 +848,7 @@ public sealed class ImageryInferenceJobExecutorTests
 
         var handler = new StubHttpHandler(_ => RasterResponse(ClassifiedGeoTiff));
         var executor = CreateExecutor(handler, provider: "http");
-        var context = CreateContext("op-bigtiff-overflow");
+        var context = CreateContext(TestOperationId);
 
         var record = CreateJobRecord(source: Convert.ToBase64String(malformed));
 
@@ -873,7 +875,7 @@ public sealed class ImageryInferenceJobExecutorTests
             new StubHttpHandler(_ => JsonResponse(
                 """{"outputType":"features","features":{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[-179.6,9.5]},"properties":{"class":"vessel"}}]}}""")),
             provider: "http");
-        var context = CreateContext("op-dateline", out _);
+        var context = CreateContext(TestOperationId, out _);
 
         var record = CreateJobRecord(
             source: Convert.ToBase64String(datelineSource), task: "detection");
@@ -897,7 +899,7 @@ public sealed class ImageryInferenceJobExecutorTests
             new StubHttpHandler(_ => JsonResponse(
                 "{\"outputType\":\"" + hostile + "\"}")),
             provider: "http");
-        var context = CreateContext("op-hostile-outputtype");
+        var context = CreateContext(TestOperationId);
 
         var result = await executor.ExecuteAsync(CreateJobRecord(), context, CancellationToken.None);
 
@@ -922,7 +924,7 @@ public sealed class ImageryInferenceJobExecutorTests
             pixelSize: double.PositiveInfinity, epsg: 32610);
         var handler = new StubHttpHandler(_ => RasterResponse(ClassifiedGeoTiff));
         var executor = CreateExecutor(handler, provider: "http");
-        var context = CreateContext("op-infinite-scale");
+        var context = CreateContext(TestOperationId);
 
         var record = CreateJobRecord(source: Convert.ToBase64String(infiniteScale));
 
@@ -943,7 +945,7 @@ public sealed class ImageryInferenceJobExecutorTests
             pixelSize: double.PositiveInfinity, epsg: 32610);
         var executor = CreateExecutor(
             new StubHttpHandler(_ => RasterResponse(infiniteOutput)), provider: "http");
-        var context = CreateContext("op-infinite-output");
+        var context = CreateContext(TestOperationId);
 
         var result = await executor.ExecuteAsync(CreateJobRecord(), context, CancellationToken.None);
 
@@ -963,7 +965,7 @@ public sealed class ImageryInferenceJobExecutorTests
             new StubHttpHandler(_ => JsonResponse(
                 """{"outputType":"features","features":{"type":"FeatureCollection","crs":{"type":"name","properties":{"name":"urn:ogc:def:crs:EPSG::3857"}},"features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[-122.4,37.8]},"properties":{}}]}}""")),
             provider: "http");
-        var context = CreateContext("op-declared-crs");
+        var context = CreateContext(TestOperationId);
 
         var result = await executor.ExecuteAsync(
             CreateJobRecord(task: "detection"), context, CancellationToken.None);
@@ -982,7 +984,7 @@ public sealed class ImageryInferenceJobExecutorTests
             new StubHttpHandler(_ => JsonResponse(
                 """{"outputType":"features","features":{"type":"FeatureCollection","crs":{"type":"name","properties":{"name":"urn:ogc:def:crs:OGC:1.3:CRS84"}},"features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[-122.4,37.8]},"properties":{}}]}}""")),
             provider: "http");
-        var context = CreateContext("op-declared-crs-ok", out _);
+        var context = CreateContext(TestOperationId, out _);
 
         var result = await executor.ExecuteAsync(
             CreateJobRecord(task: "detection"), context, CancellationToken.None);
@@ -1013,7 +1015,7 @@ public sealed class ImageryInferenceJobExecutorTests
             var executor = CreateExecutor(
                 new StubHttpHandler(_ => JsonResponse(FeaturePayloadDeclaringCrs(spelling))),
                 provider: "http");
-            var context = CreateContext($"op-crs-ok-{i}", out _);
+            var context = CreateContext(TestOperationId, out _);
 
             var result = await executor.ExecuteAsync(
                 CreateJobRecord(task: "detection"), context, CancellationToken.None);
@@ -1036,7 +1038,7 @@ public sealed class ImageryInferenceJobExecutorTests
             var executor = CreateExecutor(
                 new StubHttpHandler(_ => JsonResponse(FeaturePayloadDeclaringCrs(nearMiss))),
                 provider: "http");
-            var context = CreateContext($"op-crs-near-miss-{i}");
+            var context = CreateContext(TestOperationId);
 
             var result = await executor.ExecuteAsync(
                 CreateJobRecord(task: "detection"), context, CancellationToken.None);
@@ -1064,7 +1066,7 @@ public sealed class ImageryInferenceJobExecutorTests
             epsg: 32610, pixelScaleFieldType: 3);
         var handler = new StubHttpHandler(_ => RasterResponse(ClassifiedGeoTiff));
         var executor = CreateExecutor(handler, provider: "http");
-        var context = CreateContext("op-wrong-field-type");
+        var context = CreateContext(TestOperationId);
 
         var record = CreateJobRecord(source: Convert.ToBase64String(spoofed));
 
@@ -1085,7 +1087,7 @@ public sealed class ImageryInferenceJobExecutorTests
         var oversized = Convert.ToBase64String(new byte[64 * 1024]);
         var handler = new StubHttpHandler(_ => RasterResponse(ClassifiedGeoTiff));
         var executor = CreateExecutor(handler, provider: "http", maxArtifactBytes: 4096);
-        var context = CreateContext("op-oversized-source");
+        var context = CreateContext(TestOperationId);
 
         var record = CreateJobRecord(source: oversized);
 
@@ -1103,7 +1105,7 @@ public sealed class ImageryInferenceJobExecutorTests
         // Guard against the new bound over-rejecting a normal scene.
         var handler = new StubHttpHandler(_ => RasterResponse(ClassifiedGeoTiff));
         var executor = CreateExecutor(handler, provider: "http", maxArtifactBytes: 64 * 1024);
-        var context = CreateContext("op-source-within-ceiling", out _);
+        var context = CreateContext(TestOperationId, out _);
 
         var result = await executor.ExecuteAsync(CreateJobRecord(), context, CancellationToken.None);
 
@@ -1115,7 +1117,7 @@ public sealed class ImageryInferenceJobExecutorTests
     {
         var executor = CreateExecutor(
             new StubHttpHandler(_ => RasterResponse(ClassifiedGeoTiff)), provider: "http", maxArtifactBytes: 8);
-        var context = CreateContext("op-too-big");
+        var context = CreateContext(TestOperationId);
 
         var record = CreateJobRecord();
 
@@ -1321,7 +1323,7 @@ public sealed class ImageryInferenceJobExecutorTests
     private static IJobExecutionContext CreateContext(string operationId, out CapturedArtifact published)
     {
         var context = Substitute.For<IJobExecutionContext>();
-        context.OperationId.Returns("op-test");
+        context.OperationId.Returns(operationId);
 
         var box = new CapturedArtifact(null);
         context
@@ -1369,7 +1371,7 @@ public sealed class ImageryInferenceJobExecutorTests
                 SubmitterSecurityContext = new JobSecurityContext(null, null, [])
                 { OwnerActorId = "ApiKey:api-key:11111111-1111-1111-1111-111111111111" }
             },
-            OperationId = "op-test",
+            OperationId = TestOperationId,
             Status = ExecutionJobStatus.Running,
             CreatedAt = DateTimeOffset.UtcNow,
             UpdatedAt = DateTimeOffset.UtcNow,

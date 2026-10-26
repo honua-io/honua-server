@@ -1,22 +1,20 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using Honua.TestKit.Security;
-using Honua.Core.Features.Security.Admission;
 using System.Net;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
+using System.Text;
 using FluentAssertions;
-using Honua.Ai.StudioAiProxy;
 using Honua.Ai.StudioAiProxy.Adapters.Bedrock;
 using Honua.Ai.StudioAiProxy.Domain;
-using Honua.Core.Features.Security.Abstractions;
-using Honua.TestKit.Hosting;
-using Honua.Core.Features.AuditLog;
+using Honua.Ai.StudioAiProxy;
 using Honua.Core.Features.AuditLog.Abstractions;
+using Honua.Core.Features.AuditLog;
 using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Security.Abstractions;
+using Honua.Core.Features.Security.Admission;
 using Honua.Core.Features.Studio;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Middleware;
@@ -24,6 +22,8 @@ using Honua.Infrastructure.MultiTenancy;
 using Honua.Server.Features.Studio.Ai;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Hosting;
+using Honua.TestKit.Security;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;

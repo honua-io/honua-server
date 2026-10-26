@@ -3,12 +3,12 @@
 
 using System.Runtime.CompilerServices;
 using System.Text.Json;
-using Amazon;
-using Amazon.BedrockRuntime;
 using Amazon.BedrockRuntime.Model;
-using Amazon.Runtime;
+using Amazon.BedrockRuntime;
 using Amazon.Runtime.Documents;
 using Amazon.Runtime.EventStreams;
+using Amazon.Runtime;
+using Amazon;
 using Microsoft.Extensions.AI;
 
 namespace Honua.Ai.StudioAiProxy.Adapters.Bedrock;

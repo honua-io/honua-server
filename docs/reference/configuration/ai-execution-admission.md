@@ -50,16 +50,18 @@ directly, so it does not imply a separate human approval for every invocation.
 
 | Policy field | Default | Valid values |
 | --- | --- | --- |
-| `WindowSeconds` | 60 | 1–3,600 |
-| `MaxOperationSeconds` | 300 | 1–3,600 |
-| `DeploymentAttempts` | 120 | 1–8,192 |
-| `ActorAttempts` | 30 | 1–8,192 |
-| `CohortAttempts` | 20 | 1–8,192 |
-| `WorkflowAttempts` | 10 | 1–8,192 |
-| `DeploymentConcurrency` | 8 | 1–8,192 |
-| `ActorConcurrency` | 4 | 1–8,192 |
-| `CohortConcurrency` | 2 | 1–8,192 |
-| `WorkflowConcurrency` | 1 | 1–8,192 |
+| `windowSeconds` | 60 | 1–3,600 |
+| `maxOperationSeconds` | 300 | 1–3,600 |
+| `deploymentAttempts` | 120 | 1–8,192 |
+| `actorAttempts` | 30 | 1–8,192 |
+| `cohortAttempts` | 20 | 1–8,192 |
+| `workflowAttempts` | 10 | 1–8,192 |
+| `deploymentConcurrency` | 8 | 1–8,192 |
+| `actorConcurrency` | 4 | 1–8,192 |
+| `cohortConcurrency` | 2 | 1–8,192 |
+| `workflowConcurrency` | 1 | 1–8,192 |
+
+Policy JSON uses the camelCase field names shown above; unknown or incorrectly cased fields are rejected.
 
 The three mandatory scopes are deployment, durable actor, and actor/use-case cohort. An additional
 server-validated workflow scope aggregates across actors. All applicable scopes charge atomically.
@@ -78,8 +80,9 @@ the executing job; run scope additionally requires server-side run ownership and
 Legacy jobs lacking durable ownership cannot invoke a model.
 
 A permit covers one actual send and remains held through body and response disposal. It links caller
-cancellation, a fixed deadline, and authoritative stop/generation/epoch checks at most one second
-apart, plus a check immediately before send. Cleanup uses its own bounded token; abandoned leases
+cancellation, a fixed deadline, and authoritative stop/generation/epoch checks on a one-second polling
+interval, each check bounded by a one-second timeout, plus a check immediately before send.
+This does not establish a real-time cancellation bound. Cleanup uses its own bounded token; abandoned leases
 drain conservatively after the deadline plus 30 seconds. Remote cancellation remains best effort
 and does not prove remote execution or billing has stopped.
 

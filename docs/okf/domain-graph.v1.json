@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:4da140b4f03901fb4ffaf9752663289b02525c272d623d319f20faa33f2eafdb",
+  "bundleDigest": "sha256:2fe1d38e497f85bec2faafe633ab7b0ae8b5d7db636035e98a27cd3ebcdf8de6",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -7655,7 +7655,7 @@
     {
       "id": "reference/configuration/ai-execution-admission",
       "path": "reference/configuration/ai-execution-admission.md",
-      "documentDigest": "sha256:be3f48a2b7b0685e4a3f9e62137b7028dd4f436af4d9d577137585d03eaa4442",
+      "documentDigest": "sha256:6341294e18fae945780269838399635a84299031aff3340449ba6a32e741f7d2",
       "metadata": {
         "type": "reference",
         "title": "AI invocation admission",
