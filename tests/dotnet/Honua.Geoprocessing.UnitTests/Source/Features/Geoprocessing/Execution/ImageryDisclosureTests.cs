@@ -27,7 +27,12 @@ public sealed class ImageryDisclosureTests
         await FluentActions.Awaiting(() => client.InferAsync(options, request, default)).Should().ThrowAsync<ImageryInferenceException>().WithMessage("*disclosure*");
         options.Disclosure.Approvals.Add(new AiDisclosureApproval
         {
-            Provider = "http", Kind = "http", Destination = options.Endpoint, Model = "other-model", UseCase = "imagery-inference", DataClassification = "unclassified"
+            Provider = "http",
+            Kind = "http",
+            Destination = options.Endpoint,
+            Model = "other-model",
+            UseCase = "imagery-inference",
+            DataClassification = "unclassified"
         });
         await FluentActions.Awaiting(() => client.InferAsync(options, request, default)).Should().ThrowAsync<ImageryInferenceException>().WithMessage("*disclosure*");
         handler.Calls.Should().Be(0);
@@ -45,7 +50,12 @@ public sealed class ImageryDisclosureTests
         var options = new ImageryInferenceOptions { Provider = "http", Endpoint = "https://inference.example/v1" };
         options.Disclosure.Approvals.Add(new AiDisclosureApproval
         {
-            Provider = "http", Kind = "http", Destination = options.Endpoint, Model = "approved-model", UseCase = "imagery-inference", DataClassification = "unclassified"
+            Provider = "http",
+            Kind = "http",
+            Destination = options.Endpoint,
+            Model = "approved-model",
+            UseCase = "imagery-inference",
+            DataClassification = "unclassified"
         });
         await client.InferAsync(options, new ImageryInferenceRequest { Model = "approved-model", Task = "classification", ImageBytes = [1, 2, 3], MaxArtifactBytes = 1024 }, default);
         handler.Calls.Should().Be(1);

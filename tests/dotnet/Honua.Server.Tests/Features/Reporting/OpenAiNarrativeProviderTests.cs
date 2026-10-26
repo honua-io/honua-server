@@ -182,7 +182,8 @@ public sealed class OpenAiNarrativeProviderTests
         {
             Narrative = new ReportingNarrativeConfiguration
             {
-                Enabled = true, ApiKey = "fake-api-key",
+                Enabled = true,
+                ApiKey = "fake-api-key",
                 Disclosure = disclosure ?? ApprovedDisclosure()
             }
         }), NullLogger<OpenAiNarrativeProvider>.Instance);
