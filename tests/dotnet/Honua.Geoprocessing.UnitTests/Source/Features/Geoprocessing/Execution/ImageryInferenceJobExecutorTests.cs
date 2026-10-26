@@ -1269,8 +1269,12 @@ public sealed class ImageryInferenceJobExecutorTests
             {
                 Approvals = new[] { "landcover-v2", "fallback-model" }.Select(model => new AiDisclosureApproval
                 {
-                    Provider = provider, Kind = "http", Destination = endpoint, Model = model,
-                    UseCase = "imagery-inference", DataClassification = "unclassified"
+                    Provider = provider,
+                    Kind = "http",
+                    Destination = endpoint,
+                    Model = model,
+                    UseCase = "imagery-inference",
+                    DataClassification = "unclassified"
                 }).ToList()
             }
         };
