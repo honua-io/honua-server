@@ -150,6 +150,28 @@ in deployment manifests. Defaults are unchanged when a key is absent. Existing
 `Alerts:Enabled` / `Alerts__Enabled` behavior is unchanged; this correction applies to
 the nested evaluation, dispatch, delivery-channel, and operations settings.
 
+### Credential and identity management requires full-administrator authority
+
+API keys that hold only `admin:write` or `admin:manage` now receive `403` on the routes
+that create, rotate or revoke API keys, change user roles, deprovision users, and register
+or delete OAuth clients. Earlier builds accepted those keys there. Request and response
+shapes are unchanged, and the keys keep read access to these resources and admin write
+access elsewhere.
+
+Before upgrading, find automation that manages credentials with a scoped key and move it to
+one of these:
+
+1. **A full-administrator key.** Mint a dedicated key granted `admin:*`, store it in your
+   secret manager, and use it only for credential and identity management. Keep the scoped
+   key for everything else.
+2. **The bootstrap credential** (`HONUA_ADMIN_PASSWORD`) for one-off or break-glass changes.
+3. **An approved operation.** Submit the change as a proposal; after a separate approver
+   accepts it, Honua replays it with a credential bound to that exact method and path.
+
+After upgrading, a `403` on these routes with `CredentialManagementDenied` (event id 4119)
+in the server log identifies a caller that still needs moving. The route list is in
+[Credential and identity management](../../reference/admin-api/users-roles-licensing.md#credential-and-identity-management).
+
 ### Preview raster and coverage surfaces
 
 WMTS, OGC API Coverages, and EDR are Preview in 2026.1. Their

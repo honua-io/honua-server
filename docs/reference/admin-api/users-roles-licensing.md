@@ -29,7 +29,7 @@ Grants are case-insensitive and trimmed. A key may combine grants; its authority
 | Grant | Authority |
 |---|---|
 | `admin`, `*`, `admin:*` | Full admin: every admin endpoint, plus data access governed by access policies. |
-| `admin:write`, `admin:manage` | Full admin write (implies admin read). |
+| `admin:write`, `admin:manage` | Admin write (implies admin read), except credential and identity management; see [Credential and identity management](#credential-and-identity-management). |
 | `admin:read` | Admin read only (safe HTTP methods). Grants **no** service or layer data access on its own. |
 | `admin:approve` | Admin read plus proposal approve/reject. Grants no data access on its own. |
 | `ops:read`, `ops:reader`, `ops:*` | Read-only operational surfaces (operate status, ops health, findings, alerts). No data access. |
@@ -40,6 +40,38 @@ Grants are case-insensitive and trimmed. A key may combine grants; its authority
 | `read:*` | Read any layer of any service. |
 
 A key without a full-admin grant (for example `admin:read` or `admin:approve`) is scope-governed: service and layer reads are allowed only when one of its `read:` grants matches the target, and denied otherwise. Wildcards exist only for `read:`; `write:*` and `write:{service}/*` are rejected, as are grants with an empty service or layer (`read:`, `read:{service}/`, `read:*/{layer}`). A wildcard read is evaluated through the same path as a named `read:` grant, so access policies, field masks, row-level filters and tenant visibility apply to it unchanged. `GET /api/v1/admin/api-keys/{id}/effective-permissions` reports the grants exactly as stored, including wildcards.
+
+### Credential and identity management
+
+These routes change who can authenticate and with what authority. They require
+full-administrator credential authority:
+
+| Method | Path |
+|---|---|
+| POST | `/api/v1/admin/api-keys` |
+| POST | `/api/v1/admin/api-keys/{id}/rotate` |
+| POST | `/api/v1/admin/api-keys/{id}/revoke` |
+| PUT | `/api/v1/admin/users/{id}/roles` |
+| DELETE | `/api/v1/admin/users/{id}` |
+| POST | `/api/v1/admin/oauth-clients` |
+| DELETE | `/api/v1/admin/oauth-clients/{id}` |
+
+Full-administrator credential authority is one of:
+
+- an API key granted `admin`, `*` or `admin:*`;
+- the bootstrap credential (`HONUA_ADMIN_PASSWORD`);
+- a client certificate or a human administrator session in the `admin` role with no
+  narrower permission claims;
+- an approved operation: after a separate approver accepts a proposal for one of these
+  routes, Honua replays it with a short-lived credential bound to that exact method and
+  path.
+
+Keys holding only `admin:write`, `admin:manage`, `admin:read` or `admin:approve` receive
+`403` on these routes and nothing changes. They keep read access to the same resources
+(`GET /api/v1/admin/api-keys`, `GET /api/v1/admin/users`, the OAuth client reads and the
+effective-permissions routes) and their admin write access elsewhere. Request and response
+shapes are the same for every caller. Each refusal is logged as
+`CredentialManagementDenied` (event id 4119).
 
 ## Roles and permissions
 

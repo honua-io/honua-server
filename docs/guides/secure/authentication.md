@@ -65,6 +65,13 @@ In the authorized [API explorer](../../reference/openapi-and-explorer.md), run `
 
 The response's `data.key` is shown once — store it immediately. Manage the lifecycle with `POST /api/v1/admin/api-keys/{id}/rotate` (returns a new secret), `POST .../{id}/revoke`, and `GET .../{id}/effective-permissions`.
 
+Creating, rotating and revoking keys, changing user roles, deprovisioning users and
+registering or deleting OAuth clients require full-administrator credential authority:
+a key granted `admin`, `*` or `admin:*`, the bootstrap credential, an administrator
+session, or an approved operation. An `admin:write` key such as `ci-publisher` above
+gets `403` on those routes. Keep credential management out of CI keys; the route list
+is in [Credential and identity management](../../reference/admin-api/users-roles-licensing.md#credential-and-identity-management).
+
 Credential expiry denies authentication while preserving the managed key's
 metadata, so administrators can still inspect its expired or revoked status.
 Redis retains this metadata for 3,650 days after expiry, or after the latest
@@ -293,6 +300,7 @@ A wrong or missing key returns `401` with a `WWW-Authenticate: ApiKey` challenge
 | `401` on admin endpoints | `HONUA_ADMIN_PASSWORD` unset or mismatched; confirm the `X-API-Key` header is present and the process restarted after the change. |
 | `generateToken` refuses to issue | Issuance is HTTPS-only by default — front the server with TLS (see [TLS and mTLS](tls-and-mtls.md)). |
 | Token works from one host but not another | Portal tokens are bound to `client=referer` or `client=ip`; re-issue with the binding the caller actually presents. |
+| `admin:write` or `admin:manage` key gets `403` creating, rotating or revoking API keys, changing user roles, deprovisioning users or managing OAuth clients | Expected: these routes need full-administrator authority. Use a key granted `admin`, `*` or `admin:*`, the bootstrap credential, an administrator session, or submit the change as a proposal for approval. See [Credential and identity management](../../reference/admin-api/users-roles-licensing.md#credential-and-identity-management). |
 | OIDC user signed in but gets `403` on admin routes | The IdP token lacks a role matching `Oidc__AdminRoles`; fix the claims mapping in your IdP. |
 
 More general failures: [Troubleshooting](../deploy/troubleshooting.md).
