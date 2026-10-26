@@ -150,3 +150,7 @@ ADR is what makes that ticket a correctness item rather than an enhancement.
   deployment configuration.
 - Nothing about ADR-0076's retirement of the generation families is reopened.
 - Bedrock direct-from-browser stays out of scope. The proxy is the answer there.
+
+## Provider failure diagnostics
+
+Studio proxy log events 6752, 6754 and 6755 retain provider identity, HTTP status where available, exception type and fixed execution phase only. Response bodies and exception payloads are omitted. Operators should use these fields to distinguish HTTP, transport and parsing failures; client error and cancellation behavior is unchanged.
