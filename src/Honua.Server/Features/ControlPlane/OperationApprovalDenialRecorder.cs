@@ -10,7 +10,8 @@ namespace Honua.ControlPlane;
 internal enum OperationApprovalDenialReason
 {
     SelfApproval,
-    EvidenceInvalid
+    EvidenceInvalid,
+    CurrentAuthority
 }
 
 /// <summary>Records a minimized, durable receipt for a terminating approval refusal.</summary>
@@ -30,6 +31,7 @@ internal static class OperationApprovalDenialRecorder
         {
             OperationApprovalDenialReason.SelfApproval => "self_approval",
             OperationApprovalDenialReason.EvidenceInvalid => "evidence_invalid",
+            OperationApprovalDenialReason.CurrentAuthority => "current_authority",
             _ => throw new ArgumentOutOfRangeException(nameof(reason))
         };
         var kind = Enum.IsDefined(proposal.Kind) ? proposal.Kind.ToString() : "Unknown";

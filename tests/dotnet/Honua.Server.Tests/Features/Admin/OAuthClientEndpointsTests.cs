@@ -56,6 +56,41 @@ public sealed class OAuthClientEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/oauth-clients")]
+    [Endpoint("DELETE /api/v1/admin/oauth-clients/{id}")]
+    public async Task OperationalWriteKey_CannotRegisterOrDeleteOAuthClients()
+    {
+        // Registering or deleting an OAuth client requires full-admin credential authority;
+        // an admin:write operational key gets 403 and keeps read access.
+        var keyResponse = await _client.PostAsJsonAsync(
+            "/api/v1/admin/api-keys",
+            new CreateAdminApiKeyRequest { Name = "operational-oauth-key", Permissions = ["admin:read", "admin:write", "read:*"] },
+            _jsonOptions);
+        Assert.Equal(HttpStatusCode.Created, keyResponse.StatusCode);
+        var operational = JsonSerializer.Deserialize<ApiResponse<AdminApiKeySecretResponse>>(
+            await keyResponse.Content.ReadAsStringAsync(), _jsonOptions)!.Data!;
+        using var operationalClient = _fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", operational.Key));
+        var existing = await CreateClientAsync("existing-client", ["client_credentials"], ["features:read"]);
+
+        var register = await operationalClient.PostAsJsonAsync(
+            "/api/v1/admin/oauth-clients",
+            new CreateOAuthClientRequest
+            {
+                Name = "operational-client",
+                ClientType = "confidential",
+                AllowedGrantTypes = ["client_credentials"],
+                AllowedScopes = ["features:read"],
+            },
+            _jsonOptions);
+        var delete = await operationalClient.DeleteAsync($"/api/v1/admin/oauth-clients/{existing.Client.Id}");
+
+        Assert.Equal(HttpStatusCode.Forbidden, register.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, delete.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await _client.GetAsync($"/api/v1/admin/oauth-clients/{existing.Client.Id}")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await operationalClient.GetAsync("/api/v1/admin/oauth-clients")).StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/oauth-clients")]
     [Endpoint("GET /api/v1/admin/oauth-clients")]
     public async Task RegisterAndListClient_ReturnsSecretOnlyAtCreation()
     {

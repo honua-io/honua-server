@@ -33,6 +33,12 @@ public static class AuthenticationExtensions
     public const string AdminApprovePolicy = "AdminApprove";
 
     /// <summary>
+    /// Authorization policy for creating, rotating or revoking credentials and changing
+    /// identity authority. Requires the admin policy plus full-admin credential authority.
+    /// </summary>
+    public const string AdminCredentialManagementPolicy = "AdminCredentialManagement";
+
+    /// <summary>
     /// Authorization policy name for the read-only operational-observability surfaces (A12).
     /// Admits the admin family (full admin or <c>admin:read</c>) or a dedicated read-only
     /// <c>ops:read</c> credential for safe reads, while still requiring full admin write for any
@@ -112,6 +118,7 @@ public static class AuthenticationExtensions
         // in every policy that adds AdminPermissionRequirement below.
         services.AddSingleton<IAuthorizationHandler, AdminPermissionAuthorizationHandler>();
         services.AddSingleton<IAuthorizationHandler, AdminApproveAuthorizationHandler>();
+        services.AddSingleton<IAuthorizationHandler, AdminCredentialManagementAuthorizationHandler>();
 
         // Enforces the read-only ops-reader split (A12): admits admin or ops:read grants for safe
         // reads while requiring full admin write for mutating requests routed through OpsReadPolicy.
@@ -152,6 +159,11 @@ public static class AuthenticationExtensions
             options.AddPolicy(AdminPolicy, policy => ConfigureAdminPolicy(policy, mtlsCapabilityEnabled));
             options.AddPolicy(AdminPolicyAlias, policy => ConfigureAdminPolicy(policy, mtlsCapabilityEnabled));
             options.AddPolicy(AdminApprovePolicy, policy => ConfigureAdminApprovePolicy(policy, mtlsCapabilityEnabled));
+            options.AddPolicy(AdminCredentialManagementPolicy, policy =>
+            {
+                ConfigureAdminPolicy(policy, mtlsCapabilityEnabled);
+                _ = policy.AddRequirements(new AdminCredentialManagementRequirement());
+            });
             options.AddPolicy(OpsReadPolicy, policy => ConfigureOpsReadPolicy(policy, mtlsCapabilityEnabled));
             options.AddPolicy(TemporalHistoryReadPolicy, policy => ConfigureAdminPolicy(policy, mtlsCapabilityEnabled));
             options.AddPolicy(TemporalDiffReadPolicy, policy => ConfigureAdminPolicy(policy, mtlsCapabilityEnabled));
@@ -282,6 +294,14 @@ public static class AuthenticationExtensions
     /// </summary>
     public static TBuilder RequireAdminAuthorization<TBuilder>(this TBuilder builder)
         where TBuilder : IEndpointConventionBuilder => builder.RequireAuthorization(AdminPolicy);
+
+    /// <summary>
+    /// Requires full-admin credential authority for endpoints that create, rotate or revoke
+    /// credentials or change identity authority. Apply per mutating
+    /// route on top of the group's <see cref="RequireAdminAuthorization{TBuilder}"/>.
+    /// </summary>
+    public static TBuilder RequireAdminCredentialManagementAuthorization<TBuilder>(this TBuilder builder)
+        where TBuilder : IEndpointConventionBuilder => builder.RequireAuthorization(AdminCredentialManagementPolicy);
 
     /// <summary>Requires full admin authority or the narrow <c>admin:approve</c> grant.</summary>
     public static TBuilder RequireAdminApproveAuthorization<TBuilder>(this TBuilder builder)

@@ -226,8 +226,17 @@ internal sealed class DeterministicGroundingEngine : IGroundingEngine
         }
 
         results.Sort(GroundingCandidateComparer.ByScoreDescending);
-        return results;
+        return KeepBestPerId(results);
     }
+
+    /// <summary>
+    /// A candidate ID is the reference a draft intent binds to, so a ranking must not list
+    /// it twice. Several readable resources (for example a feature dataset and the imagery
+    /// dataset over the same storage layer) can resolve to one storage layer ID; keep the
+    /// first, which is the best-ranked by the deterministic comparer.
+    /// </summary>
+    private static List<GroundingCandidate> KeepBestPerId(List<GroundingCandidate> sorted)
+        => sorted.DistinctBy(candidate => candidate.Id, StringComparer.Ordinal).ToList();
 
     public IReadOnlyList<GroundingCandidate> ScoreServices(
         GroundingRequest request,

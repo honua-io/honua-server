@@ -20,6 +20,7 @@ public sealed class OperationApprovalDenialRecorderTests
     [UnitTheory]
     [InlineData(0, "self_approval")]
     [InlineData(1, "evidence_invalid")]
+    [InlineData(2, "current_authority")]
     public async Task RecordAsync_PersistedDecision_JoinsOnlyAllowlistedDetails(
         int reason, string code)
     {

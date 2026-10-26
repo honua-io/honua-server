@@ -201,4 +201,14 @@ internal static partial class AuthenticationLog
         Level = LogLevel.Error,
         Message = "Admin API key store is unavailable; bootstrap admin password remains the break-glass credential")]
     public static partial void AdminApiKeyStoreUnavailable(ILogger logger, Exception exception);
+
+    /// <summary>
+    /// Logs when a principal with general admin write is denied a credential or identity
+    /// management request because it lacks full-admin authority.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 4119,
+        Level = LogLevel.Warning,
+        Message = "Credential management denied for {Method} request: principal lacks full-admin credential authority")]
+    public static partial void CredentialManagementDenied(ILogger logger, string method);
 }

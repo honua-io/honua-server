@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:627d48f627a2d15c34c58e7bec310173578d222eea1eccf7725d7aa6cfe85d12",
+  "bundleDigest": "sha256:cb73a45232167e21202672a33fd35fef604e9d7851a9e5c11af1f4f4bb1cba72",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -134,7 +134,7 @@
     {
       "id": "concepts/domain/approval",
       "path": "concepts/domain/approval.md",
-      "documentDigest": "sha256:7fc38fba17273a433cfd34f5f268fe37660074538b080c64f62e893c303d09c4",
+      "documentDigest": "sha256:7e582331093e775b6c6cd66d3708046c75df7b55ca80bad884203387f6956c9b",
       "metadata": {
         "type": "concept",
         "title": "Approval",
