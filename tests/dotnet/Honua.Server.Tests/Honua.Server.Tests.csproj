@@ -106,6 +106,7 @@
     <Compile Include="../Shared/AlertUnitSupport/AzurePublisherFake.cs" Link="Shared/AzurePublisherFake.cs" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="../Shared/ProtocolUnits/Ai/McpTestFactory.cs" Link="Shared/McpTestFactory.cs" />
     <Compile Include="../Shared/ProtocolUnits/Ai/SpecGroundingTestSupport.cs" Link="Shared/SpecGroundingTestSupport.cs" />
   </ItemGroup>
 </Project>

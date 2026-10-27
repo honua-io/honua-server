@@ -27,6 +27,14 @@ The handshake methods (`initialize`, `tools/list`, `resources/list`, `resources/
 
 Layer references also require tenant-visible publications and shared resource access for the requested operation. Entity resolution and grounding rank only readable publications and omit services without readable publications or service metadata access. A layer-specific grant preserves the layer candidate while service candidates require service metadata access. `honua_render_map` checks every requested layer before invoking the renderer; layer-specific style operations use the same checked resolver. Rendering checks query access, catalog and layer discovery check metadata access, and applying a style preset checks administrative resource access in addition to its operation authorization.
 
+## API-key proposals
+
+Published MCP tools `honua_admin_api_key_create` and `honua_admin_api_key_revoke` submit proposals through the canonical operation runtime. An allowed policy decision creates a durable pending proposal with separate operation-instance, proposal and audit identities; it does not create or revoke a key. Policy denials and dry-run-first requirements still refuse execution. These proposal submissions reject `dryRun: true`. Other operator-gated published tools retain their approval-required refusal.
+
+A separately authenticated authorized approver resolves the sealed proposal through the existing approval flow. Replay checks current original-requester authority and uses that original principal, with a single execution claim. Key creation returns an opaque secret reference; the one-time key stays in the protected secret channel and must not enter model context or transcripts. A client tool-consent callback does not constitute server approval.
+
+Clients may send one printable `Idempotency-Key` header of up to 128 characters on proposal calls. The runtime binds it to the authenticated principal, tenant, proposal mode and request fingerprint. An identical retry returns the existing proposal; changed input cannot reuse that key. Proposal calls bypass the published response cache. Missing durable proposal, audit or secret-aware runtime support fails closed. This source behavior does not establish installed qualification.
+
 ## Connect a client
 
 **Claude Code.** Add the server to the project's `.mcp.json`:

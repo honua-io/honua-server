@@ -3,6 +3,8 @@
 
 using System.Buffers;
 using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Honua.Core.Features.Authorization.Domain;
@@ -91,6 +93,10 @@ internal sealed class PublishedOperationTool : IMcpTool
     private bool RequiresAdminAuthorization =>
         _descriptor.OperationId.StartsWith("admin.", StringComparison.Ordinal);
 
+    private bool RequiresProposalSubmission =>
+        _descriptor.ApprovalModel == OperationApprovalModel.OperatorGate
+        && _descriptor.OperationId is "admin.api-key.create" or "admin.api-key.revoke";
+
     // Deterministic AND read-only invocations are the only ones safe to cache: a
     // cache must never skip a side effect or return a stale AI turn.
     private bool IsCacheable =>
@@ -148,7 +154,11 @@ internal sealed class PublishedOperationTool : IMcpTool
             Description = _descriptor.Description
                 + " Published operations-toolset operation '" + _descriptor.OperationId
                 + "', governed by the operation policy decision point on every invocation"
-                + " (allow / require-approval / dry-run-first / deny)." + determinismNote,
+                + " (allow / require-approval / dry-run-first / deny)."
+                + (RequiresProposalSubmission
+                    ? " This tool submits a proposal only, never the key mutation. A separately authenticated authorized approver must approve the sealed proposal; one-time keys remain in the protected secret channel."
+                    : string.Empty)
+                + determinismNote,
             InputSchema = _inputSchema,
             OutputSchema = McpToolOutputSchemas.OperationToolOutputSchema,
             Annotations = annotations,
@@ -166,7 +176,8 @@ internal sealed class PublishedOperationTool : IMcpTool
         var principal = McpAuthorizationHelper.EnsurePrincipal(httpContext);
         await EnsureOperationAuthorizationAsync(httpContext, principal, cancellationToken).ConfigureAwait(false);
 
-        if (_descriptor.ApprovalModel == OperationApprovalModel.OperatorGate)
+        var proposalOnly = RequiresProposalSubmission;
+        if (_descriptor.ApprovalModel == OperationApprovalModel.OperatorGate && !proposalOnly)
         {
             // Fail closed until #3586 replaces this refusal with the unified runtime's
             // transport-neutral approval proof. The MCP adapter must not implement an
@@ -206,7 +217,17 @@ internal sealed class PublishedOperationTool : IMcpTool
             DryRun = dryRun,
         };
 
-        var cacheKey = IsCacheable && !dryRun
+        if (proposalOnly && dryRun)
+        {
+            return McpToolHelpers.ErrorResult(new GeoprocessingValidationException("Dry-run requests cannot be submitted for approval."));
+        }
+
+        if (proposalOnly)
+        {
+            context = BindProposalIdentity(httpContext, request, context);
+        }
+
+        var cacheKey = !proposalOnly && IsCacheable && !dryRun
             ? IPublishedOperationCache.BuildKey(
                 _descriptor.OperationId,
                 _catalogVersion,
@@ -282,7 +303,19 @@ internal sealed class PublishedOperationTool : IMcpTool
                 new InvalidOperationException("The operations toolset is unavailable (no IOperationInvoker is registered in this composition)."));
         }
 
-        var handle = await invoker.SubmitAsync(request, context, cancellationToken).ConfigureAwait(false);
+        OperationHandle handle;
+        if (proposalOnly)
+        {
+            if (invoker is not IOperationProposalSubmitter proposer)
+            {
+                return McpToolHelpers.ErrorResult(new InvalidOperationException("The proposal-only operation runtime is unavailable."));
+            }
+            handle = await proposer.ProposeAsync(request, context, cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            handle = await invoker.SubmitAsync(request, context, cancellationToken).ConfigureAwait(false);
+        }
         var output = Project(handle, cacheKey);
 
         // Cache only a completed, deterministic, read-only result — never a
@@ -293,6 +326,22 @@ internal sealed class PublishedOperationTool : IMcpTool
         }
 
         return McpToolHelpers.SuccessResult(output, McpJsonContext.Default.McpOperationToolOutput);
+    }
+
+    private OperationPolicyContext BindProposalIdentity(HttpContext httpContext, OperationRequest request, OperationPolicyContext context)
+    {
+        if (!httpContext.Request.Headers.TryGetValue("Idempotency-Key", out var values)) return context;
+        var key = values.Count == 1 ? values[0] : null;
+        if (key is not { Length: > 0 and <= 128 } || key.Any(c => c is < '!' or > '~'))
+            throw new GeoprocessingValidationException("Idempotency-Key must be one bounded printable value.");
+
+        // The canonical proposal runtime owns mode/actor/tenant scoping and the full
+        // typed request fingerprint. This adapter adds only its discovery-version binding.
+        return context with
+        {
+            IdempotencyKey = key,
+            IdempotencyRequestHash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(_catalogVersion))),
+        };
     }
 
     private async Task EnsureOperationAuthorizationAsync(
