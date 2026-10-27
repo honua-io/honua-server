@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:33f4a4a295b800ae017b8cf05f4c66c71f24aa11799314297d8f11370f84cff3",
+  "bundleDigest": "sha256:60d1e15f7eef0552f106c6845e8de013f97dc12729ebd18782d07a5ec7a7acfa",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -2319,7 +2319,7 @@
     {
       "id": "guides/migrate/arcgis-apps-and-sdks",
       "path": "guides/migrate/arcgis-apps-and-sdks.md",
-      "documentDigest": "sha256:4bbaacac461e585e921b09f7a044e78ff3ac9cf95d0cfc36e1c223e2adb27812",
+      "documentDigest": "sha256:63b1834eb890c71e23f9d1cc8305e4f5604929d531c5e5cd4b4688ff9bb9bcb5",
       "metadata": {
         "type": "guide",
         "title": "Repoint ArcGIS apps and SDKs at Honua",
@@ -2330,7 +2330,7 @@
     {
       "id": "guides/migrate/from-arcgis-server",
       "path": "guides/migrate/from-arcgis-server.md",
-      "documentDigest": "sha256:a96c77d39b14b2975fbb83e4f93fcfdf05933613c51db8e554aea5b692a14271",
+      "documentDigest": "sha256:81c964e88e00f2bbaad210224786bbe53c6279b0af3afedc5c274a7a897c2efc",
       "metadata": {
         "type": "guide",
         "title": "Migrate from ArcGIS Server",
@@ -2698,7 +2698,7 @@
     {
       "id": "guides/style/import-sld-styles",
       "path": "guides/style/import-sld-styles.md",
-      "documentDigest": "sha256:e64f1d6fe89fb4971efa7ee215c17b4ece58073d289bd7bc701083ef4acea364",
+      "documentDigest": "sha256:99d6abc8f0655c30a3c047d0301feaef08cbc7db008c4d6765e84c22704522cf",
       "metadata": {
         "type": "guide",
         "title": "Import SLD styles",
@@ -2710,11 +2710,11 @@
     {
       "id": "guides/style/style-maps",
       "path": "guides/style/style-maps.md",
-      "documentDigest": "sha256:c66b8a6c498aa1bd80553f0dfba01537bfe07196b767c8b8f3e0076cb1ec02a4",
+      "documentDigest": "sha256:e19908227fad775bd1a186cb09d10beb7c61475d1e12c57ee742b574283a9c90",
       "metadata": {
         "type": "guide",
         "title": "Style map layers",
-        "description": "Set a layer's symbology once, as a MapLibre Style Spec v8 document, so vector-tile clients, WMS and static-map rendering, and ArcGIS drawingInfo read the same document. Feature labeling is not a served capability.",
+        "description": "Set a layer's symbology once, as a MapLibre Style Spec v8 document, so vector-tile clients, WMS and static-map rendering, and ArcGIS drawingInfo read the same document. The server does not generate or paint label classes. An author-supplied drawingInfo, including labelingInfo, is stored and returned unchanged.",
         "resource": "honua://capability/styling.defaults",
         "resources": [
           "honua://capability/styling.auto-suggest"
@@ -7538,7 +7538,7 @@
     {
       "id": "reference/admin-api/styles",
       "path": "reference/admin-api/styles.md",
-      "documentDigest": "sha256:61dcde8368654501823e3c32ce0bf7e99118d2e70c784964f680346f539223b9",
+      "documentDigest": "sha256:c86403fd33c7320dd5a09751424b6baeb1b137b057098a9b4509452be99a47f4",
       "metadata": {
         "type": "reference",
         "title": "Styles",
@@ -7600,7 +7600,7 @@
     {
       "id": "reference/compatibility/geoservices-parity",
       "path": "reference/compatibility/geoservices-parity.md",
-      "documentDigest": "sha256:6ddd992a4108f89917600a0eb02f80dcb2cf12e0a36a459d1388859bcad0d4e9",
+      "documentDigest": "sha256:d7fa0d2cd1e0203e6b1ed24df6f05d8396cddba0a320b3f68131d700c710233a",
       "metadata": {
         "type": "reference",
         "title": "GeoServices REST parity",

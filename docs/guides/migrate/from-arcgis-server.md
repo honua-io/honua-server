@@ -178,9 +178,11 @@ the versioned construct matrix (`matrixVersion`, currently `2026.1`). The matrix
 type, every queryable layer and nonspatial table, identities, geometry and CRS, fields and domains,
 subtypes, relationships, attachments, renderers and label classes, time metadata, and published edit
 behavior. Each construct names the check that verifies it after apply. Label classes are on that
-list because the scan records them as diagnostics. They are not a served labeling capability: a
+list because the scan records them as diagnostics. Migration does not generate or paint them: a
 simple field token is classified `automated`, so accounting can report disposition `migrated`, but
-apply does not write a label style or FeatureServer `labelingInfo`. See
+apply does not write a label style or FeatureServer `labelingInfo`. An operator can still store an
+author-supplied `drawingInfo`, and FeatureServer returns that document unchanged, including
+`labelingInfo`. See
 [Feature labeling is not served](../style/style-maps.md#feature-labeling-is-not-served).
 
 The run returns the result as `constructAccounting` as soon as it starts. Each entry maps a source
