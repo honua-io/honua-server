@@ -159,7 +159,7 @@ internal sealed class ZarrCoverageService
                 // JSON has no representation for NaN or infinity. Keep those
                 // sentinels in the binary reader, but do not make the schema
                 // endpoint fail serialization for a valid Zarr fill value.
-                NoDataValue = array.FillValue is double fill && double.IsFinite(fill)
+                NoDataValue = ZarrValueDecoder.TryGetFiniteFillValue(array.FillValue, out var fill)
                     ? fill
                     : null
             };
