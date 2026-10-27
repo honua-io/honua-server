@@ -752,11 +752,20 @@ internal sealed class ImageServerExportHandler
                 return false;
             }
 
-            if (request.CompressionQuality.HasValue &&
-                (request.CompressionQuality.Value < MinCompressionQuality || request.CompressionQuality.Value > MaxCompressionQuality))
+            var isLerc = string.Equals(request.Format?.Trim(), "lerc", StringComparison.OrdinalIgnoreCase);
+            var quality = request.CompressionQuality;
+            if (quality.HasValue &&
+                (quality.Value < MinCompressionQuality || quality.Value > MaxCompressionQuality))
             {
-                error = new ExportParameterParseError("compressionQuality must be between 0 and 100.");
-                return false;
+                // Pro's ExportImage sends 10000 with LERC. That is a maxZError scale, not a
+                // JPEG quality. The LERC block is lossless and does not use the value (#6563).
+                if (!isLerc)
+                {
+                    error = new ExportParameterParseError("compressionQuality must be between 0 and 100.");
+                    return false;
+                }
+
+                quality = null;
             }
 
             var outputSrid = SpatialReferenceHelpers.TryParseSrid(request.ImageSr);
@@ -840,7 +849,7 @@ internal sealed class ImageServerExportHandler
             query = new RasterQuery
             {
                 OutputFormat = outputFormat,
-                Quality = request.CompressionQuality,
+                Quality = quality,
                 OutputSrid = outputSrid,
                 OutputWidth = requestedWidth,
                 OutputHeight = requestedHeight,

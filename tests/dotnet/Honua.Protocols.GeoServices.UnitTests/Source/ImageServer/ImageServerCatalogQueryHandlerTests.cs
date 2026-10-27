@@ -137,6 +137,42 @@ public class ImageServerCatalogQueryHandlerTests
         feature.Attributes["CenterY"].Should().Be(0.0);
         feature.Attributes["BandCount"].Should().Be(1);
         feature.Attributes["PixelType"].Should().Be("8BUI");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_NativeCell_StaysVisibleWhenZoomedInPastIt()
+    {
+        // Esri keeps MinPS at 0 and MaxPS at native cell * the default range factor (10).
+        // Publishing MinPS = MaxPS = the cell makes the item visible at exactly one resolution.
+        // Client Compat Coverage is ~0.0023 degrees; the Pro drive at 1:339,824 is ~0.001
+        // degrees per pixel, which is outside that point and draws nothing (#6563).
+        const double pixelX = 0.00234375;
+        const double pixelY = 0.0021875;
+        const double displayCellAtReportedScale = 0.001;
+        var raster = CreateRaster(
+            100,
+            "Client Compat Coverage",
+            xMin: -122.5,
+            yMin: 37.84 - (256 * pixelY),
+            xMax: -122.5 + (256 * pixelX),
+            yMax: 37.84);
+        SetupLayerWithRasters([raster]);
+
+        var context = CreateImageServerContext();
+        var result = await _handler.QueryCatalogAsync(context, 1, EmptyValues(), CancellationToken.None);
+
+        var feature = result.Should().BeOfType<JsonHttpResult<CatalogQueryResponse>>().Which
+            .Value!.Features.Should().ContainSingle().Subject;
+        var low = Math.Min(pixelX, pixelY);
+        var high = Math.Max(pixelX, pixelY);
+        feature.Attributes["LowPS"].Should().BeOfType<double>().Which.Should().BeApproximately(low, 1e-12);
+        feature.Attributes["HighPS"].Should().BeOfType<double>().Which.Should().BeApproximately(high, 1e-12);
+        feature.Attributes["MinPS"].Should().Be(0d);
+        feature.Attributes["MaxPS"].Should().BeOfType<double>().Which
+            .Should().BeApproximately(high * ImageServerCatalogReader.CellSizeRangeFactor, 1e-12);
+        displayCellAtReportedScale.Should().BeGreaterThan(0d);
+        displayCellAtReportedScale.Should().BeLessThan(high * ImageServerCatalogReader.CellSizeRangeFactor);
         feature.Attributes["CreatedAt"].Should().Be(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds());
         feature.Geometry.Should().NotBeNull();
         feature.Geometry!.Rings.Should().HaveCount(1);

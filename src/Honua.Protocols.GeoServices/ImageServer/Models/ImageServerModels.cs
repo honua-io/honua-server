@@ -59,11 +59,31 @@ public sealed class ImageServerServiceInfo
     [JsonPropertyName("pixelType")]
     public required string PixelType { get; init; }
 
+    /// <summary>
+    /// Minimum pixel size at which the service draws, in the raster spatial-reference units.
+    /// Zero matches ArcGIS Server and means no zoom-in limit.
+    /// </summary>
     [JsonPropertyName("minPixelSize")]
     public required double MinPixelSize { get; init; }
 
+    /// <summary>
+    /// Maximum pixel size at which the service draws, in the raster spatial-reference units.
+    /// Zero matches ArcGIS Server and means no zoom-out limit.
+    /// </summary>
     [JsonPropertyName("maxPixelSize")]
     public required double MaxPixelSize { get; init; }
+
+    /// <summary>
+    /// Minimum scale denominator at which the service draws. Zero means no limit.
+    /// </summary>
+    [JsonPropertyName("minScale")]
+    public double MinScale { get; init; }
+
+    /// <summary>
+    /// Maximum scale denominator at which the service draws. Zero means no limit.
+    /// </summary>
+    [JsonPropertyName("maxScale")]
+    public double MaxScale { get; init; }
 
     [JsonPropertyName("copyrightText")]
     public string? CopyrightText { get; init; }
