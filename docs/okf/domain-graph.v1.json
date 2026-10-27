@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:d4cb2dc55f9fe503c2d5ddad9a6b2434815642a2df1ee4d4624deaa9d3f16349",
+  "bundleDigest": "sha256:faa61f79064ba231795b6ada2d7f3dc70fc9b09943899404f32318a7f2b2f098",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -2178,7 +2178,7 @@
     {
       "id": "guides/deploy/docker-compose",
       "path": "guides/deploy/docker-compose.md",
-      "documentDigest": "sha256:df51cbcaa27f9d5b32d909e65dfbf2908dc18002e542ac4f99e86c2d4bad3b35",
+      "documentDigest": "sha256:88099dda556aa58cc1b36abaa953f33fbc14e6de7017b08f7fae172c9c756baa",
       "metadata": {
         "type": "runbook",
         "title": "Deploy with Docker Compose",
