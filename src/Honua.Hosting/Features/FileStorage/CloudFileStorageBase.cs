@@ -59,6 +59,26 @@ internal abstract class CloudFileStorageBase : ICloudFileStorage
     protected SerializedUploadProgressWriter CreateProgressWriter(string uploadId)
         => new(ProgressStore, Logger, uploadId);
 
+    /// <summary>
+    /// Upload progress is diagnostic. A distributed progress-store failure must not fail
+    /// or cancel an upload that itself succeeded, except for out-of-memory (#6645).
+    /// </summary>
+    protected async Task TrySetUploadProgressAsync(
+        string uploadId,
+        UploadProgress progress,
+        TimeSpan? ttl,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await ProgressStore.SetProgressAsync(uploadId, progress, ttl, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            FileStorageLog.ProgressUpdateFailed(Logger, ex, uploadId);
+        }
+    }
+
     protected void ReportProgressToCaller(
         IProgress<UploadProgress>? progressReporter,
         string uploadId,
@@ -272,7 +292,7 @@ internal abstract class CloudFileStorageBase : ICloudFileStorage
             ErrorMessage = progressMessage,
             CurrentPhase = "Failed"
         };
-        await ProgressStore.SetProgressAsync(uploadId, failedProgress, TimeSpan.FromMinutes(10), CancellationToken.None);
+        await TrySetUploadProgressAsync(uploadId, failedProgress, TimeSpan.FromMinutes(10), CancellationToken.None);
         ReportProgressToCaller(request.Progress, uploadId, failedProgress);
         FileStorageLog.FileUploadFailed(Logger, ex, request.FileName);
         return UploadResult.CreateFailure(resultMessage, stopwatch.Elapsed);
@@ -297,7 +317,7 @@ internal abstract class CloudFileStorageBase : ICloudFileStorage
             ErrorMessage = "Upload was cancelled",
             CurrentPhase = "Cancelled"
         };
-        await ProgressStore.SetProgressAsync(uploadId, cancelledProgress, TimeSpan.FromMinutes(10), CancellationToken.None);
+        await TrySetUploadProgressAsync(uploadId, cancelledProgress, TimeSpan.FromMinutes(10), CancellationToken.None);
         ReportProgressToCaller(request.Progress, uploadId, cancelledProgress);
     }
 
@@ -391,7 +411,7 @@ internal abstract class CloudFileStorageBase : ICloudFileStorage
                     CompletedAt = DateTimeOffset.UtcNow,
                     CurrentPhase = "Cancelled"
                 };
-                await ProgressStore.SetProgressAsync(uploadId, cancelledProgress, TimeSpan.FromMinutes(10), cancellationToken);
+                await TrySetUploadProgressAsync(uploadId, cancelledProgress, TimeSpan.FromMinutes(10), cancellationToken);
             }
 
             // Enhanced cleanup: Attempt to cleanup any partially uploaded files

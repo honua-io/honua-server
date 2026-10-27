@@ -7,6 +7,7 @@ using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
+using Honua.Db.DuckDB.Features.Infrastructure;
 
 namespace Honua.Db.DuckDB.Queries.Filters;
 
@@ -151,7 +152,7 @@ internal sealed class DuckDbSqlFilterTranslator : SqlFilterExpressionVisitorBase
         var right = TranslateGeometryExpression(spatial.Right, context);
         var distance = TranslateExpression(spatial.Distance, context);
 
-        if (DistanceConversions.IsGeographicSrid(context.Wkid))
+        if (context.Wkid == DuckDbGeodesicSql.Nad27Srid || DistanceConversions.IsGeographicSrid(context.Wkid))
         {
             if (context.GeometryType is not GeometryType.Point)
             {
@@ -164,9 +165,11 @@ internal sealed class DuckDbSqlFilterTranslator : SqlFilterExpressionVisitorBase
             EnsurePointGeometryLiteral(spatial.Right);
 
             // DuckDB's spheroid function expects latitude/longitude, while Honua's axis
-            // contract is always X/Y (longitude/latitude).
-            var geodesicDistance =
-                $"ST_Distance_Spheroid(ST_FlipCoordinates({left}), ST_FlipCoordinates({right}))";
+            // contract is always X/Y (longitude/latitude). NAD27 is shifted to EPSG:4326
+            // first so those degrees are not measured as if they were WGS 84.
+            var geodesicDistance = context.Wkid == DuckDbGeodesicSql.Nad27Srid
+                ? DuckDbGeodesicSql.Nad27SpheroidDistance(left, right)
+                : $"ST_Distance_Spheroid(ST_FlipCoordinates({left}), ST_FlipCoordinates({right}))";
             return spatial.Operator switch
             {
                 SpatialOperator.DWithin => $"{geodesicDistance} <= {distance}",

@@ -26,12 +26,24 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
     private readonly TimeSpan _signedUrlLifetime;
 
     private readonly AwsS3Options _options;
-    private readonly AmazonS3Client _client;
+    private readonly IAmazonS3 _client;
 
     public AwsS3FileStorage(
         IOptions<CloudStorageOptions> options,
         ILogger<AwsS3FileStorage> logger,
         IUploadProgressStore progressStore)
+        : this(options, logger, progressStore, client: null)
+    {
+    }
+
+    /// <summary>
+    /// Test seam. Production construction passes <see langword="null"/> and builds the SDK client.
+    /// </summary>
+    internal AwsS3FileStorage(
+        IOptions<CloudStorageOptions> options,
+        ILogger<AwsS3FileStorage> logger,
+        IUploadProgressStore progressStore,
+        IAmazonS3? client)
         : base(logger, progressStore)
     {
         ArgumentNullException.ThrowIfNull(options);
@@ -60,7 +72,7 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
             throw new InvalidOperationException("AWS S3 access key ID is required when secret access key is provided.");
         }
 
-        _client = CreateClient(_options);
+        _client = client ?? CreateClient(_options);
     }
 
     public override CloudStorageProvider Provider => CloudStorageProvider.AwsS3;
@@ -96,7 +108,7 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
         UploadCancellationTokens[uploadId] = linkedCancellationSource;
 
         var initialProgress = UploadProgress.CreateInitial(uploadId, request.FileName, totalBytes, request.ContentType);
-        await ProgressStore.SetProgressAsync(uploadId, initialProgress, TimeSpan.FromHours(1), cancellationToken);
+        await TrySetUploadProgressAsync(uploadId, initialProgress, TimeSpan.FromHours(1), cancellationToken);
         ReportProgressToCaller(request.Progress, uploadId, initialProgress);
         SerializedUploadProgressWriter? progressWriter = null;
 
@@ -236,7 +248,7 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
                 await progressWriter.CloseAndDrainAsync().ConfigureAwait(false);
             }
 
-            await ProgressStore.SetProgressAsync(uploadId, completedProgress, TimeSpan.FromHours(1), cancellationToken);
+            await TrySetUploadProgressAsync(uploadId, completedProgress, TimeSpan.FromHours(1), cancellationToken);
             ReportProgressToCaller(request.Progress, uploadId, completedProgress);
 
             stopwatch.Stop();
