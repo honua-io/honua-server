@@ -137,6 +137,8 @@ public sealed class StudioAiHttpPreparationTests
         events.Should().Contain(evt => evt.Type == StudioAiChatEventType.MessageStop);
         handler.Sends.Should().Be(1);
         handler.Body.Should().Contain("original_tool");
+        using var sentBody = JsonDocument.Parse(handler.Body!);
+        sentBody.RootElement.GetProperty("max_tokens").GetInt32().Should().Be(4096);
         var provenance = events.Where(evt => evt.Type == StudioAiChatEventType.TranscriptProvenance)
             .Should().ContainSingle().Which.Provenance;
         provenance.Should().NotBeNull();
@@ -184,15 +186,193 @@ public sealed class StudioAiHttpPreparationTests
         handler.Body.Should().Contain("owned_tool").And.Contain("owned schema");
     }
 
+    [UnitTheory]
+    [InlineData("openai")]
+    [InlineData("anthropic")]
+    public async Task StreamAsync_CredentialAwaitDrift_UsesPreparedBytesAndExistingDefault(string kind)
+    {
+        var options = new StudioAiProxyProviderOptions
+        {
+            Kind = kind, Endpoint = "https://original.invalid/gateway/", Model = "original-model",
+            ApiKey = "secret://fixture-provider", MaxTokens = 4096, TimeoutSeconds = 10
+        };
+        var messages = new List<StudioAiMessage> { new() { Role = StudioAiRole.User, Content = "original input" } };
+        var secrets = Substitute.For<ISecretProvider>();
+        secrets.IsSecretReference("secret://fixture-provider").Returns(true);
+        secrets.GetSecretOrDefaultAsync("secret://fixture-provider", null, Arg.Any<CancellationToken>())
+            .Returns(async _ =>
+            {
+                await Task.Yield();
+                options.Endpoint = "https://later.invalid";
+                options.Model = "later-model";
+                options.MaxTokens = 256;
+                messages[0] = new() { Role = StudioAiRole.User, Content = "later input" };
+                return "fixture-key";
+            });
+        using var handler = new CapturingHandler(kind);
+        using var client = new HttpClient(handler);
+        var factory = Substitute.For<IHttpClientFactory>();
+        factory.CreateClient(Arg.Any<string>()).Returns(client);
+        var adapter = Adapter(kind, factory, secrets);
+        var stream = adapter.StreamAsync(options, new() { Messages = messages }, RecordingAiAdmission.TransportPermit(), default);
+        secrets.ReceivedCalls().Should().BeEmpty("constructing the lazy stream must not resolve credentials");
+        await foreach (var _ in stream) { }
+        handler.Sends.Should().Be(1);
+        handler.Destination.Should().Be("https://original.invalid/gateway" + (kind == "openai" ? "/chat/completions" : "/v1/messages"));
+        handler.ContentType.Should().Be("application/json; charset=utf-8");
+        using var body = JsonDocument.Parse(handler.Body!);
+        body.RootElement.GetProperty("max_tokens").GetInt32().Should().Be(4096);
+        handler.Body.Should().Contain("original input").And.NotContain("later input");
+    }
+
+    [UnitTheory]
+    [InlineData("openai", false)]
+    [InlineData("openai", true)]
+    [InlineData("anthropic", false)]
+    [InlineData("anthropic", true)]
+    public async Task PrepareChatAsync_CancellationAtAcquisition_ResolvesNoCredentialAndReleasesAcquiredPermit(string kind, bool afterAcquire)
+    {
+        using var cancellation = new CancellationTokenSource();
+        var config = HttpConfig(kind);
+        var secrets = Substitute.For<ISecretProvider>();
+        var factory = Substitute.For<IHttpClientFactory>();
+        var admission = new AfterAcquireAdmission(() => cancellation.Cancel());
+        var service = Service(config, Adapter(kind, factory, secrets), admission);
+        if (!afterAcquire) cancellation.Cancel();
+        await FluentActions.Awaiting(() => service.PrepareChatAsync(new()
+        {
+            Messages = [new() { Role = StudioAiRole.User, Content = "original input" }]
+        }, RecordingAiAdmission.Context(), cancellation.Token)).Should().ThrowAsync<OperationCanceledException>();
+        admission.Inner.Acquired.Should().Be(afterAcquire ? 1 : 0);
+        admission.Inner.Released.Should().Be(afterAcquire ? 1 : 0);
+        secrets.ReceivedCalls().Should().BeEmpty();
+        factory.ReceivedCalls().Should().BeEmpty();
+    }
+
+    [UnitTheory]
+    [InlineData("openai")]
+    [InlineData("anthropic")]
+    public async Task StreamPreparedChatAsync_CurrentDisclosureRevoked_NoCredentialOrSend(string kind)
+    {
+        var config = HttpConfig(kind);
+        var secrets = Substitute.For<ISecretProvider>();
+        var factory = Substitute.For<IHttpClientFactory>();
+        var admission = new RecordingAiAdmission();
+        var service = Service(config, Adapter(kind, factory, secrets), admission);
+        await using var prepared = await service.PrepareChatAsync(new()
+        {
+            Messages = [new() { Role = StudioAiRole.User, Content = "original input" }]
+        }, RecordingAiAdmission.Context(), default);
+        config.Disclosure.Approvals.Clear();
+        var events = new List<StudioAiChatEvent>();
+        await foreach (var evt in service.StreamPreparedChatAsync(prepared, new(), default)) events.Add(evt);
+        events.Should().ContainSingle().Which.ErrorCode.Should().Be("studio_ai/disclosure_denied");
+        admission.Released.Should().Be(1);
+        secrets.ReceivedCalls().Should().BeEmpty();
+        factory.ReceivedCalls().Should().BeEmpty();
+    }
+
+    [UnitTheory]
+    [InlineData("openai")]
+    [InlineData("anthropic")]
+    public async Task StreamPreparedChatAsync_CancelledBeforeEnumeration_ReleasesWithoutCredentialsOrSend(string kind)
+    {
+        var config = HttpConfig(kind);
+        var factory = Substitute.For<IHttpClientFactory>();
+        var secrets = Substitute.For<ISecretProvider>();
+        var admission = new RecordingAiAdmission();
+        var service = Service(config, Adapter(kind, factory, secrets), admission);
+        await using var prepared = await service.PrepareChatAsync(new()
+        {
+            Messages = [new() { Role = StudioAiRole.User, Content = "original input" }]
+        }, RecordingAiAdmission.Context(), default);
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        await FluentActions.Awaiting(async () =>
+        {
+            await foreach (var _ in service.StreamPreparedChatAsync(prepared, new(), cancellation.Token)) { }
+        }).Should().ThrowAsync<OperationCanceledException>();
+        admission.Released.Should().Be(1);
+        secrets.ReceivedCalls().Should().BeEmpty();
+        factory.ReceivedCalls().Should().BeEmpty();
+    }
+
+    [UnitTheory]
+    [InlineData("openai")]
+    [InlineData("anthropic")]
+    public async Task StreamAsync_AlreadyCancelledWithInvalidDestination_PreservesInitialPermitGate(string kind)
+    {
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        var factory = Substitute.For<IHttpClientFactory>();
+        var secrets = Substitute.For<ISecretProvider>();
+        var adapter = Adapter(kind, factory, secrets);
+        var stream = adapter.StreamAsync(new() { Kind = kind, Endpoint = "invalid", Model = "original-model" },
+            new() { Messages = [new() { Role = StudioAiRole.User, Content = "original input" }] },
+            RecordingAiAdmission.TransportPermit(), cancellation.Token);
+        await FluentActions.Awaiting(async () => { await foreach (var _ in stream) { } })
+            .Should().ThrowAsync<OperationCanceledException>();
+        secrets.ReceivedCalls().Should().BeEmpty();
+        factory.ReceivedCalls().Should().BeEmpty();
+    }
+
+    [UnitTheory]
+    [InlineData("openai")]
+    [InlineData("anthropic")]
+    public async Task PrepareChatAsync_InvalidFinalDestination_RejectsBeforeAdmissionOrCredentials(string kind)
+    {
+        var config = HttpConfig(kind);
+        config.Providers["original"].Endpoint = "not an absolute URI";
+        var factory = Substitute.For<IHttpClientFactory>();
+        var secrets = Substitute.For<ISecretProvider>();
+        var admission = new RecordingAiAdmission();
+        var service = Service(config, Adapter(kind, factory, secrets), admission);
+        var error = await FluentActions.Awaiting(() => service.PrepareChatAsync(new()
+        {
+            Messages = [new() { Role = StudioAiRole.User, Content = "original input" }]
+        }, RecordingAiAdmission.Context(), default)).Should().ThrowAsync<AiAdmissionException>();
+        error.Which.Code.Should().Be("invalid_context");
+        admission.Acquired.Should().Be(0);
+        secrets.ReceivedCalls().Should().BeEmpty();
+        factory.ReceivedCalls().Should().BeEmpty();
+    }
+
+    private static StudioAiProxyConfiguration HttpConfig(string kind)
+    {
+        var config = new StudioAiProxyConfiguration { Enabled = true, DefaultProvider = "original" };
+        config.Providers["original"] = new()
+        {
+            Kind = kind, Endpoint = "https://original.invalid", Model = "original-model",
+            ApiKey = "secret://fixture-provider", MaxTokens = 4096, TimeoutSeconds = 10
+        };
+        config.Disclosure.Approvals.Add(new()
+        {
+            Provider = "original", Kind = kind, Destination = "https://original.invalid", Model = "original-model",
+            UseCase = "studio-chat", DataClassification = "unclassified"
+        });
+        return config;
+    }
+
+    private sealed class AfterAcquireAdmission(Action after) : IAiExecutionAdmission
+    {
+        public RecordingAiAdmission Inner { get; } = new();
+        public async Task<IAiExecutionPermit> AcquireAsync(AiExecutionContext context, CancellationToken cancellationToken)
+        {
+            var permit = await Inner.AcquireAsync(context, cancellationToken);
+            after();
+            return permit;
+        }
+    }
+
     private static StudioAiProxyService Service(StudioAiProxyConfiguration config, IStudioAiProxyAdapter adapter, IAiExecutionAdmission admission,
         ISecretProvider? secrets = null)
         => new(Options.Create(config), [adapter], new StudioAiTranscriptSigner(Options.Create(config), TimeProvider.System, secrets),
             NullLogger<StudioAiProxyService>.Instance, admission);
 
-    private static IStudioAiProxyAdapter Adapter(string kind, IHttpClientFactory factory)
+    private static IStudioAiProxyAdapter Adapter(string kind, IHttpClientFactory factory, ISecretProvider? secrets = null)
         => kind == "openai"
-            ? new OpenAiCompatibleStudioAiProxyAdapter(factory, new StudioAiProxyApiKeyResolver(), NullLogger<OpenAiCompatibleStudioAiProxyAdapter>.Instance)
-            : new AnthropicStudioAiProxyAdapter(factory, new StudioAiProxyApiKeyResolver(), NullLogger<AnthropicStudioAiProxyAdapter>.Instance);
+            ? new OpenAiCompatibleStudioAiProxyAdapter(factory, new StudioAiProxyApiKeyResolver(secrets), NullLogger<OpenAiCompatibleStudioAiProxyAdapter>.Instance)
+            : new AnthropicStudioAiProxyAdapter(factory, new StudioAiProxyApiKeyResolver(secrets), NullLogger<AnthropicStudioAiProxyAdapter>.Instance);
 
     private sealed class MutatingAdmission(Action mutate) : IAiExecutionAdmission
     {
@@ -210,11 +390,13 @@ public sealed class StudioAiHttpPreparationTests
         public int Sends { get; private set; }
         public string? Destination { get; private set; }
         public string? Body { get; private set; }
+        public string? ContentType { get; private set; }
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             Sends++;
             Destination = request.RequestUri!.AbsoluteUri;
             Body = await request.Content!.ReadAsStringAsync(cancellationToken);
+            ContentType = request.Content.Headers.ContentType!.ToString();
             var response = kind == "openai"
                 ? "data: {\"model\":\"original-model\",\"choices\":[{\"delta\":{\"content\":\"observed\"},\"finish_reason\":null}]}\n\ndata: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"
                 : "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"model\":\"original-model\"}}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n";
