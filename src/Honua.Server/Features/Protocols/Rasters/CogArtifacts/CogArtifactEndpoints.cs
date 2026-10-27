@@ -4,6 +4,7 @@
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
+using Honua.Server.Features.Infrastructure.FileStorage;
 using Honua.Server.Features.Protocols.Tiles.PMTilesProxy;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Net.Http.Headers;
@@ -108,9 +109,11 @@ internal static class CogArtifactEndpoints
         var metadata = target.File;
 
         var response = context.Response;
-        response.Headers[HeaderNames.AcceptRanges] = "bytes";
-        response.Headers[HeaderNames.ETag] = $"\"{metadata.SizeBytes:x}-{metadata.UploadedAt.ToUnixTimeSeconds():x}\"";
-        response.Headers[HeaderNames.LastModified] = metadata.UploadedAt.ToString("R");
+        var conditions = ArtifactHttpConditions.Evaluate(context, metadata);
+        if (conditions.StatusCode is { } statusCode)
+        {
+            return TypedResults.StatusCode(statusCode);
+        }
         response.ContentType = CogArtifactService.ContentType;
 
         if (HttpMethods.IsHead(context.Request.Method))
@@ -119,7 +122,7 @@ internal static class CogArtifactEndpoints
             return TypedResults.Empty;
         }
 
-        var rangeHeader = context.Request.Headers[HeaderNames.Range].ToString();
+        var rangeHeader = conditions.RangeHeader;
         var rangeResult = await rangeProxy.ReadRangeAsync(metadata, rangeHeader, cancellationToken).ConfigureAwait(false);
 
         switch (rangeResult.Outcome)
@@ -155,7 +158,7 @@ internal static class CogArtifactEndpoints
                 {
                     return TypedResults.NotFound();
                 }
-                return Results.Stream(fullStream, response.ContentType, enableRangeProcessing: true);
+                return Results.Stream(fullStream, response.ContentType, enableRangeProcessing: false);
         }
     }
 }

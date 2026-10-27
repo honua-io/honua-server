@@ -5,6 +5,7 @@ using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
+using Honua.Server.Features.Infrastructure.FileStorage;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Net.Http.Headers;
@@ -94,9 +95,11 @@ internal static partial class PMTilesProxyEndpoints
         }
 
         var response = context.Response;
-        response.Headers[HeaderNames.AcceptRanges] = "bytes";
-        response.Headers[HeaderNames.ETag] = $"\"{metadata.SizeBytes:x}-{metadata.UploadedAt.ToUnixTimeSeconds():x}\"";
-        response.Headers[HeaderNames.LastModified] = metadata.UploadedAt.ToString("R");
+        var conditions = ArtifactHttpConditions.Evaluate(context, metadata);
+        if (conditions.StatusCode is { } statusCode)
+        {
+            return TypedResults.StatusCode(statusCode);
+        }
         response.ContentType = string.IsNullOrWhiteSpace(metadata.ContentType)
             ? PMTilesContentType
             : metadata.ContentType;
@@ -107,7 +110,7 @@ internal static partial class PMTilesProxyEndpoints
             return TypedResults.Empty;
         }
 
-        var rangeHeader = context.Request.Headers[HeaderNames.Range].ToString();
+        var rangeHeader = conditions.RangeHeader;
         var rangeResult = await service.ReadRangeAsync(metadata, rangeHeader, cancellationToken).ConfigureAwait(false);
 
         switch (rangeResult.Outcome)
@@ -152,7 +155,7 @@ internal static partial class PMTilesProxyEndpoints
                 {
                     return TypedResults.NotFound();
                 }
-                return Results.Stream(fullStream, response.ContentType, enableRangeProcessing: true);
+                return Results.Stream(fullStream, response.ContentType, enableRangeProcessing: false);
         }
     }
 
