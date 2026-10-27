@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Buffers.Binary;
 using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Text.Json;
@@ -20,6 +21,140 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Servic
 
 public sealed class GeoParquetQueryFormatterTests(ITestOutputHelper output)
 {
+    [Fact]
+    public void FormatAsGeoParquet_AmbiguousRuntimeAttributeNames_RejectsBeforeEncoding()
+    {
+        var feature = Feature.Create(1, null,
+            new Dictionary<string, object?> { ["distance"] = 1d, ["Distance"] = 2d }.ToImmutableDictionary());
+        var act = () => GeoParquetQueryFormatter.FormatAsGeoParquet(
+            QueryResult<Feature>.Create(1, [feature]), CreateResource(), false, 4326, false, false, new GeometryLimits());
+        act.Should().Throw<InvalidOperationException>().WithMessage("*ambiguous attribute name*");
+    }
+
+    [Fact]
+    public async Task FormatAsGeoParquet_DeclaredXyzWithNaNZ_PreservesWkbDimensionAndMetadata()
+    {
+        var input = new WKBWriter(ByteOrder.LittleEndian, handleSRID: false, emitZ: true, emitM: false)
+            .Write(new Point(new CoordinateZ(1, 2, double.NaN)));
+        var feature = Feature.Create(1, input, ImmutableDictionary<string, object?>.Empty);
+        var (payload, _) = GeoParquetQueryFormatter.FormatAsGeoParquet(
+            QueryResult<Feature>.Create(1, [feature]), CreateResource(), true, 4326, true, false, new GeometryLimits());
+        using var reader = new ParquetSharp.Arrow.FileReader(new MemoryStream(payload));
+        using var batches = reader.GetRecordBatchReader();
+        using var batch = await batches.ReadNextRecordBatchAsync();
+        var wkb = ((BinaryArray)batch!.Column("geometry")).GetBytes(0).ToArray();
+        BinaryPrimitives.ReadUInt32LittleEndian(wkb.AsSpan(1, 4)).Should().Be(1001);
+        using var geo = JsonDocument.Parse(reader.Schema.Metadata["geo"]);
+        geo.RootElement.GetProperty("columns").GetProperty("geometry").GetProperty("geometry_types")
+            .EnumerateArray().Select(value => value.GetString()).Should().Equal("Point Z");
+    }
+
+    [Theory]
+    [InlineData("geometry")]
+    [InlineData("Geometry")]
+    [InlineData("bbox")]
+    [InlineData("BBOX")]
+    public async Task FormatAsGeoParquet_AttributeMatchesGeneratedColumn_PreservesAttributeAndGeometry(string attributeName)
+    {
+        var names = new[] { attributeName, attributeName + "_1", attributeName + "_2" };
+        var resource = CreateResource(names.Select(name => Field(name, MetadataV2FieldType.String)).ToArray());
+        var feature = Feature.Create(1, CreatePointWkb(10, 20),
+            names.ToImmutableDictionary(name => name, name => (object?)("retained:" + name)));
+        var (payload, _) = GeoParquetQueryFormatter.FormatAsGeoParquet(
+            QueryResult<Feature>.Create(1, [feature]), resource, true, 4326, false, false, new GeometryLimits());
+        using var reader = new ParquetSharp.Arrow.FileReader(new MemoryStream(payload));
+        using var batches = reader.GetRecordBatchReader();
+        using var batch = await batches.ReadNextRecordBatchAsync();
+        foreach (var name in names)
+        {
+            ((StringArray)batch!.Column(name)).GetString(0).Should().Be("retained:" + name);
+        }
+        reader.Schema.FieldsList.Select(field => field.Name).Should().OnlyHaveUniqueItems();
+        using var geo = JsonDocument.Parse(reader.Schema.Metadata["geo"]);
+        var geometryName = geo.RootElement.GetProperty("primary_column").GetString()!;
+        geometryName.Should().NotBe(attributeName);
+        var geometryMetadata = geo.RootElement.GetProperty("columns").GetProperty(geometryName);
+        var decoded = new WKBReader().Read(((BinaryArray)batch.Column(geometryName)).GetBytes(0).ToArray());
+        decoded.Coordinate.X.Should().Be(10);
+        decoded.Coordinate.Y.Should().Be(20);
+        var bboxPath = geometryMetadata.GetProperty("covering").GetProperty("bbox").GetProperty("xmin")
+            .EnumerateArray().Select(value => value.GetString()).ToArray();
+        bboxPath[0].Should().NotBe(attributeName);
+        var bbox = (StructArray)batch.Column(bboxPath[0]!);
+        bbox.IsNull(0).Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData("GEOMETRYCOLLECTION Z (GEOMETRYCOLLECTION Z (POINT Z (1 2 3)))", true)]
+    [InlineData("GEOMETRYCOLLECTION Z (GEOMETRYCOLLECTION Z (POINT Z (1 2 3)))", false)]
+    [InlineData("GEOMETRYCOLLECTION Z (MULTIPOINT Z ((1 2 3), (4 5 6)))", true)]
+    [InlineData("GEOMETRYCOLLECTION Z (MULTIPOINT Z ((1 2 3), (4 5 6)))", false)]
+    [InlineData("GEOMETRYCOLLECTION Z (MULTILINESTRING Z ((1 2 3, 4 5 6)))", true)]
+    [InlineData("GEOMETRYCOLLECTION Z (MULTILINESTRING Z ((1 2 3, 4 5 6)))", false)]
+    [InlineData("GEOMETRYCOLLECTION Z (MULTIPOLYGON Z (((1 2 3, 4 2 6, 4 5 9, 1 2 3))))", true)]
+    [InlineData("GEOMETRYCOLLECTION Z (MULTIPOLYGON Z (((1 2 3, 4 2 6, 4 5 9, 1 2 3))))", false)]
+    public async Task FormatAsGeoParquet_NestedXyzCollections_PreservesRequestedDimensionsAndMetadata(string wkt, bool returnZ)
+    {
+        var source = new WKTReader().Read(wkt);
+        var inputWkb = new WKBWriter(ByteOrder.LittleEndian, handleSRID: false, emitZ: true, emitM: false).Write(source);
+        var feature = Feature.Create(1, inputWkb, ImmutableDictionary<string, object?>.Empty);
+        var resource = CreateResourceWithGeometryType(MetadataV2GeometryType.GeometryCollection);
+        var (payload, _) = GeoParquetQueryFormatter.FormatAsGeoParquet(
+            QueryResult<Feature>.Create(1, [feature]), resource, true, 4326, returnZ, false, new GeometryLimits());
+        using var reader = new ParquetSharp.Arrow.FileReader(new MemoryStream(payload));
+        using var batches = reader.GetRecordBatchReader();
+        using var batch = await batches.ReadNextRecordBatchAsync();
+        var metadata = reader.Schema.Metadata;
+        var decoded = new WKBReader().Read(((BinaryArray)batch!.Column("geometry")).GetBytes(0).ToArray());
+        decoded.GeometryType.Should().Be(source.GeometryType);
+        decoded.Coordinates.Select(coordinate => (coordinate.X, coordinate.Y))
+            .Should().Equal(source.Coordinates.Select(coordinate => (coordinate.X, coordinate.Y)));
+        if (returnZ)
+        {
+            decoded.Coordinates.Select(coordinate => coordinate.Z)
+                .Should().Equal(source.Coordinates.Select(coordinate => coordinate.Z));
+        }
+        else
+        {
+            decoded.Coordinates.Should().OnlyContain(coordinate => double.IsNaN(coordinate.Z));
+        }
+        using var geo = JsonDocument.Parse(metadata["geo"]);
+        geo.RootElement.GetProperty("columns").GetProperty("geometry").GetProperty("geometry_types")
+            .EnumerateArray().Select(value => value.GetString())
+            .Should().Equal(returnZ ? "GeometryCollection Z" : "GeometryCollection");
+    }
+
+    [Fact]
+    public async Task FormatAsGeoParquet_EmptyXyzPoint_PreservesEmptyGeometryDistinctFromNull()
+    {
+        var source = new WKTReader().Read("POINT Z EMPTY");
+        var inputWkb = new WKBWriter(ByteOrder.LittleEndian, handleSRID: false, emitZ: true, emitM: false).Write(source);
+        var features = ImmutableArray.Create(
+            Feature.Create(1, inputWkb, ImmutableDictionary<string, object?>.Empty),
+            Feature.Create(2, null, ImmutableDictionary<string, object?>.Empty));
+        var resource = CreateResource();
+        var (payload, _) = GeoParquetQueryFormatter.FormatAsGeoParquet(
+            QueryResult<Feature>.Create(2, features), resource, true, 4326, true, false, new GeometryLimits());
+        using var reader = new ParquetSharp.Arrow.FileReader(new MemoryStream(payload));
+        using var batches = reader.GetRecordBatchReader();
+        using var batch = await batches.ReadNextRecordBatchAsync();
+        var metadata = reader.Schema.Metadata;
+        var geometries = (BinaryArray)batch!.Column("geometry");
+        geometries.IsNull(0).Should().BeFalse("an empty geometry is a valid value distinct from null");
+        geometries.IsNull(1).Should().BeTrue();
+        var emptyWkb = geometries.GetBytes(0).ToArray();
+        BinaryPrimitives.ReadUInt32LittleEndian(emptyWkb.AsSpan(1, 4)).Should().Be(1001);
+        using var geo = JsonDocument.Parse(metadata["geo"]);
+        geo.RootElement.GetProperty("columns").GetProperty("geometry").GetProperty("geometry_types")
+            .EnumerateArray().Select(value => value.GetString()).Should().Equal("Point Z");
+        var decoded = new WKBReader().Read(emptyWkb);
+        decoded.Should().BeOfType<Point>();
+        decoded.IsEmpty.Should().BeTrue();
+        geo.RootElement.GetProperty("columns").GetProperty("geometry").TryGetProperty("covering", out _)
+            .Should().BeFalse("non-null empty geometries have no bbox value satisfying the covering contract");
+        reader.Schema.FieldsList.Should().NotContain(field => field.Name == "bbox");
+    }
+
     [UnitTheory]
     [InlineData(7)]
     [InlineData(1024)]

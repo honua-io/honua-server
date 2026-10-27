@@ -14,7 +14,9 @@ using Honua.Core.Features.Infrastructure.Crs;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Microsoft.Extensions.Logging;
+using NetTopologySuite;
 using NetTopologySuite.Geometries;
+using NetTopologySuite.Geometries.Implementation;
 using NetTopologySuite.IO;
 using ParquetSharp.Arrow;
 
@@ -48,6 +50,9 @@ public static partial class GeoParquetFeatureWriter
     /// GeoParquet content type emitted by <see cref="FormatAsGeoParquet"/>.
     /// </summary>
     public const string ContentType = "application/vnd.apache.parquet";
+
+    [ThreadStatic]
+    private static WKBReader? _dimensionPreservingWkbReader;
 
     [ThreadStatic]
     private static WKBWriter? _wkbWriter2D;
@@ -107,22 +112,32 @@ public static partial class GeoParquetFeatureWriter
         // A small type set is all the metadata pass retains. Encoding each batch later keeps
         // Arrow buffers bounded while still describing types found in the final batch.
         var geometryTypes = new HashSet<string>(StringComparer.Ordinal);
+        var includeCovering = true;
         if (includeGeometry)
         {
             foreach (var feature in features)
             {
-                var (_, _, _, geometryType) = ProcessGeometryCore(feature.Geometry, srid,
+                var (_, envelope, _, geometryType) = ProcessGeometryCore(feature.Geometry, srid,
                     geometryLimits, returnZ, returnM, feature.Id, logger, encodeWkb: false);
                 if (geometryType is not null)
                 {
                     geometryTypes.Add(geometryType);
+                    // A non-null empty geometry has no finite bounding box. GeoParquet
+                    // requires covering values iff geometry values exist, so omit this
+                    // optional representation for the whole file instead of writing null.
+                    if (envelope is null || envelope.IsNull
+                        || !double.IsFinite(envelope.MinX) || !double.IsFinite(envelope.MinY)
+                        || !double.IsFinite(envelope.MaxX) || !double.IsFinite(envelope.MaxY))
+                    {
+                        includeCovering = false;
+                    }
                 }
             }
         }
 
-        var (schema, fieldsToInclude, resolvedObjectIdFieldName) = BuildSchema(
+        var (schema, fieldsToInclude, resolvedObjectIdFieldName, geometryColumnName, bboxColumnName) = BuildSchema(
             resource, objectIdFieldName, returnGeometry, outFields, outputSrid,
-            runtimeFields, geometryTypes);
+            runtimeFields, geometryTypes, includeCovering: includeCovering);
 
         return (WriteArrowParquet(schema, writer =>
         {
@@ -135,10 +150,15 @@ public static partial class GeoParquetFeatureWriter
                 {
                     (geometryArray, bboxArray, _) = BuildGeometryArray(batchFeatures, srid,
                         returnZ, returnM, geometryLimits, logger);
+                    if (!includeCovering)
+                    {
+                        bboxArray.Dispose();
+                        bboxArray = null;
+                    }
                 }
 
                 var arrays = BuildArrays(batchFeatures, schema, returnGeometry, geometryArray,
-                    bboxArray, resolvedObjectIdFieldName, fieldsToInclude, logger);
+                    bboxArray, resolvedObjectIdFieldName, fieldsToInclude, geometryColumnName, bboxColumnName, logger);
                 using var recordBatch = new RecordBatch(schema, arrays, count);
                 // This API flushes a new row group for each batch; do not use the buffered API.
                 writer.WriteRecordBatch(recordBatch, encodingLimits.MaxRowsPerBatch);
@@ -233,7 +253,7 @@ public static partial class GeoParquetFeatureWriter
         int? outputSrid,
         GeoParquetLimits encodingLimits)
     {
-        var (schema, _, _) = BuildSchema(
+        var (schema, _, _, _, _) = BuildSchema(
             resource, objectIdFieldName, returnGeometry, outFields, outputSrid, isEmpty: true);
 
         return (WriteArrowParquet(schema, writeBatches: null, encodingLimits), ContentType);
@@ -243,7 +263,7 @@ public static partial class GeoParquetFeatureWriter
     /// Builds the Arrow schema and resolves which attribute fields to include.
     /// Shared by both populated and empty GeoParquet paths.
     /// </summary>
-    private static (Schema schema, List<MetadataV2Field> fieldsToInclude, string objectIdFieldName) BuildSchema(
+    private static (Schema schema, List<MetadataV2Field> fieldsToInclude, string objectIdFieldName, string geometryColumnName, string bboxColumnName) BuildSchema(
         MetadataV2Resource resource,
         string objectIdFieldName,
         bool returnGeometry,
@@ -251,7 +271,8 @@ public static partial class GeoParquetFeatureWriter
         int? outputSrid,
         IReadOnlyList<(string name, IArrowType type)>? runtimeFields = null,
         IReadOnlyCollection<string>? geometryTypes = null,
-        bool isEmpty = false)
+        bool isEmpty = false,
+        bool includeCovering = true)
     {
         var resolvedFields = ResolveSelectedFields(resource, objectIdFieldName, outFields);
 
@@ -264,10 +285,6 @@ public static partial class GeoParquetFeatureWriter
             new Field(objectIdFieldName, new Int64Type(), false)
         };
 
-        if (returnGeometry && resource.HasGeometry())
-        {
-            schemaFields.Add(new Field(GeometryColumnName, new BinaryType(), true));
-        }
 
         foreach (var field in fieldsToInclude)
         {
@@ -287,16 +304,41 @@ public static partial class GeoParquetFeatureWriter
             }
         }
 
-        // GeoParquet 1.1 covering bbox column. Declared last so attribute/runtime ordering stays
-        // stable; the `geo` metadata `covering` maps xmin/ymin/xmax/ymax onto this struct.
+        var occupiedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var field in schemaFields)
+        {
+            if (!occupiedNames.Add(field.Name))
+            {
+                throw new InvalidOperationException($"Cloud-native output contains ambiguous attribute name '{field.Name}'.");
+            }
+        }
+        var geometryColumnName = AllocateGeneratedColumnName(GeometryColumnName, occupiedNames);
+        var bboxColumnName = AllocateGeneratedColumnName(BboxColumnName, occupiedNames);
         if (returnGeometry && resource.HasGeometry())
         {
-            schemaFields.Add(new Field(BboxColumnName, CreateBboxStructType(), nullable: true));
+            schemaFields.Insert(1, new Field(geometryColumnName, new BinaryType(), true));
+        }
+
+        // GeoParquet 1.1 covering bbox column. Declared last so attribute/runtime ordering stays
+        // stable; the `geo` metadata `covering` maps xmin/ymin/xmax/ymax onto this struct.
+        if (includeCovering && returnGeometry && resource.HasGeometry())
+        {
+            schemaFields.Add(new Field(bboxColumnName, CreateBboxStructType(), nullable: true));
         }
 
         var schema = new Schema(schemaFields, BuildGeoParquetMetadata(
-            resource, returnGeometry, outputSrid, geometryTypes, isEmpty));
-        return (schema, fieldsToInclude, objectIdFieldName);
+            resource, returnGeometry, outputSrid, geometryTypes, isEmpty, geometryColumnName, bboxColumnName, includeCovering));
+        return (schema, fieldsToInclude, objectIdFieldName, geometryColumnName, bboxColumnName);
+    }
+
+    internal static string AllocateGeneratedColumnName(string preferredName, ISet<string> occupiedNames)
+    {
+        var name = preferredName;
+        for (var suffix = 1; !occupiedNames.Add(name); suffix++)
+        {
+            name = $"{preferredName}_{suffix}";
+        }
+        return name;
     }
 
     /// <summary>
@@ -307,7 +349,10 @@ public static partial class GeoParquetFeatureWriter
         bool returnGeometry,
         int? outputSrid,
         IReadOnlyCollection<string>? geometryTypes,
-        bool isEmpty = false)
+        bool isEmpty,
+        string geometryColumnName,
+        string bboxColumnName,
+        bool includeCovering)
     {
         var metadata = new Dictionary<string, string>();
 
@@ -338,9 +383,10 @@ public static partial class GeoParquetFeatureWriter
         // GeoParquet 1.1 "covering" declares the per-row bbox column used for spatial pruning.
         // The paths point at the fields of the emitted `bbox` struct column so a reader can map
         // xmin/ymin/xmax/ymax without decoding geometry (honua-server#2843).
-        var coveringPart =
-            $@",""covering"":{{""bbox"":{{""{BboxXMinFieldName}"":[""{BboxColumnName}"",""{BboxXMinFieldName}""],""{BboxYMinFieldName}"":[""{BboxColumnName}"",""{BboxYMinFieldName}""],""{BboxXMaxFieldName}"":[""{BboxColumnName}"",""{BboxXMaxFieldName}""],""{BboxYMaxFieldName}"":[""{BboxColumnName}"",""{BboxYMaxFieldName}""]}}}}";
-        var geoJson = $@"{{""version"":""{GeoParquetVersion}"",""primary_column"":""{GeometryColumnName}"",""columns"":{{""{GeometryColumnName}"":{{""encoding"":""{GeometryEncoding}"",""geometry_types"":{geometryTypesPart}{crsPart}{coveringPart}}}}}}}";
+        var coveringPart = includeCovering
+            ? $@",""covering"":{{""bbox"":{{""{BboxXMinFieldName}"":[""{bboxColumnName}"",""{BboxXMinFieldName}""],""{BboxYMinFieldName}"":[""{bboxColumnName}"",""{BboxYMinFieldName}""],""{BboxXMaxFieldName}"":[""{bboxColumnName}"",""{BboxXMaxFieldName}""],""{BboxYMaxFieldName}"":[""{bboxColumnName}"",""{BboxYMaxFieldName}""]}}}}"
+            : string.Empty;
+        var geoJson = $@"{{""version"":""{GeoParquetVersion}"",""primary_column"":""{geometryColumnName}"",""columns"":{{""{geometryColumnName}"":{{""encoding"":""{GeometryEncoding}"",""geometry_types"":{geometryTypesPart}{crsPart}{coveringPart}}}}}}}";
 
         metadata[GeoMetadataKey] = geoJson;
 
@@ -463,10 +509,17 @@ public static partial class GeoParquetFeatureWriter
 
         foreach (var feature in features)
         {
+            var attributeNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var (key, value) in feature.Attributes)
             {
-                if (seenRuntimeFields.Contains(key) || resourceFieldNames.Contains(key)) continue;
                 if (key.StartsWith("__", StringComparison.Ordinal)) continue;
+                if (!attributeNames.Add(key)
+                    || (seenRuntimeFields.TryGetValue(key, out var previousName)
+                        && !string.Equals(previousName, key, StringComparison.Ordinal)))
+                {
+                    throw new InvalidOperationException($"Cloud-native output contains ambiguous attribute name '{key}'.");
+                }
+                if (seenRuntimeFields.Contains(key) || resourceFieldNames.Contains(key)) continue;
 
                 var arrowType = InferArrowTypeFromValue(value);
                 if (arrowType == null) continue;
@@ -592,6 +645,8 @@ public static partial class GeoParquetFeatureWriter
         StructArray? bboxArray,
         string objectIdFieldName,
         List<MetadataV2Field> fieldsToInclude,
+        string geometryColumnName,
+        string bboxColumnName,
         ILogger? logger = null)
     {
         var arrays = new List<IArrowArray>();
@@ -602,11 +657,11 @@ public static partial class GeoParquetFeatureWriter
             {
                 arrays.Add(BuildObjectIdArray(features, objectIdFieldName));
             }
-            else if (field.Name == GeometryColumnName && returnGeometry && geometryArray != null)
+            else if (field.Name == geometryColumnName && returnGeometry && geometryArray != null)
             {
                 arrays.Add(geometryArray);
             }
-            else if (field.Name == BboxColumnName && returnGeometry && bboxArray != null)
+            else if (field.Name == bboxColumnName && returnGeometry && bboxArray != null)
             {
                 arrays.Add(bboxArray);
             }
@@ -867,7 +922,11 @@ public static partial class GeoParquetFeatureWriter
         Geometry? geometry;
         try
         {
-            geometry = WkbReaderCache.Get().Read(geometryBytes);
+            // Packed sequences retain the input WKB's declared XY/XYZ/XYM dimensions,
+            // including empty geometries and XYZ values whose Z ordinates are all NaN.
+            _dimensionPreservingWkbReader ??= new WKBReader(
+                new NtsGeometryServices(PackedCoordinateSequenceFactory.DoubleFactory));
+            geometry = _dimensionPreservingWkbReader.Read(geometryBytes);
         }
         catch (Exception ex) when (ex is ParseException or FormatException)
         {
@@ -894,7 +953,7 @@ public static partial class GeoParquetFeatureWriter
         // GeoParquet 1.1.0 only supports XY and XYZ — always strip M values.
         geometry = GeometryOutputProcessor.ApplyDimensionFilter(geometry, returnZ, includeM: false);
 
-        var hasZ = GeometryHasZ(geometry);
+        var hasZ = returnZ && GeometryHasZ(geometry);
         var writer = GetWkbWriter(hasZ);
 
         // Envelope of the emitted geometry (output SRID, limits applied) feeds the covering bbox
@@ -1245,55 +1304,24 @@ public static partial class GeoParquetFeatureWriter
     }
 
     /// <summary>
-    /// Checks whether the geometry contains any non-NaN Z value by walking
-    /// coordinate sequences directly, avoiding the intermediate Coordinate[]
-    /// allocation that <see cref="Geometry.Coordinates"/> would produce.
+    /// Checks declared Z dimensions throughout the geometry, including empty
+    /// sequences and nested collections, without allocating coordinate arrays.
     /// </summary>
     private static bool GeometryHasZ(Geometry geometry)
     {
-        for (var g = 0; g < geometry.NumGeometries; g++)
+        return geometry switch
         {
-            var part = geometry.GetGeometryN(g);
-            if (part is Point point)
-            {
-                if (point.CoordinateSequence.Dimension > 2 &&
-                    !double.IsNaN(point.CoordinateSequence.GetOrdinate(0, Ordinate.Z)))
-                {
-                    return true;
-                }
-
-                continue;
-            }
-
-            if (part is LineString lineString)
-            {
-                if (SequenceHasZ(lineString.CoordinateSequence)) return true;
-                continue;
-            }
-
-            if (part is Polygon polygon)
-            {
-                if (SequenceHasZ(polygon.ExteriorRing.CoordinateSequence)) return true;
-                for (var h = 0; h < polygon.NumInteriorRings; h++)
-                {
-                    if (SequenceHasZ(polygon.GetInteriorRingN(h).CoordinateSequence)) return true;
-                }
-            }
-        }
-
-        return false;
+            Point point => SequenceHasZ(point.CoordinateSequence),
+            LineString line => SequenceHasZ(line.CoordinateSequence),
+            Polygon polygon => SequenceHasZ(polygon.ExteriorRing.CoordinateSequence)
+                || Enumerable.Range(0, polygon.NumInteriorRings)
+                    .Any(index => SequenceHasZ(polygon.GetInteriorRingN(index).CoordinateSequence)),
+            GeometryCollection collection => collection.Geometries.Any(GeometryHasZ),
+            _ => false
+        };
     }
 
-    private static bool SequenceHasZ(CoordinateSequence sequence)
-    {
-        if (sequence.Dimension <= 2) return false;
-        for (var i = 0; i < sequence.Count; i++)
-        {
-            if (!double.IsNaN(sequence.GetOrdinate(i, Ordinate.Z))) return true;
-        }
-
-        return false;
-    }
+    private static bool SequenceHasZ(CoordinateSequence sequence) => sequence.HasZ;
 
     private static WKBWriter GetWkbWriter(bool emitZ)
     {
