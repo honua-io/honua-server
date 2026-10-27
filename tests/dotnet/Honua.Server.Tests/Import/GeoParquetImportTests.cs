@@ -72,7 +72,6 @@ public sealed class GeoParquetImportTests : IAsyncLifetime
     [InlineData(ImportLoadMode.Upsert, 2021.25, true)]
     [Trait("Category", "Integration")]
     [Trait("Tier", "Integration")]
-    [Endpoint("POST /api/v1/admin/import/upload")]
     public async Task Import_IntoEpochBoundTarget_ValidatesEpochBeforeAppendOrUpsertWrites(
         ImportLoadMode mode, double? incomingEpoch, bool allowed)
     {
@@ -107,7 +106,6 @@ public sealed class GeoParquetImportTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/v1/admin/import/upload")]
     public async Task Import_FailedEpochReplacement_RollsBackRowsIdentityAndEpochRegistration()
     {
         var logicalName = "epoch_rollback_" + Guid.NewGuid().ToString("N")[..12];

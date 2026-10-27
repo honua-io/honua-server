@@ -102,7 +102,7 @@ A synchronous import returns the result inline; a completed background job retur
 
 ### GeoParquet input contract
 
-Preview and import validate the required `version`, `primary_column`, per-column `encoding`, and `geometry_types` metadata. The primary geometry name must match the Parquet column exactly, including case. Unknown extension metadata does not substitute for required fields.
+Preview and import validate the required `version`, `primary_column`, per-column `encoding`, and `geometry_types` metadata. The primary geometry name must match the Parquet column exactly, including case. Unknown extension metadata does not substitute for required fields. UTF-8 `geo` metadata is limited to 1 MiB, each explicit CRS definition to 256 KiB, and JSON nesting to 32 levels.
 
 Only WKB geometry encoding is currently accepted. GeoParquet 1.1 native geometry encodings are valid format options but are unsupported by this importer; diagnostics for native geometries stored as nested Parquet structures remain under verification in [#6715](https://github.com/honua-io/honua-server/issues/6715). Multiple geometry columns are refused before import writes or preview sampling, rather than discarding secondary geometries. Explicit `edges: "spherical"` is also refused; omitted edges mean `planar`, and malformed edge values are rejected.
 
