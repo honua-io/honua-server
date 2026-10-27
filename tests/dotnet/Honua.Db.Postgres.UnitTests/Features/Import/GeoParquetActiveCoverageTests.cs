@@ -329,7 +329,10 @@ public sealed class GeoParquetActiveCoverageTests
         var service = PreviewImportServiceFactory.Create();
         var result = await service.ImportFileAsync(new ImportRequest
         {
-            FileStream = stream, FileName = "multiple.parquet", TableName = "multiple_geoparquet", TargetSrid = 4326
+            FileStream = stream,
+            FileName = "multiple.parquet",
+            TableName = "multiple_geoparquet",
+            TargetSrid = 4326
         });
 
         result.Success.Should().BeFalse();
@@ -468,12 +471,16 @@ public sealed class GeoParquetActiveCoverageTests
         {
             columns["geometry2"] = new Dictionary<string, object?>
             {
-                ["encoding"] = "WKB", ["geometry_types"] = Array.Empty<string>(), ["edges"] = secondaryEdges
+                ["encoding"] = "WKB",
+                ["geometry_types"] = Array.Empty<string>(),
+                ["edges"] = secondaryEdges
             };
         }
         var geo = new Dictionary<string, object?>
         {
-            ["version"] = "1.1.0", ["primary_column"] = "geometry", ["columns"] = columns
+            ["version"] = "1.1.0",
+            ["primary_column"] = "geometry",
+            ["columns"] = columns
         };
         mutateMetadata?.Invoke(geo);
         var metadata = JsonSerializer.Serialize(geo);

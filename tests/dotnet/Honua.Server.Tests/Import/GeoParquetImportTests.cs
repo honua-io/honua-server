@@ -147,8 +147,14 @@ public sealed class GeoParquetImportTests : IAsyncLifetime
 
     private static ImportRequest EpochRequest(Stream source, string table, ImportLoadMode mode) => new()
     {
-        FileStream = source, FileName = "dynamic-epoch.parquet", TableName = table, TargetSchema = "honua_data",
-        TargetSrid = 7912, LoadMode = mode, OverwriteExisting = true, KeyColumns = ["key"]
+        FileStream = source,
+        FileName = "dynamic-epoch.parquet",
+        TableName = table,
+        TargetSchema = "honua_data",
+        TargetSrid = 7912,
+        LoadMode = mode,
+        OverwriteExisting = true,
+        KeyColumns = ["key"]
     };
 
     private static async Task<byte[]> CreateEpochParquetAsync(double? epoch, double longitude, string propertyKey = "A")
@@ -204,8 +210,13 @@ public sealed class GeoParquetImportTests : IAsyncLifetime
                 Table = imported.RootElement.GetProperty("physicalTableName").GetString(),
                 LayerName = "Dynamic CRS epoch readback",
                 ServiceName = _publishedServiceName,
-                GeometryColumn = "geometry", GeometryType = "Point", Srid = srid, HasZ = true,
-                PrimaryKey = "id", Fields = new[] { "id", "properties" }, Enabled = true
+                GeometryColumn = "geometry",
+                GeometryType = "Point",
+                Srid = srid,
+                HasZ = true,
+                PrimaryKey = "id",
+                Fields = new[] { "id", "properties" },
+                Enabled = true
             });
         var publishJson = await publishResponse.Content.ReadAsStringAsync();
         publishResponse.StatusCode.Should().Be(HttpStatusCode.Created, publishJson);

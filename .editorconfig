@@ -377,8 +377,8 @@ dotnet_diagnostic.CA2016.severity = warning
 # CS8618: Non-nullable field must contain non-null (handled by nullable flow)
 dotnet_diagnostic.CS8618.severity = suggestion
 
-# Corvus.Text.Json 5.7.9 adds optional performance suggestions to existing Geometry code.
-# Keep these two advisory; all other vendor correctness/resource rules and IL/AOT checks remain enforced.
-[src/Honua.Geometry/**/*.cs]
+# Corvus.Text.Json 5.7.9 performance analyzers also flow to consuming projects.
+# Keep only UTF-8/conversion suggestions advisory; correctness/resource and IL/AOT rules remain enforced.
+[*.cs]
 dotnet_diagnostic.CTJ001.severity = suggestion
 dotnet_diagnostic.CTJ002.severity = suggestion
