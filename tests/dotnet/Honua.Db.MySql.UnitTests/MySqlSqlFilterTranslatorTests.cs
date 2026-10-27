@@ -5,6 +5,7 @@ using System.Globalization;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Queries.Filters;
+using Honua.Db.MySql;
 using Honua.Db.MySql.Queries.Filters;
 
 namespace Honua.Db.MySql.Tests;
@@ -155,10 +156,10 @@ public class MySqlSqlFilterTranslatorTests
     }
 
     [Fact]
-    public void Translate_DWithinDistance_OnPointLayer_UsesStDistanceSphere()
+    public void Translate_DWithinDistance_OnPointLayer_UsesStDistanceOnWgs84Ellipsoid()
     {
-        // ST_Distance_Sphere requires a point resource; the polygon-typed default _resource is
-        // covered by Translate_SpatialDistance_OnNonPointLayer_ThrowsNotSupported.
+        // MySQL ST_Distance on EPSG:4326 is the host geodetic distance. The sphere is not
+        // within 0.05% of the WGS 84 spheroid for a 1° longitude span at 60°N.
         var pointResource = CreateResource("stations", MetadataV2GeometryType.Point);
 
         var filter = new SpatialDistancePredicate(
@@ -169,9 +170,27 @@ public class MySqlSqlFilterTranslatorTests
 
         var result = _translator.Translate(filter, pointResource);
 
-        Assert.Contains("ST_Distance_Sphere", result.Sql, StringComparison.Ordinal);
-        Assert.Contains("6371008.8", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("ST_Distance(", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("ST_Distance_Sphere", result.Sql, StringComparison.Ordinal);
         Assert.Contains("<= @p1", result.Sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Translate_DWithinDistance_MariaDbPointLayer_KeepsSphereFallbackVisible()
+    {
+        // MariaDB has no spheroid distance. The mean-radius sphere stays in the SQL.
+        var translator = new MySqlSqlFilterTranslator(MySqlEngineFlavor.MariaDb);
+        var pointResource = CreateResource("stations", MetadataV2GeometryType.Point);
+        var filter = new SpatialDistancePredicate(
+            SpatialOperator.DWithin,
+            new PropertyReference("geometry"),
+            new GeometryLiteral([0x01], 4326, "POINT"),
+            new Literal(100.0, LiteralType.Number));
+
+        var result = translator.Translate(filter, pointResource);
+
+        Assert.Contains("ST_Distance_Sphere(", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("6371008.8", result.Sql, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -207,7 +226,7 @@ public class MySqlSqlFilterTranslatorTests
     }
 
     [Fact]
-    public void Translate_DWithinDistance_OnMultiPointLayer_UsesStDistanceSphere()
+    public void Translate_DWithinDistance_OnMultiPointLayer_UsesStDistanceOnWgs84Ellipsoid()
     {
         var multiPointResource = CreateResource("swarm", MetadataV2GeometryType.MultiPoint);
 
@@ -219,7 +238,8 @@ public class MySqlSqlFilterTranslatorTests
 
         var result = _translator.Translate(filter, multiPointResource);
 
-        Assert.Contains("ST_Distance_Sphere", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("ST_Distance(", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("ST_Distance_Sphere", result.Sql, StringComparison.Ordinal);
     }
 
     [Theory]

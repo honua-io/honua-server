@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:60d1e15f7eef0552f106c6845e8de013f97dc12729ebd18782d07a5ec7a7acfa",
+  "bundleDigest": "sha256:e5ff95187dc2477e0f517ed4af7721523ba6e090ae2a1e6386847a1536c720a8",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -7700,7 +7700,7 @@
     {
       "id": "reference/configuration/data-sources/duckdb",
       "path": "reference/configuration/data-sources/duckdb.md",
-      "documentDigest": "sha256:f765001e6c90c1a833a1250b31c87fd48569e4f96f4640e8abbdadb24b428826",
+      "documentDigest": "sha256:0f48f93f128f9e3dc5789ef70bd5ea2d5b9594e7b9dc45d359073c270aaf52ec",
       "metadata": {
         "type": "reference",
         "title": "DuckDB provider",
@@ -7711,7 +7711,7 @@
     {
       "id": "reference/configuration/data-sources/mysql-mariadb",
       "path": "reference/configuration/data-sources/mysql-mariadb.md",
-      "documentDigest": "sha256:263e172191faf938c9b40d524b00ff7852a0110771e86b1947959a3d0e9d1c6e",
+      "documentDigest": "sha256:e989b5dedec142906c30fd418eebd170038cf992aa151be75f778b93b96becd4",
       "metadata": {
         "type": "reference",
         "title": "MySQL/MariaDB provider",

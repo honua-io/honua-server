@@ -24,7 +24,7 @@ edits, statistics, MVT, and analytics. Use the
 | `GetAsync` (single feature by id)            | Yes       |
 | `QueryPageAsync` (paged read without count)  | Yes       |
 | Spatial filters: Intersects, Within, Contains, Crosses, Touches, Overlaps, Disjoint, Equals, EnvelopeIntersects | Yes |
-| Distance filters (Point/MultiPoint layers only) | Yes (approximate, `ST_Distance_Sphere`) |
+| Distance filters (Point/MultiPoint layers only) | Yes. MySQL EPSG:4326 uses ellipsoidal `ST_Distance`. MariaDB and SRID 0 keep the visible sphere fallback |
 | Attribute `Where`, `SqlFilter`, `ObjectIds`  | Yes       |
 | Pagination, `OrderBy`                        | Yes       |
 | Edits (Create / Update / Delete)             | **No**    |
@@ -50,8 +50,8 @@ WHERE-field, and `Category=MySql` integration-test conventions.
 
 | Engine | Minimum Version | Notes |
 |--------|-----------------|-------|
-| MySQL  | 8.0.12          | `ST_Distance_Sphere` and SRID-aware functions need 8.0.11. EPSG:4326 point extents use `ST_Longitude`/`ST_Latitude`, added in 8.0.12. That release also redefined `ST_X`/`ST_Y` to follow SRS axis order, so 8.0.11 is not a safe floor. |
-| MariaDB | 10.6 LTS       | Spatial parity with MySQL 8.0 lineage |
+| MySQL  | 8.0.12          | EPSG:4326 point extents use `ST_Longitude`/`ST_Latitude`, added in 8.0.12. That release also redefined `ST_X`/`ST_Y` to follow SRS axis order, so 8.0.11 is not a safe floor. On EPSG:4326, distance filters use geodetic `ST_Distance` (WGS 84 ellipsoid, metres). |
+| MariaDB | 10.6 LTS       | No spheroid distance function. Distance filters keep `ST_Distance_Sphere` with the mean radius visible in the SQL. |
 
 MySQL 5.7 is **not** supported; spatial function semantics changed
 significantly between 5.7 and 8.0 and the test matrix targets 8.0+.
@@ -177,27 +177,32 @@ and to filter expressions translated through `MySqlSqlFilterTranslator`.
 | `Within`              | `ST_Within(col, ST_GeomFromWKB(?, srid))` |
 | `Contains`            | `ST_Contains(col, ST_GeomFromWKB(?, srid))` |
 | `Crosses` / `Touches` / `Overlaps` / `Disjoint` / `Equals` | matching `ST_*` function |
-| `WithinDistance` (Point/MultiPoint only) | `ST_Distance_Sphere(col, ST_GeomFromWKB(?, srid), 6371008.8) <= ?` |
-| `BeyondDistance` (Point/MultiPoint only) | `ST_Distance_Sphere(col, ST_GeomFromWKB(?, srid), 6371008.8) > ?` |
+| `WithinDistance` (MySQL, EPSG:4326, Point/MultiPoint) | `ST_Distance(col, ST_GeomFromWKB(?, 4326, 'axis-order=long-lat')) <= ?` |
+| `BeyondDistance` (MySQL, EPSG:4326, Point/MultiPoint) | `ST_Distance(col, ST_GeomFromWKB(?, 4326, 'axis-order=long-lat')) > ?` |
+| `WithinDistance` (MariaDB, or SRID 0) | `ST_Distance_Sphere(col, ST_GeomFromWKB(?, srid), 6371008.8) <= ?` |
+| `BeyondDistance` (MariaDB, or SRID 0) | `ST_Distance_Sphere(col, ST_GeomFromWKB(?, srid), 6371008.8) > ?` |
 | `NearestNeighbor`     | `NotSupportedException` — not implemented |
 
-`ST_Distance_Sphere` is a sphere, not a WGS 84 spheroid. Honua passes an
-explicit mean-Earth radius of 6371008.8 m. The result still differs from a
-geodesic on the ellipsoid. For that distance use a PostGIS-backed layer.
+On MySQL 8 with an EPSG:4326 layer, `ST_Distance` is the host geodetic
+distance on the WGS 84 ellipsoid and the result is metres. A distance of a
+few kilometres, including one degree of longitude at 60°N, stays within
+0.05% of that spheroid. MariaDB has no spheroid function, and SRID 0 has
+no ellipsoid, so those queries keep `ST_Distance_Sphere` with the mean
+Earth radius 6371008.8 m written in the SQL. That sphere is the fallback,
+not the EPSG:4326 path, and it is not a WGS 84 spheroid.
+
 Distance filters on layers whose geometry type is anything other than
 `Point` or `MultiPoint` raise `NotSupportedException`. The guard is
 applied uniformly in `MySqlFeatureQueryBuilder.Spatial` and
 `MySqlSqlFilterTranslator`.
 
 Distance filters also require the layer SRID to be **EPSG:4326** (WGS84)
-or **SRID 0** (Cartesian, lon/lat-assumed). MySQL `ST_Distance_Sphere`
-raises `ER_INVALID_GIS_DATA` on projected SRSes such as EPSG:3857, and
-other geographic SRSes (e.g. NAD83) compute a result with a different
-mean radius — the provider rejects them at the query builder /
-filter-translator boundary so callers get a descriptive
-`NotSupportedException` rather than an engine error or an ambiguous
-result. Pre-project the layer to EPSG:4326 before issuing distance
-filters.
+or **SRID 0** (Cartesian, lon/lat-assumed). The sphere function raises
+`ER_INVALID_GIS_DATA` on projected SRSes such as EPSG:3857, and other
+geographic SRSes are a different ellipsoid. The provider rejects them at
+the query builder / filter-translator boundary so callers get a
+descriptive `NotSupportedException` rather than an engine error. Pre-project
+the layer to EPSG:4326 before issuing distance filters.
 
 ## Engine Flavor and Axis Order
 
