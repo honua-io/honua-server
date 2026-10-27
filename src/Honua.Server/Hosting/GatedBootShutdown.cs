@@ -64,6 +64,29 @@ internal static class GatedBootShutdown
     }
 
     /// <summary>
+    /// Full name of the provider exception for a journaled attachment family that does not match
+    /// its physical tables. The type stays internal to the provider; startup still has to recognize
+    /// it. Letting it escape the entry point aborts native AOT (exit 139) instead of a refusal.
+    /// </summary>
+    internal const string AttachmentBindingRefusalTypeName =
+        "Honua.Db.Postgres.Features.Attachments.AttachmentSchemaBindingException";
+
+    /// <summary>
+    /// True when <paramref name="exception"/> is an attachment journal/physical mismatch that must
+    /// stop the host instead of aborting the runtime (honua-server#6554).
+    /// </summary>
+    /// <param name="exception">Failure returned by the migration runner.</param>
+    /// <returns>Whether boot must stop with <see cref="RefusalExitCode"/>.</returns>
+    internal static bool IsAttachmentBindingRefusal(Exception exception)
+    {
+        ArgumentNullException.ThrowIfNull(exception);
+        return string.Equals(
+            exception.GetType().FullName,
+            AttachmentBindingRefusalTypeName,
+            StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// True when <paramref name="exception"/> is the PostGIS preflight's terminal refusal.
     /// </summary>
     /// <param name="exception">Failure thrown by the startup preflight.</param>

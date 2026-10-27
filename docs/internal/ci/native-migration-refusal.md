@@ -6,9 +6,12 @@ verification marker. Lambda and Azure Functions host lifecycles are outside this
 regression. The image runs its real `/app/Honua.Server` entrypoint; this does not
 substitute a JIT executable or a test host.
 
-The fixture creates an isolated PostGIS database with a nonempty migration
-journal containing `002_CreateAttachmentsTable`, leaving the reviewed
-`038_DropV1MetadataGraphTables` contract migration pending. Migration approval,
+The fixture creates an isolated PostGIS database, applies
+`002_CreateAttachmentsTable` so the journaled attachment family exists, and
+records that script in the migration journal, leaving the reviewed
+`038_DropV1MetadataGraphTables` contract migration pending. A journal row
+without that table is an attachment binding mismatch, not this contract-gate
+proof. Migration approval,
 skip, and safety override settings remain unset. A passing result requires the
 specific existing-database migration safety refusal and pending contract name,
 exit code 1, no OOM, no unhandled exception or listening message, an unchanged
