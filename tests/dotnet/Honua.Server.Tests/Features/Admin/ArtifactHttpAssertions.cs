@@ -25,10 +25,11 @@ internal static class ArtifactHttpAssertions
             ObjectKeyOverride = metadata.FileId,
             ContentType = metadata.ContentType,
             SizeBytes = bytes.LongLength,
-            Metadata = metadata.Metadata,
+            // Publisher inputs contain source metadata, not the storage-owned upload stamp.
+            Metadata = metadata.Metadata.Remove("UploadId"),
             TimeToLive = null
         });
-        upload.Success.Should().BeTrue();
+        upload.Success.Should().BeTrue(upload.ErrorMessage);
 
         using var head = await client.SendAsync(new HttpRequestMessage(HttpMethod.Head, url));
         head.StatusCode.Should().Be(HttpStatusCode.OK);

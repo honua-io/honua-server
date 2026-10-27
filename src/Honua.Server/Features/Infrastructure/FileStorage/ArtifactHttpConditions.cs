@@ -72,6 +72,24 @@ internal static class ArtifactHttpConditions
         return new(null, range);
     }
 
+    internal static IResult ReadFailure(HttpContext context, ArtifactRangeOutcome outcome)
+    {
+        // The metadata snapshot no longer describes acquired bytes (or the provider could
+        // not fence them). Do not return its validator as if it described this failure.
+        context.Response.Headers.Remove(HeaderNames.ETag);
+        context.Response.Headers.Remove(HeaderNames.LastModified);
+        context.Response.Headers.Remove(HeaderNames.ContentRange);
+        context.Response.Headers.Remove(HeaderNames.AcceptRanges);
+        return Results.StatusCode(outcome switch
+        {
+            ArtifactRangeOutcome.RevisionChanged => StatusCodes.Status412PreconditionFailed,
+            ArtifactRangeOutcome.Unsupported => StatusCodes.Status501NotImplemented,
+            ArtifactRangeOutcome.NotFound => StatusCodes.Status404NotFound,
+            ArtifactRangeOutcome.TooLarge => StatusCodes.Status413PayloadTooLarge,
+            _ => throw new InvalidOperationException("The artifact result is not a read failure.")
+        });
+    }
+
     internal static EntityTagHeaderValue CreateEntityTag(CloudFile metadata)
     {
         var contentHash = metadata.ContentHash;

@@ -62,6 +62,27 @@ public sealed class PMTilesPublishEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/tile-operations/jobs")]
+    public async Task PublishArchive_Republish_PreservesLogicalArtifactIdAndObjectKey()
+    {
+        string? firstId = null;
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            var jobId = await StartPublishJobAsync();
+            var (status, json) = await WaitForJobCompletionAsync(jobId);
+            using var result = json;
+            status.Should().Be(OperationStatus.Completed);
+            var descriptor = GetPropertyCaseInsensitive(result!.RootElement, "publishedArtifact");
+            var id = GetPropertyCaseInsensitive(descriptor, "artifactId").GetString()!;
+            var objectKey = GetPropertyCaseInsensitive(descriptor, "objectKey").GetString()!;
+            objectKey.Should().Be(id, "the logical key must not expose a physical generation filename");
+            firstId ??= id;
+            id.Should().Be(firstId);
+            objectKey.Should().NotContain(".honua-");
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/tile-operations/jobs")]
     public async Task StartJob_PublishOperation_ReturnsAccepted()
     {
         var response = await _client.PostAsJsonAsync("/api/v1/admin/tile-operations/jobs", new

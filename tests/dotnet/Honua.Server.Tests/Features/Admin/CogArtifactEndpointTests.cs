@@ -105,6 +105,17 @@ public sealed class CogArtifactEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/raster-artifacts/cog")]
+    public async Task PublishCog_Republish_PreservesLogicalArtifactIdAndUrl()
+    {
+        var original = await PublishAsync();
+        var replacement = await PublishAsync();
+        replacement.GetProperty("artifactId").GetString().Should().Be(original.GetProperty("artifactId").GetString());
+        replacement.GetProperty("url").GetString().Should().Be(original.GetProperty("url").GetString());
+        replacement.GetProperty("url").GetString().Should().NotContain(".honua-");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/raster-artifacts/cog")]
     public async Task PublishCog_ExportsThePrimaryRasterUnderADeterministicKey()
     {
         var descriptor = await PublishAsync();
