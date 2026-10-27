@@ -7,6 +7,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Db.Databricks.Features.Security;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Db.Databricks.Tests;
@@ -109,6 +110,44 @@ public class DatabricksConnectionDriverTests
     }
 
     [Fact]
+    public async Task TestConnectionAsync_ProbeTimeout_ReturnsUnhealthyNotCancellation()
+    {
+        var logger = new RecordingLogger();
+        var driver = new DatabricksConnectionDriver(logger, new TimeoutHandler());
+        var connectionString = driver.BuildConnectionString(new ConnectionTarget(
+            "dbc-abc123.cloud.databricks.com",
+            443,
+            "wh-123",
+            "token",
+            "dapi-good",
+            SslMode.Require));
+
+        var status = await driver.TestConnectionAsync(connectionString);
+
+        Assert.Equal(ConnectionHealthStatus.Unhealthy, status);
+        Assert.Contains(logger.Messages, static message => message.Contains("probe timed out", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task TestConnectionAsync_CallerCancellation_Propagates()
+    {
+        var logger = new RecordingLogger();
+        var driver = new DatabricksConnectionDriver(logger, new TimeoutHandler());
+        var connectionString = driver.BuildConnectionString(new ConnectionTarget(
+            "dbc-abc123.cloud.databricks.com",
+            443,
+            "wh-123",
+            "token",
+            "dapi-good",
+            SslMode.Require));
+        using var canceled = new CancellationTokenSource();
+        canceled.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => driver.TestConnectionAsync(connectionString, canceled.Token));
+        Assert.DoesNotContain(logger.Messages, static message => message.Contains("probe timed out", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Registry_ListsDatabricksNextToRedshiftAndSnowflake()
     {
         var registry = new ConnectionDriverRegistry(
@@ -127,6 +166,43 @@ public class DatabricksConnectionDriverTests
 
     private static DatabricksConnectionDriver CreateDriver(HttpMessageHandler? handler = null)
         => new(NullLogger<DatabricksConnectionDriver>.Instance, handler);
+
+    /// <summary>
+    /// Raises the same <see cref="TaskCanceledException"/> <see cref="HttpClient.Timeout"/> raises
+    /// when the caller token is still active.
+    /// </summary>
+    private sealed class TimeoutHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            throw new TaskCanceledException(
+                "The request was canceled due to the configured HttpClient.Timeout of 20 seconds elapsing.",
+                new TimeoutException("The operation has timed out."));
+        }
+    }
+
+    private sealed class RecordingLogger : ILogger<DatabricksConnectionDriver>
+    {
+        public List<string> Messages { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull
+            => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            Messages.Add(formatter(state, exception));
+        }
+    }
 
     private sealed class NamedDriver(string provider) : IConnectionDriver
     {

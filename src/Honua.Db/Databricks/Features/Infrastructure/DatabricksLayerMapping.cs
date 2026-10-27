@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Globalization;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
@@ -77,6 +78,19 @@ internal sealed class DatabricksLayerMapping
         {
             throw new ArgumentException(
                 $"Invalid storage mapping for Databricks layer {layerId}: {string.Join("; ", errors)}",
+                nameof(storage));
+        }
+
+        // A shared-table discriminator must constrain every read. This provider does not
+        // emit that predicate, so accepting the binding would return other layers' rows.
+        if (!string.IsNullOrWhiteSpace(storage.LayerDiscriminatorColumn))
+        {
+            var column = storage.LayerDiscriminatorColumn.Trim();
+            var value = storage.LayerDiscriminatorValue?.ToString(CultureInfo.InvariantCulture) ?? "(missing)";
+            throw new ArgumentException(
+                $"Databricks layer {layerId} declares storage layer discriminator '{column}' = {value}, "
+                + "but this provider cannot enforce a shared-table discriminator. Remove layerDiscriminatorColumn "
+                + "from the Metadata v2 storage binding, or bind the layer to a table that contains only this layer's rows.",
                 nameof(storage));
         }
 

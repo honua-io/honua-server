@@ -84,6 +84,41 @@ public class DatabricksLayerMappingTests
     }
 
     [Fact]
+    public void FromStorage_SharedTableDiscriminator_IsNotDropped()
+    {
+        var storage = new FeatureStorageMapping(
+            TableName: "features",
+            SchemaName: "gis",
+            CatalogName: "main",
+            PrimaryKeyColumn: "id",
+            GeometryColumn: "geom",
+            StorageSrid: 4326,
+            LayerDiscriminatorColumn: "layer_id",
+            LayerDiscriminatorValue: 7);
+
+        var ex = Assert.Throws<ArgumentException>(() => DatabricksLayerMapping.FromStorage(7, storage));
+
+        Assert.Contains("layer_id", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("= 7", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("cannot enforce", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void FromStorage_DiscriminatorValueWithoutColumn_StillBinds()
+    {
+        var storage = new FeatureStorageMapping(
+            TableName: "parcels",
+            PrimaryKeyColumn: "id",
+            GeometryColumn: "geom",
+            StorageSrid: 4326,
+            LayerDiscriminatorValue: 0);
+
+        var mapping = DatabricksLayerMapping.FromStorage(0, storage);
+
+        Assert.Equal("`parcels`", mapping.QualifiedTable());
+    }
+
+    [Fact]
     public void FromStorage_MissingGeometryColumn_Throws()
     {
         var storage = new FeatureStorageMapping(

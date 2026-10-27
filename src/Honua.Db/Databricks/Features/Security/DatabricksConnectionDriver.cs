@@ -106,6 +106,18 @@ internal sealed partial class DatabricksConnectionDriver : IConnectionDriver, IS
 
             return ConnectionProbe.Evaluate(scalar);
         }
+        catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            // HttpClient.Timeout (and the statement client's own deadline) surface as
+            // cancellation even when the caller did not cancel. That is a failed probe.
+            LogProbeTimedOut(ex);
+            return ConnectionHealthStatus.Unhealthy;
+        }
+        catch (TimeoutException ex)
+        {
+            LogProbeTimedOut(ex);
+            return ConnectionHealthStatus.Unhealthy;
+        }
         catch (OperationCanceledException)
         {
             throw;
@@ -122,6 +134,9 @@ internal sealed partial class DatabricksConnectionDriver : IConnectionDriver, IS
 
     [LoggerMessage(EventId = 7205, Level = LogLevel.Warning, Message = "Databricks connection probe failed")]
     private partial void LogProbeFailed(Exception exception);
+
+    [LoggerMessage(EventId = 7206, Level = LogLevel.Warning, Message = "Databricks connection probe timed out")]
+    private partial void LogProbeTimedOut(Exception exception);
 
     private static (Uri Endpoint, string WarehouseId, string Token) Parse(string connectionString)
     {
