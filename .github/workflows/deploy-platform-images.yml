@@ -12,13 +12,22 @@ on:
         required: false
         default: false
         type: boolean
+      skip_acr:
+        description: >-
+          Publish to ECR only and skip Azure Container Registry. For when the ACR service
+          principal cannot log in (for example an expired ARM client secret) and an AWS image is
+          needed now. Every other leg, scan and boundary check still runs.
+        required: false
+        default: false
+        type: boolean
 
 permissions: {}
 
 env:
   ECR_REGION: ${{ vars.AWS_ECR_REGION }}
   ECR_REPOSITORY: ${{ vars.AWS_ECR_REPOSITORY }}
-  ACR_LOGIN_SERVER: ${{ vars.ACR_LOGIN_SERVER }}
+  # Empty when a dispatch opts out of ACR: every ACR step and target is keyed on this value.
+  ACR_LOGIN_SERVER: ${{ !(github.event_name == 'workflow_dispatch' && inputs.skip_acr == true) && vars.ACR_LOGIN_SERVER || '' }}
   ACR_REPOSITORY: ${{ vars.ACR_REPOSITORY }}
   TRIVY_IMAGE: aquasec/trivy:0.68.1
   PUBLISH_IMAGES: ${{ github.event_name != 'schedule' && (github.event_name != 'workflow_dispatch' || inputs.scan_only != true) }}
