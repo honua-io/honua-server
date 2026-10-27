@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:1bd3e86da222cff51471280876bd8db7f7bd3a31f395fce20c51a9bb2b95832a",
+  "bundleDigest": "sha256:8777ffadca71a276f2c94e176ad2d859635c707f380238efe90bc79bf8198d59",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -263,7 +263,7 @@
     {
       "id": "concepts/domain/catalog",
       "path": "concepts/domain/catalog.md",
-      "documentDigest": "sha256:dfff96c9e690da7f2231e39b0d85b8db9f35313280f90db582b96b6ed54451ee",
+      "documentDigest": "sha256:ab3271ca6342633d9075dbae660b3e4fb32633739cbd99c89194a8de48987c16",
       "metadata": {
         "type": "concept",
         "title": "Catalog and discovery",
@@ -2030,13 +2030,24 @@
     {
       "id": "guides/README",
       "path": "guides/README.md",
-      "documentDigest": "sha256:00083bb2251c08b9efa9124ef0c03b1defdd3c6f11b82582a1ee8d209ce14eef",
+      "documentDigest": "sha256:e2cc5a64cc3fb1defbeba698846c8c36cd4eff5fc16d40091efc51096c6e6eb1",
       "metadata": {
         "type": "index",
         "title": "Guides",
         "description": "Task-oriented guides, grouped by what you want to do."
       },
       "humanDocument": "https://github.com/honua-io/honua-server/blob/trunk/docs/guides/README.md"
+    },
+    {
+      "id": "guides/catalog/catalog-and-discovery",
+      "path": "guides/catalog/catalog-and-discovery.md",
+      "documentDigest": "sha256:9a2c9488d9400b3b9f3f63dd4d38058f5d53709ad9f5cb8862a92f6b9734c5ca",
+      "metadata": {
+        "type": "guide",
+        "title": "How published data becomes findable",
+        "description": "How a published layer, scene, or process shows up on each protocol Honua serves, and what keeps it out of those catalogs."
+      },
+      "humanDocument": "https://github.com/honua-io/honua-server/blob/trunk/docs/guides/catalog/catalog-and-discovery.md"
     },
     {
       "id": "guides/connect/agent-capabilities-and-editions",
@@ -8908,6 +8919,11 @@
     {
       "source": "concepts/domain/catalog",
       "relation": "links_to",
+      "target": "guides/catalog/catalog-and-discovery"
+    },
+    {
+      "source": "concepts/domain/catalog",
+      "relation": "links_to",
       "target": "guides/connect/ai-agents-mcp"
     },
     {
@@ -10918,6 +10934,11 @@
     {
       "source": "guides/README",
       "relation": "links_to",
+      "target": "guides/catalog/catalog-and-discovery"
+    },
+    {
+      "source": "guides/README",
+      "relation": "links_to",
       "target": "guides/connect/ai-agents-mcp"
     },
     {
@@ -11139,6 +11160,86 @@
       "source": "guides/README",
       "relation": "links_to",
       "target": "guides/style/style-maps"
+    },
+    {
+      "source": "guides/catalog/catalog-and-discovery",
+      "relation": "links_to",
+      "target": "concepts/domain/catalog"
+    },
+    {
+      "source": "guides/catalog/catalog-and-discovery",
+      "relation": "links_to",
+      "target": "concepts/domain/metadata"
+    },
+    {
+      "source": "guides/catalog/catalog-and-discovery",
+      "relation": "links_to",
+      "target": "concepts/domain/publication"
+    },
+    {
+      "source": "guides/catalog/catalog-and-discovery",
+      "relation": "links_to",
+      "target": "get-started/first-dataset"
+    },
+    {
+      "source": "guides/catalog/catalog-and-discovery",
+      "relation": "links_to",
+      "target": "guides/connect/ai-agents-mcp"
+    },
+    {
+      "source": "guides/catalog/catalog-and-discovery",
+      "relation": "links_to",
+      "target": "guides/publish/publish-3d-scenes"
+    },
+    {
+      "source": "guides/catalog/catalog-and-discovery",
+      "relation": "links_to",
+      "target": "guides/publish/publish-layers"
+    },
+    {
+      "source": "guides/catalog/catalog-and-discovery",
+      "relation": "links_to",
+      "target": "reference/admin-api/overview"
+    },
+    {
+      "source": "guides/catalog/catalog-and-discovery",
+      "relation": "links_to",
+      "target": "reference/geoprocessing-operations"
+    },
+    {
+      "source": "guides/catalog/catalog-and-discovery",
+      "relation": "links_to",
+      "target": "reference/protocols/geoservices-rest"
+    },
+    {
+      "source": "guides/catalog/catalog-and-discovery",
+      "relation": "links_to",
+      "target": "reference/protocols/grpc"
+    },
+    {
+      "source": "guides/catalog/catalog-and-discovery",
+      "relation": "links_to",
+      "target": "reference/protocols/odata"
+    },
+    {
+      "source": "guides/catalog/catalog-and-discovery",
+      "relation": "links_to",
+      "target": "reference/protocols/ogc-apis"
+    },
+    {
+      "source": "guides/catalog/catalog-and-discovery",
+      "relation": "links_to",
+      "target": "reference/protocols/stac"
+    },
+    {
+      "source": "guides/catalog/catalog-and-discovery",
+      "relation": "links_to",
+      "target": "reference/protocols/wms-wfs-wcs-wmts"
+    },
+    {
+      "source": "guides/catalog/catalog-and-discovery",
+      "relation": "links_to",
+      "target": "user/console-catalog-discovery"
     },
     {
       "source": "guides/connect/agent-capabilities-and-editions",

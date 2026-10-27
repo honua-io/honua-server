@@ -23,6 +23,12 @@ Examples use `http://localhost:8080`, the repository Compose default. A quicksta
 | Serve terrain and elevation tiles | [Publish terrain and elevation](publish/publish-terrain-and-elevation.md) |
 | Serve 3D Tiles scenes | [Publish 3D scenes](publish/publish-3d-scenes.md) |
 
+## Find published data
+
+| I want to… | Guide |
+|---|---|
+| See how a published layer, scene, or process becomes findable | [How published data becomes findable](catalog/catalog-and-discovery.md) |
+
 ## Style maps
 
 | I want to… | Guide |
