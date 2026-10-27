@@ -18,15 +18,31 @@ namespace Honua.Db.Redshift.Features.FeatureStore;
 /// <para>Implements the canonical <see cref="IFeatureDataProvider"/> + <see cref="IFeatureReader"/>
 /// surface for layers backed by Redshift <c>GEOMETRY</c>/<c>GEOGRAPHY</c> columns. Connectivity uses
 /// Npgsql (Redshift speaks the PostgreSQL wire protocol), but spatial behavior relies on Redshift's
-/// native spatial SQL functions rather than PostGIS. Edits, native MVT, native FlatGeobuf/Geobuf/GML,
-/// statistics aggregates, top-features, bins, and H3 are deliberately disabled on this slice and are
-/// advertised as such via <see cref="FeatureProviderCapabilities"/>.</para>
+/// native spatial SQL functions rather than PostGIS. Statistics aggregates (COUNT/SUM/MIN/MAX/AVG/
+/// STDDEV/VAR plus GROUP BY) honor the same WHERE and spatial filter as SELECT. Edits, native MVT,
+/// native FlatGeobuf/Geobuf/GML, top-features, bins, and H3 are deliberately disabled on this slice
+/// and are advertised as such via <see cref="FeatureProviderCapabilities"/>.</para>
 /// <para>Layer/storage configuration flows through the Metadata v2 provider binding passed by
 /// <see cref="FeatureProviderQueryRouter"/>.</para>
 /// </remarks>
 internal sealed class RedshiftFeatureStore : IFeatureDataProvider, IFeatureReader, IBindableFeatureDataProvider
 {
-    private static readonly FeatureProviderCapabilities _capabilities = FeatureProviderCapabilities.ReadOnlyMySql;
+    private static readonly FeatureProviderCapabilities _capabilities = new()
+    {
+        SupportsQuery = true,
+        SupportsCount = true,
+        SupportsExtent = true,
+        SupportsStatistics = true,
+        Edits = FeatureProviderEditCapabilities.ReadOnly,
+        Outputs = new FeatureProviderOutputCapabilities
+        {
+            SupportsStreamingGeoJson = false,
+            SupportsNativeMvt = false,
+            SupportsNativeFlatGeobuf = false,
+            SupportsNativeGeobuf = false,
+            SupportsNativeGml = false
+        }
+    };
 
     private readonly RedshiftFeatureDataAccess _dataAccess;
     private readonly FeatureProviderBinding? _binding;
@@ -151,9 +167,13 @@ internal sealed class RedshiftFeatureStore : IFeatureDataProvider, IFeatureReade
     }
 
     /// <inheritdoc />
-    public Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryStatisticsAsync(
+    public async Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryStatisticsAsync(
         int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
-        => throw NotSupported(nameof(QueryStatisticsAsync), layerId);
+    {
+        var (mapping, _) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
+        var sql = RedshiftFeatureQueryBuilder.BuildStatistics(mapping, query);
+        return await _dataAccess.ExecuteStatisticsAsync(mapping, sql, _boundConnection, cancellationToken).ConfigureAwait(false);
+    }
 
     /// <inheritdoc />
     public Task<TemporalExtentResult?> GetTemporalExtentAsync(

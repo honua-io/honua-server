@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -136,6 +137,90 @@ internal static partial class RedshiftFeatureQueryBuilder
         AppendSpatialFilter(sb, mapping, effective, parameters);
 
         return new ParameterizedQuery(sb.ToString(), parameters);
+    }
+
+    /// <summary>
+    /// Builds an aggregate statistics query (<c>outStatistics</c> plus optional
+    /// <c>groupByFieldsForStatistics</c>) over the same WHERE, object-id, and spatial
+    /// filter envelope as <see cref="BuildSelectQuery"/>.
+    /// </summary>
+    public static ParameterizedQuery BuildStatistics(RedshiftLayerMapping mapping, FeatureQuery query)
+    {
+        ArgumentNullException.ThrowIfNull(mapping);
+        GuardUnsupportedFilters(query);
+
+        if (query.OutStatistics is not { IsDefaultOrEmpty: false } statistics)
+        {
+            // No aggregates requested: return an empty result rather than a malformed SELECT.
+            return new ParameterizedQuery("SELECT 1 WHERE FALSE", new List<object>());
+        }
+
+        var sb = new StringBuilder();
+        var parameters = new List<object>();
+        var groupByColumns = QuoteGroupByColumns(query);
+
+        sb.Append("SELECT ");
+        if (groupByColumns.Count > 0)
+        {
+            sb.Append(string.Join(", ", groupByColumns)).Append(", ");
+        }
+
+        sb.Append(BuildStatisticColumns(statistics));
+        sb.Append(" FROM ").Append(mapping.QuotedTableReference);
+        sb.Append(" WHERE 1=1");
+
+        AppendWhereClause(sb, query, parameters);
+        AppendObjectIdsFilter(sb, mapping, query, parameters);
+        AppendSpatialFilter(sb, mapping, query, parameters);
+
+        if (groupByColumns.Count > 0)
+        {
+            sb.Append(" GROUP BY ").Append(string.Join(", ", groupByColumns));
+        }
+
+        return new ParameterizedQuery(sb.ToString(), parameters);
+    }
+
+    private static List<string> QuoteGroupByColumns(FeatureQuery query)
+    {
+        if (query.GroupByFields is not { IsDefaultOrEmpty: false } groupBy)
+        {
+            return [];
+        }
+
+        var columns = new List<string>(groupBy.Length);
+        foreach (var field in groupBy)
+        {
+            columns.Add(RedshiftIdentifier.QuoteAttribute(field));
+        }
+
+        return columns;
+    }
+
+    private static string BuildStatisticColumns(ImmutableArray<StatisticDefinition> statistics)
+    {
+        var columns = new List<string>(statistics.Length);
+        foreach (var stat in statistics)
+        {
+            var fieldExpr = RedshiftIdentifier.QuoteAttribute(stat.OnStatisticField);
+            var alias = RedshiftIdentifier.QuoteAttribute(stat.OutStatisticFieldName);
+            // STDDEV_SAMP / VAR_SAMP are the sample aggregates named by StatisticType.
+            var statExpr = stat.StatisticType switch
+            {
+                StatisticType.Count => $"COUNT({fieldExpr})",
+                StatisticType.Sum => $"SUM({fieldExpr})",
+                StatisticType.Min => $"MIN({fieldExpr})",
+                StatisticType.Max => $"MAX({fieldExpr})",
+                StatisticType.Avg => $"AVG({fieldExpr})",
+                StatisticType.Stddev => $"STDDEV_SAMP({fieldExpr})",
+                StatisticType.Var => $"VAR_SAMP({fieldExpr})",
+                _ => throw new NotSupportedException(
+                    $"Statistic type '{stat.StatisticType}' is not supported by the Redshift provider."),
+            };
+            columns.Add($"{statExpr} AS {alias}");
+        }
+
+        return string.Join(", ", columns);
     }
 
     private static string BuildGeometryWkbExpression(RedshiftLayerMapping mapping)

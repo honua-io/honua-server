@@ -475,4 +475,145 @@ public class RedshiftFeatureQueryBuilderTests
         Assert.Throws<ArgumentException>(
             () => RedshiftFeatureQueryBuilder.BuildSelectQuery(Mapping(), query, _attributes));
     }
+
+    [Theory]
+    [InlineData(StatisticType.Count, "COUNT")]
+    [InlineData(StatisticType.Sum, "SUM")]
+    [InlineData(StatisticType.Min, "MIN")]
+    [InlineData(StatisticType.Max, "MAX")]
+    [InlineData(StatisticType.Avg, "AVG")]
+    [InlineData(StatisticType.Stddev, "STDDEV_SAMP")]
+    [InlineData(StatisticType.Var, "VAR_SAMP")]
+    public void BuildStatistics_EachStatisticType_QuotesFieldAndAlias(StatisticType statisticType, string sqlFunction)
+    {
+        var query = new FeatureQuery
+        {
+            OutStatistics = ImmutableArray.Create(new StatisticDefinition
+            {
+                StatisticType = statisticType,
+                OnStatisticField = "area",
+                OutStatisticFieldName = "area_stat"
+            })
+        };
+
+        var result = RedshiftFeatureQueryBuilder.BuildStatistics(Mapping(), query);
+
+        Assert.Contains($"{sqlFunction}(\"area\") AS \"area_stat\"", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("FROM \"honua\".\"parcels\"", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("WHERE 1=1", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("GROUP BY", result.Sql, StringComparison.Ordinal);
+        Assert.Empty(result.WhereParameters);
+    }
+
+    [Fact]
+    public void BuildStatistics_WithGroupBy_ProjectsAndGroupsQuotedColumns()
+    {
+        var query = new FeatureQuery
+        {
+            OutStatistics = ImmutableArray.Create(new StatisticDefinition
+            {
+                StatisticType = StatisticType.Sum,
+                OnStatisticField = "area",
+                OutStatisticFieldName = "area_sum"
+            }),
+            GroupByFields = ImmutableArray.Create("type", "name")
+        };
+
+        var result = RedshiftFeatureQueryBuilder.BuildStatistics(Mapping(), query);
+
+        Assert.Contains("SELECT \"type\", \"name\", SUM(\"area\") AS \"area_sum\"", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("GROUP BY \"type\", \"name\"", result.Sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildStatistics_WhereObjectIdsAndSpatialFilter_MatchCountEnvelope()
+    {
+        var geometry = new byte[] { 1, 2, 3, 4 };
+        var query = new FeatureQuery
+        {
+            Where = "type = 'commercial'",
+            ObjectIds = ImmutableArray.Create(7L),
+            SpatialFilter = SpatialFilter.Create(geometry, SpatialRelationship.Intersects, 4326),
+            OutStatistics = ImmutableArray.Create(new StatisticDefinition
+            {
+                StatisticType = StatisticType.Count,
+                OnStatisticField = "id",
+                OutStatisticFieldName = "n"
+            })
+        };
+        var mapping = Mapping();
+
+        var statistics = RedshiftFeatureQueryBuilder.BuildStatistics(mapping, query);
+        var count = RedshiftFeatureQueryBuilder.BuildCountQuery(mapping, query);
+
+        Assert.Equal(FilterTail(count.Sql), FilterTail(statistics.Sql));
+        Assert.Equal(count.WhereParameters.ToArray(), statistics.WhereParameters.ToArray());
+        Assert.Contains("COUNT(\"id\") AS \"n\"", statistics.Sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildStatistics_UnsupportedStatisticType_ThrowsClearError()
+    {
+        var query = new FeatureQuery
+        {
+            OutStatistics = ImmutableArray.Create(new StatisticDefinition
+            {
+                StatisticType = (StatisticType)42,
+                OnStatisticField = "area",
+                OutStatisticFieldName = "area_stat"
+            })
+        };
+
+        var ex = Assert.Throws<NotSupportedException>(() => RedshiftFeatureQueryBuilder.BuildStatistics(Mapping(), query));
+
+        Assert.Contains("not supported", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Redshift", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("42", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildStatistics_UnsafeFieldName_Throws()
+    {
+        var query = new FeatureQuery
+        {
+            OutStatistics = ImmutableArray.Create(new StatisticDefinition
+            {
+                StatisticType = StatisticType.Sum,
+                OnStatisticField = "area;drop",
+                OutStatisticFieldName = "area_sum"
+            })
+        };
+
+        Assert.Throws<ArgumentException>(() => RedshiftFeatureQueryBuilder.BuildStatistics(Mapping(), query));
+    }
+
+    [Fact]
+    public void BuildStatistics_TemporalFilter_ThrowsNotSupported()
+    {
+        var query = new FeatureQuery
+        {
+            TemporalFilter = new TemporalFilter
+            {
+                PropertyName = "observed_at",
+                PropertyType = TemporalPropertyType.DateTime
+            },
+            OutStatistics = ImmutableArray.Create(new StatisticDefinition
+            {
+                StatisticType = StatisticType.Count,
+                OnStatisticField = "id",
+                OutStatisticFieldName = "n"
+            })
+        };
+
+        var ex = Assert.Throws<NotSupportedException>(() => RedshiftFeatureQueryBuilder.BuildStatistics(Mapping(), query));
+        Assert.Contains("Temporal filters", ex.Message, StringComparison.Ordinal);
+    }
+
+    private static string FilterTail(string sql)
+    {
+        const string marker = "WHERE 1=1";
+        var index = sql.IndexOf(marker, StringComparison.Ordinal);
+        Assert.True(index >= 0, sql);
+        return sql[index..];
+    }
 }

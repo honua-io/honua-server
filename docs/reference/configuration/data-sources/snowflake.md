@@ -11,11 +11,11 @@ through the shared `IFeatureDataProvider` seam. Snowflake is a widely deployed c
 warehouse and a common connect-in-place target for analytical spatial data.
 
 This page describes the **read/query slice**. Edits, native MVT, native
-FlatGeobuf/Geobuf/GML, statistics aggregates, top features, bins, and H3 aggregation are
-deliberately out of scope.
+FlatGeobuf/Geobuf/GML, top features, bins, and H3 aggregation are
+deliberately out of scope. Aggregate statistics (`outStatistics`) are supported.
 
-Use the [PostGIS provider](README.md) for full read/write, edits, statistics, MVT, and
-analytics. Use the [DuckDB provider](duckdb.md) for analytical Parquet workflows.
+Use the [PostGIS provider](README.md) for full read/write, edits, MVT, and analytics.
+Use the [DuckDB provider](duckdb.md) for analytical Parquet workflows.
 
 ## Protocol routing
 
@@ -60,7 +60,8 @@ compared with Snowflake's `ST_*` relationship functions.
 | Translated `SqlFilter` (CQL2/FES/OData `$filter`) | **No** (rejected; see below) |
 | Cross-SRID filter geometry | **No** (rejected with `NotSupportedException`) |
 | Edits (Create / Update / Delete) | **No** |
-| Aggregate statistics, top features, bins, H3 | **No** |
+| Aggregate statistics (`outStatistics`: COUNT/SUM/MIN/MAX/AVG/STDDEV/VAR, optional GROUP BY, same WHERE and spatial filter as SELECT) | Yes |
+| Top features, bins, H3 | **No** |
 | Temporal / `datetime` extent | **No** (rejected with `NotSupportedException`) |
 | Native MVT, FlatGeobuf, Geobuf, GML, streaming GeoJSON | **No** |
 | Replicas / change tracking / transactional outbox | **No** |
@@ -161,8 +162,8 @@ configure them as `PARCELS`. Configured identifiers are restricted to the regula
 ## Known Limitations
 
 - **Read-only.** No edits, transactional outbox, replicas, or change tracking.
-- **No aggregates.** Statistics, top features, date/value bins, and H3 aggregation are not
-  supported in this slice.
+- **No top features, bins, or H3.** Those aggregations are not supported in this slice.
+  `outStatistics` (COUNT/SUM/MIN/MAX/AVG/STDDEV/VAR, optional GROUP BY) is supported.
 - **No distance/KNN filters.** Only Intersects/Within/Contains/Disjoint/EnvelopeIntersects map to
   `ST_*` predicates; distance and nearest-neighbor filters are rejected.
 - **No translated `SqlFilter`.** Only the canonical `Where` text is parsed (Snowflake-aware

@@ -12,8 +12,8 @@ organizations that already keep authoritative spatial data in Redshift and want 
 without copying it into PostGIS.
 
 This page describes the **read/query slice**. Edits, native MVT, native
-FlatGeobuf/Geobuf/GML, statistics aggregates, and admin UI integration are deliberately out of
-scope and would land as separate slices.
+FlatGeobuf/Geobuf/GML, and admin UI integration are deliberately out of
+scope and would land as separate slices. Aggregate statistics (`outStatistics`) are supported.
 
 ## Protocol routing
 
@@ -49,9 +49,9 @@ The provider is **not** suitable for:
 
 - Editable feature layers (use the PostgreSQL provider).
 - Native MVT, FlatGeobuf, Geobuf, or GML emission (the in-process formatter handles these).
-- Statistics, top-features, date bins, value bins, H3 aggregations, temporal extents, spatial
+- Top-features, date bins, value bins, H3 aggregations, temporal extents, spatial
   analytics, or KNN/distance filters — these throw `NotSupportedException` and are reported as
-  unsupported in `FeatureProviderCapabilities`.
+  unsupported in `FeatureProviderCapabilities`. Aggregate statistics are supported.
 
 ## Configuration
 
@@ -133,7 +133,7 @@ allow-list and emits a problem-details response through the shared exception pip
 | `IFeatureReader.GetExtentAsync` | Supported | `MIN/MAX` over `ST_XMin`/`ST_YMin`/`ST_XMax`/`ST_YMax`. |
 | `IFeatureReader.GetEstimatesAsync` | Supported | Combines `CountAsync` + `GetExtentAsync`. |
 | `IFeatureReader.QueryFlatGeobufAsync` | Returns `null` (fallback) | Server falls back to the in-process formatter. |
-| `IFeatureReader.QueryStatisticsAsync` | Not supported | Throws `NotSupportedException`. |
+| `IFeatureReader.QueryStatisticsAsync` | Supported | `COUNT`/`SUM`/`MIN`/`MAX`/`AVG`/`STDDEV_SAMP`/`VAR_SAMP` plus optional `GROUP BY`, with the same WHERE and spatial filter as SELECT. |
 | `IFeatureReader.GetTemporalExtentAsync` | Not supported | Throws `NotSupportedException`. |
 | `IFeatureReader.QueryTopFeaturesAsync` | Not supported | Throws `NotSupportedException`. |
 | `IFeatureReader.QueryDateBinsAsync` / `QueryBinsAsync` / `QueryH3Async` | Not supported | Throws `NotSupportedException`. |
