@@ -7,6 +7,7 @@ using System.Text.Json;
 using FlatGeobuf;
 using Google.FlatBuffers;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using NetTopologySuite;
@@ -65,11 +66,19 @@ internal static class FlatGeobufFeatureWriter
         foreach (var feature in features)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var geometry = feature.Geometry is { Length: > 0 } ? reader.Read(feature.Geometry) : null;
-            if (geometry is not null)
+            NtsGeometry? geometry = null;
+            if (feature.Geometry is { } wkb)
             {
-                hasZ |= query.IncludeZ && HasDimension(geometry, z: true);
-                hasM |= query.IncludeM && HasDimension(geometry, z: false);
+                // Empty coordinate sequences may manufacture or lose dimensions in NTS.
+                // Preserve the complete payload's declared ordinates and reject invalid
+                // non-null geometry instead of silently exporting a missing geometry.
+                if (!WkbSridNormalizer.TryGetDeclaredOrdinates(wkb, out var declaredZ, out var declaredM))
+                {
+                    throw new InvalidDataException("FlatGeobuf requires a valid complete WKB geometry.");
+                }
+                geometry = reader.Read(wkb);
+                hasZ |= query.IncludeZ && declaredZ;
+                hasM |= query.IncludeM && declaredM;
             }
             var bounds = geometry?.EnvelopeInternal;
             if (geometry is null || geometry.IsEmpty || bounds is null || bounds.IsNull ||
@@ -295,15 +304,6 @@ internal static class FlatGeobufFeatureWriter
             ? Convert.FromHexString(text.AsSpan(2))
             : Convert.FromBase64String(text);
     }
-
-    private static bool HasDimension(NtsGeometry geometry, bool z) => geometry switch
-    {
-        Point point => z ? point.CoordinateSequence.HasZ : point.CoordinateSequence.HasM,
-        LineString line => z ? line.CoordinateSequence.HasZ : line.CoordinateSequence.HasM,
-        Polygon polygon => HasDimension(polygon.ExteriorRing, z) || polygon.InteriorRings.Any(ring => HasDimension(ring, z)),
-        GeometryCollection collection => collection.Geometries.Any(part => HasDimension(part, z)),
-        _ => false
-    };
 
     private static GeometryT EncodeGeometry(NtsGeometry geometry, bool hasZ, bool hasM)
     {
