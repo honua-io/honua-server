@@ -74,9 +74,51 @@ internal sealed class ObservabilityAuditIntegrityResponse
     /// <summary>Leading rows with no hash (written before migration 069).</summary>
     public required long UnhashedRows { get; init; }
 
+    /// <summary>Unhashed rows inside a keyed downgrade-gap attestation.</summary>
+    public long AttestedGapRows { get; init; }
+
     /// <summary>The audit_id of the first row that failed verification, if any.</summary>
     public long? FirstBrokenAuditId { get; init; }
 
     /// <summary>Human-readable failure description, if any.</summary>
     public string? FailureReason { get; init; }
+}
+
+/// <summary>
+/// Body for attesting a downgrade gap in the audit hash chain.
+/// </summary>
+internal sealed class ObservabilityAuditGapAttestationRequest
+{
+    /// <summary>The first unhashed row of the gap; must be the verifier's first broken audit_id.</summary>
+    public long? GapFirstAuditId { get; init; }
+
+    /// <summary>Why the gap exists, for example the rollback that caused it.</summary>
+    public string? Reason { get; init; }
+}
+
+/// <summary>
+/// A written downgrade-gap attestation and the verification report after it.
+/// </summary>
+internal sealed class ObservabilityAuditGapAttestationResponse
+{
+    /// <summary>The audit_id of the attestation row.</summary>
+    public required long AttestationAuditId { get; init; }
+
+    /// <summary>The last hashed row before the gap.</summary>
+    public required long AnchorAuditId { get; init; }
+
+    /// <summary>The first unhashed row of the gap.</summary>
+    public required long GapFirstAuditId { get; init; }
+
+    /// <summary>The last unhashed row of the gap.</summary>
+    public required long GapLastAuditId { get; init; }
+
+    /// <summary>The number of rows in the gap.</summary>
+    public required long GapRowCount { get; init; }
+
+    /// <summary>The first hashed row after the gap.</summary>
+    public required long ResumeAuditId { get; init; }
+
+    /// <summary>The verification report after the attestation was written.</summary>
+    public required ObservabilityAuditIntegrityResponse Verification { get; init; }
 }

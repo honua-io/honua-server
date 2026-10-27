@@ -42,6 +42,11 @@ internal static class ObservabilityAuditEndpoints
             .WithDisplayName("Verify Audit Trail Integrity")
             .WithSummary("Replay the tamper-evident hash chain and report whether the audit trail has been altered.")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+
+        group.MapPost("/gap-attestations", HandleAttestGap)
+            .WithDisplayName("Attest Audit Chain Downgrade Gap")
+            .WithSummary("Append a keyed declaration for the unhashed rows a pre-hash-chain release wrote after a rollback. Existing rows are never rewritten.")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
     }
 
     private static async Task<IResult> HandleList(
@@ -128,17 +133,69 @@ internal static class ObservabilityAuditEndpoints
         CancellationToken cancellationToken)
     {
         var report = await verifier.VerifyAsync(cancellationToken).ConfigureAwait(false);
-        var response = new ObservabilityAuditIntegrityResponse
+        return Results.Json(MapReport(report), ObservabilityJsonContext.Default.ObservabilityAuditIntegrityResponse);
+    }
+
+    private static async Task<IResult> HandleAttestGap(
+        HttpContext context,
+        ObservabilityAuditGapAttestationRequest? body,
+        [FromServices] IAuditChainGapAttestor attestor,
+        CancellationToken cancellationToken)
+    {
+        if (body?.GapFirstAuditId is not { } gapFirst || gapFirst <= 0 || string.IsNullOrWhiteSpace(body.Reason))
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                StatusCodes.Status400BadRequest,
+                ProblemDetailsHelpers.GetTitle(400),
+                "A request body with a positive 'gapFirstAuditId' and a non-empty 'reason' is required.");
+        }
+
+        var outcome = await attestor.AttestAsync(
+            new AuditChainGapAttestationRequest
+            {
+                GapFirstAuditId = gapFirst,
+                Reason = body.Reason,
+                Actor = context.GetUserIdentity(),
+                CorrelationId = context.TraceIdentifier,
+                RemoteIp = context.Connection.RemoteIpAddress?.ToString(),
+                UserAgent = context.Request.Headers.UserAgent.ToString() is { Length: > 0 } agent ? agent : null,
+            },
+            cancellationToken).ConfigureAwait(false);
+
+        return outcome.Status switch
+        {
+            AuditChainGapAttestationStatus.Attested when outcome is { Attestation: { } written, Report: { } report } =>
+                Results.Json(
+                    new ObservabilityAuditGapAttestationResponse
+                    {
+                        AttestationAuditId = written.AttestationAuditId,
+                        AnchorAuditId = written.AnchorAuditId,
+                        GapFirstAuditId = written.GapFirstAuditId,
+                        GapLastAuditId = written.GapLastAuditId,
+                        GapRowCount = written.GapRowCount,
+                        ResumeAuditId = written.ResumeAuditId,
+                        Verification = MapReport(report),
+                    },
+                    ObservabilityJsonContext.Default.ObservabilityAuditGapAttestationResponse,
+                    statusCode: StatusCodes.Status201Created),
+            AuditChainGapAttestationStatus.WriteFailed =>
+                ProblemDetailsHelpers.CreateAdminProblem(
+                    StatusCodes.Status503ServiceUnavailable, ProblemDetailsHelpers.GetTitle(503), outcome.Detail ?? "The attestation was not written."),
+            _ => ProblemDetailsHelpers.CreateAdminProblem(
+                StatusCodes.Status409Conflict, ProblemDetailsHelpers.GetTitle(409), outcome.Detail ?? "The gap cannot be attested."),
+        };
+    }
+
+    private static ObservabilityAuditIntegrityResponse MapReport(AuditIntegrityReport report)
+        => new()
         {
             Verified = report.Verified,
             RowsChecked = report.RowsChecked,
             UnhashedRows = report.UnhashedRows,
+            AttestedGapRows = report.AttestedGapRows,
             FirstBrokenAuditId = report.FirstBrokenAuditId,
             FailureReason = report.FailureReason,
         };
-
-        return Results.Json(response, ObservabilityJsonContext.Default.ObservabilityAuditIntegrityResponse);
-    }
 
     internal static bool TryParseExportFilter(
         IQueryCollection query,
