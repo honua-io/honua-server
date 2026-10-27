@@ -1,4 +1,5 @@
 name: Cloud-Native-Geospatial Conformance
+run-name: ${{ inputs.nightly_dispatch_id && format('Cloud-Native-Geospatial Conformance [{0}]', inputs.nightly_dispatch_id) || 'Cloud-Native-Geospatial Conformance' }}
 
 on:
   # Tier: nightly — external validators + a full server image build are
@@ -41,6 +42,10 @@ on:
         description: Exact candidate cut timestamp
         required: false
         type: string
+      nightly_dispatch_id:
+        description: Nightly orchestrator correlation ID (nightly-certification-<run>-<attempt>), recorded in each executed evidence receipt
+        required: false
+        type: string
 
   workflow_call:
     inputs:
@@ -59,6 +64,9 @@ on:
         type: string
       candidate_cut_at:
         required: true
+        type: string
+      nightly_dispatch_id:
+        required: false
         type: string
 
 permissions:
@@ -110,12 +118,20 @@ jobs:
     needs: validator-selftest
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || inputs.server_image != ''
     timeout-minutes: 45
+    env:
+      # honua-release nightly-certification correlation id; empty when not
+      # nightly-dispatched. producer_run.py admits it only for this exact workflow
+      # under workflow_dispatch and the validator records the five-field producer_run.
+      HONUA_NIGHTLY_DISPATCH_ID: ${{ inputs.nightly_dispatch_id || '' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: honua-io/honua-server
           ref: ${{ inputs.harness_ref || github.sha }}
+
+      - name: Refuse a malformed nightly dispatch before any work
+        run: python3 scripts/conformance/cng/producer_run.py
 
       - name: Check out the exact candidate source for offline Honua consumers
         if: inputs.server_image != ''
@@ -327,7 +343,8 @@ jobs:
             --candidate-cut-at "$candidate_cut_at" \
             --fixture-revision "docker/cng/seed.sql@$harness_sha" \
             --evidence-uri "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
-            --base-url "http://localhost:8094" || client_exit=$?
+            --base-url "http://localhost:8094" \
+            --nightly-dispatch-id "$HONUA_NIGHTLY_DISPATCH_ID" || client_exit=$?
 
           docker compose "${compose_args[@]}" logs --no-color honua-server \
             > cng-results/honua-server.log 2>&1 || true
@@ -339,7 +356,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: cng-conformance-results-${{ github.run_number }}
+          name: cng-conformance-results-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             cng-results/
           # Zarr metadata uses dotfiles; retain actual bytes for receipt audits.
