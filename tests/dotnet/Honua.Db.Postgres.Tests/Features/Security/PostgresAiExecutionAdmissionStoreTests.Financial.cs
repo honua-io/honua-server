@@ -408,7 +408,7 @@ public sealed partial class PostgresAiExecutionAdmissionStoreTests
         {
             var result = DeployChanges.To.PostgresqlDatabase(fixture.ConnectionString, _schema)
                 .JournalToPostgresqlTable(_schema, $"financial_repeat_journal_{journal}")
-                .WithScript("141_CreateAiFinancialAccounting.sql", sql)
+                .WithScript("142_CreateAiFinancialAccounting.sql", sql)
                 .WithVariable("HonuaSchema", $"\"{_schema}\"")
                 .WithTransaction()
                 .Build().PerformUpgrade();

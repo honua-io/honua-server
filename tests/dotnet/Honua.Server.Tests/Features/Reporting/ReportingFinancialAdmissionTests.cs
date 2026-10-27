@@ -40,7 +40,7 @@ public sealed class ReportingFinancialAdmissionTests(DatabaseFixtureAdapter fixt
         _schema = await fixture.CreateIsolatedSchemaAsync(nameof(ReportingFinancialAdmissionTests));
         _source = NpgsqlDataSource.Create(fixture.ConnectionString);
         await using var connection = await _source.OpenConnectionAsync();
-        foreach (var name in new[] { "140_CreateAiExecutionAdmission.sql", "141_CreateAiFinancialAccounting.sql" })
+        foreach (var name in new[] { "140_CreateAiExecutionAdmission.sql", "142_CreateAiFinancialAccounting.sql" })
         {
             await using var resource = typeof(OpenAiNarrativeProvider).Assembly.GetManifestResourceStream("Honua.Server.Migrations." + name)!;
             using var reader = new StreamReader(resource);

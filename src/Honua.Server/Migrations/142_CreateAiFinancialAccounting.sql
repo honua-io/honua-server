@@ -52,7 +52,7 @@ COMMENT ON TABLE $HonuaSchema$.ai_financial_invocations IS 'Retained model liabi
 -- honua:reader-incompatible reason=financial-mode writer fences require the matching financial admission contract
 -- A database-level fence protects financial activation during mixed-version rollout. Old
 -- binaries ignore unknown JSON fields; they must not insert unpaid attempts or drop the mode.
-CREATE FUNCTION $HonuaSchema$.guard_ai_financial_policy() RETURNS trigger
+CREATE OR REPLACE FUNCTION $HonuaSchema$.guard_ai_financial_policy() RETURNS trigger
 LANGUAGE plpgsql AS $$
 DECLARE
     old_active BOOLEAN := FALSE;
@@ -89,11 +89,19 @@ BEGIN
     RETURN NEW;
 END;
 $$;
-CREATE TRIGGER guard_ai_financial_policy
-    BEFORE INSERT OR UPDATE OR DELETE ON $HonuaSchema$.ai_execution_policies
-    FOR EACH ROW EXECUTE FUNCTION $HonuaSchema$.guard_ai_financial_policy();
+-- Preserve existing trigger identities when independent migration journals replay this script.
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger
+                   WHERE tgname = 'guard_ai_financial_policy'
+                     AND tgrelid = '$HonuaSchema$.ai_execution_policies'::regclass) THEN
+        CREATE TRIGGER guard_ai_financial_policy
+            BEFORE INSERT OR UPDATE OR DELETE ON $HonuaSchema$.ai_execution_policies
+            FOR EACH ROW EXECUTE FUNCTION $HonuaSchema$.guard_ai_financial_policy();
+    END IF;
+END $$;
 
-CREATE FUNCTION $HonuaSchema$.guard_ai_financial_attempt() RETURNS trigger
+CREATE OR REPLACE FUNCTION $HonuaSchema$.guard_ai_financial_attempt() RETURNS trigger
 LANGUAGE plpgsql AS $$
 DECLARE
     policy JSONB;
@@ -113,5 +121,12 @@ BEGIN
     RETURN NEW;
 END;
 $$;
-CREATE TRIGGER guard_ai_financial_attempt BEFORE INSERT ON $HonuaSchema$.ai_execution_attempts
-    FOR EACH ROW EXECUTE FUNCTION $HonuaSchema$.guard_ai_financial_attempt();
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger
+                   WHERE tgname = 'guard_ai_financial_attempt'
+                     AND tgrelid = '$HonuaSchema$.ai_execution_attempts'::regclass) THEN
+        CREATE TRIGGER guard_ai_financial_attempt BEFORE INSERT ON $HonuaSchema$.ai_execution_attempts
+            FOR EACH ROW EXECUTE FUNCTION $HonuaSchema$.guard_ai_financial_attempt();
+    END IF;
+END $$;
