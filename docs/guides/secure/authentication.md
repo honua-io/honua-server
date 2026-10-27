@@ -63,9 +63,9 @@ In the authorized [API explorer](../../reference/openapi-and-explorer.md), run `
 }
 ```
 
-The response's `data.key` is shown once — store it immediately. Manage the lifecycle with `POST /api/v1/admin/api-keys/{id}/rotate` (returns a new secret), `POST .../{id}/revoke`, and `GET .../{id}/effective-permissions`.
+The response's `data.key` is shown once — store it immediately. Manage the lifecycle with `POST /api/v1/admin/api-keys/{id}/rotate` (returns a new secret), `POST .../{id}/revoke`, `PATCH .../{id}/restrictions` (replaces referrer and IP lists without changing the secret), and `GET .../{id}/effective-permissions`.
 
-Creating, rotating and revoking keys, changing user roles, deprovisioning users and
+Creating, rotating, revoking and replacing restrictions on keys, changing user roles, deprovisioning users and
 registering or deleting OAuth clients require full-administrator credential authority:
 a key granted `admin`, `*` or `admin:*`, the bootstrap credential, an administrator
 session, or an approved operation. An `admin:write` key such as `ci-publisher` above
@@ -103,6 +103,10 @@ that work and add request restrictions when you create them:
 - Both lists are optional; a key with neither is unrestricted, as every key created
   before this feature is. When both are set, a request must satisfy both. Entries are
   normalized (lowercase, default ports dropped) and returned on the key's metadata.
+- Replace the lists later with `PATCH /api/v1/admin/api-keys/{id}/restrictions`.
+  The body is the whole new set: an empty or omitted list clears that restriction.
+  The secret does not change. The server log names the key id and whether the
+  referrer list and the IP list are set, not the patterns or the key.
 - Restrictions apply on every transport the key is accepted on: `X-API-Key`,
   `Authorization`/`X-Esri-Authorization: Bearer`, the form `token` field and the
   `token` query parameter. The bootstrap `HONUA_ADMIN_PASSWORD` key is never

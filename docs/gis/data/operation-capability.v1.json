@@ -259,6 +259,16 @@
     },
     {
       "spec": "admin-api",
+      "method": "PATCH",
+      "path": "/api/v1/admin/api-keys/{id}/restrictions",
+      "operationId": "updateAdminApiKeyRestrictions",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "patch-api-v1-admin-api-keys-id-restrictions"
+    },
+    {
+      "spec": "admin-api",
       "method": "POST",
       "path": "/api/v1/admin/api-keys/{id}/revoke",
       "operationId": "revokeAdminApiKey",

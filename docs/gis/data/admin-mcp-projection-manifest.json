@@ -283,6 +283,48 @@
       "idempotent": false
     },
     {
+      "operationId": "admin.api-key.update-restrictions",
+      "toolName": "honua_admin_api_key_update_restrictions",
+      "title": "Update Admin API key restrictions",
+      "inputFields": [
+        "allowedIpRanges",
+        "allowedReferrers",
+        "id"
+      ],
+      "outputFields": [
+        "approvalLane",
+        "auditId",
+        "authorizationOutcome",
+        "cacheHit",
+        "cacheKey",
+        "code",
+        "correlationId",
+        "createdAt",
+        "currentGeneration",
+        "details",
+        "deterministic",
+        "error",
+        "evidenceRefs",
+        "handleId",
+        "jobId",
+        "message",
+        "metadataRevision",
+        "operationId",
+        "operationInstanceId",
+        "policyOutcome",
+        "proposalId",
+        "requiresApproval",
+        "resourceIds",
+        "status",
+        "studioAuthorizationCode",
+        "summary",
+        "updatedAt"
+      ],
+      "readOnly": false,
+      "destructive": true,
+      "idempotent": false
+    },
+    {
       "operationId": "admin.field-mask-policy.create",
       "toolName": "honua_admin_field_mask_policy_create",
       "title": "Create field-mask policy",

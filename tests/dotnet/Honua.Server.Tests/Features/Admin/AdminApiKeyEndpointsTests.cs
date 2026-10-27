@@ -201,6 +201,12 @@ public sealed class AdminApiKeyEndpointsTests : IAsyncLifetime
             $"/api/v1/admin/api-keys/{victim.ApiKey.Id}/revoke", content: null);
         Assert.Equal(HttpStatusCode.Forbidden, revokeResponse.StatusCode);
 
+        var restrictionsResponse = await readKeyClient.PatchAsJsonAsync(
+            $"/api/v1/admin/api-keys/{victim.ApiKey.Id}/restrictions",
+            new UpdateAdminApiKeyRestrictionsRequest { AllowedReferrers = ["https://evil.example.net"] },
+            _jsonOptions);
+        Assert.Equal(HttpStatusCode.Forbidden, restrictionsResponse.StatusCode);
+
         // The privilege-escalation attempt must not have mutated anything: the
         // victim key still authenticates.
         using var victimClient = CreateApiKeyClient(victim.Key);
@@ -541,6 +547,50 @@ public sealed class AdminApiKeyEndpointsTests : IAsyncLifetime
         Assert.Equal(new[] { "192.0.2.0/24" }, created.ApiKey.AllowedIpRanges);
         Assert.Equal(HttpStatusCode.Unauthorized, await ListWithKeyAsync(created.Key, origin: null));
         Assert.Equal(HttpStatusCode.OK, await ListWithKeyAsync(unrestricted.Key, origin: null));
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/api-keys")]
+    [Endpoint("PATCH /api/v1/admin/api-keys/{id}/restrictions")]
+    [Endpoint("GET /api/v1/admin/api-keys")]
+    public async Task UpdateRestrictions_ReplacesListsWithoutReturningOrChangingTheSecret()
+    {
+        var created = await CreateApiKeyAsync("restriction-update", permissions: ["admin:read"],
+            allowedIpRanges: ["203.0.113.0/24"]);
+        var response = await _client.PatchAsJsonAsync(
+            $"/api/v1/admin/api-keys/{created.ApiKey.Id}/restrictions",
+            new UpdateAdminApiKeyRestrictionsRequest
+            {
+                AllowedReferrers = ["https://maps.example.com/"],
+                AllowedIpRanges = [],
+            },
+            _jsonOptions);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.DoesNotContain(created.Key, body, StringComparison.Ordinal);
+        Assert.DoesNotContain("203.0.113.0/24", body, StringComparison.Ordinal);
+        var updated = JsonSerializer.Deserialize<ApiResponse<AdminApiKeyResponse>>(body, _jsonOptions);
+        Assert.NotNull(updated?.Data);
+        Assert.Equal(["https://maps.example.com"], updated.Data.AllowedReferrers);
+        Assert.Null(updated.Data.AllowedIpRanges);
+        Assert.Equal(created.ApiKey.KeyPrefix, updated.Data.KeyPrefix);
+
+        Assert.Equal(HttpStatusCode.OK, await ListWithKeyAsync(created.Key, origin: "https://maps.example.com"));
+        Assert.Equal(HttpStatusCode.Unauthorized, await ListWithKeyAsync(created.Key, origin: "https://evil.example.net"));
+
+        var malformed = await _client.PatchAsJsonAsync(
+            $"/api/v1/admin/api-keys/{created.ApiKey.Id}/restrictions",
+            new UpdateAdminApiKeyRestrictionsRequest { AllowedIpRanges = ["not-an-ip"] },
+            _jsonOptions);
+        Assert.Equal(HttpStatusCode.BadRequest, malformed.StatusCode);
+        Assert.DoesNotContain(created.Key, await malformed.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+
+        var missing = await _client.PatchAsJsonAsync(
+            $"/api/v1/admin/api-keys/{Guid.NewGuid()}/restrictions",
+            new UpdateAdminApiKeyRestrictionsRequest(),
+            _jsonOptions);
+        Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
     }
 
     [IntegrationTest]
