@@ -167,6 +167,40 @@ class NativeImageImpactTests(unittest.TestCase):
         self.assertFalse(result["legacy"]["serving_trigger"])
         self.assertFalse(result["legacy"]["worker_trigger"])
 
+    def test_reason_evidence_is_a_count_and_replayable_digest(self) -> None:
+        changed = ["src/Honua.Server/Program.cs"]
+        result = report(*changed)
+        matched = MODULE.routing_reasons(ROOT, POLICY, changed, normalized=True)
+        self.assertEqual(set(result["candidate"]["reasons"]), set(MODULE.RISK_CLASSES))
+        for name, evidence in result["candidate"]["reasons"].items():
+            self.assertEqual(set(evidence), {"count", "sha256"})
+            self.assertEqual(evidence["count"], len(matched[name]))
+            self.assertEqual(evidence["sha256"], MODULE._sha256_json(matched[name]))
+            self.assertEqual(bool(evidence["count"]), result["candidate"]["risk_classes"][name])
+        summary = MODULE.markdown(result)
+        self.assertNotIn("Program.cs", summary)
+        digest = result["candidate"]["reasons"]["server_aot_compile"]["sha256"]
+        self.assertIn(digest[:12], summary)
+
+    def test_wide_change_stays_under_the_receipt_cap(self) -> None:
+        # #6544 listed every path in every risk class (about 1.8 MB of reasons
+        # on top of 8,054 changed paths) and the auditor rejected the 2,719,460
+        # byte member. The cap is the auditor's MAX_RECEIPT_BYTES.
+        paths = [
+            f"src/Honua.Very/Long/Directory/Segment/File{index:05d}.cs"
+            for index in range(8054)
+        ]
+        result = report(*paths)
+        encoded = json.dumps(result, separators=(",", ":"), sort_keys=True).encode()
+        self.assertLess(len(encoded), 2 * 1024 * 1024)
+        inflated = json.loads(encoded)
+        inflated["candidate"]["reasons"] = {
+            name: inflated["changed_paths"] for name in MODULE.RISK_CLASSES
+        }
+        listed = json.dumps(inflated, separators=(",", ":"), sort_keys=True).encode()
+        self.assertGreater(len(listed), 2 * 1024 * 1024)
+        self.assertLess(len(encoded), len(listed) // 2)
+
     def test_project_graph_is_transitive_and_conservative_about_conditions(self) -> None:
         result = report("src/Honua.Db/Oracle/OracleStore.cs")
         projects = result["graphs"]["serving"]["projects"]
