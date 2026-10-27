@@ -1,3 +1,8 @@
+---
+type: reference
+title: "Cloud-native geospatial standards and evidence"
+description: "Specification targets, supported subsets, conformance evidence and known limitations for Honua Server's cloud-native formats."
+---
 # Cloud-native geospatial standards and evidence
 
 Reviewed 2026-10-27 against Server source
