@@ -596,6 +596,82 @@ public class SnowflakeFeatureQueryBuilderTests
         Assert.Throws<ArgumentException>(() => SnowflakeFeatureQueryBuilder.BuildStatistics(BuildMapping(), query));
     }
 
+    [Fact]
+    public void BuildStatistics_HavingOrderByLimitAndOffset_BoundTheAggregateResult()
+    {
+        var query = new FeatureQuery
+        {
+            OutStatistics = ImmutableArray.Create(new StatisticDefinition
+            {
+                StatisticType = StatisticType.Avg,
+                OnStatisticField = "AREA",
+                OutStatisticFieldName = "AREA_AVG"
+            }),
+            GroupByFields = ImmutableArray.Create("CATEGORY"),
+            Having = ImmutableArray.Create(new HavingCondition
+            {
+                StatisticType = StatisticType.Count,
+                OnStatisticField = "OBJECTID",
+                Operator = HavingComparisonOperator.GreaterThanOrEqual,
+                Value = 5
+            }),
+            OrderBy = ImmutableArray.Create(new OrderByClause("area_avg", ascending: false), new OrderByClause("CATEGORY")),
+            Limit = 2,
+            Offset = 1
+        };
+
+        var result = SnowflakeFeatureQueryBuilder.BuildStatistics(BuildMapping(), query);
+
+        var havingAt = result.Sql.IndexOf("HAVING COUNT(\"OBJECTID\") >= ?", StringComparison.Ordinal);
+        var orderAt = result.Sql.IndexOf("ORDER BY \"AREA_AVG\" DESC, \"CATEGORY\" ASC", StringComparison.Ordinal);
+        var limitAt = result.Sql.IndexOf("LIMIT 2", StringComparison.Ordinal);
+        var offsetAt = result.Sql.IndexOf("OFFSET 1", StringComparison.Ordinal);
+        Assert.True(havingAt > 0 && orderAt > havingAt && limitAt > orderAt && offsetAt > limitAt, result.Sql);
+        Assert.Equal(new object[] { 5d }, result.WhereParameters.ToArray());
+        Assert.DoesNotContain("LIMIT ?", result.Sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildStatistics_OffsetWithoutOrderBy_OrdersByTheFirstAggregateColumn()
+    {
+        var query = new FeatureQuery
+        {
+            OutStatistics = ImmutableArray.Create(new StatisticDefinition
+            {
+                StatisticType = StatisticType.Count,
+                OnStatisticField = "OBJECTID",
+                OutStatisticFieldName = "N"
+            }),
+            GroupByFields = ImmutableArray.Create("CATEGORY"),
+            Offset = 3
+        };
+
+        var result = SnowflakeFeatureQueryBuilder.BuildStatistics(BuildMapping(), query);
+
+        Assert.Contains("ORDER BY \"CATEGORY\"", result.Sql, StringComparison.Ordinal);
+        Assert.EndsWith("OFFSET 3", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("LIMIT", result.Sql, StringComparison.Ordinal);
+        Assert.Empty(result.WhereParameters);
+    }
+
+    [Fact]
+    public void BuildStatistics_UnknownOrderByField_Throws()
+    {
+        var query = new FeatureQuery
+        {
+            OutStatistics = ImmutableArray.Create(new StatisticDefinition
+            {
+                StatisticType = StatisticType.Count,
+                OnStatisticField = "OBJECTID",
+                OutStatisticFieldName = "N"
+            }),
+            OrderBy = ImmutableArray.Create(new OrderByClause("AREA;DROP"))
+        };
+
+        var ex = Assert.Throws<ArgumentException>(() => SnowflakeFeatureQueryBuilder.BuildStatistics(BuildMapping(), query));
+        Assert.Contains("order-by", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static string FilterTail(string sql)
     {
         const string marker = "WHERE 1=1";

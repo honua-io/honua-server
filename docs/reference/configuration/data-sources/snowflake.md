@@ -60,7 +60,7 @@ compared with Snowflake's `ST_*` relationship functions.
 | Translated `SqlFilter` (CQL2/FES/OData `$filter`) | **No** (rejected; see below) |
 | Cross-SRID filter geometry | **No** (rejected with `NotSupportedException`) |
 | Edits (Create / Update / Delete) | **No** |
-| Aggregate statistics (`outStatistics`: COUNT/SUM/MIN/MAX/AVG/STDDEV/VAR, optional GROUP BY, same WHERE and spatial filter as SELECT) | Yes |
+| Aggregate statistics (`outStatistics`: COUNT/SUM/MIN/MAX/AVG/STDDEV/VAR, optional GROUP BY, HAVING, ORDER BY, LIMIT, and OFFSET; same WHERE and spatial filter as SELECT) | Yes |
 | Top features, bins, H3 | **No** |
 | Temporal / `datetime` extent | **No** (rejected with `NotSupportedException`) |
 | Native MVT, FlatGeobuf, Geobuf, GML, streaming GeoJSON | **No** |

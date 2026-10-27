@@ -609,6 +609,79 @@ public class RedshiftFeatureQueryBuilderTests
         Assert.Contains("Temporal filters", ex.Message, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void BuildStatistics_HavingOrderByLimitAndOffset_BoundTheAggregateResult()
+    {
+        var query = new FeatureQuery
+        {
+            OutStatistics = ImmutableArray.Create(new StatisticDefinition
+            {
+                StatisticType = StatisticType.Sum,
+                OnStatisticField = "area",
+                OutStatisticFieldName = "area_sum"
+            }),
+            GroupByFields = ImmutableArray.Create("type"),
+            Having = ImmutableArray.Create(new HavingCondition
+            {
+                StatisticType = StatisticType.Sum,
+                OnStatisticField = "area",
+                Operator = HavingComparisonOperator.GreaterThan,
+                Value = 2600
+            }),
+            OrderBy = ImmutableArray.Create(new OrderByClause("AREA_SUM", ascending: false), new OrderByClause("type", ascending: true)),
+            Limit = 2,
+            Offset = 1
+        };
+
+        var result = RedshiftFeatureQueryBuilder.BuildStatistics(Mapping(), query);
+
+        var havingAt = result.Sql.IndexOf("HAVING SUM(\"area\") > @p0", StringComparison.Ordinal);
+        var orderAt = result.Sql.IndexOf("ORDER BY \"area_sum\" DESC, \"type\" ASC", StringComparison.Ordinal);
+        var limitAt = result.Sql.IndexOf("LIMIT @p1", StringComparison.Ordinal);
+        var offsetAt = result.Sql.IndexOf("OFFSET @p2", StringComparison.Ordinal);
+        Assert.True(havingAt > 0 && orderAt > havingAt && limitAt > orderAt && offsetAt > limitAt, result.Sql);
+        Assert.Equal(new object[] { 2600d, 2, 1 }, result.WhereParameters.ToArray());
+    }
+
+    [Fact]
+    public void BuildStatistics_OffsetWithoutOrderBy_DoesNotOrderByThePrimaryKey()
+    {
+        var query = new FeatureQuery
+        {
+            OutStatistics = ImmutableArray.Create(new StatisticDefinition
+            {
+                StatisticType = StatisticType.Count,
+                OnStatisticField = "id",
+                OutStatisticFieldName = "n"
+            }),
+            Offset = 4
+        };
+
+        var result = RedshiftFeatureQueryBuilder.BuildStatistics(Mapping(), query);
+
+        Assert.DoesNotContain("ORDER BY", result.Sql, StringComparison.Ordinal);
+        Assert.EndsWith("OFFSET @p0", result.Sql, StringComparison.Ordinal);
+        Assert.Equal(new object[] { 4 }, result.WhereParameters.ToArray());
+    }
+
+    [Fact]
+    public void BuildStatistics_UnknownOrderByField_Throws()
+    {
+        var query = new FeatureQuery
+        {
+            OutStatistics = ImmutableArray.Create(new StatisticDefinition
+            {
+                StatisticType = StatisticType.Count,
+                OnStatisticField = "id",
+                OutStatisticFieldName = "n"
+            }),
+            OrderBy = ImmutableArray.Create(new OrderByClause("area;drop"))
+        };
+
+        var ex = Assert.Throws<ArgumentException>(() => RedshiftFeatureQueryBuilder.BuildStatistics(Mapping(), query));
+        Assert.Contains("order-by", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static string FilterTail(string sql)
     {
         const string marker = "WHERE 1=1";

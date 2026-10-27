@@ -133,7 +133,7 @@ allow-list and emits a problem-details response through the shared exception pip
 | `IFeatureReader.GetExtentAsync` | Supported | `MIN/MAX` over `ST_XMin`/`ST_YMin`/`ST_XMax`/`ST_YMax`. |
 | `IFeatureReader.GetEstimatesAsync` | Supported | Combines `CountAsync` + `GetExtentAsync`. |
 | `IFeatureReader.QueryFlatGeobufAsync` | Returns `null` (fallback) | Server falls back to the in-process formatter. |
-| `IFeatureReader.QueryStatisticsAsync` | Supported | `COUNT`/`SUM`/`MIN`/`MAX`/`AVG`/`STDDEV_SAMP`/`VAR_SAMP` plus optional `GROUP BY`, with the same WHERE and spatial filter as SELECT. |
+| `IFeatureReader.QueryStatisticsAsync` | Supported | `COUNT`/`SUM`/`MIN`/`MAX`/`AVG`/`STDDEV_SAMP`/`VAR_SAMP` plus optional `GROUP BY`, with the same WHERE and spatial filter as SELECT. `HAVING`, `ORDER BY` (statistic aliases and group-by fields), `LIMIT`, and `OFFSET` apply to the aggregate rows. |
 | `IFeatureReader.GetTemporalExtentAsync` | Not supported | Throws `NotSupportedException`. |
 | `IFeatureReader.QueryTopFeaturesAsync` | Not supported | Throws `NotSupportedException`. |
 | `IFeatureReader.QueryDateBinsAsync` / `QueryBinsAsync` / `QueryH3Async` | Not supported | Throws `NotSupportedException`. |
