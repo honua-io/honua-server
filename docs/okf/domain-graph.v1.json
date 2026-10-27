@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:b3815345a33dc642371d0a07b06a6848e5564f1b1be1724721f4ddda0344f35e",
+  "bundleDigest": "sha256:d4cb2dc55f9fe503c2d5ddad9a6b2434815642a2df1ee4d4624deaa9d3f16349",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -7454,7 +7454,7 @@
     {
       "id": "ops/capacity-soak-receipt",
       "path": "ops/capacity-soak-receipt.md",
-      "documentDigest": "sha256:ae8423b184dfa5e0f5e8e3f15395dbd74fa0a8f5ac7a54f3b82ef7938fc80dbe",
+      "documentDigest": "sha256:b501ffc9567130776a9518fde2dc0acf47e2d73dc6e6dd2610da19b5cffaaa06",
       "metadata": {
         "type": "reference",
         "title": "Candidate capacity-soak receipt",

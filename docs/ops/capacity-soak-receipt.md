@@ -94,20 +94,6 @@ feature, catalogue, per-layer counts and tenant scope. The canonical feature
 encoding is compact JSON with Unicode preserved, including geometry and all
 returned attributes.
 
-The 170 virtual users are anonymous, like the NBomber soak the frozen thresholds were
-measured with (lock baseline run 34753540275). A credential on a request bypasses the
-server's anonymous output cache by design, so an admin-keyed workload measures an uncached
-path the thresholds never described. Only probes, payload setup and GP control requests
-carry the admin key. `services` counts published data services; the catalogue's built-in
-`Utilities/PrintingTools` GPServer and geocode locator are not published services.
-
-Before collection, `scripts/soak/envelope_config.py` reads the server container's effective
-environment and the served catalogue and fails the run when either differs from the lock:
-GP admission (`ExecutionAdmission:MaxConcurrentJobsGlobal` and `...PerPartition` equal
-`gpWorkers + gpQueueDepth`, because admission counts queued and executing jobs together),
-the submission-rate gate off, the app rate limiter off, one worker per replica, and the
-declared services and layers. The report is uploaded as `effective-config.json`.
-
 Each completed load, GP or probe request belongs to exactly one replica/container-incarnation
 and one UTC interval of at most 30 seconds. The joint histogram retains count,
 measured duration (rounded up to a millisecond), HTTP status, in-band error and
@@ -116,8 +102,7 @@ errors/timeouts are recorded as 599; they are never dropped. Requests completing
 outside the measured window are excluded by the same rule for every outcome.
 
 Metric and workload samples cover both endpoints and the complete window, with
-no gap above 60 seconds. Samples are taken on a fixed 30-second cadence anchored at the
-window start, so a slow sample delays only the next one. Samples retain their supporting observations. Worker
+no gap above 60 seconds. Samples retain their supporting observations. Worker
 pressure is the server container's CPU consumption divided by the available host
 CPUs (GP shares this process); database pressure is the server's measured pool
 utilization; Redis pressure is connected clients divided by its `maxclients`.
@@ -128,23 +113,11 @@ are retained as failures, never counted as queued jobs. Configured limits are no
 for observed depths. Missing samples and background-task errors remain explicit
 `samplingFailures` and cannot qualify.
 
-Founder ruling 2026-10-27: steady-state SLOs exclude the fault window, and the drill
-is judged separately. Worker, database and Redis stop/start drills therefore run
-**after** the measured window closes, with the workload and GP queue still running
-but no longer recorded in `requests`. Each retains injection, detected-stop and
-recovery timestamps plus its serving probe; database and Redis recovery also require
-direct dependency readiness. `faultDrill` in the observations and the receipt marks
-the fault period (`window`, `excludedFromMeasuredWindow: true`) and judges the drill:
-every dependency recovered, every layer still serves its full count and the maximum
-payload is byte-identical (`dataIntegrity`), and every outstanding GP job reaches a
-terminal state within 300 seconds after submissions stop (`gpJobs.stuckJobIds`).
-A failed drill keeps the receipt `incomplete`.
-
-The same ruling moves GP out of the GA capacity envelope. GP control requests stay
-in the raw observations (protocol `GPServer`) but are excluded from the GA SLO
-population (`gaPopulation.excludedProtocols`); their population and the
-`gpWorkers`/`gpQueueDepth` workloads are reported under `previewEvidence.gp`, and
-those workloads carry `tier: "preview"` and do not decide completion.
+Worker, database and Redis stop/start drills run **inside** the window. Each
+retains injection, detected-stop and recovery timestamps plus its serving probe.
+Database and Redis recovery also require direct dependency readiness. Deliberate
+faults remain inside the load population and may cause the candidate to fail its
+availability budget. The collector never excludes those failures to get green.
 
 ## Evidence and verification
 
@@ -192,12 +165,8 @@ candidate containing it. No run on a newer producer ref can repair that immutabl
 source mismatch. This PR's analytical and local HTTP fixtures are implementation
 evidence, not a candidate soak or a cryptographic attestation.
 
-Candidate run 40542363841 (53bb94a) showed why: the substrate set GP admission to
-`gpWorkers` (1), admission counted the one queued job against it, and 108,842
-submissions were refused in-band. The substrate now admits `gpWorkers + gpQueueDepth`
-active jobs and refuses to start the window otherwise. Earlier text: the old GP driver
-reports that the single-worker admission limit rejects new jobs while one runs; it
-does not fill the declared queue of 100. The new collector
+The old GP driver reports that the single-worker admission limit rejects new jobs
+while one runs; it does not fill the declared queue of 100. The new collector
 records the actual depth. If a new candidate still behaves that way, its queue
 workload fails the existing frozen contract and #5314 remains open until a real
 full-envelope soak passes. Neither a passing ZIP fixture nor retiring the nightly
