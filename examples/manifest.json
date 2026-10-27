@@ -14009,7 +14009,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 460,
+      "line": 461,
       "language": "sql"
     },
     {
