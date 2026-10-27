@@ -40,11 +40,9 @@ internal static class MySqlSpatialSql
 
     /// <summary>
     /// Returns <c>true</c> when <paramref name="srid"/> is an SRS the provider supports for
-    /// <c>ST_Distance_Sphere</c>. Restricted to EPSG:4326 (WGS84) and SRID 0 — the
-    /// combinations that match the documented "WGS84 spherical approximation" contract.
-    /// MySQL <c>ST_Distance_Sphere</c> raises <c>ER_INVALID_GIS_DATA</c> on projected SRSes
-    /// (e.g. EPSG:3857) and other geographic SRSes (e.g. NAD83) compute a result using a
-    /// different mean radius — pre-project to EPSG:4326 before issuing distance filters.
+    /// geodesic distance. Restricted to EPSG:4326 (WGS 84) and SRID 0. Projected SRSes
+    /// raise <c>ER_INVALID_GIS_DATA</c>, and other geographic SRSes are a different
+    /// ellipsoid — pre-project to EPSG:4326 before issuing distance filters.
     /// </summary>
     public static bool IsDistanceSphereCompatibleSrid(int srid) =>
         srid is 0 or 4326;
@@ -56,7 +54,25 @@ internal static class MySqlSpatialSql
     public const double DistanceSphereRadiusMeters = 6_371_008.8;
 
     /// <summary>
+    /// Geodesic distance in metres. MySQL on EPSG:4326 uses <c>ST_Distance</c>, which is
+    /// the host geodetic distance on the WGS 84 ellipsoid. MariaDB has no spheroid
+    /// function, and SRID 0 has no ellipsoid, so those hosts keep
+    /// <c>ST_Distance_Sphere</c> with <see cref="DistanceSphereRadiusMeters"/> visible in
+    /// the SQL.
+    /// </summary>
+    public static string GeodesicDistance(string left, string right, int srid, MySqlEngineFlavor flavor)
+    {
+        if (flavor == MySqlEngineFlavor.Mysql && srid == 4326)
+        {
+            return $"ST_Distance({left}, {right})";
+        }
+
+        return DistanceSphere(left, right);
+    }
+
+    /// <summary>
     /// <c>ST_Distance_Sphere(left, right, radius)</c> with the explicit mean-Earth radius.
+    /// Sphere fallback for hosts that have no spheroid function.
     /// </summary>
     public static string DistanceSphere(string left, string right)
     {

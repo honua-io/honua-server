@@ -209,6 +209,10 @@ public sealed class GpCliEndToEndTests
         root.GetProperty("nativeWorker").GetString().Should().Be("notChecked");
         root.GetProperty("registeredProcessCount").GetInt32().Should().BeGreaterThan(0);
         root.GetProperty("serviceBacked").GetString().Should().Be("requiresIntegrationStack");
+        var integrationProfile = root.GetProperty("integrationProfile").GetString();
+        integrationProfile.Should().Contain("Docker Compose v2");
+        integrationProfile.Should().Contain("5432").And.Contain("6379").And.Contain("8080").And.Contain("8081");
+        integrationProfile.Should().Contain("docker compose -f docker-compose.gp-dev.yml --profile integration up --build -d");
     }
 
     [Fact]

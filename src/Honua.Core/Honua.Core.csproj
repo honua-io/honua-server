@@ -79,6 +79,7 @@
     <InternalsVisibleTo Include="Honua.Oracle" />
     <InternalsVisibleTo Include="Honua.Redshift" />
     <InternalsVisibleTo Include="Honua.Snowflake" />
+    <InternalsVisibleTo Include="Honua.Databricks" />
   </ItemGroup>
 
   <ItemGroup>

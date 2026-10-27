@@ -7,11 +7,11 @@
     "capabilities": "docs/gis/data/feature-catalog.json"
   },
   "summary": {
-    "operationCount": 506,
+    "operationCount": 507,
     "unresolvedCount": 0,
     "capabilityCount": 23,
     "perSpec": {
-      "admin-api": 413,
+      "admin-api": 414,
       "ogc-api-coverages": 8,
       "ogc-api-features": 19,
       "ogc-api-maps": 10,
@@ -21,7 +21,7 @@
       "studio-api": 23
     },
     "perCapability": {
-      "admin.control-plane": 293,
+      "admin.control-plane": 294,
       "admin.multi-tenancy": 7,
       "alerts.evaluation": 18,
       "analytics.h3": 1,
@@ -2676,6 +2676,16 @@
       "family": "Admin API",
       "maturity": "implemented",
       "catalogEntryId": "get-api-v1-admin-observability-audit-export"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/observability/audit/gap-attestations",
+      "operationId": "attestObservabilityAuditGap",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-observability-audit-gap-attestations"
     },
     {
       "spec": "admin-api",

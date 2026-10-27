@@ -631,9 +631,10 @@ public class DuckDBFeatureQueryBuilderTests
     }
 
     [Fact]
-    public void BuildSelectQuery_WithinDistance_Nad27_Throws()
+    public void BuildSelectQuery_WithinDistance_Nad27_TransformsToWgs84BeforeSpheroid()
     {
-        // NAD27 degrees are not WGS 84. A direct spheroid distance skips the datum shift.
+        // NAD27 degrees are not WGS 84. The spatial extension shifts them to EPSG:4326
+        // before ST_Distance_Spheroid; measuring the stored degrees would skip that shift.
         var geographicMapping = new DuckDBLayerMapping
         {
             LayerId = 1,
@@ -650,7 +651,14 @@ public class DuckDBFeatureQueryBuilderTests
             SpatialFilter = SpatialFilter.CreateDistanceFilter([1, 2, 3, 4], 1000.0, DistanceUnit.Meters)
         };
 
-        Assert.Throws<NotSupportedException>(() => builder.BuildSelectQuery(1, query));
+        var result = builder.BuildSelectQuery(1, query);
+
+        Assert.Contains(
+            "ST_Distance_Spheroid(ST_FlipCoordinates(ST_Transform(\"geom\", 'EPSG:4267', 'EPSG:4326', always_xy := true)), ST_FlipCoordinates(ST_Transform(ST_GeomFromWKB($1), 'EPSG:4267', 'EPSG:4326', always_xy := true)))",
+            result.Sql,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("ST_DWithin(", result.Sql, StringComparison.Ordinal);
+        Assert.Contains(1000.0, result.WhereParameters.OfType<double>());
     }
 
     [Fact]

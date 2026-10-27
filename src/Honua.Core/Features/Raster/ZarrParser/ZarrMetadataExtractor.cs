@@ -457,7 +457,7 @@ public sealed class ZarrMetadataExtractor : IZarrMetadataReader
 
         var dataType = NormalizeV3DataType(ReadRequiredString(root, "data_type", name), name);
 
-        var compressor = ResolveV3Codecs(root, name);
+        var compressor = ResolveV3Codecs(root, name, dataType);
 
         var fillValue = ResolveFillValue(root, dataType, name);
 
@@ -549,18 +549,25 @@ public sealed class ZarrMetadataExtractor : IZarrMetadataReader
 
     /// <summary>
     /// Inspects the v3 codec pipeline. Requires a leading <c>bytes</c> (endianness)
-    /// codec and at most one trailing compression codec. <c>gzip</c> is zlib-wire
-    /// compatible and maps to the existing zlib decoder; uncompressed arrays return a
-    /// null compressor. Rejects blosc, sharding, and other unsupported codecs cleanly.
+    /// codec and at most one trailing <c>gzip</c> codec. Multi-byte samples require
+    /// little-endian bytes; gzip levels must be integers from zero through nine.
+    /// Uncompressed arrays return a null compressor. Unsupported pipelines are rejected
+    /// before any chunk data is read.
     /// </summary>
-    private static string? ResolveV3Codecs(JsonElement root, string name)
+    private static string? ResolveV3Codecs(JsonElement root, string name, string dataType)
     {
         if (!root.TryGetProperty("codecs", out var codecsEl) || codecsEl.ValueKind != JsonValueKind.Array)
         {
             throw new InvalidDataException($"Zarr v3 array '{name}' is missing its codec pipeline.");
         }
 
+        if (codecsEl.GetArrayLength() is < 1 or > 2)
+        {
+            throw new InvalidDataException($"Zarr v3 array '{name}' requires one bytes codec followed by at most one gzip codec.");
+        }
+
         string? compressor = null;
+        var codecIndex = 0;
         foreach (var codec in codecsEl.EnumerateArray())
         {
             if (codec.ValueKind != JsonValueKind.Object ||
@@ -574,18 +581,46 @@ public sealed class ZarrMetadataExtractor : IZarrMetadataReader
             switch (codecName)
             {
                 case "bytes":
-                    // Array->bytes codec. Reject big-endian; the subset reader is little-endian only.
-                    if (codec.TryGetProperty("configuration", out var bytesCfg) &&
-                        bytesCfg.ValueKind == JsonValueKind.Object &&
-                        bytesCfg.TryGetProperty("endian", out var endianEl) &&
-                        endianEl.ValueKind == JsonValueKind.String &&
-                        string.Equals(endianEl.GetString(), "big", StringComparison.Ordinal))
+                    if (codecIndex != 0)
                     {
-                        throw new InvalidDataException($"Zarr v3 array '{name}' declares big-endian bytes codec; only little-endian is supported.");
+                        throw new InvalidDataException($"Zarr v3 array '{name}' requires bytes as its first and only array-to-bytes codec.");
+                    }
+                    var hasConfiguration = codec.TryGetProperty("configuration", out var bytesCfg);
+                    if (hasConfiguration && bytesCfg.ValueKind != JsonValueKind.Object)
+                    {
+                        throw new InvalidDataException($"Zarr v3 array '{name}' has malformed bytes codec configuration.");
+                    }
+                    var hasEndian = hasConfiguration && bytesCfg.TryGetProperty("endian", out _);
+                    if (!hasEndian && dataType[0] != '|')
+                    {
+                        throw new InvalidDataException($"Zarr v3 array '{name}' requires bytes codec endianness for multi-byte samples.");
+                    }
+                    if (hasEndian)
+                    {
+                        var endianEl = bytesCfg.GetProperty("endian");
+                        if (endianEl.ValueKind != JsonValueKind.String || endianEl.GetString() is not ("little" or "big"))
+                        {
+                            throw new InvalidDataException($"Zarr v3 array '{name}' has invalid bytes codec endianness.");
+                        }
+                        if (endianEl.GetString() == "big" && dataType[0] != '|')
+                        {
+                            throw new InvalidDataException($"Zarr v3 array '{name}' declares big-endian bytes codec; only little-endian is supported.");
+                        }
                     }
                     break;
                 case "gzip":
-                    // Zarr v3 gzip codec: RFC 1952 gzip container over DEFLATE.
+                    if (codecIndex != 1)
+                    {
+                        throw new InvalidDataException($"Zarr v3 array '{name}' requires gzip to follow a bytes codec.");
+                    }
+                    if (!codec.TryGetProperty("configuration", out var gzipCfg) ||
+                        gzipCfg.ValueKind != JsonValueKind.Object ||
+                        !gzipCfg.TryGetProperty("level", out var levelEl) ||
+                        levelEl.ValueKind != JsonValueKind.Number ||
+                        !levelEl.TryGetInt32(out var level) || level is < 0 or > 9)
+                    {
+                        throw new InvalidDataException($"Zarr v3 array '{name}' requires gzip codec level to be an integer from 0 to 9.");
+                    }
                     compressor = "gzip";
                     break;
                 case "zstd":
@@ -596,6 +631,7 @@ public sealed class ZarrMetadataExtractor : IZarrMetadataReader
                 default:
                     throw new InvalidDataException($"Zarr v3 array '{name}' uses unsupported codec '{codecName}'.");
             }
+            codecIndex++;
         }
 
         return compressor;

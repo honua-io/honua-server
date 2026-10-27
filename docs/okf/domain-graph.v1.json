@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:e789326875387a200f8dc0fa8d687c41fd51212011efd1c96cc2ce2f7a577ec0",
+  "bundleDigest": "sha256:c75faed3c87b447bf9f26d934d6df567bfe462e188b8b69397a5222c7c0c6803",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -2578,7 +2578,7 @@
     {
       "id": "guides/query-analyze/gp-local-dev-quickstart",
       "path": "guides/query-analyze/gp-local-dev-quickstart.md",
-      "documentDigest": "sha256:445e6c83cc1761a63444e6f79705da7ebdc8242241dd2c98906e4063118d08de",
+      "documentDigest": "sha256:249492e7a73209b9326146414cb7aa29976ee0afcf8e210c631d7e69a4e03a3a",
       "metadata": {
         "type": "guide",
         "title": "Local geoprocessing dev quickstart",
@@ -5383,7 +5383,7 @@
     {
       "id": "okf/capabilities/admin.control-plane",
       "path": "okf/capabilities/admin.control-plane.md",
-      "documentDigest": "sha256:7adaf0084b0c8eec30d632412657b323aa69bd3683f1b3eaae3b6d457af6c176",
+      "documentDigest": "sha256:d238b8871efb87d672348c3aa91e8be3fac448dc7586cb4fd40a683c9cc98229",
       "metadata": {
         "type": "capability",
         "title": "Admin Control Plane",
@@ -5451,7 +5451,7 @@
     {
       "id": "okf/capabilities/ai.mcp-discovery",
       "path": "okf/capabilities/ai.mcp-discovery.md",
-      "documentDigest": "sha256:35aa438712bfd5e7dac8facf69b1fd7e94f1b9af2b8bda9294e6ae3c8cb08e2b",
+      "documentDigest": "sha256:3264375dfeeb32012f20216591c238d040ddd277fb9a2ffbc87de1e603d301ca",
       "metadata": {
         "type": "capability",
         "title": "MCP Discovery & Query",
@@ -6267,7 +6267,7 @@
     {
       "id": "okf/capabilities/identity.portal-sharing",
       "path": "okf/capabilities/identity.portal-sharing.md",
-      "documentDigest": "sha256:82700d10c055dbe84c320f0697d76b730bbf8714f08a08012113c384cf43f00d",
+      "documentDigest": "sha256:636a9c76520fa99fed6de7af4d156f567ecb222cc034c28e1480c112714038fa",
       "metadata": {
         "type": "capability",
         "title": "ArcGIS Portal Sharing Read Surface",
@@ -6777,7 +6777,7 @@
     {
       "id": "okf/capabilities/serve.geoservices-featureserver",
       "path": "okf/capabilities/serve.geoservices-featureserver.md",
-      "documentDigest": "sha256:34a5246a1ad50ca52c904422fbadb2a0b2bfc6da8ecdabe2b74d98441e912711",
+      "documentDigest": "sha256:e230156c1718404abb352cff9ca1fd4aa895a7344b4bdb9eba6373ede171fd7c",
       "metadata": {
         "type": "capability",
         "title": "FeatureServer Query",
@@ -6828,7 +6828,7 @@
     {
       "id": "okf/capabilities/serve.geoservices-imageserver",
       "path": "okf/capabilities/serve.geoservices-imageserver.md",
-      "documentDigest": "sha256:547ac177e8c3d7e232087e0a5067061b6cfdc9c3960861a948a31488bfae2ad8",
+      "documentDigest": "sha256:d17fc8e15d8aee123816797b51de88604c2f28f074040777ef2dbb6b7dcf9ea2",
       "metadata": {
         "type": "capability",
         "title": "ImageServer",
@@ -7083,7 +7083,7 @@
     {
       "id": "okf/capabilities/serve.vector-tiles",
       "path": "okf/capabilities/serve.vector-tiles.md",
-      "documentDigest": "sha256:245d58507d3704ace0fb2b9795358c833773ba4be37874fc9f4195d2842c09a3",
+      "documentDigest": "sha256:b23dc5ee67ec4f982acd92fb4de5f69a56a0341834022d1e142cbe00e849e7e0",
       "metadata": {
         "type": "capability",
         "title": "Vector Tiles (MVT/TileJSON/PMTiles)",
@@ -7117,7 +7117,7 @@
     {
       "id": "okf/capabilities/serve.wfs",
       "path": "okf/capabilities/serve.wfs.md",
-      "documentDigest": "sha256:76db96bf8b34a7f83586442cd4730a4a65159ce52d30b1b3f3d62375b4f2e480",
+      "documentDigest": "sha256:4ef5fe336472ff5ec967db5177416c5574cf8197ddc603f8eeacde46f7be916d",
       "metadata": {
         "type": "capability",
         "title": "WFS 2.0",
@@ -7688,7 +7688,7 @@
     {
       "id": "reference/configuration/data-sources/databricks",
       "path": "reference/configuration/data-sources/databricks.md",
-      "documentDigest": "sha256:b6434ba2d61690b942198f59caf7b9aca7cf184d7048abaa10fc8c33d6974bca",
+      "documentDigest": "sha256:f9bc9435db6b9ae7c99071a34e1cd1d24cec46b12313e95dcaabea80064be066",
       "metadata": {
         "type": "reference",
         "title": "Databricks provider (read-only, best-effort)",
@@ -7700,7 +7700,7 @@
     {
       "id": "reference/configuration/data-sources/duckdb",
       "path": "reference/configuration/data-sources/duckdb.md",
-      "documentDigest": "sha256:f765001e6c90c1a833a1250b31c87fd48569e4f96f4640e8abbdadb24b428826",
+      "documentDigest": "sha256:0f48f93f128f9e3dc5789ef70bd5ea2d5b9594e7b9dc45d359073c270aaf52ec",
       "metadata": {
         "type": "reference",
         "title": "DuckDB provider",
@@ -7711,7 +7711,7 @@
     {
       "id": "reference/configuration/data-sources/mysql-mariadb",
       "path": "reference/configuration/data-sources/mysql-mariadb.md",
-      "documentDigest": "sha256:263e172191faf938c9b40d524b00ff7852a0110771e86b1947959a3d0e9d1c6e",
+      "documentDigest": "sha256:e989b5dedec142906c30fd418eebd170038cf992aa151be75f778b93b96becd4",
       "metadata": {
         "type": "reference",
         "title": "MySQL/MariaDB provider",
@@ -16979,7 +16979,7 @@
       "validation": "openapi_method_and_path",
       "runtimeDiscoveryRequired": true,
       "executionVerified": false,
-      "contractDigest": "sha256:13d10331b2bfc77edc80ea68dc0eb20197340795ba2483441ad0d36960e0a845"
+      "contractDigest": "sha256:1370bfa96417d15c89b4e91fb23f7d3c7fd6dc7eab004693f85d00ebd6485655"
     },
     {
       "workflow": "guides/workflows/design-studio",
@@ -17043,7 +17043,7 @@
       "validation": "openapi_method_and_path",
       "runtimeDiscoveryRequired": true,
       "executionVerified": false,
-      "contractDigest": "sha256:13d10331b2bfc77edc80ea68dc0eb20197340795ba2483441ad0d36960e0a845"
+      "contractDigest": "sha256:1370bfa96417d15c89b4e91fb23f7d3c7fd6dc7eab004693f85d00ebd6485655"
     },
     {
       "workflow": "guides/workflows/import-data",
@@ -17053,7 +17053,7 @@
       "validation": "openapi_method_and_path",
       "runtimeDiscoveryRequired": true,
       "executionVerified": false,
-      "contractDigest": "sha256:13d10331b2bfc77edc80ea68dc0eb20197340795ba2483441ad0d36960e0a845"
+      "contractDigest": "sha256:1370bfa96417d15c89b4e91fb23f7d3c7fd6dc7eab004693f85d00ebd6485655"
     },
     {
       "workflow": "guides/workflows/import-data",

@@ -29,6 +29,7 @@ public sealed class ObservabilityEventEndpointsTests : IAsyncLifetime
     private readonly StubAuditReader _auditReader = new();
     private readonly StubAuditExporter _auditExporter = new();
     private readonly StubAuditVerifier _auditVerifier = new();
+    private readonly StubGapAttestor _gapAttestor = new();
     private readonly StubOperateFeed _feed = new();
     private readonly WebAppFixture _fixture;
     private HttpClient _client = null!;
@@ -44,10 +45,12 @@ public sealed class ObservabilityEventEndpointsTests : IAsyncLifetime
                 services.RemoveAll<IAuditLogReader>();
                 services.RemoveAll<IAuditLogExporter>();
                 services.RemoveAll<IAuditLogIntegrityVerifier>();
+                services.RemoveAll<IAuditChainGapAttestor>();
                 services.RemoveAll<IOperateEventFeed>();
                 services.AddSingleton<IAuditLogReader>(_auditReader);
                 services.AddSingleton<IAuditLogExporter>(_auditExporter);
                 services.AddSingleton<IAuditLogIntegrityVerifier>(_auditVerifier);
+                services.AddSingleton<IAuditChainGapAttestor>(_gapAttestor);
                 services.AddSingleton<IOperateEventFeed>(_feed);
             });
     }
@@ -241,6 +244,75 @@ public sealed class ObservabilityEventEndpointsTests : IAsyncLifetime
         doc.RootElement.GetProperty("rowsChecked").GetInt64().Should().Be(12);
     }
 
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/observability/audit/gap-attestations")]
+    public async Task AttestGap_ReturnsCreatedDeclarationAndVerification()
+    {
+        _gapAttestor.Outcome = new AuditChainGapAttestationOutcome
+        {
+            Status = AuditChainGapAttestationStatus.Attested,
+            Attestation = new AuditChainGapAttestation
+            {
+                AttestationAuditId = 912,
+                AnchorAuditId = 286,
+                AnchorEntryHash = new string('a', 64),
+                GapFirstAuditId = 287,
+                GapLastAuditId = 301,
+                GapRowCount = 15,
+                ResumeAuditId = 302,
+                Reason = "rollback",
+            },
+            Report = new AuditIntegrityReport { Verified = true, RowsChecked = 912, UnhashedRows = 0, AttestedGapRows = 15 },
+        };
+
+        var response = await _client.PostAsync(
+            "/api/v1/admin/observability/audit/gap-attestations",
+            JsonContent("""{"gapFirstAuditId":287,"reason":"2026-06-30 rollback to a pre-hash-chain release"}"""));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        doc.RootElement.GetProperty("attestationAuditId").GetInt64().Should().Be(912);
+        doc.RootElement.GetProperty("gapLastAuditId").GetInt64().Should().Be(301);
+        doc.RootElement.GetProperty("verification").GetProperty("verified").GetBoolean().Should().BeTrue();
+        doc.RootElement.GetProperty("verification").GetProperty("attestedGapRows").GetInt64().Should().Be(15);
+        _gapAttestor.LastRequest!.GapFirstAuditId.Should().Be(287);
+        _gapAttestor.LastRequest.Reason.Should().Be("2026-06-30 rollback to a pre-hash-chain release");
+        _gapAttestor.LastRequest.Actor.Should().NotBeNullOrWhiteSpace();
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/observability/audit/gap-attestations")]
+    public async Task AttestGap_WithoutChainKey_ReturnsConflict()
+    {
+        _gapAttestor.Outcome = new AuditChainGapAttestationOutcome
+        {
+            Status = AuditChainGapAttestationStatus.KeyNotConfigured,
+            Detail = "AuditLog:ChainVerification:Key is not configured.",
+        };
+
+        var response = await _client.PostAsync(
+            "/api/v1/admin/observability/audit/gap-attestations",
+            JsonContent("""{"gapFirstAuditId":287,"reason":"rollback"}"""));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("ChainVerification");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/observability/audit/gap-attestations")]
+    public async Task AttestGap_WithoutReason_ReturnsBadRequestAndDoesNotAttest()
+    {
+        var response = await _client.PostAsync(
+            "/api/v1/admin/observability/audit/gap-attestations",
+            JsonContent("""{"gapFirstAuditId":287}"""));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        _gapAttestor.LastRequest.Should().BeNull();
+    }
+
+    private static StringContent JsonContent(string json)
+        => new(json, System.Text.Encoding.UTF8, "application/json");
+
     private static AuditEventRecord ExportRecord(long id, string action) => new()
     {
         AuditId = id,
@@ -296,6 +368,25 @@ public sealed class ObservabilityEventEndpointsTests : IAsyncLifetime
 
         public Task<AuditIntegrityReport> VerifyAsync(CancellationToken cancellationToken = default)
             => Task.FromResult(Report);
+    }
+
+    private sealed class StubGapAttestor : IAuditChainGapAttestor
+    {
+        public AuditChainGapAttestationOutcome Outcome { get; set; } = new()
+        {
+            Status = AuditChainGapAttestationStatus.Refused,
+            Detail = "not configured in this test",
+        };
+
+        public AuditChainGapAttestationRequest? LastRequest { get; private set; }
+
+        public Task<AuditChainGapAttestationOutcome> AttestAsync(
+            AuditChainGapAttestationRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            LastRequest = request;
+            return Task.FromResult(Outcome);
+        }
     }
 
     private sealed class StubOperateFeed : IOperateEventFeed
