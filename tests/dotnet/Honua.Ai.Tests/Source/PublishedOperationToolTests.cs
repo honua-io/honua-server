@@ -39,7 +39,7 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 /// <c>tools/list</c> / <c>tools/call</c>.
 /// </summary>
 [Protocol(TestProtocols.Mcp)]
-public sealed class PublishedOperationToolTests
+public sealed partial class PublishedOperationToolTests
 {
     private const string DeterministicReadOnlyOpId = "geo.summary";
     private const string MutatingOpId = "geo.export";

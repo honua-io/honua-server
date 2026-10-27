@@ -1,6 +1,9 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Buffers;
+using System.Security.Cryptography;
+using System.Text.Json;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Operations.Abstractions;
@@ -10,12 +13,12 @@ namespace Honua.Core.Features.Operations.Services;
 
 /// <summary>
 /// Default <see cref="IOperationInvoker"/>. Resolves the descriptor + executor for an
-/// operation id, runs the policy decision point, and only on
-/// <see cref="PolicyDecisionKind.Allow"/> calls the executor. For Deny / RequireApproval /
+/// operation id and runs the policy decision point. Ordinary submissions call the executor
+/// only on <see cref="PolicyDecisionKind.Allow"/>; explicit proposal submissions add a separate approval floor. For Deny / RequireApproval /
 /// DryRunFirst it returns a handle that reflects the decision WITHOUT touching the executor —
 /// proving the guardrail seam holds for every registered policy implementation.
 /// </summary>
-public sealed class OperationDispatcher : IOperationInvoker
+public sealed class OperationDispatcher : IOperationInvoker, IOperationProposalSubmitter
 {
     private static readonly TimeSpan PostActuationPersistenceTimeout = TimeSpan.FromSeconds(10);
 
@@ -76,13 +79,47 @@ public sealed class OperationDispatcher : IOperationInvoker
     }
 
     /// <inheritdoc />
-    public async Task<OperationHandle> SubmitAsync(
+    public Task<OperationHandle> SubmitAsync(
         OperationRequest request,
         OperationPolicyContext context,
         CancellationToken cancellationToken = default)
+        => SubmitCoreAsync(request, context, proposalOnly: false, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<OperationHandle> ProposeAsync(
+        OperationRequest request,
+        OperationPolicyContext context,
+        CancellationToken cancellationToken = default)
+        => SubmitCoreAsync(request, context, proposalOnly: true, cancellationToken);
+
+    private async Task<OperationHandle> SubmitCoreAsync(
+        OperationRequest request,
+        OperationPolicyContext context,
+        bool proposalOnly,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
+        if (proposalOnly && (request.DryRun || context.ApprovedProposalId is not null || context.ApprovedPlanHash is not null
+            || string.IsNullOrWhiteSpace(context.PrincipalId)))
+        {
+            throw new ArgumentException("Proposal submission requires an authenticated original principal, no replay proof and no dry run.");
+        }
+
+        OperationDescriptor? proposalDescriptor = null;
+        if (proposalOnly)
+        {
+            if (context.OperationInstanceId is not null || context.ProposalId is not null || context.AuditId is not null
+                || request.GatewayRequest is not null || request.VerifiedCommittedSinkPublication is not null)
+                throw new ArgumentException("Proposal submission cannot adopt an existing invocation or compatibility execution context.");
+            request = request with
+            {
+                Parameters = new Dictionary<string, string?>(request.Parameters, StringComparer.Ordinal),
+                Fields = request.Fields.ToArray(),
+                SecretParameters = new Dictionary<string, OperationSecretReference>(request.SecretParameters, StringComparer.Ordinal),
+            };
+            context = BindProposalSubmissionIdentity(request, context);
+        }
 
         // A descriptor can remain discoverable while its secret-aware actuator is deliberately
         // withheld. Such a submission must not create a handle or approval proposal at all,
@@ -122,6 +159,16 @@ public sealed class OperationDispatcher : IOperationInvoker
                     ? "Operation exceeds the caller's OAuth scope authority."
                     : "Approved replay operation exceeds the sealed OAuth scope authority.",
             };
+        }
+
+        if (proposalOnly)
+        {
+            // Preserve the ordinary pre-acceptance scope refusal before resolving the
+            // selected descriptor. Nongated operations still cannot enter acceptance.
+            proposalDescriptor = await _catalog.GetDescriptorAsync(request.OperationId, cancellationToken).ConfigureAwait(false)
+                ?? throw new OperationNotFoundException(request.OperationId);
+            if (proposalDescriptor.ApprovalModel != OperationApprovalModel.OperatorGate)
+                throw new ArgumentException("Proposal submission requires an operator-gated descriptor.");
         }
 
         string? acceptanceAuditId;
@@ -253,7 +300,7 @@ public sealed class OperationDispatcher : IOperationInvoker
         OperationValidation validation;
         try
         {
-            descriptor = await _catalog.GetDescriptorAsync(request.OperationId, cancellationToken).ConfigureAwait(false)
+            descriptor = proposalDescriptor ?? await _catalog.GetDescriptorAsync(request.OperationId, cancellationToken).ConfigureAwait(false)
                 ?? throw new OperationNotFoundException(request.OperationId);
             executor = ResolveExecutor(request.OperationId);
             if (executor is IOperationRequestPreparer preparer)
@@ -310,6 +357,17 @@ public sealed class OperationDispatcher : IOperationInvoker
                     .EvaluateAsync(descriptor, request, invocationContext, cancellationToken)
                     .ConfigureAwait(false)
                 : PolicyDecision.Allowed;
+            // Only this trusted mode adds an approval floor. A refusal is never promoted,
+            // and verified approved replay remains on the ordinary submission path.
+            if (proposalOnly && decision.Kind == PolicyDecisionKind.Allow)
+            {
+                decision = new PolicyDecision
+                {
+                    Kind = PolicyDecisionKind.RequireApproval,
+                    ApprovalLane = "control-plane",
+                    Reason = "Operator-gated proposal submission requires separate approval.",
+                };
+            }
             envelope = envelope with
             {
                 OperationId = descriptor.OperationId,
@@ -480,6 +538,11 @@ public sealed class OperationDispatcher : IOperationInvoker
             TenantId = envelope.TenantId,
             CorrelationId = correlationId,
             AuditId = acceptanceAuditId,
+            // Actuators return execution results, not approval authority. Retain the
+            // verified replay's durable proposal join across completion and retries.
+            ProposalId = string.IsNullOrWhiteSpace(invocationContext.ApprovedProposalId)
+                ? envelope.ProposalId ?? executed.ProposalId
+                : invocationContext.ApprovedProposalId,
             CreatedAt = createdAt,
             UpdatedAt = _clock.GetUtcNow(),
             AuthorizationOutcome = invocationContext.AuthorizationOutcome,
@@ -697,6 +760,43 @@ public sealed class OperationDispatcher : IOperationInvoker
                 {
                     EvidenceRefs = [.. envelope.EvidenceRefs, NonDurableDirectOperationInstanceStore.NonDurableEvidenceRef],
                 };
+
+    private static OperationPolicyContext BindProposalSubmissionIdentity(OperationRequest request, OperationPolicyContext context)
+    {
+        var buffer = new ArrayBufferWriter<byte>();
+        using (var writer = new Utf8JsonWriter(buffer))
+        {
+            writer.WriteStartObject(); writer.WriteString("mode", "operator-proposal-v1");
+            writer.WriteString("actor", context.PrincipalId); writer.WriteString("tenant", context.TenantId);
+            writer.WriteString("schema", context.SchemaName); writer.WriteString("operation", request.OperationId);
+            writer.WriteString("connection", request.ConnectionId); writer.WriteString("service", request.ServiceName);
+            writer.WriteString("adapterBinding", context.IdempotencyRequestHash);
+            writer.WriteStartObject("parameters");
+            foreach (var pair in request.Parameters.OrderBy(pair => pair.Key, StringComparer.Ordinal)) writer.WriteString(pair.Key, pair.Value);
+            writer.WriteEndObject(); writer.WriteStartArray("fields");
+            foreach (var field in request.Fields) writer.WriteStringValue(field);
+            writer.WriteEndArray(); writer.WriteStartObject("secretReferences");
+            foreach (var pair in request.SecretParameters.OrderBy(pair => pair.Key, StringComparer.Ordinal))
+            {
+                writer.WriteStartArray(pair.Key); writer.WriteStringValue(pair.Value.Name);
+                writer.WriteStringValue(pair.Value.ReferenceId); writer.WriteEndArray();
+            }
+            writer.WriteEndObject(); writer.WriteEndObject();
+        }
+        var requestHash = Convert.ToHexStringLower(SHA256.HashData(buffer.WrittenSpan));
+        buffer = new ArrayBufferWriter<byte>();
+        using (var writer = new Utf8JsonWriter(buffer))
+        {
+            writer.WriteStartArray(); writer.WriteStringValue("operator-proposal-v1");
+            writer.WriteStringValue(context.PrincipalId); writer.WriteStringValue(context.TenantId);
+            writer.WriteStringValue(context.IdempotencyKey); writer.WriteEndArray();
+        }
+        return context with
+        {
+            IdempotencyKey = context.IdempotencyKey is null ? null : "proposal-" + Convert.ToHexStringLower(SHA256.HashData(buffer.WrittenSpan)),
+            IdempotencyRequestHash = requestHash,
+        };
+    }
 
     private static bool IsTerminal(OperationHandleStatus status)
         => status is OperationHandleStatus.Completed
