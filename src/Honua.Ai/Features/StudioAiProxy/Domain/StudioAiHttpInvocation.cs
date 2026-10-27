@@ -38,9 +38,15 @@ internal sealed class StudioAiHttpInvocation
 
     internal static StudioAiProxyProviderOptions SnapshotOptions(StudioAiProxyProviderOptions options) => new()
     {
-        Kind = options.Kind, Endpoint = options.Endpoint, Model = options.Model, Region = options.Region,
-        ApiKey = options.ApiKey, ApiKeyFromEnvironment = options.ApiKeyFromEnvironment,
-        TimeoutSeconds = options.TimeoutSeconds, MaxTokens = options.MaxTokens, SupportsTools = options.SupportsTools
+        Kind = options.Kind,
+        Endpoint = options.Endpoint,
+        Model = options.Model,
+        Region = options.Region,
+        ApiKey = options.ApiKey,
+        ApiKeyFromEnvironment = options.ApiKeyFromEnvironment,
+        TimeoutSeconds = options.TimeoutSeconds,
+        MaxTokens = options.MaxTokens,
+        SupportsTools = options.SupportsTools
     };
 
     private static JsonElement CopyJson(JsonElement value)
@@ -52,23 +58,37 @@ internal sealed class StudioAiHttpInvocation
         AcceptedRequestJson = request.AcceptedRequestJson is { } accepted ? (byte[])accepted.Clone() : null,
         Certification = request.Certification is { } certification ? new()
         {
-            CandidateId = certification.CandidateId, TenantId = certification.TenantId, ReleaseId = certification.ReleaseId,
-            EndpointIdentity = certification.EndpointIdentity, ActionId = certification.ActionId, RunNonce = certification.RunNonce
+            CandidateId = certification.CandidateId,
+            TenantId = certification.TenantId,
+            ReleaseId = certification.ReleaseId,
+            EndpointIdentity = certification.EndpointIdentity,
+            ActionId = certification.ActionId,
+            RunNonce = certification.RunNonce
         } : null,
-        Provider = request.Provider, Model = request.Model, System = request.System,
-        MaxTokens = request.MaxTokens, Temperature = request.Temperature,
+        Provider = request.Provider,
+        Model = request.Model,
+        System = request.System,
+        MaxTokens = request.MaxTokens,
+        Temperature = request.Temperature,
         ToolChoice = request.ToolChoice is { } choice ? new() { Mode = choice.Mode, ToolName = choice.ToolName } : null,
         Messages = Array.AsReadOnly(request.Messages.Select(message => new StudioAiMessage
         {
-            Role = message.Role, Content = message.Content, ToolCallId = message.ToolCallId, ToolName = message.ToolName,
+            Role = message.Role,
+            Content = message.Content,
+            ToolCallId = message.ToolCallId,
+            ToolName = message.ToolName,
             ToolCalls = message.ToolCalls is { } calls ? Array.AsReadOnly(calls.Select(call => new StudioAiToolCall
             {
-                Id = call.Id, Name = call.Name, Arguments = CopyJson(call.Arguments)
+                Id = call.Id,
+                Name = call.Name,
+                Arguments = CopyJson(call.Arguments)
             }).ToArray()) : null
         }).ToArray()),
         Tools = request.Tools is { } tools ? Array.AsReadOnly(tools.Select(tool => new StudioAiToolDefinition
         {
-            Name = tool.Name, Description = tool.Description, InputSchema = CopyJson(tool.InputSchema),
+            Name = tool.Name,
+            Description = tool.Description,
+            InputSchema = CopyJson(tool.InputSchema),
             Annotations = tool.Annotations is { } annotations ? CopyJson(annotations) : null,
             OutputSchema = tool.OutputSchema is { } output ? CopyJson(output) : null
         }).ToArray()) : null

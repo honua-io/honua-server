@@ -32,28 +32,46 @@ public sealed class StudioAiHttpPreparationTests
     {
         var options = new StudioAiProxyProviderOptions
         {
-            Kind = kind, Endpoint = "https://original.invalid", Model = "original-model",
-            ApiKey = "fixture-key", ApiKeyFromEnvironment = true, MaxTokens = 4096, TimeoutSeconds = 10
+            Kind = kind,
+            Endpoint = "https://original.invalid",
+            Model = "original-model",
+            ApiKey = "fixture-key",
+            ApiKeyFromEnvironment = true,
+            MaxTokens = 4096,
+            TimeoutSeconds = 10
         };
         var config = new StudioAiProxyConfiguration { Enabled = true, DefaultProvider = "original" };
         config.Providers["original"] = options;
         config.Providers["later"] = new StudioAiProxyProviderOptions
         {
-            Kind = kind, Endpoint = "https://later.invalid", Model = "later-model",
-            ApiKey = "later-fixture-key", ApiKeyFromEnvironment = true, MaxTokens = 256, TimeoutSeconds = 10
+            Kind = kind,
+            Endpoint = "https://later.invalid",
+            Model = "later-model",
+            ApiKey = "later-fixture-key",
+            ApiKeyFromEnvironment = true,
+            MaxTokens = 256,
+            TimeoutSeconds = 10
         };
         foreach (var (name, provider) in config.Providers)
         {
             config.Disclosure.Approvals.Add(new()
             {
-                Provider = name, Kind = kind, Destination = provider.Endpoint, Model = provider.Model,
-                UseCase = "studio-chat", DataClassification = "unclassified"
+                Provider = name,
+                Kind = kind,
+                Destination = provider.Endpoint,
+                Model = provider.Model,
+                UseCase = "studio-chat",
+                DataClassification = "unclassified"
             });
         }
         config.Disclosure.Approvals.Add(new()
         {
-            Provider = "original", Kind = kind, Destination = "https://mutated.invalid", Model = "mutated-model",
-            UseCase = "studio-chat", DataClassification = "unclassified"
+            Provider = "original",
+            Kind = kind,
+            Destination = "https://mutated.invalid",
+            Model = "mutated-model",
+            UseCase = "studio-chat",
+            DataClassification = "unclassified"
         });
         var messages = new List<StudioAiMessage> { new() { Role = StudioAiRole.User, Content = "original input" } };
         using var schema = JsonDocument.Parse("{\"type\":\"object\",\"description\":\"original schema\"}");
@@ -93,12 +111,19 @@ public sealed class StudioAiHttpPreparationTests
         var config = new StudioAiProxyConfiguration { Enabled = true, DefaultProvider = "local" };
         config.Providers["local"] = new()
         {
-            Kind = "openai", Endpoint = "https://original.invalid", Model = "original-model", MaxTokens = 4096
+            Kind = "openai",
+            Endpoint = "https://original.invalid",
+            Model = "original-model",
+            MaxTokens = 4096
         };
         config.Disclosure.Approvals.Add(new()
         {
-            Provider = "local", Kind = "openai", Destination = "https://original.invalid", Model = "original-model",
-            UseCase = "studio-chat", DataClassification = "unclassified"
+            Provider = "local",
+            Kind = "openai",
+            Destination = "https://original.invalid",
+            Model = "original-model",
+            UseCase = "studio-chat",
+            DataClassification = "unclassified"
         });
         var accepted = Encoding.UTF8.GetBytes("""
             {
@@ -159,13 +184,22 @@ public sealed class StudioAiHttpPreparationTests
         var config = new StudioAiProxyConfiguration { Enabled = true, DefaultProvider = "local" };
         config.Providers["local"] = new()
         {
-            Kind = kind, Endpoint = "https://original.invalid", Model = "original-model",
-            ApiKey = "fixture-key", ApiKeyFromEnvironment = true, MaxTokens = 4096, TimeoutSeconds = 10
+            Kind = kind,
+            Endpoint = "https://original.invalid",
+            Model = "original-model",
+            ApiKey = "fixture-key",
+            ApiKeyFromEnvironment = true,
+            MaxTokens = 4096,
+            TimeoutSeconds = 10
         };
         config.Disclosure.Approvals.Add(new()
         {
-            Provider = "local", Kind = kind, Destination = config.Providers["local"].Endpoint,
-            Model = "original-model", UseCase = "studio-chat", DataClassification = "unclassified"
+            Provider = "local",
+            Kind = kind,
+            Destination = config.Providers["local"].Endpoint,
+            Model = "original-model",
+            UseCase = "studio-chat",
+            DataClassification = "unclassified"
         });
         var schema = JsonDocument.Parse("{\"type\":\"object\",\"description\":\"owned schema\"}");
         var request = new StudioAiChatRequest
@@ -193,8 +227,12 @@ public sealed class StudioAiHttpPreparationTests
     {
         var options = new StudioAiProxyProviderOptions
         {
-            Kind = kind, Endpoint = "https://original.invalid/gateway/", Model = "original-model",
-            ApiKey = "secret://fixture-provider", MaxTokens = 4096, TimeoutSeconds = 10
+            Kind = kind,
+            Endpoint = "https://original.invalid/gateway/",
+            Model = "original-model",
+            ApiKey = "secret://fixture-provider",
+            MaxTokens = 4096,
+            TimeoutSeconds = 10
         };
         var messages = new List<StudioAiMessage> { new() { Role = StudioAiRole.User, Content = "original input" } };
         var secrets = Substitute.For<ISecretProvider>();
@@ -342,13 +380,21 @@ public sealed class StudioAiHttpPreparationTests
         var config = new StudioAiProxyConfiguration { Enabled = true, DefaultProvider = "original" };
         config.Providers["original"] = new()
         {
-            Kind = kind, Endpoint = "https://original.invalid", Model = "original-model",
-            ApiKey = "secret://fixture-provider", MaxTokens = 4096, TimeoutSeconds = 10
+            Kind = kind,
+            Endpoint = "https://original.invalid",
+            Model = "original-model",
+            ApiKey = "secret://fixture-provider",
+            MaxTokens = 4096,
+            TimeoutSeconds = 10
         };
         config.Disclosure.Approvals.Add(new()
         {
-            Provider = "original", Kind = kind, Destination = "https://original.invalid", Model = "original-model",
-            UseCase = "studio-chat", DataClassification = "unclassified"
+            Provider = "original",
+            Kind = kind,
+            Destination = "https://original.invalid",
+            Model = "original-model",
+            UseCase = "studio-chat",
+            DataClassification = "unclassified"
         });
         return config;
     }
