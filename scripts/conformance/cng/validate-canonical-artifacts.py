@@ -16,6 +16,7 @@ from typing import Any, NamedTuple
 from pmtiles_http import HttpRangeSource, load_source
 from derived_zarr import has_derived_binding, observe_array
 from derived_fsspec import observe_fsspec
+from producer_run import DISPATCH_ENV, producer_run
 
 CLIENTS = {
     "GeoPandas": "1.1.4",
@@ -1489,6 +1490,26 @@ def _append_unexecuted_cells(observations: list[dict], args: argparse.Namespace)
     return observations
 
 
+def _bind_producer_run(observations: list[dict], run: dict | None) -> None:
+    """Record the nightly producer run in every executed receipt identity.
+
+    honua-release's convergence ledger accepts a nightly pass/fail cell only when
+    `evidence_receipt.identity.producer_run` equals the run it dispatched. The
+    identity must be bound before the receipt is hashed into `evidence_digest`, so
+    this runs on the receipt objects themselves, never on a digest already taken.
+    Today every CNG observation carries `evidence_receipt = None` (receipt v2 is
+    honua-server#3753), so this records nothing per cell until that lands.
+    """
+    if run is None:
+        return
+    for observation in observations:
+        receipt = observation.get("evidence_receipt")
+        if isinstance(receipt, dict):
+            if not isinstance(receipt.get("identity"), dict):
+                raise ValueError(f"{_cell_name(observation)}: receipt has no identity object")
+            receipt["identity"]["producer_run"] = dict(run)
+
+
 def _cell_name(observation: dict) -> str:
     """Names one certification cell exactly. Surfaces alone are ambiguous: the Zarr
     surface holds both third-party store reads and Honua's subset transcode."""
@@ -1537,7 +1558,16 @@ def main() -> int:
     parser.add_argument("--fixture-revision", required=True)
     parser.add_argument("--evidence-uri", required=True)
     parser.add_argument("--base-url", required=True)
+    # Nightly orchestrator correlation id (honua-release nightly-certification).
+    # Empty means not nightly-dispatched: no producer_run is emitted at all.
+    parser.add_argument("--nightly-dispatch-id", default=os.environ.get(DISPATCH_ENV, ""))
     args = parser.parse_args()
+    # Fail closed before any cell runs: a malformed id, a non-dispatch event, or a
+    # foreign repository/workflow ref must never be stamped onto evidence.
+    try:
+        args.producer_run = producer_run(args.nightly_dispatch_id)
+    except ValueError as error:
+        parser.error(str(error))
     args.evidence_digest = _digest_evidence(args.artifacts, args.native_results)
     # The generator's receipt for Honua's own COG/Zarr reads. Loaded before any cell
     # runs so a lane that skipped the generator fails loudly rather than quietly
@@ -1561,6 +1591,7 @@ def main() -> int:
     _collect(observations, validate_stac, args.base_url, args)
     _collect(observations, validate_javascript, args.artifacts, args)
     observations = _append_unexecuted_cells(_normalize_observations(observations, args), args)
+    _bind_producer_run(observations, args.producer_run)
     fragment = {
         "schema": "honua.protocol-certification-fragment/v1",
         "producer": "honua-server-cng",
@@ -1606,6 +1637,11 @@ def main() -> int:
         },
         "observations": observations,
     }
+    if args.producer_run is not None:
+        # Fragment-level statement of which dispatched run produced this fragment.
+        # honua-evidence admits unknown top-level fragment fields; it is not a
+        # substitute for the per-receipt identity the ledger authenticates.
+        fragment["producer_run"] = args.producer_run
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(fragment, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     passed = sum(observation["result"] == "pass" for observation in observations)

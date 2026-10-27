@@ -76,6 +76,14 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
 
     public string? ValidateRequest(StudioAiChatRequest request)
     {
+        if (ValidateRequestContent(request) is { } failure) return failure;
+        var providerName = ResolveProviderName(request);
+        return ValidateProviderRequest(request, providerName,
+            providerName is null ? null : _configuration.GetProvider(providerName));
+    }
+
+    private string? ValidateRequestContent(StudioAiChatRequest request)
+    {
         ArgumentNullException.ThrowIfNull(request);
 
         if (!_configuration.Enabled)
@@ -192,13 +200,17 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
             return "toolChoice.mode 'specific' requires toolChoice.toolName.";
         }
 
-        var providerName = ResolveProviderName(request);
+        return null;
+    }
+
+    private string? ValidateProviderRequest(StudioAiChatRequest request, string? providerName,
+        StudioAiProxyProviderOptions? providerOptions)
+    {
         if (string.IsNullOrWhiteSpace(providerName))
         {
             return "No provider was named and no default provider is configured.";
         }
 
-        var providerOptions = _configuration.GetProvider(providerName);
         if (providerOptions is null)
         {
             return $"Provider '{providerName}' is not configured.";
@@ -249,7 +261,32 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
         AiExecutionContext? executionContext, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (ValidateRequest(request) is { } validationError)
+        if (ValidateRequestContent(request) is not null)
+            throw new AiAdmissionException("invalid_context");
+        var providerName = ResolveProviderName(request);
+        var providerOptions = providerName is null ? null : _configuration.GetProvider(providerName);
+        // Select the built-in serializer from the same owned tuple it will freeze.
+        // Legacy custom/Bedrock adapters retain their existing request/options path.
+        var ownedOptions = providerOptions is null ? null : StudioAiHttpInvocation.SnapshotOptions(providerOptions);
+        IStudioAiPreparedHttpAdapter? httpAdapter = null;
+        StudioAiHttpInvocation? invocation = null;
+        if (ownedOptions is not null && _adaptersByKind.TryGetValue(ownedOptions.Kind, out var selected)
+            && selected is IStudioAiPreparedHttpAdapter builtInHttp)
+        {
+            try
+            {
+                invocation = builtInHttp.Prepare(ownedOptions, request);
+            }
+            catch (Exception exception) when (exception is JsonException or InvalidOperationException or ArgumentException)
+            {
+                // Never expose serialized prompt/schema values through preparation failures.
+                throw new AiAdmissionException("invalid_context");
+            }
+            request = invocation.Request;
+            providerOptions = invocation.CopyOptions();
+            httpAdapter = builtInHttp;
+        }
+        if (ValidateProviderRequest(request, providerName, providerOptions) is { } validationError)
             throw new AiAdmissionException(validationError.StartsWith("AI disclosure", StringComparison.Ordinal)
                 ? "disclosure_denied" : "invalid_context");
         if (executionContext is not { IsValid: true, UseCase: "studio-chat" })
@@ -257,7 +294,16 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
         if (_admission is null)
             throw new AiAdmissionException("unavailable");
         var permit = await _admission.AcquireAsync(executionContext, cancellationToken).ConfigureAwait(false);
-        return new StudioAiPreparedCall(request, executionContext, permit);
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return new StudioAiPreparedCall(request, executionContext, permit, providerName, httpAdapter, invocation);
+        }
+        catch
+        {
+            await permit.DisposeAsync().ConfigureAwait(false);
+            throw;
+        }
     }
 
     public async IAsyncEnumerable<StudioAiChatEvent> StreamChatAsync(StudioAiChatRequest request,
@@ -351,10 +397,11 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
         ArgumentNullException.ThrowIfNull(summary);
 
         cancellationToken.ThrowIfCancellationRequested();
-        var providerName = ResolveProviderName(request)!;
-        var providerOptions = _configuration.GetProvider(providerName)!;
+        var invocation = prepared.HttpInvocation;
+        var providerName = invocation is null ? ResolveProviderName(request)! : prepared.ProviderName!;
+        var providerOptions = invocation is null ? _configuration.GetProvider(providerName)! : invocation.CopyOptions();
         var adapter = _adaptersByKind[providerOptions.Kind];
-        var model = string.IsNullOrWhiteSpace(request.Model) ? providerOptions.Model : request.Model!;
+        var model = invocation?.Model ?? (string.IsNullOrWhiteSpace(request.Model) ? providerOptions.Model : request.Model!);
 
         summary.Provider = providerName;
         summary.Kind = providerOptions.Kind;
@@ -398,7 +445,10 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
             }
         }
 
-        var enumerator = adapter.StreamAsync(providerOptions, request, prepared.Permit, cancellationToken).GetAsyncEnumerator(cancellationToken);
+        var stream = invocation is null
+            ? adapter.StreamAsync(providerOptions, request, prepared.Permit, cancellationToken)
+            : prepared.HttpAdapter!.StreamPreparedAsync(invocation, prepared.Permit, cancellationToken);
+        var enumerator = stream.GetAsyncEnumerator(cancellationToken);
         var validator = new StudioAiStreamGrammarValidator();
         StudioAiChatEvent? successfulTerminal = null;
         var transcriptEvents = signingKey is null ? null : new List<StudioAiChatEvent>();
