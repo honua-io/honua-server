@@ -23,11 +23,12 @@ namespace Honua.Db.Databricks.Features.FeatureStore.Services;
 /// canonical <see cref="Feature.Geometry"/> byte array without an external geometry
 /// library. The <c>ST_*</c> functions require a Databricks runtime / DBSQL with
 /// spatial-function support; see the provider documentation for the limitation.</para>
-/// <para>Filtering forwards the canonical <see cref="FeatureQuery.Where"/> clause
-/// as-is — the GeoServices REST WHERE syntax is broadly compatible with Spark SQL
-/// scalar predicates. Parameterized SQL fragments, temporal filters, and non-envelope
-/// spatial filters are rejected rather than silently dropped so callers never receive
-/// over-broad results.</para>
+/// <para>Filtering re-parses the canonical <see cref="FeatureQuery.Where"/> clause into
+/// parameterized Spark SQL. Axis-aligned envelopes stay on the inline
+/// <c>st_geomfromtext</c> fast path. Polygon, line, and point filters bind WKB and call
+/// <c>st_intersects</c>, <c>st_contains</c>, <c>st_within</c>, <c>st_disjoint</c>, or
+/// envelope-intersects. Parameterized SQL fragments, temporal filters, distance, and
+/// nearest-neighbor filters are rejected rather than silently dropped.</para>
 /// </remarks>
 internal interface IDatabricksFeatureQueryBuilder
 {
@@ -216,16 +217,23 @@ internal sealed class DatabricksFeatureQueryBuilder : IDatabricksFeatureQueryBui
             predicates.Add($"{Dialect.QuoteIdentifier(mapping.PrimaryKeyColumn)} IN ({string.Join(", ", markers)})");
         }
 
-        if (query.SpatialFilter is { IsSimpleEnvelope: true } spatial
-            && spatial.EnvelopeMinX is double minX
-            && spatial.EnvelopeMinY is double minY
-            && spatial.EnvelopeMaxX is double maxX
-            && spatial.EnvelopeMaxY is double maxY)
+        if (query.SpatialFilter is { } spatial)
         {
-            var feature = Dialect.QuoteIdentifier(mapping.GeometryColumn);
-            var filter =
-                $"st_geomfromtext('POLYGON(({F(minX)} {F(minY)}, {F(maxX)} {F(minY)}, {F(maxX)} {F(maxY)}, {F(minX)} {F(maxY)}, {F(minX)} {F(minY)}))')";
-            predicates.Add(FormatEnvelopePredicate(spatial.SpatialRelationship, feature, filter));
+            if (spatial.IsSimpleEnvelope
+                && spatial.EnvelopeMinX is double minX
+                && spatial.EnvelopeMinY is double minY
+                && spatial.EnvelopeMaxX is double maxX
+                && spatial.EnvelopeMaxY is double maxY)
+            {
+                var feature = Dialect.QuoteIdentifier(mapping.GeometryColumn);
+                var filter =
+                    $"st_geomfromtext('POLYGON(({F(minX)} {F(minY)}, {F(maxX)} {F(minY)}, {F(maxX)} {F(maxY)}, {F(minX)} {F(maxY)}, {F(minX)} {F(minY)}))')";
+                predicates.Add(FormatEnvelopePredicate(spatial.SpatialRelationship, feature, filter));
+            }
+            else if (!spatial.IsSimpleEnvelope)
+            {
+                predicates.Add(FormatGeometryPredicate(mapping, spatial, parameters));
+            }
         }
 
         if (predicates.Count > 0)
@@ -468,14 +476,10 @@ internal sealed class DatabricksFeatureQueryBuilder : IDatabricksFeatureQueryBui
 
         if (query.SpatialFilter is { } spatial)
         {
-            if (!spatial.IsSimpleEnvelope)
-            {
-                throw new NotSupportedException(
-                    $"Databricks provider does not support '{spatial.SpatialRelationship}' with a non-envelope geometry. "
-                    + "Only axis-aligned envelope filters (IsSimpleEnvelope=true) are translated in this slice.");
-            }
-
-            if (!IsSupportedEnvelopeRelationship(spatial.SpatialRelationship))
+            var supported = spatial.IsSimpleEnvelope
+                ? IsSupportedEnvelopeRelationship(spatial.SpatialRelationship)
+                : IsSupportedGeometryRelationship(spatial.SpatialRelationship);
+            if (!supported)
             {
                 throw new NotSupportedException(
                     $"Databricks provider does not support spatial relationship '{spatial.SpatialRelationship}'.");
@@ -485,20 +489,71 @@ internal sealed class DatabricksFeatureQueryBuilder : IDatabricksFeatureQueryBui
 
     // Esri spatialRel is evaluated from the filter geometry: Within and Contains lead with the
     // filter operand (issue #2068). Symmetric relationships lead with the feature geometry.
+    // Function names come from DatabricksSqlFilterTranslator's operator table.
     private static string FormatEnvelopePredicate(SpatialRelationship relationship, string feature, string filter)
         => relationship switch
         {
-            SpatialRelationship.Intersects => $"st_intersects({feature}, {filter})",
-            SpatialRelationship.Contains => $"st_contains({filter}, {feature})",
-            SpatialRelationship.Within => $"st_within({filter}, {feature})",
-            SpatialRelationship.Crosses => $"st_crosses({feature}, {filter})",
-            SpatialRelationship.Touches => $"st_touches({feature}, {filter})",
-            SpatialRelationship.Overlaps => $"st_overlaps({feature}, {filter})",
-            SpatialRelationship.Disjoint => $"st_disjoint({feature}, {filter})",
-            SpatialRelationship.Equals => $"st_equals({feature}, {filter})",
+            SpatialRelationship.Intersects => SpatialCall(SpatialOperator.Intersects, feature, filter),
+            SpatialRelationship.Contains => SpatialCall(SpatialOperator.Contains, filter, feature),
+            SpatialRelationship.Within => SpatialCall(SpatialOperator.Within, filter, feature),
+            SpatialRelationship.Crosses => SpatialCall(SpatialOperator.Crosses, feature, filter),
+            SpatialRelationship.Touches => SpatialCall(SpatialOperator.Touches, feature, filter),
+            SpatialRelationship.Overlaps => SpatialCall(SpatialOperator.Overlaps, feature, filter),
+            SpatialRelationship.Disjoint => SpatialCall(SpatialOperator.Disjoint, feature, filter),
+            SpatialRelationship.Equals => SpatialCall(SpatialOperator.Equals, feature, filter),
             _ => throw new NotSupportedException(
                 $"Databricks provider does not support spatial relationship '{relationship}'."),
         };
+
+    private static string FormatGeometryPredicate(
+        DatabricksLayerMapping mapping,
+        SpatialFilter spatial,
+        List<DatabricksSqlParameter> parameters)
+    {
+        var feature = Dialect.QuoteIdentifier(mapping.GeometryColumn);
+        var filter = BindFilterGeometry(spatial, mapping, parameters);
+        return spatial.SpatialRelationship switch
+        {
+            SpatialRelationship.Intersects => SpatialCall(SpatialOperator.Intersects, feature, filter),
+            SpatialRelationship.Contains => SpatialCall(SpatialOperator.Contains, filter, feature),
+            SpatialRelationship.Within => SpatialCall(SpatialOperator.Within, filter, feature),
+            SpatialRelationship.Disjoint => SpatialCall(SpatialOperator.Disjoint, feature, filter),
+            // Envelope intersection is not a SpatialOperator. Reuse st_intersects on both envelopes.
+            SpatialRelationship.EnvelopeIntersects => SpatialCall(
+                SpatialOperator.Intersects, $"st_envelope({feature})", $"st_envelope({filter})"),
+            _ => throw new NotSupportedException(
+                $"Databricks provider does not support spatial relationship '{spatial.SpatialRelationship}'."),
+        };
+    }
+
+    private static string BindFilterGeometry(
+        SpatialFilter spatial,
+        DatabricksLayerMapping mapping,
+        List<DatabricksSqlParameter> parameters)
+    {
+        // st_geomfromwkb does not transform. Reject a mismatched SRID instead of comparing
+        // coordinates that are not in the same CRS (no cross-SRID transform in this slice).
+        var filterSrid = spatial.Srid.GetValueOrDefault();
+        if (filterSrid > 0 && filterSrid != mapping.Srid)
+        {
+            throw new NotSupportedException(
+                "Cross-SRID spatial filter is not supported by the Databricks provider: " +
+                $"filter SRID {filterSrid.ToString(CultureInfo.InvariantCulture)} differs from layer SRID " +
+                $"{mapping.Srid.ToString(CultureInfo.InvariantCulture)}. " +
+                "Pre-project the filter geometry to SRID " +
+                $"{mapping.Srid.ToString(CultureInfo.InvariantCulture)} before submitting the request.");
+        }
+
+        var srid = filterSrid > 0 ? filterSrid : mapping.Srid;
+        var name = "geom" + parameters.Count.ToString(CultureInfo.InvariantCulture);
+        // Statement Execution parameters are strings. Bind WKB hex and parse with unhex,
+        // matching DatabricksSqlFilterTranslator's geometry literal.
+        parameters.Add(new DatabricksSqlParameter(name, Convert.ToHexString(spatial.Geometry), "STRING"));
+        return $"st_geomfromwkb(unhex(:{name}), {srid.ToString(CultureInfo.InvariantCulture)})";
+    }
+
+    private static string SpatialCall(SpatialOperator op, string left, string right)
+        => DatabricksSqlFilterTranslator.FormatSpatialPredicate(op, left, right);
 
     private static bool IsSupportedEnvelopeRelationship(SpatialRelationship relationship)
         => relationship is SpatialRelationship.Intersects
@@ -509,6 +564,15 @@ internal sealed class DatabricksFeatureQueryBuilder : IDatabricksFeatureQueryBui
             or SpatialRelationship.Overlaps
             or SpatialRelationship.Disjoint
             or SpatialRelationship.Equals;
+
+    // Polygon/line/point geometry= filters. EnvelopeIntersects compares envelopes; the other
+    // four use the shared operator table directly. Distance and KNN stay unsupported.
+    private static bool IsSupportedGeometryRelationship(SpatialRelationship relationship)
+        => relationship is SpatialRelationship.Intersects
+            or SpatialRelationship.EnvelopeIntersects
+            or SpatialRelationship.Contains
+            or SpatialRelationship.Within
+            or SpatialRelationship.Disjoint;
 
     private static string F(double value) => value.ToString("R", CultureInfo.InvariantCulture);
 }

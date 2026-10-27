@@ -15,6 +15,7 @@ namespace Honua.Db.Databricks.Tests;
 public class DatabricksFeatureQueryBuilderTests
 {
     private static readonly DatabricksFeatureQueryBuilder Builder = new();
+    private static readonly byte[] PolygonWkb = [0x01, 0x03, 0x00, 0x00];
 
     private static SpatialFilter Envelope(SpatialRelationship relationship) => SpatialFilter.Create(
         geometry: [1, 2, 3, 4],
@@ -39,6 +40,12 @@ public class DatabricksFeatureQueryBuilderTests
         GeometryType = GeometryType.Polygon,
         AttributeColumns = attributes.Length == 0 ? ["name", "owner"] : attributes,
     };
+
+    private static SpatialFilter GeometryFilter(SpatialRelationship relationship, int? srid = 4326) => SpatialFilter.Create(
+        geometry: PolygonWkb,
+        spatialRelationship: relationship,
+        srid: srid,
+        isSimpleEnvelope: false);
 
     [Fact]
     public void BuildSelectQuery_TextSearch_BindsLiteralTermsInProviderDialect()
@@ -332,16 +339,104 @@ public class DatabricksFeatureQueryBuilderTests
         Assert.DoesNotContain("->>", statement.Sql, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public void BuildSelect_NonEnvelopeSpatialFilter_Throws()
+    [Theory]
+    [InlineData(SpatialRelationship.Intersects, "st_intersects(`geom`, st_geomfromwkb(unhex(:geom0), 4326))")]
+    [InlineData(SpatialRelationship.Contains, "st_contains(st_geomfromwkb(unhex(:geom0), 4326), `geom`)")]
+    [InlineData(SpatialRelationship.Within, "st_within(st_geomfromwkb(unhex(:geom0), 4326), `geom`)")]
+    [InlineData(SpatialRelationship.Disjoint, "st_disjoint(`geom`, st_geomfromwkb(unhex(:geom0), 4326))")]
+    [InlineData(SpatialRelationship.EnvelopeIntersects, "st_intersects(st_envelope(`geom`), st_envelope(st_geomfromwkb(unhex(:geom0), 4326)))")]
+    public void BuildSelect_NonEnvelopeSpatialFilter_EmitsBoundPredicate(SpatialRelationship relationship, string expected)
     {
-        var spatial = SpatialFilter.Create(
-            geometry: [1, 2, 3, 4],
-            spatialRelationship: SpatialRelationship.Intersects,
-            srid: 4326,
-            isSimpleEnvelope: false);
+        var statement = Builder.BuildSelect(Mapping(), new FeatureQuery { SpatialFilter = GeometryFilter(relationship) });
 
-        Assert.Throws<NotSupportedException>(() => Builder.BuildSelect(Mapping(), new FeatureQuery { SpatialFilter = spatial }));
+        Assert.Contains(expected, statement.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("01030000", statement.Sql, StringComparison.OrdinalIgnoreCase);
+        var parameter = Assert.Single(statement.Parameters);
+        Assert.Equal("geom0", parameter.Name);
+        Assert.Equal("01030000", parameter.Value);
+        Assert.Equal("STRING", parameter.Type);
+    }
+
+    [Fact]
+    public void BuildSelect_NonEnvelopeSpatialFilter_UnspecifiedSrid_UsesLayerSrid()
+    {
+        AssertUsesLayerSrid(null);
+        AssertUsesLayerSrid(0);
+
+        static void AssertUsesLayerSrid(int? srid)
+        {
+            var statement = Builder.BuildSelect(
+                Mapping(),
+                new FeatureQuery { SpatialFilter = GeometryFilter(SpatialRelationship.Intersects, srid) });
+
+            Assert.Contains("st_geomfromwkb(unhex(:geom0), 4326)", statement.Sql, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void BuildSelect_NonEnvelopeSpatialFilter_MatchingSrid_UsesThatSrid()
+    {
+        var mapping = new DatabricksLayerMapping
+        {
+            LayerId = 1,
+            Table = "parcels",
+            Catalog = "main",
+            Schema = "gis",
+            GeometryColumn = "geom",
+            PrimaryKeyColumn = "id",
+            Srid = 3857,
+            GeometryType = GeometryType.Polygon,
+            AttributeColumns = ["name", "owner"],
+        };
+
+        var statement = Builder.BuildSelect(
+            mapping,
+            new FeatureQuery { SpatialFilter = GeometryFilter(SpatialRelationship.Within, 3857) });
+
+        Assert.Contains("st_within(st_geomfromwkb(unhex(:geom0), 3857), `geom`)", statement.Sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildSelect_NonEnvelopeSpatialFilter_CrossSrid_Throws()
+    {
+        var ex = Assert.Throws<NotSupportedException>(() => Builder.BuildSelect(
+            Mapping(),
+            new FeatureQuery { SpatialFilter = GeometryFilter(SpatialRelationship.Intersects, 3857) }));
+
+        Assert.Contains("Cross-SRID", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(SpatialRelationship.WithinDistance)]
+    [InlineData(SpatialRelationship.BeyondDistance)]
+    [InlineData(SpatialRelationship.NearestNeighbor)]
+    [InlineData(SpatialRelationship.Crosses)]
+    [InlineData(SpatialRelationship.Touches)]
+    [InlineData(SpatialRelationship.Overlaps)]
+    [InlineData(SpatialRelationship.Equals)]
+    public void BuildSelect_UnsupportedNonEnvelopeRelationship_Throws(SpatialRelationship relationship)
+    {
+        Assert.Throws<NotSupportedException>(() => Builder.BuildSelect(
+            Mapping(),
+            new FeatureQuery { SpatialFilter = GeometryFilter(relationship) }));
+    }
+
+    [Fact]
+    public void BuildCount_NonEnvelopeSpatialFilter_BindsGeometryBesideWhere()
+    {
+        var statement = Builder.BuildCount(
+            Mapping(),
+            new FeatureQuery
+            {
+                Where = "owner = 'acme'",
+                SpatialFilter = GeometryFilter(SpatialRelationship.Disjoint),
+            });
+
+        Assert.Contains("(`owner` = :f0)", statement.Sql, StringComparison.Ordinal);
+        Assert.Contains("st_disjoint(`geom`, st_geomfromwkb(unhex(:geom1), 4326))", statement.Sql, StringComparison.Ordinal);
+        Assert.Equal("acme", statement.Parameters[0].Value);
+        Assert.Equal("01030000", statement.Parameters[1].Value);
+        Assert.Equal("geom1", statement.Parameters[1].Name);
     }
 
     [Fact]
