@@ -14,6 +14,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Crs;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Protocols.GeoServices.FeatureServer.Services;
+using Honua.TestKit.Attributes;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 
@@ -23,7 +24,7 @@ public sealed class GeoArrowQueryFormatterTests
 {
     private const string FixtureFileName = "honua-server-geoarrow-02-point.arrow";
 
-    [Theory]
+    [UnitTheory]
     [InlineData(3)]
     [InlineData(4)]
     [InlineData(7)]
@@ -42,7 +43,7 @@ public sealed class GeoArrowQueryFormatterTests
         BinaryPrimitives.ReadUInt32LittleEndian(wkb.AsSpan(1)).Should().Be((uint)type);
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData(true)]
     [InlineData(false)]
     public async Task FormatAsGeoArrowAsync_WithCorruptWkb_RejectsOnlyWhenGeometryRequested(bool returnGeometry)
@@ -61,7 +62,7 @@ public sealed class GeoArrowQueryFormatterTests
         }
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData(3, false, "Polygon")]
     [InlineData(3, true, "Polygon")]
     [InlineData(4, false, "MultiPoint")]
@@ -93,7 +94,7 @@ public sealed class GeoArrowQueryFormatterTests
             .Should().Equal(geometryType + (hasZ ? " Z" : string.Empty));
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData(false)]
     [InlineData(true)]
     public async Task FormatAsGeoArrowAsync_XyCollectionWithEmptyPolygon_DoesNotInventZ(bool includeEmptyPolygon)
@@ -115,7 +116,7 @@ public sealed class GeoArrowQueryFormatterTests
             .EnumerateArray().Select(value => value.GetString()).Should().Equal("GeometryCollection");
     }
 
-    [Fact]
+    [UnitTest]
     public async Task FormatAsGeoArrowAsync_XyCollectionWithXyzChild_PreservesNestedZ()
     {
         var child = new WKBWriter(ByteOrder.LittleEndian, handleSRID: false, emitZ: true, emitM: false)
@@ -139,7 +140,7 @@ public sealed class GeoArrowQueryFormatterTests
             .EnumerateArray().Select(value => value.GetString()).Should().Equal("GeometryCollection Z");
     }
 
-    [Fact]
+    [UnitTest]
     public async Task FormatAsGeoArrowAsync_XymGeometry_DoesNotAdvertiseZ()
     {
         var input = new WKBWriter(ByteOrder.LittleEndian, handleSRID: false, emitZ: false, emitM: true)
@@ -157,7 +158,7 @@ public sealed class GeoArrowQueryFormatterTests
             .EnumerateArray().Select(value => value.GetString()).Should().Equal("Point");
     }
 
-    [Fact]
+    [UnitTest]
     public async Task FormatAsGeoArrowAsync_ExcludedRuntimeGeometryAttribute_DoesNotAppendGeneratedColumnArray()
     {
         var resource = CreateResource(new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String });
@@ -175,7 +176,7 @@ public sealed class GeoArrowQueryFormatterTests
         geometry.Coordinate.Y.Should().Be(20);
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData("geometry", true)]
     [InlineData("Geometry", true)]
     [InlineData("geometry", false)]
@@ -204,7 +205,7 @@ public sealed class GeoArrowQueryFormatterTests
         geometry.Coordinate.Y.Should().Be(20);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task FormatAsGeoArrowAsync_AmbiguousRuntimeAttributeNames_RejectsBeforeEncoding()
     {
         var feature = Feature.Create(1, null,
@@ -214,7 +215,7 @@ public sealed class GeoArrowQueryFormatterTests
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*ambiguous attribute name*");
     }
 
-    [Fact]
+    [UnitTest]
     public async Task FormatAsGeoArrowAsync_DeclaredXyzWithNaNZ_PreservesWkbDimensionAndMetadata()
     {
         var input = new WKBWriter(ByteOrder.LittleEndian, handleSRID: false, emitZ: true, emitM: false)
@@ -231,7 +232,7 @@ public sealed class GeoArrowQueryFormatterTests
             .EnumerateArray().Select(value => value.GetString()).Should().Equal("Point Z");
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData("GEOMETRYCOLLECTION Z (GEOMETRYCOLLECTION Z (POINT Z (1 2 3)))", true)]
     [InlineData("GEOMETRYCOLLECTION Z (GEOMETRYCOLLECTION Z (POINT Z (1 2 3)))", false)]
     [InlineData("GEOMETRYCOLLECTION Z (MULTIPOINT Z ((1 2 3), (4 5 6)))", true)]
@@ -271,7 +272,7 @@ public sealed class GeoArrowQueryFormatterTests
             .Should().Equal(returnZ ? "GeometryCollection Z" : "GeometryCollection");
     }
 
-    [Fact]
+    [UnitTest]
     public async Task FormatAsGeoArrowAsync_EmptyXyzPoint_PreservesEmptyGeometryDistinctFromNull()
     {
         var source = new WKTReader().Read("POINT Z EMPTY");

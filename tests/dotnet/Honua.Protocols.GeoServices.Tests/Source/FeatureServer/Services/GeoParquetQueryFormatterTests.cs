@@ -21,7 +21,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Servic
 
 public sealed class GeoParquetQueryFormatterTests(ITestOutputHelper output)
 {
-    [Theory]
+    [UnitTheory]
     [InlineData(3)]
     [InlineData(4)]
     [InlineData(7)]
@@ -41,7 +41,7 @@ public sealed class GeoParquetQueryFormatterTests(ITestOutputHelper output)
         BinaryPrimitives.ReadUInt32LittleEndian(wkb.AsSpan(1)).Should().Be((uint)type);
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData(3, false, "Polygon")]
     [InlineData(3, true, "Polygon")]
     [InlineData(4, false, "MultiPoint")]
@@ -74,7 +74,7 @@ public sealed class GeoParquetQueryFormatterTests(ITestOutputHelper output)
             .Should().Equal(geometryType + (hasZ ? " Z" : string.Empty));
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData(false)]
     [InlineData(true)]
     public async Task FormatAsGeoParquet_XyCollectionWithEmptyPolygon_DoesNotInventZ(bool includeEmptyPolygon)
@@ -97,7 +97,7 @@ public sealed class GeoParquetQueryFormatterTests(ITestOutputHelper output)
             .EnumerateArray().Select(value => value.GetString()).Should().Equal("GeometryCollection");
     }
 
-    [Fact]
+    [UnitTest]
     public async Task FormatAsGeoParquet_XyCollectionWithXyzChild_PreservesNestedZ()
     {
         var child = new WKBWriter(ByteOrder.LittleEndian, handleSRID: false, emitZ: true, emitM: false)
@@ -122,7 +122,7 @@ public sealed class GeoParquetQueryFormatterTests(ITestOutputHelper output)
             .EnumerateArray().Select(value => value.GetString()).Should().Equal("GeometryCollection Z");
     }
 
-    [Fact]
+    [UnitTest]
     public async Task FormatAsGeoParquet_XymGeometry_DoesNotAdvertiseZ()
     {
         var input = new WKBWriter(ByteOrder.LittleEndian, handleSRID: false, emitZ: false, emitM: true)
@@ -141,7 +141,7 @@ public sealed class GeoParquetQueryFormatterTests(ITestOutputHelper output)
             .EnumerateArray().Select(value => value.GetString()).Should().Equal("Point");
     }
 
-    [Fact]
+    [UnitTest]
     public void FormatAsGeoParquet_AmbiguousRuntimeAttributeNames_RejectsBeforeEncoding()
     {
         var feature = Feature.Create(1, null,
@@ -151,7 +151,7 @@ public sealed class GeoParquetQueryFormatterTests(ITestOutputHelper output)
         act.Should().Throw<InvalidOperationException>().WithMessage("*ambiguous attribute name*");
     }
 
-    [Fact]
+    [UnitTest]
     public async Task FormatAsGeoParquet_DeclaredXyzWithNaNZ_PreservesWkbDimensionAndMetadata()
     {
         var input = new WKBWriter(ByteOrder.LittleEndian, handleSRID: false, emitZ: true, emitM: false)
@@ -169,7 +169,7 @@ public sealed class GeoParquetQueryFormatterTests(ITestOutputHelper output)
             .EnumerateArray().Select(value => value.GetString()).Should().Equal("Point Z");
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData("geometry")]
     [InlineData("Geometry")]
     [InlineData("bbox")]
@@ -204,7 +204,7 @@ public sealed class GeoParquetQueryFormatterTests(ITestOutputHelper output)
         bbox.IsNull(0).Should().BeFalse();
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData("GEOMETRYCOLLECTION Z (GEOMETRYCOLLECTION Z (POINT Z (1 2 3)))", true)]
     [InlineData("GEOMETRYCOLLECTION Z (GEOMETRYCOLLECTION Z (POINT Z (1 2 3)))", false)]
     [InlineData("GEOMETRYCOLLECTION Z (MULTIPOINT Z ((1 2 3), (4 5 6)))", true)]
@@ -244,7 +244,7 @@ public sealed class GeoParquetQueryFormatterTests(ITestOutputHelper output)
             .Should().Equal(returnZ ? "GeometryCollection Z" : "GeometryCollection");
     }
 
-    [Fact]
+    [UnitTest]
     public async Task FormatAsGeoParquet_EmptyXyzPoint_PreservesEmptyGeometryDistinctFromNull()
     {
         var source = new WKTReader().Read("POINT Z EMPTY");
@@ -1316,7 +1316,7 @@ public sealed class GeoParquetQueryFormatterTests(ITestOutputHelper output)
         timeArray.GetValue(0).Should().Be(14 * 60 * 60 * 1000 + 30 * 60 * 1000);
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData(true)]
     [InlineData(false)]
     public void FormatAsGeoParquet_WithCorruptWkb_RejectsOnlyWhenGeometryRequested(bool returnGeometry)
