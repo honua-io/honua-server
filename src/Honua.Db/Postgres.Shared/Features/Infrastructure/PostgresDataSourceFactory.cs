@@ -53,13 +53,23 @@ internal static class PostgresDataSourceFactory
         limits.IdleInTransactionTimeout = ReadTimeSpan(section, nameof(ConnectionLimits.IdleInTransactionTimeout), limits.IdleInTransactionTimeout);
 
         // A Lambda instance is frozen between invocations, so Npgsql never prunes below
-        // MinPoolSize. The long-lived defaults (min 20, idle 600s) clamp the floor up to
-        // the cap (honua-iac sets only the cap; the 4 KB environment budget has no room
-        // for the floor). Every warm API instance then holds its whole pool, and the
-        // control-plane functions — cap 2 — still open that floor on top of their
-        // invocation. Leave an explicit operator value alone.
+        // MinPoolSize. The long-lived defaults (min 20, max 200, idle 600s) clamp the floor
+        // up to the cap (honua-iac sets only the cap; the 4 KB environment budget has no room
+        // for the floor). Every warm API instance then holds its whole pool, and a host that
+        // sets nothing inherits 200 per pool. One Lambda invocation serves one request, so an
+        // unset cap is a small ceiling. Leave an explicit operator value alone.
         if (ControlPlaneEventHandlerHost.IsLambda(configuration))
         {
+            if (string.IsNullOrWhiteSpace(section[nameof(ConnectionLimits.MaxConnectionPoolSize)]))
+            {
+                limits.MaxConnectionPoolSize = LambdaUnsetMaxConnectionPoolSize;
+            }
+
+            if (string.IsNullOrWhiteSpace(section[nameof(ConnectionLimits.MaxConcurrentQueries)]))
+            {
+                limits.MaxConcurrentQueries = LambdaUnsetMaxConnectionPoolSize;
+            }
+
             if (string.IsNullOrWhiteSpace(section[nameof(ConnectionLimits.MinConnectionPoolSize)]))
             {
                 limits.MinConnectionPoolSize = 0;
@@ -82,6 +92,13 @@ internal static class PostgresDataSourceFactory
     /// stays at or above the default pruning interval.
     /// </summary>
     internal const int LambdaIdleConnectionLifetimeSeconds = 60;
+
+    /// <summary>
+    /// Pool and query ceiling applied on Lambda when those limits are unset. A frozen instance
+    /// serves one request at a time and may open a second pool, so the long-lived default of 200
+    /// is not a safe implicit cap. An explicit configuration value still wins.
+    /// </summary>
+    internal const int LambdaUnsetMaxConnectionPoolSize = 4;
 
     public static NpgsqlDataSource Create(
         string connectionString,
