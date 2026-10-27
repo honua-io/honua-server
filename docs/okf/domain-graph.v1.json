@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:8777ffadca71a276f2c94e176ad2d859635c707f380238efe90bc79bf8198d59",
+  "bundleDigest": "sha256:60d1e15f7eef0552f106c6845e8de013f97dc12729ebd18782d07a5ec7a7acfa",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -2319,7 +2319,7 @@
     {
       "id": "guides/migrate/arcgis-apps-and-sdks",
       "path": "guides/migrate/arcgis-apps-and-sdks.md",
-      "documentDigest": "sha256:b222b62c94bbf928eefc740c22be59a4e2d107abd65ccc4ef5a31e8b48a3ddbc",
+      "documentDigest": "sha256:63b1834eb890c71e23f9d1cc8305e4f5604929d531c5e5cd4b4688ff9bb9bcb5",
       "metadata": {
         "type": "guide",
         "title": "Repoint ArcGIS apps and SDKs at Honua",
@@ -2330,7 +2330,7 @@
     {
       "id": "guides/migrate/from-arcgis-server",
       "path": "guides/migrate/from-arcgis-server.md",
-      "documentDigest": "sha256:b54cb9dda8859285db8e334a60697f1acbdf25252f3e4b90c487ffa4c3da9359",
+      "documentDigest": "sha256:81c964e88e00f2bbaad210224786bbe53c6279b0af3afedc5c274a7a897c2efc",
       "metadata": {
         "type": "guide",
         "title": "Migrate from ArcGIS Server",
@@ -2698,7 +2698,7 @@
     {
       "id": "guides/style/import-sld-styles",
       "path": "guides/style/import-sld-styles.md",
-      "documentDigest": "sha256:27ee3df856064f034dd5e34b75e12a532a7f9fc1ca0d58b31249c0381d973939",
+      "documentDigest": "sha256:99d6abc8f0655c30a3c047d0301feaef08cbc7db008c4d6765e84c22704522cf",
       "metadata": {
         "type": "guide",
         "title": "Import SLD styles",
@@ -2710,11 +2710,11 @@
     {
       "id": "guides/style/style-maps",
       "path": "guides/style/style-maps.md",
-      "documentDigest": "sha256:2d2dd5e2789d3fa4256f948edeadd843e9799aaac68d5f4880300d7a74948089",
+      "documentDigest": "sha256:e19908227fad775bd1a186cb09d10beb7c61475d1e12c57ee742b574283a9c90",
       "metadata": {
         "type": "guide",
         "title": "Style map layers",
-        "description": "Set a layer's cartography once, as a MapLibre Style Spec v8 document, and have the same style drive vector tiles, WMS/static-map rendering, and ArcGIS-compatible clients.",
+        "description": "Set a layer's symbology once, as a MapLibre Style Spec v8 document, so vector-tile clients, WMS and static-map rendering, and ArcGIS drawingInfo read the same document. The server does not generate or paint label classes. An author-supplied drawingInfo, including labelingInfo, is stored and returned unchanged.",
         "resource": "honua://capability/styling.defaults",
         "resources": [
           "honua://capability/styling.auto-suggest"
@@ -7538,7 +7538,7 @@
     {
       "id": "reference/admin-api/styles",
       "path": "reference/admin-api/styles.md",
-      "documentDigest": "sha256:38976588ec9f33fdede9178fc53ee64e403280a9724cf845e68fef5ea8b20ec6",
+      "documentDigest": "sha256:c86403fd33c7320dd5a09751424b6baeb1b137b057098a9b4509452be99a47f4",
       "metadata": {
         "type": "reference",
         "title": "Styles",
@@ -7600,7 +7600,7 @@
     {
       "id": "reference/compatibility/geoservices-parity",
       "path": "reference/compatibility/geoservices-parity.md",
-      "documentDigest": "sha256:e0f7b6c2857d6621fc97526864c53c90ed957af2e7a6bbd8e84716f30439c421",
+      "documentDigest": "sha256:d7fa0d2cd1e0203e6b1ed24df6f05d8396cddba0a320b3f68131d700c710233a",
       "metadata": {
         "type": "reference",
         "title": "GeoServices REST parity",
@@ -11924,6 +11924,11 @@
     {
       "source": "guides/migrate/arcgis-apps-and-sdks",
       "relation": "links_to",
+      "target": "guides/style/style-maps"
+    },
+    {
+      "source": "guides/migrate/arcgis-apps-and-sdks",
+      "relation": "links_to",
       "target": "reference/compatibility/geoservices-parity"
     },
     {
@@ -11955,6 +11960,11 @@
       "source": "guides/migrate/from-arcgis-server",
       "relation": "links_to",
       "target": "guides/secure/authentication"
+    },
+    {
+      "source": "guides/migrate/from-arcgis-server",
+      "relation": "links_to",
+      "target": "guides/style/style-maps"
     },
     {
       "source": "guides/migrate/from-arcgis-server",
