@@ -34,7 +34,7 @@ ref policy, and [deployment presets](https://github.com/honua-io/honua-iac/blob/
 |---|---|---|---|---|---|
 | Docker Compose | GA | Dev/test on one host | generic web image | Recreate the container | — |
 | AWS ECS/Fargate + ALB | GA | Steady production traffic | generic web image (multi-arch index; runs `x86_64`) | ALB weighted target groups (canary) | `aws-ecs` |
-| AWS Lambda | Preview | Spiky/low traffic, scale-to-zero | `*-lambda-aot` (`x86_64`/amd64 only) | Alias weighted versions (canary) | `aws-serverless` |
+| AWS Lambda | Preview | Spiky/low traffic, scale-to-zero | `*-lambda-aot` (single-arch `x86_64`/amd64) | Alias weighted versions (canary) | `aws-serverless` |
 | Kubernetes (EKS/AKS) with Helm | Preview | Existing cluster estate | generic web image (`x86_64`) | See [Deploy on Kubernetes](kubernetes.md) | `aws-eks`, `azure-aks` |
 | Azure Container Apps | Not offered in 2026.1 | Steady traffic on Azure | generic web image | Revision traffic splitting (canary) | `azure-aca` |
 | Azure Functions | Not offered in 2026.1 | Spiky/low traffic on Azure | `*-functions-aot` (amd64) | Staging slot swap (atomic) | `azure-functions` |
