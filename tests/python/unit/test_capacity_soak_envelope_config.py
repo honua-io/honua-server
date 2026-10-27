@@ -23,7 +23,6 @@ import sys
 import time
 from pathlib import Path
 
-import aiohttp
 from aiohttp import web
 import yaml
 
@@ -342,3 +341,24 @@ def test_collector_no_longer_injects_faults_inside_the_window():
     assert run.index("sample_window") < run.index("self.drill(")
     assert "create_task(self.faults" not in run
     assert "steady_seconds/2" not in inspect.getsource(collector_module.Collector.faults)
+
+
+def test_drain_deadline_bounds_every_status_poll(monkeypatch):
+    """Slow status polls cannot run a batch past the budget and then report success (#6703 review)."""
+    jobs = {f"gp-{index}": "esriJobSucceeded" for index in range(10)}
+    collector, _ = _drill_collector(monkeypatch, jobs)
+
+    async def slow(request):
+        await asyncio.sleep(0.05)
+        return httpx.Response(200, json={"jobStatus": "esriJobSucceeded"})
+
+    async def exercise():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(slow)) as client:
+            return await collector.drain_gp(client, timeout=0.12)
+
+    gp_jobs = asyncio.run(exercise())
+    # Ten 50 ms polls cannot all finish inside 120 ms: the late ones stay unresolved, never "passed".
+    assert gp_jobs["passed"] is False
+    assert gp_jobs["stuckJobIds"]
+    assert gp_jobs["drainSeconds"] < 0.12 + 0.1
+    assert sum(gp_jobs["terminalStatuses"].values()) + len(gp_jobs["stuckJobIds"]) == 10

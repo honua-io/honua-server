@@ -410,17 +410,25 @@ class Collector:
         outstanding = len(pending)
         statuses = Counter()
         started = time.monotonic()
-        while pending and time.monotonic()-started < timeout:
+        deadline = started + timeout
+        while pending and time.monotonic() < deadline:
             for job_id in list(pending):
+                # The budget is checked before, and bounds, every poll: a terminal state observed
+                # after the deadline must not turn an over-budget drain into a pass.
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
                 try:
-                    document = await self.driver._get_json(client, f"/rest/services/test/GPServer/geometry.buffer/jobs/{job_id}?f=json", admin=True)
-                except Exception:  # noqa: BLE001 - a transient poll failure is retried until the bound
+                    document = await asyncio.wait_for(
+                        self.driver._get_json(client, f"/rest/services/test/GPServer/geometry.buffer/jobs/{job_id}?f=json", admin=True),
+                        remaining)
+                except Exception:  # noqa: BLE001 - a transient or timed-out poll stays unresolved until the bound
                     continue
                 if document.get("jobStatus") in TERMINAL_JOB_STATES:
                     statuses[document["jobStatus"]] += 1
                     pending.pop(job_id, None)
             if pending:
-                await asyncio.sleep(1)
+                await asyncio.sleep(min(1, max(0, deadline-time.monotonic())))
         stuck = sorted(pending)
         return dict(outstandingAtDrillEnd=outstanding, terminalStatuses=dict(statuses), stuckJobIds=stuck,
                     drainSeconds=round(time.monotonic()-started, 3), drainTimeoutSeconds=timeout, passed=not stuck)
