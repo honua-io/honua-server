@@ -172,6 +172,8 @@ Base: `/rest/services/Utilities/Geometry/GeometryServer` (all operations accept 
 
 Implemented operations: `buffer`, `simplify`, `project`, `intersect`, `union`, `clip`, `difference`, `areasAndLengths`, `lengths`, `distance`, `relation`, `densify`, `convexHull`, `generalize`, `labelPoints`, `cut`, `trimExtend`, `offset`, `autoComplete`, `reshape`, `findTransformations`, `toGeoCoordinateString`, `fromGeoCoordinateString`.
 
+`areasAndLengths` and `lengths` take `calculationType`. `calculationType=planar` selects the compatibility result: on a geographic CRS both axes are scaled by one equatorial radius (6,371,000 m) and longitude is not scaled by cos(latitude). On a projected CRS that is already in linear units, planar length and area stay in those units. `calculationType=ground` selects the ground result for the same input: length and area are measured on the WGS 84 spheroid, so a longitude span at high latitude is a ground distance. `calculationType=geodesic` stays the vertex-geodesic measure and is unchanged. `calculationType=preserveShape` returns ground metres and square metres of the shape sampled in the request CRS: edges are densified in that CRS, the samples are transformed to geographic, and the spheroidal length and area path measures them.
+
 > Open `https://server.example.com/rest/services/Utilities/Geometry/GeometryServer/buffer?geometries=-122.4,37.8&inSR=4326&distances=100&unit=9001&f=json` in a browser.
 
 See [GeoServices parity — Geometry Service](../compatibility/geoservices-parity.md#geometry-service).
