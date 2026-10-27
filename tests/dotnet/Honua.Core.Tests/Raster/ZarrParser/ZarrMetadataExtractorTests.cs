@@ -217,6 +217,33 @@ public class ZarrMetadataExtractorTests
     }
 
     [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("[]")]
+    [InlineData("[{\"name\":\"gzip\",\"configuration\":{\"level\":5}}]")]
+    [InlineData("[{\"name\":\"gzip\",\"configuration\":{\"level\":5}},{\"name\":\"bytes\",\"configuration\":{\"endian\":\"little\"}}]")]
+    [InlineData("[{\"name\":\"bytes\",\"configuration\":{\"endian\":\"little\"}},{\"name\":\"bytes\",\"configuration\":{\"endian\":\"little\"}}]")]
+    [InlineData("[{\"name\":\"bytes\",\"configuration\":{\"endian\":\"little\"}},{\"name\":\"gzip\",\"configuration\":{\"level\":5}},{\"name\":\"gzip\",\"configuration\":{\"level\":5}}]")]
+    [InlineData("[{\"name\":\"bytes\",\"configuration\":{\"endian\":\"invalid\"}}]")]
+    [InlineData("[{\"name\":\"bytes\"}]")]
+    [InlineData("[{\"name\":\"bytes\",\"configuration\":{\"endian\":3}}]")]
+    [InlineData("[{\"name\":\"bytes\",\"configuration\":{\"endian\":\"big\"}}]")]
+    [InlineData("[{\"name\":\"bytes\",\"configuration\":{\"endian\":\"little\"}},{\"name\":\"gzip\",\"configuration\":{\"level\":10}}]")]
+    [InlineData("[{\"name\":\"bytes\",\"configuration\":{\"endian\":\"little\"}},{\"name\":\"gzip\"}]")]
+    public async Task ReadMetadataAsync_V3UnsupportedPipeline_RejectedBeforeChunkRead(string codecs)
+    {
+        var objects = ZarrFixtureBuilder.BuildV3SingleArray("stores/pipeline", 2, 2, 2, 2, (r, c) => r + c, gzip: true);
+        var metadata = System.Text.Json.Nodes.JsonNode.Parse(objects["stores/pipeline/zarr.json"])!;
+        metadata["codecs"] = System.Text.Json.Nodes.JsonNode.Parse(codecs);
+        objects["stores/pipeline/zarr.json"] = System.Text.Encoding.UTF8.GetBytes(metadata.ToJsonString());
+        // Only metadata is available: unsupported pipelines must fail before any sample access.
+        objects.Remove("stores/pipeline/c/0/0");
+        var reader = new InMemoryZarrRangeReader(objects);
+        var act = () => new ZarrMetadataExtractor().ReadMetadataAsync(reader, "bucket", "stores/pipeline");
+
+        await act.Should().ThrowAsync<InvalidDataException>();
+    }
+
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadMetadataAsync_V3Group_PopulatesGeoreferencing()
     {
