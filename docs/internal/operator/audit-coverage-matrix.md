@@ -151,9 +151,9 @@ honestly add it later: never compute hashes into them. Instead, append a declara
 
 1. Activate the chain key as above, on a keyed-capable release, and confirm a hashed row
    follows the gap.
-2. Call `GET /api/v1/admin/observability/audit/verify` and note `firstBrokenAuditId`.
-3. `POST /api/v1/admin/observability/audit/gap-attestations` with
-   `{"gapFirstAuditId": <that id>, "reason": "<what rolled back, when>"}`.
+2. Run the Admin API operation `verifyObservabilityAudit` and note `firstBrokenAuditId`.
+3. Run the Admin API operation `attestObservabilityAuditGap` with that id as
+   `gapFirstAuditId` and a `reason` that names what rolled back and when.
 
 The server reads the anchor row, the gap bounds, the row count and the resume row from
 the table, refuses anything else (409), and appends an `audit.chain.gap_attested` row
