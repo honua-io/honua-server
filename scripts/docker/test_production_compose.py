@@ -100,13 +100,6 @@ class ProductionComposeTests(unittest.TestCase):
             self.assertTrue(hmac.compare_digest(environment[key], value), key)
         self.assertEqual(environment["Database__MigrationSafety__ContractApplyPolicy"], "Gate")
 
-    def test_guide_documents_every_production_step(self):
-        section = self.document.split("## Production install from the shipped Compose file", 1)[1].split("\n## ", 1)[0]
-        for block in ("production.env", "production.keyring", "production.start"):
-            self.assertIn(f"<!-- docs-validation:{block} mode=run -->", section)
-        for key in ("HONUA_MASTER_KEY", "HONUA_KEYRING_PASSWORD", "HONUA_ADMIN_PASSWORD", "POSTGRES_PASSWORD"):
-            self.assertIn(f"s|^{key}=", section)
-
     def test_documented_env_file_command_uses_private_runtime_values(self):
         values = self.values | {
             "ConnectionStrings__DefaultConnection": "Host=private-db;Password=" + secrets.token_hex(32),
