@@ -9,6 +9,7 @@ using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Tiles;
 using Honua.Core.Queries.Filters;
+using Honua.Db.MySql;
 using Honua.Db.MySql.Features.FeatureStore.Services;
 using Honua.Db.MySql.Features.Infrastructure;
 using Honua.TestKit.Attributes;
@@ -718,6 +719,63 @@ public class MySqlFeatureQueryBuilderTests
         var result = builder.BuildSelectQuery(301, query);
 
         Assert.Contains("ST_Distance_Sphere", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("6371008.8", result.Sql, StringComparison.Ordinal);
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Fact]
+    public void BuildSelectQuery_DistanceFilter_Wgs84PointLayer_UsesEllipsoidalStDistance()
+    {
+        // A mean-radius sphere is about 0.36% short of the WGS 84 spheroid for 1° of
+        // longitude at 60°N. MySQL ST_Distance is the host ellipsoid function.
+        var mapping = new MySqlLayerMapping
+        {
+            LayerId = 302,
+            TableName = "stations",
+            GeometryColumn = "geom",
+            PrimaryKeyColumn = "id",
+            Srid = 4326,
+            AttributeColumns = ["name"],
+            GeometryType = GeometryType.Point
+        };
+        var builder = new MySqlFeatureQueryBuilder(new MySqlLayerMappingRegistry([mapping]));
+        var query = new FeatureQuery
+        {
+            SpatialFilter = SpatialFilter.CreateDistanceFilter([0x01], distance: 1000, srid: 4326)
+        };
+
+        var result = builder.BuildSelectQuery(302, query);
+
+        Assert.Contains("ST_Distance(", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("ST_Distance_Sphere", result.Sql, StringComparison.Ordinal);
+        Assert.Contains(1000.0, result.WhereParameters.OfType<double>());
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Fact]
+    public void BuildSelectQuery_DistanceFilter_MariaDbWgs84PointLayer_KeepsSphereFallbackVisible()
+    {
+        var mapping = new MySqlLayerMapping
+        {
+            LayerId = 303,
+            TableName = "stations",
+            GeometryColumn = "geom",
+            PrimaryKeyColumn = "id",
+            Srid = 4326,
+            AttributeColumns = ["name"],
+            GeometryType = GeometryType.Point
+        };
+        var builder = new MySqlFeatureQueryBuilder(
+            new MySqlLayerMappingRegistry([mapping]),
+            MySqlEngineFlavor.MariaDb);
+        var query = new FeatureQuery
+        {
+            SpatialFilter = SpatialFilter.CreateDistanceFilter([0x01], distance: 1000, srid: 4326)
+        };
+
+        var result = builder.BuildSelectQuery(303, query);
+
+        Assert.Contains("ST_Distance_Sphere(", result.Sql, StringComparison.Ordinal);
         Assert.Contains("6371008.8", result.Sql, StringComparison.Ordinal);
     }
 
