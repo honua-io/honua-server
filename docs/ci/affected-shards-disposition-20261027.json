@@ -1,0 +1,58 @@
+{
+  "contract": "honua.affected-shards-operator-disposition/v1",
+  "issue": 6673,
+  "observed_at": "2026-10-27T11:42:00Z",
+  "trunk_sha": "53bb94a3fe1d7a66640e213de289b8f8bc4ffd2e",
+  "approved_mode": "report",
+  "promotion_ready": false,
+  "owner": "honua-server CI; mode stays report until a new audited window passes the existing bar",
+  "measurement": {
+    "source": "docs/ci/affected-shards-audit-20261007.json",
+    "window": "2026-09-30T16:45:00Z/2026-10-07T16:45:00Z",
+    "executed_samples": 206,
+    "false_red_rate_lower": 0.0097,
+    "false_red_rate_upper": 0.199,
+    "unresolved_red_runs": 39,
+    "note": "No newer qualifying seven-day audit is claimed. The #6683 control run is excluded from this window."
+  },
+  "branch_protection": {
+    "read": "GET /repos/honua-io/honua-server/branches/trunk/protection",
+    "branch": "trunk",
+    "enforce_admins": false,
+    "strict": false,
+    "app_id": 15368,
+    "required_contexts": [
+      "PR Gate",
+      "PR Gate / Affected shards"
+    ]
+  },
+  "workflow": {
+    "path": ".github/workflows/pr-gate.yml",
+    "AFFECTED_SHARDS_MODE": "report",
+    "publisher": "scripts/ci/affected-shard-verdict.py"
+  },
+  "disposition": "Keep AFFECTED_SHARDS_MODE at report. Do not flip to enforce and do not edit branch protection. The 2026-10-08 corrected audit remains the retained measurement and is not promotion-ready. Branch protection already requires PR Gate / Affected shards; that entry is not promotion and a green required check in report mode is not a test pass. test_pass is false for every report-mode result. The seven-day, at least 60 executed samples, and strictly below 2% bar is unchanged. Unresolved reds still block promotion. The shard cap, selection, timeouts, and advisory exclusions are unchanged.",
+  "excluded_control": {
+    "pr": 6683,
+    "run_id": 40447538109,
+    "job_id": 122012246948,
+    "head_sha": "500f01de58e6f2257388c3d4b72690fb95ce5181",
+    "reason": "Intentional pre-fix diagnostic. Exclude from the seven-day promotion window. It changes no denominator, reconciliation verdict, or false-red classification."
+  },
+  "evidence": {
+    "pr": 6663,
+    "head_sha": "a818f3421d78d65049f2b15dad9e81a25446d317",
+    "run_id": 40423291836,
+    "raw_job": "https://github.com/honua-io/honua-server/actions/runs/40423291836/job/121932881392",
+    "aggregate_job": "https://github.com/honua-io/honua-server/actions/runs/40423291836/job/121938616240",
+    "raw_result": "284 passed / 34 failed / 0 skipped",
+    "note": "The Reporting shard's raw job failed and the aggregate concluded success under report mode. That success is not a test pass and a later green fix is not evidence this red was false."
+  },
+  "configuration": {
+    "protection_was_edited": false,
+    "mode_was_flipped": false,
+    "protection_matches_2026_10_08_do_not_add": false,
+    "report_success_is_not_a_test_pass": true,
+    "statement": "Mode stays report, matching the audited disposition. Protection still requires the context, which the 2026-10-08 decision said not to add; this change does not edit protection and does not call that requirement a promotion. The verdict receipt records test_pass=false for every report-mode result, so check success is not represented as a test pass."
+  }
+}

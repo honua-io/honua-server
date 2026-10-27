@@ -1011,7 +1011,14 @@ jobs:
   # forces the pull request to UNSTABLE and stalls the clean-only merge train),
   # and the aggregate context `PR Gate / Affected shards` publishes the verdict
   # in its step summary and as HONUA_AFFECTED_SHARD_* annotations while
-  # concluding success.
+  # concluding success. That success is not a test pass. The publisher
+  # (scripts/ci/affected-shard-verdict.py) sets test_pass=false on every
+  # report-mode result, including a green shard table and a skipped selection.
+  # Trunk branch protection already requires this context (read back
+  # 2026-10-27; docs/ci/affected-shards-disposition-20261027.json). That
+  # requirement is not the promotion below and is not removed here: the
+  # lander requires the check to exist, and deleting it is a protection edit.
+  # Do not flip this mode to enforce to paper over the requirement.
   #
   #   PROMOTION RULE: make this context required when its FALSE-RED rate over 7
   #   days of runs is < 2%. A false red is a run that emits
@@ -1260,6 +1267,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      # The publisher lives in the workflow's commit. Without this checkout the
+      # aggregate would have to keep the verdict inline, where a report-mode
+      # exit 0 was indistinguishable from a test pass.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: always()
+
       - name: Download affected shard receipts
         if: always()
         continue-on-error: true
@@ -1270,6 +1283,7 @@ jobs:
           merge-multiple: true
 
       - name: Report affected-shard verdict
+        if: always()
         env:
           MODE: ${{ env.AFFECTED_SHARDS_MODE }}
           SELECT_RESULT: ${{ needs.affected-shards-select.result }}
@@ -1277,112 +1291,16 @@ jobs:
           SELECT_REASON: ${{ needs.affected-shards-select.outputs.reason }}
           SELECT_COUNT: ${{ needs.affected-shards-select.outputs.selected_count }}
           SHARDS_RESULT: ${{ needs.affected-shard.result }}
-        run: |
-          set -euo pipefail
+        run: python3 scripts/ci/affected-shard-verdict.py --timings shard-results --receipt affected-shard-verdict.json
 
-          note() { printf '%s\n' "$1" >> "${GITHUB_STEP_SUMMARY}"; }
-          note '### PR Gate / Affected shards'
-          note ''
-          if [[ "${MODE}" == "enforce" ]]; then
-            note "- Mode: \`${MODE}\` (enforcing; see the promotion rule in pr-gate.yml)"
-          else
-            note "- Mode: \`${MODE}\` (report-only until the promotion rule in pr-gate.yml is met)"
-          fi
-          note "- Selection: \`${SELECT_REASON:-unavailable}\` (\`${SELECT_COUNT:-0}\` shard families)"
-
-          # MISSING EVIDENCE IS NOT A PASS ONCE THIS CONTEXT IS REQUIRED.
-          # Promotion is documented as exactly two changes -- flip
-          # AFFECTED_SHARDS_MODE to `enforce`, add this context to branch
-          # protection -- so every path that concludes "no evidence" has to be
-          # aware of the mode. Otherwise a selector crash, an invalid routing
-          # config, or shard jobs that die before their receipts would exit 0
-          # and silently disable the required gate rather than blocking on it.
-          # In `report` the behaviour is unchanged: warn, publish, pass.
-          unavailable() {
-            local verdict="$1" explanation="$2" annotation="$3" detail="${4:-}"
-            note "- Verdict: \`${verdict}\` — ${explanation}"
-            if [[ -n "${detail}" ]]; then
-              note "  ${detail}"
-            fi
-            if [[ "${MODE}" == "enforce" ]]; then
-              note '  `AFFECTED_SHARDS_MODE` is `enforce`, so this required context fails closed on'
-              note '  missing evidence rather than reporting a pass it cannot support.'
-              echo "::error::HONUA_AFFECTED_SHARD_UNAVAILABLE ${annotation}"
-              exit 1
-            fi
-            echo "::warning::HONUA_AFFECTED_SHARD_UNAVAILABLE ${annotation}"
-            exit 0
-          }
-
-          if [[ "${SELECT_RESULT}" != "success" ]]; then
-            unavailable "selection_${SELECT_RESULT}" \
-              "no shard evidence for this head." \
-              "selection concluded '${SELECT_RESULT}'."
-          fi
-          if [[ "${SELECT_SKIP}" == "true" ]]; then
-            note "- Verdict: \`skipped\` — nothing in this diff can move a server-test shard."
-            exit 0
-          fi
-
-          shopt -s nullglob
-          timings=(shard-results/*.timing.json)
-          received=${#timings[@]}
-          expected=${SELECT_COUNT:-0}
-          if [[ "${received}" -eq 0 ]]; then
-            unavailable "no_receipts" \
-              "shard jobs concluded \`${SHARDS_RESULT}\` without a timing artifact." \
-              "shard jobs concluded '${SHARDS_RESULT}' with no timing receipt." \
-              "A shard that fails before its test step (restore, build, runner disk) produces no receipt; that is an infrastructure failure of this lane, not a shard regression."
-          fi
-
-          note ''
-          note '| Shard | Status | Duration | Budget used | Capacity |'
-          note '|---|---|---:|---:|---|'
-          red=0
-          for timing in "${timings[@]}"; do
-            shard=$(jq -r '.shard' "${timing}")
-            status=$(jq -r '.status' "${timing}")
-            duration=$(jq -r '.duration_seconds' "${timing}")
-            budget=$(jq -r 'if .headroom_ratio == null then "n/a" else ((.headroom_ratio * 1000 | round) / 10 | tostring) + "%" end' "${timing}")
-            capacity=$(jq -r '.capacity_status' "${timing}")
-            note "| ${shard} | \`${status}\` | ${duration}s | ${budget} | \`${capacity}\` |"
-            if [[ "${status}" != "passed" ]]; then
-              red=$((red + 1))
-              echo "::error::HONUA_AFFECTED_SHARD_RED shard='${shard}' status='${status}' — this shard family is red on the pull-request head. The trailing matrix will report the same failure on trunk after this merges."
-            fi
-          done
-
-          note ''
-          # A PARTIAL RECEIPT SET IS NOT GREEN. `timings` being non-empty only
-          # proves SOME selected shard reported; when one shard dies before
-          # run-server-test-shard.sh writes its timing file and another passes,
-          # every receipt present says `passed` and the naive check below would
-          # call that a clean prediction of the trailing matrix. It is not --
-          # the unreported family is exactly the one this lane was spending a
-          # runner to learn about. Checked AFTER the table so the partial
-          # evidence is still published, and after `red` is counted so a
-          # confirmed red still reports as a red rather than as infrastructure.
-          if [[ "${red}" -eq 0 && "${received}" -lt "${expected}" ]]; then
-            unavailable "incomplete_receipts" \
-              "only ${received} of ${expected} selected shard families produced a timing receipt." \
-              "shard jobs concluded '${SHARDS_RESULT}' with ${received}/${expected} timing receipts." \
-              "Every receipt received says \`passed\`, but the families that reported none are exactly the ones this lane spent runners to learn about, so this head has no complete shard evidence."
-          fi
-          if [[ "${red}" -eq 0 ]]; then
-            note "- Verdict: \`green\` — all ${received} selected shard families passed on this head."
-            echo "::notice::HONUA_AFFECTED_SHARD_GREEN ${received} selected shard families passed."
-            exit 0
-          fi
-
-          note "- Verdict: \`red\` — ${red} of ${received} selected shard families failed on this head."
-          if [[ "${MODE}" == "enforce" ]]; then
-            echo "::error::PR Gate / Affected shards: ${red} shard families are red on this head."
-            exit 1
-          fi
-          note '  Reported only: `AFFECTED_SHARDS_MODE` is `report`, so this context stays green while'
-          note '  the false-red rate is measured. Treat the rows above as a pre-merge prediction of the'
-          note '  trailing matrix and fix them before landing.'
-          exit 0
+      - name: Retain affected-shard verdict
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: pr-gate-affected-shards-verdict-${{ github.run_id }}-${{ github.run_attempt }}
+          path: affected-shard-verdict.json
+          if-no-files-found: warn
+          retention-days: 7
 
   ci-router-validation:
     # ci.yml's `CI Router Validation` job (scripts/ci/validate-ci-router.sh,
