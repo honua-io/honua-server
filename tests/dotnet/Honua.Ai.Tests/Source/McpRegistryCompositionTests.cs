@@ -266,8 +266,8 @@ public sealed class McpRegistryCompositionTests
     {
         // The explicit full-catalog opt-in keeps its pre-#3363 meaning: every eligible
         // descriptor publishes except the audited exclusions and hand-authored duplicates.
-        const int ExpectedCatalogAdminOperations = 111;
-        const int ExpectedExclusionsInCatalog = 7;
+        const int ExpectedCatalogAdminOperations = 115;
+        const int ExpectedExclusionsInCatalog = 11;
         const int ExpectedPublishedAdminTools = 104;
 
         await using var provider = BuildProductionOperationsComposition(new Dictionary<string, string?>
@@ -289,6 +289,23 @@ public sealed class McpRegistryCompositionTests
         // #6246 adds the governed object-store import to the eligible admin catalog.
         catalogAdminOperationIds.Should().Contain("admin.import.upload-object");
         publishedAdminTools.Should().Contain(PublishedOperationTool.ProjectName("admin.import.upload-object"));
+
+        // #6597 adds the four AI admission controls to the admin catalog. They are the kill
+        // switch and budget for model invocations: an AI agent must never be able to change or
+        // switch off its own admission policy, so they are excluded from MCP and stay on the
+        // admin API and Console only.
+        string[] admissionControls =
+        [
+            "admin.ai.admission.initialize",
+            "admin.ai.admission.policy-update",
+            "admin.ai.admission.stop",
+            "admin.ai.admission.resume",
+        ];
+        catalogAdminOperationIds.Should().Contain(admissionControls);
+        admissionControls.Should().OnlyContain(operationId => AdminMcpOperationExclusions.ContainsOperation(operationId),
+            "the AI admission kill switch is never agent-reachable");
+        publishedAdminTools.Should().NotIntersectWith(admissionControls.Select(PublishedOperationTool.ProjectName),
+            "an AI agent must never change or switch off its own admission policy");
 
         // Exclusions that are not catalog operations (embed keys, browser sessions) can
         // never publish; the ones that are catalog operations are withheld.
@@ -313,6 +330,40 @@ public sealed class McpRegistryCompositionTests
         catalogOperationIds.Should().Contain("studio.content.create-publication-request");
         published.Should().NotContain(PublishedOperationTool.ProjectName("studio.content.create-publication-request"));
         published.Should().Contain(name => name.StartsWith(PublishedOperationTool.NamePrefix, StringComparison.Ordinal));
+    }
+
+    [UnitTest]
+    public async Task ProductionOperationsComposition_NeverPublishesAnyAiAdmissionControl()
+    {
+        // Kill-switch rule (founder decision on #6670): an AI agent must never be able to
+        // change or switch off its own admission policy. No admin.ai.admission.* operation may
+        // publish over MCP in any composition, including the explicit full-catalog opt-in, and
+        // the rule must cover admission operations added after this test was written.
+        foreach (var options in new[]
+                 {
+                     new Dictionary<string, string?>(),
+                     new Dictionary<string, string?> { ["Mcp:PublishOperations:Enabled"] = "true" },
+                 })
+        {
+            await using var provider = BuildProductionOperationsComposition(options);
+            var published = await PublishedToolNamesAsync(BuildOperationsSurface(provider));
+            var admissionOperationIds = (await provider.GetRequiredService<IOperationCatalog>().GetSnapshotAsync())
+                .Operations
+                .Select(descriptor => descriptor.OperationId)
+                .Where(operationId => operationId.StartsWith(AdminMcpOperationExclusions.AiAdmissionOperationPrefix, StringComparison.Ordinal))
+                .ToArray();
+
+            admissionOperationIds.Should().NotBeEmpty("the AI admission controls are registered in the production catalog");
+            published.Should().NotIntersectWith(admissionOperationIds.Select(PublishedOperationTool.ProjectName));
+            published.Should().NotContain(name => name.StartsWith("honua_admin_ai_admission", StringComparison.Ordinal),
+                "no AI admission control may become an MCP tool");
+        }
+
+        AdminMcpOperationExclusions.ContainsOperation("admin.ai.admission.some-future-control").Should().BeTrue(
+            "an admission control added later is excluded before anyone lists it");
+        AdminMcpOperationExclusions.CatalogOnly.Should().OnlyContain(entry =>
+            entry.ReasonCode == AdminMcpOperationExclusions.AgentSelfGovernanceReasonCode
+            && entry.ToolName == PublishedOperationTool.ProjectName(entry.OperationId));
     }
 
     [UnitTest]

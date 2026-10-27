@@ -20,7 +20,7 @@ namespace Honua.Ai.StudioAiProxy.Adapters;
 /// (they all speak this wire shape; only <see cref="StudioAiProxyProviderOptions.Endpoint"/> and
 /// whether an API key is required differ).
 /// </summary>
-internal sealed class OpenAiCompatibleStudioAiProxyAdapter : IStudioAiProxyAdapter
+internal sealed class OpenAiCompatibleStudioAiProxyAdapter : IStudioAiProxyAdapter, IStudioAiPreparedHttpAdapter
 {
     private const string ProviderLabel = "openai";
 
@@ -44,16 +44,30 @@ internal sealed class OpenAiCompatibleStudioAiProxyAdapter : IStudioAiProxyAdapt
         => !string.IsNullOrWhiteSpace(options.Endpoint) && !string.IsNullOrWhiteSpace(options.Model);
 
     public async IAsyncEnumerable<StudioAiChatEvent> StreamAsync(
-        StudioAiProxyProviderOptions options,
-        StudioAiChatRequest request,
-        IAiExecutionPermit permit,
-        [EnumeratorCancellation] CancellationToken cancellationToken)
+        StudioAiProxyProviderOptions options, StudioAiChatRequest request,
+        IAiExecutionPermit permit, [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(request);
+        // Preserve direct callers' lazy enumeration and initial cancellation gate.
         await permit.EnsureCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var invocation = Prepare(options, request);
+        await foreach (var evt in StreamPreparedAsync(invocation, permit, cancellationToken).ConfigureAwait(false))
+            yield return evt;
+    }
 
-        var model = string.IsNullOrWhiteSpace(request.Model) ? options.Model : request.Model!;
+    public StudioAiHttpInvocation Prepare(StudioAiProxyProviderOptions options, StudioAiChatRequest request)
+        => new(options, request, "/chat/completions", (snapshot, original, model) =>
+            JsonSerializer.SerializeToUtf8Bytes(BuildRequest(snapshot, original, model),
+                StudioAiProxyJsonContext.Default.OpenAiProxyRequest));
+
+    public async IAsyncEnumerable<StudioAiChatEvent> StreamPreparedAsync(
+        StudioAiHttpInvocation invocation, IAiExecutionPermit permit,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        await permit.EnsureCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var options = invocation.CopyOptions();
+        var model = invocation.Model;
         // A local endpoint (Ollama/vLLM/LM Studio) typically needs no key; a hosted gateway does.
         // Absence here is not itself a configuration error — the provider will reject the call with
         // an auth error if a key really was required, and that surfaces as a normal Error event.
@@ -74,20 +88,18 @@ internal sealed class OpenAiCompatibleStudioAiProxyAdapter : IStudioAiProxyAdapt
             yield break;
         }
 
-        var proxyRequest = BuildRequest(options, request, model);
-
         var client = _httpClientFactory.CreateClient("studio-ai-proxy");
-        var endpoint = options.Endpoint.TrimEnd('/') + "/chat/completions";
-        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, endpoint);
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, invocation.Destination);
         if (!string.IsNullOrWhiteSpace(apiKey))
         {
             httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
         }
 
-        httpRequest.Content = new StringContent(
-            JsonSerializer.Serialize(proxyRequest, StudioAiProxyJsonContext.Default.OpenAiProxyRequest),
-            Encoding.UTF8,
-            "application/json");
+        httpRequest.Content = new ByteArrayContent(invocation.CopyBody());
+        httpRequest.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json")
+        {
+            CharSet = "utf-8"
+        };
 
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeoutCts.CancelAfter(TimeSpan.FromSeconds(options.TimeoutSeconds));
