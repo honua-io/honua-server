@@ -16,7 +16,7 @@ Submit and poll processes through OGC WPS 2.0 (GetCapabilities, DescribeProcess,
 | Capability key | `serve.wps` |
 | Category | Serve |
 | Edition | Community |
-| Surface maturity | 3 preview |
+| Surface maturity | 3 implemented |
 | Registry entries | 3 |
 | Proving tests | 31 |
 

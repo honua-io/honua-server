@@ -16,7 +16,7 @@ Submit and poll jobs through OGC API - Processes.
 | Capability key | `process.ogc-api-processes` |
 | Category | Process |
 | Edition | Community |
-| Surface maturity | 10 preview |
+| Surface maturity | 10 implemented |
 | Registry entries | 10 |
 | Proving tests | 197 |
 
