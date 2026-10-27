@@ -78,6 +78,34 @@ public static class ZarrValueDecoder
         }
     }
 
+    /// <summary>
+    /// Converts a typed fill value for numeric metadata surfaces. Non-finite values
+    /// and integers that cannot be represented exactly as doubles are omitted.
+    /// Binary subset synthesis preserves their original dtype and bits separately.
+    /// </summary>
+    public static bool TryGetFiniteFillValue(object? fillValue, out double value)
+    {
+        value = double.NaN;
+        switch (fillValue)
+        {
+            case bool boolean: value = boolean ? 1 : 0; break;
+            case float single: value = single; break;
+            case double number: value = number; break;
+            case long signed:
+                value = signed;
+                try { if (checked((long)value) != signed) return false; }
+                catch (OverflowException) { return false; }
+                break;
+            case ulong unsigned:
+                value = unsigned;
+                try { if (checked((ulong)value) != unsigned) return false; }
+                catch (OverflowException) { return false; }
+                break;
+            default: return false;
+        }
+        return double.IsFinite(value);
+    }
+
     private static string NormalizeDataType(string dtype)
         => dtype.Length > 0 && dtype[0] is '<' or '|' or '=' ? dtype[1..] : dtype;
 }
