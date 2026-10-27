@@ -145,7 +145,10 @@ of the four depends on one.
   request to `UNSTABLE` and stalls the clean-only merge train), and
 - the aggregate context **`PR Gate / Affected shards`** publishes the verdict in
   its step summary and as `HONUA_AFFECTED_SHARD_*` annotations while concluding
-  success.
+  success. That success is not a test pass. `scripts/ci/affected-shard-verdict.py`
+  sets `test_pass` false for every `report` result. Trunk protection already
+  requires the context; that requirement is not promotion (see
+  `docs/ci/affected-shards-promotion.md`).
 
 Missing evidence is mode-aware, because promotion is only those two changes and
 the context must not be able to pass by failing to look. In `report` an

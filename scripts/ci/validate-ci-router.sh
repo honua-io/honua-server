@@ -52,6 +52,7 @@ if [[ -n "${PYTHON_BIN}" ]]; then
   "${PYTHON_BIN}" scripts/ci/audit-impact-routing-evidence.test.py
   "${PYTHON_BIN}" scripts/ci/collect-impact-routing-runs.test.py
   "${PYTHON_BIN}" scripts/ci/audit-affected-shards.test.py
+  "${PYTHON_BIN}" scripts/ci/affected-shard-verdict.test.py
 else
   echo "⚠️  Skipping PR Gate impact observation validation (no working Python 3)."
 fi
