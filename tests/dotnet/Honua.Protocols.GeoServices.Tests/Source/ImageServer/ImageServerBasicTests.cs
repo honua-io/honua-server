@@ -62,8 +62,9 @@ public class ImageServerBasicTests : IClassFixture<WebAppFixture>
         {
             var definition = Uri.EscapeDataString(
                 """[{"variableName":"temperature","dimensionName":"elevation","values":[500],"isSlice":true}]""");
+            var geometry = Uri.EscapeDataString("""{"x":0,"y":0,"spatialReference":{"wkid":4326}}""");
             var response = await fixture.Client.GetAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/{operation}?geometry=0,0&geometryType=esriGeometryPoint&sr=4326&multidimensionalDefinition={definition}&f=json");
+                $"/rest/services/{TestLayerId}/ImageServer/{operation}?geometry={geometry}&geometryType=esriGeometryPoint&sr=4326&multidimensionalDefinition={definition}&f=json");
             var text = await response.Content.ReadAsStringAsync();
             response.StatusCode.Should().Be(HttpStatusCode.OK, text);
             text.Should().NotContain("NaN");
