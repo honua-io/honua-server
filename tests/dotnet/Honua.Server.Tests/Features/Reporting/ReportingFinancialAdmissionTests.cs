@@ -25,7 +25,7 @@ namespace Honua.Server.Tests.Features.Reporting;
 
 [Collection("Database.CoreEndpoints")]
 [Protocol(TestProtocols.Admin)]
-[Operation(Operations.Update)]
+[Operation(Operations.ContractTesting)]
 public sealed class ReportingFinancialAdmissionTests(DatabaseFixtureAdapter fixture) : IAsyncLifetime
 {
     private string _schema = null!;

@@ -2,6 +2,8 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Text;
+using System.Text.Json;
+using DbUp;
 using FluentAssertions;
 using Honua.Core.Features.Security.Admission;
 using Honua.Db.Postgres.Features.Security.Admission;
@@ -381,6 +383,73 @@ public sealed partial class PostgresAiExecutionAdmissionStoreTests
         };
         (await store.SettleFinancialAsync(grant, second, default)).Should().Be("conflict");
         (await FinancialChargeAsync(grant.AttemptId)).Should().Be((200L, 200L, "conflict"));
+    }
+
+    [IntegrationTest]
+    public async Task FinancialMigration_IndependentJournalReapplication_PreservesLiabilityPolicyAndFences()
+    {
+        var store = Store(); var policy = FinancialPolicy();
+        var state = await InitializeAndResumeAsync(store, policy);
+        var grant = (await store.TryAcquireAsync(FinancialContext(), Guid.NewGuid(), Frozen(policy), default)).Reservation!;
+        (await store.CommitFinancialSendAsync(grant, default)).Should().BeTrue();
+        await store.ReleaseAsync(grant, default);
+        (await FinancialChargeAsync(grant.AttemptId)).Should().Be((15L, 15L, "send-committed"));
+        var before = await FinancialMigrationSnapshotAsync();
+        using (var snapshot = JsonDocument.Parse(before))
+        {
+            snapshot.RootElement.GetProperty("policies").GetArrayLength().Should().Be(1);
+            snapshot.RootElement.GetProperty("liabilities").GetArrayLength().Should().Be(1);
+            snapshot.RootElement.GetProperty("guards").GetArrayLength().Should().Be(2);
+        }
+        var sql = await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory, "Migrations", "CreateAiFinancialAccounting.sql"));
+        // Independent fixture journals share one target schema. Each new journal must
+        // execute the SQL again rather than merely skip an already-journaled script.
+        for (var journal = 0; journal < 2; journal++)
+        {
+            var result = DeployChanges.To.PostgresqlDatabase(fixture.ConnectionString, _schema)
+                .JournalToPostgresqlTable(_schema, $"financial_repeat_journal_{journal}")
+                .WithScript("141_CreateAiFinancialAccounting.sql", sql)
+                .WithVariable("HonuaSchema", $"\"{_schema}\"")
+                .WithTransaction()
+                .Build().PerformUpgrade();
+            result.Successful.Should().BeTrue(result.Error?.ToString());
+            (await FinancialMigrationSnapshotAsync()).Should().Be(before,
+                "reapplication must preserve raw policy, debt, original basis and guard identities/privileges");
+        }
+        var unpaidWriter = async () => await ExecuteAsync($"""
+            INSERT INTO "{_schema}".ai_execution_attempts (deployment_id, attempt_id, generation_id, actor_key, use_case,
+                admitted_at, deadline_at, lease_expires_at, grant_epoch)
+            VALUES ('deployment', '{Guid.NewGuid():D}', '{state.Generation:D}', repeat('a',64), 'studio-chat',
+                clock_timestamp(), clock_timestamp()+INTERVAL '30 seconds', clock_timestamp()+INTERVAL '60 seconds', {state.Epoch})
+            """);
+        var unpaid = (await unpaidWriter.Should().ThrowAsync<PostgresException>()).Which;
+        unpaid.SqlState.Should().Be("23514");
+        unpaid.MessageText.Should().Be("Financial reservation is required before attempt admission");
+        var downgrade = async () => await ExecuteAsync($"""
+            UPDATE "{_schema}".ai_execution_policies SET policy_json = policy_json - 'Financial' WHERE deployment_id = 'deployment'
+            """);
+        var refused = (await downgrade.Should().ThrowAsync<PostgresException>()).Which;
+        refused.SqlState.Should().Be("23514");
+        refused.MessageText.Should().Be("Financial policy downgrade is forbidden");
+        (await FinancialMigrationSnapshotAsync()).Should().Be(before);
+        (await CountAttemptsAsync()).Should().Be(1, "the unpaid writer must not add an attempt");
+    }
+
+    private async Task<string> FinancialMigrationSnapshotAsync()
+    {
+        await using var connection = await fixture.DataSource.OpenConnectionAsync();
+        await using var query = new NpgsqlCommand($"""
+            SELECT jsonb_build_object(
+                'policies', (SELECT jsonb_agg(to_jsonb(p) ORDER BY deployment_id) FROM "{_schema}".ai_execution_policies p),
+                'liabilities', (SELECT jsonb_agg(to_jsonb(f) ORDER BY attempt_id) FROM "{_schema}".ai_financial_invocations f),
+                'guards', (SELECT jsonb_agg(jsonb_build_object('triggerOid', t.oid, 'functionOid', p.oid,
+                    'owner', p.proowner, 'privileges', p.proacl, 'securityDefiner', p.prosecdef,
+                    'body', p.prosrc, 'definition', pg_get_triggerdef(t.oid), 'enabled', t.tgenabled) ORDER BY t.tgname)
+                    FROM pg_trigger t JOIN pg_proc p ON p.oid = t.tgfoid
+                    WHERE t.tgrelid IN ('"{_schema}".ai_execution_policies'::regclass, '"{_schema}".ai_execution_attempts'::regclass)
+                        AND t.tgname IN ('guard_ai_financial_policy', 'guard_ai_financial_attempt')))::text
+            """, connection);
+        return (string)(await query.ExecuteScalarAsync())!;
     }
 
     private async Task<long> FinancialCountAsync()
