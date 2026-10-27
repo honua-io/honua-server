@@ -1,8 +1,11 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Text.Json;
+using System.Text.RegularExpressions;
 using FluentAssertions;
 using Honua.Server.Features.Admin;
+using Honua.TestKit;
 using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Admin;
@@ -97,6 +100,21 @@ public sealed class ComponentContractVersionsTests
 
         act.Should().Throw<InvalidOperationException>()
             .WithMessage("*'odata' is declared as '4.01' but this server does not serve it*");
+    }
+
+    [UnitTest]
+    public void DeclaredInspectorPaginationObserverVersion_MatchesTheExportedObserverContract()
+    {
+        // The certification observer's proof contract is a cross-repository interface consumed by
+        // geospatial-mcp; a bump must be recorded in release/component-versions.json (AGENTS.md).
+        using var declaration = JsonDocument.Parse(File.ReadAllText(RepositoryPaths.Resolve("release", "component-versions.json")));
+        var declared = declaration.RootElement.GetProperty("schemaVersions").GetProperty("inspector-pagination-observer").GetString();
+
+        var observer = File.ReadAllText(RepositoryPaths.Resolve("tests", "mcp-certification", "inspector-pagination.mjs"));
+        var exported = Regex.Match(observer, @"INSPECTOR_PAGINATION_CONTRACT = 'honua\.inspector-pagination-observer/(v\d+)'");
+
+        exported.Success.Should().BeTrue("the observer must export its proof contract");
+        declared.Should().Be(exported.Groups[1].Value);
     }
 
     [UnitTest]
