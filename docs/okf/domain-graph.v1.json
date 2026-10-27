@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:90a15c2097060a0ebd0d1b96123c17d6279ecfa794fcc1793202ec56e58d861c",
+  "bundleDigest": "sha256:205d30a69808622d3765b4b845391f6d956ea2e6bd2ba86b319288c5c66b8c89",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -2578,7 +2578,7 @@
     {
       "id": "guides/query-analyze/gp-local-dev-quickstart",
       "path": "guides/query-analyze/gp-local-dev-quickstart.md",
-      "documentDigest": "sha256:4a6e4d881de8fd9be1b6becd8adddd6d1bc50d7e7a2987bace58757ddf6cb6d3",
+      "documentDigest": "sha256:249492e7a73209b9326146414cb7aa29976ee0afcf8e210c631d7e69a4e03a3a",
       "metadata": {
         "type": "guide",
         "title": "Local geoprocessing dev quickstart",

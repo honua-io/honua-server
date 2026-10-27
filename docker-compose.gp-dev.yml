@@ -37,9 +37,11 @@
 # That selects `managed-worker` (a serving-image replica with no published
 # ports; managed jobs already run in-process on `honua`), `gdal-worker`, and
 # the shared `gp_artifacts` volume. Both workers bind-mount local process
-# source at /workspace/process-source so editing that tree does not rebuild
-# the server image. Referenced output staging stays off: this profile does
-# not change job execution, catalog publication, or the certified GA path.
+# source read-only at /workspace/process-source for inspection. Managed
+# executors and native helper scripts still come from the image, so a source
+# edit needs that image rebuilt and the container recreated. Referenced
+# output staging stays off: this profile does not change job execution,
+# catalog publication, or the certified GA path.
 
 # Shared by `honua` and the profile-gated `managed-worker` so both join the
 # same dev substrate. Not an application config section.
@@ -160,7 +162,8 @@ services:
   # OPTIONAL: serving-image replica that claims managed jobs. No host ports —
   # clients still use `honua`. Enable with: `--profile integration`.
   # Waits until `honua` is healthy so the two processes do not race migrations.
-  # Process source is a read-only bind mount; the published image is unchanged.
+  # Process source is a read-only inspection mount. Executor edits still
+  # require an image rebuild; the mount is not the execution path.
   managed-worker:
     image: "${HONUA_SERVER_IMAGE:-honua-server:gp-local}"
     profiles:
