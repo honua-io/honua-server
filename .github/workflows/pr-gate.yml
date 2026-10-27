@@ -763,14 +763,59 @@ jobs:
             exit 1
           fi
 
+      # Runner provisioning for the real-GDAL proof below, kept out of the proof's
+      # own 10-minute budget. The Azure Ubuntu mirror stalls for minutes at a
+      # time: on 2026-10-23..26 the proof timed out 13 times with no output at all
+      # (passing runs print apt output ~8 s in and finish in ~30 s), and one run
+      # spent 9m27s silent before the first package arrived. Every network attempt
+      # is bounded by `timeout` and retried with backoff, apt itself retries and
+      # times out stalled fetches, and the install is --no-download so dpkg is
+      # never interrupted mid-download. Category=GDAL also selects the proximity
+      # proofs: gdal_proximity.py and Scripts/gdal_euclidean_allocation.py need
+      # the GDAL Python bindings, NumPy and SciPy, which `gdal-bin` does not ship,
+      # so this is the same set ci.yml's worker-gdal-tests job installs.
+      # scripts/ci/fixtures/validate-pr-gate-apt-provisioning.py holds the step
+      # timeout and the job timeout to this loop's worst case.
+      - name: Provision the GDAL CLI packages for the real-GDAL proof
+        id: gdal-cli-packages
+        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && needs.pr-gate.outputs.docs_only != 'true' && needs.pr-gate.outputs.generated_only != 'true'
+        timeout-minutes: 25
+        run: |
+          set -euo pipefail
+          packages="gdal-bin python3-gdal python3-numpy python3-scipy"
+          printf '%s\n' \
+            'Acquire::Retries "3";' \
+            'Acquire::http::Timeout "30";' \
+            'Acquire::https::Timeout "30";' \
+            | sudo tee /etc/apt/apt.conf.d/80honua-ci-network >/dev/null
+          downloaded=false
+          for attempt in 1 2 3; do
+            if sudo timeout --kill-after=15s 240s sh -c \
+                "apt-get update -q && apt-get install -yq --download-only ${packages}"; then
+              downloaded=true
+              break
+            fi
+            echo "::warning::GDAL CLI package download attempt ${attempt} failed or stalled on the apt mirror"
+            if [[ "${attempt}" -lt 3 ]]; then
+              sleep $((attempt * 15))
+            fi
+          done
+          if [[ "${downloaded}" != "true" ]]; then
+            echo "::error::the GDAL CLI packages could not be downloaded from the runner's apt mirror after 3 bounded attempts"
+            exit 1
+          fi
+          # shellcheck disable=SC2086 # word-splitting the package list is intended
+          sudo timeout --kill-after=15s 600s apt-get install -yqq --no-download ${packages}
+
       - name: Prove the real-GDAL CLI cases run on the required gate
         # honua-server#4401: the five [GdalCliFact] cases emit Tier=Integration,
         # which the lean gate's Tier=Fast filter can never match, and ci.yml has no
         # pull_request trigger — so real gdaldem / ogr2ogr coverage could regress
-        # without blocking a merge. Run them here on the gate runner, over an
-        # apt-provisioned GDAL CLI (the same provisioning ci.yml's worker-gdal-tests
-        # job uses), with the same counts-based tripwire. HONUA_REQUIRE_GDAL_CLI
-        # turns a missing tool into a failure rather than a skip.
+        # without blocking a merge. Run them here on the gate runner, over the GDAL
+        # CLI the previous step apt-provisioned (the same provisioning ci.yml's
+        # worker-gdal-tests job uses), with the same counts-based tripwire.
+        # HONUA_REQUIRE_GDAL_CLI turns a missing tool into a failure rather than a
+        # skip.
         id: gdal-cli-proof
         if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && needs.pr-gate.outputs.docs_only != 'true' && needs.pr-gate.outputs.generated_only != 'true'
         timeout-minutes: 10
@@ -778,33 +823,14 @@ jobs:
           HONUA_REQUIRE_GDAL_CLI: "true"
         run: |
           set -euo pipefail
-          # The apt mirror occasionally stalls on a gate runner and this step has
-          # burned its whole 10-minute budget with no output (2026-10-26, three
-          # runs on two branches). Bound every apt call and retry it instead of
-          # letting one stalled mirror fail the gate.
-          apt_retry() {
-            local attempt
-            for attempt in 1 2 3; do
-              if timeout 150 sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 "$@"; then
-                return 0
-              fi
-              echo "::warning::apt-get $1 attempt ${attempt} failed or stalled; retrying"
-              sleep 10
-            done
-            echo "::error::apt-get $1 failed after 3 bounded attempts"
-            return 1
-          }
-          apt_retry update -qq
           # Category=GDAL is the whole [GdalCliFact] set, not just the gdaldem /
           # ogr2ogr cases. It also selects the two proximity correctness proofs:
           # Distance_... shells out to the gdal_proximity.py utility, and
           # Allocation_... runs the production step Scripts/gdal_euclidean_allocation.py,
-          # which imports the GDAL Python bindings, NumPy and SciPy. `gdal-bin` ships
-          # none of those, so provision the same set ci.yml's worker-gdal-tests job
-          # installs for this identical test surface and prefer the distro interpreter
-          # that owns the apt-installed modules. (GITHUB_PATH only affects LATER steps,
-          # so the PATH edit has to be an export inside this one.)
-          apt_retry install -yqq gdal-bin python3-gdal python3-numpy python3-scipy
+          # which imports the GDAL Python bindings, NumPy and SciPy. The previous step
+          # provisions those; prefer the distro interpreter that owns the
+          # apt-installed modules. (GITHUB_PATH only affects LATER steps, so the PATH
+          # edit has to be an export inside this one.)
           export PATH="/usr/bin:${PATH}"
           /usr/bin/python3 -c 'from osgeo import gdal; from scipy import ndimage; import numpy'
           for tool in gdaldem ogr2ogr gdal_translate gdalinfo gdal_proximity.py python3; do
@@ -883,6 +909,7 @@ jobs:
             --logger 'trx;LogFileName=pdal-execution-proof.trx' --results-directory tests/TestResults
 
       - name: Execute import and independent vector export fidelity proofs
+        id: fidelity-proof
         if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && needs.pr-gate.outputs.docs_only != 'true' && needs.pr-gate.outputs.generated_only != 'true'
         timeout-minutes: 25
         run: |
@@ -896,7 +923,10 @@ jobs:
         with:
           name: import-export-fidelity-proof
           path: tests/TestResults/import-export-fidelity/
-          if-no-files-found: error
+          # Missing evidence is an error only when the proof itself ran. When an
+          # earlier step failed (or timed out) the proof never runs, and an error
+          # here would bury that step's real failure under a second one.
+          if-no-files-found: ${{ steps.fidelity-proof.outcome != 'skipped' && 'error' || 'warn' }}
 
       - name: Upload point-cloud execution proof
         if: always() && needs.pr-gate.outputs.docs_only != 'true' && needs.pr-gate.outputs.generated_only != 'true'

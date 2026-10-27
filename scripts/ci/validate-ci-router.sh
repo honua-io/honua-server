@@ -46,6 +46,7 @@ echo "Validating PR Gate impact observation..."
 if [[ -n "${PYTHON_BIN}" ]]; then
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-testcontainer-images.py
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-native-tools-image.py
+  "${PYTHON_BIN}" scripts/ci/fixtures/validate-pr-gate-apt-provisioning.py --self-test
   "${PYTHON_BIN}" scripts/ci/source-inventory-pilot/test_run.py
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-mcp-server-auth.py
   HONUA_PR_GATE_IMPACT_PYTHON="${PYTHON_BIN}" scripts/ci/validate-pr-gate-impact.sh
