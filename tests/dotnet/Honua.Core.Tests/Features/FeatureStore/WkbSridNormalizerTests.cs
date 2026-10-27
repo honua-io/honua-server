@@ -93,6 +93,99 @@ public sealed class WkbSridNormalizerTests
         Assert.Same(multiPoint, result);
     }
 
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData(3u, false, false)]
+    [InlineData(1003u, true, false)]
+    [InlineData(2003u, false, true)]
+    [InlineData(3007u, true, true)]
+    [InlineData(0x80000007u, true, false)]
+    [InlineData(0x40000007u, false, true)]
+    public void TryGetDeclaredOrdinates_EmptyGeometry_UsesDeclaredType(uint type, bool expectedZ, bool expectedM)
+    {
+        var wkb = EmptyGeometry(type);
+        Assert.True(WkbSridNormalizer.TryGetDeclaredOrdinates(wkb, out var hasZ, out var hasM));
+        Assert.Equal(expectedZ, hasZ);
+        Assert.Equal(expectedM, hasM);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData(0xA0000001u, 3, true, false)]
+    [InlineData(0x60000001u, 3, false, true)]
+    [InlineData(0xE0000001u, 4, true, true)]
+    public void TryGetDeclaredOrdinates_EwkbSrid_SkipsSridWord(uint type, int ordinates, bool expectedZ, bool expectedM)
+    {
+        var wkb = CreatePoint(type, ordinates);
+        Assert.True(WkbSridNormalizer.TryGetDeclaredOrdinates(wkb, out var hasZ, out var hasM));
+        Assert.Equal(expectedZ, hasZ);
+        Assert.Equal(expectedM, hasM);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public void TryGetDeclaredOrdinates_NestedMixedEndianDimensions_AggregatesChildren()
+    {
+        var zChild = EmptyGeometry(1003u);
+        var mChild = EmptyGeometry(2007u);
+        mChild[0] = 0;
+        BinaryPrimitives.WriteUInt32BigEndian(mChild.AsSpan(1), 2007u);
+        var collection = WrapCollection(zChild.Concat(mChild).ToArray(), 2);
+        Assert.True(WkbSridNormalizer.TryGetDeclaredOrdinates(collection, out var hasZ, out var hasM));
+        Assert.True(hasZ);
+        Assert.True(hasM);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData(127, true)]
+    [InlineData(128, false)]
+    public void TryGetDeclaredOrdinates_NestingBudget_IsBounded(int wrappers, bool expected)
+    {
+        var wkb = EmptyGeometry(1003u);
+        for (var i = 0; i < wrappers; i++)
+        {
+            wkb = WrapCollection(wkb, 1);
+        }
+
+        Assert.Equal(expected, WkbSridNormalizer.TryGetDeclaredOrdinates(wkb, out var hasZ, out var hasM));
+        Assert.Equal(expected, hasZ);
+        Assert.False(hasM);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public void TryGetDeclaredOrdinates_MalformedInput_ResetsFlags()
+    {
+        var valid = EmptyGeometry(1003u);
+        byte[][] invalid = [[], valid[..^1], [.. valid, 1], EmptyGeometry(99u),
+            WrapCollection([1, 1, 0, 0, 0], 1), WrapCollection(valid, uint.MaxValue)];
+        foreach (var wkb in invalid)
+        {
+            Assert.False(WkbSridNormalizer.TryGetDeclaredOrdinates(wkb, out var hasZ, out var hasM));
+            Assert.False(hasZ);
+            Assert.False(hasM);
+        }
+    }
+
+    private static byte[] EmptyGeometry(uint type)
+    {
+        var wkb = new byte[9];
+        wkb[0] = 1;
+        BinaryPrimitives.WriteUInt32LittleEndian(wkb.AsSpan(1), type);
+        return wkb;
+    }
+
+    private static byte[] WrapCollection(byte[] children, uint count)
+    {
+        var wkb = new byte[9 + children.Length];
+        wkb[0] = 1;
+        BinaryPrimitives.WriteUInt32LittleEndian(wkb.AsSpan(1), 7u);
+        BinaryPrimitives.WriteUInt32LittleEndian(wkb.AsSpan(5), count);
+        children.CopyTo(wkb, 9);
+        return wkb;
+    }
+
     private static byte[] CreatePoint(uint rawType, int ordinates)
     {
         var ewkb = new byte[1 + sizeof(uint) + sizeof(uint) + (ordinates * sizeof(double))];

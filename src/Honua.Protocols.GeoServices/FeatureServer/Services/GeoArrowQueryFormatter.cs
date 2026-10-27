@@ -50,6 +50,14 @@ internal sealed class GeoArrowQueryFormatter
         GeoParquetQueryFormatter.EnsureSupportedCloudNativeGeometryMeasures(includeGeometry, returnM, "GeoArrow");
         var features = result.Items;
         var runtimeFields = GeoParquetQueryFormatter.DetectRuntimeFields(features, resource);
+        var includeAllFields = outFields == null || outFields.Length == 0 ||
+                              (outFields.Length == 1 && outFields[0].Equals("*", StringComparison.Ordinal));
+        if (!includeAllFields)
+        {
+            runtimeFields = runtimeFields
+                .Where(field => outFields!.Contains(field.name, StringComparer.OrdinalIgnoreCase))
+                .ToList();
+        }
         BinaryArray? geometryArray = null;
         string[] geometryTypes = [];
         if (includeGeometry)
@@ -73,7 +81,7 @@ internal sealed class GeoArrowQueryFormatter
         }
 
         var schema = BuildSchema(
-            selectedFields, includeGeometry, resource, srid, returnZ, runtimeFields, outFields, geometryTypes);
+            selectedFields, includeGeometry, resource, srid, returnZ, runtimeFields, geometryTypes);
         var recordBatch = BuildRecordBatch(
             features,
             selectedFields,
@@ -104,7 +112,6 @@ internal sealed class GeoArrowQueryFormatter
         int srid,
         bool returnZ,
         List<(string name, IArrowType type)> runtimeFields,
-        string[]? outFields,
         IReadOnlyCollection<string> geometryTypes)
     {
         var fields = new List<Apache.Arrow.Field>(selectedFields.Count + (includeGeometry ? 1 : 0));
@@ -113,6 +120,16 @@ internal sealed class GeoArrowQueryFormatter
         {
             fields.Add(CreateArrowField(field));
         }
+
+        var occupiedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var name in fields.Select(field => field.Name).Concat(runtimeFields.Select(field => field.name)))
+        {
+            if (!occupiedNames.Add(name))
+            {
+                throw new InvalidOperationException($"Cloud-native output contains ambiguous attribute name '{name}'.");
+            }
+        }
+        var geometryColumnName = GeoParquetFeatureWriter.AllocateGeneratedColumnName(GeometryColumnName, occupiedNames);
 
         if (includeGeometry)
         {
@@ -130,27 +147,19 @@ internal sealed class GeoArrowQueryFormatter
             }
 
             var geometryField = new Apache.Arrow.Field(
-                GeometryColumnName,
+                geometryColumnName,
                 BinaryType.Default,
                 nullable: true,
                 fieldMetadata);
             fields.Add(geometryField);
         }
 
-        if (runtimeFields.Count > 0)
+        foreach (var (name, type) in runtimeFields)
         {
-            var includeAllFields = outFields == null || outFields.Length == 0 ||
-                                  (outFields.Length == 1 && outFields[0].Equals("*", StringComparison.Ordinal));
-            foreach (var (name, type) in runtimeFields)
-            {
-                if (includeAllFields || outFields!.Contains(name, StringComparer.OrdinalIgnoreCase))
-                {
-                    fields.Add(new Apache.Arrow.Field(name, type, nullable: true));
-                }
-            }
+            fields.Add(new Apache.Arrow.Field(name, type, nullable: true));
         }
 
-        var schemaMetadata = BuildSchemaMetadata(resource, includeGeometry, srid, geometryTypes);
+        var schemaMetadata = BuildSchemaMetadata(resource, includeGeometry, srid, geometryTypes, geometryColumnName);
         return new Apache.Arrow.Schema(fields, schemaMetadata);
     }
 
@@ -200,14 +209,11 @@ internal sealed class GeoArrowQueryFormatter
                 "GeoArrow geometry array was not built for a geometry-bearing response."));
         }
 
-        var schemaFieldNames = new HashSet<string>(
-            schema.FieldsList.Select(f => f.Name), StringComparer.OrdinalIgnoreCase);
+        // The exact selected runtime projection also built the schema; generated
+        // geometry column names must never select an excluded attribute by name.
         foreach (var (name, type) in runtimeFields)
         {
-            if (schemaFieldNames.Contains(name))
-            {
-                arrays.Add(BuildRuntimeArray(features, name, type));
-            }
+            arrays.Add(BuildRuntimeArray(features, name, type));
         }
 
         return new RecordBatch(schema, arrays, features.Count);
@@ -568,7 +574,8 @@ internal sealed class GeoArrowQueryFormatter
         MetadataV2Resource resource,
         bool includeGeometry,
         int srid,
-        IReadOnlyCollection<string> geometryTypes)
+        IReadOnlyCollection<string> geometryTypes,
+        string geometryColumnName)
     {
         var metadata = new Dictionary<string, string>(StringComparer.Ordinal);
         if (!includeGeometry)
@@ -582,7 +589,7 @@ internal sealed class GeoArrowQueryFormatter
         var crsPart = GeoParquetProjJsonCatalog.TryGetProjJson(srid, out var projJson)
             ? $@",""crs"":{projJson}"
             : string.Empty;
-        var geoJson = $@"{{""version"":""1.1.0"",""primary_column"":""{GeometryColumnName}"",""columns"":{{""{GeometryColumnName}"":{{""encoding"":""WKB"",""geometry_types"":{geometryTypesPart}{crsPart}}}}}}}";
+        var geoJson = $@"{{""version"":""1.1.0"",""primary_column"":""{geometryColumnName}"",""columns"":{{""{geometryColumnName}"":{{""encoding"":""WKB"",""geometry_types"":{geometryTypesPart}{crsPart}}}}}}}";
 
         metadata[GeoMetadataKey] = geoJson;
         return metadata;
