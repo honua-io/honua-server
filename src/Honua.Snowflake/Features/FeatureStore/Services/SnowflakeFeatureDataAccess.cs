@@ -185,22 +185,9 @@ internal sealed class SnowflakeFeatureDataAccess
         {
             await using var connection = await _connectionFactory.OpenAsync(dataConnection, cancellationToken).ConfigureAwait(false);
             await using var command = CreateCommand(connection, query);
-
-            var rows = ImmutableArray.CreateBuilder<IReadOnlyDictionary<string, object?>>();
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-            {
-                var row = ImmutableDictionary.CreateBuilder<string, object?>(StringComparer.OrdinalIgnoreCase);
-                for (var i = 0; i < reader.FieldCount; i++)
-                {
-                    row[reader.GetName(i)] = reader.IsDBNull(i) ? null : reader.GetValue(i);
-                }
-
-                rows.Add(row.ToImmutable());
-            }
-
+            var rows = await ReadStatisticRowsAsync(command, cancellationToken).ConfigureAwait(false);
             activity?.SetStatus(ActivityStatusCode.Ok);
-            return rows.ToImmutable();
+            return rows;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -266,6 +253,26 @@ internal sealed class SnowflakeFeatureDataAccess
             string hex => Convert.FromHexString(hex),
             _ => (byte[])value
         };
+    }
+
+    private static async Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> ReadStatisticRowsAsync(
+        DbCommand command,
+        CancellationToken cancellationToken)
+    {
+        var rows = ImmutableArray.CreateBuilder<IReadOnlyDictionary<string, object?>>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var row = ImmutableDictionary.CreateBuilder<string, object?>(StringComparer.OrdinalIgnoreCase);
+            for (var i = 0; i < reader.FieldCount; i++)
+            {
+                row[reader.GetName(i)] = reader.IsDBNull(i) ? null : reader.GetValue(i);
+            }
+
+            rows.Add(row.ToImmutable());
+        }
+
+        return rows.ToImmutable();
     }
 
     private static Exception WrapException(int layerId, string operationType, Exception ex)
