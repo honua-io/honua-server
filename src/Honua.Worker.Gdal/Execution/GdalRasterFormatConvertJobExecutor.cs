@@ -27,7 +27,7 @@ internal sealed partial class GdalRasterFormatConvertJobExecutor(
     IGdalCommandRunner runner,
     IOptionsMonitor<GdalWorkerOptions> options,
     ILogger<GdalRasterFormatConvertJobExecutor> logger,
-    IOptionsMonitor<GdalHardeningOptions>? hardening = null) : IProcessExecutor
+    IOptions<GdalHardeningOptions>? hardening = null) : IProcessExecutor
 {
     /// <summary>The canonical process id this executor handles.</summary>
     public const string HandledProcessId = "conversion.raster-format";
@@ -76,9 +76,10 @@ internal sealed partial class GdalRasterFormatConvertJobExecutor(
             targetFormatRaw = string.Empty;
         }
 
-        // Null only for tests that construct the executor directly. DI supplies the
-        // same GdalHardeningOptions instance the runners project into GDAL_SKIP.
-        var hardeningOptions = hardening?.CurrentValue ?? new GdalHardeningOptions();
+        // Same fixed IOptions lifetime as ProcessGdalCommandRunner and
+        // DockerGdalCommandRunner (hardening.Value). IOptionsMonitor.CurrentValue
+        // would admit a reloaded SkipDrivers set the subprocess GDAL_SKIP does not use.
+        var hardeningOptions = hardening?.Value ?? new GdalHardeningOptions();
         if (!GdalRasterOutputDriverAdmission.TryAdmit(
                 targetFormatRaw, hardeningOptions, out var format, out var admissionError))
         {

@@ -75,7 +75,7 @@ public sealed class GdalRasterOutputDriverAdmissionTests
     {
         var runner = FakeGdalCommandRunner.Succeeding(Encoding.UTF8.GetBytes("must-not-run"));
         var scratch = GdalCli.NewScratch("honua-gdal-skip-driver-admission");
-        var hardening = new FixedHardeningMonitor(new GdalHardeningOptions { SkipDrivers = ["PNG"] });
+        var hardening = new DivergentHardeningOptions(new GdalHardeningOptions { SkipDrivers = ["PNG"] });
         var executor = new GdalRasterFormatConvertJobExecutor(
             runner,
             GdalJobFactory.Options(scratch),
@@ -127,9 +127,55 @@ public sealed class GdalRasterOutputDriverAdmissionTests
         result.ErrorMessage.Should().Contain($"{GdalHardeningOptions.SectionName}:SkipDrivers");
     }
 
-    private sealed class FixedHardeningMonitor(GdalHardeningOptions value) : IOptionsMonitor<GdalHardeningOptions>
+    [UnitTest]
+    public async Task ExecuteAsync_ReloadedSkipDrivers_UsesFixedOptionsValueNotMonitorCurrentValue()
     {
-        public GdalHardeningOptions CurrentValue { get; } = value;
+        // Runners read IOptions.Value once. A later IOptionsMonitor.CurrentValue that
+        // skips PNG must not change admission, or the job and GDAL_SKIP disagree.
+        var runner = FakeGdalCommandRunner.Succeeding(Encoding.UTF8.GetBytes("converted"));
+        var scratch = GdalCli.NewScratch("honua-gdal-skip-driver-lifetime");
+        var snapshot = new GdalHardeningOptions { SkipDrivers = ["VRT"] };
+        var reloaded = new GdalHardeningOptions { SkipDrivers = ["PNG"] };
+        var hardening = new DivergentHardeningOptions(snapshot, reloaded);
+        hardening.Value.SkipDrivers.Should().NotContain("PNG");
+        hardening.CurrentValue.SkipDrivers.Should().Contain("PNG");
+        var executor = new GdalRasterFormatConvertJobExecutor(
+            runner,
+            GdalJobFactory.Options(scratch),
+            NullLogger<GdalRasterFormatConvertJobExecutor>.Instance,
+            hardening);
+        try
+        {
+            var job = GdalJobFactory.Job(
+                GdalRasterFormatConvertJobExecutor.HandledProcessId,
+                ("source", GdalCli.RasterBase64("fake-input-raster")),
+                ("targetFormat", "PNG"));
+
+            var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
+
+            result.Status.Should().Be(ExecutionJobStatus.Succeeded, result.ErrorMessage);
+            (result.ErrorMessage ?? string.Empty).Should().NotContain("SkipDrivers");
+            runner.Invocations.Should().ContainSingle();
+            runner.Invocations.Single().Arguments.Should().ContainInOrder("-of", "PNG");
+        }
+        finally
+        {
+            GdalCli.CleanupScratch(scratch);
+        }
+    }
+
+    /// <summary>
+    /// <c>IOptions.Value</c> is the runner lifetime. <c>IOptionsMonitor.CurrentValue</c>
+    /// is a reload the runners ignore. Implementing both lets this fixture still compile
+    /// if admission is switched back to the monitor.
+    /// </summary>
+    private sealed class DivergentHardeningOptions(
+        GdalHardeningOptions snapshot,
+        GdalHardeningOptions? reloaded = null) : IOptions<GdalHardeningOptions>, IOptionsMonitor<GdalHardeningOptions>
+    {
+        public GdalHardeningOptions Value { get; } = snapshot;
+
+        public GdalHardeningOptions CurrentValue { get; } = reloaded ?? snapshot;
 
         public GdalHardeningOptions Get(string? name) => CurrentValue;
 
