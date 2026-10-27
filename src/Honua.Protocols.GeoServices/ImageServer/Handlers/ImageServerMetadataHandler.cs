@@ -25,11 +25,17 @@ namespace Honua.Protocols.GeoServices.ImageServer.Handlers;
 /// </summary>
 internal sealed class ImageServerMetadataHandler
 {
-    /// <summary>Minimum pixel size advertised in service metadata (finest resolution).</summary>
-    private const double MinPixelSize = 0.1;
+    /// <summary>
+    /// Service-level minimum pixel size. Zero matches ArcGIS Server: no zoom-in limit.
+    /// A positive value is in the raster's units and hides a geographic layer at ordinary
+    /// map scales (#6563).
+    /// </summary>
+    private const double MinPixelSize = 0;
 
-    /// <summary>Maximum pixel size advertised in service metadata (coarsest resolution).</summary>
-    private const double MaxPixelSize = 1000.0;
+    /// <summary>
+    /// Service-level maximum pixel size. Zero matches ArcGIS Server: no zoom-out limit.
+    /// </summary>
+    private const double MaxPixelSize = 0;
 
     /// <summary>Maximum image height in pixels for export requests.</summary>
     private const int MaxImageHeight = 4096;
@@ -215,6 +221,12 @@ internal sealed class ImageServerMetadataHandler
                 PixelType = MapPixelType(referenceRaster.PixelType),
                 MinPixelSize = MinPixelSize,
                 MaxPixelSize = MaxPixelSize,
+                // ArcGIS Pro will not draw outside these. Zero is the Esri "no limit" sentinel
+                // (SOAP GetServiceInfo already advertises it). Omitting the scales, or publishing
+                // a positive minPixelSize, leaves the layer in the contents pane with a legend
+                // and no pixels (#6563).
+                MinScale = 0,
+                MaxScale = 0,
                 CopyrightText = resolved.Description ?? "",
                 ServiceDataType = "esriImageServiceDataTypeGeneric",
                 MinValues = statistics.Select(s => s.MinValue ?? 0).ToArray(),

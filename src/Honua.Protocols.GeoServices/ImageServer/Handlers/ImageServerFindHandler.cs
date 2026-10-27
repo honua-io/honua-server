@@ -335,11 +335,25 @@ internal sealed class ImageServerFindHandler
 
     private static ImageServerFindImage BuildImage(ImageServerCatalogItem item, ImmutableArray<string> maskedFields)
     {
-        var pixelSize = ImageServerCatalogSecurity.IsMasked(maskedFields, "MinPS") ||
-            ImageServerCatalogSecurity.IsMasked(maskedFields, "MaxPS")
-                ? null
-                : item.MinPixelSize > 0 ? item.MinPixelSize :
-                    item.MaxPixelSize > 0 ? item.MaxPixelSize : (double?)null;
+        // MinPS is the visibility floor (0 = visible when zoomed in), not the source cell.
+        // Report LowPS so find keeps advertising the native resolution (#6563).
+        double? pixelSize = null;
+        if (!ImageServerCatalogSecurity.IsMasked(maskedFields, "MinPS") &&
+            !ImageServerCatalogSecurity.IsMasked(maskedFields, "MaxPS"))
+        {
+            if (item.MinPixelSize > 0)
+            {
+                pixelSize = item.MinPixelSize;
+            }
+            else if (!ImageServerCatalogSecurity.IsMasked(maskedFields, "LowPS") && item.LowPixelSize > 0)
+            {
+                pixelSize = item.LowPixelSize;
+            }
+            else if (item.MaxPixelSize > 0)
+            {
+                pixelSize = item.MaxPixelSize;
+            }
+        }
 
         return new ImageServerFindImage
         {

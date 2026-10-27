@@ -204,6 +204,13 @@ internal sealed record ImageServerCatalogSpatialFilter(
 /// </summary>
 internal sealed class ImageServerCatalogReader : IImageServerCatalogReader
 {
+    /// <summary>
+    /// Esri Calculate Cell Size Ranges default. The item stays visible until the map cell
+    /// is this many times its native cell. <c>MinPS</c> stays 0 so zooming in past the
+    /// native cell still draws (#6563).
+    /// </summary>
+    internal const double CellSizeRangeFactor = 10;
+
     private readonly IRasterStore _rasterStore;
     private readonly IImageServerCatalogFilterEvaluator _filterEvaluator;
     private readonly ICoordinateTransformService? _transformService;
@@ -676,8 +683,13 @@ internal sealed class ImageServerCatalogReader : IImageServerCatalogReader
             pixelSizeY = Math.Abs(raster.GeoTransform[5]);
         }
 
-        var minPixelSize = Math.Min(pixelSizeX, pixelSizeY);
-        var maxPixelSize = Math.Max(pixelSizeX, pixelSizeY);
+        // LowPS/HighPS are the source cell. MinPS/MaxPS are the visibility window.
+        // ArcGIS sets MinPS to 0 on the finest rasters and MaxPS to HighPS times the
+        // default range factor when nothing coarser takes over. Using the cell size for
+        // both ends shows the raster at exactly one resolution (#6563).
+        var lowPixelSize = Math.Min(pixelSizeX, pixelSizeY);
+        var highPixelSize = Math.Max(pixelSizeX, pixelSizeY);
+        var maxPixelSize = highPixelSize > 0 ? highPixelSize * CellSizeRangeFactor : 0;
 
         var extent = raster.Extent;
         var centerX = extent is { } e1 ? (e1.XMin + e1.XMax) / 2.0 : 0;
@@ -707,10 +719,10 @@ internal sealed class ImageServerCatalogReader : IImageServerCatalogReader
         {
             ObjectId = raster.Id,
             Name = raster.Name,
-            MinPixelSize = minPixelSize,
+            MinPixelSize = 0,
             MaxPixelSize = maxPixelSize,
-            LowPixelSize = minPixelSize,
-            HighPixelSize = maxPixelSize,
+            LowPixelSize = lowPixelSize,
+            HighPixelSize = highPixelSize,
             Width = raster.Width,
             Height = raster.Height,
             CenterX = centerX,

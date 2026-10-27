@@ -199,6 +199,52 @@ public class ImageServerExportHandlerTests
 
     [UnitTest]
     [Operation(Operations.Export)]
+    public async Task ExportImageAsync_ProLercQuality_ReturnsLercBytes()
+    {
+        // Pro's draw sends compressionQuality 10000 with LERC. That is a maxZError scale, not a
+        // JPEG quality, and must not 400 while a PNG of the same bbox succeeds (#6563).
+        var raster = CreateTestRasterInfo() with { PixelType = "8BUI", BandCount = 1, Width = 2, Height = 2 };
+        _rasterStore.QueryRastersAsync(default, default, default).ReturnsForAnyArgs([raster]);
+        _rasterStore.ExportImageAsync(1, raster.Id, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())
+            .Returns(new RasterResult
+            {
+                Data = [180, 180, 180, 180],
+                ContentType = "application/octet-stream",
+                Width = 2,
+                Height = 2,
+                BandCount = 1,
+                PixelType = "8BUI",
+            });
+
+        var context = CreateImageServerContext();
+        var request = CreateRequest(
+            rawSize: "2,2",
+            format: "lerc",
+            compression: "LERC",
+            compressionQuality: 10000,
+            pixelType: "U8",
+            responseFormat: "image");
+        var result = await _handler.ExportImageAsync(context, 1, request);
+
+        var file = result.Should().BeOfType<FileContentHttpResult>().Subject;
+        System.Text.Encoding.ASCII.GetString(file.FileContents.Span[..6]).Should().Be("Lerc2 ");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task ExportImageAsync_JpegQualityAbove100_ReturnsBadRequest()
+    {
+        SetupLayerAndRasters();
+
+        var context = CreateImageServerContext();
+        var request = CreateRequest(format: "jpg", compression: "JPEG", compressionQuality: 101);
+        var result = await _handler.ExportImageAsync(context, 1, request);
+
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
     public async Task ExportImageAsync_UnsupportedOutputFormat_ReturnsBadRequest()
     {
         SetupLayerAndRasters();
