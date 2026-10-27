@@ -17,6 +17,7 @@ from pmtiles_http import HttpRangeSource, load_source
 from derived_zarr import has_derived_binding, observe_array
 from derived_fsspec import observe_fsspec
 from producer_run import DISPATCH_ENV, producer_run
+from flatgeobuf_readback import read_flatgeobuf
 
 CLIENTS = {
     "GeoPandas": "1.1.4",
@@ -957,8 +958,8 @@ def validate_flatgeobuf(path: Path, args: argparse.Namespace) -> list[dict]:
         geopandas_seen.update(_flatgeobuf_frame_metadata(frame))
 
     def gdal_check() -> str:
-        info = _run("ogrinfo", "-json", "-al", "-so", str(path))
-        gdal_seen.update(_gdal_flatgeobuf_metadata(json.loads(info.stdout)))
+        info = read_flatgeobuf(path)
+        gdal_seen.update(_gdal_flatgeobuf_metadata(info))
         return _command_version("GDAL", "gdalinfo", "--version")
 
     _collect_client(
