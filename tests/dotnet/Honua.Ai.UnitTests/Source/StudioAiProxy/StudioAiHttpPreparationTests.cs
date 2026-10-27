@@ -33,14 +33,14 @@ public sealed class StudioAiHttpPreparationTests
         var options = new StudioAiProxyProviderOptions
         {
             Kind = kind, Endpoint = "https://original.invalid", Model = "original-model",
-            ApiKey = "fixture-key", MaxTokens = 4096, TimeoutSeconds = 10
+            ApiKey = "fixture-key", ApiKeyFromEnvironment = true, MaxTokens = 4096, TimeoutSeconds = 10
         };
         var config = new StudioAiProxyConfiguration { Enabled = true, DefaultProvider = "original" };
         config.Providers["original"] = options;
         config.Providers["later"] = new StudioAiProxyProviderOptions
         {
             Kind = kind, Endpoint = "https://later.invalid", Model = "later-model",
-            ApiKey = "later-fixture-key", MaxTokens = 256, TimeoutSeconds = 10
+            ApiKey = "later-fixture-key", ApiKeyFromEnvironment = true, MaxTokens = 256, TimeoutSeconds = 10
         };
         foreach (var (name, provider) in config.Providers)
         {
@@ -158,7 +158,7 @@ public sealed class StudioAiHttpPreparationTests
         config.Providers["local"] = new()
         {
             Kind = kind, Endpoint = "https://original.invalid", Model = "original-model",
-            ApiKey = "fixture-key", MaxTokens = 4096, TimeoutSeconds = 10
+            ApiKey = "fixture-key", ApiKeyFromEnvironment = true, MaxTokens = 4096, TimeoutSeconds = 10
         };
         config.Disclosure.Approvals.Add(new()
         {
