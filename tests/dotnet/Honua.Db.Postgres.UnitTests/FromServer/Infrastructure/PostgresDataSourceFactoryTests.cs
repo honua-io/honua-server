@@ -78,6 +78,8 @@ public sealed class PostgresDataSourceFactoryTests
         var limits = PostgresDataSourceFactory.ResolveConnectionLimits(configuration);
 
         limits.MaxConnectionPoolSize.Should().Be(8);
+        limits.MaxConcurrentQueries.Should().Be(PostgresDataSourceFactory.LambdaUnsetMaxConnectionPoolSize,
+            "an unset query ceiling on Lambda must not stay at the long-lived default of 200");
         limits.MinConnectionPoolSize.Should().Be(0,
             "a frozen Lambda does not prune, so the long-lived floor of 20 must not clamp up to the cap");
         limits.ConnectionIdleLifetimeSeconds.Should().Be(PostgresDataSourceFactory.LambdaIdleConnectionLifetimeSeconds);
@@ -109,6 +111,37 @@ public sealed class PostgresDataSourceFactoryTests
         limits.MinConnectionPoolSize.Should().Be(1);
         limits.ConnectionIdleLifetimeSeconds.Should().Be(30);
         limits.MaxConnectionPoolSize.Should().Be(2);
+        limits.MaxConcurrentQueries.Should().Be(PostgresDataSourceFactory.LambdaUnsetMaxConnectionPoolSize);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public void ResolveConnectionLimits_LambdaHost_UnsetPoolUsesServerlessCeiling()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["AWS_LAMBDA_FUNCTION_NAME"] = "honua",
+            })
+            .Build();
+
+        var limits = PostgresDataSourceFactory.ResolveConnectionLimits(configuration);
+
+        limits.MaxConnectionPoolSize.Should().Be(PostgresDataSourceFactory.LambdaUnsetMaxConnectionPoolSize);
+        limits.MaxConcurrentQueries.Should().Be(PostgresDataSourceFactory.LambdaUnsetMaxConnectionPoolSize);
+        limits.MinConnectionPoolSize.Should().Be(0);
+
+        var explicitQueries = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["HONUA_CONTROL_PLANE_LAMBDA_HANDLER"] = "scheduled-tick",
+                ["Limits:Connections:MaxConcurrentQueries"] = "3",
+                ["Limits:Connections:MaxConnectionPoolSize"] = "3",
+            })
+            .Build();
+        var kept = PostgresDataSourceFactory.ResolveConnectionLimits(explicitQueries);
+        kept.MaxConcurrentQueries.Should().Be(3, "an explicit Lambda ceiling wins over the unset default");
+        kept.MaxConnectionPoolSize.Should().Be(3);
     }
 
     [UnitTest]
@@ -119,6 +152,8 @@ public sealed class PostgresDataSourceFactoryTests
 
         var limits = PostgresDataSourceFactory.ResolveConnectionLimits(configuration);
 
+        limits.MaxConnectionPoolSize.Should().Be(200);
+        limits.MaxConcurrentQueries.Should().Be(200);
         limits.MinConnectionPoolSize.Should().Be(20);
         limits.ConnectionIdleLifetimeSeconds.Should().Be(600);
     }

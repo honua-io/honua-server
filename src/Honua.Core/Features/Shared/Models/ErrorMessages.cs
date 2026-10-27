@@ -195,7 +195,7 @@ MaxTileSize = "MaxTileSize must be a positive number of encoded vector tile byte
         public const string         /// <inheritdoc/>
 MaxConcurrentQueries = "MaxConcurrentQueries must be between 10 and 1,000";
         public const string         /// <inheritdoc/>
-MaxConnectionPoolSize = "MaxConnectionPoolSize must be between 10 and 500";
+MaxConnectionPoolSize = "MaxConnectionPoolSize must be between 1 and 1000";
         public const string         /// <inheritdoc/>
 RequestTimeout = "Connections.RequestTimeout must be between 10 seconds and 10 minutes";
         public const string         /// <inheritdoc/>

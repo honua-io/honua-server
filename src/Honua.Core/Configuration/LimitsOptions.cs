@@ -344,7 +344,9 @@ public class ConnectionLimits
     public int MaxConcurrentQueries { get; set; } = 200;
 
     /// <summary>
-    /// Maximum connection pool size.
+    /// Maximum connection pool size. Valid values are 1 through 1000. Startup refuses a pool
+    /// only when maximum concurrent queries exceed it. An unset value on Lambda is lowered
+    /// separately from this long-lived default.
     /// </summary>
     [Range(1, 1000)]
     public int MaxConnectionPoolSize { get; set; } = 200;
