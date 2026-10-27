@@ -1017,8 +1017,9 @@ internal sealed partial class FeatureServerQueryHandler(
                     FeatureServerLog.QueryExecuted(_logger, "query_fgb", serviceId, layerId, fgbStopwatch.Elapsed.TotalMilliseconds);
 
                     var payload = flatGeobufPayload ?? [];
-                    FeatureServerLog.QueryCompleted(_logger, serviceId, layerId, payload.Length > 0 ? 1 : 0, payload.Length > 0 ? 1 : 0);
-                    HonuaTelemetry.SetSuccess(featureActivity, payload.Length > 0 ? 1 : 0);
+                    // A valid empty FlatGeobuf file still has header bytes. The encoded
+                    // store contract carries no row count, so do not infer one from length.
+                    HonuaTelemetry.SetSuccess(featureActivity);
 
                     return await CreateCachedBytesResultAsync(payload, "application/vnd.flatgeobuf");
                 }

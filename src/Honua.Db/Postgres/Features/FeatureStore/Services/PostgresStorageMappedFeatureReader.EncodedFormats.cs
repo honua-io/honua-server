@@ -4,6 +4,7 @@
 using System.Globalization;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureExport;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 
@@ -17,11 +18,13 @@ namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 // capability entirely, so the FeatureServer emitted a clean 400 even though the
 // underlying PostGIS table fully supports ST_AsFlatGeobuf / ST_AsGeobuf.
 //
-// The encoders are PostGIS aggregates over a row whose geometry column carries the
+// FlatGeobuf uses the canonical feature SELECT and the shared managed writer because
+// the PostGIS aggregate corrupts nullable property indices and temporal values (#6724).
+// Geobuf remains a PostGIS aggregate over a row whose geometry column carries the
 // name passed as the final argument; we build an inner SELECT projecting objectid, the
 // (optionally reprojected) geometry as a real geometry column, and each requested
 // attribute as a typed column — mirroring FeatureQueryBuilder.BuildEncodedBinaryQuery on
-// the native path — then aggregate it with ST_AsFlatGeobuf / ST_AsGeobuf, honoring the
+// the native path — then aggregate it with ST_AsGeobuf, honoring the
 // jsonb attributes projection, layer discriminator, output SRID, filters and paging.
 internal sealed partial class PostgresStorageMappedFeatureReader : IFlatGeobufFeatureStore, IGeobufFeatureStore
 {
@@ -30,16 +33,9 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFlatGeobufFe
         CancellationToken cancellationToken)
     {
         query = await ApplyReadSecurityAsync(query, cancellationToken).ConfigureAwait(false);
-        if (_geometryColumn == null)
-        {
-            // FlatGeobuf is a geometry-bearing format; a non-spatial source layer has
-            // nothing to encode. Returning null yields an empty success response rather
-            // than producing an invalid payload.
-            return null;
-        }
-
-        var sql = BuildEncodedBinarySelect("ST_AsFlatGeobuf", includeIndex: true, query);
-        return await ExecuteEncodedBinaryQueryAsync(sql, cancellationToken).ConfigureAwait(false);
+        var features = await ExecuteFeatureQueryAsync(query, probeLimit: false, cancellationToken).ConfigureAwait(false);
+        return FlatGeobufFeatureWriter.Write(features, _resource, query,
+            ResolveAttributeFields(query), query.OutputSrid ?? _storageSrid, cancellationToken);
     }
 
     public async Task<byte[]?> QueryGeobufAsync(

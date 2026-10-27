@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:60d1e15f7eef0552f106c6845e8de013f97dc12729ebd18782d07a5ec7a7acfa",
+  "bundleDigest": "sha256:e789326875387a200f8dc0fa8d687c41fd51212011efd1c96cc2ce2f7a577ec0",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -7813,7 +7813,7 @@
     {
       "id": "reference/data-formats",
       "path": "reference/data-formats.md",
-      "documentDigest": "sha256:d4b2dee032948a4d706c875669b8c06c7c5ab06543bae94f80592a0a686319c5",
+      "documentDigest": "sha256:03de2be7de942afb71a5551100cd29410c8e95bc7dd4a2553e2ee5f24f6046ee",
       "metadata": {
         "type": "reference",
         "title": "Data formats",

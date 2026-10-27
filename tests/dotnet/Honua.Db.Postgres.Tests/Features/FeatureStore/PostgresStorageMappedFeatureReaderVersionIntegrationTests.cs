@@ -277,7 +277,9 @@ public sealed class PostgresStorageMappedFeatureReaderVersionIntegrationTests(Po
     {
         var reader = CreateReader();
         var deleted = Branch with { ObjectIds = [2] };
-        (await reader.QueryFlatGeobufAsync(1, deleted)).Should().BeNull();
+        var emptyFlatGeobuf = await reader.QueryFlatGeobufAsync(1, deleted);
+        emptyFlatGeobuf.Should().NotBeNullOrEmpty();
+        FlatGeobuf.NTS.FeatureCollectionConversions.Deserialize(emptyFlatGeobuf!).Should().BeEmpty();
         (await reader.QueryGeobufAsync(1, deleted)).Should().BeNull();
         (await reader.QueryFlatGeobufAsync(1, Branch with { ObjectIds = [4] })).Should().NotBeNullOrEmpty();
         (await reader.QueryGeobufAsync(1, Branch with { ObjectIds = [4] })).Should().NotBeNullOrEmpty();
@@ -299,6 +301,16 @@ public sealed class PostgresStorageMappedFeatureReaderVersionIntegrationTests(Po
         var result = await reader.QueryAsync(1, query);
         result.Items.Select(item => item.Id).Should().Equal(branch ? new long[] { 4 } : [1, 2]);
         result.Items.Should().OnlyContain(item => !item.Attributes.ContainsKey("secret"));
+        var encoded = await reader.QueryFlatGeobufAsync(1, query);
+        encoded.Should().NotBeNullOrEmpty();
+        var encodedRows = FlatGeobuf.NTS.FeatureCollectionConversions.Deserialize(encoded!).ToArray();
+        encodedRows.Select(item => Convert.ToInt64(item.Attributes["objectid"], CultureInfo.InvariantCulture))
+            .Order().Should().Equal(branch ? new long[] { 4 } : [1, 2]);
+        encodedRows.Should().OnlyContain(item => !item.Attributes.Exists("secret"));
+        using var encodedStream = new MemoryStream(encoded!);
+        var encodedHeader = FlatGeobuf.Helpers.ReadHeader(encodedStream);
+        Enumerable.Range(0, encodedHeader.ColumnsLength).Select(index => encodedHeader.Columns(index)?.Name)
+            .Should().NotContain("secret");
         (await reader.CountAsync(1, query)).Should().Be(branch ? 1 : 2);
         (await reader.QueryObjectIdsAsync(1, query)).Should().Equal(branch ? new long[] { 4 } : [1, 2]);
         var act = () => reader.QueryAsync(1, query with { Where = "secret = 'branch-four'" });
