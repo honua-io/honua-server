@@ -10,8 +10,6 @@ using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Queries.Filters;
 using Honua.Db.Databricks.Features.FeatureStore.Services;
 using Honua.Db.Databricks.Features.Infrastructure;
-using Honua.Protocols.GeoServices;
-using Honua.Protocols.GeoServices.FeatureServer.Models;
 
 namespace Honua.Db.Databricks.Tests;
 
@@ -401,12 +399,12 @@ public class DatabricksFeatureQueryBuilderTests
     }
 
     [Theory]
-    [InlineData("point", 1u)]
-    [InlineData("line", 2u)]
-    [InlineData("polygon", 3u)]
-    public void BuildSelect_GeoServicesEwkb_BindsIsoWkbWithoutEmbeddedSrid(string kind, uint geometryType)
+    [InlineData(1u)]
+    [InlineData(2u)]
+    [InlineData(3u)]
+    public void BuildSelect_EwkbWithEmbeddedSrid_BindsIsoWkbWithoutEmbeddedSrid(uint geometryType)
     {
-        var ewkb = GeoServicesGeometryConverter.ConvertGeoServicesGeometryToWkb(GeoServicesGeometry(kind));
+        var ewkb = EwkbWithEmbeddedSrid(geometryType, srid: 4326);
         var ewkbType = BinaryPrimitives.ReadUInt32LittleEndian(ewkb.AsSpan(1));
         Assert.NotEqual(0u, ewkbType & 0x20000000u);
 
@@ -427,9 +425,9 @@ public class DatabricksFeatureQueryBuilderTests
     }
 
     [Fact]
-    public void BuildSelect_GeoServicesEwkb_CrossSrid_StillThrows()
+    public void BuildSelect_EwkbWithEmbeddedSrid_CrossSrid_StillThrows()
     {
-        var ewkb = GeoServicesGeometryConverter.ConvertGeoServicesGeometryToWkb(GeoServicesGeometry("polygon"));
+        var ewkb = EwkbWithEmbeddedSrid(geometryType: 3, srid: 4326);
 
         var ex = Assert.Throws<NotSupportedException>(() => Builder.BuildSelect(
             Mapping(),
@@ -441,33 +439,31 @@ public class DatabricksFeatureQueryBuilderTests
         Assert.Contains("Cross-SRID", ex.Message, StringComparison.Ordinal);
     }
 
-    private static GeoServicesGeometry GeoServicesGeometry(string kind)
+    /// <summary>
+    /// Little-endian EWKB with the SRID flag set. The payload is only as complete as
+    /// <see cref="WkbSridNormalizer"/> requires, so this unit project does not reference the
+    /// GeoServices converter that emits the same flag.
+    /// </summary>
+    private static byte[] EwkbWithEmbeddedSrid(uint geometryType, int srid)
     {
-        var spatialReference = new GeoServicesSpatialReference { Wkid = 4326 };
-        return kind switch
+        using var stream = new MemoryStream();
+        stream.WriteByte(1);
+        Span<byte> word = stackalloc byte[4];
+        BinaryPrimitives.WriteUInt32LittleEndian(word, geometryType | 0x2000_0000);
+        stream.Write(word);
+        BinaryPrimitives.WriteInt32LittleEndian(word, srid);
+        stream.Write(word);
+        if (geometryType == 1)
         {
-            "point" => new GeoServicesGeometry { X = 1, Y = 2, SpatialReference = spatialReference },
-            "line" => new GeoServicesGeometry
-            {
-                Paths = [[[0, 0], [1, 1]]],
-                SpatialReference = spatialReference,
-            },
-            "polygon" => new GeoServicesGeometry
-            {
-                Rings =
-                [
-                    [
-                        [0, 0],
-                        [0, 1],
-                        [1, 1],
-                        [1, 0],
-                        [0, 0],
-                    ],
-                ],
-                SpatialReference = spatialReference,
-            },
-            _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null),
-        };
+            stream.Write(new byte[16]);
+        }
+        else
+        {
+            BinaryPrimitives.WriteUInt32LittleEndian(word, 0);
+            stream.Write(word);
+        }
+
+        return stream.ToArray();
     }
 
     [Fact]
