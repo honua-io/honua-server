@@ -91,6 +91,19 @@ public sealed class CogArtifactEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /api/v1/rasters/cog/{*artifactId}")]
+    [Endpoint("HEAD /api/v1/rasters/cog/{*artifactId}")]
+    public async Task CogProxy_ConditionalReads_HonorValidatorsBeforeRanges()
+    {
+        var descriptor = await PublishAsync();
+        var url = descriptor.GetProperty("url").GetString()!;
+        await ArtifactHttpAssertions.AssertConditionalReadsAsync(_client, url);
+        await ArtifactHttpAssertions.AssertIgnoredRangePreservesBudgetAsync(
+            _client, url, _fixture.GetOptionalService<ICloudFileStorage>()!,
+            descriptor.GetProperty("artifactId").GetString()!);
+    }
+
+    [IntegrationTest]
     [Endpoint("POST /api/v1/admin/raster-artifacts/cog")]
     public async Task PublishCog_ExportsThePrimaryRasterUnderADeterministicKey()
     {
@@ -334,6 +347,7 @@ public sealed class CogArtifactEndpointTests : IAsyncLifetime
         {
             request.Headers.Range = new RangeHeaderValue(0, 3);
         }
+        request.Headers.TryAddWithoutValidation("If-None-Match", "*");
         using var response = await anonymous.SendAsync(request);
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
         response.Headers.ETag.Should().BeNull();
