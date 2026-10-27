@@ -27,14 +27,16 @@ public static class ZarrTileRenderer
     /// <param name="tileSize">Output tile edge length in pixels.</param>
     /// <param name="colormap">Optional colormap; grayscale auto-ramp is used when null.</param>
     /// <param name="fillValue">Optional source fill value rendered transparent.</param>
+    /// <param name="typedFill">Original dtype fill. Integer sentinels that do not fit exactly in a double are masked before conversion.</param>
     /// <returns>PNG-encoded RGBA tile.</returns>
     public static byte[] Render(
         ZarrSubsetResult result,
         ZarrTileSlicePlan slice,
         int tileSize = DefaultTileSize,
         RasterColormap? colormap = null,
-        double? fillValue = null)
-        => Render(result, slice, tileSize, tileSize, colormap, fillValue);
+        double? fillValue = null,
+        object? typedFill = null)
+        => Render(result, slice, tileSize, tileSize, colormap, fillValue, typedFill);
 
     /// <summary>
     /// Renders a resolved slice to a rectangular PNG using bounded nearest-neighbor sampling.
@@ -45,6 +47,7 @@ public static class ZarrTileRenderer
     /// <param name="outputHeight">Output height in pixels.</param>
     /// <param name="colormap">Optional colormap; grayscale auto-ramp is used when null.</param>
     /// <param name="fillValue">Optional source fill value rendered transparent.</param>
+    /// <param name="typedFill">Original dtype fill. Integer sentinels that do not fit exactly in a double are masked before conversion.</param>
     /// <returns>PNG-encoded RGBA image.</returns>
     public static byte[] Render(
         ZarrSubsetResult result,
@@ -52,7 +55,8 @@ public static class ZarrTileRenderer
         int outputWidth,
         int outputHeight,
         RasterColormap? colormap = null,
-        double? fillValue = null)
+        double? fillValue = null,
+        object? typedFill = null)
     {
         ArgumentNullException.ThrowIfNull(result);
         ArgumentNullException.ThrowIfNull(slice);
@@ -72,7 +76,7 @@ public static class ZarrTileRenderer
         // subset dimensions; computing them explicitly keeps the mapping correct
         // regardless of where the Y and X axes sit in the dimension order.
         var (strideY, strideX) = ComputeSpatialStrides(result.Shape, slice.YDimensionIndex, slice.XDimensionIndex);
-        var values = DecodeBuffer(result);
+        var values = DecodeBuffer(result, typedFill);
 
         // Build the value->colour mapping. With a colormap, interpolate between stops;
         // otherwise auto-ramp grayscale over the finite value range.
@@ -331,7 +335,7 @@ public static class ZarrTileRenderer
         return (strideY, strideX);
     }
 
-    private static double[] DecodeBuffer(ZarrSubsetResult result)
+    private static double[] DecodeBuffer(ZarrSubsetResult result, object? typedFill = null)
     {
         var dtype = Normalize(result.DataType);
         var elementSize = ElementSize(dtype, result.DataType);
@@ -373,10 +377,10 @@ public static class ZarrTileRenderer
                 ReadAll(data, count, 4, values, static s => BinaryPrimitives.ReadUInt32LittleEndian(s));
                 break;
             case "i8":
-                ReadAll(data, count, 8, values, static s => BinaryPrimitives.ReadInt64LittleEndian(s));
+                ReadInt64Fill(data, count, values, typedFill as long?);
                 break;
             case "u8":
-                ReadAll(data, count, 8, values, static s => BinaryPrimitives.ReadUInt64LittleEndian(s));
+                ReadUInt64Fill(data, count, values, typedFill as ulong?);
                 break;
             default:
                 throw new InvalidOperationException($"Zarr dtype '{result.DataType}' is not supported for tile rendering.");
@@ -400,6 +404,42 @@ public static class ZarrTileRenderer
     }
 
     private delegate double ReadSample(ReadOnlySpan<byte> source);
+
+    // Equality is on the stored integer. Converting first collapses a sentinel such as
+    // 9007199254740993 and its neighbour 9007199254740992 onto one double, so a double
+    // fill would hide real samples or, when the conversion is rejected, paint the
+    // sentinel as data.
+    private static void ReadInt64Fill(ReadOnlySpan<byte> data, int count, double[] values, long? fill)
+    {
+        for (var i = 0; i < count; i++)
+        {
+            var offset = i * 8;
+            if (offset + 8 > data.Length)
+            {
+                values[i] = double.NaN;
+                continue;
+            }
+
+            var sample = BinaryPrimitives.ReadInt64LittleEndian(data.Slice(offset, 8));
+            values[i] = fill is { } sentinel && sample == sentinel ? double.NaN : sample;
+        }
+    }
+
+    private static void ReadUInt64Fill(ReadOnlySpan<byte> data, int count, double[] values, ulong? fill)
+    {
+        for (var i = 0; i < count; i++)
+        {
+            var offset = i * 8;
+            if (offset + 8 > data.Length)
+            {
+                values[i] = double.NaN;
+                continue;
+            }
+
+            var sample = BinaryPrimitives.ReadUInt64LittleEndian(data.Slice(offset, 8));
+            values[i] = fill is { } sentinel && sample == sentinel ? double.NaN : sample;
+        }
+    }
 
     private static (double Min, double Max) ResolveRange(double[] values, double? fillValue)
     {

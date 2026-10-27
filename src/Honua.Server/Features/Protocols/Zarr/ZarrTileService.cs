@@ -213,13 +213,21 @@ internal sealed class ZarrTileService : IZarrTileService
             return StandardErrorHelpers.CreateInternalServerError(context, "The Zarr store returned invalid data for this tile.");
         }
 
-        // Float and integer fills are boxed as their dtype, so a double cast drops them
-        // and no-data cells are stretched as opaque samples. Non-finite sentinels stay
-        // null: the renderer already treats non-finite samples as transparent.
-        double? fillValue = ZarrValueDecoder.TryGetFiniteFillValue(slice.Plan.Array.FillValue, out var typedFill)
-            ? typedFill
+        // Float and exact integer fills are boxed as their dtype, so a double cast drops
+        // them and no-data cells are stretched as opaque samples. Integers that do not
+        // fit in a double stay on typedFill and are masked before conversion. Non-finite
+        // sentinels stay null: the renderer already treats non-finite samples as transparent.
+        var sourceFill = slice.Plan.Array.FillValue;
+        double? fillValue = ZarrValueDecoder.TryGetFiniteFillValue(sourceFill, out var finiteFill)
+            ? finiteFill
             : null;
-        var png = ZarrTileRenderer.Render(result, slice, ZarrTileRenderer.DefaultTileSize, colormap: null, fillValue: fillValue);
+        var png = ZarrTileRenderer.Render(
+            result,
+            slice,
+            ZarrTileRenderer.DefaultTileSize,
+            colormap: null,
+            fillValue: fillValue,
+            typedFill: sourceFill);
         ZarrLog.DatacubeTileRendered(_logger, layerId, result.Variable, z, x, y, png.Length);
         return Results.Bytes(png, "image/png");
     }
