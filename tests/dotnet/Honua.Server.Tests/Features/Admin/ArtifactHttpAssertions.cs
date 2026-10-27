@@ -31,7 +31,8 @@ internal static class ArtifactHttpAssertions
         });
         upload.Success.Should().BeTrue(upload.ErrorMessage);
 
-        using var head = await client.SendAsync(new HttpRequestMessage(HttpMethod.Head, url));
+        using var headRequest = new HttpRequestMessage(HttpMethod.Head, url);
+        using var head = await client.SendAsync(headRequest);
         head.StatusCode.Should().Be(HttpStatusCode.OK);
         head.Content.Headers.ContentLength.Should().Be(bytes.LongLength);
         using var stale = new HttpRequestMessage(HttpMethod.Get, url);

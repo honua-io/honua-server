@@ -317,26 +317,33 @@ public class LocalFileStorageTests : IAsyncLifetime, IDisposable
     }
 
     [UnitTest]
-    public async Task DownloadAsync_ReadLease_PreventsReplacementUntilDisposed()
+    public async Task DownloadAsync_OpenGeneration_AllowsConcurrentReadersAndReplacementWithoutMixingBytes()
     {
         const string objectKey = "artifacts/leased-revision.bin";
         var originalBytes = "original-generation"u8.ToArray();
-        await UploadObjectAsync(objectKey, originalBytes);
-        var stream = (await _storage.DownloadAsync(objectKey))!;
-        var replacement = UploadObjectAsync(objectKey, "replacement-content"u8.ToArray());
-        try
-        {
-            replacement.IsCompleted.Should().BeFalse(
-                "an open generation lease must keep its bytes and metadata stable");
-            using var output = new MemoryStream();
-            await stream.CopyToAsync(output);
-            output.ToArray().Should().Equal(originalBytes);
-        }
-        finally
-        {
-            await stream.DisposeAsync();
-        }
-        (await replacement).Success.Should().BeTrue();
+        var replacementBytes = "replacement-content"u8.ToArray();
+        var original = await UploadObjectAsync(objectKey, originalBytes);
+        await using var first = (await _storage.DownloadIfMatchAsync(objectKey, original.File!.ETag!))!;
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await using var second = (await _storage.DownloadIfMatchAsync(
+            objectKey, original.File.ETag!, deadline.Token))!;
+
+        var replacement = await UploadObjectAsync(objectKey, replacementBytes)
+            .WaitAsync(TimeSpan.FromSeconds(5));
+        replacement.Success.Should().BeTrue();
+        var staleRead = async () => await _storage.DownloadIfMatchAsync(objectKey, original.File.ETag!);
+        await staleRead.Should().ThrowAsync<CloudFileRevisionChangedException>();
+
+        using var firstBody = new MemoryStream();
+        await first.CopyToAsync(firstBody);
+        firstBody.ToArray().Should().Equal(originalBytes);
+        using var secondBody = new MemoryStream();
+        await second.CopyToAsync(secondBody);
+        secondBody.ToArray().Should().Equal(originalBytes);
+        await using var current = (await _storage.DownloadIfMatchAsync(objectKey, replacement.File!.ETag!))!;
+        using var currentBody = new MemoryStream();
+        await current.CopyToAsync(currentBody);
+        currentBody.ToArray().Should().Equal(replacementBytes);
     }
 
     [UnitTest]

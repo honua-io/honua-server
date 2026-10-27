@@ -345,7 +345,6 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
         ArgumentException.ThrowIfNullOrWhiteSpace(fileId);
         var mutationLock = GetMutationLock(fileId);
         await mutationLock.WaitAsync(cancellationToken).ConfigureAwait(false);
-        var leased = false;
         try
         {
             if (!_fileIndex.TryGetValue(fileId, out var cloudFile))
@@ -362,24 +361,15 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
                 FileStorageLog.FileMissingOnDisk(Logger, fileId);
                 return null;
             }
-            var stream = new FileStream(fullPath, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, true);
-            var result = new ResponseDisposingStream(stream, new GenerationReadLease(mutationLock));
-            leased = true;
-            return result;
+            // Managed writes publish a new immutable path. Once opened, the OS handle
+            // pins these bytes while allowing other readers and replacement cleanup.
+            return new FileStream(fullPath, FileMode.Open, FileAccess.Read,
+                FileShare.Read | FileShare.Delete, 81920, true);
         }
         finally
         {
-            if (!leased)
-            {
-                mutationLock.Release();
-            }
+            mutationLock.Release();
         }
-    }
-
-    private sealed class GenerationReadLease(SemaphoreSlim semaphore) : IDisposable
-    {
-        private SemaphoreSlim? _semaphore = semaphore;
-        public void Dispose() => Interlocked.Exchange(ref _semaphore, null)?.Release();
     }
 
     private void TryDeleteGeneration(string path, string fileId)

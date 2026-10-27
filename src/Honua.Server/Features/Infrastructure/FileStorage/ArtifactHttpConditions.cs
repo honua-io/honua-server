@@ -25,9 +25,9 @@ internal static class ArtifactHttpConditions
 
         var headers = context.Request.Headers;
         // RFC 9110 section 13.2.2: entity-tag preconditions supersede their date counterpart.
-        if (headers.ContainsKey(HeaderNames.IfMatch))
+        if (headers.TryGetValue(HeaderNames.IfMatch, out var ifMatch))
         {
-            if (TryParseTags(headers[HeaderNames.IfMatch].ToString(), out var tags) &&
+            if (TryParseTags(ifMatch.ToString(), out var tags) &&
                 !tags.Any(candidate => candidate.Tag == "*" || candidate.Compare(etag, useStrongComparison: true)))
             {
                 return new(StatusCodes.Status412PreconditionFailed, null);
@@ -38,9 +38,9 @@ internal static class ArtifactHttpConditions
             return new(StatusCodes.Status412PreconditionFailed, null);
         }
 
-        if (headers.ContainsKey(HeaderNames.IfNoneMatch))
+        if (headers.TryGetValue(HeaderNames.IfNoneMatch, out var ifNoneMatch))
         {
-            if (TryParseTags(headers[HeaderNames.IfNoneMatch].ToString(), out var tags) &&
+            if (TryParseTags(ifNoneMatch.ToString(), out var tags) &&
                 tags.Any(candidate => candidate.Tag == "*" || candidate.Compare(etag, useStrongComparison: false)))
             {
                 return new(StatusCodes.Status304NotModified, null);
@@ -57,16 +57,14 @@ internal static class ArtifactHttpConditions
         }
 
         var range = headers[HeaderNames.Range].ToString();
-        if (!string.IsNullOrWhiteSpace(range) && headers.ContainsKey(HeaderNames.IfRange))
+        // Last-Modified cannot be proven strong: mutable objects may change twice within
+        // its one-second precision. Date/weak/invalid If-Range therefore requires a full
+        // response. A strong matching entity tag is the only safe range resume validator.
+        if (!string.IsNullOrWhiteSpace(range) && headers.TryGetValue(HeaderNames.IfRange, out var ifRange) &&
+            (!EntityTagHeaderValue.TryParse(ifRange.ToString(), out var candidate) ||
+             candidate.Tag == "*" || !candidate.Compare(etag, useStrongComparison: true)))
         {
-            // Last-Modified cannot be proven strong: mutable objects may change twice within
-            // its one-second precision. Date/weak/invalid If-Range therefore requires a full
-            // response. A strong matching entity tag is the only safe range resume validator.
-            if (!EntityTagHeaderValue.TryParse(headers[HeaderNames.IfRange].ToString(), out var candidate) ||
-                candidate.Tag == "*" || !candidate.Compare(etag, useStrongComparison: true))
-            {
-                range = null;
-            }
+            range = null;
         }
 
         return new(null, range);

@@ -53,9 +53,10 @@ applies when a range is ignored, returning 413 for larger artifacts.
 Artifact ETags use persisted content or storage-generation identity. Byte acquisition is
 conditional on that storage generation: a replacement between metadata lookup and reading
 returns 412 without the stale validator; a missing object returns 404. Providers that cannot
-fence a read return 501. Local storage publishes complete generations atomically and leases
-readers until their streams close, so failed or cancelled replacements preserve the previous
-published bytes. These guarantees cover managed publication and reads, not out-of-band edits
+fence a read return 501. Local storage publishes complete generations atomically; open file
+handles retain their immutable bytes without blocking other readers or replacement. Failed
+or cancelled replacements preserve the previous published bytes. These guarantees cover
+managed publication and reads, not out-of-band edits
 to local physical files or independent cloud-provider qualification.
 
 ## Examples
