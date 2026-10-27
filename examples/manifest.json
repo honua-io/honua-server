@@ -14,9 +14,9 @@
     "not-executable": "The inventory item is not an independent runnable example; no green execution claim is made."
   },
   "summary": {
-    "total": 1189,
+    "total": 1191,
     "byStatus": {
-      "not-executable": 1174,
+      "not-executable": 1176,
       "unvalidated": 12,
       "passed": 3
     }
@@ -6629,6 +6629,32 @@
       "language": "bash"
     },
     {
+      "id": "95dfe8f4019815ca",
+      "kind": "docs-fence",
+      "path": "docs/guides/query-analyze/gp-local-dev-quickstart.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 9,
+      "line": 149,
+      "language": "bash"
+    },
+    {
+      "id": "9dfb448bc7615a0f",
+      "kind": "docs-fence",
+      "path": "docs/guides/query-analyze/gp-local-dev-quickstart.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 8,
+      "line": 128,
+      "language": "bash"
+    },
+    {
       "id": "dd8f23f63a13265d",
       "kind": "docs-fence",
       "path": "docs/guides/query-analyze/gp-local-dev-quickstart.md",
@@ -6638,7 +6664,7 @@
         "check": "inventory-classification"
       },
       "fence": 7,
-      "line": 123,
+      "line": 119,
       "language": "bash"
     },
     {
