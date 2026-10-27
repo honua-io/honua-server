@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:ee956ba8e4b80cf929ca05d21e800b1650b924279c276edf0f0b22f523e96768",
+  "bundleDigest": "sha256:d4cb2dc55f9fe503c2d5ddad9a6b2434815642a2df1ee4d4624deaa9d3f16349",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -7744,7 +7744,7 @@
     {
       "id": "reference/configuration/data-sources/redshift",
       "path": "reference/configuration/data-sources/redshift.md",
-      "documentDigest": "sha256:276bca18c60ab62dc3528a35ef4e0b9352fa276a72b719deb589c21b2d958445",
+      "documentDigest": "sha256:d57957c71db94ffdee59d4b4cb2d3347d2d198001d8656cb9cfcddb7260c7db1",
       "metadata": {
         "type": "reference",
         "title": "Amazon Redshift provider",
@@ -7756,7 +7756,7 @@
     {
       "id": "reference/configuration/data-sources/snowflake",
       "path": "reference/configuration/data-sources/snowflake.md",
-      "documentDigest": "sha256:3099fe2ce61d315de5abdf8e6ee1a6381267de7a2efe947adeb61be22fa84262",
+      "documentDigest": "sha256:6985c5ebca19a5bf224dfccdfa211a36d8760063780523b0a9c784304c587585",
       "metadata": {
         "type": "reference",
         "title": "Snowflake provider",
