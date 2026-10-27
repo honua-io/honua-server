@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:c5f3944572533c76bf9a9bfe5af8a1682ee45686fcae33dd6731515767459f9b",
+  "bundleDigest": "sha256:ee956ba8e4b80cf929ca05d21e800b1650b924279c276edf0f0b22f523e96768",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -5383,7 +5383,7 @@
     {
       "id": "okf/capabilities/admin.control-plane",
       "path": "okf/capabilities/admin.control-plane.md",
-      "documentDigest": "sha256:7adaf0084b0c8eec30d632412657b323aa69bd3683f1b3eaae3b6d457af6c176",
+      "documentDigest": "sha256:d238b8871efb87d672348c3aa91e8be3fac448dc7586cb4fd40a683c9cc98229",
       "metadata": {
         "type": "capability",
         "title": "Admin Control Plane",
@@ -5451,7 +5451,7 @@
     {
       "id": "okf/capabilities/ai.mcp-discovery",
       "path": "okf/capabilities/ai.mcp-discovery.md",
-      "documentDigest": "sha256:35aa438712bfd5e7dac8facf69b1fd7e94f1b9af2b8bda9294e6ae3c8cb08e2b",
+      "documentDigest": "sha256:3264375dfeeb32012f20216591c238d040ddd277fb9a2ffbc87de1e603d301ca",
       "metadata": {
         "type": "capability",
         "title": "MCP Discovery & Query",
@@ -6267,7 +6267,7 @@
     {
       "id": "okf/capabilities/identity.portal-sharing",
       "path": "okf/capabilities/identity.portal-sharing.md",
-      "documentDigest": "sha256:82700d10c055dbe84c320f0697d76b730bbf8714f08a08012113c384cf43f00d",
+      "documentDigest": "sha256:636a9c76520fa99fed6de7af4d156f567ecb222cc034c28e1480c112714038fa",
       "metadata": {
         "type": "capability",
         "title": "ArcGIS Portal Sharing Read Surface",
@@ -6777,7 +6777,7 @@
     {
       "id": "okf/capabilities/serve.geoservices-featureserver",
       "path": "okf/capabilities/serve.geoservices-featureserver.md",
-      "documentDigest": "sha256:34a5246a1ad50ca52c904422fbadb2a0b2bfc6da8ecdabe2b74d98441e912711",
+      "documentDigest": "sha256:e230156c1718404abb352cff9ca1fd4aa895a7344b4bdb9eba6373ede171fd7c",
       "metadata": {
         "type": "capability",
         "title": "FeatureServer Query",
@@ -6828,7 +6828,7 @@
     {
       "id": "okf/capabilities/serve.geoservices-imageserver",
       "path": "okf/capabilities/serve.geoservices-imageserver.md",
-      "documentDigest": "sha256:547ac177e8c3d7e232087e0a5067061b6cfdc9c3960861a948a31488bfae2ad8",
+      "documentDigest": "sha256:d17fc8e15d8aee123816797b51de88604c2f28f074040777ef2dbb6b7dcf9ea2",
       "metadata": {
         "type": "capability",
         "title": "ImageServer",
@@ -7083,7 +7083,7 @@
     {
       "id": "okf/capabilities/serve.vector-tiles",
       "path": "okf/capabilities/serve.vector-tiles.md",
-      "documentDigest": "sha256:245d58507d3704ace0fb2b9795358c833773ba4be37874fc9f4195d2842c09a3",
+      "documentDigest": "sha256:b23dc5ee67ec4f982acd92fb4de5f69a56a0341834022d1e142cbe00e849e7e0",
       "metadata": {
         "type": "capability",
         "title": "Vector Tiles (MVT/TileJSON/PMTiles)",
@@ -7117,7 +7117,7 @@
     {
       "id": "okf/capabilities/serve.wfs",
       "path": "okf/capabilities/serve.wfs.md",
-      "documentDigest": "sha256:76db96bf8b34a7f83586442cd4730a4a65159ce52d30b1b3f3d62375b4f2e480",
+      "documentDigest": "sha256:4ef5fe336472ff5ec967db5177416c5574cf8197ddc603f8eeacde46f7be916d",
       "metadata": {
         "type": "capability",
         "title": "WFS 2.0",
@@ -16979,7 +16979,7 @@
       "validation": "openapi_method_and_path",
       "runtimeDiscoveryRequired": true,
       "executionVerified": false,
-      "contractDigest": "sha256:13d10331b2bfc77edc80ea68dc0eb20197340795ba2483441ad0d36960e0a845"
+      "contractDigest": "sha256:1370bfa96417d15c89b4e91fb23f7d3c7fd6dc7eab004693f85d00ebd6485655"
     },
     {
       "workflow": "guides/workflows/design-studio",
@@ -17043,7 +17043,7 @@
       "validation": "openapi_method_and_path",
       "runtimeDiscoveryRequired": true,
       "executionVerified": false,
-      "contractDigest": "sha256:13d10331b2bfc77edc80ea68dc0eb20197340795ba2483441ad0d36960e0a845"
+      "contractDigest": "sha256:1370bfa96417d15c89b4e91fb23f7d3c7fd6dc7eab004693f85d00ebd6485655"
     },
     {
       "workflow": "guides/workflows/import-data",
@@ -17053,7 +17053,7 @@
       "validation": "openapi_method_and_path",
       "runtimeDiscoveryRequired": true,
       "executionVerified": false,
-      "contractDigest": "sha256:13d10331b2bfc77edc80ea68dc0eb20197340795ba2483441ad0d36960e0a845"
+      "contractDigest": "sha256:1370bfa96417d15c89b4e91fb23f7d3c7fd6dc7eab004693f85d00ebd6485655"
     },
     {
       "workflow": "guides/workflows/import-data",
