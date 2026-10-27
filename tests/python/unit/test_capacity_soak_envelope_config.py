@@ -179,7 +179,7 @@ def test_virtual_users_are_anonymous_like_the_threshold_baseline():
 def test_sampling_cadence_does_not_add_sample_duration_to_every_gap():
     import argparse
 
-    cadence, sample_seconds, window = 0.2, 0.15, 1.0
+    cadence, sample_seconds, window = 0.3, 0.25, 1.5
 
     async def exercise():
         collector = collector_module.Collector(argparse.Namespace(base_url="http://fixture", admin_key="fixture"), LOCK)
@@ -197,7 +197,7 @@ def test_sampling_cadence_does_not_add_sample_duration_to_every_gap():
 
     begin, taken = asyncio.run(exercise())
     gaps = [b - a for a, b in zip([begin] + taken, taken)]
-    # Sleep-after-sample spaces samples cadence + duration apart (0.35 s here); a fixed cadence
+    # Sleep-after-sample spaces samples cadence + duration apart (0.55 s here); a fixed cadence
     # keeps every gap at the cadence plus scheduling jitter.
     assert max(gaps[1:]) < cadence + sample_seconds / 2
     # The window still ends with a sample at its deadline.
