@@ -44,6 +44,13 @@ public sealed record AuditIntegrityReport
     public required long UnhashedRows { get; init; }
 
     /// <summary>
+    /// Number of unhashed rows after the chain started that a keyed
+    /// <see cref="AuditChainGapAttestation"/> declares as a downgrade gap. These rows
+    /// carry no tamper evidence of their own; they are reported, not hidden.
+    /// </summary>
+    public long AttestedGapRows { get; init; }
+
+    /// <summary>
     /// The <c>audit_id</c> of the first row whose hash did not verify, or
     /// <c>null</c> when the chain is intact.
     /// </summary>

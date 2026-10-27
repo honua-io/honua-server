@@ -155,6 +155,182 @@ public sealed class PostgresAuditLogChainTests(PostgresFixture fixture)
         }
     }
 
+    // Replays the demo history behind the gap attestation: a hashing release wrote rows,
+    // a rollback to a pre-hash-chain release appended unhashed rows, the hashing release
+    // came back and started a new chain (its tail read found no hash), then the chain key
+    // was activated.
+    private async Task WriteDowngradeHistoryAsync(string schema)
+    {
+        var legacySink = new PostgresAuditLog(Provider(schema), NullLogger<PostgresAuditLog>.Instance, schema);
+        await legacySink.RecordAsync(Event("corr-1", "auth.success"));
+        await legacySink.RecordAsync(Event("corr-2", "auth.success"));
+
+        // The pre-hash-chain writer's INSERT names no hash columns.
+        for (var i = 3; i <= 4; i++)
+        {
+            await ExecuteAsync(schema, $$"""
+                INSERT INTO "{{schema}}".audit_log (
+                    timestamp, event_type, actor, actor_type, resource_type, resource_id,
+                    action, outcome, correlation_id, remote_ip, user_agent, details)
+                VALUES (
+                    NOW(), 'Authentication', 'user-1', 'UserId', 'http', '/api/v1/admin/x',
+                    'auth.success', 'Success', 'corr-{{i}}', '10.0.0.1', 'agent/1.0', '{}');
+                """);
+        }
+
+        // The returning legacy writer read the unhashed tail and started a new chain.
+        var resumedAt = new DateTimeOffset(2026, 7, 5, 23, 1, 0, TimeSpan.Zero);
+        var genesis = AuditEntryHasher.ComputeEntryHash(
+            null, resumedAt, AuditEventType.Authentication, "user-1", AuditActorType.UserId, "http",
+            "/api/v1/admin/x", "auth.success", AuditOutcome.Success, "corr-5", "10.0.0.1", "agent/1.0", "{}");
+        await ExecuteAsync(schema, $$"""
+            INSERT INTO "{{schema}}".audit_log (
+                timestamp, event_type, actor, actor_type, resource_type, resource_id,
+                action, outcome, correlation_id, remote_ip, user_agent, details, prev_hash, entry_hash)
+            VALUES (
+                '2026-07-05T23:01:00Z', 'Authentication', 'user-1', 'UserId', 'http', '/api/v1/admin/x',
+                'auth.success', 'Success', 'corr-5', '10.0.0.1', 'agent/1.0', '{}', NULL, '{{genesis}}');
+            """);
+
+        await KeyedSink(schema).RecordAsync(Event("corr-6", "auth.success"));
+    }
+
+    private PostgresAuditChainGapAttestor Attestor(string schema, byte[] key)
+        => new(
+            Provider(schema),
+            new PostgresAuditLog(Provider(schema), NullLogger<PostgresAuditLog>.Instance, schema, key),
+            new PostgresAuditLogIntegrityVerifier(Provider(schema), schema, key),
+            schema,
+            key);
+
+    private static AuditChainGapAttestationRequest GapRequest(long gapFirst) => new()
+    {
+        GapFirstAuditId = gapFirst,
+        Reason = "rolled back to a pre-hash-chain release",
+        Actor = "operator-1",
+        CorrelationId = "corr-attest",
+    };
+
+    [IntegrationTest]
+    public async Task AttestGap_AfterDowngrade_AppendsKeyedDeclarationAndChainVerifies()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresAuditLogChainTests));
+        try
+        {
+            await EnsureAuditLogTableAsync(schema);
+            await WriteDowngradeHistoryAsync(schema);
+
+            var before = await KeyedVerifier(schema).VerifyAsync();
+            before.Verified.Should().BeFalse();
+            before.FirstBrokenAuditId.Should().Be(3);
+
+            var outcome = await Attestor(schema, ChainKey).AttestAsync(GapRequest(3));
+
+            outcome.Status.Should().Be(AuditChainGapAttestationStatus.Attested, outcome.Detail);
+            outcome.Attestation!.AnchorAuditId.Should().Be(2);
+            outcome.Attestation.GapLastAuditId.Should().Be(4);
+            outcome.Attestation.GapRowCount.Should().Be(2);
+            outcome.Attestation.ResumeAuditId.Should().Be(5);
+            outcome.Attestation.ResumePreviousHash.Should().BeNull();
+            outcome.Attestation.AttestationAuditId.Should().Be(7);
+            outcome.Report!.Verified.Should().BeTrue(outcome.Report.FailureReason);
+            outcome.Report.AttestedGapRows.Should().Be(2);
+
+            // The gap rows keep no hash: nothing was rewritten.
+            var rows = await ReadChainAsync(schema);
+            rows.Count(row => row.EntryHash is null).Should().Be(2);
+
+            await KeyedSink(schema).RecordAsync(Event("corr-8", "auth.success"));
+            (await KeyedVerifier(schema).VerifyAsync()).Verified.Should().BeTrue();
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task AttestGap_WithoutChainKey_IsRefusedAndWritesNothing()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresAuditLogChainTests));
+        try
+        {
+            await EnsureAuditLogTableAsync(schema);
+            await WriteDowngradeHistoryAsync(schema);
+
+            var outcome = await Attestor(schema, []).AttestAsync(GapRequest(3));
+
+            outcome.Status.Should().Be(AuditChainGapAttestationStatus.KeyNotConfigured);
+            (await ReadChainAsync(schema)).Should().HaveCount(6);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task AttestGap_NotAtTheFirstFailure_IsRefusedAndWritesNothing()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresAuditLogChainTests));
+        try
+        {
+            await EnsureAuditLogTableAsync(schema);
+            await WriteDowngradeHistoryAsync(schema);
+
+            var outcome = await Attestor(schema, ChainKey).AttestAsync(GapRequest(4));
+
+            outcome.Status.Should().Be(AuditChainGapAttestationStatus.Refused);
+            outcome.Detail.Should().Contain("audit_id 3");
+            (await ReadChainAsync(schema)).Should().HaveCount(6);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task Verify_ForgedUnkeyedGapAttestation_DoesNotExcuseTheGap()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresAuditLogChainTests));
+        try
+        {
+            await EnsureAuditLogTableAsync(schema);
+            await WriteDowngradeHistoryAsync(schema);
+            var anchor = (await ReadChainAsync(schema))[1].EntryHash!;
+            var forged = new AuditChainGapAttestation
+            {
+                AnchorAuditId = 2,
+                AnchorEntryHash = anchor,
+                GapFirstAuditId = 3,
+                GapLastAuditId = 4,
+                GapRowCount = 2,
+                ResumeAuditId = 5,
+                Reason = "forged without the key",
+            };
+
+            // Anyone with INSERT can append a row through an unkeyed writer.
+            var unkeyed = new PostgresAuditLog(Provider(schema), NullLogger<PostgresAuditLog>.Instance, schema);
+            await unkeyed.RecordAsync(Event("corr-forged", AuditChainGapAttestation.Action) with
+            {
+                EventType = AuditEventType.AdminAction,
+                ResourceType = AuditChainGapAttestation.ResourceType,
+                ResourceId = forged.ResourceId,
+                Details = forged.ToDetails(),
+            });
+
+            var report = await KeyedVerifier(schema).VerifyAsync();
+            report.Verified.Should().BeFalse();
+            report.FirstBrokenAuditId.Should().Be(7);
+            report.FailureReason.Should().Contain("gap attestation");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
     [IntegrationTest]
     public async Task Verify_HashedRows_WithoutChainKey_DoesNotVerify()
     {
