@@ -245,7 +245,7 @@ public sealed class StudioAiHttpPreparationTests
                 options.Model = "later-model";
                 options.MaxTokens = 256;
                 messages[0] = new() { Role = StudioAiRole.User, Content = "later input" };
-                return "fixture-key";
+                return (string?)"fixture-key";
             });
         using var handler = new CapturingHandler(kind);
         using var client = new HttpClient(handler);
