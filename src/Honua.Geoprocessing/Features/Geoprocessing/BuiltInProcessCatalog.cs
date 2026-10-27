@@ -1253,7 +1253,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
         // -----------------------------------------------------------------------
         // Data-import operations (1)
         // First-class durable import pipeline (#1630). import.dataset owns the
-        // full fetch -> validate+chunk -> import -> flatten -> tile ->
+        // full fetch -> validate+chunk -> import -> publish -> tile ->
         // extent+MVT refresh -> provenance flow as ONE managed durable job,
         // composing the existing import / publishing / raster services. This is
         // the canonical execution layer the geospatial-mcp publish_data family
@@ -1264,7 +1264,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
         {
             ProcessId = "import.dataset",
             Title = "Import Dataset",
-            Description = "Imports a staged geospatial dataset end-to-end as one durable job: stages the source, imports it (the streaming importer enforces the per-feature geometry size guard / chunking), flattens the generic imported table into a typed layer (rebuilding the MVT materialization), optionally tiles a raster layer with overviews, refreshes the layer and service extents, and records a provenance artifact. Resumes by re-running from the staged source under overwrite idempotency.",
+            Description = "Imports a staged geospatial dataset end-to-end as one durable job: stages the source, imports it (the streaming importer enforces the per-feature geometry size guard / chunking), publishes the imported table as a layer whose source attributes are kept in a single JSON properties column (typed-layer flattening is tracked in honua-server#6640; the call rebuilds the MVT materialization), optionally tiles a raster layer with overviews, refreshes the layer and service extents, and records a provenance artifact. Resumes by re-running from the staged source under overwrite idempotency.",
             Category = "import",
             ExecutionTier = ProcessExecutionTier.Mutating,
             Parameters =
@@ -1273,10 +1273,10 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
                 Param("sourcePath", "Source Path", "Absolute path to the staged source file on the worker-accessible filesystem.", ProcessParameterValueType.Text, required: true),
                 Param("fileName", "File Name", "Original file name, used for format detection (e.g. parcels.geojson).", ProcessParameterValueType.Text, required: true),
                 Param("tableName", "Table Name", "Target table name for the generic imported table (imported_<table>).", ProcessParameterValueType.Text, required: true),
-                Param("layerName", "Layer Name", "Display name for the published typed layer.", ProcessParameterValueType.Text, required: true),
+                Param("layerName", "Layer Name", "Display name for the published layer.", ProcessParameterValueType.Text, required: true),
                 Param("serviceName", "Service Name", "Service to publish the layer into. Defaults to 'default'.", ProcessParameterValueType.Text),
                 Param("description", "Description", "Optional layer description.", ProcessParameterValueType.Text),
-                Param("geometryColumn", "Geometry Column", "Optional geometry column name override for the typed layer.", ProcessParameterValueType.Text),
+                Param("geometryColumn", "Geometry Column", "Optional geometry column name override for the published layer.", ProcessParameterValueType.Text),
                 Param("targetSchema", "Target Schema", "Optional schema for the imported/typed data. Defaults to the configured operational-data schema (honua_data).", ProcessParameterValueType.Text),
                 Param("sourceUrl", "Source URL", "Optional originating URL when the source was fetched from a remote object, recorded in provenance.", ProcessParameterValueType.Text),
                 Param("sourceSrid", "Source SRID", "Optional source spatial reference identifier when the source lacks embedded CRS metadata.", ProcessParameterValueType.Srid),

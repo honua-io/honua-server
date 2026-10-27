@@ -34,12 +34,13 @@ namespace Honua.Geoprocessing.Execution;
 ///     <c>ImportGeometrySizeGuard</c> vertex/ring guard per feature during streaming import (#1626).</description></item>
 ///   <item><description><b>import</b> — <see cref="IFileImportService.ImportFileAsync(ImportRequest, IProgress{ImportProgress}?, CancellationToken)"/>
 ///     streams the source into the generic <c>imported_&lt;table&gt;</c>.</description></item>
-///   <item><description><b>flatten</b> — <see cref="ILayerPublishingService.PublishLayerAsync"/> introspects the imported
-///     table and materializes the typed layer schema; the same call rebuilds the MVT materialization (#1628).</description></item>
+///   <item><description><b>publish</b> — <see cref="ILayerPublishingService.PublishLayerAsync"/> introspects the imported
+///     table and publishes it as a layer; source attributes stay in the table's single JSON <c>properties</c>
+///     column (typed-layer flattening: honua-server#6640). The same call rebuilds the MVT materialization (#1628).</description></item>
 ///   <item><description><b>tile</b> — when a raster layer is supplied,
 ///     <see cref="IRasterImportService.ImportAsync"/> loads the raster, computes statistics, and pre-generates tiles/overviews (#1625).</description></item>
 ///   <item><description><b>extent + MVT refresh</b> — <see cref="ILayerPublishingService.RefreshLayerExtentsAsync(string,string,CancellationToken)"/>
-///     recomputes the layer and service extents from the now-typed source.</description></item>
+///     recomputes the layer and service extents from the published source.</description></item>
 ///   <item><description><b>provenance</b> — a structured provenance record is appended to the execution log and
 ///     published as a JSON data-URI artifact (source, table, layer, counts, timings).</description></item>
 /// </list>
@@ -227,11 +228,11 @@ internal sealed partial class ImportDatasetJobExecutor : IProcessExecutor
         warnings.AddRange(importResult.Warnings);
         await context.ReportProgressAsync(45, "Imported source rows", cancellationToken).ConfigureAwait(false);
 
-        // Step 4 — flatten to typed schema. PublishLayerAsync introspects the
-        // imported table and materializes the typed layer; the same call rebuilds
-        // the MVT materialization (#1628).
+        // Step 4 — publish. PublishLayerAsync introspects the imported table and publishes
+        // it as a layer; source attributes stay in the JSON properties column (typed-layer
+        // flattening is honua-server#6640). The same call rebuilds the MVT materialization (#1628).
         cancellationToken.ThrowIfCancellationRequested();
-        await context.ReportProgressAsync(55, "Flattening to typed layer", cancellationToken).ConfigureAwait(false);
+        await context.ReportProgressAsync(55, "Publishing imported layer", cancellationToken).ConfigureAwait(false);
         // Fence again immediately before publish; a lost claim must not overwrite the layer (#6154).
         await context.ThrowIfExecutionLeaseLostAsync(cancellationToken).ConfigureAwait(false);
 
