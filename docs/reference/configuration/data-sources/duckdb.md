@@ -244,7 +244,7 @@ raster PNG tile; vector MVT is out of scope, see below).
 | Capability | Status |
 |-----------|--------|
 | Feature queries (select, count, object IDs) | Supported |
-| Spatial filters (including CQL2 intersects, within, contains, and distance predicates) | Supported; cross-SRID CQL2 geometry literals must be pre-transformed to the layer CRS using `always_xy` axis order |
+| Spatial filters (including CQL2 intersects, within, contains, and distance predicates) | Supported. WGS 84-compatible geographic SRIDs use `ST_Distance_Spheroid` after a lat/lon flip. NAD27 (EPSG:4267) is transformed to EPSG:4326, including the datum shift, before that spheroid measure. Other unlisted geographic codes are rejected rather than measured as WGS 84. Cross-SRID CQL2 geometry literals must be pre-transformed to the layer CRS using `always_xy` axis order |
 | Statistics and aggregation (sum, avg, count, group by) | Supported |
 | GeoJSON export | Supported |
 | Object-store Parquet / GeoParquet scans | Supported for read-only analytical layers via DuckDB temporary views |

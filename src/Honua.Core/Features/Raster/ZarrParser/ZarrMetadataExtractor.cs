@@ -651,7 +651,8 @@ public sealed class ZarrMetadataExtractor : IZarrMetadataReader
 
     /// <summary>
     /// Inspects the v3 codec pipeline. Requires a leading <c>bytes</c> (endianness)
-    /// codec and at most one trailing compression codec. Gzip uses its RFC 1952
+    /// codec and at most one trailing gzip codec. Multi-byte samples require little-endian
+    /// bytes; gzip levels must be integers from zero through nine. Gzip uses its RFC 1952
     /// container, distinct from the RFC 1950 zlib container used by v2 chunks.
     /// Uncompressed arrays return a null compressor. Unsupported codecs fail explicitly.
     /// </summary>

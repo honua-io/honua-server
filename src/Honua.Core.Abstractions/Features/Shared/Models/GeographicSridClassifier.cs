@@ -67,7 +67,8 @@ namespace Honua.Core.Features.Shared.Models;
 ///       and running them on an unlisted geographic CRS with an unestablished datum (or comparing
 ///       metres to degrees via planar <c>ST_DWithin</c>) would silently return whole-planet
 ///       matches, so the DuckDB provider rejects distance filters on unlisted geographic codes
-///       rather than guess (#2731), and the Postgres provider distance/geography-cast fallbacks
+///       rather than guess (#2731). NAD27 is the exception: it is transformed to EPSG:4326
+///       before the spheroid distance, not measured in place. The Postgres provider distance/geography-cast fallbacks
 ///       use this bucket rather than the broad list. Do not widen this list to
 ///       <see cref="GeographicSrids"/> without re-validating the provider distance paths and their
 ///       tests.
@@ -112,8 +113,9 @@ public static class GeographicSridClassifier
     /// Narrow allowlist of geographic (degree) SRIDs for which a WGS 84 spheroid geodesic distance
     /// is applied directly by the provider distance paths. Intentionally a subset of
     /// <see cref="GeographicSrids"/>. NAD27 (4267) stays on the broad geographic list for axis
-    /// order, but it is not safe here: DuckDB measures those degrees on the WGS 84 spheroid
-    /// with no datum shift. See the type remarks and #2731 before widening this list.
+    /// order, but it is not safe here: a direct spheroid distance skips the datum shift. The
+    /// DuckDB provider transforms EPSG:4267 to EPSG:4326 before measuring. Do not add 4267 to
+    /// this list. See the type remarks and #2731 before widening it.
     /// </summary>
     public static readonly ImmutableArray<int> GeodesicDistanceSafeSrids =
     [

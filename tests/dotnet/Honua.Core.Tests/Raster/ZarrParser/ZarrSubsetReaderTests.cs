@@ -139,6 +139,64 @@ public class ZarrSubsetReaderTests
     }
 
     [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData(null)]
+    [InlineData("little")]
+    [InlineData("big")]
+    public async Task ReadSubsetAsync_V3SingleByteEndianness_PreservesValues(string? endian)
+    {
+        const string root = "datasets/single-byte";
+        var objects = ZarrFixtureBuilder.BuildV3SingleArray(root, 2, 2, 2, 2, (r, c) => 0, gzip: false);
+        var document = System.Text.Json.Nodes.JsonNode.Parse(objects[root + "/zarr.json"])!;
+        document["data_type"] = "uint8";
+        document["codecs"] = System.Text.Json.Nodes.JsonNode.Parse("[{\"name\":\"bytes\"}]");
+        if (endian is not null)
+        {
+            document["codecs"]![0]!["configuration"] = new System.Text.Json.Nodes.JsonObject { ["endian"] = endian };
+        }
+        objects[root + "/zarr.json"] = Encoding.UTF8.GetBytes(document.ToJsonString());
+        objects[root + "/c/0/0"] = [1, 2, 3, 4];
+        var reader = new InMemoryZarrRangeReader(objects);
+        var metadata = await new ZarrMetadataExtractor().ReadMetadataAsync(reader, "bucket", root);
+
+        var subset = await new ZarrSubsetReader().ReadSubsetAsync(reader, "bucket", root, metadata,
+            new ZarrSubsetRequest { Variable = "single-byte", Start = [0, 0], Stop = [2, 2] });
+
+        subset.Data.Should().Equal(1, 2, 3, 4);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task ReadSubsetAsync_V3DoubleGzipPipeline_RejectedInsteadOfReturningCompressedSamples()
+    {
+        const string root = "datasets/double-gzip";
+        var objects = ZarrFixtureBuilder.BuildV3SingleArray(root, 2, 2, 2, 2, (r, c) => r * 2 + c + 1, gzip: true);
+        var document = System.Text.Json.Nodes.JsonNode.Parse(objects[root + "/zarr.json"])!;
+        var codecs = document["codecs"]!.AsArray();
+        codecs.Add(codecs[1]!.DeepClone());
+        objects[root + "/zarr.json"] = Encoding.UTF8.GetBytes(document.ToJsonString());
+        // A valid Zarr pipeline applies both gzip transforms. The old reader collapsed
+        // them to one and returned the inner gzip header as floating-point samples.
+        using (var encoded = new MemoryStream())
+        {
+            using (var gzip = new GZipStream(encoded, CompressionLevel.Optimal, leaveOpen: true))
+            {
+                gzip.Write(objects[root + "/c/0/0"]);
+            }
+            objects[root + "/c/0/0"] = encoded.ToArray();
+        }
+        var reader = new InMemoryZarrRangeReader(objects);
+        var act = async () =>
+        {
+            var metadata = await new ZarrMetadataExtractor().ReadMetadataAsync(reader, "bucket", root);
+            await new ZarrSubsetReader().ReadSubsetAsync(reader, "bucket", root, metadata,
+                new ZarrSubsetRequest { Variable = "double-gzip", Start = [0, 0], Stop = [2, 2] });
+        };
+
+        await act.Should().ThrowAsync<InvalidDataException>();
+    }
+
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadSubsetAsync_V3GzipCoded_DecodesCorrectly()
     {

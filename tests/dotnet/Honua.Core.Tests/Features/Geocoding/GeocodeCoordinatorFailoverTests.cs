@@ -287,9 +287,10 @@ public sealed class GeocodeCoordinatorFailoverTests
             maxFailoverAttempts: 2);
 
         var queries = Enumerable.Range(0, 500).Select(index => $"address {index}").ToArray();
+        // Unnamed requests may still fail over. An explicit provider name must not (#6601).
         var result = await coordinator.BatchGeocodeAsync(
             new BatchGeocodeRequest(queries),
-            providerName: "primary",
+            providerName: null,
             allowFailover: true,
             CancellationToken.None);
 
@@ -297,6 +298,75 @@ public sealed class GeocodeCoordinatorFailoverTests
         Assert.Contains(GeocodeLimitMetadata.BatchSizeMarker, result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(1, primary.BatchCallCount);
         Assert.Equal(0, secondary.BatchCallCount);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task ForwardGeocodeAsync_ExplicitProviderMissing_DoesNotCallNominatim()
+    {
+        var nominatim = new FakeGeocodeProvider(
+            "nominatim",
+            new GeocodeProviderCapabilities(SupportsForwardGeocode: true))
+        {
+            ForwardResult =
+            [
+                new GeocodeCandidate("leaked", 1.0, 2.0, 99.0, new Dictionary<string, string?>())
+            ]
+        };
+
+        var coordinator = CreateCoordinator(
+            providers: [nominatim],
+            defaultProvider: "nominatim",
+            maxFailoverAttempts: 3);
+
+        var result = await coordinator.ForwardGeocodeAsync(
+            new ForwardGeocodeRequest("1 Secret St", 1, 4326, null),
+            providerName: "local",
+            allowFailover: true,
+            CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Contains("provider_unavailable", result.ErrorMessage, StringComparison.Ordinal);
+        Assert.Contains("local", result.ErrorMessage, StringComparison.Ordinal);
+        Assert.Equal(0, nominatim.ForwardCallCount);
+        Assert.Equal(GeocodeErrorCodes.ProviderUnavailable, result.Metadata?["errorCode"]);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task ForwardGeocodeAsync_ExplicitProviderDown_DoesNotCallNominatim()
+    {
+        var local = new FakeGeocodeProvider(
+            "local",
+            new GeocodeProviderCapabilities(SupportsForwardGeocode: true))
+        {
+            ForwardException = new GeocodeProviderException("local geocoder is down")
+        };
+        var nominatim = new FakeGeocodeProvider(
+            "nominatim",
+            new GeocodeProviderCapabilities(SupportsForwardGeocode: true))
+        {
+            ForwardResult =
+            [
+                new GeocodeCandidate("leaked", 1.0, 2.0, 99.0, new Dictionary<string, string?>())
+            ]
+        };
+
+        var coordinator = CreateCoordinator(
+            providers: [local, nominatim],
+            defaultProvider: "nominatim",
+            maxFailoverAttempts: 3);
+
+        var result = await coordinator.ForwardGeocodeAsync(
+            new ForwardGeocodeRequest("1 Secret St", 1, 4326, null),
+            providerName: "local",
+            allowFailover: true,
+            CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.DoesNotContain("nominatim", result.ProviderName, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(1, local.ForwardCallCount);
+        Assert.Equal(0, nominatim.ForwardCallCount);
     }
 
     private static GeocodeCoordinatorService CreateCoordinator(

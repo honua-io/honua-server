@@ -80,7 +80,7 @@ SPEC
     # keep their existing opt-in lanes. MySQL retains its full HTTP host case.
     providers)
       cat <<'SPEC'
-tests/dotnet/Honua.Db.DuckDB.Tests/Honua.DuckDB.Tests.csproj|Honua.DuckDB-tests|||
+tests/dotnet/Honua.Db.DuckDB.Tests/Honua.DuckDB.Tests.csproj|Honua.DuckDB-tests||HONUA_TEST_POSTGRES=1|
 tests/dotnet/Honua.Plugins.Tests/Honua.Plugins.Tests.csproj|Honua.Plugins-tests|||
 tests/dotnet/Honua.GeoServicesRest.Tests/Honua.GeoServicesRest.Tests.csproj|Honua.GeoServicesRest-tests|||
 tests/dotnet/Honua.Db.Postgres.Security.Tests/Honua.Postgres.Security.Tests.csproj|postgres-security-tests|||advisory

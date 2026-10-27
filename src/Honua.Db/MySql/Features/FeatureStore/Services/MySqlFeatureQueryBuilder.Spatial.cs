@@ -81,9 +81,9 @@ internal sealed partial class MySqlFeatureQueryBuilder
             SpatialRelationship.Equals =>
                 $"ST_Equals({geomCol}, {filterGeom})",
             SpatialRelationship.WithinDistance when filter.Distance.HasValue =>
-                BuildDistanceClause(geomCol, filterGeom, filter, mapping, withinDistance: true, ref paramIndex, parameters),
+                BuildDistanceClause(geomCol, filterGeom, filter, mapping, withinDistance: true, _engineFlavor, ref paramIndex, parameters),
             SpatialRelationship.BeyondDistance when filter.Distance.HasValue =>
-                BuildDistanceClause(geomCol, filterGeom, filter, mapping, withinDistance: false, ref paramIndex, parameters),
+                BuildDistanceClause(geomCol, filterGeom, filter, mapping, withinDistance: false, _engineFlavor, ref paramIndex, parameters),
             _ => throw MySqlUnsupportedFeature.Create(
                 $"Spatial relationship '{filter.SpatialRelationship}' is not supported by the MySQL/MariaDB provider.")
         };
@@ -152,11 +152,13 @@ internal sealed partial class MySqlFeatureQueryBuilder
         SpatialFilter filter,
         MySqlLayerMapping mapping,
         bool withinDistance,
+        MySqlEngineFlavor engineFlavor,
         ref int paramIndex,
         List<object> parameters)
     {
-        // Distance queries require Point-typed layers because ST_Distance_Sphere is defined
-        // for points; polygon/line distance would silently degrade to centroid math.
+        // Distance queries require Point-typed layers. Polygon or line distance would
+        // silently degrade to a centroid, and MySQL geographic ST_Distance before 8.0.18
+        // only accepts points.
         if (mapping.GeometryType is not GeometryType.Point and not GeometryType.MultiPoint)
         {
             throw MySqlUnsupportedFeature.Create(
@@ -164,10 +166,9 @@ internal sealed partial class MySqlFeatureQueryBuilder
                 $"(layer geometry is {mapping.GeometryType}). ST_Distance_Sphere expects point geometries.");
         }
 
-        // ST_Distance_Sphere is documented for geographic SRSes or SRID 0; projected SRSes
-        // (e.g. EPSG:3857) raise ER_INVALID_GIS_DATA at the engine and other geographic
-        // SRSes use a different mean radius. Restrict to EPSG:4326 and SRID 0 — the
-        // canonical WGS84-approximation contract documented in mysql-provider.md.
+        // Projected SRSes raise ER_INVALID_GIS_DATA. Other geographic SRSes are not the
+        // WGS 84 ellipsoid ST_Distance uses for EPSG:4326. SRID 0 stays allowed: it has
+        // no ellipsoid, so the sphere fallback treats X/Y as longitude/latitude.
         if (!MySqlSpatialSql.IsDistanceSphereCompatibleSrid(mapping.Srid))
         {
             throw MySqlUnsupportedFeature.Create(
@@ -180,10 +181,8 @@ internal sealed partial class MySqlFeatureQueryBuilder
         var distanceParam = $"@p{paramIndex++}";
         parameters.Add(distanceMeters);
 
-        // ST_Distance_Sphere is a sphere on an explicit mean radius, supported by MySQL 8.0+
-        // and MariaDB 10.6+. It is not a WGS 84 spheroid. Geodesic distance is a PostGIS path.
         var op = withinDistance ? "<=" : ">";
-        return $"{MySqlSpatialSql.DistanceSphere(geomCol, filterGeom)} {op} {distanceParam}";
+        return $"{MySqlSpatialSql.GeodesicDistance(geomCol, filterGeom, mapping.Srid, engineFlavor)} {op} {distanceParam}";
     }
 
     private static double ConvertDistanceToMeters(double distance, DistanceUnit unit)
