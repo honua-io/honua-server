@@ -4,6 +4,12 @@
 This collector owns its 170 virtual users and records every completed request,
 including transport errors (599), at millisecond timer resolution. It does not
 infer a population from NBomber summary percentiles. Failed sampling is retained.
+
+The virtual users are anonymous, like the NBomber soak the frozen thresholds were
+measured with (honua-release capacity lock baseline, run 34753540275). A credential
+on a request bypasses the server's anonymous output cache by design, so an
+admin-keyed workload measures a different, uncached server path than the one the
+thresholds describe. Only workload probes and GP control requests carry the key.
 """
 from __future__ import annotations
 
@@ -23,7 +29,14 @@ import aiohttp
 import httpx
 
 from capacity_evidence import assert_candidate, digest
+import envelope_config
 from drive_soak import SoakDriver
+
+
+# Workload/metric samples are taken on this fixed cadence from the window start. The release
+# checker refuses any gap above samplePeriodSeconds (60), so the cadence cannot be "sleep 30
+# seconds after a sample", which adds the sample's own duration to every gap.
+SAMPLE_CADENCE_SECONDS = 30
 
 
 def now():
@@ -263,8 +276,10 @@ class Collector:
             await self.driver.observe_deployment(client)
             dimensions["tenants"] = 1 if self.driver.deployment["tenantSource"] == "Default" and not self.driver._capabilities.get("admin.multi-tenancy", {}).get("available") else None
             catalog = await self.driver._get_json(client, "/rest/services?f=json")
-            # Multiple protocol adapters may list the same logical service.
-            dimensions["services"] = len({service["name"] for service in catalog["services"]})
+            # Multiple protocol adapters may list the same logical service, and the catalogue
+            # also lists built-in services (Utilities/PrintingTools, the geocode locator).
+            dimensions["services"] = len(envelope_config.data_services(catalog))
+            proofs["catalogServices"] = sorted({(entry.get("name"), entry.get("type")) for entry in catalog["services"]})
             service = await self.driver._get_json(client, "/rest/services/test/FeatureServer?f=json")
             layers = service["layers"]
             dimensions["layersPerService"] = len(layers)
@@ -294,7 +309,10 @@ class Collector:
         try:
             inspection = json.loads(await command("docker", "inspect", "honua-capacity-soak-honua-1"))[0]
             configured = dict(item.split("=", 1) for item in inspection["Config"]["Env"] if "=" in item)
-            configured_workers = int(configured["ExecutionAdmission__MaxConcurrentJobsGlobal"])
+            admission_limit = int(configured["ExecutionAdmission__MaxConcurrentJobsGlobal"])
+            # One inspected server replica runs one sequential claim loop. The admission limit is
+            # the active (queued + executing) job bound, not the worker count.
+            configured_workers = envelope_config.configured_gp_workers(1)
             dimensions["gpWorkers"] = gp["executing"] if gp else None
             # GP workers share the server container's CPU allocation. Include all
             # work on that CPU resource, rather than treating a busy single slot
@@ -304,6 +322,7 @@ class Collector:
             metric["worker"] = float(cpu_percent.rstrip("%"))/(100*cpu_count)
             proofs["workerCpu"] = dict(percent=float(cpu_percent.rstrip("%")), allocatedCpus=cpu_count)
             proofs["workerConfiguration"] = configured_workers
+            proofs["admissionActiveJobLimit"] = admission_limit
             redis = await command("docker", "exec", "honua-capacity-soak-redis-1", "redis-cli", "INFO", "clients")
             clients = dict(line.split(":", 1) for line in redis.splitlines() if ":" in line)
             maximum = (await command("docker", "exec", "honua-capacity-soak-redis-1", "redis-cli", "--raw", "CONFIG", "GET", "maxclients")).splitlines()[-1]
@@ -354,11 +373,32 @@ class Collector:
             except Exception as exc:
                 self.failures.append(f"recovery {dependency}: {type(exc).__name__}: {exc}")
 
+    def workload_session(self):
+        """The virtual users' session. It carries no credential (see the module docstring)."""
+        return aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30), connector=aiohttp.TCPConnector(limit=256))
+
+    async def sample_window(self, client, steady_seconds, cadence=SAMPLE_CADENCE_SECONDS):
+        """Sample on a fixed cadence anchored at the window start; return the final sample time.
+
+        A sample slower than the cadence delays only the next sample, never every later one.
+        """
+        started = time.monotonic()
+        deadline = started + steady_seconds
+        tick = 0
+        while True:
+            tick += 1
+            due = min(started + tick*cadence, deadline)
+            await asyncio.sleep(max(0, due-time.monotonic()))
+            at = await self.sample(client)
+            print(f"{iso(at)} requests={self.ledger.observed_count} samplingFailures={len(self.failures)}", flush=True)
+            if due >= deadline:
+                return at
+
     async def run(self):
         replica = json.loads(await command("docker", "inspect", "honua-capacity-soak-honua-1"))[0]
         self.ledger.incarnation = replica["Id"]
         headers = {"X-API-Key": self.args.admin_key}
-        async with httpx.AsyncClient(timeout=10, headers=headers, transport=RecordingTransport(self.ledger)) as client, aiohttp.ClientSession(headers=headers, timeout=aiohttp.ClientTimeout(total=30), connector=aiohttp.TCPConnector(limit=256)) as session:
+        async with httpx.AsyncClient(timeout=10, headers=headers, transport=RecordingTransport(self.ledger)) as client, self.workload_session() as session:
             await self.driver.observe_deployment(client)
             assert_candidate(self.args.candidate_sha, os.environ["GITHUB_SHA"], self.driver.deployment["observedRevision"])
             await self.establish_payload(client)
@@ -370,12 +410,7 @@ class Collector:
                 self._gp_error_cursor = len(self.driver.gp.errors)
                 self.ledger.started = await self.sample(client)
                 fault = asyncio.create_task(self.faults(client))
-                deadline = time.monotonic()+self.args.steady_seconds
-                while time.monotonic() < deadline:
-                    await asyncio.sleep(min(30, max(0, deadline-time.monotonic())))
-                    at = await self.sample(client)
-                    print(f"{iso(at)} requests={self.ledger.observed_count} samplingFailures={len(self.failures)}", flush=True)
-                self.ledger.ended = at
+                self.ledger.ended = await self.sample_window(client, self.args.steady_seconds)
                 if not fault.done():
                     self.failures.append("recovery did not complete inside the observation window")
             finally:

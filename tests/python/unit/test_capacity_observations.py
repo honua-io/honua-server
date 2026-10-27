@@ -281,7 +281,9 @@ def test_sampler_retains_served_dimensions_and_actual_dependency_measurements(mo
                 document = dict(server=dict(deploymentRevision=REVISION, deploymentEnvironment="Production"),
                                 scope=dict(tenantSource="Default"), capabilities=[])
             elif request.path == "/rest/services":
-                document = dict(services=[dict(name="test")])
+                # The real root also lists built-ins, which are not published services.
+                document = dict(services=[dict(name="test", type="FeatureServer"), dict(name="test", type="GPServer"),
+                                          dict(name="Utilities/PrintingTools", type="GPServer"), dict(name="World", type="GeocodeServer")])
             elif request.path.endswith("/FeatureServer"):
                 document = dict(layers=[dict(id=i) for i in range(4)])
             elif request.path.endswith("/query"):
