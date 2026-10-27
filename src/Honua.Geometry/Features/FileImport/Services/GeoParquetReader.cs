@@ -333,7 +333,7 @@ internal static class GeoParquetReader
         }
 
         var primaryColumn = RequiredString(root, "primary_column");
-        if (!root.TryGetProperty("columns", out var columns) || columns.ValueKind != JsonValueKind.Object)
+        if (!root.TryGetProperty("columns"u8, out var columns) || columns.ValueKind != JsonValueKind.Object)
         {
             throw new InvalidDataException("GeoParquet metadata requires a 'columns' object.");
         }
@@ -358,7 +358,7 @@ internal static class GeoParquetReader
             }
 
             ValidateGeometryTypes(column.Value);
-            var edges = column.Value.TryGetProperty("edges", out _) ? RequiredString(column.Value, "edges") : "planar";
+            var edges = column.Value.TryGetProperty("edges"u8, out _) ? RequiredString(column.Value, "edges") : "planar";
             if (edges is not ("planar" or "spherical"))
             {
                 throw new InvalidDataException("GeoParquet 'edges' must be 'planar' or 'spherical'.");
@@ -394,7 +394,7 @@ internal static class GeoParquetReader
 
     private static void ValidateGeometryTypes(JsonElement column)
     {
-        if (!column.TryGetProperty("geometry_types", out var types) || types.ValueKind != JsonValueKind.Array)
+        if (!column.TryGetProperty("geometry_types"u8, out var types) || types.ValueKind != JsonValueKind.Array)
         {
             throw new InvalidDataException("GeoParquet metadata requires a 'geometry_types' array.");
         }
@@ -437,7 +437,7 @@ internal static class GeoParquetReader
         // OGC:CRS84 is mapped to SRID 4326 per industry convention (PostGIS, GDAL, etc.)
         // even though EPSG:4326 officially defines lat-lon axis order. The caller
         // surfaces a warning so operators notice the silent semantics mismatch.
-        if (!columnElement.TryGetProperty("crs", out var crs))
+        if (!columnElement.TryGetProperty("crs"u8, out var crs))
         {
             crs84Implied = true;
             return 4326;
