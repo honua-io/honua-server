@@ -3,6 +3,7 @@
 
 using System.Runtime.CompilerServices;
 using System.Text.Json;
+using System.Text;
 using NetTopologySuite.Features;
 using NetTopologySuite.IO;
 using Parquet;
@@ -33,6 +34,12 @@ internal static class GeoParquetReader
     internal const string UnsupportedEncodingMessage =
         "GeoParquet native geometry encodings are valid GeoParquet 1.1, but this importer supports only WKB geometry encoding.";
 
+    internal const string UnsupportedEdgesMessage =
+        "GeoParquet spherical edges are not supported; this importer preserves planar edges only.";
+
+    internal const string UnsupportedMultipleGeometryMessage =
+        "GeoParquet multiple geometry columns cannot be preserved by this importer; select a single geometry column before importing.";
+
     /// <summary>
     /// Streams features from a GeoParquet file. The stream must be seekable.
     /// </summary>
@@ -51,6 +58,7 @@ internal static class GeoParquetReader
         stream.Position = 0;
         using var reader = await CreateReaderAsync(stream, cancellationToken);
         var geoMeta = ParseGeoMetadata(reader.CustomMetadata);
+        ThrowIfUnsupported(geoMeta);
         var primaryColumn = geoMeta.PrimaryColumn;
         var wkbReader = new WKBReader();
         var schema = reader.Schema;
@@ -64,7 +72,7 @@ internal static class GeoParquetReader
         {
             if (schema.Fields[i] is DataField df)
             {
-                if (string.Equals(df.Name, primaryColumn, StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(df.Name, primaryColumn, StringComparison.Ordinal))
                 {
                     geometryFieldIndex = i;
                 }
@@ -182,7 +190,7 @@ internal static class GeoParquetReader
         stream.Position = 0;
         using var reader = await CreateReaderAsync(stream, cancellationToken);
         var geoMeta = ParseGeoMetadata(reader.CustomMetadata);
-        var isWkbEncoding = string.Equals(geoMeta.Encoding, "WKB", StringComparison.OrdinalIgnoreCase);
+        var isWkbEncoding = string.Equals(geoMeta.Encoding, "WKB", StringComparison.Ordinal);
 
         var warnings = new List<string>();
 
@@ -207,7 +215,12 @@ internal static class GeoParquetReader
         // Check for multiple geometry columns
         if (geoMeta.GeometryColumnCount > 1)
         {
-            warnings.Add($"GeoParquet file contains multiple geometry columns. Only the primary column '{geoMeta.PrimaryColumn}' will be imported.");
+            warnings.Add(UnsupportedMultipleGeometryMessage);
+        }
+
+        if (!geoMeta.IsPlanar)
+        {
+            warnings.Add(UnsupportedEdgesMessage);
         }
 
         // Check for nested types in schema
@@ -233,7 +246,7 @@ internal static class GeoParquetReader
         // attribute columns before discovering the mismatch.
         var hasPrimaryColumn = schema.Fields.Any(field =>
             field is DataField df &&
-            string.Equals(df.Name, geoMeta.PrimaryColumn, StringComparison.OrdinalIgnoreCase));
+            string.Equals(df.Name, geoMeta.PrimaryColumn, StringComparison.Ordinal));
 
         if (!hasPrimaryColumn)
         {
@@ -243,7 +256,7 @@ internal static class GeoParquetReader
 
         var totalRowCount = reader.Metadata?.NumRows ?? 0;
         stream.Position = 0;
-        return new GeoParquetFileMetadata(geoMeta.Srid, isWkbEncoding, warnings.ToArray(), totalRowCount);
+        return new GeoParquetFileMetadata(geoMeta.Srid, isWkbEncoding, warnings.ToArray(), totalRowCount, GetUnsupportedReason(geoMeta));
     }
 
     /// <summary>
@@ -253,7 +266,8 @@ internal static class GeoParquetReader
         int? Srid,
         bool IsWkbEncoding,
         string[] Warnings,
-        long TotalRowCount);
+        long TotalRowCount,
+        string? UnsupportedReason);
 
     /// <summary>
     /// Opens a Parquet reader, normalizing library-level I/O and format errors
@@ -280,10 +294,15 @@ internal static class GeoParquetReader
             throw new InvalidDataException("GeoParquet file is missing required 'geo' metadata key.");
         }
 
+        if (Encoding.UTF8.GetByteCount(geoJson) > 1048576)
+        {
+            throw new InvalidDataException("GeoParquet 'geo' metadata exceeds the supported byte budget.");
+        }
+
         JsonDocument doc;
         try
         {
-            doc = JsonDocument.Parse(geoJson);
+            doc = JsonDocument.Parse(geoJson, new JsonDocumentOptions { MaxDepth = 32 });
         }
         catch (JsonException ex)
         {
@@ -307,65 +326,108 @@ internal static class GeoParquetReader
     private static GeoParquetMetadata ParseGeoDocument(JsonDocument doc)
     {
         var root = doc.RootElement;
-
-        // primary_column is required per GeoParquet 1.0.0+ spec
-        if (!root.TryGetProperty("primary_column", out var pc) ||
-            pc.ValueKind != JsonValueKind.String)
+        var version = RequiredString(root, "version");
+        if (version is not ("1.0.0" or "1.1.0"))
         {
-            throw new InvalidDataException(
-                "GeoParquet 'geo' metadata has unexpected structure: required 'primary_column' field is missing or not a string.");
+            throw new NotSupportedException("GeoParquet metadata version is not supported; expected 1.0.0 or 1.1.0.");
         }
 
-        var primaryColumn = pc.GetString()!;
-
-        // columns is required per GeoParquet 1.0.0+ spec
-        if (!root.TryGetProperty("columns", out var columns) ||
-            columns.ValueKind != JsonValueKind.Object)
+        var primaryColumn = RequiredString(root, "primary_column");
+        if (!root.TryGetProperty("columns", out var columns) || columns.ValueKind != JsonValueKind.Object)
         {
-            throw new InvalidDataException(
-                "GeoParquet 'geo' metadata has unexpected structure: required 'columns' field is missing or not an object.");
+            throw new InvalidDataException("GeoParquet metadata requires a 'columns' object.");
         }
 
         string? encoding = null;
         int? srid = null;
-        var geometryColumnCount = 0;
-        var geometryColumnNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var foundPrimaryInColumns = false;
+        var geometryColumnNames = new HashSet<string>(StringComparer.Ordinal);
         var crs84Implied = false;
-
-        foreach (var col in columns.EnumerateObject())
+        var isPlanar = true;
+        foreach (var column in columns.EnumerateObject())
         {
-            geometryColumnCount++;
-            geometryColumnNames.Add(col.Name);
-
-            if (!string.Equals(col.Name, primaryColumn, StringComparison.OrdinalIgnoreCase))
+            if (!geometryColumnNames.Add(column.Name) || column.Value.ValueKind != JsonValueKind.Object)
             {
-                continue;
+                throw new InvalidDataException("GeoParquet geometry columns must have unique names and object metadata.");
             }
 
-            foundPrimaryInColumns = true;
-            var colObj = col.Value;
-
-            // Encoding
-            if (colObj.TryGetProperty("encoding", out var enc))
+            var columnEncoding = RequiredString(column.Value, "encoding");
+            if (columnEncoding is not ("WKB" or "point" or "linestring" or "polygon" or "multipoint" or "multilinestring" or "multipolygon") ||
+                (version == "1.0.0" && columnEncoding != "WKB"))
             {
-                encoding = enc.GetString();
+                throw new InvalidDataException("GeoParquet geometry encoding is invalid for the declared version.");
             }
 
-            // CRS detection — priority order per design brief
-            srid = ExtractSrid(colObj, out crs84Implied);
+            ValidateGeometryTypes(column.Value);
+            var edges = column.Value.TryGetProperty("edges", out _) ? RequiredString(column.Value, "edges") : "planar";
+            if (edges is not ("planar" or "spherical"))
+            {
+                throw new InvalidDataException("GeoParquet 'edges' must be 'planar' or 'spherical'.");
+            }
+
+            if (column.Name == primaryColumn)
+            {
+                encoding = columnEncoding;
+                isPlanar = edges == "planar";
+                srid = ExtractSrid(column.Value, out crs84Implied);
+            }
         }
 
-        // The GeoParquet spec requires that primary_column references a key in "columns".
-        // Accepting a missing entry would silently default to WKB with no SRID, masking
-        // a malformed file instead of surfacing a clear error.
-        if (!foundPrimaryInColumns)
+        if (encoding is null)
         {
-            throw new InvalidDataException(
-                $"GeoParquet 'geo' metadata declares primary_column '{primaryColumn}' but 'columns' does not contain a matching entry.");
+            throw new InvalidDataException("GeoParquet primary_column must exactly match a declared geometry column.");
         }
 
-        return new GeoParquetMetadata(primaryColumn, encoding ?? "WKB", srid, geometryColumnCount, geometryColumnNames, crs84Implied);
+        return new GeoParquetMetadata(primaryColumn, encoding, srid, geometryColumnNames.Count,
+            geometryColumnNames, crs84Implied, isPlanar);
+    }
+
+    private static string RequiredString(JsonElement element, string name)
+    {
+        if (element.ValueKind != JsonValueKind.Object || !element.TryGetProperty(name, out var value) ||
+            value.ValueKind != JsonValueKind.String || string.IsNullOrEmpty(value.GetString()))
+        {
+            throw new InvalidDataException($"GeoParquet metadata requires a nonempty '{name}' string.");
+        }
+
+        return value.GetString()!;
+    }
+
+    private static void ValidateGeometryTypes(JsonElement column)
+    {
+        if (!column.TryGetProperty("geometry_types", out var types) || types.ValueKind != JsonValueKind.Array)
+        {
+            throw new InvalidDataException("GeoParquet metadata requires a 'geometry_types' array.");
+        }
+
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var type in types.EnumerateArray())
+        {
+            if (type.ValueKind != JsonValueKind.String)
+            {
+                throw new InvalidDataException("GeoParquet geometry_types entries must be strings.");
+            }
+
+            var name = type.GetString()!;
+            var baseName = name.EndsWith(" Z", StringComparison.Ordinal) ? name[..^2] : name;
+            if (baseName is not ("Point" or "LineString" or "Polygon" or "MultiPoint" or "MultiLineString" or "MultiPolygon" or "GeometryCollection") ||
+                !seen.Add(name))
+            {
+                throw new InvalidDataException("GeoParquet geometry_types entries must be unique supported XY or XYZ geometry types.");
+            }
+        }
+    }
+
+    private static string? GetUnsupportedReason(GeoParquetMetadata metadata) =>
+        metadata.Encoding != "WKB" ? UnsupportedEncodingMessage :
+        !metadata.IsPlanar ? UnsupportedEdgesMessage :
+        metadata.GeometryColumnCount > 1 ? UnsupportedMultipleGeometryMessage : null;
+
+    private static void ThrowIfUnsupported(GeoParquetMetadata metadata)
+    {
+        if (GetUnsupportedReason(metadata) is { } reason)
+        {
+            throw new NotSupportedException(reason);
+        }
     }
 
     private static int? ExtractSrid(JsonElement columnElement, out bool crs84Implied)
@@ -387,62 +449,7 @@ internal static class GeoParquetReader
             return null;
         }
 
-        // Format 1: PROJJSON with id.authority + id.code (GeoParquet 1.1.0 spec)
-        if (crs.TryGetProperty("id", out var id) &&
-            id.TryGetProperty("authority", out var authority) &&
-            id.TryGetProperty("code", out var code))
-        {
-            var authorityStr = authority.GetString();
-
-            // EPSG authority — PROJJSON permits both numeric and string codes.
-            // Use TryGetInt32/TryParse to gracefully handle non-integral (4326.5) or
-            // out-of-range values instead of throwing FormatException/OverflowException.
-            if (string.Equals(authorityStr, "EPSG", StringComparison.OrdinalIgnoreCase))
-            {
-                if (code.ValueKind == JsonValueKind.Number && code.TryGetInt32(out var epsgCode))
-                {
-                    return epsgCode;
-                }
-
-                if (code.ValueKind == JsonValueKind.String &&
-                    int.TryParse(code.GetString(), out var epsgCodeFromString))
-                {
-                    return epsgCodeFromString;
-                }
-            }
-
-            // OGC:CRS84 → SRID 4326 per industry convention (lon-lat, same as PostGIS/GDAL)
-            if (string.Equals(authorityStr, "OGC", StringComparison.OrdinalIgnoreCase) &&
-                code.ValueKind == JsonValueKind.String &&
-                string.Equals(code.GetString(), "CRS84", StringComparison.OrdinalIgnoreCase))
-            {
-                return 4326;
-            }
-        }
-
-        // Format 2: GeoJSON-style crs.properties.name (Honua export format)
-        if (crs.TryGetProperty("properties", out var props) &&
-            props.TryGetProperty("name", out var name))
-        {
-            var nameStr = name.GetString();
-            if (nameStr != null)
-            {
-                // EPSG:<code> (e.g. "EPSG:4326")
-                if (nameStr.StartsWith("EPSG:", StringComparison.OrdinalIgnoreCase) &&
-                    int.TryParse(nameStr.AsSpan(5), out var epsgCode))
-                {
-                    return epsgCode;
-                }
-
-                // OGC:CRS84 → SRID 4326
-                if (string.Equals(nameStr, "OGC:CRS84", StringComparison.OrdinalIgnoreCase))
-                {
-                    return 4326;
-                }
-            }
-        }
-
-        return null;
+        return GeoParquetCrsResolver.Resolve(crs);
     }
 
     private sealed record GeoParquetMetadata(
@@ -451,5 +458,6 @@ internal static class GeoParquetReader
         int? Srid,
         int GeometryColumnCount,
         HashSet<string> GeometryColumnNames,
-        bool Crs84Implied);
+        bool Crs84Implied,
+        bool IsPlanar);
 }

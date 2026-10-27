@@ -140,7 +140,6 @@ internal sealed partial class StreamingFileImportService
                 var batch = new List<IFeature>(_limits.BatchSize);
                 var totalImported = 0;
                 var totalFailed = 0;
-                var nullGeometrySkipped = 0;
                 var batchesCommitted = 0;
                 var repairTally = new GeometryRepairTally();
                 var startTime = DateTimeOffset.UtcNow;
@@ -179,15 +178,6 @@ internal sealed partial class StreamingFileImportService
 
                 await foreach (var feature in featureStream.WithCancellation(cancellationToken))
                 {
-                    // GeoParquet: skip rows with null geometry and count them as failures
-                    // per design decision "Null geometry rows | Skip, count" (ticket #423).
-                    if (format == SupportedFileFormat.GeoParquet && feature.Geometry == null)
-                    {
-                        totalFailed++;
-                        nullGeometrySkipped++;
-                        continue;
-                    }
-
                     // FileGDB included: the resolved/explicit source SRID must win over whatever the
                     // reader's geometry factory carried (#6114). CSV is the exception: an EWKT/EWKB
                     // value already carries its own SRID, and stamping the 4326 default here stored
@@ -341,14 +331,8 @@ internal sealed partial class StreamingFileImportService
                     dataCommitted = true;
                 }
 
-                // Surface skipped null-geometry rows in the completion progress report
-                // so background/queued imports expose the same warning as synchronous results.
                 var completionWarningsBuilder = new List<string>(warnings.Length + 2);
                 completionWarningsBuilder.AddRange(warnings);
-                if (format == SupportedFileFormat.GeoParquet && nullGeometrySkipped > 0)
-                {
-                    completionWarningsBuilder.Add(string.Format(null, _nullGeometryWarningFormat, nullGeometrySkipped));
-                }
 
                 if (csvGeometryDiagnostics is { UnparseableGeometryRows: > 0 })
                 {

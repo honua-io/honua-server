@@ -71,11 +71,11 @@ internal sealed partial class StreamingFileImportService
 
         var updatedWarnings = parquetMeta.Warnings;
 
-        // Hard-reject non-WKB encoding before any further processing
-        if (!parquetMeta.IsWkbEncoding)
+        // Refuse unsupported source semantics before database access.
+        if (parquetMeta.UnsupportedReason is { } unsupportedReason)
         {
             return new GeoParquetPrepResult(
-                scratch, null, null, updatedWarnings, GeoParquetReader.UnsupportedEncodingMessage);
+                scratch, null, null, updatedWarnings, unsupportedReason);
         }
 
         return new GeoParquetPrepResult(scratch, scratchStream, parquetMeta.Srid, updatedWarnings, null);

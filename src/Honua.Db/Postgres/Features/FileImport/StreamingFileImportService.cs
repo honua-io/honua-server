@@ -76,8 +76,6 @@ internal sealed partial class StreamingFileImportService : IFileImportService
     private static readonly string _kmzScratchRoot = Path.Join(Path.GetTempPath(), "honua-kmz");
     private static readonly string _fileGdbScratchRoot = Path.Join(Path.GetTempPath(), "honua-filegdb");
     private static readonly string _geoParquetScratchRoot = Path.Join(Path.GetTempPath(), "honua-geoparquet");
-    private static readonly CompositeFormat _nullGeometryWarningFormat =
-        CompositeFormat.Parse("{0} row(s) were skipped because geometry was null.");
     private static readonly CompositeFormat _partialImportWarningFormat =
         CompositeFormat.Parse("{0} row(s) failed while continue-on-error was enabled; previously imported rows were retained.");
     private static readonly CompositeFormat _csvUnparseableGeometryWarningFormat =

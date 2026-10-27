@@ -110,13 +110,11 @@ internal sealed partial class StreamingFileImportService
                 warnings = parquetMeta.Warnings;
                 geoParquetTotalRows = parquetMeta.TotalRowCount;
 
-                // Hard-reject non-WKB encoding — consistent with the import path
-                // (ImportFileAsync returns CreateFailure) and the documented contract
-                // ("Non-WKB encodings are rejected" in CONTROL_PLANE_API.md).
-                if (!parquetMeta.IsWkbEncoding)
+                // Refuse unsupported source semantics before sampling, consistently with import.
+                if (parquetMeta.UnsupportedReason is { } unsupportedReason)
                 {
                     throw new NotSupportedException(
-                        GeoParquetReader.UnsupportedEncodingMessage);
+                        unsupportedReason);
                 }
 
                 fileStream = scratchStream;
@@ -199,13 +197,6 @@ internal sealed partial class StreamingFileImportService
 
             await foreach (var feature in featureStream.WithCancellation(cancellationToken))
             {
-                // GeoParquet: skip null-geometry rows from preview samples, matching
-                // the import path's skip behavior (ImportStreamingAsync).
-                if (format.Value == SupportedFileFormat.GeoParquet && feature.Geometry == null)
-                {
-                    continue;
-                }
-
                 if (needsFullCount && totalStreamedCount >= _limits.MaxPreviewCountScan)
                 {
                     break;
