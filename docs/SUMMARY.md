@@ -167,6 +167,10 @@
   - [From GeoServer](guides/migrate/from-geoserver.md)
   - [ArcGIS apps & SDKs](guides/migrate/arcgis-apps-and-sdks.md)
 
+## Catalog
+
+- [How published data becomes findable](guides/catalog/catalog-and-discovery.md)
+
 ## Reference
 
 - [Reference index](reference/README.md)

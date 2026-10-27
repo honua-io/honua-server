@@ -160,6 +160,10 @@ Each link resolves to the page's source on `trunk`. These pages are also rendere
 - [Migrate from GeoServer](https://github.com/honua-io/honua-server/blob/trunk/docs/guides/migrate/from-geoserver.md): Use honua-migrate to scan a GeoServer catalog, complete a server-validated dry-run plan, apply the reviewed catalog with explicit acknowledgement, and monitor the resulting Honua job.
 - [Repoint ArcGIS apps and SDKs at Honua](https://github.com/honua-io/honua-server/blob/trunk/docs/guides/migrate/arcgis-apps-and-sdks.md): You'll move existing ArcGIS client applications — web apps, ArcGIS Pro, and the ArcGIS Maps SDKs — onto Honua-served endpoints without rewriting them.
 
+## Catalog
+
+- [How published data becomes findable](https://github.com/honua-io/honua-server/blob/trunk/docs/guides/catalog/catalog-and-discovery.md): How a published layer, scene, or process shows up on each protocol Honua serves, and what keeps it out of those catalogs.
+
 ## Reference
 
 - [Reference](https://github.com/honua-io/honua-server/blob/trunk/docs/reference/README.md): Lookup material for Honua's public surfaces: protocols, the admin API, configuration, compatibility status, and cross-cutting contracts.
