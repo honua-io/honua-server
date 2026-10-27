@@ -4579,7 +4579,7 @@
         "check": "inventory-classification"
       },
       "fence": 5,
-      "line": 161,
+      "line": 164,
       "language": "json"
     },
     {
@@ -4592,7 +4592,7 @@
         "check": "inventory-classification"
       },
       "fence": 8,
-      "line": 311,
+      "line": 314,
       "language": "bash"
     },
     {
@@ -4605,7 +4605,7 @@
         "check": "inventory-classification"
       },
       "fence": 6,
-      "line": 222,
+      "line": 225,
       "language": "json"
     },
     {
@@ -4618,7 +4618,7 @@
         "check": "inventory-classification"
       },
       "fence": 4,
-      "line": 148,
+      "line": 151,
       "language": "bash"
     },
     {
@@ -4631,7 +4631,7 @@
         "check": "inventory-classification"
       },
       "fence": 9,
-      "line": 324,
+      "line": 327,
       "language": "bash"
     },
     {
@@ -4657,7 +4657,7 @@
         "check": "inventory-classification"
       },
       "fence": 2,
-      "line": 121,
+      "line": 124,
       "language": "bash"
     },
     {
@@ -4670,7 +4670,7 @@
         "check": "inventory-classification"
       },
       "fence": 3,
-      "line": 135,
+      "line": 138,
       "language": "bash"
     },
     {
@@ -4683,7 +4683,7 @@
         "check": "inventory-classification"
       },
       "fence": 7,
-      "line": 287,
+      "line": 290,
       "language": "sql"
     },
     {
@@ -4948,7 +4948,7 @@
         "check": "inventory-classification"
       },
       "fence": 11,
-      "line": 461,
+      "line": 463,
       "language": "bash"
     },
     {
@@ -4961,7 +4961,7 @@
         "check": "inventory-classification"
       },
       "fence": 10,
-      "line": 443,
+      "line": 445,
       "language": "bash"
     },
     {
@@ -4974,7 +4974,7 @@
         "check": "inventory-classification"
       },
       "fence": 4,
-      "line": 163,
+      "line": 165,
       "language": "bash"
     },
     {
@@ -4987,7 +4987,7 @@
         "check": "inventory-classification"
       },
       "fence": 12,
-      "line": 486,
+      "line": 488,
       "language": "bash"
     },
     {
@@ -5000,7 +5000,7 @@
         "check": "inventory-classification"
       },
       "fence": 7,
-      "line": 353,
+      "line": 355,
       "language": "yaml"
     },
     {
@@ -5013,7 +5013,7 @@
         "check": "inventory-classification"
       },
       "fence": 3,
-      "line": 93,
+      "line": 95,
       "language": "yaml"
     },
     {
@@ -5026,7 +5026,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 37,
+      "line": 39,
       "language": "bash"
     },
     {
@@ -5039,7 +5039,7 @@
         "check": "inventory-classification"
       },
       "fence": 9,
-      "line": 398,
+      "line": 400,
       "language": "bash"
     },
     {
@@ -5052,7 +5052,7 @@
         "check": "inventory-classification"
       },
       "fence": 8,
-      "line": 372,
+      "line": 374,
       "language": "yaml"
     },
     {
@@ -5065,7 +5065,7 @@
         "check": "inventory-classification"
       },
       "fence": 2,
-      "line": 59,
+      "line": 61,
       "language": "bash"
     },
     {
@@ -5078,7 +5078,7 @@
         "check": "inventory-classification"
       },
       "fence": 6,
-      "line": 344,
+      "line": 346,
       "language": "yaml"
     },
     {
@@ -5091,7 +5091,7 @@
         "check": "inventory-classification"
       },
       "fence": 5,
-      "line": 194,
+      "line": 196,
       "language": "yaml"
     },
     {

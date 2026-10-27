@@ -16,16 +16,12 @@ Submit and poll processes through OGC WPS 2.0 (GetCapabilities, DescribeProcess,
 | Capability key | `serve.wps` |
 | Category | Serve |
 | Edition | Community |
-| Surface maturity | 3 implemented |
+| Surface maturity | 3 preview |
 | Registry entries | 3 |
 | Proving tests | 31 |
 
 The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
 
-## Where to look
+## Documented in
 
-This capability ships - the counts above are routes in the server's generated feature catalog and tests that prove them - but no page in this bundle documents it yet. Until one does:
-
-- [All capabilities](README.md) — the full index with editions and status
-- [Editions and licensing](../../concepts/editions-and-licensing.md) — what each edition includes
-- [Capability matrix](../../gis/data/capability-matrix.v1.json) — the generated evidence for this key
+- [Protocols](../../concepts/protocols.md)

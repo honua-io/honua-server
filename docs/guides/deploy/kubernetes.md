@@ -5,10 +5,12 @@ description: "Install the honua-helm chart as one coordinated replica with a per
 ---
 # Deploy on Kubernetes
 
-This guide starts with one coordinated Honua replica and a persistent volume.
-That is the safe Kubernetes baseline. Horizontal scaling is a separate,
-atomic topology change: `MultiNode`, Redis, and shared cloud file storage must
-be enabled together.
+Kubernetes with Helm is Preview in 2026.1: available for evaluation, and outside
+the GA operational, SLA, and scale commitments. `x86_64` is the supported
+architecture. This guide starts with one coordinated Honua replica and a
+persistent volume. That is the safe Kubernetes baseline. Horizontal scaling is
+a separate, atomic topology change: `MultiNode`, Redis, and shared cloud file
+storage must be enabled together.
 
 The authoritative chart contract lives in
 [`honua-helm`](https://github.com/honua-io/honua-helm/blob/trunk/docs/values-contract.md).
