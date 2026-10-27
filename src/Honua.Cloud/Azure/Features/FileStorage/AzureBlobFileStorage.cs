@@ -78,7 +78,7 @@ internal sealed class AzureBlobFileStorage : CloudFileStorageBase
         UploadCancellationTokens[uploadId] = linkedCancellationSource;
 
         var initialProgress = UploadProgress.CreateInitial(uploadId, request.FileName, totalBytes, request.ContentType);
-        await ProgressStore.SetProgressAsync(uploadId, initialProgress, TimeSpan.FromHours(1), cancellationToken);
+        await TrySetUploadProgressAsync(uploadId, initialProgress, TimeSpan.FromHours(1), cancellationToken);
         ReportProgressToCaller(request.Progress, uploadId, initialProgress);
         SerializedUploadProgressWriter? progressWriter = null;
 
@@ -183,7 +183,7 @@ internal sealed class AzureBlobFileStorage : CloudFileStorageBase
                 await progressWriter.CloseAndDrainAsync().ConfigureAwait(false);
             }
 
-            await ProgressStore.SetProgressAsync(uploadId, completedProgress, TimeSpan.FromHours(1), cancellationToken);
+            await TrySetUploadProgressAsync(uploadId, completedProgress, TimeSpan.FromHours(1), cancellationToken);
             ReportProgressToCaller(request.Progress, uploadId, completedProgress);
 
             stopwatch.Stop();
