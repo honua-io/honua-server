@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Buffers.Binary;
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text;
@@ -286,9 +287,9 @@ public sealed class DatacubeTileEndpointTests : IAsyncLifetime
         {
             if (dtype == "|b1") return [(bool)value ? (byte)1 : (byte)0];
             var bytes = new byte[dtype == "<f4" ? 4 : 8];
-            if (dtype == "<f4") BinaryPrimitives.WriteSingleLittleEndian(bytes, Convert.ToSingle(value));
-            else if (dtype == "<i8") BinaryPrimitives.WriteInt64LittleEndian(bytes, Convert.ToInt64(value));
-            else BinaryPrimitives.WriteUInt64LittleEndian(bytes, Convert.ToUInt64(value));
+            if (dtype == "<f4") BinaryPrimitives.WriteSingleLittleEndian(bytes, Convert.ToSingle(value, CultureInfo.InvariantCulture));
+            else if (dtype == "<i8") BinaryPrimitives.WriteInt64LittleEndian(bytes, Convert.ToInt64(value, CultureInfo.InvariantCulture));
+            else BinaryPrimitives.WriteUInt64LittleEndian(bytes, Convert.ToUInt64(value, CultureInfo.InvariantCulture));
             return bytes;
         }
     }
