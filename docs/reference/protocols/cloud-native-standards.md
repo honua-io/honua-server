@@ -61,9 +61,11 @@ prove a published-worker or frozen-candidate deployment.
 **Vector files.** GeoParquet metadata must describe the actual WKB, including
 nested geometry dimensions, empty versus null geometries, CRS axis order and
 bounds. The importer is a narrower supported subset than the file specification:
-non-WKB encodings are rejected, additional geometry columns are not preserved,
-and null-geometry row handling has its own import policy. The current parser does
-not enforce `edges=spherical`; do not promise spherical-edge-preserving import.
+non-WKB encodings are rejected. Additional geometry columns, nested attributes
+and null-geometry rows currently have preservation defects tracked in
+[#6717](https://github.com/honua-io/honua-server/issues/6717); documenting those
+defects does not resolve them. The current parser does not enforce
+`edges=spherical`; do not promise spherical-edge-preserving import.
 Optional spatial ordering is a performance practice, not a universal validity
 requirement. GeoArrow needs extension/CRS metadata as well as valid Arrow IPC.
 
@@ -111,16 +113,27 @@ and a partial archive-verification result cannot substitute for that receipt.
 
 ## Follow-up and release scope
 
-The audit's immediate repairs are codec validation (#6705), geometry fidelity
-(#6706), conditional artifact delivery (#6707), and harness integrity (#6708).
-Their linked issues/PRs carry verification and landing status; this document does
-not mark an unmerged repair as completed. Remaining strict Zarr metadata handling,
-spherical-edge import handling, publication/cloud qualification and mutable-object
-read consistency are recorded under the audit issue for follow-up.
+The compliance goal remains open until the applicable requirements are implemented
+and verified. Thursday's release is not gated on completing that entire program;
+remaining compliance work continues afterward. The tracked repairs include:
+
+- Zarr codec validation (#6705), mandatory metadata (#6712), chunk integrity
+  (#6718) and exact typed fill values (#6722).
+- GeoParquet/GeoArrow geometry fidelity (#6706), spherical-edge handling (#6713),
+  mandatory metadata (#6715), generated-column collisions (#6716), import
+  preservation (#6717) and coordinate epochs (#6720).
+- Artifact HTTP conditions (#6707), storage revision consistency (#6714), empty
+  FlatGeobuf responses (#6719) and conformance harness integrity (#6708).
+
+The linked issues/PRs carry verification and landing status; this document does
+not mark an unmerged repair as completed. Independent publication, client and
+cloud qualification must also be completed before the corresponding claim.
 
 Run existing qualification through its normal owner-controlled workflow after
-repairs land. Preserve candidate pins and the Thursday release scope; adopting
-new optional encodings, GeoZarr conventions, native COPC or Kerchunk is separate
-product work. Until qualified evidence exists, the accurate assurance is:
+repairs land. Preserve candidate pins and the Thursday release scope. Evaluate
+optional encodings, GeoZarr conventions, native COPC and Kerchunk against their
+explicit specification targets; absence of an optional capability is distinct
+from a correctness defect in an implemented capability. Until qualified evidence
+exists, the accurate assurance is:
 **Honua implements documented cloud-native format subsets and maintains explicit
 conformance checks and known limitations.**
