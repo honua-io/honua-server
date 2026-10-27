@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:c5f3944572533c76bf9a9bfe5af8a1682ee45686fcae33dd6731515767459f9b",
+  "bundleDigest": "sha256:b20ff8642c6a42db9debbadd1130feadf5ddb233cd47499118ed8352839aee46",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -2410,7 +2410,7 @@
     {
       "id": "guides/publish/import-files",
       "path": "guides/publish/import-files.md",
-      "documentDigest": "sha256:0cf2cc0eb057f7ccdc49536df171be43d82900218fd7807a69b2c92045d9987d",
+      "documentDigest": "sha256:05a56fc5257ce9dcb88340205a8089ade8dc1ac68953e713d3f07d3e53a0fb27",
       "metadata": {
         "type": "guide",
         "title": "Import data from files",
@@ -7514,7 +7514,7 @@
     {
       "id": "reference/admin-api/imports-and-jobs",
       "path": "reference/admin-api/imports-and-jobs.md",
-      "documentDigest": "sha256:e5aff15405460da2238fea79f4a43b2f948d5cf115cd1affe13349fa21c0bdd3",
+      "documentDigest": "sha256:9c87c63154160f3fe82fa93379390c6744e1f8f226da71b3c3a7ed6ed9844003",
       "metadata": {
         "type": "reference",
         "title": "Imports and jobs",
@@ -7813,7 +7813,7 @@
     {
       "id": "reference/data-formats",
       "path": "reference/data-formats.md",
-      "documentDigest": "sha256:d4b2dee032948a4d706c875669b8c06c7c5ab06543bae94f80592a0a686319c5",
+      "documentDigest": "sha256:f196ede1c720fe35c73a54a72485de4827c9c29e682114a1487dad7286419834",
       "metadata": {
         "type": "reference",
         "title": "Data formats",
