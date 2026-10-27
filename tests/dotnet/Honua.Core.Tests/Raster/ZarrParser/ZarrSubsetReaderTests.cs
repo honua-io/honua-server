@@ -337,13 +337,13 @@ public class ZarrSubsetReaderTests
 
     /// <summary>
     /// Regression test for BH3-022: when an attacker-controlled Zarr store writes a chunk
-    /// object that is larger than the declared chunk size, only <c>chunkBytes</c> bytes should
-    /// be consumed (the ICloudRangeReader implementation returns at most <c>length</c> bytes).
-    /// The read completes successfully and returns the correct subset values.
+    /// object that is larger than the declared chunk size, reject the inconsistent object
+    /// before reading its payload. This strengthens the original bounded-read protection:
+    /// a correct sample prefix does not make the rest of the encoded chunk valid.
     /// </summary>
     [Trait("Tier", "Fast")]
     [Fact]
-    public async Task ReadSubsetAsync_ChunkObjectLargerThanDeclaredSize_ReadsOnlyDeclaredBytes()
+    public async Task ReadSubsetAsync_ChunkObjectLargerThanDeclaredSize_RejectsBeforePayloadRead()
     {
         // Build a 2×2 <f4 store with 2×2 chunks (chunkBytes = 16 bytes).
         var objects = ZarrFixtureBuilder.BuildSingleVariableUncompressed(
@@ -372,25 +372,12 @@ public class ZarrSubsetReaderTests
             Stop = new[] { 2, 2 }
         };
 
-        var subset = await new ZarrSubsetReader().ReadSubsetAsync(
+        var act = () => new ZarrSubsetReader().ReadSubsetAsync(
             trackingReader, "bucket", "datasets/oversized", metadata, request);
 
-        const int expectedChunkBytes = 2 * 2 * sizeof(float); // 16 bytes
-        trackingReader.RecordedLengths.Should().AllSatisfy(length =>
-            length.Should().Be(expectedChunkBytes,
-                "read ceiling must be capped at the declared chunk byte count even when the cloud object is larger"));
-
-        // Data integrity: the first 16 bytes are correct despite the bloated object.
-        subset.Shape.Should().Equal(2, 2);
-        for (var r = 0; r < 2; r++)
-        {
-            for (var c = 0; c < 2; c++)
-            {
-                var expected = (float)r * 2 + c + 1;
-                var actual = BitConverter.ToSingle(subset.Data, (r * 2 + c) * sizeof(float));
-                actual.Should().Be(expected, $"cell ({r},{c}) value must be correct after bounded read");
-            }
-        }
+        await act.Should().ThrowAsync<InvalidDataException>();
+        trackingReader.RecordedLengths.Should().BeEmpty(
+            "an inconsistent uncompressed object must be rejected before its payload is consumed");
     }
 
     // ─── BH2-015 regressions ──────────────────────────────────────────────────────
