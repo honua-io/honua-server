@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:d4cb2dc55f9fe503c2d5ddad9a6b2434815642a2df1ee4d4624deaa9d3f16349",
+  "bundleDigest": "sha256:b3815345a33dc642371d0a07b06a6848e5564f1b1be1724721f4ddda0344f35e",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
