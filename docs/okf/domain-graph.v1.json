@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:faa61f79064ba231795b6ada2d7f3dc70fc9b09943899404f32318a7f2b2f098",
+  "bundleDigest": "sha256:bda2fd2834c6f03bfbdeeb9efcd5898ab2e4bacfba41d1aa656d750f0a23f2bf",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -7688,7 +7688,7 @@
     {
       "id": "reference/configuration/data-sources/databricks",
       "path": "reference/configuration/data-sources/databricks.md",
-      "documentDigest": "sha256:f9bc9435db6b9ae7c99071a34e1cd1d24cec46b12313e95dcaabea80064be066",
+      "documentDigest": "sha256:66483b1e13d12ef95093bd934445ba4a77305cb3d40f3f4549664236039f2e9f",
       "metadata": {
         "type": "reference",
         "title": "Databricks provider (read-only, best-effort)",
