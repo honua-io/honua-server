@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Server.Features.Geocoding;
+using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using LibraryGeocodeProvider = Honua.Geocoding.Features.Geocoding.Abstractions.IGeocodeProvider;
@@ -14,7 +15,7 @@ namespace Honua.Server.Tests.Features.Geocoding;
 /// </summary>
 public sealed class GeocodingNominatimRegistrationTests
 {
-    [Fact]
+    [UnitTest]
     public void AddGeocoding_NominatimEnabledAbsent_RegistersNominatim()
     {
         var services = CreateServices(new Dictionary<string, string?>());
@@ -22,7 +23,7 @@ public sealed class GeocodingNominatimRegistrationTests
         Assert.Contains(services, static descriptor => descriptor.ServiceType == typeof(LibraryGeocodeProvider));
     }
 
-    [Fact]
+    [UnitTest]
     public void AddGeocoding_NominatimExplicitlyDisabled_DoesNotRegisterNominatim()
     {
         var services = CreateServices(new Dictionary<string, string?>
