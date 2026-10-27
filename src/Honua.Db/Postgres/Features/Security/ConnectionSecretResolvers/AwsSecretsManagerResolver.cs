@@ -48,13 +48,21 @@ internal sealed class AwsSecretsManagerResolver : IConnectionSecretResolver, IDi
             LogLevel.Warning,
             new EventId(6407, "AwsWebIdentityCredentialsNotSupported"),
             "Web-identity credentials are configured (IRSA) but the built-in AWS Secrets Manager resolver does not support them; refusing without querying EC2 instance metadata. Use a qualified EKS Pod Identity or explicit-credentials profile for aws:secretsmanager: references.");
+    private static readonly Action<ILogger, int, string, int, Exception?> _logSecretsManagerRetry =
+        LoggerMessage.Define<int, string, int>(
+            LogLevel.Warning,
+            new EventId(6408, "AwsSecretsManagerRetry"),
+            "AWS Secrets Manager request failed with status code {StatusCode} ({ErrorType}); retrying attempt {NextAttempt}.");
 
     internal const string ContainerAuthorizationTokenVariable = "AWS_CONTAINER_AUTHORIZATION_TOKEN";
     internal const string ContainerAuthorizationTokenFileVariable = "AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE";
 
+    private const int MaxSecretAttempts = 3;
+
     private readonly HttpClient _secretsClient;
     private readonly HttpClient _metadataClient;
     private readonly ILogger<AwsSecretsManagerResolver> _logger;
+    private readonly Func<int, CancellationToken, Task> _retryDelay;
     private readonly ConcurrentDictionary<string, CacheEntry> _cache = new(StringComparer.Ordinal);
     private readonly SemaphoreSlim _credentialsLock = new(1, 1);
     private bool _disposed;
@@ -80,11 +88,16 @@ internal sealed class AwsSecretsManagerResolver : IConnectionSecretResolver, IDi
     /// to pull the named resilient clients from (honua-server#3011). Callers own the supplied
     /// <see cref="HttpClient"/> instances and are responsible for disposing them.
     /// </summary>
-    internal AwsSecretsManagerResolver(HttpClient secretsClient, HttpClient metadataClient, ILogger<AwsSecretsManagerResolver> logger)
+    internal AwsSecretsManagerResolver(
+        HttpClient secretsClient,
+        HttpClient metadataClient,
+        ILogger<AwsSecretsManagerResolver> logger,
+        Func<int, CancellationToken, Task>? retryDelay = null)
     {
         _secretsClient = secretsClient ?? throw new ArgumentNullException(nameof(secretsClient));
         _metadataClient = metadataClient ?? throw new ArgumentNullException(nameof(metadataClient));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _retryDelay = retryDelay ?? DefaultRetryDelay;
     }
 
     /// <inheritdoc />
@@ -114,27 +127,144 @@ internal sealed class AwsSecretsManagerResolver : IConnectionSecretResolver, IDi
 
         var endpoint = new Uri($"https://secretsmanager.{region}.amazonaws.com/");
         var payload = BuildPayload(secretId, versionStage, versionId);
-        using var request = new HttpRequestMessage(HttpMethod.Post, endpoint)
+
+        for (var attempt = 1; attempt <= MaxSecretAttempts; attempt++)
+        {
+            using var request = CreateSecretRequest(endpoint, payload);
+            using var response = await SendSignedRequestAsync(request, endpoint, region, credentials, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (response.IsSuccessStatusCode)
+            {
+                var responseContent = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+                var secretValue = ExtractSecretValue(responseContent);
+                CacheValue(secretKey, secretValue);
+                return secretValue;
+            }
+
+            var errorType = await TryReadAwsErrorTypeAsync(response, cancellationToken).ConfigureAwait(false);
+            if (!IsRetryableSecretsManagerFailure(response.StatusCode, errorType) || attempt == MaxSecretAttempts)
+            {
+                throw new InvalidOperationException(FormatSecretsManagerFailure(response.StatusCode, errorType));
+            }
+
+            _logSecretsManagerRetry(
+                _logger,
+                (int)response.StatusCode,
+                errorType ?? "unknown",
+                attempt + 1,
+                null);
+            await _retryDelay(attempt, cancellationToken).ConfigureAwait(false);
+        }
+
+        throw new InvalidOperationException("AWS Secrets Manager request failed.");
+    }
+
+    private static HttpRequestMessage CreateSecretRequest(Uri endpoint, byte[] payload)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, endpoint)
         {
             Content = new ByteArrayContent(payload)
         };
-
         request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/x-amz-json-1.1");
         request.Headers.TryAddWithoutValidation("X-Amz-Target", SecretsManagerTarget);
+        return request;
+    }
 
-        using var response = await SendSignedRequestAsync(request, endpoint, region, credentials, cancellationToken)
-            .ConfigureAwait(false);
-
-        if (!response.IsSuccessStatusCode)
+    private static async Task<string?> TryReadAwsErrorTypeAsync(
+        HttpResponseMessage response,
+        CancellationToken cancellationToken)
+    {
+        string body;
+        try
         {
-            throw new InvalidOperationException(
-                $"AWS Secrets Manager request failed with status code {(int)response.StatusCode}.");
+            body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is IOException or ObjectDisposedException)
+        {
+            return null;
         }
 
-        var responseContent = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-        var secretValue = ExtractSecretValue(responseContent);
-        CacheValue(secretKey, secretValue);
-        return secretValue;
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(body);
+            if (!document.RootElement.TryGetProperty("__type", out var typeElement)
+                || typeElement.ValueKind != JsonValueKind.String)
+            {
+                return null;
+            }
+
+            return NormalizeAwsErrorType(typeElement.GetString());
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    // Smithy errors arrive as "ThrottlingException" or "com.amazonaws.secretsmanager#ThrottlingException".
+    private static string? NormalizeAwsErrorType(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return null;
+        }
+
+        var value = raw.Trim();
+        var hash = value.LastIndexOf('#');
+        if (hash >= 0 && hash < value.Length - 1)
+        {
+            value = value[(hash + 1)..];
+        }
+
+        var colon = value.IndexOf(':');
+        if (colon > 0)
+        {
+            value = value[..colon];
+        }
+
+        value = value.Trim();
+        return value.Length == 0 ? null : value;
+    }
+
+    private static bool IsRetryableSecretsManagerFailure(HttpStatusCode status, string? errorType)
+    {
+        var code = (int)status;
+        if (code is >= 500 and <= 599)
+        {
+            return true;
+        }
+
+        if (string.IsNullOrEmpty(errorType))
+        {
+            return false;
+        }
+
+        return errorType.Equals("ThrottlingException", StringComparison.Ordinal)
+            || errorType.Equals("RequestLimitExceeded", StringComparison.Ordinal)
+            || errorType.Equals("InternalServiceError", StringComparison.Ordinal);
+    }
+
+    private static string FormatSecretsManagerFailure(HttpStatusCode status, string? errorType)
+    {
+        var code = (int)status;
+        return string.IsNullOrWhiteSpace(errorType)
+            ? $"AWS Secrets Manager request failed with status code {code}."
+            : $"AWS Secrets Manager request failed with status code {code} ({errorType}).";
+    }
+
+    private static Task DefaultRetryDelay(int failedAttempt, CancellationToken cancellationToken)
+    {
+        // Three attempts, two waits. The ceiling stays under two seconds so a cold-start
+        // throttle can clear without stretching init, and jitter avoids a lockstep herd.
+        var ceilingMs = Math.Min(800, 200 * Math.Max(1, failedAttempt));
+        var delayMs = Random.Shared.Next(ceilingMs / 2, ceilingMs + 1);
+        return Task.Delay(delayMs, cancellationToken);
     }
 
     /// <inheritdoc />
