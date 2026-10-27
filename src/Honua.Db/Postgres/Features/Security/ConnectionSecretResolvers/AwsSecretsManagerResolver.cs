@@ -193,7 +193,9 @@ internal sealed class AwsSecretsManagerResolver : IConnectionSecretResolver, IDi
         try
         {
             using var document = JsonDocument.Parse(body);
-            if (!document.RootElement.TryGetProperty("__type", out var typeElement)
+            // TryGetProperty throws when the root is an array, a string, or null.
+            if (document.RootElement.ValueKind != JsonValueKind.Object
+                || !document.RootElement.TryGetProperty("__type", out var typeElement)
                 || typeElement.ValueKind != JsonValueKind.String)
             {
                 return null;

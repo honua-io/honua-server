@@ -116,6 +116,61 @@ public sealed class AwsSecretsManagerResolverRetryTests
     }
 
     [SecurityTest]
+    [UnitTheory]
+    [InlineData(503, "null")]
+    [InlineData(503, "[]")]
+    [InlineData(502, "\"ThrottlingException\"")]
+    public async Task ResolveSecretAsync_NonObjectServerErrorBody_RetriesWithoutReadingAType(int status, string body)
+    {
+        var calls = 0;
+        using var environment = CreateEnvironment();
+        using var secrets = CreateClient(_ =>
+        {
+            calls++;
+            return calls == 1
+                ? new HttpResponseMessage((HttpStatusCode)status)
+                {
+                    Content = new StringContent(body, Encoding.UTF8, "application/json")
+                }
+                : Success(ResolvedSecret);
+        });
+        using var metadata = CreateClient(_ => throw new InvalidOperationException("metadata must not be called"));
+        using var resolver = CreateResolver(secrets, metadata, (_, _) => Task.CompletedTask);
+
+        var value = await resolver.ResolveSecretAsync(SecretReference);
+
+        value.Should().Be(ResolvedSecret);
+        calls.Should().Be(2);
+    }
+
+    [SecurityTest]
+    [UnitTheory]
+    [InlineData("null")]
+    [InlineData("[]")]
+    public async Task ResolveSecretAsync_NonObjectClientErrorBody_FailsOnceWithoutTheBody(string body)
+    {
+        var calls = 0;
+        using var environment = CreateEnvironment();
+        using var secrets = CreateClient(_ =>
+        {
+            calls++;
+            return new HttpResponseMessage(HttpStatusCode.BadRequest)
+            {
+                Content = new StringContent(body, Encoding.UTF8, "application/json")
+            };
+        });
+        using var metadata = CreateClient(_ => throw new InvalidOperationException("metadata must not be called"));
+        using var resolver = CreateResolver(secrets, metadata, (_, _) => Task.CompletedTask);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            resolver.ResolveSecretAsync(SecretReference));
+
+        calls.Should().Be(1);
+        exception.Message.Should().Be("AWS Secrets Manager request failed with status code 400.");
+        exception.Message.Should().NotContain(body);
+    }
+
+    [SecurityTest]
     [Fact]
     public async Task ResolveSecretAsync_BareServerErrorThenSuccess_RetriesWithoutType()
     {
