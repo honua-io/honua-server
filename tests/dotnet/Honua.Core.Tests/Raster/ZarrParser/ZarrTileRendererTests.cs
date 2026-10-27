@@ -118,6 +118,54 @@ public class ZarrTileRendererTests
     }
 
     /// <summary>
+    /// A boxed float32 fill is not a <see cref="double"/>, so the tile path must convert it
+    /// before rendering. Otherwise the sentinel is stretched as opaque data.
+    /// </summary>
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public void Render_BoxedFloatFill_IsTransparentAndExcludedFromTheRamp()
+    {
+        object fill = -9999f;
+        (fill as double?).Should().BeNull();
+        ZarrValueDecoder.TryGetFiniteFillValue(fill, out var converted).Should().BeTrue();
+        converted.Should().Be(-9999d);
+
+        var data = new byte[4 * sizeof(float)];
+        BinaryPrimitives.WriteSingleLittleEndian(data.AsSpan(0), 10f);
+        BinaryPrimitives.WriteSingleLittleEndian(data.AsSpan(4), 20f);
+        BinaryPrimitives.WriteSingleLittleEndian(data.AsSpan(8), -9999f);
+        BinaryPrimitives.WriteSingleLittleEndian(data.AsSpan(12), 30f);
+        var subset = new ZarrSubsetResult("band", [2, 2], "<f4", data);
+        var array = new ZarrArrayMetadata(
+            "band",
+            ZarrFormatVersion.V2,
+            "band",
+            [2, 2],
+            [2, 2],
+            "<f4",
+            "C",
+            null,
+            fill,
+            ["y", "x"]);
+        var slice = new ZarrTileSlicePlan(
+            new ZarrCoverageSubsetPlan(array, new ZarrSubsetRequest { Variable = "band", Start = [0, 0], Stop = [2, 2] }),
+            YDimensionIndex: 0,
+            XDimensionIndex: 1,
+            GridXMin: 0,
+            GridYMax: 2,
+            CellWidth: 1,
+            CellHeight: 1);
+
+        var png = ZarrTileRenderer.Render(subset, slice, tileSize: 2, fillValue: converted);
+        var image = MiniPngDecoder.Decode(png);
+
+        image.Pixel(0, 0).Should().Be(((byte)0, (byte)0, (byte)0, (byte)255));
+        image.Pixel(1, 0).Should().Be(((byte)128, (byte)128, (byte)128, (byte)255));
+        image.Pixel(0, 1).Should().Be(((byte)0, (byte)0, (byte)0, (byte)0));
+        image.Pixel(1, 1).Should().Be(((byte)255, (byte)255, (byte)255, (byte)255));
+    }
+
+    /// <summary>
     /// Decodes a <see cref="GridSize"/>-square render and asserts every pixel against the value its
     /// own source cell carries, returning the decoded image for any further assertions.
     /// </summary>
