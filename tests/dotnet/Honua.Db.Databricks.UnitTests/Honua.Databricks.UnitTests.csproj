@@ -10,6 +10,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\..\src\Honua.Db\Databricks\Honua.Databricks.csproj" />
     <ProjectReference Include="..\..\..\src\Honua.Core\Honua.Core.csproj" />
+    <ProjectReference Include="..\..\..\src\Honua.Protocols.GeoServices\Honua.Protocols.GeoServices.csproj" />
     <ProjectReference Include="../Honua.TestKit.Abstractions/Honua.TestKit.Abstractions.csproj" />
   </ItemGroup>
 

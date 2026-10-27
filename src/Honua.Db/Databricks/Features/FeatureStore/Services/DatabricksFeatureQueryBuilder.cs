@@ -6,6 +6,7 @@ using System.Globalization;
 using System.Text;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Queries.Filters;
 using Honua.Core.Queries.Filters.GeoServicesSql;
@@ -546,9 +547,11 @@ internal sealed class DatabricksFeatureQueryBuilder : IDatabricksFeatureQueryBui
 
         var srid = filterSrid > 0 ? filterSrid : mapping.Srid;
         var name = "geom" + parameters.Count.ToString(CultureInfo.InvariantCulture);
-        // Statement Execution parameters are strings. Bind WKB hex and parse with unhex,
-        // matching DatabricksSqlFilterTranslator's geometry literal.
-        parameters.Add(new DatabricksSqlParameter(name, Convert.ToHexString(spatial.Geometry), "STRING"));
+        // GeoServices writes EWKB (SRID flag + embedded SRID word) when the filter SRID is
+        // positive. st_geomfromwkb parses ISO WKB only; st_geomfromewkb is a different
+        // constructor. Strip the embedded SRID and pass it as the constructor argument.
+        var wkb = WkbSridNormalizer.RemoveEmbeddedSrid(spatial.Geometry);
+        parameters.Add(new DatabricksSqlParameter(name, Convert.ToHexString(wkb), "STRING"));
         return $"st_geomfromwkb(unhex(:{name}), {srid.ToString(CultureInfo.InvariantCulture)})";
     }
 

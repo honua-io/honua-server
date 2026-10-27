@@ -1,13 +1,17 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Buffers.Binary;
 using System.Collections.Immutable;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Queries.Filters;
 using Honua.Db.Databricks.Features.FeatureStore.Services;
 using Honua.Db.Databricks.Features.Infrastructure;
+using Honua.Protocols.GeoServices;
+using Honua.Protocols.GeoServices.FeatureServer.Models;
 
 namespace Honua.Db.Databricks.Tests;
 
@@ -394,6 +398,76 @@ public class DatabricksFeatureQueryBuilderTests
             new FeatureQuery { SpatialFilter = GeometryFilter(SpatialRelationship.Within, 3857) });
 
         Assert.Contains("st_within(st_geomfromwkb(unhex(:geom0), 3857), `geom`)", statement.Sql, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("point", 1u)]
+    [InlineData("line", 2u)]
+    [InlineData("polygon", 3u)]
+    public void BuildSelect_GeoServicesEwkb_BindsIsoWkbWithoutEmbeddedSrid(string kind, uint geometryType)
+    {
+        var ewkb = GeoServicesGeometryConverter.ConvertGeoServicesGeometryToWkb(GeoServicesGeometry(kind));
+        var ewkbType = BinaryPrimitives.ReadUInt32LittleEndian(ewkb.AsSpan(1));
+        Assert.NotEqual(0u, ewkbType & 0x20000000u);
+
+        var statement = Builder.BuildSelect(
+            Mapping(),
+            new FeatureQuery
+            {
+                SpatialFilter = SpatialFilter.Create(ewkb, SpatialRelationship.Intersects, srid: 4326),
+            });
+
+        var parameter = Assert.Single(statement.Parameters);
+        var bound = Convert.FromHexString(parameter.Value!);
+        var boundType = BinaryPrimitives.ReadUInt32LittleEndian(bound.AsSpan(1));
+        Assert.Equal(0u, boundType & 0x20000000u);
+        Assert.Equal(geometryType, boundType);
+        Assert.Equal(Convert.ToHexString(WkbSridNormalizer.RemoveEmbeddedSrid(ewkb)), parameter.Value);
+        Assert.Contains("st_geomfromwkb(unhex(:geom0), 4326)", statement.Sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildSelect_GeoServicesEwkb_CrossSrid_StillThrows()
+    {
+        var ewkb = GeoServicesGeometryConverter.ConvertGeoServicesGeometryToWkb(GeoServicesGeometry("polygon"));
+
+        var ex = Assert.Throws<NotSupportedException>(() => Builder.BuildSelect(
+            Mapping(),
+            new FeatureQuery
+            {
+                SpatialFilter = SpatialFilter.Create(ewkb, SpatialRelationship.Intersects, srid: 3857),
+            }));
+
+        Assert.Contains("Cross-SRID", ex.Message, StringComparison.Ordinal);
+    }
+
+    private static GeoServicesGeometry GeoServicesGeometry(string kind)
+    {
+        var spatialReference = new GeoServicesSpatialReference { Wkid = 4326 };
+        return kind switch
+        {
+            "point" => new GeoServicesGeometry { X = 1, Y = 2, SpatialReference = spatialReference },
+            "line" => new GeoServicesGeometry
+            {
+                Paths = [[[0, 0], [1, 1]]],
+                SpatialReference = spatialReference,
+            },
+            "polygon" => new GeoServicesGeometry
+            {
+                Rings =
+                [
+                    [
+                        [0, 0],
+                        [0, 1],
+                        [1, 1],
+                        [1, 0],
+                        [0, 0],
+                    ],
+                ],
+                SpatialReference = spatialReference,
+            },
+            _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null),
+        };
     }
 
     [Fact]

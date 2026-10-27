@@ -48,6 +48,7 @@
     <InternalsVisibleTo Include="Honua.Server.Tests" />
     <InternalsVisibleTo Include="Honua.Protocols.GeoServices.Tests" />
     <InternalsVisibleTo Include="Honua.Protocols.GeoServices.UnitTests" />
+    <InternalsVisibleTo Include="Honua.Databricks.UnitTests" />
     <InternalsVisibleTo Include="Honua.TestKit" />
     <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
   </ItemGroup>
