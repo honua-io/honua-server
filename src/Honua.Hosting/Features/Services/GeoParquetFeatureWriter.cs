@@ -10,6 +10,7 @@ using Apache.Arrow;
 using Apache.Arrow.Types;
 using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Infrastructure.Crs;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
@@ -914,16 +915,21 @@ public static partial class GeoParquetFeatureWriter
         ILogger? logger = null,
         bool encodeWkb = true)
     {
-        if (geometryBytes == null || geometryBytes.Length == 0)
+        if (geometryBytes == null)
         {
             return (null, null, false, null);
+        }
+
+        if (!WkbSridNormalizer.TryGetDeclaredOrdinates(geometryBytes, out var declaredZ, out _))
+        {
+            throw new InvalidOperationException("Invalid geometry data for export.");
         }
 
         Geometry? geometry;
         try
         {
-            // Packed sequences retain the input WKB's declared XY/XYZ/XYM dimensions,
-            // including empty geometries and XYZ values whose Z ordinates are all NaN.
+            // Packed sequences preserve per-coordinate Z values, including all-NaN Z.
+            // Declared dimensions of empty geometries come from the validated WKB above.
             _dimensionPreservingWkbReader ??= new WKBReader(
                 new NtsGeometryServices(PackedCoordinateSequenceFactory.DoubleFactory));
             geometry = _dimensionPreservingWkbReader.Read(geometryBytes);
@@ -935,12 +941,12 @@ public static partial class GeoParquetFeatureWriter
                 Log.GeoParquetCorruptGeometry(logger, featureId, geometryBytes.Length, ex);
             }
 
-            return (null, null, false, null);
+            throw new InvalidOperationException("Invalid geometry data for export.");
         }
 
         if (geometry == null)
         {
-            return (null, null, false, null);
+            throw new InvalidOperationException("Invalid geometry data for export.");
         }
 
         geometry.SRID = outputSrid;
@@ -953,7 +959,7 @@ public static partial class GeoParquetFeatureWriter
         // GeoParquet 1.1.0 only supports XY and XYZ — always strip M values.
         geometry = GeometryOutputProcessor.ApplyDimensionFilter(geometry, returnZ, includeM: false);
 
-        var hasZ = returnZ && GeometryHasZ(geometry);
+        var hasZ = returnZ && declaredZ;
         var writer = GetWkbWriter(hasZ);
 
         // Envelope of the emitted geometry (output SRID, limits applied) feeds the covering bbox
@@ -1302,26 +1308,6 @@ public static partial class GeoParquetFeatureWriter
             _ => null
         };
     }
-
-    /// <summary>
-    /// Checks declared Z dimensions throughout the geometry, including empty
-    /// sequences and nested collections, without allocating coordinate arrays.
-    /// </summary>
-    private static bool GeometryHasZ(Geometry geometry)
-    {
-        return geometry switch
-        {
-            Point point => SequenceHasZ(point.CoordinateSequence),
-            LineString line => SequenceHasZ(line.CoordinateSequence),
-            Polygon polygon => SequenceHasZ(polygon.ExteriorRing.CoordinateSequence)
-                || Enumerable.Range(0, polygon.NumInteriorRings)
-                    .Any(index => SequenceHasZ(polygon.GetInteriorRingN(index).CoordinateSequence)),
-            GeometryCollection collection => collection.Geometries.Any(GeometryHasZ),
-            _ => false
-        };
-    }
-
-    private static bool SequenceHasZ(CoordinateSequence sequence) => sequence.HasZ;
 
     private static WKBWriter GetWkbWriter(bool emitZ)
     {

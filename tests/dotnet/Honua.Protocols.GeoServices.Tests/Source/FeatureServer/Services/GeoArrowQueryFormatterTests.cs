@@ -23,6 +23,140 @@ public sealed class GeoArrowQueryFormatterTests
 {
     private const string FixtureFileName = "honua-server-geoarrow-02-point.arrow";
 
+    [Theory]
+    [InlineData(3)]
+    [InlineData(4)]
+    [InlineData(7)]
+    public async Task FormatAsGeoArrowAsync_EmptyXyzWithReturnZFalse_WritesXy(int type)
+    {
+        var input = new byte[9];
+        input[0] = 1;
+        BinaryPrimitives.WriteUInt32LittleEndian(input.AsSpan(1), (uint)(type + 1000));
+        var feature = Feature.Create(1, input, ImmutableDictionary<string, object?>.Empty);
+        var (payload, _) = await GeoArrowQueryFormatter.FormatAsGeoArrowAsync(
+            QueryResult<Feature>.Create(1, [feature]), CreateResource(), true, 4326,
+            false, false, new GeometryLimits());
+        using var reader = new ArrowStreamReader(new MemoryStream(payload));
+        using var batch = await reader.ReadNextRecordBatchAsync();
+        var wkb = ((BinaryArray)batch!.Column("geometry")).GetBytes(0).ToArray();
+        BinaryPrimitives.ReadUInt32LittleEndian(wkb.AsSpan(1)).Should().Be((uint)type);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task FormatAsGeoArrowAsync_WithCorruptWkb_RejectsOnlyWhenGeometryRequested(bool returnGeometry)
+    {
+        var feature = Feature.Create(1, [0xFF, 0xFE, 0, 1, 2, 3], ImmutableDictionary<string, object?>.Empty);
+        var action = async () => await GeoArrowQueryFormatter.FormatAsGeoArrowAsync(
+            QueryResult<Feature>.Create(1, [feature]), CreateResource(), returnGeometry, 4326,
+            returnZ: false, returnM: false, new GeometryLimits());
+        if (returnGeometry)
+        {
+            await action.Should().ThrowAsync<InvalidOperationException>().WithMessage("Invalid geometry data for export.");
+        }
+        else
+        {
+            await action.Should().NotThrowAsync();
+        }
+    }
+
+    [Theory]
+    [InlineData(3, false, "Polygon")]
+    [InlineData(3, true, "Polygon")]
+    [InlineData(4, false, "MultiPoint")]
+    [InlineData(4, true, "MultiPoint")]
+    [InlineData(5, false, "MultiLineString")]
+    [InlineData(5, true, "MultiLineString")]
+    [InlineData(6, false, "MultiPolygon")]
+    [InlineData(6, true, "MultiPolygon")]
+    [InlineData(7, false, "GeometryCollection")]
+    [InlineData(7, true, "GeometryCollection")]
+    public async Task FormatAsGeoArrowAsync_EmptyWkbDeclaredDimensions_PreservesTypeAndMetadata(int type, bool hasZ, string geometryType)
+    {
+        var input = new byte[9];
+        input[0] = 1;
+        var expectedType = (uint)(type + (hasZ ? 1000 : 0));
+        BinaryPrimitives.WriteUInt32LittleEndian(input.AsSpan(1, 4), expectedType);
+        var feature = Feature.Create(1, input, ImmutableDictionary<string, object?>.Empty);
+        var resource = CreateResourceWithGeometryType(Enum.Parse<MetadataV2GeometryType>(geometryType));
+        var (payload, _) = await GeoArrowQueryFormatter.FormatAsGeoArrowAsync(
+            QueryResult<Feature>.Create(1, [feature]), resource, true, 4326, true, false, new GeometryLimits());
+        using var reader = new ArrowStreamReader(new MemoryStream(payload));
+        using var batch = await reader.ReadNextRecordBatchAsync();
+        var wkb = ((BinaryArray)batch!.Column("geometry")).GetBytes(0).ToArray();
+        BinaryPrimitives.ReadUInt32LittleEndian(wkb.AsSpan(1, 4)).Should().Be(expectedType);
+        new WKBReader().Read(wkb).IsEmpty.Should().BeTrue();
+        using var geo = JsonDocument.Parse(reader.Schema.Metadata["geo"]);
+        geo.RootElement.GetProperty("columns").GetProperty("geometry").GetProperty("geometry_types")
+            .EnumerateArray().Select(value => value.GetString())
+            .Should().Equal(geometryType + (hasZ ? " Z" : string.Empty));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task FormatAsGeoArrowAsync_XyCollectionWithEmptyPolygon_DoesNotInventZ(bool includeEmptyPolygon)
+    {
+        var input = new WKBWriter(ByteOrder.LittleEndian, handleSRID: false, emitZ: false, emitM: false)
+            .Write(new GeometryCollection(includeEmptyPolygon
+                ? [new Polygon(new LinearRing(System.Array.Empty<Coordinate>())), new Point(1, 2)]
+                : [new Point(1, 2)]));
+        var feature = Feature.Create(1, input, ImmutableDictionary<string, object?>.Empty);
+        var resource = CreateResourceWithGeometryType(MetadataV2GeometryType.GeometryCollection);
+        var (payload, _) = await GeoArrowQueryFormatter.FormatAsGeoArrowAsync(
+            QueryResult<Feature>.Create(1, [feature]), resource, true, 4326, true, false, new GeometryLimits());
+        using var reader = new ArrowStreamReader(new MemoryStream(payload));
+        using var batch = await reader.ReadNextRecordBatchAsync();
+        var wkb = ((BinaryArray)batch!.Column("geometry")).GetBytes(0).ToArray();
+        BinaryPrimitives.ReadUInt32LittleEndian(wkb.AsSpan(1, 4)).Should().Be(7);
+        using var geo = JsonDocument.Parse(reader.Schema.Metadata["geo"]);
+        geo.RootElement.GetProperty("columns").GetProperty("geometry").GetProperty("geometry_types")
+            .EnumerateArray().Select(value => value.GetString()).Should().Equal("GeometryCollection");
+    }
+
+    [Fact]
+    public async Task FormatAsGeoArrowAsync_XyCollectionWithXyzChild_PreservesNestedZ()
+    {
+        var child = new WKBWriter(ByteOrder.LittleEndian, handleSRID: false, emitZ: true, emitM: false)
+            .Write(new Point(new CoordinateZ(1, 2, 3)));
+        var input = new byte[9 + child.Length];
+        input[0] = 1;
+        BinaryPrimitives.WriteUInt32LittleEndian(input.AsSpan(1, 4), 7);
+        BinaryPrimitives.WriteUInt32LittleEndian(input.AsSpan(5, 4), 1);
+        child.CopyTo(input, 9);
+        var feature = Feature.Create(1, input, ImmutableDictionary<string, object?>.Empty);
+        var resource = CreateResourceWithGeometryType(MetadataV2GeometryType.GeometryCollection);
+        var (payload, _) = await GeoArrowQueryFormatter.FormatAsGeoArrowAsync(
+            QueryResult<Feature>.Create(1, [feature]), resource, true, 4326, true, false, new GeometryLimits());
+        using var reader = new ArrowStreamReader(new MemoryStream(payload));
+        using var batch = await reader.ReadNextRecordBatchAsync();
+        var wkb = ((BinaryArray)batch!.Column("geometry")).GetBytes(0).ToArray();
+        BinaryPrimitives.ReadUInt32LittleEndian(wkb.AsSpan(1, 4)).Should().Be(1007);
+        new WKBReader().Read(wkb).Coordinate.Z.Should().Be(3);
+        using var geo = JsonDocument.Parse(reader.Schema.Metadata["geo"]);
+        geo.RootElement.GetProperty("columns").GetProperty("geometry").GetProperty("geometry_types")
+            .EnumerateArray().Select(value => value.GetString()).Should().Equal("GeometryCollection Z");
+    }
+
+    [Fact]
+    public async Task FormatAsGeoArrowAsync_XymGeometry_DoesNotAdvertiseZ()
+    {
+        var input = new WKBWriter(ByteOrder.LittleEndian, handleSRID: false, emitZ: false, emitM: true)
+            .Write(new Point(new CoordinateM(1, 2, 3)));
+        var feature = Feature.Create(1, input, ImmutableDictionary<string, object?>.Empty);
+        var resource = CreateResource();
+        var (payload, _) = await GeoArrowQueryFormatter.FormatAsGeoArrowAsync(
+            QueryResult<Feature>.Create(1, [feature]), resource, true, 4326, true, false, new GeometryLimits());
+        using var reader = new ArrowStreamReader(new MemoryStream(payload));
+        using var batch = await reader.ReadNextRecordBatchAsync();
+        var wkb = ((BinaryArray)batch!.Column("geometry")).GetBytes(0).ToArray();
+        BinaryPrimitives.ReadUInt32LittleEndian(wkb.AsSpan(1, 4)).Should().Be(1);
+        using var geo = JsonDocument.Parse(reader.Schema.Metadata["geo"]);
+        geo.RootElement.GetProperty("columns").GetProperty("geometry").GetProperty("geometry_types")
+            .EnumerateArray().Select(value => value.GetString()).Should().Equal("Point");
+    }
+
     [Fact]
     public async Task FormatAsGeoArrowAsync_ExcludedRuntimeGeometryAttribute_DoesNotAppendGeneratedColumnArray()
     {
