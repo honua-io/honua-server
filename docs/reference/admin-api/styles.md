@@ -6,7 +6,7 @@ resource: "honua://capability/styling.defaults"
 ---
 # Styles
 
-Reference for managing layer styles. The canonical style document is MapLibre Style Spec v8 JSON; the server back-generates a GeoServices `drawingInfo` snapshot from it so MapServer and FeatureServer renderers stay in sync.
+Reference for managing layer styles. The canonical style document is MapLibre Style Spec v8 JSON; the server back-generates a GeoServices `drawingInfo` renderer from it so MapServer and FeatureServer symbology stay in sync. That snapshot does not include `labelingInfo`. Feature labeling is not a served capability; see [Feature labeling is not served](../../guides/style/style-maps.md#feature-labeling-is-not-served).
 
 All admin endpoints require admin authentication — see [Authentication](../../guides/secure/authentication.md).
 

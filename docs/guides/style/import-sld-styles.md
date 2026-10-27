@@ -36,7 +36,7 @@ The conversion is best-effort and never silent: everything that cannot be transl
 | `PointSymbolizer` / `ExternalGraphic` | `symbol` | `icon-image` set to the href; remote URIs are recorded, never fetched. |
 | `LineSymbolizer` | `line` | Stroke color, width, opacity, dasharray, linecap, linejoin. |
 | `PolygonSymbolizer` | `fill` + separate `line` outline | Outline lives on a dedicated line layer to avoid double-stroking. |
-| `TextSymbolizer` | `symbol` labels | Only `<ogc:PropertyName>` labels map to `{field}`. |
+| `TextSymbolizer` | stored `symbol` `text-field` | An `<ogc:PropertyName>` label is stored as `{field}`. The server does not draw it and does not return FeatureServer `labelingInfo`. See [Feature labeling is not served](style-maps.md#feature-labeling-is-not-served). |
 | `Min`/`MaxScaleDenominator` | `minzoom` / `maxzoom` | Web Mercator approximation. |
 | Comparison filters, `And`/`Or`/`Not` | MapLibre filter expressions | `PropertyIsBetween` decomposes into `>= AND <=`. |
 

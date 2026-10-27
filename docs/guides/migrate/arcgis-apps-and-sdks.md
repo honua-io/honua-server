@@ -50,7 +50,7 @@ const layer = new FeatureLayerCompat({
 const result = await layer.queryFeatures({ where: "1=1" });
 ```
 
-`FeatureLayerCompat` supports the common constructor options (`id`, `title`, `outFields`, `definitionExpression`, `renderer`, `popupTemplate`, `labelingInfo`, `opacity`, `visible`, `minScale`, `maxScale`) plus paged helpers like `queryFeaturesAll()` and `queryFeaturesStream()`; `MapImageLayerCompat` covers `exportImage`, `identify`, `find`, `getLegend`, and sublayer queries. The full supported-option list per class is in the [SDK guide](https://github.com/honua-io/honua-sdk-js/blob/trunk/docs/guide.md).
+`FeatureLayerCompat` supports the common constructor options (`id`, `title`, `outFields`, `definitionExpression`, `renderer`, `popupTemplate`, `labelingInfo`, `opacity`, `visible`, `minScale`, `maxScale`) plus paged helpers like `queryFeaturesAll()` and `queryFeaturesStream()`; `MapImageLayerCompat` covers `exportImage`, `identify`, `find`, `getLegend`, and sublayer queries. The full supported-option list per class is in the [SDK guide](https://github.com/honua-io/honua-sdk-js/blob/trunk/docs/guide.md). `labelingInfo` in that list is a client constructor option. The server does not publish label classes; see [Feature labeling is not served](../style/style-maps.md#feature-labeling-is-not-served).
 
 ### 3. Run the JavaScript migration engine
 

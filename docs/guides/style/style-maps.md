@@ -1,18 +1,31 @@
 ---
 type: guide
 title: "Style map layers"
-description: "Set a layer's cartography once, as a MapLibre Style Spec v8 document, and have the same style drive vector tiles, WMS/static-map rendering, and ArcGIS-compatible clients."
+description: "Set a layer's symbology once, as a MapLibre Style Spec v8 document, so vector-tile clients, WMS and static-map rendering, and ArcGIS drawingInfo read the same document. Feature labeling is not a served capability."
 resource: "honua://capability/styling.defaults"
 resources:
   - "honua://capability/styling.auto-suggest"
 ---
 # Style map layers
 
-Set a layer's cartography once, as a MapLibre Style Spec v8 document, and have the same style drive vector tiles, WMS/static-map rendering, and ArcGIS-compatible clients.
+Set a layer's symbology once, as a MapLibre Style Spec v8 document, so vector-tile clients, WMS and static-map rendering, and ArcGIS `drawingInfo` read the same document. Feature labeling is not part of that contract.
 
 **Prerequisites:** a running server ([quickstart](../../get-started/quickstart.md)), a published layer ([publish layers](../publish/publish-layers.md)), and an admin API key ([authentication](../secure/authentication.md)).
 
-Honua stores exactly one canonical style per layer — MapLibre JSON. Esri `drawingInfo` and SLD are accepted as inputs and derived as outputs, but every renderer reads from the same MapLibre document, so a style change lands everywhere at once. Also available in Honua Console — UI guide coming soon.
+Honua stores exactly one canonical style per layer — MapLibre JSON. Esri `drawingInfo` and SLD are accepted as inputs and derived as outputs. Fill, line, and circle symbology is what those renderers share. Also available in Honua Console — UI guide coming soon.
+
+## Feature labeling is not served
+
+The styling capability keys are `styling.defaults`, `styling.auto-suggest`, and `styling.ogc-api-styles`. There is no labeling key, and no route serves label classes.
+
+- Server-side raster rendering (`SkiaFeatureDrawing.RenderStyledFeature`, used by WMS GetMap, static maps, and MapServer export) paints only `fill`, `line`, and `circle`. A MapLibre `symbol` layer, including `layout.text-field`, is not drawn.
+- Default FeatureServer `drawingInfo` sets `labelingInfo` to null (`FeatureServerMetadataHandlers.BuildDefaultDrawingInfoV2`). `MapLibreToGeoServicesConverter.BuildDrawingInfo` writes a renderer, or a picture marker from `icon-image`. It never writes `labelingInfo`.
+- SLD import stores a `TextSymbolizer` whose label is an `ogc:PropertyName` as a `symbol` layer `text-field` (`SldToMapLibreConverter.BuildTextLayer`). `SldParser.ParseTextSymbolizer` drops `LabelPlacement`. Tests of that import check the stored JSON only.
+- ArcGIS source `labelingInfo` is recorded as migration diagnostics (`MigrationManifestTranslator.BuildResourceLabelClassDiagnostics`). Apply does not write a label style or `labelingInfo` from those diagnostics. A simple field token classified `automated` can still be reported as construct disposition `migrated`.
+- When a stored style already contains a `symbol` layer, VectorTileServer points `glyphs` at one bundled sans-serif face (Basic Latin and Latin-1). That face is for a client that implements text layout. Default styles omit symbol layers, and the server does not generate label classes.
+- Visual certification `CERT-RNDR-LBL-01` has no substantiating lane.
+
+A MapLibre client may paint `text-field` from the style document it fetches. That is the client's drawing, not a Honua labeling capability, and not Esri `labelingInfo`.
 
 ## Steps
 
@@ -67,7 +80,7 @@ Honua stores exactly one canonical style per layer — MapLibre JSON. Esri `draw
 
    - MapLibre/MVT clients fetch `GET /api/styles/{layerId}.json` and render tiles from `/tiles/{layerId}/{z}/{x}/{y}.mvt` client-side.
    - WMS GetMap, static maps, and MapServer `export` render server-side from the canonical document (themes are not applied on these raster paths).
-   - FeatureServer clients receive a `drawingInfo` derived automatically from the MapLibre document.
+   - FeatureServer clients receive a `drawingInfo` renderer derived from fill, line, and circle paint. `labelingInfo` is not derived. See [Feature labeling is not served](#feature-labeling-is-not-served).
 
 ## Verify
 
