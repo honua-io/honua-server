@@ -1890,6 +1890,15 @@ catch (Exception ex) when (Honua.Server.Hosting.GatedBootShutdown.IsSchemaFloorR
     await Honua.Server.Hosting.GatedBootShutdown.StopRefusedHostAsync(app, ex.Message);
     return;
 }
+catch (Exception ex) when (Honua.Server.Hosting.GatedBootShutdown.IsAttachmentBindingRefusal(ex)
+    && !Honua.Server.Hosting.GatedBootShutdown.IsInProcessTestServer(app))
+{
+    // The runner returns this mismatch as a failed migration. Rethrowing it leaves Main as an
+    // unhandled exception, and the native image then aborts (exit 139) instead of refusing
+    // (honua-server#6554).
+    await Honua.Server.Hosting.GatedBootShutdown.StopRefusedHostAsync(app, ex.Message);
+    return;
+}
 catch (InvalidOperationException ex) when (Honua.Server.Hosting.GatedBootShutdown.IsContractGateRefusal(ex))
 {
     await Honua.Server.Hosting.GatedBootShutdown.StopRefusedHostAsync(app, ex.Message);

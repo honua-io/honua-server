@@ -6,6 +6,8 @@ from pathlib import Path
 spec = importlib.util.spec_from_file_location("refusal", Path(__file__).resolve().parents[1] / "verify-native-migration-refusal.py")
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
+assert "CREATE TABLE IF NOT EXISTS honua.attachments" in module.SEED
+assert "Honua.Server.Migrations.002_CreateAttachmentsTable.sql" in module.SEED
 positive = module.REFUSAL + " " + module.CONTRACT
 module.validate(1, positive, [], False)
 for code, logs, dumps, oom in (

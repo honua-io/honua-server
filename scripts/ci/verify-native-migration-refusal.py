@@ -17,7 +17,14 @@ CONTAINER_LIMITS = ("--memory", "1g", "--memory-swap", "1g", "--cpus", "1", "--p
 DUMP_LIMIT_BYTES = 64 * 1024 * 1024
 
 
-SEED = """CREATE EXTENSION IF NOT EXISTS postgis;
+# Journaling 002 without its table makes attachment binding throw before the 038 contract gate
+# (honua-server#6554). Apply the same embedded DDL the managed refusal test applies.
+_ATTACHMENT_DDL = (
+    Path(__file__).resolve().parents[2] / "src/Honua.Server/Migrations/002_CreateAttachmentsTable.sql"
+).read_text(encoding="utf-8")
+SEED = f"""CREATE EXTENSION IF NOT EXISTS postgis;
+CREATE SCHEMA IF NOT EXISTS honua;
+{_ATTACHMENT_DDL}
 CREATE TABLE public.schema_versions (
  schemaversionsid serial PRIMARY KEY, scriptname varchar(255) NOT NULL,
  applied timestamp without time zone NOT NULL);
