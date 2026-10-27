@@ -132,6 +132,34 @@ attribute identifiers are validated against a simple-identifier allow-list at st
 | Streaming GeoJSON | No |
 | Edits (create/update/delete/transactions) | No — provider is read-only |
 
+## Spatial functions
+
+These `ST_*` functions are required for geometry reads and spatial filters. They depend on
+the DBSQL runtime (Databricks Runtime 17.1 or newer geospatial SQL). They are not available
+on Databricks SQL Classic warehouses. A warehouse without them fails geometry, extent, and
+spatial-filter statements at execution time; Honua does not emulate them in-process.
+
+| Use | Functions |
+| --- | --- |
+| Feature geometry | `hex`, `st_asbinary` |
+| Extent | `st_xmin`, `st_ymin`, `st_xmax`, `st_ymax` |
+| Envelope / bbox filter | `st_geomfromtext`, `st_intersects`, `st_contains`, `st_within`, `st_crosses`, `st_touches`, `st_overlaps`, `st_disjoint`, `st_equals` |
+| Polygon, line, or point `geometry=` filter | `st_geomfromwkb`, `unhex`, `st_intersects`, `st_contains`, `st_within`, `st_disjoint`, `st_envelope` |
+| `where` geometry literals | `st_geomfromwkb`, `unhex`, plus the same relationship functions as the envelope filter |
+
+An axis-aligned envelope stays on the inline `st_geomfromtext('POLYGON((...))')` path.
+Any other filter geometry is bound as a named string parameter (WKB hex) and parsed with
+`st_geomfromwkb(unhex(:geomN), <srid>)`. The SRID literal is the filter SRID when it is
+set and matches the layer; otherwise it is the layer SRID. A filter SRID that differs from
+the layer SRID is rejected. This provider does not transform across SRIDs.
+
+`esriSpatialRelIntersects` and `esriSpatialRelDisjoint` lead with the feature column.
+`esriSpatialRelContains` and `esriSpatialRelWithin` lead with the filter geometry, matching
+Esri semantics (`st_contains(filter, feature)` / `st_within(filter, feature)`).
+`esriSpatialRelEnvelopeIntersects` is
+`st_intersects(st_envelope(column), st_envelope(filter))`. Distance and nearest-neighbor
+relationships are not translated.
+
 ## Limitations
 
 - **No writes.** The provider exposes no `IFeatureWriter`; all edit paths are rejected.
@@ -147,7 +175,9 @@ attribute identifiers are validated against a simple-identifier allow-list at st
 - **Spatial-function availability is environment-dependent.** `ST_AsBinary`,
   `ST_GeomFromText`, `ST_Intersects`, and the `ST_*min/max` aggregates require a
   Databricks runtime / DBSQL build that ships the spatial functions. On warehouses
-  without them, geometry, extent, and spatial-filter queries will fail.
+  without them, geometry, extent, and spatial-filter queries will fail. The full set
+  used by polygon, line, and point filters is listed under
+  [Spatial functions](#spatial-functions).
 - **`WHERE` is re-parsed, not forwarded verbatim.** The GeoServices-style `where` clause is
   parsed into the shared filter AST and translated into parameterized Spark SQL
   (backtick-quoted identifiers, `:pN` bind markers). Literal operands are bound as
@@ -157,7 +187,7 @@ attribute identifiers are validated against a simple-identifier allow-list at st
   `groupByFieldsForStatistics`) is translated to Spark aggregates (COUNT/SUM/MIN/MAX/AVG,
   plus `STDDEV_SAMP`/`VAR_SAMP`) honoring the same WHERE/spatial filters as the SELECT.
 - **Unsupported query shapes fail loudly.** Enforced/security SQL filters, temporal filters,
-  distance predicates, scalar SQL functions (EXTRACT/SUBSTRING/CAST, …), and non-envelope
+  distance predicates, scalar SQL functions (EXTRACT/SUBSTRING/CAST, …), and cross-SRID
   spatial filters throw `NotSupportedException` rather than silently returning over-broad
   results. A pre-translated (Postgres-flavored) `SqlFilter` without the canonical `where`
   text is likewise rejected.
