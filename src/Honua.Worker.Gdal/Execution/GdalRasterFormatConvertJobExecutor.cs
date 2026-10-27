@@ -1,7 +1,6 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Collections.Frozen;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Microsoft.Extensions.Logging;
@@ -21,54 +20,20 @@ namespace Honua.Worker.Gdal.Execution;
 /// GDAL execution failures surface as proper GP job failures with sanitized
 /// messages rather than validation passes. Runs only inside the GDAL worker image
 /// — <see cref="AcceptedRuntimeProfiles"/> is <c>{ "native" }</c>.
+/// A target driver disabled by <c>GdalWorker:Hardening:SkipDrivers</c> is rejected
+/// at admission (#3307) rather than failing later inside GDAL.
 /// </summary>
 internal sealed partial class GdalRasterFormatConvertJobExecutor(
     IGdalCommandRunner runner,
     IOptionsMonitor<GdalWorkerOptions> options,
-    ILogger<GdalRasterFormatConvertJobExecutor> logger) : IProcessExecutor
+    ILogger<GdalRasterFormatConvertJobExecutor> logger,
+    IOptionsMonitor<GdalHardeningOptions>? hardening = null) : IProcessExecutor
 {
     /// <summary>The canonical process id this executor handles.</summary>
     public const string HandledProcessId = "conversion.raster-format";
 
     private static readonly IReadOnlySet<string> NativeProfileSet =
         new HashSet<string>(StringComparer.Ordinal) { RuntimeProfiles.Native };
-
-    private static readonly FormatTarget GeoTiffTarget =
-        new("GTiff", "tif", "image/tiff; application=geotiff", SupportsCompression: true);
-
-    private static readonly FormatTarget JpegTarget =
-        new("JPEG", "jpg", "image/jpeg", SupportsCompression: false);
-
-    // Maps the catalog's targetFormat enum onto the gdal_translate -of driver name,
-    // the scratch output extension, and the published artifact content type.
-    //
-    // Mirrors ProcessPlanValidator.RasterFormatValues, which is itself built from
-    // ProcessValueDomains.RasterFormat — the same array the catalog publishes as
-    // targetFormat's AllowedValues. Every alias the plan validator accepts and the
-    // catalog advertises must therefore normalize onto a driver here: the GeoTIFF /
-    // TIFF / TIF spellings all mean the GTiff driver and JPG means JPEG. Without the
-    // aliases an OGC Processes or GPServer client that picks an advertised value
-    // passes catalog and schema validation and then has its job killed at the CLI
-    // boundary with an invalid-format failure (#3048 review). COG stays a distinct
-    // entry because it is a real, separate GDAL driver rather than a spelling of
-    // GTiff. GdalRasterConversionExecutorTests pins the correspondence by driving this
-    // executor with every value of ProcessValueDomains.RasterFormat.
-    private static readonly FrozenDictionary<string, FormatTarget> Formats =
-        new Dictionary<string, FormatTarget>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["GTiff"] = GeoTiffTarget,
-            ["GeoTIFF"] = GeoTiffTarget,
-            ["TIFF"] = GeoTiffTarget,
-            ["TIF"] = GeoTiffTarget,
-            ["COG"] = new FormatTarget("COG", "tif", "image/tiff; application=geotiff", SupportsCompression: true),
-            ["PNG"] = new FormatTarget("PNG", "png", "image/png", SupportsCompression: false),
-            ["JPEG"] = JpegTarget,
-            ["JPG"] = JpegTarget,
-        }.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
-
-    // Rendered from Formats so the rejection message can never advertise a set the
-    // executor does not actually accept.
-    private static readonly string AllowedFormatList = string.Join(", ", Formats.Keys.Order(StringComparer.OrdinalIgnoreCase));
 
     /// <inheritdoc />
     /// <summary>
@@ -106,17 +71,18 @@ internal sealed partial class GdalRasterFormatConvertJobExecutor(
 
         var opts = options.CurrentValue;
 
-        if (!GdalJobInputReader.TryGetInput(parameters, "targetFormat", out var targetFormatRaw)
-            || string.IsNullOrWhiteSpace(targetFormatRaw))
+        if (!GdalJobInputReader.TryGetInput(parameters, "targetFormat", out var targetFormatRaw))
         {
-            return JobExecutionResult.Failed("Invalid raster-format inputs: missing required input 'targetFormat'.");
+            targetFormatRaw = string.Empty;
         }
 
-        if (!Formats.TryGetValue(targetFormatRaw.Trim(), out var format))
+        // Null only for tests that construct the executor directly. DI supplies the
+        // same GdalHardeningOptions instance the runners project into GDAL_SKIP.
+        var hardeningOptions = hardening?.CurrentValue ?? new GdalHardeningOptions();
+        if (!GdalRasterOutputDriverAdmission.TryAdmit(
+                targetFormatRaw, hardeningOptions, out var format, out var admissionError))
         {
-            return JobExecutionResult.Failed(
-                $"Invalid raster-format inputs: 'targetFormat' value '{targetFormatRaw}' is not in the allowed set " +
-                $"({AllowedFormatList}).");
+            return JobExecutionResult.Failed(admissionError);
         }
 
         if (!GdalJobInputReader.TryGetRasterInput(parameters, "source", opts.MaxArtifactBytes, out var sourceInput, out var sourceError))
@@ -130,8 +96,8 @@ internal sealed partial class GdalRasterFormatConvertJobExecutor(
         {
             // Second segment of each call is a fixed relative literal, or built from
             // format.Extension which is only ever a fixed literal drawn from the
-            // Formats allowlist above (never user-supplied), so neither can be rooted
-            // and silently discard workspace.
+            // GdalRasterOutputDriverAdmission allowlist (never user-supplied), so
+            // neither can be rooted and silently discard workspace.
             var inputPath = sourceInput.ReferencedPath ?? Path.Join(workspace, "input.tif");
             var outputPath = Path.Join(workspace, $"output.{format.Extension}");
             // Bound the DECLARED pixel footprint before invoking GDAL so a
@@ -222,8 +188,6 @@ internal sealed partial class GdalRasterFormatConvertJobExecutor(
             GdalScratch.TryCleanup(workspace, logger);
         }
     }
-
-    private readonly record struct FormatTarget(string Driver, string Extension, string ContentType, bool SupportsCompression);
 
     private static partial class Log
     {
