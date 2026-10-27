@@ -203,3 +203,142 @@ def test_sampling_cadence_does_not_add_sample_duration_to_every_gap():
     assert max(gaps[1:]) < cadence + sample_seconds / 2
     # The window still ends with a sample at its deadline.
     assert taken[-1] - begin >= window
+
+
+# --- Founder ruling 2026-10-27 -------------------------------------------------------------------
+# 1. Steady-state SLOs exclude the fault window; the drill runs after the measured window and is
+#    judged on recovery, data integrity and stuck GP jobs.
+# 2. GP is out of the GA capacity envelope and is reported as Preview evidence.
+
+from datetime import timedelta  # noqa: E402
+
+import httpx  # noqa: E402
+
+import capacity_evidence as emitter  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from test_capacity_observations import emit, observations  # noqa: E402
+
+
+def _post_window_drill(source, passed=True):
+    """Move the fixture's recoveries after the window and attach drill evidence."""
+    end = emitter.timestamp(source["window"]["endedAt"])
+    source["recoveries"] = [dict(event, injectedAt=collector_module.iso(end+timedelta(seconds=10*i+1)),
+                                 detectedAt=collector_module.iso(end+timedelta(seconds=10*i+2)),
+                                 recoveredAt=collector_module.iso(end+timedelta(seconds=10*i+5)))
+                            for i, event in enumerate(source["recoveries"])]
+    source["faultDrill"] = dict(window=dict(startedAt=collector_module.iso(end+timedelta(seconds=1)),
+                                            endedAt=collector_module.iso(end+timedelta(seconds=40))),
+                                excludedFromMeasuredWindow=True, recoveries=source["recoveries"], recovered=True,
+                                dataIntegrity=dict(passed=True), gpJobs=dict(stuckJobIds=[] if passed else ["gp-1"], passed=passed),
+                                failures=[], passed=passed)
+    return source
+
+
+def test_receipt_marks_the_post_window_fault_period():
+    result, _ = emit(_post_window_drill(observations()))
+    assert result["status"] == "completed"
+    assert result["faultDrill"]["excludedFromMeasuredWindow"] is True
+    fault = result["signals"]["recoveryTimeSeconds"]["recoveryEvidence"]["faultWindow"]
+    assert fault == result["faultDrill"]["window"]
+    assert fault["startedAt"] >= result["window"]["endedAt"]
+    assert result["signals"]["recoveryTimeSeconds"]["value"] == 4
+
+
+def test_a_failed_drill_cannot_claim_completion():
+    result, _ = emit(_post_window_drill(observations(), passed=False))
+    assert result["status"] == "incomplete"
+    assert result["faultDrill"]["gpJobs"]["stuckJobIds"] == ["gp-1"]
+
+
+def test_gp_requests_are_preview_evidence_not_the_ga_slo_population():
+    source = observations()
+    # The failed run's shape: a flood of in-band GP refusals beside healthy GA traffic.
+    source["requests"][0]["buckets"].append(dict(count=100000, durationMs=1500, httpStatus=200, inBandError=True, protocol="GPServer"))
+    source["requestCount"] += 100000
+    result, _ = emit(source)
+    baseline, _ = emit(observations())
+    for name in ("availability", "errorRate", "p95LatencyMs", "p99LatencyMs", "throughputRps"):
+        assert result["signals"][name]["value"] == baseline["signals"][name]["value"], name
+    assert result["gaPopulation"] == dict(excludedProtocols=["GPServer"], requestCount=4320000, totalRequestCount=4420000)
+    gp = result["previewEvidence"]["gp"]
+    assert gp["tier"] == "preview"
+    assert gp["requests"] == dict(count=100000, errors=100000, p95LatencyMs=1500, p99LatencyMs=1500)
+
+
+def test_unfilled_gp_queue_is_reported_as_preview_and_does_not_decide_ga():
+    source = observations()
+    source["workloads"][3]["dimensions"]["gpQueueDepth"] = 1
+    result, _ = emit(source)
+    assert result["status"] == "completed"
+    queue = result["workloads"]["gpQueueDepth"]
+    assert (queue["tier"], queue["status"], queue["observed"]) == ("preview", "not-exercised", 1)
+    assert result["previewEvidence"]["gp"]["workloads"]["gpQueueDepth"] == queue
+    assert result["workloads"]["layersPerService"]["tier"] == "ga"
+
+
+def _drill_collector(monkeypatch, job_states):
+    import argparse
+
+    collector = collector_module.Collector(argparse.Namespace(base_url="http://fixture", admin_key="fixture"), LOCK)
+    start = collector_module.now() - timedelta(seconds=5)
+    collector.ledger.started, collector.ledger.ended = start, start + timedelta(seconds=1)
+    collector.payload_id = 10000
+    collector.payload_sha256 = "sha"
+    collector.driver.gp_pending = {job: {} for job in job_states}
+
+    async def faults(client):
+        # Drill-time traffic goes through the recording client but must not join the window.
+        await client.get("http://fixture/rest/services/test/FeatureServer/0/query?f=json")
+        collector.recoveries.extend(dict(dependency=name) for name in ("worker", "database", "redis"))
+
+    async def integrity(client):
+        return dict(passed=True)
+
+    collector.faults = faults
+    collector.data_integrity = integrity
+
+    def serve(request):
+        job = request.url.path.rsplit("/", 1)[-1]
+        return httpx.Response(200, json={"jobStatus": job_states.get(job, "esriJobSucceeded")})
+
+    return collector, httpx.MockTransport(serve)
+
+
+def test_drill_runs_outside_the_measured_window_and_is_not_recorded(monkeypatch):
+    collector, transport = _drill_collector(monkeypatch, {"gp-1": "esriJobSucceeded", "gp-2": "esriJobFailed"})
+
+    async def exercise():
+        recording = collector_module.RecordingTransport(collector.ledger)
+        recording.transport = transport
+        async with httpx.AsyncClient(transport=recording) as client:
+            gp = asyncio.create_task(asyncio.sleep(0))
+            return await collector.drill(client, gp)
+
+    drill = asyncio.run(exercise())
+    assert collector.ledger.observed_count == 0
+    assert drill["window"]["startedAt"] >= collector_module.iso(collector.ledger.ended)
+    assert drill["excludedFromMeasuredWindow"] is True
+    assert drill["gpJobs"] == dict(outstandingAtDrillEnd=2, terminalStatuses={"esriJobSucceeded": 1, "esriJobFailed": 1},
+                                   stuckJobIds=[], drainSeconds=drill["gpJobs"]["drainSeconds"], drainTimeoutSeconds=300, passed=True)
+    assert drill["passed"] is True
+    assert collector.failures == []
+
+
+def test_drill_reports_stuck_gp_jobs(monkeypatch):
+    collector, transport = _drill_collector(monkeypatch, {"gp-1": "esriJobSucceeded", "gp-stuck": "esriJobExecuting"})
+
+    async def exercise():
+        async with httpx.AsyncClient(transport=transport) as client:
+            return await collector.drain_gp(client, timeout=0.05)
+
+    gp_jobs = asyncio.run(exercise())
+    assert gp_jobs["stuckJobIds"] == ["gp-stuck"] and gp_jobs["passed"] is False
+
+
+def test_collector_no_longer_injects_faults_inside_the_window():
+    import inspect
+
+    run = inspect.getsource(collector_module.Collector.run)
+    assert run.index("sample_window") < run.index("self.drill(")
+    assert "create_task(self.faults" not in run
+    assert "steady_seconds/2" not in inspect.getsource(collector_module.Collector.faults)

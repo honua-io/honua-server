@@ -129,13 +129,13 @@ def test_missing_metric_is_not_defaulted_to_zero(field):
     assert signal["thresholdVerdict"]["passed"] is False
 
 
-def test_unfilled_queue_and_sampling_failures_cannot_claim_completion():
+def test_unfilled_ga_dimension_and_sampling_failures_cannot_claim_completion():
     source = observations()
-    source["workloads"][3]["dimensions"]["gpQueueDepth"] = 0
+    source["workloads"][3]["dimensions"]["layersPerService"] = 3
     result, _ = emit(source)
     assert result["status"] == "incomplete"
-    assert result["workloads"]["gpQueueDepth"]["observed"] == 0
-    assert result["workloads"]["gpQueueDepth"]["status"] == "not-exercised"
+    assert result["workloads"]["layersPerService"]["observed"] == 3
+    assert result["workloads"]["layersPerService"]["status"] == "not-exercised"
     source = observations()
     source["samplingFailures"] = ["missed database sample"]
     assert emit(source)[0]["status"] == "incomplete"

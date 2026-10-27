@@ -10,11 +10,18 @@ measured with (honua-release capacity lock baseline, run 34753540275). A credent
 on a request bypasses the server's anonymous output cache by design, so an
 admin-keyed workload measures a different, uncached server path than the one the
 thresholds describe. Only workload probes and GP control requests carry the key.
+
+The fault drill runs AFTER the measured window closes (founder ruling 2026-10-27,
+as the 09-16 producer did): steady-state SLOs exclude the fault period, and the
+drill is judged on its own evidence, `faultDrill`: recovery per dependency, no
+data loss, and no stuck GP jobs. The workload keeps running through the drill
+but is not recorded in the steady-state population.
 """
 from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 import json
@@ -37,6 +44,11 @@ from drive_soak import SoakDriver
 # checker refuses any gap above samplePeriodSeconds (60), so the cadence cannot be "sleep 30
 # seconds after a sample", which adds the sample's own duration to every gap.
 SAMPLE_CADENCE_SECONDS = 30
+# Bound for each injected dependency to serve again, and for every outstanding GP job to reach a
+# terminal state after the drill. A job still non-terminal after this is stuck.
+RECOVERY_TIMEOUT_SECONDS = 300
+GP_DRAIN_TIMEOUT_SECONDS = 300
+TERMINAL_JOB_STATES = ("esriJobSucceeded", "esriJobFailed", "esriJobCancelled", "esriJobTimedOut")
 
 
 def now():
@@ -219,6 +231,9 @@ class Collector:
         self.args, self.lock = args, lock
         self.ledger = RequestLedger("honua", "pending")
         self.failures, self.metrics, self.workloads, self.recoveries = [], [], [], []
+        self.drill_failures = []
+        self.fault_drill = None
+        self.payload_sha256 = None
         self.users = []
         self.payload_id = None
         self._gp_error_cursor = 0
@@ -255,6 +270,7 @@ class Collector:
         actual = served["features"][0]
         if actual != feature:
             raise ValueError("maximum-payload round trip changed geometry or lost attribute data")
+        self.payload_sha256 = digest(json.dumps(served["features"], sort_keys=True).encode())
 
     def capture_gp_errors(self):
         self.failures.extend(f"GP sampling: {error}" for error in self.driver.gp.errors[self._gp_error_cursor:])
@@ -341,7 +357,6 @@ class Collector:
         return at
 
     async def faults(self, client):
-        await asyncio.sleep(self.args.steady_seconds/2)
         for dependency, container in (("worker", "honua"), ("database", "postgres"), ("redis", "redis")):
             injected = now()
             name = f"honua-capacity-soak-{container}-1"
@@ -352,7 +367,7 @@ class Collector:
                     raise ValueError("injected dependency did not stop")
                 detected = now()
                 await command("docker", "start", name)
-                deadline = time.monotonic()+300
+                deadline = time.monotonic()+RECOVERY_TIMEOUT_SECONDS
                 while time.monotonic() < deadline:
                     try:
                         # A direct dependency probe plus a serving count prevents
@@ -369,9 +384,72 @@ class Collector:
                     except Exception:
                         await asyncio.sleep(1)
                 else:
-                    raise TimeoutError(f"{dependency} did not recover within 300 seconds")
+                    raise TimeoutError(f"{dependency} did not recover within {RECOVERY_TIMEOUT_SECONDS} seconds")
             except Exception as exc:
-                self.failures.append(f"recovery {dependency}: {type(exc).__name__}: {exc}")
+                self.drill_failures.append(f"recovery {dependency}: {type(exc).__name__}: {exc}")
+
+    async def data_integrity(self, client):
+        """Every seeded layer still serves its full count and the maximum payload is byte-identical."""
+        envelope = self.lock["supportedEnvelope"]
+        counts = []
+        for layer in range(envelope["layersPerService"]):
+            document = await self.driver._get_json(client, f"/rest/services/test/FeatureServer/{layer}/query?f=json&where=1%3D1&returnCountOnly=true")
+            counts.append(document.get("count"))
+        served = await self.driver._get_json(client, f"/rest/services/test/FeatureServer/0/query?f=json&where=objectid%3D{self.payload_id}&outFields=*&returnGeometry=true")
+        features = served.get("features", [])
+        payload_sha256 = digest(json.dumps(features, sort_keys=True).encode())
+        payload_intact = len(features) == 1 and payload_sha256 == self.payload_sha256
+        passed = all(count == envelope["featuresPerLayer"] for count in counts) and payload_intact
+        return dict(layerCounts=counts, expectedFeaturesPerLayer=envelope["featuresPerLayer"],
+                    payloadSha256=payload_sha256, expectedPayloadSha256=self.payload_sha256,
+                    payloadIntact=payload_intact, passed=passed)
+
+    async def drain_gp(self, client, timeout=GP_DRAIN_TIMEOUT_SECONDS):
+        """After submissions stop, wait for every outstanding GP job to reach a terminal state."""
+        pending = getattr(self.driver, "gp_pending", {})
+        outstanding = len(pending)
+        statuses = Counter()
+        started = time.monotonic()
+        while pending and time.monotonic()-started < timeout:
+            for job_id in list(pending):
+                try:
+                    document = await self.driver._get_json(client, f"/rest/services/test/GPServer/geometry.buffer/jobs/{job_id}?f=json", admin=True)
+                except Exception:  # noqa: BLE001 - a transient poll failure is retried until the bound
+                    continue
+                if document.get("jobStatus") in TERMINAL_JOB_STATES:
+                    statuses[document["jobStatus"]] += 1
+                    pending.pop(job_id, None)
+            if pending:
+                await asyncio.sleep(1)
+        stuck = sorted(pending)
+        return dict(outstandingAtDrillEnd=outstanding, terminalStatuses=dict(statuses), stuckJobIds=stuck,
+                    drainSeconds=round(time.monotonic()-started, 3), drainTimeoutSeconds=timeout, passed=not stuck)
+
+    async def drill(self, client, gp_task):
+        """Inject faults after the measured window, then judge recovery, data and GP jobs."""
+        began = now()
+        gp_error_cursor = len(self.driver.gp.errors)
+        await self.faults(client)
+        integrity = None
+        try:
+            integrity = await self.data_integrity(client)
+        except Exception as exc:  # noqa: BLE001
+            self.drill_failures.append(f"data integrity: {type(exc).__name__}: {exc}")
+        self.driver._stop.set()
+        with contextlib.suppress(Exception):
+            await asyncio.wait_for(gp_task, 60)
+        gp_jobs = await self.drain_gp(client)
+        ended = now()
+        recovered = {event["dependency"] for event in self.recoveries} == {"worker", "database", "redis"}
+        gp_errors = self.driver.gp.errors[gp_error_cursor:]
+        self.fault_drill = dict(
+            window=dict(startedAt=iso(began), endedAt=iso(ended)), excludedFromMeasuredWindow=True,
+            load="steady-state workload and GP queue kept running during injection; not recorded in requests",
+            recoveries=self.recoveries, recovered=recovered, dataIntegrity=integrity, gpJobs=gp_jobs,
+            gpErrorsDuringDrill=dict(count=len(gp_errors), first=gp_errors[:20]),
+            failures=self.drill_failures,
+            passed=recovered and bool(integrity and integrity["passed"]) and gp_jobs["passed"] and not self.drill_failures)
+        return self.fault_drill
 
     def workload_session(self):
         """The virtual users' session. It carries no credential (see the module docstring)."""
@@ -404,21 +482,19 @@ class Collector:
             await self.establish_payload(client)
             self.users = [asyncio.create_task(self.user(session, scenario, seed)) for scenario, copies in MIX for seed in range(copies)]
             gp = asyncio.create_task(self.driver.drive_gp_queue(client))
-            fault = None
             try:
                 await asyncio.sleep(self.args.ramp_up_seconds)
                 self._gp_error_cursor = len(self.driver.gp.errors)
                 self.ledger.started = await self.sample(client)
-                fault = asyncio.create_task(self.faults(client))
                 self.ledger.ended = await self.sample_window(client, self.args.steady_seconds)
-                if not fault.done():
-                    self.failures.append("recovery did not complete inside the observation window")
+                # Sampling failures describe the measured window only; drill-time errors are
+                # drill evidence.
+                self.capture_gp_errors()
+                await self.drill(client, gp)
             finally:
                 self.stop.set()
                 self.driver._stop.set()
-                if fault is not None and not fault.done():
-                    fault.cancel()
-                tasks = [*self.users, gp, *([fault] if fault else [])]
+                tasks = [*self.users, gp]
                 try:
                     results = await asyncio.wait_for(asyncio.gather(*tasks, return_exceptions=True), 60)
                     for result in results:
@@ -426,7 +502,9 @@ class Collector:
                             self.failures.append(f"collector task failed: {type(result).__name__}: {result}")
                 except TimeoutError:
                     self.failures.append("collector tasks exceeded the 60-second drain budget")
-                self.capture_gp_errors()
+                if self.fault_drill is None:
+                    # The window never completed normally; retain everything that went wrong.
+                    self.capture_gp_errors()
         producer = producer_identity(os.environ)
         return dict(schema="honua.capacity-observations/v1", lockSha256=digest(self.args.lock.read_bytes()),
                     candidateIdentity=dict(serverRevision=self.args.candidate_sha, imageDigest=self.args.image_digest),
@@ -437,7 +515,8 @@ class Collector:
                     window=dict(startedAt=iso(self.ledger.started), endedAt=iso(self.ledger.ended)),
                     samplingFailures=self.failures, populationMode="complete-disjoint-intervals", samplePeriodSeconds=60,
                     requestCount=self.ledger.observed_count, requests=self.ledger.intervals(),
-                    metrics=self.metrics, workloads=self.workloads, recoveries=self.recoveries)
+                    metrics=self.metrics, workloads=self.workloads, recoveries=self.recoveries,
+                    faultDrill=self.fault_drill)
 
 
 def main():
