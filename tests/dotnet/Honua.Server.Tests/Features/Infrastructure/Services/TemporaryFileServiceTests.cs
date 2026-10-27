@@ -922,7 +922,7 @@ public sealed class TemporaryFileServiceTests : IDisposable
         (await cloudStorage.ListFilesAsync("temporary-files")).Should().BeEmpty();
     }
 
-    [Fact]
+    [UnitTest]
     public async Task StoreTemporaryFileAsync_WhenProgressStoreThrows_StillReturnsUrl()
     {
         var progressStore = new ThrowingUploadProgressStore();
