@@ -82,14 +82,22 @@ public sealed class GeoParquetImportTests : IAsyncLifetime
         var created = await service.ImportFileAsync(EpochRequest(initial, logicalName, ImportLoadMode.Upsert));
         created.Success.Should().BeTrue(created.ErrorMessage);
         var before = await ReadImportedTableSnapshotAsync(created);
-        await using var incoming = new MemoryStream(await CreateEpochParquetAsync(incomingEpoch, 40));
+        await using var incoming = new MemoryStream(await CreateEpochParquetAsync(incomingEpoch, 40, mode == ImportLoadMode.Append ? "B" : "A"));
         var result = await service.ImportFileAsync(EpochRequest(incoming, logicalName, mode));
         result.Success.Should().Be(allowed, result.ErrorMessage);
         var after = await ReadImportedTableSnapshotAsync(created);
         after.RelationOid.Should().Be(before.RelationOid, "append and upsert preserve the existing target identity");
         if (allowed)
         {
-            after.Rows.Should().NotBe(before.Rows);
+            var coordinates = ReadEpochRowCoordinates(after.Rows);
+            if (mode == ImportLoadMode.Append)
+            {
+                coordinates.Should().Equal(("A", 10d), ("B", 40d));
+            }
+            else
+            {
+                coordinates.Should().Equal(("A", 40d));
+            }
         }
         else
         {
@@ -122,9 +130,21 @@ public sealed class GeoParquetImportTests : IAsyncLifetime
         commitReached.Should().BeTrue("failure must occur inside the actual row/promotion commit transaction");
         result.Success.Should().BeFalse();
         (await ReadImportedTableSnapshotAsync(created)).Should().Be(before);
-        await using var append = new MemoryStream(await CreateEpochParquetAsync(2021.25, 50));
+        await using var append = new MemoryStream(await CreateEpochParquetAsync(2021.25, 50, "B"));
         var appended = await service.ImportFileAsync(EpochRequest(append, logicalName, ImportLoadMode.Append));
         appended.Success.Should().BeTrue(appended.ErrorMessage);
+        var afterAppend = await ReadImportedTableSnapshotAsync(created);
+        afterAppend.RelationOid.Should().Be(before.RelationOid);
+        ReadEpochRowCoordinates(afterAppend.Rows).Should().Equal(("A", 10d), ("B", 50d));
+    }
+
+    private static (string Key, double Longitude)[] ReadEpochRowCoordinates(string rows)
+    {
+        using var document = JsonDocument.Parse(rows);
+        return document.RootElement.EnumerateArray().Select(row =>
+            (Key: row[2].GetProperty("key").GetString()!,
+             Longitude: new WKBReader().Read(Convert.FromHexString(row[1].GetString()!)).Coordinate.X))
+            .OrderBy(row => row.Key, StringComparer.Ordinal).ToArray();
     }
 
     private static ImportRequest EpochRequest(Stream source, string table, ImportLoadMode mode) => new()
@@ -133,13 +153,13 @@ public sealed class GeoParquetImportTests : IAsyncLifetime
         TargetSrid = 7912, LoadMode = mode, OverwriteExisting = true, KeyColumns = ["key"]
     };
 
-    private static async Task<byte[]> CreateEpochParquetAsync(double? epoch, double longitude)
+    private static async Task<byte[]> CreateEpochParquetAsync(double? epoch, double longitude, string propertyKey = "A")
     {
         GeoParquetProjJsonCatalog.TryGetProjJson(7912, out var definition).Should().BeTrue();
         using var crs = JsonDocument.Parse(definition!);
         var point = new Point(longitude, 20, 30);
         var wkb = new WKBWriter(ByteOrder.LittleEndian, handleSRID: false, emitZ: true, emitM: false).Write(point);
-        return await CreateGeometryParquetAsync(wkb, "Point Z", sourceCrs: crs.RootElement, coordinateEpoch: epoch, propertyKey: "A");
+        return await CreateGeometryParquetAsync(wkb, "Point Z", sourceCrs: crs.RootElement, coordinateEpoch: epoch, propertyKey: propertyKey);
     }
 
     private async Task<(long RelationOid, string Rows)> ReadImportedTableSnapshotAsync(ImportResult imported)
