@@ -1,4 +1,4 @@
-"""Render the exact documented production install without logging secret values."""
+"""Render the shipped production Compose install without logging secret values."""
 import hmac
 import json
 import os
@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[2]
 class ProductionComposeTests(unittest.TestCase):
     def setUp(self):
         self.document = (ROOT / "docs/guides/deploy/docker-compose.md").read_text()
-        self.compose = re.search(r"cat > docker-compose.yml <<'EOF'\n(.*?)\nEOF", self.document, re.S).group(1)
+        self.compose = (ROOT / "docker-compose.production.yml").read_text()
         self.values = {
             "HONUA_IMAGE": "ghcr.io/honua-io/honua-server@sha256:" + "a" * 64,
             "HONUA_HOST": "honua.example.com",
@@ -25,6 +25,7 @@ class ProductionComposeTests(unittest.TestCase):
             "HONUA_ADMIN_PASSWORD": secrets.token_hex(32),
             "POSTGRES_PASSWORD": secrets.token_hex(32),
             "HONUA_MASTER_KEY": secrets.token_hex(32),
+            "HONUA_KEYRING_PASSWORD": secrets.token_hex(16),
             "HONUA_CORS_ORIGIN": "https://app.example.com",
             "HONUA_STORAGE_VOLUME_NAME": "production-render-only",
         }
@@ -48,9 +49,24 @@ class ProductionComposeTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, "Production Compose must render")
         return json.loads(result.stdout)
 
-    def test_document_and_shipped_production_file_agree(self):
-        source = (ROOT / "docker-compose.production.yml").read_text().strip()
-        self.assertTrue(hmac.compare_digest(self.compose.strip(), source))
+    def test_production_example_supplies_every_required_compose_input(self):
+        example = (ROOT / ".env.production.example").read_text()
+        keys = set(re.findall(r"(?m)^([A-Za-z_][A-Za-z0-9_]*)=", example))
+        required = set(re.findall(r"\$\{([A-Za-z_][A-Za-z0-9_]*):\?", self.compose))
+        self.assertEqual(required - keys, set(), "Every required Compose input has a line in the example")
+
+    def test_production_example_limits_pass_startup_validation(self):
+        example = dict(re.findall(r"(?m)^(Limits__Connections__\w+)=(\d+)$",
+                                  (ROOT / ".env.production.example").read_text()))
+        self.assertLessEqual(int(example["Limits__Connections__MaxConcurrentQueries"]),
+                             int(example["Limits__Connections__MaxConnectionPoolSize"]))
+
+    def test_operation_key_ring_certificate_is_mounted(self):
+        honua = self.model()["services"]["honua"]
+        path = honua["environment"]["Operations__SecretChannel__KeyRingCertificatePath"]
+        self.assertTrue(any(volume.get("target") == path and volume.get("read_only")
+                            for volume in honua["volumes"]))
+        self.assertEqual(honua["depends_on"]["keyring-init"]["condition"], "service_completed_successfully")
 
     def test_proxy_hostname_is_trusted_and_public_base_url_is_explicit(self):
         environment = self.model()["services"]["honua"]["environment"]
@@ -84,24 +100,19 @@ class ProductionComposeTests(unittest.TestCase):
             self.assertTrue(hmac.compare_digest(environment[key], value), key)
         self.assertEqual(environment["Database__MigrationSafety__ContractApplyPolicy"], "Gate")
 
-    def test_verification_loads_the_production_admin_password(self):
-        verify = self.document.split("## Verify", 1)[1]
-        commands = re.search(r"```bash\n(.*?)python3 -m pip", verify, re.S).group(1)
-        expected = secrets.token_hex(32)
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            (root / ".env.production").write_text("HONUA_ADMIN_PASSWORD=" + expected + "\n")
-            (root / ".env").write_text("HONUA_ADMIN_PASSWORD=" + secrets.token_hex(32) + "\n")
-            result = subprocess.run(
-                ["bash", "-c", commands + '\npython3 -c \'import hmac, os; raise SystemExit(not hmac.compare_digest(os.environ.get("HONUA_ADMIN_PASSWORD", ""), os.environ["EXPECTED_PASSWORD"]))\''],
-                cwd=root, env=dict(os.environ, EXPECTED_PASSWORD=expected), capture_output=True, text=True)
-            self.assertEqual(result.returncode, 0, "Verification must load the production credential")
+    def test_guide_documents_every_production_step(self):
+        section = self.document.split("## Production install from the shipped Compose file", 1)[1].split("\n## ", 1)[0]
+        for block in ("production.env", "production.keyring", "production.start"):
+            self.assertIn(f"<!-- docs-validation:{block} mode=run -->", section)
+        for key in ("HONUA_MASTER_KEY", "HONUA_KEYRING_PASSWORD", "HONUA_ADMIN_PASSWORD", "POSTGRES_PASSWORD"):
+            self.assertIn(f"s|^{key}=", section)
 
     def test_documented_env_file_command_uses_private_runtime_values(self):
         values = self.values | {
             "ConnectionStrings__DefaultConnection": "Host=private-db;Password=" + secrets.token_hex(32),
             "ConnectionStrings__Redis": "private-redis:6379,password=" + secrets.token_hex(32),
             "Security__ConnectionEncryption__MasterKey": secrets.token_hex(32),
+            "HONUA_KEYRING_PASSWORD": secrets.token_hex(16),
             "Cors__AllowedOrigins__1": "https://second.example.com",
             "Cache__DefaultTtlSeconds": "321",
             "SecurityHeaders__HstsMaxAge": "654321",
@@ -130,7 +141,8 @@ class ProductionComposeTests(unittest.TestCase):
                 self.assertEqual(environment[key], values[key])
 
     def test_missing_required_inputs_fail_before_container_creation(self):
-        for key in ("HONUA_IMAGE", "HONUA_HOST", "HONUA_PROXY_IP", "POSTGRES_PASSWORD", "HONUA_ADMIN_PASSWORD", "HONUA_MASTER_KEY"):
+        for key in ("HONUA_IMAGE", "HONUA_HOST", "HONUA_PROXY_IP", "POSTGRES_PASSWORD", "HONUA_ADMIN_PASSWORD", "HONUA_MASTER_KEY",
+                    "HONUA_KEYRING_PASSWORD"):
             self.assertNotEqual(self.render(**{key: ""}).returncode, 0, key)
 
     def test_datastores_are_unpublished_and_api_is_loopback_only(self):
