@@ -125,6 +125,7 @@ public static partial class EndpointRegistry
         new("GET", "/api/v1/admin/observability/audit"),
         new("GET", "/api/v1/admin/observability/audit/export"),
         new("GET", "/api/v1/admin/observability/audit/verify"),
+        new("POST", "/api/v1/admin/observability/audit/gap-attestations"),
         new("GET", "/api/v1/admin/observability/events"),
         new("GET", "/api/v1/admin/observability/logs"),
         new("GET", "/api/v1/admin/investigations"),
