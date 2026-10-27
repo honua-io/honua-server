@@ -94,6 +94,35 @@ Compose names the image `honua-worker-etl:gp-local` by default. Set
 with the devkit's `--real-worker` option; the [native Docker example](gp-devkit-authoring.md#run-native-functions-in-docker)
 converts the checked-in CSV and verifies what to expect in its GeoJSON output.
 
+## Integration profile
+
+The base file starts the host, PostGIS, and Redis. The integration profile adds
+the managed worker, the native heavy worker, and local artifact storage:
+
+```bash
+docker compose -f docker-compose.gp-dev.yml --profile integration up --build -d
+```
+
+`managed-worker` is a second serving-image process with no published ports. It
+joins the same Redis substrate and claims managed jobs. `gdal-worker` is the
+GDAL/PDAL heavy worker from `docker/worker-gdal`. Both mount the named volume
+`gp_artifacts` at `/var/lib/honua/gp-artifacts` and bind-mount local process
+source read-only at `/workspace/process-source` (the checkout, or
+`HONUA_GP_PROCESS_SOURCE`). That path is for inspection. Managed executors are
+the compiled registrations in the serving image, and native helper scripts load
+from the image. A source edit reaches a worker only after that image is rebuilt
+and the container is recreated. Section 4 has the commands.
+
+`honua-gp-devkit doctor` reports the prerequisite for this profile: Docker
+Compose v2, with host ports 5432, 6379, 8080, and 8081 free.
+
+This profile does not exercise a kind lifecycle matrix, debugger attachment, or
+a cloud account. Referenced output staging stays off. Stop the profile with:
+
+```bash
+docker compose -f docker-compose.gp-dev.yml --profile integration down
+```
+
 ## 4. Edit, rebuild, and submit again
 
 Use `new`, `run`, and `test` in the [authoring guide](gp-devkit-authoring.md)
@@ -102,6 +131,9 @@ to implement a process and its fixture. Then rebuild the integration stack:
 ```bash
 # Managed executor or catalog changes.
 docker compose -f docker-compose.gp-dev.yml up --build -d honua
+
+# Recreate the integration managed worker from that image when the profile is running.
+docker compose -f docker-compose.gp-dev.yml --profile integration up --build -d managed-worker
 
 # Native executor changes; rebuild the server too when its catalog changes.
 docker compose -f docker-compose.gp-dev.yml --profile gdal-worker up --build -d honua gdal-worker

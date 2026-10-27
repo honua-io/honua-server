@@ -274,6 +274,10 @@ public static class GpCli
             }
         }
 
+        // Ports are the defaults published by docker-compose.gp-dev.yml
+        // (POSTGRES_PORT, REDIS_PORT, HONUA_HTTP_PORT, HONUA_GRPC_PORT).
+        const string integrationProfile =
+            "integration profile: Docker Compose v2; free host ports 5432 (PostGIS), 6379 (Redis), 8080 (HTTP) and 8081 (gRPC), then run docker compose -f docker-compose.gp-dev.yml --profile integration up --build -d.";
         var report = new JsonObject
         {
             ["schemaVersion"] = "1.0",
@@ -282,11 +286,12 @@ public static class GpCli
             ["nativeWorker"] = managedOnly ? "notChecked" : nativeReady ? "imageAvailable" : "unavailable",
             ["workerImage"] = image,
             ["serviceBacked"] = "requiresIntegrationStack",
+            ["integrationProfile"] = integrationProfile,
             ["note"] = "Image availability is a prerequisite check; use run --real-worker to verify native execution. Service-backed processes require server/database configuration.",
         };
         Console.WriteLine(args.Contains("--json", StringComparer.Ordinal)
             ? report.ToJsonString()
-            : $"managed: {report["managed"]}\nnative worker: {report["nativeWorker"]} ({image})\n{report["note"]}");
+            : $"managed: {report["managed"]}\nnative worker: {report["nativeWorker"]} ({image})\n{integrationProfile}\n{report["note"]}");
         return probe.Succeeded && (managedOnly || nativeReady) ? 0 : 1;
     }
 
