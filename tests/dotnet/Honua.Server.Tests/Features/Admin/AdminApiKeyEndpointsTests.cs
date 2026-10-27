@@ -571,7 +571,8 @@ public sealed class AdminApiKeyEndpointsTests : IAsyncLifetime
         Assert.DoesNotContain(created.Key, body, StringComparison.Ordinal);
         Assert.DoesNotContain("203.0.113.0/24", body, StringComparison.Ordinal);
         var updated = JsonSerializer.Deserialize<ApiResponse<AdminApiKeyResponse>>(body, _jsonOptions);
-        Assert.NotNull(updated?.Data);
+        Assert.NotNull(updated);
+        Assert.NotNull(updated.Data);
         Assert.Equal(["https://maps.example.com"], updated.Data.AllowedReferrers);
         Assert.Null(updated.Data.AllowedIpRanges);
         Assert.Equal(created.ApiKey.KeyPrefix, updated.Data.KeyPrefix);

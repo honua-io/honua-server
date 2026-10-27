@@ -176,8 +176,8 @@ internal sealed class PostgresAdminApiKeyStore(
                 updated_at = @now
             WHERE id = @id
               AND NOT EXISTS (
-                  SELECT 1 FROM unnest(permissions) AS grant
-                  WHERE grant LIKE 'admin:operation:%')
+                  SELECT 1 FROM unnest(permissions) AS permission
+                  WHERE permission LIKE 'admin:operation:%')
             RETURNING {Columns}
             """, connection);
         command.Parameters.AddWithValue("id", id);
