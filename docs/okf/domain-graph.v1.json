@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:f780bf000b281f6b99b6b5bb76699cdc3e1c67a8742f7f2f39993f235fb65d43",
+  "bundleDigest": "sha256:cf158c51be6bd5e9ce2ba3280e989e5a924453fe504c9fc08f9c9cc955f441da",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -8223,7 +8223,7 @@
     {
       "id": "studio/byom",
       "path": "studio/byom.md",
-      "documentDigest": "sha256:2446117094bfc16a6c4a1e2f0ac9d6017e12899a88d6609cddf83f6675bb90fd",
+      "documentDigest": "sha256:9b9c0de182cec7557dbc8d24c8cacc1fdcdfcee25829e99c732e730631ed33cb",
       "metadata": {
         "type": "guide",
         "title": "Bring your own model",
