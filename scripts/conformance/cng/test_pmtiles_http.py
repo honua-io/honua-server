@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from pmtiles_http import HttpRangeSource, load_source, record_source, serving_url
+from pmtiles_http import HttpRangeSource, load_source, record_source, serving_url, SOURCE_BINDING
 
 
 class Response(io.BytesIO):
@@ -56,7 +56,7 @@ class PMTilesHttpTests(unittest.TestCase):
             artifact.write_bytes(b"archive")
             metadata = Path(directory) / "object.json"
             data = {"ContentLength": 7, "ContentType": "application/vnd.pmtiles", "Metadata": {
-                "operation": "publish", "cng-sha256": hashlib.sha256(b"archive").hexdigest()}}
+                "operation": "publish", "cng-sha256": hashlib.sha256(b"archive").hexdigest(), **SOURCE_BINDING}}
             metadata.write_text(json.dumps(data))
             requests = []
 
@@ -72,7 +72,7 @@ class PMTilesHttpTests(unittest.TestCase):
             receipt.write_text(json.dumps(source))
             self.assertEqual(b"archive", load_source(artifact, "http://honua")[0])
             for key, value in [("url", "http://surrogate/archive"), ("artifact_sha256", "0" * 64),
-                               ("provider_environment", "aws"), ("object_key", "other")]:
+                               ("provider_environment", "aws"), ("object_key", "other"), ("source_binding", {**SOURCE_BINDING, "publicationId": "other"})]:
                 receipt.write_text(json.dumps({**source, key: value}))
                 with self.assertRaises(ValueError):
                     load_source(artifact, "http://honua")

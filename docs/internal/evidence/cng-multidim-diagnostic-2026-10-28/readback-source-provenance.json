@@ -1,0 +1,20 @@
+{
+  "provenance": "Reconstructed from the exact in-memory transformations used in the successful root tool calls; no new execution or qualification claimed",
+  "base_source_sha256": "742753d8cbe1d3a6a6d9cc380d748f023456d257d24629c740a4546f070f099a",
+  "variants": {
+    "nc": {
+      "source": "/home/mike/.local/state/honua/cng-standards-20261027/reconstructed-nc-http-readback.py",
+      "source_sha256": "157642b146aef91a82b7e537836e963c85e465a7f415c1f5f834bee9047e2cf1",
+      "actual_http_output_sha256": "7415fefe365aa57496f9870090076db6918fa9ff000bf3cbb4a2b77d323f93f6",
+      "store_url": "http://127.0.0.1:14595/honua-cng-fixtures/diagnostic-multidim/nc20261028/canonical.zarr",
+      "original_command_python": "/home/mike/.local/state/honua/cng-standards-20261027/netcdf-fidelity-venv/bin/python"
+    },
+    "h5": {
+      "source": "/home/mike/.local/state/honua/cng-standards-20261027/reconstructed-h5-http-readback.py",
+      "source_sha256": "2b41065e89f7edb437f37186a0bda0e5a23dba90006a23c31c419cf5bee39700",
+      "actual_http_output_sha256": "f12bb67bfac2b9926777d5041d903416be225f5bc61d1bc4f6b766734f3857ec",
+      "store_url": "http://127.0.0.1:14595/honua-cng-fixtures/diagnostic-multidim/h520261028/canonical.zarr",
+      "original_command_python": "/home/mike/.local/state/honua/cng-standards-20261027/netcdf-fidelity-venv/bin/python"
+    }
+  }
+}

@@ -1017,17 +1017,22 @@ def validate_pmtiles(path: Path, args: argparse.Namespace) -> list[dict]:
         header = reader.header()
         metadata = reader.metadata()
         tiles = list(all_tiles(source))
-        first = tiles[0] if tiles else None
         if header.get("version") != 3:
             raise ValueError(f"PMTiles reader reported version={header.get('version')!r}, expected 3")
         if not isinstance(metadata, dict):
             raise ValueError("PMTiles metadata is not an object")
-        if first is None or not first[1]:
-            raise ValueError("PMTiles reader found no non-empty tiles")
+        expected_coordinates = {(z, x, y) for z in range(3) for x in range(1 << z) for y in range(1 << z)}
+        coordinates = [tuple(tile[0]) for tile in tiles]
+        if len(coordinates) != 21 or set(coordinates) != expected_coordinates:
+            raise ValueError("PMTiles canonical fixture tile coordinates differ")
+        if any(not tile[1] for tile in tiles):
+            raise ValueError("PMTiles reader found an empty fixture tile")
     except Exception as error:
         observation["result"] = "fail"
         observation["failure_reason"] = f"{type(error).__name__}: {error}"
         return [observation]
+    finally:
+        observation["completed_at"] = _now()
     # #4398: the declared pmtiles budget oracle, read back from the archive Honua wrote.
     observation["observed_metadata"] = {
         "spec_version": str(header.get("version")),

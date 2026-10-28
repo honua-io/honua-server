@@ -29,6 +29,8 @@
 //        <out>/honua.cog.tif, <out>/honua-consumer-evidence.json
 
 using System.Collections.Immutable;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Honua.Cng.ArtifactGen;
@@ -165,7 +167,6 @@ static async Task GeneratePMTilesAsync(string path)
         tileCompression: PMTilesCompression.Gzip,
         internalCompression: PMTilesCompression.Gzip);
 
-    var seed = 0;
     for (var z = 0; z <= 2; z++)
     {
         var width = 1 << z;
@@ -173,7 +174,7 @@ static async Task GeneratePMTilesAsync(string path)
         {
             for (var y = 0; y < width; y++)
             {
-                writer.AddTile(z, x, y, MakeTilePayload(seed++));
+                writer.AddTile(z, x, y, MakeTilePayload(z, x, y));
             }
         }
     }
@@ -187,24 +188,75 @@ static async Task GeneratePMTilesAsync(string path)
         MinZoom = 0,
         MaxZoom = 2,
         Attribution = "Honua CNG conformance lane",
-        Description = "Synthetic PMTiles archive emitted by honua PMTilesWriter for pmtiles verify",
+        Description = "Deterministic valid MVT fixture emitted by Honua PMTilesWriter",
     };
 
     await using var stream = File.Create(path);
     var bytes = await writer.WriteAsync(stream, metadata).ConfigureAwait(false);
+    if (bytes <= 16384)
+    {
+        throw new InvalidOperationException("PMTiles fixture must exceed the canonical client's 16 KiB header prefetch.");
+    }
     Console.WriteLine($"PMTiles archive: {path} ({bytes} bytes, {writer.TileCount} tiles)");
 }
 
-static byte[] MakeTilePayload(int seed)
+// Same minimal MVT 2.1 wire shape as PMTilesArchiveRoundTripTests.MiniMvt,
+// with real string attributes so compressed tiles exceed the client's header prefetch.
+static byte[] MakeTilePayload(int z, int x, int y)
 {
-    // A minimal, non-empty payload. Content bytes are opaque to `pmtiles verify`.
-    var payload = new byte[16];
-    for (var i = 0; i < payload.Length; i++)
+    var name = $"cng-{z}-{x}-{y}";
+    var attribute = string.Concat(Enumerable.Range(0, 32).Select(block =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"cng-mvt:{z}:{x}:{y}:{block}"))).ToLowerInvariant()));
+    using var geometry = new MemoryStream();
+    WriteMvtVarint(geometry, 9); // MoveTo, one point.
+    WriteMvtVarint(geometry, (ulong)((100 + x) << 1));
+    WriteMvtVarint(geometry, (ulong)((200 + y) << 1));
+    using var feature = new MemoryStream();
+    WriteMvtField(feature, 1, 1); // id
+    WriteMvtBytes(feature, 2, [0, 0, 1, 1]); // name and fixture attribute tags
+    WriteMvtField(feature, 3, 1); // POINT
+    WriteMvtBytes(feature, 4, geometry.ToArray());
+    using var layer = new MemoryStream();
+    WriteMvtBytes(layer, 1, Encoding.UTF8.GetBytes(name));
+    WriteMvtBytes(layer, 2, feature.ToArray());
+    foreach (var key in new[] { "name", "fixture" })
     {
-        payload[i] = (byte)((seed * 31 + i * 7) & 0xFF);
+        WriteMvtBytes(layer, 3, Encoding.UTF8.GetBytes(key));
     }
+    foreach (var value in new[] { name, attribute })
+    {
+        using var encoded = new MemoryStream();
+        WriteMvtBytes(encoded, 1, Encoding.UTF8.GetBytes(value));
+        WriteMvtBytes(layer, 4, encoded.ToArray());
+    }
+    WriteMvtField(layer, 5, 4096); // extent
+    WriteMvtField(layer, 15, 2); // MVT version
+    using var tile = new MemoryStream();
+    WriteMvtBytes(tile, 3, layer.ToArray());
+    return tile.ToArray();
+}
 
-    return payload;
+static void WriteMvtField(Stream stream, int field, ulong value)
+{
+    WriteMvtVarint(stream, (ulong)(field << 3));
+    WriteMvtVarint(stream, value);
+}
+
+static void WriteMvtBytes(Stream stream, int field, byte[] bytes)
+{
+    WriteMvtVarint(stream, (ulong)((field << 3) | 2));
+    WriteMvtVarint(stream, (ulong)bytes.Length);
+    stream.Write(bytes);
+}
+
+static void WriteMvtVarint(Stream stream, ulong value)
+{
+    while (value >= 128)
+    {
+        stream.WriteByte((byte)((value & 127) | 128));
+        value >>= 7;
+    }
+    stream.WriteByte((byte)value);
 }
 
 // --- 3D Tiles + glTF ------------------------------------------------------
