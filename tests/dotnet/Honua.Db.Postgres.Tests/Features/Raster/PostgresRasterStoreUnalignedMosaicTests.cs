@@ -48,13 +48,17 @@ public sealed class PostgresRasterStoreUnalignedMosaicTests(PostgresFixture fixt
 
     [IntegrationTest]
     public Task ExportCog_WithoutCogDriver_RejectsRatherThanPublishingGtiffFallback()
-        => AssertMissingCogDriverAsync(warmAvailablePool: false);
+        => AssertMissingCogDriverAsync(warmAvailablePool: false, verifyAvailableAfter: false);
 
     [IntegrationTest]
     public Task ExportCog_AfterAvailablePoolWarmup_RestrictedPoolRejectsUnavailableDriver()
-        => AssertMissingCogDriverAsync(warmAvailablePool: true);
+        => AssertMissingCogDriverAsync(warmAvailablePool: true, verifyAvailableAfter: false);
 
-    private async Task AssertMissingCogDriverAsync(bool warmAvailablePool)
+    [IntegrationTest]
+    public Task ExportCog_AfterRestrictedPool_AvailablePoolStillWritesOptimizedLayout()
+        => AssertMissingCogDriverAsync(warmAvailablePool: false, verifyAvailableAfter: true);
+
+    private async Task AssertMissingCogDriverAsync(bool warmAvailablePool, bool verifyAvailableAfter)
     {
         var schemaName = await CreateSchemaAsync();
         try
@@ -122,7 +126,32 @@ public sealed class PostgresRasterStoreUnalignedMosaicTests(PostgresFixture fixt
             raster.Should().NotBeNull();
             Func<Task> export = async () => await store.ExportImageAsync(LayerId, raster!.Id,
                 new RasterQuery { OutputFormat = RasterFormat.COG });
-            await export.Should().ThrowAsync<NotSupportedException>();
+            var restrictedException = await Record.ExceptionAsync(export);
+            if (verifyAvailableAfter)
+            {
+                // Observe the second pool even when the first pool wrongly returned fallback
+                // bytes, so a failed first assertion cannot hide cross-pool contamination.
+                var available = CreateStore(schemaName);
+                RasterResult? availableCog = null;
+                var availableException = await Record.ExceptionAsync(async () =>
+                {
+                    availableCog = await available.ExportImageAsync(LayerId, raster!.Id,
+                        new RasterQuery { OutputFormat = RasterFormat.COG });
+                });
+                availableException.Should().BeNull("the normal pool remains COG capable after a restricted session");
+                availableCog.Should().NotBeNull();
+                var bytes = availableCog!.Data;
+                var ranges = Substitute.For<ICloudRangeReader>();
+                ranges.ReadRangeAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<long>(),
+                        Arg.Any<int>(), Arg.Any<CancellationToken>())
+                    .Returns(call => Task.FromResult(bytes.AsSpan((int)call.ArgAt<long>(2),
+                        Math.Min(call.ArgAt<int>(3), bytes.Length - (int)call.ArgAt<long>(2))).ToArray()));
+                var metadata = await new CogMetadataExtractor().ReadMetadataAsync(ranges, "test", "after-restricted.tif");
+                metadata.OverviewLevels.Should().Contain(level => level.Width <= 512 && level.Height <= 512);
+                metadata.OverviewLevels.Should().OnlyContain(level => level.TileOffsets.Length > 0);
+            }
+            restrictedException.Should().BeOfType<NotSupportedException>(
+                "a restricted datasource must reject COG rather than returning mislabeled GTiff");
         }
         finally { await fixture.DropSchemaAsync(schemaName); }
     }
