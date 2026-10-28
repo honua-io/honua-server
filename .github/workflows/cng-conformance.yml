@@ -260,7 +260,7 @@ jobs:
             rio-cogeo==7.0.2 \
             xarray==2026.7.0 \
             zarr==3.3.0
-          npm install --no-save --package-lock=false flatgeobuf@4.4.0 pmtiles@4.5.0
+          npm install --no-save --package-lock=false flatgeobuf@4.4.0 pmtiles@4.5.0 @mapbox/vector-tile@3.0.0 pbf@5.1.0
           # 3D Tiles validator (chains the Khronos glTF validator).
           # sharp downloads libvips during this install. Retry transient transport
           # failures without changing the exact validator evidence identity.
