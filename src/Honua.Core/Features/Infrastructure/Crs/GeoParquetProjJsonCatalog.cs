@@ -74,6 +74,20 @@ public static class GeoParquetProjJsonCatalog
     /// </summary>
     public static IReadOnlyCollection<int> SupportedSrids => _catalog.Keys;
 
+    /// <summary>
+    /// Authoritative OGC:CRS84 definition for resolving explicit GeoParquet source CRS metadata.
+    /// This does not change the EPSG:4326 export lookup or its default-CRS omission behavior.
+    /// </summary>
+    public static string Crs84ProjJson { get; } = LoadCrs84();
+
+    private static string LoadCrs84()
+    {
+        using var stream = typeof(GeoParquetProjJsonCatalog).Assembly.GetManifestResourceStream(ResourceName)
+            ?? throw new InvalidOperationException("Embedded GeoParquet CRS catalog was not found.");
+        using var document = JsonDocument.Parse(stream);
+        return document.RootElement.GetProperty("crs84").GetRawText();
+    }
+
     private static FrozenDictionary<int, string> Load()
     {
         var assembly = typeof(GeoParquetProjJsonCatalog).Assembly;

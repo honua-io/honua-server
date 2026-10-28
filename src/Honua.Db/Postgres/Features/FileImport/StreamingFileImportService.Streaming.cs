@@ -34,7 +34,8 @@ internal sealed partial class StreamingFileImportService
         string jobId,
         CancellationToken cancellationToken,
         ShapefileScratch? shapefileScratch = null,
-        FileGdbScratch? fileGdbScratch = null)
+        FileGdbScratch? fileGdbScratch = null,
+        double? coordinateEpoch = null)
     {
         await using var connection = await OpenConnectionAsync(cancellationToken);
 
@@ -47,77 +48,25 @@ internal sealed partial class StreamingFileImportService
         // Every load mode shares one staging name per logical target. Hold the historical
         // replace advisory lock for append and upsert too, so a concurrent replace cannot drop
         // an in-flight append's staging table or its live rows (#4003, SRV-IMP-008).
-        ImportAdvisoryLock? replaceLock = null;
+        ImportedDatasetSpatialMetadata.SessionLock? replaceLock = null;
         var dataCommitted = false;
         var appendUsesStaging = false;
         try
         {
-            replaceLock = await AcquireImportLockAsync(
+            replaceLock = await ImportedDatasetSpatialMetadata.AcquireSessionLockAsync(
                 connection,
                 targetSchema,
                 allowedTableName,
                 cancellationToken);
 
-            // The load mode determines which physical table the batches stream into and how
-            // the target is prepared:
-            //
-            //   * Replace — load into a fresh, empty <table>__staging sibling, then atomically
-            //     rename it over the live table after a fully successful load. This keeps replace
-            //     transactional: a failed/cancelled load never leaves a half-dropped target, which
-            //     the previous unconditional DROP+CREATE could not guarantee.
-            //   * Append  — create the live table only if missing (never drop). An importer-owned
-            //     target loads into the same staging sibling and merges with one INSERT...SELECT,
-            //     so a reader failure leaves the live table unchanged. A table the importer does
-            //     not own keeps the direct append path.
-            //   * Upsert  — create the live table if missing, ensure a unique key index over the
-            //     requested property keys, and stream through honua.upsert_import_feature so
-            //     colliding rows UPDATE in place and the rest insert, with no full drop.
-            //
-            // The batch load opens a RepeatableRead transaction whose snapshot is taken on the
-            // first statement; preparing the table here (autocommit, on the SAME connection)
-            // guarantees it is committed and visible before that snapshot.
-            string loadTableName;
-            var hadExistingTarget = false;
-            switch (loadMode)
-            {
-                case ImportLoadMode.Append:
-                    await EnsureTableAsync(connection, targetSchema, allowedTableName, request.TargetSrid, cancellationToken);
-                    if (await TargetIsImporterOwnedAsync(connection, targetSchema, allowedTableName, cancellationToken))
-                    {
-                        loadTableName = await CreateStagingTableAsync(
-                            connection, targetSchema, allowedTableName, request.TargetSrid, cancellationToken);
-                        appendUsesStaging = true;
-                    }
-                    else
-                    {
-                        loadTableName = allowedTableName;
-                    }
-
-                    break;
-                case ImportLoadMode.Upsert:
-                    await EnsureTableAsync(connection, targetSchema, allowedTableName, request.TargetSrid, cancellationToken);
-                    await EnsureUpsertKeyAsync(connection, targetSchema, allowedTableName, request.KeyColumns, cancellationToken);
-                    loadTableName = allowedTableName;
-                    break;
-                default:
-                    // Replace via transactional staging-table swap. Record whether a live
-                    // target already existed before this request: a first-ever replace into a
-                    // brand-new target has no prior complete dataset to protect (#4006), so it
-                    // must still promote if the load imported rows even if it dropped others.
-                    hadExistingTarget = await ImportTableExistsAsync(
-                        connection, targetSchema, allowedTableName, cancellationToken);
-                    loadTableName = await CreateStagingTableAsync(
-                        connection, targetSchema, allowedTableName, request.TargetSrid, cancellationToken);
-                    break;
-            }
-
-            if (request.CommitParticipant is not null
-                && loadMode != ImportLoadMode.Replace
-                && !(loadMode == ImportLoadMode.Append && appendUsesStaging))
-            {
-                throw new InvalidDataException(
-                    "This import must commit its receipt with the rows. The target is not an importer-owned table.");
-            }
+            var target = await PrepareImportTargetAsync(
+                connection, request, targetSchema, allowedTableName, coordinateEpoch, cancellationToken);
+            var loadTableName = target.LoadTableName;
+            var hadExistingTarget = target.HadExistingTarget;
+            appendUsesStaging = target.AppendUsesStaging;
+            var directGuard = loadMode == ImportLoadMode.Replace || appendUsesStaging
+                ? null
+                : new DirectImportGuard(target.LiveIdentity!.Value, coordinateEpoch);
 
             // A Replace load streams into a <table>__staging sibling (loadTableName) rather than
             // the live table. Before this try, the only path that ever reclaimed that sibling on
@@ -140,7 +89,6 @@ internal sealed partial class StreamingFileImportService
                 var batch = new List<IFeature>(_limits.BatchSize);
                 var totalImported = 0;
                 var totalFailed = 0;
-                var nullGeometrySkipped = 0;
                 var batchesCommitted = 0;
                 var repairTally = new GeometryRepairTally();
                 var startTime = DateTimeOffset.UtcNow;
@@ -179,15 +127,6 @@ internal sealed partial class StreamingFileImportService
 
                 await foreach (var feature in featureStream.WithCancellation(cancellationToken))
                 {
-                    // GeoParquet: skip rows with null geometry and count them as failures
-                    // per design decision "Null geometry rows | Skip, count" (ticket #423).
-                    if (format == SupportedFileFormat.GeoParquet && feature.Geometry == null)
-                    {
-                        totalFailed++;
-                        nullGeometrySkipped++;
-                        continue;
-                    }
-
                     // FileGDB included: the resolved/explicit source SRID must win over whatever the
                     // reader's geometry factory carried (#6114). CSV is the exception: an EWKT/EWKB
                     // value already carries its own SRID, and stamping the 4326 default here stored
@@ -214,7 +153,8 @@ internal sealed partial class StreamingFileImportService
                             loadMode,
                             request.KeyColumns,
                             repairTally,
-                            cancellationToken);
+                            cancellationToken,
+                            directGuard);
 
                         totalImported += imported;
                         totalFailed += failed;
@@ -264,7 +204,8 @@ internal sealed partial class StreamingFileImportService
                         loadMode,
                         request.KeyColumns,
                         repairTally,
-                        cancellationToken);
+                        cancellationToken,
+                        directGuard);
 
                     totalImported += imported;
                     totalFailed += failed;
@@ -311,6 +252,9 @@ internal sealed partial class StreamingFileImportService
                             allowedTableName,
                             totalImported,
                             request.CommitParticipant,
+                            request.TargetSrid,
+                            coordinateEpoch,
+                            target.LiveIdentity,
                             CancellationToken.None);
                         dataCommitted = true;
                     }
@@ -330,6 +274,9 @@ internal sealed partial class StreamingFileImportService
                             loadTableName,
                             totalImported,
                             request.CommitParticipant,
+                            request.TargetSrid,
+                            coordinateEpoch,
+                            target.LiveIdentity,
                             CancellationToken.None);
                         dataCommitted = true;
                     }
@@ -341,14 +288,8 @@ internal sealed partial class StreamingFileImportService
                     dataCommitted = true;
                 }
 
-                // Surface skipped null-geometry rows in the completion progress report
-                // so background/queued imports expose the same warning as synchronous results.
                 var completionWarningsBuilder = new List<string>(warnings.Length + 2);
                 completionWarningsBuilder.AddRange(warnings);
-                if (format == SupportedFileFormat.GeoParquet && nullGeometrySkipped > 0)
-                {
-                    completionWarningsBuilder.Add(string.Format(null, _nullGeometryWarningFormat, nullGeometrySkipped));
-                }
 
                 if (csvGeometryDiagnostics is { UnparseableGeometryRows: > 0 })
                 {

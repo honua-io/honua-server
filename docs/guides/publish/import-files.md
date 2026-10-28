@@ -98,7 +98,24 @@ A synchronous import returns the result inline; a completed background job retur
 | CSV | `.csv` | Needs lon/lat columns or a WKT geometry column. |
 | FlatGeobuf | `.fgb` | Upload directly, no archive. CRS read from the header; if absent, `sourceSrid` is required or the import is rejected. |
 | FileGDB | `.gdb.zip` | Zip exactly one `.gdb` directory with its internal files intact (do not flatten). SRID detected from geodatabase metadata when present. One target table per request — per-layer selection is not exposed. Domains, relationship classes, subtypes, topology rules, and network datasets are detected but not imported; they surface in `warnings`. |
-| GeoParquet | `.parquet`, `.geoparquet` | CRS read from the GeoParquet `geo` metadata. Requires WKB geometry encoding; nested columns are skipped with warnings; rows with null geometry are skipped and reported; Parquet row groups are streamed one group at a time. |
+| GeoParquet | `.parquet`, `.geoparquet` | GeoParquet 1.0.0/1.1.0 with one WKB geometry column and planar edges. Null-geometry rows retain their attributes. See the [input contract and outstanding fidelity work](#geoparquet-input-contract). |
+
+### GeoParquet input contract
+
+Preview and import validate the required `version`, `primary_column`, per-column `encoding`, and `geometry_types` metadata. The primary geometry name must match the Parquet column exactly, including case. Unknown extension metadata does not substitute for required fields. UTF-8 `geo` metadata is limited to 1 MiB, each explicit CRS definition to 256 KiB, and JSON nesting to 32 levels.
+
+Only WKB geometry encoding is currently accepted. GeoParquet 1.1 native geometry encodings are valid format options but are unsupported by this importer; diagnostics for native geometries stored as nested Parquet structures remain under verification in [#6715](https://github.com/honua-io/honua-server/issues/6715). Multiple geometry columns are refused before import writes or preview sampling, rather than discarding secondary geometries. Explicit `edges: "spherical"` is also refused; omitted edges mean `planar`, and malformed edge values are rejected.
+
+An explicit `crs` must be a structurally valid, complete PROJJSON CRS definition that resolves to a supported canonical storage CRS. An authority identifier alone, legacy GeoJSON `crs.properties.name`, or an identifier conflicting with the definition is rejected. A valid definition that cannot be resolved produces an unsupported-CRS diagnostic. Omitting `crs` means OGC:CRS84 (longitude, latitude), stored as SRID 4326. Explicit `crs: null` means unknown CRS and requires an operator-supplied `sourceSrid`; `targetSrid` does not establish the source CRS.
+
+Rows with null geometry remain rows: their attributes are included in preview and import. Parquet row groups are read one at a time, subject to the configured memory budget.
+
+The following fidelity work remains open; the current importer is not a lossless route for these inputs:
+
+- Nested struct/list/map reconstruction is being validated in [#6717](https://github.com/honua-io/honua-server/issues/6717), including null-versus-empty containers, temporal/decimal precision, memory bounds, and native runtime qualification. Complete-source validation before any writes remains outstanding; unsupported values in a later row group must not be treated as an atomic import failure until that work is complete.
+- Coordinate epochs are not yet retained through import, publication, and export. Durable epoch metadata and validation of append/upsert conflicts are tracked in [#6720](https://github.com/honua-io/honua-server/issues/6720).
+- Stored Cartesian coverage of planar polygons crossing the antimeridian remains under verification in [#6713](https://github.com/honua-io/honua-server/issues/6713). Accepting planar metadata alone does not prove storage fidelity.
+- Declared empty-geometry dimensions and explicit refusal of measured WKB remain under verification in [#6717](https://github.com/honua-io/honua-server/issues/6717) and [#6715](https://github.com/honua-io/honua-server/issues/6715). GeoParquet permits XY/XYZ geometries; measured and nonlinear WKB are outside its geometry subset.
 
 When the server cannot detect a source CRS and no `sourceSrid` was supplied, the import fails with the stable error code `import.source_srid_required`.
 

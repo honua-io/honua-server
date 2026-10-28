@@ -23,11 +23,18 @@
       Honua.Geometry depends on Honua.Core / Honua.Core.Abstractions; Honua.Core
       MUST NOT reference back.
     -->
+    <PackageReference Include="Corvus.Text.Json" />
     <PackageReference Include="FlatGeobuf" />
     <PackageReference Include="NetTopologySuite" />
     <PackageReference Include="NetTopologySuite.IO.GeoJSON" />
     <PackageReference Include="Parquet.Net" />
+    <PackageReference Include="ParquetSharp" />
+    <PackageReference Include="Apache.Arrow" />
     <PackageReference Include="Snappier" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Features/FileImport/Resources/projjson-v0.7.schema.json" />
   </ItemGroup>
 
   <ItemGroup>

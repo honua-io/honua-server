@@ -43,7 +43,7 @@
     <None Update="Source\FeatureServer\Services\Conformance\geoparquet-v1.1.0.schema.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Update="Source\FeatureServer\Services\Conformance\projjson-v0.7.schema.json">
+    <None Include="../../../src/Honua.Geometry/Features/FileImport/Resources/projjson-v0.7.schema.json" Link="Source/FeatureServer/Services/Conformance/projjson-v0.7.schema.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>

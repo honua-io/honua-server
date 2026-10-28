@@ -272,6 +272,7 @@ internal sealed partial class ImportDatasetJobExecutor : IProcessExecutor
                 PrimaryKey = ImportTablePrimaryKey,
                 Fields = ImportTableFields,
                 Srid = detectedSrid,
+                StorageCrsCoordinateEpoch = importResult.StorageCrsCoordinateEpoch,
                 ServiceName = request.ServiceName,
                 ConnectionId = Guid.TryParse(request.ConnectionRef, out var pubConnectionId)
                     ? pubConnectionId

@@ -89,6 +89,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         string? resourceGeometryColumn,
         string geometryType,
         int srid,
+        double? storageCoordinateEpoch,
         IReadOnlyList<LayerFieldInsert> fields,
         LayerExtentInsert? extent,
         IReadOnlyList<string> capabilities,
@@ -104,6 +105,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             resourceGeometryColumn,
             geometryType,
             srid,
+            storageCoordinateEpoch,
             fields,
             extent,
             capabilities,
@@ -120,6 +122,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         string? resourceGeometryColumn,
         string geometryType,
         int srid,
+        double? storageCoordinateEpoch,
         IReadOnlyList<LayerFieldInsert> fields,
         LayerExtentInsert? extent,
         IReadOnlyList<string> capabilities,
@@ -146,6 +149,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             geometryType,
             srid,
             storage.StorageSrid,
+            storageCoordinateEpoch,
             fields,
             extent,
             now);
@@ -3289,6 +3293,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         string geometryType,
         int srid,
         int storageSrid,
+        double? storageCoordinateEpoch,
         IReadOnlyList<LayerFieldInsert> fields,
         LayerExtentInsert? extent,
         DateTimeOffset now)
@@ -3336,7 +3341,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
                     }
                     : null,
                 PrimaryGeometryField = geometryColumn,
-                StorageCrs = CreateSpatialReference(storageSrid)
+                StorageCrs = CreateSpatialReference(storageSrid),
+                StorageCrsCoordinateEpoch = storageCoordinateEpoch
             },
             Display = new MetadataV2ResourceDisplay
             {

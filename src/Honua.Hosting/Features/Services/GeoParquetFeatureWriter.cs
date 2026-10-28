@@ -99,6 +99,7 @@ public static partial class GeoParquetFeatureWriter
 
         // Resolve (and thereby validate) the output-CRS PROJJSON up-front so a non-resolvable
         // SRID fails fast with a precise error before any geometry encoding work happens.
+        _ = ResolveCoordinateEpoch(resource, includeGeometry, srid);
         _ = ResolveGeoParquetCrsProjJson(includeGeometry, srid);
         EnsureSupportedCloudNativeGeometryMeasures(includeGeometry, returnM, "GeoParquet");
 
@@ -380,6 +381,10 @@ public static partial class GeoParquetFeatureWriter
         // the exact CRS. Coordinates in the WKB stay in (x, y) order per the GeoParquet spec,
         // which overrides the CRS axis order, so no coordinate swap is applied.
         var crsPart = crsProjJson is null ? string.Empty : $@",""crs"":{crsProjJson}";
+        var coordinateEpoch = ResolveCoordinateEpoch(resource, includeGeometry: true, srid);
+        var epochPart = coordinateEpoch.HasValue
+            ? $@",""epoch"":{coordinateEpoch.Value.ToString("R", CultureInfo.InvariantCulture)}"
+            : string.Empty;
 
         // GeoParquet 1.1 "covering" declares the per-row bbox column used for spatial pruning.
         // The paths point at the fields of the emitted `bbox` struct column so a reader can map
@@ -387,11 +392,25 @@ public static partial class GeoParquetFeatureWriter
         var coveringPart = includeCovering
             ? $@",""covering"":{{""bbox"":{{""{BboxXMinFieldName}"":[""{bboxColumnName}"",""{BboxXMinFieldName}""],""{BboxYMinFieldName}"":[""{bboxColumnName}"",""{BboxYMinFieldName}""],""{BboxXMaxFieldName}"":[""{bboxColumnName}"",""{BboxXMaxFieldName}""],""{BboxYMaxFieldName}"":[""{bboxColumnName}"",""{BboxYMaxFieldName}""]}}}}"
             : string.Empty;
-        var geoJson = $@"{{""version"":""{GeoParquetVersion}"",""primary_column"":""{geometryColumnName}"",""columns"":{{""{geometryColumnName}"":{{""encoding"":""{GeometryEncoding}"",""geometry_types"":{geometryTypesPart}{crsPart}{coveringPart}}}}}}}";
+        var geoJson = $@"{{""version"":""{GeoParquetVersion}"",""primary_column"":""{geometryColumnName}"",""columns"":{{""{geometryColumnName}"":{{""encoding"":""{GeometryEncoding}"",""geometry_types"":{geometryTypesPart}{crsPart}{epochPart}{coveringPart}}}}}}}";
 
         metadata[GeoMetadataKey] = geoJson;
 
         return metadata;
+    }
+
+    private static double? ResolveCoordinateEpoch(MetadataV2Resource resource, bool includeGeometry, int outputSrid)
+    {
+        if (!includeGeometry || resource.Spatial?.StorageCrsCoordinateEpoch is not { } epoch)
+        {
+            return null;
+        }
+        if (!double.IsFinite(epoch) || resource.Spatial.StorageCrs?.ResolveSrid() != outputSrid)
+        {
+            throw new InvalidOperationException(
+                "GeoParquet coordinate epoch requires finite metadata and output in its storage CRS; epoch-aware CRS transformation is not supported.");
+        }
+        return epoch;
     }
 
     /// <summary>

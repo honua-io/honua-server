@@ -76,8 +76,6 @@ internal sealed partial class StreamingFileImportService : IFileImportService
     private static readonly string _kmzScratchRoot = Path.Join(Path.GetTempPath(), "honua-kmz");
     private static readonly string _fileGdbScratchRoot = Path.Join(Path.GetTempPath(), "honua-filegdb");
     private static readonly string _geoParquetScratchRoot = Path.Join(Path.GetTempPath(), "honua-geoparquet");
-    private static readonly CompositeFormat _nullGeometryWarningFormat =
-        CompositeFormat.Parse("{0} row(s) were skipped because geometry was null.");
     private static readonly CompositeFormat _partialImportWarningFormat =
         CompositeFormat.Parse("{0} row(s) failed while continue-on-error was enabled; previously imported rows were retained.");
     private static readonly CompositeFormat _csvUnparseableGeometryWarningFormat =
@@ -307,6 +305,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         KmzScratch? kmzScratch = null;
         FileGdbScratch? fileGdbScratch = null;
         GeoParquetScratch? geoParquetScratch = null;
+        double? coordinateEpoch = null;
         FileStream? fgbTempStream = null;
 
         ImportLog.ImportStarted(_logger, jobId, request.TableName, formatName, mode, totalBytes);
@@ -444,6 +443,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 }
 
                 detectedSrid = prep.DetectedSrid;
+                coordinateEpoch = prep.CoordinateEpoch;
 
                 // If scratch created a new stream (non-seekable input), dispose the original
                 if (geoParquetScratch!.ScratchDir != null && shouldDisposeStream)
@@ -525,6 +525,15 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                     ImportValidationErrorCodes.SourceSridRequired,
                     validationErrors);
                 return result;
+            }
+
+            if (coordinateEpoch.HasValue &&
+                (!detectedSrid.HasValue || sourceSrid.Value != request.TargetSrid ||
+                 sourceSrid.Value != detectedSrid.Value))
+            {
+                return ImportResult.CreateFailure(request.TableName, format.Value,
+                    "Coordinate epoch requires a known source CRS and cannot be preserved through this CRS override or transformation; use the source storage CRS.",
+                    stopwatch.Elapsed, warnings);
             }
 
             var sridValidationErrors = await ValidateImportSridsAsync(
@@ -615,7 +624,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 jobId,
                 cancellationToken,
                 shapefileScratch,
-                fileGdbScratch);
+                fileGdbScratch,
+                coordinateEpoch);
 
             // A replace whose load dropped rows against an already-populated target never
             // promoted its staging sibling (see ImportStreamingAsync) — the live target is
@@ -674,6 +684,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 schema: ResolveTargetSchema(request.TargetSchema),
                 repairedGeometryCount: repairedCount) with
             {
+                StorageCrsCoordinateEpoch = coordinateEpoch,
                 // Per-row issues (e.g. CSV address rows that failed to geocode, or GeoJSON
                 // geometries repaired by the validity gate) that did not block the import but should
                 // be relayed to the caller alongside the warnings.

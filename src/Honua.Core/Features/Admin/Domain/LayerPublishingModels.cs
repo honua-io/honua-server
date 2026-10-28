@@ -66,6 +66,9 @@ public sealed class LayerPublishRequest
     /// </summary>
     public int? Srid { get; init; }
 
+    /// <summary>Optional imported storage epoch hint, verified against durable source metadata before publication.</summary>
+    public double? StorageCrsCoordinateEpoch { get; init; }
+
     /// <summary>
     /// Primary key column name.
     /// </summary>

@@ -423,15 +423,13 @@ internal sealed partial class PostgreSqlLayerPublishingService
     }
 
     private static async Task<GeometryHealth?> InspectGeometryHealthAsync(
-        string connectionString,
+        NpgsqlConnection connection,
         string schema,
         string table,
         string geometryColumn,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        NpgsqlTransaction? transaction = null)
     {
-        await using var connection = new NpgsqlConnection(connectionString);
-        await connection.OpenAsync(cancellationToken);
-
         var sourceTable = $"{QuoteIdentifier(schema)}.{QuoteIdentifier(table)}";
         var sourceGeometry = QuoteIdentifier(geometryColumn);
         var sql = $"""
@@ -449,7 +447,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             FROM source;
             """;
 
-        await using var command = new NpgsqlCommand(sql, connection);
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
         {
@@ -466,15 +464,13 @@ internal sealed partial class PostgreSqlLayerPublishingService
     }
 
     private static async Task AddExistingLayerCheckAsync(
-        string connectionString,
+        NpgsqlConnection connection,
         string schema,
         string table,
         List<TablePublishValidationCheck> checks,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        NpgsqlTransaction? transaction = null)
     {
-        await using var connection = new NpgsqlConnection(connectionString);
-        await connection.OpenAsync(cancellationToken);
-
         if (!await HonuaTableExistsAsync(connection, "layers", cancellationToken).ConfigureAwait(false))
         {
             return;
@@ -488,7 +484,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             LIMIT 1;
             """;
 
-        await using var command = new NpgsqlCommand(sql, connection);
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
         command.Parameters.AddWithValue("@schema", schema);
         command.Parameters.AddWithValue("@table", table);
         var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);

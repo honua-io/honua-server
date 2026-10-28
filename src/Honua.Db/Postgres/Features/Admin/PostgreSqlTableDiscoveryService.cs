@@ -98,6 +98,13 @@ internal sealed class PostgreSqlTableDiscoveryService(
         ArgumentNullException.ThrowIfNull(connection);
         var postgres = connection.RequireNpgsqlConnection();
 
+        return await DiscoverNonSpatialTableAsync(postgres, schema, table, null, cancellationToken).ConfigureAwait(false);
+    }
+
+    internal async Task<TableInfo?> DiscoverNonSpatialTableAsync(
+        NpgsqlConnection postgres, string schema, string table,
+        NpgsqlTransaction? transaction, CancellationToken cancellationToken)
+    {
         const string sql = """
             SELECT table_schema, table_name
             FROM information_schema.tables AS tables
@@ -113,7 +120,7 @@ internal sealed class PostgreSqlTableDiscoveryService(
                     AND columns.table_name = tables.table_name
                     AND columns.udt_name IN ('geometry', 'geography'));
             """;
-        await using (var command = new NpgsqlCommand(sql, postgres))
+        await using (var command = new NpgsqlCommand(sql, postgres, transaction))
         {
             command.Parameters.AddWithValue("schema", schema);
             command.Parameters.AddWithValue("table", table);
@@ -129,8 +136,8 @@ internal sealed class PostgreSqlTableDiscoveryService(
         {
             Schema = schema,
             Table = table,
-            EstimatedRows = await GetEstimatedRowCountAsync(postgres, schema, table, cancellationToken).ConfigureAwait(false),
-            Columns = await GetTableColumnsAsync(postgres, schema, table, cancellationToken).ConfigureAwait(false)
+            EstimatedRows = await GetEstimatedRowCountAsync(postgres, schema, table, cancellationToken, transaction).ConfigureAwait(false),
+            Columns = await GetTableColumnsAsync(postgres, schema, table, cancellationToken, transaction).ConfigureAwait(false)
         };
     }
 
@@ -246,76 +253,7 @@ internal sealed class PostgreSqlTableDiscoveryService(
 
             await SchemaSearchPath.ApplyAsync(connection, _schemaContext?.CurrentSchema, cancellationToken: cancellationToken).ConfigureAwait(false);
 
-            var discoverySchemas = CommittedSinkSchemaGate.DiscoverySchemas(
-                _schemaConfiguration, _schemaContext?.CurrentSchema, schema);
-            const string sql = """
-                SELECT
-                    f_table_schema as schema,
-                    f_table_name as table_name,
-                    f_geometry_column as geometry_column,
-                    type as geometry_type,
-                    srid
-                FROM geometry_columns
-                WHERE f_table_schema = @schema
-                  AND lower(f_table_name) = lower(@table)
-                  AND f_table_schema <> ALL(@metadataSchemas)
-                  AND f_table_name NOT LIKE '\_\_honua\_wfs\_stage\_%' ESCAPE '\'
-                  AND f_table_schema = ANY(@discoverySchemas)
-
-                UNION ALL
-
-                SELECT
-                    f_table_schema as schema,
-                    f_table_name as table_name,
-                    f_geography_column as geometry_column,
-                    type as geometry_type,
-                    srid
-                FROM geography_columns
-                WHERE f_table_schema = @schema
-                  AND lower(f_table_name) = lower(@table)
-                  AND f_table_schema <> ALL(@metadataSchemas)
-                  AND f_table_name NOT LIKE '\_\_honua\_wfs\_stage\_%' ESCAPE '\'
-                  AND f_table_schema = ANY(@discoverySchemas)
-
-                LIMIT 1
-                """;
-
-            string resolvedSchema;
-            string resolvedTable;
-            string geometryColumn;
-            string geometryType;
-            int srid;
-
-            await using (var command = new NpgsqlCommand(sql, connection))
-            {
-                _ = command.Parameters.AddWithValue("schema", schema);
-                _ = command.Parameters.AddWithValue("table", table);
-                command.Parameters.Add("discoverySchemas", NpgsqlDbType.Array | NpgsqlDbType.Text).Value = discoverySchemas.ToArray();
-                command.Parameters.Add("metadataSchemas", NpgsqlDbType.Array | NpgsqlDbType.Text).Value = _schemaConfiguration.MetadataSchemas.ToArray();
-
-                await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-                if (!await reader.ReadAsync(cancellationToken))
-                {
-                    return null;
-                }
-
-                resolvedSchema = reader.GetString(0);
-                resolvedTable = reader.GetString(1);
-                geometryColumn = reader.GetString(2);
-                geometryType = reader.GetString(3);
-                srid = reader.GetInt32(4);
-            }
-
-            return new TableInfo
-            {
-                Schema = resolvedSchema,
-                Table = resolvedTable,
-                GeometryColumn = geometryColumn,
-                GeometryType = geometryType,
-                Srid = srid,
-                EstimatedRows = await GetEstimatedRowCountAsync(connection, resolvedSchema, resolvedTable, cancellationToken),
-                Columns = await GetTableColumnsAsync(connection, resolvedSchema, resolvedTable, cancellationToken)
-            };
+            return await DiscoverPostGisTableAsync(connection, schema, table, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -328,6 +266,86 @@ internal sealed class PostgreSqlTableDiscoveryService(
         }
     }
 
+    internal async Task<TableInfo?> DiscoverPostGisTableAsync(
+        NpgsqlConnection connection, string schema, string table,
+        CancellationToken cancellationToken, NpgsqlTransaction? transaction = null)
+    {
+        if (!CommittedSinkSchemaGate.Allows(_schemaConfiguration, _schemaContext?.CurrentSchema, schema))
+        {
+            return null;
+        }
+        var discoverySchemas = CommittedSinkSchemaGate.DiscoverySchemas(
+            _schemaConfiguration, _schemaContext?.CurrentSchema, schema);
+        const string sql = """
+            SELECT
+                f_table_schema as schema,
+                f_table_name as table_name,
+                f_geometry_column as geometry_column,
+                type as geometry_type,
+                srid
+            FROM geometry_columns
+            WHERE f_table_schema = @schema
+              AND lower(f_table_name) = lower(@table)
+              AND f_table_schema <> ALL(@metadataSchemas)
+              AND f_table_name NOT LIKE '\_\_honua\_wfs\_stage\_%' ESCAPE '\'
+              AND f_table_schema = ANY(@discoverySchemas)
+
+            UNION ALL
+
+            SELECT
+                f_table_schema as schema,
+                f_table_name as table_name,
+                f_geography_column as geometry_column,
+                type as geometry_type,
+                srid
+            FROM geography_columns
+            WHERE f_table_schema = @schema
+              AND lower(f_table_name) = lower(@table)
+              AND f_table_schema <> ALL(@metadataSchemas)
+              AND f_table_name NOT LIKE '\_\_honua\_wfs\_stage\_%' ESCAPE '\'
+              AND f_table_schema = ANY(@discoverySchemas)
+
+            LIMIT 1
+            """;
+
+        string resolvedSchema;
+        string resolvedTable;
+        string geometryColumn;
+        string geometryType;
+        int srid;
+
+        await using (var command = new NpgsqlCommand(sql, connection, transaction))
+        {
+            _ = command.Parameters.AddWithValue("schema", schema);
+            _ = command.Parameters.AddWithValue("table", table);
+            command.Parameters.Add("discoverySchemas", NpgsqlDbType.Array | NpgsqlDbType.Text).Value = discoverySchemas.ToArray();
+            command.Parameters.Add("metadataSchemas", NpgsqlDbType.Array | NpgsqlDbType.Text).Value = _schemaConfiguration.MetadataSchemas.ToArray();
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            if (!await reader.ReadAsync(cancellationToken))
+            {
+                return null;
+            }
+
+            resolvedSchema = reader.GetString(0);
+            resolvedTable = reader.GetString(1);
+            geometryColumn = reader.GetString(2);
+            geometryType = reader.GetString(3);
+            srid = reader.GetInt32(4);
+        }
+
+        return new TableInfo
+        {
+            Schema = resolvedSchema,
+            Table = resolvedTable,
+            GeometryColumn = geometryColumn,
+            GeometryType = geometryType,
+            Srid = srid,
+            EstimatedRows = await GetEstimatedRowCountAsync(connection, resolvedSchema, resolvedTable, cancellationToken, transaction),
+            Columns = await GetTableColumnsAsync(connection, resolvedSchema, resolvedTable, cancellationToken, transaction)
+        };
+    }
+
     /// <summary>
     /// Get estimated row count for a table using PostgreSQL statistics.
     /// </summary>
@@ -335,7 +353,8 @@ internal sealed class PostgreSqlTableDiscoveryService(
         NpgsqlConnection connection,
         string schema,
         string tableName,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        NpgsqlTransaction? transaction = null)
     {
         try
         {
@@ -346,7 +365,7 @@ internal sealed class PostgreSqlTableDiscoveryService(
                 WHERE n.nspname = @schema AND c.relname = @tableName
                 """;
 
-            await using var command = new NpgsqlCommand(sql, connection);
+            await using var command = new NpgsqlCommand(sql, connection, transaction);
             _ = command.Parameters.AddWithValue("schema", schema);
             _ = command.Parameters.AddWithValue("tableName", tableName);
 
@@ -373,7 +392,8 @@ internal sealed class PostgreSqlTableDiscoveryService(
         NpgsqlConnection connection,
         string schema,
         string tableName,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        NpgsqlTransaction? transaction = null)
     {
         var columns = new List<ColumnInfo>();
 
@@ -404,7 +424,7 @@ internal sealed class PostgreSqlTableDiscoveryService(
                 ORDER BY c.ordinal_position
                 """;
 
-            await using var command = new NpgsqlCommand(sql, connection);
+            await using var command = new NpgsqlCommand(sql, connection, transaction);
             _ = command.Parameters.AddWithValue("schema", schema);
             _ = command.Parameters.AddWithValue("tableName", tableName);
 

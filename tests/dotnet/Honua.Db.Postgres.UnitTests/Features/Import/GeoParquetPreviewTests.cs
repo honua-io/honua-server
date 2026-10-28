@@ -8,6 +8,7 @@ using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.FileImport.Domain;
 using Honua.TestKit;
+using Honua.TestKit.Attributes;
 using Honua.TestKit.Infrastructure;
 
 namespace Honua.Db.Postgres.Tests.Features.Import;
@@ -15,7 +16,7 @@ namespace Honua.Db.Postgres.Tests.Features.Import;
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class GeoParquetPreviewTests
 {
-    [Fact]
+    [UnitTest]
     public async Task PreviewFileAsync_GeoParquet_ReturnsPreviewMetadata()
     {
         await using var stream = await GeoParquetTestFactory.CreateStreamAsync();
@@ -30,7 +31,7 @@ public sealed class GeoParquetPreviewTests
         preview.SampleProperties["name"].Should().Be("Test Feature");
     }
 
-    [Fact]
+    [UnitTest]
     public async Task PreviewFileAsync_GeoParquet_NoCrsKey_DefaultsToSrid4326()
     {
         await using var stream = await GeoParquetTestFactory.CreateStreamAsync(crs: GeoParquetTestFactory.CrsStyle.Omitted);
@@ -43,7 +44,7 @@ public sealed class GeoParquetPreviewTests
         preview.TotalFeatureCount.Should().Be(1);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task PreviewFileAsync_GeoParquet_ExplicitNullCrs_ReturnsNullSrid()
     {
         await using var stream = await GeoParquetTestFactory.CreateStreamAsync(crs: GeoParquetTestFactory.CrsStyle.ExplicitNull);
@@ -56,7 +57,7 @@ public sealed class GeoParquetPreviewTests
         preview.TotalFeatureCount.Should().Be(1);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task PreviewFileAsync_GeoParquet_OgcCrs84ProjJson_DefaultsToSrid4326()
     {
         await using var stream = await GeoParquetTestFactory.CreateStreamAsync(crs: GeoParquetTestFactory.CrsStyle.OgcCrs84ProjJson);
@@ -69,23 +70,20 @@ public sealed class GeoParquetPreviewTests
         preview.TotalFeatureCount.Should().Be(1);
     }
 
-    [Fact]
-    public async Task PreviewFileAsync_GeoParquet_OgcCrs84PropertiesName_DefaultsToSrid4326()
+    [UnitTheory]
+    [InlineData(GeoParquetTestFactory.CrsStyle.PropertiesName)]
+    [InlineData(GeoParquetTestFactory.CrsStyle.OgcCrs84PropertiesName)]
+    public async Task PreviewFileAsync_GeoParquet_LegacyGeoJsonCrs_RejectsMalformedProjJson(GeoParquetTestFactory.CrsStyle style)
     {
-        await using var stream = await GeoParquetTestFactory.CreateStreamAsync(crs: GeoParquetTestFactory.CrsStyle.OgcCrs84PropertiesName);
-        var service = CreateService();
-
-        var preview = await service.PreviewFileAsync(stream, "ogc_crs84_propname.parquet");
-
-        preview.Format.Should().Be(SupportedFileFormat.GeoParquet);
-        preview.DetectedSrid.Should().Be(4326);
-        preview.TotalFeatureCount.Should().Be(1);
+        await using var stream = await GeoParquetTestFactory.CreateStreamAsync(crs: style);
+        var act = () => CreateService().PreviewFileAsync(stream, "legacy-crs.parquet");
+        await act.Should().ThrowAsync<InvalidDataException>().WithMessage("*PROJJSON*");
     }
 
-    [Fact]
-    public async Task PreviewFileAsync_GeoParquet_DecimalEpsgCode_FallsBackToNullSrid()
+    [UnitTest]
+    public async Task PreviewFileAsync_GeoParquet_DecimalEpsgCode_RejectsMalformedProjJson()
     {
-        // CRS with decimal EPSG code (4326.5) — not a valid integer, should fall through gracefully
+        // An identifier-only object cannot establish a valid source CRS.
         var crs = new Dictionary<string, object?>(StringComparer.Ordinal)
         {
             ["id"] = new Dictionary<string, object?>(StringComparer.Ordinal)
@@ -97,17 +95,14 @@ public sealed class GeoParquetPreviewTests
         await using var stream = await GeoParquetTestFactory.CreateWithCustomCrsAsync(crs);
         var service = CreateService();
 
-        var preview = await service.PreviewFileAsync(stream, "decimal_crs.parquet");
-
-        preview.Format.Should().Be(SupportedFileFormat.GeoParquet);
-        preview.DetectedSrid.Should().BeNull();
-        preview.TotalFeatureCount.Should().Be(1);
+        var act = () => service.PreviewFileAsync(stream, "decimal_crs.parquet");
+        await act.Should().ThrowAsync<InvalidDataException>().WithMessage("*PROJJSON*");
     }
 
-    [Fact]
-    public async Task PreviewFileAsync_GeoParquet_OutOfRangeEpsgCode_FallsBackToNullSrid()
+    [UnitTest]
+    public async Task PreviewFileAsync_GeoParquet_OutOfRangeEpsgCode_RejectsMalformedProjJson()
     {
-        // CRS with huge EPSG code exceeding Int32 range — should fall through gracefully
+        // Out-of-range identifiers cannot substitute for a complete CRS definition.
         var crs = new Dictionary<string, object?>(StringComparer.Ordinal)
         {
             ["id"] = new Dictionary<string, object?>(StringComparer.Ordinal)
@@ -119,14 +114,11 @@ public sealed class GeoParquetPreviewTests
         await using var stream = await GeoParquetTestFactory.CreateWithCustomCrsAsync(crs);
         var service = CreateService();
 
-        var preview = await service.PreviewFileAsync(stream, "huge_crs.parquet");
-
-        preview.Format.Should().Be(SupportedFileFormat.GeoParquet);
-        preview.DetectedSrid.Should().BeNull();
-        preview.TotalFeatureCount.Should().Be(1);
+        var act = () => service.PreviewFileAsync(stream, "huge_crs.parquet");
+        await act.Should().ThrowAsync<InvalidDataException>().WithMessage("*PROJJSON*");
     }
 
-    [Fact]
+    [UnitTest]
     public async Task PreviewFileAsync_GeoParquet_NonWkbEncoding_ThrowsNotSupportedException()
     {
         await using var stream = await GeoParquetTestFactory.CreateStreamAsync(encoding: "point");
@@ -138,23 +130,17 @@ public sealed class GeoParquetPreviewTests
             .WithMessage("*supports only WKB geometry encoding*");
     }
 
-    [Fact]
-    public async Task PreviewFileAsync_GeoParquet_SecondaryGeometryColumn_ExcludedFromProperties()
+    [UnitTest]
+    public async Task PreviewFileAsync_GeoParquet_SecondaryGeometryColumn_RejectsLossyPreview()
     {
         await using var stream = await GeoParquetTestFactory.CreateWithSecondaryGeometryAsync();
         var service = CreateService();
+        var act = () => service.PreviewFileAsync(stream, "multi_geom.parquet");
 
-        var preview = await service.PreviewFileAsync(stream, "multi_geom.parquet");
-
-        preview.Format.Should().Be(SupportedFileFormat.GeoParquet);
-        preview.TotalFeatureCount.Should().Be(1);
-        preview.SampleProperties.Should().ContainKey("name");
-        preview.SampleProperties.Should().NotContainKey("geometry");
-        preview.SampleProperties.Should().NotContainKey("geometry2");
-        preview.Warnings.Should().Contain(w => w.Contains("multiple geometry columns"));
+        await act.Should().ThrowAsync<NotSupportedException>().WithMessage("*multiple geometry columns*");
     }
 
-    [Fact]
+    [UnitTest]
     public async Task PreviewFileAsync_GeoParquet_MalformedGeoJson_ThrowsInvalidDataException()
     {
         await using var stream = await GeoParquetTestFactory.CreateWithMalformedMetadataAsync();
@@ -166,7 +152,7 @@ public sealed class GeoParquetPreviewTests
             .WithMessage("*malformed*");
     }
 
-    [Fact]
+    [UnitTest]
     public async Task PreviewFileAsync_GeoParquet_NoGeoMetadataKey_ThrowsInvalidDataException()
     {
         await using var stream = await GeoParquetTestFactory.CreateWithoutGeoMetadataAsync();
@@ -178,7 +164,7 @@ public sealed class GeoParquetPreviewTests
             .WithMessage("*missing required*geo*");
     }
 
-    [Fact]
+    [UnitTest]
     public async Task PreviewFileAsync_GeoParquet_WrongShapedMetadata_ThrowsInvalidDataException()
     {
         await using var stream = await GeoParquetTestFactory.CreateWithWrongShapedMetadataAsync();
@@ -190,7 +176,7 @@ public sealed class GeoParquetPreviewTests
             .WithMessage("*unexpected structure*");
     }
 
-    [Fact]
+    [UnitTest]
     public async Task PreviewFileAsync_GeoParquet_TotalFeatureCount_ReflectsFullRowCount()
     {
         // Create a file with 5 rows but cap preview samples at 2.
@@ -205,7 +191,7 @@ public sealed class GeoParquetPreviewTests
         preview.TotalFeatureCount.Should().Be(5);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task PreviewFileAsync_GeoParquet_NullGeometryRow_ExcludedFromSamples()
     {
         // Row 1 has geometry, Row 2 has null geometry
@@ -221,7 +207,7 @@ public sealed class GeoParquetPreviewTests
         preview.SampleProperties.Should().ContainKey("name");
     }
 
-    [Fact]
+    [UnitTest]
     public async Task PreviewFileAsync_GeoParquet_TimeAndBinaryColumns_IncludedInSampleProperties()
     {
         await using var stream = await GeoParquetTestFactory.CreateWithTimeAndBinaryColumnsAsync();
@@ -236,7 +222,7 @@ public sealed class GeoParquetPreviewTests
         preview.SampleProperties.Should().ContainKey("thumbnail");
     }
 
-    [Fact]
+    [UnitTest]
     public async Task PreviewFileAsync_GeoParquet_Int16Column_IncludedInSampleProperties()
     {
         await using var stream = await GeoParquetTestFactory.CreateWithInt16ColumnAsync();
@@ -249,7 +235,7 @@ public sealed class GeoParquetPreviewTests
         preview.SampleProperties.Should().ContainKey("priority");
     }
 
-    [Fact]
+    [UnitTest]
     public async Task PreviewFileAsync_GeoParquet_ProjJsonStringEpsgCode_DetectsSrid4326()
     {
         await using var stream = await GeoParquetTestFactory.CreateStreamAsync(crs: GeoParquetTestFactory.CrsStyle.ProjJsonStringCode);
@@ -262,7 +248,7 @@ public sealed class GeoParquetPreviewTests
         preview.TotalFeatureCount.Should().Be(1);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task PreviewFileAsync_GeoParquet_MissingPrimaryColumn_ThrowsInvalidDataException()
     {
         await using var stream = await GeoParquetTestFactory.CreateWithMissingPrimaryColumnAsync();
@@ -274,7 +260,7 @@ public sealed class GeoParquetPreviewTests
             .WithMessage("*primary_column*");
     }
 
-    [Fact]
+    [UnitTest]
     public async Task PreviewFileAsync_GeoParquet_MissingColumnsField_ThrowsInvalidDataException()
     {
         await using var stream = await GeoParquetTestFactory.CreateWithMissingColumnsFieldAsync();
@@ -286,7 +272,7 @@ public sealed class GeoParquetPreviewTests
             .WithMessage("*columns*");
     }
 
-    [Fact]
+    [UnitTest]
     public async Task PreviewFileAsync_GeoParquet_LargeSingleRowGroup_IsAccepted()
     {
         // pyarrow/GeoPandas defaults to a single row group up to 1,048,576 rows.
@@ -301,7 +287,7 @@ public sealed class GeoParquetPreviewTests
         preview.SampleProperties.Should().ContainKey("name");
     }
 
-    [Fact]
+    [UnitTest]
     public async Task PreviewFileAsync_GeoParquet_DuckDbSizedRowGroups_AreAccepted()
     {
         // DuckDB defaults to 122,880-row groups. Exercise both groups around that
@@ -318,7 +304,7 @@ public sealed class GeoParquetPreviewTests
         preview.SampleProperties.Should().ContainKey("name");
     }
 
-    [Fact]
+    [UnitTest]
     public async Task PreviewFileAsync_GeoParquet_RowGroupExceedingMemoryLimit_ThrowsInvalidDataException()
     {
         await using var stream = await GeoParquetTestFactory.CreateStreamAsync(rowCount: 150_000);
@@ -330,7 +316,7 @@ public sealed class GeoParquetPreviewTests
             .WithMessage("*ImportLimits.MaxMemoryBytes*");
     }
 
-    [Fact]
+    [UnitTest]
     public async Task PreviewFileAsync_GeoParquet_MismatchedPrimaryColumn_ThrowsInvalidDataException()
     {
         // Geo metadata references "geometry" but the Parquet schema has no such column
@@ -343,7 +329,7 @@ public sealed class GeoParquetPreviewTests
             .WithMessage("*geometry*not found*schema*");
     }
 
-    [Fact]
+    [UnitTest]
     public async Task PreviewFileAsync_GeoParquet_PrimaryColumnMissingFromGeoColumns_ThrowsInvalidDataException()
     {
         // Parquet schema has "geometry", but geo.columns only describes "other_geom"
@@ -356,7 +342,7 @@ public sealed class GeoParquetPreviewTests
             .WithMessage("*primary_column*columns*");
     }
 
-    [Fact]
+    [UnitTest]
     public void DetectFormat_AndSupportedExtensions_IncludeGeoParquet()
     {
         var service = CreateService();
@@ -367,7 +353,7 @@ public sealed class GeoParquetPreviewTests
         service.GetSupportedExtensions().Should().Contain(".geoparquet");
     }
 
-    [Fact]
+    [UnitTest]
     public void DetectFormat_UppercaseExtension_StillDetectsGeoParquet()
     {
         var service = CreateService();
@@ -377,7 +363,7 @@ public sealed class GeoParquetPreviewTests
         service.DetectFormat("mixed.Parquet").Should().Be(SupportedFileFormat.GeoParquet);
     }
 
-    [Fact]
+    [UnitTest]
     public void DetectFormat_UppercaseExtension_WorksForPreExistingFormats()
     {
         var service = CreateService();
@@ -387,7 +373,7 @@ public sealed class GeoParquetPreviewTests
         service.DetectFormat("tracks.GPX").Should().Be(SupportedFileFormat.Gpx);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task PreviewFileAsync_GeoParquet_CorruptedFile_ThrowsInvalidDataException()
     {
         // A stream whose contents are not a valid Parquet file. Parquet.Net throws

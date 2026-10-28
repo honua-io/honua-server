@@ -43,7 +43,8 @@ internal sealed partial class StreamingFileImportService
         ImportLoadMode loadMode,
         IReadOnlyList<string> keyColumns,
         GeometryRepairTally repairTally,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        DirectImportGuard? directGuard = null)
     {
         var imported = 0;
         var failed = 0;
@@ -53,14 +54,31 @@ internal sealed partial class StreamingFileImportService
         activity?.SetTag("import.feature_count", features.Count);
         activity?.SetTag("import.load_mode", loadMode.ToString());
 
-        // Continue-on-error can't run inside a single transaction because any statement error aborts it.
-        var useTransaction = _limits.UseTransactions && !_limits.ContinueOnError;
+        // Direct writes always protect epoch/identity validation and rows in one batch transaction.
+        // Existing staging commit boundaries remain unchanged; savepoints isolate row fallback.
+        var useTransaction = directGuard is not null || (_limits.UseTransactions && !_limits.ContinueOnError);
         await using var transaction = useTransaction
             ? await connection.BeginTransactionAsync(IsolationLevel.RepeatableRead, cancellationToken)
             : null;
 
+        var previousRepaired = repairTally.Repaired;
+        var previousSkipped = repairTally.SkippedInvalid;
+        // Lazy caches failures as well as WKB: SQL fast-path rollback must not repeat repair,
+        // cutter mutations or tally increments when retrying the same bounded batch row.
+        var geometryResults = features.Select(feature => new Lazy<WkbGateResult>(
+            () => CreateWkb(feature, wkbWriter, repairTally, targetSrid))).ToArray();
+        var useSavepoints = transaction is not null && _limits.ContinueOnError;
         try
         {
+            if (directGuard is not null)
+            {
+                await ValidateDirectImportAsync(connection, transaction!, schemaName, tableName,
+                    targetSrid, directGuard, cancellationToken);
+            }
+            if (useSavepoints)
+            {
+                await transaction!.SaveAsync("import_batch_fast", cancellationToken);
+            }
             try
             {
                 imported = await InsertBatchFastAsync(
@@ -69,32 +87,35 @@ internal sealed partial class StreamingFileImportService
                     schemaName,
                     tableName,
                     features,
+                    geometryResults,
                     sourceSrid,
                     targetSrid,
-                    wkbWriter,
                     loadMode,
                     keyColumns,
-                    repairTally,
                     cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 throw;
             }
-            catch (Exception) when (_limits.ContinueOnError)
+            catch (Exception ex) when (_limits.ContinueOnError && ex is not (OutOfMemoryException or OperationCanceledException))
             {
+                if (useSavepoints)
+                {
+                    await transaction!.RollbackAsync("import_batch_fast", CancellationToken.None);
+                    await transaction.ReleaseAsync("import_batch_fast", CancellationToken.None);
+                }
                 (imported, failed) = await InsertBatchIndividuallyAsync(
                     connection,
                     transaction,
                     schemaName,
                     tableName,
                     features,
+                    geometryResults,
                     sourceSrid,
                     targetSrid,
-                    wkbWriter,
                     loadMode,
                     keyColumns,
-                    repairTally,
                     cancellationToken);
             }
 
@@ -109,6 +130,8 @@ internal sealed partial class StreamingFileImportService
             if (transaction != null)
             {
                 await transaction.RollbackAsync(CancellationToken.None);
+                repairTally.Repaired = previousRepaired;
+                repairTally.SkippedInvalid = previousSkipped;
             }
             throw;
         }
@@ -125,12 +148,11 @@ internal sealed partial class StreamingFileImportService
         string schemaName,
         string tableName,
         List<IFeature> features,
+        IReadOnlyList<Lazy<WkbGateResult>> geometryResults,
         int sourceSrid,
         int targetSrid,
-        WKBWriter wkbWriter,
         ImportLoadMode loadMode,
         IReadOnlyList<string> keyColumns,
-        GeometryRepairTally repairTally,
         CancellationToken cancellationToken)
     {
         var wkbs = new List<byte[]?>(features.Count);
@@ -141,7 +163,7 @@ internal sealed partial class StreamingFileImportService
         {
             cancellationToken.ThrowIfCancellationRequested();
             var feature = features[i];
-            var gate = CreateWkb(feature, wkbWriter, repairTally, targetSrid);
+            var gate = geometryResults[i].Value;
 
             // A gate skip must exclude the whole row, not degrade it: a null WKB is a legal
             // null-geometry row, so passing the skipped feature through would silently import
@@ -288,12 +310,11 @@ internal sealed partial class StreamingFileImportService
         string schemaName,
         string tableName,
         List<IFeature> features,
+        IReadOnlyList<Lazy<WkbGateResult>> geometryResults,
         int sourceSrid,
         int targetSrid,
-        WKBWriter wkbWriter,
         ImportLoadMode loadMode,
         IReadOnlyList<string> keyColumns,
-        GeometryRepairTally repairTally,
         CancellationToken cancellationToken)
     {
         var imported = 0;
@@ -332,18 +353,27 @@ internal sealed partial class StreamingFileImportService
             ? null
             : command.Parameters.Add("datum_pipeline", NpgsqlDbType.Text);
 
-        foreach (var feature in features)
+        var useSavepoints = transaction is not null && _limits.ContinueOnError;
+        for (var row = 0; row < features.Count; row++)
         {
+            var feature = features[row];
             cancellationToken.ThrowIfCancellationRequested();
-
+            if (useSavepoints)
+            {
+                await transaction!.SaveAsync("import_row", cancellationToken);
+            }
             try
             {
-                var gate = CreateWkb(feature, wkbWriter, repairTally, targetSrid);
+                var gate = geometryResults[row].Value;
 
                 // A gate skip excludes the whole row (see InsertBatchFastAsync): inserting the
                 // feature with a NULL wkb would import its properties as a null-geometry row.
                 if (gate.Skipped)
                 {
+                    if (useSavepoints)
+                    {
+                        await transaction!.ReleaseAsync("import_row", cancellationToken);
+                    }
                     continue;
                 }
 
@@ -360,9 +390,22 @@ internal sealed partial class StreamingFileImportService
                 propertiesParameter.Value = BuildPropertiesJson(feature);
                 await command.ExecuteNonQueryAsync(cancellationToken);
                 imported++;
+                if (useSavepoints)
+                {
+                    await transaction!.ReleaseAsync("import_row", cancellationToken);
+                }
             }
-            catch (Exception ex)
+            catch (OperationCanceledException)
             {
+                throw;
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                if (useSavepoints)
+                {
+                    await transaction!.RollbackAsync("import_row", CancellationToken.None);
+                    await transaction.ReleaseAsync("import_row", CancellationToken.None);
+                }
                 ImportLog.FeatureInsertFailed(_logger, ex, tableName);
                 failed++;
                 if (!_limits.ContinueOnError)
@@ -560,7 +603,10 @@ internal sealed partial class StreamingFileImportService
             }
         }
 
-        var stored = AntimeridianCutter.CutStoredGeometry(geometry, targetSrid);
+        var sourceGeometry = feature as IImportGeometrySource;
+        var stored = sourceGeometry?.HasPlanarEdges == true
+            ? geometry
+            : AntimeridianCutter.CutStoredGeometry(geometry, targetSrid);
         if (!ReferenceEquals(stored, geometry))
         {
             // A Web Mercator ring cut into the geographic target carries that target SRID,
@@ -583,7 +629,7 @@ internal sealed partial class StreamingFileImportService
             }
         }
 
-        var writer = SelectWkbWriter(geometry, wkbWriter);
+        var writer = SelectWkbWriter(geometry, wkbWriter, sourceGeometry);
         var wkb = writer.Write(geometry);
 
         if (wkb.Length > _limits.MaxWkbSize)
@@ -620,9 +666,12 @@ internal sealed partial class StreamingFileImportService
     /// </summary>
     private static WKBWriter SelectWkbWriter(
         NetTopologySuite.Geometries.Geometry geometry,
-        WKBWriter plainWriter)
+        WKBWriter plainWriter,
+        IImportGeometrySource? sourceGeometry)
     {
         var (hasZ, hasM) = DetectZm(geometry);
+        hasZ |= sourceGeometry?.HasDeclaredZ == true;
+        hasM |= sourceGeometry?.HasDeclaredM == true;
         if (!hasZ && !hasM)
         {
             return plainWriter;

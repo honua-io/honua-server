@@ -23,9 +23,9 @@ Uploaded via `POST /api/v1/admin/import/upload` (or `upload-url`, with `preview`
 | CSV | `.csv` | Needs lon/lat columns or a WKT geometry column. WKT geometry preserves XY, Z and M ordinates on import and bulk export. Bulk, OGC API Features and WFS CSV output share null/empty string escaping. |
 | FlatGeobuf | `.fgb` | Compact binary format. |
 | File Geodatabase | `.gdb.zip` | Zipped Esri `.gdb` directory. |
-| GeoParquet | `.parquet`, `.geoparquet` | Apache Parquet with WKB geometry encoding. |
+| GeoParquet | `.parquet`, `.geoparquet` | GeoParquet 1.0.0/1.1.0, one WKB geometry column, planar edges; null-geometry rows retain attributes. CRS validation and outstanding nested/epoch/dimension fidelity work are described in the [input contract](../guides/publish/import-files.md#geoparquet-input-contract). |
 
-New import tables retain the source geometry's ordinate dimensions (for example GPX elevations) while enforcing the requested SRID; existing append/upsert tables keep their declared geometry constraints.
+New import tables enforce the requested SRID; existing append/upsert tables keep their declared geometry constraints. Dimension preservation is format-specific (for example, GPX elevations above); GeoParquet declared empty-geometry dimensions remain under verification in the linked input contract.
 
 Format detection uses the extension plus content magic numbers (ZIP, SQLite, FlatGeobuf, Parquet signatures), so mislabeled files are caught early.
 

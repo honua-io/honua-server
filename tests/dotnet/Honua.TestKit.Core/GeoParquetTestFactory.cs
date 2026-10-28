@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Text.Json;
+using Honua.Core.Features.Infrastructure.Crs;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 using Parquet;
@@ -596,14 +597,7 @@ public static class GeoParquetTestFactory
     {
         return crs switch
         {
-            CrsStyle.ProjJson => new Dictionary<string, object?>(StringComparer.Ordinal)
-            {
-                ["id"] = new Dictionary<string, object?>(StringComparer.Ordinal)
-                {
-                    ["authority"] = "EPSG",
-                    ["code"] = 4326
-                }
-            },
+            CrsStyle.ProjJson => BuildAuthoritativeCrs(),
             CrsStyle.PropertiesName => new Dictionary<string, object?>(StringComparer.Ordinal)
             {
                 ["type"] = "name",
@@ -612,14 +606,7 @@ public static class GeoParquetTestFactory
                     ["name"] = "EPSG:4326"
                 }
             },
-            CrsStyle.OgcCrs84ProjJson => new Dictionary<string, object?>(StringComparer.Ordinal)
-            {
-                ["id"] = new Dictionary<string, object?>(StringComparer.Ordinal)
-                {
-                    ["authority"] = "OGC",
-                    ["code"] = "CRS84"
-                }
-            },
+            CrsStyle.OgcCrs84ProjJson => BuildAuthoritativeCrs(crs84: true),
             CrsStyle.OgcCrs84PropertiesName => new Dictionary<string, object?>(StringComparer.Ordinal)
             {
                 ["type"] = "name",
@@ -628,16 +615,30 @@ public static class GeoParquetTestFactory
                     ["name"] = "OGC:CRS84"
                 }
             },
-            CrsStyle.ProjJsonStringCode => new Dictionary<string, object?>(StringComparer.Ordinal)
-            {
-                ["id"] = new Dictionary<string, object?>(StringComparer.Ordinal)
-                {
-                    ["authority"] = "EPSG",
-                    ["code"] = "4326" // String code per PROJJSON spec
-                }
-            },
+            CrsStyle.ProjJsonStringCode => BuildAuthoritativeCrs(stringCode: true),
             _ => throw new ArgumentOutOfRangeException(nameof(crs))
         };
+    }
+
+    private static Dictionary<string, object?> BuildAuthoritativeCrs(bool crs84 = false, bool stringCode = false)
+    {
+        string definition;
+        if (crs84)
+        {
+            definition = GeoParquetProjJsonCatalog.Crs84ProjJson;
+        }
+        else if (!GeoParquetProjJsonCatalog.TryGetProjJson(4326, out definition!))
+        {
+            throw new InvalidOperationException("Authoritative EPSG:4326 test definition is missing.");
+        }
+        using var document = JsonDocument.Parse(definition);
+        var result = document.RootElement.EnumerateObject()
+            .ToDictionary(property => property.Name, property => (object?)property.Value.Clone(), StringComparer.Ordinal);
+        if (stringCode)
+        {
+            result["id"] = new Dictionary<string, object?> { ["authority"] = "EPSG", ["code"] = "4326" };
+        }
+        return result;
     }
 
     private static Dictionary<string, string> BuildGeoMetadata(

@@ -87,6 +87,35 @@ internal sealed partial class PostgreSqlLayerPublishingService
             connection, schema, table, cancellationToken).ConfigureAwait(false);
     }
 
+    private async Task<TableInfo?> ResolveTableInfoForValidationAsync(
+        NpgsqlConnection connection, string schema, string table, CancellationToken cancellationToken,
+        NpgsqlTransaction? transaction = null)
+    {
+        if (!CommittedSinkSchemaGate.Allows(_schemaConfiguration, _schemaContext?.CurrentSchema, schema))
+        {
+            return null;
+        }
+        try
+        {
+            if (_tableDiscoveryService is PostgreSqlTableDiscoveryService postgresDiscovery)
+            {
+                return await postgresDiscovery.DiscoverPostGisTableAsync(
+                    connection, schema, table, cancellationToken, transaction).ConfigureAwait(false)
+                    ?? await postgresDiscovery.DiscoverNonSpatialTableAsync(
+                        connection, schema, table, transaction, cancellationToken).ConfigureAwait(false);
+            }
+            var tables = await _tableDiscoveryService.DiscoverPostGisTablesAsync(connection, cancellationToken).ConfigureAwait(false);
+            return tables.FirstOrDefault(candidate => candidate.Schema.Equals(schema, StringComparison.OrdinalIgnoreCase) &&
+                candidate.Table.Equals(table, StringComparison.OrdinalIgnoreCase))
+                ?? await _tableDiscoveryService.DiscoverNonSpatialTableAsync(connection, schema, table, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not (OutOfMemoryException or OperationCanceledException))
+        {
+            Log.TableDiscoveryFailed(_logger, ex);
+            throw new LayerPublishingException(LayerPublishingErrorKind.Unknown, "Failed to discover tables for publishing.");
+        }
+    }
+
     private async Task<bool> TableExistsAsync(
         NpgsqlConnection connection,
         string schema,
