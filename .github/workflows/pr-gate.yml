@@ -321,7 +321,8 @@ jobs:
         if: steps.docs-only.outputs.docs_only == 'true'
         run: |
           python3 -m pip install -r scripts/ci/okf-requirements.txt
-          python3 scripts/ci/generate-okf-graph.py --check
+          python3 scripts/ci/generate-okf-graph.py --output "${RUNNER_TEMP}/domain-graph.v1.json"
+          python3 scripts/ci/generate-okf-graph.py --check --output "${RUNNER_TEMP}/domain-graph.v1.json"
           python3 scripts/ci/generate-llms-txt.py --check
 
       # Artifact consistency is a cheap docs check, not a C# architecture test.

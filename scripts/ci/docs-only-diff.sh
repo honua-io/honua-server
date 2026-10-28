@@ -231,7 +231,6 @@ PROSE_EXTENSIONS = {".md", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp"}
 DOCS_DATA = {
     "docs/get-started/install-artifacts.json",
     "docs/llms.txt",
-    "docs/okf/domain-graph.v1.json",
 }
 
 # Everything a step the docs-only exit skips compiles, executes or reads. A
