@@ -22,26 +22,42 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
     private static readonly string[] ExpectedIndexedNames = ["indexed-10", "indexed-11", "indexed-12"];
     private readonly WebAppFixture _fixture;
     private readonly List<long> _flatGeobufProbeIds = [];
+    private MetadataV2Field[]? _originalSchemaFields;
 
     public FeatureServerQueryParameterTests(WebAppFixture fixture)
     {
         _fixture = fixture;
     }
 
-    public Task InitializeAsync() => Task.CompletedTask;
+    public Task InitializeAsync()
+    {
+        var graph = _fixture.GetCurrentV2GraphSnapshot().Graph;
+        var publication = graph.Publications.Single(p => p.LayerIndex == WebAppFixture.TestLayerId);
+        _originalSchemaFields = graph.Resources.Single(r => r.Metadata.Id == publication.ResourceId).SchemaFields.ToArray();
+        return Task.CompletedTask;
+    }
 
     public async Task DisposeAsync()
     {
-        if (_flatGeobufProbeIds.Count == 0)
+        try
         {
-            return;
+            if (_flatGeobufProbeIds.Count > 0)
+            {
+                await using var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema!);
+                await using var command = connection.CreateCommand();
+                command.CommandText = "DELETE FROM features WHERE layer_id = @layer AND objectid = ANY(@ids);";
+                command.Parameters.AddWithValue("layer", WebAppFixture.TestLayerId);
+                command.Parameters.AddWithValue("ids", _flatGeobufProbeIds.ToArray());
+                await command.ExecuteNonQueryAsync();
+            }
         }
-        await using var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema!);
-        await using var command = connection.CreateCommand();
-        command.CommandText = "DELETE FROM features WHERE layer_id = @layer AND objectid = ANY(@ids);";
-        command.Parameters.AddWithValue("layer", WebAppFixture.TestLayerId);
-        command.Parameters.AddWithValue("ids", _flatGeobufProbeIds.ToArray());
-        await command.ExecuteNonQueryAsync();
+        finally
+        {
+            if (_originalSchemaFields is not null)
+            {
+                _fixture.RestoreV2ResourceSchemaFields(WebAppFixture.TestLayerId, _originalSchemaFields);
+            }
+        }
     }
 
     [Fact]
@@ -277,12 +293,12 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
     {
         var fields = new[]
         {
-            new MetadataV2Field { Name = "exact_integer", Type = MetadataV2FieldType.BigInteger },
-            new MetadataV2Field { Name = "enabled", Type = MetadataV2FieldType.Boolean },
-            new MetadataV2Field { Name = "document", Type = MetadataV2FieldType.Json },
-            new MetadataV2Field { Name = "blob", Type = MetadataV2FieldType.Binary },
-            new MetadataV2Field { Name = "observed_at", Type = MetadataV2FieldType.DateTime },
-            new MetadataV2Field { Name = "observed_fraction", Type = MetadataV2FieldType.DateTime }
+            new MetadataV2Field { Name = "exact_integer", Type = MetadataV2FieldType.BigInteger, Nullable = true },
+            new MetadataV2Field { Name = "enabled", Type = MetadataV2FieldType.Boolean, Nullable = true },
+            new MetadataV2Field { Name = "document", Type = MetadataV2FieldType.Json, Nullable = true },
+            new MetadataV2Field { Name = "blob", Type = MetadataV2FieldType.Binary, Nullable = true },
+            new MetadataV2Field { Name = "observed_at", Type = MetadataV2FieldType.DateTime, Nullable = true },
+            new MetadataV2Field { Name = "observed_fraction", Type = MetadataV2FieldType.DateTime, Nullable = true }
         };
         foreach (var field in fields)
         {
