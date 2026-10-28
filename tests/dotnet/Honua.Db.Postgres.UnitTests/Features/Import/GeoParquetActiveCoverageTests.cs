@@ -438,7 +438,10 @@ public sealed class GeoParquetActiveCoverageTests
         var exportAttempted = false;
         try
         {
-            using var writer = new ParquetSharp.Arrow.FileWriter(stream, schema, leaveOpen: true);
+            using var propertiesBuilder = new ParquetSharp.Arrow.ArrowWriterPropertiesBuilder();
+            propertiesBuilder.StoreSchema();
+            using var properties = propertiesBuilder.Build();
+            using var writer = new ParquetSharp.Arrow.FileWriter(stream, schema, arrowProperties: properties, leaveOpen: true);
             // Export invalidates the batch even when it fails; only dispose before an attempt.
             exportAttempted = true;
             writer.WriteRecordBatch(batch);

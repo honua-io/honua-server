@@ -114,7 +114,7 @@ internal static class GeoParquetNestedAttributeReader
         field.ColumnIndex >= 0 ? [field.ColumnIndex] : field.Children.SelectMany(GetLeafIndices);
 
     private static long GetBufferBytes(ArrayData data) =>
-        data.Buffers.Sum(buffer => (long)buffer.Length) + data.Children.Sum(GetBufferBytes);
+        (data.Buffers?.Sum(buffer => (long)buffer.Length) ?? 0) + (data.Children?.Sum(GetBufferBytes) ?? 0);
 
     private sealed class BoundedBufferWriter(int maximumBytes) : IBufferWriter<byte>
     {

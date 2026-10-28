@@ -78,6 +78,25 @@ internal sealed partial class StreamingFileImportService
                 scratch, null, null, updatedWarnings, unsupportedReason);
         }
 
+        // Validate every bounded source row before opening the target write path. A late unsupported
+        // nested value or malformed geometry must not leave earlier append/upsert batches committed.
+        try
+        {
+            await foreach (var feature in GeoParquetReader.ReadStreamingAsync(scratchStream, _limits, cancellationToken))
+            {
+                _ = feature;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is InvalidDataException or NotSupportedException or ArgumentException)
+        {
+            ImportLog.ImportFailedWithException(_logger, ex, jobId, tableName);
+            return new GeoParquetPrepResult(scratch, null, null, updatedWarnings, SanitizeImportValidationMessage(ex));
+        }
+        scratchStream.Position = 0;
         return new GeoParquetPrepResult(scratch, scratchStream, parquetMeta.Srid, updatedWarnings, null);
     }
 }
