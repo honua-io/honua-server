@@ -436,7 +436,10 @@ class SoakDriver:
         Queue age is measured client-side, the way an operator measures it: the time a submitted
         job spends before the single worker picks it up.
         """
+        # Shared with the capacity collector, which drains these identities after its fault drill
+        # to prove no job was left stuck.
         pending: dict[str, dict[str, float]] = {}
+        self.gp_pending = pending
         completed = 0
         rejected = 0
 

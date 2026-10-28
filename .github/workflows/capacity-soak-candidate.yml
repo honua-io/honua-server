@@ -89,7 +89,6 @@ env:
   # production startup validation refuses every credential literal this repository ships.
   SOAK_ADMIN_PASSWORD: 'Capacity-Soak-${{ github.run_id }}-${{ github.run_attempt }}-Aa1!'
   SOAK_MASTER_KEY: capacity-soak-master-key-${{ github.run_id }}-${{ github.run_attempt }}-padding0000
-  SOAK_GP_WORKERS: '1'
   LOCK_PATH: certification/capacity-envelope.v1.json
 
 jobs:
@@ -341,6 +340,11 @@ jobs:
               raise SystemExit("dispatch does not match the pinned manifest candidate and image")
           PYTHON
           digest="$(sha256sum lock.json | cut -d' ' -f1)"
+          # The started server's GP admission comes from the lock, never from a workflow literal.
+          # Every later `docker compose` call re-reads docker-compose.soak.yml, so it goes to the
+          # job environment.
+          gp_active_jobs="$(PYTHONPATH=producer/scripts/soak python -c 'import json, envelope_config; print(envelope_config.admission_active_job_limit(json.load(open("lock.json"))["supportedEnvelope"]))')"
+          echo "SOAK_GP_ACTIVE_JOBS=$gp_active_jobs" >> "$GITHUB_ENV"
           echo "url=$url" >> "$GITHUB_OUTPUT"
           echo "sha256=$digest" >> "$GITHUB_OUTPUT"
           python - <<'PY' >> "$GITHUB_OUTPUT"
@@ -543,6 +547,16 @@ jobs:
           done
           curl -fsS "$BASE_URL/rest/services/test/FeatureServer/0/query?f=json&where=1%3D1&returnCountOnly=true"
 
+      - name: Refuse a server whose effective configuration differs from the envelope
+        working-directory: producer
+        run: |
+          set -euo pipefail
+          # Fail in seconds, not after an hour: the GP admission limit, rate-limit posture, worker
+          # count, published services and layers the server actually started with must be the
+          # envelope's, or the soak measures a different deployment than the one it claims.
+          python scripts/soak/envelope_config.py --lock ../lock.json --base-url "$BASE_URL" \
+            --admin-key "$SOAK_ADMIN_PASSWORD" --report "$RUNNER_TEMP/effective-config.json"
+
       # Under workflow_call GITHUB_WORKFLOW_REF names the caller; the attestation signer
       # (Fulcio buildSignerURI) is this workflow's OIDC job_workflow_ref, so record that.
       - name: Resolve the executing workflow identity
@@ -690,6 +704,7 @@ jobs:
             ${{ runner.temp }}/verified-attestation.json
             ${{ runner.temp }}/gate-verdict.txt
             ${{ runner.temp }}/topology.json
+            ${{ runner.temp }}/effective-config.json
             ${{ runner.temp }}/capacity-runner-admission.json
             ${{ runner.temp }}/honua-server.log
             ${{ runner.temp }}/postgres.log

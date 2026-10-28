@@ -34,7 +34,8 @@ jobs:
             tests/python/unit/test_capacity_soak_keyring.py \
             tests/python/unit/test_capacity_runner_routing.py \
             tests/python/unit/test_capacity_producer_preflight.py \
-            tests/python/unit/test_capacity_soak_cleanup.py -q
+            tests/python/unit/test_capacity_soak_cleanup.py \
+            tests/python/unit/test_capacity_soak_envelope_config.py -q
       - name: Check the emitted ZIP with the independent frozen release verifier
         env:
           RELEASE_REF: 8213a142cc03c118061dacad5e6384f9d23d66df
