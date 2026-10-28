@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:b193149dabde9811061804ce0a0f9e503efbcc55e0a9c04e391e1902e32ba8b6",
+  "bundleDigest": "sha256:b5c7676116dd3fd7c82499900c7548ffa0cbb5ff60751ccefb1339964b3e7141",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -2652,7 +2652,7 @@
     {
       "id": "guides/secure/authentication",
       "path": "guides/secure/authentication.md",
-      "documentDigest": "sha256:fa9665d446aac1806cf3d5b2128ed06e21b1c49c303205144754260a3b8f6d9f",
+      "documentDigest": "sha256:bf1edd6d373f11a931dcbd959e17620acee619c1ec2df307b600258b04e6c841",
       "metadata": {
         "type": "guide",
         "title": "Authenticate clients",
@@ -5386,7 +5386,7 @@
     {
       "id": "okf/capabilities/admin.control-plane",
       "path": "okf/capabilities/admin.control-plane.md",
-      "documentDigest": "sha256:d238b8871efb87d672348c3aa91e8be3fac448dc7586cb4fd40a683c9cc98229",
+      "documentDigest": "sha256:b9d6a8bebe2aaff5615dca0dff657add29de02c339898277ca815c1b9652314a",
       "metadata": {
         "type": "capability",
         "title": "Admin Control Plane",
@@ -7553,7 +7553,7 @@
     {
       "id": "reference/admin-api/users-roles-licensing",
       "path": "reference/admin-api/users-roles-licensing.md",
-      "documentDigest": "sha256:34d89a31d0d7e58c75e54a3e4e1db0eb444491192c96abfcd572ab3f5ebeef27",
+      "documentDigest": "sha256:6900bbcb2c0d4fa28aa6e2f2d02bb9f1ad14a8a52a7c188e1d7aa457bf998f8f",
       "metadata": {
         "type": "reference",
         "title": "Users, roles, and licensing",
@@ -17006,7 +17006,7 @@
       "validation": "openapi_method_and_path",
       "runtimeDiscoveryRequired": true,
       "executionVerified": false,
-      "contractDigest": "sha256:1370bfa96417d15c89b4e91fb23f7d3c7fd6dc7eab004693f85d00ebd6485655"
+      "contractDigest": "sha256:c0e20cdf9be301cf823a6d14a1f3788b6201d8db712fa7cc6f55016621554290"
     },
     {
       "workflow": "guides/workflows/design-studio",
@@ -17070,7 +17070,7 @@
       "validation": "openapi_method_and_path",
       "runtimeDiscoveryRequired": true,
       "executionVerified": false,
-      "contractDigest": "sha256:1370bfa96417d15c89b4e91fb23f7d3c7fd6dc7eab004693f85d00ebd6485655"
+      "contractDigest": "sha256:c0e20cdf9be301cf823a6d14a1f3788b6201d8db712fa7cc6f55016621554290"
     },
     {
       "workflow": "guides/workflows/import-data",
@@ -17080,7 +17080,7 @@
       "validation": "openapi_method_and_path",
       "runtimeDiscoveryRequired": true,
       "executionVerified": false,
-      "contractDigest": "sha256:1370bfa96417d15c89b4e91fb23f7d3c7fd6dc7eab004693f85d00ebd6485655"
+      "contractDigest": "sha256:c0e20cdf9be301cf823a6d14a1f3788b6201d8db712fa7cc6f55016621554290"
     },
     {
       "workflow": "guides/workflows/import-data",
