@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:a181e5cb93c9695749a9817da33a84d0f7ea2cacafac548787a3f4efad3c803a",
+  "bundleDigest": "sha256:3ca2451ee0462225024b5aed9546c0fa1c41654ec5aba86c8fe69b64139853ec",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -1835,12 +1835,15 @@
     {
       "id": "concepts/protocols",
       "path": "concepts/protocols.md",
-      "documentDigest": "sha256:27b62e3f596423c94bb324efee1d6a8924f610ef7eb149401eef78d33c604317",
+      "documentDigest": "sha256:0eac6d4fd975a8b58153372890f1dc7f28d2eece8e4cc0d3cceace1202009005",
       "metadata": {
         "type": "concept",
         "title": "Protocols",
         "description": "Honua serves every published layer through multiple protocols at once — the same PostGIS table can be queried from ArcGIS Pro, QGIS, Excel, a MapLibre web map, and an AI agent without ETL or duplication.",
-        "resource": "honua://capability/serve.sensorthings"
+        "resource": "honua://capability/serve.sensorthings",
+        "resources": [
+          "honua://capability/serve.wps"
+        ]
       },
       "humanDocument": "https://github.com/honua-io/honua-server/blob/trunk/docs/concepts/protocols.md"
     },
@@ -2156,11 +2159,11 @@
     {
       "id": "guides/deploy/cloud-deployments",
       "path": "guides/deploy/cloud-deployments.md",
-      "documentDigest": "sha256:b7b10bedfff2868dd30fb18955e858592b2dbc3626648e9d02d38ac0208c8710",
+      "documentDigest": "sha256:def729d8fdbc96d631ca8f04fa412a5ab0eaee2483c3814242b264f650f9e13a",
       "metadata": {
         "type": "runbook",
         "title": "Deploy on AWS and Azure",
-        "description": "You'll pick a managed-cloud deployment pattern for Honua — ECS/Fargate, Lambda, Azure Container Apps, or Azure Functions — and know which image, configuration, and rollout mechanism each one uses."
+        "description": "You'll pick a 2026.1 deployment pattern for Honua — Compose and ECS are GA, Lambda and Kubernetes are Preview, Azure is not offered — and know which image, configuration, and rollout mechanism each one uses."
       },
       "humanDocument": "https://github.com/honua-io/honua-server/blob/trunk/docs/guides/deploy/cloud-deployments.md"
     },
@@ -2189,7 +2192,7 @@
     {
       "id": "guides/deploy/kubernetes",
       "path": "guides/deploy/kubernetes.md",
-      "documentDigest": "sha256:2ea75ba55af519cdccae147f34b29bbc6af4db6f9d03a6b815e1484a0c0572d6",
+      "documentDigest": "sha256:3c937ad6eabf32d4a9eb751f055a4ea782bc05b29f608a43135ee92e82fe4cbc",
       "metadata": {
         "type": "guide",
         "title": "Deploy on Kubernetes",
@@ -5367,7 +5370,7 @@
     {
       "id": "okf/capabilities/README",
       "path": "okf/capabilities/README.md",
-      "documentDigest": "sha256:fa989eaf75d4e2b7e0885e30a03b5adb38da617391d31f8ae303f2e2a6c740e7",
+      "documentDigest": "sha256:231949118b384ebde62cff765231caf32e7819bd7cd825201eb1909ea5053fec",
       "metadata": {
         "type": "index",
         "title": "Capability concepts",
@@ -6505,7 +6508,7 @@
     {
       "id": "okf/capabilities/process.geoprocessing",
       "path": "okf/capabilities/process.geoprocessing.md",
-      "documentDigest": "sha256:1bcdf15b34c78f0f8d401d355d07f24ebef4e6974969b04fe1aae0e80229fda7",
+      "documentDigest": "sha256:9c6817eb1333985650270ede2d70059c3f4848d1e4fb683dd2f3d0b29b927da8",
       "metadata": {
         "type": "capability",
         "title": "Geoprocessing Task Execution",
@@ -6522,7 +6525,7 @@
     {
       "id": "okf/capabilities/process.ogc-api-processes",
       "path": "okf/capabilities/process.ogc-api-processes.md",
-      "documentDigest": "sha256:b11407eeac2d3d500a69258f0f87a244ee6b75c90258d5cd2ca35987c53a3e30",
+      "documentDigest": "sha256:54d1c42addeaaf4c3380bc6fa4a1b83a5f94893982c023687aef21e7322855c1",
       "metadata": {
         "type": "capability",
         "title": "OGC API Processes",
@@ -7168,7 +7171,7 @@
     {
       "id": "okf/capabilities/serve.wps",
       "path": "okf/capabilities/serve.wps.md",
-      "documentDigest": "sha256:6603e40158940510fff3d6d068c14747174752edf22afa198cb788112184a03a",
+      "documentDigest": "sha256:a30c1a07801dcab91d1c427fdf061388d141ba33a7416ee0281efaabb263cf3d",
       "metadata": {
         "type": "capability",
         "title": "WPS 2.0",
@@ -7962,7 +7965,7 @@
     {
       "id": "reference/protocols/cloud-native-formats",
       "path": "reference/protocols/cloud-native-formats.md",
-      "documentDigest": "sha256:a8ad6c131e6293ccb92d107b3e98e0ab7e384d5b7d0162e113ff297b3d0e60b5",
+      "documentDigest": "sha256:2808c84049a061278af534a8b177ef3bd3d0414540bf48f8c437c6757cb154bd",
       "metadata": {
         "type": "reference",
         "title": "Cloud-native formats",
@@ -7974,6 +7977,17 @@
         ]
       },
       "humanDocument": "https://github.com/honua-io/honua-server/blob/trunk/docs/reference/protocols/cloud-native-formats.md"
+    },
+    {
+      "id": "reference/protocols/cloud-native-standards",
+      "path": "reference/protocols/cloud-native-standards.md",
+      "documentDigest": "sha256:21d79d2669c6f66582d6cb4780a5df36d7edebd44b3ced2b47b2cfbd9c2a6b81",
+      "metadata": {
+        "type": "reference",
+        "title": "Cloud-native geospatial standards and evidence",
+        "description": "Specification targets, supported subsets, conformance evidence and known limitations for Honua Server's cloud-native formats."
+      },
+      "humanDocument": "https://github.com/honua-io/honua-server/blob/trunk/docs/reference/protocols/cloud-native-standards.md"
     },
     {
       "id": "reference/protocols/geoservices-rest",
@@ -15039,12 +15053,7 @@
     {
       "source": "okf/capabilities/serve.wps",
       "relation": "links_to",
-      "target": "concepts/editions-and-licensing"
-    },
-    {
-      "source": "okf/capabilities/serve.wps",
-      "relation": "links_to",
-      "target": "okf/capabilities/README"
+      "target": "concepts/protocols"
     },
     {
       "source": "okf/capabilities/staticmap.high-dpi",
@@ -16039,12 +16048,22 @@
     {
       "source": "reference/protocols/cloud-native-formats",
       "relation": "links_to",
+      "target": "reference/protocols/cloud-native-standards"
+    },
+    {
+      "source": "reference/protocols/cloud-native-formats",
+      "relation": "links_to",
       "target": "reference/protocols/ogc-apis"
     },
     {
       "source": "reference/protocols/cloud-native-formats",
       "relation": "links_to",
       "target": "reference/protocols/stac"
+    },
+    {
+      "source": "reference/protocols/cloud-native-standards",
+      "relation": "links_to",
+      "target": "reference/protocols/cloud-native-formats"
     },
     {
       "source": "reference/protocols/geoservices-rest",
@@ -16776,6 +16795,14 @@
     {
       "source": "reference/configuration/ai-execution-admission",
       "target": "internal/contributor/ai-admission-redis"
+    },
+    {
+      "source": "reference/protocols/cloud-native-formats",
+      "target": "cng-status"
+    },
+    {
+      "source": "reference/protocols/cloud-native-standards",
+      "target": "cng-status"
     }
   ],
   "workflows": {

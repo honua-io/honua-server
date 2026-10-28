@@ -1,11 +1,11 @@
 ---
 type: runbook
 title: "Deploy on AWS and Azure"
-description: "You'll pick a managed-cloud deployment pattern for Honua — ECS/Fargate, Lambda, Azure Container Apps, or Azure Functions — and know which image, configuration, and rollout mechanism each one uses."
+description: "You'll pick a 2026.1 deployment pattern for Honua — Compose and ECS are GA, Lambda and Kubernetes are Preview, Azure is not offered — and know which image, configuration, and rollout mechanism each one uses."
 ---
 # Deploy on AWS and Azure
 
-You'll pick a managed-cloud deployment pattern for Honua — ECS/Fargate, Lambda, Azure Container Apps, or Azure Functions — and know which image, configuration, and rollout mechanism each one uses.
+You'll pick a 2026.1 deployment pattern for Honua — Compose and ECS are GA, Lambda and Kubernetes are Preview, Azure is not offered — and know which image, configuration, and rollout mechanism each one uses.
 
 **Prerequisites:** A PostGIS database (RDS or Azure Database for PostgreSQL Flexible Server), the required env vars from [Configure Honua Server](configuration.md) (`ConnectionStrings__DefaultConnection`, `HONUA_ADMIN_PASSWORD`, `Security__ConnectionEncryption__MasterKey`, `Cors__AllowedOrigins__0`), and TLS terminated at the edge (ALB, API Gateway, Front Door) — Honua does not terminate TLS.
 
@@ -30,13 +30,16 @@ ref policy, and [deployment presets](https://github.com/honua-io/honua-iac/blob/
 
 ## Pick a pattern
 
-| Pattern | Best for | Image family | Rollout mechanism | honua-iac module |
-|---|---|---|---|---|
-| AWS ECS/Fargate + ALB | Steady production traffic | generic web image (multi-arch index; runs `x86_64`) | ALB weighted target groups (canary) | `aws-ecs` |
-| AWS Lambda | Spiky/low traffic, scale-to-zero | `*-lambda-aot` (single-arch `x86_64`/amd64) | Alias weighted versions (canary) | `aws-serverless` |
-| Azure Container Apps | Steady production traffic on Azure | generic web image | Revision traffic splitting (canary) | `azure-aca` |
-| Azure Functions | Spiky/low traffic on Azure | `*-functions-aot` (amd64) | Staging slot swap (atomic) | `azure-functions` |
-| Kubernetes (EKS/AKS) | Existing cluster estate | generic web image (multi-arch) | See [Deploy on Kubernetes](kubernetes.md) | `aws-eks`, `azure-aks` |
+| Pattern | 2026.1 tier | Best for | Image family | Rollout mechanism | honua-iac module |
+|---|---|---|---|---|---|
+| Docker Compose | GA | Dev/test on one host | generic web image | Recreate the container | — |
+| AWS ECS/Fargate + ALB | GA | Steady production traffic | generic web image (multi-arch index; runs `x86_64`) | ALB weighted target groups (canary) | `aws-ecs` |
+| AWS Lambda | Preview | Spiky/low traffic, scale-to-zero | `*-lambda-aot` (single-arch `x86_64`/amd64) | Alias weighted versions (canary) | `aws-serverless` |
+| Kubernetes (EKS/AKS) with Helm | Preview | Existing cluster estate | generic web image (`x86_64`) | See [Deploy on Kubernetes](kubernetes.md) | `aws-eks`, `azure-aks` |
+| Azure Container Apps | Not offered in 2026.1 | Steady traffic on Azure | generic web image | Revision traffic splitting (canary) | `azure-aca` |
+| Azure Functions | Not offered in 2026.1 | Spiky/low traffic on Azure | `*-functions-aot` (amd64) | Staging slot swap (atomic) | `azure-functions` |
+
+2026.1 certifies `x86_64` only. arm64 images, including `*-lambda-aot-arm64`, are unsupported. Preview patterns stay available for evaluation and are outside GA operational, SLA, and scale commitments. A tier label does not remove routes or change authorization.
 
 The database and observability tiers are separate modules: `aws-data` / `azure-data`
 for the managed PostGIS, and `observability-stack`.
@@ -127,10 +130,10 @@ aws ecs describe-services --cluster honua-prod --services honua-server \
 
 Lambda production images are built from [`docker/Dockerfile.lambda.aot`](../../../docker/Dockerfile.lambda.aot); the explicitly suffixed JIT debug image uses [`docker/Dockerfile.lambda`](../../../docker/Dockerfile.lambda). The `docker/Dockerfile.lambda.aot.simple` variant is a local diagnostic fallback and is not published. The Lambda host shim lives in [`docker/cloud`](../../../docker/cloud).
 
-- Use the single-architecture `x86_64` (amd64) `*-lambda-aot` image from same-region ECR behind API Gateway or a function URL, with the function's architecture set to `x86_64`. The release manifest pins `awsLambdaArchitecture: x86_64`, and the 2026.1 Lambda GA bill rejects any other Lambda architecture.
+- Use the single-architecture `x86_64` (amd64) `*-lambda-aot` image from same-region ECR behind API Gateway or a function URL, with the function's architecture set to `x86_64`. Lambda is Preview in 2026.1. The release manifest pins `awsLambdaArchitecture: x86_64`, and the 2026.1 bill rejects any other Lambda architecture.
 - Set `HONUA_SKIP_MIGRATIONS=true` and run migrations out-of-band — concurrent cold starts must not race migrations.
 - Publish numeric versions and route traffic through an alias; canary weight shifting and automatic promote/rollback use the deploy backend `honua-gitops-aws-lambda`.
-- `v*` release tags publish the Lambda AOT image as `vX.Y.Z-lambda-aot-amd64` (the `x86_64` variant, which the unsuffixed `vX.Y.Z-lambda-aot` tag also resolves to) alongside an uncertified `vX.Y.Z-lambda-aot-arm64`, matching the nightly `nightly-lambda-aot-<sha7>-amd64` shape.
+- `v*` release tags publish the Lambda AOT image as `vX.Y.Z-lambda-aot-amd64` (the `x86_64` variant, which the unsuffixed `vX.Y.Z-lambda-aot` tag also resolves to). `vX.Y.Z-lambda-aot-arm64` is unsupported in 2026.1. Nightly amd64 tags keep the `nightly-lambda-aot-<sha7>-amd64` shape.
 
 ```bash
 aws lambda update-function-code --function-name honua-prod \

@@ -266,6 +266,11 @@ jobs:
           # failures without changing the exact validator evidence identity.
           retry npm install -g 3d-tiles-validator@0.6.1
 
+      - name: Verify FlatGeobuf corruption rejection with pinned GDAL
+        env:
+          HONUA_CNG_REQUIRE_GDAL_VERSION: '3.8.4'
+        run: python3 -m unittest discover -s scripts/conformance/cng -p 'test_flatgeobuf_readback.py' -v
+
       - name: Run CNG conformance lane
         id: run
         env:
