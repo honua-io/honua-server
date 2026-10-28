@@ -17,13 +17,30 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
 [Protocol(TestProtocols.FeatureServer)]
 [Collection("Database")]
-public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixture>
+public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixture>, IAsyncLifetime
 {
     private readonly WebAppFixture _fixture;
+    private readonly List<long> _flatGeobufProbeIds = [];
 
     public FeatureServerQueryParameterTests(WebAppFixture fixture)
     {
         _fixture = fixture;
+    }
+
+    public Task InitializeAsync() => Task.CompletedTask;
+
+    public async Task DisposeAsync()
+    {
+        if (_flatGeobufProbeIds.Count == 0)
+        {
+            return;
+        }
+        await using var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema!);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "DELETE FROM features WHERE layer_id = @layer AND objectid = ANY(@ids);";
+        command.Parameters.AddWithValue("layer", WebAppFixture.TestLayerId);
+        command.Parameters.AddWithValue("ids", _flatGeobufProbeIds.ToArray());
+        await command.ExecuteNonQueryAsync();
     }
 
     [Fact]
@@ -282,7 +299,10 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
         using var stream = new MemoryStream(payload);
         var header = FlatGeobuf.Helpers.ReadHeader(stream);
         header.FeaturesCount.Should().Be(1);
-        stream.Position += (long)FlatGeobuf.Index.PackedRTree.CalcSize(header.FeaturesCount, header.IndexNodeSize);
+        if (header.IndexNodeSize > 0)
+        {
+            stream.Position += (long)FlatGeobuf.Index.PackedRTree.CalcSize(header.FeaturesCount, header.IndexNodeSize);
+        }
         using var reader = new BinaryReader(stream);
         var featureSize = reader.ReadInt32();
         var packed = FlatGeobuf.Feature.GetRootAsFeature(new Google.FlatBuffers.ByteBuffer(reader.ReadBytes(featureSize)));
@@ -330,6 +350,18 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var payload = await ReadFlatGeobufEvidenceAsync(response, geometry is null ? "null-geometry" : "empty-point");
+        var packedGeometry = ReadSingleFlatGeobufGeometry(payload);
+        if (geometry is not null)
+        {
+            packedGeometry.Should().NotBeNull();
+            packedGeometry!.Value.Type.Should().Be(FlatGeobuf.GeometryType.Point);
+            packedGeometry.Value.GetXyArray().Should().HaveCount(2)
+                .And.OnlyContain(value => double.IsNaN(value));
+        }
+        else
+        {
+            packedGeometry.Should().BeNull();
+        }
         var decoded = FlatGeobuf.NTS.FeatureCollectionConversions.Deserialize(payload);
         var feature = decoded.Should().ContainSingle().Subject;
         feature.Attributes["name"].Should().Be("geometry-control");
@@ -340,7 +372,12 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
         else
         {
             feature.Geometry.Should().NotBeNull();
-            feature.Geometry.IsEmpty.Should().BeTrue();
+            // FlatGeobuf 3.26's NTS adapter retains NaN as a one-coordinate
+            // sequence instead of normalizing it to NTS's zero-coordinate EMPTY.
+            // Raw encoding above and mandatory independent GDAL readback are
+            // the EMPTY contract oracle; retain decoded coordinate controls here.
+            double.IsNaN(feature.Geometry.Coordinate.X).Should().BeTrue();
+            double.IsNaN(feature.Geometry.Coordinate.Y).Should().BeTrue();
             feature.Geometry.GeometryType.Should().Be("Point");
         }
         using var stream = new MemoryStream(payload);
@@ -379,9 +416,18 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?f=fgb&where=objectid%3D{id}&outFields=name");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var payload = await ReadFlatGeobufEvidenceAsync(response, "multipoint-empty-member");
+        var packedGeometry = ReadSingleFlatGeobufGeometry(payload)!.Value;
+        packedGeometry.Type.Should().Be(FlatGeobuf.GeometryType.MultiPoint);
+        var xy = packedGeometry.GetXyArray();
+        xy.Should().HaveCount(4);
+        double.IsNaN(xy[0]).Should().BeTrue();
+        double.IsNaN(xy[1]).Should().BeTrue();
+        xy[2].Should().Be(1);
+        xy[3].Should().Be(2);
         var feature = FlatGeobuf.NTS.FeatureCollectionConversions.Deserialize(payload).Should().ContainSingle().Subject;
         feature.Geometry.NumGeometries.Should().Be(2);
-        feature.Geometry.GetGeometryN(0).IsEmpty.Should().BeTrue();
+        double.IsNaN(feature.Geometry.GetGeometryN(0).Coordinate.X).Should().BeTrue();
+        double.IsNaN(feature.Geometry.GetGeometryN(0).Coordinate.Y).Should().BeTrue();
         feature.Geometry.GetGeometryN(1).Coordinate.X.Should().Be(1);
         feature.Geometry.GetGeometryN(1).Coordinate.Y.Should().Be(2);
     }
@@ -397,10 +443,17 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
             INSERT INTO features (layer_id, geometry, attributes)
             SELECT @layer, ST_SetSRID(ST_Point(i::double precision, i::double precision / 2), 4326),
                    jsonb_build_object('name', 'indexed-' || i, 'category', 'cng-index-probe')
-            FROM generate_series(1, 40) i;
+            FROM generate_series(1, 40) i
+            RETURNING objectid;
             """;
         command.Parameters.AddWithValue("layer", WebAppFixture.TestLayerId);
-        await command.ExecuteNonQueryAsync();
+        await using (var reader = await command.ExecuteReaderAsync())
+        {
+            while (await reader.ReadAsync())
+            {
+                _flatGeobufProbeIds.Add(reader.GetInt64(0));
+            }
+        }
         var predicate = Uri.EscapeDataString("category = 'cng-index-probe'");
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?f=fgb&where={predicate}&outFields=name,category&resultRecordCount=100");
@@ -413,7 +466,22 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
         var subset = FlatGeobuf.NTS.FeatureCollectionConversions.Deserialize(stream,
             new NetTopologySuite.Geometries.Envelope(10, 12, 5, 6)).ToArray();
         subset.Select(feature => feature.Attributes["name"]).Should()
-            .BeEquivalentTo("indexed-10", "indexed-11", "indexed-12");
+            .BeEquivalentTo(new[] { "indexed-10", "indexed-11", "indexed-12" });
+    }
+
+    private static FlatGeobuf.Geometry? ReadSingleFlatGeobufGeometry(byte[] payload)
+    {
+        using var stream = new MemoryStream(payload);
+        var header = FlatGeobuf.Helpers.ReadHeader(stream);
+        header.FeaturesCount.Should().Be(1);
+        if (header.IndexNodeSize > 0)
+        {
+            stream.Position += (long)FlatGeobuf.Index.PackedRTree.CalcSize(header.FeaturesCount, header.IndexNodeSize);
+        }
+        using var reader = new BinaryReader(stream);
+        var size = reader.ReadInt32();
+        var feature = FlatGeobuf.Feature.GetRootAsFeature(new Google.FlatBuffers.ByteBuffer(reader.ReadBytes(size)));
+        return feature.Geometry;
     }
 
     private static async Task<byte[]> ReadFlatGeobufEvidenceAsync(HttpResponseMessage response, string name)
@@ -441,7 +509,9 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
         command.Parameters.AddWithValue("layer", WebAppFixture.TestLayerId);
         command.Parameters.AddWithValue("attributes", attributes);
         command.Parameters.AddWithValue("geometry", NpgsqlTypes.NpgsqlDbType.Text, (object?)geometry ?? DBNull.Value);
-        return Convert.ToInt64(await command.ExecuteScalarAsync(), System.Globalization.CultureInfo.InvariantCulture);
+        var id = Convert.ToInt64(await command.ExecuteScalarAsync(), System.Globalization.CultureInfo.InvariantCulture);
+        _flatGeobufProbeIds.Add(id);
+        return id;
     }
 
     [IntegrationTest]
