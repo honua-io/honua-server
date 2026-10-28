@@ -1,13 +1,21 @@
 #!/usr/bin/env python3
-"""Boot the documented Production Compose on fresh volumes; never print secrets."""
+"""Boot the documented Production Compose install on fresh volumes; never print secrets.
+
+The smoke runs the annotated blocks of "Production install from the shipped Compose
+file" in docs/guides/deploy/docker-compose.md, verbatim, in a scratch directory that
+holds copies of the shipped docker-compose.production.yml and .env.production.example,
+exactly as a customer would. For isolation from other installs on the same host it
+only renames the network and storage volume in the copied template and selects
+unused loopback ports; it changes no documented command.
+"""
 import argparse
-import base64
-import ipaddress
+import importlib.util
 import json
 import os
 from pathlib import Path
 import re
 import secrets
+import shutil
 import socket
 import subprocess
 import tempfile
@@ -17,6 +25,23 @@ import urllib.request
 
 
 ROOT = Path(__file__).resolve().parents[2]
+GUIDE = ROOT / "docs/guides/deploy/docker-compose.md"
+SECTION = "## Production install from the shipped Compose file"
+BLOCK_PREFIX = "production."
+# Known startup refusals, reported by marker only so no log text (or secret) is echoed.
+DIAGNOSTICS = {
+    "missing-keyring-certificate": "KeyRingCertificatePath' is required",
+    "unreadable-keyring-certificate": "KeyRingCertificatePath' is set to",
+    "invalid-limits": "Invalid limits configuration",
+    "weak-admin-password": "Admin password must",
+    "missing-master-key": "Set the connection encryption master key",
+    "missing-keyring-password": "Set HONUA_KEYRING_PASSWORD",
+    "missing-image": "Set an immutable HONUA_IMAGE",
+    "missing-proxy-address": "Set the trusted proxy address",
+    "missing-postgis-initialization": "PostGIS extension is not installed",
+}
+TEARDOWN_PLACEHOLDERS = ("HONUA_PROXY_IP", "HONUA_MASTER_KEY", "HONUA_KEYRING_PASSWORD", "POSTGRES_PASSWORD",
+                         "HONUA_ADMIN_PASSWORD")
 
 
 def free_port():
@@ -25,92 +50,89 @@ def free_port():
         return listener.getsockname()[1]
 
 
+def documented_blocks():
+    """Return the runnable production blocks, in document order."""
+    document = GUIDE.read_text(encoding="utf-8")
+    start = document.find("\n" + SECTION + "\n")
+    if start < 0:
+        raise RuntimeError(f"{GUIDE.relative_to(ROOT)} has no '{SECTION}' section")
+    end = document.find("\n## ", start + len(SECTION) + 2)
+    section = document[start:end if end >= 0 else len(document)]
+    spec = importlib.util.spec_from_file_location(
+        "fences", ROOT / "scripts/docs-validation/extract-fenced-commands.py")
+    fences = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(fences)
+    with tempfile.TemporaryDirectory() as directory:
+        path = Path(directory) / "section.md"
+        path.write_text(section, encoding="utf-8")
+        blocks = fences.parse(path)
+    runnable = [(block_id, content) for block_id, mode, content in blocks
+                if mode == "run" and block_id.startswith(BLOCK_PREFIX)]
+    if not runnable:
+        raise RuntimeError("The production section has no runnable docs-validation blocks")
+    return runnable
+
+
+def read_env(path):
+    values = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line and not line.startswith("#") and "=" in line:
+            key, value = line.split("=", 1)
+            values[key] = value
+    return values
+
+
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    artifact = parser.add_mutually_exclusive_group(required=True)
-    artifact.add_argument("--image", help="Exact published image@sha256 digest")
-    artifact.add_argument("--runtime", type=Path,
-                          help="Local Honua.Server.dll for source validation; never a published-image receipt")
-    parser.add_argument("--initialize-postgis", action="store_true",
-                        help="Apply the documented troubleshooting remedy to isolate the mapper regression")
-    parser.add_argument("--timeout", type=int, default=180)
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--image", required=True, help="Exact published image@sha256 digest")
+    parser.add_argument("--timeout", type=int, default=240, help="Seconds to wait for readiness")
     args = parser.parse_args()
-    if args.image and not re.fullmatch(r"[^\s]+@sha256:[0-9a-f]{64}", args.image):
+    if not re.fullmatch(r"[^\s]+@sha256:[0-9a-f]{64}", args.image):
         parser.error("--image must be an immutable published digest")
-    if args.runtime and (not args.runtime.is_file() or args.runtime.name != "Honua.Server.dll"):
-        parser.error("--runtime must name a built Honua.Server.dll")
+    for tool in ("docker", "openssl", "bash", "sed"):
+        if not shutil.which(tool):
+            parser.error(f"{tool} is required")
+
+    blocks = documented_blocks()
     project = "honua-production-smoke-" + secrets.token_hex(6)
-    port = free_port()
-    proxy_port = free_port()
-    document = (ROOT / "docs/guides/deploy/docker-compose.md").read_text()
-    match = re.search(r"cat > docker-compose.yml <<'EOF'\n(.*?)\nEOF", document, re.S)
-    if not match:
-        raise RuntimeError("Documented Production Compose block was not found")
-    compose_text = match.group(1).replace("127.0.0.1:8080:8080", f"127.0.0.1:{port}:8080")
-    compose_text = compose_text.replace("127.0.0.1:8081:8081", f"127.0.0.1:{free_port()}:8081")
+    http_port, grpc_port = free_port(), free_port()
     environment = {key: value for key, value in os.environ.items()
-                   if not key.startswith(("HONUA_", "ConnectionStrings__", "Security__", "Cors__",
-                                          "ForwardedHeaders__", "Authentication__", "Database__"))}
-    values = dict(HONUA_IMAGE=args.image or "mcr.microsoft.com/dotnet/aspnet:10.0", POSTGRES_PASSWORD=secrets.token_hex(32),
-                       HONUA_ADMIN_PASSWORD="Aa1!" + secrets.token_hex(32),
-                       HONUA_MASTER_KEY=secrets.token_hex(32), HONUA_CORS_ORIGIN="https://app.example.com",
-                       HONUA_HOST="honua.example.com", HONUA_STORAGE_VOLUME_NAME=project + "-storage",
-                       HONUA_NETWORK_NAME=project, HONUA_PROXY_IP="127.0.0.1")
-    environment.update(values)
-    receipt = {"image": args.image, "published_image": args.image is not None,
-               "fresh_volumes": True, "production": True,
-               "postgis_remedy": args.initialize_postgis, "ready": False}
-    with tempfile.TemporaryDirectory(prefix=project) as directory:
-        compose_file = Path(directory) / "compose.yml"
-        compose_file.write_text(compose_text)
-        env_file = Path(directory) / ".env.production"
-        env_file.write_text("\n".join(f"{key}={value}" for key, value in values.items()))
-        env_file.chmod(0o600)
-        proxy_file = Path(directory) / "proxy.json"
-        proxy_file.write_text(json.dumps({
-            "services": {"honua": {"environment": {"Authentication__BasicCompatibility__Enabled": "true"}},
-                         "smoke_proxy": {
-                "image": "caddy:2-alpine",
-                "ports": [f"127.0.0.1:{proxy_port}:8080"],
-                "configs": [{"source": "smoke_caddy", "target": "/etc/caddy/Caddyfile"}],
-            }},
-            # Model the scheme asserted by the documented TLS terminator; real
-            # certificate/DNS qualification remains on the deployment host.
-            "configs": {"smoke_caddy": {"content": ":8080 {\n  reverse_proxy honua:8080 {\n    header_up X-Forwarded-Proto https\n  }\n}\n"}},
-        }))
-        for filename, sql in re.findall(r"cat > ([\w-]+\.sql) <<'EOF'\n(.*?)\nEOF", document, re.S):
-            (Path(directory) / filename).write_text(sql + "\n")
-        command = ["docker", "compose", "--project-name", project,
-                   "-f", str(compose_file), "-f", str(proxy_file)]
-        if args.runtime:
-            runtime_file = Path(directory) / "runtime.json"
-            runtime_file.write_text(json.dumps({"services": {"honua": {
-                "entrypoint": ["dotnet", "/app/Honua.Server.dll"],
-                "working_dir": "/app",
-                "volumes": [{"type": "bind", "source": str(args.runtime.resolve().parent),
-                             "target": "/app", "read_only": True}],
-            }}}))
-            command += ["-f", str(runtime_file)]
+                   if not key.startswith(("HONUA_", "ConnectionStrings__", "Security__", "Cors__", "COMPOSE_",
+                                          "ForwardedHeaders__", "Authentication__", "Database__", "Operations__"))
+                   and key != "POSTGRES_PASSWORD"}
+    environment.update(HONUA_IMAGE=args.image, COMPOSE_PROJECT_NAME=project,
+                       HONUA_HTTP_PORT=str(http_port), HONUA_GRPC_PORT=str(grpc_port))
+    receipt = {"image": args.image, "fresh_volumes": True, "production": True,
+               "documented_blocks": [block_id for block_id, _ in blocks], "ready": False}
 
-        def compose(*arguments):
-            return subprocess.run(command + list(arguments), env=environment,
-                                  capture_output=True, text=True, timeout=args.timeout + 60)
+    # Real disk next to the checkout is not required; the bind-mounted key ring only
+    # needs a directory the Docker daemon can see.
+    with tempfile.TemporaryDirectory(prefix=project + "-") as directory:
+        install = Path(directory)
+        shutil.copy2(ROOT / "docker-compose.production.yml", install / "docker-compose.production.yml")
+        template = (ROOT / ".env.production.example").read_text(encoding="utf-8")
+        template = re.sub(r"(?m)^HONUA_NETWORK_NAME=.*$", f"HONUA_NETWORK_NAME={project}", template)
+        template = re.sub(r"(?m)^HONUA_STORAGE_VOLUME_NAME=.*$", f"HONUA_STORAGE_VOLUME_NAME={project}-storage",
+                          template)
+        (install / ".env.production.example").write_text(template, encoding="utf-8")
 
-        def status(path, *, proxy=False, authenticated=False, host=None, basic=False, spoof_https=False):
-            headers = {}
+        def compose(*arguments, timeout=120):
+            return subprocess.run(
+                ["docker", "compose", "-f", "docker-compose.production.yml", "--env-file", ".env.production",
+                 *arguments], cwd=install, env=environment, capture_output=True, text=True, timeout=timeout)
+
+        def diagnose(text):
+            return sorted(name for name, marker in DIAGNOSTICS.items() if marker in text)
+
+        def status(path, *, host=None, authenticated=False, password=""):
+            headers = {"X-Forwarded-Proto": "https"} if host else {}
             if host:
                 headers["Host"] = host
             if authenticated:
-                headers["X-API-Key"] = environment["HONUA_ADMIN_PASSWORD"]
-            if basic:
-                credential = base64.b64encode(("admin:" + environment["HONUA_ADMIN_PASSWORD"]).encode()).decode()
-                headers["Authorization"] = "Basic " + credential
-            if spoof_https:
-                headers["X-Forwarded-Proto"] = "https"
-            request = urllib.request.Request(
-                f"http://127.0.0.1:{proxy_port if proxy else port}{path}", headers=headers)
+                headers["X-API-Key"] = password
+            request = urllib.request.Request(f"http://127.0.0.1:{http_port}{path}", headers=headers)
             try:
-                with urllib.request.urlopen(request, timeout=3) as response:
+                with urllib.request.urlopen(request, timeout=5) as response:
                     return response.status
             except urllib.error.HTTPError as error:
                 return error.code
@@ -118,64 +140,56 @@ def main():
                 return 0
 
         try:
-            if compose("up", "-d", "--wait", "--wait-timeout", str(args.timeout), "postgres", "redis").returncode:
-                receipt["failure"] = "backing-services-startup"
+            script = "\n".join(["set -euo pipefail"] + [
+                f"printf '>>> docs-validation: %s\\n' {block_id}\n{content}" for block_id, content in blocks])
+            result = subprocess.run(["bash", "-c", script], cwd=install, env=environment,
+                                    capture_output=True, text=True, timeout=args.timeout + 900)
+            completed = re.findall(r"^>>> docs-validation: (\S+)$", result.stdout, re.M)
+            receipt["documented_exit_code"] = result.returncode
+            if result.returncode:
+                receipt["failed_block"] = completed[-1] if completed else None
+                receipt["failure"] = "documented-install"
+                logs = compose("logs", "--no-color", "--tail", "300", "honua").stdout if (
+                    install / ".env.production").exists() else ""
+                receipt["diagnostics"] = diagnose(result.stderr + logs)
             else:
-                if compose("up", "-d", "--no-deps", "smoke_proxy").returncode:
-                    raise RuntimeError("The isolated proxy could not start")
-                proxy_id = compose("ps", "-q", "smoke_proxy").stdout.strip()
-                proxy_address = subprocess.run(
-                    ["docker", "inspect", "--format", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", proxy_id],
-                    capture_output=True, text=True, check=True).stdout.strip()
-                environment["HONUA_PROXY_IP"] = str(ipaddress.ip_address(proxy_address))
-                if args.initialize_postgis:
-                    result = compose("exec", "-T", "postgres", "psql", "-v", "ON_ERROR_STOP=1",
-                                     "-U", "honua", "-d", "honua", "-c", "CREATE EXTENSION IF NOT EXISTS postgis;")
-                    if result.returncode:
-                        raise RuntimeError("PostGIS troubleshooting remedy failed")
-                if compose("up", "-d", "--no-deps", "honua").returncode:
-                    receipt["failure"] = "server-container-startup"
+                values = read_env(install / ".env.production")
+                password = values.get("HONUA_ADMIN_PASSWORD", "")
+                host = values.get("HONUA_HOST", "")
+                deadline = time.monotonic() + args.timeout
+                ready_status = 0
+                while time.monotonic() < deadline:
+                    ready_status = status("/healthz/ready")
+                    if ready_status == 200:
+                        break
+                    time.sleep(2)
+                receipt["ready_status"] = ready_status
+                if ready_status != 200:
+                    receipt["failure"] = "readiness"
+                    receipt["diagnostics"] = diagnose(compose("logs", "--no-color", "--tail", "300", "honua").stdout)
                 else:
-                    deadline = time.monotonic() + args.timeout
-                    while time.monotonic() < deadline:
-                        if status("/healthz/ready") == 200:
-                            receipt["live_status"] = status("/healthz/live")
-                            receipt["anonymous_admin_status"] = status("/api/v1/admin/config")
-                            receipt["ready"] = (receipt["live_status"] == 200
-                                                and receipt["anonymous_admin_status"] == 401)
-                            break
-                        logs = compose("logs", "--no-color", "--tail", "100", "honua").stdout
-                        if "exactly one safe approval mapper" in logs:
-                            receipt["failure"] = "missing-safe-rollback-approval-mappers"
-                            break
-                        if "PostGIS extension is not installed" in logs:
-                            receipt["failure"] = "missing-postgis-initialization"
-                            break
-                        time.sleep(2)
-                    if not receipt["ready"] and "failure" not in receipt:
-                        receipt["failure"] = "readiness-or-authentication"
-                    if receipt["ready"]:
-                        deadline = time.monotonic() + 30
-                        while time.monotonic() < deadline:
-                            if status("/healthz/ready", proxy=True) == 200:
-                                break
-                            time.sleep(1)
-                        receipt["proxy_authenticated_admin_status"] = status(
-                            "/api/v1/admin/config", proxy=True, authenticated=True, host=environment["HONUA_HOST"])
-                        receipt["proxy_untrusted_host_status"] = status(
-                            "/api/v1/admin/config", proxy=True, authenticated=True, host="untrusted.invalid")
-                        receipt["proxy_https_basic_status"] = status(
-                            "/api/v1/admin/config", proxy=True, basic=True, host=environment["HONUA_HOST"])
-                        receipt["untrusted_forwarded_https_status"] = status(
-                            "/api/v1/admin/config", basic=True, spoof_https=True, host=environment["HONUA_HOST"])
-                        receipt["ready"] = (receipt["proxy_authenticated_admin_status"] == 200
-                                            and receipt["proxy_untrusted_host_status"] == 400
-                                            and receipt["proxy_https_basic_status"] == 200
-                                            and receipt["untrusted_forwarded_https_status"] == 401)
-                        if not receipt["ready"]:
-                            receipt["failure"] = "proxy-hostname-or-authentication"
+                    receipt["live_status"] = status("/healthz/live")
+                    receipt["anonymous_admin_status"] = status("/api/v1/admin/config", host=host)
+                    receipt["proxied_admin_status"] = status(
+                        "/api/v1/admin/config", host=host, authenticated=True, password=password)
+                    receipt["untrusted_host_status"] = status(
+                        "/api/v1/admin/config", host="untrusted.invalid", authenticated=True, password=password)
+                    receipt["ready"] = (receipt["live_status"] == 200
+                                        and receipt["anonymous_admin_status"] == 401
+                                        and receipt["proxied_admin_status"] == 200
+                                        and receipt["untrusted_host_status"] == 400)
+                    if not receipt["ready"]:
+                        receipt["failure"] = "authentication-or-hostname"
         finally:
-            receipt["cleanup_succeeded"] = compose("down", "--volumes", "--remove-orphans").returncode == 0
+            down = subprocess.run(
+                ["docker", "compose", "-f", "docker-compose.production.yml", "--env-file",
+                 ".env.production" if (install / ".env.production").exists() else ".env.production.example",
+                 "down", "--volumes", "--remove-orphans"],
+                # Placeholders only satisfy interpolation for a stack that never started;
+                # project, network and volume names still come from the env file.
+                cwd=install, env={**{key: "teardown" for key in TEARDOWN_PLACEHOLDERS}, **environment},
+                capture_output=True, text=True, timeout=300)
+            receipt["cleanup_succeeded"] = down.returncode == 0
     print(json.dumps(receipt, sort_keys=True))
     return 0 if receipt["ready"] and receipt["cleanup_succeeded"] else 1
 
