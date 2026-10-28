@@ -7,11 +7,13 @@ using System.Globalization;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Core.Features.Raster.CogParser;
 using Honua.Db.Postgres.Features.Raster;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
+using NSubstitute;
 
 namespace Honua.Db.Postgres.Tests.Features.Raster;
 
@@ -43,6 +45,156 @@ namespace Honua.Db.Postgres.Tests.Features.Raster;
 public sealed class PostgresRasterStoreUnalignedMosaicTests(PostgresFixture fixture)
 {
     private const int LayerId = 4792;
+
+    [IntegrationTest]
+    public async Task ExportCog_AfterRestrictedPool_AvailablePoolStillWritesOptimizedLayout()
+    {
+        var schemaName = await CreateSchemaAsync();
+        try
+        {
+            await using (var connection = await fixture.GetConnectionAsync(schemaName))
+            await using (var command = connection.CreateCommand())
+            {
+                command.CommandText = """
+                    INSERT INTO raster_data(layer_id, name, raster)
+                    VALUES (4792, 'missing-cog-driver', ST_AddBand(
+                        ST_MakeEmptyRaster(1024,1024,0,1024,1,-1,0,0,3857),
+                        '32BF'::text,7::double precision,-9999::double precision));
+                    """;
+                await command.ExecuteNonQueryAsync();
+            }
+
+            // A dedicated pool sets a session-local GDAL policy on every physical connection.
+            // Do not mutate the shared container, process cache, or other tests' sessions.
+            var settings = new NpgsqlConnectionStringBuilder(fixture.ConnectionString)
+            {
+                Options = "-c postgis.gdal_enabled_drivers=GTiff"
+            };
+            await using var dataSource = NpgsqlDataSource.Create(settings.ConnectionString);
+            await using (var connection = await dataSource.OpenConnectionAsync())
+            await using (var command = connection.CreateCommand())
+            {
+                command.CommandText = "SELECT short_name FROM ST_GDALDrivers() WHERE short_name IN ('COG','GTiff')";
+                await using var reader = await command.ExecuteReaderAsync();
+                var drivers = new List<string>();
+                while (await reader.ReadAsync()) drivers.Add(reader.GetString(0));
+                drivers.Should().Equal(new[] { "GTiff" }, "the isolated session allows TIFF but cannot author COG");
+            }
+
+            await using (var connection = await dataSource.OpenConnectionAsync())
+            await using (var command = connection.CreateCommand())
+            {
+                command.CommandText = """
+                    SELECT octet_length(ST_AsGDALRaster(ST_AddBand(
+                        ST_MakeEmptyRaster(2,2,0,2,1,-1,0,0,3857),
+                        '32BF'::text,7::double precision,-9999::double precision), 'GTiff'));
+                    """;
+                Convert.ToInt32(await command.ExecuteScalarAsync(), CultureInfo.InvariantCulture)
+                    .Should().BeGreaterThan(0, "GTiff fallback is genuinely writable in the restricted session");
+            }
+
+            var store = new PostgresRasterStore(new FixtureConnectionProvider(dataSource),
+                NullLogger<PostgresRasterStore>.Instance, FixtureBypassDatabaseSchemaGuard.Instance, schemaName);
+            var raster = await store.GetPrimaryRasterInfoAsync(LayerId);
+            raster.Should().NotBeNull();
+            Func<Task> export = async () => await store.ExportImageAsync(LayerId, raster!.Value.Id,
+                new RasterQuery { OutputFormat = RasterFormat.COG });
+            var restrictedException = await Record.ExceptionAsync(export);
+            // Observe the second pool even when the first pool wrongly returned fallback
+            // bytes, so a failed first assertion cannot hide cross-pool contamination.
+            var available = CreateStore(schemaName);
+            RasterResult? availableCog = null;
+            var availableException = await Record.ExceptionAsync(async () =>
+            {
+                availableCog = await available.ExportImageAsync(LayerId, raster!.Value.Id,
+                    new RasterQuery { OutputFormat = RasterFormat.COG });
+            });
+            availableException.Should().BeNull("the normal pool remains COG capable after a restricted session");
+            availableCog.Should().NotBeNull();
+            var bytes = availableCog!.Value.Data;
+            var ranges = Substitute.For<ICloudRangeReader>();
+            ranges.ReadRangeAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<long>(),
+                    Arg.Any<int>(), Arg.Any<CancellationToken>())
+                .Returns(call => Task.FromResult(bytes.AsSpan((int)call.ArgAt<long>(2),
+                    Math.Min(call.ArgAt<int>(3), bytes.Length - (int)call.ArgAt<long>(2))).ToArray()));
+            var metadata = await new CogMetadataExtractor().ReadMetadataAsync(ranges, "test", "after-restricted.tif");
+            metadata.OverviewLevels.Should().Contain(level => level.Width <= 512 && level.Height <= 512);
+            metadata.OverviewLevels.Should().OnlyContain(level => level.TileOffsets.Length > 0);
+            restrictedException.Should().BeOfType<NotSupportedException>(
+                "a restricted datasource must reject COG rather than returning mislabeled GTiff");
+        }
+        finally { await fixture.DropSchemaAsync(schemaName); }
+    }
+
+    // Exercise the actual managed writer, rather than reproducing its SQL or validating a
+    // pre-generated fixture. A 1024px image requires reduced-resolution IFDs for COG 1.0.
+    [IntegrationTest]
+    public async Task ExportCog_EmptyExtent_WritesTilesAndOverviews()
+    {
+        var schemaName = await CreateSchemaAsync();
+        try
+        {
+            await using var connection = await fixture.GetConnectionAsync(schemaName);
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                INSERT INTO raster_data(layer_id, name, raster)
+                VALUES (4792, 'cog-layout', ST_AddBand(
+                    ST_MakeEmptyRaster(1024,1024,0,1024,1,-1,0,0,3857),
+                    '32BF'::text,7::double precision,-9999::double precision));
+                """;
+            await command.ExecuteNonQueryAsync();
+            var envelope = new NetTopologySuite.Geometries.Envelope(2048, 3072, 0, 1024);
+            var query = new RasterQuery
+            {
+                OutputFormat = RasterFormat.COG,
+                OutputWidth = 1024,
+                OutputHeight = 1024,
+                CoverClipExtent = true,
+                ResamplingAlgorithm = ResamplingAlgorithm.NearestNeighbor,
+                ClipRegion = new RasterClipRegion
+                {
+                    Geometry = new NetTopologySuite.IO.WKBWriter().Write(
+                        new NetTopologySuite.Geometries.GeometryFactory().ToGeometry(envelope)),
+                    Srid = 3857
+                }
+            };
+            var store = CreateStore(schemaName);
+            var result = await store.ExportEmptyExtentAsync(LayerId, query);
+
+            // Reading the emitted TIFF's IFD chain also requires real tile offset/count tags;
+            // plain stripped GTiff must fail this check rather than pass as readable TIFF.
+            var rangeReader = Substitute.For<ICloudRangeReader>();
+            rangeReader.ReadRangeAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<long>(),
+                    Arg.Any<int>(), Arg.Any<CancellationToken>())
+                .Returns(call => Task.FromResult(result.Data.AsSpan((int)call.ArgAt<long>(2),
+                    Math.Min(call.ArgAt<int>(3), result.Data.Length - (int)call.ArgAt<long>(2))).ToArray()));
+            var metadata = await new CogMetadataExtractor().ReadMetadataAsync(rangeReader, "test", "actual.tif");
+            metadata.Width.Should().Be(1024);
+            metadata.Height.Should().Be(1024);
+            metadata.TileWidth.Should().BeLessThanOrEqualTo(512);
+            metadata.TileHeight.Should().BeLessThanOrEqualTo(512);
+            metadata.OverviewLevels.Should().Contain(level => level.Width <= 512 && level.Height <= 512,
+                "COG optimized GeoTIFF requires a reduced-resolution image for this canvas");
+            metadata.OverviewLevels.Should().OnlyContain(level => level.TileOffsets.Length > 0);
+
+            // Producer-stack GDAL roundtrip verifies that layout changes retain nodata and samples.
+            // External rio-cogeo validation remains separate evidence, not this assertion.
+            command.CommandText = """
+                WITH emitted AS (SELECT ST_FromGDALRaster(@bytes) AS rast)
+                SELECT ST_SRID(rast), ST_BandNoDataValue(rast,1),
+                       ST_Value(rast,1,1,1,false), ST_Value(rast,1,1024,1024,false)
+                FROM emitted;
+                """;
+            command.Parameters.AddWithValue("bytes", result.Data);
+            await using var reader = await command.ExecuteReaderAsync();
+            (await reader.ReadAsync()).Should().BeTrue();
+            reader.GetInt32(0).Should().Be(3857);
+            reader.GetDouble(1).Should().Be(-9999);
+            reader.GetDouble(2).Should().Be(-9999);
+            reader.GetDouble(3).Should().Be(-9999);
+        }
+        finally { await fixture.DropSchemaAsync(schemaName); }
+    }
 
     [IntegrationTheory]
     [InlineData("single")]
