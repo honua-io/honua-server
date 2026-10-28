@@ -160,6 +160,34 @@ internal sealed class PostgresAdminApiKeyStore(
         return await reader.ReadAsync(cancellationToken).ConfigureAwait(false) ? Read(reader) : null;
     }
 
+    public async Task<AdminApiKeyRecord?> UpdateRestrictionsAsync(
+        Guid id,
+        AdminApiKeyRestrictions restrictions,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(restrictions);
+        var now = _timeProvider.GetUtcNow();
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        // Approved-operation credentials are single-purpose. Leave them unchanged.
+        await using var command = new NpgsqlCommand($"""
+            UPDATE {_table}
+            SET allowed_referrers = @allowedReferrers,
+                allowed_ip_ranges = @allowedIpRanges,
+                updated_at = @now
+            WHERE id = @id
+              AND NOT EXISTS (
+                  SELECT 1 FROM unnest(permissions) AS permission
+                  WHERE permission LIKE 'admin:operation:%')
+            RETURNING {Columns}
+            """, connection);
+        command.Parameters.AddWithValue("id", id);
+        command.Parameters.AddWithValue("now", now);
+        command.Parameters.Add(TextArrayOrNull("allowedReferrers", AdminApiKeyRestrictions.Normalize(restrictions.AllowedReferrers)));
+        command.Parameters.Add(TextArrayOrNull("allowedIpRanges", AdminApiKeyRestrictions.Normalize(restrictions.AllowedIpRanges)));
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        return await reader.ReadAsync(cancellationToken).ConfigureAwait(false) ? Read(reader) : null;
+    }
+
     public async Task<AdminApiKeyValidationResult?> ValidateAsync(string keyMaterial, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(keyMaterial))

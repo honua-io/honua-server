@@ -41,6 +41,16 @@ internal interface IAdminApiKeyStore
 
     Task<AdminApiKeyRecord?> RevokeAsync(Guid id, CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Replaces referrer and IP restrictions. Null or empty lists remove that restriction.
+    /// Key material is unchanged. Returns null when the key does not exist or is an
+    /// approved-operation credential.
+    /// </summary>
+    Task<AdminApiKeyRecord?> UpdateRestrictionsAsync(
+        Guid id,
+        AdminApiKeyRestrictions restrictions,
+        CancellationToken cancellationToken);
+
     Task<AdminApiKeyValidationResult?> ValidateAsync(string keyMaterial, CancellationToken cancellationToken);
 }
 
@@ -207,6 +217,35 @@ internal sealed class InMemoryAdminApiKeyStore(TimeProvider? timeProvider = null
 
             // A concurrent usage or rotation write replaced the snapshot: revoke the current
             // record rather than report a revocation that was never stored.
+            if (_keys.TryUpdate(id, updated, existing))
+            {
+                return Task.FromResult<AdminApiKeyRecord?>(updated);
+            }
+        }
+    }
+
+    public Task<AdminApiKeyRecord?> UpdateRestrictionsAsync(
+        Guid id,
+        AdminApiKeyRestrictions restrictions,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(restrictions);
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!_keys.TryGetValue(id, out var existing)
+                || existing.Permissions.Any(AdminApiKeyPermission.IsApprovedOperationGrant))
+            {
+                return Task.FromResult<AdminApiKeyRecord?>(null);
+            }
+
+            var updated = existing with
+            {
+                UpdatedAt = _timeProvider.GetUtcNow(),
+                AllowedReferrers = AdminApiKeyRestrictions.Normalize(restrictions.AllowedReferrers),
+                AllowedIpRanges = AdminApiKeyRestrictions.Normalize(restrictions.AllowedIpRanges),
+            };
+
             if (_keys.TryUpdate(id, updated, existing))
             {
                 return Task.FromResult<AdminApiKeyRecord?>(updated);
@@ -444,6 +483,37 @@ internal sealed class RedisAdminApiKeyStore(IConnectionMultiplexer redis, TimePr
         }
 
         throw new InvalidOperationException($"Admin API key {id:D} changed on every revocation attempt.");
+    }
+
+    public async Task<AdminApiKeyRecord?> UpdateRestrictionsAsync(
+        Guid id,
+        AdminApiKeyRestrictions restrictions,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(restrictions);
+        for (var attempt = 0; attempt < WriteAttempts; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var snapshot = await _database.StringGetAsync(BuildKey(id)).ConfigureAwait(false);
+            var existing = Read(snapshot);
+            if (existing is null || existing.Permissions.Any(AdminApiKeyPermission.IsApprovedOperationGrant))
+            {
+                return null;
+            }
+
+            var updated = existing with
+            {
+                UpdatedAt = _timeProvider.GetUtcNow(),
+                AllowedReferrers = AdminApiKeyRestrictions.Normalize(restrictions.AllowedReferrers),
+                AllowedIpRanges = AdminApiKeyRestrictions.Normalize(restrictions.AllowedIpRanges),
+            };
+            if (await TryReplaceAsync(id, snapshot, updated).ConfigureAwait(false))
+            {
+                return updated;
+            }
+        }
+
+        throw new InvalidOperationException($"Admin API key {id:D} changed on every restriction update.");
     }
 
     /// <summary>Writes <paramref name="updated"/> only if the stored bytes still equal <paramref name="snapshot"/>.</summary>

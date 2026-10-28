@@ -18,6 +18,7 @@ All endpoints require admin authentication — see [Authentication](../../guides
 | POST | `/api/v1/admin/api-keys` | Create a scoped API key |
 | POST | `/api/v1/admin/api-keys/{id}/rotate` | Rotate an API key (returns the new secret once) |
 | POST | `/api/v1/admin/api-keys/{id}/revoke` | Revoke an API key |
+| PATCH | `/api/v1/admin/api-keys/{id}/restrictions` | Replace referrer and IP restrictions without changing the secret |
 | GET | `/api/v1/admin/api-keys/{id}/effective-permissions` | Get the key's effective permissions |
 
 In the authorized [API explorer](../openapi-and-explorer.md), run `POST /api/v1/admin/api-keys` with `{"name":"ci-publisher","permissions":["admin:write"]}`. The body takes `name`, `permissions`, an optional `expiresAt`, and optional request restrictions `allowedReferrers` (origin patterns such as `https://app.example.com` or `https://*.example.com`) and `allowedIpRanges` (CIDR ranges or addresses); an empty `permissions` list grants full admin access. Restrictions are recommended for keys used from browsers or in the `token` query parameter; see [Restrict keys used from browsers or in URLs](../../guides/secure/authentication.md#restrict-keys-used-from-browsers-or-in-urls).
@@ -51,6 +52,7 @@ full-administrator credential authority:
 | POST | `/api/v1/admin/api-keys` |
 | POST | `/api/v1/admin/api-keys/{id}/rotate` |
 | POST | `/api/v1/admin/api-keys/{id}/revoke` |
+| PATCH | `/api/v1/admin/api-keys/{id}/restrictions` |
 | PUT | `/api/v1/admin/users/{id}/roles` |
 | DELETE | `/api/v1/admin/users/{id}` |
 | POST | `/api/v1/admin/oauth-clients` |
