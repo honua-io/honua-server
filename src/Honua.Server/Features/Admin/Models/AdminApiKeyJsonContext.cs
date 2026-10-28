@@ -19,6 +19,7 @@ namespace Honua.Server.Features.Admin.Models;
 [JsonSerializable(typeof(ApiResponse<AdminApiKeyEffectivePermissionsResponse>))]
 [JsonSerializable(typeof(ApiResponse<object>))]
 [JsonSerializable(typeof(CreateAdminApiKeyRequest))]
+[JsonSerializable(typeof(UpdateAdminApiKeyRestrictionsRequest))]
 [JsonSerializable(typeof(AdminApiKeyResponse))]
 [JsonSerializable(typeof(AdminApiKeySecretResponse))]
 [JsonSerializable(typeof(AdminApiKeyEffectivePermissionsResponse))]

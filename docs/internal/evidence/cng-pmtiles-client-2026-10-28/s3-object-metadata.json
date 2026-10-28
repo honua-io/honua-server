@@ -1,0 +1,17 @@
+{
+    "AcceptRanges": "bytes",
+    "LastModified": "Wed, 28 Oct 2026 06:14:48 GMT",
+    "ContentLength": 25216,
+    "ETag": "\"dfe153930b9dbc88668229e2cb182aca\"",
+    "ContentType": "application/vnd.pmtiles",
+    "ServerSideEncryption": "AES256",
+    "Metadata": {
+        "operation": "publish",
+        "cng-sha256": "fdf309bda8f0c4ce3e4ac08c5c88ddbddea2b9dbc3736f0604d755cc4e702a54",
+        "layerid": "1000",
+        "serviceid": "svc-cng-feature",
+        "publicationid": "pub-cng-feature-1000",
+        "resourceid": "res-cng-1000",
+        "storagebindingid": "storage-cng-1000"
+    }
+}

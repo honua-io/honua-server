@@ -1,0 +1,44 @@
+{
+  "source_sha": "57d2c31132e52147d79ca702db34b70e7954abac",
+  "ci_run": 40607031200,
+  "ci_url": "https://github.com/honua-io/honua-server/actions/runs/40607031200",
+  "worker": {
+    "artifact_id": 12782412570,
+    "archive_sha256": "548925b10c830c20a22e528f7185d1c658309fba22dc3718972bb056b04f1737",
+    "files": [
+      {
+        "file": "Honua.Worker.Gdal.dll",
+        "sha256": "687cab4fd47c0c6472fa5b53a418e2e20472d8d48ffcf3e4dbef8b180799ddee"
+      },
+      {
+        "file": "Honua.Worker.Gdal.deps.json",
+        "sha256": "ae6ea68806347583a20b64a0e744b1f1a9cfa499254c27291cf74084a398e162"
+      },
+      {
+        "file": "Honua.Worker.Gdal.runtimeconfig.json",
+        "sha256": "f8bd1713a3691d58eb332a71675f129385b91e852b66e7b6761cae1f34d4efd2"
+      }
+    ]
+  },
+  "server": {
+    "artifact_id": 12782164814,
+    "archive_sha256": "d1d4de8dbf20db994c242ba51e1f0a800edefdcb8eb94fa5e1d16e1398449fe1",
+    "files": {
+      "Honua.Server.dll": "3059c13a71058cb58a77532f23d9cefa64631199851891617858ac8ad9bd42e1",
+      "Honua.Server.deps.json": "c79c53d84a5fec4175cbf33c045cf11918d0bc4fdc2412f707502d7b7ad8fc9a",
+      "Honua.Server.runtimeconfig.json": "5c53ca387574213bf4c58aa6b3e9b7ab211336e9e69566037283fa322d8360e7"
+    }
+  },
+  "native_tools": {
+    "immutable_image": "ghcr.io/honua-io/honua-server-native-tools@sha256:6561e8f6018e967aa99a0125e82fa7d4411b79dc9381fbe82d0cd373958c8415",
+    "input_identity": "309de81da452fbbd4be4a703f85491d7aae270d46dce1e95e252285364d9bea8",
+    "source_sha": "66b28d9a17b6f83675d92f4cdf4d00dac2f5e2c9",
+    "provenance_receipt": "native-tools-provenance.json"
+  },
+  "server_runtime_base": "mcr.microsoft.com/dotnet/aspnet:10.0@sha256:d5633778c754e89a386882eddf8dbee6942447a8a4b8267c19cf1e1158d0b0ac",
+  "runtime_version": "10.0.13",
+  "diagnostic_image_ids": {
+    "worker": "sha256:dc3ec376f6e9147db348688fcf6405ad51caa6ac413fb2973bc7cb7ff4402dda",
+    "server": "sha256:458cacbfb57e3bddde46472de71fa0d62f8163bf43608b6c75a580b7b9d2fecb"
+  }
+}

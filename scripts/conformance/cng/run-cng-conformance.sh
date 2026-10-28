@@ -215,7 +215,7 @@ seed_pmtiles_serving() {
     docker cp "$ARTIFACTS_DIR/honua.pmtiles" "$container":/tmp/cng-honua.pmtiles || return 1
     $COMPOSE_CMD "${CNG_COMPOSE_ARGS[@]}" exec -T localstack awslocal s3api put-object \
         --bucket honua-cng-fixtures --key pmtiles/cng/honua.pmtiles --body /tmp/cng-honua.pmtiles \
-        --content-type application/vnd.pmtiles --metadata "operation=publish,cng-sha256=$digest" >/dev/null || return 1
+        --content-type application/vnd.pmtiles --metadata "operation=publish,cng-sha256=$digest,layerId=1000,serviceId=svc-cng-feature,publicationId=pub-cng-feature-1000,resourceId=res-cng-1000,storageBindingId=storage-cng-1000" >/dev/null || return 1
     $COMPOSE_CMD "${CNG_COMPOSE_ARGS[@]}" exec -T localstack awslocal s3api head-object \
         --bucket honua-cng-fixtures --key pmtiles/cng/honua.pmtiles \
         > "$RESULTS_DIR/pmtiles-s3-object.json" || return 1

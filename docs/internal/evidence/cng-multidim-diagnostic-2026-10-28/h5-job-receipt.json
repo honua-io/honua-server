@@ -1,0 +1,1002 @@
+{
+  "schema": "honua.diagnostic.multidim-worker.v1",
+  "qualification": false,
+  "outcome": "bound",
+  "started_at": "2026-10-28T05:25:35.767758+00:00",
+  "responses": [
+    {
+      "path": "/api/v1/admin/zarr-stores?layerId=1000",
+      "method": "GET",
+      "status": 200,
+      "body": []
+    },
+    {
+      "path": "/api/v1/admin/multidim-coverages/",
+      "method": "POST",
+      "status": 201,
+      "body": {
+        "id": 1,
+        "layerId": 1000,
+        "name": "CNG derived diagnostic-1",
+        "description": null,
+        "format": "CloudOptimizedHdf5",
+        "provider": "AwsS3",
+        "bucket": "honua-cng-fixtures",
+        "objectKey": "diagnostic-multidim/h520261028/canonical.h5",
+        "variables": [
+          "temperature"
+        ],
+        "srid": null,
+        "variableCount": null,
+        "metadataScannedAt": null,
+        "status": "reader-not-enabled",
+        "createdAt": "2026-10-28T05:25:39.208659+00:00"
+      }
+    },
+    {
+      "path": "/api/v1/admin/multidim-coverages/1/refresh",
+      "method": "POST",
+      "status": 202,
+      "body": {
+        "jobId": "covscan-c399f6ddf75a46af9b5507c75d047381",
+        "status": "queued",
+        "statusUrl": "/api/v1/admin/multidim-coverages/jobs/covscan-c399f6ddf75a46af9b5507c75d047381",
+        "error": null,
+        "warnings": [],
+        "coverage": null
+      }
+    },
+    {
+      "path": "/api/v1/admin/multidim-coverages/jobs/covscan-c399f6ddf75a46af9b5507c75d047381",
+      "method": "GET",
+      "status": 200,
+      "body": {
+        "jobId": "covscan-c399f6ddf75a46af9b5507c75d047381",
+        "status": "queued",
+        "statusUrl": "/api/v1/admin/multidim-coverages/jobs/covscan-c399f6ddf75a46af9b5507c75d047381",
+        "error": null,
+        "warnings": [],
+        "coverage": null
+      }
+    },
+    {
+      "path": "/api/v1/admin/multidim-coverages/jobs/covscan-c399f6ddf75a46af9b5507c75d047381",
+      "method": "GET",
+      "status": 200,
+      "body": {
+        "jobId": "covscan-c399f6ddf75a46af9b5507c75d047381",
+        "status": "succeeded",
+        "statusUrl": "/api/v1/admin/multidim-coverages/jobs/covscan-c399f6ddf75a46af9b5507c75d047381",
+        "error": null,
+        "warnings": [],
+        "coverage": {
+          "id": 1,
+          "layerId": 1000,
+          "name": "CNG derived diagnostic-1",
+          "description": null,
+          "format": "CloudOptimizedHdf5",
+          "provider": "AwsS3",
+          "bucket": "honua-cng-fixtures",
+          "objectKey": "diagnostic-multidim/h520261028/canonical.h5",
+          "variables": [
+            "temperature"
+          ],
+          "srid": 4326,
+          "variableCount": 1,
+          "metadataScannedAt": "2026-10-28T05:25:44.600587+00:00",
+          "status": null,
+          "createdAt": "2026-10-28T05:25:39.208659+00:00"
+        }
+      }
+    },
+    {
+      "path": "/api/v1/admin/zarr-stores?layerId=1000",
+      "method": "GET",
+      "status": 200,
+      "body": [
+        {
+          "id": 1,
+          "layerId": 1000,
+          "name": "CNG derived diagnostic-1 (Zarr)",
+          "description": "Derived from multidimensional coverage 1.",
+          "provider": "AwsS3",
+          "bucket": "honua-cng-fixtures",
+          "rootPath": "diagnostic-multidim/h520261028/canonical.zarr",
+          "zarrFormat": 2,
+          "srid": 4326,
+          "variableCount": 4,
+          "primaryVariable": "temperature",
+          "variables": [
+            {
+              "name": "temperature",
+              "shape": [
+                4,
+                8,
+                16
+              ],
+              "chunks": [
+                1,
+                4,
+                4
+              ],
+              "dataType": "<f4",
+              "compressor": null,
+              "dimensionNames": [
+                "time",
+                "y",
+                "x"
+              ]
+            },
+            {
+              "name": "time",
+              "shape": [
+                4
+              ],
+              "chunks": [
+                4
+              ],
+              "dataType": "<i4",
+              "compressor": null,
+              "dimensionNames": [
+                "time"
+              ]
+            },
+            {
+              "name": "x",
+              "shape": [
+                16
+              ],
+              "chunks": [
+                16
+              ],
+              "dataType": "<f8",
+              "compressor": null,
+              "dimensionNames": [
+                "x"
+              ]
+            },
+            {
+              "name": "y",
+              "shape": [
+                8
+              ],
+              "chunks": [
+                8
+              ],
+              "dataType": "<f8",
+              "compressor": null,
+              "dimensionNames": [
+                "y"
+              ]
+            }
+          ],
+          "metadataScannedAt": "2026-10-28T05:25:44.9587265+00:00",
+          "createdAt": "2026-10-28T05:25:44.6187925+00:00"
+        }
+      ]
+    },
+    {
+      "path": "/api/v1/admin/jobs/covscan-c399f6ddf75a46af9b5507c75d047381/logs?limit=200",
+      "method": "GET",
+      "status": 200,
+      "body": {
+        "jobId": "covscan-c399f6ddf75a46af9b5507c75d047381",
+        "state": "available",
+        "items": [
+          {
+            "timestamp": "2026-10-28T05:25:41.5505591+00:00",
+            "level": "Info",
+            "message": "Running GDAL command: gdalmdiminfo /vsis3/honua-cng-fixtures/diagnostic-multidim/h520261028/canonical.h5",
+            "phase": "execute",
+            "metadata": {
+              "gdal.tool": "gdalmdiminfo",
+              "gdal.command": "gdalmdiminfo /vsis3/honua-cng-fixtures/diagnostic-multidim/h520261028/canonical.h5"
+            }
+          },
+          {
+            "timestamp": "2026-10-28T05:25:41.6971844+00:00",
+            "level": "Info",
+            "message": "Running GDAL command: gdalmdimtranslate -of Zarr /vsis3/honua-cng-fixtures/diagnostic-multidim/h520261028/canonical.h5 /vsis3/honua-cng-fixtures/diagnostic-multidim/h520261028/canonical.zarr",
+            "phase": "execute",
+            "metadata": {
+              "gdal.tool": "gdalmdimtranslate",
+              "gdal.command": "gdalmdimtranslate -of Zarr /vsis3/honua-cng-fixtures/diagnostic-multidim/h520261028/canonical.h5 /vsis3/honua-cng-fixtures/diagn",
+              "honua.log.truncated": "true"
+            }
+          },
+          {
+            "timestamp": "2026-10-28T05:25:42.4271669+00:00",
+            "level": "Info",
+            "message": "Running GDAL command: gdalinfo --config GDAL_PAM_ENABLED NO -json /vsis3/honua-cng-fixtures/diagnostic-multidim/h520261028/canonical.zarr",
+            "phase": "execute",
+            "metadata": {
+              "gdal.tool": "gdalinfo",
+              "gdal.command": "gdalinfo --config GDAL_PAM_ENABLED NO -json /vsis3/honua-cng-fixtures/diagnostic-multidim/h520261028/canonical.zarr"
+            }
+          },
+          {
+            "timestamp": "2026-10-28T05:25:42.5311242+00:00",
+            "level": "Info",
+            "message": "Running GDAL command: gdalinfo --config GDAL_PAM_ENABLED NO -json -stats /vsis3/honua-cng-fixtures/diagnostic-multidim/h520261028/canonical.zarr",
+            "phase": "execute",
+            "metadata": {
+              "gdal.tool": "gdalinfo",
+              "gdal.command": "gdalinfo --config GDAL_PAM_ENABLED NO -json -stats /vsis3/honua-cng-fixtures/diagnostic-multidim/h520261028/canonical.zarr"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "scope": "CI-managed diagnostic worker/server with S3 emulator; not production image or campaign qualification",
+  "identity": {
+    "source_sha": "57d2c31132e52147d79ca702db34b70e7954abac",
+    "server_revision": "57d2c31132e52147d79ca702db34b70e7954abac",
+    "worker_revision": "57d2c31132e52147d79ca702db34b70e7954abac",
+    "server_image": "sha256:458cacbfb57e3bddde46472de71fa0d62f8163bf43608b6c75a580b7b9d2fecb",
+    "worker_image": "sha256:dc3ec376f6e9147db348688fcf6405ad51caa6ac413fb2973bc7cb7ff4402dda"
+  },
+  "input_sha256": "4d2bf70598174577311e5c9863d0475b8c8066d92cb5e2e66f80f2da5ec0daf7",
+  "setup_proofs": [
+    {
+      "path": "/healthz/ready",
+      "status": 200,
+      "body_sha256": "5fa7aac5375c5815787fba3f49559f9b45b14023147ce0652803387974144e5f"
+    },
+    {
+      "path": "/rest/services/cng/FeatureServer/1000?f=json",
+      "status": 200,
+      "body_sha256": "4e4c51ca2df621089a2402006121e71dfedfaa3fbfe72d0e9808a9b66b12d401"
+    }
+  ],
+  "before": [],
+  "coverage": {
+    "id": 1,
+    "layerId": 1000,
+    "name": "CNG derived diagnostic-1",
+    "description": null,
+    "format": "CloudOptimizedHdf5",
+    "provider": "AwsS3",
+    "bucket": "honua-cng-fixtures",
+    "objectKey": "diagnostic-multidim/h520261028/canonical.h5",
+    "variables": [
+      "temperature"
+    ],
+    "srid": null,
+    "variableCount": null,
+    "metadataScannedAt": null,
+    "status": "reader-not-enabled",
+    "createdAt": "2026-10-28T05:25:39.208659+00:00"
+  },
+  "job": {
+    "jobId": "covscan-c399f6ddf75a46af9b5507c75d047381",
+    "status": "succeeded",
+    "statusUrl": "/api/v1/admin/multidim-coverages/jobs/covscan-c399f6ddf75a46af9b5507c75d047381",
+    "error": null,
+    "warnings": [],
+    "coverage": {
+      "id": 1,
+      "layerId": 1000,
+      "name": "CNG derived diagnostic-1",
+      "description": null,
+      "format": "CloudOptimizedHdf5",
+      "provider": "AwsS3",
+      "bucket": "honua-cng-fixtures",
+      "objectKey": "diagnostic-multidim/h520261028/canonical.h5",
+      "variables": [
+        "temperature"
+      ],
+      "srid": 4326,
+      "variableCount": 1,
+      "metadataScannedAt": "2026-10-28T05:25:44.600587+00:00",
+      "status": null,
+      "createdAt": "2026-10-28T05:25:39.208659+00:00"
+    }
+  },
+  "after": [
+    {
+      "id": 1,
+      "layerId": 1000,
+      "name": "CNG derived diagnostic-1 (Zarr)",
+      "description": "Derived from multidimensional coverage 1.",
+      "provider": "AwsS3",
+      "bucket": "honua-cng-fixtures",
+      "rootPath": "diagnostic-multidim/h520261028/canonical.zarr",
+      "zarrFormat": 2,
+      "srid": 4326,
+      "variableCount": 4,
+      "primaryVariable": "temperature",
+      "variables": [
+        {
+          "name": "temperature",
+          "shape": [
+            4,
+            8,
+            16
+          ],
+          "chunks": [
+            1,
+            4,
+            4
+          ],
+          "dataType": "<f4",
+          "compressor": null,
+          "dimensionNames": [
+            "time",
+            "y",
+            "x"
+          ]
+        },
+        {
+          "name": "time",
+          "shape": [
+            4
+          ],
+          "chunks": [
+            4
+          ],
+          "dataType": "<i4",
+          "compressor": null,
+          "dimensionNames": [
+            "time"
+          ]
+        },
+        {
+          "name": "x",
+          "shape": [
+            16
+          ],
+          "chunks": [
+            16
+          ],
+          "dataType": "<f8",
+          "compressor": null,
+          "dimensionNames": [
+            "x"
+          ]
+        },
+        {
+          "name": "y",
+          "shape": [
+            8
+          ],
+          "chunks": [
+            8
+          ],
+          "dataType": "<f8",
+          "compressor": null,
+          "dimensionNames": [
+            "y"
+          ]
+        }
+      ],
+      "metadataScannedAt": "2026-10-28T05:25:44.9587265+00:00",
+      "createdAt": "2026-10-28T05:25:44.6187925+00:00"
+    }
+  ],
+  "job_logs": {
+    "jobId": "covscan-c399f6ddf75a46af9b5507c75d047381",
+    "state": "available",
+    "items": [
+      {
+        "timestamp": "2026-10-28T05:25:41.5505591+00:00",
+        "level": "Info",
+        "message": "Running GDAL command: gdalmdiminfo /vsis3/honua-cng-fixtures/diagnostic-multidim/h520261028/canonical.h5",
+        "phase": "execute",
+        "metadata": {
+          "gdal.tool": "gdalmdiminfo",
+          "gdal.command": "gdalmdiminfo /vsis3/honua-cng-fixtures/diagnostic-multidim/h520261028/canonical.h5"
+        }
+      },
+      {
+        "timestamp": "2026-10-28T05:25:41.6971844+00:00",
+        "level": "Info",
+        "message": "Running GDAL command: gdalmdimtranslate -of Zarr /vsis3/honua-cng-fixtures/diagnostic-multidim/h520261028/canonical.h5 /vsis3/honua-cng-fixtures/diagnostic-multidim/h520261028/canonical.zarr",
+        "phase": "execute",
+        "metadata": {
+          "gdal.tool": "gdalmdimtranslate",
+          "gdal.command": "gdalmdimtranslate -of Zarr /vsis3/honua-cng-fixtures/diagnostic-multidim/h520261028/canonical.h5 /vsis3/honua-cng-fixtures/diagn",
+          "honua.log.truncated": "true"
+        }
+      },
+      {
+        "timestamp": "2026-10-28T05:25:42.4271669+00:00",
+        "level": "Info",
+        "message": "Running GDAL command: gdalinfo --config GDAL_PAM_ENABLED NO -json /vsis3/honua-cng-fixtures/diagnostic-multidim/h520261028/canonical.zarr",
+        "phase": "execute",
+        "metadata": {
+          "gdal.tool": "gdalinfo",
+          "gdal.command": "gdalinfo --config GDAL_PAM_ENABLED NO -json /vsis3/honua-cng-fixtures/diagnostic-multidim/h520261028/canonical.zarr"
+        }
+      },
+      {
+        "timestamp": "2026-10-28T05:25:42.5311242+00:00",
+        "level": "Info",
+        "message": "Running GDAL command: gdalinfo --config GDAL_PAM_ENABLED NO -json -stats /vsis3/honua-cng-fixtures/diagnostic-multidim/h520261028/canonical.zarr",
+        "phase": "execute",
+        "metadata": {
+          "gdal.tool": "gdalinfo",
+          "gdal.command": "gdalinfo --config GDAL_PAM_ENABLED NO -json -stats /vsis3/honua-cng-fixtures/diagnostic-multidim/h520261028/canonical.zarr"
+        }
+      }
+    ]
+  },
+  "store_url": "http://127.0.0.1:14595/honua-cng-fixtures/diagnostic-multidim/h520261028/canonical.zarr",
+  "object_listing": {
+    "Contents": [
+      {
+        "Key": "diagnostic-multidim/h520261028/canonical.zarr/",
+        "LastModified": "2026-10-28T05:25:41.000Z",
+        "ETag": "\"d41d8cd98f00b204e9800998ecf8427e\"",
+        "Size": 0,
+        "StorageClass": "STANDARD"
+      },
+      {
+        "Key": "diagnostic-multidim/h520261028/canonical.zarr/.zattrs",
+        "LastModified": "2026-10-28T05:25:42.000Z",
+        "ETag": "\"e0df6e75fd901eb39d0b5250d82a6d47\"",
+        "Size": 29,
+        "StorageClass": "STANDARD"
+      },
+      {
+        "Key": "diagnostic-multidim/h520261028/canonical.zarr/.zgroup",
+        "LastModified": "2026-10-28T05:25:41.000Z",
+        "ETag": "\"1c1df06cf70200f31bf5963d2af1d0e8\"",
+        "Size": 23,
+        "StorageClass": "STANDARD"
+      },
+      {
+        "Key": "diagnostic-multidim/h520261028/canonical.zarr/.zmetadata",
+        "LastModified": "2026-10-28T05:25:42.000Z",
+        "ETag": "\"de1396add2788c4628b02f11e851c291\"",
+        "Size": 1822,
+        "StorageClass": "STANDARD"
+      },
+      {
+        "Key": "diagnostic-multidim/h520261028/canonical.zarr/temperature/",
+        "LastModified": "2026-10-28T05:25:42.000Z",
+        "ETag": "\"d41d8cd98f00b204e9800998ecf8427e\"",
+        "Size": 0,
+        "StorageClass": "STANDARD"
+      },
+      {
+        "Key": "diagnostic-multidim/h520261028/canonical.zarr/temperature/.zarray",
+        "LastModified": "2026-10-28T05:25:42.000Z",
+        "ETag": "\"3828df55d85f2d4c0abedd0995ad2b9e\"",
+        "Size": 192,
+        "StorageClass": "STANDARD"
+      },
+      {
+        "Key": "diagnostic-multidim/h520261028/canonical.zarr/temperature/.zattrs",
+        "LastModified": "2026-10-28T05:25:42.000Z",
+        "ETag": "\"a9cd3a314adb0ace5d2e6f758cec6471\"",
+        "Size": 123,
+        "StorageClass": "STANDARD"
+      },
+      {
+        "Key": "diagnostic-multidim/h520261028/canonical.zarr/temperature/0.0.0",
+        "LastModified": "2026-10-28T05:25:42.000Z",
+        "ETag": "\"be4091e73c6894a2bf846f0b8bf265cc\"",
+        "Size": 64,
+        "StorageClass": "STANDARD"
+      },
+      {
+        "Key": "diagnostic-multidim/h520261028/canonical.zarr/temperature/0.0.1",
+        "LastModified": "2026-10-28T05:25:42.000Z",
+        "ETag": "\"08d1dd1cae31bd93b2dc7f3e8a06995b\"",
+        "Size": 64,
+        "StorageClass": "STANDARD"
+      },
+      {
+        "Key": "diagnostic-multidim/h520261028/canonical.zarr/temperature/0.0.2",
+        "LastModified": "2026-10-28T05:25:42.000Z",
+        "ETag": "\"f7e2d3ddffa48fe5adf7df1278ca983e\"",
+        "Size": 64,
+        "StorageClass": "STANDARD"
+      },
+      {
+        "Key": "diagnostic-multidim/h520261028/canonical.zarr/temperature/0.0.3",
+        "LastModified": "2026-10-28T05:25:42.000Z",
+        "ETag": "\"32d1ace292ad325fdc74de1d0d77a614\"",
+        "Size": 64,
+        "StorageClass": "STANDARD"
+      },
+      {
+        "Key": "diagnostic-multidim/h520261028/canonical.zarr/temperature/0.1.0",
+        "LastModified": "2026-10-28T05:25:42.000Z",
+        "ETag": "\"8d67a6ebdd5f0db8c25fa2e7c0d918df\"",
+        "Size": 64,
+        "StorageClass": "STANDARD"
+      },
+      {
+        "Key": "diagnostic-multidim/h520261028/canonical.zarr/temperature/0.1.1",
+        "LastModified": "2026-10-28T05:25:42.000Z",
+        "ETag": "\"af9b6844db72a05472362929fe94e3d9\"",
+        "Size": 64,
+        "StorageClass": "STANDARD"
+      },
+      {
+        "Key": "diagnostic-multidim/h520261028/canonical.zarr/temperature/0.1.2",
+        "LastModified": "2026-10-28T05:25:42.000Z",
+        "ETag": "\"1971fbf1946e4cd9982fea606ee7b1a4\"",
+        "Size": 64,
+        "StorageClass": "STANDARD"
+      },
+      {
+        "Key": "diagnostic-multidim/h520261028/canonical.zarr/temperature/0.1.3",
+        "LastModified": "2026-10-28T05:25:42.000Z",
+        "ETag": "\"e37352a302634c2df0f28188d9b6b770\"",
+        "Size": 64,
+        "StorageClass": "STANDARD"
+      },
+      {
+        "Key": "diagnostic-multidim/h520261028/canonical.zarr/temperature/1.0.0",
+        "LastModified": "2026-10-28T05:25:42.000Z",
+        "ETag": "\"4b8cd88c32c5d06dfd5fccde5f248263\"",
+        "Size": 64,
+        "StorageClass": "STANDARD"
+      },
+      {
+        "Key": "diagnostic-multidim/h520261028/canonical.zarr/temperature/1.0.1",
+        "LastModified": "2026-10-28T05:25:42.000Z",
+        "ETag": "\"c8b6a2fb19367cec2cd7d71f8101409f\"",
+        "Size": 64,
+        "StorageClass": "STANDARD"
+      },
+      {
+        "Key": "diagnostic-multidim/h520261028/canonical.zarr/temperature/1.0.2",
+        "LastModified": "2026-10-28T05:25:42.000Z",
+        "ETag": "\"df4d07fc018938908da710682118565f\"",
+        "Size": 64,
+        "StorageClass": "STANDARD"
+      },
+      {
+        "Key": "diagnostic-multidim/h520261028/canonical.zarr/temperature/1.0.3",
+        "LastModified": "2026-10-28T05:25:42.000Z",
+        "ETag": "\"fe8d40ea04b6b5f2a936e1b410a1a613\"",
+        "Size": 64,
+        "StorageClass": "STANDARD"
+      },
+      {
+        "Key": "diagnostic-multidim/h520261028/canonical.zarr/temperature/1.1.0",
+        "LastModified": "2026-10-28T05:25:42.000Z",
+        "ETag": "\"e1e7250df1a7f7b1f6c73ed92e351148\"",
+        "Size": 64,
+        "StorageClass": "STANDARD"
+      },
+      {
+        "Key": "diagnostic-multidim/h520261028/canonical.zarr/temperature/1.1.1",
+        "LastModified": "2026-10-28T05:25:42.000Z",
+        "ETag": "\"d325a7e078fbd6e62a87a638f8d50872\"",
+        "Size": 64,
+        "StorageClass": "STANDARD"
+      },
+      {
+        "Key": "diagnostic-multidim/h520261028/canonical.zarr/temperature/1.1.2",
+        "LastModified": "2026-10-28T05:25:42.000Z",
+        "ETag": "\"1d6ac53713adf559e29c283f2a59a451\"",
+        "Size": 64,
+        "StorageClass": "STANDARD"
+      },
+      {
+        "Key": "diagnostic-multidim/h520261028/canonical.zarr/temperature/1.1.3",
+        "LastModified": "2026-10-28T05:25:42.000Z",
+        "ETag": "\"05a2d21978e61f903948922a71c210d6\"",
+        "Size": 64,
+        "StorageClass": "STANDARD"
+      },
+      {
+        "Key": "diagnostic-multidim/h520261028/canonical.zarr/temperature/2.0.0",
+        "LastModified": "2026-10-28T05:25:42.000Z",
+        "ETag": "\"14593377c68cca87c4128420a1560024\"",
+        "Size": 64,
+        "StorageClass": "STANDARD"
+      },
+      {
+        "Key": "diagnostic-multidim/h520261028/canonical.zarr/temperature/2.0.1",
+        "LastModified": "2026-10-28T05:25:42.000Z",
+        "ETag": "\"c8fda4abb85beb330f782201975a0303\"",
+        "Size": 64,
+        "StorageClass": "STANDARD"
+      },
+      {
+        "Key": "diagnostic-multidim/h520261028/canonical.zarr/temperature/2.0.2",
+        "LastModified": "2026-10-28T05:25:42.000Z",
+        "ETag": "\"7c043d3768fbcc203044a4eb1288dcd9\"",
+        "Size": 64,
+        "StorageClass": "STANDARD"
+      },
+      {
+        "Key": "diagnostic-multidim/h520261028/canonical.zarr/temperature/2.0.3",
+        "LastModified": "2026-10-28T05:25:42.000Z",
+        "ETag": "\"bfecff1844c15e0aa750aedc50e3db02\"",
+        "Size": 64,
+        "StorageClass": "STANDARD"
+      },
+      {
+        "Key": "diagnostic-multidim/h520261028/canonical.zarr/temperature/2.1.0",
+        "LastModified": "2026-10-28T05:25:42.000Z",
+        "ETag": "\"4458fbe3befd2749735eec0cbc38ba71\"",
+        "Size": 64,
+        "StorageClass": "STANDARD"
+      },
+      {
+        "Key": "diagnostic-multidim/h520261028/canonical.zarr/temperature/2.1.1",
+        "LastModified": "2026-10-28T05:25:42.000Z",
+        "ETag": "\"98bda293b22200e198da0ffdbc2ad99e\"",
+        "Size": 64,
+        "StorageClass": "STANDARD"
+      },
+      {
+        "Key": "diagnostic-multidim/h520261028/canonical.zarr/temperature/2.1.2",
+        "LastModified": "2026-10-28T05:25:42.000Z",
+        "ETag": "\"3d60419608a22170eec39252ec28e0d3\"",
+        "Size": 64,
+        "StorageClass": "STANDARD"
+      },
+      {
+        "Key": "diagnostic-multidim/h520261028/canonical.zarr/temperature/2.1.3",
+        "LastModified": "2026-10-28T05:25:42.000Z",
+        "ETag": "\"99697aecb072230e9a9513c3d628a7cb\"",
+        "Size": 64,
+        "StorageClass": "STANDARD"
+      },
+      {
+        "Key": "diagnostic-multidim/h520261028/canonical.zarr/temperature/3.0.0",
+        "LastModified": "2026-10-28T05:25:42.000Z",
+        "ETag": "\"4b89ca1925e5fcf0b8929e1d778dab64\"",
+        "Size": 64,
+        "StorageClass": "STANDARD"
+      },
+      {
+        "Key": "diagnostic-multidim/h520261028/canonical.zarr/temperature/3.0.1",
+        "LastModified": "2026-10-28T05:25:42.000Z",
+        "ETag": "\"fdc15aa10b10c675b946a0bc297610b4\"",
+        "Size": 64,
+        "StorageClass": "STANDARD"
+      },
+      {
+        "Key": "diagnostic-multidim/h520261028/canonical.zarr/temperature/3.0.2",
+        "LastModified": "2026-10-28T05:25:42.000Z",
+        "ETag": "\"4ac7bca8b03337a2303c1d401a77229b\"",
+        "Size": 64,
+        "StorageClass": "STANDARD"
+      },
+      {
+        "Key": "diagnostic-multidim/h520261028/canonical.zarr/temperature/3.0.3",
+        "LastModified": "2026-10-28T05:25:42.000Z",
+        "ETag": "\"35bdcf136d9eb9773b5b4cb96596e456\"",
+        "Size": 64,
+        "StorageClass": "STANDARD"
+      },
+      {
+        "Key": "diagnostic-multidim/h520261028/canonical.zarr/temperature/3.1.0",
+        "LastModified": "2026-10-28T05:25:42.000Z",
+        "ETag": "\"70d28cb9375d4c04dace744b90d2850d\"",
+        "Size": 64,
+        "StorageClass": "STANDARD"
+      },
+      {
+        "Key": "diagnostic-multidim/h520261028/canonical.zarr/temperature/3.1.1",
+        "LastModified": "2026-10-28T05:25:42.000Z",
+        "ETag": "\"aa72ec9024bbdce72eadcb8eb165fe21\"",
+        "Size": 64,
+        "StorageClass": "STANDARD"
+      },
+      {
+        "Key": "diagnostic-multidim/h520261028/canonical.zarr/temperature/3.1.2",
+        "LastModified": "2026-10-28T05:25:42.000Z",
+        "ETag": "\"b6013b2f99e43f927ba36dfeeb55819b\"",
+        "Size": 64,
+        "StorageClass": "STANDARD"
+      },
+      {
+        "Key": "diagnostic-multidim/h520261028/canonical.zarr/temperature/3.1.3",
+        "LastModified": "2026-10-28T05:25:42.000Z",
+        "ETag": "\"084931f6b00da528ff29cbaa1eacee7a\"",
+        "Size": 64,
+        "StorageClass": "STANDARD"
+      },
+      {
+        "Key": "diagnostic-multidim/h520261028/canonical.zarr/time/",
+        "LastModified": "2026-10-28T05:25:41.000Z",
+        "ETag": "\"d41d8cd98f00b204e9800998ecf8427e\"",
+        "Size": 0,
+        "StorageClass": "STANDARD"
+      },
+      {
+        "Key": "diagnostic-multidim/h520261028/canonical.zarr/time/.zarray",
+        "LastModified": "2026-10-28T05:25:42.000Z",
+        "ETag": "\"840753c51e7f078e53e536c875ba3d54\"",
+        "Size": 160,
+        "StorageClass": "STANDARD"
+      },
+      {
+        "Key": "diagnostic-multidim/h520261028/canonical.zarr/time/.zattrs",
+        "LastModified": "2026-10-28T05:25:42.000Z",
+        "ETag": "\"7be69916830c9be8bbf217d58c1c5cee\"",
+        "Size": 136,
+        "StorageClass": "STANDARD"
+      },
+      {
+        "Key": "diagnostic-multidim/h520261028/canonical.zarr/time/0",
+        "LastModified": "2026-10-28T05:25:42.000Z",
+        "ETag": "\"6443e90c52d73712c7d4b8b09d3d32a1\"",
+        "Size": 16,
+        "StorageClass": "STANDARD"
+      },
+      {
+        "Key": "diagnostic-multidim/h520261028/canonical.zarr/x/",
+        "LastModified": "2026-10-28T05:25:41.000Z",
+        "ETag": "\"d41d8cd98f00b204e9800998ecf8427e\"",
+        "Size": 0,
+        "StorageClass": "STANDARD"
+      },
+      {
+        "Key": "diagnostic-multidim/h520261028/canonical.zarr/x/.zarray",
+        "LastModified": "2026-10-28T05:25:42.000Z",
+        "ETag": "\"445e7b595671b9b730c5ecdd5281a317\"",
+        "Size": 162,
+        "StorageClass": "STANDARD"
+      },
+      {
+        "Key": "diagnostic-multidim/h520261028/canonical.zarr/x/.zattrs",
+        "LastModified": "2026-10-28T05:25:42.000Z",
+        "ETag": "\"82eae14760639abe8c8bf7a0c88b9e0e\"",
+        "Size": 110,
+        "StorageClass": "STANDARD"
+      },
+      {
+        "Key": "diagnostic-multidim/h520261028/canonical.zarr/x/0",
+        "LastModified": "2026-10-28T05:25:42.000Z",
+        "ETag": "\"48028b4dae1569cba42d294750a38c02\"",
+        "Size": 128,
+        "StorageClass": "STANDARD"
+      },
+      {
+        "Key": "diagnostic-multidim/h520261028/canonical.zarr/y/",
+        "LastModified": "2026-10-28T05:25:41.000Z",
+        "ETag": "\"d41d8cd98f00b204e9800998ecf8427e\"",
+        "Size": 0,
+        "StorageClass": "STANDARD"
+      },
+      {
+        "Key": "diagnostic-multidim/h520261028/canonical.zarr/y/.zarray",
+        "LastModified": "2026-10-28T05:25:42.000Z",
+        "ETag": "\"8f0ba46d7331d6d61e842813602ba490\"",
+        "Size": 160,
+        "StorageClass": "STANDARD"
+      },
+      {
+        "Key": "diagnostic-multidim/h520261028/canonical.zarr/y/.zattrs",
+        "LastModified": "2026-10-28T05:25:42.000Z",
+        "ETag": "\"89a70bbe087a6310631771204705439f\"",
+        "Size": 110,
+        "StorageClass": "STANDARD"
+      },
+      {
+        "Key": "diagnostic-multidim/h520261028/canonical.zarr/y/0",
+        "LastModified": "2026-10-28T05:25:42.000Z",
+        "ETag": "\"470b07fc764fdfa53e146dafc8c48b2a\"",
+        "Size": 64,
+        "StorageClass": "STANDARD"
+      }
+    ],
+    "RequestCharged": null
+  },
+  "directory_markers": [
+    {
+      "key": "diagnostic-multidim/h520261028/canonical.zarr/",
+      "size": 0
+    },
+    {
+      "key": "diagnostic-multidim/h520261028/canonical.zarr/temperature/",
+      "size": 0
+    },
+    {
+      "key": "diagnostic-multidim/h520261028/canonical.zarr/time/",
+      "size": 0
+    },
+    {
+      "key": "diagnostic-multidim/h520261028/canonical.zarr/x/",
+      "size": 0
+    },
+    {
+      "key": "diagnostic-multidim/h520261028/canonical.zarr/y/",
+      "size": 0
+    }
+  ],
+  "objects": {
+    ".zattrs": {
+      "size": 29,
+      "sha256": "daec348617d941f7e3dc6aeb8a4773ee3a1c09b007db98bfea0ceb76977eaee3"
+    },
+    ".zgroup": {
+      "size": 23,
+      "sha256": "e1e1914ae531ecb50e1ead685ef01895a5452faf5f25f35cd78f1f5de1367470"
+    },
+    ".zmetadata": {
+      "size": 1822,
+      "sha256": "970c6bbd21c3147fe0d85a089b1427bbc354a834c92c1360648accf426bf45d3"
+    },
+    "temperature/.zarray": {
+      "size": 192,
+      "sha256": "d6b88374ff2f03f1e41dbba648cf32125cba2afb44e170fab477c634b8da8038"
+    },
+    "temperature/.zattrs": {
+      "size": 123,
+      "sha256": "35d0e08f498cd9b5b4b25b81626cfea1ff6b7e891d9d0340156a3783b64f11b2"
+    },
+    "temperature/0.0.0": {
+      "size": 64,
+      "sha256": "bf64fa5529639ee1cf4af876c59ed4abf285388badfe6b34554f04e070ea8467"
+    },
+    "temperature/0.0.1": {
+      "size": 64,
+      "sha256": "1ffd2f577cbe6da81af9fe5434ab3f3f4ed5f6346cdf12229adc77bf36a7b66d"
+    },
+    "temperature/0.0.2": {
+      "size": 64,
+      "sha256": "3ecd6f9dd9d2ff7e2eca284683e2c89dae6179532c162efa70809eb6d4897eba"
+    },
+    "temperature/0.0.3": {
+      "size": 64,
+      "sha256": "ea378462b7822705fdeec0f47c3bcc4ec89b8c99613d14473ca838c03561ffcb"
+    },
+    "temperature/0.1.0": {
+      "size": 64,
+      "sha256": "2c9722d8f6227537d73964cfa5aef3c2263822c3476088fcb4971c1d86f6b9f6"
+    },
+    "temperature/0.1.1": {
+      "size": 64,
+      "sha256": "25fea97a09fdd6504d073a26588cf4735ea6fe8f4536b14b33b4b858a3beb080"
+    },
+    "temperature/0.1.2": {
+      "size": 64,
+      "sha256": "02c302472aa74cf3ec78fd306df12ae9465681e6bf38f754e8f946ab9ffd03f3"
+    },
+    "temperature/0.1.3": {
+      "size": 64,
+      "sha256": "801de3afb1e15c0f88f979c86a71c6882690040b7ac5519b34decfdc72c6389a"
+    },
+    "temperature/1.0.0": {
+      "size": 64,
+      "sha256": "fc713a3cd7e009a2a0afa2144be0187dd41bf979591e76a858965581f7ebce00"
+    },
+    "temperature/1.0.1": {
+      "size": 64,
+      "sha256": "b21bf1fbee6dd857d822c43ce90beb75ef5e7177560ad873ece871827e08e360"
+    },
+    "temperature/1.0.2": {
+      "size": 64,
+      "sha256": "8222c04b16ef71e86ff99305f87e442852ed0a5da916ed126de064401f6e0314"
+    },
+    "temperature/1.0.3": {
+      "size": 64,
+      "sha256": "cf0b045c49f33f05f184607deb7aedccebe4341e2a0cd81e0686b291b5fba82a"
+    },
+    "temperature/1.1.0": {
+      "size": 64,
+      "sha256": "3d268d0b19c91c227139cbadab3c9ebc5c57809ce47680fb9c67ba23207bfc74"
+    },
+    "temperature/1.1.1": {
+      "size": 64,
+      "sha256": "31578cac9ab058f492a9265cf51d571e5347c36966756cb996fbbeec3d25149d"
+    },
+    "temperature/1.1.2": {
+      "size": 64,
+      "sha256": "d3526378ac1e7e0212e4604b597ee7a3ab9f38bb8cfd66b7e3b4ea8ffed8c05b"
+    },
+    "temperature/1.1.3": {
+      "size": 64,
+      "sha256": "a5f1a8101596417c6f9550dc4aa8bdbd7962f9b644a58b44983b7e2d4290049e"
+    },
+    "temperature/2.0.0": {
+      "size": 64,
+      "sha256": "13fbbe51cac0f48dbac471f00f332474586ccb6b36180dd60f3463c9063f4cec"
+    },
+    "temperature/2.0.1": {
+      "size": 64,
+      "sha256": "7ea31b1beaa7abc9fab44d06402af01a1c6fc03bff58d495097cdc5090f3b034"
+    },
+    "temperature/2.0.2": {
+      "size": 64,
+      "sha256": "96bbdca56bbf16008f81320d2eed72af5d6f37782c2080708683932ba7e8d0ff"
+    },
+    "temperature/2.0.3": {
+      "size": 64,
+      "sha256": "6fe23be26dcf924ad54e7200829d7673a573d6d71a5a42bb83f8362787d9d40f"
+    },
+    "temperature/2.1.0": {
+      "size": 64,
+      "sha256": "9065382ba99cf495977db641f0ad34a6fc820e4df3bf82c25935603732dce2de"
+    },
+    "temperature/2.1.1": {
+      "size": 64,
+      "sha256": "38ed2796921d1870f71832cbac6efd6ddc5bbcdee73832f4a6c34a93700e6859"
+    },
+    "temperature/2.1.2": {
+      "size": 64,
+      "sha256": "ed039bdf12b2df98fcaf5640be9e87ba581f4e22a28989b156ffa1d165086378"
+    },
+    "temperature/2.1.3": {
+      "size": 64,
+      "sha256": "823693039a5f98af752eebc14d2826353f891cda847a53665717b37059240263"
+    },
+    "temperature/3.0.0": {
+      "size": 64,
+      "sha256": "6273c465082f3b7aa4c4c67891b4f56ae564eb4dc91175dabc793bc5003547d5"
+    },
+    "temperature/3.0.1": {
+      "size": 64,
+      "sha256": "b09730b35559d98b04659ffad7314c999ad0163baa89418593cd673086aaaaa9"
+    },
+    "temperature/3.0.2": {
+      "size": 64,
+      "sha256": "f1cf6728385f2089880ce7b8a161f5add3be864c04ee01b2f5647f46679b88fe"
+    },
+    "temperature/3.0.3": {
+      "size": 64,
+      "sha256": "3592bcc2f7d740db672a749425e2487b2d58eb246e1b906f67c986d2b0be697e"
+    },
+    "temperature/3.1.0": {
+      "size": 64,
+      "sha256": "2d496fbeeba0541c924d222533cc28d8b136703234968edfe33a94c84bac54ef"
+    },
+    "temperature/3.1.1": {
+      "size": 64,
+      "sha256": "16150d03f33194928bf166d7c90460b8bae3893ef220b7b72991df51bbd3bd7a"
+    },
+    "temperature/3.1.2": {
+      "size": 64,
+      "sha256": "1a655088de37c72b922ae1a2c1c79c4166b481f7799f2dc7dd54268910ad6bff"
+    },
+    "temperature/3.1.3": {
+      "size": 64,
+      "sha256": "d3b3d79665a7b491b6179087e8a06b746cf5a9c18e2c4742c9f88d0fef3fccf5"
+    },
+    "time/.zarray": {
+      "size": 160,
+      "sha256": "5d663519d4494398d4923b1997fbf4c573c102a06d85b99a927be0e329be542b"
+    },
+    "time/.zattrs": {
+      "size": 136,
+      "sha256": "e74615e7a5ddb759d7b344813f2a690f261b390f396745d289398edfc2879694"
+    },
+    "time/0": {
+      "size": 16,
+      "sha256": "baed642339816affb3fe8719792d0e4ce82f12db72b7373d244eaa65445800fe"
+    },
+    "x/.zarray": {
+      "size": 162,
+      "sha256": "d8b77c64dc7ce20ff4cbb4ca741f96c41586dc4ccad270c37a2b333bd423126a"
+    },
+    "x/.zattrs": {
+      "size": 110,
+      "sha256": "b6137100267163f904ca2589e72130ac299e6be8497895c563fbde8930f42989"
+    },
+    "x/0": {
+      "size": 128,
+      "sha256": "eed71da7e71b2c163f66bf365fae3938387fa9fe8f891a4de241b42139912a09"
+    },
+    "y/.zarray": {
+      "size": 160,
+      "sha256": "28637ef059a33d88ff1781616942946419f551f221f66ff5f8685f08d555f159"
+    },
+    "y/.zattrs": {
+      "size": 110,
+      "sha256": "cadc7bb767dcbd59725198b8cd7100d46e8dff084532c784195aa3d6469972b3"
+    },
+    "y/0": {
+      "size": 64,
+      "sha256": "6ab8cc0b934f6f1e92e6c052a2b308655a8f09d7976390c4bb1855e0f3ab8cdc"
+    }
+  },
+  "archive_transfer": {
+    "requests": 46,
+    "bytes": 5283
+  },
+  "worker_log_sha256": "f4a0db5c66345cdf2916265b34d37ce900e373fa0afd8ff14b9b27d952fcd9a4",
+  "completed_at": "2026-10-28T05:25:45.864535+00:00",
+  "diagnostic_only": true
+}
