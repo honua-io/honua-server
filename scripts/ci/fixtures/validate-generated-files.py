@@ -38,7 +38,8 @@ class GeneratedGraphFreshness(unittest.TestCase):
         paths = subprocess.check_output(
             ['bash', '-c', 'source scripts/ci/generated-files.sh; printf "%s\\n" "${GENERATED_FILES[@]}"'],
             cwd=ROOT, text=True).splitlines()
-        self.assertEqual(paths.count('docs/okf/domain-graph.v1.json'), 1)
+        self.assertNotIn('docs/okf/domain-graph.v1.json', paths)
+        self.assertIn('/docs/okf/domain-graph.v1.json', (ROOT / '.gitignore').read_text())
         self.assertNotIn('docs/okf', paths)
         self.assertNotIn('docs/gis/data/public-interface-proof.json', paths)
 
