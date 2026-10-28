@@ -192,9 +192,11 @@ relationships are not translated.
   results. A pre-translated (Postgres-flavored) `SqlFilter` without the canonical `where`
   text is likewise rejected.
 - **No schema introspection.** Attribute columns must be listed explicitly per layer.
-- **Deferred to a hardening follow-up:** Metadata-v2 binding
-  (`IBindableFeatureDataProvider`) so layers resolve from secure connections rather than
-  static config. Top-features, date/value bins, and H3 aggregation remain unsupported.
+- **Metadata-v2 binding.** A layer whose connection provider is `databricks` (aliases
+  `databrickssql`, `dbsql`) resolves catalog, schema, table, geometry, and object-id
+  columns from the Metadata v2 feature storage binding. `Databricks:Layers` remains a
+  fallback, not the only configuration, and `POST /admin/connections/{id}/test` probes
+  the warehouse with `SELECT 1`. Top-features, date/value bins, and H3 aggregation remain unsupported.
 
 Provider selection variables are listed in the
 [environment variable reference](../environment-variables.md#database-and-providers).
