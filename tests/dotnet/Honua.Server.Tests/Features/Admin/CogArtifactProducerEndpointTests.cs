@@ -139,7 +139,8 @@ public sealed class CogArtifactProducerEndpointTests
             downloaded.Content.Headers.ContentType.Should().NotBeNull();
             downloaded.Content.Headers.ContentType!.ToString().Should().Be(stored.ContentType);
             (await downloaded.Content.ReadAsByteArrayAsync()).Should().Equal(bytes);
-            using var head = await client.SendAsync(new HttpRequestMessage(HttpMethod.Head, url));
+            using var headRequest = new HttpRequestMessage(HttpMethod.Head, url);
+            using var head = await client.SendAsync(headRequest);
             head.StatusCode.Should().Be(HttpStatusCode.OK);
             head.Content.Headers.ContentType.Should().NotBeNull();
             head.Content.Headers.ContentType!.ToString().Should().Be(stored.ContentType);
