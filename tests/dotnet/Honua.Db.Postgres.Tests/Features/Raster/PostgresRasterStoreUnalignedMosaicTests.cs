@@ -66,7 +66,7 @@ public sealed class PostgresRasterStoreUnalignedMosaicTests(PostgresFixture fixt
 
             // A dedicated pool sets a session-local GDAL policy on every physical connection.
             // Do not mutate the shared container, process cache, or other tests' sessions.
-            var settings = new NpgsqlConnectionStringBuilder(fixture.DataSource.ConnectionString)
+            var settings = new NpgsqlConnectionStringBuilder(fixture.ConnectionString)
             {
                 Options = "-c postgis.gdal_enabled_drivers=GTiff"
             };

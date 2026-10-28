@@ -69,7 +69,7 @@ public sealed class CogArtifactProducerEndpointTests
             var dataSource = database.DataSource;
             if (missingDriver)
             {
-                restricted = NpgsqlDataSource.Create(new NpgsqlConnectionStringBuilder(dataSource.ConnectionString)
+                restricted = NpgsqlDataSource.Create(new NpgsqlConnectionStringBuilder(database.ConnectionString)
                 { Options = "-c postgis.gdal_enabled_drivers=GTiff" }.ConnectionString);
                 dataSource = restricted;
                 await using var connection = await dataSource.OpenConnectionAsync();
