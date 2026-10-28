@@ -68,7 +68,10 @@ public class ImageServerBasicTests : IClassFixture<WebAppFixture>
             var text = await response.Content.ReadAsStringAsync();
             response.StatusCode.Should().Be(HttpStatusCode.OK, text);
             text.Should().NotContain("NaN");
+            reader.ReceivedCalls().Should().Contain(call => call.GetMethodInfo().Name ==
+                (operation == "getSamples" ? "ReadBatchAsync" : "ReadAsync"), text);
             using var json = JsonDocument.Parse(text);
+            json.RootElement.TryGetProperty("error", out _).Should().BeFalse(text);
             if (operation == "getSamples")
             {
                 var sample = json.RootElement.GetProperty("samples")[0];

@@ -41,14 +41,6 @@ public sealed class ZarrTypedNoDataConsumerTests
         image.Pixel(0, 0).Item4.Should().Be(0, "the exact typed sentinel is transparent");
         image.Pixel(1, 0).Item4.Should().Be(255, "its distinct adjacent integer is real data");
 
-        var store = Substitute.For<IZarrStore>();
-        store.ListByLayerAsync(7, Arg.Any<CancellationToken>()).Returns(Task.FromResult(new[] { registration }));
-        var reader = new ZarrRasterSliceReader(store, new ZarrSubsetReader(), [ranges]);
-        var rendered = await reader.ReadAsync(7, new ZarrRasterSliceReadRequest(null, 4326, 2, 2,
-            [new ZarrPointSliceSelection("band", "elevation", 500)]));
-        rendered.Status.Should().Be(ZarrRasterSliceReadStatus.Success, rendered.Error);
-        rendered.Rgba![3].Should().Be(0);
-        rendered.Rgba[7].Should().Be(255, "slice reprojection/render must retain the adjacent real sample");
     }
 
     [Theory]
@@ -71,6 +63,26 @@ public sealed class ZarrTypedNoDataConsumerTests
         valid.Status.Should().Be(ZarrPointSliceReadStatus.Success, valid.Error);
         valid.Value.Should().NotBeNull("the adjacent source integer is not the sentinel");
         double.IsFinite(valid.Value!.Value).Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("<i8", 0)]
+    [InlineData("<i8", 1)]
+    [InlineData("<u8", 0)]
+    [InlineData("<u8", 1)]
+    [Trait("Tier", "Fast")]
+    public async Task ReadSlice_Int64Fill_PreservesAdjacentValidPixel(string dtype, int offset)
+    {
+        var (registration, objects, _) = Fixture(dtype, offset);
+        var ranges = new InMemoryZarrRangeReader(objects);
+        var store = Substitute.For<IZarrStore>();
+        store.ListByLayerAsync(7, Arg.Any<CancellationToken>()).Returns(Task.FromResult(new[] { registration }));
+        var reader = new ZarrRasterSliceReader(store, new ZarrSubsetReader(), [ranges]);
+        var rendered = await reader.ReadAsync(7, new ZarrRasterSliceReadRequest(null, 4326, 2, 2,
+            [new ZarrPointSliceSelection("band", "elevation", 500)]));
+        rendered.Status.Should().Be(ZarrRasterSliceReadStatus.Success, rendered.Error);
+        rendered.Rgba![3].Should().Be(0);
+        rendered.Rgba[7].Should().Be(255, "slice reprojection/render must retain the adjacent real sample");
     }
 
     [Theory]

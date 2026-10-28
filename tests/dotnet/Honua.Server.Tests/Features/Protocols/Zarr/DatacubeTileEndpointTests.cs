@@ -251,12 +251,15 @@ public sealed class DatacubeTileEndpointTests : IAsyncLifetime
     [InlineData("<i8")]
     [InlineData("<u8")]
     [InlineData("|b1")]
+    [InlineData("<i8", true)]
+    [InlineData("<u8", true)]
     [Endpoint("GET /api/v1/datacubes/{layerId}/tiles/{tileMatrixSetId}/{z}/{x}/{y}")]
-    public async Task DatacubeTile_TypedFill_MasksStoredAndAbsentChunksThroughService(string dtype)
+    public async Task DatacubeTile_TypedFill_MasksStoredAndAbsentChunksThroughService(string dtype, bool wide = false)
     {
         var objects = ZarrFixtureBuilder.BuildGroupedZlib(CubeRoot, 2, 2, 1, 1,
             (_, _) => 0, 3857, -WorldExtent, -WorldExtent, WorldExtent, WorldExtent);
         object fill = dtype switch { "<f4" => -9999f, "<i8" => -9999L, "<u8" => 9999UL, _ => true };
+        if (wide) fill = dtype == "<i8" ? (object)9007199254740993L : 9007199254740993UL;
         var arrayKey = CubeRoot + "/temperature/.zarray";
         var array = JsonNode.Parse(Encoding.UTF8.GetString(objects[arrayKey]))!.AsObject();
         array["dtype"] = dtype;
@@ -265,7 +268,7 @@ public sealed class DatacubeTileEndpointTests : IAsyncLifetime
         objects[arrayKey] = Encoding.UTF8.GetBytes(array.ToJsonString());
         objects.Remove(CubeRoot + "/temperature/0.0"); // Must synthesize the declared typed fill.
         objects[CubeRoot + "/temperature/0.1"] = Cell(fill);
-        objects[CubeRoot + "/temperature/1.0"] = Cell(dtype == "|b1" ? false : 10L);
+        objects[CubeRoot + "/temperature/1.0"] = Cell(dtype == "|b1" ? false : wide ? 9007199254740992L : 10L);
         objects[CubeRoot + "/temperature/1.1"] = Cell(dtype == "|b1" ? false : 30L);
         var fixture = new WebAppFixture().ConfigureServices(services =>
         {
