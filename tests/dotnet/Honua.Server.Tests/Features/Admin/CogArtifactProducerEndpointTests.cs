@@ -131,14 +131,29 @@ public sealed class CogArtifactProducerEndpointTests
             var bytes = copied.ToArray();
             using var downloaded = await client.GetAsync(url);
             downloaded.StatusCode.Should().Be(HttpStatusCode.OK);
+            downloaded.Content.Headers.ContentType?.ToString().Should().Be(stored.ContentType);
             (await downloaded.Content.ReadAsByteArrayAsync()).Should().Equal(bytes);
             using var head = await client.SendAsync(new HttpRequestMessage(HttpMethod.Head, url));
+            head.StatusCode.Should().Be(HttpStatusCode.OK);
+            head.Content.Headers.ContentType?.ToString().Should().Be(stored.ContentType);
             head.Content.Headers.ContentLength.Should().Be(bytes.LongLength);
             using var rangeRequest = new HttpRequestMessage(HttpMethod.Get, url);
             rangeRequest.Headers.Range = new RangeHeaderValue(0, 31);
             using var range = await client.SendAsync(rangeRequest);
             range.StatusCode.Should().Be(HttpStatusCode.PartialContent);
+            range.Content.Headers.ContentRange?.From.Should().Be(0);
+            range.Content.Headers.ContentRange?.To.Should().Be(31);
+            range.Content.Headers.ContentRange?.Length.Should().Be(bytes.LongLength);
             (await range.Content.ReadAsByteArrayAsync()).Should().Equal(bytes[..32]);
+            // Raw capture is unqualified evidence, including when later layout assertions fail.
+            var evidence = Environment.GetEnvironmentVariable("HONUA_CNG_COG_EVIDENCE_DIR");
+            if (!string.IsNullOrWhiteSpace(evidence))
+            {
+                Directory.CreateDirectory(evidence);
+                await File.WriteAllBytesAsync(Path.Combine(evidence, "published-all-nodata-unqualified.tif"), bytes);
+                await File.WriteAllTextAsync(Path.Combine(evidence, "published-all-nodata-unqualified.sha256"),
+                    Convert.ToHexStringLower(SHA256.HashData(bytes)));
+            }
             // Producer-stack roundtrip verifies samples; external validators consume the
             // optional exact-byte artifact separately and remain independent evidence.
             await using (var connection = await database.GetConnectionAsync(schema))
@@ -167,14 +182,7 @@ public sealed class CogArtifactProducerEndpointTests
             metadata.NoData.Should().Be("-9999");
             metadata.OverviewLevels.Should().Contain(level => level.Width <= 512 && level.Height <= 512);
             metadata.OverviewLevels.Should().OnlyContain(level => level.TileOffsets.Length > 0);
-            var evidence = Environment.GetEnvironmentVariable("HONUA_CNG_COG_EVIDENCE_DIR");
-            if (!string.IsNullOrWhiteSpace(evidence))
-            {
-                Directory.CreateDirectory(evidence);
-                await File.WriteAllBytesAsync(Path.Combine(evidence, "published-all-nodata.tif"), bytes);
-                await File.WriteAllTextAsync(Path.Combine(evidence, "published-all-nodata.sha256"),
-                    Convert.ToHexStringLower(SHA256.HashData(bytes)));
-            }
+
         }
         finally
         {
