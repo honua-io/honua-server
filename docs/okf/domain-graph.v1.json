@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:8265e304c08563a3a414c56f4aab45d2cb4e370147c1a41d2eefc481c8e1c567",
+  "bundleDigest": "sha256:abc99dbda544f80308399f251001119bffd1978cf95086ed5349ce151116b709",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -7965,7 +7965,7 @@
     {
       "id": "reference/protocols/cloud-native-formats",
       "path": "reference/protocols/cloud-native-formats.md",
-      "documentDigest": "sha256:2808c84049a061278af534a8b177ef3bd3d0414540bf48f8c437c6757cb154bd",
+      "documentDigest": "sha256:710e0f0d28ca2e24028012a598f1ff0281d66d0ec4271640678e8b44f2bb85ce",
       "metadata": {
         "type": "reference",
         "title": "Cloud-native formats",

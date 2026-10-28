@@ -58,6 +58,13 @@ Separately, the COG artifact publication service requests `RasterFormat.COG` fro
 the raster store, publishes the result to file storage, and exposes authorized
 GET/HEAD range access. Published-file layout and deployed delivery need their own
 independent evidence; the tile-transcode conformance cell does not cover them.
+COG export requires a writable native GDAL COG driver on the actual database connection;
+an unavailable driver fails explicitly, without substituting GeoTIFF bytes. Empty canvases
+use the same COG creation options as populated exports, including internal overviews.
+Real PostGIS publication regressions cover a 1024×1024 all-nodata raster, stored-byte
+GET/HEAD/range fidelity and unavailable-driver failure. Independent strict rio-cogeo
+validation and Rasterio window reads qualify those fixture bytes; deployed HTTPS,
+CORS and cloud transfer behavior require separate deployment evidence.
 
 Optional per-raster **sensor metadata** (sensor name, camera model, interior/exterior orientation, RPC, DEM source) can be modeled in the `raster_sensor_metadata` companion table. When present it powers ImageServer DEM-backed height mensuration, orientation-ranked `find`, and RPC image-coordinate-system `project` warps; plain rasters with no sensor metadata serve normally and those features degrade gracefully.
 
