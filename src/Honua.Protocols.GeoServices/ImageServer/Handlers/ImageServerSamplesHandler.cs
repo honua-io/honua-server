@@ -303,7 +303,7 @@ internal sealed class ImageServerSamplesHandler
                     : StandardErrorHelpers.CreateBadRequest(context, message);
             }
 
-            var value = read.Value!.Value;
+            var value = read.Value is { } sample && double.IsFinite(sample) ? (double?)sample : null;
             var srid = point.Srid ?? requestSrid;
 
             samples.Add(new SampleEntry
@@ -315,7 +315,7 @@ internal sealed class ImageServerSamplesHandler
                     Y = point.Y,
                     SpatialReference = srid is null ? null : new SpatialReference { Wkid = srid.Value, LatestWkid = srid.Value },
                 },
-                Value = FormatValue(value),
+                Value = value is { } numeric ? FormatValue(numeric) : "NoData",
                 Resolution = null,
                 Attributes = new Dictionary<string, object?> { ["Value"] = value },
             });
