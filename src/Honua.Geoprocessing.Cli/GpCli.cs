@@ -289,9 +289,12 @@ public static class GpCli
             ["integrationProfile"] = integrationProfile,
             ["note"] = "Image availability is a prerequisite check; use run --real-worker to verify native execution. Service-backed processes require server/database configuration.",
         };
+        GpHarnessPrerequisiteProbe.WriteJson(report);
+        var toolchain = GpHarnessPrerequisiteProbe.FormatReport();
         Console.WriteLine(args.Contains("--json", StringComparer.Ordinal)
             ? report.ToJsonString()
-            : $"managed: {report["managed"]}\nnative worker: {report["nativeWorker"]} ({image})\n{integrationProfile}\n{report["note"]}");
+            : $"managed: {report["managed"]}\nnative worker: {report["nativeWorker"]} ({image})\n{integrationProfile}\n{report["note"]}\n{toolchain}");
+        // Toolchain presence is reported only. It is not part of this exit code.
         return probe.Succeeded && (managedOnly || nativeReady) ? 0 : 1;
     }
 
@@ -1459,7 +1462,7 @@ public static class GpCli
         Console.WriteLine();
         Console.WriteLine("Usage:");
         Console.WriteLine("  Installed tool: honua-gp-devkit <command> (equivalent to the honua gp command family below)");
-        Console.WriteLine("  honua gp doctor [--managed-only] [--json]");
+        Console.WriteLine("  honua gp doctor [--managed-only] [--json]  (also reports docker, kind, kubectl, and helm)");
         Console.WriteLine("  honua gp list [--json] [--probe-container]");
         Console.WriteLine("  honua gp describe <processId> [--json] [--probe-container]");
         Console.WriteLine("  honua gp plan <processId> [--input <file>] [--param k=v ...]");
@@ -1490,6 +1493,9 @@ public static class GpCli
         Console.WriteLine("  --in-process        Force the fast host-CLI path even when the worker image is present.");
         Console.WriteLine();
         Console.WriteLine("Commands:");
+        Console.WriteLine("  doctor  Report the managed probe, native image, and integration profile. Also reports");
+        Console.WriteLine("          docker, kind, kubectl, and helm as found or missing, with one remediation line each.");
+        Console.WriteLine("          Missing tools do not change the exit code.");
         Console.WriteLine("  describe  Show a process's typed parameters, outputs, inputs JSON Schema, and an example (--json for the machine view).");
         Console.WriteLine("  plan  Dry-run: validate params + DAG and estimate output size/cost WITHOUT executing.");
         Console.WriteLine("  run   Execute the process and emit its artifact(s).");

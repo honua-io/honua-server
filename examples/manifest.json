@@ -14,9 +14,9 @@
     "not-executable": "The inventory item is not an independent runnable example; no green execution claim is made."
   },
   "summary": {
-    "total": 1208,
+    "total": 1214,
     "byStatus": {
-      "not-executable": 1193,
+      "not-executable": 1199,
       "unvalidated": 12,
       "passed": 3
     }
@@ -6668,6 +6668,45 @@
       "language": "bash"
     },
     {
+      "id": "73ca09f928a24033",
+      "kind": "docs-fence",
+      "path": "docs/guides/query-analyze/gp-local-dev-quickstart.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 12,
+      "line": 220,
+      "language": "bash"
+    },
+    {
+      "id": "7bcedf98fb0bf63c",
+      "kind": "docs-fence",
+      "path": "docs/guides/query-analyze/gp-local-dev-quickstart.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 11,
+      "line": 213,
+      "language": "bash"
+    },
+    {
+      "id": "7d3245b8e1085429",
+      "kind": "docs-fence",
+      "path": "docs/guides/query-analyze/gp-local-dev-quickstart.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 13,
+      "line": 237,
+      "language": "bash"
+    },
+    {
       "id": "81f522d5aec8397c",
       "kind": "docs-fence",
       "path": "docs/guides/query-analyze/gp-local-dev-quickstart.md",
@@ -6690,7 +6729,7 @@
         "check": "inventory-classification"
       },
       "fence": 9,
-      "line": 155,
+      "line": 172,
       "language": "bash"
     },
     {
@@ -6703,7 +6742,46 @@
         "check": "inventory-classification"
       },
       "fence": 8,
-      "line": 131,
+      "line": 154,
+      "language": "bash"
+    },
+    {
+      "id": "c1f385cbf3f21846",
+      "kind": "docs-fence",
+      "path": "docs/guides/query-analyze/gp-local-dev-quickstart.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 10,
+      "line": 195,
+      "language": "bash"
+    },
+    {
+      "id": "c224f1254bfc74f8",
+      "kind": "docs-fence",
+      "path": "docs/guides/query-analyze/gp-local-dev-quickstart.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 14,
+      "line": 246,
+      "language": "bash"
+    },
+    {
+      "id": "d7c2cd14eeab7e13",
+      "kind": "docs-fence",
+      "path": "docs/guides/query-analyze/gp-local-dev-quickstart.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 15,
+      "line": 270,
       "language": "bash"
     },
     {
@@ -6716,7 +6794,7 @@
         "check": "inventory-classification"
       },
       "fence": 7,
-      "line": 122,
+      "line": 129,
       "language": "bash"
     },
     {
@@ -7769,7 +7847,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 136,
+      "line": 140,
       "language": "bash"
     },
     {
