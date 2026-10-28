@@ -72,6 +72,7 @@ public sealed class GeoParquetImportTests : IAsyncLifetime
     [InlineData(ImportLoadMode.Upsert, 2021.25, true)]
     [Trait("Category", "Integration")]
     [Trait("Tier", "Integration")]
+    [Endpoint("POST /api/v1/admin/import/upload")]
     public async Task Import_IntoEpochBoundTarget_ValidatesEpochBeforeAppendOrUpsertWrites(
         ImportLoadMode mode, double? incomingEpoch, bool allowed)
     {

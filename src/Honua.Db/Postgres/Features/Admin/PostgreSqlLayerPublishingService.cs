@@ -258,6 +258,8 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             : null;
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken);
+        await SchemaSearchPath.ApplyAsync(connection, _schemaContext?.CurrentSchema,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
         // Wait for any importer before discovery or the repeatable-read snapshot exists.
         await using var importSourceLock = await ImportedDatasetSpatialMetadata.AcquireSessionLockAsync(
             connection, schema, table, cancellationToken);

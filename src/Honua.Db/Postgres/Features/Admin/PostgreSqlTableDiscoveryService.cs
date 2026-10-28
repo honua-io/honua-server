@@ -98,12 +98,12 @@ internal sealed class PostgreSqlTableDiscoveryService(
         ArgumentNullException.ThrowIfNull(connection);
         var postgres = connection.RequireNpgsqlConnection();
 
-        return await DiscoverNonSpatialTableAsync(postgres, schema, table, cancellationToken, null).ConfigureAwait(false);
+        return await DiscoverNonSpatialTableAsync(postgres, schema, table, null, cancellationToken).ConfigureAwait(false);
     }
 
     internal async Task<TableInfo?> DiscoverNonSpatialTableAsync(
         NpgsqlConnection postgres, string schema, string table,
-        CancellationToken cancellationToken, NpgsqlTransaction? transaction)
+        NpgsqlTransaction? transaction, CancellationToken cancellationToken)
     {
         const string sql = """
             SELECT table_schema, table_name

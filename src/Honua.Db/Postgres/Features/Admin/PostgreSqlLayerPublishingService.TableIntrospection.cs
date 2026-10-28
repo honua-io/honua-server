@@ -102,7 +102,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 return await postgresDiscovery.DiscoverPostGisTableAsync(
                     connection, schema, table, cancellationToken, transaction).ConfigureAwait(false)
                     ?? await postgresDiscovery.DiscoverNonSpatialTableAsync(
-                        connection, schema, table, cancellationToken, transaction).ConfigureAwait(false);
+                        connection, schema, table, transaction, cancellationToken).ConfigureAwait(false);
             }
             var tables = await _tableDiscoveryService.DiscoverPostGisTablesAsync(connection, cancellationToken).ConfigureAwait(false);
             return tables.FirstOrDefault(candidate => candidate.Schema.Equals(schema, StringComparison.OrdinalIgnoreCase) &&

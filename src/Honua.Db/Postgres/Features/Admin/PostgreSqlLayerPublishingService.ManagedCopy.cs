@@ -9,7 +9,7 @@ namespace Honua.Db.Postgres.Features.Admin;
 
 internal sealed partial class PostgreSqlLayerPublishingService
 {
-    private sealed record ManagedCopyTargetIdentity(string Host, int Port, string Database, string Schema, long ObjectId);
+    private sealed record ManagedCopyTargetIdentity(string? Host, int Port, string Database, string Schema, long ObjectId);
 
     private async Task<ManagedCopyTargetIdentity> ReadManagedCopyTargetAsync(CancellationToken cancellationToken)
     {
@@ -25,7 +25,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         return new ManagedCopyTargetIdentity(target.Host, target.Port, target.Database, identity.Schema, identity.ObjectId);
     }
 
-    private async Task<string> ValidateManagedCopyTargetAsync(
+    private static async Task<string> ValidateManagedCopyTargetAsync(
         NpgsqlConnection source, IReadOnlyList<LayerFieldInsert> fields,
         ManagedCopyTargetIdentity target, CancellationToken cancellationToken)
     {
