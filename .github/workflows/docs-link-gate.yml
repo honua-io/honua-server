@@ -75,6 +75,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           # The additions-only example gate diffs the PR head against its base.
           fetch-depth: 0
 
@@ -116,7 +117,17 @@ jobs:
         run: python3 scripts/ci/check-okf-bundle.py --summary
 
       - name: Check the derived OKF agent graph
-        run: python3 scripts/ci/generate-okf-graph.py --check
+        run: |
+          python3 scripts/ci/generate-okf-graph.py --output "${RUNNER_TEMP}/domain-graph.v1.json"
+          python3 scripts/ci/generate-okf-graph.py --check --output "${RUNNER_TEMP}/domain-graph.v1.json"
+
+      - name: Upload exact-head OKF agent graph
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: okf-agent-graph-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/domain-graph.v1.json
+          if-no-files-found: error
+          retention-days: 30
 
       # One capability concept per registry entry, generated from
       # docs/gis/data/capability-keys.v1.json and the capability matrix. They
