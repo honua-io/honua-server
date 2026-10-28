@@ -25,7 +25,26 @@ public class RedshiftFeatureStoreReadPolicyTests
 {
     private const int LayerId = 1;
 
-    public static TheoryData<string> ReadOperations => new() { "get", "query", "ids", "count", "extent", "estimates" };
+    public static TheoryData<string> ReadOperations => new() { "get", "query", "ids", "count", "extent", "estimates", "statistics" };
+
+    [Fact]
+    public void Capabilities_SupportStatisticsOnADedicatedDeclaration()
+    {
+        var store = CreateStore(new RecordingConnectionFactory(), readSecurity: null);
+
+        Assert.True(store.Capabilities.SupportsStatistics);
+        Assert.NotSame(FeatureProviderCapabilities.ReadOnlyMySql, store.Capabilities);
+        Assert.True(store.Capabilities.SupportsQuery);
+        Assert.True(store.Capabilities.SupportsCount);
+        Assert.True(store.Capabilities.SupportsExtent);
+        Assert.False(store.Capabilities.SupportsReadPolicyEnforcement);
+        Assert.Equal(FeatureProviderEditCapabilities.ReadOnly, store.Capabilities.Edits);
+        Assert.False(store.Capabilities.Outputs.SupportsStreamingGeoJson);
+        Assert.False(store.Capabilities.Outputs.SupportsNativeMvt);
+        Assert.False(store.Capabilities.Outputs.SupportsNativeFlatGeobuf);
+        Assert.False(store.Capabilities.Outputs.SupportsNativeGeobuf);
+        Assert.False(store.Capabilities.Outputs.SupportsNativeGml);
+    }
 
     [Theory]
     [MemberData(nameof(ReadOperations))]
@@ -136,6 +155,7 @@ public class RedshiftFeatureStoreReadPolicyTests
         "count" => reader.CountAsync(LayerId, new FeatureQuery()),
         "extent" => reader.GetExtentAsync(LayerId),
         "estimates" => reader.GetEstimatesAsync(LayerId),
+        "statistics" => reader.QueryStatisticsAsync(LayerId, new FeatureQuery()),
         _ => throw new ArgumentOutOfRangeException(nameof(operation), operation, null)
     };
 

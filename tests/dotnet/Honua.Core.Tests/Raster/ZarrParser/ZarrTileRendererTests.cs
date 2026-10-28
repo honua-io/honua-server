@@ -166,6 +166,54 @@ public class ZarrTileRendererTests
     }
 
     /// <summary>
+    /// An int64 fill past the exact double range must stay transparent, and the
+    /// neighbouring integer that rounds to the same double must stay opaque.
+    /// </summary>
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public void Render_LossyInt64Fill_MasksOnlyTheExactSentinel()
+    {
+        const long sentinel = 9007199254740993L;
+        const long neighbour = 9007199254740992L;
+        object fill = sentinel;
+        ZarrValueDecoder.TryGetFiniteFillValue(fill, out _).Should().BeFalse();
+
+        var data = new byte[4 * sizeof(long)];
+        BinaryPrimitives.WriteInt64LittleEndian(data.AsSpan(0), 10L);
+        BinaryPrimitives.WriteInt64LittleEndian(data.AsSpan(8), neighbour);
+        BinaryPrimitives.WriteInt64LittleEndian(data.AsSpan(16), sentinel);
+        BinaryPrimitives.WriteInt64LittleEndian(data.AsSpan(24), 30L);
+        var subset = new ZarrSubsetResult("band", [2, 2], "<i8", data);
+        var array = new ZarrArrayMetadata(
+            "band",
+            ZarrFormatVersion.V2,
+            "band",
+            [2, 2],
+            [2, 2],
+            "<i8",
+            "C",
+            null,
+            fill,
+            ["y", "x"]);
+        var slice = new ZarrTileSlicePlan(
+            new ZarrCoverageSubsetPlan(array, new ZarrSubsetRequest { Variable = "band", Start = [0, 0], Stop = [2, 2] }),
+            YDimensionIndex: 0,
+            XDimensionIndex: 1,
+            GridXMin: 0,
+            GridYMax: 2,
+            CellWidth: 1,
+            CellHeight: 1);
+
+        var png = ZarrTileRenderer.RenderWithTypedFill(subset, slice, tileSize: 2, fillValue: fill);
+        var image = MiniPngDecoder.Decode(png);
+
+        image.Pixel(0, 0).Should().Be(((byte)0, (byte)0, (byte)0, (byte)255));
+        image.Pixel(1, 0).Should().Be(((byte)255, (byte)255, (byte)255, (byte)255));
+        image.Pixel(0, 1).Should().Be(((byte)0, (byte)0, (byte)0, (byte)0));
+        image.Pixel(1, 1).Should().Be(((byte)0, (byte)0, (byte)0, (byte)255));
+    }
+
+    /// <summary>
     /// Decodes a <see cref="GridSize"/>-square render and asserts every pixel against the value its
     /// own source cell carries, returning the decoded image for any further assertions.
     /// </summary>

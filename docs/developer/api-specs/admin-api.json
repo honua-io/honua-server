@@ -8512,6 +8512,53 @@
         }
       }
     },
+    "/observability/audit/gap-attestations": {
+      "post": {
+        "tags": [
+          "Observability"
+        ],
+        "summary": "Attest Audit Chain Downgrade Gap",
+        "description": "Append a keyed declaration for the contiguous run of unhashed audit rows that a release without the hash chain appended after a rollback. The server derives the anchor row, gap bounds, row count and resume row from the stored rows; gapFirstAuditId must be the first row that verification reports as broken. Existing rows are never rewritten or re-hashed. Verification then accepts exactly the declared rows, reports them as attestedGapRows, and accepts the declaration only when its own row verifies under the configured chain key. Returns 409 when no chain key is configured or the stored rows do not show a downgrade gap at that row. The declaration is itself an audit row with action audit.chain.gap_attested. Requires admin write access.",
+        "operationId": "attestObservabilityAuditGap",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ObservabilityAuditGapAttestationBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The written declaration and the verification report after it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObservabilityAuditGapAttestation"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "503": {
+            "description": "The audit store did not accept the declaration row."
+          }
+        }
+      }
+    },
     "/observability/autonomy/policies": {
       "get": {
         "tags": [
@@ -34198,6 +34245,11 @@
             "format": "int64",
             "description": "Leading rows with no hash (written before the hash-chain migration)."
           },
+          "attestedGapRows": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unhashed rows after the chain started that a keyed downgrade-gap attestation declares. They carry no tamper evidence of their own."
+          },
           "firstBrokenAuditId": {
             "type": "integer",
             "format": "int64",
@@ -34208,6 +34260,74 @@
             "type": "string",
             "nullable": true,
             "description": "Human-readable failure description, if any."
+          }
+        }
+      },
+      "ObservabilityAuditGapAttestationBody": {
+        "type": "object",
+        "description": "Request to attest one downgrade gap in the audit hash chain.",
+        "required": [
+          "gapFirstAuditId",
+          "reason"
+        ],
+        "properties": {
+          "gapFirstAuditId": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The first unhashed row of the gap; must be the first broken audit id that verification reports."
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 512,
+            "description": "Why the gap exists, for example the rollback that caused it."
+          }
+        }
+      },
+      "ObservabilityAuditGapAttestation": {
+        "type": "object",
+        "description": "A written downgrade-gap attestation.",
+        "required": [
+          "attestationAuditId",
+          "anchorAuditId",
+          "gapFirstAuditId",
+          "gapLastAuditId",
+          "gapRowCount",
+          "resumeAuditId",
+          "verification"
+        ],
+        "properties": {
+          "attestationAuditId": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The audit id of the declaration row."
+          },
+          "anchorAuditId": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The last hashed row before the gap."
+          },
+          "gapFirstAuditId": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The first unhashed row of the gap."
+          },
+          "gapLastAuditId": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The last unhashed row of the gap."
+          },
+          "gapRowCount": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The number of rows in the gap."
+          },
+          "resumeAuditId": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The first hashed row after the gap."
+          },
+          "verification": {
+            "$ref": "#/components/schemas/ObservabilityAuditIntegrity"
           }
         }
       },

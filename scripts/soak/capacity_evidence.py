@@ -16,6 +16,12 @@ import zipfile
 from datetime import datetime
 from pathlib import Path
 
+# Founder ruling 2026-10-27: GP is out of the 2026.1 GA capacity envelope and is reported as Preview
+# evidence. GP control requests stay in the raw observations (protocol "GPServer") but are excluded
+# from the GA SLO population, and the GP dimensions do not decide GA completion.
+PREVIEW_PROTOCOLS = frozenset({"GPServer"})
+PREVIEW_DIMENSIONS = frozenset({"gpWorkers", "gpQueueDepth"})
+
 
 def digest(payload: bytes) -> str:
     return hashlib.sha256(payload).hexdigest()
@@ -30,6 +36,19 @@ def timestamp(value: str) -> datetime:
 def assert_candidate(candidate: str, source: str, checkout: str) -> None:
     if not re.fullmatch(r"[0-9a-f]{40}", candidate) or not candidate == source == checkout:
         raise ValueError("workflow source and checkout must both equal the manifest candidate commit")
+
+
+def failed(buckets) -> int:
+    return sum(bucket["count"] for bucket in buckets if bucket["httpStatus"] >= 500 or bucket["inBandError"])
+
+
+def nearest_rank(buckets, fraction):
+    rank = math.ceil(sum(bucket["count"] for bucket in buckets) * fraction)
+    for bucket in sorted(buckets, key=lambda b: b["durationMs"]):
+        rank -= bucket["count"]
+        if rank <= 0:
+            return bucket["durationMs"]
+    raise ValueError("empty latency population")
 
 
 def receipt(lock: dict, lock_hash: str, source: dict, payload: bytes, artifact_url: str) -> dict:
@@ -53,19 +72,18 @@ def receipt(lock: dict, lock_hash: str, source: dict, payload: bytes, artifact_u
     duration = (timestamp(source["window"]["endedAt"]) - timestamp(source["window"]["startedAt"])).total_seconds()
     if duration <= 0:
         raise ValueError("empty observation window")
-    buckets = [bucket for interval in source["requests"] for bucket in interval["buckets"]]
-    count = sum(bucket["count"] for bucket in buckets)
-    if count <= 0 or source["requestCount"] != count:
+    every_bucket = [bucket for interval in source["requests"] for bucket in interval["buckets"]]
+    if sum(bucket["count"] for bucket in every_bucket) != source["requestCount"]:
         raise ValueError("empty or inconsistent request population")
-    errors = sum(bucket["count"] for bucket in buckets if bucket["httpStatus"] >= 500 or bucket["inBandError"])
+    buckets = [bucket for bucket in every_bucket if bucket["protocol"] not in PREVIEW_PROTOCOLS]
+    preview_buckets = [bucket for bucket in every_bucket if bucket["protocol"] in PREVIEW_PROTOCOLS]
+    count = sum(bucket["count"] for bucket in buckets)
+    if count <= 0:
+        raise ValueError("empty GA request population")
+    errors = failed(buckets)
 
     def percentile(fraction):
-        rank = math.ceil(count * fraction)
-        for bucket in sorted(buckets, key=lambda b: b["durationMs"]):
-            rank -= bucket["count"]
-            if rank <= 0:
-                return bucket["durationMs"]
-        raise ValueError("empty latency population")
+        return nearest_rank(buckets, fraction)
 
     metrics, workloads, recoveries = (source[name] for name in ("metrics", "workloads", "recoveries"))
     # Missing measurements are null, never a zero that could pass a threshold.
@@ -104,22 +122,38 @@ def receipt(lock: dict, lock_hash: str, source: dict, payload: bytes, artifact_u
     signals["saturationRatio"]["saturationComponents"] = {
         name: dict(value=value, sampleCount=len(metrics), rawArtifactIds=references) for name, value in components.items()}
     signals["recoveryTimeSeconds"]["recoveryEvidence"] = dict(events=recoveries, rawArtifactIds=references)
+    drill = source.get("faultDrill")
+    if drill is not None:
+        # The fault period is marked so the consumer can exclude it from steady state and judge
+        # the drill on its own evidence.
+        signals["recoveryTimeSeconds"]["recoveryEvidence"]["faultWindow"] = drill["window"]
     exercised = {}
     for name, target in lock["supportedEnvelope"].items():
         observed = [row["dimensions"].get(name) for row in workloads]
         met = bool(observed) and all(value == target for value in observed)
-        exercised[name] = dict(candidateIdentity=candidate, window=source["window"], query=lock["workloadQueries"][name],
+        exercised[name] = dict(tier="preview" if name in PREVIEW_DIMENSIONS else "ga", candidateIdentity=candidate, window=source["window"], query=lock["workloadQueries"][name],
                                status="exercised" if met else "not-exercised", target=target,
                                observed=target if met else next((v for v in observed if v != target), None),
                                executionMode="candidate-topology", proxy=False, sampleCount=len(workloads),
                                observationPopulation=dict(kind="ratio", numerator=sum(v == target for v in observed), denominator=len(observed), sampleCount=len(observed)),
                                rawArtifactIds=references)
+    ga_dimensions_exercised = all(w["status"] == "exercised" for name, w in exercised.items() if name not in PREVIEW_DIMENSIONS)
     complete = (not source["samplingFailures"] and all(v is not None for v in values.values())
-                and all(w["status"] == "exercised" for w in exercised.values())
-                and {event["dependency"] for event in recoveries} == {"worker", "database", "redis"})
+                and ga_dimensions_exercised
+                and {event["dependency"] for event in recoveries} == {"worker", "database", "redis"}
+                and (drill is None or drill.get("passed") is True))
+    preview_count = sum(bucket["count"] for bucket in preview_buckets)
+    preview = dict(gp=dict(
+        tier="preview", protocols=sorted(PREVIEW_PROTOCOLS), rawArtifactIds=references,
+        requests=dict(count=preview_count, errors=failed(preview_buckets),
+                      p95LatencyMs=nearest_rank(preview_buckets, .95) if preview_count else None,
+                      p99LatencyMs=nearest_rank(preview_buckets, .99) if preview_count else None),
+        workloads={name: exercised[name] for name in sorted(PREVIEW_DIMENSIONS) if name in exercised}))
     return dict(common, schemaVersion=2, status="completed" if complete else "incomplete", evidenceScope="single-tenant-ga", profile="soak",
                 lockSha256=lock_hash, observedRevision=source["observedRevision"], steadyStateSeconds=duration,
                 envelope=lock["supportedEnvelope"], producer=source["producer"], signals=signals, workloads=exercised,
+                gaPopulation=dict(excludedProtocols=sorted(PREVIEW_PROTOCOLS), requestCount=count, totalRequestCount=source["requestCount"]),
+                previewEvidence=preview, faultDrill=drill,
                 signingIdentity="https://github.com/"+source["producer"]["workflowRef"],
                 signature="external:slsa-v1:capacity-evidence.zip",
                 rawArtifacts=[dict(id="observations", kind="capacity-observations", path="capacity-observations.json",
