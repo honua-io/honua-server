@@ -440,19 +440,21 @@ public sealed class GeometryServiceAdvancedOperationsTests
     [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/areasAndLengths")]
     public async Task Area_PreserveShapeOnCoarseWebMercatorPolygon_DiffersFromVertexGeodesic()
     {
-        // A 10° by 1° quadrilateral around 60°N. Vertex-only geodesic area is the
-        // spheroid. preserveShape densifies those edges and measures the result in
-        // Web Mercator metres, which are stretched by about sec(latitude).
+        // A 10° by 1° quadrilateral around 60°N. preserveShape samples the straight
+        // Web Mercator edges, then measures that densified shape on the spheroid.
+        // The ground area must agree with a geodesic measure of the same densified
+        // shape within 1%, not the Mercator-scaled planar area.
         const double radius = 6_378_137d;
         var ring = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"""
             [[[{MercatorX(0, radius):G17},{MercatorY(60, radius):G17}],[{MercatorX(10, radius):G17},{MercatorY(60, radius):G17}],[{MercatorX(10, radius):G17},{MercatorY(61, radius):G17}],[{MercatorX(0, radius):G17},{MercatorY(61, radius):G17}],[{MercatorX(0, radius):G17},{MercatorY(60, radius):G17}]]]
             """);
+        var densified = DensifyWebMercatorQuadrilateral(radius, stepsPerEdge: 40);
 
-        var geodesic = Math.Abs(await PostAreaSquareMetersAsync(ring, "geodesic"));
         var preserveShape = Math.Abs(await PostAreaSquareMetersAsync(ring, "preserveShape"));
+        var densifiedGeodesic = Math.Abs(await PostAreaSquareMetersAsync(densified, "geodesic"));
 
-        geodesic.Should().BeGreaterThan(1e10);
-        preserveShape.Should().BeGreaterThan(geodesic * 2d);
+        densifiedGeodesic.Should().BeGreaterThan(1e10);
+        Math.Abs(preserveShape - densifiedGeodesic).Should().BeLessThan(densifiedGeodesic * 0.01d);
     }
 
     private async Task<double> PostAreaSquareMetersAsync(string ring, string calculationType)
@@ -486,6 +488,46 @@ public sealed class GeometryServiceAdvancedOperationsTests
 
     private static double MercatorY(double latitudeDegrees, double radius)
         => Math.Log(Math.Tan(Math.PI / 4d + latitudeDegrees * Math.PI / 360d)) * radius;
+
+    private static string DensifyWebMercatorQuadrilateral(double radius, int stepsPerEdge)
+    {
+        var corners = new (double X, double Y)[]
+        {
+            (MercatorX(0, radius), MercatorY(60, radius)),
+            (MercatorX(10, radius), MercatorY(60, radius)),
+            (MercatorX(10, radius), MercatorY(61, radius)),
+            (MercatorX(0, radius), MercatorY(61, radius))
+        };
+
+        var builder = new StringBuilder();
+        builder.Append("[[");
+        var first = true;
+        for (var edge = 0; edge < corners.Length; edge++)
+        {
+            var start = corners[edge];
+            var end = corners[(edge + 1) % corners.Length];
+            for (var step = 0; step < stepsPerEdge; step++)
+            {
+                var t = step / (double)stepsPerEdge;
+                AppendMercatorVertex(builder, ref first, start.X + ((end.X - start.X) * t), start.Y + ((end.Y - start.Y) * t));
+            }
+        }
+
+        AppendMercatorVertex(builder, ref first, corners[0].X, corners[0].Y);
+        builder.Append("]]");
+        return builder.ToString();
+    }
+
+    private static void AppendMercatorVertex(StringBuilder builder, ref bool first, double x, double y)
+    {
+        if (!first)
+        {
+            builder.Append(',');
+        }
+
+        first = false;
+        builder.Append(System.Globalization.CultureInfo.InvariantCulture, $"[{x:G17},{y:G17}]");
+    }
 
     [IntegrationTest]
     [Operation(Operations.Area)]
@@ -582,6 +624,122 @@ public sealed class GeometryServiceAdvancedOperationsTests
         result.Should().NotBeNull();
         result!.Lengths.Should().HaveCount(1);
         result.Lengths![0].Should().BeGreaterThan(111_250d);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Length)]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/lengths")]
+    public async Task Length_PlanarAt60N_MatchesEquatorialEsriScale()
+    {
+        // One degree of longitude at 60°N. calculationType=planar keeps today's
+        // Esri number: both axes times the equatorial radius, with no cos(latitude).
+        const double equatorialRadiusMeters = 6_371_000d;
+        var expected = equatorialRadiusMeters * Math.PI / 180d;
+
+        var planar = await PostLengthMetersAsync(0d, 60d, 1d, 60d, "planar");
+
+        planar.Should().BeApproximately(expected, 1d);
+        planar.Should().BeGreaterThan(100_000d);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Length)]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/lengths")]
+    public async Task Length_GroundAt60N_MatchesSpheroid()
+    {
+        // A 10° longitude span at 60°N. calculationType=ground is the ground result:
+        // within 1% of the WGS 84 spheroid, not the equatorial planar scale.
+        var ground = await PostLengthMetersAsync(0d, 60d, 10d, 60d, "ground");
+        var spheroid = VincentyMeters(0d, 60d, 10d, 60d);
+
+        spheroid.Should().BeGreaterThan(500_000d);
+        Math.Abs(ground - spheroid).Should().BeLessThan(spheroid * 0.01d);
+    }
+
+    private async Task<double> PostLengthMetersAsync(
+        double x1,
+        double y1,
+        double x2,
+        double y2,
+        string calculationType)
+    {
+        var body = string.Create(System.Globalization.CultureInfo.InvariantCulture, $$"""
+        {
+            "polylines": [
+                {"paths": [[[{{x1:G17}},{{y1:G17}}],[{{x2:G17}},{{y2:G17}}]]]}
+            ],
+            "sr": "4326",
+            "lengthUnit": "esriMeters",
+            "calculationType": "{{calculationType}}"
+        }
+        """);
+
+        using var requestContent = new StringContent(body, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync(
+            "/rest/services/Utilities/Geometry/GeometryServer/lengths",
+            requestContent);
+        response.Be200Ok();
+        var content = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize(content, GeometryServiceJsonContext.Default.GeometryServiceLengthResponse);
+        result.Should().NotBeNull();
+        result!.Lengths.Should().HaveCount(1);
+        return result.Lengths![0];
+    }
+
+    private static double VincentyMeters(double lon1, double lat1, double lon2, double lat2)
+    {
+        const double semiMajor = 6_378_137d;
+        const double flattening = 1d / 298.257223563d;
+        var semiMinor = semiMajor * (1d - flattening);
+        var phi1 = lat1 * Math.PI / 180d;
+        var phi2 = lat2 * Math.PI / 180d;
+        var longitudeDelta = (lon2 - lon1) * Math.PI / 180d;
+        var u1 = Math.Atan((1d - flattening) * Math.Tan(phi1));
+        var u2 = Math.Atan((1d - flattening) * Math.Tan(phi2));
+        var sinU1 = Math.Sin(u1);
+        var cosU1 = Math.Cos(u1);
+        var sinU2 = Math.Sin(u2);
+        var cosU2 = Math.Cos(u2);
+        var lambda = longitudeDelta;
+        double sinSigma = 0;
+        double cosSigma = 0;
+        double sigma = 0;
+        double cosSqAlpha = 0;
+        double cos2SigmaM = 0;
+        for (var iteration = 0; iteration < 100; iteration++)
+        {
+            var sinLambda = Math.Sin(lambda);
+            var cosLambda = Math.Cos(lambda);
+            sinSigma = Math.Sqrt(
+                Math.Pow(cosU2 * sinLambda, 2) +
+                Math.Pow(cosU1 * sinU2 - sinU1 * cosU2 * cosLambda, 2));
+            if (sinSigma <= 0)
+            {
+                return 0;
+            }
+
+            cosSigma = sinU1 * sinU2 + cosU1 * cosU2 * cosLambda;
+            sigma = Math.Atan2(sinSigma, cosSigma);
+            var sinAlpha = cosU1 * cosU2 * sinLambda / sinSigma;
+            cosSqAlpha = Math.Max(0d, 1d - sinAlpha * sinAlpha);
+            cos2SigmaM = cosSqAlpha <= 0d ? 0d : cosSigma - 2d * sinU1 * sinU2 / cosSqAlpha;
+            var c = flattening / 16d * cosSqAlpha * (2d + flattening * (4d - 3d * cosSqAlpha));
+            var previous = lambda;
+            lambda = longitudeDelta + (1d - c) * flattening * sinAlpha
+                * (sigma + c * sinSigma * (cos2SigmaM + c * cosSigma * (-1d + 2d * cos2SigmaM * cos2SigmaM)));
+            if (Math.Abs(lambda - previous) < 1e-12)
+            {
+                break;
+            }
+        }
+
+        var uSq = cosSqAlpha * (semiMajor * semiMajor - semiMinor * semiMinor) / (semiMinor * semiMinor);
+        var aCoeff = 1d + uSq / 16384d * (4096d + uSq * (-768d + uSq * (320d - 175d * uSq)));
+        var bCoeff = uSq / 1024d * (256d + uSq * (-128d + uSq * (74d - 47d * uSq)));
+        var deltaSigma = bCoeff * sinSigma * (cos2SigmaM + bCoeff / 4d
+            * (cosSigma * (-1d + 2d * cos2SigmaM * cos2SigmaM)
+                - bCoeff / 6d * cos2SigmaM * (-3d + 4d * sinSigma * sinSigma) * (-3d + 4d * cos2SigmaM * cos2SigmaM)));
+        return semiMinor * aCoeff * (sigma - deltaSigma);
     }
 
     [IntegrationTest]

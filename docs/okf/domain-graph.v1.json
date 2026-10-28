@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:20e86abe28ede6efcf9945e4d383ccec5d401041186f50760a88df802648c60d",
+  "bundleDigest": "sha256:b3f8ace0df7c01e66c3eb6258916c5f8a62c47d1b78529e2e6e255daad17f775",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -6814,7 +6814,7 @@
     {
       "id": "okf/capabilities/serve.geoservices-geometry-service",
       "path": "okf/capabilities/serve.geoservices-geometry-service.md",
-      "documentDigest": "sha256:c951f55bc5849b86f604b08bdf2bb9feb09c1809e5f1a68d1d50da1e72ce454b",
+      "documentDigest": "sha256:402c5327ab81b571a64aa44bdfb688c24b3c42a82e05d8f383ade084b414e52c",
       "metadata": {
         "type": "capability",
         "title": "Geometry Service",
@@ -7603,7 +7603,7 @@
     {
       "id": "reference/compatibility/geoservices-parity",
       "path": "reference/compatibility/geoservices-parity.md",
-      "documentDigest": "sha256:d7fa0d2cd1e0203e6b1ed24df6f05d8396cddba0a320b3f68131d700c710233a",
+      "documentDigest": "sha256:4b8eb9f0b85e26d28cf4dadb757be99ac654c2803626daf5d4527cb237f3bd17",
       "metadata": {
         "type": "reference",
         "title": "GeoServices REST parity",
@@ -7992,7 +7992,7 @@
     {
       "id": "reference/protocols/geoservices-rest",
       "path": "reference/protocols/geoservices-rest.md",
-      "documentDigest": "sha256:68bc2f813e354e367194a9545a1903562b8c78cb84d27aea04b9684dc3c8a4f3",
+      "documentDigest": "sha256:6e620f8ae4915a28382a83a67814753195d4a724af812a7e1ef2768c65fadc91",
       "metadata": {
         "type": "reference",
         "title": "GeoServices REST (ArcGIS-compatible)",
