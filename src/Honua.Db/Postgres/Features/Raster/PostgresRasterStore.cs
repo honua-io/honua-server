@@ -553,11 +553,6 @@ internal sealed class PostgresRasterStore : IRasterStore
             throw new ArgumentException($"Unsupported GDAL driver name: {formatName}");
         }
 
-        // COG creation options are resolved from a concrete source raster's overviews; an empty
-        // canvas has none, so it is written with the plain GeoTIFF driver COG already falls back to.
-        var effectiveFormat = formatName == "COG" ? "GTiff" : formatName;
-        var creationOptionsClause = BuildCreationOptionsClause(BuildExportCreationOptions(query, effectiveFormat));
-
         // Find one source raster to provide the layer's output layout. The source expression below
         // deliberately mirrors the populated export pipeline: selection and rendering functions
         // can change both the band count and the pixel type before the empty canvas is assembled.
@@ -585,6 +580,13 @@ internal sealed class PostgresRasterStore : IRasterStore
         }
 
         var referenceRasterId = Convert.ToInt64(referenceIdValue, CultureInfo.InvariantCulture);
+        var effectiveFormat = formatName;
+        var creationOptionsClause = BuildCreationOptionsClause(BuildExportCreationOptions(query, effectiveFormat));
+        if (formatName == "COG")
+        {
+            (effectiveFormat, creationOptionsClause) = await ResolveCogOptionsAsync(
+                connection, blockSize: 512, includeOverviewResampling: true, cancellationToken).ConfigureAwait(false);
+        }
         var sourceExpr = "raster";
         var sourceParams = new List<(string Name, object Value)>();
         if (query.Bands is { Length: > 0 } bands)
@@ -880,14 +882,13 @@ internal sealed class PostgresRasterStore : IRasterStore
             : string.Empty;
 
         // COG export: use creation options for proper internal tiling.
-        // If the COG GDAL driver is unavailable, fall back to GTiff with COG-compatible options.
         var creationOptionsClause = "";
         var effectiveFormat = formatName;
         const int exportBlockSize = 512;
         if (formatName == "COG")
         {
             (effectiveFormat, creationOptionsClause) = await ResolveCogOptionsAsync(
-                connection, blockSize: exportBlockSize, layerId, rasterId,
+                connection, blockSize: exportBlockSize,
                 includeOverviewResampling: true, cancellationToken).ConfigureAwait(false);
         }
         else
@@ -2271,7 +2272,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         if (formatName == "COG")
         {
             (effectiveFormat, creationOptionsClause) = await ResolveCogOptionsAsync(
-                connection, blockSize: exportBlockSize, layerId, rasterIds[0],
+                connection, blockSize: exportBlockSize,
                 includeOverviewResampling: true, cancellationToken).ConfigureAwait(false);
         }
         else
@@ -2631,13 +2632,13 @@ internal sealed class PostgresRasterStore : IRasterStore
             throw new ArgumentException($"Unsupported GDAL driver name: {formatName}");
         }
 
-        // COG driver check: same fallback as ExportImageAsync
+        // Require writable native COG support on this connection, as ExportImageAsync does.
         var effectiveTileFormat = formatName;
         var tileCreationOptions = "";
         if (formatName == "COG")
         {
             (effectiveTileFormat, tileCreationOptions) = await ResolveCogOptionsAsync(
-                connection, blockSize: 256, layerId, rasterId,
+                connection, blockSize: 256,
                 includeOverviewResampling: false, cancellationToken).ConfigureAwait(false);
         }
 
@@ -2737,7 +2738,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         if (formatName == "COG")
         {
             (effectiveTileFormat, tileCreationOptions) = await ResolveCogOptionsAsync(
-                connection, blockSize: 256, layerId, rasterIds[0],
+                connection, blockSize: 256,
                 includeOverviewResampling: false, cancellationToken).ConfigureAwait(false);
         }
 
@@ -2845,7 +2846,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         if (formatName == "COG")
         {
             (effectiveTileFormat, tileCreationOptions) = await ResolveCogOptionsAsync(
-                connection, blockSize: 256, layerId, rasterId,
+                connection, blockSize: 256,
                 includeOverviewResampling: false, cancellationToken).ConfigureAwait(false);
         }
 
@@ -2919,7 +2920,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         if (formatName == "COG")
         {
             (effectiveTileFormat, tileCreationOptions) = await ResolveCogOptionsAsync(
-                connection, blockSize: 256, layerId, rasterIds[0],
+                connection, blockSize: 256,
                 includeOverviewResampling: false, cancellationToken).ConfigureAwait(false);
         }
 
@@ -5200,55 +5201,30 @@ internal sealed class PostgresRasterStore : IRasterStore
         }
     }
 
-    // GDAL driver availability is static for the PostGIS process lifetime.
-    // Cache per driver name to avoid querying ST_GDALDrivers() on every export.
-    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> _gdalDriverCache = new();
-
     /// <summary>
-    /// Resolves the effective GDAL format and creation options for COG output.
-    /// Falls back to GTiff with COG-compatible options if the native COG driver is unavailable.
+    /// Resolves native COG creation options on the actual export connection.
+    /// Driver policy is session-specific; a GeoTIFF fallback cannot guarantee COG layout.
     /// </summary>
-    private async Task<(string EffectiveFormat, string CreationOptionsClause)> ResolveCogOptionsAsync(
+    private static async Task<(string EffectiveFormat, string CreationOptionsClause)> ResolveCogOptionsAsync(
         DbConnection connection,
         int blockSize,
-        int layerId,
-        long rasterId,
         bool includeOverviewResampling,
         CancellationToken cancellationToken)
     {
-        var hasCogDriver = await CheckGdalDriverAsync(connection, "COG", cancellationToken).ConfigureAwait(false);
-        if (hasCogDriver)
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT 1 FROM ST_GDALDrivers() WHERE short_name = 'COG' AND can_write LIMIT 1";
+        if (await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is null)
         {
-            var options = $"'COMPRESS=DEFLATE', 'BLOCKSIZE={blockSize}'";
-            if (includeOverviewResampling)
-            {
-                options += ", 'OVERVIEW_RESAMPLING=NEAREST'";
-            }
-
-            return ("COG", $", ARRAY[{options}]");
+            throw new NotSupportedException("A writable GDAL COG driver is required for COG export.");
         }
 
-        PostgresRasterLog.CogDriverFallback(_logger, layerId, rasterId);
-        return ("GTiff", $", ARRAY['TILED=YES', 'COMPRESS=DEFLATE', 'BLOCKXSIZE={blockSize}', 'BLOCKYSIZE={blockSize}']");
-    }
-
-    private static async Task<bool> CheckGdalDriverAsync(
-        DbConnection connection,
-        string driverName,
-        CancellationToken cancellationToken)
-    {
-        if (_gdalDriverCache.TryGetValue(driverName, out var cached))
+        var options = $"'COMPRESS=DEFLATE', 'BLOCKSIZE={blockSize}'";
+        if (includeOverviewResampling)
         {
-            return cached;
+            options += ", 'OVERVIEW_RESAMPLING=NEAREST'";
         }
 
-        await using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT 1 FROM ST_GDALDrivers() WHERE short_name = @driver LIMIT 1";
-        AddParameter(cmd, "@driver", driverName);
-        var result = await cmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-        var available = result != null;
-        _gdalDriverCache.TryAdd(driverName, available);
-        return available;
+        return ("COG", $", ARRAY[{options}]");
     }
 
     private async Task<int?> ReadRasterSridAsync(
