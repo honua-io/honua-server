@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:1d61440607f681ab7240881799687f3694abf44eca6634d1d998406cbf305452",
+  "bundleDigest": "sha256:a34377b058fe5cbb6cbb6d6e5b58c35729987b79856df93b87711e27c62fb804",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -7962,7 +7962,7 @@
     {
       "id": "reference/protocols/cloud-native-formats",
       "path": "reference/protocols/cloud-native-formats.md",
-      "documentDigest": "sha256:a8ad6c131e6293ccb92d107b3e98e0ab7e384d5b7d0162e113ff297b3d0e60b5",
+      "documentDigest": "sha256:2808c84049a061278af534a8b177ef3bd3d0414540bf48f8c437c6757cb154bd",
       "metadata": {
         "type": "reference",
         "title": "Cloud-native formats",
@@ -7974,6 +7974,17 @@
         ]
       },
       "humanDocument": "https://github.com/honua-io/honua-server/blob/trunk/docs/reference/protocols/cloud-native-formats.md"
+    },
+    {
+      "id": "reference/protocols/cloud-native-standards",
+      "path": "reference/protocols/cloud-native-standards.md",
+      "documentDigest": "sha256:21d79d2669c6f66582d6cb4780a5df36d7edebd44b3ced2b47b2cfbd9c2a6b81",
+      "metadata": {
+        "type": "reference",
+        "title": "Cloud-native geospatial standards and evidence",
+        "description": "Specification targets, supported subsets, conformance evidence and known limitations for Honua Server's cloud-native formats."
+      },
+      "humanDocument": "https://github.com/honua-io/honua-server/blob/trunk/docs/reference/protocols/cloud-native-standards.md"
     },
     {
       "id": "reference/protocols/geoservices-rest",
@@ -16039,12 +16050,22 @@
     {
       "source": "reference/protocols/cloud-native-formats",
       "relation": "links_to",
+      "target": "reference/protocols/cloud-native-standards"
+    },
+    {
+      "source": "reference/protocols/cloud-native-formats",
+      "relation": "links_to",
       "target": "reference/protocols/ogc-apis"
     },
     {
       "source": "reference/protocols/cloud-native-formats",
       "relation": "links_to",
       "target": "reference/protocols/stac"
+    },
+    {
+      "source": "reference/protocols/cloud-native-standards",
+      "relation": "links_to",
+      "target": "reference/protocols/cloud-native-formats"
     },
     {
       "source": "reference/protocols/geoservices-rest",
@@ -16776,6 +16797,14 @@
     {
       "source": "reference/configuration/ai-execution-admission",
       "target": "internal/contributor/ai-admission-redis"
+    },
+    {
+      "source": "reference/protocols/cloud-native-formats",
+      "target": "cng-status"
+    },
+    {
+      "source": "reference/protocols/cloud-native-standards",
+      "target": "cng-status"
     }
   ],
   "workflows": {
