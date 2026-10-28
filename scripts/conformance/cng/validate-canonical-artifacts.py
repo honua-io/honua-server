@@ -1314,9 +1314,21 @@ def validate_hdf5_netcdf(path: Path, args: argparse.Namespace) -> list[dict]:
         with tempfile.NamedTemporaryFile(suffix=".nc", delete=False) as stream:
             repacked = Path(stream.name)
         try:
-            _run("h5repack", str(path), str(repacked))
+            # This tiny fixture proves PAGE layout conversion, not a cloud-sized chunk profile.
+            _run("h5repack", "-S", "PAGE", "-G", "262144", str(path), str(repacked))
             _validate_canonical_hdf5(repacked)
             _validate_canonical_xarray(repacked)
+            import h5py
+            with h5py.File(repacked, "r") as handle:
+                properties = handle.id.get_create_plist()
+                if properties.get_file_space_strategy()[0] != h5py.h5f.FSPACE_STRATEGY_PAGE:
+                    raise ValueError("repacked file does not use PAGE file space strategy")
+                if properties.get_file_space_page_size() != 262144:
+                    raise ValueError("repacked PAGE size differs from 262144 bytes")
+            statistics = _run("h5stat", "-S", str(repacked)).stdout
+            metadata = re.search(r"File metadata:\s*(\d+) bytes", statistics)
+            if not metadata or int(metadata.group(1)) > 262144:
+                raise ValueError("repacked PAGE does not contain the reported file metadata")
         finally:
             repacked.unlink(missing_ok=True)
 
