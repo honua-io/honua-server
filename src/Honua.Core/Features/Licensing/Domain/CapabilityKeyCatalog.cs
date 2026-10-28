@@ -180,7 +180,7 @@ public static class CapabilityKeyCatalog
         new("serve.wfs", "WFS 2.0", Categories.Serve,
             HonuaEdition.Community, "Query and read features through WFS 2.0."),
         new("serve.wps", "WPS 2.0", Categories.Serve,
-            HonuaEdition.Community, "Submit and poll processes through OGC WPS 2.0 (GetCapabilities, DescribeProcess, Execute, GetStatus, GetResult)."),
+            HonuaEdition.Community, "Submit and poll processes through OGC WPS 2.0 (GetCapabilities, DescribeProcess, Execute, GetStatus, GetResult).", Status: PreviewStatus),
         new("serve.vector-tiles", "Vector Tiles (MVT/TileJSON/PMTiles)", Categories.Serve,
             HonuaEdition.Community, "Serve Mapbox Vector Tiles, TileJSON descriptors, and PMTiles archives."),
         new("serve.sensorthings", "OGC SensorThings API", Categories.Serve,
@@ -220,9 +220,9 @@ public static class CapabilityKeyCatalog
 
         // Process
         new("process.geoprocessing", "Geoprocessing Task Execution", Categories.Process,
-            HonuaEdition.Community, "Submit and poll geoprocessing tasks through the Esri GeoServices GPServer surface. Print/export-specific tasks are gated by printing.* entitlement keys."),
+            HonuaEdition.Community, "Submit and poll geoprocessing tasks through the Esri GeoServices GPServer surface. Print/export-specific tasks are gated by printing.* entitlement keys.", Status: PreviewStatus),
         new("process.ogc-api-processes", "OGC API Processes", Categories.Process,
-            HonuaEdition.Community, "Submit and poll jobs through OGC API - Processes."),
+            HonuaEdition.Community, "Submit and poll jobs through OGC API - Processes.", Status: PreviewStatus),
 
         // Collaboration
         new("collaboration.map-sessions", "Map Collaboration Sessions", Categories.Collaboration,

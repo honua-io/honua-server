@@ -349,6 +349,8 @@ public sealed class TypedProposalCurrentApiKeyTests(RedisFixture redis) : IAsync
             inner.CreateAsync(name, permissions, expires, createdBy, restrictions, token);
         public Task<AdminApiKeyCreateResult?> RotateAsync(Guid id, CancellationToken token) => inner.RotateAsync(id, token);
         public Task<AdminApiKeyRecord?> RevokeAsync(Guid id, CancellationToken token) => inner.RevokeAsync(id, token);
+        public Task<AdminApiKeyRecord?> UpdateRestrictionsAsync(Guid id, AdminApiKeyRestrictions restrictions, CancellationToken token) =>
+            inner.UpdateRestrictionsAsync(id, restrictions, token);
         public Task<AdminApiKeyValidationResult?> ValidateAsync(string key, CancellationToken token) => inner.ValidateAsync(key, token);
     }
 

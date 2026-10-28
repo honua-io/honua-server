@@ -17,6 +17,7 @@ from pmtiles_http import HttpRangeSource, load_source
 from derived_zarr import has_derived_binding, observe_array
 from derived_fsspec import observe_fsspec
 from producer_run import DISPATCH_ENV, producer_run
+from flatgeobuf_readback import read_flatgeobuf
 
 CLIENTS = {
     "GeoPandas": "1.1.4",
@@ -957,8 +958,8 @@ def validate_flatgeobuf(path: Path, args: argparse.Namespace) -> list[dict]:
         geopandas_seen.update(_flatgeobuf_frame_metadata(frame))
 
     def gdal_check() -> str:
-        info = _run("ogrinfo", "-json", "-al", "-so", str(path))
-        gdal_seen.update(_gdal_flatgeobuf_metadata(json.loads(info.stdout)))
+        info = read_flatgeobuf(path)
+        gdal_seen.update(_gdal_flatgeobuf_metadata(info))
         return _command_version("GDAL", "gdalinfo", "--version")
 
     _collect_client(
@@ -1230,10 +1231,76 @@ def validate_honua_zarr_subset(path: Path, args: argparse.Namespace) -> list[dic
     return observations
 
 
-def validate_hdf5_netcdf(path: Path, args: argparse.Namespace) -> list[dict]:
+def _validate_canonical_hdf5(path: Path) -> None:
+    """Assert this lane's known NetCDF fixture, not arbitrary HDF conventions."""
     import h5py
+    import numpy as np
+
+    with h5py.File(path, "r") as handle:
+        if "temperature" not in handle:
+            raise ValueError("canonical temperature dataset is missing")
+        data = handle["temperature"]
+        if data.shape != (4, 8, 16):
+            raise ValueError("canonical temperature shape differs")
+        if data.chunks != (1, 4, 4):
+            raise ValueError("canonical temperature chunks differ")
+        if data.dtype.kind != "f" or data.dtype.itemsize != 4:
+            raise ValueError("canonical temperature dtype differs from Float32")
+        if not np.array_equal(data[:], np.arange(512, dtype=np.float32).reshape(4, 8, 16)):
+            raise ValueError("canonical temperature values differ")
+        for index, name in enumerate(("time", "y", "x")):
+            scales = list(data.dims[index].values())
+            if len(scales) != 1 or scales[0].name != "/" + name:
+                raise ValueError("canonical dimension scale links differ")
+        metadata = ((handle, "Conventions", "CF-1.10"),
+                    (data, "units", "degC"), (data, "standard_name", "sea_surface_temperature"),
+                    (handle["y"], "standard_name", "latitude"), (handle["y"], "units", "degrees_north"),
+                    (handle["y"], "axis", "Y"), (handle["x"], "standard_name", "longitude"),
+                    (handle["x"], "units", "degrees_east"), (handle["x"], "axis", "X"),
+                    (handle["time"], "calendar", "proleptic_gregorian"),
+                    (handle["time"], "units", "days since 2026-01-01 00:00:00"))
+        for target, key, expected in metadata:
+            actual = target.attrs.get(key)
+            if isinstance(actual, bytes):
+                actual = actual.decode("utf-8")
+            if actual != expected:
+                raise ValueError(f"canonical CF metadata differs: {key}")
+        for name, expected in (("time", np.arange(4)), ("y", np.linspace(22., 18., 8)), ("x", np.linspace(-160., -156., 16))):
+            if not np.array_equal(handle[name][:], expected):
+                raise ValueError(f"canonical coordinate differs: {name}")
+
+
+def _validate_canonical_xarray(path: Path) -> None:
+    import numpy as np
     import xarray
 
+    with xarray.open_dataset(path, engine="h5netcdf") as dataset:
+        if dict(dataset.sizes) != {"time": 4, "y": 8, "x": 16}:
+            raise ValueError("canonical multidimensional shape differs")
+        data = dataset["temperature"]
+        if data.dims != ("time", "y", "x"):
+            raise ValueError("canonical dimension order differs")
+        if data.dtype.kind != "f" or data.dtype.itemsize != 4:
+            raise ValueError("canonical temperature dtype differs from Float32")
+        if tuple(data.encoding.get("chunksizes", ())) != (1, 4, 4):
+            raise ValueError("canonical temperature chunks differ")
+        if not np.array_equal(data.values, np.arange(512, dtype=np.float32).reshape(4, 8, 16)):
+            raise ValueError("canonical temperature values differ")
+        for name, expected in (("time", np.array(["2026-01-01", "2026-01-02", "2026-01-03", "2026-01-04"], dtype="datetime64[ns]")),
+                               ("y", np.linspace(22., 18., 8)), ("x", np.linspace(-160., -156., 16))):
+            if dataset[name].dims != (name,) or not np.array_equal(dataset[name].values, expected):
+                raise ValueError(f"canonical coordinate differs: {name}")
+        expected_metadata = ((dataset, "Conventions", "CF-1.10"), (data, "units", "degC"),
+                             (data, "standard_name", "sea_surface_temperature"),
+                             (dataset["y"], "standard_name", "latitude"), (dataset["y"], "units", "degrees_north"),
+                             (dataset["y"], "axis", "Y"), (dataset["x"], "standard_name", "longitude"),
+                             (dataset["x"], "units", "degrees_east"), (dataset["x"], "axis", "X"))
+        for target, key, expected in expected_metadata:
+            if target.attrs.get(key) != expected:
+                raise ValueError(f"canonical CF metadata differs: {key}")
+
+
+def validate_hdf5_netcdf(path: Path, args: argparse.Namespace) -> list[dict]:
     observations: list[dict] = []
 
     def h5stat_check() -> str:
@@ -1247,23 +1314,29 @@ def validate_hdf5_netcdf(path: Path, args: argparse.Namespace) -> list[dict]:
         with tempfile.NamedTemporaryFile(suffix=".nc", delete=False) as stream:
             repacked = Path(stream.name)
         try:
-            _run("h5repack", str(path), str(repacked))
+            # This tiny fixture proves PAGE layout conversion, not a cloud-sized chunk profile.
+            _run("h5repack", "-S", "PAGE", "-G", "262144", str(path), str(repacked))
+            _validate_canonical_hdf5(repacked)
+            _validate_canonical_xarray(repacked)
+            import h5py
             with h5py.File(repacked, "r") as handle:
-                if "temperature" not in handle or handle["temperature"].size < 1:
-                    raise ValueError("repacked file lost the temperature dataset")
+                properties = handle.id.get_create_plist()
+                if properties.get_file_space_strategy()[0] != h5py.h5f.FSPACE_STRATEGY_PAGE:
+                    raise ValueError("repacked file does not use PAGE file space strategy")
+                if properties.get_file_space_page_size() != 262144:
+                    raise ValueError("repacked PAGE size differs from 262144 bytes")
+            statistics = _run("h5stat", "-S", str(repacked)).stdout
+            metadata = re.search(r"File metadata:\s*(\d+) bytes", statistics)
+            if not metadata or int(metadata.group(1)) > 262144:
+                raise ValueError("repacked PAGE does not contain the reported file metadata")
         finally:
             repacked.unlink(missing_ok=True)
 
     def h5py_check() -> None:
-        with h5py.File(path, "r") as handle:
-            if "temperature" not in handle or handle["temperature"].size < 1:
-                raise ValueError("h5py did not recover the temperature dataset")
+        _validate_canonical_hdf5(path)
 
     def xarray_check() -> None:
-        with xarray.open_dataset(path, engine="h5netcdf") as dataset:
-            if "temperature" not in dataset or dataset["temperature"].size < 1:
-                raise ValueError("xarray did not recover the netCDF temperature variable")
-            dataset.load()
+        _validate_canonical_xarray(path)
 
     for operation, client, lane, check in (
         ("metadata-statistics", "h5stat", "h5stat", h5stat_check),

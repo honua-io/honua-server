@@ -276,6 +276,13 @@ internal static class ServiceCollectionExtensions
                 serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 configuration["Database:Schema"],
                 serviceProvider.GetRequiredService<Honua.Core.Features.AuditLog.AuditChainKeySnapshot>().Key));
+        services.AddScoped<IAuditChainGapAttestor>(serviceProvider =>
+            new PostgresAuditChainGapAttestor(
+                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
+                serviceProvider.GetRequiredService<IAuditLog>(),
+                serviceProvider.GetRequiredService<IAuditLogIntegrityVerifier>(),
+                configuration["Database:Schema"],
+                serviceProvider.GetRequiredService<Honua.Core.Features.AuditLog.AuditChainKeySnapshot>().Key));
         services.AddScoped<IInvestigationStore, PostgresInvestigationStore>();
 
         // Persisted ops-health rollup store (#2553). Schema-qualified so it targets the configured

@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:205d30a69808622d3765b4b845391f6d956ea2e6bd2ba86b319288c5c66b8c89",
+  "bundleDigest": "sha256:b5c7676116dd3fd7c82499900c7548ffa0cbb5ff60751ccefb1339964b3e7141",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -1835,12 +1835,15 @@
     {
       "id": "concepts/protocols",
       "path": "concepts/protocols.md",
-      "documentDigest": "sha256:27b62e3f596423c94bb324efee1d6a8924f610ef7eb149401eef78d33c604317",
+      "documentDigest": "sha256:0eac6d4fd975a8b58153372890f1dc7f28d2eece8e4cc0d3cceace1202009005",
       "metadata": {
         "type": "concept",
         "title": "Protocols",
         "description": "Honua serves every published layer through multiple protocols at once — the same PostGIS table can be queried from ArcGIS Pro, QGIS, Excel, a MapLibre web map, and an AI agent without ETL or duplication.",
-        "resource": "honua://capability/serve.sensorthings"
+        "resource": "honua://capability/serve.sensorthings",
+        "resources": [
+          "honua://capability/serve.wps"
+        ]
       },
       "humanDocument": "https://github.com/honua-io/honua-server/blob/trunk/docs/concepts/protocols.md"
     },
@@ -2156,11 +2159,11 @@
     {
       "id": "guides/deploy/cloud-deployments",
       "path": "guides/deploy/cloud-deployments.md",
-      "documentDigest": "sha256:b7b10bedfff2868dd30fb18955e858592b2dbc3626648e9d02d38ac0208c8710",
+      "documentDigest": "sha256:def729d8fdbc96d631ca8f04fa412a5ab0eaee2483c3814242b264f650f9e13a",
       "metadata": {
         "type": "runbook",
         "title": "Deploy on AWS and Azure",
-        "description": "You'll pick a managed-cloud deployment pattern for Honua — ECS/Fargate, Lambda, Azure Container Apps, or Azure Functions — and know which image, configuration, and rollout mechanism each one uses."
+        "description": "You'll pick a 2026.1 deployment pattern for Honua — Compose and ECS are GA, Lambda and Kubernetes are Preview, Azure is not offered — and know which image, configuration, and rollout mechanism each one uses."
       },
       "humanDocument": "https://github.com/honua-io/honua-server/blob/trunk/docs/guides/deploy/cloud-deployments.md"
     },
@@ -2178,7 +2181,7 @@
     {
       "id": "guides/deploy/docker-compose",
       "path": "guides/deploy/docker-compose.md",
-      "documentDigest": "sha256:df51cbcaa27f9d5b32d909e65dfbf2908dc18002e542ac4f99e86c2d4bad3b35",
+      "documentDigest": "sha256:88099dda556aa58cc1b36abaa953f33fbc14e6de7017b08f7fae172c9c756baa",
       "metadata": {
         "type": "runbook",
         "title": "Deploy with Docker Compose",
@@ -2189,7 +2192,7 @@
     {
       "id": "guides/deploy/kubernetes",
       "path": "guides/deploy/kubernetes.md",
-      "documentDigest": "sha256:2ea75ba55af519cdccae147f34b29bbc6af4db6f9d03a6b815e1484a0c0572d6",
+      "documentDigest": "sha256:3c937ad6eabf32d4a9eb751f055a4ea782bc05b29f608a43135ee92e82fe4cbc",
       "metadata": {
         "type": "guide",
         "title": "Deploy on Kubernetes",
@@ -2649,7 +2652,7 @@
     {
       "id": "guides/secure/authentication",
       "path": "guides/secure/authentication.md",
-      "documentDigest": "sha256:fa9665d446aac1806cf3d5b2128ed06e21b1c49c303205144754260a3b8f6d9f",
+      "documentDigest": "sha256:bf1edd6d373f11a931dcbd959e17620acee619c1ec2df307b600258b04e6c841",
       "metadata": {
         "type": "guide",
         "title": "Authenticate clients",
@@ -5367,7 +5370,7 @@
     {
       "id": "okf/capabilities/README",
       "path": "okf/capabilities/README.md",
-      "documentDigest": "sha256:fa989eaf75d4e2b7e0885e30a03b5adb38da617391d31f8ae303f2e2a6c740e7",
+      "documentDigest": "sha256:231949118b384ebde62cff765231caf32e7819bd7cd825201eb1909ea5053fec",
       "metadata": {
         "type": "index",
         "title": "Capability concepts",
@@ -5383,7 +5386,7 @@
     {
       "id": "okf/capabilities/admin.control-plane",
       "path": "okf/capabilities/admin.control-plane.md",
-      "documentDigest": "sha256:7adaf0084b0c8eec30d632412657b323aa69bd3683f1b3eaae3b6d457af6c176",
+      "documentDigest": "sha256:b9d6a8bebe2aaff5615dca0dff657add29de02c339898277ca815c1b9652314a",
       "metadata": {
         "type": "capability",
         "title": "Admin Control Plane",
@@ -5451,7 +5454,7 @@
     {
       "id": "okf/capabilities/ai.mcp-discovery",
       "path": "okf/capabilities/ai.mcp-discovery.md",
-      "documentDigest": "sha256:35aa438712bfd5e7dac8facf69b1fd7e94f1b9af2b8bda9294e6ae3c8cb08e2b",
+      "documentDigest": "sha256:3264375dfeeb32012f20216591c238d040ddd277fb9a2ffbc87de1e603d301ca",
       "metadata": {
         "type": "capability",
         "title": "MCP Discovery & Query",
@@ -6267,7 +6270,7 @@
     {
       "id": "okf/capabilities/identity.portal-sharing",
       "path": "okf/capabilities/identity.portal-sharing.md",
-      "documentDigest": "sha256:82700d10c055dbe84c320f0697d76b730bbf8714f08a08012113c384cf43f00d",
+      "documentDigest": "sha256:636a9c76520fa99fed6de7af4d156f567ecb222cc034c28e1480c112714038fa",
       "metadata": {
         "type": "capability",
         "title": "ArcGIS Portal Sharing Read Surface",
@@ -6505,7 +6508,7 @@
     {
       "id": "okf/capabilities/process.geoprocessing",
       "path": "okf/capabilities/process.geoprocessing.md",
-      "documentDigest": "sha256:1bcdf15b34c78f0f8d401d355d07f24ebef4e6974969b04fe1aae0e80229fda7",
+      "documentDigest": "sha256:9c6817eb1333985650270ede2d70059c3f4848d1e4fb683dd2f3d0b29b927da8",
       "metadata": {
         "type": "capability",
         "title": "Geoprocessing Task Execution",
@@ -6522,7 +6525,7 @@
     {
       "id": "okf/capabilities/process.ogc-api-processes",
       "path": "okf/capabilities/process.ogc-api-processes.md",
-      "documentDigest": "sha256:b11407eeac2d3d500a69258f0f87a244ee6b75c90258d5cd2ca35987c53a3e30",
+      "documentDigest": "sha256:54d1c42addeaaf4c3380bc6fa4a1b83a5f94893982c023687aef21e7322855c1",
       "metadata": {
         "type": "capability",
         "title": "OGC API Processes",
@@ -6777,7 +6780,7 @@
     {
       "id": "okf/capabilities/serve.geoservices-featureserver",
       "path": "okf/capabilities/serve.geoservices-featureserver.md",
-      "documentDigest": "sha256:34a5246a1ad50ca52c904422fbadb2a0b2bfc6da8ecdabe2b74d98441e912711",
+      "documentDigest": "sha256:e230156c1718404abb352cff9ca1fd4aa895a7344b4bdb9eba6373ede171fd7c",
       "metadata": {
         "type": "capability",
         "title": "FeatureServer Query",
@@ -6828,7 +6831,7 @@
     {
       "id": "okf/capabilities/serve.geoservices-imageserver",
       "path": "okf/capabilities/serve.geoservices-imageserver.md",
-      "documentDigest": "sha256:547ac177e8c3d7e232087e0a5067061b6cfdc9c3960861a948a31488bfae2ad8",
+      "documentDigest": "sha256:d17fc8e15d8aee123816797b51de88604c2f28f074040777ef2dbb6b7dcf9ea2",
       "metadata": {
         "type": "capability",
         "title": "ImageServer",
@@ -7083,7 +7086,7 @@
     {
       "id": "okf/capabilities/serve.vector-tiles",
       "path": "okf/capabilities/serve.vector-tiles.md",
-      "documentDigest": "sha256:245d58507d3704ace0fb2b9795358c833773ba4be37874fc9f4195d2842c09a3",
+      "documentDigest": "sha256:b23dc5ee67ec4f982acd92fb4de5f69a56a0341834022d1e142cbe00e849e7e0",
       "metadata": {
         "type": "capability",
         "title": "Vector Tiles (MVT/TileJSON/PMTiles)",
@@ -7117,7 +7120,7 @@
     {
       "id": "okf/capabilities/serve.wfs",
       "path": "okf/capabilities/serve.wfs.md",
-      "documentDigest": "sha256:76db96bf8b34a7f83586442cd4730a4a65159ce52d30b1b3f3d62375b4f2e480",
+      "documentDigest": "sha256:4ef5fe336472ff5ec967db5177416c5574cf8197ddc603f8eeacde46f7be916d",
       "metadata": {
         "type": "capability",
         "title": "WFS 2.0",
@@ -7168,7 +7171,7 @@
     {
       "id": "okf/capabilities/serve.wps",
       "path": "okf/capabilities/serve.wps.md",
-      "documentDigest": "sha256:6603e40158940510fff3d6d068c14747174752edf22afa198cb788112184a03a",
+      "documentDigest": "sha256:a30c1a07801dcab91d1c427fdf061388d141ba33a7416ee0281efaabb263cf3d",
       "metadata": {
         "type": "capability",
         "title": "WPS 2.0",
@@ -7550,7 +7553,7 @@
     {
       "id": "reference/admin-api/users-roles-licensing",
       "path": "reference/admin-api/users-roles-licensing.md",
-      "documentDigest": "sha256:34d89a31d0d7e58c75e54a3e4e1db0eb444491192c96abfcd572ab3f5ebeef27",
+      "documentDigest": "sha256:6900bbcb2c0d4fa28aa6e2f2d02bb9f1ad14a8a52a7c188e1d7aa457bf998f8f",
       "metadata": {
         "type": "reference",
         "title": "Users, roles, and licensing",
@@ -7677,7 +7680,7 @@
     {
       "id": "reference/configuration/data-sources/README",
       "path": "reference/configuration/data-sources/README.md",
-      "documentDigest": "sha256:a9bcced57702a1d7d76f25c4b88eb54805c577de1a1b11846d44157750a0c413",
+      "documentDigest": "sha256:9d9dc092752c331348e1fa966044572c4c833e7477f656f99996e2faa892437c",
       "metadata": {
         "type": "index",
         "title": "Data sources",
@@ -7688,7 +7691,7 @@
     {
       "id": "reference/configuration/data-sources/databricks",
       "path": "reference/configuration/data-sources/databricks.md",
-      "documentDigest": "sha256:b6434ba2d61690b942198f59caf7b9aca7cf184d7048abaa10fc8c33d6974bca",
+      "documentDigest": "sha256:66483b1e13d12ef95093bd934445ba4a77305cb3d40f3f4549664236039f2e9f",
       "metadata": {
         "type": "reference",
         "title": "Databricks provider (read-only, best-effort)",
@@ -7744,7 +7747,7 @@
     {
       "id": "reference/configuration/data-sources/redshift",
       "path": "reference/configuration/data-sources/redshift.md",
-      "documentDigest": "sha256:276bca18c60ab62dc3528a35ef4e0b9352fa276a72b719deb589c21b2d958445",
+      "documentDigest": "sha256:d57957c71db94ffdee59d4b4cb2d3347d2d198001d8656cb9cfcddb7260c7db1",
       "metadata": {
         "type": "reference",
         "title": "Amazon Redshift provider",
@@ -7756,7 +7759,7 @@
     {
       "id": "reference/configuration/data-sources/snowflake",
       "path": "reference/configuration/data-sources/snowflake.md",
-      "documentDigest": "sha256:3099fe2ce61d315de5abdf8e6ee1a6381267de7a2efe947adeb61be22fa84262",
+      "documentDigest": "sha256:6985c5ebca19a5bf224dfccdfa211a36d8760063780523b0a9c784304c587585",
       "metadata": {
         "type": "reference",
         "title": "Snowflake provider",
@@ -7962,7 +7965,7 @@
     {
       "id": "reference/protocols/cloud-native-formats",
       "path": "reference/protocols/cloud-native-formats.md",
-      "documentDigest": "sha256:93b0d66a75dbcbcfb12934d34eb9f2ff93bfe6e6fcd151dbff4696fa0bb367dc",
+      "documentDigest": "sha256:2808c84049a061278af534a8b177ef3bd3d0414540bf48f8c437c6757cb154bd",
       "metadata": {
         "type": "reference",
         "title": "Cloud-native formats",
@@ -7974,6 +7977,17 @@
         ]
       },
       "humanDocument": "https://github.com/honua-io/honua-server/blob/trunk/docs/reference/protocols/cloud-native-formats.md"
+    },
+    {
+      "id": "reference/protocols/cloud-native-standards",
+      "path": "reference/protocols/cloud-native-standards.md",
+      "documentDigest": "sha256:21d79d2669c6f66582d6cb4780a5df36d7edebd44b3ced2b47b2cfbd9c2a6b81",
+      "metadata": {
+        "type": "reference",
+        "title": "Cloud-native geospatial standards and evidence",
+        "description": "Specification targets, supported subsets, conformance evidence and known limitations for Honua Server's cloud-native formats."
+      },
+      "humanDocument": "https://github.com/honua-io/honua-server/blob/trunk/docs/reference/protocols/cloud-native-standards.md"
     },
     {
       "id": "reference/protocols/geoservices-rest",
@@ -15039,12 +15053,7 @@
     {
       "source": "okf/capabilities/serve.wps",
       "relation": "links_to",
-      "target": "concepts/editions-and-licensing"
-    },
-    {
-      "source": "okf/capabilities/serve.wps",
-      "relation": "links_to",
-      "target": "okf/capabilities/README"
+      "target": "concepts/protocols"
     },
     {
       "source": "okf/capabilities/staticmap.high-dpi",
@@ -16039,12 +16048,22 @@
     {
       "source": "reference/protocols/cloud-native-formats",
       "relation": "links_to",
+      "target": "reference/protocols/cloud-native-standards"
+    },
+    {
+      "source": "reference/protocols/cloud-native-formats",
+      "relation": "links_to",
       "target": "reference/protocols/ogc-apis"
     },
     {
       "source": "reference/protocols/cloud-native-formats",
       "relation": "links_to",
       "target": "reference/protocols/stac"
+    },
+    {
+      "source": "reference/protocols/cloud-native-standards",
+      "relation": "links_to",
+      "target": "reference/protocols/cloud-native-formats"
     },
     {
       "source": "reference/protocols/geoservices-rest",
@@ -16776,6 +16795,14 @@
     {
       "source": "reference/configuration/ai-execution-admission",
       "target": "internal/contributor/ai-admission-redis"
+    },
+    {
+      "source": "reference/protocols/cloud-native-formats",
+      "target": "cng-status"
+    },
+    {
+      "source": "reference/protocols/cloud-native-standards",
+      "target": "cng-status"
     }
   ],
   "workflows": {
@@ -16979,7 +17006,7 @@
       "validation": "openapi_method_and_path",
       "runtimeDiscoveryRequired": true,
       "executionVerified": false,
-      "contractDigest": "sha256:13d10331b2bfc77edc80ea68dc0eb20197340795ba2483441ad0d36960e0a845"
+      "contractDigest": "sha256:c0e20cdf9be301cf823a6d14a1f3788b6201d8db712fa7cc6f55016621554290"
     },
     {
       "workflow": "guides/workflows/design-studio",
@@ -17043,7 +17070,7 @@
       "validation": "openapi_method_and_path",
       "runtimeDiscoveryRequired": true,
       "executionVerified": false,
-      "contractDigest": "sha256:13d10331b2bfc77edc80ea68dc0eb20197340795ba2483441ad0d36960e0a845"
+      "contractDigest": "sha256:c0e20cdf9be301cf823a6d14a1f3788b6201d8db712fa7cc6f55016621554290"
     },
     {
       "workflow": "guides/workflows/import-data",
@@ -17053,7 +17080,7 @@
       "validation": "openapi_method_and_path",
       "runtimeDiscoveryRequired": true,
       "executionVerified": false,
-      "contractDigest": "sha256:13d10331b2bfc77edc80ea68dc0eb20197340795ba2483441ad0d36960e0a845"
+      "contractDigest": "sha256:c0e20cdf9be301cf823a6d14a1f3788b6201d8db712fa7cc6f55016621554290"
     },
     {
       "workflow": "guides/workflows/import-data",
