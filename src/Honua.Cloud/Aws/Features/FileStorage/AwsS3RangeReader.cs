@@ -67,6 +67,10 @@ internal sealed class AwsS3RangeReader : ICloudRangeReader
         {
             response = await _client.GetObjectAsync(request, cancellationToken).ConfigureAwait(false);
         }
+        catch (AmazonS3Exception ex) when (ex.StatusCode == System.Net.HttpStatusCode.PreconditionFailed)
+        {
+            throw new CloudFileRevisionChangedException();
+        }
         catch (AmazonS3Exception ex) when (IsNotFound(ex))
         {
             throw new FileNotFoundException($"S3 object '{key}' was not found in bucket '{bucket}'.", ex);

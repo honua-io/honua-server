@@ -287,6 +287,171 @@ public class LocalFileStorageTests : IAsyncLifetime, IDisposable
     }
 
     [UnitTest]
+    public async Task DownloadAsync_DuringReplacement_WaitsForCompletePublishedGeneration()
+    {
+        const string objectKey = "artifacts/interleaved-revision.bin";
+        await UploadObjectAsync(objectKey, "original-generation"u8.ToArray());
+        var replacementBytes = "replacement-content"u8.ToArray();
+        await using var replacementContent = new GatedReadStream(replacementBytes);
+        var replacement = _storage.UploadAsync(new FileUploadRequest
+        {
+            Content = replacementContent,
+            FileName = "tile.png",
+            ContentType = "image/png",
+            SizeBytes = replacementBytes.Length,
+            ObjectKeyOverride = objectKey
+        });
+        await replacementContent.ReadStarted.WaitAsync(TimeSpan.FromSeconds(5));
+        var download = _storage.DownloadBytesAsync(objectKey);
+        try
+        {
+            download.IsCompleted.Should().BeFalse(
+                "metadata and content acquisition must serialize with publication");
+        }
+        finally
+        {
+            replacementContent.ReleaseRead();
+            (await replacement).Success.Should().BeTrue();
+        }
+        (await download).Should().Equal(replacementBytes);
+    }
+
+    [UnitTest]
+    public async Task DownloadAsync_OpenGeneration_AllowsConcurrentReadersAndReplacementWithoutMixingBytes()
+    {
+        const string objectKey = "artifacts/leased-revision.bin";
+        var originalBytes = "original-generation"u8.ToArray();
+        var replacementBytes = "replacement-content"u8.ToArray();
+        var original = await UploadObjectAsync(objectKey, originalBytes);
+        await using var first = (await _storage.DownloadIfMatchAsync(objectKey, original.File!.ETag!))!;
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await using var second = (await _storage.DownloadIfMatchAsync(
+            objectKey, original.File.ETag!, deadline.Token))!;
+
+        var replacement = await UploadObjectAsync(objectKey, replacementBytes)
+            .WaitAsync(TimeSpan.FromSeconds(5));
+        replacement.Success.Should().BeTrue();
+        var staleRead = async () => await _storage.DownloadIfMatchAsync(objectKey, original.File.ETag!);
+        await staleRead.Should().ThrowAsync<CloudFileRevisionChangedException>();
+
+        using var firstBody = new MemoryStream();
+        await first.CopyToAsync(firstBody);
+        firstBody.ToArray().Should().Equal(originalBytes);
+        using var secondBody = new MemoryStream();
+        await second.CopyToAsync(secondBody);
+        secondBody.ToArray().Should().Equal(originalBytes);
+        await using var current = (await _storage.DownloadIfMatchAsync(objectKey, replacement.File!.ETag!))!;
+        using var currentBody = new MemoryStream();
+        await current.CopyToAsync(currentBody);
+        currentBody.ToArray().Should().Equal(replacementBytes);
+    }
+
+    [UnitTest]
+    public async Task UploadAsync_ReusedCallerUploadId_CreatesDistinctGenerationValidators()
+    {
+        const string objectKey = "artifacts/reused-upload-id.bin";
+        const string uploadId = "caller-retries-this-upload";
+        await using var original = new MemoryStream("original-generation"u8.ToArray());
+        var first = await _storage.UploadAsync(new FileUploadRequest
+        {
+            UploadId = uploadId,
+            Content = original,
+            FileName = "artifact.bin",
+            ContentType = "application/octet-stream",
+            ObjectKeyOverride = objectKey
+        });
+        await using var replacement = new MemoryStream("replacement-content"u8.ToArray());
+        var second = await _storage.UploadAsync(new FileUploadRequest
+        {
+            UploadId = uploadId,
+            Content = replacement,
+            FileName = "artifact.bin",
+            ContentType = "application/octet-stream",
+            ObjectKeyOverride = objectKey
+        });
+        first.Success.Should().BeTrue();
+        second.Success.Should().BeTrue();
+        second.File!.ETag.Should().NotBe(first.File!.ETag);
+        var read = async () => await _storage.DownloadIfMatchAsync(objectKey, first.File.ETag!);
+        await read.Should().ThrowAsync<CloudFileRevisionChangedException>();
+    }
+
+    [UnitTest]
+    public async Task DownloadIfMatchAsync_ReplacedGeneration_RefusesStaleFullAndRangeSource()
+    {
+        const string objectKey = "artifacts/conditional-revision.bin";
+        var original = await UploadObjectAsync(objectKey, "original-generation"u8.ToArray());
+        var replacement = await UploadObjectAsync(objectKey, "replacement-content"u8.ToArray());
+        var action = async () => await _storage.DownloadIfMatchAsync(objectKey, original.File!.ETag!);
+        await action.Should().ThrowAsync<CloudFileRevisionChangedException>();
+
+        var stream = (await _storage.DownloadIfMatchAsync(objectKey, replacement.File!.ETag!))!;
+        using var output = new MemoryStream();
+        await stream.CopyToAsync(output);
+        output.ToArray().Should().Equal("replacement-content"u8.ToArray());
+        await stream.DisposeAsync();
+        await stream.DisposeAsync();
+        stream.Dispose();
+        (await UploadObjectAsync(objectKey, "third-generation-ok"u8.ToArray())).Success.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public async Task UploadAsync_FailedReplacement_PreservesPublishedGenerationAndRestartMetadata()
+    {
+        const string objectKey = "artifacts/revision-consistency.bin";
+        var originalBytes = "original-generation"u8.ToArray();
+        var original = await UploadObjectAsync(objectKey, originalBytes);
+        original.Success.Should().BeTrue();
+
+        await using var failingContent = new GatedReadStream("replacement-content"u8.ToArray(), failOnRead: true);
+        failingContent.ReleaseRead();
+        var failed = await _storage.UploadAsync(new FileUploadRequest
+        {
+            Content = failingContent,
+            FileName = "tile.png",
+            ContentType = "image/png",
+            SizeBytes = originalBytes.Length,
+            ObjectKeyOverride = objectKey
+        });
+
+        failed.Success.Should().BeFalse();
+        (await _storage.DownloadBytesAsync(objectKey)).Should().Equal(originalBytes,
+            "failed replacement input must never truncate the published generation");
+        (await _storage.GetMetadataAsync(objectKey))!.ETag.Should().Be(original.File!.ETag);
+        var restarted = CreateStorage(_testBasePath);
+        (await restarted.DownloadBytesAsync(objectKey)).Should().Equal(originalBytes);
+        (await restarted.GetMetadataAsync(objectKey))!.ETag.Should().Be(original.File.ETag);
+        Directory.EnumerateFiles(_testBasePath, "*.pending", SearchOption.AllDirectories).Should().BeEmpty();
+        Directory.EnumerateFiles(_testBasePath, "*", SearchOption.AllDirectories).Should().HaveCount(2);
+    }
+
+    [UnitTest]
+    public async Task UploadAsync_CancelledReplacement_PreservesPublishedGeneration()
+    {
+        const string objectKey = "artifacts/cancelled-revision.bin";
+        var originalBytes = "original-generation"u8.ToArray();
+        var original = await UploadObjectAsync(objectKey, originalBytes);
+        await using var replacementContent = new GatedReadStream("replacement-content"u8.ToArray());
+        using var cancellation = new CancellationTokenSource();
+        var replacement = _storage.UploadAsync(new FileUploadRequest
+        {
+            Content = replacementContent,
+            FileName = "tile.png",
+            ContentType = "image/png",
+            SizeBytes = originalBytes.Length,
+            ObjectKeyOverride = objectKey
+        }, cancellation.Token);
+        await replacementContent.ReadStarted.WaitAsync(TimeSpan.FromSeconds(5));
+        cancellation.Cancel();
+        var action = async () => await replacement;
+        await action.Should().ThrowAsync<OperationCanceledException>();
+        (await _storage.DownloadBytesAsync(objectKey)).Should().Equal(originalBytes);
+        (await _storage.GetMetadataAsync(objectKey))!.ETag.Should().Be(original.File!.ETag);
+        Directory.EnumerateFiles(_testBasePath, "*.pending", SearchOption.AllDirectories).Should().BeEmpty();
+        Directory.EnumerateFiles(_testBasePath, "*", SearchOption.AllDirectories).Should().HaveCount(2);
+    }
+
+    [UnitTest]
     public async Task UploadIfMatchAsync_StaleValidator_PreservesNewGeneration()
     {
         const string objectKey = "tiles/layer/0/0/1.png";
@@ -692,7 +857,7 @@ public class LocalFileStorageTests : IAsyncLifetime, IDisposable
         };
     }
 
-    private sealed class GatedReadStream(byte[] content) : Stream
+    private sealed class GatedReadStream(byte[] content, bool failOnRead = false) : Stream
     {
         private readonly MemoryStream _inner = new(content);
         private readonly TaskCompletionSource _readStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -730,6 +895,11 @@ public class LocalFileStorageTests : IAsyncLifetime, IDisposable
             {
                 _readStarted.TrySetResult();
                 await _releaseRead.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            if (failOnRead)
+            {
+                throw new IOException("Injected replacement input failure.");
             }
 
             return await _inner.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);

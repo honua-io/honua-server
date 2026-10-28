@@ -7,6 +7,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Domain;
@@ -44,6 +45,40 @@ public sealed class PMTilesPublishEndpointTests : IAsyncLifetime
     public async Task DisposeAsync()
     {
         await _fixture.DisposeAsync();
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/tiles/pmtiles/{*artifactId}")]
+    [Endpoint("HEAD /api/v1/tiles/pmtiles/{*artifactId}")]
+    public async Task PMTilesProxy_ConditionalReads_HonorValidatorsBeforeRanges()
+    {
+        var artifactId = await PublishArchiveAsync();
+        var url = $"/api/v1/tiles/pmtiles/{artifactId}";
+        await ArtifactHttpAssertions.AssertConditionalReadsAsync(_client, url);
+        await ArtifactHttpAssertions.AssertIgnoredRangePreservesBudgetAsync(
+            _client, url, _fixture.GetOptionalService<ICloudFileStorage>()!,
+            artifactId);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/tile-operations/jobs")]
+    public async Task PublishArchive_Republish_PreservesLogicalArtifactIdAndObjectKey()
+    {
+        string? firstId = null;
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            var jobId = await StartPublishJobAsync();
+            var (status, json) = await WaitForJobCompletionAsync(jobId);
+            using var result = json;
+            status.Should().Be(OperationStatus.Completed);
+            var descriptor = GetPropertyCaseInsensitive(result!.RootElement, "publishedArtifact");
+            var id = GetPropertyCaseInsensitive(descriptor, "artifactId").GetString()!;
+            var objectKey = GetPropertyCaseInsensitive(descriptor, "objectKey").GetString()!;
+            objectKey.Should().Be(id, "the logical key must not expose a physical generation filename");
+            firstId ??= id;
+            id.Should().Be(firstId);
+            objectKey.Should().NotContain(".honua-");
+        }
     }
 
     [IntegrationTest]
@@ -406,6 +441,7 @@ public sealed class PMTilesPublishEndpointTests : IAsyncLifetime
             request.Headers.Range = new RangeHeaderValue(0, 6);
         }
 
+        request.Headers.TryAddWithoutValidation("If-None-Match", "*");
         using var response = await client.SendAsync(request);
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
         response.Headers.ETag.Should().BeNull();

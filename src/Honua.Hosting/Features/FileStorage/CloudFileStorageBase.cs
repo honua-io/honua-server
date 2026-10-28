@@ -106,6 +106,10 @@ internal abstract class CloudFileStorageBase : ICloudFileStorage
 
     public abstract Task<Stream?> DownloadAsync(string fileId, CancellationToken cancellationToken = default);
 
+    public virtual Task<Stream?> DownloadIfMatchAsync(string fileId, string expectedETag, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("Conditional artifact reads are not supported by this storage provider.");
+
+
     public async Task<byte[]?> DownloadBytesAsync(string fileId, CancellationToken cancellationToken = default)
     {
         await using var stream = await DownloadAsync(fileId, cancellationToken);
