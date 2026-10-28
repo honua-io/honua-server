@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { artifactKey, observeRangeFetch, sha256, validateServingSource } from "./http-range-observer.mjs";
+import { artifactKey, sourceBinding, observeRangeFetch, sha256, validateServingSource } from "./http-range-observer.mjs";
 
 const url = `http://honua/api/v1/tiles/pmtiles/${artifactKey}`;
 const response = (body, range, status = 206) => new Response(body, { status, headers: { "Content-Range": range } });
@@ -46,9 +46,9 @@ test("ignored ranges, incorrect ranges, changed bytes and foreign URLs cannot pa
 test("serving source binds exact artifact, supported route and emulator scope", () => {
   const content = Buffer.from("archive");
   const source = { url, artifact_sha256: sha256(content), artifact_size: content.length,
-    provider: "AwsS3", provider_environment: "localstack", object_key: artifactKey, bucket: "honua-cng-fixtures", publication_api_proven: false };
+    provider: "AwsS3", provider_environment: "localstack", object_key: artifactKey, bucket: "honua-cng-fixtures", publication_api_proven: false, source_binding: sourceBinding };
   validateServingSource(content, source, "http://honua");
-  for (const changed of [{ url: "http://surrogate/archive" }, { artifact_size: 88 }, { artifact_sha256: "0".repeat(64) }, { provider_environment: "aws" }]) {
+  for (const changed of [{ url: "http://surrogate/archive" }, { artifact_size: 88 }, { artifact_sha256: "0".repeat(64) }, { provider_environment: "aws" }, { source_binding: { ...sourceBinding, publicationId: "other" } }]) {
     assert.throws(() => validateServingSource(content, { ...source, ...changed }, "http://honua"), /does not match/);
   }
 });

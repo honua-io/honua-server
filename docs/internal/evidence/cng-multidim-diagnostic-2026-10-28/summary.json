@@ -1,0 +1,130 @@
+{
+  "qualification": false,
+  "source_sha": "57d2c31132e52147d79ca702db34b70e7954abac",
+  "scope": "CI-managed diagnostic server/worker and provenance-verified native-tools with S3 emulator; actual API-to-worker-to-registration and canonical HTTP output reads",
+  "runs": {
+    "nc": {
+      "job_id": "covscan-b219aa38ca064577b19ed8679385e01f",
+      "input_sha256": "545e859729fff81ee233b49e953af364ea9c7359501adc6b1e2a24f76b41f3a1",
+      "receipt_sha256": "9068bbddf7f16d25ac2913d09387cf660c99280fe58b0d47c583cc10a85474ee",
+      "http_readback_sha256": "7415fefe365aa57496f9870090076db6918fa9ff000bf3cbb4a2b77d323f93f6",
+      "archive_transfer": {
+        "requests": 46,
+        "bytes": 5287
+      },
+      "readback": {
+        "source": "canonical.nc",
+        "store": "honua-derived.zarr",
+        "shape": [
+          4,
+          8,
+          16
+        ],
+        "dtype": "float32",
+        "source_chunks": [
+          1,
+          4,
+          4
+        ],
+        "output_chunks": [
+          1,
+          4,
+          4
+        ],
+        "rechunked": false,
+        "raw_value_mismatches": 0,
+        "masked_fill_cells": 2,
+        "coordinate_mismatches": 0,
+        "cf_mismatches": 0
+      },
+      "client_versions": {
+        "zarr": "3.4.2",
+        "xarray": "2026.9.0",
+        "numpy": "2.5.4"
+      },
+      "containers": {
+        "honua-server": {
+          "Id": "7f5f8772b102f9c268a764aa1e9f95337d3dc61ccee1980be7ae8a1cafde122c",
+          "Image": "sha256:458cacbfb57e3bddde46472de71fa0d62f8163bf43608b6c75a580b7b9d2fecb",
+          "cpu_limit": 1000000000,
+          "memory_limit": 1610612736,
+          "pids_limit": 256,
+          "user": ""
+        },
+        "zarr-worker": {
+          "Id": "84bc19f62c196cb4f2929f684be3769652b7475e5d4c0ac07c2076c6b9bc7a16",
+          "Image": "sha256:dc3ec376f6e9147db348688fcf6405ad51caa6ac413fb2973bc7cb7ff4402dda",
+          "cpu_limit": 1000000000,
+          "memory_limit": 1610612736,
+          "pids_limit": 256,
+          "user": "root"
+        }
+      }
+    },
+    "h5": {
+      "job_id": "covscan-c399f6ddf75a46af9b5507c75d047381",
+      "input_sha256": "4d2bf70598174577311e5c9863d0475b8c8066d92cb5e2e66f80f2da5ec0daf7",
+      "receipt_sha256": "ea3b7fee9d6c2802affe2d9eb4166fe1b7ca87f67e7ed55f563e0dc84936ed5c",
+      "http_readback_sha256": "f12bb67bfac2b9926777d5041d903416be225f5bc61d1bc4f6b766734f3857ec",
+      "archive_transfer": {
+        "requests": 46,
+        "bytes": 5283
+      },
+      "readback": {
+        "source": "canonical.h5",
+        "store": "honua-derived.zarr",
+        "shape": [
+          4,
+          8,
+          16
+        ],
+        "dtype": "float32",
+        "source_chunks": [
+          1,
+          4,
+          4
+        ],
+        "output_chunks": [
+          1,
+          4,
+          4
+        ],
+        "rechunked": false,
+        "raw_value_mismatches": 0,
+        "masked_fill_cells": 2,
+        "coordinate_mismatches": 0,
+        "cf_mismatches": 0
+      },
+      "client_versions": {
+        "zarr": "3.4.2",
+        "xarray": "2026.9.0",
+        "numpy": "2.5.4"
+      },
+      "containers": {
+        "honua-server": {
+          "Id": "3713260f5613449f365bb0f7f05bc39ec50581d269de2ea4dc31e55a86821fdc",
+          "Image": "sha256:458cacbfb57e3bddde46472de71fa0d62f8163bf43608b6c75a580b7b9d2fecb",
+          "cpu_limit": 1000000000,
+          "memory_limit": 1610612736,
+          "pids_limit": 256,
+          "user": ""
+        },
+        "zarr-worker": {
+          "Id": "67c3d7f4158ff5d1a5d4051fa372f16005bf3a7a620acef25ed1df6904b6c0c7",
+          "Image": "sha256:dc3ec376f6e9147db348688fcf6405ad51caa6ac413fb2973bc7cb7ff4402dda",
+          "cpu_limit": 1000000000,
+          "memory_limit": 1610612736,
+          "pids_limit": 256,
+          "user": "root"
+        }
+      }
+    }
+  },
+  "limits": [
+    "Not published production/AOT image qualification",
+    "Not real AWS or frozen 24-row campaign qualification",
+    "No native HDF5 source range budgets or representative cloud-layout performance proof",
+    "CoverageJSON pixel serving not exercised: existing CNG seed publishes FeatureServer and STAC only",
+    "Input time coordinate is int32 rather than the fixed optional fsspec int64 profile; no campaign cell credited"
+  ]
+}

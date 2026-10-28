@@ -1,0 +1,9 @@
+{
+  "source": "PDAL2.10.2 writers.copc generatedfromindependentlyauthored3points; seeexistingissue2442 audit",
+  "image": "ghcr.io/honua-io/honua-server-native-tools@sha256:6561e8f6018e967aa99a0125e82fa7d4411b79dc9381fbe82d0cd373958c8415",
+  "fixtures": {
+    "genuine-6.copc.laz": "ca2167bd58fce354f2ebdc5bc0e48282ab88312900796b0e436ab57ec1fdfa4d",
+    "genuine-7.copc.laz": "c56e09a16a387611d58bf27af39c0a4dbd9a5028220cc603ab495dccc2709839",
+    "genuine-8.copc.laz": "48120804cf7e9719a144da9b9de3924e907884ba551ddbb3922f8c195f6b07e5"
+  }
+}

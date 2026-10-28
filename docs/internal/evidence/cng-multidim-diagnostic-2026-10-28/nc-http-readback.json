@@ -1,0 +1,83 @@
+{
+  "scope": "Canonical Zarr/xarray HTTP reads with consolidated metadata of actual bound diagnostic worker output through S3 emulator; full array, no subset efficiency or production qualification",
+  "versions": {
+    "zarr": "3.4.2",
+    "xarray": "2026.9.0",
+    "numpy": "2.5.4"
+  },
+  "results": [
+    {
+      "source": "canonical.nc",
+      "store": "honua-derived.zarr",
+      "shape": [
+        4,
+        8,
+        16
+      ],
+      "dtype": "float32",
+      "source_chunks": [
+        1,
+        4,
+        4
+      ],
+      "output_chunks": [
+        1,
+        4,
+        4
+      ],
+      "rechunked": false,
+      "raw_value_mismatches": 0,
+      "masked_fill_cells": 2,
+      "coordinate_mismatches": 0,
+      "cf_mismatches": 0,
+      "output_object_sha256": {
+        ".zattrs": "daec348617d941f7e3dc6aeb8a4773ee3a1c09b007db98bfea0ceb76977eaee3",
+        ".zgroup": "e1e1914ae531ecb50e1ead685ef01895a5452faf5f25f35cd78f1f5de1367470",
+        ".zmetadata": "8ca35bcffca7bd829f04a3672c5756681d8f89cb4061ebc8f4152a7323651d4b",
+        "temperature/.zarray": "d6b88374ff2f03f1e41dbba648cf32125cba2afb44e170fab477c634b8da8038",
+        "temperature/.zattrs": "35d0e08f498cd9b5b4b25b81626cfea1ff6b7e891d9d0340156a3783b64f11b2",
+        "temperature/0.0.0": "bf64fa5529639ee1cf4af876c59ed4abf285388badfe6b34554f04e070ea8467",
+        "temperature/0.0.1": "1ffd2f577cbe6da81af9fe5434ab3f3f4ed5f6346cdf12229adc77bf36a7b66d",
+        "temperature/0.0.2": "3ecd6f9dd9d2ff7e2eca284683e2c89dae6179532c162efa70809eb6d4897eba",
+        "temperature/0.0.3": "ea378462b7822705fdeec0f47c3bcc4ec89b8c99613d14473ca838c03561ffcb",
+        "temperature/0.1.0": "2c9722d8f6227537d73964cfa5aef3c2263822c3476088fcb4971c1d86f6b9f6",
+        "temperature/0.1.1": "25fea97a09fdd6504d073a26588cf4735ea6fe8f4536b14b33b4b858a3beb080",
+        "temperature/0.1.2": "02c302472aa74cf3ec78fd306df12ae9465681e6bf38f754e8f946ab9ffd03f3",
+        "temperature/0.1.3": "801de3afb1e15c0f88f979c86a71c6882690040b7ac5519b34decfdc72c6389a",
+        "temperature/1.0.0": "fc713a3cd7e009a2a0afa2144be0187dd41bf979591e76a858965581f7ebce00",
+        "temperature/1.0.1": "b21bf1fbee6dd857d822c43ce90beb75ef5e7177560ad873ece871827e08e360",
+        "temperature/1.0.2": "8222c04b16ef71e86ff99305f87e442852ed0a5da916ed126de064401f6e0314",
+        "temperature/1.0.3": "cf0b045c49f33f05f184607deb7aedccebe4341e2a0cd81e0686b291b5fba82a",
+        "temperature/1.1.0": "3d268d0b19c91c227139cbadab3c9ebc5c57809ce47680fb9c67ba23207bfc74",
+        "temperature/1.1.1": "31578cac9ab058f492a9265cf51d571e5347c36966756cb996fbbeec3d25149d",
+        "temperature/1.1.2": "d3526378ac1e7e0212e4604b597ee7a3ab9f38bb8cfd66b7e3b4ea8ffed8c05b",
+        "temperature/1.1.3": "a5f1a8101596417c6f9550dc4aa8bdbd7962f9b644a58b44983b7e2d4290049e",
+        "temperature/2.0.0": "13fbbe51cac0f48dbac471f00f332474586ccb6b36180dd60f3463c9063f4cec",
+        "temperature/2.0.1": "7ea31b1beaa7abc9fab44d06402af01a1c6fc03bff58d495097cdc5090f3b034",
+        "temperature/2.0.2": "96bbdca56bbf16008f81320d2eed72af5d6f37782c2080708683932ba7e8d0ff",
+        "temperature/2.0.3": "6fe23be26dcf924ad54e7200829d7673a573d6d71a5a42bb83f8362787d9d40f",
+        "temperature/2.1.0": "9065382ba99cf495977db641f0ad34a6fc820e4df3bf82c25935603732dce2de",
+        "temperature/2.1.1": "38ed2796921d1870f71832cbac6efd6ddc5bbcdee73832f4a6c34a93700e6859",
+        "temperature/2.1.2": "ed039bdf12b2df98fcaf5640be9e87ba581f4e22a28989b156ffa1d165086378",
+        "temperature/2.1.3": "823693039a5f98af752eebc14d2826353f891cda847a53665717b37059240263",
+        "temperature/3.0.0": "6273c465082f3b7aa4c4c67891b4f56ae564eb4dc91175dabc793bc5003547d5",
+        "temperature/3.0.1": "b09730b35559d98b04659ffad7314c999ad0163baa89418593cd673086aaaaa9",
+        "temperature/3.0.2": "f1cf6728385f2089880ce7b8a161f5add3be864c04ee01b2f5647f46679b88fe",
+        "temperature/3.0.3": "3592bcc2f7d740db672a749425e2487b2d58eb246e1b906f67c986d2b0be697e",
+        "temperature/3.1.0": "2d496fbeeba0541c924d222533cc28d8b136703234968edfe33a94c84bac54ef",
+        "temperature/3.1.1": "16150d03f33194928bf166d7c90460b8bae3893ef220b7b72991df51bbd3bd7a",
+        "temperature/3.1.2": "1a655088de37c72b922ae1a2c1c79c4166b481f7799f2dc7dd54268910ad6bff",
+        "temperature/3.1.3": "d3b3d79665a7b491b6179087e8a06b746cf5a9c18e2c4742c9f88d0fef3fccf5",
+        "time/.zarray": "5d663519d4494398d4923b1997fbf4c573c102a06d85b99a927be0e329be542b",
+        "time/.zattrs": "e74615e7a5ddb759d7b344813f2a690f261b390f396745d289398edfc2879694",
+        "time/0": "baed642339816affb3fe8719792d0e4ce82f12db72b7373d244eaa65445800fe",
+        "x/.zarray": "5098f38e272bb35e8f14daaedf9a05d0253d7a54b6703f3b95cb88d683b175b7",
+        "x/.zattrs": "b6137100267163f904ca2589e72130ac299e6be8497895c563fbde8930f42989",
+        "x/0": "eed71da7e71b2c163f66bf365fae3938387fa9fe8f891a4de241b42139912a09",
+        "y/.zarray": "c5efc035d3d6bf159a25cf7f9995ebe1f9e2cf0361627ff5cba7bc75f8d3cd84",
+        "y/.zattrs": "cadc7bb767dcbd59725198b8cd7100d46e8dff084532c784195aa3d6469972b3",
+        "y/0": "6ab8cc0b934f6f1e92e6c052a2b308655a8f09d7976390c4bb1855e0f3ab8cdc"
+      }
+    }
+  ]
+}

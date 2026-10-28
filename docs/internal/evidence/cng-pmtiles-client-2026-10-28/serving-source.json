@@ -1,0 +1,25 @@
+{
+  "schema": "honua-cng-pmtiles-serving/v1",
+  "url": "http://127.0.0.1:18094/api/v1/tiles/pmtiles/pmtiles/cng/honua.pmtiles",
+  "artifact_sha256": "fdf309bda8f0c4ce3e4ac08c5c88ddbddea2b9dbc3736f0604d755cc4e702a54",
+  "artifact_size": 25216,
+  "provider": "AwsS3",
+  "provider_environment": "localstack",
+  "object_key": "pmtiles/cng/honua.pmtiles",
+  "bucket": "honua-cng-fixtures",
+  "publication_api_proven": false,
+  "source_binding": {
+    "layerId": "1000",
+    "serviceId": "svc-cng-feature",
+    "publicationId": "pub-cng-feature-1000",
+    "resourceId": "res-cng-1000",
+    "storageBindingId": "storage-cng-1000"
+  },
+  "scope": "candidate serving route with an S3-compatible emulator; not real AWS certification",
+  "producer_source_sha": "af0c17d2e61ebc620a7eb69e094f299bf736af19",
+  "serving_source_sha": "57d2c31132e52147d79ca702db34b70e7954abac",
+  "serving_image": "sha256:458cacbfb57e3bddde46472de71fa0d62f8163bf43608b6c75a580b7b9d2fecb",
+  "qualification": false,
+  "source_binding_scope": "trusted synthetic fixture authorization binding; not production layer materialization or publication API proof",
+  "emulator_restart_scope": "NoSuchBucket before setup; created fixture bucket and uploaded only PMTiles; original NC/HDF objects not restored and current old store URLs not claimed live"
+}
