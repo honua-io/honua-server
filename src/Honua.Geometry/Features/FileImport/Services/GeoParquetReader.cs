@@ -164,9 +164,10 @@ internal static class GeoParquetReader
 
                 NetTopologySuite.Geometries.Geometry? geometry = null;
                 var wkbBytes = geometryData[row];
+                var declaredZ = false;
                 if (wkbBytes != null)
                 {
-                    if (!WkbSridNormalizer.TryGetDeclaredOrdinates(wkbBytes, out _, out var hasM) || hasM)
+                    if (!WkbSridNormalizer.TryGetDeclaredOrdinates(wkbBytes, out declaredZ, out var hasM) || hasM)
                     {
                         throw new InvalidDataException("GeoParquet WKB must contain supported XY or XYZ geometry types; measured, nonlinear, or malformed WKB is not accepted.");
                     }
@@ -181,7 +182,7 @@ internal static class GeoParquetReader
                     }
                 }
 
-                yield return new Feature(geometry, attributes);
+                yield return new GeoParquetSourceFeature(geometry, attributes, declaredZ);
 
                 recordCount++;
                 if (recordCount % YieldInterval == 0)
@@ -256,6 +257,34 @@ internal static class GeoParquetReader
         var totalRowCount = reader.Metadata?.NumRows ?? 0;
         stream.Position = 0;
         return new GeoParquetFileMetadata(geoMeta.Srid, isWkbEncoding, warnings.ToArray(), totalRowCount, GetUnsupportedReason(geoMeta));
+    }
+
+    // The streaming importer batches these same feature instances; semantic facts never enter
+    // the user-controlled attribute dictionary, and remain attached when geometry is repaired.
+    private sealed class GeoParquetSourceFeature(
+        NetTopologySuite.Geometries.Geometry? geometry,
+        IAttributesTable attributes,
+        bool declaredZ) : IFeature, IImportGeometrySource
+    {
+        private readonly Feature _feature = new(geometry, attributes);
+        public NetTopologySuite.Geometries.Geometry? Geometry
+        {
+            get => _feature.Geometry;
+            set => _feature.Geometry = value;
+        }
+        public NetTopologySuite.Geometries.Envelope? BoundingBox
+        {
+            get => _feature.BoundingBox;
+            set => _feature.BoundingBox = value;
+        }
+        public IAttributesTable Attributes
+        {
+            get => _feature.Attributes;
+            set => _feature.Attributes = value;
+        }
+        public bool HasDeclaredZ => declaredZ;
+        public bool HasDeclaredM => false;
+        public bool HasPlanarEdges => true;
     }
 
     /// <summary>

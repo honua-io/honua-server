@@ -560,7 +560,10 @@ internal sealed partial class StreamingFileImportService
             }
         }
 
-        var stored = AntimeridianCutter.CutStoredGeometry(geometry, targetSrid);
+        var sourceGeometry = feature as IImportGeometrySource;
+        var stored = sourceGeometry?.HasPlanarEdges == true
+            ? geometry
+            : AntimeridianCutter.CutStoredGeometry(geometry, targetSrid);
         if (!ReferenceEquals(stored, geometry))
         {
             // A Web Mercator ring cut into the geographic target carries that target SRID,
@@ -583,7 +586,7 @@ internal sealed partial class StreamingFileImportService
             }
         }
 
-        var writer = SelectWkbWriter(geometry, wkbWriter);
+        var writer = SelectWkbWriter(geometry, wkbWriter, sourceGeometry);
         var wkb = writer.Write(geometry);
 
         if (wkb.Length > _limits.MaxWkbSize)
@@ -620,9 +623,12 @@ internal sealed partial class StreamingFileImportService
     /// </summary>
     private static WKBWriter SelectWkbWriter(
         NetTopologySuite.Geometries.Geometry geometry,
-        WKBWriter plainWriter)
+        WKBWriter plainWriter,
+        IImportGeometrySource? sourceGeometry)
     {
         var (hasZ, hasM) = DetectZm(geometry);
+        hasZ |= sourceGeometry?.HasDeclaredZ == true;
+        hasM |= sourceGeometry?.HasDeclaredM == true;
         if (!hasZ && !hasM)
         {
             return plainWriter;

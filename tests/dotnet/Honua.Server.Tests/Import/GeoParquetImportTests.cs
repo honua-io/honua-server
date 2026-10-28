@@ -129,6 +129,15 @@ public sealed class GeoParquetImportTests : IAsyncLifetime
         commitReached.Should().BeTrue("failure must occur inside the actual row/promotion commit transaction");
         result.Success.Should().BeFalse();
         (await ReadImportedTableSnapshotAsync(created)).Should().Be(before);
+        foreach (var mode in new[] { ImportLoadMode.Append, ImportLoadMode.Upsert })
+        {
+            await using var mismatched = new MemoryStream(await CreateEpochParquetAsync(
+                2022.5, 40, mode == ImportLoadMode.Append ? "B" : "A"));
+            var rejected = await service.ImportFileAsync(EpochRequest(mismatched, logicalName, mode));
+            rejected.Success.Should().BeFalse("rollback must retain the original epoch binding for {0}", mode);
+            rejected.ErrorMessage.Should().Contain("epoch");
+            (await ReadImportedTableSnapshotAsync(created)).Should().Be(before);
+        }
         await using var append = new MemoryStream(await CreateEpochParquetAsync(2021.25, 50, "B"));
         var appended = await service.ImportFileAsync(EpochRequest(append, logicalName, ImportLoadMode.Append));
         appended.Success.Should().BeTrue(appended.ErrorMessage);
@@ -224,9 +233,21 @@ public sealed class GeoParquetImportTests : IAsyncLifetime
         using var published = JsonDocument.Parse(publishJson);
         var layerId = published.RootElement.GetProperty("data").GetProperty("layerId").GetInt32();
         using var exportResponse = await _client.GetAsync(
-            $"/rest/services/{_publishedServiceName}/FeatureServer/{layerId}/query?where=1%3D1&outFields=*&returnGeometry=true&returnZ=true&outSR={srid}&f=geoparquet");
-        exportResponse.StatusCode.Should().Be(HttpStatusCode.OK, await exportResponse.Content.ReadAsStringAsync());
-        await using var exported = new MemoryStream(await exportResponse.Content.ReadAsByteArrayAsync());
+            $"/rest/services/{_publishedServiceName}/FeatureServer/{layerId}/query?where=1%3D1&outFields=*&returnGeometry=true&returnZ=true&outSR={srid}&f=parquet");
+        var exportBytes = await exportResponse.Content.ReadAsByteArrayAsync();
+        var exportMediaType = exportResponse.Content.Headers.ContentType?.MediaType;
+        var exportDiagnostic = exportMediaType?.Contains("json", StringComparison.OrdinalIgnoreCase) == true
+            ? System.Text.Encoding.UTF8.GetString(exportBytes.AsSpan(0, Math.Min(exportBytes.Length, 4096)))
+            : $"Response media type: {exportMediaType}";
+        exportResponse.StatusCode.Should().Be(HttpStatusCode.OK, exportDiagnostic);
+        exportMediaType.Should().Be("application/vnd.apache.parquet", exportDiagnostic);
+        if (Environment.GetEnvironmentVariable("HONUA_CNG_VECTOR_ARTIFACT_DIRECTORY") is { Length: > 0 } artifactDirectory)
+        {
+            Directory.CreateDirectory(artifactDirectory);
+            await File.WriteAllBytesAsync(Path.Join(artifactDirectory, "dynamic-epoch-source.parquet"), payload);
+            await File.WriteAllBytesAsync(Path.Join(artifactDirectory, "dynamic-epoch-export.parquet"), exportBytes);
+        }
+        await using var exported = new MemoryStream(exportBytes);
         using var parquet = await Parquet.ParquetReader.CreateAsync(exported);
         using var metadata = JsonDocument.Parse(parquet.CustomMetadata["geo"]);
         var geometryMetadata = metadata.RootElement.GetProperty("columns").GetProperty(
