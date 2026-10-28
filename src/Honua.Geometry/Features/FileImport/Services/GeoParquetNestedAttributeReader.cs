@@ -184,7 +184,7 @@ internal static class GeoParquetNestedAttributeReader
             case MapArray map:
                 writer.WriteStartObject();
                 var keys = new HashSet<string>(StringComparer.Ordinal);
-                for (var index = map.GetValueOffset(row); index < map.GetValueOffset(row) + map.GetValueLength(row); index++)
+                for (var index = map.ValueOffsets[row]; index < map.ValueOffsets[row + 1]; index++)
                 {
                     if (map.Keys is not StringArray strings || strings.IsNull(index))
                     {
@@ -202,7 +202,7 @@ internal static class GeoParquetNestedAttributeReader
                 break;
             case ListArray list:
                 writer.WriteStartArray();
-                for (var index = list.GetValueOffset(row); index < list.GetValueOffset(row) + list.GetValueLength(row); index++)
+                for (var index = list.ValueOffsets[row]; index < list.ValueOffsets[row + 1]; index++)
                 {
                     WriteValue(writer, list.Values, index, depth + 1, cancellationToken);
                 }
@@ -225,7 +225,7 @@ internal static class GeoParquetNestedAttributeReader
                 break;
             case Decimal32Array value: writer.WriteRawValue(value.GetString(row), skipInputValidation: false); break;
             case Decimal64Array value: writer.WriteRawValue(value.GetString(row), skipInputValidation: false); break;
-            case Decimal256Array value: writer.WriteRawValue(value.GetString(row), skipInputValidation: false); break;
+            case Decimal256Array value: writer.WriteRawValue(value.GetString(row) ?? throw new InvalidDataException("GeoParquet decimal value is unexpectedly null."), skipInputValidation: false); break;
             case Decimal128Array value: writer.WriteRawValue(value.GetString(row), skipInputValidation: false); break;
             case TimestampArray value:
                 WriteTimestamp(writer, value.GetValue(row)!.Value, (TimestampType)value.Data.DataType);

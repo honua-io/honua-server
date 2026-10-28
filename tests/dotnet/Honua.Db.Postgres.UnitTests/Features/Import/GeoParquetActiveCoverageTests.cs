@@ -24,6 +24,59 @@ namespace Honua.Db.Postgres.Tests.Features.Import;
 public sealed class GeoParquetActiveCoverageTests
 {
     [UnitTest]
+    public async Task PreviewFileAsync_GeoParquetNonseekableInput_ReadsBufferedCopyAndReleasesScratch()
+    {
+        await using var payload = await GeoParquetTestFactory.CreateStreamAsync();
+        await using var input = new CapturedNonseekableStream(payload.ToArray());
+        var preview = await PreviewImportServiceFactory.Create().PreviewFileAsync(input, "nonseekable.parquet");
+        preview.TotalFeatureCount.Should().Be(1);
+        input.ScratchDirectory.Should().NotBeNull();
+        Directory.Exists(input.ScratchDirectory).Should().BeFalse();
+        input.CanRead.Should().BeTrue("the input stream belongs to the caller");
+    }
+
+    [UnitTest]
+    public async Task ImportFileAsync_GeoParquetCanceledAfterScratchCopy_ReleasesUntransferredScratch()
+    {
+        using var cancellation = new CancellationTokenSource();
+        await using var payload = await GeoParquetTestFactory.CreateStreamAsync();
+        await using var input = new CapturedNonseekableStream(payload.ToArray(), cancellation);
+        var act = () => PreviewImportServiceFactory.Create().ImportFileAsync(new ImportRequest
+        {
+            FileStream = input,
+            FileName = "canceled.parquet",
+            TableName = "canceled_scratch",
+            TargetSrid = 4326
+        }, cancellationToken: cancellation.Token);
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        input.ScratchDirectory.Should().NotBeNull();
+        Directory.Exists(input.ScratchDirectory).Should().BeFalse("owned scratch must be cleaned even before ownership reaches the outer caller");
+        input.CanRead.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public async Task PreviewFileAsync_GeoParquetSeekableInput_PreservesCallerStreamOwnership()
+    {
+        await using var input = await GeoParquetTestFactory.CreateStreamAsync();
+        await PreviewImportServiceFactory.Create().PreviewFileAsync(input, "caller-owned.parquet");
+        input.CanRead.Should().BeTrue();
+        input.Position = 0;
+        input.ReadByte().Should().Be((byte)'P');
+    }
+
+    private sealed class CapturedNonseekableStream(byte[] bytes, CancellationTokenSource? cancelAfterCopy = null) : MemoryStream(bytes)
+    {
+        public override bool CanSeek => false;
+        public string? ScratchDirectory { get; private set; }
+        public override async Task CopyToAsync(Stream destination, int bufferSize, CancellationToken cancellationToken)
+        {
+            ScratchDirectory = Path.GetDirectoryName(((FileStream)destination).Name);
+            await base.CopyToAsync(destination, bufferSize, cancellationToken);
+            cancelAfterCopy?.Cancel();
+        }
+    }
+
+    [UnitTest]
     public async Task PreviewFileAsync_GeoParquetValidNativePointEncoding_RejectsWithExplicitCapabilityBoundary()
     {
         var x = new DataField<double>("x");
