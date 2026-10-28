@@ -399,6 +399,7 @@ for Python (`arcgis.geometry`).
 
 Known parameter-level caveats:
 
+- `areasAndLengths` and `lengths`: `calculationType=planar` selects the compatibility result (geographic axes use equatorial radius 6,371,000 m and do not apply cos(latitude); projected linear units are unchanged). `calculationType=ground` selects the ground result on the WGS 84 spheroid. `calculationType=geodesic` is the unchanged vertex-geodesic measure. `calculationType=preserveShape` returns ground metres of the shape sampled in the request CRS.
 - `f` supports `json`/`pjson` only; `f=html` is rejected.
 - `clip` uses the envelope of the clip geometry, not its full shape.
 - `findTransformations` returns the applicable default from the shared Esri datum
