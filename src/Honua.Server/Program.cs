@@ -604,6 +604,10 @@ Honua.Db.Oracle.Features.Security.OracleConnectionDriverServiceCollectionExtensi
 // (Snowflake.Data is not single-file/AOT safe — see Honua.Server.csproj).
 Honua.Snowflake.Features.Security.SnowflakeConnectionDriverServiceCollectionExtensions.AddSnowflakeConnectionDriver(builder.Services);
 #endif
+// Databricks speaks HTTPS to the SQL Statement Execution API (no ADO.NET driver) and stays
+// registered beside Redshift and Snowflake so admin connection tests resolve the provider
+// even when the experimental feature gate has not enabled the read-through provider.
+Honua.Db.Databricks.Features.Security.DatabricksConnectionDriverServiceCollectionExtensions.AddDatabricksConnectionDriver(builder.Services);
 builder.Services.AddSingleton<Honua.Core.Features.Security.Abstractions.IConnectionDriverRegistry, Honua.Core.Features.Security.Abstractions.ConnectionDriverRegistry>();
 
 // IGeometryService is a pure NTS-backed compute service (its only dependency is

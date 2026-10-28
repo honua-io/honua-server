@@ -14,9 +14,9 @@
     "not-executable": "The inventory item is not an independent runnable example; no green execution claim is made."
   },
   "summary": {
-    "total": 1205,
+    "total": 1208,
     "byStatus": {
-      "not-executable": 1190,
+      "not-executable": 1193,
       "unvalidated": 12,
       "passed": 3
     }
@@ -4709,8 +4709,8 @@
         "check": "inventory-classification"
       },
       "fence": 9,
-      "line": 382,
-      "language": "bash"
+      "line": 376,
+      "language": "powershell"
     },
     {
       "id": "0fbc5e454cb33f3f",
@@ -4722,8 +4722,8 @@
         "check": "inventory-classification"
       },
       "fence": 7,
-      "line": 339,
-      "language": "bash"
+      "line": 321,
+      "language": "powershell"
     },
     {
       "id": "1841bc17c2aa72e1",
@@ -4735,7 +4735,20 @@
         "check": "inventory-classification"
       },
       "fence": 3,
-      "line": 224,
+      "line": 76,
+      "language": "bash"
+    },
+    {
+      "id": "1a748c2b760a91e1",
+      "kind": "docs-fence",
+      "path": "docs/guides/deploy/docker-compose.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 13,
+      "line": 467,
       "language": "bash"
     },
     {
@@ -4748,7 +4761,7 @@
         "check": "inventory-classification"
       },
       "fence": 5,
-      "line": 282,
+      "line": 147,
       "language": "bash"
     },
     {
@@ -4761,7 +4774,7 @@
         "check": "inventory-classification"
       },
       "fence": 2,
-      "line": 70,
+      "line": 56,
       "language": "bash"
     },
     {
@@ -4774,8 +4787,8 @@
         "check": "inventory-classification"
       },
       "fence": 4,
-      "line": 244,
-      "language": "powershell"
+      "line": 99,
+      "language": "bash"
     },
     {
       "id": "7be8833cbe9817a2",
@@ -4787,7 +4800,7 @@
         "check": "inventory-classification"
       },
       "fence": 10,
-      "line": 390,
+      "line": 416,
       "language": "bash"
     },
     {
@@ -4800,8 +4813,21 @@
         "check": "inventory-classification"
       },
       "fence": 6,
-      "line": 299,
-      "language": "powershell"
+      "line": 301,
+      "language": "bash"
+    },
+    {
+      "id": "8ec0bd9f7285987c",
+      "kind": "docs-fence",
+      "path": "docs/guides/deploy/docker-compose.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 12,
+      "line": 459,
+      "language": "bash"
     },
     {
       "id": "903ab4d67a39ce79",
@@ -4814,6 +4840,19 @@
       },
       "fence": 8,
       "line": 359,
+      "language": "bash"
+    },
+    {
+      "id": "b2aa0597b72dbf82",
+      "kind": "docs-fence",
+      "path": "docs/guides/deploy/docker-compose.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 11,
+      "line": 436,
       "language": "bash"
     },
     {
