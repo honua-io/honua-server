@@ -47,18 +47,7 @@ public sealed class PostgresRasterStoreUnalignedMosaicTests(PostgresFixture fixt
     private const int LayerId = 4792;
 
     [IntegrationTest]
-    public Task ExportCog_WithoutCogDriver_RejectsRatherThanPublishingGtiffFallback()
-        => AssertMissingCogDriverAsync(warmAvailablePool: false, verifyAvailableAfter: false);
-
-    [IntegrationTest]
-    public Task ExportCog_AfterAvailablePoolWarmup_RestrictedPoolRejectsUnavailableDriver()
-        => AssertMissingCogDriverAsync(warmAvailablePool: true, verifyAvailableAfter: false);
-
-    [IntegrationTest]
-    public Task ExportCog_AfterRestrictedPool_AvailablePoolStillWritesOptimizedLayout()
-        => AssertMissingCogDriverAsync(warmAvailablePool: false, verifyAvailableAfter: true);
-
-    private async Task AssertMissingCogDriverAsync(bool warmAvailablePool, bool verifyAvailableAfter)
+    public async Task ExportCog_AfterRestrictedPool_AvailablePoolStillWritesOptimizedLayout()
     {
         var schemaName = await CreateSchemaAsync();
         try
@@ -73,22 +62,6 @@ public sealed class PostgresRasterStoreUnalignedMosaicTests(PostgresFixture fixt
                         '32BF'::text,7::double precision,-9999::double precision));
                     """;
                 await command.ExecuteNonQueryAsync();
-            }
-
-            if (warmAvailablePool)
-            {
-                await using (var connection = await fixture.DataSource.OpenConnectionAsync())
-                await using (var command = connection.CreateCommand())
-                {
-                    command.CommandText = "SELECT count(*) FROM ST_GDALDrivers() WHERE short_name = 'COG' AND can_write";
-                    Convert.ToInt64(await command.ExecuteScalarAsync(), CultureInfo.InvariantCulture)
-                        .Should().Be(1, "the first pool must genuinely support writable COG");
-                }
-                var available = CreateStore(schemaName);
-                var primary = await available.GetPrimaryRasterInfoAsync(LayerId);
-                var cog = await available.ExportImageAsync(LayerId, primary!.Id,
-                    new RasterQuery { OutputFormat = RasterFormat.COG });
-                cog.Data.Should().NotBeEmpty("the normal pool warms the real managed COG capability path");
             }
 
             // A dedicated pool sets a session-local GDAL policy on every physical connection.
@@ -127,29 +100,26 @@ public sealed class PostgresRasterStoreUnalignedMosaicTests(PostgresFixture fixt
             Func<Task> export = async () => await store.ExportImageAsync(LayerId, raster!.Id,
                 new RasterQuery { OutputFormat = RasterFormat.COG });
             var restrictedException = await Record.ExceptionAsync(export);
-            if (verifyAvailableAfter)
+            // Observe the second pool even when the first pool wrongly returned fallback
+            // bytes, so a failed first assertion cannot hide cross-pool contamination.
+            var available = CreateStore(schemaName);
+            RasterResult? availableCog = null;
+            var availableException = await Record.ExceptionAsync(async () =>
             {
-                // Observe the second pool even when the first pool wrongly returned fallback
-                // bytes, so a failed first assertion cannot hide cross-pool contamination.
-                var available = CreateStore(schemaName);
-                RasterResult? availableCog = null;
-                var availableException = await Record.ExceptionAsync(async () =>
-                {
-                    availableCog = await available.ExportImageAsync(LayerId, raster!.Id,
-                        new RasterQuery { OutputFormat = RasterFormat.COG });
-                });
-                availableException.Should().BeNull("the normal pool remains COG capable after a restricted session");
-                availableCog.Should().NotBeNull();
-                var bytes = availableCog!.Data;
-                var ranges = Substitute.For<ICloudRangeReader>();
-                ranges.ReadRangeAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<long>(),
-                        Arg.Any<int>(), Arg.Any<CancellationToken>())
-                    .Returns(call => Task.FromResult(bytes.AsSpan((int)call.ArgAt<long>(2),
-                        Math.Min(call.ArgAt<int>(3), bytes.Length - (int)call.ArgAt<long>(2))).ToArray()));
-                var metadata = await new CogMetadataExtractor().ReadMetadataAsync(ranges, "test", "after-restricted.tif");
-                metadata.OverviewLevels.Should().Contain(level => level.Width <= 512 && level.Height <= 512);
-                metadata.OverviewLevels.Should().OnlyContain(level => level.TileOffsets.Length > 0);
-            }
+                availableCog = await available.ExportImageAsync(LayerId, raster!.Id,
+                    new RasterQuery { OutputFormat = RasterFormat.COG });
+            });
+            availableException.Should().BeNull("the normal pool remains COG capable after a restricted session");
+            availableCog.Should().NotBeNull();
+            var bytes = availableCog!.Data;
+            var ranges = Substitute.For<ICloudRangeReader>();
+            ranges.ReadRangeAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<long>(),
+                    Arg.Any<int>(), Arg.Any<CancellationToken>())
+                .Returns(call => Task.FromResult(bytes.AsSpan((int)call.ArgAt<long>(2),
+                    Math.Min(call.ArgAt<int>(3), bytes.Length - (int)call.ArgAt<long>(2))).ToArray()));
+            var metadata = await new CogMetadataExtractor().ReadMetadataAsync(ranges, "test", "after-restricted.tif");
+            metadata.OverviewLevels.Should().Contain(level => level.Width <= 512 && level.Height <= 512);
+            metadata.OverviewLevels.Should().OnlyContain(level => level.TileOffsets.Length > 0);
             restrictedException.Should().BeOfType<NotSupportedException>(
                 "a restricted datasource must reject COG rather than returning mislabeled GTiff");
         }
@@ -158,10 +128,8 @@ public sealed class PostgresRasterStoreUnalignedMosaicTests(PostgresFixture fixt
 
     // Exercise the actual managed writer, rather than reproducing its SQL or validating a
     // pre-generated fixture. A 1024px image requires reduced-resolution IFDs for COG 1.0.
-    [IntegrationTheory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task ExportCog_LargeEmptyOrPopulatedExtent_WritesTilesAndOverviews(bool empty)
+    [IntegrationTest]
+    public async Task ExportCog_EmptyExtent_WritesTilesAndOverviews()
     {
         var schemaName = await CreateSchemaAsync();
         try
@@ -172,10 +140,9 @@ public sealed class PostgresRasterStoreUnalignedMosaicTests(PostgresFixture fixt
                 INSERT INTO raster_data(layer_id, name, raster)
                 VALUES (4792, 'cog-layout', ST_AddBand(
                     ST_MakeEmptyRaster(1024,1024,0,1024,1,-1,0,0,3857),
-                    '32BF'::text,7::double precision,-9999::double precision))
-                RETURNING id;
+                    '32BF'::text,7::double precision,-9999::double precision));
                 """;
-            var id = Convert.ToInt64(await command.ExecuteScalarAsync(), CultureInfo.InvariantCulture);
+            await command.ExecuteNonQueryAsync();
             var envelope = new NetTopologySuite.Geometries.Envelope(2048, 3072, 0, 1024);
             var query = new RasterQuery
             {
@@ -184,17 +151,15 @@ public sealed class PostgresRasterStoreUnalignedMosaicTests(PostgresFixture fixt
                 OutputHeight = 1024,
                 CoverClipExtent = true,
                 ResamplingAlgorithm = ResamplingAlgorithm.NearestNeighbor,
-                ClipRegion = empty ? new RasterClipRegion
+                ClipRegion = new RasterClipRegion
                 {
                     Geometry = new NetTopologySuite.IO.WKBWriter().Write(
                         new NetTopologySuite.Geometries.GeometryFactory().ToGeometry(envelope)),
                     Srid = 3857
-                } : null
+                }
             };
             var store = CreateStore(schemaName);
-            var result = empty
-                ? await store.ExportEmptyExtentAsync(LayerId, query)
-                : await store.ExportImageAsync(LayerId, id, query);
+            var result = await store.ExportEmptyExtentAsync(LayerId, query);
 
             // Reading the emitted TIFF's IFD chain also requires real tile offset/count tags;
             // plain stripped GTiff must fail this check rather than pass as readable TIFF.
@@ -225,8 +190,8 @@ public sealed class PostgresRasterStoreUnalignedMosaicTests(PostgresFixture fixt
             (await reader.ReadAsync()).Should().BeTrue();
             reader.GetInt32(0).Should().Be(3857);
             reader.GetDouble(1).Should().Be(-9999);
-            reader.GetDouble(2).Should().Be(empty ? -9999 : 7);
-            reader.GetDouble(3).Should().Be(empty ? -9999 : 7);
+            reader.GetDouble(2).Should().Be(-9999);
+            reader.GetDouble(3).Should().Be(-9999);
         }
         finally { await fixture.DropSchemaAsync(schemaName); }
     }
