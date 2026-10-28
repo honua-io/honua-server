@@ -189,11 +189,13 @@ public sealed class GeoParquetImportTests : IAsyncLifetime
         return (reader.GetInt64(0), reader.GetString(1));
     }
 
-    [IntegrationTest]
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
     [Endpoint("POST /api/v1/admin/import/upload")]
     [Endpoint("POST /api/v1/admin/connections/{connectionId}/layers")]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
-    public async Task Upload_WithDynamicCrsEpoch_PreservesEpochThroughPublicationAndSameCrsExport()
+    public async Task Upload_WithDynamicCrsEpoch_PreservesEpochThroughPublicationAndSameCrsExport(bool waitForImport)
     {
         const int srid = 7912; // Authoritative ITRF2014 geographic 3D dynamic reference frame.
         const double epoch = 2021.25;
@@ -212,7 +214,20 @@ public sealed class GeoParquetImportTests : IAsyncLifetime
         var connectionId = await _fixture.GetTestSecureConnectionIdAsync();
         connectionId.Should().NotBeNull();
         _publishedServiceName = $"geoparquet_epoch_{Guid.NewGuid():N}";
-        using var publishResponse = await _client.PostAsJsonAsync(
+        using var safety = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        await using var sourceWriter = waitForImport
+            ? await _fixture.Postgres.DataSource.OpenConnectionAsync(safety.Token)
+            : null;
+        var lockKey = $"honua.file-import.replace:{imported.RootElement.GetProperty("schema").GetString()}.{imported.RootElement.GetProperty("physicalTableName").GetString()}";
+        if (sourceWriter is not null)
+        {
+            await using var acquire = sourceWriter.CreateCommand();
+            acquire.CommandText = "SELECT pg_advisory_lock(hashtextextended(@key, 0))";
+            acquire.Parameters.AddWithValue("key", lockKey);
+            await acquire.ExecuteNonQueryAsync(safety.Token);
+        }
+        var expectedEpoch = epoch;
+        var publishTask = _client.PostAsJsonAsync(
             $"/api/v1/admin/connections/{connectionId}/layers",
             new
             {
@@ -227,7 +242,47 @@ public sealed class GeoParquetImportTests : IAsyncLifetime
                 PrimaryKey = "id",
                 Fields = new[] { "id", "properties" },
                 Enabled = true
-            });
+            }, safety.Token);
+        try
+        {
+            if (sourceWriter is not null)
+            {
+                await using var waiting = sourceWriter.CreateCommand();
+                waiting.CommandText = """
+                    SELECT EXISTS (SELECT 1 FROM pg_locks
+                        WHERE locktype = 'advisory' AND NOT granted AND pid <> pg_backend_pid()
+                          AND database = (SELECT oid FROM pg_database WHERE datname = current_database())
+                          AND objsubid = 1
+                          AND ((classid::bigint << 32) | objid::bigint) = hashtextextended(@key, 0))
+                    """;
+                waiting.Parameters.AddWithValue("key", lockKey);
+                while (await waiting.ExecuteScalarAsync(safety.Token) is not true)
+                {
+                    publishTask.IsCompleted.Should().BeFalse("publication must wait on the held import lock");
+                    await Task.Delay(10, safety.Token);
+                }
+                var metadataSchema = _fixture.GetService<Honua.Db.Postgres.Features.Infrastructure.PostgresSchemaConfiguration>().MetadataSchema;
+                using var identifiers = new Npgsql.NpgsqlCommandBuilder();
+                await using var mutation = sourceWriter.CreateCommand();
+                mutation.CommandText = $"UPDATE {identifiers.QuoteIdentifier(metadataSchema)}.imported_dataset_spatial_metadata SET coordinate_epoch = @epoch WHERE schema_name = @schema AND table_name = @table AND geometry_column = 'geometry'";
+                expectedEpoch = 2022.5;
+                mutation.Parameters.AddWithValue("epoch", expectedEpoch);
+                mutation.Parameters.AddWithValue("schema", imported.RootElement.GetProperty("schema").GetString()!);
+                mutation.Parameters.AddWithValue("table", imported.RootElement.GetProperty("physicalTableName").GetString()!);
+                (await mutation.ExecuteNonQueryAsync(safety.Token)).Should().Be(1);
+            }
+        }
+        finally
+        {
+            if (sourceWriter is not null)
+            {
+                await using var release = sourceWriter.CreateCommand();
+                release.CommandText = "SELECT pg_advisory_unlock(hashtextextended(@key, 0))";
+                release.Parameters.AddWithValue("key", lockKey);
+                await release.ExecuteNonQueryAsync();
+            }
+        }
+        using var publishResponse = await publishTask;
         var publishJson = await publishResponse.Content.ReadAsStringAsync();
         publishResponse.StatusCode.Should().Be(HttpStatusCode.Created, publishJson);
         using var published = JsonDocument.Parse(publishJson);
@@ -241,7 +296,7 @@ public sealed class GeoParquetImportTests : IAsyncLifetime
             : $"Response media type: {exportMediaType}";
         exportResponse.StatusCode.Should().Be(HttpStatusCode.OK, exportDiagnostic);
         exportMediaType.Should().Be("application/vnd.apache.parquet", exportDiagnostic);
-        if (Environment.GetEnvironmentVariable("HONUA_CNG_VECTOR_ARTIFACT_DIRECTORY") is { Length: > 0 } artifactDirectory)
+        if (!waitForImport && Environment.GetEnvironmentVariable("HONUA_CNG_VECTOR_ARTIFACT_DIRECTORY") is { Length: > 0 } artifactDirectory)
         {
             Directory.CreateDirectory(artifactDirectory);
             await File.WriteAllBytesAsync(Path.Join(artifactDirectory, "dynamic-epoch-source.parquet"), payload);
@@ -253,7 +308,7 @@ public sealed class GeoParquetImportTests : IAsyncLifetime
         var geometryMetadata = metadata.RootElement.GetProperty("columns").GetProperty(
             metadata.RootElement.GetProperty("primary_column").GetString()!);
         geometryMetadata.TryGetProperty("epoch", out var actualEpoch).Should().BeTrue("the durable imported epoch must survive publication and same-CRS export");
-        actualEpoch.GetDouble().Should().Be(epoch);
+        actualEpoch.GetDouble().Should().Be(expectedEpoch);
         geometryMetadata.GetProperty("crs").GetProperty("id").GetProperty("code").GetInt32().Should().Be(srid);
         using var rows = parquet.OpenRowGroupReader(0);
         var field = parquet.Schema.GetDataFields().Single(field => field.Name == metadata.RootElement.GetProperty("primary_column").GetString());

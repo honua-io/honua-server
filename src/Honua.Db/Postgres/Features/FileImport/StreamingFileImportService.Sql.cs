@@ -99,9 +99,10 @@ internal sealed partial class StreamingFileImportService
         NpgsqlConnection connection,
         string schemaName,
         string tableName,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        NpgsqlTransaction? transaction = null)
     {
-        await using var command = new NpgsqlCommand(ImportTableExistsSql, connection);
+        await using var command = new NpgsqlCommand(ImportTableExistsSql, connection, transaction);
         command.Parameters.AddWithValue("schema_name", schemaName);
         command.Parameters.AddWithValue("table_name", tableName);
         return (bool?)await command.ExecuteScalarAsync(cancellationToken) == true;
@@ -131,9 +132,10 @@ internal sealed partial class StreamingFileImportService
         string schemaName,
         string tableName,
         int targetSrid,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        NpgsqlTransaction? transaction = null)
     {
-        await using var command = new NpgsqlCommand(EnsureImportTableSql, connection);
+        await using var command = new NpgsqlCommand(EnsureImportTableSql, connection, transaction);
         command.Parameters.AddWithValue("schema_name", schemaName);
         command.Parameters.AddWithValue("table_name", tableName);
         command.Parameters.AddWithValue("target_srid", targetSrid);
@@ -150,9 +152,10 @@ internal sealed partial class StreamingFileImportService
         string schemaName,
         string tableName,
         int targetSrid,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        NpgsqlTransaction? transaction = null)
     {
-        await using var command = new NpgsqlCommand(CreateImportStagingTableSql, connection);
+        await using var command = new NpgsqlCommand(CreateImportStagingTableSql, connection, transaction);
         command.Parameters.AddWithValue("schema_name", schemaName);
         command.Parameters.AddWithValue("table_name", tableName);
         command.Parameters.AddWithValue("target_srid", targetSrid);
@@ -160,64 +163,38 @@ internal sealed partial class StreamingFileImportService
         return stagingName ?? tableName + "__staging";
     }
 
-    private static async Task<ImportAdvisoryLock> AcquireImportLockAsync(
-        NpgsqlConnection connection,
-        string schemaName,
-        string tableName,
-        CancellationToken cancellationToken)
-    {
-        var lockKey = $"honua.file-import.replace:{schemaName}.{tableName}";
-        await using var command = new NpgsqlCommand(
-            "SELECT pg_advisory_lock(hashtextextended(@lock_key, 0))",
-            connection);
-        // The request cancellation token remains the upper bound. A command timeout must not
-        // turn a long-running import into a false concurrency failure while waiting its turn.
-        command.CommandTimeout = 0;
-        command.Parameters.AddWithValue("lock_key", lockKey);
-        await command.ExecuteNonQueryAsync(cancellationToken);
-        return new ImportAdvisoryLock(connection, lockKey);
-    }
-
-    private sealed class ImportAdvisoryLock(NpgsqlConnection connection, string lockKey) : IAsyncDisposable
-    {
-        private int _released;
-
-        public async ValueTask DisposeAsync()
-        {
-            if (Interlocked.Exchange(ref _released, 1) != 0)
-            {
-                return;
-            }
-
-            await using var command = new NpgsqlCommand(
-                "SELECT pg_advisory_unlock(hashtextextended(@lock_key, 0))",
-                connection);
-            command.Parameters.AddWithValue("lock_key", lockKey);
-            await command.ExecuteNonQueryAsync(CancellationToken.None);
-        }
-    }
-
     /// <summary>
     /// Atomically replaces the live target with the freshly-loaded staging sibling inside a
     /// single transaction, so the drop+rename is all-or-nothing.
     /// </summary>
-    private static async Task SwapStagingTableAsync(
+    private async Task SwapStagingTableAsync(
         NpgsqlConnection connection,
         string schemaName,
         string tableName,
         int featureCount,
         ImportCommitParticipant? commitParticipant,
+        int storageSrid,
+        double? coordinateEpoch,
+        ImportedDatasetSpatialMetadata.Identity? expectedIdentity,
         CancellationToken cancellationToken)
     {
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         try
         {
+            await ValidatePromotionIdentityAsync(
+                connection, transaction, schemaName, tableName, expectedIdentity, cancellationToken);
             await using (var command = new NpgsqlCommand(SwapImportTableSql, connection, transaction))
             {
                 command.Parameters.AddWithValue("schema_name", schemaName);
                 command.Parameters.AddWithValue("table_name", tableName);
                 await command.ExecuteNonQueryAsync(cancellationToken);
             }
+
+            var identity = await ImportedDatasetSpatialMetadata.LockAndResolveAsync(
+                connection, transaction, schemaName, tableName, "geometry", cancellationToken);
+            await ImportedDatasetSpatialMetadata.WriteAsync(
+                connection, transaction, _schemaConfiguration.MetadataSchema, schemaName, tableName,
+                "geometry", identity, storageSrid, coordinateEpoch, cancellationToken);
 
             await InvokeCommitParticipantAsync(
                 commitParticipant, transaction, schemaName, tableName, featureCount, cancellationToken);
@@ -235,18 +212,27 @@ internal sealed partial class StreamingFileImportService
     /// Copies every staged row into the live target and drops the staging sibling in one
     /// transaction. A failure rolls the insert back and leaves the live table unchanged.
     /// </summary>
-    private static async Task AppendStagingIntoTargetAsync(
+    private async Task AppendStagingIntoTargetAsync(
         NpgsqlConnection connection,
         string schemaName,
         string liveTableName,
         string stagingTableName,
         int featureCount,
         ImportCommitParticipant? commitParticipant,
+        int storageSrid,
+        double? coordinateEpoch,
+        ImportedDatasetSpatialMetadata.Identity? expectedIdentity,
         CancellationToken cancellationToken)
     {
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         try
         {
+            if (expectedIdentity is not { } identity)
+            {
+                throw new InvalidDataException("Import target identity is not available for append.");
+            }
+            await ValidateDirectImportAsync(connection, transaction, schemaName, liveTableName,
+                storageSrid, new DirectImportGuard(identity, coordinateEpoch), cancellationToken);
             var insertSql =
                 $"INSERT INTO {QuoteIdentifier(schemaName)}.{QuoteIdentifier(liveTableName)} (geometry, properties) " +
                 $"SELECT geometry, properties FROM {QuoteIdentifier(schemaName)}.{QuoteIdentifier(stagingTableName)}";
@@ -310,11 +296,12 @@ internal sealed partial class StreamingFileImportService
         NpgsqlConnection connection,
         string schemaName,
         string tableName,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        NpgsqlTransaction? transaction = null)
     {
         await using var command = new NpgsqlCommand(
             "SELECT obj_description(to_regclass(@relation), 'pg_class')",
-            connection);
+            connection, transaction);
         command.Parameters.AddWithValue(
             "relation",
             $"{QuoteIdentifier(schemaName)}.{QuoteIdentifier(tableName)}");
@@ -349,9 +336,10 @@ internal sealed partial class StreamingFileImportService
         string schemaName,
         string tableName,
         IReadOnlyList<string> keyColumns,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        NpgsqlTransaction? transaction = null)
     {
-        await using var command = new NpgsqlCommand(EnsureImportUpsertKeySql, connection);
+        await using var command = new NpgsqlCommand(EnsureImportUpsertKeySql, connection, transaction);
         command.Parameters.AddWithValue("schema_name", schemaName);
         command.Parameters.AddWithValue("table_name", tableName);
         command.Parameters.Add("key_columns", NpgsqlTypes.NpgsqlDbType.Array | NpgsqlTypes.NpgsqlDbType.Text)

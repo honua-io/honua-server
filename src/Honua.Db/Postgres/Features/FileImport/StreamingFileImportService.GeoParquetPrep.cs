@@ -25,7 +25,8 @@ internal sealed partial class StreamingFileImportService
         Stream? Stream,
         int? DetectedSrid,
         string[] Warnings,
-        string? ErrorMessage);
+        string? ErrorMessage,
+        double? CoordinateEpoch = null);
 
     /// <summary>
     /// Buffers and validates a GeoParquet source: extracts metadata, enforces row-group
@@ -99,7 +100,7 @@ internal sealed partial class StreamingFileImportService
                 return new GeoParquetPrepResult(scratch, null, null, updatedWarnings, SanitizeImportValidationMessage(ex));
             }
             scratchStream.Position = 0;
-            return new GeoParquetPrepResult(scratch, scratchStream, parquetMeta.Srid, updatedWarnings, null);
+            return new GeoParquetPrepResult(scratch, scratchStream, parquetMeta.Srid, updatedWarnings, null, parquetMeta.CoordinateEpoch);
         }
         catch
         {

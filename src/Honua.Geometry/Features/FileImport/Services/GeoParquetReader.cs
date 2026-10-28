@@ -256,7 +256,7 @@ internal static class GeoParquetReader
 
         var totalRowCount = reader.Metadata?.NumRows ?? 0;
         stream.Position = 0;
-        return new GeoParquetFileMetadata(geoMeta.Srid, isWkbEncoding, warnings.ToArray(), totalRowCount, GetUnsupportedReason(geoMeta));
+        return new GeoParquetFileMetadata(geoMeta.Srid, isWkbEncoding, warnings.ToArray(), totalRowCount, GetUnsupportedReason(geoMeta), geoMeta.CoordinateEpoch);
     }
 
     // The streaming importer batches these same feature instances; semantic facts never enter
@@ -295,7 +295,8 @@ internal static class GeoParquetReader
         bool IsWkbEncoding,
         string[] Warnings,
         long TotalRowCount,
-        string? UnsupportedReason);
+        string? UnsupportedReason,
+        double? CoordinateEpoch = null);
 
     /// <summary>
     /// Opens a Parquet reader, normalizing library-level I/O and format errors
@@ -374,6 +375,7 @@ internal static class GeoParquetReader
         var geometryColumnNames = new HashSet<string>(StringComparer.Ordinal);
         var crs84Implied = false;
         var isPlanar = true;
+        double? coordinateEpoch = null;
         foreach (var column in columns.EnumerateObject())
         {
             if (!geometryColumnNames.Add(column.Name) || column.Value.ValueKind != JsonValueKind.Object)
@@ -397,8 +399,19 @@ internal static class GeoParquetReader
                 throw new InvalidDataException("GeoParquet 'edges' must be 'planar' or 'spherical'.");
             }
 
+            double? columnEpoch = null;
+            if (column.Value.TryGetProperty("epoch"u8, out var epoch))
+            {
+                if (epoch.ValueKind != JsonValueKind.Number || !epoch.TryGetDouble(out var value) || !double.IsFinite(value))
+                {
+                    throw new InvalidDataException("GeoParquet coordinate epoch must be a finite decimal-year number.");
+                }
+                columnEpoch = value;
+            }
+
             if (column.Name == primaryColumn)
             {
+                coordinateEpoch = columnEpoch;
                 encoding = columnEncoding;
                 isPlanar = edges == "planar";
                 srid = ExtractSrid(column.Value, out crs84Implied);
@@ -411,7 +424,7 @@ internal static class GeoParquetReader
         }
 
         return new GeoParquetMetadata(primaryColumn, encoding, srid, geometryColumnNames.Count,
-            geometryColumnNames, crs84Implied, isPlanar);
+            geometryColumnNames, crs84Implied, isPlanar, coordinateEpoch);
     }
 
     private static void ValidateUniqueMetadataProperties(JsonElement element, string[]? knownProperties = null)
@@ -510,5 +523,6 @@ internal static class GeoParquetReader
         int GeometryColumnCount,
         HashSet<string> GeometryColumnNames,
         bool Crs84Implied,
-        bool IsPlanar);
+        bool IsPlanar,
+        double? CoordinateEpoch);
 }

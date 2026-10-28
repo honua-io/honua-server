@@ -655,13 +655,11 @@ internal sealed partial class PostgreSqlLayerPublishingService
     }
 
     private static async Task<int?> ResolveExistingServiceSridAsync(
-        string connectionString,
+        NpgsqlConnection connection,
         string serviceName,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        NpgsqlTransaction? transaction = null)
     {
-        await using var connection = new NpgsqlConnection(connectionString);
-        await connection.OpenAsync(cancellationToken);
-
         if (!await HonuaTableExistsAsync(connection, "services", cancellationToken).ConfigureAwait(false))
         {
             return null;
@@ -674,7 +672,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             LIMIT 1;
             """;
 
-        await using var command = new NpgsqlCommand(sql, connection);
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
         command.Parameters.AddWithValue("@serviceName", serviceName);
         var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
         return result == null || result == DBNull.Value

@@ -72,6 +72,9 @@ public sealed record ImportResult
     /// </summary>
     public int? DetectedSrid { get; init; }
 
+    /// <summary>Coordinate epoch of imported storage coordinates, when supplied by the source.</summary>
+    public double? StorageCrsCoordinateEpoch { get; init; }
+
     /// <summary>
     /// Error message if import failed
     /// </summary>
