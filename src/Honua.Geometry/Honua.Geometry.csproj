@@ -28,6 +28,8 @@
     <PackageReference Include="NetTopologySuite" />
     <PackageReference Include="NetTopologySuite.IO.GeoJSON" />
     <PackageReference Include="Parquet.Net" />
+    <PackageReference Include="ParquetSharp" />
+    <PackageReference Include="Apache.Arrow" />
     <PackageReference Include="Snappier" />
   </ItemGroup>
 

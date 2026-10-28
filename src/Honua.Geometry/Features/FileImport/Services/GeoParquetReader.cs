@@ -4,6 +4,7 @@
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text;
+using Honua.Core.Features.FeatureStore.Services;
 using NetTopologySuite.Features;
 using NetTopologySuite.IO;
 using Parquet;
@@ -81,7 +82,7 @@ internal static class GeoParquetReader
                     attributeFields.Add((i, df));
                 }
             }
-            // Nested types (StructField, ListField, MapField) are not DataFields — warned via DetectWarnings
+            // Nested attributes are reconstructed through Arrow below; scalar columns retain their declared types.
         }
 
         if (geometryFieldIndex < 0)
@@ -106,6 +107,9 @@ internal static class GeoParquetReader
                     + "Split the file into smaller row groups or increase the configured memory limit.");
             }
 
+            var nestedAttributes = await GeoParquetNestedAttributeReader.ReadRowGroupAsync(
+                stream, schema.Fields.Where(field => field is not DataField && !geometryColumnNames.Contains(field.Name))
+                    .Select(field => field.Name).ToArray(), rg, limits, cancellationToken);
             using var rowGroupReader = reader.OpenRowGroupReader(rg);
 
             // Read geometry column
@@ -149,10 +153,23 @@ internal static class GeoParquetReader
                     }
                 }
 
+                foreach (var (name, values) in nestedAttributes)
+                {
+                    if (values.Count != geometryData.Length)
+                    {
+                        throw new InvalidDataException("GeoParquet nested attribute row count does not match the geometry column.");
+                    }
+                    attributes.Add(name, values[row]);
+                }
+
                 NetTopologySuite.Geometries.Geometry? geometry = null;
                 var wkbBytes = geometryData[row];
                 if (wkbBytes != null)
                 {
+                    if (!WkbSridNormalizer.TryGetDeclaredOrdinates(wkbBytes, out _, out var hasM) || hasM)
+                    {
+                        throw new InvalidDataException("GeoParquet WKB must contain supported XY or XYZ geometry types; measured, nonlinear, or malformed WKB is not accepted.");
+                    }
                     try
                     {
                         geometry = wkbReader.Read(wkbBytes);
@@ -223,30 +240,12 @@ internal static class GeoParquetReader
             warnings.Add(UnsupportedEdgesMessage);
         }
 
-        // Check for nested types in schema
         var schema = reader.Schema;
-        foreach (var field in schema.Fields)
-        {
-            if (field is StructField sf)
-            {
-                warnings.Add($"Column '{sf.Name}' uses a nested type (Struct) that cannot be imported. This column will be skipped.");
-            }
-            else if (field is ListField lf)
-            {
-                warnings.Add($"Column '{lf.Name}' uses a nested type (List) that cannot be imported. This column will be skipped.");
-            }
-            else if (field is MapField mf)
-            {
-                warnings.Add($"Column '{mf.Name}' uses a nested type (Map) that cannot be imported. This column will be skipped.");
-            }
-        }
-
-        // Verify primary geometry column exists in the Parquet schema as a DataField.
+        // Verify the exact primary column exists, including valid native nested encodings.
         // Fail fast here instead of deferring to ReadStreamingAsync, which would read
         // attribute columns before discovering the mismatch.
         var hasPrimaryColumn = schema.Fields.Any(field =>
-            field is DataField df &&
-            string.Equals(df.Name, geoMeta.PrimaryColumn, StringComparison.Ordinal));
+            string.Equals(field.Name, geoMeta.PrimaryColumn, StringComparison.Ordinal));
 
         if (!hasPrimaryColumn)
         {
@@ -326,6 +325,7 @@ internal static class GeoParquetReader
     private static GeoParquetMetadata ParseGeoDocument(JsonDocument doc)
     {
         var root = doc.RootElement;
+        ValidateUniqueMetadataProperties(root, ["version", "primary_column", "columns"]);
         var version = RequiredString(root, "version");
         if (version is not ("1.0.0" or "1.1.0"))
         {
@@ -337,6 +337,8 @@ internal static class GeoParquetReader
         {
             throw new InvalidDataException("GeoParquet metadata requires a 'columns' object.");
         }
+
+        ValidateUniqueMetadataProperties(columns);
 
         string? encoding = null;
         int? srid = null;
@@ -350,6 +352,8 @@ internal static class GeoParquetReader
                 throw new InvalidDataException("GeoParquet geometry columns must have unique names and object metadata.");
             }
 
+            ValidateUniqueMetadataProperties(column.Value,
+                ["encoding", "geometry_types", "crs", "edges", "orientation", "bbox", "epoch", "covering"]);
             var columnEncoding = RequiredString(column.Value, "encoding");
             if (columnEncoding is not ("WKB" or "point" or "linestring" or "polygon" or "multipoint" or "multilinestring" or "multipolygon") ||
                 (version == "1.0.0" && columnEncoding != "WKB"))
@@ -374,11 +378,29 @@ internal static class GeoParquetReader
 
         if (encoding is null)
         {
-            throw new InvalidDataException("GeoParquet primary_column must exactly match a declared geometry column.");
+            throw new InvalidDataException("GeoParquet primary_column must exactly match an entry in columns.");
         }
 
         return new GeoParquetMetadata(primaryColumn, encoding, srid, geometryColumnNames.Count,
             geometryColumnNames, crs84Implied, isPlanar);
+    }
+
+    private static void ValidateUniqueMetadataProperties(JsonElement element, string[]? knownProperties = null)
+    {
+        if (element.ValueKind != JsonValueKind.Object)
+        {
+            return;
+        }
+
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var property in element.EnumerateObject())
+        {
+            if ((knownProperties is null || knownProperties.Contains(property.Name, StringComparer.Ordinal)) &&
+                !names.Add(property.Name))
+            {
+                throw new InvalidDataException("GeoParquet metadata contains duplicate property names.");
+            }
+        }
     }
 
     private static string RequiredString(JsonElement element, string name)
@@ -386,7 +408,7 @@ internal static class GeoParquetReader
         if (element.ValueKind != JsonValueKind.Object || !element.TryGetProperty(name, out var value) ||
             value.ValueKind != JsonValueKind.String || string.IsNullOrEmpty(value.GetString()))
         {
-            throw new InvalidDataException($"GeoParquet metadata requires a nonempty '{name}' string.");
+            throw new InvalidDataException($"GeoParquet metadata has unexpected structure: requires a nonempty '{name}' string.");
         }
 
         return value.GetString()!;

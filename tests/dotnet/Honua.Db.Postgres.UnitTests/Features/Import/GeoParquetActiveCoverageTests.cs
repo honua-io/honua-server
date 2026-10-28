@@ -350,6 +350,92 @@ public sealed class GeoParquetActiveCoverageTests
         preview.Warnings.Should().NotContain(warning => warning.Contains("geometry was null"));
     }
 
+    [UnitTheory]
+    [InlineData("UTC", "Z")]
+    [InlineData("", "")]
+    public async Task ReadStreamingAsync_GeoParquetNestedNanosecondValues_PreservesRawSubTickPrecision(string timezone, string suffix)
+    {
+        var timestampType = new Apache.Arrow.Types.TimestampType(Apache.Arrow.Types.TimeUnit.Nanosecond, timezone);
+        var timeType = new Apache.Arrow.Types.Time64Type(Apache.Arrow.Types.TimeUnit.Nanosecond);
+        var fields = new[]
+        {
+            new Apache.Arrow.Field("timestamp", timestampType, false),
+            new Apache.Arrow.Field("time", timeType, false)
+        };
+        var structureType = new Apache.Arrow.Types.StructType(fields);
+        var raw = new Apache.Arrow.ArrowBuffer.Builder<long>().Append(123456789L).Build();
+        using var timestamp = new Apache.Arrow.TimestampArray(timestampType, raw, Apache.Arrow.ArrowBuffer.Empty, 1, 0, 0);
+        using var time = new Apache.Arrow.Time64Array(timeType, raw, Apache.Arrow.ArrowBuffer.Empty, 1, 0, 0);
+        using var structure = new Apache.Arrow.StructArray(structureType, 1,
+            new Apache.Arrow.IArrowArray[] { timestamp, time }, Apache.Arrow.ArrowBuffer.Empty);
+        using var geometry = new Apache.Arrow.BinaryArray.Builder()
+            .Append(new WKBWriter().Write(new NetTopologySuite.Geometries.Point(1, 2))).Build();
+        var schema = new Apache.Arrow.Schema.Builder()
+            .Field(new Apache.Arrow.Field("geometry", Apache.Arrow.Types.BinaryType.Default, false))
+            .Field(new Apache.Arrow.Field("metadata", structureType, false))
+            .Metadata(new Dictionary<string, string>
+            {
+                ["geo"] = "{\"version\":\"1.1.0\",\"primary_column\":\"geometry\",\"columns\":{\"geometry\":{\"encoding\":\"WKB\",\"geometry_types\":[\"Point\"]}}}"
+            }).Build();
+        await using var stream = new MemoryStream();
+        using (var batch = new Apache.Arrow.RecordBatch(schema, new Apache.Arrow.IArrowArray[] { geometry, structure }, 1))
+        using (var writer = new ParquetSharp.Arrow.FileWriter(stream, schema, leaveOpen: true))
+        {
+            writer.WriteRecordBatch(batch);
+            writer.Close();
+        }
+        stream.Position = 0;
+        var rows = new List<NetTopologySuite.Features.IFeature>();
+        await foreach (var feature in GeoParquetReader.ReadStreamingAsync(stream, new ImportLimits(), CancellationToken.None))
+        {
+            rows.Add(feature);
+        }
+        rows.Should().ContainSingle();
+        var metadata = (JsonElement)rows[0].Attributes["metadata"];
+        metadata.GetProperty("timestamp").GetString().Should().Be("1970-01-01T00:00:00.123456789" + suffix);
+        metadata.GetProperty("time").GetString().Should().Be("00:00:00.123456789");
+    }
+
+    [UnitTest]
+    public async Task ImportFileAsync_GeoParquetUnsupportedMapInLaterRowGroup_RejectsBeforeDatabaseAccess()
+    {
+        var geometry = new DataField<byte[]>("geometry");
+        var key = new DataField<int>("key", false);
+        var value = new DataField<string>("value", true);
+        var schema = new ParquetSchema(geometry, new MapField("mapping", key, value));
+        await using var stream = new MemoryStream();
+        using (var writer = await ParquetWriter.CreateAsync(schema, stream))
+        {
+            writer.CustomMetadata = new Dictionary<string, string>
+            {
+                ["geo"] = "{\"version\":\"1.1.0\",\"primary_column\":\"geometry\",\"columns\":{\"geometry\":{\"encoding\":\"WKB\",\"geometry_types\":[\"Point\"]}}}"
+            };
+            var wkb = new WKBWriter().Write(new NetTopologySuite.Geometries.Point(1, 2));
+            using (var first = writer.CreateRowGroup())
+            {
+                await first.WriteColumnAsync(new ParquetDataColumn(geometry, new[] { wkb }));
+                await first.WriteColumnAsync(new ParquetDataColumn(key, Array.Empty<int>(), definitionLevels: [0], repetitionLevels: [0]));
+                await first.WriteColumnAsync(new ParquetDataColumn(value, Array.Empty<string>(), definitionLevels: [0], repetitionLevels: [0]));
+            }
+            using (var second = writer.CreateRowGroup())
+            {
+                await second.WriteColumnAsync(new ParquetDataColumn(geometry, new[] { wkb }));
+                await second.WriteColumnAsync(new ParquetDataColumn(key, new[] { 1 }, definitionLevels: [2], repetitionLevels: [0]));
+                await second.WriteColumnAsync(new ParquetDataColumn(value, new[] { "value" }, definitionLevels: [3], repetitionLevels: [0]));
+            }
+        }
+        stream.Position = 0;
+        var result = await PreviewImportServiceFactory.Create().ImportFileAsync(new ImportRequest
+        {
+            FileStream = stream,
+            FileName = "late-map.parquet",
+            TableName = "late_unsupported_map",
+            TargetSrid = 4326
+        });
+        result.Success.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("map").And.Contain("string keys");
+    }
+
     [UnitTest]
     public async Task ReadStreamingAsync_GeoParquetNestedValues_PreservesStructListMapAndNulls()
     {

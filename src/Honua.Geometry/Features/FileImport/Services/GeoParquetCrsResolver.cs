@@ -33,6 +33,7 @@ internal static class GeoParquetCrsResolver
         try
         {
             using var bounded = JsonDocument.Parse(bytes, new JsonDocumentOptions { MaxDepth = MaximumDepth });
+            ValidateUniqueProperties(bounded.RootElement);
             lock (_evaluationLock)
             {
                 if (!_evaluator.Evaluate(bytes))
@@ -63,6 +64,30 @@ internal static class GeoParquetCrsResolver
         }
 
         throw new NotSupportedException("GeoParquet CRS is valid PROJJSON but its complete definition cannot be resolved to a supported storage CRS.");
+    }
+
+    internal static void ValidateUniqueProperties(JsonElement element)
+    {
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            var names = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var property in element.EnumerateObject())
+            {
+                if (!names.Add(property.Name))
+                {
+                    throw new InvalidDataException("GeoParquet PROJJSON contains duplicate property names.");
+                }
+
+                ValidateUniqueProperties(property.Value);
+            }
+        }
+        else if (element.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var child in element.EnumerateArray())
+            {
+                ValidateUniqueProperties(child);
+            }
+        }
     }
 
     private static void ValidateAssertedIdentifier(JsonElement source, JsonElement canonical, int srid)
