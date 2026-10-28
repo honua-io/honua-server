@@ -11,6 +11,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.CogParser;
 using Honua.Db.Postgres.Features.Raster;
@@ -19,6 +20,7 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 using NSubstitute;
@@ -44,6 +46,7 @@ public sealed class CogArtifactProducerEndpointTests
         var schema = await database.CreateIsolatedSchemaAsync(nameof(CogArtifactProducerEndpointTests));
         WebAppFixture? host = null;
         NpgsqlDataSource? restricted = null;
+        var storagePath = Path.Join(Path.GetTempPath(), $"honua-cog-producer-{Guid.NewGuid():N}");
         try
         {
             await using (var connection = await database.GetConnectionAsync(schema))
@@ -96,7 +99,9 @@ public sealed class CogArtifactProducerEndpointTests
                 NullLogger<PostgresRasterStore>.Instance, FixtureBypassDatabaseSchemaGuard.Instance, schema);
             var primary = await store.GetPrimaryRasterInfoAsync(WebAppFixture.TestLayerId);
             primary.Should().NotBeNull();
-            host = new WebAppFixture().ReplaceService<IRasterStore>(store).ConfigureWebHost(builder =>
+            host = new WebAppFixture().ReplaceService<IRasterStore>(store)
+                .ConfigureServices(services => services.PostConfigure<LocalStorageOptions>(options => options.BasePath = storagePath))
+                .ConfigureWebHost(builder =>
             {
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
@@ -192,6 +197,7 @@ public sealed class CogArtifactProducerEndpointTests
         finally
         {
             if (host is not null) await host.DisposeAsync();
+            if (Directory.Exists(storagePath)) Directory.Delete(storagePath, recursive: true);
             if (restricted is not null) await restricted.DisposeAsync();
             await database.DropSchemaAsync(schema);
             await database.DisposeAsync();
