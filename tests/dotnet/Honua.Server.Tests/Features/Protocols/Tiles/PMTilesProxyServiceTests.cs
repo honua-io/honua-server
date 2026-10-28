@@ -11,6 +11,7 @@ using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.FileStorage;
 using Honua.Server.Features.Protocols.Tiles.PMTilesProxy;
+using Honua.Server.Features.Infrastructure.FileStorage;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Infrastructure;
 using Microsoft.Extensions.Options;
@@ -149,7 +150,7 @@ public sealed class PMTilesProxyServiceTests
         var metadata = (await sut.ResolveAsync(fileId, CancellationToken.None)).Metadata!;
         var result = await sut.ReadRangeAsync(metadata, rangeHeader: null, CancellationToken.None);
 
-        result.Outcome.Should().Be(PMTilesRangeOutcome.Full);
+        result.Outcome.Should().Be(ArtifactRangeOutcome.Full);
         result.TotalSize.Should().Be(8);
     }
 
@@ -171,7 +172,7 @@ public sealed class PMTilesProxyServiceTests
         var metadata = (await sut.ResolveAsync(fileId, CancellationToken.None)).Metadata!;
         var result = await sut.ReadRangeAsync(metadata, rangeHeader: null, CancellationToken.None);
 
-        result.Outcome.Should().Be(PMTilesRangeOutcome.TooLarge);
+        result.Outcome.Should().Be(ArtifactRangeOutcome.TooLarge);
         result.TotalSize.Should().Be(PMTilesProxyService.MaxDirectFullStreamBytes + 1);
     }
 
@@ -188,7 +189,7 @@ public sealed class PMTilesProxyServiceTests
         var metadata = (await sut.ResolveAsync(fileId, CancellationToken.None)).Metadata!;
         var result = await sut.ReadRangeAsync(metadata, rangeHeader: null, CancellationToken.None);
 
-        result.Outcome.Should().Be(PMTilesRangeOutcome.Full);
+        result.Outcome.Should().Be(ArtifactRangeOutcome.Full);
         result.TotalSize.Should().Be(PMTilesProxyService.MaxDirectFullStreamBytes);
     }
 
@@ -206,7 +207,7 @@ public sealed class PMTilesProxyServiceTests
         var metadata = (await sut.ResolveAsync(fileId, CancellationToken.None)).Metadata!;
         var result = await sut.ReadRangeAsync(metadata, rangeHeader: "bytes=2-2", CancellationToken.None);
 
-        result.Outcome.Should().Be(PMTilesRangeOutcome.Partial);
+        result.Outcome.Should().Be(ArtifactRangeOutcome.Partial);
         result.Payload.Should().Equal(42);
     }
 
@@ -224,7 +225,7 @@ public sealed class PMTilesProxyServiceTests
         var metadata = (await sut.ResolveAsync(fileId, CancellationToken.None)).Metadata!;
         var result = await sut.ReadRangeAsync(metadata, rangeHeader: "bytes=0-", CancellationToken.None);
 
-        result.Outcome.Should().Be(PMTilesRangeOutcome.TooLarge);
+        result.Outcome.Should().Be(ArtifactRangeOutcome.TooLarge);
         result.TotalSize.Should().Be(PMTilesProxyService.MaxDirectFullStreamBytes + 1);
     }
 
@@ -238,7 +239,7 @@ public sealed class PMTilesProxyServiceTests
         var metadata = (await sut.ResolveAsync(fileId, CancellationToken.None)).Metadata!;
         var result = await sut.ReadRangeAsync(metadata, rangeHeader: "bytes=2-5", CancellationToken.None);
 
-        result.Outcome.Should().Be(PMTilesRangeOutcome.Partial);
+        result.Outcome.Should().Be(ArtifactRangeOutcome.Partial);
         result.Start.Should().Be(2);
         result.End.Should().Be(5);
         result.TotalSize.Should().Be(8);
@@ -255,7 +256,7 @@ public sealed class PMTilesProxyServiceTests
         var metadata = (await sut.ResolveAsync(fileId, CancellationToken.None)).Metadata!;
         var result = await sut.ReadRangeAsync(metadata, rangeHeader: "bytes=20-30", CancellationToken.None);
 
-        result.Outcome.Should().Be(PMTilesRangeOutcome.Unsatisfiable);
+        result.Outcome.Should().Be(ArtifactRangeOutcome.Unsatisfiable);
         result.TotalSize.Should().Be(3);
     }
 
@@ -275,7 +276,7 @@ public sealed class PMTilesProxyServiceTests
 
         var result = await sut.ReadRangeAsync(metadata!, rangeHeader: "bytes=0-3", CancellationToken.None);
 
-        result.Outcome.Should().Be(PMTilesRangeOutcome.NotFound);
+        result.Outcome.Should().Be(ArtifactRangeOutcome.NotFound);
         result.TotalSize.Should().Be(8);
     }
 
@@ -283,7 +284,7 @@ public sealed class PMTilesProxyServiceTests
     public async Task ReadRangeAsync_RangeReader_S3NoSuchKey_ReturnsNotFound()
     {
         // S3 GetObjectAsync throws AmazonS3Exception (NoSuchKey) when the key
-        // is missing. The proxy must normalize that to PMTilesRangeOutcome.NotFound
+        // is missing. The proxy must normalize that to ArtifactRangeOutcome.NotFound
         // so the endpoint returns 404, not let the global exception mapper surface
         // it as 500.
         var stub = new TestCloudStorage();
@@ -305,7 +306,7 @@ public sealed class PMTilesProxyServiceTests
         var metadata = (await sut.ResolveAsync(fileId, CancellationToken.None)).Metadata!;
         var result = await sut.ReadRangeAsync(metadata, "bytes=0-3", CancellationToken.None);
 
-        result.Outcome.Should().Be(PMTilesRangeOutcome.NotFound);
+        result.Outcome.Should().Be(ArtifactRangeOutcome.NotFound);
         result.TotalSize.Should().Be(16);
     }
 
@@ -329,7 +330,7 @@ public sealed class PMTilesProxyServiceTests
         var metadata = (await sut.ResolveAsync(fileId, CancellationToken.None)).Metadata!;
         var result = await sut.ReadRangeAsync(metadata, "bytes=0-3", CancellationToken.None);
 
-        result.Outcome.Should().Be(PMTilesRangeOutcome.NotFound);
+        result.Outcome.Should().Be(ArtifactRangeOutcome.NotFound);
         result.TotalSize.Should().Be(16);
     }
 
@@ -412,7 +413,7 @@ public sealed class PMTilesProxyServiceTests
         var metadata = (await sut.ResolveAsync(fileId, CancellationToken.None)).Metadata!;
         var result = await sut.ReadRangeAsync(metadata, "bytes=0-3", CancellationToken.None);
 
-        result.Outcome.Should().Be(PMTilesRangeOutcome.Partial);
+        result.Outcome.Should().Be(ArtifactRangeOutcome.Partial);
         stubReader.LastBucket.Should().Be("honua-bucket");
         stubReader.LastKey.Should().Be(metadata.StoragePath);
         stubReader.LastOffset.Should().Be(0);
@@ -436,7 +437,7 @@ public sealed class PMTilesProxyServiceTests
         // Metadata lookup, the prefix check (KeyPrefix "/" normalises to empty)
         // and the ETag-conditional S3 read all succeed: none of them is the 404.
         var range = await sut.ReadRangeAsync(metadata, "bytes=0-16383", CancellationToken.None);
-        range.Outcome.Should().Be(PMTilesRangeOutcome.Partial);
+        range.Outcome.Should().Be(ArtifactRangeOutcome.Partial);
 
         var binding = sut.BindSource(await SnapshotAsync(), metadata);
 
@@ -456,7 +457,7 @@ public sealed class PMTilesProxyServiceTests
 
         var range = await sut.ReadRangeAsync(metadata, "bytes=0-16383", CancellationToken.None);
 
-        range.Outcome.Should().Be(PMTilesRangeOutcome.Partial);
+        range.Outcome.Should().Be(ArtifactRangeOutcome.Partial);
         range.Start.Should().Be(0);
         range.End.Should().Be(16383);
         range.TotalSize.Should().Be(7_089_102);
@@ -598,7 +599,7 @@ public sealed class PMTilesProxyServiceTests
                 UploadedAt = DateTimeOffset.UtcNow,
                 Metadata = metadata ?? DefaultPublishMetadata,
                 Provider = provider,
-                ETag = etag
+                ETag = etag ?? Guid.NewGuid().ToString("N")
             }, bytes);
             return fileId;
         }
@@ -623,6 +624,14 @@ public sealed class PMTilesProxyServiceTests
             => Task.FromResult<Stream?>(!_missingBytes.Contains(fileId) && _files.TryGetValue(fileId, out var entry)
                 ? new Honua.TestKit.CallerOwnedMemoryStream(entry.Bytes, writable: false)
                 : null);
+        public Task<Stream?> DownloadIfMatchAsync(string fileId, string expectedETag, CancellationToken cancellationToken = default)
+        {
+            if (_files.TryGetValue(fileId, out var entry) && entry.File.ETag != expectedETag)
+            {
+                throw new CloudFileRevisionChangedException();
+            }
+            return DownloadAsync(fileId, cancellationToken);
+        }
         public Task<byte[]?> DownloadBytesAsync(string fileId, CancellationToken cancellationToken = default)
             => Task.FromResult<byte[]?>(!_missingBytes.Contains(fileId) && _files.TryGetValue(fileId, out var entry) ? entry.Bytes : null);
         public Task<bool> DeleteAsync(string fileId, CancellationToken cancellationToken = default) => Task.FromResult(_files.Remove(fileId));
@@ -652,6 +661,9 @@ public sealed class PMTilesProxyServiceTests
         public CloudStorageProvider Provider { get; }
 
         public Task<byte[]> ReadRangeAsync(string bucket, string key, long offset, int length, CancellationToken cancellationToken = default)
+            => Task.FromException<byte[]>(_exception);
+
+        public Task<byte[]> ReadRangeAsync(string bucket, string key, long offset, int length, string expectedETag, CancellationToken cancellationToken = default)
             => Task.FromException<byte[]>(_exception);
 
         public Task<Stream> ReadRangeStreamAsync(string bucket, string key, long offset, int length, CancellationToken cancellationToken = default)

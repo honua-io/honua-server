@@ -88,6 +88,9 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
         SerializedUploadProgressWriter? progressWriter = null;
         SemaphoreSlim? mutationLock = null;
         var mutationLockHeld = false;
+        string? pendingPath = null;
+        string? unpublishedPath = null;
+        var published = false;
 
         // Store cancellation token for potential cancellation
         UploadCancellationTokens[uploadId] = linkedCancellationSource;
@@ -117,7 +120,13 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
                 storagePath = BuildStoragePath(fileId, request.FileName, request.Folder);
             }
 
+            // Logical keys remain stable; physical generations are never overwritten in place.
+            var extension = Path.GetExtension(storagePath);
+            var generationId = Guid.NewGuid().ToString("N");
+            storagePath = storagePath[..^extension.Length] + ".honua-" + generationId + extension;
             var fullPath = GetSafeFullPath(storagePath);
+            pendingPath = fullPath + ".pending";
+            unpublishedPath = fullPath;
 
             mutationLock = GetMutationLock(fileId);
             await mutationLock.WaitAsync(linkedCancellationSource.Token).ConfigureAwait(false);
@@ -137,6 +146,8 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
                 }
             }
 
+            _fileIndex.TryGetValue(fileId, out var previousGeneration);
+
             // Ensure directory exists
             var directory = Path.GetDirectoryName(fullPath);
             if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
@@ -148,7 +159,7 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
             string? contentHash;
             long sizeBytes;
 
-            await using (var fileStream = new FileStream(fullPath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, true))
+            await using (var fileStream = new FileStream(pendingPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, true))
             {
                 using var hashAlgorithm = SHA256.Create();
                 await using var cryptoStream = new CryptoStream(fileStream, hashAlgorithm, CryptoStreamMode.Write, leaveOpen: true);
@@ -199,13 +210,23 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
                 UploadedAt = uploadedAt,
                 ExpiresAt = expiresAt,
                 ContentHash = contentHash,
-                ETag = uploadId,
+                ETag = generationId,
                 Metadata = request.Metadata.Add("UploadId", uploadId),
                 Provider = CloudStorageProvider.Local
             };
 
+            // Publish a complete generation through one atomic metadata-pointer replacement.
+            // A process interruption before this move retains the previous pointer; after it, restart sees
+            // the new complete bytes. Unreferenced staging remnants are never served.
+            File.Move(pendingPath, fullPath);
+            pendingPath = null;
+            await SaveMetadataAsync(cloudFile, linkedCancellationSource.Token).ConfigureAwait(false);
             _fileIndex[fileId] = cloudFile;
-            await SaveMetadataAsync(cloudFile, cancellationToken);
+            published = true;
+            if (previousGeneration is not null && previousGeneration.StoragePath != storagePath)
+            {
+                TryDeleteGeneration(GetSafeFullPath(previousGeneration.StoragePath), fileId);
+            }
 
             // Report completion
             var completedProgress = new UploadProgress
@@ -289,6 +310,14 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
         }
         finally
         {
+            if (pendingPath is not null)
+            {
+                TryDeleteGeneration(pendingPath, uploadId);
+            }
+            if (!published && unpublishedPath is not null)
+            {
+                TryDeleteGeneration(unpublishedPath, uploadId);
+            }
             if (mutationLockHeld)
             {
                 mutationLock!.Release();
@@ -301,24 +330,58 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
     }
 
     /// <inheritdoc />
-    public override async Task<Stream?> DownloadAsync(string fileId, CancellationToken cancellationToken = default)
+    public override Task<Stream?> DownloadAsync(string fileId, CancellationToken cancellationToken = default)
+        => OpenGenerationAsync(fileId, expectedETag: null, cancellationToken);
+
+    /// <inheritdoc />
+    public override Task<Stream?> DownloadIfMatchAsync(string fileId, string expectedETag, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(expectedETag);
+        return OpenGenerationAsync(fileId, expectedETag, cancellationToken);
+    }
+
+    private async Task<Stream?> OpenGenerationAsync(string fileId, string? expectedETag, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(fileId);
-
-        var cloudFile = await GetMetadataAsync(fileId, cancellationToken);
-        if (cloudFile is null)
+        var mutationLock = GetMutationLock(fileId);
+        await mutationLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            return null;
+            if (!_fileIndex.TryGetValue(fileId, out var cloudFile))
+            {
+                return null;
+            }
+            if (expectedETag is not null && !string.Equals(expectedETag, cloudFile.ETag, StringComparison.Ordinal))
+            {
+                throw new CloudFileRevisionChangedException();
+            }
+            var fullPath = GetSafeFullPath(cloudFile.StoragePath);
+            if (!File.Exists(fullPath))
+            {
+                FileStorageLog.FileMissingOnDisk(Logger, fileId);
+                return null;
+            }
+            // Managed writes publish a new immutable path. Once opened, the OS handle
+            // pins these bytes while allowing other readers and replacement cleanup.
+            return new FileStream(fullPath, FileMode.Open, FileAccess.Read,
+                FileShare.Read | FileShare.Delete, 81920, true);
         }
-
-        var fullPath = GetSafeFullPath(cloudFile.StoragePath);
-        if (!File.Exists(fullPath))
+        finally
         {
-            FileStorageLog.FileMissingOnDisk(Logger, fileId);
-            return null;
+            mutationLock.Release();
         }
+    }
 
-        return new FileStream(fullPath, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, true);
+    private void TryDeleteGeneration(string path, string fileId)
+    {
+        try
+        {
+            File.Delete(path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            FileStorageLog.FileDeleteFailed(Logger, ex, fileId);
+        }
     }
 
     /// <inheritdoc />
@@ -603,8 +666,18 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
     private async Task SaveMetadataAsync(CloudFile cloudFile, CancellationToken cancellationToken)
     {
         var metadataFile = GetMetadataFilePath(cloudFile.FileId);
-        var json = JsonSerializer.Serialize(cloudFile, FileStorageJsonContext.Default.CloudFile);
-        await File.WriteAllTextAsync(metadataFile, json, cancellationToken);
+        var pending = metadataFile + "." + Guid.NewGuid().ToString("N") + ".pending";
+        try
+        {
+            var json = JsonSerializer.Serialize(cloudFile, FileStorageJsonContext.Default.CloudFile);
+            await File.WriteAllTextAsync(pending, json, cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            File.Move(pending, metadataFile, overwrite: true);
+        }
+        finally
+        {
+            TryDeleteGeneration(pending, cloudFile.FileId);
+        }
     }
 
     private string GetMetadataFilePath(string fileId)

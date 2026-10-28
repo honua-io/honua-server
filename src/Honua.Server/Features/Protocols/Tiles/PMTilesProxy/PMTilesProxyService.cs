@@ -1,11 +1,11 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Net.Http.Headers;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Microsoft.Extensions.Options;
+using Honua.Server.Features.Infrastructure.FileStorage;
 
 namespace Honua.Server.Features.Protocols.Tiles.PMTilesProxy;
 
@@ -16,40 +16,14 @@ namespace Honua.Server.Features.Protocols.Tiles.PMTilesProxy;
 /// </summary>
 internal sealed class PMTilesProxyService
 {
-    private const long MaxRangeLength = 64 * 1024 * 1024; // 64 MiB cap per range request
+    internal const long MaxDirectFullStreamBytes = ArtifactByteReader.MaxDirectFullStreamBytes;
 
-    // A no-Range GET falls back to streaming the whole artifact. In a serverless
-    // Lambda-proxy deployment the entire HTTP response has to fit inside a single
-    // synchronous Lambda invocation result, which AWS hard-caps at 6 MB (larger still
-    // once binary bodies are base64-encoded for the Lambda/API Gateway proxy envelope,
-    // ~33% inflation). Above that ceiling the platform doesn't return a clean error: the
-    // Lambda response fails to transmit and API Gateway/CloudFront synthesize an opaque
-    // generic 500 with no correlation id (#2991) even though honua-server itself served
-    // 200 internally. PMTiles browser clients always read archives via byte-range
-    // requests (the header, directories, and tiles are all fetched by range) and never
-    // perform a full-file GET in normal operation, so rejecting an oversized full-file
-    // GET with a fast, bounded, honest error only affects callers that intentionally
-    // want the whole artifact in one response (health checks, curl, wget) — never a
-    // real map client — while keeping small archives' existing no-Range fast path
-    // unchanged. Kept comfortably under the 6 MB Lambda ceiling even after the ~33%
-    // base64 inflation a binary body incurs over that transport.
-    internal const long MaxDirectFullStreamBytes = 4 * 1024 * 1024; // 4 MiB
-
-    // Cap on how many bytes the download fallback may read-and-discard to reach
-    // the range start when the provider stream is not seekable. PMTiles clients
-    // routinely request small ranges at large offsets (directories live at the
-    // archive tail), so without this budget a provider with no ICloudRangeReader
-    // would download an entire multi-GB archive from cloud storage to serve a few
-    // KiB — a bandwidth amplification path on an unauthenticated endpoint. Ranges
-    // beyond the budget are rejected as unsatisfiable instead.
-    private const long MaxDownloadFallbackSkip = 8 * 1024 * 1024; // 8 MiB
     internal const string PMTilesContentType = "application/vnd.pmtiles";
     internal const string OperationMetadataKey = "operation";
     internal const string PublishOperationValue = "publish";
 
     private readonly ICloudFileStorage _cloudStorage;
-    private readonly IEnumerable<ICloudRangeReader> _rangeReaders;
-    private readonly IReadOnlyList<ICloudNotFoundClassifier> _notFoundClassifiers;
+    private readonly ArtifactByteReader _byteReader;
     private readonly CloudStorageOptions _storageOptions;
 
     public PMTilesProxyService(
@@ -59,8 +33,7 @@ internal sealed class PMTilesProxyService
         IOptions<CloudStorageOptions> storageOptions)
     {
         _cloudStorage = cloudStorage ?? throw new ArgumentNullException(nameof(cloudStorage));
-        _rangeReaders = rangeReaders ?? throw new ArgumentNullException(nameof(rangeReaders));
-        _notFoundClassifiers = (notFoundClassifiers ?? throw new ArgumentNullException(nameof(notFoundClassifiers))).ToArray();
+        _byteReader = new ArtifactByteReader(cloudStorage, rangeReaders, notFoundClassifiers, storageOptions);
         _storageOptions = storageOptions?.Value ?? throw new ArgumentNullException(nameof(storageOptions));
     }
 
@@ -157,260 +130,18 @@ internal sealed class PMTilesProxyService
         return value.Trim().Trim('/');
     }
 
-    public async Task<PMTilesRangeResult> ReadRangeAsync(
-        CloudFile metadata,
-        string? rangeHeader,
-        CancellationToken cancellationToken)
-    {
-        ArgumentNullException.ThrowIfNull(metadata);
+    public Task<ArtifactRangeResult> ReadRangeAsync(CloudFile metadata, string? rangeHeader, CancellationToken cancellationToken)
+        => _byteReader.ReadRangeAsync(metadata, rangeHeader, cancellationToken);
 
-        var totalSize = metadata.SizeBytes;
-        if (string.IsNullOrWhiteSpace(rangeHeader))
-        {
-            return totalSize > MaxDirectFullStreamBytes
-                ? PMTilesRangeResult.TooLarge(totalSize)
-                : PMTilesRangeResult.Full(totalSize);
-        }
+    public Task<ArtifactRangeResult> ReadFullAsync(CloudFile metadata, CancellationToken cancellationToken)
+        => _byteReader.ReadFullAsync(metadata, cancellationToken);
 
-        if (!TryParseSingleByteRange(rangeHeader, totalSize, out var start, out var end))
-        {
-            return PMTilesRangeResult.Unsatisfiable(totalSize);
-        }
+    internal static bool TryParseSingleByteRange(string header, long totalSize, out long start, out long end)
+        => ArtifactByteReader.TryParseSingleByteRange(header, totalSize, out start, out end);
 
-        var length = end - start + 1;
-        if (length <= 0 || length > MaxRangeLength)
-        {
-            return PMTilesRangeResult.Unsatisfiable(totalSize);
-        }
-
-        // A Range response crosses the same synchronous serverless payload
-        // boundary as a no-Range response. Reject callers that spell a full
-        // oversized download as "bytes=0-" (and any other oversized range)
-        // before reading the object; normal PMTiles clients request small
-        // header, directory, and tile slices.
-        if (length > MaxDirectFullStreamBytes)
-        {
-            return PMTilesRangeResult.TooLarge(totalSize);
-        }
-
-        var bucket = ResolveBucket(metadata.Provider);
-        var reader = _rangeReaders.FirstOrDefault(r => r.Provider == metadata.Provider);
-        byte[]? payload;
-        if (reader != null && !string.IsNullOrEmpty(bucket))
-        {
-            try
-            {
-                payload = string.IsNullOrWhiteSpace(metadata.ETag)
-                    ? await reader.ReadRangeAsync(bucket, metadata.StoragePath, start, (int)length, cancellationToken).ConfigureAwait(false)
-                    : await reader.ReadRangeAsync(bucket, metadata.StoragePath, start, (int)length, metadata.ETag, cancellationToken).ConfigureAwait(false);
-            }
-            catch (Exception ex) when (ex is NotSupportedException || IsProviderNotFound(ex, _notFoundClassifiers))
-            {
-                // S3 NoSuchKey / Azure 404. Match the download-fallback path
-                // by surfacing a missing underlying object as NotFound so the
-                // endpoint returns 404 instead of letting the global exception
-                // mapper turn the provider exception into a 500.
-                return PMTilesRangeResult.NotFound(totalSize);
-            }
-        }
-        else
-        {
-            var fallback = await ReadRangeViaDownloadAsync(metadata, start, length, cancellationToken).ConfigureAwait(false);
-            if (fallback.SkipBudgetExceeded)
-            {
-                // No range reader is registered for this provider and the object
-                // stream cannot seek to the requested offset within the skip
-                // budget. Reject rather than downloading the whole object.
-                return PMTilesRangeResult.Unsatisfiable(totalSize);
-            }
-
-            payload = fallback.Payload;
-        }
-
-        if (payload is null)
-        {
-            // Underlying object went missing between metadata lookup and range
-            // read (out-of-band delete, lifecycle expiry, etc.). Surface this
-            // as NotFound so the endpoint returns 404 — matching the no-Range
-            // GET fallback that uses OpenFullAsync — instead of a 500.
-            return PMTilesRangeResult.NotFound(totalSize);
-        }
-
-        return PMTilesRangeResult.Partial(start, end, totalSize, payload);
-    }
-
-    /// <summary>
-    /// Fans <paramref name="exception"/> through every registered
-    /// <see cref="ICloudNotFoundClassifier"/> so the proxy can surface a missing
-    /// underlying object as 404 without taking a direct dependency on AWS / Azure
-    /// SDK exception types. Provider-specific classifiers live in Honua.Aws /
-    /// Honua.Azure.
-    /// </summary>
     internal static bool IsProviderNotFound(Exception exception, IReadOnlyList<ICloudNotFoundClassifier> classifiers)
-    {
-        for (var i = 0; i < classifiers.Count; i++)
-        {
-            if (classifiers[i].IsNotFound(exception))
-            {
-                return true;
-            }
-        }
+        => ArtifactByteReader.IsProviderNotFound(exception, classifiers);
 
-        return false;
-    }
-
-    public async Task<Stream?> OpenFullAsync(string artifactId, CancellationToken cancellationToken)
-    {
-        return await _cloudStorage.DownloadAsync(artifactId, cancellationToken).ConfigureAwait(false);
-    }
-
-    public async Task<Stream?> OpenFullAsync(
-        string artifactId,
-        CloudFile authorized,
-        CancellationToken cancellationToken)
-    {
-        ArgumentNullException.ThrowIfNull(authorized);
-        if (!string.IsNullOrWhiteSpace(authorized.ETag))
-        {
-            var current = await ResolveAsync(artifactId, cancellationToken).ConfigureAwait(false);
-            if (!current.Exists ||
-                current.Metadata is null ||
-                !string.Equals(current.Metadata.ETag, authorized.ETag, StringComparison.Ordinal))
-            {
-                return null;
-            }
-        }
-
-        // DownloadAsync is not conditional. A writer can replace the object
-        // after this ETag check and before the download.
-        return await OpenFullAsync(artifactId, cancellationToken).ConfigureAwait(false);
-    }
-
-    private async Task<DownloadFallbackResult> ReadRangeViaDownloadAsync(
-        CloudFile metadata,
-        long start,
-        long length,
-        CancellationToken cancellationToken)
-    {
-        var stream = await _cloudStorage.DownloadAsync(metadata.FileId, cancellationToken).ConfigureAwait(false);
-        if (stream is null)
-        {
-            return DownloadFallbackResult.Missing;
-        }
-
-        await using var _ = stream.ConfigureAwait(false);
-
-        if (stream.CanSeek)
-        {
-            stream.Position = start;
-        }
-        else if (start > MaxDownloadFallbackSkip)
-        {
-            // The range starts beyond the skip budget on a non-seekable stream:
-            // reaching it would download (and discard) the prefix of the whole
-            // object. Bail out before pulling the object body.
-            return DownloadFallbackResult.OverSkipBudget;
-        }
-        else
-        {
-            // Discard up to start
-            var skipBuffer = new byte[Math.Min(start, 81920)];
-            var remainingToSkip = start;
-            while (remainingToSkip > 0)
-            {
-                var requested = (int)Math.Min(skipBuffer.Length, remainingToSkip);
-                var read = await stream.ReadAsync(skipBuffer.AsMemory(0, requested), cancellationToken).ConfigureAwait(false);
-                if (read == 0)
-                {
-                    break;
-                }
-                remainingToSkip -= read;
-            }
-        }
-
-        var payload = new byte[length];
-        var totalRead = 0;
-        while (totalRead < length)
-        {
-            var read = await stream.ReadAsync(payload.AsMemory(totalRead, (int)(length - totalRead)), cancellationToken).ConfigureAwait(false);
-            if (read == 0)
-            {
-                break;
-            }
-            totalRead += read;
-        }
-
-        if (totalRead < length)
-        {
-            Array.Resize(ref payload, totalRead);
-        }
-
-        return DownloadFallbackResult.Read(payload);
-    }
-
-    /// <summary>
-    /// Result of the download-fallback range read: either the materialized payload,
-    /// a missing underlying object (null payload), or a refusal because reaching the
-    /// range start would exceed <see cref="MaxDownloadFallbackSkip"/>.
-    /// </summary>
-    private readonly record struct DownloadFallbackResult(byte[]? Payload, bool SkipBudgetExceeded)
-    {
-        public static DownloadFallbackResult Missing => new(null, false);
-        public static DownloadFallbackResult OverSkipBudget => new(null, true);
-        public static DownloadFallbackResult Read(byte[] payload) => new(payload, false);
-    }
-
-    private string ResolveBucket(CloudStorageProvider provider) => provider switch
-    {
-        CloudStorageProvider.AwsS3 => _storageOptions.AwsS3?.BucketName ?? string.Empty,
-        CloudStorageProvider.AzureBlob => _storageOptions.AzureBlob?.ContainerName ?? string.Empty,
-        _ => string.Empty
-    };
-
-    internal static bool TryParseSingleByteRange(string headerValue, long totalSize, out long start, out long end)
-    {
-        start = 0;
-        end = 0;
-
-        if (!RangeHeaderValue.TryParse(headerValue, out var parsed) ||
-            !string.Equals(parsed.Unit, "bytes", StringComparison.OrdinalIgnoreCase) ||
-            parsed.Ranges.Count != 1)
-        {
-            return false;
-        }
-
-        var range = parsed.Ranges.First();
-        if (range.From.HasValue)
-        {
-            start = range.From.Value;
-            if (start >= totalSize)
-            {
-                return false;
-            }
-
-            end = range.To.HasValue
-                ? Math.Min(range.To.Value, totalSize - 1)
-                : totalSize - 1;
-        }
-        else if (range.To.HasValue)
-        {
-            // Suffix length: bytes=-N
-            var suffix = range.To.Value;
-            if (suffix == 0)
-            {
-                return false;
-            }
-
-            start = Math.Max(0, totalSize - suffix);
-            end = totalSize - 1;
-        }
-        else
-        {
-            return false;
-        }
-
-        return start <= end && end < totalSize;
-    }
 }
 
 internal enum PMTilesSourceBindingKind
@@ -443,55 +174,4 @@ internal readonly record struct PMTilesProxyResolution(bool Exists, CloudFile? M
 {
     public static PMTilesProxyResolution NotFound() => new(false, null);
     public static PMTilesProxyResolution Found(CloudFile metadata) => new(true, metadata);
-}
-
-internal sealed record PMTilesRangeResult
-{
-    public required PMTilesRangeOutcome Outcome { get; init; }
-    public required long TotalSize { get; init; }
-    public long Start { get; init; }
-    public long End { get; init; }
-    public byte[]? Payload { get; init; }
-
-    public static PMTilesRangeResult Full(long totalSize) => new()
-    {
-        Outcome = PMTilesRangeOutcome.Full,
-        TotalSize = totalSize
-    };
-
-    public static PMTilesRangeResult Partial(long start, long end, long totalSize, byte[] payload) => new()
-    {
-        Outcome = PMTilesRangeOutcome.Partial,
-        Start = start,
-        End = end,
-        TotalSize = totalSize,
-        Payload = payload
-    };
-
-    public static PMTilesRangeResult Unsatisfiable(long totalSize) => new()
-    {
-        Outcome = PMTilesRangeOutcome.Unsatisfiable,
-        TotalSize = totalSize
-    };
-
-    public static PMTilesRangeResult NotFound(long totalSize) => new()
-    {
-        Outcome = PMTilesRangeOutcome.NotFound,
-        TotalSize = totalSize
-    };
-
-    public static PMTilesRangeResult TooLarge(long totalSize) => new()
-    {
-        Outcome = PMTilesRangeOutcome.TooLarge,
-        TotalSize = totalSize
-    };
-}
-
-internal enum PMTilesRangeOutcome
-{
-    Full,
-    Partial,
-    Unsatisfiable,
-    NotFound,
-    TooLarge
 }
