@@ -203,7 +203,13 @@ internal static class FlatGeobufFeatureWriter
                     WriteBytes(writer, BinaryValue(value));
                     break;
                 case ColumnType.Json:
-                    var json = value is JsonElement element ? element.GetRawText() : ScalarText(value);
+                    var json = value switch
+                    {
+                        JsonElement element => element.GetRawText(),
+                        string text => string.Concat("\"", JsonEncodedText.Encode(text).ToString(), "\""),
+                        bool boolean => boolean ? "true" : "false",
+                        _ => ScalarText(value)
+                    };
                     using (JsonDocument.Parse(json))
                     {
                         WriteBytes(writer, Encoding.UTF8.GetBytes(json));

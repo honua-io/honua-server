@@ -355,6 +355,48 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
     }
 
     [IntegrationTheory]
+    [InlineData("\"123\"", JsonValueKind.String, "123")]
+    [InlineData("\"escaped \\\"quote\\\"\"", JsonValueKind.String, "escaped \"quote\"")]
+    [InlineData("true", JsonValueKind.True, null)]
+    [InlineData("false", JsonValueKind.False, null)]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithFlatGeobufScalarJson_PreservesJsonType(
+        string sourceJson, JsonValueKind expectedKind, string? expectedString)
+    {
+        _fixture.UpdateV2ResourceSchemaField(WebAppFixture.TestLayerId,
+            new MetadataV2Field { Name = "document", Type = MetadataV2FieldType.Json, Nullable = true });
+        var id = await InsertFlatGeobufProbeAsync($"{{\"document\":{sourceJson}}}");
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?f=fgb&where=objectid%3D{id}&outFields=document");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await ReadFlatGeobufEvidenceAsync(response, "scalar-json");
+        using var stream = new MemoryStream(payload);
+        var header = FlatGeobuf.Helpers.ReadHeader(stream);
+        header.Columns(1)!.Value.Type.Should().Be(FlatGeobuf.ColumnType.Json);
+        if (header.IndexNodeSize > 0)
+        {
+            stream.Position += (long)FlatGeobuf.Index.PackedRTree.CalcSize(header.FeaturesCount, header.IndexNodeSize);
+        }
+        using var reader = new BinaryReader(stream);
+        var packed = FlatGeobuf.Feature.GetRootAsFeature(
+            new Google.FlatBuffers.ByteBuffer(reader.ReadBytes(reader.ReadInt32())));
+        using var properties = new MemoryStream(packed.GetPropertiesArray());
+        using var propertyReader = new BinaryReader(properties);
+        propertyReader.ReadUInt16().Should().Be(0);
+        propertyReader.ReadInt64().Should().Be(id);
+        propertyReader.ReadUInt16().Should().Be(1);
+        var json = Encoding.UTF8.GetString(propertyReader.ReadBytes(propertyReader.ReadInt32()));
+        using var document = JsonDocument.Parse(json);
+        document.RootElement.ValueKind.Should().Be(expectedKind);
+        if (expectedString is not null)
+        {
+            document.RootElement.GetString().Should().Be(expectedString);
+        }
+    }
+
+    [IntegrationTheory]
     [InlineData(null)]
     [InlineData("POINT EMPTY")]
     [Operation(Operations.Query)]
