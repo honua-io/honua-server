@@ -129,13 +129,13 @@ def test_missing_metric_is_not_defaulted_to_zero(field):
     assert signal["thresholdVerdict"]["passed"] is False
 
 
-def test_unfilled_queue_and_sampling_failures_cannot_claim_completion():
+def test_unfilled_ga_dimension_and_sampling_failures_cannot_claim_completion():
     source = observations()
-    source["workloads"][3]["dimensions"]["gpQueueDepth"] = 0
+    source["workloads"][3]["dimensions"]["layersPerService"] = 3
     result, _ = emit(source)
     assert result["status"] == "incomplete"
-    assert result["workloads"]["gpQueueDepth"]["observed"] == 0
-    assert result["workloads"]["gpQueueDepth"]["status"] == "not-exercised"
+    assert result["workloads"]["layersPerService"]["observed"] == 3
+    assert result["workloads"]["layersPerService"]["status"] == "not-exercised"
     source = observations()
     source["samplingFailures"] = ["missed database sample"]
     assert emit(source)[0]["status"] == "incomplete"
@@ -281,7 +281,9 @@ def test_sampler_retains_served_dimensions_and_actual_dependency_measurements(mo
                 document = dict(server=dict(deploymentRevision=REVISION, deploymentEnvironment="Production"),
                                 scope=dict(tenantSource="Default"), capabilities=[])
             elif request.path == "/rest/services":
-                document = dict(services=[dict(name="test")])
+                # The real root also lists built-ins, which are not published services.
+                document = dict(services=[dict(name="test", type="FeatureServer"), dict(name="test", type="GPServer"),
+                                          dict(name="Utilities/PrintingTools", type="GPServer"), dict(name="World", type="GeocodeServer")])
             elif request.path.endswith("/FeatureServer"):
                 document = dict(layers=[dict(id=i) for i in range(4)])
             elif request.path.endswith("/query"):
