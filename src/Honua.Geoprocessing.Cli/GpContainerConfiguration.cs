@@ -24,6 +24,9 @@ internal static partial class GpContainerConfiguration
         {
             // Fresh per-reproduction scratch. Never a path copied from the bundle.
             values["GdalWorker:ScratchRoot"] = scratchRoot;
+            // File sinks and feature-stream spills use OutputRootDirectory. Keep it
+            // under the reproduction scratch so deleting that tree removes them too.
+            values["Geoprocessing:Executors:OutputRootDirectory"] = Path.Join(scratchRoot, "executor-output");
         }
 
         return new ConfigurationBuilder().AddInMemoryCollection(values).Build();

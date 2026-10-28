@@ -161,24 +161,93 @@ public sealed class GpReproduceCommandTests : IDisposable
         stderr.Should().NotContain("was not reproduced");
     }
 
+    [Fact]
+    public async Task RunAsync_Reproduce_ExplicitEmptyInput_IsNotReportedMissing()
+    {
+        var inputs = SuccessInputs();
+        inputs["note"] = "";
+        var bundle = WriteBundle(inputs, errorCode: null);
+
+        var (exit, stdout, stderr) = await InvokeAsync("reproduce", bundle);
+
+        exit.Should().Be(0, stdout + stderr);
+        stderr.Should().NotContain("actual missing");
+        stdout.Should().Contain("outcome : reproduced recorded success");
+    }
+
+    [Fact]
+    public async Task RunAsync_Reproduce_GeoJsonInline_PassesTheDocumentRatherThanBase64()
+    {
+        const string geoJson = """{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[0,0]},"properties":{}}]}""";
+        var inputs = new Dictionary<string, string>(StringComparer.Ordinal) { ["inline"] = geoJson };
+        var mediaTypes = new Dictionary<string, string>(StringComparer.Ordinal) { ["inline"] = "application/geo+json" };
+        var bundle = WriteBundle(inputs, errorCode: null, processId: "source.geojson", mediaTypes: mediaTypes);
+
+        var (exit, stdout, stderr) = await InvokeAsync("reproduce", bundle);
+
+        exit.Should().Be(0, stdout + stderr);
+        stdout.Should().Contain("process : source.geojson");
+        stdout.Should().Contain("outcome : reproduced recorded success");
+        stderr.Should().NotContain("Invalid source.geojson");
+    }
+
+    [Fact]
+    public void ToParameter_SourceOgrJsonMediaType_PassesBase64Bytes()
+    {
+        var json = """{"type":"FeatureCollection","features":[]}"""u8.ToArray();
+        var encoded = GpReproduceCommand.ToParameter(
+            "source.ogr",
+            new GpDiagnosticInput { Id = "source", MediaType = "application/json" },
+            json);
+
+        encoded.Should().Be(Convert.ToBase64String(json));
+        encoded.Should().NotBe(Encoding.UTF8.GetString(json));
+    }
+
+    [Fact]
+    public void ToParameter_SourceGeoJsonDataUri_StaysTheRawUri()
+    {
+        const string dataUri = "data:application/geo+json;base64,eyJ0eXBlIjoiRmVhdHVyZUNvbGxlY3Rpb24ifQ==";
+        var encoded = GpReproduceCommand.ToParameter(
+            "source.geojson",
+            new GpDiagnosticInput { Id = "input", MediaType = "application/geo+json" },
+            Encoding.UTF8.GetBytes(dataUri));
+
+        encoded.Should().Be(dataUri);
+    }
+
+    [Fact]
+    public void ToParameter_GeometryBufferWkbText_IsNotReencoded()
+    {
+        var encoded = GpReproduceCommand.ToParameter(
+            "geometry.buffer",
+            new GpDiagnosticInput { Id = "wkb", MediaType = "text/plain" },
+            Encoding.UTF8.GetBytes(PointWkbBase64));
+
+        encoded.Should().Be(PointWkbBase64);
+    }
+
     private string WriteBundle(
         IReadOnlyDictionary<string, string> inputs,
         string? errorCode,
         string? omitId = null,
         string? mismatchId = null,
         string? referenceId = null,
-        string? reference = null)
+        string? reference = null,
+        string processId = "geometry.buffer",
+        Dictionary<string, string>? mediaTypes = null)
     {
         var inputNodes = new JsonArray();
         var included = new JsonArray();
         foreach (var (id, text) in inputs)
         {
             var hash = string.Equals(id, mismatchId, StringComparison.Ordinal) ? WrongHash : Sha(text);
+            var mediaType = mediaTypes is not null && mediaTypes.TryGetValue(id, out var declared) ? declared : "text/plain";
             var input = new JsonObject
             {
                 ["id"] = id,
                 ["role"] = "input",
-                ["mediaType"] = "text/plain",
+                ["mediaType"] = mediaType,
                 ["byteSize"] = Encoding.UTF8.GetByteCount(text),
                 ["sha256"] = hash,
             };
@@ -212,7 +281,7 @@ public sealed class GpReproduceCommandTests : IDisposable
             ["inputDataIncluded"] = included.Count > 0,
             ["dependencies"] = new JsonArray
             {
-                new JsonObject { ["name"] = "geometry.buffer" },
+                new JsonObject { ["name"] = processId },
             },
             ["artifactsState"] = "none",
             ["inputs"] = inputNodes,

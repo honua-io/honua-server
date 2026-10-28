@@ -4,6 +4,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
+using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Geoprocessing.Diagnostics;
 using Honua.Geoprocessing.LocalRunner;
 using Honua.Geoprocessing.Release;
@@ -21,6 +22,9 @@ namespace Honua.Geoprocessing.Cli;
 internal static partial class GpReproduceCommand
 {
     private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
+
+    /// <summary>Catalog used to bind exported bytes the way each executor reads them.</summary>
+    private static readonly BuiltInProcessCatalog ProcessCatalog = new(logger: null);
 
     private static readonly HashSet<string> AbsentArtifactAvailability = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -118,7 +122,7 @@ internal static partial class GpReproduceCommand
         var parameters = new Dictionary<string, string>(payloads.Count, StringComparer.Ordinal);
         foreach (var input in evidence.Inputs)
         {
-            parameters[input.Id] = ToParameter(input, payloads[input.Id]);
+            parameters[input.Id] = ToParameter(processId, input, payloads[input.Id]);
             if (ContainsCredential(Encoding.UTF8.GetBytes(parameters[input.Id])))
             {
                 RefuseCredentials(error);
@@ -276,7 +280,8 @@ internal static partial class GpReproduceCommand
         {
             var item = included.FirstOrDefault(candidate => string.Equals(candidate.Id, input.Id, StringComparison.Ordinal));
             var expected = NormalizeDigest(input.Sha256) ?? (item is null ? null : NormalizeDigest(item.Sha256));
-            if (item is null || !item.ContentIncluded || string.IsNullOrEmpty(item.ContentBase64))
+            // "" is valid base64 for a zero-byte input. Only a missing property is a gap.
+            if (item is null || !item.ContentIncluded || item.ContentBase64 is null)
             {
                 problems.Add(Gap("input", input.Id, expected, "missing"));
                 continue;
@@ -496,24 +501,64 @@ internal static partial class GpReproduceCommand
         return Encoding.UTF8.GetBytes(artifact);
     }
 
-    private static string ToParameter(GpDiagnosticInput input, byte[] bytes)
+    /// <summary>
+    /// Turns exported input bytes into the string the executor reads.
+    /// A document or data-URI parameter stays UTF-8 even when the media type is
+    /// <c>application/geo+json</c>. A parameter the executor base64-decodes stays
+    /// base64 even when the media type is <c>application/json</c>. Every other
+    /// parameter follows the media type, so a text/plain WKB value is not re-encoded.
+    /// </summary>
+    internal static string ToParameter(string processId, GpDiagnosticInput input, byte[] bytes)
+    {
+        var parameter = ProcessCatalog.GetProcess(processId)?.Parameters
+            .FirstOrDefault(candidate => string.Equals(candidate.Name, input.Id, StringComparison.Ordinal));
+        if (parameter is not null && IsDocumentParameter(parameter))
+        {
+            return DecodeTextOrBase64(bytes);
+        }
+
+        if (parameter is not null && IsBase64Payload(parameter))
+        {
+            return Convert.ToBase64String(bytes);
+        }
+
+        return FromMediaType(input, bytes);
+    }
+
+    private static bool IsDocumentParameter(ProcessParameterSpec parameter)
+        => parameter.AcceptsGeoJsonDataUri
+            || string.Equals(parameter.Name, "inline", StringComparison.Ordinal);
+
+    private static bool IsBase64Payload(ProcessParameterSpec parameter)
+        => parameter.ValueType == ProcessParameterValueType.Text
+            && (parameter.AcceptsRasterSource
+                || (parameter.Description.Contains("base64-encoded", StringComparison.Ordinal)
+                    && !parameter.Description.Contains("data:", StringComparison.Ordinal)));
+
+    private static string FromMediaType(GpDiagnosticInput input, byte[] bytes)
     {
         var text = input.MediaType is null
             || input.MediaType.StartsWith("text/", StringComparison.OrdinalIgnoreCase)
             || string.Equals(input.MediaType, "application/json", StringComparison.OrdinalIgnoreCase);
-        if (text)
+        if (!text)
         {
-            try
-            {
-                return StrictUtf8.GetString(bytes);
-            }
-            catch (DecoderFallbackException)
-            {
-                // Binary payload declared as text: pass the base64 the executors expect for WKB.
-            }
+            return Convert.ToBase64String(bytes);
         }
 
-        return Convert.ToBase64String(bytes);
+        return DecodeTextOrBase64(bytes);
+    }
+
+    private static string DecodeTextOrBase64(byte[] bytes)
+    {
+        try
+        {
+            return StrictUtf8.GetString(bytes);
+        }
+        catch (DecoderFallbackException)
+        {
+            // Binary payload declared as text: pass the base64 the executors expect for WKB.
+            return Convert.ToBase64String(bytes);
+        }
     }
 
     private static bool TryResolveProcess(
