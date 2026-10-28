@@ -32,7 +32,7 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
     public Task InitializeAsync()
     {
         var graph = _fixture.GetCurrentV2GraphSnapshot().Graph;
-        var publication = graph.Publications.Single(p => p.LayerIndex == WebAppFixture.TestLayerId);
+        var publication = graph.Publications.First(p => p.LayerIndex == WebAppFixture.TestLayerId);
         _originalSchemaFields = graph.Resources.Single(r => r.Metadata.Id == publication.ResourceId).SchemaFields.ToArray();
         return Task.CompletedTask;
     }
