@@ -2295,6 +2295,12 @@
       "path": "/zarr-stores/{id}"
     },
     {
+      "operationId": "updateAdminApiKeyRestrictions",
+      "catalogOperationId": "admin.api-key.update-restrictions",
+      "method": "PATCH",
+      "path": "/api-keys/{id}/restrictions"
+    },
+    {
       "operationId": "updateAdminLayerFields",
       "catalogOperationId": "admin.layer.fields.set",
       "method": "PUT",

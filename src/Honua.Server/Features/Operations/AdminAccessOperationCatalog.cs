@@ -33,6 +33,7 @@ internal static class AdminAccessOperationCatalog
         Write("admin.api-key.create", "Create Admin API key", HttpMethod.Post, "/api-keys", "createAdminApiKey"),
         Write("admin.api-key.rotate", "Rotate Admin API key", HttpMethod.Post, "/api-keys/{id}/rotate", "rotateAdminApiKey"),
         Write("admin.api-key.revoke", "Revoke Admin API key", HttpMethod.Post, "/api-keys/{id}/revoke", "revokeAdminApiKey", OperationSideEffectClass.DestroysState),
+        Write("admin.api-key.update-restrictions", "Update Admin API key restrictions", HttpMethod.Patch, "/api-keys/{id}/restrictions", "updateAdminApiKeyRestrictions"),
         Read("admin.api-key.effective-permissions", "Get Admin API key effective permissions", "/api-keys/{id}/effective-permissions", "getAdminApiKeyEffectivePermissions"),
 
         Read("admin.role.list", "List roles", "/roles", "listRoles"),

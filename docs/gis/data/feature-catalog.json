@@ -1436,6 +1436,7 @@
         "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.GenuinelyScopedApiKey_IsDeniedAdminEndpoint",
         "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.InternalReplayCredential_CannotBeDiscoveredOrReissuedThroughKeyManagement",
         "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.ReadOnlyScopedKey_CanReadAdminSurface",
+        "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.UpdateRestrictions_ReplacesListsWithoutReturningOrChangingTheSecret",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ApproveScopedKey_CanReadAndApproveButCannotMutateOtherAdminSurfaces",
         "Honua.Server.Tests.Features.Admin.RedisAdminApiKeyEndpointsTests.Expiry_WithRedisRegistry_DeniesCredentialAndRetainsMetadata",
         "Honua.Server.Tests.Features.Admin.RedisAdminApiKeyEndpointsTests.LegacyRedisRecord_PreservesCompareAndSetAndExpiry",
@@ -15251,6 +15252,20 @@
       "capability": "serve.3d-tiles-scene"
     },
     {
+      "id": "patch-api-v1-admin-api-keys-id-restrictions",
+      "route": "/api/v1/admin/api-keys/{id}/restrictions",
+      "method": "PATCH",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.UpdateRestrictions_ReplacesListsWithoutReturningOrChangingTheSecret"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
+    },
+    {
       "id": "patch-api-v1-admin-config",
       "route": "/api/v1/admin/config",
       "method": "PATCH",
@@ -16059,6 +16074,7 @@
         "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.OperationalWriteKey_CannotManageCredentials",
         "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.ReadOnlyScopedKey_CannotPerformMutatingAdminOperations",
         "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.RotateApiKey_AfterExpiry_IsRejectedRatherThanIssuingUnusableMaterial",
+        "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.UpdateRestrictions_ReplacesListsWithoutReturningOrChangingTheSecret",
         "Honua.Server.Tests.Features.Admin.PostgresAdminApiKeyStoreTests.ExpiredKey_IsRejected_AndPermissionsDefaultToAdminWildcard",
         "Honua.Server.Tests.Features.Admin.PostgresAdminApiKeyStoreTests.KeyMintedOnOneInstance_AuthenticatesOnAnother_AndRevocationAndRotationApplyEverywhere",
         "Honua.Server.Tests.Features.Admin.PostgresAdminApiKeyStoreTests.Restrictions_RoundTripAcrossInstances_AndSurviveRotation",
@@ -20874,8 +20890,10 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceAdvancedOperationsTests.Length_GeodesicCalculationType_UsesGeodeticMeasurement",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceAdvancedOperationsTests.Length_GeographicInput_ReturnsMeters",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceAdvancedOperationsTests.Length_GroundAt60N_MatchesSpheroid",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceAdvancedOperationsTests.Length_InvalidCalculationType_ReturnsStandardGeoServicesError",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceAdvancedOperationsTests.Length_MissingSpatialReference_Returns400",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceAdvancedOperationsTests.Length_PlanarAt60N_MatchesEquatorialEsriScale",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceAdvancedOperationsTests.Length_PostValidRequest_ReturnsLengthValues"
       ],
       "proof_ledger_surface": "geometry-service",

@@ -31,6 +31,7 @@ public static partial class EndpointRegistry
         new("POST", "/api/v1/admin/api-keys"),
         new("POST", "/api/v1/admin/api-keys/{id}/rotate"),
         new("POST", "/api/v1/admin/api-keys/{id}/revoke"),
+        new("PATCH", "/api/v1/admin/api-keys/{id}/restrictions"),
         new("GET", "/api/v1/admin/api-keys/{id}/effective-permissions"),
 
         // Embed governance: keys, scoping, policy, analytics, usage (#1191).
