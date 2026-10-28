@@ -14243,7 +14243,7 @@
         "check": "inventory-classification"
       },
       "fence": 2,
-      "line": 134,
+      "line": 135,
       "language": "json"
     },
     {
@@ -14256,7 +14256,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 88,
+      "line": 89,
       "language": "json"
     },
     {

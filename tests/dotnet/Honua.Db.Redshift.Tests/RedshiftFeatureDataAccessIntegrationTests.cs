@@ -1,7 +1,13 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Collections.Immutable;
+using System.Globalization;
+using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Db.Redshift.Features.FeatureStore;
 using Honua.Db.Redshift.Features.FeatureStore.Services;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -33,6 +39,7 @@ public sealed class RedshiftFeatureDataAccessIntegrationTests : IAsyncLifetime
 
     private PostgreSqlContainer _container = null!;
     private RedshiftFeatureDataAccess _dataAccess = null!;
+    private RedshiftFeatureStore _store = null!;
     private RedshiftLayerMapping _mapping = null!;
     private static readonly string[] _attributes = ["name", "area", "type"];
 
@@ -96,6 +103,7 @@ public sealed class RedshiftFeatureDataAccessIntegrationTests : IAsyncLifetime
         var options = Options.Create(new RedshiftOptions { ConnectionString = connectionString });
         var factory = new RedshiftConnectionFactory(options);
         _dataAccess = new RedshiftFeatureDataAccess(factory, options, NullLogger<RedshiftFeatureDataAccess>.Instance);
+        _store = new RedshiftFeatureStore(_dataAccess);
 
         _mapping = new RedshiftLayerMapping
         {
@@ -154,6 +162,153 @@ public sealed class RedshiftFeatureDataAccessIntegrationTests : IAsyncLifetime
             _mapping, RedshiftFeatureQueryBuilder.BuildCountQuery(_mapping, query), dataConnection: null, CancellationToken.None);
 
         Assert.True(count is > 0 and < 10);
+    }
+
+    [RequiredEnvironmentFact(TestRedshiftEnvVar, "1", skipReason: "stand-in-not-enabled:HONUA_TEST_REDSHIFT")]
+    public async Task QueryStatistics_HavingOrderByLimitAndOffset_ReturnsThePagedGroup()
+    {
+        if (_store is null || _container is null)
+        {
+            throw new InvalidOperationException(
+                "Redshift stand-in did not start. This test must execute the statistics query, not pass without a database.");
+        }
+
+        var reader = _store.CreateReaderForBinding(CreateStatisticsBinding(_store));
+        var grouped = new FeatureQuery
+        {
+            OutStatistics = ImmutableArray.Create(
+                new StatisticDefinition
+                {
+                    StatisticType = StatisticType.Count,
+                    OnStatisticField = "id",
+                    OutStatisticFieldName = "n"
+                },
+                new StatisticDefinition
+                {
+                    StatisticType = StatisticType.Sum,
+                    OnStatisticField = "area",
+                    OutStatisticFieldName = "area_sum"
+                }),
+            GroupByFields = ImmutableArray.Create("type")
+        };
+
+        var havingRows = await reader.QueryStatisticsAsync(1, grouped with
+        {
+            Having = ImmutableArray.Create(new HavingCondition
+            {
+                StatisticType = StatisticType.Sum,
+                OnStatisticField = "area",
+                Operator = HavingComparisonOperator.GreaterThan,
+                Value = 2600
+            })
+        });
+
+        // Odds are commercial (sum 2512.5); evens are residential (sum 3015). The threshold
+        // keeps only residential. Two rows would mean HAVING never reached the database.
+        Assert.Single(havingRows);
+        Assert.Equal("residential", havingRows[0]["type"]);
+        Assert.Equal(5L, Convert.ToInt64(havingRows[0]["n"], CultureInfo.InvariantCulture));
+        Assert.Equal(3015d, Convert.ToDouble(havingRows[0]["area_sum"], CultureInfo.InvariantCulture));
+
+        var pagedRows = await reader.QueryStatisticsAsync(1, grouped with
+        {
+            OrderBy = ImmutableArray.Create(new OrderByClause("type", ascending: true)),
+            Limit = 1,
+            Offset = 1
+        });
+
+        // type ASC is commercial then residential. OFFSET 1 LIMIT 1 is the second group.
+        Assert.Single(pagedRows);
+        Assert.Equal("residential", pagedRows[0]["type"]);
+        Assert.Equal(5L, Convert.ToInt64(pagedRows[0]["n"], CultureInfo.InvariantCulture));
+    }
+
+    private static FeatureProviderBinding CreateStatisticsBinding(RedshiftFeatureStore provider)
+    {
+        var connectionId = Guid.NewGuid();
+        var service = new MetadataV2Service
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "svc-parcels", Name = "Parcels" },
+            SpatialReference = MetadataV2SpatialReference.Wgs84
+        };
+        var resource = new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "res-parcels", Name = "Parcels" },
+            Type = MetadataV2ResourceType.FeatureDataset,
+            StorageBindingIds = ["binding-parcels"],
+            SchemaFields =
+            [
+                new MetadataV2Field
+                {
+                    Name = "id",
+                    Type = MetadataV2FieldType.BigInteger,
+                    Nullable = false,
+                    SemanticRoles = ["id.primary"]
+                },
+                new MetadataV2Field
+                {
+                    Name = "geom",
+                    Type = MetadataV2FieldType.Geometry,
+                    Nullable = false,
+                    SemanticRoles = ["geometry.primary"]
+                },
+                new MetadataV2Field { Name = "type", Type = MetadataV2FieldType.String },
+                new MetadataV2Field { Name = "area", Type = MetadataV2FieldType.Double }
+            ],
+            Spatial = new MetadataV2ResourceSpatial
+            {
+                SpatialReference = MetadataV2SpatialReference.Wgs84,
+                GeometryType = MetadataV2GeometryType.Point,
+                PrimaryGeometryField = "geom"
+            }
+        };
+        var storageBinding = new MetadataV2StorageBinding
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "binding-parcels", Name = "binding-parcels" },
+            ResourceId = resource.Metadata.Id,
+            ConnectionId = connectionId.ToString(),
+            StorageType = MetadataV2StorageType.RelationalTable,
+            Locator = "public.parcels",
+            StorageLayerId = 1
+        };
+        var publication = new MetadataV2Publication
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "pub-parcels", Name = "Parcels" },
+            ServiceId = service.Metadata.Id,
+            ResourceId = resource.Metadata.Id,
+            StorageBindingId = storageBinding.Metadata.Id,
+            Identifier = new MetadataV2PublicationIdentifier { Value = "1", IsNumeric = true }
+        };
+        var graph = new MetadataV2Graph
+        {
+            Revision = 1,
+            Environment = "test",
+            Resources = [resource],
+            Connections =
+            [
+                new MetadataV2Connection
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = connectionId.ToString(), Name = "stand-in" },
+                    Provider = DataProviderNames.Redshift
+                }
+            ],
+            StorageBindings = [storageBinding],
+            Services = [service],
+            Publications = [publication]
+        };
+        var snapshot = new MetadataV2GraphSnapshot(graph, "test", DateTimeOffset.UtcNow);
+        var resolvedBinding = snapshot.ResolveStorageBinding(publication)
+            ?? throw new InvalidOperationException("Test snapshot did not include a storage binding.");
+
+        return new FeatureProviderBinding(
+            service,
+            resource,
+            publication,
+            resolvedBinding,
+            FeatureStorageMapping.FromMetadata(resource, resolvedBinding),
+            1,
+            provider,
+            Connection: null);
     }
 }
 

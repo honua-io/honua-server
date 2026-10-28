@@ -171,6 +171,36 @@ internal sealed class SnowflakeFeatureDataAccess
         }
     }
 
+    public async Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> ExecuteStatisticsAsync(
+        SnowflakeLayerMapping mapping,
+        ParameterizedQuery query,
+        DataConnection? dataConnection,
+        CancellationToken cancellationToken)
+    {
+        using var activity = _activitySource.StartActivity("snowflake.feature.statistics");
+        activity?.SetTag("db.system", "snowflake");
+        activity?.SetTag("layer.id", mapping.LayerId);
+
+        try
+        {
+            await using var connection = await _connectionFactory.OpenAsync(dataConnection, cancellationToken).ConfigureAwait(false);
+            await using var command = CreateCommand(connection, query);
+            var rows = await ReadStatisticRowsAsync(command, cancellationToken).ConfigureAwait(false);
+            activity?.SetStatus(ActivityStatusCode.Ok);
+            return rows;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is DbException or TimeoutException)
+        {
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            SnowflakeFeatureLog.QueryFailed(_logger, "statistics", mapping.LayerId, ex);
+            throw WrapException(mapping.LayerId, "statistics", ex);
+        }
+    }
+
     public async Task<ImmutableArray<long>> ExecuteObjectIdsAsync(
         SnowflakeLayerMapping mapping,
         ParameterizedQuery query,
@@ -223,6 +253,26 @@ internal sealed class SnowflakeFeatureDataAccess
             string hex => Convert.FromHexString(hex),
             _ => (byte[])value
         };
+    }
+
+    private static async Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> ReadStatisticRowsAsync(
+        DbCommand command,
+        CancellationToken cancellationToken)
+    {
+        var rows = ImmutableArray.CreateBuilder<IReadOnlyDictionary<string, object?>>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var row = ImmutableDictionary.CreateBuilder<string, object?>(StringComparer.OrdinalIgnoreCase);
+            for (var i = 0; i < reader.FieldCount; i++)
+            {
+                row[reader.GetName(i)] = reader.IsDBNull(i) ? null : reader.GetValue(i);
+            }
+
+            rows.Add(row.ToImmutable());
+        }
+
+        return rows.ToImmutable();
     }
 
     private static Exception WrapException(int layerId, string operationType, Exception ex)
