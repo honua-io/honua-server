@@ -397,6 +397,62 @@
         }
       }
     },
+    "/api-keys/{id}/restrictions": {
+      "patch": {
+        "tags": [
+          "API Keys"
+        ],
+        "summary": "Update Admin API Key Restrictions",
+        "description": "Replaces the referrer and IP restrictions on an existing server-managed API key. Each list replaces that restriction entirely; null or empty removes it. The key secret is unchanged and is not returned. Requires the same full-admin credential authority as create, rotate and revoke.",
+        "operationId": "updateAdminApiKeyRestrictions",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "API key identifier.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAdminApiKeyRestrictionsRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "API key restrictions replaced. The response contains key metadata only.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAdminApiKeyResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
     "/api-keys/{id}/effective-permissions": {
       "get": {
         "tags": [
@@ -25642,6 +25698,34 @@
             "nullable": true,
             "maxItems": 50,
             "description": "Optional client IP allow-list. When set, a request using the key is accepted only from an address inside one of the ranges, as resolved behind the configured trusted proxies (ForwardedHeaders:KnownProxies). Entries are CIDR ranges or single addresses; a CIDR with bits set past its prefix is rejected.",
+            "items": {
+              "type": "string",
+              "maxLength": 255,
+              "description": "CIDR range or address, e.g. `203.0.113.0/24`, `2001:db8::/32`."
+            }
+          }
+        }
+      },
+      "UpdateAdminApiKeyRestrictionsRequest": {
+        "type": "object",
+        "description": "Replacement restrictions. Null or empty lists remove that restriction. Does not accept or return key material.",
+        "properties": {
+          "allowedReferrers": {
+            "type": "array",
+            "nullable": true,
+            "maxItems": 50,
+            "description": "Origin allow-list that replaces the current referrer restriction. Null or empty removes it.",
+            "items": {
+              "type": "string",
+              "maxLength": 255,
+              "description": "Origin pattern, e.g. `https://app.example.com` or `https://*.example.com`."
+            }
+          },
+          "allowedIpRanges": {
+            "type": "array",
+            "nullable": true,
+            "maxItems": 50,
+            "description": "CIDR allow-list that replaces the current IP restriction. Null or empty removes it.",
             "items": {
               "type": "string",
               "maxLength": 255,

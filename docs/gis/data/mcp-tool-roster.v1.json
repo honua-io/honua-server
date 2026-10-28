@@ -1,8 +1,8 @@
 {
   "$schema": "./mcp-tool-roster.v1.schema.json",
   "schemaVersion": 1,
-  "serverSha": "b6c47e73daef63aa6099bc160b0abd4ef0231259",
-  "generatedAt": "2026-10-26T18:53:37Z",
+  "serverSha": "b5ccc9854428f1aaaae77bb2359b8d83a28d8816",
+  "generatedAt": "2026-10-27T13:12:13Z",
   "regenerate": "bash scripts/generate-mcp-tool-roster.sh",
   "static": [
     "honua_alert_events",
@@ -73,6 +73,7 @@
     "honua_admin_api_key_effective_permissions",
     "honua_admin_api_key_list",
     "honua_admin_api_key_revoke",
+    "honua_admin_api_key_update_restrictions",
     "honua_admin_connections_create",
     "honua_admin_connections_test",
     "honua_admin_field_mask_policy_create",

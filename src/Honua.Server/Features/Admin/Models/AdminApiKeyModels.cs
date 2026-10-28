@@ -53,6 +53,26 @@ public sealed class CreateAdminApiKeyRequest
 }
 
 /// <summary>
+/// Replacement referrer and IP restrictions for an existing admin API key.
+/// </summary>
+/// <remarks>
+/// Each list replaces that restriction entirely. Null or empty removes it. The key secret
+/// is not part of this request and is not returned.
+/// </remarks>
+public sealed class UpdateAdminApiKeyRestrictionsRequest
+{
+    /// <summary>
+    /// Origin allow-list that replaces the key's current referrer restriction.
+    /// </summary>
+    public IReadOnlyList<string>? AllowedReferrers { get; init; }
+
+    /// <summary>
+    /// CIDR allow-list that replaces the key's current IP restriction.
+    /// </summary>
+    public IReadOnlyList<string>? AllowedIpRanges { get; init; }
+}
+
+/// <summary>
 /// Metadata for an admin API key without plaintext key material.
 /// </summary>
 public sealed class AdminApiKeyResponse
