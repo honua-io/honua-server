@@ -120,6 +120,59 @@ public sealed class GeoParquetActiveCoverageTests
     }
 
     [UnitTheory]
+    [InlineData("independent-v1.0.parquet", 4326, null)]
+    [InlineData("independent-epoch-v1.1.parquet", 7912, 2021.25)]
+    public async Task GeoParquetPyArrowInput_DirectReaderAndPreviewAgree(
+        string fileName, int expectedSrid, double? expectedEpoch)
+    {
+        var path = Path.Combine(AppContext.BaseDirectory, "TestData", "GeoParquet", fileName);
+        await using var metadataStream = File.OpenRead(path);
+        var metadata = await GeoParquetReader.ExtractMetadataAsync(metadataStream, CancellationToken.None);
+        metadata.Srid.Should().Be(expectedSrid);
+        metadata.CoordinateEpoch.Should().Be(expectedEpoch);
+
+        await using var readerStream = File.OpenRead(path);
+        var features = new List<NetTopologySuite.Features.IFeature>();
+        await foreach (var item in GeoParquetReader.ReadStreamingAsync(
+            readerStream, new ImportLimits(), CancellationToken.None))
+        {
+            features.Add(item);
+        }
+        var feature = features.Should().ContainSingle().Subject;
+        feature.Geometry.Coordinate.X.Should().BeApproximately(
+            expectedSrid == 7912 ? 10d : -122.4194d, 1e-9);
+        feature.Geometry.Coordinate.Y.Should().BeApproximately(
+            expectedSrid == 7912 ? 20d : 37.7749d, 1e-9);
+        feature.Attributes["name"].Should().Be("PyArrow control");
+
+        await using var previewStream = File.OpenRead(path);
+        var preview = await PreviewImportServiceFactory.Create().PreviewFileAsync(previewStream, fileName);
+        preview.TotalFeatureCount.Should().Be(1);
+        preview.DetectedSrid.Should().Be(expectedSrid);
+        preview.SampleProperties["name"].Should().Be("PyArrow control");
+    }
+
+    [UnitTheory]
+    [InlineData("null")]
+    [InlineData("\"2021.25\"")]
+    [InlineData("true")]
+    [InlineData("1e309")]
+    public async Task ExtractMetadataAsync_GeoParquetInvalidEpoch_RejectsBeforeReadingRows(string epochJson)
+    {
+        using var value = JsonDocument.Parse(epochJson);
+        await using var stream = await CreateEdgesStreamAsync("planar", mutateMetadata: metadata =>
+        {
+            var columns = (Dictionary<string, object?>)metadata["columns"]!;
+            var column = (Dictionary<string, object?>)columns["geometry"]!;
+            column["epoch"] = value.RootElement.Clone();
+        });
+
+        var act = () => GeoParquetReader.ExtractMetadataAsync(stream, CancellationToken.None);
+        await act.Should().ThrowAsync<InvalidDataException>()
+            .WithMessage("*epoch*finite decimal-year number*");
+    }
+
+    [UnitTheory]
     [InlineData("version", "missing")]
     [InlineData("version", "invalid")]
     [InlineData("encoding", "missing")]

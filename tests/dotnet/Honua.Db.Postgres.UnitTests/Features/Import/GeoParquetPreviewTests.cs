@@ -192,19 +192,19 @@ public sealed class GeoParquetPreviewTests
     }
 
     [UnitTest]
-    public async Task PreviewFileAsync_GeoParquet_NullGeometryRow_ExcludedFromSamples()
+    public async Task PreviewFileAsync_GeoParquet_NullGeometryRow_RetainsIdAndAttributesInSample()
     {
-        // Row 1 has geometry, Row 2 has null geometry
-        await using var stream = await GeoParquetTestFactory.CreateStreamAsync(includeNullGeometryRow: true);
+        // Put the null-geometry row first so the preview's single property sample must contain it.
+        await using var stream = await GeoParquetTestFactory.CreateStreamAsync(
+            includeNullGeometryRow: true, nullGeometryFirst: true);
         var service = CreateService();
 
         var preview = await service.PreviewFileAsync(stream, "null_geom.parquet");
 
         preview.Format.Should().Be(SupportedFileFormat.GeoParquet);
-        // TotalFeatureCount comes from Parquet footer metadata (all rows)
         preview.TotalFeatureCount.Should().Be(2);
-        // Preview samples exclude null-geometry rows
-        preview.SampleProperties.Should().ContainKey("name");
+        preview.SampleProperties["objectid"].Should().Be(2L);
+        preview.SampleProperties["name"].Should().Be("No Geometry");
     }
 
     [UnitTest]
