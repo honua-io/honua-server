@@ -416,12 +416,15 @@ public sealed class GeoParquetActiveCoverageTests
             new Apache.Arrow.Field("time", timeType, false)
         };
         var structureType = new Apache.Arrow.Types.StructType(fields);
-        var raw = new Apache.Arrow.ArrowBuffer.Builder<long>().Append(123456789L).Build();
-        using var timestamp = new Apache.Arrow.TimestampArray(timestampType, raw, Apache.Arrow.ArrowBuffer.Empty, 1, 0, 0);
-        using var time = new Apache.Arrow.Time64Array(timeType, raw, Apache.Arrow.ArrowBuffer.Empty, 1, 0, 0);
-        using var structure = new Apache.Arrow.StructArray(structureType, 1,
+        // Arrow C export transfers each buffer allocation exactly once. The two raw values must
+        // own separate buffers even though their bytes are equal; exported arrays become invalid.
+        var timestampBuffer = new Apache.Arrow.ArrowBuffer.Builder<long>().Append(123456789L).Build();
+        var timeBuffer = new Apache.Arrow.ArrowBuffer.Builder<long>().Append(123456789L).Build();
+        var timestamp = new Apache.Arrow.TimestampArray(timestampType, timestampBuffer, Apache.Arrow.ArrowBuffer.Empty, 1, 0, 0);
+        var time = new Apache.Arrow.Time64Array(timeType, timeBuffer, Apache.Arrow.ArrowBuffer.Empty, 1, 0, 0);
+        var structure = new Apache.Arrow.StructArray(structureType, 1,
             new Apache.Arrow.IArrowArray[] { timestamp, time }, Apache.Arrow.ArrowBuffer.Empty);
-        using var geometry = new Apache.Arrow.BinaryArray.Builder()
+        var geometry = new Apache.Arrow.BinaryArray.Builder()
             .Append(new WKBWriter().Write(new NetTopologySuite.Geometries.Point(1, 2))).Build();
         var schema = new Apache.Arrow.Schema.Builder()
             .Field(new Apache.Arrow.Field("geometry", Apache.Arrow.Types.BinaryType.Default, false))
@@ -431,11 +434,22 @@ public sealed class GeoParquetActiveCoverageTests
                 ["geo"] = "{\"version\":\"1.1.0\",\"primary_column\":\"geometry\",\"columns\":{\"geometry\":{\"encoding\":\"WKB\",\"geometry_types\":[\"Point\"]}}}"
             }).Build();
         await using var stream = new MemoryStream();
-        using (var batch = new Apache.Arrow.RecordBatch(schema, new Apache.Arrow.IArrowArray[] { geometry, structure }, 1))
-        using (var writer = new ParquetSharp.Arrow.FileWriter(stream, schema, leaveOpen: true))
+        var batch = new Apache.Arrow.RecordBatch(schema, new Apache.Arrow.IArrowArray[] { geometry, structure }, 1);
+        var exportAttempted = false;
+        try
         {
+            using var writer = new ParquetSharp.Arrow.FileWriter(stream, schema, leaveOpen: true);
+            // Export invalidates the batch even when it fails; only dispose before an attempt.
+            exportAttempted = true;
             writer.WriteRecordBatch(batch);
             writer.Close();
+        }
+        finally
+        {
+            if (!exportAttempted)
+            {
+                batch.Dispose();
+            }
         }
         stream.Position = 0;
         var rows = new List<NetTopologySuite.Features.IFeature>();
