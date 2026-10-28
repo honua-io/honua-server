@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:88ad0fa5a829057203ac81a07c0da9c4f17369b4ec42ed647a4f16b9f6d082ff",
+  "bundleDigest": "sha256:22eb70db13137b3f7ebefd0fa58a131634dedf513327b08d1972b58b05625d22",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -2410,7 +2410,7 @@
     {
       "id": "guides/publish/import-files",
       "path": "guides/publish/import-files.md",
-      "documentDigest": "sha256:a7b636daf307c62a7ba602dffb8fea8ce46c5073d5e9bcff488be37e422a3af2",
+      "documentDigest": "sha256:6a334a6d158c8c5967f554fa0c255c9995d9cd2a48eb9e07e7e80654d7e1f8a2",
       "metadata": {
         "type": "guide",
         "title": "Import data from files",
