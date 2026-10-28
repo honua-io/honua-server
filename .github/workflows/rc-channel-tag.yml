@@ -5,16 +5,20 @@ name: Release candidate channel tag
 # mint runs in honua-release and cannot write this package, so this workflow, owned by the
 # package's repository, moves the tag.
 #
-# It takes only a lock label. The image comes from the signed lock itself: the
-# nightly-lock/<label> tag in honua-release, whose platform-lock.json must verify with cosign as
-# honua-release's nightly-certification.yml on trunk. Nothing else moves; :2026.1, :stable and the
-# other public channels stay promotion-owned.
+# It takes only a label, and the image comes from the release record itself:
+# - a minted nightly lock: the nightly-lock/<label> tag in honua-release, whose platform-lock.json
+#   must verify with cosign as honua-release's nightly-certification.yml on trunk; or, when no lock
+#   exists for the label,
+# - the rc-release pre-release <label> (rolling gate-window admission, release#376 amendment
+#   2026-10-22): a honua-release GitHub pre-release created by rc-release.yml, whose attached
+#   platform-manifest.yaml pins the server digest that its notes also name.
+# Nothing else moves; :2026.1, :stable and the other public channels stay promotion-owned.
 
 on:
   workflow_dispatch:
     inputs:
       lock_label:
-        description: "Minted nightly lock label, for example 2026.1-rc.3"
+        description: "Release candidate label (a nightly lock or an rc-release pre-release), for example 2026.1-rc.3"
         required: true
         type: string
 
@@ -40,25 +44,33 @@ jobs:
       contents: read
       packages: write
     steps:
-      - name: Read the signed lock for the label
+      - name: Find the release record for the label
         id: lock
         env:
           LABEL: ${{ inputs.lock_label }}
         run: |
           set -euo pipefail
-          [[ "$LABEL" =~ ^2026\.1-rc\.[0-9]+$ ]] || { echo "::error::lock label must look like 2026.1-rc.N"; exit 1; }
+          [[ "$LABEL" =~ ^2026\.1-rc\.[0-9]+$ ]] || { echo "::error::label must look like 2026.1-rc.N"; exit 1; }
           git init -q --bare lock.git
-          git -C lock.git fetch -q --no-tags "https://github.com/${LOCK_REPOSITORY}" \
-            "refs/tags/nightly-lock/${LABEL}:refs/tags/nightly-lock/${LABEL}"
-          commit="$(git -C lock.git rev-parse --verify "refs/tags/nightly-lock/${LABEL}^{commit}")"
           mkdir lock
-          git -C lock.git show "${commit}:platform-lock.json" > lock/platform-lock.json
-          git -C lock.git show "${commit}:platform-lock.sigstore.json" > lock/platform-lock.sigstore.json
-          echo "commit=${commit}" >> "$GITHUB_OUTPUT"
+          if git -C lock.git fetch -q --no-tags "https://github.com/${LOCK_REPOSITORY}" \
+              "refs/tags/nightly-lock/${LABEL}:refs/tags/nightly-lock/${LABEL}" 2>/dev/null; then
+            commit="$(git -C lock.git rev-parse --verify "refs/tags/nightly-lock/${LABEL}^{commit}")"
+            git -C lock.git show "${commit}:platform-lock.json" > lock/platform-lock.json
+            git -C lock.git show "${commit}:platform-lock.sigstore.json" > lock/platform-lock.sigstore.json
+            echo "source=nightly-lock" >> "$GITHUB_OUTPUT"
+            echo "record=nightly-lock/${LABEL} (${commit})" >> "$GITHUB_OUTPUT"
+          else
+            echo "No nightly-lock/${LABEL}; using the rc-release pre-release."
+            echo "source=rc-release" >> "$GITHUB_OUTPUT"
+            echo "record=release ${LABEL}" >> "$GITHUB_OUTPUT"
+          fi
 
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        if: steps.lock.outputs.source == 'nightly-lock'
 
       - name: Verify the lock was signed by the trunk nightly mint
+        if: steps.lock.outputs.source == 'nightly-lock'
         run: |
           set -euo pipefail
           cosign verify-blob lock/platform-lock.json --bundle lock/platform-lock.sigstore.json \
@@ -71,14 +83,27 @@ jobs:
         id: image
         env:
           LABEL: ${{ inputs.lock_label }}
+          SOURCE: ${{ steps.lock.outputs.source }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          lock=lock/platform-lock.json
-          [ "$(jq -r '.platform.id' "$lock")" = "honua-${LABEL}" ] || { echo "::error::lock does not name honua-${LABEL}"; exit 1; }
-          digests="$(jq -r --arg image "$IMAGE" \
-            '[.components["honua-server"].artifacts[] | select(.kind == "image" and .coordinate == $image) | .digest] | unique | .[]' "$lock")"
-          [ "$(printf '%s\n' "$digests" | grep -c .)" = 1 ] || { echo "::error::lock must pin exactly one ${IMAGE} digest; found: ${digests:-none}"; exit 1; }
-          [[ "$digests" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::locked digest is malformed: $digests"; exit 1; }
+          if [ "$SOURCE" = nightly-lock ]; then
+            lock=lock/platform-lock.json
+            [ "$(jq -r '.platform.id' "$lock")" = "honua-${LABEL}" ] || { echo "::error::lock does not name honua-${LABEL}"; exit 1; }
+            digests="$(jq -r --arg image "$IMAGE" \
+              '[.components["honua-server"].artifacts[] | select(.kind == "image" and .coordinate == $image) | .digest] | unique | .[]' "$lock")"
+          else
+            # Only rc-release.yml creates these: a pre-release on honua-release, published by Actions.
+            release="$(gh api "repos/${LOCK_REPOSITORY}/releases/tags/${LABEL}")"
+            [ "$(jq -r '.prerelease' <<<"$release")" = true ] || { echo "::error::${LABEL} is not a pre-release"; exit 1; }
+            [ "$(jq -r '.author.login' <<<"$release")" = "github-actions[bot]" ] || { echo "::error::${LABEL} was not published by rc-release.yml"; exit 1; }
+            gh release download "$LABEL" -R "$LOCK_REPOSITORY" -p platform-manifest.yaml -D lock
+            digests="$(yq -r '.components["honua-server"].digest // ""' lock/platform-manifest.yaml)"
+            [ -n "$digests" ] && jq -r '.body' <<<"$release" | grep -qF "$digests" \
+              || { echo "::error::the ${LABEL} notes do not name the manifest server digest ${digests:-none}"; exit 1; }
+          fi
+          [ "$(printf '%s\n' "$digests" | grep -c .)" = 1 ] || { echo "::error::${LABEL} must pin exactly one ${IMAGE} digest; found: ${digests:-none}"; exit 1; }
+          [[ "$digests" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::pinned digest is malformed: $digests"; exit 1; }
           echo "digest=${digests}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
@@ -95,7 +120,7 @@ jobs:
         env:
           DIGEST: ${{ steps.image.outputs.digest }}
           LABEL: ${{ inputs.lock_label }}
-          LOCK_COMMIT: ${{ steps.lock.outputs.commit }}
+          RECORD: ${{ steps.lock.outputs.record }}
         run: |
           set -euo pipefail
           current() { docker buildx imagetools inspect "$CHANNEL" --format '{{json .Manifest}}' 2>/dev/null | jq -r '.digest // empty' || true; }
@@ -108,7 +133,7 @@ jobs:
           [ "$after" = "$DIGEST" ] || { echo "::error::${CHANNEL} resolves to ${after:-nothing}, not ${DIGEST}"; exit 1; }
           {
             echo "### ${CHANNEL}"
-            echo "- lock: nightly-lock/${LABEL} (${LOCK_COMMIT})"
+            echo "- record: ${RECORD}"
             echo "- digest: ${DIGEST}"
             echo "- previous: ${before:-none}"
           } >> "$GITHUB_STEP_SUMMARY"
