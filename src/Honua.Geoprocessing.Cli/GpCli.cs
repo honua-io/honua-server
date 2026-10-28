@@ -32,7 +32,7 @@ namespace Honua.Geoprocessing.Cli;
 public static class GpCli
 {
     /// <summary>
-    /// Parses argv and dispatches to the <c>list</c> or <c>run</c> verb.
+    /// Parses argv and dispatches to a devkit verb (<c>list</c>, <c>run</c>, <c>reproduce</c>, and the others in <see cref="PrintUsage"/>).
     /// </summary>
     /// <param name="args">Process arguments (the verb plus its options).</param>
     /// <returns>A process exit code: 0 success, non-zero on usage error or a failed run.</returns>
@@ -63,6 +63,7 @@ public static class GpCli
                 "init" => RunInit(rest),
                 "publish" => await RunPublish(rest).ConfigureAwait(false),
                 "release" => GpReleaseCommand.Run(rest, Console.Out, Console.Error),
+                "reproduce" => await GpReproduceCommand.RunAsync(rest, Console.Out, Console.Error).ConfigureAwait(false),
                 "-h" or "--help" or "help" => PrintUsageAndOk(),
                 _ => Fail($"Unknown command '{verb}'."),
             };
@@ -75,11 +76,13 @@ public static class GpCli
 
     private static ServiceProvider BuildProvider(
         GdalProcessExecutorMode gdalMode = GdalProcessExecutorMode.InProcess,
-        GlassBoxCapture? glassBox = null)
+        GlassBoxCapture? glassBox = null,
+        string? scratchRoot = null)
     {
         // Only the dev container settings are configurable; no Redis or control-plane
         // services are composed. Native bind mounts use the invoking developer's UID/GID.
-        var configuration = GpContainerConfiguration.Create();
+        // reproduce passes a fresh scratch root and never a path from the bundle.
+        var configuration = GpContainerConfiguration.Create(scratchRoot: scratchRoot);
 
         var services = new ServiceCollection();
         services.AddLogging(b => b.AddSimpleConsole(o => o.SingleLine = true).SetMinimumLevel(LogLevel.Warning));
@@ -140,6 +143,28 @@ public static class GpCli
         }
 
         return resolved;
+    }
+
+    /// <summary>
+    /// One in-process local run against a scratch directory the caller created.
+    /// Same executor set as <c>honua gp run</c>, without a receipt directory, glass box,
+    /// or container probe.
+    /// </summary>
+    internal static async Task<LocalRunResult> ExecuteLocalAsync(
+        string processId,
+        IReadOnlyDictionary<string, string> inputs,
+        string scratchRoot,
+        CancellationToken cancellationToken)
+    {
+        using var provider = BuildProvider(GdalProcessExecutorMode.InProcess, scratchRoot: scratchRoot);
+        var executors = ResolveExecutors(provider);
+        var runner = new GeoprocessingLocalRunner(executors);
+        if (!runner.AvailableProcessIds.Contains(processId, StringComparer.Ordinal))
+        {
+            return LocalRunResult.UnknownProcess(processId, string.Join(", ", runner.AvailableProcessIds));
+        }
+
+        return await runner.RunAsync(processId, inputs, cancellationToken).ConfigureAwait(false);
     }
 
     private static int RunList(string[] args)
@@ -1474,6 +1499,7 @@ public static class GpCli
         Console.WriteLine("  honua gp publish <id> [--server <url>] [--api-key <key>] [--message <m>] [--dry-run] [--publish]");
         Console.WriteLine("  honua gp release [--descriptor honua-gp.yaml] --output <dir> [--source-repository o/n] [--source-sha <sha>] [--runtime-image <ref@sha256:..>] [--json]");
         Console.WriteLine("  honua gp release verify <lock.json> [--artifacts <dir>] [--json]");
+        Console.WriteLine("  honua gp reproduce <bundle.json> [--lock <lock.json>] [--checkout <dir>] [--process <id>]");
         Console.WriteLine();
         Console.WriteLine("Run options:");
         Console.WriteLine("  --input, -i <file>  Read a file and bind it (base64) to the process's primary input.");
@@ -1506,6 +1532,9 @@ public static class GpCli
         Console.WriteLine("        working process, input schema, fixtures, expected artifacts, dependency lock, VS Code debugging.");
         Console.WriteLine("  --probe-container   list/describe: also check the GDAL worker image (shells out to the container runtime).");
         Console.WriteLine("  publish  Push an authored workflow to the WorkflowPackage store (GitOps approval-gated promotion).");
+        Console.WriteLine("  reproduce  Run a diagnostic bundle locally from its exported inputs.");
+        Console.WriteLine("        Does not replay production writes, reuse production paths, or move HEAD.");
+        Console.WriteLine("        Exits 0 only when the local outcome matches the recorded one, including a recorded failure.");
         Console.WriteLine();
         Console.WriteLine("Publish options:");
         Console.WriteLine("  --server, -s <url>  Console REST server root. Default http://localhost:8080.");
@@ -1530,6 +1559,7 @@ public static class GpCli
         Console.WriteLine("  honua gp new gdal.warp-clip --kind gdal --output /tmp/preview  # preview only");
         Console.WriteLine("  honua gp publish my-flow --file workflow.json --dry-run");
         Console.WriteLine("  honua gp publish geometry.buffer --as-process-node --publish --api-key <key>");
+        Console.WriteLine("  honua gp reproduce job-diagnostic-bundle.json --lock process-release-lock.json");
     }
 }
 
