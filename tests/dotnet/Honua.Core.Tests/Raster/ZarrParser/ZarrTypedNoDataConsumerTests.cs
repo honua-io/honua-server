@@ -149,8 +149,14 @@ public sealed class ZarrTypedNoDataConsumerTests
             [array], "band", "x", "y", null, Axes: [new ZarrAxis("elevation", 1, null, 500, 500)]);
         var registration = new ZarrRegistration
         {
-            Id = 1, LayerId = 7, Name = "typed", Provider = CloudStorageProvider.AwsS3,
-            Bucket = "bucket", RootPath = "typed", CreatedAt = DateTimeOffset.UnixEpoch, Metadata = metadata
+            Id = 1,
+            LayerId = 7,
+            Name = "typed",
+            Provider = CloudStorageProvider.AwsS3,
+            Bucket = "bucket",
+            RootPath = "typed",
+            CreatedAt = DateTimeOffset.UnixEpoch,
+            Metadata = metadata
         };
         return (registration, new Dictionary<string, byte[]> { ["typed/band/0.0.0"] = bytes }, fill);
     }

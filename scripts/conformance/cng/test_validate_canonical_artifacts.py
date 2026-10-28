@@ -634,10 +634,10 @@ class CanonicalArtifactEvidenceTests(unittest.TestCase):
             MODULE._now = original_now
         self.assertEqual(["now", "run"], events)
 
-    def test_compose_build_secrets_have_standalone_file_defaults(self):
+    def test_compose_build_secrets_use_environment_sources(self):
         compose = (SCRIPT.parents[3] / "docker" / "cng" / "compose.yml").read_text(encoding="utf-8")
-        self.assertIn("HONUA_GITHUB_ACTOR_SECRET_FILE:-.empty-build-secret", compose)
-        self.assertIn("HONUA_GITHUB_TOKEN_SECRET_FILE:-.empty-build-secret", compose)
+        self.assertIn("environment: HONUA_CNG_BUILD_ACTOR", compose)
+        self.assertIn("environment: HONUA_CNG_BUILD_TOKEN", compose)
         self.assertNotIn("environment: HONUA_DOCKER_GITHUB_TOKEN", compose)
 
     def test_standalone_harness_requires_and_resolves_github_packages_token(self):

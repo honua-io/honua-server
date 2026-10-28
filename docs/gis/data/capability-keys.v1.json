@@ -492,14 +492,16 @@
       "displayName": "Geoprocessing Task Execution",
       "category": "Process",
       "edition": "Community",
-      "description": "Submit and poll geoprocessing tasks through the Esri GeoServices GPServer surface. Print/export-specific tasks are gated by printing.* entitlement keys."
+      "description": "Submit and poll geoprocessing tasks through the Esri GeoServices GPServer surface. Print/export-specific tasks are gated by printing.* entitlement keys.",
+      "status": "preview"
     },
     {
       "key": "process.ogc-api-processes",
       "displayName": "OGC API Processes",
       "category": "Process",
       "edition": "Community",
-      "description": "Submit and poll jobs through OGC API - Processes."
+      "description": "Submit and poll jobs through OGC API - Processes.",
+      "status": "preview"
     },
     {
       "key": "provider.databricks",
@@ -772,7 +774,8 @@
       "displayName": "WPS 2.0",
       "category": "Serve",
       "edition": "Community",
-      "description": "Submit and poll processes through OGC WPS 2.0 (GetCapabilities, DescribeProcess, Execute, GetStatus, GetResult)."
+      "description": "Submit and poll processes through OGC WPS 2.0 (GetCapabilities, DescribeProcess, Execute, GetStatus, GetResult).",
+      "status": "preview"
     },
     {
       "key": "staticmap.high-dpi",
