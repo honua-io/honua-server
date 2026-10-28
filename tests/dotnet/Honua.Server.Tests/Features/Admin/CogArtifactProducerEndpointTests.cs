@@ -104,7 +104,7 @@ public sealed class CogArtifactProducerEndpointTests
             await host.InitializeAsync();
             using var client = host.CreateAdminClient();
             var storage = host.GetService<ICloudFileStorage>();
-            var artifactId = $"cog/{WebAppFixture.TestLayerId}/{primary!.Id}.tif";
+            var artifactId = $"cog/{WebAppFixture.TestLayerId}/{primary!.Value.Id}.tif";
             (await storage.GetMetadataAsync(artifactId)).Should().BeNull();
             using var response = await client.PostAsJsonAsync("/api/v1/admin/raster-artifacts/cog",
                 new { layerId = WebAppFixture.TestLayerId });

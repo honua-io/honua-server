@@ -97,7 +97,7 @@ public sealed class PostgresRasterStoreUnalignedMosaicTests(PostgresFixture fixt
                 NullLogger<PostgresRasterStore>.Instance, FixtureBypassDatabaseSchemaGuard.Instance, schemaName);
             var raster = await store.GetPrimaryRasterInfoAsync(LayerId);
             raster.Should().NotBeNull();
-            Func<Task> export = async () => await store.ExportImageAsync(LayerId, raster!.Id,
+            Func<Task> export = async () => await store.ExportImageAsync(LayerId, raster!.Value.Id,
                 new RasterQuery { OutputFormat = RasterFormat.COG });
             var restrictedException = await Record.ExceptionAsync(export);
             // Observe the second pool even when the first pool wrongly returned fallback
@@ -106,12 +106,12 @@ public sealed class PostgresRasterStoreUnalignedMosaicTests(PostgresFixture fixt
             RasterResult? availableCog = null;
             var availableException = await Record.ExceptionAsync(async () =>
             {
-                availableCog = await available.ExportImageAsync(LayerId, raster!.Id,
+                availableCog = await available.ExportImageAsync(LayerId, raster!.Value.Id,
                     new RasterQuery { OutputFormat = RasterFormat.COG });
             });
             availableException.Should().BeNull("the normal pool remains COG capable after a restricted session");
             availableCog.Should().NotBeNull();
-            var bytes = availableCog!.Data;
+            var bytes = availableCog!.Value.Data;
             var ranges = Substitute.For<ICloudRangeReader>();
             ranges.ReadRangeAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<long>(),
                     Arg.Any<int>(), Arg.Any<CancellationToken>())
