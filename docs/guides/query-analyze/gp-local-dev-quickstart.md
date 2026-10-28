@@ -164,7 +164,10 @@ inside one container, then waits. The host publish is loopback only; inside the
 container debugpy must listen on all interfaces or Compose cannot forward the
 port. Point the debugger at `127.0.0.1` port 5678 and map the checkout to
 `/workspace/process-source`. The file launched here is the mounted script. Jobs
-still execute the copy under `/app/Scripts` in the image.
+still execute the copy under `/app/Scripts` in the image. The command passes
+the checked-in proximity fixture as `src` and writes `dst` under `/tmp`, which
+is writable inside the container. The script exits 2 when those two paths are
+omitted.
 
 ```bash
 docker compose -f docker-compose.gp-dev.yml --profile integration run --rm --no-deps \
@@ -172,7 +175,7 @@ docker compose -f docker-compose.gp-dev.yml --profile integration run --rm --no-
   --publish 127.0.0.1:5678:5678 \
   -e HOME=/tmp \
   -e PYTHONUSERBASE=/tmp/debugpy-site \
-  gdal-worker -c "python3 -m pip install --user --quiet --disable-pip-version-check debugpy==1.8.14 && python3 -m debugpy --listen 0.0.0.0:5678 --wait-for-client /workspace/process-source/src/Honua.Worker.Gdal/Scripts/gdal_euclidean_allocation.py"
+  gdal-worker -c "python3 -m pip install --user --quiet --disable-pip-version-check debugpy==1.8.14 && python3 -m debugpy --listen 0.0.0.0:5678 --wait-for-client /workspace/process-source/src/Honua.Worker.Gdal/Scripts/gdal_euclidean_allocation.py /workspace/process-source/tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/Proximity/proximity-sources.tif /tmp/euclidean-allocation.tif"
 ```
 
 Ctrl-C stops it, and `--rm` removes it. This change does not include a Linux
@@ -191,30 +194,31 @@ do not claim the same Redis jobs. The idle container sets
 
 ```bash
 docker compose -f docker-compose.gp-dev.yml --profile integration stop gdal-worker
-docker compose -f docker-compose.gp-dev.yml --profile integration run --rm --no-deps -d \
+docker rm -f honua-gp-vsdbg >/dev/null 2>&1 || true
+docker compose -f docker-compose.gp-dev.yml --profile integration run --no-deps -d \
+  --name honua-gp-vsdbg \
   --entrypoint sleep \
   -e DOTNET_EnableDiagnostics=1 \
   --volume "${HOME}/.honua/vsdbg:/vsdbg:ro" \
   gdal-worker infinity
 ```
 
-The editor attaches through Compose, not through a published port. Its pipe
-program is `docker`. Its arguments are
-`compose -f docker-compose.gp-dev.yml exec -T gdal-worker`, and the debugger
-path is `/vsdbg/vsdbg`. Map `/workspace/process-source` to the checkout. The
-process is `dotnet` with argument `/app/Honua.Worker.Gdal.dll` (the image's
-compiled worker). With the profile worker stopped, that exec reaches this
-one-shot container.
+`compose run` starts a new container. It is not the `gdal-worker` service, so
+`compose exec gdal-worker` does not reach it. The editor pipe program is
+`docker`. Its arguments are `exec -i honua-gp-vsdbg`, and the debugger path is
+`/vsdbg/vsdbg`. Map `/workspace/process-source` to the checkout. The process is
+`dotnet` with argument `/app/Honua.Worker.Gdal.dll` (the image's compiled
+worker).
 
 ```bash
-docker compose -f docker-compose.gp-dev.yml --profile integration exec -T gdal-worker /vsdbg/vsdbg --interpreter=vscode
+docker exec -i honua-gp-vsdbg /vsdbg/vsdbg --interpreter=vscode
 ```
 
-When finished, stop the one-shot container and start the normal worker again.
+When finished, remove that named container and start the normal worker again.
 The normal worker does not enable diagnostics.
 
 ```bash
-docker compose -f docker-compose.gp-dev.yml --profile integration stop gdal-worker
+docker rm -f honua-gp-vsdbg
 docker compose -f docker-compose.gp-dev.yml --profile integration up -d gdal-worker
 ```
 

@@ -75,6 +75,18 @@ internal static class GpHarnessPrerequisiteProbe
     /// <param name="name">A bare executable name.</param>
     /// <returns>The first matching path, or null.</returns>
     internal static string? DefaultPathLookup(string name)
+        => LookupOnPath(name, Environment.GetEnvironmentVariable("PATH"), OperatingSystem.IsWindows());
+
+    /// <summary>
+    /// Resolves <paramref name="name"/> on <paramref name="path"/>. On Windows the candidates are
+    /// <c>.exe</c>, <c>.cmd</c>, and <c>.bat</c>, matching <c>GpRunnability</c> and <c>GpCustomProject</c>.
+    /// Elsewhere the name is used as given.
+    /// </summary>
+    /// <param name="name">A bare executable name.</param>
+    /// <param name="path">A PATH value, or null.</param>
+    /// <param name="windowsExecutableExtensions">Whether to probe Windows executable extensions.</param>
+    /// <returns>The first matching path, or null.</returns>
+    internal static string? LookupOnPath(string name, string? path, bool windowsExecutableExtensions)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         if (Path.IsPathRooted(name) || name.Contains('/') || name.Contains('\\'))
@@ -82,27 +94,31 @@ internal static class GpHarnessPrerequisiteProbe
             return null;
         }
 
-        var path = Environment.GetEnvironmentVariable("PATH");
         if (string.IsNullOrEmpty(path))
         {
             return null;
         }
 
+        var names = windowsExecutableExtensions
+            ? new[] { name + ".exe", name + ".cmd", name + ".bat" }
+            : new[] { name };
         foreach (var directory in path.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
-            try
+            foreach (var candidateName in names)
             {
-                var candidate = Path.Combine(directory, name);
-                if (File.Exists(candidate))
+                try
                 {
-                    return candidate;
+                    // Join does not drop earlier segments when a later one is rooted.
+                    var candidate = Path.Join(directory, candidateName);
+                    if (File.Exists(candidate))
+                    {
+                        return candidate;
+                    }
                 }
-            }
-            catch (IOException)
-            {
-            }
-            catch (UnauthorizedAccessException)
-            {
+                catch (Exception ex) when (ex is ArgumentException or IOException or UnauthorizedAccessException)
+                {
+                    continue;
+                }
             }
         }
 

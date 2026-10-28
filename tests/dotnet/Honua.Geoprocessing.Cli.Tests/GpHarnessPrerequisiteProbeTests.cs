@@ -78,4 +78,66 @@ public sealed class GpHarnessPrerequisiteProbeTests
         report["helm"]!.GetValue<string>().Should().Be("missing");
         report["kindRemediation"]!.GetValue<string>().Should().Contain("does not fail doctor");
     }
+
+    [Fact]
+    public void LookupOnPath_WindowsExtensions_ResolvesExeBeforeCmdAndBat()
+    {
+        var root = Directory.CreateTempSubdirectory("honua-gp-probe-");
+        try
+        {
+            File.WriteAllText(Path.Join(root.FullName, "docker"), "not-used");
+            File.WriteAllText(Path.Join(root.FullName, "docker.cmd"), "later");
+            File.WriteAllText(Path.Join(root.FullName, "docker.exe"), "first");
+
+            GpHarnessPrerequisiteProbe.LookupOnPath("docker", root.FullName, windowsExecutableExtensions: true)
+                .Should().Be(Path.Join(root.FullName, "docker.exe"));
+        }
+        finally
+        {
+            root.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public void LookupOnPath_WindowsExtensions_IgnoresExtensionlessFile()
+    {
+        var root = Directory.CreateTempSubdirectory("honua-gp-probe-");
+        try
+        {
+            File.WriteAllText(Path.Join(root.FullName, "helm"), "unix-only");
+
+            GpHarnessPrerequisiteProbe.LookupOnPath("helm", root.FullName, windowsExecutableExtensions: true)
+                .Should().BeNull();
+        }
+        finally
+        {
+            root.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public void LookupOnPath_UnixName_ResolvesExtensionlessFile()
+    {
+        var root = Directory.CreateTempSubdirectory("honua-gp-probe-");
+        try
+        {
+            File.WriteAllText(Path.Join(root.FullName, "kind"), "kind");
+
+            GpHarnessPrerequisiteProbe.LookupOnPath("kind", root.FullName, windowsExecutableExtensions: false)
+                .Should().Be(Path.Join(root.FullName, "kind"));
+        }
+        finally
+        {
+            root.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public void LookupOnPath_RootedOrSlashedName_ReturnsNull()
+    {
+        GpHarnessPrerequisiteProbe.LookupOnPath("/usr/bin/docker", "/usr/bin", windowsExecutableExtensions: false)
+            .Should().BeNull();
+        GpHarnessPrerequisiteProbe.LookupOnPath("docker/cli", "/usr/bin", windowsExecutableExtensions: false)
+            .Should().BeNull();
+    }
 }
