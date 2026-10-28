@@ -19,6 +19,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 [Collection("Database")]
 public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixture>, IAsyncLifetime
 {
+    private static readonly string[] ExpectedIndexedNames = ["indexed-10", "indexed-11", "indexed-12"];
     private readonly WebAppFixture _fixture;
     private readonly List<long> _flatGeobufProbeIds = [];
 
@@ -466,7 +467,7 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
         var subset = FlatGeobuf.NTS.FeatureCollectionConversions.Deserialize(stream,
             new NetTopologySuite.Geometries.Envelope(10, 12, 5, 6)).ToArray();
         subset.Select(feature => feature.Attributes["name"]).Should()
-            .BeEquivalentTo(new[] { "indexed-10", "indexed-11", "indexed-12" });
+            .BeEquivalentTo(ExpectedIndexedNames);
     }
 
     private static FlatGeobuf.Geometry? ReadSingleFlatGeobufGeometry(byte[] payload)
