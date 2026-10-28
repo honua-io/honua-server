@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:55965d781c1d661105e8ea8ea88e229034501faf44aafa3a59b7dc59cf1e47bf",
+  "bundleDigest": "sha256:8265e304c08563a3a414c56f4aab45d2cb4e370147c1a41d2eefc481c8e1c567",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -8088,7 +8088,7 @@
     {
       "id": "reference/protocols/vector-tiles",
       "path": "reference/protocols/vector-tiles.md",
-      "documentDigest": "sha256:240dba732d8054a56efd2cb6a272177c9f71f60dd3e9cbc21c67c27d76bd03e3",
+      "documentDigest": "sha256:c88d6fb291324fbac55e6bae4c6008bdbf34e69d1502424a30c9bff51017d1f2",
       "metadata": {
         "type": "reference",
         "title": "Vector tiles",

@@ -297,6 +297,7 @@ internal static class FeatureRegistrationExtensions
     private static IServiceCollection AddPMTilesProxy(this IServiceCollection services)
     {
         services.AddSingleton<PMTilesProxyService>();
+        services.AddSingleton<Honua.Server.Features.Infrastructure.FileStorage.ArtifactByteReader>();
         services.AddScoped<Honua.Server.Features.Protocols.Rasters.CogArtifacts.CogArtifactService>();
         // Lets a protocol assembly advertise a published COG without referencing the
         // server: Honua.Server references the protocols, never the reverse, so STAC

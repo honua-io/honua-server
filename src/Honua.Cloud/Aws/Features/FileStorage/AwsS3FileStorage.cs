@@ -322,21 +322,38 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
         }
     }
 
-    public override async Task<Stream?> DownloadAsync(string fileId, CancellationToken cancellationToken = default)
+    public override Task<Stream?> DownloadAsync(string fileId, CancellationToken cancellationToken = default)
+        => DownloadCoreAsync(fileId, expectedETag: null, cancellationToken);
+
+    public override Task<Stream?> DownloadIfMatchAsync(string fileId, string expectedETag, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(expectedETag);
+        return DownloadCoreAsync(fileId, expectedETag, cancellationToken);
+    }
+
+    private async Task<Stream?> DownloadCoreAsync(string fileId, string? expectedETag, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(fileId);
 
         try
         {
-            var response = await _client.GetObjectAsync(_options.BucketName, fileId, cancellationToken);
+            var response = await _client.GetObjectAsync(new GetObjectRequest
+            {
+                BucketName = _options.BucketName,
+                Key = fileId,
+                EtagToMatch = expectedETag
+            }, cancellationToken);
             return new ResponseDisposingStream(response.ResponseStream, response);
+        }
+        catch (AmazonS3Exception ex) when (ex.StatusCode == HttpStatusCode.PreconditionFailed)
+        {
+            throw new CloudFileRevisionChangedException();
         }
         catch (AmazonS3Exception ex) when (IsNotFound(ex))
         {
             return null;
         }
     }
-
 
     public override async Task<bool> DeleteAsync(string fileId, CancellationToken cancellationToken = default)
     {
