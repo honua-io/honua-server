@@ -17,6 +17,7 @@ from pmtiles_http import HttpRangeSource, load_source
 from derived_zarr import has_derived_binding, observe_array
 from derived_fsspec import observe_fsspec
 from producer_run import DISPATCH_ENV, producer_run
+from flatgeobuf_readback import read_flatgeobuf
 
 CLIENTS = {
     "GeoPandas": "1.1.4",
@@ -957,8 +958,8 @@ def validate_flatgeobuf(path: Path, args: argparse.Namespace) -> list[dict]:
         geopandas_seen.update(_flatgeobuf_frame_metadata(frame))
 
     def gdal_check() -> str:
-        info = _run("ogrinfo", "-json", "-al", "-so", str(path))
-        gdal_seen.update(_gdal_flatgeobuf_metadata(json.loads(info.stdout)))
+        info = read_flatgeobuf(path)
+        gdal_seen.update(_gdal_flatgeobuf_metadata(info))
         return _command_version("GDAL", "gdalinfo", "--version")
 
     _collect_client(
@@ -1313,9 +1314,21 @@ def validate_hdf5_netcdf(path: Path, args: argparse.Namespace) -> list[dict]:
         with tempfile.NamedTemporaryFile(suffix=".nc", delete=False) as stream:
             repacked = Path(stream.name)
         try:
-            _run("h5repack", str(path), str(repacked))
+            # This tiny fixture proves PAGE layout conversion, not a cloud-sized chunk profile.
+            _run("h5repack", "-S", "PAGE", "-G", "262144", str(path), str(repacked))
             _validate_canonical_hdf5(repacked)
             _validate_canonical_xarray(repacked)
+            import h5py
+            with h5py.File(repacked, "r") as handle:
+                properties = handle.id.get_create_plist()
+                if properties.get_file_space_strategy()[0] != h5py.h5f.FSPACE_STRATEGY_PAGE:
+                    raise ValueError("repacked file does not use PAGE file space strategy")
+                if properties.get_file_space_page_size() != 262144:
+                    raise ValueError("repacked PAGE size differs from 262144 bytes")
+            statistics = _run("h5stat", "-S", str(repacked)).stdout
+            metadata = re.search(r"File metadata:\s*(\d+) bytes", statistics)
+            if not metadata or int(metadata.group(1)) > 262144:
+                raise ValueError("repacked PAGE does not contain the reported file metadata")
         finally:
             repacked.unlink(missing_ok=True)
 

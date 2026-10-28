@@ -118,19 +118,22 @@ class NetcdfFidelityTests(unittest.TestCase):
                     self.validate(clients=("xarray",))
 
     def test_repack_corrupted_output_is_rejected_and_removed(self):
-        for mutation in ("values", "chunks"):
+        for mutation in ("values", "chunks", "PAGE"):
             with self.subTest(mutation=mutation):
                 outputs = []
-                def run(tool, source, destination):
+                def run(tool, *arguments):
                     self.assertEqual(tool, "h5repack")
+                    self.assertEqual(arguments[:4], ("-S", "PAGE", "-G", "262144"))
+                    source, destination = arguments[-2:]
                     outputs.append(Path(destination))
                     if mutation == "chunks":
                         self.dataset.to_netcdf(destination, engine="h5netcdf",
                             encoding={"temperature": {"chunksizes": (2, 4, 4), "dtype": "float32"}})
                     else:
                         shutil.copyfile(source, destination)
-                        with h5py.File(destination, "r+") as handle:
-                            handle["temperature"][0, 0, 0] = -123
+                        if mutation == "values":
+                            with h5py.File(destination, "r+") as handle:
+                                handle["temperature"][0, 0, 0] = -123
                 def collect(observations, format_name, operation, client, lane, args, check, **kwargs):
                     if client == "h5repack":
                         check()

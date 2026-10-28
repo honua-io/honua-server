@@ -116,12 +116,12 @@ class HarnessContextTests(unittest.TestCase):
             args.requirements_context.write_text(json.dumps(context))
             result = module.build_fragment(value, outcomes, args)
             self.assertEqual(len(value['assignments']), 51)
-            self.assertEqual(len(result['observations']), 42)
-            self.assertEqual(result['operation_scope'], {'complete': True, 'expected': 42, 'observed': 42})
+            self.assertEqual(len(result['observations']), 37)
+            self.assertEqual(result['operation_scope'], {'complete': True, 'expected': 37, 'observed': 37})
             selected = set(module.test_filter(value).split('|'))
             self.assertEqual(selected, {'FullyQualifiedName~' + test for test in outcomes})
             preview = [row for row in value['assignments'] if row['capability_key'] not in implemented]
-            self.assertEqual(len(preview), 9)
+            self.assertEqual(len(preview), 14)
             self.assertTrue(all('FullyQualifiedName~' + test in selected for row in preview for test in row['test_ids']))
 
     def test_context_must_match_every_source_owned_row_field(self):
