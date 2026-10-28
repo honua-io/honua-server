@@ -2,11 +2,11 @@
 
 # Cloud-Native-Geospatial (CNG) conformance runner for Honua Server.
 #
-# Validates honua's PRODUCED cloud-native artifacts against the canonical
-# first-party validators, failing on any validator non-zero exit:
+# Validates honua's PRODUCED cloud-native artifacts against the pinned
+# validators and independent clients, failing on any validator non-zero exit:
 #
 #   GeoParquet 1.1.0  FeatureServer f=parquet   -> gpq validate
-#   FlatGeobuf        FeatureServer f=fgb        -> ogrinfo -al -so (read-back)
+#   FlatGeobuf        FeatureServer f=fgb        -> ogrinfo -json -al -features (read-back)
 #   PMTiles v3        PMTilesWriter (generated)  -> pmtiles verify
 #   3D Tiles 1.1      Tileset+GLB (generated)    -> 3d-tiles-validator (+ gltf_validator)
 #   COG (GeoTIFF)     CogTiffTileEncoder tile    -> rasterio / rio-cogeo / gdalinfo
@@ -16,7 +16,8 @@
 # are produced by driving honua's own writers and readers through the bundled
 # artifact generator.
 #
-# COG and Zarr are consumer surfaces: honua reads them, it does not publish them.
+# This default lane exercises COG and Zarr consumer paths; separate publication
+# and worker-derived stores need their own evidence.
 # The deterministic third-party inputs generated here are therefore *inputs*, not
 # evidence. honua-server#4398: the lane used to validate those inputs directly,
 # which made the COG and Zarr cells python validating python's own output. The
@@ -87,18 +88,12 @@ if [[ -z "$GITHUB_PACKAGES_TOKEN" ]]; then
     echo "Set HONUA_DOCKER_GITHUB_TOKEN, GITHUB_TOKEN, or GH_TOKEN before running this harness." >&2
     exit 1
 fi
-BUILD_SECRET_DIR="$(mktemp -d)"
-printf '%s' "$GITHUB_PACKAGES_ACTOR" > "$BUILD_SECRET_DIR/github-actor"
-printf '%s' "$GITHUB_PACKAGES_TOKEN" > "$BUILD_SECRET_DIR/github-token"
-export HONUA_GITHUB_ACTOR_SECRET_FILE="$BUILD_SECRET_DIR/github-actor"
-export HONUA_GITHUB_TOKEN_SECRET_FILE="$BUILD_SECRET_DIR/github-token"
 
 cleanup() {
     if [[ "$CLEANUP" == "true" ]]; then
         echo -e "\n${YELLOW}Cleaning up CNG containers...${NC}"
         $COMPOSE_CMD "${CNG_COMPOSE_ARGS[@]}" down --remove-orphans --volumes 2>/dev/null || true
     fi
-    rm -rf "$BUILD_SECRET_DIR"
 }
 trap cleanup EXIT
 
@@ -173,12 +168,16 @@ EOF
 bring_up_stack() {
     if [[ "$SKIP_BUILD" != "true" ]]; then
         echo -e "${YELLOW}Building Honua Server image...${NC}"
-        $COMPOSE_CMD "${CNG_COMPOSE_ARGS[@]}" build honua-server
+        # Environment-backed BuildKit secrets need no external-file entitlement.
+        # Scope this handoff to the build; never use Docker build arguments.
+        HONUA_CNG_BUILD_ACTOR="$GITHUB_PACKAGES_ACTOR" \
+        HONUA_CNG_BUILD_TOKEN="$GITHUB_PACKAGES_TOKEN" \
+            $COMPOSE_CMD "${CNG_COMPOSE_ARGS[@]}" build honua-server || return 1
     fi
 
     echo -e "${YELLOW}Starting PostgreSQL + Redis + ephemeral S3 fixture...${NC}"
     $COMPOSE_CMD "${CNG_COMPOSE_ARGS[@]}" down --remove-orphans --volumes 2>/dev/null || true
-    $COMPOSE_CMD "${CNG_COMPOSE_ARGS[@]}" up -d postgres redis localstack
+    $COMPOSE_CMD "${CNG_COMPOSE_ARGS[@]}" up -d postgres redis localstack || return 1
     wait_for_health postgres 120 || return 1
     wait_for_health redis 60 || return 1
     wait_for_health localstack 120 || return 1
@@ -186,20 +185,20 @@ bring_up_stack() {
 
     # Start honua once to run migrations, then seed the CNG service additively.
     echo -e "${YELLOW}Starting Honua Server (migrations)...${NC}"
-    $COMPOSE_CMD "${CNG_COMPOSE_ARGS[@]}" up -d honua-server
+    $COMPOSE_CMD "${CNG_COMPOSE_ARGS[@]}" up -d honua-server || return 1
     wait_for_health honua-server "$SERVER_HEALTH_TIMEOUT" || return 1
 
     echo -e "${YELLOW}Stopping Honua Server to seed CNG data...${NC}"
-    $COMPOSE_CMD "${CNG_COMPOSE_ARGS[@]}" stop honua-server
+    $COMPOSE_CMD "${CNG_COMPOSE_ARGS[@]}" stop honua-server || return 1
 
     echo -e "${YELLOW}Seeding CNG conformance service...${NC}"
     local pg
-    pg=$($COMPOSE_CMD "${CNG_COMPOSE_ARGS[@]}" ps -q postgres)
-    docker cp "$CNG_SEED_FILE" "$pg":/tmp/cng-seed.sql
-    docker exec -i "$pg" psql -v ON_ERROR_STOP=1 -U postgres -d honua_cng -f /tmp/cng-seed.sql >/dev/null
+    pg=$($COMPOSE_CMD "${CNG_COMPOSE_ARGS[@]}" ps -q postgres) || return 1
+    docker cp "$CNG_SEED_FILE" "$pg":/tmp/cng-seed.sql || return 1
+    docker exec -i "$pg" psql -v ON_ERROR_STOP=1 -U postgres -d honua_cng -f /tmp/cng-seed.sql >/dev/null || return 1
 
     echo -e "${YELLOW}Restarting Honua Server...${NC}"
-    $COMPOSE_CMD "${CNG_COMPOSE_ARGS[@]}" up -d honua-server
+    $COMPOSE_CMD "${CNG_COMPOSE_ARGS[@]}" up -d honua-server || return 1
     wait_for_health honua-server "$SERVER_HEALTH_TIMEOUT" || return 1
 
     echo -e "${GREEN}Honua Server healthy at ${BASE_URL}${NC}"
@@ -263,9 +262,9 @@ validate_flatgeobuf() {
         return
     fi
     echo "Fetched $(wc -c < "$out") bytes"
-    # ogrinfo with VERIFY_BUFFERS forces FlatGeobuf to fully decode every feature
-    # buffer instead of trusting the spatial index, so a malformed payload fails.
-    if OGR_FLATGEOBUF_VERIFY_BUFFERS=YES ogrinfo -al -so "$out" 2>&1 | tee "$RESULTS_DIR/ogrinfo-fgb.log" | grep -q "Feature Count"; then
+    # Read every feature and reconcile the decoded count with the layer header.
+    if python3 scripts/conformance/cng/flatgeobuf_readback.py "$out" \
+        > "$RESULTS_DIR/ogrinfo-fgb.log" 2>&1; then
         FLATGEOBUF_STATUS=0
         FLATGEOBUF_DETAIL="ogrinfo read-back succeeded (FeatureServer f=fgb)"
         echo -e "${GREEN}FlatGeobuf valid${NC}"
@@ -444,7 +443,7 @@ cat > "$SUMMARY_FILE" << EOF
 |---|---|---|---|---|
 | GeoParquet 1.1.0 | FeatureServer \`f=parquet\` | \`gpq validate\` | $(status_label $GEOPARQUET_STATUS) | $GEOPARQUET_DETAIL |
 | PMTiles serving setup | Honua S3-backed route (LocalStack) | object identity + HEAD | $(status_label $PMTILES_HTTP_STATUS) | $PMTILES_HTTP_DETAIL |
-| FlatGeobuf | FeatureServer \`f=fgb\` | \`ogrinfo -al -so\` | $(status_label $FLATGEOBUF_STATUS) | $FLATGEOBUF_DETAIL |
+| FlatGeobuf | FeatureServer \`f=fgb\` | \`ogrinfo -json -al -features\` | $(status_label $FLATGEOBUF_STATUS) | $FLATGEOBUF_DETAIL |
 | PMTiles v3 | \`PMTilesWriter\` | \`pmtiles verify\` | $(status_label $PMTILES_STATUS) | $PMTILES_DETAIL |
 | 3D Tiles 1.1 | \`TilesetDocumentWriter\` + \`GeometryTileBuilder\` | \`3d-tiles-validator\` + \`gltf_validator\` | $(status_label $TILES_STATUS) | $TILES_DETAIL |
 | COG / Zarr consumer | \`CogTiffTileEncoder\` + \`ZarrSubsetReader\` | range-read accounting (value oracles in validate-canonical-artifacts.py) | $(status_label $CONSUMER_STATUS) | $CONSUMER_DETAIL |

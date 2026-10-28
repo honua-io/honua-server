@@ -103,6 +103,6 @@ networks:
 
 secrets:
   github_actor:
-    file: ${HONUA_GITHUB_ACTOR_SECRET_FILE:-.empty-build-secret}
+    environment: HONUA_CNG_BUILD_ACTOR
   github_token:
-    file: ${HONUA_GITHUB_TOKEN_SECRET_FILE:-.empty-build-secret}
+    environment: HONUA_CNG_BUILD_TOKEN
