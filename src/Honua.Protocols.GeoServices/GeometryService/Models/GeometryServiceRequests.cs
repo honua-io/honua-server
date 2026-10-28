@@ -259,12 +259,18 @@ internal enum MeasurementCalculationType
     Geodesic,
 
     /// <summary>
-    /// Esri <c>preserveShape</c>. Edges are densified along the spheroid at about 10 km
-    /// (tighter when the geometry is smaller), transformed back to the request SR, and
-    /// measured with the planar length and area conversion. <see cref="Geodesic"/> stays
+    /// Esri <c>preserveShape</c>. Edges are densified in the request CRS (about 10 km,
+    /// tighter when the geometry is smaller), the samples are transformed to geographic,
+    /// and length and area use the spheroidal path. <see cref="Geodesic"/> stays
     /// vertex-only geography measurement, so a long projected edge is one geodesic.
     /// </summary>
-    PreserveShape
+    PreserveShape,
+
+    /// <summary>
+    /// Ground length and area on the WGS 84 spheroid for the input as given.
+    /// <see cref="Planar"/> keeps the equatorial-radius compatibility scale.
+    /// </summary>
+    Ground
 }
 
 /// <summary>

@@ -20890,8 +20890,10 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceAdvancedOperationsTests.Length_GeodesicCalculationType_UsesGeodeticMeasurement",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceAdvancedOperationsTests.Length_GeographicInput_ReturnsMeters",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceAdvancedOperationsTests.Length_GroundAt60N_MatchesSpheroid",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceAdvancedOperationsTests.Length_InvalidCalculationType_ReturnsStandardGeoServicesError",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceAdvancedOperationsTests.Length_MissingSpatialReference_Returns400",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceAdvancedOperationsTests.Length_PlanarAt60N_MatchesEquatorialEsriScale",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceAdvancedOperationsTests.Length_PostValidRequest_ReturnsLengthValues"
       ],
       "proof_ledger_surface": "geometry-service",
