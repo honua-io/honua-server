@@ -102,6 +102,51 @@ public sealed class ImageServerWmtsMatrixSetTests : IDisposable
 
     [IntegrationTest]
     [Endpoint("GET /rest/services/{id}/ImageServer/WMTS")]
+    [Operation(Operations.GetTile)]
+    public async Task Wmts_EmptyWebMercatorPng_RequiresExistingNonOverlappingRaster()
+    {
+        var store = CreateRasterStoreSubstitute();
+        store.QueryRastersAsync(default, default, default).ReturnsForAnyArgs(Array.Empty<RasterInfo>());
+        var fixture = await CreateFixtureAsync(store, enableWorldCrs84Quad: false);
+        try
+        {
+            var url = $"/rest/services/{TestLayerId}/ImageServer/WMTS?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER={TestLayerId}&STYLE=default&FORMAT=image/png&TILEMATRIXSET=WebMercatorQuad&TILEMATRIX=8&TILEROW=96&TILECOL=38";
+            using var blank = await fixture.Client.GetAsync(url);
+            blank.StatusCode.Should().Be(HttpStatusCode.OK, await blank.Content.ReadAsStringAsync());
+            blank.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+            var bytes = await blank.Content.ReadAsByteArrayAsync();
+            bytes[..8].Should().Equal([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+            System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(bytes.AsSpan(16, 4)).Should().Be(256);
+            System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(bytes.AsSpan(20, 4)).Should().Be(256);
+            var compressedLength = System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(bytes.AsSpan(33, 4));
+            using var compressed = new MemoryStream(bytes, 41, compressedLength);
+            using var decoder = new System.IO.Compression.ZLibStream(compressed, System.IO.Compression.CompressionMode.Decompress);
+            using var pixels = new MemoryStream();
+            await decoder.CopyToAsync(pixels);
+            pixels.Length.Should().Be(256 * (1 + 256 * 4));
+            pixels.ToArray().Should().OnlyContain(value => value == 0);
+
+            using var jpeg = await fixture.Client.GetAsync(url.Replace("image/png", "image/jpeg"));
+            jpeg.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            using var ordinary = await fixture.Client.GetAsync($"/rest/services/{TestLayerId}/ImageServer/tile/8/96/38?format=png");
+            ordinary.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            var rasters = await store.ListRastersAsync(TestLayerId);
+            store.QueryRastersAsync(default, default, default).ReturnsForAnyArgs(rasters);
+            using var rendererMiss = await fixture.Client.GetAsync(url);
+            rendererMiss.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            store.QueryRastersAsync(default, default, default).ReturnsForAnyArgs(Array.Empty<RasterInfo>());
+            store.ListRastersAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(Array.Empty<RasterInfo>());
+            using var missing = await fixture.Client.GetAsync(url);
+            missing.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/WMTS")]
     [Operation(Operations.Metadata)]
     public async Task Wmts_GetCapabilities_DefaultConfig_AdvertisesOnlyWebMercatorQuad()
     {

@@ -3621,7 +3621,7 @@ internal static class ImageServerEndpoints
             format,
             resolution.PublicationId,
             resolution.PublicationLayerIndex,
-            cancellationToken);
+            cancellationToken: cancellationToken);
     }
 
     private static async Task<IResult> GetImageTileByService(
@@ -3644,7 +3644,7 @@ internal static class ImageServerEndpoints
             format,
             resolution.PublicationId,
             resolution.PublicationLayerIndex,
-            cancellationToken);
+            cancellationToken: cancellationToken);
     }
 
     private static async Task<IResult> GetWmts(

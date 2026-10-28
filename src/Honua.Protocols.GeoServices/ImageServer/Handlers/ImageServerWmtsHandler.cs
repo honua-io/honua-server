@@ -414,7 +414,8 @@ internal sealed class ImageServerWmtsHandler(
             tileFormatToken,
             publicationId,
             cacheLayerId,
-            cancellationToken).ConfigureAwait(false);
+            wmtsBlankOutsideCoverage: true,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
     // Validates a requested TILEMATRIX/TILEROW/TILECOL against the canonical gridset bounds

@@ -156,7 +156,7 @@ internal static partial class ImageServerSoapEndpoints
             format,
             current.PublicationId,
             current.PublicationLayerIndex,
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken: cancellationToken).ConfigureAwait(false);
         if (result is Microsoft.AspNetCore.Http.HttpResults.FileContentHttpResult { FileContents: var imageData })
         {
             return CreateSoapResponse(

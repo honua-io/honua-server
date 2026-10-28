@@ -64,6 +64,7 @@ internal sealed class ImageServerTileHandler
         string format,
         string? publicationId = null,
         int? cacheLayerId = null,
+        bool wmtsBlankOutsideCoverage = false,
         CancellationToken cancellationToken = default)
     {
         using var scope = HonuaTelemetryScope.StartFeature(
@@ -146,6 +147,29 @@ internal sealed class ImageServerTileHandler
                 cancellationToken);
 
             ImageServerLog.ImageTileRequested(_logger, layerId, level, row, col);
+
+            // WMTS publishes the full matrix without per-layer limits. A valid PNG tile
+            // outside all indexed raster coverage is a transparent tile, not a missing
+            // resource. Do not mask missing datasets, temporal selection or COG errors.
+            var hasCogBinding = _cogTileResolver != null
+                && resolvedLayer.Publication.LayerIndex is { } cogLayerIndex
+                && CogPublicationBinding.Resolve(snapshot, cogLayerIndex)?.Metadata.Id
+                    == resolvedLayer.Publication.Metadata.Id;
+            if (wmtsBlankOutsideCoverage && rasterFormat == RasterFormat.PNG
+                && selectedRasters.Length == 0 && timestamp is null && timeStart is null)
+            {
+                // A resolver may swallow an individual cloud read failure, so only
+                // an empty registration list proves no COG needs that lookup.
+                var cogStore = context.RequestServices.GetService<ICogStore>();
+                var noCogs = !hasCogBinding || (cogStore != null
+                    && (await cogStore.ListByLayerAsync(resolvedLayer.Publication.LayerIndex!.Value, cancellationToken)
+                        .ConfigureAwait(false)).Length == 0);
+                if (noCogs && (await _rasterStore.ListRastersAsync(layerId, cancellationToken)
+                    .ConfigureAwait(false)).Length > 0)
+                {
+                    return Results.File(TransparentWmtsTile, "image/png");
+                }
+            }
 
             if (selectedRasters.Length == 0 && _cogTileResolver == null)
             {
@@ -578,6 +602,10 @@ internal sealed class ImageServerTileHandler
             }
         }
     }
+
+    // 256 x 256 transparent RGBA PNG for a proven empty WebMercator tile.
+    private static readonly byte[] TransparentWmtsTile = Convert.FromBase64String(
+        "iVBORw0KGgoAAAANSUhEUgAAAQAAAAEACAYAAABccqhmAAABFUlEQVR42u3BMQEAAADCoPVP7WsIoAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAeAMBPAAB2ClDBAAAAABJRU5ErkJggg==");
 
     private static IResult CreateMissingTileResponse(HttpContext context, string detail)
         // Tile misses are transport 404s, unlike ordinary GeoServices operation errors.
