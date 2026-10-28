@@ -1001,6 +1001,34 @@ class FlatGeobufConsumerMetadataTests(unittest.TestCase):
             with self.subTest(raw=raw):
                 self.assertEqual(expected, MODULE._pmtiles_tile_type(raw))
 
+    def test_pmtiles_completion_time_follows_client_io_on_success_and_failure(self):
+        from types import ModuleType
+
+        package = ModuleType("pmtiles")
+        package.__path__ = []
+        reader_module = ModuleType("pmtiles.reader")
+        reader_module.Reader = lambda source: Namespace(header=lambda: {"version": 3}, metadata=lambda: {})
+        for fails in (False, True):
+            with self.subTest(client_fails=fails):
+                clock = {"value": "2026-10-28T00:00:00Z"}
+                def now():
+                    return clock["value"]
+                def tiles(source):
+                    clock["value"] = "2026-10-28T00:00:02Z"
+                    if fails:
+                        raise ValueError("client read failed")
+                    return [((z, x, y), b"tile") for z in range(3)
+                            for x in range(1 << z) for y in range(1 << z)]
+                reader_module.all_tiles = tiles
+                with unittest.mock.patch.dict("sys.modules", {"pmtiles": package, "pmtiles.reader": reader_module}), \
+                        unittest.mock.patch.object(MODULE, "_now", side_effect=now), \
+                        unittest.mock.patch.object(MODULE, "load_source", return_value=(b"archive", {"url": "http://honua"})), \
+                        unittest.mock.patch.object(MODULE, "HttpRangeSource", return_value=Namespace(transfer={}, responses=[])):
+                    row = MODULE.validate_pmtiles(Path("fixture.pmtiles"), args())[0]
+                self.assertEqual("2026-10-28T00:00:02Z", row["completed_at"])
+                self.assertEqual("2026-10-28T00:00:00Z", row["started_at"])
+                self.assertEqual("fail" if fails else "pass", row["result"])
+
     def test_javascript_metadata_survives_collection_without_invented_transfer(self):
         import subprocess
 

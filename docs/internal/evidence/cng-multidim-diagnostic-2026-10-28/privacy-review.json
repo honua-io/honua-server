@@ -1,0 +1,22 @@
+{
+  "scope": "selected JSON fields and command strings inspected; no credentials/authorization headers/connection strings included",
+  "inspected_files": [
+    "summary.json",
+    "nc-job-receipt.json",
+    "h5-job-receipt.json",
+    "nc-http-readback.json",
+    "h5-http-readback.json",
+    "native-libraries.json",
+    "native-tools-provenance.json",
+    "readback-source-provenance.json"
+  ],
+  "excluded": [
+    "test credentials and environment files",
+    "full server/worker logs",
+    "1000-file extraction manifests",
+    "CoverageJSON404 fixture responses"
+  ],
+  "archive_entries": 97,
+  "output_objects": 92,
+  "source_and_output_hashes_verified_against_original_receipts": true
+}

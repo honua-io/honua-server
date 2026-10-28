@@ -1031,6 +1031,8 @@ def validate_pmtiles(path: Path, args: argparse.Namespace) -> list[dict]:
         observation["result"] = "fail"
         observation["failure_reason"] = f"{type(error).__name__}: {error}"
         return [observation]
+    finally:
+        observation["completed_at"] = _now()
     # #4398: the declared pmtiles budget oracle, read back from the archive Honua wrote.
     observation["observed_metadata"] = {
         "spec_version": str(header.get("version")),
