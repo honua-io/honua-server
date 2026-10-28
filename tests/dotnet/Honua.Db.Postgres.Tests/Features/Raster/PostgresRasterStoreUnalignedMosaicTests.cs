@@ -47,7 +47,14 @@ public sealed class PostgresRasterStoreUnalignedMosaicTests(PostgresFixture fixt
     private const int LayerId = 4792;
 
     [IntegrationTest]
-    public async Task ExportCog_WithoutCogDriver_RejectsRatherThanPublishingGtiffFallback()
+    public Task ExportCog_WithoutCogDriver_RejectsRatherThanPublishingGtiffFallback()
+        => AssertMissingCogDriverAsync(warmAvailablePool: false);
+
+    [IntegrationTest]
+    public Task ExportCog_AfterAvailablePoolWarmup_RestrictedPoolRejectsUnavailableDriver()
+        => AssertMissingCogDriverAsync(warmAvailablePool: true);
+
+    private async Task AssertMissingCogDriverAsync(bool warmAvailablePool)
     {
         var schemaName = await CreateSchemaAsync();
         try
@@ -62,6 +69,22 @@ public sealed class PostgresRasterStoreUnalignedMosaicTests(PostgresFixture fixt
                         '32BF'::text,7::double precision,-9999::double precision));
                     """;
                 await command.ExecuteNonQueryAsync();
+            }
+
+            if (warmAvailablePool)
+            {
+                await using (var connection = await fixture.DataSource.OpenConnectionAsync())
+                await using (var command = connection.CreateCommand())
+                {
+                    command.CommandText = "SELECT count(*) FROM ST_GDALDrivers() WHERE short_name = 'COG' AND can_write";
+                    Convert.ToInt64(await command.ExecuteScalarAsync(), CultureInfo.InvariantCulture)
+                        .Should().Be(1, "the first pool must genuinely support writable COG");
+                }
+                var available = CreateStore(schemaName);
+                var primary = await available.GetPrimaryRasterInfoAsync(LayerId);
+                var cog = await available.ExportImageAsync(LayerId, primary!.Id,
+                    new RasterQuery { OutputFormat = RasterFormat.COG });
+                cog.Data.Should().NotBeEmpty("the normal pool warms the real managed COG capability path");
             }
 
             // A dedicated pool sets a session-local GDAL policy on every physical connection.
