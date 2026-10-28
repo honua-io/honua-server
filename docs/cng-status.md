@@ -13,6 +13,14 @@ the store-backed seed/compose under [`docker/cng/`](../docker/cng/), and the
 artifact generator under
 [`scripts/conformance/cng/artifact-gen/`](../scripts/conformance/cng/artifact-gen/).
 
+## Additional bounded engineering receipts
+
+The [2026-10-28 PMTiles client replay](internal/evidence/cng-pmtiles-client-2026-10-28/README.md)
+and [multidimensional worker replay](internal/evidence/cng-multidim-diagnostic-2026-10-28/README.md)
+retain exact producer/serving sources, diagnostic image identities, canonical-client readbacks and
+small artifact bundles. These engineering receipts do not change the frozen campaign denominator
+or establish current-trunk, published-production, real-cloud or complete standards qualification.
+
 ## Current evidence status
 
 Source review baseline: `89a966cd342e88c8fd5ab157e564d14c3d9a68e2`.

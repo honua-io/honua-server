@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { flatGeobufMetadata, pmtilesMetadata } from "./artifact-metadata.mjs";
+import { flatGeobufMetadata, pmtilesMetadata, validatePmtilesFixtureTile } from "./artifact-metadata.mjs";
 
 test("FlatGeobuf observations come from decoded values, including changed count and extent", () => {
   const features = [[10, 30], [-4, 7]].map(coordinates => ({ geometry: { type: "Point", coordinates } }));
@@ -45,4 +45,13 @@ test("PMTiles header observations retain actual type/count/bounds and do not cla
   assert.equal(pmtilesMetadata({ tileType: 2 }).tile_type, "png");
   assert.equal(pmtilesMetadata({ tileType: 88 }).tile_type, "88");
   assert.equal(observed.observed_transfer, undefined);
+});
+
+test("PMTiles fixture rejects a valid nonempty MVT returned for the wrong tile", () => {
+  const wrongTile = { layers: { "cng-2-3-3": {
+    version: 2, extent: 4096, length: 1,
+    feature: () => ({ id: 1, type: 1, properties: { name: "cng-2-3-3", fixture: "wrong" },
+      loadGeometry: () => [[{ x: 103, y: 203 }]] })
+  } } };
+  assert.throws(() => validatePmtilesFixtureTile(wrongTile, 0, 0, 0), /fixture/);
 });
