@@ -29,7 +29,7 @@ public class PrintingToolsOrphanReconcilerTests
 {
     [UnitTest]
     [Protocol(TestProtocols.PrintingTools)]
-    public async Task RestartedHost_FailsQueuedPrintWithinReconciliationInterval()
+    public async Task RestartedHost_FailsQueuedPrintOnLaterHostedSweep()
     {
         var store = new MemoryProgressStore();
         var submitter = Submitter();
@@ -42,14 +42,27 @@ public class PrintingToolsOrphanReconcilerTests
         var orphanOptions = new PrintingToolsOrphanOptions
         {
             ReconciliationInterval = TimeSpan.FromMilliseconds(20),
-            LeaseTimeout = TimeSpan.FromMilliseconds(40)
+            LeaseTimeout = TimeSpan.FromMinutes(1)
         };
         await using var restarted = BuildProvider(store, new PrintWorkerInstance(), new PrintJobTracker(), orphanOptions);
         var reconciler = ActivatorUtilities.CreateInstance<PrintingToolsOrphanReconciler>(restarted);
         await reconciler.StartAsync(CancellationToken.None);
         try
         {
-            var body = await PollStatusAsync(restarted, submitter, queued.JobId, TimeSpan.FromSeconds(2));
+            // Safety cancellation bounds a hung hosted service; elapsed time is not the
+            // functional oracle. The first immutable snapshot contains a fresh lease.
+            using var safety = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            await store.FirstEnumeration.WaitAsync(safety.Token);
+            await store.SetProgressAsync(queued.JobId, queued with
+            {
+                HeartbeatAt = DateTimeOffset.UtcNow - orphanOptions.LeaseTimeout - TimeSpan.FromMinutes(1)
+            }, cancellationToken: safety.Token);
+
+            // The initial sweep cannot fail its fresh snapshot. A subsequent real periodic
+            // hosted sweep must observe the replacement and perform the terminal CAS.
+            var terminalEnumeration = await store.TerminalReplacement.WaitAsync(safety.Token);
+            Assert.True(terminalEnumeration >= 2, "Orphan failure must occur during a later hosted sweep.");
+            var body = await ReadStatusAsync(restarted, submitter, queued.JobId);
             Assert.Contains("esriJobFailed", body, StringComparison.Ordinal);
             Assert.Contains(PrintingToolsOrphanReconciler.RestartedMessage, body, StringComparison.Ordinal);
         }
@@ -152,28 +165,6 @@ public class PrintingToolsOrphanReconcilerTests
             [context, new WebMapDefinition(), "PNG32", "MAP_ONLY", 96, NullLogger.Instance, CancellationToken.None])!;
     }
 
-    private static async Task<string> PollStatusAsync(
-        ServiceProvider services,
-        ClaimsPrincipal submitter,
-        string jobId,
-        TimeSpan timeout)
-    {
-        var deadline = DateTime.UtcNow + timeout;
-        string body = "";
-        while (DateTime.UtcNow < deadline)
-        {
-            body = await ReadStatusAsync(services, submitter, jobId);
-            if (body.Contains("esriJobFailed", StringComparison.Ordinal))
-            {
-                return body;
-            }
-
-            await Task.Delay(15);
-        }
-
-        return body;
-    }
-
     private static async Task<string> ReadStatusAsync(ServiceProvider services, ClaimsPrincipal submitter, string jobId)
     {
         var context = new DefaultHttpContext { RequestServices = services, User = submitter };
@@ -200,6 +191,13 @@ public class PrintingToolsOrphanReconcilerTests
     {
         private readonly object _gate = new();
         private readonly Dictionary<string, IOperationProgress> _items = new(StringComparer.Ordinal);
+        private readonly TaskCompletionSource _firstEnumeration = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource<int> _terminalReplacement = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _enumerationCount;
+
+        public Task FirstEnumeration => _firstEnumeration.Task;
+
+        public Task<int> TerminalReplacement => _terminalReplacement.Task;
 
         public IOperationProgress[] Snapshot()
         {
@@ -268,6 +266,10 @@ public class PrintingToolsOrphanReconcilerTests
                     return Task.FromResult(ProgressCompareAndSetResult.StatusMismatch(current));
                 }
                 _items[operationId] = progress;
+                if (progress.Status == OperationStatus.Failed)
+                {
+                    _terminalReplacement.TrySetResult(_enumerationCount);
+                }
                 return Task.FromResult(ProgressCompareAndSetResult.Updated);
             }
         }
@@ -324,6 +326,9 @@ public class PrintingToolsOrphanReconcilerTests
                     .OfType<TProgress>()
                     .Where(progress => progress.Type == operationType)
                     .ToArray();
+                _enumerationCount++;
+                // Capture the immutable snapshot before waking the test's mutation.
+                _firstEnumeration.TrySetResult();
                 return Task.FromResult(matches);
             }
         }
