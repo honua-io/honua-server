@@ -78,7 +78,7 @@ public sealed class PostgresRasterStoreUnalignedMosaicTests(PostgresFixture fixt
                 await using var reader = await command.ExecuteReaderAsync();
                 var drivers = new List<string>();
                 while (await reader.ReadAsync()) drivers.Add(reader.GetString(0));
-                drivers.Should().Equal("GTiff", "the isolated session allows TIFF but cannot author COG");
+                drivers.Should().Equal(new[] { "GTiff" }, "the isolated session allows TIFF but cannot author COG");
             }
 
             await using (var connection = await dataSource.OpenConnectionAsync())
