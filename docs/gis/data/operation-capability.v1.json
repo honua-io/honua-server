@@ -4564,7 +4564,7 @@
       "operationId": "OgcProcessesLandingPage",
       "capability": "process.ogc-api-processes",
       "family": "OGC API Processes",
-      "maturity": "implemented",
+      "maturity": "preview",
       "catalogEntryId": "get-ogc-processes"
     },
     {
@@ -4574,7 +4574,7 @@
       "operationId": "OgcProcessesConformance",
       "capability": "process.ogc-api-processes",
       "family": "OGC API Processes",
-      "maturity": "implemented",
+      "maturity": "preview",
       "catalogEntryId": "get-ogc-processes-conformance"
     },
     {
@@ -4584,7 +4584,7 @@
       "operationId": "OgcProcessesJobList",
       "capability": "process.ogc-api-processes",
       "family": "OGC API Processes",
-      "maturity": "implemented",
+      "maturity": "preview",
       "catalogEntryId": "get-ogc-processes-jobs"
     },
     {
@@ -4594,7 +4594,7 @@
       "operationId": "OgcProcessesDismissJob",
       "capability": "process.ogc-api-processes",
       "family": "OGC API Processes",
-      "maturity": "implemented",
+      "maturity": "preview",
       "catalogEntryId": "delete-ogc-processes-jobs-jobid"
     },
     {
@@ -4604,7 +4604,7 @@
       "operationId": "OgcProcessesJobStatus",
       "capability": "process.ogc-api-processes",
       "family": "OGC API Processes",
-      "maturity": "implemented",
+      "maturity": "preview",
       "catalogEntryId": "get-ogc-processes-jobs-jobid"
     },
     {
@@ -4614,7 +4614,7 @@
       "operationId": "OgcProcessesJobResults",
       "capability": "process.ogc-api-processes",
       "family": "OGC API Processes",
-      "maturity": "implemented",
+      "maturity": "preview",
       "catalogEntryId": "get-ogc-processes-jobs-jobid-results"
     },
     {
@@ -4624,7 +4624,7 @@
       "operationId": "OgcProcessesOpenApiSpec",
       "capability": "process.ogc-api-processes",
       "family": "OGC API Processes",
-      "maturity": "implemented",
+      "maturity": "preview",
       "catalogEntryId": "get-ogc-processes-openapi-json"
     },
     {
@@ -4634,7 +4634,7 @@
       "operationId": "OgcProcessesList",
       "capability": "process.ogc-api-processes",
       "family": "OGC API Processes",
-      "maturity": "implemented",
+      "maturity": "preview",
       "catalogEntryId": "get-ogc-processes-processes"
     },
     {
@@ -4644,7 +4644,7 @@
       "operationId": "OgcProcessDescription",
       "capability": "process.ogc-api-processes",
       "family": "OGC API Processes",
-      "maturity": "implemented",
+      "maturity": "preview",
       "catalogEntryId": "get-ogc-processes-processes-processid"
     },
     {
@@ -4654,7 +4654,7 @@
       "operationId": "OgcProcessExecute",
       "capability": "process.ogc-api-processes",
       "family": "OGC API Processes",
-      "maturity": "implemented",
+      "maturity": "preview",
       "catalogEntryId": "post-ogc-processes-processes-processid-execution"
     },
     {

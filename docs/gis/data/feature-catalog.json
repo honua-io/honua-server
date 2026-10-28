@@ -909,7 +909,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesJobOwnershipTests.DismissJob_CrossOwnerJob_ReturnsNotFound_AndDoesNotCancel"
       ],
       "proof_ledger_surface": "ogc-api-processes",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "process.ogc-api-processes"
     },
     {
@@ -1220,7 +1220,7 @@
         "Honua.Worker.Gdal.Tests.GdalArtifactPublisherTests.PublishFileAsync_ForcedStagingOnAttestedVolume_ReplacementReadsOracleBytes"
       ],
       "proof_ledger_surface": "geoprocessing-output-artifacts",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "process.geoprocessing"
     },
     {
@@ -1236,7 +1236,7 @@
         "Honua.Server.Tests.Features.Geoprocessing.CustomCodeArtifactEndpointsTests.Upload_RejectsCrossJobRevokedAndStaleAttemptCredentials"
       ],
       "proof_ledger_surface": "geoprocessing-output-artifacts",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "process.geoprocessing"
     },
     {
@@ -7887,7 +7887,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.LandingPage_ServiceDescPointsToProcessesOpenApi"
       ],
       "proof_ledger_surface": "ogc-api-processes",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "process.ogc-api-processes"
     },
     {
@@ -7901,7 +7901,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Conformance_ReturnsProcessesCoreClasses"
       ],
       "proof_ledger_surface": "ogc-api-processes",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "process.ogc-api-processes"
     },
     {
@@ -7920,7 +7920,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesJobOwnershipTests.JobList_MixedOwnership_ReturnsOnlyCallerJobs"
       ],
       "proof_ledger_surface": "ogc-api-processes",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "process.ogc-api-processes"
     },
     {
@@ -7949,7 +7949,7 @@
         "Honua.Worker.Gdal.Tests.OgcProcessesExecutionProofTests.Execute_RasterSurfaceProcess_CompletesAndReturnsAnalyticalSlope"
       ],
       "proof_ledger_surface": "ogc-api-processes",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "process.ogc-api-processes"
     },
     {
@@ -7998,7 +7998,7 @@
         "Honua.Worker.Gdal.Tests.OgcProcessesExecutionProofTests.Execute_RasterSurfaceProcess_CompletesAndReturnsAnalyticalSlope"
       ],
       "proof_ledger_surface": "ogc-api-processes",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "process.ogc-api-processes"
     },
     {
@@ -8015,7 +8015,7 @@
         "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.OpenApiDocuments_OidcEnabled_TenantlessValidBearer_ContinuePastTenantResolution"
       ],
       "proof_ledger_surface": "ogc-api-processes",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "process.ogc-api-processes"
     },
     {
@@ -8036,7 +8036,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.ProcessList_WithNonPositiveLimit_Returns400"
       ],
       "proof_ledger_surface": "ogc-api-processes",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "process.ogc-api-processes"
     },
     {
@@ -8060,7 +8060,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.ProcessDescription_ValidId_ReturnsDescription"
       ],
       "proof_ledger_surface": "ogc-api-processes",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "process.ogc-api-processes"
     },
     {
@@ -11386,7 +11386,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.RoutingUtilityServiceTests.RoutingRoot_WithoutCatalogPublication_ListsOnlySupportedSynchronousTools"
       ],
       "proof_ledger_surface": "gpserver-adapter",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "process.geoprocessing"
     },
     {
@@ -11418,7 +11418,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.RoutingAsyncWebToolTests.TaskInfo_PublishesAsyncPointSchemaAndDocumentedOutputs"
       ],
       "proof_ledger_surface": "gpserver-adapter",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "process.geoprocessing"
     },
     {
@@ -11437,7 +11437,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.NetworkAnalysisUtilitiesTaskTests.GetToolInfo_ReturnsTheNetworkDescriptionAndServiceLimits"
       ],
       "proof_ledger_surface": "gpserver-adapter",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "process.geoprocessing"
     },
     {
@@ -11453,7 +11453,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.JobsList_WithStatusFilter_ReturnsOnlyMatchingStatus"
       ],
       "proof_ledger_surface": "gpserver-adapter",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "process.geoprocessing"
     },
     {
@@ -11481,7 +11481,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.RoutingAsyncWebToolTests.SubmitJob_StockFeatureSet_CompletesWithNamedResultsAndInputIdentity"
       ],
       "proof_ledger_surface": "gpserver-adapter",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "process.geoprocessing"
     },
     {
@@ -11495,7 +11495,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.CancelJob_WithInvalidJobId_ReturnsError"
       ],
       "proof_ledger_surface": "gpserver-adapter",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "process.geoprocessing"
     },
     {
@@ -11519,7 +11519,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.RoutingAsyncWebToolTests.SubmitJob_StockFeatureSet_CompletesWithNamedResultsAndInputIdentity"
       ],
       "proof_ledger_surface": "gpserver-adapter",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "process.geoprocessing"
     },
     {
@@ -11534,7 +11534,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.SubmitJobGet_UnknownTask_ReturnsNotFound"
       ],
       "proof_ledger_surface": "gpserver-adapter",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "process.geoprocessing"
     },
     {
@@ -15174,7 +15174,7 @@
         "Honua.Server.Tests.Infrastructure.Middleware.HeadMethodEndpointTests.Head_WpsGetCapabilities_MatchesGetStatusWithEmptyBodyAndContentLength"
       ],
       "proof_ledger_surface": "wps-2.0.2",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.wps"
     },
     {
@@ -15188,7 +15188,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wps20.Wps20EndpointsTests.ConformanceEcho_ConfiguredPublicBaseUrl_IsUsedForLinks"
       ],
       "proof_ledger_surface": "wps-2.0.2",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.wps"
     },
     {
@@ -20506,7 +20506,7 @@
         "Honua.Worker.Gdal.Tests.OgcProcessesExecutionProofTests.Execute_RasterSurfaceProcess_CompletesAndReturnsAnalyticalSlope"
       ],
       "proof_ledger_surface": "ogc-api-processes",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "process.ogc-api-processes"
     },
     {
@@ -22568,7 +22568,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.RoutingUtilityServiceTests.RoutingRoot_PostAndAlias_ReturnsTheSameDescriptor"
       ],
       "proof_ledger_surface": "gpserver-adapter",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "process.geoprocessing"
     },
     {
@@ -22583,7 +22583,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.TaskInfo_Post_KnownTask_ReturnsTaskMetadata"
       ],
       "proof_ledger_surface": "gpserver-adapter",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "process.geoprocessing"
     },
     {
@@ -22625,7 +22625,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.NetworkAnalysisUtilitiesTaskTests.GetTravelModes_ExecutesAnonymouslyAndReturnsTheEsriRecordSet"
       ],
       "proof_ledger_surface": "gpserver-adapter",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "process.geoprocessing"
     },
     {
@@ -22639,7 +22639,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.CancelJobPost_WithInvalidJobId_ReturnsError"
       ],
       "proof_ledger_surface": "gpserver-adapter",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "process.geoprocessing"
     },
     {
@@ -22712,7 +22712,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.RoutingAsyncWebToolTests.SubmitJob_UnsupportedTravelModeSettings_FailWithoutSolverOrArtifacts"
       ],
       "proof_ledger_surface": "gpserver-adapter",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "process.geoprocessing"
     },
     {
@@ -24002,7 +24002,7 @@
         "Honua.Server.Tests.Features.PrintingTools.PrintingToolsGpServerService5546Tests.PrintingTools_SoapToolInfo_ResolvesCallableAndLegacyNames"
       ],
       "proof_ledger_surface": "gpserver-soap-discovery",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "process.geoprocessing"
     },
     {
@@ -24051,7 +24051,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.RoutingVirtualSoapContractTests.GetToolNames_VirtualRouting_MatchesThePublishedCallableTasks"
       ],
       "proof_ledger_surface": "gpserver-soap-discovery",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "process.geoprocessing"
     },
     {
@@ -24775,7 +24775,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wps20.Wps20EndpointsTests.ReadRequest_XmlWithUndeclaredWpsOperation_ReturnsValidationError"
       ],
       "proof_ledger_surface": "wps-2.0.2",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.wps"
     },
     {
@@ -24816,7 +24816,7 @@
         "Honua.Server.Tests.Features.Geoprocessing.CustomCodeArtifactEndpointsTests.Upload_UserOutputsCannotConsumeReservedJournalCountOrBytes"
       ],
       "proof_ledger_surface": "geoprocessing-output-artifacts",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "process.geoprocessing"
     },
     {
