@@ -50,7 +50,10 @@ public sealed class PdalExecutionProofTests(ITestOutputHelper testOutput) : IDis
         for (var axis = 0; axis < 3; axis++)
         {
             BitConverter.ToDouble(output, 131 + axis * 8).Should().Be(BitConverter.ToDouble(source, 131 + axis * 8));
-            BitConverter.ToDouble(output, 155 + axis * 8).Should().Be(BitConverter.ToDouble(source, 155 + axis * 8));
+            var sourceOffset = BitConverter.ToDouble(source, 155 + axis * 8);
+            var offsetTolerance = Math.Abs(Math.BitIncrement(sourceOffset) - sourceOffset) * 4;
+            BitConverter.ToDouble(output, 155 + axis * 8).Should().BeApproximately(sourceOffset, offsetTolerance,
+                "forwarded offsets may round by a few binary ULPs during PDAL option serialization");
         }
         output[104].Should().Be(sourceFormat == 8 ? (byte)8 : (byte)7,
             "normalizing COPC 6/7 to LAS 7 is allowed, but source 8 infrared must remain representable");
