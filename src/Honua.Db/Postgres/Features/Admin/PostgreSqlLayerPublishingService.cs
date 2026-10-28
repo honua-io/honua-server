@@ -242,6 +242,12 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                 "Schema or table contains invalid characters.");
         }
 
+        if (!CommittedSinkSchemaGate.Allows(_schemaConfiguration, _schemaContext?.CurrentSchema, schema))
+        {
+            throw new LayerPublishingException(LayerPublishingErrorKind.NotFound,
+                $"Table '{schema}.{table}' was not found.");
+        }
+
         var serviceName = NormalizeServiceName(request.ServiceName);
         var publicationScope = ResolvePublicationScope(request.Namespace, _tenantContext?.TenantId);
         var (scopeGraph, _) = await LoadCurrentOrEmptyGraphAsync(cancellationToken).ConfigureAwait(false);
@@ -749,6 +755,12 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         }
 
         checks.Add(Pass("source-table", $"Source table identifier '{schema}.{table}' is syntactically valid."));
+
+        if (!CommittedSinkSchemaGate.Allows(_schemaConfiguration, _schemaContext?.CurrentSchema, schema))
+        {
+            checks.Add(Error("source-table", $"Table '{schema}.{table}' was not found.", $"{schema}.{table}", null));
+            return BuildValidationResult(request, serviceName, null, null, null, checks);
+        }
 
         await using var ownedConnection = existingConnection is null ? new NpgsqlConnection(connectionString) : null;
         var connection = existingConnection ?? ownedConnection!;

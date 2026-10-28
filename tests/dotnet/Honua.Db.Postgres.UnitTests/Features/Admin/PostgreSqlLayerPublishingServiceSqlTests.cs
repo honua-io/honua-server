@@ -79,7 +79,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         var method = serviceType.GetMethod("UpsertPublishedLayerMetadataV2Async", BindingFlags.Instance | BindingFlags.NonPublic)!;
 
         await (Task)method.Invoke(service,
-            ["default", request, 1, storage, "objectid", "geometry", "Point", 4326, fields, null,
+            ["default", request, 1, storage, "objectid", "geometry", "Point", 4326, null, fields, null,
                 new[] { "Query" }, new PostgreSqlLayerPublishingService.PublicationScope(null, null), false, CancellationToken.None])!;
 
         saved.Should().NotBeNull();
@@ -512,7 +512,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             ["geometry", MetadataV2FieldType.Geometry, null, true, null, null, null]), 1);
         var method = serviceType.GetMethod("UpsertPublishedLayerMetadataV2Async", BindingFlags.Instance | BindingFlags.NonPublic)!;
         await (Task)method.Invoke(service,
-            ["default", request, 1, storage, "objectid", "geometry", "Point", 4326, fields, null,
+            ["default", request, 1, storage, "objectid", "geometry", "Point", 4326, null, fields, null,
                 new[] { "Query" }, new PostgreSqlLayerPublishingService.PublicationScope(null, null), false, CancellationToken.None])!;
     }
 
