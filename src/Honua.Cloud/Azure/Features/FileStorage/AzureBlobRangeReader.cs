@@ -57,15 +57,23 @@ internal sealed class AzureBlobRangeReader : ICloudRangeReader
         var blobClient = _serviceClient.GetBlobContainerClient(bucket).GetBlobClient(key);
         var range = new HttpRange(offset, length);
 
-        var response = await blobClient.DownloadStreamingAsync(
-            new BlobDownloadOptions
-            {
-                Range = range,
-                Conditions = string.IsNullOrWhiteSpace(expectedETag)
-                    ? null
-                    : new BlobRequestConditions { IfMatch = new ETag(expectedETag) },
-            },
-            cancellationToken).ConfigureAwait(false);
+        Azure.Response<BlobDownloadStreamingResult> response;
+        try
+        {
+            response = await blobClient.DownloadStreamingAsync(
+                new BlobDownloadOptions
+                {
+                    Range = range,
+                    Conditions = string.IsNullOrWhiteSpace(expectedETag)
+                        ? null
+                        : new BlobRequestConditions { IfMatch = new ETag(expectedETag) },
+                },
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (RequestFailedException ex) when (ex.Status == 412)
+        {
+            throw new CloudFileRevisionChangedException();
+        }
         using var download = response.Value;
 
         using var ms = new MemoryStream(length);
