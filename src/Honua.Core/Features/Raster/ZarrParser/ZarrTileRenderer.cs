@@ -1,7 +1,6 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Buffers.Binary;
 using Honua.Core.Features.Raster.Domain;
 
 namespace Honua.Core.Features.Raster.ZarrParser;
@@ -53,6 +52,31 @@ public static class ZarrTileRenderer
         int outputHeight,
         RasterColormap? colormap = null,
         double? fillValue = null)
+        => RenderWithTypedFill(result, slice, outputWidth, outputHeight, colormap, fillValue);
+
+    /// <summary>Renders a square tile with an explicit source-typed nodata sentinel.</summary>
+    /// <param name="result">Decoded subset payload.</param>
+    /// <param name="slice">Resolved spatial slice plan.</param>
+    /// <param name="tileSize">Output tile edge length.</param>
+    /// <param name="colormap">Optional colormap.</param>
+    /// <param name="fillValue">Typed source sentinel; null opts out of finite nodata masking.</param>
+    /// <returns>PNG-encoded RGBA tile.</returns>
+    public static byte[] RenderWithTypedFill(
+        ZarrSubsetResult result, ZarrTileSlicePlan slice, int tileSize = DefaultTileSize,
+        RasterColormap? colormap = null, object? fillValue = null)
+        => RenderWithTypedFill(result, slice, tileSize, tileSize, colormap, fillValue);
+
+    /// <summary>Renders a rectangular image, comparing an explicit sentinel before numeric conversion.</summary>
+    /// <param name="result">Decoded subset payload.</param>
+    /// <param name="slice">Resolved spatial slice plan.</param>
+    /// <param name="outputWidth">Output width.</param>
+    /// <param name="outputHeight">Output height.</param>
+    /// <param name="colormap">Optional colormap.</param>
+    /// <param name="fillValue">Typed source sentinel; null opts out of finite nodata masking.</param>
+    /// <returns>PNG-encoded RGBA image.</returns>
+    public static byte[] RenderWithTypedFill(
+        ZarrSubsetResult result, ZarrTileSlicePlan slice, int outputWidth, int outputHeight,
+        RasterColormap? colormap = null, object? fillValue = null)
     {
         ArgumentNullException.ThrowIfNull(result);
         ArgumentNullException.ThrowIfNull(slice);
@@ -72,11 +96,11 @@ public static class ZarrTileRenderer
         // subset dimensions; computing them explicitly keeps the mapping correct
         // regardless of where the Y and X axes sit in the dimension order.
         var (strideY, strideX) = ComputeSpatialStrides(result.Shape, slice.YDimensionIndex, slice.XDimensionIndex);
-        var values = DecodeBuffer(result);
+        var values = DecodeBuffer(result, fillValue);
 
         // Build the value->colour mapping. With a colormap, interpolate between stops;
         // otherwise auto-ramp grayscale over the finite value range.
-        var ramp = colormap is null ? ResolveRange(values, fillValue) : default;
+        var ramp = colormap is null ? ResolveRange(values) : default;
 
         var pixels = new byte[checked(outputWidth * outputHeight * 4)];
         for (var py = 0; py < outputHeight; py++)
@@ -101,7 +125,7 @@ public static class ZarrTileRenderer
                 var index = (gy * strideY) + (gx * strideX);
                 var value = index >= 0 && index < values.Length ? values[index] : double.NaN;
                 var offset = ((py * outputWidth) + px) * 4;
-                WritePixel(pixels.AsSpan(offset), value, colormap, ramp, fillValue);
+                WritePixel(pixels.AsSpan(offset), value, colormap, ramp);
             }
         }
 
@@ -138,6 +162,25 @@ public static class ZarrTileRenderer
         RasterColormap? colormap,
         (double Min, double Max)? stretchRange,
         double? fillValue)
+        => RenderRgbaWithTypedFill(result, slice, outputWidth, outputHeight, sampleX, sampleY,
+            resampling, colormap, stretchRange, fillValue);
+
+    /// <summary>Samples a transformed grid using source-typed nodata equality before interpolation.</summary>
+    /// <param name="result">Decoded subset payload.</param>
+    /// <param name="slice">Resolved spatial slice plan.</param>
+    /// <param name="outputWidth">Output width.</param>
+    /// <param name="outputHeight">Output height.</param>
+    /// <param name="sampleX">Native X coordinates.</param>
+    /// <param name="sampleY">Native Y coordinates.</param>
+    /// <param name="resampling">Sampling method.</param>
+    /// <param name="colormap">Optional colormap.</param>
+    /// <param name="stretchRange">Optional explicit stretch.</param>
+    /// <param name="fillValue">Typed source sentinel; null opts out of finite nodata masking.</param>
+    /// <returns>Row-major RGBA bytes.</returns>
+    public static byte[] RenderRgbaWithTypedFill(
+        ZarrSubsetResult result, ZarrTileSlicePlan slice, int outputWidth, int outputHeight,
+        double[] sampleX, double[] sampleY, ResamplingAlgorithm resampling, RasterColormap? colormap,
+        (double Min, double Max)? stretchRange, object? fillValue)
     {
         ArgumentNullException.ThrowIfNull(result);
         ArgumentNullException.ThrowIfNull(slice);
@@ -158,11 +201,11 @@ public static class ZarrTileRenderer
         }
 
         var (strideY, strideX) = ComputeSpatialStrides(result.Shape, slice.YDimensionIndex, slice.XDimensionIndex);
-        var values = DecodeBuffer(result);
+        var values = DecodeBuffer(result, fillValue);
 
         // With an explicit stretch the display range is caller-supplied; otherwise auto-ramp
         // grayscale (and, when a colormap is present, spread it across) the finite slice range.
-        var range = stretchRange ?? ResolveRange(values, fillValue);
+        var range = stretchRange ?? ResolveRange(values);
         var lo = range.Min;
         var hi = range.Max > range.Min ? range.Max : range.Min + 1;
 
@@ -178,9 +221,8 @@ public static class ZarrTileRenderer
                 slice,
                 sampleX[index],
                 sampleY[index],
-                resampling,
-                fillValue);
-            WriteStretchedPixel(pixels.AsSpan(index * 4), value, colormap, lo, hi, fillValue);
+                resampling);
+            WriteStretchedPixel(pixels.AsSpan(index * 4), value, colormap, lo, hi);
         }
 
         return pixels;
@@ -199,8 +241,7 @@ public static class ZarrTileRenderer
         ZarrTileSlicePlan slice,
         double x,
         double y,
-        ResamplingAlgorithm resampling,
-        double? fillValue)
+        ResamplingAlgorithm resampling)
     {
         // Fractional cell-centre position of the native coordinate within the subset grid.
         var fx = ((x - slice.GridXMin) / slice.CellWidth) - 0.5;
@@ -216,7 +257,7 @@ public static class ZarrTileRenderer
             var v = idx >= 0 && idx < values.Length ? values[idx] : double.NaN;
             // Substitute a missing neighbour with the centre value so an interpolation kernel
             // never smears NoData into valid output; the centre-missing case short-circuits above.
-            return !double.IsFinite(v) || (fillValue is { } fill && v.Equals(fill)) ? double.NaN : v;
+            return !double.IsFinite(v) ? double.NaN : v;
         }
 
         var centre = ValueAt((int)Math.Round(fx), (int)Math.Round(fy));
@@ -280,10 +321,9 @@ public static class ZarrTileRenderer
         double value,
         RasterColormap? colormap,
         double lo,
-        double hi,
-        double? fillValue)
+        double hi)
     {
-        if (!double.IsFinite(value) || (fillValue is { } fill && value.Equals(fill)))
+        if (!double.IsFinite(value))
         {
             pixel[0] = 0;
             pixel[1] = 0;
@@ -331,88 +371,30 @@ public static class ZarrTileRenderer
         return (strideY, strideX);
     }
 
-    private static double[] DecodeBuffer(ZarrSubsetResult result)
+    private static double[] DecodeBuffer(ZarrSubsetResult result, object? fillValue)
     {
         var dtype = Normalize(result.DataType);
         var elementSize = ElementSize(dtype, result.DataType);
         var count = result.Data.Length / elementSize;
         var values = new double[count];
-        var data = result.Data.AsSpan();
-
-        switch (dtype)
+        for (var index = 0; index < count; index++)
         {
-            case "f4":
-                ReadAll(data, count, 4, values, static s => BinaryPrimitives.ReadSingleLittleEndian(s));
-                break;
-            case "f8":
-                ReadAll(data, count, 8, values, static s => BinaryPrimitives.ReadDoubleLittleEndian(s));
-                break;
-            case "i1":
-                for (var i = 0; i < count && i < data.Length; i++)
-                {
-                    values[i] = (sbyte)data[i];
-                }
-                break;
-            case "u1":
-            case "b1":
-                for (var i = 0; i < count && i < data.Length; i++)
-                {
-                    values[i] = data[i];
-                }
-                break;
-            case "i2":
-                ReadAll(data, count, 2, values, static s => BinaryPrimitives.ReadInt16LittleEndian(s));
-                break;
-            case "u2":
-                ReadAll(data, count, 2, values, static s => BinaryPrimitives.ReadUInt16LittleEndian(s));
-                break;
-            case "i4":
-                ReadAll(data, count, 4, values, static s => BinaryPrimitives.ReadInt32LittleEndian(s));
-                break;
-            case "u4":
-                ReadAll(data, count, 4, values, static s => BinaryPrimitives.ReadUInt32LittleEndian(s));
-                break;
-            case "i8":
-                ReadAll(data, count, 8, values, static s => BinaryPrimitives.ReadInt64LittleEndian(s));
-                break;
-            case "u8":
-                ReadAll(data, count, 8, values, static s => BinaryPrimitives.ReadUInt64LittleEndian(s));
-                break;
-            default:
+            var scalar = result.Data.AsSpan(index * elementSize, elementSize);
+            if (!ZarrValueDecoder.TryDecodeWithFill(scalar, dtype, fillValue, out var value))
                 throw new InvalidOperationException($"Zarr dtype '{result.DataType}' is not supported for tile rendering.");
+            values[index] = value ?? double.NaN;
         }
-
         return values;
     }
 
-    private static void ReadAll(ReadOnlySpan<byte> data, int count, int size, double[] values, ReadSample read)
-    {
-        for (var i = 0; i < count; i++)
-        {
-            var offset = i * size;
-            if (offset + size > data.Length)
-            {
-                values[i] = double.NaN;
-                continue;
-            }
-            values[i] = read(data.Slice(offset, size));
-        }
-    }
-
-    private delegate double ReadSample(ReadOnlySpan<byte> source);
-
-    private static (double Min, double Max) ResolveRange(double[] values, double? fillValue)
+    private static (double Min, double Max) ResolveRange(double[] values)
     {
         var min = double.PositiveInfinity;
         var max = double.NegativeInfinity;
         foreach (var value in values)
         {
-            // Exact equality is required (not tolerance-based): fillValue is the
-            // producer-declared CF/NetCDF/Zarr "_FillValue"/no-data sentinel, and
-            // only a bit-identical match identifies a no-data pixel. A tolerance
-            // here would risk misclassifying genuine nearby data values as
-            // missing.
-            if (!double.IsFinite(value) || (fillValue is { } fill && value.Equals(fill)))
+            // Source-typed nodata was already masked before decoding.
+            if (!double.IsFinite(value))
             {
                 continue;
             }
@@ -437,15 +419,10 @@ public static class ZarrTileRenderer
         Span<byte> pixel,
         double value,
         RasterColormap? colormap,
-        (double Min, double Max) ramp,
-        double? fillValue)
+        (double Min, double Max) ramp)
     {
-        // Exact equality is required (not tolerance-based): fillValue is the
-        // producer-declared CF/NetCDF/Zarr "_FillValue"/no-data sentinel, and
-        // only a bit-identical match identifies a no-data pixel. A tolerance
-        // here would risk misclassifying genuine nearby data values as
-        // missing.
-        if (!double.IsFinite(value) || (fillValue is { } fill && value.Equals(fill)))
+        // Source-typed nodata was already masked before decoding.
+        if (!double.IsFinite(value))
         {
             pixel[0] = 0;
             pixel[1] = 0;

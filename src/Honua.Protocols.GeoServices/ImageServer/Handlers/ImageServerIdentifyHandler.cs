@@ -368,8 +368,9 @@ internal sealed class ImageServerIdentifyHandler
                 read.Error ?? "multidimensionalDefinition could not be resolved.");
         }
 
-        var hasData = read.Status == ZarrPointSliceReadStatus.Success;
-        var value = hasData ? read.Value!.Value : double.NaN;
+        var hasData = read.Status == ZarrPointSliceReadStatus.Success &&
+            read.Value is { } sample && double.IsFinite(sample);
+        var value = hasData ? read.Value.GetValueOrDefault() : double.NaN;
         var response = new IdentifyResponse
         {
             ObjectId = null,

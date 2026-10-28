@@ -93,6 +93,33 @@ public sealed class ZarrTypedNoDataConsumerTests
         overridden.Pixel(1, 1).Item4.Should().Be(0, "the explicit override is the selected sentinel");
     }
 
+    [Theory]
+    [InlineData(float.NaN, false)]
+    [InlineData(float.PositiveInfinity, false)]
+    [InlineData(float.NegativeInfinity, false)]
+    [InlineData(float.NaN, true)]
+    [Trait("Tier", "Fast")]
+    public async Task ReadPoint_NonFiniteOrAbsentNanSample_ReturnsNull(float sample, bool missing)
+    {
+        var (registration, objects, _) = Fixture("<i8", 0);
+        var metadata = registration.Metadata!;
+        var array = metadata.Arrays[0] with { DataType = "<f4", FillValue = float.NaN };
+        registration = registration with { Metadata = metadata with { Arrays = [array] } };
+        var bytes = new byte[16];
+        BinaryPrimitives.WriteSingleLittleEndian(bytes, sample);
+        for (var index = 1; index < 4; index++)
+            BinaryPrimitives.WriteSingleLittleEndian(bytes.AsSpan(index * 4), 10f);
+        objects["typed/band/0.0.0"] = bytes;
+        if (missing) objects.Clear();
+        var store = Substitute.For<IZarrStore>();
+        store.ListByLayerAsync(7, Arg.Any<CancellationToken>()).Returns(Task.FromResult(new[] { registration }));
+        var reader = new ZarrPointSliceReader(store, new ZarrSubsetReader(), [new InMemoryZarrRangeReader(objects)]);
+        var result = await reader.ReadAsync(7, 0.5, 1.5, 4326,
+            [new ZarrPointSliceSelection("band", "elevation", 500)]);
+        result.Status.Should().Be(ZarrPointSliceReadStatus.Success, result.Error);
+        result.Value.Should().BeNull("canonical point nodata must not leak a non-finite JSON number");
+    }
+
     private static (ZarrRegistration Registration, Dictionary<string, byte[]> Objects, object Fill) Fixture(string dtype, int offset)
     {
         const long adjacent = 9007199254740992L;
