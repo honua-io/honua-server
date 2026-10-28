@@ -124,7 +124,7 @@ internal sealed class CogArtifactService
                 new RasterQuery { OutputFormat = RasterFormat.COG },
                 cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or NotSupportedException)
         {
             CogArtifactLog.ExportFailed(_logger, layerId, raster.Id, ex);
             return new CogArtifactPublishOutcome(CogArtifactPublishStatus.ExportFailed, null, "COG export failed.");
