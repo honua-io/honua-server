@@ -8,6 +8,9 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <None Update="Features\Scene\PointCloud\Fixtures\*.copc.laz">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <ProjectReference Include="..\..\..\src\Honua.Core\Honua.Core.csproj" />
     <ProjectReference Include="../Honua.TestKit.Core/Honua.TestKit.Core.csproj" />
     <ProjectReference Include="..\..\..\src\Honua.Scene\Honua.Scene.csproj" />

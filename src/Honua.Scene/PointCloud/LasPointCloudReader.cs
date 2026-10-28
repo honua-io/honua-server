@@ -32,6 +32,14 @@ namespace Honua.Core.Features.Scene.PointCloud;
 /// </remarks>
 public static class LasPointCloudReader
 {
+    /// <summary>
+    /// Reads public-header metadata for source registration without decoding point records.
+    /// </summary>
+    /// <param name="source">The available public-header prefix.</param>
+    /// <returns>The declared point count, coordinate bounds and record layout.</returns>
+    /// <exception cref="LasFormatException">The header is not supported.</exception>
+    public static LasHeader ReadSourceHeader(ReadOnlySpan<byte> source) => ReadHeader(source);
+
     private const int PublicHeaderMinLength = 227; // LAS 1.2 public header size.
 
     /// <summary>
