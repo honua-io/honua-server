@@ -35,6 +35,58 @@ public class ImageServerBasicTests : IClassFixture<WebAppFixture>
         _fixture = fixture;
     }
 
+    [IntegrationTheory]
+    [InlineData("getSamples")]
+    [InlineData("identify")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/getSamples")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/identify")]
+    [Operation(Operations.Query)]
+    [Operation(Operations.Identify)]
+    public async Task PointEndpoints_NodataSlice_UsesNullAndNoDataWithoutJsonNan(string operation)
+    {
+        var reader = Substitute.For<IZarrPointSliceReader>();
+        reader.ReadAsync(Arg.Any<int>(), Arg.Any<double>(), Arg.Any<double>(), Arg.Any<int?>(),
+                Arg.Any<IReadOnlyList<ZarrPointSliceSelection>>(), Arg.Any<CancellationToken>())
+            .Returns(new ZarrPointSliceReadResult(ZarrPointSliceReadStatus.Success, null, "temperature", null));
+        reader.ReadBatchAsync(Arg.Any<int>(), Arg.Any<IReadOnlyList<ZarrPointSliceReadRequest>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<ZarrPointSliceReadResult>>(
+                [new(ZarrPointSliceReadStatus.Success, null, "temperature", null)]));
+        var fixture = new WebAppFixture().ConfigureServices(services =>
+        {
+            services.RemoveAll<IZarrPointSliceReader>();
+            services.AddSingleton(reader);
+        });
+        await fixture.InitializeAsync();
+        try
+        {
+            var definition = Uri.EscapeDataString(
+                """[{"variableName":"temperature","dimensionName":"elevation","values":[500],"isSlice":true}]""");
+            var geometry = Uri.EscapeDataString("""{"x":0,"y":0,"spatialReference":{"wkid":4326}}""");
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/{operation}?geometry={geometry}&geometryType=esriGeometryPoint&sr=4326&multidimensionalDefinition={definition}&f=json");
+            var text = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.OK, text);
+            text.Should().NotContain("NaN");
+            reader.ReceivedCalls().Should().Contain(call => call.GetMethodInfo().Name ==
+                (operation == "getSamples" ? "ReadBatchAsync" : "ReadAsync"), text);
+            using var json = JsonDocument.Parse(text);
+            json.RootElement.TryGetProperty("error", out _).Should().BeFalse(text);
+            if (operation == "getSamples")
+            {
+                var sample = json.RootElement.GetProperty("samples")[0];
+                sample.GetProperty("value").GetString().Should().Be("NoData");
+                sample.GetProperty("attributes").GetProperty("Value").ValueKind.Should().Be(JsonValueKind.Null);
+            }
+            else
+            {
+                json.RootElement.GetProperty("value").GetString().Should().Be("NoData");
+                json.RootElement.GetProperty("properties").GetProperty("HasData").GetBoolean().Should().BeFalse();
+            }
+        }
+        finally { await fixture.DisposeAsync(); }
+    }
+
     [IntegrationTest]
     [Endpoint("GET /rest/services/{id}/ImageServer")]
     [Operation(Operations.GetServiceInfo)]

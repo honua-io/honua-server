@@ -213,8 +213,10 @@ internal sealed class ZarrTileService : IZarrTileService
             return StandardErrorHelpers.CreateInternalServerError(context, "The Zarr store returned invalid data for this tile.");
         }
 
-        var fillValue = slice.Plan.Array.FillValue as double?;
-        var png = ZarrTileRenderer.Render(result, slice, ZarrTileRenderer.DefaultTileSize, colormap: null, fillValue: fillValue);
+        // Preserve the source dtype until nodata comparison; widening int64/uint64
+        // sentinels first can collapse an adjacent real sample onto the same double.
+        var png = ZarrTileRenderer.RenderWithTypedFill(result, slice, ZarrTileRenderer.DefaultTileSize,
+            colormap: null, fillValue: slice.Plan.Array.FillValue);
         ZarrLog.DatacubeTileRendered(_logger, layerId, result.Variable, z, x, y, png.Length);
         return Results.Bytes(png, "image/png");
     }
