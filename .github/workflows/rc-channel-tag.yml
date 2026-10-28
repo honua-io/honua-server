@@ -1,0 +1,114 @@
+name: Release candidate channel tag
+
+# Owner decision 17 (release-candidate-channel-tag-2026-10-10, honua-release#376): each mint
+# publishes or moves ghcr.io/honua-io/honua-server:2026.1-rc to the certified lock. The nightly
+# mint runs in honua-release and cannot write this package, so this workflow, owned by the
+# package's repository, moves the tag.
+#
+# It takes only a lock label. The image comes from the signed lock itself: the
+# nightly-lock/<label> tag in honua-release, whose platform-lock.json must verify with cosign as
+# honua-release's nightly-certification.yml on trunk. Nothing else moves; :2026.1, :stable and the
+# other public channels stay promotion-owned.
+
+on:
+  workflow_dispatch:
+    inputs:
+      lock_label:
+        description: "Minted nightly lock label, for example 2026.1-rc.3"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc-channel-tag
+  cancel-in-progress: false
+
+env:
+  CHANNEL: ghcr.io/honua-io/honua-server:2026.1-rc
+  IMAGE: ghcr.io/honua-io/honua-server
+  LOCK_REPOSITORY: honua-io/honua-release
+  LOCK_SIGNER: https://github.com/honua-io/honua-release/.github/workflows/nightly-certification.yml@refs/heads/trunk
+
+jobs:
+  move:
+    if: github.ref == 'refs/heads/trunk' && github.repository == 'honua-io/honua-server'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Read the signed lock for the label
+        id: lock
+        env:
+          LABEL: ${{ inputs.lock_label }}
+        run: |
+          set -euo pipefail
+          [[ "$LABEL" =~ ^2026\.1-rc\.[0-9]+$ ]] || { echo "::error::lock label must look like 2026.1-rc.N"; exit 1; }
+          git init -q --bare lock.git
+          git -C lock.git fetch -q --no-tags "https://github.com/${LOCK_REPOSITORY}" \
+            "refs/tags/nightly-lock/${LABEL}:refs/tags/nightly-lock/${LABEL}"
+          commit="$(git -C lock.git rev-parse --verify "refs/tags/nightly-lock/${LABEL}^{commit}")"
+          mkdir lock
+          git -C lock.git show "${commit}:platform-lock.json" > lock/platform-lock.json
+          git -C lock.git show "${commit}:platform-lock.sigstore.json" > lock/platform-lock.sigstore.json
+          echo "commit=${commit}" >> "$GITHUB_OUTPUT"
+
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Verify the lock was signed by the trunk nightly mint
+        run: |
+          set -euo pipefail
+          cosign verify-blob lock/platform-lock.json --bundle lock/platform-lock.sigstore.json \
+            --certificate-identity "$LOCK_SIGNER" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            --certificate-github-workflow-repository "$LOCK_REPOSITORY" \
+            --certificate-github-workflow-ref refs/heads/trunk
+
+      - name: Select the locked server image
+        id: image
+        env:
+          LABEL: ${{ inputs.lock_label }}
+        run: |
+          set -euo pipefail
+          lock=lock/platform-lock.json
+          [ "$(jq -r '.platform.id' "$lock")" = "honua-${LABEL}" ] || { echo "::error::lock does not name honua-${LABEL}"; exit 1; }
+          digests="$(jq -r --arg image "$IMAGE" \
+            '[.components["honua-server"].artifacts[] | select(.kind == "image" and .coordinate == $image) | .digest] | unique | .[]' "$lock")"
+          [ "$(printf '%s\n' "$digests" | grep -c .)" = 1 ] || { echo "::error::lock must pin exactly one ${IMAGE} digest; found: ${digests:-none}"; exit 1; }
+          [[ "$digests" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::locked digest is malformed: $digests"; exit 1; }
+          echo "digest=${digests}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Move the channel tag to the locked bytes
+        env:
+          DIGEST: ${{ steps.image.outputs.digest }}
+          LABEL: ${{ inputs.lock_label }}
+          LOCK_COMMIT: ${{ steps.lock.outputs.commit }}
+        run: |
+          set -euo pipefail
+          current() { docker buildx imagetools inspect "$CHANNEL" --format '{{json .Manifest}}' 2>/dev/null | jq -r '.digest // empty' || true; }
+          before="$(current)"
+          if [ "$before" != "$DIGEST" ]; then
+            # imagetools copies the locked manifest byte for byte, so the tag resolves to the lock's digest.
+            docker buildx imagetools create --tag "$CHANNEL" "${IMAGE}@${DIGEST}"
+          fi
+          after="$(current)"
+          [ "$after" = "$DIGEST" ] || { echo "::error::${CHANNEL} resolves to ${after:-nothing}, not ${DIGEST}"; exit 1; }
+          {
+            echo "### ${CHANNEL}"
+            echo "- lock: nightly-lock/${LABEL} (${LOCK_COMMIT})"
+            echo "- digest: ${DIGEST}"
+            echo "- previous: ${before:-none}"
+          } >> "$GITHUB_STEP_SUMMARY"
