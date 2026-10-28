@@ -328,6 +328,10 @@ public sealed class WebAppFixture : IAsyncLifetime
     public void UpdateV2ResourceSchemaField(int layerIndex, MetadataV2Field field)
         => Honua.TestKit.Mixins.WebAppFixtureMetadataV2GraphMutationMixin.UpdateResourceSchemaField(this, layerIndex, field);
 
+    /// <summary>Restores a resource's schema fields after a test-local mutation.</summary>
+    public void RestoreV2ResourceSchemaFields(int layerIndex, IReadOnlyList<MetadataV2Field> fields)
+        => Honua.TestKit.Mixins.WebAppFixtureMetadataV2GraphMutationMixin.RestoreResourceSchemaFields(this, layerIndex, fields);
+
     /// <summary>
     /// Sets (or clears with <c>null</c>) editor-tracking and GlobalID bindings on the
     /// resource published at <paramref name="layerIndex"/>.

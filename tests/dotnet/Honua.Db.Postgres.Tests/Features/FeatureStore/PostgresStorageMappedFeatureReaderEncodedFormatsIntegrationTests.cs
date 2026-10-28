@@ -256,7 +256,7 @@ public sealed partial class PostgresStorageMappedFeatureReaderEncodedFormatsInte
     }
 
     [Fact]
-    public async Task QueryFlatGeobufAsync_NoMatchingRows_ReturnsNull()
+    public async Task QueryFlatGeobufAsync_NoMatchingRows_ReturnsReadableEmptyFile()
     {
         var reader = CreateReader();
 
@@ -265,7 +265,37 @@ public sealed partial class PostgresStorageMappedFeatureReaderEncodedFormatsInte
             new FeatureQuery { Where = "population > 100000000" },
             CancellationToken.None);
 
-        payload.Should().BeNull();
+        payload.Should().NotBeNullOrEmpty();
+        FlatGeobuf.NTS.FeatureCollectionConversions.Deserialize(payload!).Should().BeEmpty();
+        using var stream = new MemoryStream(payload!);
+        var header = FlatGeobuf.Helpers.ReadHeader(stream);
+        header.FeaturesCount.Should().Be(0);
+        header.IndexNodeSize.Should().Be(0);
+        header.Crs!.Value.Code.Should().Be(4326);
+    }
+
+    [Theory]
+    [InlineData(null, 3857)]
+    [InlineData(4326, 4326)]
+    public async Task QueryFlatGeobufAsync_StorageCrsDiffersFromAdvertisedCrs_LabelsActualCoordinates(
+        int? outputSrid, int expectedSrid)
+    {
+        await _fixture.ExecuteAsync($"""
+            ALTER TABLE {_schema}.cities ALTER COLUMN geom TYPE geometry(Point, 3857)
+                USING ST_Transform(geom, 3857);
+            """);
+        // The advertised resource remains WGS84; storage coordinates are Web Mercator.
+        var reader = CreateReader(storageSrid: 3857);
+        var payload = await reader.QueryFlatGeobufAsync(1,
+            new FeatureQuery { OutputSrid = outputSrid }, CancellationToken.None);
+
+        payload.Should().NotBeNullOrEmpty();
+        using var stream = new MemoryStream(payload!);
+        FlatGeobuf.Helpers.ReadHeader(stream).Crs!.Value.Code.Should().Be(expectedSrid);
+        var feature = FlatGeobuf.NTS.FeatureCollectionConversions.Deserialize(payload!)
+            .Single(item => Equals(item.Attributes["name"], "Honolulu"));
+        var expectedX = expectedSrid == 4326 ? -157.8583 : -157.8583 * Math.PI / 180 * 6378137;
+        feature.Geometry.Coordinate.X.Should().BeApproximately(expectedX, 0.001);
     }
 
     [Fact]
@@ -558,7 +588,8 @@ public sealed partial class PostgresStorageMappedFeatureReaderEncodedFormatsInte
         bool smallintHint = false,
         string? connectionString = null,
         bool preferSerialPlan = false,
-        IAdoNetDatabaseConnectionProvider? connectionProvider = null)
+        IAdoNetDatabaseConnectionProvider? connectionProvider = null,
+        int storageSrid = 4326)
     {
         var schemaFields = new List<MetadataV2Field>
         {
@@ -599,7 +630,7 @@ public sealed partial class PostgresStorageMappedFeatureReaderEncodedFormatsInte
             SchemaName: _schema,
             PrimaryKeyColumn: "objectid",
             GeometryColumn: "geom",
-            StorageSrid: 4326,
+            StorageSrid: storageSrid,
             AttributesColumn: attributesColumn,
             ProviderOptions: smallintHint
                 ? new Dictionary<string, string>

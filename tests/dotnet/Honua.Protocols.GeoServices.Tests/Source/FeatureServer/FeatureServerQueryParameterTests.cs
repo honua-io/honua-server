@@ -5,23 +5,59 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Protocols.GeoServices.FeatureServer;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
+
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
 [Protocol(TestProtocols.FeatureServer)]
 [Collection("Database")]
-public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixture>
+public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixture>, IAsyncLifetime
 {
+    private static readonly string[] ExpectedIndexedNames = ["indexed-10", "indexed-11", "indexed-12"];
     private readonly WebAppFixture _fixture;
+    private readonly List<long> _flatGeobufProbeIds = [];
+    private MetadataV2Field[]? _originalSchemaFields;
 
     public FeatureServerQueryParameterTests(WebAppFixture fixture)
     {
         _fixture = fixture;
+    }
+
+    public Task InitializeAsync()
+    {
+        var graph = _fixture.GetCurrentV2GraphSnapshot().Graph;
+        var publication = graph.Publications.First(p => p.LayerIndex == WebAppFixture.TestLayerId);
+        _originalSchemaFields = graph.Resources.Single(r => r.Metadata.Id == publication.ResourceId).SchemaFields.ToArray();
+        return Task.CompletedTask;
+    }
+
+    public async Task DisposeAsync()
+    {
+        try
+        {
+            if (_flatGeobufProbeIds.Count > 0)
+            {
+                await using var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema!);
+                await using var command = connection.CreateCommand();
+                command.CommandText = "DELETE FROM features WHERE layer_id = @layer AND objectid = ANY(@ids);";
+                command.Parameters.AddWithValue("layer", WebAppFixture.TestLayerId);
+                command.Parameters.AddWithValue("ids", _flatGeobufProbeIds.ToArray());
+                await command.ExecuteNonQueryAsync();
+            }
+        }
+        finally
+        {
+            if (_originalSchemaFields is not null)
+            {
+                _fixture.RestoreV2ResourceSchemaFields(WebAppFixture.TestLayerId, _originalSchemaFields);
+            }
+        }
     }
 
     [Fact]
@@ -174,6 +210,367 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/vnd.flatgeobuf");
         var payload = await response.Content.ReadAsByteArrayAsync();
         payload.Should().NotBeEmpty();
+    }
+
+    [IntegrationTheory]
+    [InlineData("*", 4326)]
+    [InlineData("name", 3857)]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithFlatGeobufFormatAndNoMatches_ReturnsReadableEmptyFile(string fields, int outputSrid)
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?f=fgb&where=1%3D0&outFields={fields}&outSR={outputSrid}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/vnd.flatgeobuf");
+        var payload = await ReadFlatGeobufEvidenceAsync(response, $"empty-{outputSrid}");
+        payload.Should().NotBeEmpty("an empty result still needs a valid FlatGeobuf header");
+        FlatGeobuf.NTS.FeatureCollectionConversions.Deserialize(payload).Should().BeEmpty();
+        using var stream = new MemoryStream(payload);
+        var header = FlatGeobuf.Helpers.ReadHeader(stream, out _);
+        header.FeaturesCount.Should().Be(0);
+        header.IndexNodeSize.Should().Be(0);
+        (header.Crs?.Code).Should().Be(outputSrid);
+        var columns = Enumerable.Range(0, header.ColumnsLength)
+            .Select(index => header.Columns(index)?.Name).ToArray();
+        columns.Should().Contain("name");
+        columns.Should().Contain("objectid");
+        if (fields != "*")
+        {
+            columns.Should().HaveCount(2);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithFlatGeobufNullableAttribute_PreservesFollowingColumnIdentity()
+    {
+        var id = await InsertFlatGeobufProbeAsync("""{"name":null,"description":"after-null","population":42}""");
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?f=fgb&where=objectid%3D{id}&outFields=name,description,population");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var decoded = FlatGeobuf.NTS.FeatureCollectionConversions.Deserialize(await ReadFlatGeobufEvidenceAsync(response, "nullable-attributes"));
+        var feature = decoded.Should().ContainSingle().Subject;
+        feature.Attributes.Exists("name").Should().BeFalse("null properties have no FlatGeobuf property entry");
+        feature.Attributes["description"].Should().Be("after-null");
+        feature.Attributes["population"].Should().Be(42);
+    }
+
+    [IntegrationTheory]
+    [InlineData("created_date", MetadataV2FieldType.Date, "2026-10-27")]
+    [InlineData("observed_time", MetadataV2FieldType.Time, "12:34:56")]
+    [InlineData("record_uuid", MetadataV2FieldType.Uuid, "43c522e5-35d6-48de-96e6-8e8329a10bd5")]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithFlatGeobufTypedAttribute_PreservesValue(
+        string fieldName, MetadataV2FieldType fieldType, string value)
+    {
+        _fixture.UpdateV2ResourceSchemaField(WebAppFixture.TestLayerId,
+            new MetadataV2Field { Name = fieldName, Type = fieldType, Nullable = true });
+        var attributes = new System.Text.Json.Nodes.JsonObject
+        {
+            [fieldName] = value,
+            ["description"] = "following-value"
+        };
+        var id = await InsertFlatGeobufProbeAsync(attributes.ToJsonString());
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?f=fgb&where=objectid%3D{id}&outFields={fieldName},description");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var decoded = FlatGeobuf.NTS.FeatureCollectionConversions.Deserialize(await ReadFlatGeobufEvidenceAsync(response, fieldName));
+        var feature = decoded.Should().ContainSingle().Subject;
+        feature.Attributes[fieldName].Should().Be(value);
+        feature.Attributes["description"].Should().Be("following-value");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithFlatGeobufTypedProperties_PreservesExactValuesAndColumnTypes()
+    {
+        var fields = new[]
+        {
+            new MetadataV2Field { Name = "exact_integer", Type = MetadataV2FieldType.BigInteger, Nullable = true },
+            new MetadataV2Field { Name = "enabled", Type = MetadataV2FieldType.Boolean, Nullable = true },
+            new MetadataV2Field { Name = "document", Type = MetadataV2FieldType.Json, Nullable = true },
+            new MetadataV2Field { Name = "blob", Type = MetadataV2FieldType.Binary, Nullable = true },
+            new MetadataV2Field { Name = "observed_at", Type = MetadataV2FieldType.DateTime, Nullable = true },
+            new MetadataV2Field { Name = "observed_fraction", Type = MetadataV2FieldType.DateTime, Nullable = true }
+        };
+        foreach (var field in fields)
+        {
+            _fixture.UpdateV2ResourceSchemaField(WebAppFixture.TestLayerId, field);
+        }
+        var id = await InsertFlatGeobufProbeAsync("""
+            {"exact_integer":9223372036854775807,"enabled":true,"document":{"items":[1,null,"text"]},
+             "blob":"AP9/gA==","observed_at":"2026-10-27T12:34:56.123Z","observed_fraction":0.125}
+            """);
+        var names = string.Join(',', fields.Select(field => field.Name));
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?f=fgb&where=objectid%3D{id}&outFields={names}");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await ReadFlatGeobufEvidenceAsync(response, "typed-properties");
+        using var stream = new MemoryStream(payload);
+        var header = FlatGeobuf.Helpers.ReadHeader(stream);
+        header.FeaturesCount.Should().Be(1);
+        if (header.IndexNodeSize > 0)
+        {
+            stream.Position += (long)FlatGeobuf.Index.PackedRTree.CalcSize(header.FeaturesCount, header.IndexNodeSize);
+        }
+        using var reader = new BinaryReader(stream);
+        var featureSize = reader.ReadInt32();
+        var packed = FlatGeobuf.Feature.GetRootAsFeature(new Google.FlatBuffers.ByteBuffer(reader.ReadBytes(featureSize)));
+        using var properties = new MemoryStream(packed.GetPropertiesArray());
+        using var propertyReader = new BinaryReader(properties);
+        var values = new Dictionary<string, object?>();
+        while (properties.Position < properties.Length)
+        {
+            var column = header.Columns(propertyReader.ReadUInt16())!.Value;
+            object value = column.Type switch
+            {
+                FlatGeobuf.ColumnType.Long => propertyReader.ReadInt64(),
+                FlatGeobuf.ColumnType.Bool => propertyReader.ReadBoolean(),
+                FlatGeobuf.ColumnType.Binary => propertyReader.ReadBytes(propertyReader.ReadInt32()),
+                FlatGeobuf.ColumnType.Json or FlatGeobuf.ColumnType.DateTime =>
+                    System.Text.Encoding.UTF8.GetString(propertyReader.ReadBytes(propertyReader.ReadInt32())),
+                _ => throw new InvalidDataException($"Unexpected property type: {column.Type}")
+            };
+            values.Add(column.Name, value);
+        }
+        values["objectid"].Should().Be(id);
+        values["exact_integer"].Should().Be(long.MaxValue);
+        values["enabled"].Should().Be(true);
+        values["blob"].Should().BeOfType<byte[]>().Which.Should().Equal(0, 255, 127, 128);
+        using var document = JsonDocument.Parse((string)values["document"]!);
+        document.RootElement.GetProperty("items")[1].ValueKind.Should().Be(JsonValueKind.Null);
+        document.RootElement.GetProperty("items")[2].GetString().Should().Be("text");
+        DateTimeOffset.Parse((string)values["observed_at"]!, System.Globalization.CultureInfo.InvariantCulture)
+            .Should().Be(new DateTimeOffset(2026, 10, 27, 12, 34, 56, 123, TimeSpan.Zero));
+        DateTimeOffset.Parse((string)values["observed_fraction"]!, System.Globalization.CultureInfo.InvariantCulture)
+            .Should().Be(DateTimeOffset.UnixEpoch.AddTicks(1250));
+        stream.Position.Should().Be(stream.Length);
+    }
+
+    [IntegrationTheory]
+    [InlineData("\"123\"", JsonValueKind.String, "123")]
+    [InlineData("\"escaped \\\"quote\\\"\"", JsonValueKind.String, "escaped \"quote\"")]
+    [InlineData("true", JsonValueKind.True, null)]
+    [InlineData("false", JsonValueKind.False, null)]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithFlatGeobufScalarJson_PreservesJsonType(
+        string sourceJson, JsonValueKind expectedKind, string? expectedString)
+    {
+        _fixture.UpdateV2ResourceSchemaField(WebAppFixture.TestLayerId,
+            new MetadataV2Field { Name = "document", Type = MetadataV2FieldType.Json, Nullable = true });
+        var id = await InsertFlatGeobufProbeAsync($"{{\"document\":{sourceJson}}}");
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?f=fgb&where=objectid%3D{id}&outFields=document");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await ReadFlatGeobufEvidenceAsync(response, "scalar-json");
+        using var stream = new MemoryStream(payload);
+        var header = FlatGeobuf.Helpers.ReadHeader(stream);
+        header.Columns(1)!.Value.Type.Should().Be(FlatGeobuf.ColumnType.Json);
+        if (header.IndexNodeSize > 0)
+        {
+            stream.Position += (long)FlatGeobuf.Index.PackedRTree.CalcSize(header.FeaturesCount, header.IndexNodeSize);
+        }
+        using var reader = new BinaryReader(stream);
+        var packed = FlatGeobuf.Feature.GetRootAsFeature(
+            new Google.FlatBuffers.ByteBuffer(reader.ReadBytes(reader.ReadInt32())));
+        using var properties = new MemoryStream(packed.GetPropertiesArray());
+        using var propertyReader = new BinaryReader(properties);
+        propertyReader.ReadUInt16().Should().Be(0);
+        propertyReader.ReadInt64().Should().Be(id);
+        propertyReader.ReadUInt16().Should().Be(1);
+        var json = Encoding.UTF8.GetString(propertyReader.ReadBytes(propertyReader.ReadInt32()));
+        using var document = JsonDocument.Parse(json);
+        document.RootElement.ValueKind.Should().Be(expectedKind);
+        if (expectedString is not null)
+        {
+            document.RootElement.GetString().Should().Be(expectedString);
+        }
+    }
+
+    [IntegrationTheory]
+    [InlineData(null)]
+    [InlineData("POINT EMPTY")]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithFlatGeobufNullOrEmptyGeometry_PreservesRow(string? geometry)
+    {
+        var id = await InsertFlatGeobufProbeAsync("""{"name":"geometry-control"}""", geometry);
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?f=fgb&where=objectid%3D{id}&outFields=name");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await ReadFlatGeobufEvidenceAsync(response, geometry is null ? "null-geometry" : "empty-point");
+        var packedGeometry = ReadSingleFlatGeobufGeometry(payload);
+        if (geometry is not null)
+        {
+            packedGeometry.Should().NotBeNull();
+            packedGeometry!.Value.Type.Should().Be(FlatGeobuf.GeometryType.Point);
+            packedGeometry.Value.GetXyArray().Should().HaveCount(2)
+                .And.OnlyContain(value => double.IsNaN(value));
+        }
+        else
+        {
+            packedGeometry.Should().BeNull();
+        }
+        var decoded = FlatGeobuf.NTS.FeatureCollectionConversions.Deserialize(payload);
+        var feature = decoded.Should().ContainSingle().Subject;
+        feature.Attributes["name"].Should().Be("geometry-control");
+        if (geometry is null)
+        {
+            feature.Geometry.Should().BeNull();
+        }
+        else
+        {
+            feature.Geometry.Should().NotBeNull();
+            // FlatGeobuf 3.26's NTS adapter retains NaN as a one-coordinate
+            // sequence instead of normalizing it to NTS's zero-coordinate EMPTY.
+            // Raw encoding above and mandatory independent GDAL readback are
+            // the EMPTY contract oracle; retain decoded coordinate controls here.
+            double.IsNaN(feature.Geometry.Coordinate.X).Should().BeTrue();
+            double.IsNaN(feature.Geometry.Coordinate.Y).Should().BeTrue();
+            feature.Geometry.GeometryType.Should().Be("Point");
+        }
+        using var stream = new MemoryStream(payload);
+        FlatGeobuf.Helpers.ReadHeader(stream).IndexNodeSize.Should().Be(0);
+    }
+
+    [IntegrationTheory]
+    [InlineData("POLYGON EMPTY", false, false, "xy-polygon")]
+    [InlineData("POLYGON Z EMPTY", true, false, "xyz-polygon")]
+    [InlineData("GEOMETRYCOLLECTION Z EMPTY", true, false, "xyz-collection")]
+    [InlineData("GEOMETRYCOLLECTION M EMPTY", false, true, "xym-collection")]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithFlatGeobufEmptyGeometry_PreservesDeclaredDimensions(
+        string geometry, bool hasZ, bool hasM, string evidenceName)
+    {
+        var id = await InsertFlatGeobufProbeAsync("""{"name":"dimension-control"}""", geometry);
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?f=fgb&where=objectid%3D{id}&outFields=name&returnZ=true&returnM=true");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await ReadFlatGeobufEvidenceAsync(response, "dimension-" + evidenceName);
+        using var stream = new MemoryStream(payload);
+        var header = FlatGeobuf.Helpers.ReadHeader(stream);
+        header.FeaturesCount.Should().Be(1);
+        header.HasZ.Should().Be(hasZ);
+        header.HasM.Should().Be(hasM);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithFlatGeobufMultiPointEmptyMember_PreservesBothMembers()
+    {
+        var id = await InsertFlatGeobufProbeAsync("""{"name":"empty-component"}""", "MULTIPOINT (EMPTY, (1 2))");
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?f=fgb&where=objectid%3D{id}&outFields=name");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await ReadFlatGeobufEvidenceAsync(response, "multipoint-empty-member");
+        var packedGeometry = ReadSingleFlatGeobufGeometry(payload)!.Value;
+        packedGeometry.Type.Should().Be(FlatGeobuf.GeometryType.MultiPoint);
+        var xy = packedGeometry.GetXyArray();
+        xy.Should().HaveCount(4);
+        double.IsNaN(xy[0]).Should().BeTrue();
+        double.IsNaN(xy[1]).Should().BeTrue();
+        xy[2].Should().Be(1);
+        xy[3].Should().Be(2);
+        var feature = FlatGeobuf.NTS.FeatureCollectionConversions.Deserialize(payload).Should().ContainSingle().Subject;
+        feature.Geometry.NumGeometries.Should().Be(2);
+        double.IsNaN(feature.Geometry.GetGeometryN(0).Coordinate.X).Should().BeTrue();
+        double.IsNaN(feature.Geometry.GetGeometryN(0).Coordinate.Y).Should().BeTrue();
+        feature.Geometry.GetGeometryN(1).Coordinate.X.Should().Be(1);
+        feature.Geometry.GetGeometryN(1).Coordinate.Y.Should().Be(2);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithFlatGeobufSpatialIndex_ReadsExactRowsAcrossMultipleNodeLevels()
+    {
+        await using var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema!);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO features (layer_id, geometry, attributes)
+            SELECT @layer, ST_SetSRID(ST_Point(i::double precision, i::double precision / 2), 4326),
+                   jsonb_build_object('name', 'indexed-' || i, 'category', 'cng-index-probe')
+            FROM generate_series(1, 40) i
+            RETURNING objectid;
+            """;
+        command.Parameters.AddWithValue("layer", WebAppFixture.TestLayerId);
+        await using (var reader = await command.ExecuteReaderAsync())
+        {
+            while (await reader.ReadAsync())
+            {
+                _flatGeobufProbeIds.Add(reader.GetInt64(0));
+            }
+        }
+        var predicate = Uri.EscapeDataString("category = 'cng-index-probe'");
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?f=fgb&where={predicate}&outFields=name,category&resultRecordCount=100");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await ReadFlatGeobufEvidenceAsync(response, "indexed-40-points");
+        FlatGeobuf.NTS.FeatureCollectionConversions.Deserialize(payload).Should().HaveCount(40);
+        using var stream = new MemoryStream(payload);
+        FlatGeobuf.Helpers.ReadHeader(stream).IndexNodeSize.Should().Be(16);
+        stream.Position = 0;
+        var subset = FlatGeobuf.NTS.FeatureCollectionConversions.Deserialize(stream,
+            new NetTopologySuite.Geometries.Envelope(10, 12, 5, 6)).ToArray();
+        subset.Select(feature => feature.Attributes["name"]).Should()
+            .BeEquivalentTo(ExpectedIndexedNames);
+    }
+
+    private static FlatGeobuf.Geometry? ReadSingleFlatGeobufGeometry(byte[] payload)
+    {
+        using var stream = new MemoryStream(payload);
+        var header = FlatGeobuf.Helpers.ReadHeader(stream);
+        header.FeaturesCount.Should().Be(1);
+        if (header.IndexNodeSize > 0)
+        {
+            stream.Position += (long)FlatGeobuf.Index.PackedRTree.CalcSize(header.FeaturesCount, header.IndexNodeSize);
+        }
+        using var reader = new BinaryReader(stream);
+        var size = reader.ReadInt32();
+        var feature = FlatGeobuf.Feature.GetRootAsFeature(new Google.FlatBuffers.ByteBuffer(reader.ReadBytes(size)));
+        return feature.Geometry;
+    }
+
+    private static async Task<byte[]> ReadFlatGeobufEvidenceAsync(HttpResponseMessage response, string name)
+    {
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/vnd.flatgeobuf");
+        var payload = await response.Content.ReadAsByteArrayAsync();
+        // Explicit opt-in saves real endpoint bytes for independent GDAL readback.
+        if (Environment.GetEnvironmentVariable("HONUA_FGB_FIXTURE_DIR") is { Length: > 0 } directory)
+        {
+            Directory.CreateDirectory(directory);
+            await File.WriteAllBytesAsync(Path.Combine(directory, name + ".fgb"), payload);
+        }
+        return payload;
+    }
+
+    private async Task<long> InsertFlatGeobufProbeAsync(string attributes, string? geometry = "POINT (1 2)")
+    {
+        await using var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema!);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO features (layer_id, geometry, attributes)
+            VALUES (@layer, ST_GeomFromText(@geometry, 4326), @attributes::jsonb)
+            RETURNING objectid;
+            """;
+        command.Parameters.AddWithValue("layer", WebAppFixture.TestLayerId);
+        command.Parameters.AddWithValue("attributes", attributes);
+        command.Parameters.AddWithValue("geometry", NpgsqlTypes.NpgsqlDbType.Text, (object?)geometry ?? DBNull.Value);
+        var id = Convert.ToInt64(await command.ExecuteScalarAsync(), System.Globalization.CultureInfo.InvariantCulture);
+        _flatGeobufProbeIds.Add(id);
+        return id;
     }
 
     [IntegrationTest]
