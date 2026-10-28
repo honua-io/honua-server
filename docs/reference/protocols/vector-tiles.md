@@ -43,6 +43,22 @@ Scheduled invalidation: `TileCacheExpiry` (`Enabled`, `IntervalSeconds`, `Target
 
 `GET/HEAD /api/v1/tiles/pmtiles/{artifactId}` streams a published PMTiles artifact with `Accept-Ranges: bytes`, `ETag`, and `Last-Modified` headers so MapLibre/PMTiles browser clients can issue HTTP range requests against private object storage. Unknown artifacts return 404. Artifacts are produced by the publish pipeline — see [Publish tiles — PMTiles](../../guides/publish/publish-tiles.md#pmtiles).
 
+The PMTiles proxy and the published COG artifact proxy authorize each read before evaluating
+GET/HEAD preconditions. Matching `If-None-Match` returns 304; failed `If-Match` or
+`If-Unmodified-Since` returns 412. Entity-tag conditions take precedence over their date
+counterparts. `If-Range` resumes a byte range only for a matching strong ETag; stale, weak,
+or date validators require a full response. The existing 4 MiB full-response limit still
+applies when a range is ignored, returning 413 for larger artifacts.
+
+Artifact ETags use persisted content or storage-generation identity. Byte acquisition is
+conditional on that storage generation: a replacement between metadata lookup and reading
+returns 412 without the stale validator; a missing object returns 404. Providers that cannot
+fence a read return 501. Local storage publishes complete generations atomically; open file
+handles retain their immutable bytes without blocking other readers or replacement. Failed
+or cancelled replacements preserve the previous published bytes. These guarantees cover
+managed publication and reads, not out-of-band edits
+to local physical files or independent cloud-provider qualification.
+
 ## Examples
 
 > Open `https://server.example.com/tiles/0/tile.json`, `https://server.example.com/tiles/0/12/655/1586.mvt?where=status%3D` in a browser.

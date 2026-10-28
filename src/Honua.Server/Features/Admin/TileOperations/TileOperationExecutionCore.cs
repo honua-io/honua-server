@@ -708,7 +708,10 @@ internal sealed partial class TileOperationExecutionCore
             ArtifactId = artifactId,
             StorageProvider = uploadResult.File.Provider,
             Bucket = bucket,
-            ObjectKey = uploadResult.File.StoragePath,
+            // Local storage resolves stable logical keys to immutable physical generations.
+            ObjectKey = uploadResult.File.Provider == CloudStorageProvider.Local
+                ? uploadResult.File.FileId
+                : uploadResult.File.StoragePath,
             ContentType = uploadResult.File.ContentType,
             SizeBytes = uploadResult.File.SizeBytes,
             UrlStrategy = publishOptions.UrlStrategy,

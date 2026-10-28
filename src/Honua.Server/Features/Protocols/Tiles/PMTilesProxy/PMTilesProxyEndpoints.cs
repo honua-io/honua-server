@@ -5,6 +5,7 @@ using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
+using Honua.Server.Features.Infrastructure.FileStorage;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Net.Http.Headers;
@@ -37,6 +38,9 @@ internal static partial class PMTilesProxyEndpoints
             // Every read must evaluate the current source policy, including after a
             // previously public publication becomes restricted or is retired.
             .CacheOutput(policy => policy.NoCache())
+            .Produces(StatusCodes.Status304NotModified)
+            .Produces(StatusCodes.Status412PreconditionFailed)
+            .Produces(StatusCodes.Status501NotImplemented)
             .ProducesProblem(StatusCodes.Status413PayloadTooLarge);
 
         return endpoints;
@@ -94,9 +98,11 @@ internal static partial class PMTilesProxyEndpoints
         }
 
         var response = context.Response;
-        response.Headers[HeaderNames.AcceptRanges] = "bytes";
-        response.Headers[HeaderNames.ETag] = $"\"{metadata.SizeBytes:x}-{metadata.UploadedAt.ToUnixTimeSeconds():x}\"";
-        response.Headers[HeaderNames.LastModified] = metadata.UploadedAt.ToString("R");
+        var conditions = ArtifactHttpConditions.Evaluate(context, metadata);
+        if (conditions.StatusCode is { } statusCode)
+        {
+            return TypedResults.StatusCode(statusCode);
+        }
         response.ContentType = string.IsNullOrWhiteSpace(metadata.ContentType)
             ? PMTilesContentType
             : metadata.ContentType;
@@ -107,21 +113,23 @@ internal static partial class PMTilesProxyEndpoints
             return TypedResults.Empty;
         }
 
-        var rangeHeader = context.Request.Headers[HeaderNames.Range].ToString();
+        var rangeHeader = conditions.RangeHeader;
         var rangeResult = await service.ReadRangeAsync(metadata, rangeHeader, cancellationToken).ConfigureAwait(false);
 
         switch (rangeResult.Outcome)
         {
-            case PMTilesRangeOutcome.Unsatisfiable:
+            case ArtifactRangeOutcome.RevisionChanged:
+            case ArtifactRangeOutcome.Unsupported:
+                return ArtifactHttpConditions.ReadFailure(context, rangeResult.Outcome);
+
+            case ArtifactRangeOutcome.Unsatisfiable:
                 response.Headers[HeaderNames.ContentRange] = $"bytes */{rangeResult.TotalSize}";
                 return TypedResults.StatusCode(StatusCodes.Status416RangeNotSatisfiable);
 
-            case PMTilesRangeOutcome.NotFound:
-                // Underlying object disappeared between metadata lookup and range
-                // read. Match the no-Range GET fallback below by surfacing 404.
-                return TypedResults.NotFound();
+            case ArtifactRangeOutcome.NotFound:
+                return ArtifactHttpConditions.ReadFailure(context, rangeResult.Outcome);
 
-            case PMTilesRangeOutcome.TooLarge:
+            case ArtifactRangeOutcome.TooLarge:
                 // A no-Range GET against an artifact above the safe direct-stream
                 // budget: streaming it whole would silently fail once this response
                 // crosses the host's own payload ceiling (#2991) instead of a clean,
@@ -135,7 +143,7 @@ internal static partial class PMTilesProxyEndpoints
                     $"{PMTilesProxyService.MaxDirectFullStreamBytes:N0}-byte limit for one proxy response. " +
                     "Request a smaller byte range (this endpoint advertises Accept-Ranges: bytes).");
 
-            case PMTilesRangeOutcome.Partial:
+            case ArtifactRangeOutcome.Partial:
                 response.Headers[HeaderNames.ContentRange] = $"bytes {rangeResult.Start}-{rangeResult.End}/{rangeResult.TotalSize}";
                 response.StatusCode = StatusCodes.Status206PartialContent;
                 response.ContentLength = rangeResult.Payload?.LongLength ?? 0L;
@@ -145,14 +153,14 @@ internal static partial class PMTilesProxyEndpoints
                 }
                 return TypedResults.Empty;
 
-            case PMTilesRangeOutcome.Full:
+            case ArtifactRangeOutcome.Full:
             default:
-                var fullStream = await service.OpenFullAsync(artifactId, metadata, cancellationToken).ConfigureAwait(false);
-                if (fullStream is null)
+                var fullResult = await service.ReadFullAsync(metadata, cancellationToken).ConfigureAwait(false);
+                if (fullResult.Outcome != ArtifactRangeOutcome.Full)
                 {
-                    return TypedResults.NotFound();
+                    return ArtifactHttpConditions.ReadFailure(context, fullResult.Outcome);
                 }
-                return Results.Stream(fullStream, response.ContentType, enableRangeProcessing: true);
+                return Results.Stream(fullResult.Stream!, response.ContentType, enableRangeProcessing: false);
         }
     }
 
