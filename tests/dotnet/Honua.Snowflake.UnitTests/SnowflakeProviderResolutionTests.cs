@@ -51,7 +51,7 @@ public class SnowflakeProviderResolutionTests
         Assert.True(caps.SupportsQuery);
         Assert.True(caps.SupportsCount);
         Assert.True(caps.SupportsExtent);
-        Assert.False(caps.SupportsStatistics);
+        Assert.True(caps.SupportsStatistics);
         Assert.Equal(FeatureProviderEditCapabilities.ReadOnly, caps.Edits);
         Assert.False(caps.Outputs.SupportsStreamingGeoJson);
         Assert.False(caps.Outputs.SupportsNativeMvt);
@@ -62,11 +62,14 @@ public class SnowflakeProviderResolutionTests
     }
 
     [Fact]
-    public async Task QueryStatistics_OnSnowflakeProvider_Throws()
+    public async Task QueryStatistics_WithoutMetadataV2Binding_ThrowsClearError()
     {
         var provider = CreateStore();
-        await Assert.ThrowsAsync<NotSupportedException>(
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
             () => provider.Reader.QueryStatisticsAsync(LayerId, new FeatureQuery()));
+
+        Assert.Contains("Metadata v2 provider binding", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -174,7 +177,7 @@ public class SnowflakeProviderResolutionTests
         Assert.Equal(connectionId, factory.LastDataConnection!.ConnectionId);
     }
 
-    public static TheoryData<string> ReadOperations => new() { "get", "query", "ids", "count", "extent", "estimates" };
+    public static TheoryData<string> ReadOperations => new() { "get", "query", "ids", "count", "extent", "estimates", "statistics" };
 
     [Theory]
     [MemberData(nameof(ReadOperations))]
@@ -285,6 +288,7 @@ public class SnowflakeProviderResolutionTests
         "count" => reader.CountAsync(LayerId, new FeatureQuery()),
         "extent" => reader.GetExtentAsync(LayerId),
         "estimates" => reader.GetEstimatesAsync(LayerId),
+        "statistics" => reader.QueryStatisticsAsync(LayerId, new FeatureQuery()),
         _ => throw new ArgumentOutOfRangeException(nameof(operation), operation, null)
     };
 
