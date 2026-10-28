@@ -24,7 +24,7 @@ public sealed class ZarrTypedNoDataConsumerTests
     [InlineData("<u8", 0)]
     [InlineData("<u8", 1)]
     [Trait("Tier", "Fast")]
-    public async Task RenderAndSlice_Int64Fill_PreservesAdjacentValidPixel(string dtype, int offset)
+    public async Task Render_Int64Fill_PreservesAdjacentValidPixel(string dtype, int offset)
     {
         var (registration, objects, fill) = Fixture(dtype, offset);
         var array = registration.Metadata!.Arrays[0];
@@ -36,8 +36,7 @@ public sealed class ZarrTypedNoDataConsumerTests
         var slice = new ZarrTileSlicePlan(new ZarrCoverageSubsetPlan(array,
             new ZarrSubsetRequest { Variable = "band", Start = [0, 0, 0], Stop = [1, 2, 2] }),
             YDimensionIndex: 1, XDimensionIndex: 2, GridXMin: 0, GridYMax: 2, CellWidth: 1, CellHeight: 1);
-        double? numericFill = ZarrValueDecoder.TryGetFiniteFillValue(fill, out var number) ? number : null;
-        var image = MiniPngDecoder.Decode(ZarrTileRenderer.Render(subset, slice, 2, fillValue: numericFill));
+        var image = MiniPngDecoder.Decode(ZarrTileRenderer.RenderWithTypedFill(subset, slice, 2, fillValue: fill));
         image.Pixel(0, 0).Item4.Should().Be(0, "the exact typed sentinel is transparent");
         image.Pixel(1, 0).Item4.Should().Be(255, "its distinct adjacent integer is real data");
 
