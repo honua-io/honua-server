@@ -20,25 +20,9 @@ Honua serves data from one primary provider (PostgreSQL/PostGIS by default) plus
 | [Snowflake](snowflake.md) | Read/query only (additional) | Layer connection resolves to `snowflake`/`snowflakedb` | Native `GEOGRAPHY`/`GEOMETRY` tables; no edits, statistics, native MVT/encoded exports, distance/KNN, temporal filters, or cross-SRID transforms. Not Native AOT compatible. |
 | [Databricks](databricks.md) | Read/query only (additional, best-effort) | Layer connection resolves to `databricks`/`databrickssql`/`dbsql` | HTTP read-through over the SQL Statement Execution REST API against a SQL Warehouse; no native driver. Statistics are supported; edits and native encoded exports are not. Spatial functions depend on the DBSQL/runtime. |
 
-Provider selection variables are listed in the [environment variable reference](../environment-variables.md#database-and-providers).
+Provider selection variables are listed in the [environment variable reference](../environment-variables.md#database-and-providers). Warehouse registration flags are at the end of this page.
 
-## Experimental warehouse environment variables
-
-All three warehouse providers are Enterprise, experimental, and off by default
-for 2026.1. Enabling a provider without its matching experimental flag fails
-startup; these switches do not promote the provider to GA.
-
-| Provider | Required opt-in and enable switch | Connection settings | Native AOT |
-|---|---|---|---|
-| Redshift | `Experimental__Features__RedshiftProvider=true`; `Redshift__Enabled=true` | `Redshift__ConnectionString`; optional `Redshift__CommandTimeoutSeconds` | Supported by the Npgsql-based adapter. |
-| Snowflake | `Experimental__Features__SnowflakeProvider=true`; `Snowflake__Enabled=true` | `Snowflake__ConnectionString`; optional `Snowflake__CommandTimeoutSeconds` | Not supported by `Snowflake.Data`. AOT verification sets MSBuild `HonuaSkipSnowflakeForAotVerification=true`, which defines `HONUA_SKIP_SNOWFLAKE` and removes the provider from that build. |
-| Databricks | `Experimental__Features__DatabricksProvider=true`; `Databricks__Enabled=true` | `Databricks__Host`, `Databricks__WarehouseId`, `Databricks__Token`; optional `Databricks__Catalog`, `Databricks__Schema`, `Databricks__CommandTimeoutSeconds` | Supported by the HTTP adapter. |
-
-Store credentials in the deployment secret mechanism; do not commit connection
-strings or tokens. The provider-specific pages describe layer bindings,
-predicate limitations, and failure behavior.
-
-### Nightly HTTP-stack coverage
+## Nightly HTTP-stack coverage
 
 DuckDB, MySQL/MariaDB, and SQL Server are exercised nightly through the full HTTP
 stack against real seeded rows — GeoServices FeatureServer, OGC API Features, OData,
@@ -73,3 +57,34 @@ CI uses `postgis/postgis` Docker images as version-level proxies for managed-ser
 ## PostGIS requirements and managed-Postgres setup
 
 Required extensions, connection-string format, Aurora and Azure Flexible Server setup, pooling, and startup validation moved to the dedicated [PostGIS page](postgis.md).
+
+## Warehouse provider environment variables
+
+Amazon Redshift, Snowflake, and Databricks register in `InfrastructureCompositionRoot` only when `WarehouseProviderDecisions` reports the provider enabled. Each experimental gate defaults to false, and `{Provider}:Enabled` defaults to true, so the provider stays unregistered until the gate is set. Setting `{Provider}__Enabled=true` while its gate is false throws at startup. These flags do not change capability or statistics rows.
+
+They are secondary providers. `DataSource__Provider` accepts only `postgres`/`postgis`, `duckdb`, or `mysql`/`mariadb`. Setting it to `redshift`, `snowflake`, or `databricks` throws at startup. A layer reaches a warehouse through its data connection's provider name.
+
+Environment names below are the `.env.example` form. They bind to the colon keys the composition root reads (`Experimental:Features:RedshiftProvider`, `Redshift:Enabled`, and the same pattern for Snowflake and Databricks).
+
+| Variable | Default | Role |
+| --- | --- | --- |
+| `Experimental__Features__RedshiftProvider` | `false` | Experimental gate. Required before Redshift registers. |
+| `Redshift__Enabled` | `true` | Set `false` to skip registration. Explicit `true` without the gate throws. |
+| `Redshift__ConnectionString` | unset | Default Npgsql connection string, including the password. Leave unset when layers use a secure data connection. |
+| `Redshift__CommandTimeoutSeconds` | `60` | Read command timeout. |
+| `Experimental__Features__SnowflakeProvider` | `false` | Experimental gate. Required before Snowflake registers. |
+| `Snowflake__Enabled` | `true` | Set `false` to skip registration. Explicit `true` without the gate throws. |
+| `Snowflake__ConnectionString` | unset | ADO.NET connection string (`account`, `user`, `password`, `db`, `schema`, `warehouse`, `role`). This string is the connection secret. |
+| `Snowflake__CommandTimeoutSeconds` | `60` | Read command timeout. |
+| `Experimental__Features__DatabricksProvider` | `false` | Experimental gate. Required before Databricks registers. |
+| `Databricks__Enabled` | `true` | Set `false` to skip registration. Explicit `true` without the gate throws. |
+| `Databricks__Host` | unset | Absolute HTTPS workspace URL. Blank leaves a registered provider dormant. |
+| `Databricks__WarehouseId` | unset | SQL warehouse id. Required when `Host` is set. |
+| `Databricks__Token` | unset | Personal access token or OAuth bearer token. Required when `Host` is set. |
+| `Databricks__Catalog` | unset | Optional default Unity Catalog name. |
+| `Databricks__Schema` | unset | Optional default schema. |
+| `Databricks__CommandTimeoutSeconds` | `120` | Statement wait budget. |
+
+`Snowflake.Data` is not Native AOT compatible. AOT verification sets MSBuild `HonuaSkipSnowflakeForAotVerification=true`, which drops the `Honua.Snowflake` project reference and defines `HONUA_SKIP_SNOWFLAKE`. Startup then compiles out Snowflake registration, and the Snowflake decision is unsupported even if its gate is on. Redshift (Npgsql) and Databricks (HTTP) have no equivalent skip switch.
+
+Store connection strings and `Databricks__Token` in the deployment secret mechanism. Do not commit them. Provider pages describe layer bindings and failure behavior. This section does not restate statistics or predicate support.
