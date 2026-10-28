@@ -213,6 +213,26 @@ public sealed class GpCliEndToEndTests
         integrationProfile.Should().Contain("Docker Compose v2");
         integrationProfile.Should().Contain("5432").And.Contain("6379").And.Contain("8080").And.Contain("8081");
         integrationProfile.Should().Contain("docker compose -f docker-compose.gp-dev.yml --profile integration up --build -d");
+        foreach (var tool in new[] { "docker", "kind", "kubectl", "helm" })
+        {
+            root.GetProperty(tool).GetString().Should().BeOneOf("found", "missing");
+            root.GetProperty(tool + "Remediation").GetString().Should().NotBeNullOrWhiteSpace()
+                .And.Contain("does not fail doctor");
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_DoctorText_ReportsToolchainStatusAndRemediation()
+    {
+        var (exit, stdout, _) = await InvokeAsync("doctor", "--managed-only");
+
+        exit.Should().Be(0);
+        foreach (var tool in new[] { "docker", "kind", "kubectl", "helm" })
+        {
+            stdout.Should().ContainAny($"{tool}: found", $"{tool}: missing");
+        }
+
+        stdout.Should().Contain("does not fail doctor");
     }
 
     [Fact]
@@ -241,6 +261,8 @@ public sealed class GpCliEndToEndTests
         exit.Should().Be(0);
         stdout.Should().Contain("Usage:");
         stdout.Should().Contain("honua gp list");
+        stdout.Should().Contain("docker, kind, kubectl, and helm");
+        stdout.Should().Contain("Missing tools do not change the exit code.");
     }
 
     [Fact]

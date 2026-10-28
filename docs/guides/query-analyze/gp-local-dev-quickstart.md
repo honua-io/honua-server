@@ -114,13 +114,124 @@ from the image. A source edit reaches a worker only after that image is rebuilt
 and the container is recreated. Section 4 has the commands.
 
 `honua-gp-devkit doctor` reports the prerequisite for this profile: Docker
-Compose v2, with host ports 5432, 6379, 8080, and 8081 free.
+Compose v2, with host ports 5432, 6379, 8080, and 8081 free. It also reports
+whether `docker`, `kind`, `kubectl`, and `helm` are on PATH, each as `found` or
+`missing` with one remediation line. A missing tool does not fail doctor.
+Doctor still exits 0 only when the managed probe succeeds and, unless
+`--managed-only`, the native worker image is available.
 
 This profile does not exercise a kind lifecycle matrix, debugger attachment, or
-a cloud account. Referenced output staging stays off. Stop the profile with:
+a cloud account. The sections below document a trusted-local debugger attach
+and the kind case list. Neither runs as part of this profile, and the live kind
+matrix is not executed by this change. Referenced output staging stays off.
+Stop the profile with:
 
 ```bash
 docker compose -f docker-compose.gp-dev.yml --profile integration down
+```
+
+## Attach a debugger on the native worker
+
+This recipe is for a developer machine. It is not a production custom-code
+target, and it is not the default. The integration profile's `gdal-worker`
+keeps the image entrypoint, publishes no debugger port, and leaves
+`DOTNET_EnableDiagnostics=0`. Nothing below is written into
+`docker-compose.gp-dev.yml` or into `honua-worker-etl`. debugpy and vsdbg stay
+off the image. Do not point the listen port at a shared or production host.
+Publish it only on `127.0.0.1`.
+
+The one-shot container uses the profile's existing read-only source mount at
+`/workspace/process-source` (the checkout, or `HONUA_GP_PROCESS_SOURCE`). A
+source edit is visible on that mount. Workers still run the image's compiled
+executors, and native helper scripts still load from the image, until that
+image is rebuilt and the container is recreated. Attaching a debugger does not
+switch execution onto the mount. The published image has no debugger symbols,
+so a breakpoint in the mounted sources binds only after a symbolized rebuild.
+
+Confirm the toolchain, then build the native image if doctor reports it
+unavailable:
+
+```bash
+honua-gp-devkit doctor
+docker compose -f docker-compose.gp-dev.yml --profile integration build gdal-worker
+```
+
+### Python (debugpy)
+
+The native image has Python 3 for its GDAL helper scripts and does not include
+debugpy. This command installs the pinned debugpy into a throwaway directory
+inside one container, then waits. The host publish is loopback only; inside the
+container debugpy must listen on all interfaces or Compose cannot forward the
+port. Point the debugger at `127.0.0.1` port 5678 and map the checkout to
+`/workspace/process-source`. The file launched here is the mounted script. Jobs
+still execute the copy under `/app/Scripts` in the image.
+
+```bash
+docker compose -f docker-compose.gp-dev.yml --profile integration run --rm --no-deps \
+  --entrypoint /bin/sh \
+  --publish 127.0.0.1:5678:5678 \
+  -e HOME=/tmp \
+  -e PYTHONUSERBASE=/tmp/debugpy-site \
+  gdal-worker -c "python3 -m pip install --user --quiet --disable-pip-version-check debugpy==1.8.14 && python3 -m debugpy --listen 0.0.0.0:5678 --wait-for-client /workspace/process-source/src/Honua.Worker.Gdal/Scripts/gdal_euclidean_allocation.py"
+```
+
+Ctrl-C stops it, and `--rm` removes it. This change does not include a Linux
+debugger smoke. If `python3 -m pip` is absent, the command fails; do not add
+debugpy to the image to get past that.
+
+### .NET (vsdbg)
+
+Install Microsoft's vsdbg with the official getvsdbg script into
+`$HOME/.honua/vsdbg` on the developer machine first. Mount that directory
+read-only. It is a local prerequisite, not part of the image.
+
+Stop the profile's native worker before the one-shot container so two workers
+do not claim the same Redis jobs. The idle container sets
+`DOTNET_EnableDiagnostics=1` only for itself.
+
+```bash
+docker compose -f docker-compose.gp-dev.yml --profile integration stop gdal-worker
+docker compose -f docker-compose.gp-dev.yml --profile integration run --rm --no-deps -d \
+  --entrypoint sleep \
+  -e DOTNET_EnableDiagnostics=1 \
+  --volume "${HOME}/.honua/vsdbg:/vsdbg:ro" \
+  gdal-worker infinity
+```
+
+The editor attaches through Compose, not through a published port. Its pipe
+program is `docker`. Its arguments are
+`compose -f docker-compose.gp-dev.yml exec -T gdal-worker`, and the debugger
+path is `/vsdbg/vsdbg`. Map `/workspace/process-source` to the checkout. The
+process is `dotnet` with argument `/app/Honua.Worker.Gdal.dll` (the image's
+compiled worker). With the profile worker stopped, that exec reaches this
+one-shot container.
+
+```bash
+docker compose -f docker-compose.gp-dev.yml --profile integration exec -T gdal-worker /vsdbg/vsdbg --interpreter=vscode
+```
+
+When finished, stop the one-shot container and start the normal worker again.
+The normal worker does not enable diagnostics.
+
+```bash
+docker compose -f docker-compose.gp-dev.yml --profile integration stop gdal-worker
+docker compose -f docker-compose.gp-dev.yml --profile integration up -d gdal-worker
+```
+
+## Kind lifecycle cases
+
+Doctor reports `docker`, `kind`, `kubectl`, and `helm` as found or missing.
+The case list is
+[gp-kind-lifecycle-matrix.py](../../../scripts/ci/gp-kind-lifecycle-matrix.py).
+It names six cases: success, failure, cancellation, timeout, worker loss, and
+artifact-upload failure. The default command does not call kind, create a
+cluster, or pull images. If one of those four tools is missing, the script
+prints a remediation line and exits non-zero. `--execute` is refused: live
+execution is not implemented in this slice. This change does not run the live
+kind matrix and does not add a required CI job.
+
+```bash
+python3 scripts/ci/gp-kind-lifecycle-matrix.py
 ```
 
 ## 4. Edit, rebuild, and submit again
