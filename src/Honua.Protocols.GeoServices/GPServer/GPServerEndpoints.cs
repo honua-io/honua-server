@@ -1194,7 +1194,10 @@ internal static partial class GPServerEndpoints
                 DataType = publishedName == "Solve_Succeeded" && IsRoutingJob(job) ? "GPBoolean" : GPServerParameterTranslation.ToEsriDataType(artifact.Kind),
                 Value = publishedName == "Solve_Succeeded" && IsRoutingJob(job) ? RoutingAsyncWebTools.BooleanResult(value)
                     : GPServerEsriOutputTranslation.Translate(artifact.Kind, value, ResolveResultSrid(job, artifact.Kind),
-                    job.Spec.Parameters.GetValueOrDefault(GeoprocessingProtocolMetadataKeys.GPServerFeatureSchema))
+                    IsRoutingJob(job) && Honua.Geoprocessing.Execution.GeoprocessingDispatchHelper.ResolveProcessId(job.Spec.Parameters) == RoutingProcessDefinitions.Route
+                        && publishedName is "Output_Directions" or "Output_Route_Edges"
+                        ? RoutingAsyncWebTools.RouteOutputSchema(publishedName).GetRawText()
+                        : job.Spec.Parameters.GetValueOrDefault(GeoprocessingProtocolMetadataKeys.GPServerFeatureSchema))
             };
 
             return Results.Json(response, GPServerJsonContext.Default.GPResultResponse,
@@ -1937,13 +1940,15 @@ internal static partial class GPServerEndpoints
                 Description = $"Output artifact of type {kind}.",
                 DataType = outputName == "Solve_Succeeded" ? "GPBoolean" : GPServerParameterTranslation.ToEsriDataType(kind),
                 Direction = "esriGPParameterDirectionOutput",
+                DefaultValue = definition.ProcessId == RoutingProcessDefinitions.Route && kind == ArtifactKind.FeatureLayer
+                    ? RoutingAsyncWebTools.RouteOutputSchema(outputName) : null,
                 // Mutually exclusive outputs must NOT all be advertised as
                 // required: exactly one is produced per run, so a client that
                 // enumerates required outputs from task metadata would otherwise
                 // wait forever for the alternative that never arrives.
-                ParameterType = definition.OutputsAreAlternatives
-                    ? "esriGPParameterTypeOptional"
-                    : "esriGPParameterTypeRequired"
+                ParameterType = definition.ProcessId == RoutingProcessDefinitions.Route
+                    ? "esriGPParameterTypeDerived"
+                    : definition.OutputsAreAlternatives ? "esriGPParameterTypeOptional" : "esriGPParameterTypeRequired"
             });
         }
 

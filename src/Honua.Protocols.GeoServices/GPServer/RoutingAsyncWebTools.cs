@@ -96,6 +96,35 @@ internal static class RoutingAsyncWebTools
         return document.RootElement.Clone();
     }
 
+    // These fields are emitted by RoutingJobExecutor; no unsupported turn or edge
+    // attributes are implied by the empty optional outputs.
+    internal static JsonElement RouteOutputSchema(string output)
+    {
+        var geometry = output == "Output_Stops" ? "esriGeometryPoint" : "esriGeometryPolyline";
+        var fields = output switch
+        {
+            "Output_Routes" => """
+                [{"name":"OBJECTID","type":"esriFieldTypeOID"},
+                 {"name":"Name","type":"esriFieldTypeString"},
+                 {"name":"StopCount","type":"esriFieldTypeDouble"},
+                 {"name":"Total_Time","type":"esriFieldTypeDouble"},
+                 {"name":"Total_Distance","type":"esriFieldTypeDouble"}]
+                """,
+            "Output_Stops" => """
+                [{"name":"OBJECTID","type":"esriFieldTypeOID"},
+                 {"name":"Name","type":"esriFieldTypeString"}]
+                """,
+            "Output_Directions" or "Output_Route_Edges" => """
+                [{"name":"OBJECTID","type":"esriFieldTypeOID"}]
+                """,
+            _ => throw new ArgumentException("Not a route feature output.", nameof(output)),
+        };
+        using var document = JsonDocument.Parse($$"""
+            {"objectIdFieldName":"OBJECTID","geometryType":"{{geometry}}","spatialReference":{"wkid":4326},"fields":{{fields}},"features":[]}
+            """);
+        return document.RootElement.Clone();
+    }
+
     internal static Dictionary<string, string> Translate(ProcessDefinition definition, IReadOnlyDictionary<string, string> raw, int? environmentOutSr)
     {
         var translated = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
