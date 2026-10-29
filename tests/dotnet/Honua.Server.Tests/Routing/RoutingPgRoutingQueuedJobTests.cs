@@ -136,6 +136,24 @@ public sealed class RoutingPgRoutingQueuedJobTests : IClassFixture<PgRoutingFixt
     }
 
     [RoutingTest("HONUA_ROUTING_TEST")]
+    public async Task RouteOutput_ReportsHonestNameAndStopCount()
+    {
+        using var client = Client(_host);
+        var inputs = new Dictionary<string, string>
+        {
+            ["Stops"] = PointSet((0, 0, 1L, "Start", (double?)null), (0.02, 0.02, 2L, "End", null)),
+            ["Travel_Mode"] = "driving",
+        };
+        var job = await SubmitAsync(client, "FindRoutes", inputs);
+        using var terminal = await UntilTerminalAsync(client, "FindRoutes", job, "GPServer", SuccessBudget);
+        terminal.RootElement.GetProperty("jobStatus").GetString().Should().Be("esriJobSucceeded", terminal.RootElement.GetRawText());
+        using var routes = await ResultAsync(client, "FindRoutes", job, "Output_Routes");
+        var attributes = routes.RootElement.GetProperty("value").GetProperty("features")[0].GetProperty("attributes");
+        attributes.GetProperty("Name").GetString().Should().Be("Start - End");
+        attributes.GetProperty("StopCount").GetInt32().Should().Be(2);
+    }
+
+    [RoutingTest("HONUA_ROUTING_TEST")]
     public async Task ClosestFacilities_QueuedJob_MatchesLatticeOracle()
     {
         const long incidentId = 0;
