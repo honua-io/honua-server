@@ -66,6 +66,13 @@ on:
         description: Publish the exact gated amd64 worker from canonical trunk (never a release)
         type: boolean
         default: false
+      candidate_sha:
+        description: >-
+          Optional full 40-hex commit to build and publish instead of the dispatch
+          commit. The workflow must still be dispatched from trunk. The commit must
+          be reachable from trunk. Empty builds the dispatch commit.
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -100,6 +107,25 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: Resolve worker source commit
+        id: source
+        env:
+          # PR and schedule runs never see a candidate; only an explicit trunk dispatch may name one.
+          CANDIDATE_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.candidate_sha || '' }}
+        run: python3 scripts/ci/worker_publication.py resolve-source
+
+      # The running workflow file is already loaded from trunk. Keep that publication
+      # script: the candidate tree's copy records GITHUB_SHA and would disagree with
+      # the image revision label. Boundary scripts after this step are the candidate's.
+      - name: Check out the candidate the worker image must match
+        if: steps.source.outputs.source_sha != github.sha
+        run: |
+          set -euo pipefail
+          install -d /tmp/honua-worker-publication
+          cp scripts/ci/worker_publication.py /tmp/honua-worker-publication/worker_publication.py
+          git fetch --no-tags origin "${{ steps.source.outputs.source_sha }}"
+          git checkout --detach "${{ steps.source.outputs.source_sha }}"
+
       - name: Set up .NET CI
         uses: ./.github/actions/setup-dotnet-ci
 
@@ -125,7 +151,7 @@ jobs:
           no-cache-filters: native-tools
           tags: honua-worker-gdal:boundary
           build-args: |
-            HONUA_GIT_SHA=${{ github.sha }}
+            HONUA_GIT_SHA=${{ steps.source.outputs.source_sha }}
           secrets: |
             github_actor=${{ github.actor }}
             github_token=${{ github.token }}
@@ -155,7 +181,7 @@ jobs:
       - name: Prove actual image native entry hold and cancellation
         run: >-
           python3 scripts/qualification/verify_native_entry_image.py
-          --image honua-worker-gdal:boundary --source-sha "${{ github.sha }}"
+          --image honua-worker-gdal:boundary --source-sha "${{ steps.source.outputs.source_sha }}"
           --output tests/TestResults/native-entry-image.json
 
       - name: Start attested Redis for worker smoke test
@@ -382,7 +408,14 @@ jobs:
       # a registry write. PR and scheduled validation do not retain a large tar.
       - name: Prepare exact tested worker publication bundle
         if: github.event_name == 'workflow_dispatch'
-        run: python3 scripts/ci/worker_publication.py prepare
+        env:
+          CANDIDATE_SHA: ${{ steps.source.outputs.source_sha }}
+        run: |
+          script="scripts/ci/worker_publication.py"
+          if [[ -f /tmp/honua-worker-publication/worker_publication.py ]]; then
+            script=/tmp/honua-worker-publication/worker_publication.py
+          fi
+          python3 "$script" prepare
 
       - name: Retain exact tested worker publication bundle
         if: github.event_name == 'workflow_dispatch'
@@ -410,6 +443,7 @@ jobs:
       attestations: write
     env:
       PUBLISH_NIGHTLY: ${{ inputs.publish_nightly }}
+      CANDIDATE_SHA: ${{ inputs.candidate_sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2

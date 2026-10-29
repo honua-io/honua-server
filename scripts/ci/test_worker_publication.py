@@ -1,6 +1,7 @@
 """Publication guard and exact-image binding regressions; no Docker execution."""
 
 import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -159,6 +160,87 @@ class WorkerPublicationTests(unittest.TestCase):
         self.assertNotIn("docker/build-push-action", published_steps)
         self.assertIn("--source-ref refs/heads/trunk --source-digest", published_steps)
         self.assertIn("worker-gdal-image.yml", published_steps)
+        self.assertEqual("", events["workflow_dispatch"]["inputs"]["candidate_sha"]["default"])
+        self.assertEqual("${{ inputs.candidate_sha }}", publish["env"]["CANDIDATE_SHA"])
+        self.assertLess(names.index("Resolve worker source commit"), names.index("Build isolated native worker"))
+        self.assertLess(names.index("Resolve worker source commit"),
+                        names.index("Check out the candidate the worker image must match"))
+        self.assertLess(names.index("Check out the candidate the worker image must match"),
+                        names.index("Build isolated native worker"))
+        workflow_text = (ROOT / ".github/workflows/worker-gdal-image.yml").read_text(encoding="utf-8")
+        self.assertIn("HONUA_GIT_SHA=${{ steps.source.outputs.source_sha }}", workflow_text)
+        self.assertIn('--source-sha "${{ steps.source.outputs.source_sha }}"', workflow_text)
+        self.assertIn("trivy-worker-gdal-${{ github.sha }}", workflow_text)
+        self.assertIn("python3 scripts/ci/worker_publication.py resolve-source", workflow_text)
+        self.assertEqual(1, workflow_text.count("resolve-source"))
+        contract = jobs["publication-contract"]
+        self.assertNotIn("candidate", json.dumps(contract["steps"]))
+
+    def test_empty_candidate_preserves_dispatch_commit(self):
+        with patch.object(publication, "candidate_reachable") as reachable:
+            self.assertEqual(SHA, publication.require_publication({**ENVIRONMENT, "CANDIDATE_SHA": ""})["source_sha"])
+            self.assertEqual(SHA, publication.require_publication({**ENVIRONMENT, "CANDIDATE_SHA": SHA})["source_sha"])
+            reachable.assert_not_called()
+
+    def test_candidate_must_be_full_lowercase_hex_on_trunk(self):
+        for value in ("trunk", "A" * 40, "a" * 39, "g" * 40, "a" * 41):
+            with self.subTest(value=value), patch.object(publication, "candidate_reachable") as reachable:
+                with self.assertRaises(ValueError):
+                    publication.require_publication({**ENVIRONMENT, "CANDIDATE_SHA": value})
+                reachable.assert_not_called()
+        with patch.object(publication, "candidate_reachable") as reachable:
+            with self.assertRaises(ValueError):
+                publication.require_publication({**ENVIRONMENT, "CANDIDATE_SHA": "c" * 40, "GITHUB_REF": "refs/heads/feature"})
+            reachable.assert_not_called()
+
+    def test_unreachable_candidate_is_refused_before_registry_mutation(self):
+        environment = {**ENVIRONMENT, "CANDIDATE_SHA": "e" * 40}
+        with patch.object(publication, "candidate_reachable", return_value=False), \
+             patch.object(publication, "load_verified") as load, \
+             patch.object(publication.subprocess, "run") as run:
+            with self.assertRaisesRegex(ValueError, "not reachable from trunk"):
+                publication.publish(Path("unused"), environment)
+            load.assert_not_called()
+            run.assert_not_called()
+
+    def test_reachable_candidate_binds_publication_to_that_commit(self):
+        candidate = "c" * 40
+        environment = {**ENVIRONMENT, "CANDIDATE_SHA": candidate}
+        with tempfile.TemporaryDirectory() as directory, \
+             patch.object(publication, "candidate_reachable", return_value=True) as reachable, \
+             patch.object(publication, "load_verified", return_value={"image_id": IMAGE_ID, "source_sha": candidate}), \
+             patch.object(publication.subprocess, "run"), \
+             patch.object(publication, "command", return_value="sha256:" + "f" * 64), \
+             patch.object(publication, "verify_remote"):
+            root = Path(directory)
+            (root / "bundle.json").write_text("{}", encoding="utf-8")
+            environment = {**environment, "GITHUB_OUTPUT": str(root / "out.txt")}
+            self.assertEqual(candidate, publication.require_publication(environment)["source_sha"])
+            publication.publish(root, environment)
+            receipt = json.loads((root / "publication.json").read_text(encoding="utf-8"))
+            self.assertEqual(candidate, receipt["source_sha"])
+            self.assertIn(f":nightly-{candidate}-1234-1", receipt["tag"])
+            self.assertEqual(candidate, publication.resolve_source(environment))
+            self.assertIn(f"source_sha={candidate}\n", (root / "out.txt").read_text(encoding="utf-8"))
+            reachable.assert_called()
+
+    def test_compare_status_accepts_only_trunk_ancestors(self):
+        for status, accepted in (("ahead", True), ("identical", True), ("behind", False), ("diverged", False)):
+            with self.subTest(status=status):
+                with patch.object(publication, "_local_ancestor", return_value=None), \
+                     patch.object(publication, "command", return_value=json.dumps({"status": status})):
+                    self.assertEqual(accepted, publication.candidate_reachable("c" * 40, ENVIRONMENT))
+
+    def test_local_history_refuses_without_calling_the_api(self):
+        def run(args, check, capture_output):
+            if args[1] == "merge-base":
+                return subprocess.CompletedProcess(args, 1)
+            return subprocess.CompletedProcess(args, 0)
+
+        with patch.object(publication.subprocess, "run", side_effect=run), \
+             patch.object(publication, "command") as command:
+            self.assertFalse(publication.candidate_reachable("c" * 40, ENVIRONMENT))
+            command.assert_not_called()
 
 
 if __name__ == "__main__":
