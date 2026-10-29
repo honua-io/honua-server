@@ -28,7 +28,7 @@ internal sealed class RoutingJobExecutor(
 {
     public IReadOnlySet<string> ProcessIds { get; } = new HashSet<string>(StringComparer.Ordinal)
     {
-        RoutingProcessDefinitions.ClosestFacilities, RoutingProcessDefinitions.OdCostMatrix, RoutingProcessDefinitions.LocationAllocation,
+        RoutingProcessDefinitions.Route, RoutingProcessDefinitions.ClosestFacilities, RoutingProcessDefinitions.OdCostMatrix, RoutingProcessDefinitions.LocationAllocation,
     };
 
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
@@ -90,7 +90,22 @@ internal sealed class RoutingJobExecutor(
             FeatureCollection first;
             FeatureCollection second;
 
-            if (processId == RoutingProcessDefinitions.ClosestFacilities)
+            if (processId == RoutingProcessDefinitions.Route)
+            {
+                Require(capabilities.SupportsRoute, "The routing provider does not support routes.");
+                Require(cutoff is null, "Route cutoff is not supported.");
+                first = ReadPoints(inputs, "stops", configuration.Value.MaxStops);
+                Require(first.Count >= 2, "At least two stops are required.");
+                second = new FeatureCollection();
+                var request = new RouteSolveRequest(Points(first), OutSrid: outSrid)
+                { InSrid = inSrid, Barriers = barriers, TravelMode = mode };
+                var result = await routing.SolveRouteAsync(request, cancellationToken).ConfigureAwait(false);
+                solution = result.Solved
+                    ? [Feature(result.RouteGeometryGeoJson, ("Total_Time", result.TotalTimeMinutes / minutesPerUnit),
+                        ("Total_Distance", result.TotalLengthMeters / metersPerUnit))]
+                    : [];
+            }
+            else if (processId == RoutingProcessDefinitions.ClosestFacilities)
             {
                 Require(capabilities.SupportsClosestFacility, "The routing provider does not support closest facilities.");
                 first = ReadPoints(inputs, "incidents", configuration.Value.MaxIncidents);
@@ -219,19 +234,24 @@ internal sealed class RoutingJobExecutor(
 
             var firstOutput = await ProjectInputsAsync(first, inSrid, outSrid, transforms, cancellationToken).ConfigureAwait(false);
             var secondOutput = await ProjectInputsAsync(second, inSrid, outSrid, transforms, cancellationToken).ConfigureAwait(false);
-            var payloads = new[]
+            var payloads = new List<byte[]>
             {
                 FeatureCollectionArtifact.WriteFeatureCollection(solution, processId),
                 FeatureCollectionArtifact.WriteFeatureCollection(firstOutput, processId),
                 FeatureCollectionArtifact.WriteFeatureCollection(secondOutput, processId),
-                Encoding.UTF8.GetBytes(solution.Count > 0 ? "true" : "false"),
             };
+            if (processId == RoutingProcessDefinitions.Route)
+            {
+                // Route edge output is empty only because requests for it are rejected.
+                payloads.Add(FeatureCollectionArtifact.WriteFeatureCollection([], processId));
+            }
+            payloads.Add(Encoding.UTF8.GetBytes(solution.Count > 0 ? "true" : "false"));
             Require(payloads.All(payload => payload.Length <= options.CurrentValue.MaxArtifactBytes), "Routing output exceeds MaxArtifactBytes.");
             // Encode/validate all outputs before publishing; provider failures cannot leave partial success artifacts.
-            for (var index = 0; index < payloads.Length; index++)
+            for (var index = 0; index < payloads.Count; index++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var uri = index == 3 ? "data:application/json;base64," + Convert.ToBase64String(payloads[index])
+                var uri = index == payloads.Count - 1 ? "data:application/json;base64," + Convert.ToBase64String(payloads[index])
                     : FeatureCollectionArtifact.BuildDataUri(payloads[index]);
                 Require(await context.TryPublishArtifactAsync(uri, cancellationToken).ConfigureAwait(false), "Routing artifact publication lost its execution fence.");
             }

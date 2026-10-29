@@ -20,6 +20,7 @@ using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
+using Honua.Protocols.GeoServices.GPServer;
 using Honua.Routing.Features.Routing.Abstractions;
 using Honua.Routing.Features.Routing.Domain;
 using Microsoft.AspNetCore.Mvc;
@@ -592,8 +593,16 @@ public static class SharingRestEndpoints
                 SharingRestLog.RoutingHelpersUnavailable(logger, exception);
             }
         }
+        // A real published service is required: the existing GP validator enforces
+        // tenant visibility, protocol enablement and the caller's service access.
+        var asyncService = context.RequestServices.GetRequiredService<IConfiguration>()["Routing:AsyncGPServiceId"];
+        var asyncRouteAvailable = capabilities.SupportsRoute && !string.IsNullOrWhiteSpace(asyncService)
+            && !asyncService.Equals("Routing", StringComparison.OrdinalIgnoreCase)
+            && (await GPServerEndpoints.ValidateServiceAsync(context, asyncService, logger, context.RequestAborted)
+                .ConfigureAwait(false)).IsValid;
         return new PortalHelperServices
         {
+            AsyncRoute = asyncRouteAvailable ? new PortalHelperService { Url = $"{rootUrl}/rest/services/{Uri.EscapeDataString(asyncService!)}/GPServer" } : null,
             RoutingUtilities = routingUtilitiesAvailable ? new PortalHelperService { Url = $"{rootUrl}/rest/services/Routing/GPServer" } : null,
             Route = capabilities.SupportsRoute ? new PortalHelperService { Url = $"{baseUrl}/Route" } : null,
             ServiceArea = capabilities.SupportsServiceArea ? new PortalHelperService { Url = $"{baseUrl}/ServiceArea" } : null,

@@ -8,15 +8,17 @@ namespace Honua.Geoprocessing;
 /// <summary>Provider-backed routing operations executed by the shared managed job runtime.</summary>
 internal static class RoutingProcessDefinitions
 {
+    internal const string Route = "routing.route";
     internal const string ClosestFacilities = "routing.closest-facilities";
     internal const string OdCostMatrix = "routing.od-cost-matrix";
     internal const string LocationAllocation = "routing.location-allocation";
 
     internal static bool Handles(string processId)
-        => processId is ClosestFacilities or OdCostMatrix or LocationAllocation;
+        => processId is Route or ClosestFacilities or OdCostMatrix or LocationAllocation;
 
     internal static ProcessDefinition[] Create() =>
     [
+        Definition(Route, "Find Routes", "Solves a route through ordered stops.", [Points("stops", "Stops")]),
         Definition(ClosestFacilities, "Find Closest Facilities", "Finds ranked network routes between incidents and facilities.",
         [
             Points("incidents", "Incidents"), Points("facilities", "Facilities"),
@@ -65,7 +67,9 @@ internal static class RoutingProcessDefinitions
                 Points("line_barriers", "Line Barriers", required: false),
                 Points("polygon_barriers", "Polygon Barriers", required: false),
             ],
-            OutputArtifactKinds = [ArtifactKind.FeatureLayer, ArtifactKind.FeatureLayer, ArtifactKind.FeatureLayer, ArtifactKind.Scalar],
+            OutputArtifactKinds = id == Route
+                ? [ArtifactKind.FeatureLayer, ArtifactKind.FeatureLayer, ArtifactKind.FeatureLayer, ArtifactKind.FeatureLayer, ArtifactKind.Scalar]
+                : [ArtifactKind.FeatureLayer, ArtifactKind.FeatureLayer, ArtifactKind.FeatureLayer, ArtifactKind.Scalar],
         };
 
     private static ProcessParameterSpec Points(string name, string title, bool required = true)

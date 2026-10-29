@@ -70,7 +70,8 @@ public sealed class RoutingPgRoutingQueuedJobTests : IClassFixture<PgRoutingFixt
         _redis = redis;
         _routing = routing;
         _redisConnection = DurableConnection(redis.ConnectionString, database: null);
-        _host = CreateHost(_redisConnection, new ProfiledNetworkDatasetResolver(), routing);
+        _host = CreateHost(_redisConnection, new ProfiledNetworkDatasetResolver(), routing)
+            .ConfigureWebHost(builder => builder.UseSetting("Routing:AsyncGPServiceId", ServiceId));
     }
 
     public async Task InitializeAsync()
@@ -83,6 +84,55 @@ public sealed class RoutingPgRoutingQueuedJobTests : IClassFixture<PgRoutingFixt
     {
         await _host.DisposeAsync();
         await DeleteControlPlaneKeysAsync(_redisConnection, database: 0);
+    }
+
+    [RoutingTest("HONUA_ROUTING_TEST")]
+    public async Task Route_QueuedJob_UsesRealLatticeAndReturnsOrderedStops()
+    {
+        using var client = Client(_host);
+        var inputs = new Dictionary<string, string>
+        {
+            ["Stops"] = PointSet((0, 0, 1L, "Start", (double?)null), (0.02, 0.02, 2L, "End", null)),
+            ["Travel_Mode"] = "driving",
+        };
+        var job = await SubmitAsync(client, "routing.route", inputs);
+        using var terminal = await UntilTerminalAsync(client, "routing.route", job, "GPServer", SuccessBudget);
+        terminal.RootElement.GetProperty("jobStatus").GetString().Should().Be("esriJobSucceeded", terminal.RootElement.GetRawText());
+        AssertNamedResults(terminal.RootElement, "Output_Routes", "Output_Stops", "Output_Directions", "Output_Route_Edges", "Solve_Succeeded");
+        await AssertSucceededFlagAsync(client, "routing.route", job, "GPServer");
+        using var routes = await ResultAsync(client, "routing.route", job, "Output_Routes");
+        var features = routes.RootElement.GetProperty("value").GetProperty("features");
+        features.GetArrayLength().Should().Be(1);
+        features[0].GetProperty("attributes").GetProperty("Total_Time").GetDouble().Should().BeApproximately(4d, 0.001);
+        var path = features[0].GetProperty("geometry").GetProperty("paths")[0];
+        AssertCoordinate(path[0], 0, 0, DegreeTolerance);
+        AssertCoordinate(path[path.GetArrayLength()-1], 0.02, 0.02, DegreeTolerance);
+        using var stops = await ResultAsync(client, "routing.route", job, "Output_Stops");
+        stops.RootElement.GetProperty("value").GetProperty("features").GetArrayLength().Should().Be(2);
+    }
+
+    [RoutingTest("HONUA_ROUTING_TEST")]
+    public async Task FindRoutes_PublishedAsyncAlias_UsesDurablePgRoutingAndCompleteOutputs()
+    {
+        using var client = Client(_host);
+        var inputs = new Dictionary<string, string>
+        {
+            ["Stops"] = PointSet((0, 0, 1L, "Start", (double?)null), (0.02, 0.02, 2L, "End", null)),
+            ["Travel_Mode"] = "driving", ["Populate_Directions"] = "false", ["Populate_Route_Edges"] = "false",
+        };
+        var job = await SubmitAsync(client, "FindRoutes", inputs);
+        using var terminal = await UntilTerminalAsync(client, "FindRoutes", job, "GPServer", SuccessBudget);
+        terminal.RootElement.GetProperty("jobStatus").GetString().Should().Be("esriJobSucceeded", terminal.RootElement.GetRawText());
+        AssertNamedResults(terminal.RootElement, "Output_Routes", "Output_Stops", "Output_Directions", "Output_Route_Edges", "Solve_Succeeded");
+        await AssertSucceededFlagAsync(client, "FindRoutes", job, "GPServer");
+        using var routes = await ResultAsync(client, "FindRoutes", job, "Output_Routes");
+        routes.RootElement.GetProperty("value").GetProperty("features")[0].GetProperty("attributes")
+            .GetProperty("Total_Time").GetDouble().Should().BeApproximately(4d, 0.001);
+        foreach (var optional in new[] { "Output_Directions", "Output_Route_Edges" })
+        {
+            using var output = await ResultAsync(client, "FindRoutes", job, optional);
+            output.RootElement.GetProperty("value").GetProperty("features").GetArrayLength().Should().Be(0);
+        }
     }
 
     [RoutingTest("HONUA_ROUTING_TEST")]

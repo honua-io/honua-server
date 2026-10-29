@@ -14,12 +14,14 @@ namespace Honua.Protocols.GeoServices.GPServer;
 internal static class RoutingAsyncWebTools
 {
     internal static bool IsTask(string? taskName)
-        => taskName is not null && (taskName.Equals("FindClosestFacilities", StringComparison.OrdinalIgnoreCase)
+        => taskName is not null && (taskName.Equals("FindRoutes", StringComparison.OrdinalIgnoreCase)
+            || taskName.Equals("FindClosestFacilities", StringComparison.OrdinalIgnoreCase)
             || taskName.Equals("GenerateOriginDestinationCostMatrix", StringComparison.OrdinalIgnoreCase)
             || taskName.Equals("SolveLocationAllocation", StringComparison.OrdinalIgnoreCase));
 
     private static readonly Dictionary<string, string> CommonInputs = new(StringComparer.OrdinalIgnoreCase)
     {
+        ["Stops"] = "stops",
         ["Incidents"] = "incidents",
         ["Facilities"] = "facilities",
         ["Origins"] = "origins",
@@ -48,6 +50,7 @@ internal static class RoutingAsyncWebTools
 
     internal static string InputName(string canonicalName, string processId) => canonicalName switch
     {
+        "stops" => "Stops",
         "incidents" => "Incidents",
         "facilities" => "Facilities",
         "origins" => "Origins",
@@ -72,6 +75,7 @@ internal static class RoutingAsyncWebTools
 
     internal static string[] Outputs(string processId) => processId switch
     {
+        RoutingProcessDefinitions.Route => ["Output_Routes", "Output_Stops", "Output_Directions", "Output_Route_Edges", "Solve_Succeeded"],
         RoutingProcessDefinitions.ClosestFacilities => ["Output_Routes", "Output_Incidents", "Output_Facilities", "Solve_Succeeded"],
         RoutingProcessDefinitions.OdCostMatrix => ["Output_Origin_Destination_Lines", "Output_Origins", "Output_Destinations", "Solve_Succeeded"],
         RoutingProcessDefinitions.LocationAllocation => ["Output_Allocation_Lines", "Output_Facilities", "Output_Demand_Points", "Solve_Succeeded"],
@@ -108,7 +112,8 @@ internal static class RoutingAsyncWebTools
                 // False/empty packaging controls request no extra effect. Other advanced settings are rejected.
                 if ((name.Equals("Save_Route_Data", StringComparison.OrdinalIgnoreCase)
                     || name.Equals("Save_Output_Network_Analysis_Layer", StringComparison.OrdinalIgnoreCase)
-                    || name.Equals("Populate_Directions", StringComparison.OrdinalIgnoreCase)) && bool.TryParse(value, out var flag) && !flag)
+                    || name.Equals("Populate_Directions", StringComparison.OrdinalIgnoreCase)
+                    || name.Equals("Populate_Route_Edges", StringComparison.OrdinalIgnoreCase)) && bool.TryParse(value, out var flag) && !flag)
                 {
                     continue;
                 }

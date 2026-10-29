@@ -269,7 +269,7 @@ internal static partial class GPServerEndpoints
         // The utility tasks answer for every service id, like the NAServer solves they
         // describe: a stand-alone routing binding names a utilityUrl whose service id
         // need not publish any catalog task of its own.
-        if (NAServerMetadata.IsUtilityTask(taskName))
+        if (NAServerMetadata.IsUtilityTask(taskName) && !IsAsyncRouteTask(context, serviceId, taskName))
         {
             var routingError = await ValidateRoutingUtilityTaskAsync(context, taskName, ct).ConfigureAwait(false);
             if (routingError is not null)
@@ -319,7 +319,7 @@ internal static partial class GPServerEndpoints
 
         try
         {
-            if (readSoapParameters is null && NAServerMetadata.IsUtilityTask(taskName))
+            if (readSoapParameters is null && NAServerMetadata.IsUtilityTask(taskName) && !IsAsyncRouteTask(context, serviceId, taskName))
             {
                 // The utility tasks are synchronous by contract (Esri publishes them as
                 // esriExecutionTypeSynchronous); there is no job to enqueue.
@@ -465,7 +465,7 @@ internal static partial class GPServerEndpoints
 
         try
         {
-            if (readSoapParameters is null && NAServerMetadata.IsUtilityTask(taskName))
+            if (readSoapParameters is null && NAServerMetadata.IsUtilityTask(taskName) && !IsAsyncRouteTask(context, serviceId, taskName))
             {
                 // Read-only projection of the routing provider: no job, no job
                 // authorization, anonymous like the NAServer solves it describes, and
@@ -1342,6 +1342,17 @@ internal static partial class GPServerEndpoints
     // -----------------------------------------------------------------------
     // Shared helpers
     // -----------------------------------------------------------------------
+
+    // A separately published and authorized GP service owns the asynchronous tool.
+    // The provider-level Routing GP service remains synchronous and unchanged.
+    private static bool IsAsyncRouteTask(HttpContext context, string serviceId, string taskName)
+    {
+        var configured = context.RequestServices.GetRequiredService<IConfiguration>()["Routing:AsyncGPServiceId"];
+        return !string.IsNullOrWhiteSpace(configured)
+            && serviceId.Equals(configured, StringComparison.OrdinalIgnoreCase)
+            && !serviceId.Equals("Routing", StringComparison.OrdinalIgnoreCase)
+            && taskName.Equals("FindRoutes", StringComparison.OrdinalIgnoreCase);
+    }
 
     internal static Task<ServiceResourceValidationHelpers.ServiceValidationV2Result> ValidateServiceAsync(
         HttpContext context,
