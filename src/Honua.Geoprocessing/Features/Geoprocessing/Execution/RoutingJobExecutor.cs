@@ -96,14 +96,22 @@ internal sealed class RoutingJobExecutor(
                 Require(cutoff is null, "Route cutoff is not supported.");
                 first = ReadPoints(inputs, "stops", configuration.Value.MaxStops);
                 Require(first.Count >= 2, "At least two stops are required.");
+                string? routeName = null;
                 for (var index = 0; index < first.Count; index++)
                 {
+                    var currentRouteName = Attribute(first[index], "RouteName")?.ToString() ?? string.Empty;
+                    if (index == 0) routeName = currentRouteName;
+                    else Require(routeName == currentRouteName, "Multiple route groups are not supported.");
                     foreach (var attribute in first[index].Attributes.GetNames())
                     {
                         var value = first[index].Attributes[attribute];
                         if (value is null || attribute.Equals("OBJECTID", StringComparison.OrdinalIgnoreCase)
                             || attribute.Equals("ID", StringComparison.OrdinalIgnoreCase)
                             || attribute.Equals("Name", StringComparison.OrdinalIgnoreCase)) continue;
+                        if (attribute.Equals("RouteName", StringComparison.OrdinalIgnoreCase))
+                        {
+                            continue;
+                        }
                         if (attribute.Equals("Sequence", StringComparison.OrdinalIgnoreCase))
                         {
                             Require(Number(value, attribute) == index + 1, "Stops must be supplied in their requested sequence.");
@@ -118,7 +126,7 @@ internal sealed class RoutingJobExecutor(
                 var result = await routing.SolveRouteAsync(request, cancellationToken).ConfigureAwait(false);
                 solution = result.Solved
                     ? [Feature(result.RouteGeometryGeoJson,
-                        ("Name", $"{Name(first, 0)} - {Name(first, first.Count - 1)}"), ("StopCount", first.Count),
+                        ("Name", string.IsNullOrEmpty(routeName) ? $"{Name(first, 0)} - {Name(first, first.Count - 1)}" : routeName), ("StopCount", first.Count),
                         ("Total_Time", result.TotalTimeMinutes / minutesPerUnit),
                         ("Total_Distance", result.TotalLengthMeters / metersPerUnit))]
                     : [];

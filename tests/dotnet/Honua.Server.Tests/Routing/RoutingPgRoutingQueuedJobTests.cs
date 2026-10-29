@@ -154,6 +154,27 @@ public sealed class RoutingPgRoutingQueuedJobTests : IClassFixture<PgRoutingFixt
     }
 
     [RoutingTest("HONUA_ROUTING_TEST")]
+    public async Task RouteNamedGroup_UsesDeclaredNameAndRejectsMultipleGroups()
+    {
+        const string stops = """
+            {"geometryType":"esriGeometryPoint","spatialReference":{"wkid":4326},"features":[
+              {"geometry":{"x":0,"y":0},"attributes":{"Name":"Start","RouteName":"A","Sequence":1}},
+              {"geometry":{"x":0.02,"y":0.02},"attributes":{"Name":"End","RouteName":"A","Sequence":2}}]}
+            """;
+        using var client = Client(_host);
+        var job = await SubmitAsync(client, "FindRoutes", new Dictionary<string, string> { ["Stops"] = stops });
+        using var terminal = await UntilTerminalAsync(client, "FindRoutes", job, "GPServer", SuccessBudget);
+        terminal.RootElement.GetProperty("jobStatus").GetString().Should().Be("esriJobSucceeded", terminal.RootElement.GetRawText());
+        using var routes = await ResultAsync(client, "FindRoutes", job, "Output_Routes");
+        routes.RootElement.GetProperty("value").GetProperty("features")[0].GetProperty("attributes").GetProperty("Name").GetString().Should().Be("A");
+        var mixed = stops.Replace("\"RouteName\":\"A\",\"Sequence\":2", "\"RouteName\":\"B\",\"Sequence\":2", StringComparison.Ordinal);
+        mixed.Should().NotBe(stops);
+        var rejected = await SubmitAsync(client, "FindRoutes", new Dictionary<string, string> { ["Stops"] = mixed });
+        using var rejectedTerminal = await UntilTerminalAsync(client, "FindRoutes", rejected, "GPServer", SuccessBudget);
+        rejectedTerminal.RootElement.GetProperty("jobStatus").GetString().Should().Be("esriJobFailed", rejectedTerminal.RootElement.GetRawText());
+    }
+
+    [RoutingTest("HONUA_ROUTING_TEST")]
     public async Task ClosestFacilities_QueuedJob_MatchesLatticeOracle()
     {
         const long incidentId = 0;

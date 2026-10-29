@@ -90,8 +90,11 @@ internal static class RoutingAsyncWebTools
             "polygon_barriers" => "esriGeometryPolygon",
             _ => "esriGeometryPoint",
         };
+        var fields = parameter == "stops"
+            ? """[{"name":"OBJECTID","type":"esriFieldTypeOID"},{"name":"Name","type":"esriFieldTypeString","length":500},{"name":"RouteName","type":"esriFieldTypeString","length":1024},{"name":"Sequence","type":"esriFieldTypeInteger"}]"""
+            : """[{"name":"OBJECTID","type":"esriFieldTypeOID"},{"name":"Name","type":"esriFieldTypeString"}]""";
         using var document = JsonDocument.Parse($$"""
-            {"geometryType":"{{geometryType}}","spatialReference":{"wkid":4326},"fields":[{"name":"OBJECTID","type":"esriFieldTypeOID"},{"name":"Name","type":"esriFieldTypeString"}],"features":[]}
+            {"geometryType":"{{geometryType}}","spatialReference":{"wkid":4326},"fields":{{fields}},"features":[]}
             """);
         return document.RootElement.Clone();
     }
@@ -112,7 +115,9 @@ internal static class RoutingAsyncWebTools
                 """,
             "Output_Stops" => """
                 [{"name":"OBJECTID","type":"esriFieldTypeOID"},
-                 {"name":"Name","type":"esriFieldTypeString"}]
+                 {"name":"Name","type":"esriFieldTypeString"},
+                 {"name":"RouteName","type":"esriFieldTypeString"},
+                 {"name":"Sequence","type":"esriFieldTypeDouble"}]
                 """,
             "Output_Directions" or "Output_Route_Edges" => """
                 [{"name":"OBJECTID","type":"esriFieldTypeOID"}]

@@ -34,4 +34,13 @@ public sealed class RouteJobMetadataTests
             new Dictionary<string, string> { ["Travel_Mode"] = "Custom" }, null));
     }
 
+    [Fact]
+    public void StopTemplate_DeclaresSupportedGroupAndSequenceFields()
+    {
+        var fields = RoutingAsyncWebTools.DefaultFeatureSet("stops").GetProperty("fields").EnumerateArray()
+            .ToDictionary(x => x.GetProperty("name").GetString()!, x => x.GetProperty("type").GetString());
+        Assert.Equal("esriFieldTypeString", fields["RouteName"]);
+        Assert.Equal("esriFieldTypeInteger", fields["Sequence"]);
+    }
+
 }
