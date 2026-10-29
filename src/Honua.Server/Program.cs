@@ -913,7 +913,11 @@ builder.Services.AddSingleton<Honua.Infrastructure.Monitoring.DegradedStartupCon
 // Lambda that is a connect storm against RDS Proxy; EventBridge retries the invocation instead.
 if (Honua.ControlPlane.ControlPlaneLambdaConnectionRelease.HostsDatabasePollingLoops(builder.Configuration))
 {
-    builder.Services.AddHostedService<Honua.Infrastructure.Monitoring.DatabaseRecoveryBackgroundService>();
+    // Also a singleton: on AWS Lambda the readiness probe drives a bounded recovery attempt itself,
+    // because the background loop only runs while an invocation is executing.
+    builder.Services.AddSingleton<Honua.Infrastructure.Monitoring.DatabaseRecoveryBackgroundService>();
+    builder.Services.AddHostedService(static sp =>
+        sp.GetRequiredService<Honua.Infrastructure.Monitoring.DatabaseRecoveryBackgroundService>());
 }
 builder.Services.AddScoped<Honua.Infrastructure.Monitoring.IDeployPreflightProbe,
     Honua.Infrastructure.Monitoring.DeployPreflightProbe>();

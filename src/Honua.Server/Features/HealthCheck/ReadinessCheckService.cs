@@ -23,6 +23,12 @@ using Honua.Core.Features.Infrastructure.Health;
 /// </summary>
 internal sealed class ReadinessCheckService : IReadinessCheckService
 {
+    /// <summary>
+    /// Upper bound on the recovery attempt a degraded AWS Lambda readiness probe runs inline; it
+    /// stays well inside the API Gateway integration timeout (29 s).
+    /// </summary>
+    internal static readonly TimeSpan InlineRecoveryBudget = TimeSpan.FromSeconds(10);
+
     private readonly IDatabaseHealthChecker _databaseHealthChecker;
     private readonly ICacheHealthChecker? _cacheHealthChecker;
     private readonly IFeatureChangeEventStoreHealth? _featureChangeEventStoreHealth;
@@ -32,6 +38,7 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
     private readonly GeoprocessingOutputStoreHealthCheck? _outputStoreHealth;
     private readonly MigrationState _migrationState;
     private readonly DegradedStartupContext? _degradedStartup;
+    private readonly DatabaseRecoveryBackgroundService? _databaseRecovery;
     private readonly ILogger<ReadinessCheckService> _logger;
     private readonly DurableJobSubstrateOptions _durableJobSubstrate;
 
@@ -46,9 +53,11 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
         IOptions<AlertOptions>? alertOptions = null,
         GeoprocessingOutputStoreHealthCheck? outputStoreHealth = null,
         IOptions<DurableJobSubstrateOptions>? durableJobSubstrateOptions = null,
-        DegradedStartupContext? degradedStartup = null)
+        DegradedStartupContext? degradedStartup = null,
+        DatabaseRecoveryBackgroundService? databaseRecovery = null)
     {
         _degradedStartup = degradedStartup;
+        _databaseRecovery = databaseRecovery;
         _databaseHealthChecker = databaseHealthChecker;
         _cacheHealthChecker = cacheHealthChecker;
         _featureChangeEventStoreHealth = featureChangeEventStoreHealth;
@@ -88,6 +97,15 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
             // Degraded start (#1632): the host is serving without database access because the
             // database was transiently unavailable at boot. Report the sanitized phase and failure
             // class until the background recovery loop restores access.
+            // On AWS Lambda the background recovery loop only runs while an invocation executes,
+            // and a degraded probe answers in milliseconds, so the loop's connects never finish:
+            // run one bounded attempt here so a cold start before the migration task ran recovers
+            // once the schema is current (honua-release run 40746787170).
+            if (_degradedStartup is { IsAwaitingDatabase: true } && _databaseRecovery is { RecoversOnReadinessProbe: true } recovery)
+            {
+                await recovery.TryRecoverOnReadinessProbeAsync(InlineRecoveryBudget, cancellationToken);
+            }
+
             if (_degradedStartup is { IsAwaitingDatabase: true } degraded)
             {
                 // honua-server#5916: a schema behind this binary (migrations not applied yet) is its
