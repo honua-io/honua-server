@@ -7,6 +7,17 @@ namespace Honua.Server.Tests.Routing;
 
 public sealed class RouteJobMetadataTests
 {
+    [Theory]
+    [InlineData(RoutingProcessDefinitions.ClosestFacilities)]
+    [InlineData(RoutingProcessDefinitions.OdCostMatrix)]
+    [InlineData(RoutingProcessDefinitions.LocationAllocation)]
+    public void OtherRoutingTasks_RejectCustomTravelModeInsteadOfUsingDefault(string processId)
+    {
+        var definition = RoutingProcessDefinitions.Create().Single(x => x.ProcessId == processId);
+        Assert.Throws<GeoprocessingValidationException>(() => RoutingAsyncWebTools.Translate(definition,
+            new Dictionary<string, string> { ["Travel_Mode"] = "Custom" }, null));
+    }
+
     [Fact]
     public void NamedOutputs_IncludeOnlySupportedAndEmptyOptionalOutputs()
     {

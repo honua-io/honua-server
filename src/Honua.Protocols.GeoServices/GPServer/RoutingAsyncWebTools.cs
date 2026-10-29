@@ -208,9 +208,7 @@ internal static class RoutingAsyncWebTools
         }
         if (translated.TryGetValue("travel_mode", out var mode) && mode.Equals("Custom", StringComparison.OrdinalIgnoreCase))
         {
-            if (definition.ProcessId == RoutingProcessDefinitions.Route)
-                throw new GeoprocessingValidationException("Custom route travel modes are not supported.");
-            translated.Remove("travel_mode");
+            throw new GeoprocessingValidationException("Custom routing travel modes are not supported.");
         }
         return translated;
 
