@@ -2484,7 +2484,8 @@ internal sealed class PostgresRasterStore : IRasterStore
                 Y = y,
                 Srid = srid,
                 BandValues = new Dictionary<int, object?>(),
-                HasData = false
+                HasData = false,
+                ContributingRasterIds = []
             };
         }
 
@@ -2513,6 +2514,13 @@ internal sealed class PostgresRasterStore : IRasterStore
         // Resolve a contested pixel with the ordering exportImage renders for the same mosaic rule
         // (#4064): seamline clips, nadir/attribute projections and the ordered union are shared.
         var mosaicSource = BuildMosaicSourceSelect("raster", ordering, attributeSort);
+        // The contributor probe uses the same point as the merged sample. Mixed raster SRIDs
+        // transform onto each aligned raster; a uniform SRID reuses the merged sample point.
+        var contributorPoint = rasterSrid is int
+            ? samplePoint
+            : "ST_Transform(ST_SetSRID(ST_MakePoint(@x, @y), @pointSrid), ST_SRID(candidate.aligned_rast))";
+        var contributorsSql = RasterMosaicSql.CreateIdentifyContributorArraySql(
+            mergeStrategy, ordering, attributeSort, contributorPoint);
 
         await using var command = connection.CreateCommand();
         command.CommandText = $"""
@@ -2532,8 +2540,9 @@ internal sealed class PostgresRasterStore : IRasterStore
                 FROM merged
                 WHERE rast IS NOT NULL
             )
-            SELECT band, val
-            FROM rendered,
+            SELECT band, val, contributors.ids
+            FROM rendered
+            CROSS JOIN (SELECT {contributorsSql} AS ids) AS contributors,
                  LATERAL generate_series(1, ST_NumBands(rast)) AS band,
                  LATERAL ST_Value(rast, band,
                     {samplePoint}
@@ -2553,6 +2562,7 @@ internal sealed class PostgresRasterStore : IRasterStore
 
         var bandValues = new Dictionary<int, object?>();
         var hasData = false;
+        long[] contributing = [];
 
         await using var reader = await ExecuteIdentifyReaderAsync(command, cancellationToken).ConfigureAwait(false);
         while (await ReadIdentifyRowAsync(reader, cancellationToken).ConfigureAwait(false))
@@ -2564,6 +2574,11 @@ internal sealed class PostgresRasterStore : IRasterStore
             {
                 hasData = true;
             }
+
+            if (contributing.Length == 0 && !reader.IsDBNull(2))
+            {
+                contributing = reader.GetFieldValue<long[]>(2);
+            }
         }
 
         return new PixelValueResult
@@ -2572,7 +2587,8 @@ internal sealed class PostgresRasterStore : IRasterStore
             Y = y,
             Srid = srid,
             BandValues = bandValues,
-            HasData = hasData
+            HasData = hasData,
+            ContributingRasterIds = contributing
         };
     }
 

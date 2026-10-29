@@ -243,4 +243,84 @@ internal static class RasterMosaicSql
         // and wins the LAST union.
         _ => "effective_acquisition ASC, created_at ASC, id ASC"
     };
+
+    /// <summary>
+    /// Scalar <c>bigint[]</c> of the rasters that supplied an identified mosaic pixel.
+    /// The subquery reads the <c>source</c> CTE and the same aligned grid
+    /// <see cref="CreateMosaicAggregateExpression"/> unions, then keeps the raster the
+    /// mosaic operator would keep. Catalog order is not the contribution: a raster that
+    /// is NoData at the sample does not win just because it sorts first.
+    /// </summary>
+    /// <param name="mergeStrategy">Pixel-resolution operation used by the union.</param>
+    /// <param name="ordering">Ordering applied to a FIRST/LAST selection.</param>
+    /// <param name="attributeSort">Allowlisted attribute sort for <see cref="RasterMosaicOrdering.Attribute"/>.</param>
+    /// <param name="samplePointSql">
+    /// Geometry expression for the identify point, in the raster SRID. It may reference
+    /// <c>candidate.aligned_rast</c> when the selected rasters do not share one SRID.
+    /// </param>
+    internal static string CreateIdentifyContributorArraySql(
+        RasterMergeStrategy mergeStrategy,
+        RasterMosaicOrdering ordering,
+        RasterMosaicAttributeSort? attributeSort,
+        string samplePointSql)
+    {
+        var aligned = CreateAlignedRasterExpression("source");
+        var ranked = $"""
+            SELECT candidate.id,
+                   row_number() OVER (ORDER BY {OrderByClause(ordering, attributeSort)}) AS n,
+                   count(*) OVER () AS total,
+                   ST_Value(candidate.aligned_rast, 1, {samplePointSql}) AS band1
+            FROM (
+                SELECT source.*, {aligned} AS aligned_rast
+                FROM source
+                WHERE source.rast IS NOT NULL
+            ) AS candidate
+            WHERE candidate.aligned_rast IS NOT NULL
+              AND EXISTS (
+                  SELECT 1
+                  FROM generate_series(1, ST_NumBands(candidate.aligned_rast)) AS band(n)
+                  WHERE ST_Value(candidate.aligned_rast, band.n, {samplePointSql}) IS NOT NULL)
+            """;
+
+        var picked = mergeStrategy switch
+        {
+            // Every non-NoData sample contributes to the mean. Order is irrelevant.
+            RasterMergeStrategy.Average => $"""
+                SELECT COALESCE(array_agg(ranked.id ORDER BY ranked.id), ARRAY[]::bigint[])
+                FROM ({ranked}) AS ranked
+                """,
+
+            // MIN/MAX ignore mosaic order. Band 1 matches the single-band mosaics this
+            // service identifies; id ASC keeps a tied value on one raster.
+            RasterMergeStrategy.Min => WinnerByBandValue(ranked, "ASC"),
+            RasterMergeStrategy.Max => WinnerByBandValue(ranked, "DESC"),
+
+            // Oldest is the FIRST union: the first non-NoData raster in mosaic order wins.
+            RasterMergeStrategy.Oldest => $"""
+                SELECT COALESCE(array_agg(ranked.id), ARRAY[]::bigint[])
+                FROM ({ranked}) AS ranked
+                WHERE ranked.n = 1
+                """,
+
+            // Newest and the other LAST unions: the last non-NoData raster in mosaic order wins.
+            _ => $"""
+                SELECT COALESCE(array_agg(ranked.id), ARRAY[]::bigint[])
+                FROM ({ranked}) AS ranked
+                WHERE ranked.n = ranked.total
+                """,
+        };
+
+        return $"({picked})";
+    }
+
+    private static string WinnerByBandValue(string ranked, string direction) => $"""
+        SELECT COALESCE(array_agg(picked.id), ARRAY[]::bigint[])
+        FROM (
+            SELECT ranked.id
+            FROM ({ranked}) AS ranked
+            WHERE ranked.band1 IS NOT NULL
+            ORDER BY ranked.band1 {direction}, ranked.id ASC
+            LIMIT 1
+        ) AS picked
+        """;
 }

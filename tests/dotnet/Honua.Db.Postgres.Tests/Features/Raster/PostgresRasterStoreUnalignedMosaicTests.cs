@@ -317,6 +317,30 @@ public sealed class PostgresRasterStoreUnalignedMosaicTests(PostgresFixture fixt
         });
     }
 
+    // #6561: the named raster is the one whose sample the union kept. At the overlap the
+    // newer fine raster wins; outside its footprint the older coarse raster wins, including
+    // when Oldest is asked to prefer it where both cover the point.
+    [IntegrationTest]
+    public async Task IdentifyMosaicAsync_NamesTheRasterThatSuppliedThePixel()
+    {
+        await WithNestedMosaicAsync(async (store, ids) =>
+        {
+            var coarse = ids[0];
+            var fine = ids[1];
+
+            var overlap = await store.IdentifyMosaicAsync(LayerId, ids, RasterMergeStrategy.Newest, 1.25, 1.75, 4326);
+            var outsideFine = await store.IdentifyMosaicAsync(LayerId, ids, RasterMergeStrategy.Newest, 0.25, 0.25, 4326);
+            var oldest = await store.IdentifyMosaicAsync(LayerId, ids, RasterMergeStrategy.Oldest, 1.25, 1.75, 4326);
+
+            Band1(overlap).Should().Be(5);
+            overlap.ContributingRasterIds.Should().Equal([fine]);
+            Band1(outsideFine).Should().Be(20);
+            outsideFine.ContributingRasterIds.Should().Equal([coarse]);
+            Band1(oldest).Should().Be(20);
+            oldest.ContributingRasterIds.Should().Equal([coarse]);
+        });
+    }
+
     [IntegrationTest]
     public async Task GetClippedMosaicStatisticsAndHistogramsAsync_WithMixedResolutionRasters_AnalyseTheAlignedUnion()
     {
