@@ -572,9 +572,29 @@ public static class SharingRestEndpoints
 
         // NAServer is a provider-level service. Its routes accept the stable Routing
         // name independently of feature-service publications in the metadata catalog.
-        var baseUrl = $"{BaseUrlResolver.GetBaseUrl(context).TrimEnd('/')}/rest/services/Routing/NAServer";
+        var rootUrl = BaseUrlResolver.GetBaseUrl(context).TrimEnd('/');
+        var baseUrl = $"{rootUrl}/rest/services/Routing/NAServer";
+        // The virtual GP service is suppressed when a catalog publication owns its name.
+        // Do not advertise a different service as our routing utility in that case.
+        var routingUtilitiesAvailable = false;
+        if (capabilities.SupportsRoute || capabilities.SupportsServiceArea)
+        {
+            try
+            {
+                var graph = await context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>()
+                    .GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
+                routingUtilitiesAvailable = !graph.Graph.Services.Any(service =>
+                    string.Equals(service.Metadata.Id, "Routing", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(service.Metadata.Name, "Routing", StringComparison.OrdinalIgnoreCase));
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException and not OutOfMemoryException)
+            {
+                SharingRestLog.RoutingHelpersUnavailable(logger, exception);
+            }
+        }
         return new PortalHelperServices
         {
+            RoutingUtilities = routingUtilitiesAvailable ? new PortalHelperService { Url = $"{rootUrl}/rest/services/Routing/GPServer" } : null,
             Route = capabilities.SupportsRoute ? new PortalHelperService { Url = $"{baseUrl}/Route" } : null,
             ServiceArea = capabilities.SupportsServiceArea ? new PortalHelperService { Url = $"{baseUrl}/ServiceArea" } : null,
             ClosestFacility = capabilities.SupportsClosestFacility ? new PortalHelperService { Url = $"{baseUrl}/ClosestFacility" } : null,
