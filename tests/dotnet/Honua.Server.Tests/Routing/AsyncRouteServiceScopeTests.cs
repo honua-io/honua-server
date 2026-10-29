@@ -61,10 +61,13 @@ public sealed class AsyncRouteServiceScopeTests
             foreach (var name in names.Where(n => n != "FindRoutes"))
             {
                 using var info = await client.GetAsync($"/rest/services/test/GPServer/{Uri.EscapeDataString(name)}?f=json");
-                Assert.Equal(System.Net.HttpStatusCode.NotFound, info.StatusCode);
+                using var infoBody = JsonDocument.Parse(await info.Content.ReadAsStringAsync());
+                Assert.Equal(404, infoBody.RootElement.GetProperty("error").GetProperty("code").GetInt32());
                 using var content = new StringContent("invalid", Encoding.UTF8, "application/json");
                 using var submit = await client.PostAsync($"/rest/services/test/GPServer/{Uri.EscapeDataString(name)}/submitJob", content);
-                Assert.Equal(System.Net.HttpStatusCode.NotFound, submit.StatusCode);
+                using var submitBody = JsonDocument.Parse(await submit.Content.ReadAsStringAsync());
+                Assert.Equal(404, submitBody.RootElement.GetProperty("error").GetProperty("code").GetInt32());
+                Assert.False(submitBody.RootElement.TryGetProperty("jobId", out _));
             }
             const string soap = "<soap:Envelope xmlns:soap='http://schemas.xmlsoap.org/soap/envelope/' xmlns:tns='http://www.esri.com/schemas/ArcGIS/10.8'><soap:Body><tns:GetToolNames/></soap:Body></soap:Envelope>";
             using var xml = new StringContent(soap, Encoding.UTF8, "text/xml");

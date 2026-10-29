@@ -76,7 +76,9 @@ public sealed class AsyncRoutePortalDiscoveryTests
             Assert.False(document.RootElement.GetProperty("helperServices").TryGetProperty("asyncRoute", out _));
             using var content = new StringContent("invalid", System.Text.Encoding.UTF8, "application/json");
             using var denied = await client.PostAsync("/rest/services/test/GPServer/FindRoutes/submitJob", content);
-            Assert.Contains(denied.StatusCode, new[] { HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden, HttpStatusCode.NotFound });
+            using var denial = JsonDocument.Parse(await denied.Content.ReadAsStringAsync());
+            Assert.Contains(denial.RootElement.GetProperty("error").GetProperty("code").GetInt32(), new[] { 403, 404, 498, 499 });
+            Assert.False(denial.RootElement.TryGetProperty("jobId", out _));
         }
         finally { await fixture.DisposeAsync(); }
     }
