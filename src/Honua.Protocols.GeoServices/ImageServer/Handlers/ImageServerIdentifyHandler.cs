@@ -262,12 +262,20 @@ internal sealed class ImageServerIdentifyHandler
             // returnGeometry=true (the default) and omits it when false.
             var includeFootprint = request.ReturnGeometry != false;
 
-            // Build identify response
+            // A mosaic names the raster that supplied the pixel. Sort position is not that
+            // raster: the store reports the id the same union kept, and a NoData neighbor stays
+            // at visibility 0 (#6561).
+            var winner = WinningCatalogRaster(selectedRasters, pixelResult.ContributingRasterIds);
+            var nameMasked = ImageServerCatalogSecurity.IsMasked(maskedFields, "Name");
             var response = new IdentifyResponse
             {
-                ObjectId = selectedRasters.Length == 1 ? selectedRasters[0].Id : null,
-                Name = ImageServerCatalogSecurity.IsMasked(maskedFields, "Name")
-                    ? null : selectedRasters.Length == 1 ? selectedRasters[0].Name : $"{resolved.DisplayName} mosaic",
+                ObjectId = winner?.Id ?? (selectedRasters.Length == 1 ? selectedRasters[0].Id : null),
+                Name = nameMasked
+                    ? null
+                    : winner?.Name
+                        ?? (selectedRasters.Length == 1
+                            ? selectedRasters[0].Name
+                            : $"{resolved.DisplayName} mosaic"),
                 Value = FormatPixelValues(pixelResult.BandValues),
                 Location = new Point
                 {
@@ -279,10 +287,8 @@ internal sealed class ImageServerIdentifyHandler
                 CatalogItems = request.ReturnCatalogItems == true
                     ? BuildCatalogItems(selectedRasters, includeFootprint, maskedFields)
                     : null,
-                // One entry per returned catalog item, in catalogItems order. Every selected
-                // raster participates in the identified pixel, so each is fully visible.
                 CatalogItemVisibilities = request.ReturnCatalogItems == true
-                    ? selectedRasters.Select(static _ => 1.0).ToArray()
+                    ? CatalogVisibilities(selectedRasters, pixelResult.ContributingRasterIds)
                     : []
             };
 
@@ -572,6 +578,60 @@ internal sealed class ImageServerIdentifyHandler
         }
 
         return properties;
+    }
+
+    /// <summary>
+    /// The catalog raster that solely supplied the pixel, when the mosaic operator selected one.
+    /// </summary>
+    private static RasterInfo? WinningCatalogRaster(RasterInfo[] rasters, IReadOnlyList<long>? contributing)
+    {
+        if (contributing is not { Count: 1 })
+        {
+            return null;
+        }
+
+        var winnerId = contributing[0];
+        foreach (var raster in rasters)
+        {
+            if (raster.Id == winnerId)
+            {
+                return raster;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Visibility of each catalog feature, in that same order. A sole winner is fully visible
+    /// and the others are hidden. Several contributors, including an average or a sample whose
+    /// bands came from different rasters, split 1 equally. A missing report (a single-raster
+    /// identify) keeps every returned item fully visible.
+    /// </summary>
+    private static double[] CatalogVisibilities(RasterInfo[] rasters, IReadOnlyList<long>? contributing)
+    {
+        if (contributing is null)
+        {
+            return rasters.Select(static _ => 1.0).ToArray();
+        }
+
+        if (contributing.Count == 0)
+        {
+            return new double[rasters.Length];
+        }
+
+        var share = 1.0 / contributing.Count;
+        var contributors = new HashSet<long>(contributing);
+        var visibilities = new double[rasters.Length];
+        for (var i = 0; i < rasters.Length; i++)
+        {
+            if (contributors.Contains(rasters[i].Id))
+            {
+                visibilities[i] = share;
+            }
+        }
+
+        return visibilities;
     }
 
     private static IdentifyCatalogItems BuildCatalogItems(RasterInfo[] rasters, bool returnGeometry, ImmutableArray<string> maskedFields)
