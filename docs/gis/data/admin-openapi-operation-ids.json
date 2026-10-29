@@ -93,6 +93,12 @@
       "path": "/field-workflows/submissions/{submissionId}/assignment"
     },
     {
+      "operationId": "attestObservabilityAuditGap",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/observability/audit/gap-attestations"
+    },
+    {
       "operationId": "cancelCompatibilityImportJob",
       "catalogOperationId": null,
       "method": "POST",
