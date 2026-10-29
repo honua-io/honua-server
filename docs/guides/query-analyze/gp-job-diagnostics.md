@@ -93,5 +93,40 @@ Both are read-only and use the same Job Read authorization as the REST route; an
 with a read-only key gets the owner view.
 
 The same projection backs the SDK, CLI and Console surfaces as they adopt it
-(honua-release#613, stage 3). Local reproduction from this evidence is
-tracked separately (honua-server#6220).
+(honua-release#613, stage 3). A bundle that carries GP evidence can be run
+locally; see [From job id to local reproduction](#from-job-id-to-local-reproduction).
+
+## From job id to local reproduction
+
+`honua-gp-devkit reproduce` turns one exported diagnostic bundle into a separate
+local run. It does not replay production writes, does not reuse production
+credentials, connection strings or output paths, and does not check out another
+commit or move HEAD. It refuses to run when an input or artifact is missing or
+its bytes do not match the recorded hash, and it says which one.
+
+Read the job with `honua_diagnose_job` (above) and keep the diagnostic bundle
+that was exported with `gpEvidence`. Input bytes are present only when that
+export was explicitly authorized. From the checkout that should match a recorded
+source SHA:
+
+```bash
+honua-gp-devkit reproduce ./job-diagnostic-bundle.json
+```
+
+When the evidence records a release lock digest, pass the lock file you already
+have. The command compares that digest, and the source SHA when the evidence has
+one, to this checkout (`git rev-parse HEAD`) and to the lock. A mismatch names
+the identity and stops.
+
+```bash
+honua-gp-devkit reproduce ./job-diagnostic-bundle.json --lock ./process-release-lock.json
+```
+
+Exported inputs are written into a new temporary scratch directory and passed to
+the same local executors as `honua-gp-devkit run`. That directory, and the output
+directory next to it, are deleted when the command finishes. A bundle written
+before GP evidence still loads, and reproduce exits non-zero because the case is
+incomplete. A reproduced failure is still a failure of the process: the command
+exits 0 only when the local outcome matches the recorded one, including a
+recorded native failure, and it says so. The devkit help text spells the same
+verb as `honua gp reproduce`.

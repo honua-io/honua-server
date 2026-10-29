@@ -14,9 +14,9 @@
     "not-executable": "The inventory item is not an independent runnable example; no green execution claim is made."
   },
   "summary": {
-    "total": 1214,
+    "total": 1216,
     "byStatus": {
-      "not-executable": 1199,
+      "not-executable": 1201,
       "unvalidated": 12,
       "passed": 3
     }
@@ -6053,7 +6053,7 @@
         "check": "inventory-classification"
       },
       "fence": 3,
-      "line": 140,
+      "line": 157,
       "language": "sql"
     },
     {
@@ -6627,6 +6627,32 @@
       "fence": 2,
       "line": 29,
       "language": "json"
+    },
+    {
+      "id": "dd1320ca466d5925",
+      "kind": "docs-fence",
+      "path": "docs/guides/query-analyze/gp-job-diagnostics.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 3,
+      "line": 112,
+      "language": "bash"
+    },
+    {
+      "id": "df1b0d0aef88032f",
+      "kind": "docs-fence",
+      "path": "docs/guides/query-analyze/gp-job-diagnostics.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 4,
+      "line": 121,
+      "language": "bash"
     },
     {
       "id": "00422b9908bb5cf0",

@@ -77,5 +77,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Honua.Geoprocessing.UnitTests" />
+    <!-- reproduce tests assert that an old bundle still parses (honua-server#6220). -->
+    <InternalsVisibleTo Include="Honua.Geoprocessing.Cli.Tests" />
   </ItemGroup>
 </Project>
