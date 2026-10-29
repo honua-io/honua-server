@@ -1929,6 +1929,21 @@ internal static partial class GPServerEndpoints
             });
         }
 
+        if (definition.ProcessId == RoutingProcessDefinitions.Route)
+        {
+            // The route adapter accepts only false for these documented optional
+            // features; true is rejected rather than silently ignored.
+            foreach (var name in new[] { "Populate_Route_Edges", "Populate_Directions", "Save_Route_Data", "Save_Output_Network_Analysis_Layer" })
+            {
+                parameters.Add(new GPParameterInfo
+                {
+                    Name = name, DisplayName = name.Replace('_', ' '), DataType = "GPBoolean",
+                    Direction = "esriGPParameterDirectionInput", ParameterType = "esriGPParameterTypeOptional",
+                    Description = "Only false is supported.", DefaultValue = System.Text.Json.JsonSerializer.SerializeToElement(false),
+                });
+            }
+        }
+
         for (var index = 0; index < definition.OutputArtifactKinds.Count; index++)
         {
             var kind = definition.OutputArtifactKinds[index];

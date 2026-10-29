@@ -54,4 +54,22 @@ public sealed class RouteJobMetadataTests
         Assert.Equal(new[] { "Seconds", "Minutes", "Hours", "Days" }, measurement.ChoiceList);
     }
 
+    [Theory]
+    [InlineData("Populate_Route_Edges")]
+    [InlineData("Populate_Directions")]
+    [InlineData("Save_Route_Data")]
+    [InlineData("Save_Output_Network_Analysis_Layer")]
+    public void FalseOnlyControls_AreAdvertisedAndRejectTrue(string name)
+    {
+        var route = RoutingProcessDefinitions.Create().Single(x => x.ProcessId == RoutingProcessDefinitions.Route);
+        var parameter = GPServerEndpoints.BuildTaskInfo("FindRoutes", route).Parameters!.Single(x => x.Name == name);
+        Assert.Equal("GPBoolean", parameter.DataType);
+        Assert.False(parameter.DefaultValue!.Value.GetBoolean());
+        Assert.Equal("esriGPParameterTypeOptional", parameter.ParameterType);
+        Assert.Throws<GeoprocessingValidationException>(() => RoutingAsyncWebTools.Translate(route,
+            new Dictionary<string, string> { [name] = "true" }, null));
+        var translated = RoutingAsyncWebTools.Translate(route, new Dictionary<string, string> { [name] = "false" }, null);
+        Assert.False(translated.ContainsKey(name));
+    }
+
 }
