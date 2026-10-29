@@ -3,6 +3,7 @@
 
 using System.Security.Cryptography;
 using System.Text;
+using Honua.Infrastructure.Redis;
 using Microsoft.Extensions.Caching.Memory;
 using StackExchange.Redis;
 
@@ -84,13 +85,15 @@ public static partial class OidcAuthenticationExtensions
 
             try
             {
-                var bound = await redis.GetDatabase().ScriptEvaluateAsync(
-                    BindTokenReplayContinuationScript,
-                    [admission.TokenKey],
-                    [RegisteredTokenReplayValue, marker]).ConfigureAwait(false);
+                var bound = await RedisClientFault.RetryCompletedReaderAsync(
+                    () => redis.GetDatabase().ScriptEvaluateAsync(
+                        BindTokenReplayContinuationScript,
+                        [admission.TokenKey],
+                        [RegisteredTokenReplayValue, marker]),
+                    cancellationToken).ConfigureAwait(false);
                 return (int)bound == 1;
             }
-            catch (Exception ex) when (ex is RedisException or TimeoutException && ex is not OperationCanceledException)
+            catch (Exception ex) when (RedisClientFault.IsRedisTransportFault(ex))
             {
                 // RedisTimeoutException derives from TimeoutException, not RedisException.
                 OidcAuthenticationLog.TokenReplayContinuationBindFailed(logger, ex);
