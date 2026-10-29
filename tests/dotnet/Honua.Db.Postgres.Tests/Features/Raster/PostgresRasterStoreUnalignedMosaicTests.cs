@@ -341,6 +341,42 @@ public sealed class PostgresRasterStoreUnalignedMosaicTests(PostgresFixture fixt
         });
     }
 
+    // ST_Union resolves each band on its own. Min of (1, 10) and (2, 3) is (1, 3), so both
+    // rasters contributed. Newest still names only the later raster when it supplies every band.
+    // Oldest names both when the earlier raster is NoData on band 2.
+    [IntegrationTest]
+    public async Task IdentifyMosaicAsync_NamesEveryRasterThatSuppliedABand()
+    {
+        var schemaName = await CreateSchemaAsync();
+        try
+        {
+            var lowHigh = await InsertTwoBandRasterAsync(schemaName, "low-high", band1: 1, band2: 10, Day(1));
+            var highLow = await InsertTwoBandRasterAsync(schemaName, "high-low", band1: 2, band2: 3, Day(2));
+            var store = CreateStore(schemaName);
+
+            var minimum = await store.IdentifyMosaicAsync(LayerId, [lowHigh, highLow], RasterMergeStrategy.Min, 0.5, 1.5, 4326);
+            Band(minimum, 1).Should().Be(1);
+            Band(minimum, 2).Should().Be(3);
+            minimum.ContributingRasterIds.Should().Equal([lowHigh, highLow]);
+
+            var newest = await store.IdentifyMosaicAsync(LayerId, [lowHigh, highLow], RasterMergeStrategy.Newest, 0.5, 1.5, 4326);
+            Band(newest, 1).Should().Be(2);
+            Band(newest, 2).Should().Be(3);
+            newest.ContributingRasterIds.Should().Equal([highLow]);
+
+            var hole = await InsertTwoBandRasterAsync(schemaName, "band2-nodata", band1: 1, band2: null, Day(1));
+            var fill = await InsertTwoBandRasterAsync(schemaName, "band2-fill", band1: 2, band2: 3, Day(2));
+            var oldest = await store.IdentifyMosaicAsync(LayerId, [hole, fill], RasterMergeStrategy.Oldest, 0.5, 1.5, 4326);
+            Band(oldest, 1).Should().Be(1);
+            Band(oldest, 2).Should().Be(3);
+            oldest.ContributingRasterIds.Should().Equal([hole, fill]);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
     [IntegrationTest]
     public async Task GetClippedMosaicStatisticsAndHistogramsAsync_WithMixedResolutionRasters_AnalyseTheAlignedUnion()
     {
@@ -667,10 +703,45 @@ public sealed class PostgresRasterStoreUnalignedMosaicTests(PostgresFixture fixt
 
     private string? _schemaName;
 
-    private static double Band1(PixelValueResult result)
+    private static double Band1(PixelValueResult result) => Band(result, 1);
+
+    private static double Band(PixelValueResult result, int band)
     {
         result.HasData.Should().BeTrue();
-        return Convert.ToDouble(result.BandValues[1], CultureInfo.InvariantCulture);
+        return Convert.ToDouble(result.BandValues[band], CultureInfo.InvariantCulture);
+    }
+
+    // A 2x2 raster on x[0,2] y[0,2]. A null second band is stored as NoData so ST_Union can
+    // take that band from another raster.
+    private async Task<long> InsertTwoBandRasterAsync(
+        string schemaName,
+        string name,
+        double band1,
+        double? band2,
+        DateTimeOffset acquisition)
+    {
+        await using var connection = await fixture.GetConnectionAsync(schemaName);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO raster_data (layer_id, name, raster, acquisition_date, created_at)
+            SELECT @layerId,
+                   @name,
+                   ST_AddBand(
+                       ST_AddBand(
+                           ST_MakeEmptyRaster(2, 2, 0, 2, 1, -1, 0, 0, 4326),
+                           '32BF', @band1, NULL),
+                       '32BF', @band2, @nodata),
+                   @acquisition,
+                   @acquisition
+            RETURNING id;
+            """;
+        command.Parameters.AddWithValue("layerId", LayerId);
+        command.Parameters.AddWithValue("name", name);
+        command.Parameters.AddWithValue("band1", band1);
+        command.Parameters.AddWithValue("band2", band2 ?? -9999d);
+        command.Parameters.AddWithValue("nodata", band2 is null ? -9999d : DBNull.Value);
+        command.Parameters.AddWithValue("acquisition", acquisition.UtcDateTime);
+        return (long)(await command.ExecuteScalarAsync())!;
     }
 
     private static DateTimeOffset Day(int day) => new(2024, 1, day, 0, 0, 0, TimeSpan.Zero);

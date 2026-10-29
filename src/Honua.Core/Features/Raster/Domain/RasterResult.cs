@@ -94,10 +94,11 @@ public readonly record struct PixelValueResult
     public bool HasData { get; init; }
 
     /// <summary>
-    /// Rasters that supplied this sample. A selection mosaic (newest, oldest, min, max) contains
-    /// the one raster whose pixel the union kept. An average contains every raster with a
-    /// non-NoData sample at the point. Empty when the point is NoData. Null when the identify
-    /// did not report contribution, which a single-raster read does not.
+    /// Rasters that supplied this sample. Each band is resolved on its own, so the list contains
+    /// every raster that won at least one band. One id means a single raster supplied the whole
+    /// sample. An average contains every raster with a non-NoData sample at the point. Empty when
+    /// the point is NoData. Null when the identify did not report contribution, which a
+    /// single-raster read does not.
     /// </summary>
     public IReadOnlyList<long>? ContributingRasterIds { get; init; }
 }

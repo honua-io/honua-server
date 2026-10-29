@@ -603,9 +603,10 @@ internal sealed class ImageServerIdentifyHandler
     }
 
     /// <summary>
-    /// Visibility of each catalog feature, in that same order. One winning raster is fully
-    /// visible and the others are hidden. An average splits 1 across every contributor.
-    /// A missing report (a single-raster identify) keeps every returned item fully visible.
+    /// Visibility of each catalog feature, in that same order. A sole winner is fully visible
+    /// and the others are hidden. Several contributors, including an average or a sample whose
+    /// bands came from different rasters, split 1 equally. A missing report (a single-raster
+    /// identify) keeps every returned item fully visible.
     /// </summary>
     private static double[] CatalogVisibilities(RasterInfo[] rasters, IReadOnlyList<long>? contributing)
     {
