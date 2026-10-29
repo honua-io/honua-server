@@ -137,7 +137,8 @@ FROM ${DOTNET_ASPNET_IMAGE} AS runtime
 # The current upstream digest predates available OS fixes. The revision is
 # echoed in the upgrade RUN so a bump invalidates the cached apt layer.
 # 2026-10-08: pick up libfreetype6 2.13.2+dfsg-1ubuntu0.2 (CVE-2026-95512).
-ARG RUNTIME_PACKAGE_REVISION=20261008
+# 2026-10-29: pick up libbrotli1 1.1.0-2ubuntu0.1 (CVE-2026-111497).
+ARG RUNTIME_PACKAGE_REVISION=20261029
 
 # Security: Install runtime dependencies. The glibc runtime is required by
 # ParquetSharp's native library, which backs the GeoParquet writer.
@@ -151,9 +152,11 @@ RUN echo "runtime package revision ${RUNTIME_PACKAGE_REVISION}" && \
     ca-certificates \
     fontconfig \
     libatomic1 \
+    libbrotli1 \
     libgssapi-krb5-2 \
     tzdata \
     wget && \
+    dpkg --compare-versions "$(dpkg-query -W -f '$${Version}' libbrotli1)" ge "1.1.0-2ubuntu0.1" && \
     rm -rf /var/lib/apt/lists/* /tmp/*
 
 # Security: Create non-root user with minimal privileges
