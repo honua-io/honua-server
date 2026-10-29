@@ -7,6 +7,17 @@ namespace Honua.Server.Tests.Routing;
 
 public sealed class RouteJobMetadataTests
 {
+    [Fact]
+    public void RouteMetadata_BuildsWithoutReflectionSerialization()
+    {
+        if (Environment.GetEnvironmentVariable("HONUA_EXPECT_NO_REFLECTION") == "1")
+            Assert.False(System.Text.Json.JsonSerializer.IsReflectionEnabledByDefault);
+        var route = RoutingProcessDefinitions.Create().Single(x => x.ProcessId == RoutingProcessDefinitions.Route);
+        var task = GPServerEndpoints.BuildTaskInfo("FindRoutes", route);
+        foreach (var name in new[] { "Populate_Route_Edges", "Populate_Directions", "Save_Route_Data", "Save_Output_Network_Analysis_Layer" })
+            Assert.False(task.Parameters!.Single(x => x.Name == name).DefaultValue!.Value.GetBoolean());
+    }
+
     [Theory]
     [InlineData(RoutingProcessDefinitions.ClosestFacilities)]
     [InlineData(RoutingProcessDefinitions.OdCostMatrix)]

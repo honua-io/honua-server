@@ -1941,7 +1941,7 @@ internal static partial class GPServerEndpoints
                 {
                     Name = name, DisplayName = name.Replace('_', ' '), DataType = "GPBoolean",
                     Direction = "esriGPParameterDirectionInput", ParameterType = "esriGPParameterTypeOptional",
-                    Description = "Only false is supported.", DefaultValue = System.Text.Json.JsonSerializer.SerializeToElement(false),
+                    Description = "Only false is supported.", DefaultValue = System.Text.Json.JsonSerializer.SerializeToElement(false, GPServerJsonContext.Default.Boolean),
                 });
             }
         }
