@@ -112,7 +112,7 @@ The supported financial path is Reporting narrative generation with the PostgreS
 
 Before activation, confirm the inventory of every model-sending replica and that each runs admission-aware code. Database fences protect ledger-using legacy writers; they cannot account for or stop an executable that never consults admission. This sender-inventory prerequisite is not installed mixed-version qualification.
 
-Apply migrations 140 and 141 before activation. Keep the same deployment identity and PostgreSQL authority across replicas. Use the existing canonical operator operations and their normal authorization/approval policy:
+Apply migrations 140 (`140_CreateAiExecutionAdmission.sql`) and 142 (`142_CreateAiFinancialAccounting.sql`) before activation. Migration 142 installs `ai_financial_invocations` and the writer and policy fences. Migration 141 is imported-dataset spatial metadata and does not provide those guards. Keep the same deployment identity and PostgreSQL authority across replicas. Use the existing canonical operator operations and their normal authorization/approval policy:
 
 1. For an existing deployment, execute `admin.ai.admission.stop` and wait for active invocation leases to drain. Cancellation and lease expiry do not prove remote billing has stopped.
 2. Execute `admin.ai.admission.policy-update` with the complete explicit policy, including `financial`. For a missing deployment, use `admin.ai.admission.initialize`; it creates stopped state.
