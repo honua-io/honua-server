@@ -108,15 +108,26 @@ internal sealed record GeocodeServerInfoResponse
     [JsonPropertyName("capabilities")]
     public required string Capabilities { get; init; }
 
-    // Candidate result schema includes the location and score as well as attributes.
-    // Shape/Score are the Esri field names for those always-present result members;
-    // do not advertise Status or locator-engine fields that Honua does not emit.
+    // Candidate result schema includes the location, score and supported address attributes.
+    // Address attributes are optional because providers supply different structured fields.
+    // Do not advertise Status or locator-engine fields that Honua does not emit.
     [JsonPropertyName("candidateFields")]
     public GeocodeAddressField[] CandidateFields { get; init; } =
     [
         new GeocodeAddressField { Name = "Shape", Alias = "Shape", Type = "esriFieldTypeGeometry", Length = null },
         new GeocodeAddressField { Name = "Score", Alias = "Score", Type = "esriFieldTypeDouble", Length = null },
         new GeocodeAddressField { Name = "Match_addr", Alias = "Match Address" },
+        new GeocodeAddressField { Name = "LongLabel", Alias = "Long Label" },
+        new GeocodeAddressField { Name = "ShortLabel", Alias = "Short Label" },
+        new GeocodeAddressField { Name = "Address", Alias = "Address" },
+        new GeocodeAddressField { Name = "AddNum", Alias = "Address Number" },
+        new GeocodeAddressField { Name = "Addr_type", Alias = "Address Type" },
+        new GeocodeAddressField { Name = "Type", Alias = "Type" },
+        new GeocodeAddressField { Name = "City", Alias = "City" },
+        new GeocodeAddressField { Name = "Region", Alias = "Region" },
+        new GeocodeAddressField { Name = "Neighborhood", Alias = "Neighborhood" },
+        new GeocodeAddressField { Name = "Postal", Alias = "Postal" },
+        new GeocodeAddressField { Name = "CountryCode", Alias = "Country Code" },
         new GeocodeAddressField { Name = "Provider", Alias = "Provider" }
     ];
 

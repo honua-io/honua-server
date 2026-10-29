@@ -313,7 +313,7 @@ public sealed class GeocodingEndpointTests
         var capabilities = payload.RootElement.GetProperty("capabilities").GetString();
         Assert.Equal("Geocode,ReverseGeocode,Suggest", capabilities);
 
-        // candidateFields advertises the attributes every candidate emits; categories
+        // candidateFields advertises supported result attributes; categories
         // advertises the address/place families candidates are classified into, now that
         // category filtering is supported on the shared interface (#1867).
         var candidateFields = payload.RootElement.GetProperty("candidateFields");
@@ -323,6 +323,26 @@ public sealed class GeocodingEndpointTests
             field => field.GetProperty("name").GetString() == "Match_addr");
         Assert.Equal(JsonValueKind.Array, payload.RootElement.GetProperty("categories").ValueKind);
         Assert.True(payload.RootElement.GetProperty("categories").GetArrayLength() > 0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer")]
+    public async Task GeocodeServerMetadata_AdvertisesStructuredAddressFieldsUsedByNativeClients()
+    {
+        using var factory = CreateDefaultFactory();
+        using var client = factory.CreateClient();
+        using var response = await client.GetAsync("/rest/services/World/GeocodeServer?f=json");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var fields = payload.RootElement.GetProperty("candidateFields").EnumerateArray()
+            .ToDictionary(field => field.GetProperty("name").GetString()!, field => field.GetProperty("type").GetString());
+        foreach (var name in new[] { "LongLabel", "ShortLabel", "Address", "AddNum", "Addr_type", "Type", "City", "Region", "Neighborhood", "Postal", "CountryCode" })
+        {
+            Assert.True(fields.TryGetValue(name, out var type), $"Missing output field {name}");
+            Assert.Equal("esriFieldTypeString", type);
+        }
+        Assert.False(fields.ContainsKey("Status"));
     }
 
     [IntegrationTest]
