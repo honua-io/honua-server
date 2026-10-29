@@ -200,11 +200,8 @@ public sealed class GeoParquetImportTests : IAsyncLifetime
     {
         const int srid = 7912; // Authoritative ITRF2014 geographic 3D dynamic reference frame.
         const double epoch = 2021.25;
-        GeoParquetProjJsonCatalog.TryGetProjJson(srid, out var definition).Should().BeTrue();
-        using var crs = JsonDocument.Parse(definition!);
-        var point = new WKTReader().Read("POINT Z (10 20 30)");
-        var bytes = new WKBWriter(ByteOrder.LittleEndian, handleSRID: false, emitZ: true, emitM: false).Write(point);
-        var payload = await CreateGeometryParquetAsync(bytes, "Point Z", sourceCrs: crs.RootElement, coordinateEpoch: epoch);
+        var payload = await File.ReadAllBytesAsync(Path.Combine(
+            AppContext.BaseDirectory, "TestData", "GeoParquet", "independent-epoch-v1.1.parquet"));
         using var content = CreateUploadContent(payload, "epoch.parquet", "dynamic_epoch_roundtrip", srid);
         using var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
         var json = await response.Content.ReadAsStringAsync();
@@ -318,6 +315,15 @@ public sealed class GeoParquetImportTests : IAsyncLifetime
         roundtrip.Coordinate.X.Should().Be(10);
         roundtrip.Coordinate.Y.Should().Be(20);
         roundtrip.Coordinate.Z.Should().Be(30);
+
+        using var transformedResponse = await _client.GetAsync(
+            $"/rest/services/{_publishedServiceName}/FeatureServer/{layerId}/query?where=1%3D1&outFields=*&returnGeometry=true&returnZ=true&outSR=4326&f=parquet");
+        var transformedError = await transformedResponse.Content.ReadAsStringAsync();
+        using var transformedDocument = JsonDocument.Parse(transformedError);
+        var error = transformedDocument.RootElement.GetProperty("error");
+        error.GetProperty("code").GetInt32().Should().Be(400, transformedError);
+        error.GetProperty("details").EnumerateArray().Select(detail => detail.GetString())
+            .Should().Contain(detail => detail != null && detail.Contains("epoch-aware CRS transformation", StringComparison.Ordinal));
     }
 
     [Theory]
@@ -453,11 +459,9 @@ public sealed class GeoParquetImportTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/import/upload")]
     public async Task Upload_WithGeoParquet_ImportsFeaturesToTable()
     {
-        // Arrange
-        await using var stream = await GeoParquetTestFactory.CreateStreamAsync(
-            encoding: "WKB",
-            crs: GeoParquetTestFactory.CrsStyle.ProjJson);
-        var fileBytes = stream.ToArray();
+        // Exercise a GeoParquet 1.0 input authored by PyArrow, outside the production Parquet writer.
+        var fileBytes = await File.ReadAllBytesAsync(Path.Combine(
+            AppContext.BaseDirectory, "TestData", "GeoParquet", "independent-v1.0.parquet"));
 
         var content = CreateUploadContent(fileBytes, "sample.parquet", "geoparquet_import_test");
 
@@ -482,9 +486,9 @@ public sealed class GeoParquetImportTests : IAsyncLifetime
         var rows = await ReadImportedRowsAsync(responseContent);
         var row = rows.Should().ContainSingle().Subject;
         row.ObjectId.Should().Be(1L);
-        row.Name.Should().Be("Test Feature");
+        row.Name.Should().Be("PyArrow control");
 
-        // GeoParquetTestFactory writes POINT(-122.4194 37.7749) in EPSG:4326 and the upload
+        // The PyArrow fixture writes POINT(-122.4194 37.7749) in default OGC:CRS84, and the upload
         // requests TargetSrid=4326, so the stored point must be that point, unmoved.
         row.Geometry.Should().BeOfType<Point>();
         var point = (Point)row.Geometry!;

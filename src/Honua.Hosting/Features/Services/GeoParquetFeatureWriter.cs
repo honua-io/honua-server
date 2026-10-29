@@ -32,6 +32,10 @@ namespace Honua.Infrastructure.Services;
 /// </summary>
 public static partial class GeoParquetFeatureWriter
 {
+    /// <summary>Client-safe refusal when an epoch cannot describe transformed output coordinates.</summary>
+    public const string CoordinateEpochOutputUnsupportedMessage =
+        "GeoParquet coordinate epoch requires finite metadata and output in its storage CRS; epoch-aware CRS transformation is not supported.";
+
     // Constants for GeoParquet format
     private const string GeometryColumnName = "geometry";
 
@@ -407,8 +411,7 @@ public static partial class GeoParquetFeatureWriter
         }
         if (!double.IsFinite(epoch) || resource.Spatial.StorageCrs?.ResolveSrid() != outputSrid)
         {
-            throw new InvalidOperationException(
-                "GeoParquet coordinate epoch requires finite metadata and output in its storage CRS; epoch-aware CRS transformation is not supported.");
+            throw new InvalidOperationException(CoordinateEpochOutputUnsupportedMessage);
         }
         return epoch;
     }

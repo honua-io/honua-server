@@ -53,7 +53,8 @@ public static class GeoParquetTestFactory
         CrsStyle crs = CrsStyle.ProjJson,
         int rowCount = 1,
         bool includeNullGeometryRow = false,
-        int? rowGroupSize = null)
+        int? rowGroupSize = null,
+        bool nullGeometryFirst = false)
     {
         var objectIdField = new DataField<long?>("objectid");
         var nameField = new DataField<string>("name", true);
@@ -101,6 +102,12 @@ public static class GeoParquetTestFactory
             ids[totalRows - 1] = totalRows;
             names[totalRows - 1] = "No Geometry";
             geoms[totalRows - 1] = null;
+            if (nullGeometryFirst && totalRows > 1)
+            {
+                (ids[0], ids[totalRows - 1]) = (ids[totalRows - 1], ids[0]);
+                (names[0], names[totalRows - 1]) = (names[totalRows - 1], names[0]);
+                (geoms[0], geoms[totalRows - 1]) = (geoms[totalRows - 1], geoms[0]);
+            }
         }
 
         var stream = new MemoryStream();

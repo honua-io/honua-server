@@ -1302,6 +1302,12 @@ internal sealed partial class FeatureServerQueryHandler(
                 return StandardErrorHelpers.CreateFromException(context, ex);
             }
 
+            if (string.Equals(ex.Message, GeoParquetFeatureWriter.CoordinateEpochOutputUnsupportedMessage, StringComparison.Ordinal))
+            {
+                return StandardErrorHelpers.CreateBadRequest(
+                    context, GeoParquetFeatureWriter.CoordinateEpochOutputUnsupportedMessage);
+            }
+
             if (IsClientSafeInvalidOperation(ex))
             {
                 return StandardErrorHelpers.CreateBadRequest(context, ErrorMessages.Validation.InvalidParameter);

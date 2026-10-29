@@ -81,6 +81,9 @@
     <None Update="TestData/FileGdb/relationship-class.gdb.zip">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <None Update="TestData/GeoParquet/*.parquet">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <None Update="TestData/Sld/*.xml">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
