@@ -87,6 +87,28 @@ public sealed class RoutingPgRoutingQueuedJobTests : IClassFixture<PgRoutingFixt
     }
 
     [RoutingTest("HONUA_ROUTING_TEST")]
+    public async Task FindRoutes_AcceptsAdvertisedTravelModeIdWithRealProvider()
+    {
+        using var client = Client(_host);
+        using var utility = await client.GetAsync("/rest/services/Routing/GPServer/GetTravelModes/execute?f=json");
+        utility.EnsureSuccessStatusCode();
+        using var metadata = JsonDocument.Parse(await utility.Content.ReadAsStringAsync());
+        var id = metadata.RootElement.GetProperty("results").EnumerateArray()
+            .Single(x => x.GetProperty("paramName").GetString() == "defaultTravelMode").GetProperty("value").GetString();
+        var inputs = new Dictionary<string, string>
+        {
+            ["Stops"] = PointSet((0, 0, 1L, "Start", (double?)null), (0.02, 0.02, 2L, "End", null)),
+            ["Travel_Mode"] = id!,
+        };
+        var job = await SubmitAsync(client, "FindRoutes", inputs);
+        using var terminal = await UntilTerminalAsync(client, "FindRoutes", job, "GPServer", SuccessBudget);
+        terminal.RootElement.GetProperty("jobStatus").GetString().Should().Be("esriJobSucceeded", terminal.RootElement.GetRawText());
+        using var routes = await ResultAsync(client, "FindRoutes", job, "Output_Routes");
+        routes.RootElement.GetProperty("value").GetProperty("features")[0].GetProperty("attributes")
+            .GetProperty("Total_Time").GetDouble().Should().BeApproximately(4d, 0.001);
+    }
+
+    [RoutingTest("HONUA_ROUTING_TEST")]
     public async Task Route_QueuedJob_UsesRealLatticeAndReturnsOrderedStops()
     {
         using var client = Client(_host);

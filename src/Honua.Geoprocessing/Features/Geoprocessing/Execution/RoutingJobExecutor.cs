@@ -80,6 +80,12 @@ internal sealed class RoutingJobExecutor(
             var capabilities = await routing.GetCapabilitiesAsync(cancellationToken).ConfigureAwait(false);
             var barriers = ReadBarriers(inputs);
             var mode = ReadTravelMode(inputs.GetValueOrDefault("travel_mode"));
+            if (mode is not null && !capabilities.SupportedTravelModes.Any(name => name.Equals(mode, StringComparison.OrdinalIgnoreCase)))
+            {
+                var matches = capabilities.SupportedTravelModes.Where(name => RoutingTravelModeId.Create(name).Equals(mode, StringComparison.Ordinal)).ToArray();
+                Require(matches.Length <= 1, "The travel-mode identifier is ambiguous.");
+                if (matches.Length == 1) mode = matches[0];
+            }
             var capabilityError = RoutingRequestValidation.ValidateCapabilities(capabilities, barriers, mode);
             if (capabilityError is not null)
             {

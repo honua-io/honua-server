@@ -2,8 +2,6 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Globalization;
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Honua.Routing.Features.Routing.Domain;
@@ -479,18 +477,7 @@ internal static class NAServerMetadata
     /// A stable 16-character identifier per profile name (Esri ids are 16 characters);
     /// clients persist the id in saved layers, so it must not change between requests.
     /// </summary>
-    internal static string TravelModeId(string name)
-    {
-        var hash = SHA256.HashData(Encoding.UTF8.GetBytes("honua-travel-mode:" + name.ToLowerInvariant()));
-        const string alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-        var id = new char[16];
-        for (var i = 0; i < id.Length; i++)
-        {
-            id[i] = alphabet[hash[i] % alphabet.Length];
-        }
-
-        return new string(id);
-    }
+    internal static string TravelModeId(string name) => RoutingTravelModeId.Create(name);
 
     private static string TravelModeType(string name)
     {
