@@ -25,10 +25,10 @@ internal sealed class PortalResourceReadAuthorizer(
             return false;
         }
 
-        var username = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+        var username = PortalPrincipal.Resolve(principal);
         var context = contextAccessor.HttpContext;
         if (string.IsNullOrWhiteSpace(username) || context is null || context.User.Identity?.IsAuthenticated != true
-            || !string.Equals(username, context.User.FindFirstValue(ClaimTypes.NameIdentifier), StringComparison.Ordinal)
+            || !string.Equals(username, PortalPrincipal.Resolve(context.User), StringComparison.Ordinal)
             || !TryGetTrustedTenant(context, out var tenantId)
             || !string.Equals(LayerAccessAuthorizer.ResolveAuthorizationTenantId(principal, tenantId), tenantId, StringComparison.Ordinal))
         {

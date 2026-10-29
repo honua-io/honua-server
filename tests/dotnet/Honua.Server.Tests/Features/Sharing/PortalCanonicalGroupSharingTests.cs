@@ -115,6 +115,69 @@ public sealed class PortalCanonicalGroupSharingTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Security)]
+    [Endpoint("GET /sharing/rest/content/groups/{groupId}")]
+    public async Task ManagedKeyGroupAudience_RequiresExactMembershipAndRevocation()
+    {
+        using var ownerClient = _fixture.CreateClient(c => c.DefaultRequestHeaders.Add("Referer", Referer));
+        var owner = await IssueAsync("alice", "publisher");
+        var group = await CreateGroupAsync(ownerClient, owner);
+        using (var share = await PostAsync(ownerClient, $"/sharing/rest/content/items/{ItemId}/share?token={owner}", ("groups", group)))
+        {
+            (await DocumentAsync(share)).GetProperty("notSharedWith").GetArrayLength().Should().Be(0);
+        }
+
+        var store = _fixture.Services.GetRequiredService<IAdminApiKeyStore>();
+        var member = await store.CreateAsync("machine", ["read:*"], null, "test", CancellationToken.None);
+        var outsider = await store.CreateAsync("machine-other", ["read:*"], null, "test", CancellationToken.None);
+        using var memberClient = _fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", member.Key));
+        using var outsiderClient = _fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", outsider.Key));
+        var subject = $"api-key:{member.Record.Id:D}";
+        using (var refusedMutation = await PostAsync(memberClient, "/sharing/rest/community/createGroup", ("title", "forbidden"), ("access", "private")))
+        {
+            await refusedMutation.AssertGeoServicesErrorAsync(499);
+        }
+        using (var self = await memberClient.GetAsync("/sharing/rest/community/self?f=json"))
+        {
+            (await DocumentAsync(self)).GetProperty("username").GetString().Should().Be(subject);
+        }
+        using (var denied = await memberClient.GetAsync($"/sharing/rest/content/groups/{group}?f=json"))
+        {
+            await denied.AssertGeoServicesErrorAsync(404);
+        }
+        using (var add = await PostAsync(ownerClient, $"/sharing/rest/community/groups/{group}/addUsers?token={owner}", ("users", subject)))
+        {
+            (await DocumentAsync(add)).GetProperty("members").EnumerateArray().Select(x => x.GetString()).Should().Contain(subject);
+        }
+        using (var visible = await memberClient.GetAsync($"/sharing/rest/content/groups/{group}?f=json"))
+        {
+            (await DocumentAsync(visible)).GetProperty("items").EnumerateArray().Select(x => x.GetProperty("id").GetString()).Should().Contain(ItemId);
+        }
+        using (var denied = await outsiderClient.GetAsync($"/sharing/rest/content/groups/{group}?f=json"))
+        {
+            await denied.AssertGeoServicesErrorAsync(404);
+        }
+        var foreignOwner = await IssueAsync("alice", "publisher", "tenant-a");
+        var foreignGroup = await CreateGroupAsync(ownerClient, foreignOwner);
+        using (var foreignAdd = await PostAsync(ownerClient, $"/sharing/rest/community/groups/{foreignGroup}/addUsers?token={foreignOwner}", ("users", subject)))
+        {
+            (await DocumentAsync(foreignAdd)).GetProperty("members").EnumerateArray().Select(x => x.GetString()).Should().Contain(subject);
+        }
+        using (var foreignDenied = await memberClient.GetAsync($"/sharing/rest/content/groups/{foreignGroup}?f=json"))
+        {
+            await foreignDenied.AssertGeoServicesErrorAsync(404);
+        }
+        using (var remove = await PostAsync(ownerClient, $"/sharing/rest/community/groups/{group}/removeUsers?token={owner}", ("users", subject)))
+        {
+            (await DocumentAsync(remove)).GetProperty("members").EnumerateArray().Select(x => x.GetString()).Should().NotContain(subject);
+        }
+        using (var denied = await memberClient.GetAsync($"/sharing/rest/content/groups/{group}?f=json"))
+        {
+            await denied.AssertGeoServicesErrorAsync(404);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
     [Endpoint("POST /sharing/rest/content/items/{itemId}/share")]
     [Endpoint("POST /sharing/rest/content/items/{itemId}/unshare")]
     [Endpoint("GET /sharing/rest/content/groups/{groupId}")]

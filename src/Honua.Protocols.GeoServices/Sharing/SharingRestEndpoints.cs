@@ -1143,7 +1143,7 @@ public static class SharingRestEndpoints
     }
 
     private static string ResolveUsername(ClaimsPrincipal principal)
-        => principal.FindFirstValue(ClaimTypes.NameIdentifier)
+        => PortalPrincipal.Resolve(principal)
             ?? principal.FindFirstValue("preferred_username")
             ?? principal.FindFirstValue("sub")
             ?? principal.Identity?.Name

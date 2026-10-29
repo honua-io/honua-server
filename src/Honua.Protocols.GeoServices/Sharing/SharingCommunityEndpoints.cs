@@ -212,7 +212,7 @@ internal static class SharingCommunityEndpoints
         HttpContext context, IPortalGroupStore groupStore, string username, CancellationToken cancellationToken)
     {
         if (!PortalResourceReadAuthorizer.TryGetTrustedTenant(context, out _)
-            || !string.Equals(context.User.FindFirstValue(ClaimTypes.NameIdentifier), username, StringComparison.OrdinalIgnoreCase))
+            || !string.Equals(PortalPrincipal.Resolve(context.User), username, StringComparison.OrdinalIgnoreCase))
         {
             return [];
         }
@@ -240,7 +240,7 @@ internal static class SharingCommunityEndpoints
             return gate;
         }
 
-        var caller = RequireAuthenticatedUser(context);
+        var caller = PortalPrincipal.Resolve(context.User);
         if (caller is null)
         {
             return StandardErrorHelpers.CreateUnauthorized(context, "Authentication is required to list group content.");
@@ -557,8 +557,8 @@ internal static class SharingCommunityEndpoints
             return true;
         }
 
-        var user = ResolveUsername(principal);
-        return record.Members.Contains(user, StringComparer.OrdinalIgnoreCase) || IsAdmin(principal);
+        var user = PortalPrincipal.Resolve(principal);
+        return (user is not null && record.Members.Contains(user, StringComparer.OrdinalIgnoreCase)) || IsAdmin(principal);
     }
 
     private static bool CanSeeMembers(PortalGroupRecord record, ClaimsPrincipal principal)
@@ -573,9 +573,9 @@ internal static class SharingCommunityEndpoints
             return true;
         }
 
-        var user = ResolveUsername(principal);
-        return string.Equals(record.Owner, user, StringComparison.OrdinalIgnoreCase)
-            || record.Members.Contains(user, StringComparer.OrdinalIgnoreCase);
+        var user = PortalPrincipal.Resolve(principal);
+        return user is not null && (string.Equals(record.Owner, user, StringComparison.OrdinalIgnoreCase)
+            || record.Members.Contains(user, StringComparer.OrdinalIgnoreCase));
     }
 
     private static bool CanAdministerGroup(PortalGroupRecord record, string caller, ClaimsPrincipal principal)
@@ -593,13 +593,6 @@ internal static class SharingCommunityEndpoints
             ? subject
             : null;
     }
-
-    private static string ResolveUsername(ClaimsPrincipal principal)
-        => principal.FindFirstValue(ClaimTypes.NameIdentifier)
-            ?? principal.FindFirstValue("preferred_username")
-            ?? principal.FindFirstValue("sub")
-            ?? principal.Identity?.Name
-            ?? "user";
 
     private static GroupResponse ToGroup(PortalGroupRecord record, bool includeMembers) => new()
     {

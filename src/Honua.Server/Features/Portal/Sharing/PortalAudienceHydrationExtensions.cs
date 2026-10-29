@@ -1,7 +1,6 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Security.Claims;
 using Honua.Infrastructure.Authentication;
 
 namespace Honua.Server.Features.Portal.Sharing;
@@ -13,7 +12,7 @@ internal static class PortalAudienceHydrationExtensions
         {
             var provider = context.RequestServices.GetService<IPortalAudienceSnapshotProvider>();
             if (provider is not null && context.User.Identity?.IsAuthenticated == true
-                && context.User.FindFirstValue(ClaimTypes.NameIdentifier) is { Length: > 0 } username
+                && PortalPrincipal.Resolve(context.User) is { Length: > 0 } username
                 && PortalResourceReadAuthorizer.TryGetTrustedTenant(context, out var tenantId))
             {
                 // No TTL: each request gets one fresh, internally consistent audience
