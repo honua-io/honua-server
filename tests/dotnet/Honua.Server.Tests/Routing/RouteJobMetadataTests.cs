@@ -43,4 +43,15 @@ public sealed class RouteJobMetadataTests
         Assert.Equal("esriFieldTypeInteger", fields["Sequence"]);
     }
 
+    [Fact]
+    public void RouteMeasurementUnits_AreRequiredAndDefaultToSupportedMinutes()
+    {
+        var route = RoutingProcessDefinitions.Create().Single(x => x.ProcessId == RoutingProcessDefinitions.Route);
+        var task = GPServerEndpoints.BuildTaskInfo("FindRoutes", route);
+        var measurement = task.Parameters!.Single(x => x.Name == "Measurement_Units");
+        Assert.Equal("esriGPParameterTypeRequired", measurement.ParameterType);
+        Assert.Equal("Minutes", measurement.DefaultValue!.Value.GetString());
+        Assert.Equal(new[] { "Seconds", "Minutes", "Hours", "Days" }, measurement.ChoiceList);
+    }
+
 }

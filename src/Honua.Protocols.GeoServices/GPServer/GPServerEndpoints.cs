@@ -1920,7 +1920,7 @@ internal static partial class GPServerEndpoints
                 DefaultValue = RoutingProcessDefinitions.Handles(definition.ProcessId) && parameter.AcceptsGeoJsonDataUri
                     ? RoutingAsyncWebTools.DefaultFeatureSet(parameter.Name)
                     : GPServerParameterTranslation.TranslateDefaultValue(parameter),
-                ParameterType = parameter.Required
+                ParameterType = parameter.Required || (definition.ProcessId == RoutingProcessDefinitions.Route && parameter.Name == "time_units")
                     ? "esriGPParameterTypeRequired"
                     : "esriGPParameterTypeOptional",
                 ChoiceList = parameter.AllowedValues is { Count: > 0 } allowed
