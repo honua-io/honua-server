@@ -96,12 +96,30 @@ internal sealed class RoutingJobExecutor(
                 Require(cutoff is null, "Route cutoff is not supported.");
                 first = ReadPoints(inputs, "stops", configuration.Value.MaxStops);
                 Require(first.Count >= 2, "At least two stops are required.");
+                for (var index = 0; index < first.Count; index++)
+                {
+                    foreach (var attribute in first[index].Attributes.GetNames())
+                    {
+                        var value = first[index].Attributes[attribute];
+                        if (value is null || attribute.Equals("OBJECTID", StringComparison.OrdinalIgnoreCase)
+                            || attribute.Equals("ID", StringComparison.OrdinalIgnoreCase)
+                            || attribute.Equals("Name", StringComparison.OrdinalIgnoreCase)) continue;
+                        if (attribute.Equals("Sequence", StringComparison.OrdinalIgnoreCase))
+                        {
+                            Require(Number(value, attribute) == index + 1, "Stops must be supplied in their requested sequence.");
+                            continue;
+                        }
+                        throw new ArgumentException($"Stop attribute '{attribute}' is not supported by this route tool.");
+                    }
+                }
                 second = new FeatureCollection();
                 var request = new RouteSolveRequest(Points(first), OutSrid: outSrid)
                 { InSrid = inSrid, Barriers = barriers, TravelMode = mode };
                 var result = await routing.SolveRouteAsync(request, cancellationToken).ConfigureAwait(false);
                 solution = result.Solved
-                    ? [Feature(result.RouteGeometryGeoJson, ("Total_Time", result.TotalTimeMinutes / minutesPerUnit),
+                    ? [Feature(result.RouteGeometryGeoJson,
+                        ("Name", $"{Name(first, 0)} - {Name(first, first.Count - 1)}"), ("StopCount", first.Count),
+                        ("Total_Time", result.TotalTimeMinutes / minutesPerUnit),
                         ("Total_Distance", result.TotalLengthMeters / metersPerUnit))]
                     : [];
             }

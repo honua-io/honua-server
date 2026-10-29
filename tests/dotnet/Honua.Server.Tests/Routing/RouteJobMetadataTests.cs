@@ -25,4 +25,13 @@ public sealed class RouteJobMetadataTests
         var translated = RoutingAsyncWebTools.Translate(route, new Dictionary<string, string> { [parameter] = "false" }, null);
         Assert.False(translated.ContainsKey(parameter));
     }
+    [Fact]
+    public void Route_RejectsCustomTravelModeAndDoesNotAdvertiseCutoff()
+    {
+        var route = RoutingProcessDefinitions.Create().Single(x => x.ProcessId == RoutingProcessDefinitions.Route);
+        Assert.DoesNotContain(route.Parameters, x => x.Name == "cutoff");
+        Assert.Throws<GeoprocessingValidationException>(() => RoutingAsyncWebTools.Translate(route,
+            new Dictionary<string, string> { ["Travel_Mode"] = "Custom" }, null));
+    }
+
 }

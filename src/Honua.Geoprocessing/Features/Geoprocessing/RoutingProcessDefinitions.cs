@@ -56,7 +56,8 @@ internal static class RoutingProcessDefinitions
                 .. inputs,
                 Parameter("srid", "Input coordinate reference; embedded declarations must agree.", ProcessParameterValueType.Srid, "4326"),
                 Parameter("output_srid", "Output coordinate reference.", ProcessParameterValueType.Srid, "4326"),
-                Parameter("cutoff", "Maximum network travel time in the selected time units.", ProcessParameterValueType.FloatingPoint),
+                .. (id == Route ? Array.Empty<ProcessParameterSpec>() :
+                [Parameter("cutoff", "Maximum network travel time in the selected time units.", ProcessParameterValueType.FloatingPoint)]),
                 Parameter("time_units", "Time units for cutoffs and reported travel times.", ProcessParameterValueType.Text,
                     "Minutes", ["Seconds", "Minutes", "Hours", "Days"]),
                 .. (id == LocationAllocation ? Array.Empty<ProcessParameterSpec>() :
