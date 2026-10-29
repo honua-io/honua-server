@@ -525,11 +525,16 @@ public static class SharingRestEndpoints
         }
 
         var principal = context.User;
+        var helpers = await BuildRoutingHelpersAsync(context, logger).ConfigureAwait(false);
         var user = principal.Identity?.IsAuthenticated == true
             ? new PortalUser
             {
                 Username = ResolveUsername(principal),
                 FullName = ResolveDisplayName(principal),
+                // Advertise only the operation this server can actually perform for
+                // its administrative principal. Do not infer other Esri privileges.
+                Privileges = principal.IsInRole("admin") && helpers.Route is not null
+                    ? ["premium:user:networkanalysis"] : null,
             }
             : null;
 
@@ -538,7 +543,7 @@ public static class SharingRestEndpoints
             Id = PortalId,
             Name = "Honua",
             User = user,
-            HelperServices = await BuildRoutingHelpersAsync(context, logger).ConfigureAwait(false),
+            HelperServices = helpers,
         };
 
         return Results.Json(response, SharingRestJsonContext.Default.PortalSelfResponse, contentType: JsonContentType);

@@ -183,6 +183,11 @@ internal sealed record PortalUser
     /// <summary>Coarse role string for the calling principal.</summary>
     [JsonPropertyName("role")]
     public string Role { get; init; } = "org_user";
+
+    /// <summary>Privileges backed by the current principal and available services.</summary>
+    [JsonPropertyName("privileges")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<string>? Privileges { get; init; }
 }
 
 /// <summary>
