@@ -109,7 +109,7 @@ internal static class RoutingAsyncWebTools
             "Output_Routes" => """
                 [{"name":"OBJECTID","type":"esriFieldTypeOID"},
                  {"name":"Name","type":"esriFieldTypeString"},
-                 {"name":"StopCount","type":"esriFieldTypeDouble"},
+                 {"name":"StopCount","type":"esriFieldTypeInteger"},
                  {"name":"Total_Time","type":"esriFieldTypeDouble"},
                  {"name":"Total_Distance","type":"esriFieldTypeDouble"}]
                 """,

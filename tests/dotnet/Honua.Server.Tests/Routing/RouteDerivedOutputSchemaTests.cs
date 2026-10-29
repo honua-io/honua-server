@@ -20,7 +20,7 @@ public sealed class RouteDerivedOutputSchemaTests
         Assert.Equal("esriGeometryPolyline", route.GetProperty("geometryType").GetString());
         var fields = route.GetProperty("fields").EnumerateArray().ToDictionary(x => x.GetProperty("name").GetString()!, x => x.GetProperty("type").GetString());
         Assert.Equal("esriFieldTypeString", fields["Name"]);
-        Assert.Equal("esriFieldTypeDouble", fields["StopCount"]);
+        Assert.Equal("esriFieldTypeInteger", fields["StopCount"]);
         Assert.Equal("esriFieldTypeDouble", fields["Total_Time"]);
         Assert.Equal("esriFieldTypeDouble", fields["Total_Distance"]);
         Assert.Equal("esriGeometryPoint", outputs.Single(x => x.Name == "Output_Stops").DefaultValue!.Value.GetProperty("geometryType").GetString());
@@ -39,4 +39,18 @@ public sealed class RouteDerivedOutputSchemaTests
         Assert.Empty(result.GetProperty("features").EnumerateArray());
         Assert.Equal("esriFieldTypeOID", result.GetProperty("fields")[0].GetProperty("type").GetString());
     }
+    [Fact]
+    public void RouteResult_StopCountIsPublishedAsInteger()
+    {
+        var schema = RoutingAsyncWebTools.RouteOutputSchema("Output_Routes");
+        const string geoJson = """
+            {"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"LineString","coordinates":[[0,0],[1,1]]},"properties":{"Name":"A","StopCount":2,"Total_Time":4.0,"Total_Distance":1.0}}]}
+            """;
+        var value = "data:application/geo+json;base64," + Convert.ToBase64String(Encoding.UTF8.GetBytes(geoJson));
+        var result = GPServerEsriOutputTranslation.Translate(ArtifactKind.FeatureLayer, value, 4326, schema.GetRawText());
+        var fields = result.GetProperty("fields").EnumerateArray().ToDictionary(x => x.GetProperty("name").GetString()!, x => x.GetProperty("type").GetString());
+        Assert.Equal("esriFieldTypeInteger", fields["StopCount"]);
+        Assert.Equal(2, result.GetProperty("features")[0].GetProperty("attributes").GetProperty("StopCount").GetInt32());
+    }
+
 }

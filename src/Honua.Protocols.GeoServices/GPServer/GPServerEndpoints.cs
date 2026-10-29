@@ -1195,7 +1195,7 @@ internal static partial class GPServerEndpoints
                 Value = publishedName == "Solve_Succeeded" && IsRoutingJob(job) ? RoutingAsyncWebTools.BooleanResult(value)
                     : GPServerEsriOutputTranslation.Translate(artifact.Kind, value, ResolveResultSrid(job, artifact.Kind),
                     IsRoutingJob(job) && Honua.Geoprocessing.Execution.GeoprocessingDispatchHelper.ResolveProcessId(job.Spec.Parameters) == RoutingProcessDefinitions.Route
-                        && publishedName is "Output_Directions" or "Output_Route_Edges"
+                        && publishedName is "Output_Routes" or "Output_Directions" or "Output_Route_Edges"
                         ? RoutingAsyncWebTools.RouteOutputSchema(publishedName).GetRawText()
                         : job.Spec.Parameters.GetValueOrDefault(GeoprocessingProtocolMetadataKeys.GPServerFeatureSchema))
             };
