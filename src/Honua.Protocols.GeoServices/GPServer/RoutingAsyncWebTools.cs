@@ -91,7 +91,7 @@ internal static class RoutingAsyncWebTools
             _ => "esriGeometryPoint",
         };
         var fields = parameter == "stops"
-            ? """[{"name":"OBJECTID","type":"esriFieldTypeOID"},{"name":"Name","type":"esriFieldTypeString","length":500},{"name":"RouteName","type":"esriFieldTypeString","length":1024},{"name":"Sequence","type":"esriFieldTypeInteger"}]"""
+            ? """[{"name":"OBJECTID","type":"esriFieldTypeOID"},{"name":"Name","type":"esriFieldTypeString","length":500},{"name":"RouteName","type":"esriFieldTypeString","length":1024},{"name":"Sequence","type":"esriFieldTypeInteger"},{"name":"AdditionalTime","type":"esriFieldTypeDouble"},{"name":"AdditionalDistance","type":"esriFieldTypeDouble"},{"name":"CurbApproach","type":"esriFieldTypeSmallInteger"},{"name":"LocationType","type":"esriFieldTypeInteger"}]"""
             : """[{"name":"OBJECTID","type":"esriFieldTypeOID"},{"name":"Name","type":"esriFieldTypeString"}]""";
         using var document = JsonDocument.Parse($$"""
             {"geometryType":"{{geometryType}}","spatialReference":{"wkid":4326},"fields":{{fields}},"features":[]}

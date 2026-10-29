@@ -175,6 +175,26 @@ public sealed class RoutingPgRoutingQueuedJobTests : IClassFixture<PgRoutingFixt
     }
 
     [RoutingTest("HONUA_ROUTING_TEST")]
+    public async Task RouteStops_ZeroDefaultsAcceptedAndNonzeroRejected()
+    {
+        const string stops = """
+            {"geometryType":"esriGeometryPoint","spatialReference":{"wkid":4326},"features":[
+              {"geometry":{"x":0,"y":0},"attributes":{"Name":"Start","AdditionalTime":0,"AdditionalDistance":0,"CurbApproach":0,"LocationType":0}},
+              {"geometry":{"x":0.02,"y":0.02},"attributes":{"Name":"End","AdditionalTime":0,"AdditionalDistance":0,"CurbApproach":0,"LocationType":0}}]}
+            """;
+        using var client = Client(_host);
+        var job = await SubmitAsync(client, "FindRoutes", new Dictionary<string, string> { ["Stops"] = stops });
+        using var terminal = await UntilTerminalAsync(client, "FindRoutes", job, "GPServer", SuccessBudget);
+        terminal.RootElement.GetProperty("jobStatus").GetString().Should().Be("esriJobSucceeded", terminal.RootElement.GetRawText());
+        using var routes = await ResultAsync(client, "FindRoutes", job, "Output_Routes");
+        routes.RootElement.GetProperty("value").GetProperty("features")[0].GetProperty("attributes").GetProperty("Total_Time").GetDouble().Should().BeApproximately(4d, 0.001);
+        var invalid = stops.Replace("\"LocationType\":0", "\"LocationType\":1", StringComparison.Ordinal);
+        var rejected = await SubmitAsync(client, "FindRoutes", new Dictionary<string, string> { ["Stops"] = invalid });
+        using var failure = await UntilTerminalAsync(client, "FindRoutes", rejected, "GPServer", SuccessBudget);
+        failure.RootElement.GetProperty("jobStatus").GetString().Should().Be("esriJobFailed", failure.RootElement.GetRawText());
+    }
+
+    [RoutingTest("HONUA_ROUTING_TEST")]
     public async Task ClosestFacilities_QueuedJob_MatchesLatticeOracle()
     {
         const long incidentId = 0;

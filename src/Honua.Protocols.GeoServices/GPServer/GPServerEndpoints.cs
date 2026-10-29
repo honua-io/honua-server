@@ -1912,7 +1912,9 @@ internal static partial class GPServerEndpoints
                 Name = RoutingProcessDefinitions.Handles(definition.ProcessId) ? RoutingAsyncWebTools.InputName(parameter.Name, definition.ProcessId)
                     : GPServerParameterNames.Publish(parameter.Name, parameterPrefix),
                 DisplayName = parameter.DisplayName,
-                Description = parameter.Description,
+                Description = definition.ProcessId == RoutingProcessDefinitions.Route && parameter.Name == "stops"
+                    ? "Ordered stops for one route. Additional time, additional distance, curb approach and location type must be zero or null."
+                    : parameter.Description,
                 DataType = parameter.AcceptsGeoJsonDataUri
                     ? "GPFeatureRecordSetLayer"
                     : GPServerParameterTranslation.ToEsriDataType(parameter.ValueType),

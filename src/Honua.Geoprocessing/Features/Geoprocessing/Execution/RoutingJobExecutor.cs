@@ -112,6 +112,15 @@ internal sealed class RoutingJobExecutor(
                         {
                             continue;
                         }
+                        if (attribute.Equals("AdditionalTime", StringComparison.OrdinalIgnoreCase)
+                            || attribute.Equals("AdditionalDistance", StringComparison.OrdinalIgnoreCase)
+                            || attribute.Equals("AdditionalCost", StringComparison.OrdinalIgnoreCase)
+                            || attribute.Equals("CurbApproach", StringComparison.OrdinalIgnoreCase)
+                            || attribute.Equals("LocationType", StringComparison.OrdinalIgnoreCase))
+                        {
+                            Require(Number(value, attribute) == 0, $"Nondefault {attribute} is not supported.");
+                            continue;
+                        }
                         if (attribute.Equals("Sequence", StringComparison.OrdinalIgnoreCase))
                         {
                             Require(Number(value, attribute) == index + 1, "Stops must be supplied in their requested sequence.");
