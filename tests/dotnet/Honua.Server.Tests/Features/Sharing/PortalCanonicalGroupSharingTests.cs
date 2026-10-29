@@ -115,6 +115,58 @@ public sealed class PortalCanonicalGroupSharingTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Security)]
+    [Endpoint("POST /sharing/rest/community/groups/{groupId}/addUsers")]
+    [Endpoint("POST /sharing/rest/community/groups/{groupId}/removeUsers")]
+    [Endpoint("POST /sharing/rest/community/groups/{groupId}/delete")]
+    public async Task ReservedMachineSubjectBearer_CannotReadOrMutateMachineOwnedGroup()
+    {
+        using var client = _fixture.CreateClient(c => c.DefaultRequestHeaders.Add("Referer", Referer));
+        var subject = $"api-key:{Guid.NewGuid():D}";
+        var groups = _fixture.Services.GetRequiredService<IPortalGroupStore>();
+        var group = await groups.CreateAsync(new PortalGroupRegistration("reserved", null, PortalGroupAccess.Private, []), subject, CancellationToken.None);
+        var forged = await IssueAsync(subject, "admin");
+        client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", forged);
+        using (var portal = await client.GetAsync("/sharing/rest/portals/self?f=json"))
+        {
+            await portal.AssertGeoServicesErrorAsync(499);
+        }
+        using (var self = await client.GetAsync("/sharing/rest/community/self?f=json"))
+        {
+            await self.AssertGeoServicesErrorAsync(499);
+        }
+        using (var named = await client.GetAsync($"/sharing/rest/community/users/{Uri.EscapeDataString(subject)}?f=json"))
+        {
+            await named.AssertGeoServicesErrorAsync(404);
+        }
+        using (var read = await client.GetAsync($"/sharing/rest/content/groups/{group.Id}?f=json"))
+        {
+            await read.AssertGeoServicesErrorAsync(499);
+        }
+        using (var groupRead = await client.GetAsync($"/sharing/rest/community/groups/{group.Id}?f=json"))
+        {
+            await groupRead.AssertGeoServicesErrorAsync(404);
+        }
+        foreach (var path in new[]
+        {
+            "/sharing/rest/community/createGroup",
+            $"/sharing/rest/community/groups/{group.Id}/addUsers",
+            $"/sharing/rest/community/groups/{group.Id}/removeUsers",
+            $"/sharing/rest/community/groups/{group.Id}/delete",
+            $"/sharing/rest/content/items/{ItemId}/share",
+            $"/sharing/rest/content/items/{ItemId}/unshare",
+        })
+        {
+            using var response = await PostAsync(client, path, ("users", "bob"), ("groups", group.Id), ("title", "forbidden"));
+            await response.AssertGeoServicesErrorAsync(499);
+        }
+        var unchanged = await groups.GetAsync(group.Id, CancellationToken.None);
+        unchanged.Should().NotBeNull();
+        unchanged!.Owner.Should().Be(subject);
+        unchanged.Members.Should().ContainSingle().Which.Should().Be(subject);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
     [Endpoint("GET /sharing/rest/content/groups/{groupId}")]
     public async Task ManagedKeyGroupAudience_RequiresExactMembershipAndRevocation()
     {

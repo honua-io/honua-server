@@ -542,6 +542,11 @@ internal static class SharingCommunityEndpoints
 
     private static bool CanSeeGroup(PortalGroupRecord record, ClaimsPrincipal principal)
     {
+        if (HasRejectedReservedSubject(principal))
+        {
+            return false;
+        }
+
         if (string.Equals(record.Access, PortalGroupAccess.Public, StringComparison.OrdinalIgnoreCase))
         {
             return true;
@@ -563,6 +568,11 @@ internal static class SharingCommunityEndpoints
 
     private static bool CanSeeMembers(PortalGroupRecord record, ClaimsPrincipal principal)
     {
+        if (HasRejectedReservedSubject(principal))
+        {
+            return false;
+        }
+
         if (principal.Identity?.IsAuthenticated != true)
         {
             return false;
@@ -581,6 +591,10 @@ internal static class SharingCommunityEndpoints
     private static bool CanAdministerGroup(PortalGroupRecord record, string caller, ClaimsPrincipal principal)
         => string.Equals(record.Owner, caller, StringComparison.OrdinalIgnoreCase) || IsAdmin(principal);
 
+    private static bool HasRejectedReservedSubject(ClaimsPrincipal principal)
+        => principal.FindFirstValue(ClaimTypes.NameIdentifier)?.StartsWith("api-key:", StringComparison.OrdinalIgnoreCase) == true
+            && PortalPrincipal.Resolve(principal) is null;
+
     private static bool IsAdmin(ClaimsPrincipal principal)
         => principal.IsInRole(AdminRole) ||
             principal.Claims.Any(c =>
@@ -588,9 +602,9 @@ internal static class SharingCommunityEndpoints
 
     private static string? RequireAuthenticatedUser(HttpContext context)
     {
-        var subject = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
-        return context.User.Identity?.IsAuthenticated == true && !string.IsNullOrWhiteSpace(subject)
-            ? subject
+        var identity = context.User.Identity as ClaimsIdentity;
+        return identity is not null && !string.Equals(identity.AuthenticationType, AuthenticationExtensions.ApiKeyScheme, StringComparison.OrdinalIgnoreCase)
+            ? PortalPrincipal.Resolve(context.User)
             : null;
     }
 

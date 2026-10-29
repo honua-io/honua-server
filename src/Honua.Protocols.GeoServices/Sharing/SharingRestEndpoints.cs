@@ -525,6 +525,11 @@ public static class SharingRestEndpoints
         }
 
         var principal = context.User;
+        if (principal.Identity?.IsAuthenticated == true && string.IsNullOrEmpty(ResolveUsername(principal)))
+        {
+            return StandardErrorHelpers.CreateUnauthorized(context, "An authenticated Portal subject is required.");
+        }
+
         var user = principal.Identity?.IsAuthenticated == true
             ? new PortalUser
             {
@@ -599,12 +604,18 @@ public static class SharingRestEndpoints
                 "Authentication is required to describe the current user.");
         }
 
+        var username = ResolveUsername(principal);
+        if (string.IsNullOrEmpty(username))
+        {
+            return StandardErrorHelpers.CreateUnauthorized(context, "An authenticated Portal subject is required.");
+        }
+
         var response = new CommunitySelfResponse
         {
-            Id = ResolveUsername(principal),
-            Username = ResolveUsername(principal),
+            Id = username,
+            Username = username,
             FullName = ResolveDisplayName(principal),
-            Groups = await SharingCommunityEndpoints.GetUserGroupsAsync(context, groupStore, ResolveUsername(principal), context.RequestAborted).ConfigureAwait(false),
+            Groups = await SharingCommunityEndpoints.GetUserGroupsAsync(context, groupStore, username, context.RequestAborted).ConfigureAwait(false),
         };
 
         return Results.Json(response, SharingRestJsonContext.Default.CommunitySelfResponse, contentType: JsonContentType);
@@ -624,7 +635,7 @@ public static class SharingRestEndpoints
         }
 
         var current = ResolveUsername(context.User);
-        if (!string.Equals(current, username, StringComparison.OrdinalIgnoreCase))
+        if (string.IsNullOrEmpty(current) || !string.Equals(current, username, StringComparison.OrdinalIgnoreCase))
         {
             return StandardErrorHelpers.CreateNotFound(context, "User does not exist or is inaccessible.");
         }
@@ -653,7 +664,7 @@ public static class SharingRestEndpoints
         }
 
         var current = ResolveUsername(context.User);
-        if (!string.Equals(current, username, StringComparison.OrdinalIgnoreCase))
+        if (string.IsNullOrEmpty(current) || !string.Equals(current, username, StringComparison.OrdinalIgnoreCase))
         {
             return StandardErrorHelpers.CreateNotFound(context, "User does not exist or is inaccessible.");
         }
@@ -1143,11 +1154,21 @@ public static class SharingRestEndpoints
     }
 
     private static string ResolveUsername(ClaimsPrincipal principal)
-        => PortalPrincipal.Resolve(principal)
+    {
+        var subject = PortalPrincipal.Resolve(principal);
+        if (subject is not null)
+        {
+            return subject;
+        }
+
+        var fallback = principal.FindFirstValue(ClaimTypes.NameIdentifier)
             ?? principal.FindFirstValue("preferred_username")
             ?? principal.FindFirstValue("sub")
-            ?? principal.Identity?.Name
-            ?? "user";
+            ?? principal.Identity?.Name;
+        return fallback?.StartsWith("api-key:", StringComparison.OrdinalIgnoreCase) == true
+            ? string.Empty
+            : fallback ?? "user";
+    }
 
     private static string ResolveDisplayName(ClaimsPrincipal principal)
         => principal.FindFirstValue("name")
