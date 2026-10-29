@@ -117,7 +117,7 @@ internal static class RoutingAsyncWebTools
                 [{"name":"OBJECTID","type":"esriFieldTypeOID"},
                  {"name":"Name","type":"esriFieldTypeString"},
                  {"name":"RouteName","type":"esriFieldTypeString"},
-                 {"name":"Sequence","type":"esriFieldTypeDouble"}]
+                 {"name":"Sequence","type":"esriFieldTypeInteger"}]
                 """,
             "Output_Directions" or "Output_Route_Edges" => """
                 [{"name":"OBJECTID","type":"esriFieldTypeOID"}]
@@ -129,6 +129,10 @@ internal static class RoutingAsyncWebTools
             """);
         return document.RootElement.Clone();
     }
+
+    // Stops retain client attributes, including a possible OBJECTID. Limit the
+    // output override to Sequence so the translator can safely allocate its own OID.
+    internal const string RouteStopsOutputTypes = """{"fields":[{"name":"Sequence","type":"esriFieldTypeInteger"}]}""";
 
     internal static Dictionary<string, string> Translate(ProcessDefinition definition, IReadOnlyDictionary<string, string> raw, int? environmentOutSr)
     {

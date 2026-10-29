@@ -53,4 +53,21 @@ public sealed class RouteDerivedOutputSchemaTests
         Assert.Equal(2, result.GetProperty("features")[0].GetProperty("attributes").GetProperty("StopCount").GetInt32());
     }
 
+    [Fact]
+    public void RouteStops_SequenceIsIntegerWithoutClobberingInputObjectId()
+    {
+        var schema = RoutingAsyncWebTools.RouteOutputSchema("Output_Stops");
+        Assert.Equal("esriFieldTypeInteger", schema.GetProperty("fields").EnumerateArray()
+            .Single(x => x.GetProperty("name").GetString() == "Sequence").GetProperty("type").GetString());
+        const string geoJson = """
+            {"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[0,0]},"properties":{"OBJECTID":77,"Name":"Start","Sequence":1}}]}
+            """;
+        var value = "data:application/geo+json;base64," + Convert.ToBase64String(Encoding.UTF8.GetBytes(geoJson));
+        var result = GPServerEsriOutputTranslation.Translate(ArtifactKind.FeatureLayer, value, 4326, RoutingAsyncWebTools.RouteStopsOutputTypes);
+        var fields = result.GetProperty("fields").EnumerateArray().ToDictionary(x => x.GetProperty("name").GetString()!, x => x.GetProperty("type").GetString());
+        Assert.Equal("esriFieldTypeInteger", fields["Sequence"]);
+        Assert.Equal("esriFieldTypeOID", fields[result.GetProperty("objectIdFieldName").GetString()!]);
+        Assert.Equal(77, result.GetProperty("features")[0].GetProperty("attributes").GetProperty("OBJECTID").GetInt32());
+    }
+
 }
