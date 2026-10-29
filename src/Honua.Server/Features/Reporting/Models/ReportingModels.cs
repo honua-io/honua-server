@@ -21,6 +21,10 @@ internal sealed class ReportingOpenAiChatRequest
     [JsonPropertyName("max_tokens")]
     public int? MaxTokens { get; set; }
 
+    [JsonPropertyName("service_tier")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ServiceTier { get; set; }
+
     [JsonPropertyName("temperature")]
     public double? Temperature { get; set; }
 

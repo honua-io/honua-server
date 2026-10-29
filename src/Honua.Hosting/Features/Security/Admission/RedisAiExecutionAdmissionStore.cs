@@ -43,6 +43,11 @@ internal sealed partial class RedisAiExecutionAdmissionStore(IConnectionMultiple
             DateTimeOffset.FromUnixTimeMilliseconds(granted.Deadline), DateTimeOffset.FromUnixTimeMilliseconds(granted.Lease)));
     }
 
+    public Task<AiAdmissionDecision> TryAcquireAsync(AiExecutionContext context, Guid attemptId, AiFinancialRequest request, CancellationToken cancellationToken)
+        => TryAcquireAsync(context, attemptId, cancellationToken);
+    public Task<bool> CommitFinancialSendAsync(AiAdmissionReservation reservation, CancellationToken cancellationToken) => Task.FromResult(false);
+    public Task<string> SettleFinancialAsync(AiAdmissionReservation reservation, AiFinancialUsage usage, CancellationToken cancellationToken) => Task.FromResult("financial_unsupported");
+
     public async Task<bool> IsCurrentAsync(AiAdmissionReservation reservation, CancellationToken cancellationToken)
     {
         var result = await ExecuteAsync(reservation.DeploymentId,
@@ -64,6 +69,7 @@ internal sealed partial class RedisAiExecutionAdmissionStore(IConnectionMultiple
 
     public async Task<AiAdmissionControlResult> ApplyControlAsync(AiAdmissionControlCommand command, CancellationToken cancellationToken)
     {
+        if (command.Policy?.Financial is not null) return new("financial_unsupported", null);
         if (!command.IsValid || Encoding.UTF8.GetByteCount(command.ActorId) > 4096
             || Encoding.UTF8.GetByteCount(command.InvocationId) > 128 || Encoding.UTF8.GetByteCount(command.CorrelationId) > 128)
         {

@@ -16,7 +16,7 @@ using Npgsql;
 namespace Honua.Db.Postgres.Tests.Features.Security;
 
 [Collection("Database")]
-public sealed class PostgresAiExecutionAdmissionStoreTests(PostgresFixture fixture) : IAsyncLifetime
+public sealed partial class PostgresAiExecutionAdmissionStoreTests(PostgresFixture fixture) : IAsyncLifetime
 {
     private string _schema = null!;
     private readonly List<NpgsqlDataSource> _sources = [];
@@ -29,6 +29,9 @@ public sealed class PostgresAiExecutionAdmissionStoreTests(PostgresFixture fixtu
         await using var connection = await fixture.DataSource.OpenConnectionAsync();
         await using var command = new NpgsqlCommand(migration.Replace("$HonuaSchema$", $"\"{_schema}\"", StringComparison.Ordinal), connection);
         await command.ExecuteNonQueryAsync();
+        var financial = await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory, "Migrations", "CreateAiFinancialAccounting.sql"));
+        await using var financialCommand = new NpgsqlCommand(financial.Replace("$HonuaSchema$", $"\"{_schema}\"", StringComparison.Ordinal), connection);
+        await financialCommand.ExecuteNonQueryAsync();
     }
 
     public async Task DisposeAsync()
@@ -36,6 +39,26 @@ public sealed class PostgresAiExecutionAdmissionStoreTests(PostgresFixture fixtu
         foreach (var source in _sources)
             await source.DisposeAsync();
         await fixture.DropSchemaAsync(_schema);
+    }
+
+    [IntegrationTest]
+    public async Task TryAcquire_PersistedFinancialModeWithoutValidBasis_DeniesWithoutAttemptCharge()
+    {
+        var store = Store();
+        var state = await InitializeAndResumeAsync(store, new AiAdmissionPolicy());
+        (await store.ApplyControlAsync(Command(AiAdmissionControlAction.Stop, state), default)).Applied.Should().BeTrue();
+        // A persisted financial transition must never be silently interpreted as
+        // legacy attempt-only policy when its required price/bounds basis is absent.
+        await ExecuteAsync($$"""
+            UPDATE "{{_schema}}".ai_execution_policies
+            SET policy_json = jsonb_set(policy_json, '{Financial}', '{}'::jsonb), epoch = epoch + 1
+            WHERE deployment_id = 'deployment'
+            """);
+
+        var decision = await store.TryAcquireAsync(Context(), Guid.NewGuid(), CancellationToken.None);
+
+        decision.Granted.Should().BeFalse("financial mode cannot fall back to legacy admission");
+        (await CountAttemptsAsync()).Should().Be(0, "a denied financial request must not partially charge attempts");
     }
 
     [IntegrationTest]

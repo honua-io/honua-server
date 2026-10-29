@@ -22,7 +22,36 @@ internal sealed partial class AiExecutionAdmissionCoordinator(
     private static readonly TimeSpan CheckTimeout = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan ReleaseTimeout = TimeSpan.FromSeconds(2);
 
-    public async Task<IAiExecutionPermit> AcquireAsync(AiExecutionContext context, CancellationToken cancellationToken)
+    public async Task<AiFinancialPriceBasis?> GetFinancialBasisAsync(AiExecutionContext context, CancellationToken cancellationToken)
+    {
+        if (!context.IsValid || context.DeploymentId != _deploymentId) throw new AiAdmissionException("invalid_context");
+        try
+        {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(AcquireTimeout);
+            await using var scope = scopes.CreateAsyncScope();
+            var state = await scope.ServiceProvider.GetRequiredService<IAiExecutionAdmissionStore>()
+                .GetStateAsync(context.DeploymentId, timeout.Token).WaitAsync(timeout.Token).ConfigureAwait(false);
+            if (state is null) throw new AiAdmissionException("uninitialized");
+            if (!state.Policy.IsValid) throw new AiAdmissionException("invalid_policy");
+            return state.Policy.Financial?.Basis;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (AiAdmissionException) { throw; }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            StoreFailed(_logger, ex.GetType().Name);
+            throw new AiAdmissionException("unavailable");
+        }
+    }
+
+    public Task<IAiExecutionPermit> AcquireAsync(AiExecutionContext context, CancellationToken cancellationToken)
+        => AcquireCoreAsync(context, null, cancellationToken);
+
+    public Task<IAiExecutionPermit> AcquireAsync(AiExecutionContext context, AiFinancialRequest request, CancellationToken cancellationToken)
+        => AcquireCoreAsync(context, request, cancellationToken);
+
+    private async Task<IAiExecutionPermit> AcquireCoreAsync(AiExecutionContext context, AiFinancialRequest? request, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (context is not { IsValid: true } || context.DeploymentId != _deploymentId)
@@ -36,8 +65,9 @@ internal sealed partial class AiExecutionAdmissionCoordinator(
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeout.CancelAfter(AcquireTimeout);
             await using var scope = scopes.CreateAsyncScope();
-            decision = await scope.ServiceProvider.GetRequiredService<IAiExecutionAdmissionStore>()
-                .TryAcquireAsync(context, attemptId, timeout.Token).WaitAsync(timeout.Token).ConfigureAwait(false);
+            var store = scope.ServiceProvider.GetRequiredService<IAiExecutionAdmissionStore>();
+            decision = await (request is null ? store.TryAcquireAsync(context, attemptId, timeout.Token)
+                : store.TryAcquireAsync(context, attemptId, request, timeout.Token)).WaitAsync(timeout.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -53,7 +83,9 @@ internal sealed partial class AiExecutionAdmissionCoordinator(
             throw new AiAdmissionException(decision.Code, decision.RetryAfterSeconds);
         if (decision.Code != "admitted" || reservation.DeploymentId != context.DeploymentId || reservation.AttemptId != attemptId
             || reservation.Generation == Guid.Empty || reservation.Epoch <= 0
-            || reservation.LeaseExpiresUtc < reservation.DeadlineUtc)
+            || reservation.LeaseExpiresUtc < reservation.DeadlineUtc
+            || (reservation.Financial is { } financial && (request is null || financial.RequestDigest != request.RequestDigest
+                || financial.BasisDigest.Length != 64 || !financial.BasisDigest.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f'))))
             throw new AiAdmissionException("unavailable");
         if (cancellationToken.IsCancellationRequested)
         {
@@ -78,6 +110,41 @@ internal sealed partial class AiExecutionAdmissionCoordinator(
             if (!cancellationToken.IsCancellationRequested)
                 StoreFailed(_logger, ex.GetType().Name);
             return false;
+        }
+    }
+
+    private async Task<bool> CommitFinancialSendAsync(AiAdmissionReservation reservation, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(CheckTimeout);
+            await using var scope = scopes.CreateAsyncScope();
+            return await scope.ServiceProvider.GetRequiredService<IAiExecutionAdmissionStore>()
+                .CommitFinancialSendAsync(reservation, timeout.Token).WaitAsync(timeout.Token).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            StoreFailed(_logger, ex.GetType().Name);
+            return false;
+        }
+    }
+
+    private async Task RecordFinancialUsageAsync(AiAdmissionReservation reservation, AiFinancialUsage usage)
+    {
+        try
+        {
+            // Provider usage may arrive with caller cancellation/stop. Original debt can
+            // still settle under its original basis using bounded independent cleanup.
+            using var cleanup = new CancellationTokenSource(ReleaseTimeout);
+            await using var scope = scopes.CreateAsyncScope();
+            await scope.ServiceProvider.GetRequiredService<IAiExecutionAdmissionStore>()
+                .SettleFinancialAsync(reservation, usage, cleanup.Token).WaitAsync(cleanup.Token).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            StoreFailed(_logger, ex.GetType().Name);
+            // Uncertain settlement never releases the full retained reservation.
         }
     }
 
@@ -135,6 +202,9 @@ internal sealed partial class AiExecutionAdmissionCoordinator(
         }
 
         public CancellationToken Token => _token;
+        public bool HasFinancialReservation => _reservation.Financial is not null;
+        public Task RecordFinancialUsageAsync(AiFinancialUsage usage, CancellationToken cancellationToken)
+            => HasFinancialReservation ? _owner.RecordFinancialUsageAsync(_reservation, usage) : Task.CompletedTask;
 
         public async Task BeginInvocationAsync(CancellationToken cancellationToken)
         {
@@ -147,6 +217,10 @@ internal sealed partial class AiExecutionAdmissionCoordinator(
         {
             if (Volatile.Read(ref _begun) != 1 || Interlocked.CompareExchange(ref _sent, 1, 0) != 0)
                 throw new AiAdmissionException("duplicate_invocation");
+            await EnsureCurrentAsync(cancellationToken).ConfigureAwait(false);
+            if (HasFinancialReservation && !await _owner.CommitFinancialSendAsync(_reservation, cancellationToken).ConfigureAwait(false))
+                throw new AiAdmissionException("financial_stop");
+            // A committed but interrupted claim remains full debt and cannot be reused.
             await EnsureCurrentAsync(cancellationToken).ConfigureAwait(false);
         }
 

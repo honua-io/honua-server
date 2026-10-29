@@ -34,11 +34,12 @@ on:
       - 'src/Honua.Hosting/Features/Security/**'
       - 'src/Honua.Db/Postgres/Features/Security/Admission/**'
       - 'src/Honua.Server/Migrations/140_CreateAiExecutionAdmission.sql'
+      - 'src/Honua.Server/Migrations/*AiFinancialAccounting.sql'
       - 'src/Honua.Ai/Features/StudioAiProxy/**'
       - 'src/Honua.Server/Features/Operations/AiAdmissionControl*.cs'
       - 'src/Honua.Server/Features/Operations/OperationsServiceCollectionExtensions.cs'
       - 'src/Honua.Server/Features/Reporting/**'
-      - 'tests/dotnet/Honua.Db.Postgres.Tests/Features/Security/PostgresAiExecutionAdmissionStoreTests.cs'
+      - 'tests/dotnet/Honua.Db.Postgres.Tests/Features/Security/PostgresAiExecutionAdmissionStoreTests*.cs'
       - 'tests/dotnet/Honua.Core.Tests/Features/Reporting/**'
       - 'tests/dotnet/Honua.Server.Tests/Features/Reporting/**'
       - 'tests/dotnet/Honua.Server.Tests/Features/Operations/AiAdmissionControl*.cs'
@@ -133,7 +134,7 @@ jobs:
           from pathlib import Path
           required = {
               'server': ['AiAdmissionControlOperationTests', 'AiAdmissionControlHostTests',
-                         'OperationsToolsetTests', 'OpenAiNarrativeProviderTests',
+                         'OperationsToolsetTests', 'OpenAiNarrativeProviderTests', 'ReportingFinancialAdmissionTests',
                          'ReportingServiceCollectionExtensionsTests', 'AnalysisReportServiceTests',
                          'AnalysisReportEndpointsTests', 'AnalysisReportEndpointsHappyPathTests',
                          'AnalysisReportEvalPipelineTests', 'RenderGoldenTests'],

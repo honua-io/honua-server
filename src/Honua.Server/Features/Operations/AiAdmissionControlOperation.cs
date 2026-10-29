@@ -44,7 +44,7 @@ internal static class AiAdmissionControlOperation
             AiAdmissionControlAction.Stop => "Stop model invocations",
             _ => "Resume model invocations"
         },
-        Description = "Controls durable AI invocation attempts without resetting accounting.",
+        Description = "Controls durable AI invocation limits and explicit financial activation without resetting accounting.",
         ExecutionKind = OperationExecutionKind.Synchronous,
         ApprovalModel = OperationApprovalModel.OperatorGate,
         Policy = new OperationPolicyMetadata
@@ -72,7 +72,7 @@ internal static class AiAdmissionControlOperation
             || request.ServiceName is not null || request.Fields.Count != 0 || request.SecretParameters.Count != 0)
             throw new ArgumentException("Invalid AI admission operation request.");
         var allowed = new HashSet<string>(["deploymentId", "expectedGeneration", "expectedRevision", "expectedEpoch", "policy", ActorPin], StringComparer.Ordinal);
-        if (request.Parameters.Count > allowed.Count || request.Parameters.Any(pair => !allowed.Contains(pair.Key) || pair.Value?.Length > 4096))
+        if (request.Parameters.Count > allowed.Count || request.Parameters.Any(pair => !allowed.Contains(pair.Key) || pair.Value?.Length > (pair.Key == "policy" ? 8192 : 4096)))
             throw new ArgumentException("Invalid AI admission operation parameters.");
         var parameters = new Dictionary<string, string?>(request.Parameters, StringComparer.Ordinal);
         if (parameters.TryGetValue("deploymentId", out var target) && !string.Equals(target, deploymentId, StringComparison.Ordinal))
@@ -83,7 +83,7 @@ internal static class AiAdmissionControlOperation
         {
             if (!parameters.TryGetValue("policy", out var json) || string.IsNullOrWhiteSpace(json))
                 throw new ArgumentException("An explicit AI admission policy is required.");
-            var policy = JsonSerializer.Deserialize(json, AiAdmissionControlJsonContext.Default.AiAdmissionPolicy);
+            var policy = DeserializePolicy(json);
             if (policy is not { IsValid: true })
                 throw new ArgumentException("Invalid AI admission policy.");
             parameters["policy"] = JsonSerializer.Serialize(policy, AiAdmissionControlJsonContext.Default.AiAdmissionPolicy);
@@ -98,6 +98,28 @@ internal static class AiAdmissionControlOperation
         return parameters;
     }
 
+    private static AiAdmissionPolicy? DeserializePolicy(string json)
+    {
+        using var document = JsonDocument.Parse(json, new JsonDocumentOptions { MaxDepth = 16 });
+        RejectDuplicateProperties(document.RootElement);
+        return JsonSerializer.Deserialize(json, AiAdmissionControlJsonContext.Default.AiAdmissionPolicy);
+    }
+
+    private static void RejectDuplicateProperties(JsonElement value)
+    {
+        if (value.ValueKind == JsonValueKind.Object)
+        {
+            var names = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var property in value.EnumerateObject())
+            {
+                if (!names.Add(property.Name)) throw new JsonException("Duplicate AI admission policy property.");
+                RejectDuplicateProperties(property.Value);
+            }
+        }
+        else if (value.ValueKind == JsonValueKind.Array)
+            foreach (var item in value.EnumerateArray()) RejectDuplicateProperties(item);
+    }
+
     internal static AiAdmissionControlCommand BuildCommand(string id, IReadOnlyDictionary<string, string?> parameters,
         string actor, string invocation, string correlation)
     {
@@ -106,7 +128,7 @@ internal static class AiAdmissionControlOperation
             || !long.TryParse(parameters.GetValueOrDefault("expectedEpoch"), NumberStyles.None, CultureInfo.InvariantCulture, out var epoch))
             throw new ArgumentException("Invalid AI admission expected-state tuple.");
         var policy = parameters.TryGetValue("policy", out var json)
-            ? JsonSerializer.Deserialize(json!, AiAdmissionControlJsonContext.Default.AiAdmissionPolicy) : null;
+            ? DeserializePolicy(json!) : null;
         var command = new AiAdmissionControlCommand(parameters["deploymentId"]!, Actions[id], generation, revision, epoch,
             actor, invocation, correlation, policy);
         if (!command.IsValid)

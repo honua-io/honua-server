@@ -20,6 +20,23 @@ namespace Honua.Hosting.ComponentTests;
 public sealed class RedisAiExecutionAdmissionStoreTests(AiAdmissionRedisFixture fixture)
 {
     [IntegrationTest]
+    public async Task ApplyControlAsync_FinancialInitializeAndUpdate_AreRejectedWithoutChangingRedisState()
+    {
+        using var connection = await ConnectAsync();
+        var store = new RedisAiExecutionAdmissionStore(connection); var context = Context();
+        var financial = Honua.TestKit.Security.AiFinancialTestPolicy.Create();
+        var create = Initialize(context.DeploymentId) with { Policy = financial };
+        (await store.ApplyControlAsync(create, default)).Code.Should().Be("financial_unsupported");
+        (await store.GetStateAsync(context.DeploymentId, default)).Should().BeNull();
+        var initialized = await store.ApplyControlAsync(Initialize(context.DeploymentId), default);
+        initialized.Applied.Should().BeTrue();
+        var before = initialized.State!;
+        (await store.ApplyControlAsync(Control(before, AiAdmissionControlAction.UpdatePolicy) with { Policy = financial }, default)).Code.Should().Be("financial_unsupported");
+        var after = (await store.GetStateAsync(context.DeploymentId, default))!;
+        after.Should().BeEquivalentTo(before); after.Policy.Financial.Should().BeNull();
+    }
+
+    [IntegrationTest]
     public async Task ApplyControlAsync_MissingLedger_RequiresExplicitStoppedBootstrapAndQuarantine()
     {
         using var connection = await ConnectAsync();

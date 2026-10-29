@@ -140,6 +140,10 @@ public sealed class AiExecutionAdmissionCoordinatorTests
             return Task.FromResult(new AiAdmissionDecision(Code, IncludeReservation
                 ? new(context.DeploymentId, attemptId, Guid.NewGuid(), 1, deadline, deadline.AddSeconds(30)) : null));
         }
+        public Task<AiAdmissionDecision> TryAcquireAsync(AiExecutionContext context, Guid attemptId, AiFinancialRequest request, CancellationToken cancellationToken)
+            => TryAcquireAsync(context, attemptId, cancellationToken);
+        public Task<bool> CommitFinancialSendAsync(AiAdmissionReservation reservation, CancellationToken cancellationToken) => Task.FromResult(false);
+        public Task<string> SettleFinancialAsync(AiAdmissionReservation reservation, AiFinancialUsage usage, CancellationToken cancellationToken) => Task.FromResult("unavailable");
         public Task<bool> IsCurrentAsync(AiAdmissionReservation reservation, CancellationToken cancellationToken)
         {
             CheckEntered.TrySetResult();

@@ -15,14 +15,22 @@ using NpgsqlTypes;
 namespace Honua.Db.Postgres.Features.Security.Admission;
 
 /// <summary>Durable multi-scope AI accounting serialized by one short deployment-row transaction.</summary>
-internal sealed class PostgresAiExecutionAdmissionStore(IAdoNetDatabaseConnectionProvider connections, string? schemaName = null)
+internal sealed partial class PostgresAiExecutionAdmissionStore(IAdoNetDatabaseConnectionProvider connections, string? schemaName = null)
     : IAiExecutionAdmissionStore
 {
     private readonly string _policies = SchemaSearchPath.QualifyTable("ai_execution_policies", schemaName);
     private readonly string _attempts = SchemaSearchPath.QualifyTable("ai_execution_attempts", schemaName);
     private readonly string _events = SchemaSearchPath.QualifyTable("ai_execution_control_events", schemaName);
 
-    public async Task<AiAdmissionDecision> TryAcquireAsync(AiExecutionContext context, Guid attemptId, CancellationToken cancellationToken)
+    private readonly string _financial = SchemaSearchPath.QualifyTable("ai_financial_invocations", schemaName);
+
+    public Task<AiAdmissionDecision> TryAcquireAsync(AiExecutionContext context, Guid attemptId, CancellationToken cancellationToken)
+        => AcquireCoreAsync(context, attemptId, null, cancellationToken);
+
+    public Task<AiAdmissionDecision> TryAcquireAsync(AiExecutionContext context, Guid attemptId, AiFinancialRequest request, CancellationToken cancellationToken)
+        => AcquireCoreAsync(context, attemptId, request, cancellationToken);
+
+    private async Task<AiAdmissionDecision> AcquireCoreAsync(AiExecutionContext context, Guid attemptId, AiFinancialRequest? request, CancellationToken cancellationToken)
     {
         if (!context.IsValid || attemptId == Guid.Empty)
             return new("invalid_context");
@@ -104,6 +112,8 @@ internal sealed class PostgresAiExecutionAdmissionStore(IAdoNetDatabaseConnectio
 
             var deadline = now.AddSeconds(policy.MaxOperationSeconds);
             var expires = deadline.AddSeconds(AiAdmissionPolicy.DrainSeconds);
+            var financial = await ReserveFinancialAsync(connection, transaction, state, context, attemptId, request, now, deadline, expires, cancellationToken).ConfigureAwait(false);
+            if (financial.Code is not null) return new(financial.Code);
             await using var insert = new NpgsqlCommand($"""
                 INSERT INTO {_attempts}
                     (deployment_id, attempt_id, generation_id, actor_key, use_case, workflow_key,
@@ -122,9 +132,9 @@ internal sealed class PostgresAiExecutionAdmissionStore(IAdoNetDatabaseConnectio
             insert.Parameters.AddWithValue("epoch", state.Epoch);
             await insert.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
-            return new("admitted", new(context.DeploymentId, attemptId, state.Generation, state.Epoch, deadline, expires));
+            return new("admitted", new(context.DeploymentId, attemptId, state.Generation, state.Epoch, deadline, expires, financial.Financial));
         }
-        catch (Exception exception) when (exception is JsonException or InvalidOperationException)
+        catch (Exception exception) when (exception is JsonException or InvalidOperationException or OverflowException)
         {
             return new("invalid_policy");
         }
@@ -144,6 +154,14 @@ internal sealed class PostgresAiExecutionAdmissionStore(IAdoNetDatabaseConnectio
             var state = await ReadStateAsync(connection, null, reservation.DeploymentId, false, cancellationToken).ConfigureAwait(false);
             if (state is null || state.Generation != reservation.Generation || state.Epoch != reservation.Epoch || state.Stopped)
                 return false;
+            if (state.Policy.Financial is { } policy)
+            {
+                if (reservation.Financial is not { } financial || financial.BasisDigest != policy.Basis.Digest || !policy.IsValid) return false;
+                await using var validity = new NpgsqlCommand("SELECT clock_timestamp() >= @effective AND clock_timestamp() < @expiry", connection);
+                validity.Parameters.AddWithValue("effective", policy.Basis.EffectiveUtc);
+                validity.Parameters.AddWithValue("expiry", policy.Basis.ExpiresUtc);
+                if (await validity.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is not true) return false;
+            }
             await using var command = new NpgsqlCommand($"""
                 SELECT EXISTS (SELECT 1 FROM {_policies} p JOIN {_attempts} a USING (deployment_id)
                     WHERE p.deployment_id = @deployment AND p.schema_version = 1
@@ -229,6 +247,8 @@ internal sealed class PostgresAiExecutionAdmissionStore(IAdoNetDatabaseConnectio
             {
                 if (!state.Stopped || await HasActiveAsync(connection, transaction, command.DeploymentId, now, cancellationToken).ConfigureAwait(false))
                     return new("policy_not_drained", state);
+                if (state.Policy.Financial is { } prior && (command.Policy!.Financial is not { } next || !prior.HasSameAccountingIdentity(next)))
+                    return new("invalid_control", state);
                 state = state with { Policy = command.Policy!, Revision = checked(state.Revision + 1), Epoch = checked(state.Epoch + 1) };
                 code = "updated";
             }
@@ -243,6 +263,8 @@ internal sealed class PostgresAiExecutionAdmissionStore(IAdoNetDatabaseConnectio
             {
                 if (!state.Stopped)
                     return new("resumed", state);
+                if (state.Policy.Financial is not null && await HasFinancialStopAsync(connection, transaction, command.DeploymentId, cancellationToken).ConfigureAwait(false))
+                    return new("financial_stop", state);
                 if (now < state.NotBeforeUtc)
                     return new("recovering", state);
                 state = state with { Stopped = false, Epoch = checked(state.Epoch + 1) };
@@ -250,12 +272,18 @@ internal sealed class PostgresAiExecutionAdmissionStore(IAdoNetDatabaseConnectio
             }
         }
         var result = new AiAdmissionControlResult(code, state, true);
-        await using (var persist = new NpgsqlCommand($"""
-            INSERT INTO {_policies} (deployment_id, schema_version, policy_json, generation_id, revision, epoch, stopped, not_before)
-            VALUES (@deployment, 1, @policy, @generation, @revision, @epoch, @stopped, @not_before)
-            ON CONFLICT (deployment_id) DO UPDATE SET policy_json = EXCLUDED.policy_json, revision = EXCLUDED.revision,
-                epoch = EXCLUDED.epoch, stopped = EXCLUDED.stopped, not_before = EXCLUDED.not_before
-            """, connection, transaction))
+        // Existing controls must use UPDATE: BEFORE INSERT runs before ON CONFLICT,
+        // and must not mistake Resume/Stop for a new financial activation.
+        var persistenceSql = command.Action == AiAdmissionControlAction.Initialize
+            ? $"""
+                INSERT INTO {_policies} (deployment_id, schema_version, policy_json, generation_id, revision, epoch, stopped, not_before)
+                VALUES (@deployment, 1, @policy, @generation, @revision, @epoch, @stopped, @not_before)
+                """
+            : $"""
+                UPDATE {_policies} SET policy_json = @policy, revision = @revision, epoch = @epoch,
+                    stopped = @stopped, not_before = @not_before WHERE deployment_id = @deployment AND generation_id = @generation
+                """;
+        await using (var persist = new NpgsqlCommand(persistenceSql, connection, transaction))
         {
             persist.Parameters.AddWithValue("deployment", state.DeploymentId);
             persist.Parameters.AddWithValue("policy", NpgsqlDbType.Jsonb, JsonSerializer.Serialize(state.Policy, AiAdmissionStoreJsonContext.Default.AiAdmissionPolicy));
@@ -341,6 +369,7 @@ internal sealed class PostgresAiExecutionAdmissionStore(IAdoNetDatabaseConnectio
     }
 }
 
+[JsonSerializable(typeof(AiFinancialPriceBasis))]
 [JsonSerializable(typeof(AiAdmissionPolicy))]
 [JsonSerializable(typeof(AiAdmissionControlResult))]
 [JsonSerializable(typeof(AiAdmissionControlCommand))]
