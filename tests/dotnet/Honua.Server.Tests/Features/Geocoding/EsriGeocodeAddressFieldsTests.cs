@@ -44,4 +44,37 @@ public sealed class EsriGeocodeAddressFieldsTests
         attributes["display_name"].Should().Be("10 Main St, Honolulu, HI 96813");
         attributes["osm_id"].Should().Be("1");
     }
+
+    [UnitTest]
+    public void Apply_StructuredResult_DeclaresEveryStandardAttributeInLocatorMetadata()
+    {
+        var actual = EsriGeocodeAddressFields.Apply(
+            "10 Main St, Honolulu, HI 96813",
+            "PointAddress",
+            new StructuredAddress
+            {
+                AddressNumber = "10",
+                StreetName = "Main St",
+                City = "Honolulu",
+                Region = "Hawaii",
+                PostalCode = "96813",
+                CountryCode = "us",
+                Neighborhood = "Downtown"
+            },
+            new Dictionary<string, string?>());
+        var info = new GeocodeServerInfoResponse
+        {
+            Capabilities = "Geocode,ReverseGeocode",
+            SpatialReference = new GeocodeSpatialReference { Wkid = 4326, LatestWkid = 4326 }
+        };
+        var fields = info.CandidateFields.ToDictionary(field => field.Name, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var attribute in actual)
+        {
+            fields.Should().ContainKey(attribute.Key);
+            fields[attribute.Key].Type.Should().Be("esriFieldTypeString");
+            attribute.Value.Should().NotBeNullOrWhiteSpace();
+        }
+    }
+
 }
