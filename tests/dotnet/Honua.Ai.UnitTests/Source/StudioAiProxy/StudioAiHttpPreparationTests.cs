@@ -408,6 +408,16 @@ public sealed class StudioAiHttpPreparationTests
             after();
             return permit;
         }
+
+        public Task<AiFinancialPriceBasis?> GetFinancialBasisAsync(AiExecutionContext context, CancellationToken cancellationToken)
+            => Inner.GetFinancialBasisAsync(context, cancellationToken);
+
+        public async Task<IAiExecutionPermit> AcquireAsync(AiExecutionContext context, AiFinancialRequest request, CancellationToken cancellationToken)
+        {
+            var permit = await Inner.AcquireAsync(context, request, cancellationToken);
+            after();
+            return permit;
+        }
     }
 
     private static StudioAiProxyService Service(StudioAiProxyConfiguration config, IStudioAiProxyAdapter adapter, IAiExecutionAdmission admission,
@@ -428,6 +438,16 @@ public sealed class StudioAiHttpPreparationTests
             await Task.Yield();
             mutate();
             return await _inner.AcquireAsync(context, cancellationToken);
+        }
+
+        public Task<AiFinancialPriceBasis?> GetFinancialBasisAsync(AiExecutionContext context, CancellationToken cancellationToken)
+            => _inner.GetFinancialBasisAsync(context, cancellationToken);
+
+        public async Task<IAiExecutionPermit> AcquireAsync(AiExecutionContext context, AiFinancialRequest request, CancellationToken cancellationToken)
+        {
+            await Task.Yield();
+            mutate();
+            return await _inner.AcquireAsync(context, request, cancellationToken);
         }
     }
 
