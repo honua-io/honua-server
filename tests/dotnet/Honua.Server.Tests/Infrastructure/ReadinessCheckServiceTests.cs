@@ -11,8 +11,11 @@ using Honua.Infrastructure.Events;
 using Honua.Infrastructure.Monitoring;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Infrastructure;
 
@@ -495,6 +498,52 @@ public sealed class ReadinessCheckServiceTests
         var result = await service.CheckReadinessAsync();
 
         result.IsReady.Should().BeTrue();
+    }
+
+    /// <summary>
+    /// honua-release run 40746787170: on AWS Lambda a degraded (schema-floor) probe runs one
+    /// bounded recovery attempt itself, so a cold start before the migration task ran turns ready
+    /// once the schema is current instead of answering 503 schema-floor for the instance's life.
+    /// </summary>
+    [UnitTheory]
+    [Operation(Operations.HealthCheck)]
+    [InlineData(true, true)]
+    [InlineData(false, false)]
+    public async Task CheckReadinessAsync_DegradedSchemaFloor_RecoversInlineOnlyOnLambda(bool lambda, bool expectReady)
+    {
+        var degraded = new DegradedStartupContext();
+        degraded.MarkDegraded(false, typeof(ReadinessCheckServiceTests).Assembly,
+            "schema guard: migration '031_CreateMetadataV2Snapshot.sql' not applied", schemaGuardPending: true,
+            reasonCode: ReadinessReasonCodes.SchemaFloor);
+        var migrationState = new MigrationState();
+        var guard = NSubstitute.Substitute.For<Honua.Core.Features.Infrastructure.Abstractions.IDatabaseSchemaGuard>();
+        guard.VerifyAsync(NSubstitute.Arg.Any<string>(), NSubstitute.Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+        var settings = new Dictionary<string, string?> { ["ConnectionStrings:DefaultConnection"] = "Host=unused;Database=unused" };
+        if (lambda)
+        {
+            settings["AWS_LAMBDA_FUNCTION_NAME"] = "honua-api";
+        }
+
+        using var services = new Microsoft.Extensions.DependencyInjection.ServiceCollection()
+            .AddSingleton(guard).BuildServiceProvider();
+        // Construction registers the Lambda probe hook on the degraded-start context. Readiness
+        // reaches it through that context, which is the collaborator it already has.
+        using var recovery = new DatabaseRecoveryBackgroundService(
+            degraded, migrationState, new DatabaseCompatibilityState(),
+            new Microsoft.Extensions.Configuration.ConfigurationBuilder().AddInMemoryCollection(settings).Build(),
+            new Honua.Core.Configuration.StartupResilienceOptions(), services,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<DatabaseRecoveryBackgroundService>.Instance);
+        var service = new ReadinessCheckService(
+            new MockHealthyDatabaseChecker(), migrationState, new MockLogger<ReadinessCheckService>(),
+            degradedStartup: degraded);
+
+        var result = await service.CheckReadinessAsync();
+
+        result.IsReady.Should().Be(expectReady);
+        if (!expectReady)
+        {
+            result.ReasonCode.Should().Be(ReadinessReasonCodes.SchemaFloor);
+        }
     }
 
     private static ReadinessCheckService CreateService(

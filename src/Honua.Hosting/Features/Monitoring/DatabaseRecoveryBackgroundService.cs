@@ -29,6 +29,8 @@ internal sealed class DatabaseRecoveryBackgroundService : BackgroundService
     private readonly StartupResilienceOptions _options;
     private readonly IServiceProvider _services;
     private readonly ILogger<DatabaseRecoveryBackgroundService> _logger;
+    private readonly SemaphoreSlim _attemptGate = new(1, 1);
+    private int _attempts; // guarded by _attemptGate
 
     public DatabaseRecoveryBackgroundService(
         DegradedStartupContext context,
@@ -46,7 +48,34 @@ internal sealed class DatabaseRecoveryBackgroundService : BackgroundService
         _options = options;
         _services = services;
         _logger = logger;
+        RecoversOnReadinessProbe = !string.IsNullOrWhiteSpace(
+            configuration[StartupDatabasePreflight.AwsLambdaFunctionNameKey]);
+        if (RecoversOnReadinessProbe)
+        {
+            // Readiness already depends on the degraded-start context. Registering here keeps the
+            // probe attempt on that context instead of adding this service as another collaborator.
+            context.RegisterReadinessProbeRecovery(async (budget, token) =>
+            {
+                await TryRecoverOnReadinessProbeAsync(budget, token);
+            });
+        }
     }
+
+    /// <summary>
+    /// Whether a readiness probe should drive a recovery attempt itself instead of only reporting
+    /// the background loop's state: true on AWS Lambda, where this loop runs only while an
+    /// invocation is executing.
+    /// </summary>
+    /// <remarks>
+    /// While degraded, <c>/healthz/ready</c> answers 503 in milliseconds without touching the
+    /// database, so each invocation ends before a background connect through RDS Proxy (TCP, TLS,
+    /// SCRAM) can finish; the environment is frozen between probes and the connect's wall-clock
+    /// timeout expires while it is frozen. The instance then never leaves degraded mode even after
+    /// the migration task ran (honua-release run 40746787170: a pre-migration cold start served
+    /// schema-floor for 15 minutes while every background connect timed out). Running one bounded
+    /// attempt inside the probe keeps the invocation alive for the whole handshake.
+    /// </remarks>
+    internal bool RecoversOnReadinessProbe { get; }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -64,22 +93,110 @@ internal sealed class DatabaseRecoveryBackgroundService : BackgroundService
         while (!stoppingToken.IsCancellationRequested)
         {
             attempt++;
+            Exception? failure;
             try
             {
-                await TryRecoverAsync(stoppingToken);
-                _context.MarkRecovered();
-                MonitoringLog.DatabaseRecoverySucceeded(_logger, attempt);
-                return;
+                failure = await RunAttemptAsync(stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
                 return;
             }
-            // Intentional: this is the top-level retry loop for database recovery after a
-            // startup connectivity failure; any exception type from the recovery attempt
-            // (connection, auth, migration, or otherwise) must be classified via
-            // IsTransientConnectivityError below rather than crash the background service,
-            // so retries/backoff and the terminal "give up" path both stay reachable.
+
+            if (failure is null)
+            {
+                return;
+            }
+
+            if (_context.RecoveryFailure is not null)
+            {
+                // A non-transient failure: RunAttemptAsync already recorded it.
+                MonitoringLog.DatabaseRecoveryGaveUp(_logger, attempt, failure.Message, failure);
+                return;
+            }
+
+            if (_options.MaxRetryAttempts > 0 && attempt >= _options.MaxRetryAttempts)
+            {
+                _context.MarkRecoveryAbandoned(DescribeFailure(failure));
+                MonitoringLog.DatabaseRecoveryGaveUp(_logger, attempt, failure.Message, failure);
+                return;
+            }
+
+            var delay = StartupDatabaseResilience.GetRetryDelay(
+                attempt, _options.RetryBaseDelay, _options.RetryMaxDelay, jitter);
+            MonitoringLog.DatabaseRecoveryAttemptFailed(
+                _logger, attempt, delay.TotalSeconds, failure.Message, failure);
+
+            try
+            {
+                await Task.Delay(delay, stoppingToken);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Runs one recovery attempt inside a readiness probe, bounded by <paramref name="budget"/>, when
+    /// <see cref="RecoversOnReadinessProbe"/> holds and the host is still awaiting the database.
+    /// Never throws for a failed attempt: the probe reads the outcome from the degraded-start state.
+    /// </summary>
+    /// <param name="budget">Upper bound on the attempt, including waiting for an attempt in flight.</param>
+    /// <param name="cancellationToken">The probe's cancellation token.</param>
+    /// <returns>True when the host is no longer awaiting the database.</returns>
+    internal async Task<bool> TryRecoverOnReadinessProbeAsync(TimeSpan budget, CancellationToken cancellationToken)
+    {
+        if (!RecoversOnReadinessProbe || !_context.IsAwaitingDatabase || _context.RecoveryFailure is not null)
+        {
+            return !_context.IsAwaitingDatabase;
+        }
+
+        using var bounded = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        bounded.CancelAfter(budget);
+        try
+        {
+            await RunAttemptAsync(bounded.Token);
+        }
+        catch (OperationCanceledException) when (bounded.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+        {
+            // The budget ran out (or an attempt in flight held the gate): the next probe retries.
+        }
+
+        return !_context.IsAwaitingDatabase;
+    }
+
+    /// <summary>
+    /// Runs one single-flight recovery attempt, marks the host recovered on success, and classifies
+    /// a failure. Returns null when the host is no longer awaiting the database.
+    /// </summary>
+    private async Task<Exception?> RunAttemptAsync(CancellationToken cancellationToken)
+    {
+        await _attemptGate.WaitAsync(cancellationToken);
+        try
+        {
+            if (!_context.IsAwaitingDatabase)
+            {
+                return null;
+            }
+
+            var attempt = ++_attempts;
+            try
+            {
+                await TryRecoverAsync(cancellationToken);
+                _context.MarkRecovered();
+                MonitoringLog.DatabaseRecoverySucceeded(_logger, attempt);
+                return null;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            // Intentional: this is the top-level boundary of one recovery attempt; any exception
+            // type (connection, auth, migration, or otherwise) must be classified via
+            // IsTransientConnectivityError below rather than crash the background service, so
+            // retries/backoff and the terminal "give up" path both stay reachable.
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 if (IsSchemaBehindBinary(ex, out var schemaFloorReason))
@@ -88,38 +205,30 @@ internal sealed class DatabaseRecoveryBackgroundService : BackgroundService
                     // start before the migration task ran): keep waiting, and say so on readiness.
                     _context.UpdateReason(ReadinessReasonCodes.SchemaFloor, schemaFloorReason);
                 }
-                else if (!IsTransient(ex))
+                else if (!IsTransient(ex) && !cancellationToken.IsCancellationRequested)
                 {
+                    // (A failure surfaced by a cancelled attempt, such as a probe whose budget ran
+                    // out mid-connect, is never classified as terminal.)
                     // A non-transient failure surfaced during recovery (e.g. the database is now
                     // reachable but a migration script is invalid). Stop retrying; this needs an
                     // operator, not another connection attempt.
                     _context.MarkRecoveryAbandoned(DescribeFailure(ex));
-                    MonitoringLog.DatabaseRecoveryGaveUp(_logger, attempt, ex.Message, ex);
-                    return;
                 }
 
-                if (_options.MaxRetryAttempts > 0 && attempt >= _options.MaxRetryAttempts)
-                {
-                    _context.MarkRecoveryAbandoned(DescribeFailure(ex));
-                    MonitoringLog.DatabaseRecoveryGaveUp(_logger, attempt, ex.Message, ex);
-                    return;
-                }
-
-                var delay = StartupDatabaseResilience.GetRetryDelay(
-                    attempt, _options.RetryBaseDelay, _options.RetryMaxDelay, jitter);
-                MonitoringLog.DatabaseRecoveryAttemptFailed(
-                    _logger, attempt, delay.TotalSeconds, ex.Message, ex);
-
-                try
-                {
-                    await Task.Delay(delay, stoppingToken);
-                }
-                catch (OperationCanceledException)
-                {
-                    return;
-                }
+                return ex;
             }
         }
+        finally
+        {
+            _attemptGate.Release();
+        }
+    }
+
+    /// <inheritdoc />
+    public override void Dispose()
+    {
+        _attemptGate.Dispose();
+        base.Dispose();
     }
 
     private async Task TryRecoverAsync(CancellationToken cancellationToken)
