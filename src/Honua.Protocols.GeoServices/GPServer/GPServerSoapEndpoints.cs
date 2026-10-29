@@ -82,8 +82,8 @@ internal static class GPServerSoapEndpoints
                     {
                         return Complete(scope, CreateSoapFault("This operation does not accept arguments.", StatusCodes.Status400BadRequest, soap));
                     }
-                    result = new XElement("Result", GPServerEndpoints.BuildPublishedTaskNames(catalog)
-                        .Select(task => BuildToolInfo(GPServerEndpoints.BuildTaskInfo(task, GPServerEndpoints.ResolveTaskDefinition(catalog, task)!))));
+                    result = new XElement("Result", GPServerEndpoints.BuildPublishedTaskNamesForService(context, serviceId, catalog)
+                        .Select(task => BuildToolInfo(GPServerEndpoints.BuildTaskInfo(task, GPServerEndpoints.ResolveTaskDefinitionForService(context, serviceId, catalog, task)!))));
                     break;
                 case "GetToolNames":
                 case "GetTaskNames":
@@ -91,7 +91,7 @@ internal static class GPServerSoapEndpoints
                     {
                         return Complete(scope, CreateSoapFault("This operation does not accept arguments.", StatusCodes.Status400BadRequest, soap));
                     }
-                    result = new XElement("Result", GPServerEndpoints.BuildPublishedTaskNames(catalog).Select(task => new XElement("String", task)));
+                    result = new XElement("Result", GPServerEndpoints.BuildPublishedTaskNamesForService(context, serviceId, catalog).Select(task => new XElement("String", task)));
                     break;
                 case "GetToolInfo":
                     var arguments = operation.Elements().ToArray();
@@ -104,9 +104,9 @@ internal static class GPServerSoapEndpoints
                         return Complete(scope, CreateSoapFault("GetToolInfo requires one ToolName argument.", StatusCodes.Status400BadRequest, soap));
                     }
                     var taskName = arguments[0].Value;
-                    var canonicalName = GPServerEndpoints.BuildPublishedTaskNames(catalog)
+                    var canonicalName = GPServerEndpoints.BuildPublishedTaskNamesForService(context, serviceId, catalog)
                         .FirstOrDefault(candidate => string.Equals(candidate, taskName, StringComparison.Ordinal));
-                    var definition = canonicalName is null ? null : GPServerEndpoints.ResolveTaskDefinition(catalog, canonicalName);
+                    var definition = canonicalName is null ? null : GPServerEndpoints.ResolveTaskDefinitionForService(context, serviceId, catalog, canonicalName);
                     if (definition is null || !GPServerExecutionPolicy.IsJobCallable(definition))
                     {
                         return Complete(scope, CreateSoapFault("The requested task was not found.", StatusCodes.Status404NotFound, soap));

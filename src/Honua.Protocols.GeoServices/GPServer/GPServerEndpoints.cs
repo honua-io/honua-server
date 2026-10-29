@@ -244,7 +244,7 @@ internal static partial class GPServerEndpoints
             // listing is the callable-name set SOAP GetTaskNames must equal, and the
             // utility tasks have no SOAP or job form. ArcGIS Pro / arcpy.nax address them
             // directly on the "utilityUrl" GP service rather than discovering them.
-            Tasks = [.. BuildPublishedTaskNames(processCatalog)]
+            Tasks = [.. BuildPublishedTaskNamesForService(context, serviceId, processCatalog)]
         };
 
         return Results.Json(
@@ -286,7 +286,7 @@ internal static partial class GPServerEndpoints
         }
 
         var processCatalog = context.RequestServices.GetRequiredService<IProcessCatalog>();
-        var definition = ResolveTaskDefinition(processCatalog, taskName);
+        var definition = ResolveTaskDefinitionForService(context, serviceId, processCatalog, taskName);
         // Keep metadata consistent with the service task list: GPServer is a JOB entry
         // point, so it describes exactly the operations that declare that entry point
         // (#4409). Execution routes retain their independent IsJobCallable guards.
@@ -339,7 +339,7 @@ internal static partial class GPServerEndpoints
             // Auth must precede parameter reading to guarantee 401/403 before 400
             // on invalid input from unauthenticated callers (see IGeoprocessingJobService contract).
             var processCatalog = context.RequestServices.GetRequiredService<IProcessCatalog>();
-            var definition = ResolveTaskDefinition(processCatalog, taskName);
+            var definition = ResolveTaskDefinitionForService(context, serviceId, processCatalog, taskName);
             if (definition is null)
             {
                 // Preserve auth-before-validation for an unknown task without inventing
@@ -481,7 +481,7 @@ internal static partial class GPServerEndpoints
 
             // Auth must precede parameter reading to guarantee 401/403 before 400.
             var processCatalog = context.RequestServices.GetRequiredService<IProcessCatalog>();
-            var definition = ResolveTaskDefinition(processCatalog, taskName);
+            var definition = ResolveTaskDefinitionForService(context, serviceId, processCatalog, taskName);
             if (definition is null)
             {
                 // Preserve auth-before-validation for an unknown task without inventing
@@ -1347,11 +1347,15 @@ internal static partial class GPServerEndpoints
     // The provider-level Routing GP service remains synchronous and unchanged.
     private static bool IsAsyncRouteTask(HttpContext context, string serviceId, string taskName)
     {
+        return IsAsyncRouteService(context, serviceId) && taskName.Equals("FindRoutes", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsAsyncRouteService(HttpContext context, string serviceId)
+    {
         var configured = context.RequestServices.GetRequiredService<IConfiguration>()["Routing:AsyncGPServiceId"];
         return !string.IsNullOrWhiteSpace(configured)
             && serviceId.Equals(configured, StringComparison.OrdinalIgnoreCase)
-            && !serviceId.Equals("Routing", StringComparison.OrdinalIgnoreCase)
-            && taskName.Equals("FindRoutes", StringComparison.OrdinalIgnoreCase);
+            && !serviceId.Equals("Routing", StringComparison.OrdinalIgnoreCase);
     }
 
     internal static Task<ServiceResourceValidationHelpers.ServiceValidationV2Result> ValidateServiceAsync(
@@ -1787,6 +1791,19 @@ internal static partial class GPServerEndpoints
     /// never publishes duplicates.
     /// </para>
     /// </summary>
+    internal static ProcessDefinition? ResolveTaskDefinitionForService(HttpContext context, string serviceId,
+        IProcessCatalog catalog, string? taskName)
+    {
+        var definition = ResolveTaskDefinition(catalog, taskName);
+        if (definition?.ProcessId == RoutingProcessDefinitions.Route && !IsAsyncRouteService(context, serviceId))
+            return null;
+        return definition;
+    }
+
+    internal static IEnumerable<string> BuildPublishedTaskNamesForService(HttpContext context, string serviceId,
+        IProcessCatalog catalog)
+        => BuildPublishedTaskNames(catalog).Where(name => ResolveTaskDefinitionForService(context, serviceId, catalog, name) is not null);
+
     internal static IEnumerable<string> BuildPublishedTaskNames(IProcessCatalog processCatalog)
     {
         var processes = processCatalog.ListProcesses();

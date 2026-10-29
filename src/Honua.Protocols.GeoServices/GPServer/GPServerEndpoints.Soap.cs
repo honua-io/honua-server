@@ -33,7 +33,7 @@ internal static partial class GPServerEndpoints
                 IReadOnlyDictionary<string, string> ReadParameters()
                 {
                     var catalog = context.RequestServices.GetRequiredService<IProcessCatalog>();
-                    var definition = ResolveTaskDefinition(catalog, taskName)
+                    var definition = ResolveTaskDefinitionForService(context, context.Request.RouteValues["serviceId"]?.ToString() ?? string.Empty, catalog, taskName)
                         ?? throw new GeoprocessingNotFoundException("The requested task was not found.");
                     return GPServerSoapExecution.ReadSubmission(operation, BuildTaskInfo(taskName, definition));
                 }
