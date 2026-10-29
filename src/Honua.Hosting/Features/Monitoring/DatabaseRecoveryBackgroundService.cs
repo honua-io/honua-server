@@ -50,6 +50,15 @@ internal sealed class DatabaseRecoveryBackgroundService : BackgroundService
         _logger = logger;
         RecoversOnReadinessProbe = !string.IsNullOrWhiteSpace(
             configuration[StartupDatabasePreflight.AwsLambdaFunctionNameKey]);
+        if (RecoversOnReadinessProbe)
+        {
+            // Readiness already depends on the degraded-start context. Registering here keeps the
+            // probe attempt on that context instead of adding this service as another collaborator.
+            context.RegisterReadinessProbeRecovery(async (budget, token) =>
+            {
+                await TryRecoverOnReadinessProbeAsync(budget, token);
+            });
+        }
     }
 
     /// <summary>

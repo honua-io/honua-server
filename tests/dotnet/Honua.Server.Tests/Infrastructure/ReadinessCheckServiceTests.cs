@@ -526,6 +526,8 @@ public sealed class ReadinessCheckServiceTests
 
         using var services = new Microsoft.Extensions.DependencyInjection.ServiceCollection()
             .AddSingleton(guard).BuildServiceProvider();
+        // Construction registers the Lambda probe hook on the degraded-start context. Readiness
+        // reaches it through that context, which is the collaborator it already has.
         using var recovery = new DatabaseRecoveryBackgroundService(
             degraded, migrationState, new DatabaseCompatibilityState(),
             new Microsoft.Extensions.Configuration.ConfigurationBuilder().AddInMemoryCollection(settings).Build(),
@@ -533,7 +535,7 @@ public sealed class ReadinessCheckServiceTests
             Microsoft.Extensions.Logging.Abstractions.NullLogger<DatabaseRecoveryBackgroundService>.Instance);
         var service = new ReadinessCheckService(
             new MockHealthyDatabaseChecker(), migrationState, new MockLogger<ReadinessCheckService>(),
-            degradedStartup: degraded, databaseRecovery: recovery);
+            degradedStartup: degraded);
 
         var result = await service.CheckReadinessAsync();
 

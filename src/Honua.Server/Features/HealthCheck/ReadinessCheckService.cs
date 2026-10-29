@@ -38,7 +38,6 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
     private readonly GeoprocessingOutputStoreHealthCheck? _outputStoreHealth;
     private readonly MigrationState _migrationState;
     private readonly DegradedStartupContext? _degradedStartup;
-    private readonly DatabaseRecoveryBackgroundService? _databaseRecovery;
     private readonly ILogger<ReadinessCheckService> _logger;
     private readonly DurableJobSubstrateOptions _durableJobSubstrate;
 
@@ -53,11 +52,9 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
         IOptions<AlertOptions>? alertOptions = null,
         GeoprocessingOutputStoreHealthCheck? outputStoreHealth = null,
         IOptions<DurableJobSubstrateOptions>? durableJobSubstrateOptions = null,
-        DegradedStartupContext? degradedStartup = null,
-        DatabaseRecoveryBackgroundService? databaseRecovery = null)
+        DegradedStartupContext? degradedStartup = null)
     {
         _degradedStartup = degradedStartup;
-        _databaseRecovery = databaseRecovery;
         _databaseHealthChecker = databaseHealthChecker;
         _cacheHealthChecker = cacheHealthChecker;
         _featureChangeEventStoreHealth = featureChangeEventStoreHealth;
@@ -101,9 +98,9 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
             // and a degraded probe answers in milliseconds, so the loop's connects never finish:
             // run one bounded attempt here so a cold start before the migration task ran recovers
             // once the schema is current (honua-release run 40746787170).
-            if (_degradedStartup is { IsAwaitingDatabase: true } && _databaseRecovery is { RecoversOnReadinessProbe: true } recovery)
+            if (_degradedStartup is { IsAwaitingDatabase: true })
             {
-                await recovery.TryRecoverOnReadinessProbeAsync(InlineRecoveryBudget, cancellationToken);
+                await _degradedStartup.TryRecoverOnReadinessProbeAsync(InlineRecoveryBudget, cancellationToken);
             }
 
             if (_degradedStartup is { IsAwaitingDatabase: true } degraded)

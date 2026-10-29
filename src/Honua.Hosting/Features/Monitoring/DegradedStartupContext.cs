@@ -17,6 +17,7 @@ internal sealed class DegradedStartupContext
     private volatile string? _reason;
     private volatile string? _recoveryFailure;
     private volatile string? _reasonCode;
+    private volatile Func<TimeSpan, CancellationToken, Task>? _readinessProbeRecovery;
 
     /// <summary>
     /// Whether the host entered degraded mode (database unavailable at startup).
@@ -117,4 +118,35 @@ internal sealed class DegradedStartupContext
     /// <summary>Records that the recovery loop stopped retrying.</summary>
     /// <param name="failure">Sanitized reason recovery stopped.</param>
     public void MarkRecoveryAbandoned(string failure) => _recoveryFailure = failure;
+
+    /// <summary>
+    /// Registers the one recovery attempt a readiness probe may run while this host is still
+    /// awaiting the database. The database recovery service registers this on AWS Lambda, where
+    /// the background loop cannot finish between frozen invocations. A host that never registers
+    /// leaves the probe as a status report.
+    /// </summary>
+    /// <param name="recover">The bounded attempt. It must not throw for a failed connect.</param>
+    internal void RegisterReadinessProbeRecovery(Func<TimeSpan, CancellationToken, Task> recover)
+    {
+        ArgumentNullException.ThrowIfNull(recover);
+        _readinessProbeRecovery = recover;
+    }
+
+    /// <summary>
+    /// Runs the registered readiness-probe recovery attempt when one exists and the host is still
+    /// awaiting the database. A missing registration, a recovered host, or an abandoned recovery
+    /// returns without doing work.
+    /// </summary>
+    /// <param name="budget">Upper bound on the attempt.</param>
+    /// <param name="cancellationToken">The probe's cancellation token.</param>
+    internal async Task TryRecoverOnReadinessProbeAsync(TimeSpan budget, CancellationToken cancellationToken)
+    {
+        var recover = _readinessProbeRecovery;
+        if (recover is null || !IsAwaitingDatabase || RecoveryFailure is not null)
+        {
+            return;
+        }
+
+        await recover(budget, cancellationToken);
+    }
 }
