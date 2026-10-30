@@ -106,12 +106,11 @@ internal static partial class VectorTileExecution
     /// measurement an operator needs to size the budget.
     /// </summary>
     /// <remarks>
-    /// The refusal costs a full <c>ST_AsMVT</c> encode, so it is logged: a layer that is dense at
-    /// low zoom answers 413 for every request to the handful of tiles that carry its features,
-    /// and before honua-server#4918 nothing in the server said so — the capacity soak spent 44%
-    /// of its tile budget encoding a 1.4 MB tile it then discarded, with no log line naming the
-    /// limit. Cached refusals (see <c>TileOutcomeOutputCachePolicy</c>) bypass this path, so the
-    /// line is emitted once per tile per TTL rather than once per request.
+    /// The refusal is what remains after the PostGIS reader has already retried with stricter
+    /// generalization. It still costs the strictest <c>ST_AsMVT</c> encode, so it is logged.
+    /// Before honua-server#4918 a dense low-zoom tile was encoded and discarded with no log line
+    /// naming the limit. Cached refusals (see <c>TileOutcomeOutputCachePolicy</c>) bypass this
+    /// path, so the line is emitted once per tile per TTL rather than once per request.
     /// </remarks>
     private static IResult RefuseOversizedTile(
         HttpContext context,
@@ -140,7 +139,7 @@ internal static partial class VectorTileExecution
     [LoggerMessage(
         EventId = 3473,
         Level = LogLevel.Warning,
-        Message = "Refused vector tile {LayerId}/{Zoom}/{TileCol}/{TileRow}: encoded {EncodedBytes} bytes exceeds Limits:Tiles:MaxTileSize ({MaxTileSize} bytes). Raise the budget or reduce the features/attributes served at this zoom.")]
+        Message = "Refused vector tile {LayerId}/{Zoom}/{TileCol}/{TileRow}: encoded {EncodedBytes} bytes still exceeds Limits:Tiles:MaxTileSize ({MaxTileSize} bytes) after generalization.")]
     private static partial void LogTileRefusedOverBudget(
         ILogger logger,
         int layerId,

@@ -439,9 +439,19 @@ public sealed partial class PostgresStorageMappedFeatureReaderEncodedFormatsInte
         var exact = await provider.GetMvtTileAsync(1, 0, 0, 0, query, options,
             new TileLimits { MaxTileSize = payload!.Length });
         exact.Should().Equal(payload);
+
+        // A budget one byte under the full encode must not return those bytes. Attribute
+        // thinning can fit a smaller valid tile; a tile that cannot shrink still refuses.
+        var shrunk = await provider.GetMvtTileAsync(1, 0, 0, 0, query, options,
+            new TileLimits { MaxTileSize = payload.Length - 1 });
+        shrunk.Should().NotBeNull();
+        shrunk!.LongLength.Should().BeLessThanOrEqualTo(payload.Length - 1);
+        shrunk.LongLength.Should().BeGreaterThan(0);
+        MvtTileDecoder.Decode(shrunk).FeatureCount.Should().BeGreaterThan(0);
+
         await Assert.ThrowsAsync<TileSizeLimitExceededException>(() =>
             provider.GetMvtTileAsync(1, 0, 0, 0, query, options,
-                new TileLimits { MaxTileSize = payload.Length - 1 }));
+                new TileLimits { MaxTileSize = 1 }));
     }
 
     [Theory]
