@@ -629,7 +629,7 @@ The no-upgrade pin still reports `zlib1g` `1:1.3.dfsg-3.1ubuntu2.2`.
 
 `wget` (CVE-2021-31879, alert #3406) is no longer installed in those Ubuntu
 runtime stages. Health checks use `bash /dev/tcp` to `127.0.0.1`. The bases
-ship bash and neither curl nor wget. nginx, caddy, and the OGC stub still call
+ship bash and do not install an HTTP client. nginx, caddy, and the OGC stub still call
 wget. Cite scripts pipe `scripts/docker/container-http-get.sh` into `bash -s`.
 
 The published Lambda JIT stage deletes `/usr/local/bin/aws-lambda-rie`
