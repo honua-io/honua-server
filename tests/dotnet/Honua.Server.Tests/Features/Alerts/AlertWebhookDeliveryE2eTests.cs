@@ -361,8 +361,22 @@ public sealed class AlertWebhookDeliveryE2eTests(DatabaseFixtureAdapter database
             receiver.LogicalNotificationCount.Should().Be(deadIds.Count);
             receiver.RequestCount.Should().Be(deadIds.Count);
 
+            // The receiver counts the webhook before the dispatcher persists Delivered.
+            // Wait for that write so the retry is not racing an in-progress delivery.
+            var persistDeadline = DateTimeOffset.UtcNow.AddSeconds(10);
+            IReadOnlyList<DispatchSnapshot> persistedRows = await harness.ReadDispatchesAsync(watched);
+            while (deadIds.Any(id => StatusOf(persistedRows, id) != (short)AlertDispatchStatus.Delivered)
+                && DateTimeOffset.UtcNow < persistDeadline)
+            {
+                await Task.Delay(50);
+                persistedRows = await harness.ReadDispatchesAsync(watched);
+            }
+
+            deadIds.Should().OnlyContain(
+                id => StatusOf(persistedRows, id) == (short)AlertDispatchStatus.Delivered,
+                "the post-delivery redrive waits until the dispatcher has persisted delivery");
+
             var lossAfterDelivery = await RedriveAsync(admin, maxCount: 2);
-            await Task.Delay(TimeSpan.FromMilliseconds(400));
             var terminal = await harness.ReadDispatchesAsync(watched);
             AssertSingleRowPerEvent(terminal, watched);
             AssertControlRows(terminal, delivered.EventId, failed.EventId);
@@ -372,6 +386,12 @@ public sealed class AlertWebhookDeliveryE2eTests(DatabaseFixtureAdapter database
             if (lossBeforeDelivery == 0)
             {
                 lossAfterDelivery.Should().Be(0);
+            }
+
+            var metricDeadline = DateTimeOffset.UtcNow.AddSeconds(5);
+            while (Volatile.Read(ref succeeded) < deadIds.Count && DateTimeOffset.UtcNow < metricDeadline)
+            {
+                await Task.Delay(50);
             }
 
             Volatile.Read(ref succeeded).Should().BeGreaterThanOrEqualTo(deadIds.Count);
