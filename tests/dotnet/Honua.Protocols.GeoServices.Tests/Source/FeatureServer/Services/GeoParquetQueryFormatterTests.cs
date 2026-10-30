@@ -1346,13 +1346,61 @@ public sealed class GeoParquetQueryFormatterTests(ITestOutputHelper output)
         batch.Column("bool_field").Should().BeOfType<BooleanArray>();
         batch.Column("datetime_field").Should().BeOfType<TimestampArray>();
         batch.Column("date_field").Should().BeOfType<Date32Array>();
-        batch.Column("time_field").Should().BeOfType<Time32Array>();
+        batch.Column("time_field").Should().BeOfType<Time64Array>();
         batch.Column("json_field").Should().BeOfType<StringArray>();
         batch.Column("binary_field").Should().BeOfType<BinaryArray>();
         batch.Column("uuid_field").Should().BeOfType<StringArray>();
 
-        var timeArray = (Time32Array)batch.Column("time_field");
-        timeArray.GetValue(0).Should().Be(14 * 60 * 60 * 1000 + 30 * 60 * 1000);
+        var timeArray = (Time64Array)batch.Column("time_field");
+        timeArray.GetTime(0).Should().Be(new TimeOnly(14, 30, 0));
+        timeArray.Data.DataType.Should().BeOfType<Apache.Arrow.Types.Time64Type>()
+            .Which.Unit.Should().Be(Apache.Arrow.Types.TimeUnit.Microsecond);
+    }
+
+    [Fact]
+    public async Task FormatAsGeoParquet_TimeWithMicroseconds_PreservesMicroseconds()
+    {
+        var layer = CreateLayer(
+            Field("objectid", MetadataV2FieldType.BigInteger, nullable: false),
+            Field("sampled_at", MetadataV2FieldType.Time));
+        // PostgreSQL time stores microseconds. 123456 µs is 1_234_560 ticks.
+        var time = new TimeOnly(12, 34, 56).Add(TimeSpan.FromTicks(1_234_560));
+        var feature = Feature.Create(
+            1,
+            CreatePointWkb(0, 0),
+            new Dictionary<string, object?>
+            {
+                ["objectid"] = 1L,
+                ["sampled_at"] = time
+            }.ToImmutableDictionary());
+
+        var (payload, _) = GeoParquetQueryFormatter.FormatAsGeoParquet(
+            QueryResult<Feature>.Create(1, [feature]),
+            layer,
+            returnGeometry: true,
+            outputSrid: 4326,
+            returnZ: false,
+            returnM: false,
+            new GeometryLimits());
+
+        using var stream = new MemoryStream(payload);
+        using var reader = new ParquetSharp.Arrow.FileReader(stream);
+        using var batchReader = reader.GetRecordBatchReader();
+        var batch = await batchReader.ReadNextRecordBatchAsync();
+
+        batch.Should().NotBeNull();
+        var column = batch!.Column("sampled_at");
+        var stored = column switch
+        {
+            Time64Array time64 => time64.GetTime(0),
+            Time32Array time32 => TimeOnly.FromTimeSpan(TimeSpan.FromMilliseconds(time32.GetValue(0)!.Value)),
+            _ => null
+        };
+        stored.Should().NotBeNull();
+        // TimeOnly.ToString stops at milliseconds, so compare ticks. 123456 µs is 1_234_560 ticks.
+        stored!.Value.Ticks.Should().Be(time.Ticks);
+        column.Data.DataType.Should().BeOfType<Apache.Arrow.Types.Time64Type>()
+            .Which.Unit.Should().Be(Apache.Arrow.Types.TimeUnit.Microsecond);
     }
 
     [UnitTheory]
