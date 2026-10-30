@@ -98,7 +98,44 @@ public sealed class GpProjectDiscoveryTests
             allowInstalledRestore: true);
         blocked.RunnableHere.Should().BeFalse();
         blocked.BlockedBy.Should().Be(GpProjectDiscovery.DotnetRuntimeName);
-        blocked.Prerequisites[0].Detail.Should().Contain(".NET 10 SDK").And.Contain(GpProjectDiscovery.NoSubmit);
+        blocked.Prerequisites[0].Detail.Should().Contain(".NET 10 SDK").And.Contain("dotnet --list-sdks").And.Contain(GpProjectDiscovery.NoSubmit);
+    }
+
+    [Fact]
+    public void Dotnet_HostWithoutSdk_IsMissing()
+    {
+        using var directory = new TempProject();
+        directory.Write("process/packages.lock.json", "{}\n");
+        var verdict = GpProjectDiscovery.Assess(
+            Manifest(GpProjectLanguage.Dotnet, GpBundledToolchain.Version),
+            directory.Path,
+            new GpEnvironmentProbe(
+                hostGdalAvailable: false,
+                workerImageAvailable: null,
+                pythonAvailable: true,
+                integrationStackConfigured: false,
+                executableAvailable: static name => name == "dotnet",
+                dotnetSdkAvailable: false),
+            resolvedHarnessRoot: null,
+            allowInstalledRestore: true);
+
+        verdict.RunnableHere.Should().BeFalse();
+        verdict.BlockedBy.Should().Be(GpProjectDiscovery.DotnetRuntimeName);
+        verdict.Prerequisites[0].Status.Should().Be("missing");
+        verdict.Prerequisites[0].Detail.Should().Contain("host alone cannot build").And.Contain(GpProjectDiscovery.NoSubmit);
+        GpProjectDiscovery.BlockedError(Manifest(GpProjectLanguage.Dotnet, GpBundledToolchain.Version), verdict)
+            .Should().Contain("does not submit to a server");
+    }
+
+    [Theory]
+    [InlineData("10.0.100 [/usr/share/dotnet/sdk]\n", true)]
+    [InlineData("8.0.414 [/usr/share/dotnet/sdk]\n10.0.100-rc.1 [/usr/share/dotnet/sdk]\n", true)]
+    [InlineData("8.0.414 [/usr/share/dotnet/sdk]\n", false)]
+    [InlineData("", false)]
+    [InlineData("The command could not be loaded. A .NET SDK is required.\n", false)]
+    public void SdkList_RequiresANet10Sdk(string sdkList, bool includes)
+    {
+        GpEnvironmentProbe.SdkListIncludesNet10(sdkList).Should().Be(includes);
     }
 
     [Fact]

@@ -128,9 +128,9 @@ public static class GpProjectDiscovery
                 : new GpPrerequisite(PythonRuntimeName, "missing", $"python3 is not on PATH. Install Python 3.11 or newer and rerun. {NoSubmit}");
         }
 
-        return probe.ExecutableAvailable("dotnet")
-            ? new GpPrerequisite(DotnetRuntimeName, "satisfied", $"dotnet is on PATH. {NoSubmit}")
-            : new GpPrerequisite(DotnetRuntimeName, "missing", $"dotnet is not on PATH. Install the .NET 10 SDK and rerun. {NoSubmit}");
+        return probe.DotnetSdkAvailable
+            ? new GpPrerequisite(DotnetRuntimeName, "satisfied", $".NET 10 SDK is installed (dotnet --list-sdks). {NoSubmit}")
+            : new GpPrerequisite(DotnetRuntimeName, "missing", $"No .NET 10 SDK is installed (dotnet --list-sdks). The dotnet host alone cannot build a project. Install the .NET 10 SDK and rerun. {NoSubmit}");
     }
 
     private static GpPrerequisite DependencyLock(GpProjectManifest manifest, string projectDirectory)

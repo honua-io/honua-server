@@ -213,7 +213,7 @@ server submission. Add `--probe-container` to also check the GDAL worker image.
 
 A scaffolded project is not a catalog registration. `describe --project <dir>` and
 `list --project <dir>` report that task's own
-prerequisites: the language runtime (Python 3.11+ or the .NET 10 SDK), the committed
+prerequisites: the language runtime (Python 3.11+ or a .NET 10 SDK reported by `dotnet --list-sdks`; the runtime host alone is not enough), the committed
 dependency lock, and the local harness. A lock that is present is the dependency set;
 `describe` does not import each locked package. A missing interpreter, lock, or harness
 is `missing`, names what to install, and `test` stops before starting the harness. The
