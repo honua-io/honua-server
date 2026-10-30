@@ -14,7 +14,9 @@ using Honua.Core.Features.FileImport.Services;
 using Honua.Db.Postgres.Features.FileImport;
 using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.Db.Postgres.Features.Migration;
+using NetTopologySuite.Features;
 using Npgsql;
+using NpgsqlTypes;
 
 namespace Honua.Db.Postgres.Features.FileImport;
 
@@ -25,6 +27,8 @@ internal sealed partial class StreamingFileImportService
     // truncates longer identifiers, which can otherwise make the geometry and
     // properties indexes collide with SQLSTATE 42P07.
     private const int MaxImportTableNameLength = 40;
+    private const string PromoteImportTypedColumnsSql =
+        "SELECT column_name, postgres_type FROM honua.promote_import_typed_columns(@schema_name, @table_name, @columns::jsonb)";
     private const string ImportTableExistsSql = """
         SELECT EXISTS (
             SELECT 1
@@ -106,6 +110,82 @@ internal sealed partial class StreamingFileImportService
         command.Parameters.AddWithValue("schema_name", schemaName);
         command.Parameters.AddWithValue("table_name", tableName);
         return (bool?)await command.ExecuteScalarAsync(cancellationToken) == true;
+    }
+
+    /// <summary>
+    /// Projects inferred attributes onto nullable typed columns of an import-owned table.
+    /// The properties jsonb document is left intact. A missing ownership comment makes the
+    /// database function return without changing the table.
+    /// </summary>
+    private static async Task<IReadOnlyList<ImportTypedColumn>> PromoteTypedColumnsAsync(
+        NpgsqlConnection connection,
+        string schemaName,
+        string tableName,
+        IReadOnlyList<ImportTypedColumn> columns,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand(PromoteImportTypedColumnsSql, connection);
+        command.Parameters.AddWithValue("schema_name", schemaName);
+        command.Parameters.AddWithValue("table_name", tableName);
+        command.Parameters.Add(new NpgsqlParameter("columns", NpgsqlDbType.Jsonb)
+        {
+            Value = BuildTypedColumnPayload(columns)
+        });
+
+        var promoted = new List<ImportTypedColumn>(columns.Count);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            promoted.Add(new ImportTypedColumn
+            {
+                Name = reader.GetString(0),
+                PostgresType = reader.GetString(1)
+            });
+        }
+
+        return promoted;
+    }
+
+    private static string BuildTypedColumnPayload(IReadOnlyList<ImportTypedColumn> columns)
+    {
+        if (columns.Count == 0)
+        {
+            return "[]";
+        }
+
+        var payload = new StringBuilder(columns.Count * 48);
+        payload.Append('[');
+        for (var i = 0; i < columns.Count; i++)
+        {
+            if (i > 0)
+            {
+                payload.Append(',');
+            }
+
+            payload.Append("{\"name\":\"");
+            payload.Append(columns[i].Name);
+            payload.Append("\",\"pgType\":\"");
+            payload.Append(columns[i].PostgresType);
+            payload.Append("\"}");
+        }
+
+        payload.Append(']');
+        return payload.ToString();
+    }
+
+    private static void ObserveTypedColumns(ImportTypedColumnInference inference, IFeature feature)
+    {
+        if (feature.Attributes is null)
+        {
+            return;
+        }
+
+        var names = feature.Attributes.GetNames();
+        var values = feature.Attributes.GetValues();
+        for (var i = 0; i < names.Length; i++)
+        {
+            inference.Observe(names[i], values[i]);
+        }
     }
 
     private static async Task CreateTableAsync(

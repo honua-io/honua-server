@@ -24,7 +24,7 @@ internal sealed partial class StreamingFileImportService
     /// <summary>
     /// Stream features from source and insert into database in batches.
     /// </summary>
-    private async Task<(int imported, int failed, int repaired, string[] warnings, IReadOnlyList<ImportValidationIssue> rowIssues, string physicalTableName, bool replacementBlocked)> ImportStreamingAsync(
+    private async Task<(int imported, int failed, int repaired, string[] warnings, IReadOnlyList<ImportValidationIssue> rowIssues, string physicalTableName, bool replacementBlocked, IReadOnlyList<ImportTypedColumn> typedColumns)> ImportStreamingAsync(
         ImportRequest request,
         Stream fileStream,
         SupportedFileFormat format,
@@ -87,6 +87,7 @@ internal sealed partial class StreamingFileImportService
                 // Z/M ordinates that PostGIS rejects, dropping otherwise-valid rows).
                 var wkbWriter = new WKBWriter();
                 var batch = new List<IFeature>(_limits.BatchSize);
+                var typedColumnInference = new ImportTypedColumnInference();
                 var totalImported = 0;
                 var totalFailed = 0;
                 var batchesCommitted = 0;
@@ -138,6 +139,7 @@ internal sealed partial class StreamingFileImportService
                     }
 
                     batch.Add(feature);
+                    ObserveTypedColumns(typedColumnInference, feature);
 
                     // Process batch when full
                     if (batch.Count >= _limits.BatchSize)
@@ -340,8 +342,18 @@ internal sealed partial class StreamingFileImportService
                     completionWarningsBuilder.Add(string.Format(null, _skippedInvalidGeometryWarningFormat, repairTally.SkippedInvalid));
                 }
 
+                IReadOnlyList<ImportTypedColumn> typedColumns = [];
                 if (dataCommitted)
                 {
+                    // Rows are already committed. Promote on the live table before statistics
+                    // refresh, using the import lock this connection already holds.
+                    typedColumns = await PromoteTypedColumnsAsync(
+                        connection,
+                        targetSchema,
+                        allowedTableName,
+                        typedColumnInference.Resolve(),
+                        CancellationToken.None);
+
                     try
                     {
                         await AnalyzeTableAsync(connection, targetSchema, allowedTableName, CancellationToken.None);
@@ -388,7 +400,7 @@ internal sealed partial class StreamingFileImportService
                     CurrentPhase = "Import completed"
                 });
 
-                return (totalImported, totalFailed, repairTally.Repaired, completionWarnings, rowIssues, allowedTableName, replacementBlocked);
+                return (totalImported, totalFailed, repairTally.Repaired, completionWarnings, rowIssues, allowedTableName, replacementBlocked, typedColumns);
             }
             catch when ((loadMode == ImportLoadMode.Replace || appendUsesStaging) && !dataCommitted)
             {
