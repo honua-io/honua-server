@@ -35,6 +35,9 @@ services:
       - FileStorage__AwsS3__SecretAccessKey=test
       - FileStorage__AwsS3__EnableServerSideEncryption=false
       - FileStorage__PMTilesPublish__KeyPrefix=pmtiles
+      # The lane uploads the archive itself (publish tags, no source binding).
+      # Operator-provisioned archives on this prefix are served when this is true.
+      - FileStorage__PMTilesPublish__AllowAnonymousUnboundArchives=true
       - Security__ConnectionEncryption__MasterKey=test-master-key-that-is-at-least-32-characters-long-for-security
       - Security__ConnectionEncryption__Salt=dGVzdC1zYWx0LWZvci1lbmNyeXB0aW9uLXRlc3RpbmctcHVycG9zZXM=
     depends_on:

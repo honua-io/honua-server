@@ -640,6 +640,13 @@ class CanonicalArtifactEvidenceTests(unittest.TestCase):
         self.assertIn("environment: HONUA_CNG_BUILD_TOKEN", compose)
         self.assertNotIn("environment: HONUA_DOCKER_GITHUB_TOKEN", compose)
 
+    def test_pmtiles_serving_allows_the_operator_uploaded_archive(self):
+        """The CNG seed puts an unbound archive at the publish prefix. The proxy
+        serves that operator path when AllowAnonymousUnboundArchives is true."""
+        compose = (SCRIPT.parents[3] / "docker" / "cng" / "compose.yml").read_text(encoding="utf-8")
+        self.assertIn("FileStorage__PMTilesPublish__KeyPrefix=pmtiles", compose)
+        self.assertIn("FileStorage__PMTilesPublish__AllowAnonymousUnboundArchives=true", compose)
+
     def test_standalone_harness_requires_and_resolves_github_packages_token(self):
         harness = (SCRIPT.parent / "run-cng-conformance.sh").read_text(encoding="utf-8")
         self.assertIn(
