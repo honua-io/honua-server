@@ -173,7 +173,10 @@ internal static class StudioAiProxyEndpoints
             context.Response.Headers.RetryAfter = ex.RetryAfterSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture);
             return Results.Problem(statusCode: ex.Code is "budget_exceeded" or "concurrency_exceeded" or "ledger_full"
                 ? StatusCodes.Status429TooManyRequests : StatusCodes.Status503ServiceUnavailable,
-                title: "AI invocation admission is unavailable or denied.");
+                title: "AI invocation admission is unavailable or denied.",
+                // The code is allowlisted and sanitized by AiAdmissionException, so it is safe to return. It
+                // lets operators tell "ledger not initialized" or "stopped" from a backend outage (#6761).
+                extensions: new Dictionary<string, object?> { ["code"] = ex.Code });
         }
         await using var preparedOwner = prepared;
 

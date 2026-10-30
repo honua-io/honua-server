@@ -553,6 +553,8 @@ public sealed class StudioAiProxyEndpointsTests : IAsyncLifetime
     [IntegrationTheory]
     [InlineData("budget_exceeded", HttpStatusCode.TooManyRequests)]
     [InlineData("uninitialized", HttpStatusCode.ServiceUnavailable)]
+    [InlineData("stopped", HttpStatusCode.ServiceUnavailable)]
+    [InlineData("unavailable", HttpStatusCode.ServiceUnavailable)]
     [Endpoint("POST /api/v1/studio/ai/chat")]
     public async Task PostChat_AdmissionDenied_ReturnsProblemBeforeSseOrProviderSend(string code, HttpStatusCode expectedStatus)
     {
@@ -564,6 +566,8 @@ public sealed class StudioAiProxyEndpointsTests : IAsyncLifetime
         response.StatusCode.Should().Be(expectedStatus);
         response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
         response.Headers.RetryAfter.Should().NotBeNull();
+        using var problem = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        problem.RootElement.GetProperty("code").GetString().Should().Be(code);
         admission.Sent.Should().Be(0);
         _audit.Recorded.Should().NotContain(entry => entry.Action == "studio_ai.chat");
     }
