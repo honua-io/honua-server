@@ -137,9 +137,39 @@ public sealed class McpWorkflowViewTests
         var anonymous = await ListToolsAsync(surface, McpWorkflowViewCatalog.SetupViewName, McpTestFactory.AnonymousHttpContext());
 
         anonymous.Names.Should().Contain(["honua_create_map_package", "honua_create_app_package"]);
+        anonymous.Names.Should().NotContain(["honua_validate_package", "honua_preview_package"]);
         McpWorkflowViewCatalog.Setup.Revision.Should().Be("setup.v6");
 
         foreach (var name in new[] { "honua_create_map_package", "honua_create_app_package" })
+        {
+            var response = await DispatchAsync(
+                surface,
+                "{\"jsonrpc\":\"2.0\",\"id\":\"anon\",\"method\":\"tools/call\",\"params\":{\"name\":\"" + name + "\",\"arguments\":{}}}",
+                McpTestFactory.AnonymousHttpContext());
+
+            var refused = response!.Error is not null
+                ? response.Error.Data!.Code
+                : response.Result!.Value.GetProperty("structuredContent").GetProperty("code").GetString();
+            refused.Should().Be("unauthenticated", name);
+        }
+    }
+
+    [UnitTest]
+    public async Task ReviewView_ListsPackageReviewToAnonymousCallersWithoutGrantingIt()
+    {
+        // The two review descriptors do not fit on setup (128 KiB aggregate). Inspector
+        // resolves --tool-name against tools/list, so they need a view it can negotiate.
+        var surface = BuildFullSurface();
+        var anonymous = await ListToolsAsync(surface, McpWorkflowViewCatalog.ReviewViewName, McpTestFactory.AnonymousHttpContext());
+
+        anonymous.Names.Should().Equal("honua_preview_package", "honua_validate_package");
+        McpWorkflowViewCatalog.Review.Revision.Should().Be("review.v1");
+
+        var projection = McpWorkflowViewProjector.Project(McpWorkflowViewCatalog.Review, BuildCatalogEntries());
+        projection.BudgetViolations.Should().BeEmpty();
+        projection.AggregateCanonicalBytes.Should().BeLessThanOrEqualTo(McpWorkflowViewBudget.MaxAggregateDescriptorBytes);
+
+        foreach (var name in new[] { "honua_validate_package", "honua_preview_package" })
         {
             var response = await DispatchAsync(
                 surface,
@@ -201,9 +231,12 @@ public sealed class McpWorkflowViewTests
             "honua_studio_remove_interaction",
             "honua_studio_add_control",
             "honua_studio_remove_control",
+            "honua_create_map_package",
+            "honua_create_app_package",
             "honua_studio_propose_publication",
             "honua_supported_operation_kinds",
         ]);
+        view.Names.Should().NotContain(["honua_validate_package", "honua_preview_package"]);
         view.Names.Should().HaveCount(41);
 
         var stages = view.Meta.GetProperty("stages").EnumerateArray().ToArray();
@@ -870,7 +903,7 @@ public sealed class McpWorkflowViewTests
             .ToArray();
 
         views.Select(v => v.GetProperty("name").GetString()).Should().Equal(
-            "analyze", "configure", "default", "operate", "setup");
+            "analyze", "configure", "default", "operate", "review", "setup");
         views.Should().OnlyContain(v => v.GetProperty("toolCount").GetInt32() <= McpWorkflowViewBudget.MaxDescriptors);
     }
 
