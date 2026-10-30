@@ -107,3 +107,33 @@ def test_attempt_from_env_prefers_explicit_then_batch():
     assert attempt_from_env({"AWS_BATCH_JOB_ATTEMPT": "3"}) == "3"
     assert attempt_from_env({}) == "1"
     assert attempt_from_env(None) == "1"
+
+
+TRACE = "4bf92f3577b34da6a3ce929d0e0e4736"
+PARENT = f"00-{TRACE}-00f067aa0ba902b7-01"
+
+
+def test_correlation_and_trace_are_recorded_when_the_environment_supplies_them(tmp_path):
+    journal = EventJournal(tmp_path / "events.jsonl", attempt="2", correlation="corr-admitted", trace=TRACE)
+    journal.phase("execute")
+    journal.terminal("succeeded", 0)
+    records = lines(tmp_path / "events.jsonl")
+    assert all(record["correlation"] == "corr-admitted" and record["trace"] == TRACE for record in records)
+
+
+def test_unsafe_correlation_and_invalid_trace_are_omitted(tmp_path):
+    journal = EventJournal(tmp_path / "events.jsonl", correlation="password=hunter2", trace="not-a-trace")
+    journal.phase("execute")
+    record = lines(tmp_path / "events.jsonl")[0]
+    assert "correlation" not in record and "trace" not in record
+
+
+def test_identity_helpers_prefer_honua_traceparent_and_reject_zeros():
+    from honua_customcode_harness.events import correlation_from_env, trace_from_env
+
+    env = {"HONUA_CORRELATION_ID": " corr-1 ", "HONUA_TRACEPARENT": PARENT, "TRACEPARENT": "00-" + "a" * 32 + "-" + "b" * 16 + "-01"}
+    assert correlation_from_env(env) == "corr-1"
+    assert trace_from_env(env) == TRACE
+    assert correlation_from_env({"HONUA_CORRELATION_ID": "has space"}) is None
+    assert trace_from_env({"TRACEPARENT": "00-" + "0" * 32 + "-" + "1" * 16 + "-01"}) is None
+    assert trace_from_env({}) is None

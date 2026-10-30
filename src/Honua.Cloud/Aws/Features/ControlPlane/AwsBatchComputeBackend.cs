@@ -459,13 +459,30 @@ internal sealed partial class AwsBatchComputeBackend(
             job.OperationId, owner.DeclaredScope,
             startDeadline.AddSeconds(TryParseInt(job.Spec.Parameters, AwsBatchParameterKeys.TimeoutSeconds) ?? 3600).AddMinutes(5))
         { Attempt = attempt }, cancellationToken).ConfigureAwait(false);
-        return new Dictionary<string, string>(StringComparer.Ordinal)
+        var prepared = new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["env.HONUA_JOB_TOKEN"] = issuance.Token,
             ["env.HONUA_JOB_ID"] = job.OperationId,
             ["env.HONUA_JOB_ATTEMPT"] = attempt.ToString(CultureInfo.InvariantCulture),
             ["env.HONUA_JOB_START_DEADLINE"] = startDeadline.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture)
         };
+        // The harness copies these onto every journal record. Ingestion still trusts the
+        // admitted job, not the journal, so a tool cannot forge the stored identity.
+        if (JobEventIdentity.TryNormalizeCorrelation(job.Audit.CorrelationId, out var correlation))
+        {
+            prepared[JobEventIdentity.CorrelationParameter] = correlation;
+        }
+
+        if (JobEventIdentity.TryNormalizeTraceParent(job.Audit.TraceParent, out var traceParent, out var traceId))
+        {
+            prepared[JobEventIdentity.TraceParentParameter] = traceParent;
+            if (!job.Spec.Parameters.ContainsKey(JobEventIdentity.TraceIdParameter))
+            {
+                prepared[JobEventIdentity.TraceIdParameter] = traceId;
+            }
+        }
+
+        return prepared;
     }
 
     public async Task OnPreparationCommittedAsync(ExecutionJobRecord previous, ExecutionJobRecord prepared, CancellationToken cancellationToken)

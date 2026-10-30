@@ -32,6 +32,8 @@ Every line is one JSON object. Fields present on every record:
 | `at` | string | UTC wall-clock time, RFC 3339 with millisecond precision and a `Z` suffix. |
 | `elapsedMs` | integer | Milliseconds on the producer's monotonic clock since the run started. Durations derived from this are **measured**; durations derived from `at` or from job-log timestamps are **inferred**. |
 | `attempt` | string | Attempt identity: `HONUA_ATTEMPT_ID`, else `AWS_BATCH_JOB_ATTEMPT`, else `1`; `local` for the local runners and `devkit` for the devkit. |
+| `correlation` | string | Optional. Present when `HONUA_CORRELATION_ID` is a safe id (letters, digits, `. _ : -`, at most 128 characters). Omitted otherwise. |
+| `trace` | string | Optional. The 32-hex W3C trace id from `HONUA_TRACEPARENT`, else `TRACEPARENT`. Omitted when the parent is absent or invalid. |
 | `kind` | string | One of the kinds below. |
 
 Kinds and their extra fields:
@@ -66,6 +68,14 @@ metadata `honua.event.v`, `honua.event.kind`, `honua.event.seq`, `honua.event.at
 `honua.event.elapsedMs`, and `honua.event.percent`, under the job-event cap (1000 entries,
 256 KiB). Overflow becomes one warning entry carrying `honua.event.dropped`; the
 `terminal` record is forwarded regardless.
+
+Ingestion then stamps the admitted job onto every stored event and discards the
+journal's own `attempt`, `correlation`, and `trace`. The stored keys are
+`honua.event.job`, `honua.event.attempt` (the broker attempt), `honua.event.correlation`,
+and `honua.event.trace`. A late worker whose journal names another attempt is rejected
+before those events are stored. The same correlation and traceparent are injected as
+`HONUA_CORRELATION_ID` and `HONUA_TRACEPARENT` when the attempt is prepared, and the
+trace id is recorded on the job as `honua.trace_id` when that parameter is not already set.
 
 The console job step view (`GET /admin/jobs/{id}/steps`) reports `timingSource` per step:
 `measured` when both the step and the next one carry `honua.event.elapsedMs`, otherwise

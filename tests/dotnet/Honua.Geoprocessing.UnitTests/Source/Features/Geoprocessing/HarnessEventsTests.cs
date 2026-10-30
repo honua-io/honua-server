@@ -44,6 +44,24 @@ public sealed class HarnessEventsTests
         events[6].ExitCode.Should().Be(1);
     }
 
+    [Fact]
+    public void Parse_ReadsJournalCorrelationAndTrace_ButForwardingDoesNotTrustThem()
+    {
+        const string line = """
+            {"v":1,"seq":0,"attempt":"untrusted","correlation":"forged-corr","trace":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","kind":"phase","phase":"execute"}
+            """;
+        var parsed = HarnessEvents.Parse(line);
+        parsed.Should().ContainSingle();
+        parsed[0].Correlation.Should().Be("forged-corr");
+        parsed[0].Trace.Should().Be("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+
+        var forwarded = HarnessEvents.ToExecutionLogEntries(parsed, DateTimeOffset.UnixEpoch);
+        forwarded.Should().ContainSingle();
+        forwarded[0].Metadata!.Should().NotContainKey(JobEventIdentity.CorrelationMetadataKey);
+        forwarded[0].Metadata!.Should().NotContainKey(JobEventIdentity.TraceMetadataKey);
+        forwarded[0].Metadata![HarnessEvents.AttemptKey].Should().Be("untrusted");
+    }
+
     [Theory]
     [InlineData("{\"v\":2,\"kind\":\"phase\"}")]
     [InlineData("{\"kind\":\"progress\"}")]
