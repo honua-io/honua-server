@@ -37,7 +37,13 @@ internal sealed partial class StreamingFileImportService
         FileGdbScratch? fileGdbScratch = null,
         double? coordinateEpoch = null)
     {
-        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var lease = await OpenConnectionAsync(cancellationToken);
+        // The whole import holds the replace session lock below. On Lambda it runs on an unpooled
+        // connection, so closing it ends the RDS Proxy-pinned session (honua-server#6765).
+        await using var session = await _sessionLockConnections
+            .OpenAsync(lease, cancellationToken, hasCallerTransaction: lease.Transaction is not null)
+            .ConfigureAwait(false);
+        var connection = session.Connection;
 
         // Validate and prepare table
         var targetSchema = ResolveTargetSchema(request.TargetSchema);

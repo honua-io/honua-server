@@ -48,6 +48,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
     private readonly Honua.Core.Features.Infrastructure.Abstractions.ICloudFileStorage? _cloudStorage;
     private readonly PostgresSchemaConfiguration _schemaConfiguration;
     private readonly IDatumTransformationCatalog? _datumTransformationCatalog;
+    private readonly PostgresSessionLockConnections _sessionLockConnections;
 
     private const string CreateImportTableSql = "SELECT honua.create_import_table(@schema_name, @table_name, @target_srid)";
     private const string EnsureImportTableSql = "SELECT honua.ensure_import_table(@schema_name, @table_name, @target_srid)";
@@ -104,7 +105,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         ImportLimits? limits = null,
         Honua.Core.Features.Infrastructure.Abstractions.ICloudFileStorage? cloudStorage = null,
         PostgresSchemaConfiguration? schemaConfiguration = null,
-        IDatumTransformationCatalog? datumTransformationCatalog = null)
+        IDatumTransformationCatalog? datumTransformationCatalog = null,
+        PostgresSessionLockConnections? sessionLockConnections = null)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _crsDetectionService = crsDetectionService ?? throw new ArgumentNullException(nameof(crsDetectionService));
@@ -119,6 +121,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             PostgresSchemaConfiguration.DefaultDataSchema,
             [PostgresSchemaConfiguration.DefaultDataSchema, "public"]);
         _datumTransformationCatalog = datumTransformationCatalog;
+        _sessionLockConnections = sessionLockConnections ?? PostgresSessionLockConnections.Pooled;
     }
 
     /// <summary>

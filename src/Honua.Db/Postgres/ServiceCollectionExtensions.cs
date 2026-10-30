@@ -114,6 +114,12 @@ internal static class ServiceCollectionExtensions
         var schemaConfiguration = PostgresSchemaConfiguration.FromConfiguration(configuration);
         services.TryAddSingleton(schemaConfiguration);
 
+        // Import and publish paths hold session advisory locks. Behind RDS Proxy those pin the
+        // proxy session, and a frozen Lambda never prunes its pool, so on Lambda they run on
+        // unpooled connections; long-lived hosts keep their pools (honua-server#6765).
+        services.TryAddSingleton(new PostgresSessionLockConnections(
+            Honua.Core.Features.ControlPlane.Abstractions.ControlPlaneEventHandlerHost.IsLambda(configuration)));
+
         // Register concurrency gate as singleton — shared across all scoped providers.
         // Factory form so the DI container tracks the IDisposable for shutdown disposal.
         services.TryAddSingleton(_ => new QueryConcurrencyGate(connectionLimits));
@@ -555,7 +561,8 @@ internal static class ServiceCollectionExtensions
                 serviceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<LayerPublishingOptions>>().Value,
                 serviceProvider.GetService<Honua.Core.Features.MultiTenancy.Abstractions.ITenantContext>(),
                 serviceProvider.GetRequiredService<PostgresSchemaConfiguration>(),
-                serviceProvider.GetService<ISchemaContext>()));
+                serviceProvider.GetService<ISchemaContext>(),
+                serviceProvider.GetRequiredService<PostgresSessionLockConnections>()));
 
         // Register health checker
         services.AddScoped<IDatabaseHealthChecker, PostgresDatabaseHealthChecker>();
@@ -763,7 +770,8 @@ internal static class ServiceCollectionExtensions
                 limits,
                 cloudStorage,
                 serviceProvider.GetRequiredService<PostgresSchemaConfiguration>(),
-                serviceProvider.GetService<Honua.Core.Features.Infrastructure.Crs.IDatumTransformationCatalog>());
+                serviceProvider.GetService<Honua.Core.Features.Infrastructure.Crs.IDatumTransformationCatalog>(),
+                serviceProvider.GetRequiredService<PostgresSessionLockConnections>());
         });
 
         // Shared catalog receipt for honua_ingest_job_artifact. Registered before MCP so the
@@ -771,7 +779,8 @@ internal static class ServiceCollectionExtensions
         services.TryAddSingleton<IServerJobArtifactImportLedger>(static serviceProvider =>
             new PostgresServerJobArtifactImportLedger(
                 serviceProvider.GetRequiredService<NpgsqlDataSource>(),
-                serviceProvider.GetRequiredService<PostgresSchemaConfiguration>()));
+                serviceProvider.GetRequiredService<PostgresSchemaConfiguration>(),
+                serviceProvider.GetRequiredService<PostgresSessionLockConnections>()));
 
         // Register universal import job service using unified progress store
         // This replaces the in-memory job service with one that uses centralized progress tracking
@@ -932,7 +941,8 @@ internal static class ServiceCollectionExtensions
                 serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 httpClientFactory.CreateClient(OgcWfsImportService.HttpClientName),
                 serviceProvider.GetRequiredService<ILogger<OgcWfsImportService>>(),
-                serviceProvider.GetService<PostgresSchemaConfiguration>());
+                serviceProvider.GetService<PostgresSchemaConfiguration>(),
+                serviceProvider.GetRequiredService<PostgresSessionLockConnections>());
         });
 
         // First-class DAG remote source connectors (feat/etl-remote-source-connectors).

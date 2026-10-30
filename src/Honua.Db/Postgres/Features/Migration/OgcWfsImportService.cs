@@ -49,6 +49,7 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
 
     private readonly IOgcServiceMigrationScanner _scanner;
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
+    private readonly PostgresSessionLockConnections _sessionLockConnections;
     private readonly HttpClient _httpClient;
     private readonly PostgresSchemaConfiguration _schemaConfiguration;
     private readonly ILogger<OgcWfsImportService> _logger;
@@ -58,8 +59,10 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
         IAdoNetDatabaseConnectionProvider connectionProvider,
         HttpClient httpClient,
         ILogger<OgcWfsImportService> logger,
-        PostgresSchemaConfiguration? schemaConfiguration = null)
+        PostgresSchemaConfiguration? schemaConfiguration = null,
+        PostgresSessionLockConnections? sessionLockConnections = null)
     {
+        _sessionLockConnections = sessionLockConnections ?? PostgresSessionLockConnections.Pooled;
         _scanner = scanner ?? throw new ArgumentNullException(nameof(scanner));
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
@@ -287,7 +290,14 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
         var classification = MigrationFidelityAutomationStatuses.Automated;
 
         await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        var connection = lease.Connection;
+        // An overwrite holds a session advisory lock. On Lambda it runs on an unpooled connection,
+        // so closing it ends the RDS Proxy-pinned session (honua-server#6765).
+        await using var session = request.OverwriteExisting
+            ? await _sessionLockConnections
+                .OpenAsync(lease, cancellationToken, hasCallerTransaction: lease.Transaction is not null)
+                .ConfigureAwait(false)
+            : new PostgresSessionLockConnections.SessionConnection(lease.Connection, owned: false);
+        var connection = session.Connection;
 
         await EnsureSchemaAsync(connection, targetSchema, cancellationToken).ConfigureAwait(false);
 
