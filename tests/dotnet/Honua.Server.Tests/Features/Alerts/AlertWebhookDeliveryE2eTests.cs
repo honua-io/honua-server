@@ -10,9 +10,12 @@ using System.Net.Sockets;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using System.Diagnostics.Metrics;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Alerts;
+using Honua.TestKit;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -241,6 +244,201 @@ public sealed class AlertWebhookDeliveryE2eTests(DatabaseFixtureAdapter database
         row.DeliveredAt.Should().NotBeNull();
     }
 
+    /// <summary>
+    /// Five dead-lettered webhook rows drain through the admin redrive endpoint in
+    /// batches of two, then two dispatch replicas deliver them once. A delivered row
+    /// and a not-yet-due failed row stay put, including when the caller retries a
+    /// redrive whose response it did not observe (#3869).
+    /// </summary>
+    [IntegrationTest(Timeout = 180000)]
+    [Endpoint("POST /api/v1/admin/alerts/dispatch/redrive")]
+    public async Task DeadLetters_RedriveInBatchesOfTwo_DeliverOnceAndLeaveControlRows()
+    {
+        await using var receiver = await WebhookReceiver.StartAsync();
+        var web = new WebAppFixture();
+        await web.InitializeAsync();
+        try
+        {
+            using var admin = web.CreateAdminClient();
+            await using var harness = await CreateHarnessAsync(receiver.Url, maxAttempts: 3, receiver.Certificate);
+
+            var deadIds = new List<long>(5);
+            var dedupeKeys = new List<string>(5);
+            for (var index = 0; index < 5; index++)
+            {
+                var seeded = await harness.SeedWebhookDispatchAsync(AlertDispatchStatus.DeadLetter);
+                deadIds.Add(seeded.EventId);
+                dedupeKeys.Add(seeded.DedupeKey);
+            }
+
+            var delivered = await harness.SeedWebhookDispatchAsync(AlertDispatchStatus.Delivered);
+            var failed = await harness.SeedWebhookDispatchAsync(AlertDispatchStatus.Failed);
+            var watched = deadIds.Append(delivered.EventId).Append(failed.EventId).ToArray();
+
+            var auditFloor = await harness.MaxAuditIdAsync();
+            var batches = new List<int>();
+            var pending = new HashSet<long>();
+            var passes = 0;
+            while (pending.Count < deadIds.Count)
+            {
+                passes++;
+                passes.Should().BeLessThanOrEqualTo(8, "five dead letters at two per call drain in three passes");
+
+                var before = await harness.ReadDispatchesAsync(watched);
+                AssertControlRows(before, delivered.EventId, failed.EventId);
+                var remaining = deadIds.Count(id => StatusOf(before, id) == (short)AlertDispatchStatus.DeadLetter);
+                var globalDead = await harness.CountStatusAsync((short)AlertDispatchStatus.DeadLetter);
+
+                var redriven = await RedriveAsync(admin, maxCount: 2);
+                redriven.Should().BeGreaterThan(0);
+                batches.Add(redriven);
+
+                var after = await harness.ReadDispatchesAsync(watched);
+                AssertSingleRowPerEvent(after, watched);
+                AssertControlRows(after, delivered.EventId, failed.EventId);
+                var moved = deadIds.Count(id =>
+                    StatusOf(before, id) == (short)AlertDispatchStatus.DeadLetter &&
+                    StatusOf(after, id) == (short)AlertDispatchStatus.Pending);
+                moved.Should().BeLessThanOrEqualTo(2);
+                if (globalDead == remaining)
+                {
+                    moved.Should().Be(Math.Min(2, remaining), "a quiet outbox moves exactly the requested batch");
+                    redriven.Should().Be(moved);
+                }
+
+                foreach (var id in deadIds)
+                {
+                    if (StatusOf(after, id) != (short)AlertDispatchStatus.Pending)
+                    {
+                        continue;
+                    }
+
+                    pending.Add(id);
+                    var row = after.Single(item => item.EventId == id);
+                    row.Attempts.Should().Be(0);
+                    row.LastError.Should().BeNull();
+                    row.NextAttemptAt.Should().NotBeNull().And.BeCloseTo(
+                        DateTimeOffset.UtcNow,
+                        TimeSpan.FromMinutes(2),
+                        "a redrive makes the row due at the request time");
+                }
+            }
+
+            if (batches.Sum() == deadIds.Count)
+            {
+                batches.Should().Equal(2, 2, 1);
+            }
+
+            var lossBeforeDelivery = await RedriveAsync(admin, maxCount: 2);
+            var afterLoss = await harness.ReadDispatchesAsync(watched);
+            AssertSingleRowPerEvent(afterLoss, watched);
+            AssertControlRows(afterLoss, delivered.EventId, failed.EventId);
+            deadIds.Should().OnlyContain(id => StatusOf(afterLoss, id) == (short)AlertDispatchStatus.Pending);
+            if (await harness.CountStatusAsync((short)AlertDispatchStatus.DeadLetter) == 0)
+            {
+                lossBeforeDelivery.Should().Be(0, "a retry after the dead-letter set is empty redrives nothing");
+            }
+
+            var succeeded = 0;
+            using var listener = new MeterListener
+            {
+                InstrumentPublished = (instrument, current) =>
+                {
+                    if (instrument.Name == "honua.alerts.deliveries_succeeded_total")
+                    {
+                        current.EnableMeasurementEvents(instrument);
+                    }
+                },
+            };
+            listener.SetMeasurementEventCallback<long>((_, measurement, _, _) =>
+                Interlocked.Add(ref succeeded, (int)measurement));
+            listener.Start();
+
+            await harness.StartDispatchersAsync();
+            var requests = await receiver.WaitForRequestsAsync(deadIds.Count, TimeSpan.FromSeconds(20));
+            requests.Select(static request => request.Headers["Idempotency-Key"])
+                .Should().BeEquivalentTo(dedupeKeys, "each redriven event is delivered once under its stable dedupe key");
+            receiver.LogicalNotificationCount.Should().Be(deadIds.Count);
+            receiver.RequestCount.Should().Be(deadIds.Count);
+
+            var lossAfterDelivery = await RedriveAsync(admin, maxCount: 2);
+            await Task.Delay(TimeSpan.FromMilliseconds(400));
+            var terminal = await harness.ReadDispatchesAsync(watched);
+            AssertSingleRowPerEvent(terminal, watched);
+            AssertControlRows(terminal, delivered.EventId, failed.EventId);
+            deadIds.Should().OnlyContain(id => StatusOf(terminal, id) == (short)AlertDispatchStatus.Delivered);
+            (await harness.CountStatusAsync((short)AlertDispatchStatus.Processing)).Should().Be(0);
+            receiver.RequestCount.Should().Be(deadIds.Count, "a redrive retry must not send a second logical notification");
+            if (lossBeforeDelivery == 0)
+            {
+                lossAfterDelivery.Should().Be(0);
+            }
+
+            Volatile.Read(ref succeeded).Should().BeGreaterThanOrEqualTo(deadIds.Count);
+
+            HealthCheckResult health = default;
+            var becameHealthy = false;
+            for (var attempt = 0; attempt < 50; attempt++)
+            {
+                health = new AlertDispatchHealthCheck(
+                    harness.DispatchHealth,
+                    Options.Create(harness.Options)).Evaluate(DateTimeOffset.UtcNow);
+                if (health.Status == HealthStatus.Healthy
+                    && harness.DispatchHealth.LastBacklog?.DeadLetteredCount == 0)
+                {
+                    becameHealthy = true;
+                    break;
+                }
+
+                await Task.Delay(100);
+            }
+
+            becameHealthy.Should().BeTrue(health.Description);
+            var backlog = await harness.DispatchStore.GetBacklogAsync();
+            backlog.DeadLetteredCount.Should().Be(0);
+            backlog.RetryingCount.Should().Be(1, "the not-yet-due failed control row remains retryable");
+
+            var audits = await harness.ReadRedrivenAuditsSinceAsync(auditFloor);
+            var expectedAudits = batches.Append(lossBeforeDelivery).Append(lossAfterDelivery).ToArray();
+            audits.Should().ContainInOrder(expectedAudits, "each completed redrive writes one audit of the count it actually moved");
+        }
+        finally
+        {
+            await web.DisposeAsync();
+        }
+    }
+
+    private static async Task<int> RedriveAsync(HttpClient admin, int maxCount)
+    {
+        var response = await admin.PostAsync(
+            $"/api/v1/admin/alerts/dispatch/redrive?maxCount={maxCount.ToString(System.Globalization.CultureInfo.InvariantCulture)}",
+            content: null);
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+        using var document = JsonDocument.Parse(body);
+        document.RootElement.GetProperty("success").GetBoolean().Should().BeTrue();
+        return document.RootElement.GetProperty("data").GetProperty("redriven").GetInt32();
+    }
+
+    private static void AssertControlRows(IReadOnlyList<DispatchSnapshot> rows, long deliveredEventId, long failedEventId)
+    {
+        rows.Where(row => row.EventId == deliveredEventId)
+            .Should().ContainSingle()
+            .Which.Status.Should().Be((short)AlertDispatchStatus.Delivered);
+        rows.Where(row => row.EventId == failedEventId)
+            .Should().ContainSingle()
+            .Which.Status.Should().Be((short)AlertDispatchStatus.Failed);
+    }
+
+    private static void AssertSingleRowPerEvent(IReadOnlyList<DispatchSnapshot> rows, long[] eventIds)
+    {
+        rows.Select(static row => row.EventId).Should().OnlyHaveUniqueItems();
+        rows.Should().HaveCount(eventIds.Length);
+    }
+
+    private static short StatusOf(IReadOnlyList<DispatchSnapshot> rows, long eventId)
+        => rows.Single(row => row.EventId == eventId).Status;
+
     private async Task<AlertE2eHarness> CreateHarnessAsync(
         string destination,
         int maxAttempts,
@@ -404,9 +602,17 @@ public sealed class AlertWebhookDeliveryE2eTests(DatabaseFixtureAdapter database
             options,
             metrics,
             NullLogger<AlertDispatchBackgroundService>.Instance);
+        var secondDispatcher = new AlertDispatchBackgroundService(
+            provider.GetRequiredService<IServiceScopeFactory>(),
+            [sink],
+            new AlertNotificationRateLimiter(),
+            new AlertChannelCircuitBreaker(options),
+            options,
+            metrics,
+            NullLogger<AlertDispatchBackgroundService>.Instance);
 
         return new AlertE2eHarness(
-            pipeline, dispatcher, outbox, eventStore, dispatchStore, lifecycleStore,
+            pipeline, dispatcher, secondDispatcher, alertOptions, outbox, eventStore, dispatchStore, lifecycleStore,
             database.DataSource, provider, client, sink, maxAttempts);
     }
 
@@ -422,6 +628,8 @@ public sealed class AlertWebhookDeliveryE2eTests(DatabaseFixtureAdapter database
     private sealed class AlertE2eHarness(
         AlertPipeline pipeline,
         AlertDispatchBackgroundService dispatcher,
+        AlertDispatchBackgroundService secondDispatcher,
+        AlertOptions alertOptions,
         IAlertOutboxWriter outbox,
         IAlertEventStore eventStore,
         IAlertDispatchStore dispatchStore,
@@ -432,6 +640,10 @@ public sealed class AlertWebhookDeliveryE2eTests(DatabaseFixtureAdapter database
         WebhookAlertDeliverySink sink,
         int maxAttempts) : IAsyncDisposable
     {
+        private bool _secondStarted;
+
+        public AlertOptions Options { get; } = alertOptions;
+        public AlertDispatchBackgroundService DispatchHealth => dispatcher;
         public IAlertDispatchStore DispatchStore { get; } = dispatchStore;
         public IAlertDispatchStore SecondDispatchStore { get; } = new PostgresAlertDispatchStore(
             new TestConnectionProvider(dataSource),
@@ -445,6 +657,124 @@ public sealed class AlertWebhookDeliveryE2eTests(DatabaseFixtureAdapter database
         {
             await EvaluateOnlyAsync();
             await dispatcher.StartAsync(CancellationToken.None);
+        }
+
+        public async Task StartDispatchersAsync()
+        {
+            await dispatcher.StartAsync(CancellationToken.None);
+            await secondDispatcher.StartAsync(CancellationToken.None);
+            _secondStarted = true;
+        }
+
+        public async Task<(long EventId, string DedupeKey)> SeedWebhookDispatchAsync(AlertDispatchStatus status)
+        {
+            var dedupeKey = $"ops:3869:{Guid.NewGuid():N}";
+            var appended = await EventStore.TryAppendAsync(new AlertEventEnvelope
+            {
+                DedupeKey = dedupeKey,
+                RuleId = 0,
+                ServiceId = ServiceId,
+                LayerId = 0,
+                ObjectId = 0,
+                TriggerType = AlertTriggerType.Threshold,
+                Generation = 0,
+                Severity = AlertSeverity.Warning,
+                OccurredAt = DateTimeOffset.UtcNow,
+                PayloadJson = "{\"qualification\":\"3869\"}",
+                IncidentStatus = AlertIncidentStatus.Started,
+                Source = AlertEventSources.Ops,
+            });
+            appended.Should().NotBeNull();
+            var eventId = appended!.Value;
+            await DispatchStore.EnqueueAsync(eventId, ImmutableArray.Create(AlertChannelType.Webhook));
+            if (status == AlertDispatchStatus.Pending)
+            {
+                return (eventId, dedupeKey);
+            }
+
+            await using var connection = await dataSource.OpenConnectionAsync();
+            await using var command = new NpgsqlCommand("""
+                UPDATE honua.alert_dispatch
+                SET status = 1, claim_token = @claim_token, updated_at = now()
+                WHERE event_id = @event_id;
+
+                UPDATE honua.alert_dispatch
+                SET status = @status,
+                    attempts = CASE WHEN @status = 4 THEN 5 ELSE 1 END,
+                    last_error = CASE
+                        WHEN @status = 2 THEN NULL
+                        WHEN @status = 3 THEN 'retryable failure'
+                        ELSE 'provider exhausted' END,
+                    delivered_at = CASE WHEN @status = 2 THEN now() ELSE NULL END,
+                    next_attempt_at = CASE WHEN @status = 3 THEN now() + INTERVAL '1 day' ELSE next_attempt_at END,
+                    claim_token = NULL,
+                    updated_at = now()
+                WHERE event_id = @event_id;
+                """, connection);
+            command.Parameters.AddWithValue("claim_token", NpgsqlDbType.Uuid, Guid.NewGuid());
+            command.Parameters.AddWithValue("event_id", NpgsqlDbType.Bigint, eventId);
+            command.Parameters.AddWithValue("status", NpgsqlDbType.Smallint, (short)status);
+            (await command.ExecuteNonQueryAsync()).Should().Be(2);
+            return (eventId, dedupeKey);
+        }
+
+        public async Task<IReadOnlyList<DispatchSnapshot>> ReadDispatchesAsync(long[] eventIds)
+        {
+            await using var connection = await dataSource.OpenConnectionAsync();
+            await using var command = new NpgsqlCommand("""
+                SELECT event_id, status, attempts, last_error, next_attempt_at
+                FROM honua.alert_dispatch
+                WHERE event_id = ANY(@event_ids)
+                ORDER BY event_id
+                """, connection);
+            command.Parameters.AddWithValue("event_ids", NpgsqlDbType.Array | NpgsqlDbType.Bigint, eventIds.ToArray());
+            var rows = new List<DispatchSnapshot>();
+            await using var reader = await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                rows.Add(new DispatchSnapshot(
+                    reader.GetInt64(0),
+                    reader.GetInt16(1),
+                    reader.GetInt32(2),
+                    reader.IsDBNull(3) ? null : reader.GetString(3),
+                    reader.IsDBNull(4) ? null : reader.GetFieldValue<DateTimeOffset>(4)));
+            }
+
+            return rows;
+        }
+
+        public async Task<long> CountStatusAsync(short status)
+        {
+            await using var connection = await dataSource.OpenConnectionAsync();
+            await using var command = new NpgsqlCommand(
+                "SELECT COUNT(*) FROM honua.alert_dispatch WHERE status = @status",
+                connection);
+            command.Parameters.AddWithValue("status", NpgsqlDbType.Smallint, status);
+            return (long)(await command.ExecuteScalarAsync())!;
+        }
+
+        public Task<long> MaxAuditIdAsync()
+            => ScalarAsync<long>("SELECT COALESCE(MAX(audit_id), 0)::bigint FROM honua.audit_log;");
+
+        public async Task<IReadOnlyList<int>> ReadRedrivenAuditsSinceAsync(long auditId)
+        {
+            await using var connection = await dataSource.OpenConnectionAsync();
+            await using var command = new NpgsqlCommand("""
+                SELECT details
+                FROM honua.audit_log
+                WHERE audit_id > @audit_id AND action = 'alerts.redrive_dead_letters'
+                ORDER BY audit_id
+                """, connection);
+            command.Parameters.AddWithValue("audit_id", NpgsqlDbType.Bigint, auditId);
+            var counts = new List<int>();
+            await using var reader = await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                using var document = JsonDocument.Parse(reader.GetString(0));
+                counts.Add(document.RootElement.GetProperty("redriven").GetInt32());
+            }
+
+            return counts;
         }
 
         public async Task EvaluateOnlyAsync()
@@ -552,10 +882,22 @@ public sealed class AlertWebhookDeliveryE2eTests(DatabaseFixtureAdapter database
         public async ValueTask DisposeAsync()
         {
             await dispatcher.StopAsync(CancellationToken.None);
+            if (_secondStarted)
+            {
+                await secondDispatcher.StopAsync(CancellationToken.None);
+            }
+
             await provider.DisposeAsync();
             client.Dispose();
         }
     }
+
+    private sealed record DispatchSnapshot(
+        long EventId,
+        short Status,
+        int Attempts,
+        string? LastError,
+        DateTimeOffset? NextAttemptAt);
 
     private sealed record DispatchRow(
         AlertDispatchStatus Status,
@@ -604,6 +946,7 @@ public sealed class AlertWebhookDeliveryE2eTests(DatabaseFixtureAdapter database
         public string Url { get; } = url + "/alerts";
         public X509Certificate2 Certificate { get; } = certificate;
         public int LogicalNotificationCount => _logicalNotifications.Count;
+        public int RequestCount => _requests.Count;
 
         public static async Task<WebhookReceiver> StartAsync()
         {
