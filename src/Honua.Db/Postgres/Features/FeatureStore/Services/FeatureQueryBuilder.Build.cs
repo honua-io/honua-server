@@ -595,6 +595,29 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
         TileLimits tileLimits,
         CoreGeometryStorageType geometryStorageType = CoreGeometryStorageType.Geometry,
         Honua.Core.Features.Tiles.GridGeometry? gridGeometry = null)
+        => BuildMvtTileQuery(
+            layerId,
+            x,
+            y,
+            z,
+            query,
+            tileOptions,
+            tileLimits,
+            geometryStorageType,
+            gridGeometry,
+            MvtTileBudgetStep.Full);
+
+    internal CoreParameterizedQuery BuildMvtTileQuery(
+        int layerId,
+        int x,
+        int y,
+        int z,
+        FeatureQuery? query,
+        TileOptions tileOptions,
+        TileLimits tileLimits,
+        CoreGeometryStorageType geometryStorageType,
+        Honua.Core.Features.Tiles.GridGeometry? gridGeometry,
+        MvtTileBudgetStep budgetStep)
     {
         GuardVersionedReadSupported(query, "mvt-tile");
 
@@ -605,7 +628,7 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
         if (gridGeometry is not null)
         {
             return BuildCustomGridsetMvtTileQuery(
-                layerId, x, y, z, query, tileOptions, tileLimits, geometryStorageType, gridGeometry);
+                layerId, x, y, z, query, tileOptions, tileLimits, geometryStorageType, gridGeometry, budgetStep);
         }
 
         var sql = _stringBuilderPool.Get();
@@ -680,23 +703,47 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
                 filterGeometryOperand = geometryForTile;
             }
 
-            if (!isGeographicTile && z <= tileOptions.SimplifyZoom)
-            {
-                var simplifyTolerance = TileMath.GetSimplificationTolerance(z);
-                if (simplifyTolerance > 0)
+            geometryForTile = MvtTileBudget.ApplySimplification(
+                geometryForTile,
+                budgetStep,
+                isGeographicTile,
+                z,
+                tileWidth,
+                tileExtent,
+                tileOptions.SimplifyZoom,
+                value =>
                 {
                     var simplifyParam = $"${paramIndex++}";
-                    parameters.Add(simplifyTolerance);
-                    geometryForTile = $"ST_SimplifyPreserveTopology({geometryForTile}, {simplifyParam})";
-                }
+                    parameters.Add(value);
+                    return simplifyParam;
+                });
+
+            var attributesSelect = budgetStep.OmitAttributes
+                ? null
+                : BuildMaskedAttributesColumn(
+                    ResolveMaskedFields(query ?? new FeatureQuery()),
+                    ref paramIndex,
+                    parameters);
+
+            if (attributesSelect is null)
+            {
+                sql.Append(CultureInfo.InvariantCulture, $@"
+            SELECT ST_AsMVT(tile, 'layer', $6, 'geom') AS mvt
+            FROM (
+                SELECT
+                    {DatabaseSchema.ObjectIdColumn},
+                    ST_AsMVTGeom(
+                        {geometryForTile},
+                        {tileEnvelope},
+                        $6,
+                        $7
+                    ) AS geom
+                FROM {_tableName} f
+                WHERE {DatabaseSchema.LayerIdColumn} = $1");
             }
-
-            var attributesSelect = BuildMaskedAttributesColumn(
-                ResolveMaskedFields(query ?? new FeatureQuery()),
-                ref paramIndex,
-                parameters);
-
-            sql.Append(CultureInfo.InvariantCulture, $@"
+            else
+            {
+                sql.Append(CultureInfo.InvariantCulture, $@"
             SELECT ST_AsMVT(tile, 'layer', $6, 'geom') AS mvt
             FROM (
                 SELECT
@@ -710,6 +757,7 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
                     ) AS geom
                 FROM {_tableName} f
                 WHERE {DatabaseSchema.LayerIdColumn} = $1");
+            }
 
             if (query != null)
             {
@@ -721,16 +769,9 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
             sql.Append(CultureInfo.InvariantCulture, $@"
                     AND {filterGeometryOperand} && {tileEnvelopeForFilter}
                     AND ST_Intersects({filterGeometryOperand}, {tileEnvelopeForFilter})");
-
-            if (tileLimits.MaxFeaturesPerTile > 0)
-            {
-                var limitParam = $"${paramIndex}";
-                parameters.Add(tileLimits.MaxFeaturesPerTile);
-                sql.Append(CultureInfo.InvariantCulture, $" LIMIT {limitParam}");
-            }
-
-            sql.Append(@"
-                ) AS tile");
+            AppendMinPixelPredicate(sql, ref paramIndex, parameters, budgetStep, geometryForTile, tileWidth, tileExtent);
+            AppendTileBudgetLimit(
+                sql, ref paramIndex, parameters, budgetStep, tileLimits.MaxFeaturesPerTile, geometryForTile);
 
             return new CoreParameterizedQuery(sql.ToString(), parameters);
         }
@@ -757,7 +798,8 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
         TileOptions tileOptions,
         TileLimits tileLimits,
         CoreGeometryStorageType geometryStorageType,
-        Honua.Core.Features.Tiles.GridGeometry gridGeometry)
+        Honua.Core.Features.Tiles.GridGeometry gridGeometry,
+        MvtTileBudgetStep budgetStep)
     {
         var tileBounds = gridGeometry.GetTileBounds(x, y, z)
             ?? throw new ArgumentOutOfRangeException(
@@ -825,12 +867,45 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
                 tileEnvelopeForFilter = tileEnvelopeWithBuffer;
             }
 
-            var attributesSelect = BuildMaskedAttributesColumn(
-                ResolveMaskedFields(query ?? new FeatureQuery()),
-                ref paramIndex,
-                parameters);
+            if (!budgetStep.IsFull)
+            {
+                geometryForTile = MvtTileBudget.Generalize(
+                    geometryForTile,
+                    MvtTileBudget.Tolerance(z, tileSpanX, tileExtent, gridGeometry.IsGeographic, budgetStep),
+                    value =>
+                    {
+                        var token = $"${paramIndex++}";
+                        parameters.Add(value);
+                        return token;
+                    });
+            }
 
-            sql.Append(CultureInfo.InvariantCulture, $@"
+            var attributesSelect = budgetStep.OmitAttributes
+                ? null
+                : BuildMaskedAttributesColumn(
+                    ResolveMaskedFields(query ?? new FeatureQuery()),
+                    ref paramIndex,
+                    parameters);
+
+            if (attributesSelect is null)
+            {
+                sql.Append(CultureInfo.InvariantCulture, $@"
+            SELECT ST_AsMVT(tile, 'layer', $3, 'geom') AS mvt
+            FROM (
+                SELECT
+                    {DatabaseSchema.ObjectIdColumn},
+                    ST_AsMVTGeom(
+                        {geometryForTile},
+                        {tileEnvelope},
+                        $3,
+                        $4
+                    ) AS geom
+                FROM {_tableName} f
+                WHERE {DatabaseSchema.LayerIdColumn} = $1");
+            }
+            else
+            {
+                sql.Append(CultureInfo.InvariantCulture, $@"
             SELECT ST_AsMVT(tile, 'layer', $3, 'geom') AS mvt
             FROM (
                 SELECT
@@ -844,6 +919,7 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
                     ) AS geom
                 FROM {_tableName} f
                 WHERE {DatabaseSchema.LayerIdColumn} = $1");
+            }
 
             if (query != null)
             {
@@ -855,16 +931,9 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
             sql.Append(CultureInfo.InvariantCulture, $@"
                     AND {filterGeometryOperand} && {tileEnvelopeForFilter}
                     AND ST_Intersects({filterGeometryOperand}, {tileEnvelopeForFilter})");
-
-            if (tileLimits.MaxFeaturesPerTile > 0)
-            {
-                var limitParam = $"${paramIndex}";
-                parameters.Add(tileLimits.MaxFeaturesPerTile);
-                sql.Append(CultureInfo.InvariantCulture, $" LIMIT {limitParam}");
-            }
-
-            sql.Append(@"
-                ) AS tile");
+            AppendMinPixelPredicate(sql, ref paramIndex, parameters, budgetStep, geometryForTile, tileSpanX, tileExtent);
+            AppendTileBudgetLimit(
+                sql, ref paramIndex, parameters, budgetStep, tileLimits.MaxFeaturesPerTile, geometryForTile);
 
             return new CoreParameterizedQuery(sql.ToString(), parameters);
         }
@@ -905,5 +974,73 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
         var area = DatumOutputSelection.AreaForTile(
             tileBounds.XMin, tileBounds.YMin, tileBounds.XMax, tileBounds.YMax, targetSrid);
         return DatumOutputSelection.Resolve(DatumCatalog.Shared, from, targetSrid, area);
+    }
+
+    private static void AppendMinPixelPredicate(
+        StringBuilder sql,
+        ref int paramIndex,
+        List<object> parameters,
+        MvtTileBudgetStep budgetStep,
+        string geometrySql,
+        double tileSpan,
+        int tileExtent)
+    {
+        // A lambda cannot capture the ref parameter, so the placeholder index is a local
+        // for the duration of the predicate and copied back afterwards.
+        var index = paramIndex;
+        var predicate = MvtTileBudget.MinSizePredicate(
+            geometrySql,
+            MvtTileBudget.MinMapUnits(tileSpan, tileExtent, budgetStep),
+            value =>
+            {
+                var token = $"${index++}";
+                parameters.Add(value);
+                return token;
+            });
+        paramIndex = index;
+        if (predicate is not null)
+        {
+            sql.Append(CultureInfo.InvariantCulture, $" AND {predicate}");
+        }
+    }
+
+    /// <summary>
+    /// Closes the MVT subquery. The full pass keeps the historical LIMIT with no ORDER BY.
+    /// A thinning pass orders largest-feature-first, then object id, and drops null tile geometry.
+    /// </summary>
+    private static void AppendTileBudgetLimit(
+        StringBuilder sql,
+        ref int paramIndex,
+        List<object> parameters,
+        MvtTileBudgetStep budgetStep,
+        int configuredMaxFeatures,
+        string geometryForTile)
+    {
+        if (budgetStep.IsFull)
+        {
+            if (configuredMaxFeatures > 0)
+            {
+                var limitParam = $"${paramIndex}";
+                parameters.Add(configuredMaxFeatures);
+                sql.Append(CultureInfo.InvariantCulture, $" LIMIT {limitParam}");
+            }
+
+            sql.Append(@"
+                ) AS tile");
+            return;
+        }
+
+        if (MvtTileBudget.FeatureLimit(configuredMaxFeatures, budgetStep) is int featureCap)
+        {
+            sql.Append(CultureInfo.InvariantCulture,
+                $" ORDER BY ST_Area({geometryForTile}) DESC, {DatabaseSchema.ObjectIdColumn} ASC");
+            var limitParam = $"${paramIndex}";
+            parameters.Add(featureCap);
+            sql.Append(CultureInfo.InvariantCulture, $" LIMIT {limitParam}");
+        }
+
+        sql.Append(@"
+                ) AS tile
+            WHERE geom IS NOT NULL");
     }
 }

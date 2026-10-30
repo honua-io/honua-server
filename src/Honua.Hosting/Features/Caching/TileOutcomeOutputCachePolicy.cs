@@ -19,11 +19,12 @@ namespace Honua.Infrastructure.Caching;
 /// every empty or over-budget tile re-runs the full <c>ST_AsMVT</c> encode on every request even
 /// though the answer is a pure function of the cache key (tenant, licence, route, tile matrix,
 /// tile coordinates, query/Accept variants and the enforced byte budget). That is the whole
-/// working set for the two most common tile responses a real deployment serves: a sparse layer
-/// answers 204 for nearly every tile, and a layer that is dense at low zoom answers 413 for the
-/// handful of tiles that carry its features. honua-server#4918 measured the cost — the 2026.1
+/// working set for the two tile responses this policy stores: a sparse layer answers 204 for
+/// nearly every tile, and a tile that still exceeds the byte budget after generalization answers
+/// 413. honua-server#4918 measured the cost of refusing before that generalization — the 2026.1
 /// capacity envelope's 10,000-feature layer encodes a 1,492,055-byte z0 tile in ~1.4 s, which the
-/// server then discarded with a 413 on every one of 22,853 requests.
+/// server then discarded with a 413 on every one of 22,853 requests. Dense low-zoom tiles now
+/// fit the budget before that refusal; 413 stays cached for the pathological remainder.
 /// <para>
 /// Only the tile policies that already partition their cache key by the enforced byte budget opt
 /// into this, so an entry can never outlive the limit that produced it: raising or lowering

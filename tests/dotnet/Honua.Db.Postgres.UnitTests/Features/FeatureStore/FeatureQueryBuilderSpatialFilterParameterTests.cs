@@ -474,6 +474,7 @@ public sealed class FeatureQueryBuilderSpatialFilterParameterTests
         result.Sql.Should().Contain("ST_Transform");
         // Built-in tile-envelope helpers must not appear on the custom path.
         result.Sql.Should().NotContain("ST_TileEnvelope");
+        result.Sql.Should().NotContain("ST_SnapToGrid");
     }
 
     [Fact]
@@ -501,5 +502,6 @@ public sealed class FeatureQueryBuilderSpatialFilterParameterTests
             gridGeometry: null);
 
         result.Sql.Should().Contain("ST_TileEnvelope");
+        result.Sql.Should().NotContain("ST_SnapToGrid");
     }
 }

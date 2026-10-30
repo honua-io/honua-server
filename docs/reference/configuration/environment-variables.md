@@ -313,18 +313,23 @@ Geoprocessing job admission and executor guardrails:
 `Limits__Tiles__MaxTileSize` defaults to `512000` bytes and accepts positive byte counts.
 It limits encoded MVT bytes before HTTP content compression; it does not set tile
 pixel dimensions. Managed and source-backed PostGIS reads check the byte length
-before allocating the response array. Oversized output is rejected without a
-partial tile or tile cache headers. OGC API Tiles returns HTTP 413 with an
-`application/problem+json` body (`status: 413`, `title: Payload Too Large`).
-GeoServices MVT routes return the documented HTTP 200 error envelope with
-`error.code: 413`. Request a higher zoom level or reduce the included data.
+before allocating the response array. A tile that would exceed the budget is
+re-encoded with progressively stricter simplification, snapping, sub-pixel
+dropping, and feature and attribute thinning until the encoded bytes fit. The
+response is never larger than the budget, and a tile that already fits is unchanged.
+OGC API Tiles returns HTTP 413 with an `application/problem+json` body
+(`status: 413`, `title: Payload Too Large`), and GeoServices MVT routes return the
+documented HTTP 200 error envelope with `error.code: 413`, only when the strictest
+pass — a single feature with no attributes — still exceeds the budget. Request a
+higher zoom level or raise the budget for that pathological tile.
 Tile output-cache keys include the byte budget, so entries created before enforcement
 or under a larger cap cannot bypass the limit.
 
 Previously this option had no effect and its model default was 512 with pixel
 units. Explicitly configured values now mean bytes; review any existing value
-that was chosen as a pixel dimension. The database still encodes the tile under
-its existing feature and statement limits before the output length is known.
+that was chosen as a pixel dimension. A dense layer at zoom 0–2 is served within
+the budget. The database may encode more than one candidate before the fitting
+tile is returned.
 
 ## Studio AI proxy request budget
 

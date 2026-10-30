@@ -6089,6 +6089,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Studio.LambdaContentVersionReadTests.GetContentVersion_LambdaHostCompletedReaderOnce_ReturnsOk",
         "Honua.Server.Tests.Features.Studio.StudioBridgedFamilyEndpointsTests.FormFamily_ConsoleAuthoredPackageRoundTripsLosslesslyThroughLifecycle",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.GetVersion_ContentHashInput_RecomputesToContentHashOnVersionAndPublishedReads",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.ListAndGetVersions_FlagOn_NonOwnerSeesOnlyThePublishedVersion",
@@ -8479,6 +8480,7 @@
         "Honua.ProviderSmoke.Tests.PrimaryProviderSmokeTestsBase.Tiles_RasterTile_ReturnsNonEmptyPng",
         "Honua.ProviderSmoke.Tests.SqlServerProviderSmokeTests.Tiles_RasterTile_ReturnsNonEmptyPng",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.RefreshMaterializedFeatures_AfterSourceUpdate_RebuildsSnapshotMvtReads",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.DenseLowZoomMvtBudgetEndpointTests.GetTile_DenseZoom0_ReturnsDecodableTileWithinBudget",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Tiles.OgcTilesCrsTests.GetTile_WorldCRS84Quad_UsesGeographicTileEnvelopeForMvt",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Tiles.OgcTilesCrsTests.GetTile_WorldCRS84Quad_WithCrs4326_ReturnsTile",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Tiles.OgcTilesCrsTests.GetTile_WorldCRS84Quad_WithInvalidCrs_ReturnsBadRequest",
@@ -13157,6 +13159,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.DenseLowZoomMvtBudgetEndpointTests.GetTile_DenseZoom0_ReturnsDecodableTileWithinBudget",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ProviderRoutedTileAndH3EndpointTests.VectorTileServer_RootStyleAndTile_UseSameRoutedPrimaryPublication",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VectorTileServer.VectorTileServerEndpointTests.VectorTileServer_Tile_BadCoordinates_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VectorTileServer.VectorTileServerEndpointTests.VectorTileServer_Tile_EmptyTile_ReturnsNoContent",
@@ -15000,6 +15003,7 @@
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishUploadedGeoJson_ThroughSecureConnection_ServesQueryAndVectorTile",
         "Honua.Server.Tests.Features.API.EndpointCoverageTests.MVT_GetTile_ShouldReturnProtobuf",
         "Honua.Server.Tests.Features.Admin.ServiceSettingsEndpointsTests.UpdateProtocols_DisableFeatureServer_BlocksLayerTiles",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.DenseLowZoomMvtBudgetEndpointTests.GetTile_DenseZoom0_ReturnsDecodableTileWithinBudget",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.MvtTileCacheTtlOverrideTests.GetTile_WithPerTilesetOverride_UsesOverrideTtl",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.MvtTileCacheTtlTests.GetTile_AuthenticatedRequest_UsesPrivateCacheWithGlobalTtl",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.MvtTileCacheTtlTests.GetTile_NoPerTilesetOverride_UsesGlobalCacheMaxAge",
