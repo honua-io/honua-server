@@ -327,6 +327,36 @@ public sealed class GeoArrowQueryFormatterTests
     }
 
     [Fact]
+    public async Task FormatAsGeoArrowAsync_DateTimeWithMicroseconds_PreservesMicroseconds()
+    {
+        var resource = CreateResource(
+            new MetadataV2Field { Name = "observed_at", Type = MetadataV2FieldType.DateTime });
+        // PostgreSQL timestamptz stores microseconds. 123456 µs is 1_234_560 ticks.
+        var instant = new DateTimeOffset(2024, 6, 15, 12, 34, 56, TimeSpan.Zero).AddTicks(1_234_560);
+        var feature = Feature.Create(
+            1,
+            null,
+            new Dictionary<string, object?> { ["observed_at"] = instant }.ToImmutableDictionary());
+
+        var (payload, _) = await GeoArrowQueryFormatter.FormatAsGeoArrowAsync(
+            QueryResult<Feature>.Create(1, [feature]),
+            resource,
+            returnGeometry: false,
+            outputSrid: null,
+            returnZ: false,
+            returnM: false,
+            new GeometryLimits());
+
+        using var reader = new ArrowStreamReader(new MemoryStream(payload));
+        using var batch = await reader.ReadNextRecordBatchAsync();
+        var stored = batch!.Column("observed_at").Should().BeOfType<TimestampArray>().Subject.GetTimestamp(0);
+        stored.Should().Be(instant);
+        reader.Schema.GetFieldByName("observed_at").DataType
+            .Should().BeOfType<TimestampType>()
+            .Which.Unit.Should().Be(TimeUnit.Microsecond);
+    }
+
+    [Fact]
     public async Task FormatAsGeoArrowAsync_WithFeatures_WritesReadableArrowStreamWithGeoMetadata()
     {
         var layer = CreateLayer(

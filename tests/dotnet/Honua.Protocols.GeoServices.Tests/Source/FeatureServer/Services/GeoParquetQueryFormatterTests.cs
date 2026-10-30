@@ -892,6 +892,45 @@ public sealed class GeoParquetQueryFormatterTests(ITestOutputHelper output)
     }
 
     [Fact]
+    public async Task FormatAsGeoParquet_DateTimeWithMicroseconds_PreservesMicroseconds()
+    {
+        var layer = CreateLayer(
+            Field("objectid", MetadataV2FieldType.BigInteger, nullable: false),
+            Field("observed_at", MetadataV2FieldType.DateTime));
+        // PostgreSQL timestamptz stores microseconds. 123456 µs is 1_234_560 ticks.
+        var instant = new DateTime(2024, 6, 15, 12, 34, 56, DateTimeKind.Utc).AddTicks(1_234_560);
+        var feature = Feature.Create(
+            1,
+            CreatePointWkb(0, 0),
+            new Dictionary<string, object?>
+            {
+                ["objectid"] = 1L,
+                ["observed_at"] = instant
+            }.ToImmutableDictionary());
+
+        var (payload, _) = GeoParquetQueryFormatter.FormatAsGeoParquet(
+            QueryResult<Feature>.Create(1, [feature]),
+            layer,
+            returnGeometry: true,
+            outputSrid: 4326,
+            returnZ: false,
+            returnM: false,
+            new GeometryLimits());
+
+        using var stream = new MemoryStream(payload);
+        using var reader = new ParquetSharp.Arrow.FileReader(stream);
+        using var batchReader = reader.GetRecordBatchReader();
+        var batch = await batchReader.ReadNextRecordBatchAsync();
+
+        batch.Should().NotBeNull();
+        var stored = ((TimestampArray)batch!.Column("observed_at")).GetTimestamp(0);
+        stored.Should().Be(new DateTimeOffset(instant, TimeSpan.Zero));
+        batch.Schema.GetFieldByName("observed_at").DataType
+            .Should().BeOfType<Apache.Arrow.Types.TimestampType>()
+            .Which.Unit.Should().Be(Apache.Arrow.Types.TimeUnit.Microsecond);
+    }
+
+    [Fact]
     public void FormatAsGeoParquet_EmptyResultWithUnresolvableSrid_ThrowsInvalidOperation()
     {
         var layer = CreateLayer(
