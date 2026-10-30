@@ -43,7 +43,8 @@ public sealed class MvtTileBudgetTests
             (4, (int?)200, true),
             (5, (int?)40, true),
             (6, (int?)8, true),
-            (7, (int?)1, true));
+            (7, (int?)1, true),
+            (8, (int?)1, true));
     }
 
     [Fact]
@@ -132,19 +133,139 @@ public sealed class MvtTileBudgetTests
         var thrown = await Assert.ThrowsAsync<TileSizeLimitExceededException>(() =>
             MvtTileBudgetFitter.ReadAsync(
                 1,
-                step => step.Index,
-                (index, max, _) =>
+                step => step,
+                (step, max, _) =>
                 {
-                    if (index == 7)
+                    if (step.Next() is null)
                     {
                         throw terminal;
                     }
 
-                    throw new TileSizeLimitExceededException(index, max);
+                    throw new TileSizeLimitExceededException(step.Index, max);
                 },
                 CancellationToken.None));
 
         thrown.Should().BeSameAs(terminal);
+    }
+
+    [Fact]
+    public async Task ReadAsync_CollapsedThinningPasses_RefusesInsteadOfReturningEmpty()
+    {
+        var refusal = new TileSizeLimitExceededException(100, 10);
+        var seen = new List<int>();
+        var thrown = await Assert.ThrowsAsync<TileSizeLimitExceededException>(() =>
+            MvtTileBudgetFitter.ReadAsync(
+                10,
+                step =>
+                {
+                    seen.Add(step.Index);
+                    return step;
+                },
+                (step, _, _) => step.IsFull
+                    ? throw refusal
+                    : Task.FromResult<byte[]?>(null),
+                CancellationToken.None));
+
+        thrown.Should().BeSameAs(refusal);
+        seen.Should().Equal(0, 1, 2, 3, 4, 5, 6, 7, 8);
+    }
+
+    [Fact]
+    public async Task ReadAsync_SnappedPassesEmpty_KeepsOneUnsnappedFeature()
+    {
+        var seen = new List<int>();
+        var tile = await MvtTileBudgetFitter.ReadAsync(
+            10,
+            step =>
+            {
+                seen.Add(step.Index);
+                return step;
+            },
+            (step, max, _) =>
+            {
+                if (step.IsFull)
+                {
+                    throw new TileSizeLimitExceededException(100, max);
+                }
+
+                return Task.FromResult<byte[]?>(step.SimplifyScale <= 0 ? [7] : null);
+            },
+            CancellationToken.None);
+
+        seen.Should().Equal(0, 1, 2, 3, 4, 5, 6, 7, 8);
+        tile.Should().Equal(new byte[] { 7 });
+    }
+
+    [Fact]
+    public void Tolerance_CustomGrid_UsesTileResolutionNotWebMercatorZoom()
+    {
+        var step = MvtTileBudgetStep.Full.Next()!.Value;
+        const double span = 1_000d;
+        const int extent = 4096;
+        var tileUnit = span / extent;
+
+        var custom = MvtTileBudget.Tolerance(0, span, extent, geographic: false, step, useWebMercatorZoomFloor: false);
+        custom.Should().BeApproximately(tileUnit * step.SimplifyScale, 1e-9);
+
+        var webMercator = MvtTileBudget.Tolerance(0, span, extent, geographic: false, step);
+        webMercator.Should().BeApproximately(TileMath.GetSimplificationTolerance(0) * step.SimplifyScale, 1e-9);
+    }
+
+    [Fact]
+    public void BuildMvtTileQuery_CustomGridThinning_SnapsToTheGridResolution()
+    {
+        var builder = CreateBuilder();
+        var grid = new GridGeometry
+        {
+            Id = "local-metre",
+            Srid = 27700,
+            IsGeographic = false,
+            TopLeftX = 0,
+            TopLeftY = 1_000,
+            TileWidth = 256,
+            TileHeight = 256,
+            Levels = [new GridLevel(0, ScaleDenominator: 1, CellSize: 1_000d / 256d, MatrixWidth: 1, MatrixHeight: 1)]
+        };
+        var step = MvtTileBudgetStep.Full.Next()!.Value;
+        var result = builder.BuildMvtTileQuery(
+            1, 0, 0, 0,
+            new FeatureQuery { SpatialReferenceSrid = 27700 },
+            new TileOptions { SimplifyZoom = 0, TileBuffer = 0, TileExtent = 4096 },
+            new TileLimits { MaxFeaturesPerTile = 0 },
+            CoreGeometryStorageType.Geometry,
+            grid,
+            step);
+
+        var expected = (1_000d / 4096d) * step.SimplifyScale;
+        var numbers = result.WhereParameters.OfType<double>().ToList();
+        result.Sql.Should().Contain("ST_SnapToGrid");
+        numbers.Any(number => Math.Abs(number - expected) < 1e-6).Should().BeTrue();
+        numbers.Any(number => Math.Abs(number - 4_000d) < 1e-3).Should().BeFalse();
+    }
+
+    [Fact]
+    public void BuildMvtTileQuery_LastPass_KeepsOneFeatureWithoutSnapping()
+    {
+        var builder = CreateBuilder();
+        var last = MvtTileBudgetStep.Full;
+        while (last.Next() is { } next)
+        {
+            last = next;
+        }
+
+        var result = builder.BuildMvtTileQuery(
+            1, 0, 0, 0,
+            new FeatureQuery { SpatialReferenceSrid = 3857 },
+            new TileOptions { SimplifyZoom = 0, TileBuffer = 0, TileExtent = 4096 },
+            new TileLimits { MaxFeaturesPerTile = 0 },
+            CoreGeometryStorageType.Geometry,
+            gridGeometry: null,
+            last);
+
+        result.Sql.Should().NotContain("ST_SnapToGrid");
+        result.Sql.Should().NotContain(DatabaseSchema.AttributesColumn);
+        result.Sql.Should().Contain("LIMIT");
+        result.Sql.Should().Contain("WHERE geom IS NOT NULL");
     }
 
     [Fact]

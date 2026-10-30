@@ -320,8 +320,11 @@ response is never larger than the budget, and a tile that already fits is unchan
 OGC API Tiles returns HTTP 413 with an `application/problem+json` body
 (`status: 413`, `title: Payload Too Large`), and GeoServices MVT routes return the
 documented HTTP 200 error envelope with `error.code: 413`, only when the strictest
-pass — a single feature with no attributes — still exceeds the budget. Request a
-higher zoom level or raise the budget for that pathological tile.
+pass — one feature, no attributes, and no grid snap — still exceeds the budget, or
+when that pass is empty because earlier snaps removed every geometry. A tile that
+was empty on the first pass still returns 204. Request a higher zoom level or raise
+the budget for that pathological tile. An operator-defined gridset snaps to its own
+resolution; the Web Mercator zoom table is only a floor for the built-in pyramid.
 Tile output-cache keys include the byte budget, so entries created before enforcement
 or under a larger cap cannot bypass the limit.
 

@@ -92,7 +92,13 @@ internal sealed partial class PostgresStorageMappedFeatureReader : ITileProvider
             {
                 geometryForTile = MvtTileBudget.Generalize(
                     geometryForTile,
-                    MvtTileBudget.Tolerance(z, tileWidth, tileExtent, geographic, step),
+                    MvtTileBudget.Tolerance(
+                        z,
+                        tileWidth,
+                        tileExtent,
+                        geographic,
+                        step,
+                        useWebMercatorZoomFloor: gridGeometry is null),
                     value => sql.AddParameter(value));
             }
 

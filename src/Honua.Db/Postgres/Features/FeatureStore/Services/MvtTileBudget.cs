@@ -36,6 +36,9 @@ internal readonly record struct MvtTileBudgetStep(
         4 => new MvtTileBudgetStep(5, 32d, 0d, 40, true),
         5 => new MvtTileBudgetStep(6, 64d, 0d, 8, true),
         6 => new MvtTileBudgetStep(7, 64d, 0d, 1, true),
+        // No snap and no pixel filter. Earlier passes can collapse every line and
+        // polygon; this pass keeps one original feature when attributes were the cost.
+        7 => new MvtTileBudgetStep(8, 0d, 0d, 1, true),
         _ => null
     };
 }
@@ -47,15 +50,19 @@ internal readonly record struct MvtTileBudgetStep(
 internal static class MvtTileBudget
 {
     /// <summary>
-    /// Map-unit simplification distance for a pass. Full fidelity returns 0 and the caller
-    /// keeps the zoom rule it already had.
+    /// Map-unit simplification distance for a pass. Full fidelity, and a pass with no
+    /// simplify scale, return 0 and the caller keeps the geometry it already had.
+    /// <paramref name="useWebMercatorZoomFloor"/> is true only for the built-in Web Mercator
+    /// pyramid, where the zoom table is a lower bound. Operator-defined gridsets pass false
+    /// so the tolerance is that tile's own resolution.
     /// </summary>
     internal static double Tolerance(
         int zoom,
         double tileSpan,
         int tileExtent,
         bool geographic,
-        MvtTileBudgetStep step)
+        MvtTileBudgetStep step,
+        bool useWebMercatorZoomFloor = true)
     {
         if (step.IsFull || tileSpan <= 0 || step.SimplifyScale <= 0)
         {
@@ -63,7 +70,9 @@ internal static class MvtTileBudget
         }
 
         var tileUnit = tileExtent > 0 ? tileSpan / tileExtent : tileSpan;
-        var zoomTolerance = geographic ? 0d : TileMath.GetSimplificationTolerance(zoom);
+        var zoomTolerance = geographic || !useWebMercatorZoomFloor
+            ? 0d
+            : TileMath.GetSimplificationTolerance(zoom);
         return Math.Max(zoomTolerance, tileUnit) * step.SimplifyScale;
     }
 
@@ -167,8 +176,9 @@ internal static class MvtTileBudget
 /// <summary>
 /// Re-encodes a vector tile with progressively stricter passes until it fits the byte budget.
 /// A pass that already fits is returned immediately. An empty thinning pass is not a fit:
-/// the next pass samples features the pixel filter removed. The exception survives only when
-/// the strictest pass is still over budget.
+/// the next pass samples features the pixel filter removed. The last pass keeps one feature
+/// without snapping. An empty last pass, or a last pass that is still over budget, refuses.
+/// A genuinely empty first pass still returns no tile.
 /// </summary>
 internal static class MvtTileBudgetFitter
 {
@@ -182,6 +192,7 @@ internal static class MvtTileBudgetFitter
         ArgumentNullException.ThrowIfNull(execute);
 
         var step = MvtTileBudgetStep.Full;
+        TileSizeLimitExceededException? refusal = null;
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -190,18 +201,27 @@ internal static class MvtTileBudgetFitter
             {
                 tile = await execute(build(step), maxTileSize, cancellationToken).ConfigureAwait(false);
             }
-            catch (TileSizeLimitExceededException) when (step.Next() is { } next)
+            catch (TileSizeLimitExceededException ex) when (step.Next() is { } next)
             {
+                refusal = ex;
                 step = next;
                 continue;
             }
 
-            if (tile is { Length: > 0 } || step.IsFull || step.Next() is null)
+            if (tile is { Length: > 0 } || step.IsFull)
             {
                 return tile;
             }
 
-            step = step.Next()!.Value;
+            if (step.Next() is { } nextStep)
+            {
+                step = nextStep;
+                continue;
+            }
+
+            // The first pass was over budget, so this tile has features. Snapping can
+            // remove every one of them; that is a refusal, not an empty tile.
+            throw refusal ?? new TileSizeLimitExceededException(-1, maxTileSize);
         }
     }
 }

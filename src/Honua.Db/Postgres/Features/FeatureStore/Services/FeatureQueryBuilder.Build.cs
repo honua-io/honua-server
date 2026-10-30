@@ -871,7 +871,13 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
             {
                 geometryForTile = MvtTileBudget.Generalize(
                     geometryForTile,
-                    MvtTileBudget.Tolerance(z, tileSpanX, tileExtent, gridGeometry.IsGeographic, budgetStep),
+                    MvtTileBudget.Tolerance(
+                        z,
+                        tileSpanX,
+                        tileExtent,
+                        gridGeometry.IsGeographic,
+                        budgetStep,
+                        useWebMercatorZoomFloor: false),
                     value =>
                     {
                         var token = $"${paramIndex++}";
