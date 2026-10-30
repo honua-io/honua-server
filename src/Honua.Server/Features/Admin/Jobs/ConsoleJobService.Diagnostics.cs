@@ -32,7 +32,7 @@ internal sealed partial class ConsoleJobService
     private const int MaxStderrExcerptLength = 2000;
 
     private static readonly string[] ErrorCodeMetadataKeys = ["error.code", "errorCode", "error_code", "code"];
-    private static readonly string[] ExitCodeMetadataKeys = ["native.exit_code", "nativeExitCode", "exit.code", "exitCode", "exit_code"];
+    private static readonly string[] ExitCodeMetadataKeys = ["native.exit_code", "nativeExitCode", "exit.code", "exitCode", "exit_code", "honua.event.exitCode"];
     private static readonly string[] StderrMetadataKeys = ["stderr.excerpt", "stderr_excerpt", "native.stderr", "stderr"];
 
     private static readonly string ServerVersion = ResolveServerVersion();
@@ -120,11 +120,22 @@ internal sealed partial class ConsoleJobService
             missing.Add("failure: the job is Failed but recorded no error message");
         }
 
+        var traceId = JobEventIdentity.ResolveTraceId(job);
+        if (traceId is null)
+        {
+            missing.Add("traceId: the job record has no admitted traceparent and no honua.trace_id");
+        }
+
+        if (artifacts.ExpiredCount > 0)
+        {
+            notes.Add("artifacts: expired results cannot be fetched; resubmit the job to produce them again");
+        }
+
         return new ConsoleJobDiagnostics
         {
             JobId = job.OperationId,
             CorrelationId = job.Audit.CorrelationId,
-            TraceId = GetParameter(job, ExecutionJobParameterKeys.TraceId),
+            TraceId = traceId,
             GeneratedAt = now,
             View = operatorView ? "operator" : "owner",
             Identity = new ConsoleJobDiagnosticIdentity
@@ -470,25 +481,8 @@ internal sealed partial class ConsoleJobService
         var metadata = errorEntry?.Metadata;
         var exitCode = ParseExitCode(FirstMetadata(metadata, ExitCodeMetadataKeys));
         var stderr = FirstMetadata(metadata, StderrMetadataKeys);
-        var recovery = classification switch
-        {
-            "cancelled" => attempt.Retry.Allowed
-                ? "the job was cancelled; retry re-runs it as a new attempt"
-                : "the job was cancelled",
-            "worker_lost" => attempt.Retry.Allowed
-                ? "the worker stopped heartbeating; check worker capacity and logs, then retry"
-                : "the worker stopped heartbeating and the retry budget is exhausted; check worker capacity and logs before resubmitting",
-            "timeout" => "the job exceeded its timeout policy; reduce the input scope or raise the timeout before resubmitting",
-            _ => attempt.Retry.Allowed
-                ? (exitCode.HasValue || stderr is not null
-                    ? "a step failed with native output; fix the input or tool before retrying, since a retry repeats the same spec"
-                    : "fix the reported error before retrying; a retry repeats the same spec")
-                : "fix the reported error and resubmit; this job cannot be retried in place"
-        };
-
-        var phase = errorEntry is null
-            ? job.CurrentPhase
-            : (string.IsNullOrWhiteSpace(errorEntry.Phase) ? job.CurrentPhase : errorEntry.Phase);
+        var recovery = DescribeRecovery(classification, job, attempt, exitCode, stderr);
+        var phase = ResolveFailurePhase(job, errorEntry, classification);
 
         return new ConsoleJobDiagnosticFailure
         {
@@ -517,13 +511,115 @@ internal sealed partial class ConsoleJobService
             return "worker_lost";
         }
 
-        if (message.Contains("exceeded maximum execution duration", StringComparison.OrdinalIgnoreCase))
+        if (message.Contains("exceeded maximum execution duration", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("execution timed out", StringComparison.OrdinalIgnoreCase))
         {
             return "timeout";
         }
 
         return ClassifyFailure(job);
     }
+
+    /// <summary>
+    /// The step phase a reader should open. A recorded step phase is kept. Generic
+    /// terminal labels (<c>Failed</c>, submission, timeout, heartbeat) are replaced
+    /// from the stored reason so invalid input, startup, upload, and expiry do not
+    /// all look like an unnamed failure.
+    /// </summary>
+    private static string? ResolveFailurePhase(
+        ExecutionJobRecord job,
+        ExecutionLogEntry? errorEntry,
+        string classification)
+    {
+        var fromLog = string.IsNullOrWhiteSpace(errorEntry?.Phase) ? null : errorEntry!.Phase;
+        if (fromLog is not null && !IsGenericFailurePhase(fromLog))
+        {
+            return fromLog;
+        }
+
+        var message = job.ErrorMessage ?? string.Empty;
+        if (IsStartupFailure(job, message))
+        {
+            return "starting-worker";
+        }
+
+        if (IsUploadFailure(message) || IsExpiredResults(message))
+        {
+            return "publishing-results";
+        }
+
+        if (IsInvalidInput(message) || classification is "timeout" or "worker_lost")
+        {
+            return "executing";
+        }
+
+        if (fromLog is not null)
+        {
+            return fromLog;
+        }
+
+        return string.IsNullOrWhiteSpace(job.CurrentPhase) ? null : job.CurrentPhase;
+    }
+
+    private static string DescribeRecovery(
+        string classification,
+        ExecutionJobRecord job,
+        ConsoleJobDiagnosticAttempt attempt,
+        int? exitCode,
+        string? stderr)
+    {
+        var message = job.ErrorMessage ?? string.Empty;
+        var retry = attempt.Retry.Allowed;
+        return classification switch
+        {
+            "cancelled" => retry
+                ? "the job was cancelled; retry re-runs it as a new attempt"
+                : "the job was cancelled",
+            "worker_lost" => retry
+                ? "the worker stopped heartbeating; check worker capacity and logs, then retry"
+                : "the worker stopped heartbeating and the retry budget is exhausted; check worker capacity and logs before resubmitting",
+            "timeout" => "the job exceeded its timeout policy; reduce the input scope or raise the timeout before resubmitting",
+            _ when IsStartupFailure(job, message) => retry
+                ? "the worker did not start; check the backend before retrying, since a retry repeats the same spec"
+                : "the worker did not start and this job cannot be retried in place; check the backend and resubmit",
+            _ when IsInvalidInput(message) => retry
+                ? "the input was rejected; fix the input before retrying, since a retry repeats the same spec"
+                : "the input was rejected; fix the input and resubmit, since this job cannot be retried in place",
+            _ when IsUploadFailure(message) => retry
+                ? "results were not stored; retry publishes the same spec again and does not recover a partial upload"
+                : "results were not stored and this job cannot be retried in place; resubmit after the store is healthy",
+            _ when IsExpiredResults(message) =>
+                "the result retention period has elapsed; resubmit the job. A retry cannot fetch expired results",
+            _ => retry
+                ? (exitCode.HasValue || stderr is not null
+                    ? "a step failed with native output; fix the input or tool before retrying, since a retry repeats the same spec"
+                    : "fix the reported error before retrying; a retry repeats the same spec")
+                : "fix the reported error and resubmit; this job cannot be retried in place"
+        };
+    }
+
+    private static bool IsGenericFailurePhase(string phase)
+        => phase.Equals("Failed", StringComparison.Ordinal)
+            || phase.Equals("Failed (abandoned)", StringComparison.Ordinal)
+            || phase.Equals("Failed (submission)", StringComparison.Ordinal)
+            || phase.Equals("Failed (timeout)", StringComparison.Ordinal)
+            || phase.Equals("Failed (heartbeat expired)", StringComparison.Ordinal);
+
+    private static bool IsStartupFailure(ExecutionJobRecord job, string message)
+        => string.Equals(job.CurrentPhase, ExecutionJobSubmissionHelper.SubmissionFailurePhase, StringComparison.Ordinal)
+            || string.Equals(message, ExecutionJobSubmissionHelper.SubmissionFailureMessage, StringComparison.Ordinal)
+            || message.StartsWith("No batch compute backend registered", StringComparison.Ordinal);
+
+    private static bool IsUploadFailure(string message)
+        => message.Contains("Failed to persist", StringComparison.Ordinal);
+
+    private static bool IsInvalidInput(string message)
+        => message.Contains("invalid input", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("missing required input", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsExpiredResults(string message)
+        => message.Contains("retention period has elapsed", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("results expired", StringComparison.OrdinalIgnoreCase);
 
     private async Task<ConsoleJobStep[]> BuildDiagnosticStepsAsync(
         ExecutionJobRecord job,

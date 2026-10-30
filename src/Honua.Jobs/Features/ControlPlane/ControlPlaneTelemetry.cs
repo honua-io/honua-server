@@ -50,6 +50,10 @@ internal static class ControlPlaneTelemetry
         public const string ExecutionJobStatus = "honua.controlplane.execution.status";
         public const string ExecutionJobPreviousStatus = "honua.controlplane.execution.previous_status";
         public const string ExecutionResult = "honua.controlplane.execution.result";
+        /// <summary>Attempt number on the durable job at the time the span opened.</summary>
+        public const string ExecutionAttempt = "honua.controlplane.execution.attempt";
+        /// <summary>Admitted 32-hex trace id. Omitted when the job recorded none.</summary>
+        public const string ExecutionTraceId = "honua.trace_id";
         /// <summary>
         /// Outcome of a single <c>ExecutionReconcileCycles</c> tick (PA-165): one of
         /// <c>changed</c>, <c>unchanged</c>, <c>not_found</c>, <c>terminal</c>,
@@ -354,9 +358,15 @@ internal static class ControlPlaneTelemetry
         activity?.SetTag(Tags.ExecutionJobKind, job.Spec.Kind.ToString());
         activity?.SetTag(Tags.TargetKind, job.Spec.TargetKind.ToString());
         activity?.SetTag(Tags.Backend, job.Spec.Backend);
+        activity?.SetTag(Tags.ExecutionAttempt, job.AttemptCount);
         if (!string.IsNullOrWhiteSpace(job.Audit.CorrelationId))
         {
             activity?.SetTag(HonuaTelemetry.Tags.CorrelationId, job.Audit.CorrelationId);
+        }
+
+        if (JobEventIdentity.ResolveTraceId(job) is { } traceId)
+        {
+            activity?.SetTag(Tags.ExecutionTraceId, traceId);
         }
 
         return activity;

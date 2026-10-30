@@ -202,6 +202,23 @@ public sealed class AuditTelemetryCoverageTests
             Assert.Equal(submissionContext.TraceId, link.Context.TraceId);
             Assert.Equal(submissionContext.SpanId, link.Context.SpanId);
             Assert.Equal("corr-a3-002", worker.GetTagItem(HonuaTelemetry.Tags.CorrelationId));
+            Assert.Equal(dequeued.AttemptCount, worker.GetTagItem(ControlPlaneTelemetry.Tags.ExecutionAttempt));
+            Assert.Equal(
+                submissionContext.TraceId.ToHexString(),
+                worker.GetTagItem(ControlPlaneTelemetry.Tags.ExecutionTraceId));
+
+            var parameters = new Dictionary<string, string>(dequeued.Spec.Parameters, StringComparer.Ordinal);
+            parameters.Remove(JobEventIdentity.TraceIdParameter);
+            var untraced = dequeued with
+            {
+                Audit = dequeued.Audit with { TraceParent = null, TraceState = null },
+                Spec = dequeued.Spec with { Parameters = parameters }
+            };
+            using var bare = ControlPlaneTelemetry.StartExecutionActivity(
+                ControlPlaneTelemetry.Activities.ExecutionRun, "run", untraced);
+            Assert.NotNull(bare);
+            Assert.Null(bare.GetTagItem(ControlPlaneTelemetry.Tags.ExecutionTraceId));
+            Assert.Equal(untraced.AttemptCount, bare.GetTagItem(ControlPlaneTelemetry.Tags.ExecutionAttempt));
         }
         finally
         {
