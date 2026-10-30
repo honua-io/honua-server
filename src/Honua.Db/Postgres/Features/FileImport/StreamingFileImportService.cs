@@ -740,6 +740,21 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 geometryTooLargeIssues);
             return result;
         }
+        catch (ImportTableOwnershipException ex)
+        {
+            // Map before the generic handler. A missing code becomes "Import failed."
+            // and the synchronous upload answers 200 instead of 409.
+            ImportLog.ImportFailedWithException(_logger, ex, jobId, request.TableName);
+            errorMessage = ImportTableOwnershipException.CreateSafeMessage(request.TableName);
+            result = ImportResult.CreateFailure(
+                request.TableName,
+                format ?? SupportedFileFormat.GeoJson,
+                errorMessage,
+                stopwatch.Elapsed,
+                warnings,
+                errorCode: ImportTableOwnershipException.Code);
+            return result;
+        }
         catch (InvalidDataException ex)
         {
             // Preserve the specific message (e.g. "Row X in row group Y contains

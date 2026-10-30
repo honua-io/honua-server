@@ -26,13 +26,22 @@ internal sealed partial class StreamingFileImportService
         }
 
         var existed = await ImportTableExistsAsync(connection, schema, table, cancellationToken, transaction);
+        var mode = request.EffectiveLoadMode;
+        // A replace drops the live table. Prove ownership before resolving geometry:
+        // an unowned table may have no geometry column, and that lookup would report
+        // a missing identity instead of IMPORT_TARGET_NOT_OWNED. The swap rechecks
+        // under its own lock.
+        if (existed && mode == ImportLoadMode.Replace &&
+            !await TargetIsImporterOwnedAsync(connection, schema, table, cancellationToken, transaction))
+        {
+            throw new ImportTableOwnershipException(schema, table);
+        }
         ImportedDatasetSpatialMetadata.Identity? identity = null;
         if (existed)
         {
             identity = await ImportedDatasetSpatialMetadata.LockAndResolveAsync(
                 connection, transaction, schema, table, "geometry", cancellationToken);
         }
-        var mode = request.EffectiveLoadMode;
         if (mode != ImportLoadMode.Replace)
         {
             if (!existed)
