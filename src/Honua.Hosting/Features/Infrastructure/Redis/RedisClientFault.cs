@@ -24,6 +24,24 @@ internal static class RedisClientFault
            && string.Equals(exception.Message, CompletedReaderMessage, StringComparison.Ordinal);
 
     /// <summary>
+    /// Whether <paramref name="exception"/> or any exception it wraps is the completed-reader
+    /// pipe fault. Stores translate Redis failures into their own typed exceptions, so the
+    /// fault can arrive as an inner exception.
+    /// </summary>
+    internal static bool ContainsCompletedReader(Exception exception)
+    {
+        for (var current = exception; current is not null; current = current.InnerException)
+        {
+            if (IsCompletedReader(current))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
     /// Whether <paramref name="exception"/> is a Redis transport failure, including a timeout
     /// and the completed-reader pipe fault. Cancellation is not a transport failure.
     /// </summary>

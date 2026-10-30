@@ -20,6 +20,7 @@ using Honua.Core.Features.Publishing.Domain;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Temporal.Domain;
 using Honua.Infrastructure.Progress;
+using Honua.Infrastructure.Redis;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.StackExchangeRedis;
 using StackExchange.Redis;
@@ -193,7 +194,9 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
             {
                 throw CreateDistributedStateUnavailableException("atomically replace progress");
             }
-            persisted = await _redis!.GetDatabase().HashGetAsync(key, "data").ConfigureAwait(false);
+            persisted = await RedisClientFault.RetryCompletedReaderAsync(
+                () => _redis!.GetDatabase().HashGetAsync(key, "data"),
+                cancellationToken).ConfigureAwait(false);
             current = persisted.HasValue ? DeserializeProgress(persisted.ToString()) : null;
         }
         if (current is null)
@@ -369,7 +372,9 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
 
         try
         {
-            var json = await _cache.GetStringAsync(key, cancellationToken);
+            var json = await RedisClientFault.RetryCompletedReaderAsync(
+                () => _cache.GetStringAsync(key, cancellationToken),
+                cancellationToken).ConfigureAwait(false);
             if (json == null)
             {
                 RemoveFallbackEntry(operationId, key);
@@ -728,7 +733,9 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
 
         try
         {
-            await _cache.GetStringAsync(HealthCheckKey, cancellationToken).ConfigureAwait(false);
+            await RedisClientFault.RetryCompletedReaderAsync(
+                () => _cache.GetStringAsync(HealthCheckKey, cancellationToken),
+                cancellationToken).ConfigureAwait(false);
             _isUsingFallback = false;
             Log.RedisConnectionRestored(_logger);
             return true;
@@ -815,7 +822,9 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
         var setKey = operationType.HasValue
             ? GetActiveOperationTypeKey(operationType.Value)
             : ActiveOperationIdsKey;
-        var members = await db.SetMembersAsync(setKey).ConfigureAwait(false);
+        var members = await RedisClientFault.RetryCompletedReaderAsync(
+            () => db.SetMembersAsync(setKey),
+            cancellationToken).ConfigureAwait(false);
         var activeIds = new List<string>(members.Length);
 
         foreach (var member in members)
@@ -845,14 +854,18 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
     {
         try
         {
-            var typeValue = await _cache!.GetStringAsync($"{TypePrefix}{operationId}", cancellationToken).ConfigureAwait(false);
+            var typeValue = await RedisClientFault.RetryCompletedReaderAsync(
+                () => _cache!.GetStringAsync($"{TypePrefix}{operationId}", cancellationToken),
+                cancellationToken).ConfigureAwait(false);
             if (!string.IsNullOrWhiteSpace(typeValue) &&
                 Enum.TryParse<OperationType>(typeValue.ToString(), true, out var parsedType))
             {
                 return parsedType;
             }
 
-            var progressValue = await _cache!.GetStringAsync($"{KeyPrefix}{operationId}", cancellationToken).ConfigureAwait(false);
+            var progressValue = await RedisClientFault.RetryCompletedReaderAsync(
+                () => _cache!.GetStringAsync($"{KeyPrefix}{operationId}", cancellationToken),
+                cancellationToken).ConfigureAwait(false);
             if (string.IsNullOrWhiteSpace(progressValue))
             {
                 return null;
@@ -873,7 +886,9 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
 
     private async Task<bool> ProgressEntryExistsAsync(string operationId, CancellationToken cancellationToken)
     {
-        var progressJson = await _cache!.GetStringAsync($"{KeyPrefix}{operationId}", cancellationToken).ConfigureAwait(false);
+        var progressJson = await RedisClientFault.RetryCompletedReaderAsync(
+            () => _cache!.GetStringAsync($"{KeyPrefix}{operationId}", cancellationToken),
+            cancellationToken).ConfigureAwait(false);
         return !string.IsNullOrWhiteSpace(progressJson);
     }
 

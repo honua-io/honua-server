@@ -154,10 +154,19 @@ internal static class ExceptionMapper
                 null
             ),
 
-            // A Redis pipe completed under an in-flight command escapes auth only when the
-            // caller did not catch it. Map that one message to 503; every other
-            // InvalidOperationException stays 500 (honua-server#6753).
-            InvalidOperationException invalidOperationEx when RedisClientFault.IsCompletedReader(invalidOperationEx) => (
+            // Shared progress state is transiently unreachable (the type's contract): the
+            // caller must retry, so answer 503 rather than a server-bug 500 (honua-server#6753).
+            Honua.Infrastructure.Progress.DistributedProgressStateUnavailableException => (
+                StatusCodes.Status503ServiceUnavailable,
+                "Service Unavailable",
+                "The service is temporarily unavailable. Please try again later.",
+                null
+            ),
+
+            // A Redis pipe completed under an in-flight command, bare or wrapped by a store's
+            // own exception. Map that one fault to 503; every other InvalidOperationException
+            // stays 500 (honua-server#6753).
+            InvalidOperationException invalidOperationEx when RedisClientFault.ContainsCompletedReader(invalidOperationEx) => (
                 StatusCodes.Status503ServiceUnavailable,
                 "Service Unavailable",
                 "The service is temporarily unavailable. Please try again later.",

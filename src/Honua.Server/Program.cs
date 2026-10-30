@@ -1023,6 +1023,10 @@ builder.Services.AddHostedService<Honua.Infrastructure.Authentication.RedisAdmin
 if (Honua.Infrastructure.Hosting.LambdaHostStopExitGuard.IsAwsLambda(Environment.GetEnvironmentVariable))
 {
     builder.Services.AddHostedService<Honua.Infrastructure.Hosting.LambdaHostStopExitGuard>();
+
+    // A thawed sandbox can find its Redis sockets dead; re-validate them before the first
+    // request after an idle gap so no Redis read path fails on the teardown (#6753).
+    Honua.Infrastructure.Redis.RedisThawProbeExtensions.AddRedisThawProbe(builder.Services);
 }
 // Embed governance (#1191): authoritative embed key issuance/scoping, policy
 // evaluation, rate accounting, and redacted analytics ingestion. In-memory
@@ -1384,6 +1388,10 @@ app.UseControlPlaneLambdaConnectionRelease(builder.Configuration);
 // Stamp Honua-Instance on every response, including ones short-circuited below (host
 // validation, HTTPS redirection, auth), so callers can tell which replica answered.
 app.UseServerInstanceHeader();
+
+// Lambda only: probe Redis after an idle gap (a possible freeze) ahead of authentication and
+// every other Redis reader, so a connection torn down on thaw fails the probe, not the request (#6753).
+Honua.Infrastructure.Redis.RedisThawProbeExtensions.UseRedisThawProbe(app);
 
 if (forwardedHeadersEnabled)
 {
