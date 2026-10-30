@@ -25,6 +25,8 @@ public sealed class CachingMetadataV2GraphProvider : IMetadataV2GraphProvider
     private readonly MetadataV2GraphSnapshotCache _cache;
     private readonly string _environment;
     private readonly Func<CancellationToken, ValueTask<MetadataV2GraphSnapshot>> _loadCurrent;
+    private readonly IMetadataV2GraphRevisionProbe? _revisionProbe;
+    private MetadataV2GraphSnapshot? _validated;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="CachingMetadataV2GraphProvider"/> class.
@@ -79,9 +81,87 @@ public sealed class CachingMetadataV2GraphProvider : IMetadataV2GraphProvider
         };
     }
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="CachingMetadataV2GraphProvider"/> class that
+    /// revalidates the cached snapshot against the database once per instance of this provider
+    /// (one request scope) before serving it.
+    /// </summary>
+    /// <remarks>
+    /// For nodes with no cross-node invalidation channel, such as Lambda instances without Redis
+    /// (honua-server#6762). Each instance caches its own snapshot and nothing tells it about a
+    /// publish on another instance, so without this a just-published service 404s until the TTL
+    /// expires. The probe is one primary-key read of the current-pointer row; the full catalog is
+    /// reloaded (single-flight, through the shared cache) only when the active revision changed.
+    /// It needs no LISTEN/NOTIFY or long-lived connection, so it holds across frozen/thawed instances.
+    /// </remarks>
+    /// <param name="inner">The request-scoped provider (used for revision lookups).</param>
+    /// <param name="cache">The shared per-instance snapshot cache.</param>
+    /// <param name="environment">The metadata environment this provider resolves (the cache key).</param>
+    /// <param name="loadScopeFactory">Creates the scope each cache-miss load runs in.</param>
+    /// <param name="resolveLoader">Resolves the uncached backing provider from the load scope.</param>
+    /// <param name="revisionProbe">Reads the active revision ETag; <c>null</c> disables revalidation.</param>
+    public CachingMetadataV2GraphProvider(
+        IMetadataV2GraphProvider inner,
+        MetadataV2GraphSnapshotCache cache,
+        string environment,
+        IServiceScopeFactory loadScopeFactory,
+        Func<IServiceProvider, IMetadataV2GraphProvider> resolveLoader,
+        IMetadataV2GraphRevisionProbe? revisionProbe)
+        : this(inner, cache, environment, loadScopeFactory, resolveLoader)
+    {
+        _revisionProbe = revisionProbe;
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="CachingMetadataV2GraphProvider"/> class whose
+    /// loads run on <paramref name="inner"/> and which revalidates with <paramref name="revisionProbe"/>.
+    /// </summary>
+    /// <param name="inner">The provider that reads the snapshot from the backing store.</param>
+    /// <param name="cache">The shared per-instance snapshot cache.</param>
+    /// <param name="environment">The metadata environment this provider resolves (the cache key).</param>
+    /// <param name="revisionProbe">Reads the active revision ETag; <c>null</c> disables revalidation.</param>
+    public CachingMetadataV2GraphProvider(
+        IMetadataV2GraphProvider inner,
+        MetadataV2GraphSnapshotCache cache,
+        string environment,
+        IMetadataV2GraphRevisionProbe? revisionProbe)
+        : this(inner, cache, environment)
+    {
+        _revisionProbe = revisionProbe;
+    }
+
     /// <inheritdoc />
     public ValueTask<MetadataV2GraphSnapshot> GetCurrentAsync(CancellationToken cancellationToken = default)
-        => _cache.GetOrLoadAsync(_environment, _loadCurrent, cancellationToken);
+        => _revisionProbe is null || !_cache.IsEnabled
+            ? _cache.GetOrLoadAsync(_environment, _loadCurrent, cancellationToken)
+            : GetRevalidatedAsync(_revisionProbe, cancellationToken);
+
+    private async ValueTask<MetadataV2GraphSnapshot> GetRevalidatedAsync(
+        IMetadataV2GraphRevisionProbe probe,
+        CancellationToken cancellationToken)
+    {
+        var snapshot = await _cache.GetOrLoadAsync(_environment, _loadCurrent, cancellationToken).ConfigureAwait(false);
+
+        // One probe per request scope: repeat reads in the same request reuse the validated
+        // snapshot. A same-scope write invalidates the cache and the next read returns a different
+        // snapshot object, which is probed again rather than trusting the memo.
+        if (ReferenceEquals(snapshot, _validated))
+        {
+            return snapshot;
+        }
+
+        var currentEtag = await probe.GetCurrentEtagAsync(cancellationToken).ConfigureAwait(false);
+        if (currentEtag is not null && !string.Equals(currentEtag, snapshot.Etag, StringComparison.Ordinal))
+        {
+            // Another instance activated a newer revision. Drop the superseded snapshot (only if
+            // it is still the cached one) and reload once; a concurrent reload is shared.
+            _cache.InvalidateIfCurrent(_environment, snapshot.Etag);
+            snapshot = await _cache.GetOrLoadAsync(_environment, _loadCurrent, cancellationToken).ConfigureAwait(false);
+        }
+
+        _validated = snapshot;
+        return snapshot;
+    }
 
     /// <inheritdoc />
     public ValueTask<MetadataV2GraphSnapshot?> GetByRevisionAsync(long revision, CancellationToken cancellationToken = default)

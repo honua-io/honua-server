@@ -96,6 +96,16 @@ public sealed class CacheOptions
     public int MetadataGraphTtlSeconds { get; set; } = 10;
 
     /// <summary>
+    /// Whether each request revalidates the cached Metadata v2 graph snapshot against the database
+    /// (a one-row read of the active revision ETag) and reloads it when another instance published.
+    /// <c>null</c> (default) enables it automatically on AWS Lambda when no Redis cross-node
+    /// invalidation is composed, where instances otherwise never learn about another instance's
+    /// publish until the TTL expires (honua-server#6762). Set <c>true</c> for any other multi-instance
+    /// deployment without Redis, or <c>false</c> to opt out.
+    /// </summary>
+    public bool? MetadataGraphRevalidateOnRead { get; set; }
+
+    /// <summary>
     /// Whether to use in-memory fallback when Redis is unavailable.
     /// Default is true for high availability.
     /// </summary>

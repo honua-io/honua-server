@@ -14,7 +14,8 @@ namespace Honua.Core.Features.Metadata.Abstractions;
 /// on the writing node so read surfaces observe the mutation immediately instead of waiting out
 /// the TTL. When Redis is composed (multi-node), the host's implementation also broadcasts the
 /// invalidation so every other node drops its snapshot; the TTL remains the backstop for a lost
-/// broadcast. Read-modify-write callers do not depend on this: they read
+/// broadcast. A node without the broadcast on Lambda revalidates the cached snapshot per request
+/// through <see cref="IMetadataV2GraphRevisionProbe"/> instead. Read-modify-write callers do not depend on this: they read
 /// the persisted snapshot directly through the uncached store, never the cached provider.
 /// </remarks>
 public interface IMetadataV2GraphCacheInvalidator

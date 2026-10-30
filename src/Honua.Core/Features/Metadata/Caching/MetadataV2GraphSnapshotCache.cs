@@ -21,7 +21,9 @@ namespace Honua.Core.Features.Metadata.Caching;
 /// deployments with Redis composed, the host decorates this cache with a Redis pub/sub invalidator
 /// that broadcasts each write so every node drops its snapshot too. Staleness is still bounded by a
 /// short, configurable TTL (<see cref="CacheOptions.MetadataGraphTtl"/>) as the backstop for a lost
-/// broadcast or a Redis-off node. Concurrent misses are coalesced (single-flight) so a TTL expiry under load
+/// broadcast. A node without the broadcast (Lambda without Redis) instead revalidates the cached
+/// snapshot's ETag against the database once per request (<see cref="CachingMetadataV2GraphProvider"/>)
+/// and drops a superseded snapshot with <see cref="InvalidateIfCurrent"/>. Concurrent misses are coalesced (single-flight) so a TTL expiry under load
 /// triggers a single reload rather than a stampede.
 /// </remarks>
 public sealed class MetadataV2GraphSnapshotCache : IMetadataV2GraphCacheInvalidator
@@ -103,6 +105,47 @@ public sealed class MetadataV2GraphSnapshotCache : IMetadataV2GraphCacheInvalida
 
     /// <inheritdoc />
     public void InvalidateAll() => _slots.Clear();
+
+    /// <summary>
+    /// Whether snapshots are cached at all. When false every read already goes to the backing
+    /// store, so a freshness probe would be redundant.
+    /// </summary>
+    public bool IsEnabled
+    {
+        get
+        {
+            var options = _options.Value;
+            return options.MetadataGraphCacheEnabled && options.MetadataGraphTtl > TimeSpan.Zero;
+        }
+    }
+
+    /// <summary>
+    /// Drops this node's cached snapshot for the environment only when it is the snapshot with
+    /// <paramref name="staleEtag"/>. A newer snapshot another caller already reloaded (or a load
+    /// still in flight) is kept, so concurrent stale-detections trigger one reload, not several.
+    /// Local only: the caller observed the newer revision in the database itself, so nothing is
+    /// broadcast.
+    /// </summary>
+    /// <param name="environment">The metadata environment key.</param>
+    /// <param name="staleEtag">ETag of the snapshot the caller found to be superseded.</param>
+    public void InvalidateIfCurrent(string environment, string staleEtag)
+    {
+        ArgumentNullException.ThrowIfNull(environment);
+        ArgumentNullException.ThrowIfNull(staleEtag);
+        if (!_slots.TryGetValue(environment, out var slot))
+        {
+            return;
+        }
+
+        lock (slot.Gate)
+        {
+            if (slot.State is { Snapshot: { IsCompletedSuccessfully: true } snapshot }
+                && string.Equals(snapshot.Result.Etag, staleEtag, StringComparison.Ordinal))
+            {
+                slot.State = null;
+            }
+        }
+    }
 
     private static bool IsExpired(SlotState state, long nowTicks)
     {

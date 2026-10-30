@@ -83,6 +83,80 @@ public sealed class PostgresMetadataV2GraphCacheTests(PostgresFixture fixture, I
     }
 
     [IntegrationTest]
+    public async Task RevalidatingProvider_PublishOnInstanceA_ReadOnInstanceB_SeesNewServiceWithinTtl()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresMetadataV2GraphCacheTests));
+        try
+        {
+            await CoreMigrationTestFixture.ApplyMetadataV2Async(fixture, schema);
+            var connectionProvider = new TestConnectionProvider(fixture.DataSource, schema);
+
+            // Two Lambda instances without Redis: each owns its cache and invalidates only itself.
+            var cacheA = new MetadataV2GraphSnapshotCache(
+                Options.Create(new CacheOptions { MetadataGraphCacheEnabled = true, MetadataGraphTtlSeconds = 3600 }));
+            var cacheB = new MetadataV2GraphSnapshotCache(
+                Options.Create(new CacheOptions { MetadataGraphCacheEnabled = true, MetadataGraphTtlSeconds = 3600 }));
+            PostgresMetadataV2GraphStore StoreFor(MetadataV2GraphSnapshotCache cache) => new(
+                connectionProvider,
+                Environment,
+                FixtureBypassDatabaseSchemaGuard.Instance,
+                schema,
+                cache);
+            CachingMetadataV2GraphProvider RequestOnB()
+            {
+                var store = StoreFor(cacheB);
+                return new CachingMetadataV2GraphProvider(store, cacheB, Environment, store);
+            }
+
+            var storeA = StoreFor(cacheA);
+            var initial = await storeA.SaveAsync(BuildGraph(revision: 1, serviceCount: 1), expectedEtag: null);
+
+            // Instance B warms its cache before the publish.
+            (await RequestOnB().GetCurrentAsync()).FindService("Service 1").Should().BeNull();
+
+            // Instance A publishes a new service.
+            await storeA.SaveAsync(BuildGraph(revision: 2, serviceCount: 2), expectedEtag: initial.Etag);
+
+            // Without the probe (the pre-fix behaviour) B keeps serving its stale snapshot.
+            var unprobed = new CachingMetadataV2GraphProvider(StoreFor(cacheB), cacheB, Environment);
+            (await unprobed.GetCurrentAsync()).FindService("Service 1").Should().BeNull();
+
+            // With it, the very next request on B resolves the service, well inside the 1 h TTL.
+            (await RequestOnB().GetCurrentAsync()).FindService("Service 1").Should()
+                .NotBeNull("a service published on another instance must not 404 until the TTL (#6762)");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task RevisionProbe_ReturnsActiveEtag_AndNullBeforeFirstPublish()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresMetadataV2GraphCacheTests));
+        try
+        {
+            await CoreMigrationTestFixture.ApplyMetadataV2Async(fixture, schema);
+            var store = new PostgresMetadataV2GraphStore(
+                new TestConnectionProvider(fixture.DataSource, schema),
+                Environment,
+                FixtureBypassDatabaseSchemaGuard.Instance,
+                schema);
+
+            (await store.GetCurrentEtagAsync()).Should().BeNull();
+
+            var saved = await store.SaveAsync(BuildGraph(revision: 1, serviceCount: 1), expectedEtag: null);
+            (await store.GetCurrentEtagAsync()).Should().Be(saved.Etag);
+            (await store.GetCurrentAsync()).Etag.Should().Be(saved.Etag, "the probe and the loader must agree on the active ETag");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
     public async Task CachedProvider_IsFasterThanPerCallStoreReads()
     {
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresMetadataV2GraphCacheTests));
