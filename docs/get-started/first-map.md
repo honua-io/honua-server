@@ -7,7 +7,7 @@ description: "You'll turn a published layer into a live MapLibre map using vecto
 
 You'll turn a published layer into a live MapLibre map using vector tiles, TileJSON, and the server's auto-generated style in about 10 minutes.
 
-**Prerequisites:** a published layer and its `layerId` (see [Publish your first dataset](first-dataset.md)), `$HONUA_BASE_URL`, `$HONUA_API_KEY`, `$HONUA_SERVICE`, and `$HONUA_LAYER_ID` set as that page describes, and Python 3 to serve one HTML file. Step 1 installs the pinned clients (`honua-admin` 0.1.12, `honua-sdk` 0.1.18) and the MCP Python client `mcp` 2.1.1, so this page can be run on its own.
+**Prerequisites:** a published layer and its `layerId` (see [Publish your first dataset](first-dataset.md)), `$HONUA_BASE_URL`, `$HONUA_API_KEY`, `$HONUA_SERVICE`, and `$HONUA_LAYER_ID` set as that page describes, and Python 3 to serve one HTML file. Step 1 installs the pinned clients (`honua-admin` 0.1.12, `honua-sdk` 0.1.19) and the MCP Python client `mcp` 2.1.1, so this page can be run on its own.
 
 > The browser fetches tiles without credentials, so steps 2–6 require anonymous reads to be
 > enabled on the published service. Do not proceed after a refused policy change.
@@ -27,7 +27,7 @@ refuses the operation; it does not enable anonymous access. Use the Redis-backed
 profile and retain a successful policy-change result before opening the map.
 
 ```bash
-python3 -m pip install 'honua-admin==0.1.12' 'honua-sdk==0.1.18' 'mcp==2.1.1'
+python3 -m pip install 'honua-admin==0.1.12' 'honua-sdk==0.1.19' 'mcp==2.1.1'
 python3 - <<'PY'
 import asyncio
 import os

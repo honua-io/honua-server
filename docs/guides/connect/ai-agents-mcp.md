@@ -82,7 +82,37 @@ Clients may send one printable `Idempotency-Key` header of up to 128 characters 
 
 ### Verify
 
-Run `POST /mcp` with `{"jsonrpc":"2.0","id":2,"method":"tools/list"}`.
+The [quickstart](../../get-started/quickstart.md) publishes the server on
+`http://localhost:18080` (`HONUA_HTTP_PORT`). Handshake methods are open, so
+this check sends no API key. Use the published MCP Python client to initialize
+the session and list tools:
+
+```bash
+python3 -m pip install 'mcp==2.1.1'
+```
+
+```bash
+python3 - <<'PY'
+import asyncio
+
+from mcp import ClientSessionGroup
+from mcp.client.session_group import StreamableHttpParameters
+
+
+async def discover():
+    server = StreamableHttpParameters(url="http://localhost:18080/mcp")
+    async with ClientSessionGroup() as group:
+        session = await group.connect_to_server(server)
+        listed = await session.list_tools()
+        names = [tool.name for tool in listed.tools]
+    if not any(name.startswith("honua_") for name in names):
+        raise SystemExit(names)
+    print("\n".join(names))
+
+
+asyncio.run(discover())
+PY
+```
 
 The response lists the `honua_*` tools this deployment advertises, with JSON Schema input definitions. Which ones appear depends on the deployment profile (see [Which tools and resources appear](#which-tools-and-resources-appear-capability-gating)), so treat `tools/list` as the authoritative inventory rather than counting the families below. From your agent, "list the Honua tools and validate an empty plan" should return a structured violation list (for example `EMPTY_PLAN_ID`), not an error.
 
