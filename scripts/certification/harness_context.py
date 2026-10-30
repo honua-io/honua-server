@@ -9,6 +9,25 @@ def operation_key(row):
     return row['capability_key'], row['surface'], row['operation']
 
 
+def requirement_posture(assignment, contract):
+    """Return the maturity and tier a governed row must carry.
+
+    Omitted fields stay supported at the contract tier. A declared preview row
+    is the GP preview floor: required at no tier, which the catalog records as
+    required_tier release. Any other pair is refused. The caller still compares
+    the context exactly, so an undeclared downgrade cannot pass.
+    """
+    maturity = assignment['maturity'] if 'maturity' in assignment else 'supported'
+    required_tier = assignment['required_tier'] if 'required_tier' in assignment else contract['required_tier']
+    if maturity not in {'supported', 'preview'} or not isinstance(required_tier, str) or not required_tier:
+        raise ValueError('local harness maturity is not a governed posture')
+    if maturity == 'supported' and required_tier != contract['required_tier']:
+        raise ValueError('supported harness operation must keep the contract tier')
+    if maturity == 'preview' and required_tier != 'release':
+        raise ValueError('preview harness operation is required at no tier')
+    return maturity, required_tier
+
+
 def expected_requirements(contract, matrix, producer_sha):
     if contract['deployment_target'] != 'source-test-host':
         raise ValueError('protocol harness requires source-test-host execution')
@@ -30,6 +49,7 @@ def expected_requirements(contract, matrix, producer_sha):
             raise ValueError('local harness capability is absent from the source matrix')
         if not capability.get('maturity', {}).get('implemented'):
             continue
+        maturity, required_tier = requirement_posture(assignment, contract)
         expected[key] = {
             **{field: assignment[field] for field in (
                 'capability_key', 'surface', 'operation', 'test_ids', 'scenario_facets')},
@@ -40,8 +60,8 @@ def expected_requirements(contract, matrix, producer_sha):
             'fixture_revision': f'server-test-fixtures@{producer_sha}',
             'contract_revision': f"server-protocol-harness@{contract['revision']}+{producer_sha}",
             'auth_policy_revision': contract['auth_policy_revision'],
-            'maturity': 'supported',
-            'required_tier': contract['required_tier'],
+            'maturity': maturity,
+            'required_tier': required_tier,
         }
     if not expected:
         raise ValueError('source matrix has no implemented harness operations')
