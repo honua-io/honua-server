@@ -61,8 +61,9 @@ def source_commit(environment):
 def candidate_reachable(candidate, environment):
     """Whether ``candidate`` is an ancestor of ``origin/trunk`` or is that commit.
 
-    Local history decides when both objects are present. A depth-1 checkout cannot
-    prove ancestry, so an inconclusive local check asks the compare API: ``ahead``
+    Local history decides when both objects are present; in a shallow clone only a
+    positive local answer counts. A depth-1 checkout cannot prove ancestry, so an
+    inconclusive local check asks the compare API (``GH_TOKEN`` authenticates it): ``ahead``
     (trunk is ahead of the candidate) and ``identical`` are reachable; ``behind``
     and ``diverged`` are not. Tests patch this function and must not call git or gh.
     """
@@ -97,8 +98,20 @@ def _local_ancestor(candidate):
     if ancestor.returncode == 0:
         return True
     if ancestor.returncode == 1:
-        return False
+        # A shallow boundary hides the history between a fetched candidate and
+        # origin/trunk, so "not an ancestor" is only authoritative in a full clone.
+        return None if _is_shallow() else False
     return None
+
+
+def _is_shallow():
+    try:
+        shallow = subprocess.run(
+            ["git", "rev-parse", "--is-shallow-repository"],
+            check=False, capture_output=True, text=True)
+    except OSError:
+        return True
+    return shallow.returncode != 0 or (shallow.stdout or "").strip() != "false"
 
 
 def identity(environment):

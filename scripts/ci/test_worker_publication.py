@@ -232,15 +232,38 @@ class WorkerPublicationTests(unittest.TestCase):
                     self.assertEqual(accepted, publication.candidate_reachable("c" * 40, ENVIRONMENT))
 
     def test_local_history_refuses_without_calling_the_api(self):
-        def run(args, check, capture_output):
+        def run(args, check, capture_output, text=False):
             if args[1] == "merge-base":
                 return subprocess.CompletedProcess(args, 1)
+            if args[1:] == ["rev-parse", "--is-shallow-repository"]:
+                return subprocess.CompletedProcess(args, 0, stdout="false\n")
             return subprocess.CompletedProcess(args, 0)
 
         with patch.object(publication.subprocess, "run", side_effect=run), \
              patch.object(publication, "command") as command:
             self.assertFalse(publication.candidate_reachable("c" * 40, ENVIRONMENT))
             command.assert_not_called()
+
+    def test_shallow_negative_ancestry_asks_the_api(self):
+        def run(args, check, capture_output, text=False):
+            if args[1] == "merge-base":
+                return subprocess.CompletedProcess(args, 1)
+            if args[1:] == ["rev-parse", "--is-shallow-repository"]:
+                return subprocess.CompletedProcess(args, 0, stdout="true\n")
+            return subprocess.CompletedProcess(args, 0)
+
+        with patch.object(publication.subprocess, "run", side_effect=run), \
+             patch.object(publication, "command", return_value=json.dumps({"status": "ahead"})) as command:
+            self.assertTrue(publication.candidate_reachable("c" * 40, ENVIRONMENT))
+            command.assert_called_once()
+
+    def test_every_ancestry_step_authenticates_gh(self):
+        workflow = yaml.safe_load((ROOT / ".github/workflows/worker-gdal-image.yml").read_text(encoding="utf-8"))
+        steps = workflow["jobs"]["build-and-scan"]["steps"]
+        names = [step.get("name") for step in steps]
+        for name in ("Resolve worker source commit", "Prepare exact tested worker publication bundle"):
+            self.assertEqual("${{ github.token }}", steps[names.index(name)]["env"]["GH_TOKEN"])
+        self.assertEqual("${{ github.token }}", workflow["jobs"]["publish-nightly"]["env"]["GH_TOKEN"])
 
 
 if __name__ == "__main__":

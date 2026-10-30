@@ -112,6 +112,8 @@ jobs:
         env:
           # PR and schedule runs never see a candidate; only an explicit trunk dispatch may name one.
           CANDIDATE_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.candidate_sha || '' }}
+          # A shallow checkout cannot prove candidate ancestry; the compare API fallback needs gh auth.
+          GH_TOKEN: ${{ github.token }}
         run: python3 scripts/ci/worker_publication.py resolve-source
 
       # The running workflow file is already loaded from trunk. Keep that publication
@@ -410,6 +412,7 @@ jobs:
         if: github.event_name == 'workflow_dispatch'
         env:
           CANDIDATE_SHA: ${{ steps.source.outputs.source_sha }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           script="scripts/ci/worker_publication.py"
           if [[ -f /tmp/honua-worker-publication/worker_publication.py ]]; then
@@ -444,6 +447,7 @@ jobs:
     env:
       PUBLISH_NIGHTLY: ${{ inputs.publish_nightly }}
       CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2

@@ -13,7 +13,8 @@ build caches remain enabled; the blocking vulnerability policy is unchanged.
 After review, an operator can select `publish_nightly=true` on canonical `trunk`.
 The same dispatch may set `candidate_sha` to a full 40-hex commit that is reachable
 from `trunk` (local `git merge-base --is-ancestor`, or compare-API status `ahead`
-or `identical`). The build checks that commit out, runs the same image, smoke,
+or `identical`; a negative local answer in a shallow checkout falls back to the
+API, authenticated with the workflow `GH_TOKEN`). The build checks that commit out, runs the same image, smoke,
 boundary, handoff, PDAL, native API, and Trivy gates, and stamps
 `org.opencontainers.image.revision` with the candidate. The nightly tag and bundle
 `source_sha` use that commit, so GP lifecycle and resilience qualification can bind
