@@ -90,6 +90,12 @@ def main():
                         raise RuntimeError('--package-version-stamp is required with --host-debug-receipt')
                     # Candidate host-debug evidence only. write_host_debug_receipt never marks it published.
                     publication.write_host_debug_receipt(args.host_debug_receipt, args.package_version_stamp)
+            described = run(tool, 'describe', '--project', str(project), '--json')
+            discovery = json.loads(described)
+            assert discovery['source'] == 'project' and discovery['executionMode'] == 'custom', discovery
+            assert discovery['runnableHere'] is True, discovery
+            assert any(item['name'].startswith('dependency lock') and item['status'] == 'satisfied'
+                       for item in discovery['prerequisites']), discovery
             output = run(tool, 'test', '--project', str(project))
             assert 'PASS  summary.json' in output and 'summary : passed' in output
             if language == 'dotnet' and os.name != 'nt':

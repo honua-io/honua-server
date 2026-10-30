@@ -57,6 +57,17 @@ public sealed record GpProjectManifest
     /// <summary>Exact installed devkit payload version used by this project.</summary>
     public string? ToolchainVersion { get; init; }
 
+    /// <summary>Descriptor-relative dependency lock, when the descriptor names one.</summary>
+    public string? DependencyLock { get; init; }
+
+    /// <summary>
+    /// The lock path discovery checks. A declared <see cref="DependencyLock"/> wins; otherwise
+    /// Python projects use <c>requirements.lock</c> and .NET projects use <c>process/packages.lock.json</c>.
+    /// </summary>
+    public string DependencyLockPath => string.IsNullOrWhiteSpace(DependencyLock)
+        ? Language == GpProjectLanguage.Python ? "requirements.lock" : "process/packages.lock.json"
+        : DependencyLock;
+
     /// <summary>The harness entrypoint (<c>module:function</c> or <c>Assembly::Namespace.Type</c>).</summary>
     public required string Entrypoint { get; init; }
 
@@ -135,6 +146,7 @@ public sealed record GpProjectManifest
             Template = map.GetValueOrDefault("template"),
             TemplateCommit = map.GetValueOrDefault("templateCommit"),
             HarnessRoot = map.GetValueOrDefault("harnessRoot"),
+            DependencyLock = map.GetValueOrDefault("dependencyLock"),
             Entrypoint = Require("entrypoint"),
             Source = Require("source"),
             Build = map.GetValueOrDefault("build"),
@@ -178,6 +190,7 @@ public sealed record GpProjectManifest
             TemplateCommit = local.TemplateCommit,
             HarnessRoot = local.HarnessRoot,
             ToolchainVersion = local.ToolchainVersion,
+            DependencyLock = descriptor.DependencyLock,
             Source = Require(local.Source, "authoring.source"),
             Build = language == GpProjectLanguage.Dotnet ? Require(local.Build, "authoring.build") : local.Build,
             AssemblyDir = language == GpProjectLanguage.Dotnet ? Require(local.AssemblyDir, "authoring.assemblyDir") : local.AssemblyDir,
@@ -547,8 +560,9 @@ public static class GpCustomProjectTester
     /// <param name="harnessRoot">The honua-server checkout holding the harnesses.</param>
     /// <param name="update">Whether to rewrite expectations instead of comparing.</param>
     /// <param name="tolerance">Numeric tolerance for JSON comparison.</param>
+    /// <param name="probe">Machine facts. Null inspects this machine. The harness directory is already resolved; a missing runtime or lock fails before the process starts.</param>
     /// <param name="cancellationToken">Cancellation.</param>
-    public static async Task<GpCustomProjectTestResult> RunAsync(string projectDirectory, string harnessRoot, bool update, double tolerance = 1e-9, CancellationToken cancellationToken = default)
+    public static async Task<GpCustomProjectTestResult> RunAsync(string projectDirectory, string harnessRoot, bool update, double tolerance = 1e-9, GpEnvironmentProbe? probe = null, CancellationToken cancellationToken = default)
     {
         // MSBuild identifies project instances and incremental outputs by their paths.
         // A shell build resolves its working directory (for example /var -> /private/var
@@ -556,6 +570,17 @@ public static class GpCustomProjectTester
         var root = ResolvePhysicalDirectory(projectDirectory);
         harnessRoot = ResolvePhysicalDirectory(harnessRoot);
         var manifest = GpProjectManifest.Load(Path.Join(root, GpProjectManifest.FileName));
+        var verdict = GpProjectDiscovery.Assess(
+            manifest,
+            root,
+            probe ?? new GpEnvironmentProbe(),
+            Directory.Exists(harnessRoot) ? harnessRoot : null,
+            allowInstalledRestore: false);
+        if (!verdict.RunnableHere)
+        {
+            return new GpCustomProjectTestResult { Passed = false, Lines = [], Error = GpProjectDiscovery.BlockedError(manifest, verdict) };
+        }
+
         var runsDirectory = Path.Join(root, ".honua", "test-runs");
         Directory.CreateDirectory(runsDirectory);
 

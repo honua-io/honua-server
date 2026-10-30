@@ -169,18 +169,35 @@ public static class GpCli
 
     private static int RunList(string[] args)
     {
-        if (args.Any(arg => arg is not ("--json" or "--probe-container")))
+        string? project = null;
+        var asJson = false;
+        var probeContainer = false;
+        for (var i = 0; i < args.Length; i++)
         {
-            throw new GpCliUsageException("Usage: honua-gp-devkit list [--json] [--probe-container]");
+            switch (args[i])
+            {
+                case "--json":
+                    asJson = true;
+                    break;
+                case "--probe-container":
+                    probeContainer = true;
+                    break;
+                case "--project":
+                    project = NextValue(args, ref i, "--project");
+                    break;
+                default:
+                    throw new GpCliUsageException("Usage: honua-gp-devkit list [--json] [--probe-container] [--project <dir>]");
+            }
         }
 
         using var provider = BuildProvider();
         var executors = ResolveExecutors(provider);
         var runner = new GeoprocessingLocalRunner(executors);
         var catalog = provider.GetService<IProcessCatalog>();
-        var probe = BuildProbe(args.Contains("--probe-container", StringComparer.Ordinal));
+        var probe = BuildProbe(probeContainer);
+        (GpProjectManifest Manifest, GpRunnability Verdict)? projectDiscovery = project is null ? null : DiscoverProject(project);
 
-        if (args.Contains("--json", StringComparer.Ordinal))
+        if (asJson)
         {
             var definitions = new JsonArray();
             foreach (var id in runner.AvailableProcessIds)
@@ -199,6 +216,11 @@ public static class GpCli
                 }
             }
 
+            if (projectDiscovery is { } discovered)
+            {
+                definitions.Add(GpProjectDiscovery.WriteDescriptor(discovered.Manifest, discovered.Verdict));
+            }
+
             Console.WriteLine(definitions.ToJsonString());
             return 0;
         }
@@ -211,6 +233,16 @@ public static class GpCli
             var runnability = GpRunnabilityAssessor.Assess(def, id, ExecutorProfile(executors, id), probe);
             var verdict = runnability.RunnableHere ? runnability.ExecutionModeLabel : $"{runnability.ExecutionModeLabel}, blocked: {runnability.BlockedBy}";
             Console.WriteLine(def is not null ? $"  {id,-32} {def.Title,-48} [{verdict}]" : $"  {id,-32} {"",-48} [{verdict}]");
+        }
+
+        if (projectDiscovery is { } projectVerdict)
+        {
+            var label = projectVerdict.Verdict.RunnableHere
+                ? projectVerdict.Verdict.ExecutionModeLabel
+                : $"{projectVerdict.Verdict.ExecutionModeLabel}, blocked: {projectVerdict.Verdict.BlockedBy}";
+            Console.WriteLine();
+            Console.WriteLine("Custom project (local; not a catalog registration):");
+            Console.WriteLine($"  {projectVerdict.Manifest.Name,-32} {projectVerdict.Manifest.Entrypoint,-48} [{label}]");
         }
 
         return 0;
@@ -328,13 +360,14 @@ public static class GpCli
         if (args.Length == 0)
         {
             throw new GpCliUsageException(
-                "Missing <processId>. Usage: honua gp describe <processId> [--json]");
+                "Missing <processId>. Usage: honua gp describe <processId> [--json] [--project <dir>]");
         }
 
-        var processId = args[0];
+        string? processId = null;
+        string? project = null;
         var asJson = false;
         var probeContainer = false;
-        for (var i = 1; i < args.Length; i++)
+        for (var i = 0; i < args.Length; i++)
         {
             switch (args[i])
             {
@@ -344,9 +377,38 @@ public static class GpCli
                 case "--probe-container":
                     probeContainer = true;
                     break;
+                case "--project":
+                    project = NextValue(args, ref i, "--project");
+                    break;
                 default:
-                    throw new GpCliUsageException($"Unknown option '{args[i]}'.");
+                    if (args[i].StartsWith('-') || processId is not null)
+                    {
+                        throw new GpCliUsageException($"Unknown option '{args[i]}'. Usage: honua gp describe <processId> [--json] [--project <dir>]");
+                    }
+
+                    processId = args[i];
+                    break;
             }
+        }
+
+        if (project is not null)
+        {
+            if (processId is not null)
+            {
+                throw new GpCliUsageException("describe takes a process id or --project <dir>, not both.");
+            }
+
+            var discovered = DiscoverProject(project);
+            Console.WriteLine(asJson
+                ? GpProjectDiscovery.WriteDescriptor(discovered.Manifest, discovered.Verdict).ToJsonString()
+                : GpProjectDiscovery.RenderText(discovered.Manifest, discovered.Verdict));
+            return 0;
+        }
+
+        if (processId is null)
+        {
+            throw new GpCliUsageException(
+                "Missing <processId>. Usage: honua gp describe <processId> [--json] [--project <dir>]");
         }
 
         // Resolve from the SAME live catalog `list`/`run`/`plan` use, so a described
@@ -1025,10 +1087,21 @@ public static class GpCli
             throw new GpCliUsageException(ex.Message);
         }
 
+        var projectRoot = Path.GetFullPath(projectDirectory);
         var harnessRoot = GpCustomProjectScaffolder.ResolveHarnessRoot(
             explicitHarnessRoot ?? manifest.HarnessRoot,
-            projectDirectory,
+            projectRoot,
             manifest.ToolchainVersion);
+        var verdict = GpProjectDiscovery.Assess(manifest, projectRoot, new GpEnvironmentProbe(), harnessRoot, allowInstalledRestore: true);
+        if (!verdict.RunnableHere)
+        {
+            // Fail before restoring a toolchain or starting a harness. The named prerequisite
+            // is the whole answer; this command never submits the project to a server.
+            Console.Error.WriteLine($"error   : {GpProjectDiscovery.BlockedError(manifest, verdict)}");
+            Console.WriteLine("summary : FAILED");
+            return 1;
+        }
+
         if (harnessRoot is null)
         {
             try
@@ -1041,10 +1114,43 @@ public static class GpCli
             }
         }
 
+        return await FinishProjectTestAsync(manifest, projectRoot, harnessRoot, update).ConfigureAwait(false);
+    }
+
+    private static (GpProjectManifest Manifest, GpRunnability Verdict) DiscoverProject(string projectDirectory)
+    {
+        var root = Path.GetFullPath(projectDirectory);
+        if (!Directory.Exists(root))
+        {
+            throw new GpCliUsageException($"Project directory '{projectDirectory}' does not exist.");
+        }
+
+        var manifestPath = Path.Join(root, GpProjectManifest.FileName);
+        if (!File.Exists(manifestPath))
+        {
+            throw new GpCliUsageException($"{root} holds no {GpProjectManifest.FileName}; run `honua-gp-devkit init` first or pass --project <dir>.");
+        }
+
+        GpProjectManifest manifest;
+        try
+        {
+            manifest = GpProjectManifest.Load(manifestPath);
+        }
+        catch (InvalidDataException ex)
+        {
+            throw new GpCliUsageException(ex.Message);
+        }
+
+        var harness = GpCustomProjectScaffolder.ResolveHarnessRoot(manifest.HarnessRoot, root, manifest.ToolchainVersion);
+        return (manifest, GpProjectDiscovery.Assess(manifest, root, new GpEnvironmentProbe(), harness, allowInstalledRestore: true));
+    }
+
+    private static async Task<int> FinishProjectTestAsync(GpProjectManifest manifest, string projectRoot, string harnessRoot, bool update)
+    {
         Console.WriteLine($"project : {manifest.Name} ({(manifest.Language == GpProjectLanguage.Python ? "python" : "dotnet")}, {manifest.Entrypoint})");
         Console.WriteLine($"harness : {harnessRoot}");
         Console.WriteLine($"mode    : {(update ? "UPDATE (rewriting expected artifacts)" : "assert")}");
-        var result = await GpCustomProjectTester.RunAsync(projectDirectory, harnessRoot, update).ConfigureAwait(false);
+        var result = await GpCustomProjectTester.RunAsync(projectRoot, harnessRoot, update).ConfigureAwait(false);
         foreach (var line in result.Lines)
         {
             Console.WriteLine(line);
@@ -1488,8 +1594,9 @@ public static class GpCli
         Console.WriteLine("Usage:");
         Console.WriteLine("  Installed tool: honua-gp-devkit <command> (equivalent to the honua gp command family below)");
         Console.WriteLine("  honua gp doctor [--managed-only] [--json]  (also reports docker, kind, kubectl, and helm)");
-        Console.WriteLine("  honua gp list [--json] [--probe-container]");
+        Console.WriteLine("  honua gp list [--json] [--probe-container] [--project <dir>]");
         Console.WriteLine("  honua gp describe <processId> [--json] [--probe-container]");
+        Console.WriteLine("  honua gp describe --project <dir> [--json]");
         Console.WriteLine("  honua gp plan <processId> [--input <file>] [--param k=v ...]");
         Console.WriteLine("  honua gp run  <processId> [--input <file>] [--param k=v ...] [--out <file>] [--glass-box] [--real-worker]");
         Console.WriteLine("  honua gp test [<fixtureId>] [--root <dir>] [--update]");
@@ -1523,6 +1630,7 @@ public static class GpCli
         Console.WriteLine("          docker, kind, kubectl, and helm as found or missing, with one remediation line each.");
         Console.WriteLine("          Missing tools do not change the exit code.");
         Console.WriteLine("  describe  Show a process's typed parameters, outputs, inputs JSON Schema, and an example (--json for the machine view).");
+        Console.WriteLine("            --project <dir> reports that custom project's runtime, dependency lock, and local harness (runnableHere). It never submits to a server.");
         Console.WriteLine("  plan  Dry-run: validate params + DAG and estimate output size/cost WITHOUT executing.");
         Console.WriteLine("  run   Execute the process and emit its artifact(s).");
         Console.WriteLine("  test  Run golden-file fixtures under samples/gp (or --root) and assert outputs;");
