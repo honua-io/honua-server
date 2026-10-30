@@ -11,6 +11,7 @@ using Honua.Core.Features.Attachments.Abstractions;
 using Honua.Core.Features.Attachments.Services;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.AutoDocs;
+using Honua.Core.Features.Caching;
 using Honua.Core.Features.Collaboration.Operations;
 using Honua.Core.Features.Deployment.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -374,14 +375,25 @@ internal static class ServiceCollectionExtensions
         // The read surface is the cached path; the write surface (IMetadataV2GraphStore) stays the
         // raw store so read-modify-write publish paths always load a fresh persisted snapshot.
         // Cache-miss loads are shared across callers and outlive a cancelled initiator, so they
-        // resolve the store from their own scope instead of the initiating request's.
+        // resolve the store from their own scope instead of the initiating request's. Without a
+        // cross-node invalidation channel on Lambda, each request revalidates the cached snapshot's
+        // ETag against the current-pointer row (honua-server#6762).
+        var revalidateOnLambda = Honua.Core.Features.ControlPlane.Abstractions.ControlPlaneEventHandlerHost.IsLambda(configuration);
         services.AddScoped<IMetadataV2GraphProvider>(serviceProvider =>
-            new CachingMetadataV2GraphProvider(
-                serviceProvider.GetRequiredService<IMetadataV2GraphStore>(),
-                serviceProvider.GetRequiredService<MetadataV2GraphSnapshotCache>(),
+        {
+            var store = serviceProvider.GetRequiredService<IMetadataV2GraphStore>();
+            var cache = serviceProvider.GetRequiredService<MetadataV2GraphSnapshotCache>();
+            var revisionProbe = ShouldRevalidateMetadataGraphOnRead(serviceProvider, cache, revalidateOnLambda)
+                ? store as IMetadataV2GraphRevisionProbe
+                : null;
+            return new CachingMetadataV2GraphProvider(
+                store,
+                cache,
                 metadataEnvironment,
                 serviceProvider.GetRequiredService<IServiceScopeFactory>(),
-                static loadScope => loadScope.GetRequiredService<IMetadataV2GraphStore>()));
+                static loadScope => loadScope.GetRequiredService<IMetadataV2GraphStore>(),
+                revisionProbe);
+        });
         // Legacy V1 catalog -> Metadata v2 graph projector (honua-server#2081). Lets compat
         // seeding paths (cloud-demo reset/startup) project freshly-seeded legacy services
         // into the active graph store so the v2 read paths resolve them.
@@ -1121,5 +1133,25 @@ internal static class ServiceCollectionExtensions
         return double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed) && parsed > 0
             ? parsed
             : defaultValue;
+    }
+
+    /// <summary>
+    /// Whether the Metadata v2 read path revalidates its cached snapshot per request.
+    /// <c>Cache:MetadataGraphRevalidateOnRead</c> wins when set; otherwise it is on for Lambda when
+    /// the invalidator is the in-process cache itself, i.e. no Redis broadcast is composed.
+    /// </summary>
+    internal static bool ShouldRevalidateMetadataGraphOnRead(
+        IServiceProvider serviceProvider,
+        MetadataV2GraphSnapshotCache cache,
+        bool isLambda)
+    {
+        var configured = serviceProvider.GetService<IOptions<CacheOptions>>()?.Value.MetadataGraphRevalidateOnRead;
+        if (configured is { } explicitSetting)
+        {
+            return explicitSetting;
+        }
+
+        return isLambda
+            && ReferenceEquals(serviceProvider.GetService<IMetadataV2GraphCacheInvalidator>(), cache);
     }
 }

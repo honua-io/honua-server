@@ -345,6 +345,8 @@ internal static class InfrastructureCompositionRoot
         // Correctness, not a licensed capability: keyed on the multiplexer being composed at all,
         // not on the Redis cache entitlement. Multi-node mode already requires Redis
         // (ConfigurationValidationService), so a Redis-off deployment is single-node by contract.
+        // Lambda is the exception (many instances, no Redis required): its read path revalidates the
+        // cached snapshot per request instead (Cache:MetadataGraphRevalidateOnRead, #6762).
         if (!services.Any(static d => d.ServiceType == typeof(IConnectionMultiplexer)))
         {
             return;

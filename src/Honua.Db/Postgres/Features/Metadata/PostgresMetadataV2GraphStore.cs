@@ -21,7 +21,7 @@ namespace Honua.Db.Postgres.Features.Metadata;
 /// refreshed in the same transaction. <c>metadata_v2_current</c> tracks the active
 /// revision per environment.
 /// </summary>
-internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMetadataV2GraphRevisionStager, IMetadataV2GraphWriteBaseReader
+internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMetadataV2GraphRevisionStager, IMetadataV2GraphWriteBaseReader, IMetadataV2GraphRevisionProbe
 {
     // Shared with schema-coupled metadata publishers such as the demo STAC seed.
     // The environment hash is the second key so unrelated environments can publish concurrently.
@@ -487,6 +487,29 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
         command.Parameters.AddWithValue("@namespace", MetadataWriteLockNamespace);
         command.Parameters.AddWithValue("@environment", _environment);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// One primary-key read of the environment's current-pointer row: no document load, no schema
+    /// guard round trip, and no session state, so it is safe on every request behind RDS Proxy.
+    /// A missing pointer table (schema not yet migrated) reads as "no activated revision", the same
+    /// answer <see cref="GetCurrentAsync"/> gives by falling back to the compat/empty snapshot.
+    /// </remarks>
+    public async ValueTask<string?> GetCurrentEtagAsync(CancellationToken cancellationToken = default)
+    {
+        var sql = $"SELECT etag FROM {_currentTable} WHERE environment = @environment";
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@environment", _environment);
+        try
+        {
+            return await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) as string;
+        }
+        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UndefinedTable)
+        {
+            return null;
+        }
     }
 
     private async Task<MetadataV2GraphSnapshot?> TryLoadCurrentAsync(CancellationToken cancellationToken)
