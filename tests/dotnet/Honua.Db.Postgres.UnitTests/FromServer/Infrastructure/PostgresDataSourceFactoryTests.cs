@@ -175,6 +175,59 @@ public sealed class PostgresDataSourceFactoryTests
 
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
+    public void Configure_ReleaseSessionOnClose_InitializerPathIsUnpooled()
+    {
+        var builder = new NpgsqlDataSourceBuilder(TestConnectionString);
+
+        PostgresDataSourceFactory.Configure(
+            builder, schemaHeadersEnabled: false, new ConnectionLimits(), releaseSessionOnClose: true);
+
+        builder.ConnectionStringBuilder.Pooling.Should().BeFalse(
+            "a pooled connection keeps its RDS Proxy pin through a Lambda freeze (#6760)");
+        builder.ConnectionStringBuilder.MinPoolSize.Should().Be(0);
+        builder.ConnectionStringBuilder.Options.Should().BeNullOrEmpty();
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public void Configure_ReleaseSessionOnClose_RoleDefaultsStaysPooled()
+    {
+        var builder = new NpgsqlDataSourceBuilder(TestConnectionString);
+
+        PostgresDataSourceFactory.Configure(
+            builder, schemaHeadersEnabled: false, new ConnectionLimits(),
+            sessionSettingsMode: DatabaseSessionSettingsMode.RoleDefaults, releaseSessionOnClose: true);
+
+        builder.ConnectionStringBuilder.Pooling.Should().BeTrue("role-defaults issues no session SET, so nothing pins");
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public void Configure_ReleaseSessionOnClose_MultiplexingStaysPooled()
+    {
+        var builder = new NpgsqlDataSourceBuilder(TestConnectionString);
+
+        PostgresDataSourceFactory.Configure(
+            builder, schemaHeadersEnabled: false, new ConnectionLimits { Multiplexing = "true" }, releaseSessionOnClose: true);
+
+        builder.ConnectionStringBuilder.Multiplexing.Should().BeTrue();
+        builder.ConnectionStringBuilder.Pooling.Should().BeTrue("Npgsql multiplexing requires pooling");
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public void CreateForBoundSource_ReleaseSessionOnClose_IsUnpooled()
+    {
+        using var pooled = PostgresDataSourceFactory.CreateForBoundSource(TestConnectionString, new ConnectionLimits());
+        using var unpooled = PostgresDataSourceFactory.CreateForBoundSource(
+            TestConnectionString, new ConnectionLimits(), releaseSessionOnClose: true);
+
+        new NpgsqlConnectionStringBuilder(pooled.ConnectionString).Pooling.Should().BeTrue();
+        new NpgsqlConnectionStringBuilder(unpooled.ConnectionString).Pooling.Should().BeFalse();
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
     public void Create_DefaultNonMultiplexingPath_ConnectionStringContainsNoOptions()
     {
         using var dataSource = PostgresDataSourceFactory.Create(

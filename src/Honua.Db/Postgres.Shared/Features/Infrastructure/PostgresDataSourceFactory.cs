@@ -105,10 +105,11 @@ internal static class PostgresDataSourceFactory
         bool schemaHeadersEnabled,
         ConnectionLimits limits,
         string? defaultSchema = null,
-        DatabaseSessionSettingsMode sessionSettingsMode = DatabaseSessionSettingsMode.Connection)
+        DatabaseSessionSettingsMode sessionSettingsMode = DatabaseSessionSettingsMode.Connection,
+        bool releaseSessionOnClose = false)
     {
         var builder = new NpgsqlDataSourceBuilder(connectionString);
-        Configure(builder, schemaHeadersEnabled, limits, defaultSchema, sessionSettingsMode);
+        Configure(builder, schemaHeadersEnabled, limits, defaultSchema, sessionSettingsMode, releaseSessionOnClose);
         return Track(builder.Build());
     }
 
@@ -116,12 +117,16 @@ internal static class PostgresDataSourceFactory
     /// Builds a data source for a bound (secure-connection) source database. Bound sources
     /// always use <see cref="DatabaseSessionSettingsMode.Connection"/>: their role is not the
     /// primary database role an operator configures for <c>role-defaults</c>.
+    /// <paramref name="releaseSessionOnClose"/> has the same meaning as on <see cref="Configure"/>.
     /// </summary>
-    public static NpgsqlDataSource CreateForBoundSource(string connectionString, ConnectionLimits limits)
+    public static NpgsqlDataSource CreateForBoundSource(
+        string connectionString,
+        ConnectionLimits limits,
+        bool releaseSessionOnClose = false)
     {
         var builder = new NpgsqlDataSourceBuilder(connectionString);
         var sourceOptions = builder.ConnectionStringBuilder.Options;
-        Configure(builder, schemaHeadersEnabled: false, limits);
+        Configure(builder, schemaHeadersEnabled: false, limits, releaseSessionOnClose: releaseSessionOnClose);
         if (!string.IsNullOrWhiteSpace(sourceOptions) &&
             !string.Equals(sourceOptions, builder.ConnectionStringBuilder.Options, StringComparison.Ordinal))
         {
@@ -167,12 +172,21 @@ internal static class PostgresDataSourceFactory
         return dataSource;
     }
 
+    /// <summary>
+    /// Applies pool limits, keepalive and session settings to <paramref name="builder"/>.
+    /// With <paramref name="releaseSessionOnClose"/>, a source whose session settings are applied
+    /// by a per-connection <c>SET</c> is built unpooled, so closing the logical connection ends
+    /// the physical session. Behind RDS Proxy that <c>SET</c> pins the proxy session, and a frozen
+    /// Lambda never prunes its pool, so a pooled pinned connection would hold a proxy backend
+    /// until the proxy's idle-client timeout (honua-server#6760).
+    /// </summary>
     public static void Configure(
         NpgsqlDataSourceBuilder builder,
         bool schemaHeadersEnabled,
         ConnectionLimits limits,
         string? defaultSchema = null,
-        DatabaseSessionSettingsMode sessionSettingsMode = DatabaseSessionSettingsMode.Connection)
+        DatabaseSessionSettingsMode sessionSettingsMode = DatabaseSessionSettingsMode.Connection,
+        bool releaseSessionOnClose = false)
     {
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(limits);
@@ -283,6 +297,12 @@ internal static class PostgresDataSourceFactory
         }
         else
         {
+            if (releaseSessionOnClose)
+            {
+                connectionStringBuilder.Pooling = false;
+                connectionStringBuilder.MinPoolSize = 0;
+            }
+
             var initializerSql = BuildSessionSettingsSql(limits, searchPathSchema);
             builder.UsePhysicalConnectionInitializer(
                 connection =>
