@@ -154,15 +154,19 @@ public sealed class DeployPreflightPlaneProjection
     public string Id { get; init; } = string.Empty;
 
     /// <summary>
-    /// Runtime profile of the element, if any.
+    /// Runtime profile of the element. A null profile is an observation (no pin)
+    /// and stays in the JSON; the serializer context omits other nulls.
     /// </summary>
     [JsonPropertyName("runtimeProfile")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     public string? RuntimeProfile { get; init; }
 
     /// <summary>
     /// Effective artifact reference after applying explicit-pin-wins precedence over the release.
+    /// A null reference is an observation (no pin) and stays in the JSON.
     /// </summary>
     [JsonPropertyName("effectiveArtifactReference")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     public string? EffectiveArtifactReference { get; init; }
 
     /// <summary>
