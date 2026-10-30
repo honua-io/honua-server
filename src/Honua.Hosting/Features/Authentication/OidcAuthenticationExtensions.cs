@@ -7,6 +7,7 @@ using System.Security.Claims;
 using System.Text;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Capabilities;
+using Honua.Infrastructure.Redis;
 using Honua.Infrastructure.Security;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -831,29 +832,18 @@ public static partial class OidcAuthenticationExtensions
             {
                 if (redis.IsConnected)
                 {
-                    var database = redis.GetDatabase();
-                    var registered = await database.StringSetAsync(
-                        tokenKey,
-                        scope.RegistrationValue,
-                        expiresIn,
-                        when: When.NotExists).ConfigureAwait(false);
-                    if (registered)
-                    {
-                        return new(TokenReplayRegistrationResult.Registered, TokenReplayStore.Redis);
-                    }
-
-                    // A reused token is admitted on the HTTP API it was admitted on
-                    // (honua-server#4899) or on the server-issued continuation it is bound
-                    // to (honua-server#4909); anywhere else it is a replay.
-                    var current = await database.StringGetAsync(tokenKey).ConfigureAwait(false);
-                    return new(ClassifyReusedToken((string?)current, scope), TokenReplayStore.Redis);
+                    return await RedisClientFault.RetryCompletedReaderAsync(
+                        () => RegisterConnectedTokenReplayAsync(redis, tokenKey, scope, expiresIn),
+                        cancellationToken).ConfigureAwait(false);
                 }
 
                 OidcAuthenticationLog.TokenReplayRedisDisconnected(logger);
             }
-            catch (Exception ex) when (ex is RedisException or TimeoutException && ex is not OperationCanceledException)
+            catch (Exception ex) when (RedisClientFault.IsRedisTransportFault(ex))
             {
                 // RedisTimeoutException derives from TimeoutException, not RedisException.
+                // A torn pipe surfaces as the completed-reader InvalidOperationException
+                // (honua-server#6753) and degrades the same way as a timeout.
                 OidcAuthenticationLog.TokenReplayRedisAccessFailed(logger, ex);
             }
 
@@ -880,6 +870,30 @@ public static partial class OidcAuthenticationExtensions
         return new(
             failClosed ? TokenReplayRegistrationResult.Unavailable : TokenReplayRegistrationResult.Skipped,
             null);
+    }
+
+    private static async Task<TokenReplayRegistration> RegisterConnectedTokenReplayAsync(
+        IConnectionMultiplexer redis,
+        string tokenKey,
+        TokenReplayScope scope,
+        TimeSpan expiresIn)
+    {
+        var database = redis.GetDatabase();
+        var registered = await database.StringSetAsync(
+            tokenKey,
+            scope.RegistrationValue,
+            expiresIn,
+            when: When.NotExists).ConfigureAwait(false);
+        if (registered)
+        {
+            return new(TokenReplayRegistrationResult.Registered, TokenReplayStore.Redis);
+        }
+
+        // A reused token is admitted on the HTTP API it was admitted on
+        // (honua-server#4899) or on the server-issued continuation it is bound
+        // to (honua-server#4909); anywhere else it is a replay.
+        var current = await database.StringGetAsync(tokenKey).ConfigureAwait(false);
+        return new(ClassifyReusedToken((string?)current, scope), TokenReplayStore.Redis);
     }
 
     private static async Task<TokenReplayRegistration> TryRegisterTokenReplayInMemoryAsync(

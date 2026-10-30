@@ -4,6 +4,7 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Cryptography;
 using System.Text;
+using Honua.Infrastructure.Redis;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
@@ -60,14 +61,19 @@ internal static class AtomicTokenReplayProtection
             try
             {
                 var expiry = expiresOn - DateTime.UtcNow;
-                if (expiry <= TimeSpan.Zero) expiry = TimeSpan.FromSeconds(1);
+                if (expiry <= TimeSpan.Zero)
+                {
+                    expiry = TimeSpan.FromSeconds(1);
+                }
+
                 // SET NX EX: atomic set-if-not-exists. Returns true when the key was set
-                // (first use), false when the key already existed (replay).
-                return await multiplexer.GetDatabase()
-                    .StringSetAsync(cacheKey, "1", expiry, when: When.NotExists)
-                    .ConfigureAwait(false);
+                // (first use), false when the key already existed (replay). A completed
+                // reader is retried once; a second fault fails closed like RedisException.
+                return await RedisClientFault.RetryCompletedReaderAsync(
+                    () => multiplexer.GetDatabase().StringSetAsync(cacheKey, "1", expiry, when: When.NotExists),
+                    cancellationToken).ConfigureAwait(false);
             }
-            catch (RedisException)
+            catch (Exception ex) when (ex is RedisException || RedisClientFault.IsCompletedReader(ex))
             {
                 // Redis unavailable: fail-closed - treat as replay to prevent replay via
                 // a degraded non-atomic path.
