@@ -94,6 +94,83 @@ public sealed class PostgresDataSourceFactoryTests
 
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
+    public void ResolveConnectionLimits_LambdaHost_BoundsConnectionLifetimeBelowProxyIdleTimeout()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["AWS_LAMBDA_FUNCTION_NAME"] = "honua",
+                ["Limits:Connections:ConnectionIdleLifetimeSeconds"] = "60",
+            })
+            .Build();
+
+        var limits = PostgresDataSourceFactory.ResolveConnectionLimits(configuration);
+
+        limits.ConnectionLifetimeSeconds.Should().Be(PostgresDataSourceFactory.LambdaConnectionLifetimeSeconds);
+        limits.ConnectionLifetimeSeconds.Should().BeLessThan(60,
+            "a pooled connection must be retired before the 60 s RDS Proxy idle-client timeout closes it");
+
+        var builder = new NpgsqlDataSourceBuilder(TestConnectionString);
+        PostgresDataSourceFactory.Configure(builder, schemaHeadersEnabled: false, limits);
+        builder.ConnectionStringBuilder.ConnectionLifetime.Should().Be(PostgresDataSourceFactory.LambdaConnectionLifetimeSeconds);
+
+        using var bound = PostgresDataSourceFactory.CreateForBoundSource(TestConnectionString, limits);
+        new NpgsqlConnectionStringBuilder(bound.ConnectionString).ConnectionLifetime
+            .Should().Be(PostgresDataSourceFactory.LambdaConnectionLifetimeSeconds,
+                "bound sources (the publish path's source database) go through the same proxy");
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public void ResolveConnectionLimits_ExplicitConnectionLifetime_Wins()
+    {
+        var lambda = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["AWS_LAMBDA_FUNCTION_NAME"] = "honua",
+                ["Limits:Connections:ConnectionLifetimeSeconds"] = "20",
+            })
+            .Build();
+        PostgresDataSourceFactory.ResolveConnectionLimits(lambda).ConnectionLifetimeSeconds.Should().Be(20);
+
+        var longLived = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Limits:Connections:ConnectionLifetimeSeconds"] = "300",
+            })
+            .Build();
+        var limits = PostgresDataSourceFactory.ResolveConnectionLimits(longLived);
+        limits.ConnectionLifetimeSeconds.Should().Be(300);
+        var builder = new NpgsqlDataSourceBuilder(TestConnectionString);
+        PostgresDataSourceFactory.Configure(builder, schemaHeadersEnabled: false, limits);
+        builder.ConnectionStringBuilder.ConnectionLifetime.Should().Be(300);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public void Configure_ExplicitZeroConnectionLifetime_ReachesNpgsqlAsUnlimited()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["AWS_LAMBDA_FUNCTION_NAME"] = "honua",
+                ["Limits:Connections:ConnectionLifetimeSeconds"] = "0",
+            })
+            .Build();
+        var limits = PostgresDataSourceFactory.ResolveConnectionLimits(configuration);
+        limits.ConnectionLifetimeSeconds.Should().Be(0, "an explicit operator value wins over the Lambda default");
+
+        // The supplied string carries a lifetime, and Npgsql's own default is 3600: both must yield to 0.
+        var builder = new NpgsqlDataSourceBuilder(TestConnectionString + ";Connection Lifetime=120");
+        PostgresDataSourceFactory.Configure(builder, schemaHeadersEnabled: false, limits);
+        builder.ConnectionStringBuilder.ConnectionLifetime.Should().Be(0);
+
+        using var bound = PostgresDataSourceFactory.CreateForBoundSource(TestConnectionString, limits);
+        new NpgsqlConnectionStringBuilder(bound.ConnectionString).ConnectionLifetime.Should().Be(0);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
     public void ResolveConnectionLimits_EventHandlerLambda_ExplicitPoolFloorWins()
     {
         var configuration = new ConfigurationBuilder()
@@ -156,6 +233,7 @@ public sealed class PostgresDataSourceFactoryTests
         limits.MaxConcurrentQueries.Should().Be(200);
         limits.MinConnectionPoolSize.Should().Be(20);
         limits.ConnectionIdleLifetimeSeconds.Should().Be(600);
+        limits.ConnectionLifetimeSeconds.Should().Be(3600, "long-lived hosts keep Npgsql's own default lifetime");
     }
 
     [UnitTest]

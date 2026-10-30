@@ -37,6 +37,7 @@ internal static class PostgresDataSourceFactory
         limits.MinConnectionPoolSize = ReadInt(section, nameof(ConnectionLimits.MinConnectionPoolSize), limits.MinConnectionPoolSize);
         limits.ConnectionIdleLifetimeSeconds = ReadInt(section, nameof(ConnectionLimits.ConnectionIdleLifetimeSeconds), limits.ConnectionIdleLifetimeSeconds);
         limits.ConnectionPruningIntervalSeconds = ReadInt(section, nameof(ConnectionLimits.ConnectionPruningIntervalSeconds), limits.ConnectionPruningIntervalSeconds);
+        limits.ConnectionLifetimeSeconds = ReadInt(section, nameof(ConnectionLimits.ConnectionLifetimeSeconds), limits.ConnectionLifetimeSeconds);
         limits.CommandTimeoutSeconds = ReadInt(section, nameof(ConnectionLimits.CommandTimeoutSeconds), limits.CommandTimeoutSeconds);
         limits.BufferSizeBytes = ReadInt(section, nameof(ConnectionLimits.BufferSizeBytes), limits.BufferSizeBytes);
         limits.RequestTimeout = ReadTimeSpan(section, nameof(ConnectionLimits.RequestTimeout), limits.RequestTimeout);
@@ -81,6 +82,17 @@ internal static class PostgresDataSourceFactory
                     LambdaIdleConnectionLifetimeSeconds,
                     limits.ConnectionPruningIntervalSeconds);
             }
+
+            // Idle pruning cannot keep a pooled connection inside the RDS Proxy idle-client
+            // timeout: it is sample-based (it closes only after the idle lifetime has fully
+            // elapsed) and its timer does not run while the sandbox is frozen. The proxy then
+            // closes the client socket first, and the next request that borrows it fails with
+            // EndOfStreamException (honua-server#6764: S10 publish answered 500). Npgsql checks
+            // Connection Lifetime against the wall clock at checkout, so it holds across freezes.
+            if (string.IsNullOrWhiteSpace(section[nameof(ConnectionLimits.ConnectionLifetimeSeconds)]))
+            {
+                limits.ConnectionLifetimeSeconds = LambdaConnectionLifetimeSeconds;
+            }
         }
 
         return limits;
@@ -92,6 +104,14 @@ internal static class PostgresDataSourceFactory
     /// stays at or above the default pruning interval.
     /// </summary>
     internal const int LambdaIdleConnectionLifetimeSeconds = 60;
+
+    /// <summary>
+    /// Total connection lifetime applied on Lambda when
+    /// <c>Limits:Connections:ConnectionLifetimeSeconds</c> is unset. It stays below the 60 s RDS
+    /// Proxy idle-client timeout that honua-iac sets on small cells, so no pooled connection
+    /// handed out on Lambda can be one the proxy has already closed.
+    /// </summary>
+    internal const int LambdaConnectionLifetimeSeconds = 45;
 
     /// <summary>
     /// Pool and query ceiling applied on Lambda when those limits are unset. A frozen instance
@@ -215,6 +235,10 @@ internal static class PostgresDataSourceFactory
         connectionStringBuilder.MinPoolSize = Math.Min(limits.MinConnectionPoolSize, connectionStringBuilder.MaxPoolSize);
         connectionStringBuilder.ConnectionIdleLifetime = limits.ConnectionIdleLifetimeSeconds;
         connectionStringBuilder.ConnectionPruningInterval = limits.ConnectionPruningIntervalSeconds;
+        // Always assigned, like the idle lifetime: an explicit 0 (unlimited) must reach Npgsql,
+        // whose own default is 3600.
+        connectionStringBuilder.ConnectionLifetime = limits.ConnectionLifetimeSeconds;
+
         connectionStringBuilder.CommandTimeout = limits.CommandTimeoutSeconds;
         connectionStringBuilder.WriteBufferSize = limits.BufferSizeBytes;
         connectionStringBuilder.ReadBufferSize = limits.BufferSizeBytes;

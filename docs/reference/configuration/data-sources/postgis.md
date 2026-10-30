@@ -187,6 +187,7 @@ The mode covers the `DefaultConnection` data source only, whose role the startup
 | `Limits__Connections__MinConnectionPoolSize` | `20` | Npgsql pool minimum. |
 | `Limits__Connections__MaxConcurrentQueries` | `200` | Ceiling on concurrently executing queries. |
 | `Limits__Connections__ConnectionIdleLifetimeSeconds` | `600` | Idle connection lifetime. |
+| `Limits__Connections__ConnectionLifetimeSeconds` | `3600`; `45` on AWS Lambda | Maximum total lifetime of a pooled connection, checked when it is borrowed; `0` means unlimited. On Lambda it keeps pooled connections inside the RDS Proxy idle-client timeout. |
 | `Limits__Connections__ConnectionAcquisitionTimeoutSeconds` | `5` | Max wait to acquire a pooled connection. |
 | `Limits__Connections__CommandTimeoutSeconds` | `30` | Command timeout. |
 | `Limits__Connections__StatementTimeout` / `LockTimeout` | `00:00:30` | Server-side statement and lock timeouts. |
