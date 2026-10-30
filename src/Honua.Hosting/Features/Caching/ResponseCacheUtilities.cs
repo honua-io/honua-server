@@ -10,6 +10,8 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Queries.Filters;
 using Honua.Infrastructure.Authentication;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Infrastructure.Caching;
 
@@ -38,9 +40,17 @@ internal static class ResponseCacheUtilities
             return false;
         }
 
-        var cacheControl = context.Request.Headers.CacheControl.ToString();
-        if (cacheControl.Contains("no-cache", StringComparison.OrdinalIgnoreCase) ||
-            cacheControl.Contains("no-store", StringComparison.OrdinalIgnoreCase))
+        // SEC-20: credentials the authentication middleware does not turn into a
+        // principal (portal tokens, API keys, embed keys) must still miss the
+        // shared cache. Storing them, even under a key that includes the secret,
+        // would keep serving the body after revocation until the TTL elapsed.
+        if (BypassOutputCacheOnCredentialedRequestPolicy.CarriesCredential(context))
+        {
+            return false;
+        }
+
+        if (HeaderSuppressesSharedCache(context.Request.Headers.CacheControl.ToString()) ||
+            HeaderSuppressesSharedCache(context.Response.Headers.CacheControl.ToString()))
         {
             return false;
         }
@@ -140,6 +150,10 @@ internal static class ResponseCacheUtilities
         var accept = request.Headers.Accept.ToString();
         var prefer = request.Headers["Prefer"].ToString();
         var tenant = TenantScopeHelpers.ResolveRequestTenantId(request.HttpContext) ?? "<none>";
+        // Same fingerprint the output cache varies on (#1983). Anonymous metadata
+        // and query bodies that differ by edition must not share an entry.
+        var license = ResolveLicenseKey(request);
+        var testSchema = ResolveTestSchemaKey(request);
         var keyMaterial = string.Concat(
             request.Method, '|',
             request.Scheme, '|',
@@ -149,7 +163,9 @@ internal static class ResponseCacheUtilities
             canonicalQuery, '|',
             accept, '|',
             prefer, '|',
-            tenant);
+            tenant, '|',
+            license, '|',
+            testSchema);
 
         var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(keyMaterial)))
             .ToLowerInvariant();
@@ -183,6 +199,54 @@ internal static class ResponseCacheUtilities
         }
 
         return string.Join('&', parts);
+    }
+
+    private static bool HeaderSuppressesSharedCache(string header)
+        => header.Contains("no-cache", StringComparison.OrdinalIgnoreCase) ||
+           header.Contains("no-store", StringComparison.OrdinalIgnoreCase);
+
+    // DefaultHttpContext throws when RequestServices was never assigned. Key
+    // helpers run from unit tests that do not install a provider; those requests
+    // have no license to vary on.
+    private static bool TryGetRequestServices(HttpContext context, out IServiceProvider services)
+    {
+        try
+        {
+            services = context.RequestServices;
+        }
+        catch (InvalidOperationException)
+        {
+            services = null!;
+            return false;
+        }
+
+        return services is not null;
+    }
+
+    private static string ResolveLicenseKey(HttpRequest request)
+    {
+        if (!TryGetRequestServices(request.HttpContext, out _))
+        {
+            return "<none>";
+        }
+
+        return OutputCachingRegistration.ResolveLicenseOutputCacheKey(request.HttpContext).Value;
+    }
+
+    private static string ResolveTestSchemaKey(HttpRequest request)
+    {
+        if (!TryGetRequestServices(request.HttpContext, out var services))
+        {
+            return string.Empty;
+        }
+
+        var configuration = services.GetService<IConfiguration>();
+        if (configuration?.GetValue<bool>("HONUA_TEST_SCHEMA_HEADERS") != true)
+        {
+            return string.Empty;
+        }
+
+        return request.Headers["X-Honua-Test-Schema"].ToString();
     }
 
     private static bool SqlFilterContainsSpatialOperation(SqlFragment? sqlFilter)

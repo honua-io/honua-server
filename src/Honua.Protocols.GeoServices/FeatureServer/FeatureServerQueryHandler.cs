@@ -575,6 +575,14 @@ internal sealed partial class FeatureServerQueryHandler(
                     payload = JsonReindenter.ToIndentedUtf8Bytes(payload);
                 }
 
+                // Re-check admission at store time. A handler that set
+                // Cache-Control: no-store after the initial decision must not
+                // land in the shared cache.
+                if (!ResponseCacheUtilities.ShouldCache(context, _cacheOptions))
+                {
+                    return Results.Bytes(payload, contentType);
+                }
+
                 var cachedResponse = ResponseCacheUtilities.CreateCachedResponse(payload, contentType, _etagService);
                 await _responseCache.SetAsync(currentCacheKey, cachedResponse, cacheTtl, cancellationToken);
                 return ResponseCacheUtilities.CreateResultFromCachedResponse(context, cachedResponse, _etagService);
@@ -584,6 +592,11 @@ internal sealed partial class FeatureServerQueryHandler(
             {
                 var currentCacheKey = GetCacheKey();
                 if (currentCacheKey is null)
+                {
+                    return Results.Bytes(payload, contentType);
+                }
+
+                if (!ResponseCacheUtilities.ShouldCache(context, _cacheOptions))
                 {
                     return Results.Bytes(payload, contentType);
                 }
@@ -602,9 +615,23 @@ internal sealed partial class FeatureServerQueryHandler(
                 }
 
                 var payloadArray = payload.ToArray();
+                if (!ResponseCacheUtilities.ShouldCache(context, _cacheOptions))
+                {
+                    return Results.Bytes(payloadArray, contentType);
+                }
+
                 var cachedResponse = ResponseCacheUtilities.CreateCachedResponse(payloadArray, contentType, _etagService);
                 await _responseCache.SetAsync(currentCacheKey, cachedResponse, cacheTtl, cancellationToken);
                 return ResponseCacheUtilities.CreateResultFromCachedResponse(context, cachedResponse, _etagService);
+            }
+
+            // Access control already ran. A hit is the same anonymous URL that was
+            // stored, so it must not pay for spatial-reference resolution or SQL
+            // preparation. A miss falls through and the bound key is reused on store.
+            var earlyCached = await TryGetCachedResponseAsync().ConfigureAwait(false);
+            if (earlyCached != null)
+            {
+                return earlyCached;
             }
 
             var (preparedQuery, outputSrid, preparationError) = await PrepareFeatureQueryAsync(
@@ -724,12 +751,6 @@ internal sealed partial class FeatureServerQueryHandler(
                     Distinct = false
                 };
 
-                var cached = await TryGetCachedResponseAsync();
-                if (cached != null)
-                {
-                    return cached;
-                }
-
                 var stopwatch = Stopwatch.StartNew();
                 var statisticsRows = await _queryExecutor.QueryStatisticsAsync(
                     queryLayer.Service,
@@ -758,12 +779,6 @@ internal sealed partial class FeatureServerQueryHandler(
             // takes precedence over the count-only branch.
             if (validatedParams.ReturnCountOnly && !validatedParams.ReturnExtentOnly)
             {
-                var cached = await TryGetCachedResponseAsync();
-                if (cached != null)
-                {
-                    return cached;
-                }
-
                 var stopwatch = Stopwatch.StartNew();
                 var (count, countError) = await ResolveReturnCountAsync(
                     queryLayer.Service,
@@ -804,12 +819,6 @@ internal sealed partial class FeatureServerQueryHandler(
 
             if (validatedParams.ReturnExtentOnly)
             {
-                var cached = await TryGetCachedResponseAsync();
-                if (cached != null)
-                {
-                    return cached;
-                }
-
                 var stopwatch = Stopwatch.StartNew();
                 var extent = await _queryExecutor.GetExtentAsync(
                     queryLayer.Service,
@@ -879,12 +888,6 @@ internal sealed partial class FeatureServerQueryHandler(
                         context,
                         cancellationToken);
                     return _streamingResult;
-                }
-
-                var cached = await TryGetCachedResponseAsync();
-                if (cached != null)
-                {
-                    return cached;
                 }
 
                 var stopwatch = Stopwatch.StartNew();
@@ -976,12 +979,6 @@ internal sealed partial class FeatureServerQueryHandler(
 
             if (!useStreaming)
             {
-                var cached = await TryGetCachedResponseAsync();
-                if (cached != null)
-                {
-                    return cached;
-                }
-
                 if (isFgb)
                 {
                     if (validatedParams.ReturnDistinctValues)

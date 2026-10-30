@@ -142,7 +142,7 @@ After a successful upload, `<LicensePath>.uploaded` takes precedence at startup.
 | `Cache__JitterPercentage` | `0.2` | TTL jitter to avoid cache stampedes. |
 | `Cache__EnableFallback` | `true` | Use in-memory fallback when Redis is unavailable. |
 | `Cache__FallbackMaxEntries` | `1000` | Max entries in the in-memory fallback cache. |
-| `Cache__ResponseCachingEnabled` | `false` | Cache exact protocol responses separately from metadata. |
+| `Cache__ResponseCachingEnabled` | `false` | Cache exact anonymous, non-spatial protocol responses (FeatureServer query, OGC API Features items, OData) separately from metadata. Off by default. Credentialed requests are not stored. The key includes the license fingerprint. Request or response `Cache-Control: no-cache` or `no-store` skips storage. Ad hoc spatial reads stay uncached. |
 | `Cache__RetryIntervalSeconds` | `30` | Redis reconnect interval after a failure. |
 | `Cache__KeyPrefix` | `honua:` | Key prefix for shared Redis instances. |
 

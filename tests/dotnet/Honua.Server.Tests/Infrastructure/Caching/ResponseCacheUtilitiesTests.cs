@@ -1,12 +1,17 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Security.Claims;
 using FluentAssertions;
 using Honua.Core.Features.Caching;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Licensing.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Queries.Filters;
 using Honua.Infrastructure.Caching;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Infrastructure.Caching;
 
@@ -168,6 +173,149 @@ public sealed class ResponseCacheUtilitiesTests
         var result = ResponseCacheUtilities.ShouldBypassAdHocSpatialResponseCache(query, "category = 'park'");
 
         result.Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData("Authorization", "Bearer secret")]
+    [InlineData("X-API-Key", "secret")]
+    [InlineData("X-Esri-Authorization", "secret")]
+    [InlineData("X-Honua-Embed-Key", "secret")]
+    [InlineData("X-Honua-Token", "secret")]
+    public void ShouldCache_WithCredentialHeader_ReturnsFalse(string header, string value)
+    {
+        var context = CreateCachingRequest();
+        context.Request.Headers[header] = value;
+
+        ResponseCacheUtilities.ShouldCache(context, EnabledResponseCache()).Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData("?token=secret")]
+    [InlineData("?key=secret")]
+    [InlineData("?f=json&token=secret")]
+    public void ShouldCache_WithCredentialQuery_ReturnsFalse(string queryString)
+    {
+        var context = CreateCachingRequest(queryString);
+
+        ResponseCacheUtilities.ShouldCache(context, EnabledResponseCache()).Should().BeFalse();
+    }
+
+    [Fact]
+    public void ShouldCache_WithAuthenticatedPrincipal_ReturnsFalse()
+    {
+        var context = CreateCachingRequest();
+        context.User = new ClaimsPrincipal(new ClaimsIdentity(authenticationType: "Test"));
+
+        ResponseCacheUtilities.ShouldCache(context, EnabledResponseCache()).Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData("no-store")]
+    [InlineData("no-cache")]
+    [InlineData("private, no-store")]
+    public void ShouldCache_WhenResponseCacheControlSuppressesSharedCache_ReturnsFalse(string cacheControl)
+    {
+        var context = CreateCachingRequest();
+        context.Response.Headers.CacheControl = cacheControl;
+
+        ResponseCacheUtilities.ShouldCache(context, EnabledResponseCache()).Should().BeFalse();
+    }
+
+    [Fact]
+    public void ShouldCache_WhenResponseCacheControlIsPrivate_ReturnsTrue()
+    {
+        var context = CreateCachingRequest();
+        context.Response.Headers.CacheControl = "private, must-revalidate";
+
+        ResponseCacheUtilities.ShouldCache(context, EnabledResponseCache()).Should().BeTrue();
+    }
+
+    [Fact]
+    public void BuildFeatureServerKey_DoesNotEmbedTheCredential()
+    {
+        var context = CreateCachingRequest("?f=json&where=1%3D1&token=super-secret-token");
+
+        var key = ResponseCacheUtilities.BuildFeatureServerKey("roads", 0, context.Request);
+
+        key.Should().NotContain("super-secret-token");
+    }
+
+    [Fact]
+    public void BuildFeatureServerKey_DifferentLicenseFingerprints_ProducesDifferentKeys()
+    {
+        var pro = CreateCachingRequest();
+        var community = CreateCachingRequest();
+        UseServices(pro, testSchemaHeaders: false, new FixedLicenseStatusProvider(new LicenseStatus(HonuaEdition.Pro, true, null, null)));
+        UseServices(community, testSchemaHeaders: false, new FixedLicenseStatusProvider(new LicenseStatus(HonuaEdition.Community, true, null, null)));
+
+        var proKey = ResponseCacheUtilities.BuildFeatureServerKey("roads", 0, pro.Request);
+        var communityKey = ResponseCacheUtilities.BuildFeatureServerKey("roads", 0, community.Request);
+
+        proKey.Should().NotBe(communityKey);
+    }
+
+    [Fact]
+    public void BuildFeatureServerKey_TestSchemaHeader_VariesOnlyWhenEnabled()
+    {
+        var first = CreateCachingRequest();
+        var second = CreateCachingRequest();
+        first.Request.Headers["X-Honua-Test-Schema"] = "schema-a";
+        second.Request.Headers["X-Honua-Test-Schema"] = "schema-b";
+        UseServices(first, testSchemaHeaders: false);
+        UseServices(second, testSchemaHeaders: false);
+
+        ResponseCacheUtilities.BuildFeatureServerKey("roads", 0, first.Request)
+            .Should().Be(ResponseCacheUtilities.BuildFeatureServerKey("roads", 0, second.Request));
+
+        UseServices(first, testSchemaHeaders: true);
+        UseServices(second, testSchemaHeaders: true);
+
+        ResponseCacheUtilities.BuildFeatureServerKey("roads", 0, first.Request)
+            .Should().NotBe(ResponseCacheUtilities.BuildFeatureServerKey("roads", 0, second.Request));
+    }
+
+    private static CacheOptions EnabledResponseCache()
+        => new()
+        {
+            Enabled = true,
+            ResponseCachingEnabled = true
+        };
+
+    private static DefaultHttpContext CreateCachingRequest(string queryString = "?$top=25")
+        => CreateRequest(
+            scheme: "https",
+            host: "api.example.test",
+            pathBase: string.Empty,
+            path: "/rest/services/roads/FeatureServer/0/query",
+            queryString: queryString);
+
+    private static void UseServices(
+        DefaultHttpContext context,
+        bool testSchemaHeaders,
+        ILicenseStatusProvider? license = null)
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["HONUA_TEST_SCHEMA_HEADERS"] = testSchemaHeaders ? "true" : "false"
+            })
+            .Build();
+        var services = new ServiceCollection();
+        services.AddSingleton<IConfiguration>(configuration);
+        if (license is not null)
+        {
+            services.AddSingleton<ILicenseStatusProvider>(license);
+        }
+
+        context.RequestServices = services.BuildServiceProvider();
+    }
+
+    private sealed class FixedLicenseStatusProvider(LicenseStatus status) : ILicenseStatusProvider
+    {
+        public LicenseStatus GetCurrentStatus() => status;
+
+        public Task<LicenseUploadResult> UploadLicenseAsync(Stream licenseStream, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
     }
 
     private static DefaultHttpContext CreateRequest(
