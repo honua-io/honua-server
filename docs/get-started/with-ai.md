@@ -157,6 +157,27 @@ Discover capabilities and the tools' current input/output schemas. Use supported
 MCP or SDK surfaces for the work below; when a wrapper is missing, use the
 documented generated client or deployment tool, not an invented command.
 
+Prove authenticated access against the server the quickstart started. That page
+publishes on `http://localhost:18080`. Export its admin password as
+`HONUA_API_KEY` and keep the value out of the transcript:
+
+```bash
+python3 -m venv .venv && . .venv/bin/activate
+pip install 'honua-sdk==0.1.19'
+```
+
+```python
+import os
+from honua_sdk import HonuaClient
+
+with HonuaClient("http://localhost:18080", api_key=os.environ["HONUA_API_KEY"]) as client:
+    services = client.list_services()
+print(services)
+```
+
+The service list is the inspection check. Tool discovery is the handshake in
+the MCP guide. Neither one proves a rendered map.
+
 **Done when:** the agent can inspect the intended environment under the right
 identity and distinguish unavailable capabilities from permission failures.
 

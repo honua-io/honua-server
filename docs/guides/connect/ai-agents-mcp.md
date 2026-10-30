@@ -82,7 +82,41 @@ Clients may send one printable `Idempotency-Key` header of up to 128 characters 
 
 ### Verify
 
-Run `POST /mcp` with `{"jsonrpc":"2.0","id":2,"method":"tools/list"}`.
+Run `POST /mcp` with the initialize body above, then `{"jsonrpc":"2.0","id":2,"method":"tools/list"}`, sending the `Mcp-Session-Id` from the initialize response. The endpoint on this page is `http://localhost:8080/mcp`. Handshake methods are open, so this check sends no API key:
+
+```python
+import json
+import urllib.request
+
+url = "http://localhost:8080/mcp"
+
+def post(payload, session=None):
+    request = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json", "Accept": "application/json, text/event-stream"},
+        method="POST",
+    )
+    if session:
+        request.add_header("Mcp-Session-Id", session)
+    with urllib.request.urlopen(request, timeout=30) as response:
+        return response.headers.get("Mcp-Session-Id"), response.read().decode()
+
+session, _initialized = post({
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "initialize",
+    "params": {
+        "protocolVersion": "2025-03-26",
+        "capabilities": {},
+        "clientInfo": {"name": "honua-docs", "version": "1"},
+    },
+})
+_session, listed = post({"jsonrpc": "2.0", "id": 2, "method": "tools/list"}, session)
+if "honua_" not in listed:
+    raise SystemExit(listed)
+print(listed)
+```
 
 The response lists the `honua_*` tools this deployment advertises, with JSON Schema input definitions. Which ones appear depends on the deployment profile (see [Which tools and resources appear](#which-tools-and-resources-appear-capability-gating)), so treat `tools/list` as the authoritative inventory rather than counting the families below. From your agent, "list the Honua tools and validate an empty plan" should return a structured violation list (for example `EMPTY_PLAN_ID`), not an error.
 
