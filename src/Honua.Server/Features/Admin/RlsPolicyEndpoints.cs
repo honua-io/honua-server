@@ -182,7 +182,7 @@ internal static partial class RlsPolicyEndpoints
             };
 
             var created = await store.CreatePolicyAsync(policy, context.RequestAborted);
-            await ResponseCacheUtilities.InvalidateSharedQueryResponsesAsync(context, context.RequestAborted).ConfigureAwait(false);
+            await ResponseCacheUtilities.InvalidateSharedQueryResponsesAsync(context).ConfigureAwait(false);
             RlsPolicyLog.PolicyCreated(logger, created.PolicyId, created.Role, created.Service, created.Layer);
             return TypedResults.Created(
                 $"/api/v1/admin/rls-policies/{created.PolicyId}",
@@ -220,7 +220,7 @@ internal static partial class RlsPolicyEndpoints
                 return TypedResults.NotFound(ApiResponse<object>.Failure("RLS policy not found"));
             }
 
-            await ResponseCacheUtilities.InvalidateSharedQueryResponsesAsync(context, context.RequestAborted).ConfigureAwait(false);
+            await ResponseCacheUtilities.InvalidateSharedQueryResponsesAsync(context).ConfigureAwait(false);
             RlsPolicyLog.PolicyDeleted(logger, id);
             return TypedResults.Ok(ApiResponse<object>.SuccessWithMessage("RLS policy deleted"));
         }

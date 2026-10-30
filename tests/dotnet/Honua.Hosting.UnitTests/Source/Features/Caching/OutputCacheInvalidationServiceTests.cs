@@ -287,6 +287,55 @@ public sealed class OutputCacheInvalidationServiceTests
         await responseCache.Received().RemoveByPatternAsync("response:query:ogc:collection:parcels_title:*", Arg.Any<CancellationToken>());
     }
 
+    [UnitTest]
+    [Operation(Operations.Cache)]
+    public async Task InvalidateLayerAsync_NonNumericPublication_EvictsPublicationIdViaStorageBinding()
+    {
+        var responseCache = Substitute.For<IResponseCache>();
+        var scopeFactory = CreateScopeFactory(CreateNonNumericPublicationGraph());
+        var logger = NullLogger<OutputCacheInvalidationService>.Instance;
+        var sut = new OutputCacheInvalidationService(null, responseCache, null, scopeFactory, null, logger);
+
+        await sut.InvalidateLayerAsync(null, 42, CancellationToken.None);
+
+        await responseCache.Received().RemoveByPatternAsync("response:query:ogc:collection:parcels:*", Arg.Any<CancellationToken>());
+    }
+
+    private static MetadataV2Graph CreateNonNumericPublicationGraph()
+    {
+        var builder = new TestMetadataV2GraphBuilder();
+        builder
+            .AddResource(
+                "res-parcels",
+                "Named Parcels",
+                MetadataV2ResourceType.FeatureDataset,
+                spatial: new MetadataV2ResourceSpatial
+                {
+                    SpatialReference = MetadataV2SpatialReference.Wgs84,
+                    GeometryType = MetadataV2GeometryType.Point,
+                    PrimaryGeometryField = "shape",
+                    SupportedCrs = [MetadataV2SpatialReference.Wgs84],
+                })
+            .AddStorageBinding(
+                "binding-parcels",
+                "res-parcels",
+                "features:42",
+                storageLayerId: 42)
+            .AddService(
+                "svc-alpha",
+                "alpha",
+                protocols: [ServiceProtocols.FeatureServer])
+            .AddPublication(
+                id: "parcels",
+                serviceId: "svc-alpha",
+                resourceId: "res-parcels",
+                layerIndex: null,
+                storageBindingId: "binding-parcels",
+                serviceLocalId: "parcels",
+                publicationType: MetadataV2PublicationType.OgcCollection);
+        return builder.Build();
+    }
+
     private static MetadataV2Graph CreateAliasedPublicationGraph()
     {
         var graph = CreateFeatureServerGraph(("alpha", [7]));

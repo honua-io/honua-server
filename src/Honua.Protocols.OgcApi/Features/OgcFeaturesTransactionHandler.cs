@@ -295,10 +295,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             var statusCode = hasErrors ? 207 : 200; // 207 Multi-Status for partial success
             if (results.Any(result => result.IsSuccess))
             {
-                await _mutationEventService.InvalidateLayerAsync(
-                    null,
-                    LayerValidationHelpers.QueryCacheLayerId(publication, layerId),
-                    CancellationToken.None);
+                await _mutationEventService.InvalidatePublishedLayerAsync(publication, layerId);
             }
             context.Response.Headers["Content-Crs"] = $"<{inputCrs.Uri}>";
             HonuaTelemetry.SetSuccess(activity, response.SuccessCount);
@@ -600,10 +597,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 context.Response.Headers["Content-Crs"] = $"<{inputCrs.Uri}>";
                 var response = ToOgcFeature(responseFeature.Value, resource, inputCrs.AxisOrder, updateLinks);
 
-                await _mutationEventService.InvalidateLayerAsync(
-                    null,
-                    LayerValidationHelpers.QueryCacheLayerId(publication, layerId),
-                    CancellationToken.None);
+                await _mutationEventService.InvalidatePublishedLayerAsync(publication, layerId);
                 // Inline publish on non-outbox backends. Pass the same geometry-change
                 // value the outbox scope used so consumers see a consistent contract:
                 // any Replace that overwrites or clears a non-null existing geometry
@@ -982,10 +976,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 context.Response.Headers["Content-Crs"] = $"<{inputCrs.Uri}>";
                 var response = ToOgcFeature(responseFeature.Value, resource, inputCrs.AxisOrder, updateLinks);
 
-                await _mutationEventService.InvalidateLayerAsync(
-                    null,
-                    LayerValidationHelpers.QueryCacheLayerId(publication, layerId),
-                    CancellationToken.None);
+                await _mutationEventService.InvalidatePublishedLayerAsync(publication, layerId);
                 try
                 {
                     await _mutationEventService.PublishAsync(

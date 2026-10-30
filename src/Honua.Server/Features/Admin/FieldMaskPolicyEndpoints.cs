@@ -175,7 +175,7 @@ internal static partial class FieldMaskPolicyEndpoints
             };
 
             var created = await store.CreatePolicyAsync(policy, context.RequestAborted);
-            await ResponseCacheUtilities.InvalidateSharedQueryResponsesAsync(context, context.RequestAborted).ConfigureAwait(false);
+            await ResponseCacheUtilities.InvalidateSharedQueryResponsesAsync(context).ConfigureAwait(false);
             FieldMaskPolicyLog.PolicyCreated(logger, created.PolicyId, created.Role, created.Service, created.Layer, created.Attribute);
             return TypedResults.Created(
                 $"/api/v1/admin/field-mask-policies/{created.PolicyId}",
@@ -214,7 +214,7 @@ internal static partial class FieldMaskPolicyEndpoints
                 return TypedResults.NotFound(ApiResponse<object>.Failure("Field-mask policy not found"));
             }
 
-            await ResponseCacheUtilities.InvalidateSharedQueryResponsesAsync(context, context.RequestAborted).ConfigureAwait(false);
+            await ResponseCacheUtilities.InvalidateSharedQueryResponsesAsync(context).ConfigureAwait(false);
             FieldMaskPolicyLog.PolicyDeleted(logger, id);
             return TypedResults.Ok(ApiResponse<object>.SuccessWithMessage("Field-mask policy deleted"));
         }

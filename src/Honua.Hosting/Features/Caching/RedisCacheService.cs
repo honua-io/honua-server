@@ -136,6 +136,9 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
     /// <inheritdoc />
     public bool IsUsingFallback => _isUsingFallback;
 
+    /// <inheritdoc />
+    public bool IsProcessLocal => _distributedCache is null or MemoryDistributedCache || _isUsingFallback;
+
     public async Task<CacheStorageMetrics> GetStorageMetricsAsync(CancellationToken cancellationToken = default)
     {
         var backend = _distributedCache == null || _isUsingFallback ? "memory" : "redis";

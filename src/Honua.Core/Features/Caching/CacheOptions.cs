@@ -33,10 +33,10 @@ public sealed class CacheOptions
     public bool ResponseCachingEnabled { get; set; }
 
     /// <summary>
-    /// Allows exact response caching while the cache service is using its in-memory
-    /// fallback (no Redis). Off by default. Set this only for a deployment that runs
-    /// a single server instance; the fallback store is process-local and is not shared
-    /// or invalidated across instances.
+    /// Allows exact response caching while cached values stay in this process: a
+    /// process-local distributed memory cache, or the cache service's in-memory
+    /// fallback dictionary. Off by default. Set this only for a deployment that runs
+    /// a single server instance; that store is not shared or invalidated across instances.
     /// </summary>
     public bool ResponseCachingAllowInMemoryFallback { get; set; }
 

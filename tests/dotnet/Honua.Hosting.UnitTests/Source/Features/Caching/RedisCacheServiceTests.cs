@@ -12,6 +12,7 @@ using Honua.Infrastructure.Middleware;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Caching.Distributed;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -341,6 +342,22 @@ public sealed class RedisCacheServiceTests : IDisposable
     {
         // Assert
         _cacheService.IsUsingFallback.Should().BeTrue();
+        _cacheService.IsProcessLocal.Should().BeTrue();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Cache)]
+    public void IsProcessLocal_WithMemoryDistributedCache_IsTrueWhileFallbackFlagStaysFalse()
+    {
+        var backend = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
+        using var cache = new RedisCacheService(
+            backend,
+            Options.Create(new CacheOptions { Enabled = true }),
+            NullLogger<RedisCacheService>.Instance,
+            _performanceMonitor);
+
+        cache.IsUsingFallback.Should().BeFalse();
+        cache.IsProcessLocal.Should().BeTrue();
     }
 
     [UnitTest]

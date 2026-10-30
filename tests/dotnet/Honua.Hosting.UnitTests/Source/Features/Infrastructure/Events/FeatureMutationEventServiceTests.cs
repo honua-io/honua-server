@@ -4,10 +4,15 @@
 using System.Collections.Immutable;
 using FluentAssertions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Infrastructure.Caching;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Events;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 using NSubstitute;
@@ -169,5 +174,34 @@ public sealed class FeatureMutationEventServiceTests
         captured.Should().NotBeNull();
         captured!.GeometryJson.Should().NotBeNullOrEmpty();
         captured.GeometrySrid.Should().Be(4326);
+    }
+
+    [UnitTest]
+    public async Task InvalidatePublishedLayerAsync_EvictsStorageLayerAndPublicationId()
+    {
+        var responseCache = Substitute.For<IResponseCache>();
+        var scopeFactory = new ServiceCollection().BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
+        var invalidation = new OutputCacheInvalidationService(
+            null,
+            responseCache,
+            null,
+            scopeFactory,
+            null,
+            NullLogger<OutputCacheInvalidationService>.Instance);
+        var service = new FeatureMutationEventService(Substitute.For<IFeatureChangeEventPublisher>(), invalidation);
+        var publication = new MetadataV2Publication
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "parcels", Name = "parcels" },
+            Identifier = new MetadataV2PublicationIdentifier { Value = "parcels", IsNumeric = false },
+        };
+
+        await service.InvalidatePublishedLayerAsync(publication, 42);
+
+        await responseCache.Received().RemoveByPatternAsync(
+            "response:query:ogc:collection:parcels:*",
+            CancellationToken.None);
+        await responseCache.Received().RemoveByPatternAsync(
+            "response:query:ogc:collection:42:*",
+            CancellationToken.None);
     }
 }

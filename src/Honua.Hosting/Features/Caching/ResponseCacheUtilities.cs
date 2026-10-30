@@ -128,9 +128,10 @@ internal static class ResponseCacheUtilities
 
     /// <summary>
     /// Bumps the FeatureServer, OGC, and OData query-response namespaces when an
-    /// invalidator is registered. A missing registration leaves the cache unchanged.
+    /// invalidator is registered. The bump is not tied to the request lifetime:
+    /// a cancelled request must not skip it. A missing registration leaves the cache unchanged.
     /// </summary>
-    internal static async Task InvalidateSharedQueryResponsesAsync(HttpContext context, CancellationToken cancellationToken)
+    internal static async Task InvalidateSharedQueryResponsesAsync(HttpContext context)
     {
         if (!TryGetRequestServices(context, out var services))
         {
@@ -143,7 +144,7 @@ internal static class ResponseCacheUtilities
             return;
         }
 
-        await invalidator.InvalidateQueryResponsesAsync(cancellationToken).ConfigureAwait(false);
+        await invalidator.InvalidateQueryResponsesAsync(CancellationToken.None).ConfigureAwait(false);
     }
 
     internal static CachedResponse CreateCachedResponse(byte[] payload, string contentType, IETagService etagService)
@@ -265,9 +266,10 @@ internal static class ResponseCacheUtilities
         return false;
     }
 
-    // The in-memory fallback is process-local. Response caching stays off there
-    // unless the single-instance opt-in is set. Unit tests that do not register a
-    // health checker keep the previous allow behavior.
+    // A process-local store (no distributed cache, distributed memory, or the
+    // fallback dictionary) is not shared across instances. Response caching stays
+    // off there unless the single-instance opt-in is set. Unit tests that do not
+    // register a health checker keep the previous allow behavior.
     private static bool ResponseCachingBlockedByInMemoryFallback(HttpContext context, CacheOptions options)
     {
         if (options.ResponseCachingAllowInMemoryFallback)
@@ -281,7 +283,7 @@ internal static class ResponseCacheUtilities
         }
 
         var health = services.GetService<ICacheHealthChecker>();
-        return health?.IsUsingFallback == true;
+        return health?.IsProcessLocal == true;
     }
 
     private static bool HeaderSuppressesSharedCache(string header)

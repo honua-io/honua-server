@@ -15,7 +15,9 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Hosting;
+using Honua.Infrastructure.Middleware;
 using Microsoft.Extensions.Caching.Distributed;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
@@ -298,5 +300,117 @@ public sealed class AnonymousResponseCacheAdmissionTests : IAsyncLifetime
         }
 
         return result;
+    }
+}
+
+/// <summary>
+/// The default host registers a process-local distributed memory cache. Response
+/// caching stays off for that backend unless the single-instance opt-in is set.
+/// This host keeps that registration.
+/// </summary>
+[Collection("Database")]
+[Protocol(TestProtocols.FeatureServer)]
+[Operation(Operations.Query)]
+public sealed class ProcessLocalResponseCacheAdmissionTests : IAsyncLifetime
+{
+    private readonly WebAppFixture _fixture = new WebAppFixture()
+        .ConfigureWebHost(builder =>
+        {
+            builder.UseSetting("HONUA_DEV_AUTH", "false");
+            builder.UseSetting("Cache:Enabled", "true");
+            builder.UseSetting("Cache:ResponseCachingEnabled", "true");
+        });
+
+    public async Task InitializeAsync()
+    {
+        await _fixture.InitializeAsync();
+        _fixture.UpdateV2ServiceMetadata("test", accessPolicy: new AccessPolicy { AllowAnonymous = true });
+    }
+
+    public async Task DisposeAsync() => await _fixture.DisposeAsync();
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task ProcessLocalDistributedCache_DoesNotStoreTheQueryResponse()
+    {
+        var options = _fixture.Services.GetRequiredService<IOptions<CacheOptions>>().Value;
+        options.Enabled.Should().BeTrue();
+        options.ResponseCachingEnabled.Should().BeTrue();
+        options.ResponseCachingAllowInMemoryFallback.Should().BeFalse();
+
+        var health = _fixture.Services.GetRequiredService<ICacheHealthChecker>();
+        health.IsUsingFallback.Should().BeFalse();
+        health.IsProcessLocal.Should().BeTrue();
+        _fixture.Services.GetRequiredService<IDistributedCache>().Should().BeOfType<MemoryDistributedCache>();
+
+        var before = await ResponseKeysAsync(_fixture);
+        using var client = _fixture.CreateClient();
+        var body = await GetSuccessAsync(client, QueryPath(resultRecordCount: 11));
+        body.Should().NotContain("honuaCacheMarker");
+
+        var after = await ResponseKeysAsync(_fixture);
+        after.Should().BeEquivalentTo(before, "a process-local distributed cache must not store the query response");
+    }
+
+    private static async Task<string[]> ResponseKeysAsync(WebAppFixture fixture)
+    {
+        var cache = (RedisCacheService)fixture.Services.GetRequiredService<ICacheService>();
+        var schema = new SchemaContext { CurrentSchema = fixture.CurrentSchema };
+        try
+        {
+            var scoped = await LoadDistributedKeysAsync(cache);
+            schema.CurrentSchema = null;
+            var unscoped = await LoadDistributedKeysAsync(cache);
+            return ReadFallbackKeys(cache)
+                .Concat(scoped)
+                .Concat(unscoped)
+                .Where(key => key.Contains("response:query:", StringComparison.Ordinal))
+                .Distinct(StringComparer.Ordinal)
+                .Order(StringComparer.Ordinal)
+                .ToArray();
+        }
+        finally
+        {
+            schema.CurrentSchema = null;
+        }
+    }
+
+    private static async Task<IReadOnlyList<string>> LoadDistributedKeysAsync(RedisCacheService cache)
+    {
+        var method = typeof(RedisCacheService).GetMethod(
+            "LoadDistributedIndexedKeysAsync",
+            BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("Distributed key index reader is missing.");
+        var task = (Task<IReadOnlyList<string>>)method.Invoke(cache, [CancellationToken.None])!;
+        return await task;
+    }
+
+    private static IEnumerable<string> ReadFallbackKeys(RedisCacheService cache)
+    {
+        var field = typeof(RedisCacheService).GetField("_fallbackCache", BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("Fallback cache field is missing.");
+        var dictionary = field.GetValue(cache) ?? throw new InvalidOperationException("Fallback cache is missing.");
+        foreach (var item in (IEnumerable)dictionary)
+        {
+            yield return (string)item.GetType().GetProperty("Key")!.GetValue(item)!;
+        }
+    }
+
+    private static string QueryPath(int resultRecordCount)
+        => "/rest/services/test/FeatureServer/0/query?f=json&where=1%3D1&outFields=objectid&returnGeometry=false"
+           + "&resultRecordCount=" + resultRecordCount.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    private static async Task<string> GetSuccessAsync(HttpClient client, string path)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, path);
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        request.Headers.AcceptEncoding.Add(new StringWithQualityHeaderValue("identity"));
+        using var response = await client.SendAsync(request);
+        var body = await response.Content.ReadAsStringAsync();
+        var snippet = body.Length > 300 ? body[..300] : body;
+        response.IsSuccessStatusCode.Should().BeTrue("query returned {0}: {1}", (int)response.StatusCode, snippet);
+        body.Should().Contain("\"features\"", "query body must be a feature payload: {0}", snippet);
+        body.Should().NotContain("\"code\":499", "query body must be a feature payload: {0}", snippet);
+        return body;
     }
 }

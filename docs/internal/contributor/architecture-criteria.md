@@ -244,7 +244,7 @@ shared infrastructure.
     - protocol preferences.
   - Exact response caching and generic query-result caching are opt-in and off by default
     (`Cache:ResponseCachingEnabled=false`). Redis metadata and catalog caching can stay enabled.
-    Response caching stays off while the cache service is using its in-memory fallback unless
+    Response caching stays off while the cache is process-local (distributed memory or the in-memory fallback) unless
     `Cache:ResponseCachingAllowInMemoryFallback` is set for a single server instance. Stored
     responses are limited by `Cache:ResponseCacheMaxEntryBytes` and `Cache:ResponseCacheMaxBytes`.
   - Do not add exact response caching for ad hoc spatial feature, query or render requests,

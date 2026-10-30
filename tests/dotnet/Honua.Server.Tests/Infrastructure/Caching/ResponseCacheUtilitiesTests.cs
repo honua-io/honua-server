@@ -18,6 +18,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Infrastructure.Caching;
 
@@ -391,6 +392,46 @@ public sealed class ResponseCacheUtilitiesTests
     }
 
     [UnitTest]
+    public void ShouldCache_WhenDistributedCacheIsProcessLocal_ReturnsFalse()
+    {
+        var context = CreateCachingRequest();
+        var services = new ServiceCollection();
+        services.AddSingleton<ICacheHealthChecker>(new FallbackHealthChecker(usingFallback: false, processLocal: true));
+        context.RequestServices = services.BuildServiceProvider();
+
+        ResponseCacheUtilities.ShouldCache(context, EnabledResponseCache()).Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void ShouldCache_WhenProcessLocalCacheIsExplicitlyAllowed_ReturnsTrue()
+    {
+        var context = CreateCachingRequest();
+        var services = new ServiceCollection();
+        services.AddSingleton<ICacheHealthChecker>(new FallbackHealthChecker(usingFallback: false, processLocal: true));
+        context.RequestServices = services.BuildServiceProvider();
+
+        var options = EnabledResponseCache();
+        options.ResponseCachingAllowInMemoryFallback = true;
+
+        ResponseCacheUtilities.ShouldCache(context, options).Should().BeTrue();
+    }
+
+    [UnitTest]
+    public async Task InvalidateSharedQueryResponsesAsync_CancelledRequest_StillBumpsNamespaces()
+    {
+        var invalidator = Substitute.For<IQueryResponseCacheInvalidator>();
+        var services = new ServiceCollection();
+        services.AddSingleton(invalidator);
+        var context = CreateCachingRequest();
+        context.RequestServices = services.BuildServiceProvider();
+        context.RequestAborted = new CancellationToken(canceled: true);
+
+        await ResponseCacheUtilities.InvalidateSharedQueryResponsesAsync(context);
+
+        await invalidator.Received(1).InvalidateQueryResponsesAsync(CancellationToken.None);
+    }
+
+    [UnitTest]
     public void BuildFeatureServerKey_RepeatedQueryValues_PreserveOrder()
     {
         var forward = CreateCachingRequest("?f=json&orderByFields=NAME&orderByFields=POP%20DESC");
@@ -477,9 +518,11 @@ public sealed class ResponseCacheUtilitiesTests
         return request.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(1));
     }
 
-    private sealed class FallbackHealthChecker(bool usingFallback) : ICacheHealthChecker
+    private sealed class FallbackHealthChecker(bool usingFallback, bool? processLocal = null) : ICacheHealthChecker
     {
         public bool IsUsingFallback { get; } = usingFallback;
+
+        public bool IsProcessLocal { get; } = processLocal ?? usingFallback;
 
         public Task<bool> IsCacheHealthyAsync(CancellationToken cancellationToken = default)
             => Task.FromResult(true);

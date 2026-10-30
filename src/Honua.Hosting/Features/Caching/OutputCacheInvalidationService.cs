@@ -390,11 +390,15 @@ internal sealed partial class OutputCacheInvalidationService : IQueryResponseCac
             var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
             foreach (var pub in snapshot.Graph.Publications)
             {
-                if (pub.LayerIndex != layerId)
+                var resource = snapshot.ResolveResource(pub);
+                // LayerIndex is the service-local id. Publications with a non-numeric
+                // identifier keep that null and are reached through the storage binding.
+                if (pub.LayerIndex != layerId && snapshot.ResolveStorageLayerId(pub, resource) != layerId)
                 {
                     continue;
                 }
-                AddPublicationCollectionAliases(collectionIds, pub, snapshot.ResolveResource(pub));
+
+                AddPublicationCollectionAliases(collectionIds, pub, resource);
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
