@@ -3230,7 +3230,7 @@
               "POST /rest/services/{serviceId}/GPServer"
             ],
             "capabilityMaturity": [
-              "implemented"
+              "preview"
             ],
             "notes": "Returns service metadata and the published task list projected from the built-in IProcessCatalog. Implemented in #723. Utilities/PrintingTools publishes its own synchronous service resource on this path, listing Export Web Map Task and Get Layout Templates Info Task."
           },
@@ -3345,7 +3345,7 @@
               "POST /rest/services/{serviceId}/GPServer/{taskName}"
             ],
             "capabilityMaturity": [
-              "implemented"
+              "preview"
             ],
             "notes": "Returns task metadata projected from the built-in IProcessCatalog, including parameter descriptions and Esri data types. Implemented in #723. Every GP service also resolves the NetworkAnalysisUtilities tasks GetTravelModes and GetToolInfo by name (synchronous, anonymous projections of the routing provider, deliberately absent from the task list because they have no SOAP or job form) so ArcGIS Pro and arcpy can bind the NAServer next to it (#5035)."
           },
@@ -3360,7 +3360,7 @@
               "POST /rest/services/{serviceId}/GPServer/{taskName}/execute"
             ],
             "capabilityMaturity": [
-              "implemented"
+              "preview"
             ],
             "notes": "Runs sync-eligible (deterministic single-geometry geometry.* / conversion.geometry-format) tasks inline through the same canonical job runtime as submitJob and returns the Esri execute envelope (results \u002B messages). Async-only tasks return a 400 capability message pointing at submitJob. Both execute and submitJob honor env:outSR, env:workspace, and env:overwriteOutput; nonempty env:processSR or context.processSR are rejected before execution or job submission (GeoServices error.code=400 over HTTP 200); unsupported env:* controls return an error with code 400. context.outSR maps to env:outSR; null or blank processing references request no override. A failed or cancelled run returns the GeoServices error envelope (code 500, job id and failure message in details) instead of an empty results list (#4034). Implemented in #1660."
           },
@@ -3374,7 +3374,7 @@
               "GET /rest/services/{serviceId}/GPServer/{taskName}/jobs"
             ],
             "capabilityMaturity": [
-              "implemented"
+              "preview"
             ],
             "notes": "Lists submitted/running/completed/failed jobs for a task, newest first, with opaque cursor paging. Job/Read authorization and per-job ownership are enforced in the shared job service before any job is surfaced."
           },
@@ -3388,7 +3388,7 @@
               "GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}"
             ],
             "capabilityMaturity": [
-              "implemented"
+              "preview"
             ],
             "notes": "Job status polling with route binding validation. Maps ExecutionJobRecord to Esri status. Implemented in #723."
           },
@@ -3403,7 +3403,7 @@
               "POST /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/cancel"
             ],
             "capabilityMaturity": [
-              "implemented"
+              "preview"
             ],
             "notes": "Job cancellation with route binding validation. Implemented in #723."
           },
@@ -3417,7 +3417,7 @@
               "GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/results/{paramName}"
             ],
             "capabilityMaturity": [
-              "implemented"
+              "preview"
             ],
             "notes": "Per-output result access with route binding validation. Successful terminal jobs advertise named result URLs backed by the durable result-package store, and retrieval returns each parameter\u0027s Esri data type and stored value."
           },
@@ -3432,7 +3432,7 @@
               "POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob"
             ],
             "capabilityMaturity": [
-              "implemented"
+              "preview"
             ],
             "notes": "Resolves the published task name against the built-in IProcessCatalog, validates inputs, persists GPServer route metadata, and returns an Esri job envelope. Implemented in #723."
           }

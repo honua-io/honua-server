@@ -8,11 +8,11 @@ using System.Text;
 using System.Text.Encodings.Web;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Redis;
 using Honua.Infrastructure.Security;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
-using StackExchange.Redis;
 
 namespace Honua.Infrastructure.Authentication;
 
@@ -156,7 +156,12 @@ internal sealed class ApiKeyAuthenticationHandler(
         {
             try
             {
-                var storedKey = await dependencies.AdminApiKeyStore.ValidateAsync(providedApiKey, cancellationToken);
+                // One completed-reader fault is a torn Redis pipe (Lambda freeze/thaw or a
+                // timeout). Retry once so the multiplexer can reconnect and a managed key
+                // still authenticates (honua-server#6753).
+                var storedKey = await RedisClientFault.RetryCompletedReaderAsync(
+                    () => dependencies.AdminApiKeyStore.ValidateAsync(providedApiKey, cancellationToken),
+                    cancellationToken);
                 if (storedKey is not null)
                 {
                     var violation = ApiKeyRequestRestrictions.Evaluate(storedKey.Record, request);
@@ -177,11 +182,11 @@ internal sealed class ApiKeyAuthenticationHandler(
                         ApiKeyRejection.None);
                 }
             }
-            catch (Exception ex) when (ex is RedisException or TimeoutException or System.Data.Common.DbException && ex is not OperationCanceledException)
+            catch (Exception ex) when (RedisClientFault.IsCredentialStoreUnavailable(ex))
             {
                 // RedisTimeoutException derives from TimeoutException, not RedisException.
-                // A store outage must not become an unhandled 500, and must not skip the
-                // HONUA_ADMIN_PASSWORD break-glass comparison.
+                // A second completed-reader fault is the same outage: fall through to the
+                // HONUA_ADMIN_PASSWORD break-glass comparison instead of an unhandled 500.
                 storeUnavailable = true;
                 AuthenticationLog.AdminApiKeyStoreUnavailable(logger, ex);
             }

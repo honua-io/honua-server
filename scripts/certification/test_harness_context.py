@@ -124,6 +124,40 @@ class HarnessContextTests(unittest.TestCase):
             self.assertEqual(len(preview), 14)
             self.assertTrue(all('FullyQualifiedName~' + test in selected for row in preview for test in row['test_ids']))
 
+    def test_printing_preview_floor_is_the_only_declared_downgrade(self):
+        from harness_context import expected_requirements
+        value = module.load_contract(CONTRACT)
+        matrix = json.loads((REPOSITORY_ROOT / 'docs/gis/data/capability-matrix.v1.json').read_text())
+        expected = expected_requirements(value, matrix, 'a' * 40)
+        key = (
+            'printing.pdf-output', 'printing-tools',
+            'POST /rest/services/Utilities/PrintingTools/GPServer/Export Web Map Task/execute',
+        )
+        self.assertEqual(expected[key]['maturity'], 'preview')
+        self.assertEqual(expected[key]['required_tier'], 'release')
+        others = [row for ident, row in expected.items() if ident != key]
+        self.assertTrue(all(
+            row['maturity'] == 'supported' and row['required_tier'] == 'nightly' for row in others))
+        declared = contract()
+        declared['assignments'][0]['maturity'] = 'preview'
+        declared['assignments'][0]['required_tier'] = 'release'
+        outcomes = {'ExampleTests.Get_ReturnsDocument': 'pass'}
+        with governed_fixture(declared, execution_args()) as args:
+            module.build_fragment(declared, outcomes, args)
+        with governed_fixture(declared, execution_args()) as args:
+            context = json.loads(args.requirements_context.read_text())
+            context['requirements'][0]['maturity'] = 'supported'
+            context['requirements'][0]['required_tier'] = 'nightly'
+            args.requirements_context.write_text(json.dumps(context))
+            with self.assertRaisesRegex(ValueError, 'altered harness operation'):
+                module.build_fragment(declared, outcomes, args)
+        illegal = contract()
+        illegal['assignments'][0]['maturity'] = 'preview'
+        illegal['assignments'][0]['required_tier'] = 'nightly'
+        with self.assertRaisesRegex(ValueError, 'required at no tier'):
+            with governed_fixture(illegal, execution_args()):
+                pass
+
     def test_context_must_match_every_source_owned_row_field(self):
         value = contract()
         value['assignments'][0]['test_ids'].append('ExampleTests.Get_RejectsInvalidInput')

@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Shared.Models;
+using Honua.Infrastructure.Redis;
 using Polly.CircuitBreaker;
 
 namespace Honua.Infrastructure.Models;
@@ -150,6 +151,16 @@ internal static class ExceptionMapper
                 StatusCodes.Status401Unauthorized,
                 "Unauthorized",
                 "Authentication is required to access this resource.",
+                null
+            ),
+
+            // A Redis pipe completed under an in-flight command escapes auth only when the
+            // caller did not catch it. Map that one message to 503; every other
+            // InvalidOperationException stays 500 (honua-server#6753).
+            InvalidOperationException invalidOperationEx when RedisClientFault.IsCompletedReader(invalidOperationEx) => (
+                StatusCodes.Status503ServiceUnavailable,
+                "Service Unavailable",
+                "The service is temporarily unavailable. Please try again later.",
                 null
             ),
 
