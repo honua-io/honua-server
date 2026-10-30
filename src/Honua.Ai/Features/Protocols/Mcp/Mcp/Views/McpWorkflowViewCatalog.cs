@@ -42,6 +42,9 @@ internal static class McpWorkflowViewCatalog
     /// <summary>The 2026.1 analyze view: ground, plan, execute, and job control.</summary>
     public const string AnalyzeViewName = "analyze";
 
+    /// <summary>Read-only package review. Split from <c>setup</c> so that view stays inside the descriptor budget.</summary>
+    public const string ReviewViewName = "review";
+
     /// <summary>
     /// The default meta/workflow surface. Long-tail operations are reached by
     /// resolving/searching, describing, planning/proposing, then executing.
@@ -213,6 +216,8 @@ internal static class McpWorkflowViewCatalog
                     // Map and app package composition. Listing grants no authority: both tools
                     // still refuse an anonymous caller (unauthenticated), which an installed client
                     // that resolves tools from the listing can now actually exercise.
+                    // honua_validate_package and honua_preview_package live on the review view:
+                    // adding their descriptors pushed this view over the 128 KiB aggregate ceiling.
                     McpWorkflowViewMemberRule.Exact("honua_create_map_package"),
                     McpWorkflowViewMemberRule.Exact("honua_create_app_package"),
                 ],
@@ -437,6 +442,36 @@ internal static class McpWorkflowViewCatalog
         ],
     };
 
+    /// <summary>
+    /// The <c>review</c> view. Package review is read-only and does not belong on
+    /// <c>configure</c> (that view carries the admin roster) or <c>analyze</c> (the
+    /// ground/plan/execute prompts). It is not on <c>setup</c> because the two
+    /// descriptors, about 2.5 KiB each, push that view past the 128 KiB aggregate ceiling.
+    /// </summary>
+    public static McpWorkflowViewDefinition Review { get; } = new()
+    {
+        Name = ReviewViewName,
+        Title = "Review a package",
+        Description =
+            "Validate or preview a map, app, or other supported package. The review is read-only "
+            + "and does not execute or publish. Listing grants no authority.",
+        Revision = "review.v1",
+        Stages =
+        [
+            new McpWorkflowViewStageDefinition
+            {
+                Id = "package-review",
+                Title = "Read-only package review",
+                Description = "Inspect a package and return the canonical review. An anonymous caller is still refused.",
+                Rules =
+                [
+                    McpWorkflowViewMemberRule.Exact("honua_validate_package"),
+                    McpWorkflowViewMemberRule.Exact("honua_preview_package"),
+                ],
+            },
+        ],
+    };
+
     /// <summary>Every view this server publishes, keyed by name (ordinal).</summary>
     public static IReadOnlyDictionary<string, McpWorkflowViewDefinition> All { get; } =
         new Dictionary<string, McpWorkflowViewDefinition>(StringComparer.Ordinal)
@@ -446,6 +481,7 @@ internal static class McpWorkflowViewCatalog
             [Configure.Name] = Configure,
             [Operate.Name] = Operate,
             [Analyze.Name] = Analyze,
+            [Review.Name] = Review,
         };
 
     /// <summary>The published view names, in stable ordinal order.</summary>
