@@ -22,12 +22,17 @@ internal sealed class PostgresServerJobArtifactImportLedger : IServerJobArtifact
 
     private readonly NpgsqlDataSource _dataSource;
     private readonly string _table;
+    private readonly PostgresSessionLockConnections _sessionLockConnections;
 
-    internal PostgresServerJobArtifactImportLedger(NpgsqlDataSource dataSource, PostgresSchemaConfiguration schema)
+    internal PostgresServerJobArtifactImportLedger(
+        NpgsqlDataSource dataSource,
+        PostgresSchemaConfiguration schema,
+        Microsoft.Extensions.Options.IOptions<PostgresSessionLockConnections>? sessionLockConnections = null)
     {
         ArgumentNullException.ThrowIfNull(dataSource);
         ArgumentNullException.ThrowIfNull(schema);
         _dataSource = dataSource;
+        _sessionLockConnections = sessionLockConnections?.Value ?? PostgresSessionLockConnections.Pooled;
         _table = SchemaSearchPath.QualifyTable("job_artifact_import_receipt", schema.MetadataSchema);
     }
 
@@ -40,7 +45,10 @@ internal sealed class PostgresServerJobArtifactImportLedger : IServerJobArtifact
         ArgumentNullException.ThrowIfNull(import);
         RequireScope(scope);
         var scopeKey = ScopeKey(scope);
-        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        // The attempt holds a session advisory lock. On Lambda the connection is unpooled, so
+        // closing it ends the RDS Proxy-pinned session (honua-server#6765).
+        await using var connection = await _sessionLockConnections.OpenAsync(_dataSource, cancellationToken)
+            .ConfigureAwait(false);
         if (!await TryLockAsync(connection, scopeKey, cancellationToken).ConfigureAwait(false))
         {
             throw new ServerJobArtifactImportInProgressException();

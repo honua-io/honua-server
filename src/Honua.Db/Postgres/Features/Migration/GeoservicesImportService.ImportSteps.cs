@@ -43,7 +43,12 @@ internal sealed partial class GeoservicesImportService
 
         Log.ImportStarting(_logger, request.ServiceUrl, request.LayerId, request.TableName);
 
-        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var lease = await OpenConnectionAsync(cancellationToken);
+        // The import holds a session advisory lock for the whole job. On Lambda it runs on an
+        // unpooled connection, so closing it ends the RDS Proxy-pinned session (honua-server#6765).
+        await using var session = await _sessionLockConnections
+            .OpenAsync(lease, cancellationToken, hasCallerTransaction: lease.Transaction is not null);
+        var connection = session.Connection;
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
         // #4600: one import per target table, for the whole job. A retry submitted while the original
