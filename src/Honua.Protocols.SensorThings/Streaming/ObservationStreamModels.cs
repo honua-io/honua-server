@@ -55,16 +55,44 @@ public sealed record ObservationStreamFrame
     public static ObservationStreamFrame Heartbeat() => new() { IsHeartbeat = true };
 }
 
-/// <summary>Status frame emitted on the SSE/WebSocket handshake.</summary>
+/// <summary>Status frame emitted on the SSE/WebSocket handshake and on a terminal gap.</summary>
 public sealed record ObservationStreamStatus
 {
-    /// <summary>Connection status token (e.g. <c>connected</c>).</summary>
+    /// <summary>This stream does not retain a cursor. A gap means the client must rebaseline.</summary>
+    public const string EphemeralSemantics = "ephemeral";
+
+    /// <summary>Connection status token (e.g. <c>connected</c> or <c>gap</c>).</summary>
     [JsonPropertyName("status")]
     public required string Status { get; init; }
 
     /// <summary>The datastream id this stream is scoped to, or null for all.</summary>
     [JsonPropertyName("datastreamId")]
     public long? DatastreamId { get; init; }
+
+    /// <summary>Delivery contract. <c>ephemeral</c> means overflow ends the session instead of replaying.</summary>
+    [JsonPropertyName("semantics")]
+    public string? Semantics { get; init; }
+
+    /// <summary>Why a terminal status was emitted, for example <c>slow-consumer</c>.</summary>
+    [JsonPropertyName("reason")]
+    public string? Reason { get; init; }
+
+    /// <summary>Handshake frame. Semantics are advertised on every successful connect.</summary>
+    public static ObservationStreamStatus Connected(long? datastreamId) => new()
+    {
+        Status = "connected",
+        DatastreamId = datastreamId,
+        Semantics = EphemeralSemantics,
+    };
+
+    /// <summary>Terminal gap. The frames that did not fit are not replayed.</summary>
+    public static ObservationStreamStatus SlowConsumerGap(long? datastreamId) => new()
+    {
+        Status = "gap",
+        DatastreamId = datastreamId,
+        Reason = "slow-consumer",
+        Semantics = EphemeralSemantics,
+    };
 }
 
 /// <summary>Redis pub/sub envelope used to fan observation frames out across nodes.</summary>
@@ -96,4 +124,7 @@ internal static partial class ObservationStreamLog
 
     [LoggerMessage(EventId = 5104, Level = LogLevel.Debug, Message = "Observation stream session refused ({Transport}): {Limit} admission cap reached.")]
     public static partial void SessionRejected(ILogger logger, string transport, ObservationStreamAdmissionLimit limit);
+
+    [LoggerMessage(EventId = 5105, Level = LogLevel.Warning, Message = "Observation stream session {SessionId} disconnected because its buffer overflowed.")]
+    public static partial void SlowConsumerDisconnected(ILogger logger, Guid sessionId);
 }

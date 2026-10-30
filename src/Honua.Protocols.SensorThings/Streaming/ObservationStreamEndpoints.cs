@@ -39,7 +39,9 @@ internal static class ObservationStreamEndpoints
             .WithDescription(
                 "Opens a real-time stream of newly-ingested Observations. SSE: send " +
                 "Accept: text/event-stream. WebSocket: send an Upgrade request. " +
-                "Optional query param: datastreamId (tail a single Datastream).")
+                "Optional query param: datastreamId (tail a single Datastream). " +
+                "Delivery is ephemeral: there is no resume cursor, and a slow consumer is " +
+                "disconnected with a gap status instead of a silent drop.")
             .WithTags("SensorThings")
             .RequireAuthorization()
             .Produces(200, contentType: "text/event-stream")
@@ -145,6 +147,7 @@ internal static class ObservationStreamEndpoints
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
             context.RequestAborted, session.DisconnectToken);
         var ct = linkedCts.Token;
+        var clientGone = false;
 
         try
         {
@@ -152,7 +155,7 @@ internal static class ObservationStreamEndpoints
                 context.Response,
                 "status",
                 JsonSerializer.Serialize(
-                    new ObservationStreamStatus { Status = "connected", DatastreamId = datastreamId },
+                    ObservationStreamStatus.Connected(datastreamId),
                     ObservationStreamJsonContext.Default.ObservationStreamStatus),
                 ct).ConfigureAwait(false);
             await context.Response.Body.FlushAsync(ct).ConfigureAwait(false);
@@ -197,15 +200,21 @@ internal static class ObservationStreamEndpoints
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            // Normal disconnect.
+            // The session token or the request ended. A slow-consumer cancel still
+            // needs a gap frame, and that write must not use the cancelled token.
         }
         catch (IOException)
         {
-            // Client disconnected.
+            clientGone = true;
         }
         catch (ObjectDisposedException)
         {
-            // Response disposed.
+            clientGone = true;
+        }
+
+        if (!clientGone)
+        {
+            await WriteSlowConsumerGapAsync(context, session, datastreamId, socket: null).ConfigureAwait(false);
         }
     }
 
@@ -219,13 +228,14 @@ internal static class ObservationStreamEndpoints
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
             context.RequestAborted, session.DisconnectToken);
         var ct = linkedCts.Token;
+        var clientGone = false;
 
         try
         {
             await SendSocketAsync(
                 socket,
                 JsonSerializer.Serialize(
-                    new ObservationStreamStatus { Status = "connected", DatastreamId = datastreamId },
+                    ObservationStreamStatus.Connected(datastreamId),
                     ObservationStreamJsonContext.Default.ObservationStreamStatus),
                 ct).ConfigureAwait(false);
 
@@ -266,11 +276,66 @@ internal static class ObservationStreamEndpoints
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            // Normal disconnect.
+            // The session token or the request ended. A slow-consumer cancel still
+            // needs a gap frame, and that write must not use the cancelled token.
         }
         catch (WebSocketException)
         {
-            // Client closed abruptly.
+            clientGone = true;
+        }
+
+        if (!clientGone)
+        {
+            await WriteSlowConsumerGapAsync(context, session, datastreamId, socket).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Emits the terminal gap on <see cref="HttpContext.RequestAborted"/> only.
+    /// The session token is already cancelled, and disposing it must not block this write.
+    /// </summary>
+    private static async Task WriteSlowConsumerGapAsync(
+        HttpContext context,
+        ObservationStreamSession session,
+        long? datastreamId,
+        WebSocket? socket)
+    {
+        if (session.DisconnectReason != ObservationStreamDisconnectReason.SlowConsumer
+            || context.RequestAborted.IsCancellationRequested)
+        {
+            return;
+        }
+
+        var json = JsonSerializer.Serialize(
+            ObservationStreamStatus.SlowConsumerGap(datastreamId),
+            ObservationStreamJsonContext.Default.ObservationStreamStatus);
+        try
+        {
+            if (socket is null)
+            {
+                await WriteSseAsync(context.Response, "status", json, context.RequestAborted).ConfigureAwait(false);
+                await context.Response.Body.FlushAsync(context.RequestAborted).ConfigureAwait(false);
+            }
+            else
+            {
+                await SendSocketAsync(socket, json, context.RequestAborted).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // The client aborted while the gap was being written.
+        }
+        catch (IOException)
+        {
+            // The client is already gone.
+        }
+        catch (ObjectDisposedException)
+        {
+            // The response was disposed before the gap could be written.
+        }
+        catch (WebSocketException)
+        {
+            // The socket closed before the gap could be written.
         }
     }
 
