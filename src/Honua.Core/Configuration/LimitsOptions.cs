@@ -364,6 +364,15 @@ public class ConnectionLimits
     public int ConnectionIdleLifetimeSeconds { get; set; } = 600;
 
     /// <summary>
+    /// Maximum total lifetime of a pooled connection in seconds; 0 means unlimited. Npgsql
+    /// enforces it when a connection is taken from the pool, using wall-clock time, so it holds
+    /// even when a frozen Lambda sandbox never runs idle pruning. Unset on Lambda, it defaults
+    /// below the RDS Proxy idle-client timeout (honua-server#6764).
+    /// </summary>
+    [Range(0, 86400)]
+    public int ConnectionLifetimeSeconds { get; set; }
+
+    /// <summary>
     /// Connection pruning interval in seconds.
     /// </summary>
     [Range(1, 3600)]
