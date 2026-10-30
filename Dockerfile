@@ -139,6 +139,7 @@ FROM ${DOTNET_ASPNET_IMAGE} AS runtime
 # 2026-10-08: pick up libfreetype6 2.13.2+dfsg-1ubuntu0.2 (CVE-2026-95512).
 # 2026-10-29: pick up libbrotli1 1.1.0-2ubuntu0.1 (CVE-2026-111497).
 # 2026-10-30: pick up zlib1g 1:1.3.dfsg-3.1ubuntu2.3 (CVE-2026-85091).
+# dpkg-query needs the version field with one dollar. Two dollars emit a leading dollar and fail the epoch check.
 ARG RUNTIME_PACKAGE_REVISION=20261030
 
 # Security: Install runtime dependencies. The glibc runtime is required by
@@ -156,8 +157,8 @@ RUN echo "runtime package revision ${RUNTIME_PACKAGE_REVISION}" && \
     libbrotli1 \
     libgssapi-krb5-2 \
     tzdata && \
-    dpkg --compare-versions "$(dpkg-query -W -f '$${Version}' libbrotli1)" ge "1.1.0-2ubuntu0.1" && \
-    dpkg --compare-versions "$(dpkg-query -W -f '$${Version}' zlib1g)" ge "1:1.3.dfsg-3.1ubuntu2.3" && \
+    dpkg --compare-versions "$(dpkg-query -W -f '${Version}' libbrotli1)" ge "1.1.0-2ubuntu0.1" && \
+    dpkg --compare-versions "$(dpkg-query -W -f '${Version}' zlib1g)" ge "1:1.3.dfsg-3.1ubuntu2.3" && \
     rm -rf /var/lib/apt/lists/* /tmp/*
 
 # Security: Create non-root user with minimal privileges

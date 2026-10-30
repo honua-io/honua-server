@@ -25,6 +25,9 @@ public sealed class RuntimeImageCveTests
             runtimeStage.Should().NotContain("wget", $"{relativePath} runtime stage must not install or call wget");
             runtimeStage.Should().Contain(PackageRevision, relativePath);
             runtimeStage.Should().Contain("apt-get upgrade -y", relativePath);
+            runtimeStage.Should().Contain("dpkg-query -W -f '${Version}' zlib1g", relativePath);
+            runtimeStage.Should().NotContain("dpkg-query -W -f '$${Version}'",
+                $"{relativePath} must pass dpkg-query ${{Version}}; a doubled dollar emits a leading dollar and compare-versions rejects the epoch");
             runtimeStage.Should().Contain("HEALTHCHECK", relativePath);
             runtimeStage.Should().Contain("/dev/tcp/127.0.0.1/8080", relativePath);
             runtimeStage.Should().Contain("GET /healthz/live HTTP/1.0", relativePath);
@@ -63,6 +66,8 @@ public sealed class RuntimeImageCveTests
 
         runtimeStage.Should().Contain(PackageRevision);
         runtimeStage.Should().Contain("apt-get upgrade -y");
+        runtimeStage.Should().Contain("dpkg-query -W -f '${Version}' zlib1g");
+        runtimeStage.Should().NotContain("dpkg-query -W -f '$${Version}'");
         runtimeStage.Should().NotContain("wget");
     }
 
@@ -106,7 +111,16 @@ public sealed class RuntimeImageCveTests
                 if (trimmed.Contains("wget", StringComparison.Ordinal)
                     && trimmed.Contains("healthz", StringComparison.Ordinal))
                 {
-                    offenders.Add($"{relativePath}: {trimmed}");
+                    offenders.Add($"{relativePath}: wget {trimmed}");
+                }
+
+                // Compose interpolates $status on the host before the container
+                // starts. The file must contain $$status so the shell still sees $status.
+                if (trimmed.Contains("/dev/tcp/", StringComparison.Ordinal)
+                    && trimmed.Contains("healthz", StringComparison.Ordinal)
+                    && System.Text.RegularExpressions.Regex.IsMatch(trimmed, @"(?<!\$)\$status"))
+                {
+                    offenders.Add($"{relativePath}: compose interpolates the status variable");
                 }
             }
         }
