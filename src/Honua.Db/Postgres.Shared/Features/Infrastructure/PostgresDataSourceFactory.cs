@@ -235,10 +235,9 @@ internal static class PostgresDataSourceFactory
         connectionStringBuilder.MinPoolSize = Math.Min(limits.MinConnectionPoolSize, connectionStringBuilder.MaxPoolSize);
         connectionStringBuilder.ConnectionIdleLifetime = limits.ConnectionIdleLifetimeSeconds;
         connectionStringBuilder.ConnectionPruningInterval = limits.ConnectionPruningIntervalSeconds;
-        if (limits.ConnectionLifetimeSeconds > 0)
-        {
-            connectionStringBuilder.ConnectionLifetime = limits.ConnectionLifetimeSeconds;
-        }
+        // Always assigned, like the idle lifetime: an explicit 0 (unlimited) must reach Npgsql,
+        // whose own default is 3600.
+        connectionStringBuilder.ConnectionLifetime = limits.ConnectionLifetimeSeconds;
 
         connectionStringBuilder.CommandTimeout = limits.CommandTimeoutSeconds;
         connectionStringBuilder.WriteBufferSize = limits.BufferSizeBytes;
