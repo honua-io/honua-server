@@ -138,7 +138,8 @@ FROM ${DOTNET_ASPNET_IMAGE} AS runtime
 # echoed in the upgrade RUN so a bump invalidates the cached apt layer.
 # 2026-10-08: pick up libfreetype6 2.13.2+dfsg-1ubuntu0.2 (CVE-2026-95512).
 # 2026-10-29: pick up libbrotli1 1.1.0-2ubuntu0.1 (CVE-2026-111497).
-ARG RUNTIME_PACKAGE_REVISION=20261029
+# 2026-10-30: pick up zlib1g 1:1.3.dfsg-3.1ubuntu2.3 (CVE-2026-85091).
+ARG RUNTIME_PACKAGE_REVISION=20261030
 
 # Security: Install runtime dependencies. The glibc runtime is required by
 # ParquetSharp's native library, which backs the GeoParquet writer.
@@ -154,9 +155,9 @@ RUN echo "runtime package revision ${RUNTIME_PACKAGE_REVISION}" && \
     libatomic1 \
     libbrotli1 \
     libgssapi-krb5-2 \
-    tzdata \
-    wget && \
+    tzdata && \
     dpkg --compare-versions "$(dpkg-query -W -f '$${Version}' libbrotli1)" ge "1.1.0-2ubuntu0.1" && \
+    dpkg --compare-versions "$(dpkg-query -W -f '$${Version}' zlib1g)" ge "1:1.3.dfsg-3.1ubuntu2.3" && \
     rm -rf /var/lib/apt/lists/* /tmp/*
 
 # Security: Create non-root user with minimal privileges
@@ -225,9 +226,9 @@ ENV ASPNETCORE_ENVIRONMENT=Production \
     DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false \
     DOTNET_EnableDiagnostics=0
 
-# Health check
+# Health check. The runtime image has bash and no HTTP client.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-    CMD ["wget", "-q", "-T", "5", "-O", "/dev/null", "http://localhost:8080/healthz/live"]
+    CMD ["bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /healthz/live HTTP/1.0\\r\\nHost: 127.0.0.1\\r\\nConnection: close\\r\\n\\r\\n' >&3 && IFS= read -r status <&3 && case \"$status\" in *' 200 '*) exit 0 ;; *) exit 1 ;; esac"]
 
 EXPOSE 8080/tcp 8081/tcp
 

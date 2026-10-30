@@ -162,3 +162,13 @@ LABEL honua.runtime.profile="web-debug" \
 EXPOSE 8080
 
 CMD ["Honua.Server"]
+
+# `docker build --target local-emulation` keeps the base emulator for local
+# `docker run` when AWS_LAMBDA_RUNTIME_API is unset. The last stage is what CI publishes.
+FROM runtime AS local-emulation
+
+FROM runtime
+# CVE-2026-111943: the current public al2023 index is still Go 1.26.9
+# (fixed in 1.26.10 / 1.27.3). Production sets AWS_LAMBDA_RUNTIME_API and the
+# entrypoint execs /var/runtime/bootstrap, so this stage removes the emulator.
+RUN rm -f /usr/local/bin/aws-lambda-rie

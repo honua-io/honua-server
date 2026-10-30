@@ -12,11 +12,11 @@ workflow files.
 
 | Location | Endpoint | Probe purpose | Resolution |
 |---|---|---|---|
-| `docker-compose.yml` | `/healthz/live` | Server container liveness | `wget` GET; discard body |
+| `docker-compose.yml` | `/healthz/live` | Server container liveness | `bash /dev/tcp` GET; discard body |
 | `docker-compose.yml` | `/operate` | Operations UI availability | `wget` GET; discard body |
-| `docker-compose.gp-dev.yml` | `/healthz/live` | Server container liveness | `wget` GET; discard body |
-| `docker/scale-test/compose.yml` (server) | `/healthz/live` | Server container liveness | `wget` GET; discard body |
-| `docker/scale-test/compose.yml` (server replica) | `/healthz/live` | Replica container liveness | `wget` GET; discard body |
+| `docker-compose.gp-dev.yml` | `/healthz/live` | Server container liveness | `bash /dev/tcp` GET; discard body |
+| `docker/scale-test/compose.yml` (server) | `/healthz/live` | Server container liveness | `bash /dev/tcp` GET; discard body |
+| `docker/scale-test/compose.yml` (server replica) | `/healthz/live` | Replica container liveness | `bash /dev/tcp` GET; discard body |
 | `docker/scale-test/compose.yml` (proxy) | `/healthz/live` | Proxied server liveness | `wget` GET; discard body |
 | `docs/guides/deploy/docker-compose.md` (server example) | `/healthz/live` | Documented server liveness | `wget` GET; discard body |
 | `docs/guides/deploy/docker-compose.md` (operations example) | `/operate` | Documented operations UI availability | `wget` GET; discard body |
@@ -24,5 +24,6 @@ workflow files.
 | `scripts/cloud/post-deployment-verification.sh` (security) | `/healthz/live` | Inspect security headers | GET; emit headers and discard body |
 | `scripts/cloud/post-deployment-verification.sh` (version) | `/healthz/live` | Inspect version header | GET; emit headers and discard body |
 
-The client-compat compose probe was already converted to an explicit GET by #3389. It remains
-documented inline because its comment explains why `--spider` must not be restored.
+The client-compat compose probe was already converted to an explicit GET by #3389. It now uses
+`bash /dev/tcp` as well (CVE-2021-31879). It remains documented inline because its comment
+explains why a HEAD probe must not be restored.

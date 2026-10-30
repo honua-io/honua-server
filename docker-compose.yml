@@ -126,7 +126,7 @@ services:
       storage-init:
         condition: service_completed_successfully
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--output-document=/dev/null", "http://localhost:8080/healthz/live"]
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /healthz/live HTTP/1.0\\r\\nHost: 127.0.0.1\\r\\nConnection: close\\r\\n\\r\\n' >&3 && IFS= read -r status <&3 && case \"$status\" in *' 200 '*) exit 0 ;; *) exit 1 ;; esac"]
       interval: 30s
       timeout: 10s
       retries: 3

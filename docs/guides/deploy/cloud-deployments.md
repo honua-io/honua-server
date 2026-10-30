@@ -128,7 +128,7 @@ aws ecs describe-services --cluster honua-prod --services honua-server \
 
 ## AWS Lambda
 
-Lambda production images are built from [`docker/Dockerfile.lambda.aot`](../../../docker/Dockerfile.lambda.aot); the explicitly suffixed JIT debug image uses [`docker/Dockerfile.lambda`](../../../docker/Dockerfile.lambda). The `docker/Dockerfile.lambda.aot.simple` variant is a local diagnostic fallback and is not published. The Lambda host shim lives in [`docker/cloud`](../../../docker/cloud).
+Lambda production images are built from [`docker/Dockerfile.lambda.aot`](../../../docker/Dockerfile.lambda.aot); the explicitly suffixed JIT debug image uses [`docker/Dockerfile.lambda`](../../../docker/Dockerfile.lambda). The published JIT image removes `/usr/local/bin/aws-lambda-rie` (CVE-2026-111943). Local emulation keeps that binary: `docker build --target local-emulation -f docker/Dockerfile.lambda .`. The `docker/Dockerfile.lambda.aot.simple` variant is a local diagnostic fallback and is not published. The Lambda host shim lives in [`docker/cloud`](../../../docker/cloud).
 
 - Use the single-architecture `x86_64` (amd64) `*-lambda-aot` image from same-region ECR behind API Gateway or a function URL, with the function's architecture set to `x86_64`. Lambda is Preview in 2026.1. The release manifest pins `awsLambdaArchitecture: x86_64`, and the 2026.1 bill rejects any other Lambda architecture.
 - Set `HONUA_SKIP_MIGRATIONS=true` and run migrations out-of-band — concurrent cold starts must not race migrations.

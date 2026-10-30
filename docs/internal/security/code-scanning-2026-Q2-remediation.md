@@ -605,3 +605,54 @@ the completed run uses a fresh empty regular file.
 A passing generic Security Nightly run does not establish the result for
 another image digest. The general 260-item quality cleanup is not additional
 RC security acceptance.
+
+## 2026-10-30 fixable image findings
+
+Issue #6790. The 2026-10-08 and 2026-10-13 rows that leave `wget`, `zlib1g`,
+and the Lambda emulator open describe those scans. They are not the disposition
+after this change. The unfixed Ubuntu packages that remain are tracked by #6795.
+No `.trivyignore` entry was added. `DOTNET_ASPNET_IMAGE` and
+`DOTNET_RUNTIME_DEPS_IMAGE` were not bumped.
+
+| Pin | Digest | Why it stayed |
+| --- | --- | --- |
+| `mcr.microsoft.com/dotnet/aspnet:10.0` | `sha256:d5633778c754e89a386882eddf8dbee6942447a8a4b8267c19cf1e1158d0b0ac` (.NET 10.0.13) | The tag index on 2026-10-30 was `sha256:de0ee358cdd672f7017a003bed21e9ac9ed48a27c922a59b18175b6e82fa7fee` (.NET 10.0.14). Apt on the pin already installs the zlib fix. |
+| `mcr.microsoft.com/dotnet/runtime-deps:10.0` | `sha256:da5846024d0008b48259b53a8953d39381fe5b7ec99ef1449ba4ba927f201490` | The tag index was `sha256:62028293921f5bd6db3d9f9119cd29cd926dfd3c2336da23b09f425e40c3c832`. Same reason. |
+| `public.ecr.aws/lambda/provided:al2023` | `sha256:612c98f126c2a95e77a016d56fed50a83055e11d636132ee6ebdd461f01b9617` | `/usr/local/bin/aws-lambda-rie` is Go 1.26.9 on amd64 and arm64. The public index `sha256:b19630ffeffa483bfc47690ff7b59accd4eda84f632b6e29a72b3f57fb29cbd9` is also Go 1.26.9. CVE-2026-111943 is fixed in 1.26.10 and 1.27.3. |
+
+`RUNTIME_PACKAGE_REVISION` is now `20261030` in the root Dockerfile,
+`docker/Dockerfile.aot`, and `docker/Dockerfile.lambda.aot`. The value is echoed
+inside `apt-get upgrade`, and each of those runs checks that `zlib1g` is at
+least `1:1.3.dfsg-3.1ubuntu2.3` (CVE-2026-85091, alert #3532). A rebuild of the
+pinned runtime-deps image with that upgrade no longer reports CVE-2026-85091.
+The no-upgrade pin still reports `zlib1g` `1:1.3.dfsg-3.1ubuntu2.2`.
+
+`wget` (CVE-2021-31879, alert #3406) is no longer installed in those Ubuntu
+runtime stages. Health checks use `bash /dev/tcp` to `127.0.0.1`. The bases
+ship bash and neither curl nor wget. nginx, caddy, and the OGC stub still call
+wget. Cite scripts pipe `scripts/docker/container-http-get.sh` into `bash -s`.
+
+The published Lambda JIT stage deletes `/usr/local/bin/aws-lambda-rie`
+(CVE-2026-111943, alert #3803). `docker build --target local-emulation -f
+docker/Dockerfile.lambda .` keeps the binary for local `docker run`. Production
+Lambda sets `AWS_LAMBDA_RUNTIME_API`, and the entrypoint execs
+`/var/runtime/bootstrap`. `docker/Dockerfile.controlplane-lambda` is not in the
+scan matrix and is unchanged.
+
+Local Trivy 0.68.1 (`aquasec/trivy:0.68.1`, `--scanners vuln`, all severities)
+on the runtime package recipe, not a full app publish:
+
+| Recipe | Total | Notes |
+| --- | --- | --- |
+| runtime-deps pin, no upgrade | 27 (22 MEDIUM, 5 LOW) | CVE-2026-85091 present |
+| AOT recipe before (upgrade, with wget) | 27 (22 MEDIUM, 5 LOW) | CVE-2026-85091 absent; CVE-2021-31879 present |
+| AOT recipe after | 26 (21 MEDIUM, 5 LOW) | both absent |
+| JIT recipe before | 28 (23 MEDIUM, 5 LOW) | CVE-2021-31879 present; also `libexpat1` |
+| JIT recipe after | 27 (22 MEDIUM, 5 LOW) | CVE-2021-31879 absent |
+| Lambda pin, amd64 and arm64 | 55 (44 HIGH, 10 MEDIUM, 1 UNKNOWN) | CVE-2026-111943, stdlib v1.26.9 |
+| Lambda pin plus `rm` of the emulator | 52 (43 HIGH, 9 MEDIUM) | CVE-2026-111943 absent |
+
+The Lambda proof image does not re-run the Dockerfile's existing `dnf upgrade`.
+The 43 remaining HIGH findings are Amazon Linux packages in that older snapshot.
+The public index above, which is newer, still reported CVE-2026-111943 and did
+not offer a fixed emulator.

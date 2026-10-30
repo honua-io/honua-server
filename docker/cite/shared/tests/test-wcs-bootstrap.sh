@@ -22,12 +22,12 @@ count="$("${compose[@]}" exec -T postgres psql -U postgres -d honua_cite_wcs -At
 "${compose[@]}" stop honua-server
 "${compose[@]}" exec -T postgres psql -U postgres -d honua_cite_wcs -v ON_ERROR_STOP=1 < docker/cite/wcs20/seed.sql
 "${compose[@]}" up --no-build --wait --wait-timeout 120 honua-server
-"${compose[@]}" exec -T honua-server wget -T 15 -qO- http://localhost:8080/healthz/ready
+timeout 15 "${compose[@]}" exec -T honua-server bash -s -- "http://localhost:8080/healthz/ready" < "$repo_root/scripts/docker/container-http-get.sh"
 count="$("${compose[@]}" exec -T postgres psql -U postgres -d honua_cite_wcs -Atc 'SELECT count(*) FROM honua.raster_data')"
 [[ "$count" == 2 ]]
 # Check the actual migration effect that the old handcrafted seed omitted.
 storage="$("${compose[@]}" exec -T postgres psql -U postgres -d honua_cite_wcs -Atc "SELECT attstorage FROM pg_attribute WHERE attrelid = 'honua.raster_data'::regclass AND attname = 'raster'")"
 [[ "$storage" == e ]]
-capabilities="$("${compose[@]}" exec -T honua-server wget -T 15 -qO- 'http://localhost:8080/ogc/services/cite/wcs?service=WCS&version=2.0.1&request=GetCapabilities')"
+capabilities="$(timeout 15 "${compose[@]}" exec -T honua-server bash -s -- 'http://localhost:8080/ogc/services/cite/wcs?service=WCS&version=2.0.1&request=GetCapabilities' < "$repo_root/scripts/docker/container-http-get.sh")"
 grep -q 'CoverageSummary' <<< "$capabilities"
 echo 'PASS: WCS extension-first migration, data-only seed, restart and raster storage floor'
