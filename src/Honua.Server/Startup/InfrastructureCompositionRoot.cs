@@ -304,7 +304,8 @@ internal static class InfrastructureCompositionRoot
         services.AddSingleton<IResponseCache>(sp =>
         {
             var innerCache = new CacheServiceResponseCache(
-                sp.GetRequiredService<ICacheService>());
+                sp.GetRequiredService<ICacheService>(),
+                sp.GetRequiredService<IOptions<CacheOptions>>().Value);
             return new MonitoredResponseCacheDecorator(
                 innerCache,
                 sp.GetRequiredService<IPerformanceMonitor>(),

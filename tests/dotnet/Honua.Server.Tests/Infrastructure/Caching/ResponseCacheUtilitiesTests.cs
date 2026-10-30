@@ -2,17 +2,22 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using FluentAssertions;
 using Honua.Core.Features.Caching;
+using Honua.Core.Features.Caching.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Queries.Filters;
+using Honua.Infrastructure.Authentication.ClientCertificates;
 using Honua.Infrastructure.Caching;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Infrastructure.Caching;
 
@@ -275,6 +280,160 @@ public sealed class ResponseCacheUtilitiesTests
             .Should().NotBe(ResponseCacheUtilities.BuildFeatureServerKey("roads", 0, second.Request));
     }
 
+    [UnitTest]
+    public void ShouldCache_WithEmptyUnauthenticatedIdentity_ReturnsTrue()
+    {
+        var context = CreateCachingRequest();
+        context.User = new ClaimsPrincipal(new ClaimsIdentity());
+
+        ResponseCacheUtilities.ShouldCache(context, EnabledResponseCache()).Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void ShouldCache_WithUnauthenticatedIdentityThatHasClaims_ReturnsFalse()
+    {
+        var context = CreateCachingRequest();
+        context.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim("sub", "user")]));
+
+        ResponseCacheUtilities.ShouldCache(context, EnabledResponseCache()).Should().BeFalse();
+    }
+
+    [UnitTheory]
+    [InlineData("honua_admin_session", "session-value")]
+    [InlineData("honua_admin_login", "login-value")]
+    public void ShouldCache_WithCredentialCookie_ReturnsFalse(string name, string value)
+    {
+        var context = CreateCachingRequest();
+        context.Request.Headers.Cookie = $"{name}={value}";
+
+        ResponseCacheUtilities.ShouldCache(context, EnabledResponseCache()).Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void ShouldCache_WithEmptyCredentialCookie_ReturnsTrue()
+    {
+        var context = CreateCachingRequest();
+        context.Request.Headers.Cookie = "honua_admin_session=";
+
+        ResponseCacheUtilities.ShouldCache(context, EnabledResponseCache()).Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void ShouldCache_WithUnrelatedCookie_ReturnsTrue()
+    {
+        var context = CreateCachingRequest();
+        context.Request.Headers.Cookie = "preference=dark";
+
+        ResponseCacheUtilities.ShouldCache(context, EnabledResponseCache()).Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void ShouldCache_WithConnectionClientCertificate_ReturnsFalse()
+    {
+        var context = CreateCachingRequest();
+        using var certificate = CreateClientCertificate();
+        context.Connection.ClientCertificate = certificate;
+
+        ResponseCacheUtilities.ShouldCache(context, EnabledResponseCache()).Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void ShouldCache_WithForwardedClientCertificateHeader_ReturnsFalse()
+    {
+        var context = CreateCachingRequest();
+        context.Request.Headers["X-Forwarded-Client-Cert"] = "present";
+
+        ResponseCacheUtilities.ShouldCache(context, EnabledResponseCache()).Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void ShouldCache_WithConfiguredForwardedClientCertificateHeader_ReturnsFalse()
+    {
+        var context = CreateCachingRequest();
+        var services = new ServiceCollection();
+        services.AddSingleton<IOptionsMonitor<ClientCertificateAuthenticationOptions>>(
+            new FixedOptionsMonitor<ClientCertificateAuthenticationOptions>(new ClientCertificateAuthenticationOptions
+            {
+                ForwardedCertificate = new ForwardedClientCertificateOptions
+                {
+                    HeaderName = "X-Custom-Client-Cert"
+                }
+            }));
+        context.RequestServices = services.BuildServiceProvider();
+        context.Request.Headers["X-Custom-Client-Cert"] = "present";
+
+        ResponseCacheUtilities.ShouldCache(context, EnabledResponseCache()).Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void ShouldCache_WhenCacheIsInMemoryFallback_ReturnsFalse()
+    {
+        var context = CreateCachingRequest();
+        var services = new ServiceCollection();
+        services.AddSingleton<ICacheHealthChecker>(new FallbackHealthChecker(usingFallback: true));
+        context.RequestServices = services.BuildServiceProvider();
+
+        ResponseCacheUtilities.ShouldCache(context, EnabledResponseCache()).Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void ShouldCache_WhenInMemoryFallbackIsExplicitlyAllowed_ReturnsTrue()
+    {
+        var context = CreateCachingRequest();
+        var services = new ServiceCollection();
+        services.AddSingleton<ICacheHealthChecker>(new FallbackHealthChecker(usingFallback: true));
+        context.RequestServices = services.BuildServiceProvider();
+
+        var options = EnabledResponseCache();
+        options.ResponseCachingAllowInMemoryFallback = true;
+
+        ResponseCacheUtilities.ShouldCache(context, options).Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void BuildFeatureServerKey_RepeatedQueryValues_PreserveOrder()
+    {
+        var forward = CreateCachingRequest("?f=json&orderByFields=NAME&orderByFields=POP%20DESC");
+        var reverse = CreateCachingRequest("?f=json&orderByFields=POP%20DESC&orderByFields=NAME");
+        var again = CreateCachingRequest("?f=json&orderByFields=NAME&orderByFields=POP%20DESC");
+
+        var forwardKey = ResponseCacheUtilities.BuildFeatureServerKey("roads", 0, forward.Request);
+        var reverseKey = ResponseCacheUtilities.BuildFeatureServerKey("roads", 0, reverse.Request);
+        var againKey = ResponseCacheUtilities.BuildFeatureServerKey("roads", 0, again.Request);
+
+        forwardKey.Should().NotBe(reverseKey);
+        forwardKey.Should().Be(againKey);
+    }
+
+    [UnitTest]
+    public void BuildOgcCollectionKey_UsesCanonicalPublicationIdPrefix()
+    {
+        ResponseCacheUtilities.CanonicalOgcCollectionId("pub-parcels", "parcels").Should().Be("pub-parcels");
+        ResponseCacheUtilities.CanonicalOgcCollectionId("  ", "parcels").Should().Be("parcels");
+
+        var alias = CreateRequest(
+            scheme: "https",
+            host: "api.example.test",
+            pathBase: string.Empty,
+            path: "/ogc/features/collections/parcels/items",
+            queryString: "?limit=10");
+        var numeric = CreateRequest(
+            scheme: "https",
+            host: "api.example.test",
+            pathBase: string.Empty,
+            path: "/ogc/features/collections/7/items",
+            queryString: "?limit=10");
+
+        var aliasKey = ResponseCacheUtilities.BuildOgcCollectionKey("pub-parcels", alias.Request);
+        var numericKey = ResponseCacheUtilities.BuildOgcCollectionKey("pub-parcels", numeric.Request);
+
+        aliasKey.Should().StartWith("response:query:ogc:collection:pub-parcels:");
+        numericKey.Should().StartWith("response:query:ogc:collection:pub-parcels:");
+        aliasKey.Should().NotBe(numericKey);
+        ResponseCacheUtilities.BuildOgcCollectionPattern("pub-parcels")
+            .Should().Be("response:query:ogc:collection:pub-parcels:*");
+    }
+
     private static CacheOptions EnabledResponseCache()
         => new()
         {
@@ -309,6 +468,39 @@ public sealed class ResponseCacheUtilitiesTests
         }
 
         context.RequestServices = services.BuildServiceProvider();
+    }
+
+    private static X509Certificate2 CreateClientCertificate()
+    {
+        using var rsa = RSA.Create(2048);
+        var request = new CertificateRequest("CN=cache-admission", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        return request.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(1));
+    }
+
+    private sealed class FallbackHealthChecker(bool usingFallback) : ICacheHealthChecker
+    {
+        public bool IsUsingFallback { get; } = usingFallback;
+
+        public Task<bool> IsCacheHealthyAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(true);
+    }
+
+    private sealed class FixedOptionsMonitor<T>(T value) : IOptionsMonitor<T>
+    {
+        public T CurrentValue { get; } = value;
+
+        public T Get(string? name) => CurrentValue;
+
+        public IDisposable OnChange(Action<T, string?> listener) => EmptyDisposable.Instance;
+
+        private sealed class EmptyDisposable : IDisposable
+        {
+            public static readonly EmptyDisposable Instance = new();
+
+            public void Dispose()
+            {
+            }
+        }
     }
 
     private sealed class FixedLicenseStatusProvider(LicenseStatus status) : ILicenseStatusProvider

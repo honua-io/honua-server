@@ -142,7 +142,10 @@ After a successful upload, `<LicensePath>.uploaded` takes precedence at startup.
 | `Cache__JitterPercentage` | `0.2` | TTL jitter to avoid cache stampedes. |
 | `Cache__EnableFallback` | `true` | Use in-memory fallback when Redis is unavailable. |
 | `Cache__FallbackMaxEntries` | `1000` | Max entries in the in-memory fallback cache. |
-| `Cache__ResponseCachingEnabled` | `false` | Cache exact anonymous, non-spatial protocol responses (FeatureServer query, OGC API Features items, OData) separately from metadata. Off by default. Credentialed requests are not stored. The key includes the license fingerprint. Request or response `Cache-Control: no-cache` or `no-store` skips storage. Ad hoc spatial reads stay uncached. |
+| `Cache__ResponseCachingEnabled` | `false` | Cache exact public, non-spatial protocol responses (FeatureServer query, OGC API Features items, OData) separately from metadata. Off by default. Admission requires an empty principal. Cookies, a connection client certificate, and the forwarded client-certificate header count as credentials. The key includes the license fingerprint. Request or response `Cache-Control: no-cache` or `no-store` skips storage when those headers are already written. Ad hoc spatial reads and any non-default `gdbVersion` stay uncached. |
+| `Cache__ResponseCachingAllowInMemoryFallback` | `false` | Allow exact response caching while the cache service is using its in-memory fallback (no Redis). Off by default. Set this only on a single server instance; the fallback store is process-local. |
+| `Cache__ResponseCacheMaxEntryBytes` | `1048576` | Skip storing a query response whose payload is larger than this many bytes. |
+| `Cache__ResponseCacheMaxBytes` | `67108864` | Skip storing a query response that would push this process over this total payload budget. |
 | `Cache__RetryIntervalSeconds` | `30` | Redis reconnect interval after a failure. |
 | `Cache__KeyPrefix` | `honua:` | Key prefix for shared Redis instances. |
 

@@ -5,6 +5,7 @@ using System.IO.Compression;
 using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.ControlPlane;
 using Honua.Server.Features.Admin.Jobs;
+using Honua.Core.Features.Caching.Abstractions;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Observability.Abstractions;
 using Honua.Infrastructure.Caching;
@@ -29,6 +30,8 @@ internal static class ObservabilityServiceCollectionExtensions
 
         ConfigureOutputCaching(services, configuration, redisCacheEntitled);
         services.AddSingleton<OutputCacheInvalidationService>();
+        services.AddSingleton<IQueryResponseCacheInvalidator>(sp =>
+            sp.GetRequiredService<OutputCacheInvalidationService>());
         services.AddETags();
         services.TryAddSingleton<ISystemMetricsCollector, SystemMetricsCollector>();
         services.AddPerformanceMonitoring();

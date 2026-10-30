@@ -105,6 +105,9 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
             var resource = layerValidation.Resource!;
             var publication = layerValidation.Publication!;
+            var ogcCacheCollectionId = ResponseCacheUtilities.CanonicalOgcCollectionId(
+                publication.Metadata.Id,
+                LayerValidationHelpers.AdvertisedCollectionId(publication, resource));
             var service = layerValidation.Service;
 
             var snapshot = layerValidation.Snapshot!;
@@ -231,7 +234,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
             }
 
             var cacheKey = canCache
-                ? ResponseCacheUtilities.BuildOgcCollectionKey(collectionId, request)
+                ? ResponseCacheUtilities.BuildOgcCollectionKey(ogcCacheCollectionId, request)
                 : null;
 
             if (canCache && cacheKey != null)
@@ -636,6 +639,9 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
             var resource = layerValidation.Resource!;
             var publication = layerValidation.Publication!;
+            var ogcCacheCollectionId = ResponseCacheUtilities.CanonicalOgcCollectionId(
+                publication.Metadata.Id,
+                LayerValidationHelpers.AdvertisedCollectionId(publication, resource));
             var service = layerValidation.Service;
 
             var snapshot = layerValidation.Snapshot!;
@@ -687,7 +693,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
                     if (earlyCrs.IsSuccess)
                     {
                         var earlyKey = await _responseCache.BindKeyAsync(
-                            ResponseCacheUtilities.BuildOgcCollectionKey(collectionId, request),
+                            ResponseCacheUtilities.BuildOgcCollectionKey(ogcCacheCollectionId, request),
                             cancellationToken).ConfigureAwait(false);
                         var earlyCached = await _responseCache.GetAsync<CachedResponse>(earlyKey, cancellationToken)
                             .ConfigureAwait(false);
@@ -757,7 +763,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
             }
 
             var cacheKey = boundItemCacheKey ?? (canCache
-                ? ResponseCacheUtilities.BuildOgcCollectionKey(collectionId, request)
+                ? ResponseCacheUtilities.BuildOgcCollectionKey(ogcCacheCollectionId, request)
                 : null);
 
             if (canCache && cacheKey != null && boundItemCacheKey == null)

@@ -575,9 +575,9 @@ internal sealed partial class FeatureServerQueryHandler(
                     payload = JsonReindenter.ToIndentedUtf8Bytes(payload);
                 }
 
-                // Re-check admission at store time. A handler that set
-                // Cache-Control: no-store after the initial decision must not
-                // land in the shared cache.
+                // Re-check admission at store time. Only headers already written on the
+                // response are visible; a later middleware that sets Cache-Control is
+                // not part of this check. Admission still requires an empty principal.
                 if (!ResponseCacheUtilities.ShouldCache(context, _cacheOptions))
                 {
                     return Results.Bytes(payload, contentType);
@@ -625,13 +625,16 @@ internal sealed partial class FeatureServerQueryHandler(
                 return ResponseCacheUtilities.CreateResultFromCachedResponse(context, cachedResponse, _etagService);
             }
 
-            // Access control already ran. A hit is the same anonymous URL that was
-            // stored, so it must not pay for spatial-reference resolution or SQL
-            // preparation. A miss falls through and the bound key is reused on store.
-            var earlyCached = await TryGetCachedResponseAsync().ConfigureAwait(false);
-            if (earlyCached != null)
+            // Ordinary reads look up before query preparation. Statistics reads defer
+            // the lookup until field access has been checked. A miss falls through and
+            // the bound key is reused on store.
+            if (string.IsNullOrWhiteSpace(validatedParams.OutStatistics))
             {
-                return earlyCached;
+                var earlyCached = await TryGetCachedResponseAsync().ConfigureAwait(false);
+                if (earlyCached != null)
+                {
+                    return earlyCached;
+                }
             }
 
             var (preparedQuery, outputSrid, preparationError) = await PrepareFeatureQueryAsync(
@@ -750,6 +753,14 @@ internal sealed partial class FeatureServerQueryHandler(
                     OrderBy = statisticsOrderBy.IsDefaultOrEmpty ? null : statisticsOrderBy,
                     Distinct = false
                 };
+
+                // Field access has been checked. A hit reuses the bound key; a miss
+                // stores under that same key.
+                var statisticsCached = await TryGetCachedResponseAsync().ConfigureAwait(false);
+                if (statisticsCached != null)
+                {
+                    return statisticsCached;
+                }
 
                 var stopwatch = Stopwatch.StartNew();
                 var statisticsRows = await _queryExecutor.QueryStatisticsAsync(
@@ -1434,7 +1445,13 @@ internal sealed partial class FeatureServerQueryHandler(
            parameters.Distance.HasValue ||
            !string.IsNullOrWhiteSpace(parameters.Units) ||
            parameters.ReturnDistance ||
-           !string.IsNullOrWhiteSpace(parameters.SpatialRel);
+           !string.IsNullOrWhiteSpace(parameters.SpatialRel) ||
+           IsNonDefaultGdbVersion(parameters.GdbVersion);
+
+    // Same default as FeatureServerVersioning: blank or sde.default only.
+    private static bool IsNonDefaultGdbVersion(string? gdbVersion)
+        => !string.IsNullOrWhiteSpace(gdbVersion) &&
+           !gdbVersion.Trim().Equals("sde.default", StringComparison.OrdinalIgnoreCase);
 
     private async Task<(FeatureQuery? Query, int? OutputSrid, IResult? Error)> PrepareFeatureQueryAsync(
         HttpContext context,

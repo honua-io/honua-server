@@ -330,4 +330,27 @@ public class CacheOptionsValidatorTests
             Assert.True(result.Succeeded, $"Prefix '{prefix}' should be valid");
         }
     }
+
+    [UnitTest]
+    public void Validate_ResponseCacheBudgetBelowEntryCap_ReturnsFail()
+    {
+        var options = new CacheOptions
+        {
+            Enabled = true,
+            DefaultTtlSeconds = 1800,
+            ServiceTtlSeconds = 3600,
+            LayerTtlSeconds = 1800,
+            NegativeTtlSeconds = 60,
+            KeyPrefix = "honua:",
+            ResponseCacheMaxEntryBytes = 1_048_576,
+            ResponseCacheMaxBytes = 65_536
+        };
+
+        var result = _validator.Validate(null, options);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(
+            result.Failures ?? Array.Empty<string>(),
+            failure => failure.Contains("ResponseCacheMaxBytes", StringComparison.Ordinal));
+    }
 }

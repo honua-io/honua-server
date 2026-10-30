@@ -4,6 +4,7 @@
 using System.Globalization;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Infrastructure.Caching;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -545,6 +546,7 @@ public static class VersionManagementServerEndpoints
             return StandardErrorHelpers.CreateNotFound(context, $"Version '{versionGuid}' was not found.");
         }
 
+        await ResponseCacheUtilities.InvalidateSharedQueryResponsesAsync(context, cancellationToken).ConfigureAwait(false);
         return Moment(true);
     }
 
@@ -583,6 +585,7 @@ public static class VersionManagementServerEndpoints
             return StandardErrorHelpers.CreateNotFound(context, $"Version '{versionGuid}' was not found.");
         }
 
+        await ResponseCacheUtilities.InvalidateSharedQueryResponsesAsync(context, cancellationToken).ConfigureAwait(false);
         return Moment(true);
     }
 
@@ -691,6 +694,7 @@ public static class VersionManagementServerEndpoints
                     : result.Conflicts.Select(ToConflictInfo).ToArray(),
             };
 
+            await ResponseCacheUtilities.InvalidateSharedQueryResponsesAsync(context, cancellationToken).ConfigureAwait(false);
             return Results.Json(response, VersionManagementJsonContext.Default.ReconcileResponse,
                 contentType: "application/json");
         }
@@ -839,6 +843,7 @@ public static class VersionManagementServerEndpoints
                 BlockedByConflicts = result.BlockedByConflicts,
             };
 
+            await ResponseCacheUtilities.InvalidateSharedQueryResponsesAsync(context, cancellationToken).ConfigureAwait(false);
             return Results.Json(response, VersionManagementJsonContext.Default.PostResponse,
                 contentType: "application/json");
         }

@@ -251,6 +251,69 @@ public sealed class OutputCacheInvalidationServiceTests
             Arg.Any<CancellationToken>());
     }
 
+    [UnitTest]
+    [Operation(Operations.Cache)]
+    public async Task InvalidateQueryResponsesAsync_BumpsFeatureServerOgcAndODataNamespaces()
+    {
+        var responseCache = Substitute.For<IResponseCache>();
+        var scopeFactory = new ServiceCollection().BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
+        var logger = NullLogger<OutputCacheInvalidationService>.Instance;
+        var sut = new OutputCacheInvalidationService(null, responseCache, null, scopeFactory, null, logger);
+
+        await sut.InvalidateQueryResponsesAsync(CancellationToken.None);
+
+        await responseCache.Received().RemoveByPatternAsync("response:query:featureserver:service:*", Arg.Any<CancellationToken>());
+        await responseCache.Received().RemoveByPatternAsync("response:query:ogc:collection:*", Arg.Any<CancellationToken>());
+        await responseCache.Received().RemoveByPatternAsync("response:query:odata:layer:*", Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Cache)]
+    public async Task InvalidateLayerAsync_WithPublicationAliases_EvictsEachAlias()
+    {
+        var responseCache = Substitute.For<IResponseCache>();
+        var scopeFactory = CreateScopeFactory(CreateAliasedPublicationGraph());
+        var logger = NullLogger<OutputCacheInvalidationService>.Instance;
+        var sut = new OutputCacheInvalidationService(null, responseCache, null, scopeFactory, null, logger);
+
+        await sut.InvalidateLayerAsync(null, 7, CancellationToken.None);
+
+        await responseCache.Received().RemoveByPatternAsync("response:query:ogc:collection:7:*", Arg.Any<CancellationToken>());
+        await responseCache.Received().RemoveByPatternAsync("response:query:ogc:collection:pub-parcels:*", Arg.Any<CancellationToken>());
+        await responseCache.Received().RemoveByPatternAsync("response:query:ogc:collection:parcels:*", Arg.Any<CancellationToken>());
+        await responseCache.Received().RemoveByPatternAsync("response:query:ogc:collection:parcels-path:*", Arg.Any<CancellationToken>());
+        await responseCache.Received().RemoveByPatternAsync("response:query:ogc:collection:res-layer-7:*", Arg.Any<CancellationToken>());
+        await responseCache.Received().RemoveByPatternAsync("response:query:ogc:collection:layer_7:*", Arg.Any<CancellationToken>());
+        await responseCache.Received().RemoveByPatternAsync("response:query:ogc:collection:parcels_title:*", Arg.Any<CancellationToken>());
+    }
+
+    private static MetadataV2Graph CreateAliasedPublicationGraph()
+    {
+        var graph = CreateFeatureServerGraph(("alpha", [7]));
+        var publication = graph.Publications.Single();
+        var resource = graph.Resources.Single();
+        return graph with
+        {
+            Publications =
+            [
+                publication with
+                {
+                    Metadata = publication.Metadata with { Id = "pub-parcels" },
+                    LayerIndex = 7,
+                    ServiceLocalId = "parcels",
+                    Path = "parcels-path"
+                }
+            ],
+            Resources =
+            [
+                resource with
+                {
+                    Metadata = resource.Metadata with { Title = "Parcels Title" }
+                }
+            ]
+        };
+    }
+
     private static IServiceScopeFactory CreateScopeFactory(MetadataV2Graph graph)
     {
         var services = new ServiceCollection();

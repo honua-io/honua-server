@@ -311,6 +311,11 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
             return;
         }
 
+        if (ExceedsQueryResponseEntryCap(prefixedKey, data))
+        {
+            return;
+        }
+
         // Try Redis first if available
         if (_distributedCache != null)
         {
@@ -1118,6 +1123,12 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
             _keyLocks.TryRemove(kvp);
         }
     }
+
+    private bool ExceedsQueryResponseEntryCap(string prefixedKey, byte[] data)
+        => data.Length > _options.ResponseCacheMaxEntryBytes &&
+           (prefixedKey.Contains("query:featureserver", StringComparison.Ordinal) ||
+            prefixedKey.Contains("query:ogc", StringComparison.Ordinal) ||
+            prefixedKey.Contains("query:odata", StringComparison.Ordinal));
 
     private string GetPrefixedKey(string key)
     {

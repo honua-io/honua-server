@@ -421,6 +421,13 @@ internal static class LayerValidationHelpers
     }
 
     /// <summary>
+    /// Layer id used when invalidating query-response cache entries for a publication.
+    /// Prefers the publication layer index so alias routes share one invalidation target.
+    /// </summary>
+    internal static int QueryCacheLayerId(MetadataV2Publication publication, int storageLayerId)
+        => publication.LayerIndex ?? storageLayerId;
+
+    /// <summary>
     /// Picks the tenant-visible publication whose predicate matches the requested collection id.
     /// Protocol-enabled publications win, then the preferred publication type, then a primary publication.
     /// When none of the matches enable the protocol, the first visible match is returned so a later

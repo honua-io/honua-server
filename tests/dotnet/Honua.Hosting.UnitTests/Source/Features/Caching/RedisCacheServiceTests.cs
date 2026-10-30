@@ -6,9 +6,9 @@ using System.Reflection;
 using FluentAssertions;
 using Honua.Core.Features.Caching;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Infrastructure.Caching;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Infrastructure.Middleware;
-using Honua.Infrastructure.Caching;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Caching.Distributed;
@@ -54,6 +54,41 @@ public sealed class RedisCacheServiceTests : IDisposable
     public void Dispose()
     {
         _cacheService.Dispose();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Cache)]
+    public async Task SetAsync_QueryResponseOverEntryCap_IsNotStored()
+    {
+        var options = new CacheOptions
+        {
+            Enabled = true,
+            EnableFallback = true,
+            ResponseCacheMaxEntryBytes = 1024,
+            KeyPrefix = "test:"
+        };
+        using var cache = new RedisCacheService(
+            null,
+            Options.Create(options),
+            NullLogger<RedisCacheService>.Instance,
+            _performanceMonitor);
+        const string queryKey = "response:query:featureserver:service:alpha:layer:1:abc";
+        const string metadataKey = "metadata:layer:1";
+
+        await cache.SetAsync(queryKey, new CachedResponse(new byte[32], "application/json"), TimeSpan.FromMinutes(1));
+        var small = await cache.GetAsync<CachedResponse>(queryKey);
+        small.Should().NotBeNull();
+        small!.Payload.Length.Should().Be(32);
+
+        await cache.SetAsync(queryKey, new CachedResponse(new byte[4096], "application/json"), TimeSpan.FromMinutes(1));
+        var unchanged = await cache.GetAsync<CachedResponse>(queryKey);
+        unchanged.Should().NotBeNull();
+        unchanged!.Payload.Length.Should().Be(32);
+
+        await cache.SetAsync(metadataKey, new CachedResponse(new byte[4096], "application/json"), TimeSpan.FromMinutes(1));
+        var metadata = await cache.GetAsync<CachedResponse>(metadataKey);
+        metadata.Should().NotBeNull();
+        metadata!.Payload.Length.Should().Be(4096);
     }
 
     [UnitTest]

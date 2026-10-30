@@ -26,9 +26,33 @@ public sealed class CacheOptions
     /// <summary>
     /// Whether exact response caching is enabled separately from metadata/catalog caching.
     /// Disable this for serverless and small-node deployments that should keep Redis metadata caching
-    /// without retaining high-cardinality protocol responses.
+    /// without retaining high-cardinality protocol responses. Off by default.
+    /// Admission requires an empty principal. Cookies, a connection client certificate, and the
+    /// forwarded client-certificate header count as credentials.
     /// </summary>
     public bool ResponseCachingEnabled { get; set; }
+
+    /// <summary>
+    /// Allows exact response caching while the cache service is using its in-memory
+    /// fallback (no Redis). Off by default. Set this only for a deployment that runs
+    /// a single server instance; the fallback store is process-local and is not shared
+    /// or invalidated across instances.
+    /// </summary>
+    public bool ResponseCachingAllowInMemoryFallback { get; set; }
+
+    /// <summary>
+    /// Maximum payload size, in bytes, of one cached query response.
+    /// Responses larger than this are not stored. Default is 1 MiB.
+    /// </summary>
+    [Range(1024, 268435456, ErrorMessage = "ResponseCacheMaxEntryBytes must be between 1024 and 268435456.")]
+    public int ResponseCacheMaxEntryBytes { get; set; } = 1_048_576;
+
+    /// <summary>
+    /// Maximum total payload bytes of cached query responses retained by this process.
+    /// A response that would exceed the budget is not stored. Default is 64 MiB.
+    /// </summary>
+    [Range(65536, 1073741824, ErrorMessage = "ResponseCacheMaxBytes must be between 65536 and 1073741824.")]
+    public int ResponseCacheMaxBytes { get; set; } = 67_108_864;
 
     /// <summary>
     /// Default time-to-live for cached layer metadata in seconds.
