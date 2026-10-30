@@ -33,6 +33,18 @@ public sealed record HarnessEvent
     /// <summary>The attempt identity.</summary>
     public string Attempt { get; init; } = "1";
 
+    /// <summary>
+    /// Correlation id copied from the worker environment, when the journal recorded one.
+    /// Ingestion does not trust this value; the admitted job is the source.
+    /// </summary>
+    public string? Correlation { get; init; }
+
+    /// <summary>
+    /// 32-hex trace id copied from the worker environment, when the journal recorded one.
+    /// Ingestion does not trust this value; the admitted job is the source.
+    /// </summary>
+    public string? Trace { get; init; }
+
     /// <summary>phase, progress, log, artifact, failure, truncated, terminal, or text.</summary>
     public required string Kind { get; init; }
 
@@ -185,6 +197,8 @@ public static class HarnessEvents
                     : null,
                 ElapsedMs = Int64(root, "elapsedMs"),
                 Attempt = String(root, "attempt") ?? "1",
+                Correlation = String(root, "correlation"),
+                Trace = String(root, "trace"),
                 Phase = String(root, "phase"),
                 Percent = Double(root, "percent"),
                 Level = String(root, "level"),

@@ -4,13 +4,17 @@
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using NSubstitute;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.ControlPlane;
 using Honua.Geoprocessing;
 using Honua.Geoprocessing.CustomCode;
@@ -1042,6 +1046,77 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/jobs/{jobId}/diagnostics")]
+    public async Task GetJobDiagnostics_ProjectsAdmittedHarnessIdentity()
+    {
+        const string traceId = "4bf92f3577b34da6a3ce929d0e0e4736";
+        var bytes = Encoding.UTF8.GetBytes("""
+            {"v":1,"kind":"phase","seq":0,"attempt":"untrusted","correlation":"forged-corr","trace":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","phase":"execute"}
+            {"v":1,"kind":"terminal","seq":1,"attempt":"untrusted","correlation":"forged-corr","status":"failed","exitCode":1}
+            """);
+        var now = DateTimeOffset.UtcNow;
+        var job = CreateJob("job-diag-harness-identity", ExecutionJobStatus.Failed, now.AddMinutes(-5), "corr-admitted") with
+        {
+            CompletedAt = now.AddMinutes(-4),
+            AttemptCount = 3,
+            ErrorMessage = "tool failed",
+            Audit = new OperationAuditInfo
+            {
+                RequestedBy = "alice",
+                CorrelationId = "corr-admitted",
+                TraceParent = "00-" + traceId + "-00f067aa0ba902b7-01"
+            },
+            Spec = CreateSpec("customcode-workload", new Dictionary<string, string>
+            {
+                [ExecutionJobParameterKeys.TraceId] = traceId
+            })
+        };
+        var artifact = new CustomCodeArtifactDescriptor
+        {
+            JobId = job.OperationId,
+            Attempt = 3,
+            Name = HarnessEvents.FileName,
+            ObjectKey = "server-owned/journal",
+            ContentType = "application/x-ndjson",
+            Provider = CloudStorageProvider.AwsS3,
+            SizeBytes = bytes.Length,
+            Sha256 = Convert.ToHexStringLower(SHA256.HashData(bytes)),
+            State = "available"
+        };
+        job = job with { ArtifactReferences = [artifact.Serialize()] };
+        _jobStore.Set(job);
+        var storage = Substitute.For<ICloudFileStorage>();
+        storage.Provider.Returns(CloudStorageProvider.AwsS3);
+        storage.DownloadAsync(artifact.ObjectKey, Arg.Any<CancellationToken>()).Returns(_ => new MemoryStream(bytes));
+        using var services = new ServiceCollection()
+            .AddSingleton<IExecutionJobStore>(_jobStore)
+            .AddSingleton<IExecutionLogStore>(_logStore)
+            .AddSingleton(storage)
+            .BuildServiceProvider();
+        var ingestor = new CustomCodeArtifactIngestor(services);
+        await ingestor.IngestAsync(job, artifact, CancellationToken.None);
+        await ingestor.IngestAsync(job, artifact, CancellationToken.None);
+
+        var response = await _client.GetAsync("/api/v1/admin/jobs/job-diag-harness-identity/diagnostics");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var rawBody = await response.Content.ReadAsStringAsync();
+        rawBody.Should().NotContain("forged-corr").And.NotContain("untrusted")
+            .And.NotContain("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        using var doc = JsonDocument.Parse(rawBody);
+        var root = doc.RootElement;
+        root.GetProperty("correlationId").GetString().Should().Be("corr-admitted");
+        root.GetProperty("traceId").GetString().Should().Be(traceId);
+        root.GetProperty("attempt").GetProperty("number").GetInt32().Should().Be(3);
+        var events = root.GetProperty("events");
+        events.GetProperty("totalCount").GetInt32().Should().Be(2);
+        events.GetProperty("items").EnumerateArray().Should().OnlyContain(item =>
+            item.GetProperty("metadata").GetProperty(HarnessEvents.AttemptKey).GetString() == "3"
+            && item.GetProperty("metadata").GetProperty(JobEventIdentity.JobMetadataKey).GetString() == job.OperationId
+            && item.GetProperty("metadata").GetProperty(JobEventIdentity.CorrelationMetadataKey).GetString() == "corr-admitted"
+            && item.GetProperty("metadata").GetProperty(JobEventIdentity.TraceMetadataKey).GetString() == traceId);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/jobs/{jobId}/diagnostics")]
     public async Task GetJobDiagnostics_ScopedReadKey_ReceivesOwnerViewWithoutInfrastructureIdentities()
     {
         // Same gated-fixture pattern as the scoped admin read-key test above: a read-only
@@ -1363,11 +1438,24 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
 
         public void SetLogs(string operationId, params ExecutionLogEntry[] entries) => _logs[operationId] = entries;
 
+        private readonly Dictionary<string, HashSet<string>> _appendedOnce = new(StringComparer.Ordinal);
+
         public Task AppendAsync(string operationId, ExecutionLogEntry entry, CancellationToken cancellationToken = default)
         {
             var current = _logs.TryGetValue(operationId, out var entries) ? entries : Array.Empty<ExecutionLogEntry>();
             _logs[operationId] = current.Append(entry).ToArray();
             return Task.CompletedTask;
+        }
+
+        public Task AppendOnceAsync(string operationId, string eventId, ExecutionLogEntry entry, CancellationToken cancellationToken = default)
+        {
+            if (!_appendedOnce.TryGetValue(operationId, out var ids))
+            {
+                ids = new HashSet<string>(StringComparer.Ordinal);
+                _appendedOnce[operationId] = ids;
+            }
+
+            return ids.Add(eventId) ? AppendAsync(operationId, entry, cancellationToken) : Task.CompletedTask;
         }
 
         public Task<IReadOnlyList<ExecutionLogEntry>> GetLogsAsync(string operationId, CancellationToken cancellationToken = default)

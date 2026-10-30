@@ -42,6 +42,7 @@ public sealed class EventJournal : IProgressReporter, IGpLogger, IDisposable
     private const int MessageLimit = 2000;
     private const int PhaseLimit = 500;
     private static readonly string[] AttemptEnvNames = ["HONUA_JOB_ATTEMPT", "HONUA_ATTEMPT_ID", "AWS_BATCH_JOB_ATTEMPT"];
+    private static readonly string[] TraceParentEnvNames = ["HONUA_TRACEPARENT", "TRACEPARENT"];
     private static readonly HashSet<string> Kinds = new(StringComparer.Ordinal)
     {
         "phase", "progress", "log", "artifact", "failure", "truncated", "terminal"
@@ -57,8 +58,10 @@ public sealed class EventJournal : IProgressReporter, IGpLogger, IDisposable
     /// <param name="maxEvents">Record cap; terminal records are exempt.</param>
     /// <param name="maxBytes">Byte cap; terminal records are exempt.</param>
     /// <param name="mirror">An optional logger that still receives the human-readable lines.</param>
+    /// <param name="correlation">Admitted correlation id. Unsafe values are omitted.</param>
+    /// <param name="trace">32-hex trace id. Other values are omitted.</param>
     public EventJournal(string path, string attempt = "1", int maxEvents = DefaultMaxEvents,
-        long maxBytes = DefaultMaxBytes, IGpLogger? mirror = null)
+        long maxBytes = DefaultMaxBytes, IGpLogger? mirror = null, string? correlation = null, string? trace = null)
     {
         if (maxEvents <= 0 || maxBytes <= 0)
         {
@@ -67,6 +70,8 @@ public sealed class EventJournal : IProgressReporter, IGpLogger, IDisposable
 
         Path = System.IO.Path.GetFullPath(path);
         Attempt = Limit(attempt, 64);
+        Correlation = NormalizeCorrelation(correlation);
+        Trace = NormalizeTraceId(trace);
         MaxEvents = maxEvents;
         MaxBytes = maxBytes;
         _mirror = mirror;
@@ -82,6 +87,12 @@ public sealed class EventJournal : IProgressReporter, IGpLogger, IDisposable
 
     /// <summary>The attempt identity on every record.</summary>
     public string Attempt { get; }
+
+    /// <summary>The correlation id on every record, when the run was given a safe one.</summary>
+    public string? Correlation { get; }
+
+    /// <summary>The 32-hex trace id on every record, when the run was given one.</summary>
+    public string? Trace { get; }
 
     /// <summary>The record cap.</summary>
     public int MaxEvents { get; }
@@ -116,6 +127,29 @@ public sealed class EventJournal : IProgressReporter, IGpLogger, IDisposable
 
         return "1";
     }
+
+    /// <summary>The correlation id declared by <c>HONUA_CORRELATION_ID</c>, or null.</summary>
+    /// <param name="env">The job environment (the process environment when null).</param>
+    public static string? CorrelationFromEnvironment(IReadOnlyDictionary<string, string?>? env)
+        => NormalizeCorrelation(Read(env, "HONUA_CORRELATION_ID"));
+
+    /// <summary>The trace id declared by <c>HONUA_TRACEPARENT</c> or <c>TRACEPARENT</c>, or null.</summary>
+    /// <param name="env">The job environment (the process environment when null).</param>
+    public static string? TraceFromEnvironment(IReadOnlyDictionary<string, string?>? env)
+    {
+        foreach (var name in TraceParentEnvNames)
+        {
+            if (TraceIdFromParent(Read(env, name)) is { } trace)
+            {
+                return trace;
+            }
+        }
+
+        return null;
+    }
+
+    private static string? Read(IReadOnlyDictionary<string, string?>? env, string name)
+        => env is null ? Environment.GetEnvironmentVariable(name) : env.GetValueOrDefault(name);
 
     /// <summary>The journal path declared by the environment, or <paramref name="fallback"/>.</summary>
     /// <param name="env">The job environment (the process environment when null).</param>
@@ -185,8 +219,18 @@ public sealed class EventJournal : IProgressReporter, IGpLogger, IDisposable
                 ["at"] = DateTimeOffset.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture),
                 ["elapsedMs"] = _clock.ElapsedMilliseconds,
                 ["attempt"] = Attempt,
-                ["kind"] = kind,
             };
+            if (Correlation is not null)
+            {
+                record["correlation"] = Correlation;
+            }
+
+            if (Trace is not null)
+            {
+                record["trace"] = Trace;
+            }
+
+            record["kind"] = kind;
             if (fields is not null)
             {
                 foreach (var (key, value) in fields.ToArray())
@@ -308,4 +352,82 @@ public sealed class EventJournal : IProgressReporter, IGpLogger, IDisposable
     }
 
     private static string Limit(string value, int length) => value.Length > length ? value[..length] : value;
+
+    private static string? NormalizeCorrelation(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var text = value.Trim();
+        if (text.Length is < 1 or > 128)
+        {
+            return null;
+        }
+
+        foreach (var character in text)
+        {
+            if (character is not ((>= 'A' and <= 'Z') or (>= 'a' and <= 'z') or (>= '0' and <= '9') or '.' or '_' or ':' or '-'))
+            {
+                return null;
+            }
+        }
+
+        return text;
+    }
+
+    private static string? NormalizeTraceId(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var text = value.Trim().ToLowerInvariant();
+        return text.Length == 32 && IsHex(text) && !IsAllZero(text) ? text : null;
+    }
+
+    private static string? TraceIdFromParent(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var parts = value.Trim().ToLowerInvariant().Split('-');
+        if (parts.Length != 4 || parts[0] != "00" || parts[1].Length != 32 || parts[2].Length != 16 || parts[3].Length != 2
+            || !IsHex(parts[1]) || !IsHex(parts[2]) || !IsHex(parts[3]) || IsAllZero(parts[1]) || IsAllZero(parts[2]))
+        {
+            return null;
+        }
+
+        return parts[1];
+    }
+
+    private static bool IsHex(string value)
+    {
+        foreach (var character in value)
+        {
+            if (character is not ((>= '0' and <= '9') or (>= 'a' and <= 'f')))
+            {
+                return false;
+            }
+        }
+
+        return value.Length > 0;
+    }
+
+    private static bool IsAllZero(string value)
+    {
+        foreach (var character in value)
+        {
+            if (character != '0')
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
 }

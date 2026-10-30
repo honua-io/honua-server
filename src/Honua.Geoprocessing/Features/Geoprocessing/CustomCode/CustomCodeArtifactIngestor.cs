@@ -74,6 +74,9 @@ internal sealed class CustomCodeArtifactIngestor(IServiceProvider services) : IC
             {
                 [HarnessEvents.AttemptKey] = attempt
             };
+            // Attempt, job, correlation, and trace come from the admitted record. A journal
+            // that names a different attempt or a forged correlation is not stored that way.
+            JobEventIdentity.Stamp(metadata, current);
             await logs.AppendOnceAsync(job.OperationId, eventId, entries[index] with { Metadata = metadata }, cancellationToken).ConfigureAwait(false);
         }
     }
