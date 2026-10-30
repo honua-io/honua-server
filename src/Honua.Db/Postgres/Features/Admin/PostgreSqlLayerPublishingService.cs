@@ -39,7 +39,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
     Honua.Core.Features.MultiTenancy.Abstractions.ITenantContext? tenantContext = null,
     PostgresSchemaConfiguration? schemaConfiguration = null,
     Honua.Core.Features.Infrastructure.Abstractions.ISchemaContext? schemaContext = null,
-    PostgresSessionLockConnections? sessionLockConnections = null) : ILayerPublishingService
+    Microsoft.Extensions.Options.IOptions<PostgresSessionLockConnections>? sessionLockConnections = null) : ILayerPublishingService
 {
     private const string DefaultServiceName = "default";
     private const int CatalogExtentSrid = 4326;
@@ -266,7 +266,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         // This connection holds the importer session lock below. On Lambda it is unpooled, so
         // closing it ends the RDS Proxy-pinned session (honua-server#6765).
         await using var connection = new NpgsqlConnection(
-            (sessionLockConnections ?? PostgresSessionLockConnections.Pooled).Resolve(connectionString));
+            (sessionLockConnections?.Value ?? PostgresSessionLockConnections.Pooled).Resolve(connectionString));
         await connection.OpenAsync(cancellationToken);
         // Keep the connection string's search_path. The request schema is not this
         // database's search path: overwriting it makes to_regclass('features') resolve

@@ -1,11 +1,13 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Configuration;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Db.Postgres.Features.FileImport;
 using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.Infrastructure;
@@ -17,12 +19,14 @@ namespace Honua.Db.Postgres.Tests.Features.Infrastructure;
 /// to the pool (honua-server#6765).
 /// </summary>
 [Collection("Database")]
+[Protocol(ProtocolNames.TestQuality)]
 public sealed class PostgresSessionLockConnectionsIntegrationTests(PostgresFixture fixture)
 {
     private const string StopMessage = "stop the attempt after observing the lock";
     private static readonly PostgresSessionLockConnections Release = new(releaseSessionOnClose: true);
 
     [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
     public async Task OpenAsync_DataSourceReleaseSessionOnClose_LeavesNoBackendAfterLockRelease()
     {
         var applicationName = NewApplicationName();
@@ -39,6 +43,7 @@ public sealed class PostgresSessionLockConnectionsIntegrationTests(PostgresFixtu
     }
 
     [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
     public async Task OpenAsync_DataSourcePooled_KeepsBackendInPool()
     {
         // Long-lived hosts keep warm pools: the same backend serves the next open.
@@ -57,6 +62,7 @@ public sealed class PostgresSessionLockConnectionsIntegrationTests(PostgresFixtu
     }
 
     [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
     public async Task OpenAsync_PooledWorkConnectionReleaseSessionOnClose_ReplacesItAndEndsSessionOnDispose()
     {
         var applicationName = NewApplicationName();
@@ -78,6 +84,28 @@ public sealed class PostgresSessionLockConnectionsIntegrationTests(PostgresFixtu
     }
 
     [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task OpenAsync_ReplacementInConnectionMode_KeepsPoolSessionSettings()
+    {
+        // The pool applies its timeouts with a physical-connection initializer that a bare
+        // connection skips; the replacement replays them.
+        var applicationName = NewApplicationName();
+        var limits = new ConnectionLimits { LockTimeout = TimeSpan.FromSeconds(7) };
+        var locks = PostgresSessionLockConnections.ForPrimaryDataSource(
+            true, limits, schemaHeadersEnabled: false, defaultSchema: null, DatabaseSessionSettingsMode.Connection);
+        await using var dataSource = PostgresDataSourceFactory.Create(
+            PooledConnectionString(applicationName), schemaHeadersEnabled: false, limits);
+        await using var work = await dataSource.OpenConnectionAsync();
+        Assert.Equal("7s", await ScalarAsync<string>(work, "SHOW lock_timeout"));
+
+        await using var session = await locks.OpenAsync(work, CancellationToken.None);
+
+        Assert.True(session.IsUnpooledReplacement);
+        Assert.Equal("7s", await ScalarAsync<string>(session.Connection, "SHOW lock_timeout"));
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
     public async Task GetOrImportAsync_ReleaseSessionOnClose_LockBackendEndsWithTheAttempt()
     {
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresSessionLockConnectionsIntegrationTests));
@@ -99,7 +127,7 @@ public sealed class PostgresSessionLockConnectionsIntegrationTests(PostgresFixtu
             var ledger = new PostgresServerJobArtifactImportLedger(
                 dataSource,
                 new PostgresSchemaConfiguration(schema, schema, [schema]),
-                Release);
+                Microsoft.Extensions.Options.Options.Create(Release));
             var scope = new ServerJobArtifactImportScope(
                 "tenant", "actor", "intent-6765", new string('a', 64), schema, "target");
 

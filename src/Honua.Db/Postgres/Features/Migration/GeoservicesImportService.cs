@@ -41,9 +41,9 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         IAttachmentStore? attachmentStore = null,
         IMigrationCatalogWriter? catalogWriter = null,
         PostgresSchemaConfiguration? schemaConfiguration = null,
-        PostgresSessionLockConnections? sessionLockConnections = null)
+        Microsoft.Extensions.Options.IOptions<PostgresSessionLockConnections>? sessionLockConnections = null)
     {
-        _sessionLockConnections = sessionLockConnections ?? PostgresSessionLockConnections.Pooled;
+        _sessionLockConnections = sessionLockConnections?.Value ?? PostgresSessionLockConnections.Pooled;
         _restClient = restClient ?? throw new ArgumentNullException(nameof(restClient));
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _crsRegistry = crsRegistry ?? throw new ArgumentNullException(nameof(crsRegistry));

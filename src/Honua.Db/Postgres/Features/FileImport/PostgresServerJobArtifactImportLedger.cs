@@ -27,12 +27,12 @@ internal sealed class PostgresServerJobArtifactImportLedger : IServerJobArtifact
     internal PostgresServerJobArtifactImportLedger(
         NpgsqlDataSource dataSource,
         PostgresSchemaConfiguration schema,
-        PostgresSessionLockConnections? sessionLockConnections = null)
+        Microsoft.Extensions.Options.IOptions<PostgresSessionLockConnections>? sessionLockConnections = null)
     {
         ArgumentNullException.ThrowIfNull(dataSource);
         ArgumentNullException.ThrowIfNull(schema);
         _dataSource = dataSource;
-        _sessionLockConnections = sessionLockConnections ?? PostgresSessionLockConnections.Pooled;
+        _sessionLockConnections = sessionLockConnections?.Value ?? PostgresSessionLockConnections.Pooled;
         _table = SchemaSearchPath.QualifyTable("job_artifact_import_receipt", schema.MetadataSchema);
     }
 

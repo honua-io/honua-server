@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Configuration;
 using Npgsql;
 
 namespace Honua.Db.Postgres.Features.Infrastructure;
@@ -18,21 +19,54 @@ namespace Honua.Db.Postgres.Features.Infrastructure;
 /// re-take the same key as a transaction lock on the work connection and rely on advisory-lock
 /// reentrancy within a session, so the lock cannot move to a separate connection. Long-lived
 /// hosts keep their pooled connections (<see cref="Pooled"/>).
-/// Behind RDS Proxy the server runs <c>Database:SessionSettings:Mode=role-defaults</c>, so
-/// the role's session timeouts apply to the unpooled connection as they do to the pool.
+/// A replacement keeps the pool's session settings. Settings carried in the connection string
+/// (startup options) and role defaults (<c>role-defaults</c> mode) apply on their own. In the
+/// default <c>connection</c> mode the pool applies them with a physical-connection initializer,
+/// which a bare connection skips, so the replacement runs <see cref="SessionSettingsSql"/>
+/// after it opens. Only the primary pool can need a replacement: on Lambda the named and bound
+/// pools that use the initializer are already unpooled (honua-server#6760).
 /// </remarks>
 internal sealed class PostgresSessionLockConnections
 {
     /// <summary>Long-lived hosts: session locks stay on pooled connections.</summary>
     internal static readonly PostgresSessionLockConnections Pooled = new(releaseSessionOnClose: false);
 
-    internal PostgresSessionLockConnections(bool releaseSessionOnClose)
+    internal PostgresSessionLockConnections(bool releaseSessionOnClose, string? sessionSettingsSql = null)
     {
         ReleaseSessionOnClose = releaseSessionOnClose;
+        SessionSettingsSql = sessionSettingsSql;
     }
 
     /// <summary>Whether a session-lock connection must end its physical session when it closes.</summary>
     internal bool ReleaseSessionOnClose { get; }
+
+    /// <summary>
+    /// The primary pool's per-connection session settings, or <see langword="null"/> when the
+    /// pool applies none by initializer. Run on every unpooled replacement.
+    /// </summary>
+    internal string? SessionSettingsSql { get; }
+
+    /// <summary>
+    /// Builds the policy for the primary data source, mirroring how
+    /// <see cref="PostgresDataSourceFactory.Configure"/> applies its session settings.
+    /// </summary>
+    internal static PostgresSessionLockConnections ForPrimaryDataSource(
+        bool releaseSessionOnClose,
+        ConnectionLimits limits,
+        bool schemaHeadersEnabled,
+        string? defaultSchema,
+        DatabaseSessionSettingsMode sessionSettingsMode)
+    {
+        ArgumentNullException.ThrowIfNull(limits);
+        var usesInitializer = sessionSettingsMode != DatabaseSessionSettingsMode.RoleDefaults
+            && !schemaHeadersEnabled
+            && !PostgresDataSourceFactory.ResolveMultiplexing(limits.Multiplexing, schemaHeadersEnabled);
+        var sql = usesInitializer
+            ? PostgresDataSourceFactory.BuildSessionSettingsSql(
+                limits, PostgresDataSourceFactory.ResolveSearchPathSchema(schemaHeadersEnabled, defaultSchema))
+            : null;
+        return new PostgresSessionLockConnections(releaseSessionOnClose, sql);
+    }
 
     /// <summary>
     /// Whether a connection opened from <paramref name="connectionString"/> must be replaced.
@@ -42,7 +76,10 @@ internal sealed class PostgresSessionLockConnections
     internal bool RequiresUnpooled(string connectionString)
         => ReleaseSessionOnClose && new NpgsqlConnectionStringBuilder(connectionString).Pooling;
 
-    /// <summary>The connection string to open a session-lock connection from.</summary>
+    /// <summary>
+    /// The connection string to open a session-lock connection from. For a caller that opens a
+    /// bare connection from a raw string, which never had the pool's initializer.
+    /// </summary>
     internal string Resolve(string connectionString)
         => RequiresUnpooled(connectionString) ? BuildUnpooledConnectionString(connectionString) : connectionString;
 
@@ -95,13 +132,18 @@ internal sealed class PostgresSessionLockConnections
             MinPoolSize = 0,
         }.ConnectionString;
 
-    private static async Task<NpgsqlConnection> OpenUnpooledAsync(
+    private async Task<NpgsqlConnection> OpenUnpooledAsync(
         string connectionString, CancellationToken cancellationToken)
     {
         var connection = new NpgsqlConnection(BuildUnpooledConnectionString(connectionString));
         try
         {
             await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+            if (SessionSettingsSql is { Length: > 0 } sessionSettingsSql)
+            {
+                await using var command = new NpgsqlCommand(sessionSettingsSql, connection);
+                await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            }
         }
         catch
         {

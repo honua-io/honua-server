@@ -5,6 +5,7 @@ using FluentAssertions;
 using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.Core.Configuration;
 using Honua.Db.Postgres;
 using Honua.Db.Postgres.Tests;
 using Microsoft.Extensions.Configuration;
@@ -107,6 +108,33 @@ public sealed class PostgresSessionLockConnectionsTests
     public void AddPostgreSqlServices_Lambda_ReleasesSessionLocksOnClose()
         => ResolveRegistered(lambdaFunctionName: "honua-api").ReleaseSessionOnClose.Should().BeTrue();
 
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public void ForPrimaryDataSource_ConnectionMode_ReplaysPoolSessionSettings()
+    {
+        var limits = new ConnectionLimits { LockTimeout = TimeSpan.FromSeconds(7) };
+
+        var locks = PostgresSessionLockConnections.ForPrimaryDataSource(
+            true, limits, schemaHeadersEnabled: false, "honua", DatabaseSessionSettingsMode.Connection);
+
+        locks.SessionSettingsSql.Should().Be(PostgresDataSourceFactory.BuildSessionSettingsSql(limits, "honua"));
+        locks.SessionSettingsSql.Should().Contain("lock_timeout");
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public void ForPrimaryDataSource_RoleDefaultsOrStartupOptions_ReplaysNothing()
+    {
+        var limits = new ConnectionLimits();
+
+        PostgresSessionLockConnections.ForPrimaryDataSource(
+                true, limits, schemaHeadersEnabled: false, "honua", DatabaseSessionSettingsMode.RoleDefaults)
+            .SessionSettingsSql.Should().BeNull();
+        PostgresSessionLockConnections.ForPrimaryDataSource(
+                true, limits, schemaHeadersEnabled: true, "honua", DatabaseSessionSettingsMode.Connection)
+            .SessionSettingsSql.Should().BeNull();
+    }
+
     private static PostgresSessionLockConnections ResolveRegistered(string? lambdaFunctionName)
     {
         var configuration = new ConfigurationBuilder()
@@ -121,6 +149,6 @@ public sealed class PostgresSessionLockConnectionsTests
         services.AddPostgreSqlServices(configuration, TestCoreSchemaMigrations.Manifest);
 
         using var provider = services.BuildServiceProvider();
-        return provider.GetRequiredService<PostgresSessionLockConnections>();
+        return provider.GetRequiredService<Microsoft.Extensions.Options.IOptions<PostgresSessionLockConnections>>().Value;
     }
 }

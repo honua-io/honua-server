@@ -60,9 +60,9 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
         HttpClient httpClient,
         ILogger<OgcWfsImportService> logger,
         PostgresSchemaConfiguration? schemaConfiguration = null,
-        PostgresSessionLockConnections? sessionLockConnections = null)
+        Microsoft.Extensions.Options.IOptions<PostgresSessionLockConnections>? sessionLockConnections = null)
     {
-        _sessionLockConnections = sessionLockConnections ?? PostgresSessionLockConnections.Pooled;
+        _sessionLockConnections = sessionLockConnections?.Value ?? PostgresSessionLockConnections.Pooled;
         _scanner = scanner ?? throw new ArgumentNullException(nameof(scanner));
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
