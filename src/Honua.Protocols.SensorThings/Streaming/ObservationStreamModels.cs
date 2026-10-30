@@ -1,7 +1,6 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Globalization;
 using System.Text.Json.Serialization;
 using Honua.Core.Features.SensorThings.Domain;
 using Microsoft.Extensions.Logging;
@@ -37,19 +36,18 @@ public sealed record ObservationStreamFrame
     /// <summary>Builds a frame from a persisted observation.</summary>
     public static ObservationStreamFrame FromObservation(SensorThingsObservation observation)
     {
-        var start = Iso(observation.PhenomenonTime);
+        var start = Services.StaEntityMapper.FormatInstant(observation.PhenomenonTime);
         return new()
         {
             IsHeartbeat = false,
             IotId = observation.Id,
             DatastreamId = observation.DatastreamId,
-            PhenomenonTime = observation.PhenomenonTimeEnd is { } end ? $"{start}/{Iso(end)}" : start,
+            PhenomenonTime = observation.PhenomenonTimeEnd is { } end
+                ? $"{start}/{Services.StaEntityMapper.FormatInstant(end)}"
+                : start,
             Result = Services.StaEntityMapper.ResultValue(observation)
         };
     }
-
-    private static string Iso(DateTimeOffset value) =>
-        value.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture);
 
     /// <summary>Builds a keep-alive heartbeat frame.</summary>
     public static ObservationStreamFrame Heartbeat() => new() { IsHeartbeat = true };
