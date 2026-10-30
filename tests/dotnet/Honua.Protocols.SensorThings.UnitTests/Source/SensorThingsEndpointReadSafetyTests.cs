@@ -139,4 +139,28 @@ public sealed class SensorThingsEndpointReadSafetyTests
         Assert.Equal(9, payload.RootElement.GetProperty("@iot.id").GetInt64());
         Assert.Equal(42.5, payload.RootElement.GetProperty("result").GetDouble());
     }
+
+    [UnitTest]
+    public void MapObservation_MicrosecondPhenomenonTime_PreservesMicroseconds()
+    {
+        var instant = DateTimeOffset.Parse(
+            "2024-06-15T12:34:56.123456Z",
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.AdjustToUniversal);
+        var observation = new SensorThingsObservation
+        {
+            Id = 9,
+            DatastreamId = 1,
+            Result = 1,
+            PhenomenonTime = instant,
+            PhenomenonTimeEnd = instant.AddTicks(1_000_000),
+            ResultTime = instant
+        };
+        const string expected = "2024-06-15T12:34:56.1234560Z/2024-06-15T12:34:56.2234560Z";
+        var rest = StaEntityMapper.MapObservation(observation, "https://sensor.example.test/sta/v1.1");
+        var frame = ObservationStreamFrame.FromObservation(observation);
+        Assert.Equal(expected, rest.PhenomenonTime);
+        Assert.Equal("2024-06-15T12:34:56.1234560Z", rest.ResultTime);
+        Assert.Equal(expected, frame.PhenomenonTime);
+    }
 }

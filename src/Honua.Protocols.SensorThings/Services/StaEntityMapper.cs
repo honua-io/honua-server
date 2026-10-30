@@ -14,8 +14,19 @@ namespace Honua.Protocols.SensorThings.Services;
 /// </summary>
 internal static class StaEntityMapper
 {
-    private static string Iso(DateTimeOffset value) =>
-        value.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture);
+    /// <summary>
+    /// Formats an instant as UTC ISO-8601 with a <c>Z</c> suffix.
+    /// Millisecond-aligned values keep three fractional digits. Finer values use seven digits.
+    /// The three-digit pattern rounds, so it is only used when the remainder is zero.
+    /// </summary>
+    internal static string FormatInstant(DateTimeOffset value)
+    {
+        var utc = value.ToUniversalTime();
+        var pattern = utc.Ticks % TimeSpan.TicksPerMillisecond == 0
+            ? "yyyy-MM-dd'T'HH:mm:ss.fff'Z'"
+            : "yyyy-MM-dd'T'HH:mm:ss.fffffff'Z'";
+        return utc.ToString(pattern, CultureInfo.InvariantCulture);
+    }
 
     public static StaThing MapThing(SensorThingsThing thing, string staBase) => new()
     {
@@ -55,8 +66,8 @@ internal static class StaEntityMapper
         {
             IotId = observation.Id,
             IotSelfLink = $"{staBase}/Observations({observation.Id})",
-            PhenomenonTime = observation.PhenomenonTimeEnd is { } end ? $"{Iso(observation.PhenomenonTime)}/{Iso(end)}" : Iso(observation.PhenomenonTime),
-            ResultTime = observation.ResultTime is { } rt ? Iso(rt) : null,
+            PhenomenonTime = observation.PhenomenonTimeEnd is { } end ? $"{FormatInstant(observation.PhenomenonTime)}/{FormatInstant(end)}" : FormatInstant(observation.PhenomenonTime),
+            ResultTime = observation.ResultTime is { } rt ? FormatInstant(rt) : null,
             Result = ResultValue(observation),
             DatastreamNavigationLink = $"{staBase}/Observations({observation.Id})/Datastream"
         };
@@ -80,7 +91,7 @@ internal static class StaEntityMapper
         string? phenomenonTime = null;
         if (datastream.PhenomenonTimeStart is { } start && datastream.PhenomenonTimeEnd is { } end)
         {
-            phenomenonTime = $"{Iso(start)}/{Iso(end)}";
+            phenomenonTime = $"{FormatInstant(start)}/{FormatInstant(end)}";
         }
 
         return new StaDatastream
