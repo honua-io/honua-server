@@ -528,6 +528,11 @@ internal static class McpToolOutputSchemas
             "packageFamily": { "type": ["string", "null"] },
             "packageId": { "type": ["string", "null"] },
             "decision": { "type": ["string", "null"] },
+            "status": {
+              "type": "string",
+              "enum": ["ready", "warning", "blocked"],
+              "description": "Review outcome. Distinct from the structured error envelope status \"error\"."
+            },
             "findings": { "type": "array", "items": { "type": "object" } },
             "previewPlan": { "type": ["object", "null"] },
             "estimate": { "type": ["object", "null"] }
