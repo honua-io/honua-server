@@ -196,13 +196,16 @@ COPY --from=build /app /var/task
 # the GeoParquet f=parquet encoder: without it every export answered 501 (honua-server#4912).
 # The digest-pinned runtime-deps base lags Ubuntu security pockets. Upgrade here so
 # openssl/libssl CVE-2026-84782 (fix 3.0.13-0ubuntu3.16) does not wait on a base refresh.
+# 2026-10-30: the same echo picks up zlib1g 1:1.3.dfsg-3.1ubuntu2.3 (CVE-2026-85091).
+# dpkg-query needs the version field with one dollar. Two dollars emit a leading dollar and fail the epoch check.
 # The revision is echoed so a bump invalidates the cached apt layer.
-ARG RUNTIME_PACKAGE_REVISION=20261008
+ARG RUNTIME_PACKAGE_REVISION=20261030
 # hadolint ignore=DL3008,DL3005
 RUN echo "runtime package revision ${RUNTIME_PACKAGE_REVISION}" && \
     apt-get update && \
     apt-get upgrade -y && \
     apt-get install -y --no-install-recommends libatomic1 libgssapi-krb5-2 fonts-dejavu-core && \
+    dpkg --compare-versions "$(dpkg-query -W -f '${Version}' zlib1g)" ge "1:1.3.dfsg-3.1ubuntu2.3" && \
     rm -rf /var/lib/apt/lists/* && \
     test -r /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf && \
     chmod +x /var/task/Honua.Server && \

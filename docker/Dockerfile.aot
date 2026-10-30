@@ -170,12 +170,14 @@ FROM ${DOTNET_RUNTIME_DEPS_IMAGE} AS runtime
 
 # Echoed in the upgrade RUN so a bump invalidates the cached apt layer.
 # 2026-10-08: refresh Ubuntu pocket updates on the digest-pinned runtime-deps base.
-ARG RUNTIME_PACKAGE_REVISION=20261008
+# 2026-10-30: pick up zlib1g 1:1.3.dfsg-3.1ubuntu2.3 (CVE-2026-85091).
+# dpkg-query needs the version field with one dollar. Two dollars emit a leading dollar and fail the epoch check.
+ARG RUNTIME_PACKAGE_REVISION=20261030
 
 # Security: Install runtime dependencies. The Ubuntu runtime-deps base already ships
 # ICU (InvariantGlobalization=false, honua-server#1369). libatomic1 is required by
-# ParquetSharpNative, which backs the GeoParquet writer (honua-server#4912); wget backs
-# the HEALTHCHECK below. fonts-dejavu-core is the rendering font: the NoDependencies Skia
+# ParquetSharpNative, which backs the GeoParquet writer (honua-server#4912).
+# fonts-dejavu-core is the rendering font: the NoDependencies Skia
 # asset has no Fontconfig lookup, and without a font file every label, legend and Studio
 # deliverable renders blank (honua-server#4908, #4949).
 # The base is digest-pinned; compatible security updates and dependency versions
@@ -189,8 +191,8 @@ RUN echo "runtime package revision ${RUNTIME_PACKAGE_REVISION}" && \
     fonts-dejavu-core \
     libatomic1 \
     libgssapi-krb5-2 \
-    tzdata \
-    wget && \
+    tzdata && \
+    dpkg --compare-versions "$(dpkg-query -W -f '${Version}' zlib1g)" ge "1:1.3.dfsg-3.1ubuntu2.3" && \
     rm -rf /var/lib/apt/lists/* /tmp/* && \
     test -r /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf
 
@@ -283,9 +285,9 @@ ENV ASPNETCORE_ENVIRONMENT=Production \
     DOTNET_EnableDiagnostics=0 \
     HONUA_DEFAULT_FONT_PATH=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf
 
-# Security: Enhanced health check with timeout and authentication bypass
+# Health check. The runtime image has bash and no HTTP client.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-    CMD ["wget", "-q", "-T", "5", "-O", "/dev/null", "http://localhost:8080/healthz/live"]
+    CMD ["bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /healthz/live HTTP/1.0\\r\\nHost: 127.0.0.1\\r\\nConnection: close\\r\\n\\r\\n' >&3 && IFS= read -r status <&3 && case \"$status\" in *' 200 '*) exit 0 ;; *) exit 1 ;; esac"]
 
 # Security: Explicit port exposure
 EXPOSE 8080/tcp 8081/tcp

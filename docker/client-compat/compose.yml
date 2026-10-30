@@ -192,10 +192,9 @@ services:
     networks:
       - compat
     healthcheck:
-      # GNU wget --spider probes with HEAD, but Honua's health routes intentionally
-      # accept GET only. Use a discarded GET so this remains portable across the
-      # Debian runtime image introduced on 2026-08-21 and BusyBox-based images.
-      test: ["CMD", "wget", "--quiet", "--output-document=/dev/null", "http://localhost:5000/healthz/ready"]
+      # Published server images are Ubuntu and do not install an HTTP client
+      # (CVE-2021-31879). Probe with bash /dev/tcp. Health routes accept GET only.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/5000 && printf 'GET /healthz/ready HTTP/1.0\\r\\nHost: 127.0.0.1\\r\\nConnection: close\\r\\n\\r\\n' >&3 && IFS= read -r status <&3 && case \"$$status\" in *' 200 '*) exit 0 ;; *) exit 1 ;; esac"]
       interval: 10s
       timeout: 5s
       retries: 30
