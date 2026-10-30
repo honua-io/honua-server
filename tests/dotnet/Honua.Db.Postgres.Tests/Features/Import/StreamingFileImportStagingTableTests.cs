@@ -79,6 +79,9 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
                 schema_name, staging_name, target_srid);
             EXECUTE format('CREATE INDEX IF NOT EXISTS %I ON %I.%I USING GIST (geometry)', 'idx_' || staging_name || '_geometry', schema_name, staging_name);
             EXECUTE format('CREATE INDEX IF NOT EXISTS %I ON %I.%I USING GIN (properties)', 'idx_' || staging_name || '_properties', schema_name, staging_name);
+            -- Mirrors 129_ProtectImportTableOwnership.sql: a promoted staging table is importer-owned,
+            -- so a later replace of the same target passes the importer's ownership check.
+            EXECUTE format('COMMENT ON TABLE %I.%I IS %L', schema_name, staging_name, 'honua:import-owned:v1');
             RETURN staging_name;
         END;
         $$;
@@ -187,6 +190,12 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
                     VALUES (ST_SetSRID(ST_MakePoint(0, 0), 4326), jsonb_build_object('name', 'legacy'));
                     """;
                 await command.ExecuteNonQueryAsync();
+            }
+
+            if (loadMode == ImportLoadMode.Replace)
+            {
+                // A replace drops the live table, so a legacy table must be explicitly adopted first.
+                await MarkImporterOwnedAsync(schema, legacyName);
             }
 
             var provider = new TestConnectionProvider(fixture.DataSource, schema);
@@ -310,6 +319,7 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
         {
             await EnsureImportFunctionsAsync();
             await SeedOverwriteGuardTargetAsync(schema);
+            await MarkImporterOwnedAsync(schema, OverwriteGuardPhysicalTable);
             var relationIdBefore = await ReadRelationIdAsync(schema, OverwriteGuardPhysicalTable);
 
             var result = await ImportOverwriteGuardFixtureAsync(schema, overwriteExisting: true);
@@ -524,6 +534,7 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
         {
             await EnsureImportFunctionsAsync();
             await SeedOverwriteGuardTargetAsync(schema);
+            await MarkImporterOwnedAsync(schema, OverwriteGuardPhysicalTable);
             var liveOid = await ReadRelationIdAsync(schema, OverwriteGuardPhysicalTable);
             using var cancellation = new CancellationTokenSource();
             var committedBatches = 0;
@@ -592,6 +603,7 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
         {
             await EnsureImportFunctionsAsync();
             await SeedOverwriteGuardTargetAsync(schema);
+            await MarkImporterOwnedAsync(schema, OverwriteGuardPhysicalTable);
             var liveOid = await ReadRelationIdAsync(schema, OverwriteGuardPhysicalTable);
             var provider = new TestConnectionProvider(fixture.DataSource, schema);
             var service = CreateStreamingService(provider, schema);
@@ -631,6 +643,7 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
         {
             await EnsureImportFunctionsAsync();
             await SeedOverwriteGuardTargetAsync(schema);
+            await MarkImporterOwnedAsync(schema, OverwriteGuardPhysicalTable);
             var provider = new TestConnectionProvider(fixture.DataSource, schema);
             var service = CreateStreamingService(provider, schema);
             await using var stream = new MemoryStream(Encoding.UTF8.GetBytes("name,lat,lon\n"));
