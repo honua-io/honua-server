@@ -97,9 +97,17 @@ public sealed class ImageServerMosaicIntegrationTests
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
 
-            json.RootElement.GetProperty("name").GetString().Should().Contain("mosaic");
+            // #6561: newest names the raster that supplied the pixel. overlap-newest (value 5)
+            // wins the contested sample; the other overlapping rasters stay in the catalog.
+            var catalogFeatures = json.RootElement.GetProperty("catalogItems").GetProperty("features");
+            catalogFeatures.GetArrayLength().Should().Be(2);
+            var overlapId = catalogFeatures.EnumerateArray()
+                .Select(feature => feature.GetProperty("attributes"))
+                .Single(attributes => attributes.GetProperty("Name").GetString() == "overlap-newest")
+                .GetProperty("OBJECTID").GetInt64();
+            json.RootElement.GetProperty("name").GetString().Should().Be("overlap-newest");
+            json.RootElement.GetProperty("objectId").GetInt64().Should().Be(overlapId);
             json.RootElement.GetProperty("properties").GetProperty("Band_1").GetDouble().Should().Be(5);
-            json.RootElement.GetProperty("catalogItems").GetProperty("features").GetArrayLength().Should().Be(2);
         }
         finally
         {
@@ -151,13 +159,14 @@ public sealed class ImageServerMosaicIntegrationTests
                     attributes => attributes.GetProperty("OBJECTID").GetInt64());
             var westId = objectIds["west"];
             var eastId = objectIds["east"];
+            var overlapId = objectIds["overlap-newest"];
 
             using (var unlocked = await IdentifyJsonAsync(fixture, "geometry=1.5,1&geometryType=esriGeometryPoint&sr=4326"))
             {
                 unlocked.RootElement.GetProperty("value").GetString().Should().Be("5");
-                // A merged mosaic has no single catalog item, so objectId is null or omitted.
-                (!unlocked.RootElement.TryGetProperty("objectId", out var unlockedObjectId) ||
-                    unlockedObjectId.ValueKind == JsonValueKind.Null).Should().BeTrue();
+                // #6561: the default newest mosaic names the one raster that supplied the pixel.
+                unlocked.RootElement.GetProperty("objectId").GetInt64().Should().Be(overlapId);
+                unlocked.RootElement.GetProperty("name").GetString().Should().Be("overlap-newest");
             }
 
             using (var locked = await IdentifyJsonAsync(

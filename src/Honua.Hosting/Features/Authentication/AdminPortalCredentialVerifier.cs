@@ -7,8 +7,8 @@ using System.Text;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
+using Honua.Infrastructure.Redis;
 using Microsoft.Extensions.Options;
-using StackExchange.Redis;
 
 namespace Honua.Infrastructure.Authentication;
 
@@ -136,9 +136,11 @@ internal sealed class AdminPortalCredentialVerifier(
 
         try
         {
-            return await _adminApiKeyStore.ValidateAsync(password, cancellationToken).ConfigureAwait(false);
+            return await RedisClientFault.RetryCompletedReaderAsync(
+                () => _adminApiKeyStore.ValidateAsync(password, cancellationToken),
+                cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception ex) when (ex is RedisException or TimeoutException or System.Data.Common.DbException && ex is not OperationCanceledException)
+        catch (Exception ex) when (RedisClientFault.IsCredentialStoreUnavailable(ex))
         {
             if (_logger is not null)
             {

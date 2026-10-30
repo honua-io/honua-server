@@ -189,11 +189,12 @@ public sealed class McpRegistryCompositionTests
         // honua-server#3363 (coordinator ruling 2026-09-14): eligible Admin operation
         // publication is on by default for the production composition — no
         // Mcp:PublishOperations configuration at all. The committed projection manifest is
-        // the contract: its 66 rows are the Admin API and access catalogs minus the
-        // audited exclusions (digest below). The closed operator roster adds five tools
+        // the contract: its 67 rows are the Admin API and access catalogs minus the
+        // audited exclusions (digest below). #6701 adds admin.api-key.update-restrictions
+        // to that projection. The closed operator roster adds five tools
         // (server status, connection create, connection test, import-from-URL, import-from-object-store)
         // without enabling the full catalog. Other admin.* providers stay opt-in.
-        const int ExpectedManifestTools = 66;
+        const int ExpectedManifestTools = 67;
         const int ExpectedRosterAdditions = 5;
         const int ExpectedPublishedTools = ExpectedManifestTools + ExpectedRosterAdditions;
         const int ExpectedExclusions = 15;
@@ -266,9 +267,9 @@ public sealed class McpRegistryCompositionTests
     {
         // The explicit full-catalog opt-in keeps its pre-#3363 meaning: every eligible
         // descriptor publishes except the audited exclusions and hand-authored duplicates.
-        const int ExpectedCatalogAdminOperations = 115;
+        const int ExpectedCatalogAdminOperations = 116;
         const int ExpectedExclusionsInCatalog = 11;
-        const int ExpectedPublishedAdminTools = 104;
+        const int ExpectedPublishedAdminTools = 105;
 
         await using var provider = BuildProductionOperationsComposition(new Dictionary<string, string?>
         {
