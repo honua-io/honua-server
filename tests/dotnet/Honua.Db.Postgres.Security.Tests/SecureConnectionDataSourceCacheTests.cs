@@ -323,6 +323,37 @@ public sealed partial class SecureConnectionDataSourceCacheTests
 
     [SecurityTest]
     [UnitTest]
+    public void Acquire_OnLambda_NamedAndBoundPoolsAreUnpooled()
+    {
+        // Named and bound pools SET session settings per connection, which pins RDS Proxy.
+        // A frozen Lambda never prunes, so each close must end the session (#6760).
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["AWS_LAMBDA_FUNCTION_NAME"] = "honua-api" })
+            .Build();
+        using var cache = new SecureConnectionDataSourceCache(configuration);
+
+        using var named = cache.Acquire("named", SampleConnectionString);
+        using var bound = cache.Acquire("bound", SampleConnectionString, preservePrimarySchema: false);
+
+        Assert.False(new NpgsqlConnectionStringBuilder(named.DataSource.ConnectionString).Pooling);
+        Assert.False(new NpgsqlConnectionStringBuilder(bound.DataSource.ConnectionString).Pooling);
+    }
+
+    [SecurityTest]
+    [UnitTest]
+    public void Acquire_LongLivedHost_NamedAndBoundPoolsStayPooled()
+    {
+        using var cache = new SecureConnectionDataSourceCache(new ConfigurationBuilder().Build());
+
+        using var named = cache.Acquire("named", SampleConnectionString);
+        using var bound = cache.Acquire("bound", SampleConnectionString, preservePrimarySchema: false);
+
+        Assert.True(new NpgsqlConnectionStringBuilder(named.DataSource.ConnectionString).Pooling);
+        Assert.True(new NpgsqlConnectionStringBuilder(bound.DataSource.ConnectionString).Pooling);
+    }
+
+    [SecurityTest]
+    [UnitTest]
     public async Task Acquire_OverlappingRotations_PinEachGenerationUntilItsLastAcquisitionCompletes()
     {
         using var cache = new SecureConnectionDataSourceCache(new ConfigurationBuilder().Build());

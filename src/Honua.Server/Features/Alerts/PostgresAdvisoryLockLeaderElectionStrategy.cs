@@ -56,9 +56,12 @@ internal sealed class PostgresAdvisoryLockLeaderElectionStrategy : ILeaderElecti
     public string InstanceId { get; }
 
     /// <summary>
-    /// Builds a one-session data source for the advisory lock. Multiplexing is forced
+    /// Builds an unpooled data source for the advisory lock. Multiplexing is forced
     /// off and TCP keepalive is enabled even when the application pool has both the
-    /// other way around.
+    /// other way around. Unpooled because the lock attempt pins the RDS Proxy session
+    /// whether or not it wins: a pooled loser connection would keep that pin, and every
+    /// frozen Lambda instance would hold one proxy backend (honua-server#6760). Closing
+    /// an unpooled connection ends the session, so only the leader holds one.
     /// </summary>
     internal static NpgsqlDataSource CreateDedicatedLockDataSource(NpgsqlDataSource dataSource)
         => CreateDedicatedLockDataSource(dataSource, TimeSpan.FromSeconds(30));
@@ -70,8 +73,8 @@ internal sealed class PostgresAdvisoryLockLeaderElectionStrategy : ILeaderElecti
         var builder = new NpgsqlConnectionStringBuilder(dataSource.ConnectionString)
         {
             Multiplexing = false,
+            Pooling = false,
             PersistSecurityInfo = true,
-            MaxPoolSize = 2,
             MinPoolSize = 0,
         };
         builder.KeepAlive = seconds;
