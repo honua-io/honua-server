@@ -9,6 +9,7 @@ using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Queries.Filters;
 using Honua.Infrastructure.Caching;
+using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -175,7 +176,7 @@ public sealed class ResponseCacheUtilitiesTests
         result.Should().BeFalse();
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData("Authorization", "Bearer secret")]
     [InlineData("X-API-Key", "secret")]
     [InlineData("X-Esri-Authorization", "secret")]
@@ -189,7 +190,7 @@ public sealed class ResponseCacheUtilitiesTests
         ResponseCacheUtilities.ShouldCache(context, EnabledResponseCache()).Should().BeFalse();
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData("?token=secret")]
     [InlineData("?key=secret")]
     [InlineData("?f=json&token=secret")]
@@ -200,7 +201,7 @@ public sealed class ResponseCacheUtilitiesTests
         ResponseCacheUtilities.ShouldCache(context, EnabledResponseCache()).Should().BeFalse();
     }
 
-    [Fact]
+    [UnitTest]
     public void ShouldCache_WithAuthenticatedPrincipal_ReturnsFalse()
     {
         var context = CreateCachingRequest();
@@ -209,7 +210,7 @@ public sealed class ResponseCacheUtilitiesTests
         ResponseCacheUtilities.ShouldCache(context, EnabledResponseCache()).Should().BeFalse();
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData("no-store")]
     [InlineData("no-cache")]
     [InlineData("private, no-store")]
@@ -221,7 +222,7 @@ public sealed class ResponseCacheUtilitiesTests
         ResponseCacheUtilities.ShouldCache(context, EnabledResponseCache()).Should().BeFalse();
     }
 
-    [Fact]
+    [UnitTest]
     public void ShouldCache_WhenResponseCacheControlIsPrivate_ReturnsTrue()
     {
         var context = CreateCachingRequest();
@@ -230,7 +231,7 @@ public sealed class ResponseCacheUtilitiesTests
         ResponseCacheUtilities.ShouldCache(context, EnabledResponseCache()).Should().BeTrue();
     }
 
-    [Fact]
+    [UnitTest]
     public void BuildFeatureServerKey_DoesNotEmbedTheCredential()
     {
         var context = CreateCachingRequest("?f=json&where=1%3D1&token=super-secret-token");
@@ -240,7 +241,7 @@ public sealed class ResponseCacheUtilitiesTests
         key.Should().NotContain("super-secret-token");
     }
 
-    [Fact]
+    [UnitTest]
     public void BuildFeatureServerKey_DifferentLicenseFingerprints_ProducesDifferentKeys()
     {
         var pro = CreateCachingRequest();
@@ -254,7 +255,7 @@ public sealed class ResponseCacheUtilitiesTests
         proKey.Should().NotBe(communityKey);
     }
 
-    [Fact]
+    [UnitTest]
     public void BuildFeatureServerKey_TestSchemaHeader_VariesOnlyWhenEnabled()
     {
         var first = CreateCachingRequest();
