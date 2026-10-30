@@ -262,6 +262,9 @@ internal static class FlatGeobufFeatureWriter
 
     private static string ScalarText(object value) => Convert.ToString(UnwrapScalar(value), CultureInfo.InvariantCulture) ?? string.Empty;
 
+    private static string FormatFlatGeobufInstant(DateTimeOffset instant) =>
+        instant.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss.fffffff'Z'", CultureInfo.InvariantCulture);
+
     private static string FormatText(object value, MetadataV2FieldType type)
     {
         value = UnwrapScalar(value);
@@ -271,15 +274,19 @@ internal static class FlatGeobufFeatureWriter
         }
         if (type == MetadataV2FieldType.DateTime)
         {
+            // GDAL rejects a FlatGeobuf datetime value longer than 32 bytes.
+            // DateTimeOffset "O" writes "+00:00" and is 33 bytes, so every
+            // instant is UTC with a trailing Z and seven fractional digits.
             return value switch
             {
-                DateTimeOffset date => date.ToString("O", CultureInfo.InvariantCulture),
-                DateTime date => (date.Kind == DateTimeKind.Unspecified
-                    ? DateTime.SpecifyKind(date, DateTimeKind.Utc) : date.ToUniversalTime()).ToString("O", CultureInfo.InvariantCulture),
-                long milliseconds => DateTimeOffset.FromUnixTimeMilliseconds(milliseconds).ToString("O", CultureInfo.InvariantCulture),
-                double milliseconds => DateTimeOffset.UnixEpoch.AddMilliseconds(milliseconds).ToString("O", CultureInfo.InvariantCulture),
-                _ => DateTimeOffset.Parse(ScalarText(value), CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal)
-                    .ToString("O", CultureInfo.InvariantCulture)
+                DateTimeOffset date => FormatFlatGeobufInstant(date),
+                DateTime date => FormatFlatGeobufInstant(date.Kind == DateTimeKind.Unspecified
+                    ? new DateTimeOffset(DateTime.SpecifyKind(date, DateTimeKind.Utc))
+                    : new DateTimeOffset(date.ToUniversalTime())),
+                long milliseconds => FormatFlatGeobufInstant(DateTimeOffset.FromUnixTimeMilliseconds(milliseconds)),
+                double milliseconds => FormatFlatGeobufInstant(DateTimeOffset.UnixEpoch.AddMilliseconds(milliseconds)),
+                _ => FormatFlatGeobufInstant(DateTimeOffset.Parse(
+                    ScalarText(value), CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal))
             };
         }
         return value switch

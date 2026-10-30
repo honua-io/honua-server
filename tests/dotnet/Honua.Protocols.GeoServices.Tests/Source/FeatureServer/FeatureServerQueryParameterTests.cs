@@ -347,10 +347,12 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
         using var document = JsonDocument.Parse((string)values["document"]!);
         document.RootElement.GetProperty("items")[1].ValueKind.Should().Be(JsonValueKind.Null);
         document.RootElement.GetProperty("items")[2].GetString().Should().Be("text");
-        DateTimeOffset.Parse((string)values["observed_at"]!, System.Globalization.CultureInfo.InvariantCulture)
-            .Should().Be(new DateTimeOffset(2026, 10, 27, 12, 34, 56, 123, TimeSpan.Zero));
-        DateTimeOffset.Parse((string)values["observed_fraction"]!, System.Globalization.CultureInfo.InvariantCulture)
-            .Should().Be(DateTimeOffset.UnixEpoch.AddTicks(1250));
+        var observedAt = (string)values["observed_at"]!;
+        observedAt.Should().Be("2026-10-27T12:34:56.1230000Z");
+        observedAt.Length.Should().BeLessThanOrEqualTo(32);
+        var observedFraction = (string)values["observed_fraction"]!;
+        observedFraction.Should().Be("1970-01-01T00:00:00.0001250Z");
+        observedFraction.Length.Should().BeLessThanOrEqualTo(32);
         stream.Position.Should().Be(stream.Length);
     }
 
