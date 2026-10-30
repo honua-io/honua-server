@@ -27,6 +27,12 @@ internal static class ObservationStreamEndpoints
 {
     private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromSeconds(25);
 
+    /// <summary>
+    /// The gap frame is best-effort. A client that has stopped reading must not pin the
+    /// handler past this budget; the transport is aborted when the write does not finish.
+    /// </summary>
+    private static readonly TimeSpan GapWriteBudget = TimeSpan.FromSeconds(2);
+
     /// <summary>Maps the SensorThings observation-stream endpoint.</summary>
     public static IEndpointRouteBuilder MapSensorThingsStreamEndpoints(this IEndpointRouteBuilder endpoints)
     {
@@ -291,8 +297,9 @@ internal static class ObservationStreamEndpoints
     }
 
     /// <summary>
-    /// Emits the terminal gap on <see cref="HttpContext.RequestAborted"/> only.
-    /// The session token is already cancelled, and disposing it must not block this write.
+    /// Emits the terminal gap without using the cancelled session token.
+    /// The write is bounded: a client that stopped reading does not pin the handler,
+    /// and the transport is aborted when the budget expires.
     /// </summary>
     private static async Task WriteSlowConsumerGapAsync(
         HttpContext context,
@@ -309,17 +316,24 @@ internal static class ObservationStreamEndpoints
         var json = JsonSerializer.Serialize(
             ObservationStreamStatus.SlowConsumerGap(datastreamId),
             ObservationStreamJsonContext.Default.ObservationStreamStatus);
+        using var budget = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
+        budget.CancelAfter(GapWriteBudget);
         try
         {
             if (socket is null)
             {
-                await WriteSseAsync(context.Response, "status", json, context.RequestAborted).ConfigureAwait(false);
-                await context.Response.Body.FlushAsync(context.RequestAborted).ConfigureAwait(false);
+                await WriteSseAsync(context.Response, "status", json, budget.Token).ConfigureAwait(false);
+                await context.Response.Body.FlushAsync(budget.Token).ConfigureAwait(false);
             }
-            else
+            else if (socket.State == WebSocketState.Open)
             {
-                await SendSocketAsync(socket, json, context.RequestAborted).ConfigureAwait(false);
+                await SendSocketAsync(socket, json, budget.Token).ConfigureAwait(false);
             }
+        }
+        catch (OperationCanceledException) when (
+            budget.IsCancellationRequested && !context.RequestAborted.IsCancellationRequested)
+        {
+            AbortTransport(context, socket);
         }
         catch (OperationCanceledException)
         {
@@ -337,6 +351,28 @@ internal static class ObservationStreamEndpoints
         {
             // The socket closed before the gap could be written.
         }
+    }
+
+    /// <summary>Drops a transport that did not accept the terminal gap within the budget.</summary>
+    private static void AbortTransport(HttpContext context, WebSocket? socket)
+    {
+        if (socket is not null)
+        {
+            try
+            {
+                socket.Abort();
+            }
+            catch (WebSocketException)
+            {
+                // The socket already failed.
+            }
+            catch (ObjectDisposedException)
+            {
+                // The socket was already disposed.
+            }
+        }
+
+        context.Abort();
     }
 
     private static Task WriteSseAsync(HttpResponse response, string eventName, string json, CancellationToken ct) =>

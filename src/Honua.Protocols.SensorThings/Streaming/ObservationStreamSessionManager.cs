@@ -147,6 +147,9 @@ internal sealed class ObservationStreamSessionManager : IDisposable
             SingleWriter = false
         });
         var cts = new CancellationTokenSource();
+        // Capture before the session is visible. Overflow on another thread can remove
+        // it and dispose this source before the return, and Token then throws.
+        var disconnectToken = cts.Token;
         var state = new ObservationStreamSessionState();
         var entry = new SessionEntry(channel, cts, datastreamId, transport, scope, principal, state);
         if (!_sessions.TryAdd(id, entry))
@@ -158,7 +161,7 @@ internal sealed class ObservationStreamSessionManager : IDisposable
         }
 
         ObservationStreamLog.SessionCreated(_logger, id, transport, datastreamId);
-        return new ObservationStreamSession(id, channel.Reader, this, state, cts.Token);
+        return new ObservationStreamSession(id, channel.Reader, this, state, disconnectToken);
     }
 
     private ObservationStreamAdmissionLimit TryReserveSlot(string tenant, (string Tenant, string Principal) principal)
