@@ -453,6 +453,13 @@ kubectl rollout status deployment/honua-server --namespace honua --timeout=600s
 
 For deploy-API-managed rollouts, `POST .../operations/{operationId}/rollback` drives the platform backend (re-point alias, shift ALB weights back, reverse slot swap). Single-instance Docker: restart the previous image tag.
 
+For an RDS-backed cell using the product restore executor, configure the cell's authorized
+database security group IDs in `ControlPlane:Restore:RdsSecurityGroupIds`, alongside its
+cell prefix, subnet group, connection secret, audit destination, and revision schema catalog.
+The executor refuses a restore when the security groups are absent or the cell prefix cannot
+fit a unique replacement instance ID. A failed restore retains the cell ownership record for
+operator investigation before another restore is attempted.
+
 ### Rollback target eligibility
 
 Before you roll back the image, check that the target image can protect itself
