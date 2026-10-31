@@ -309,7 +309,7 @@ create a `backups` directory, and make both that directory and this Compose
 directory writable by uid 1001 (the sidecar writes backups and
 `compose.executor.image.yaml` as that user). The overlay's init service changes the socket
 volume to that user before the executor binds it, and lists both compose files so a later
-image change keeps the socket mount. Load the immutable release image on the host before
+image change keeps the management services. Load the immutable release image on the host before
 anyone approves it (`docker compose up` for the executor uses `--pull never`). Set
 `HONUA_RELEASE_IMAGE` to that digest, `HONUA_RELEASE_VERSION` to its release version,
 `COMPOSE_PROJECT_NAME` to the project name
@@ -337,7 +337,7 @@ The overlay runs the candidate image as a separate management process on loopbac
 `HONUA_MANAGER_PORT` (default 18082). Create distinct proposer and approver credentials
 there and use its MCP and approval endpoints. Its separate database prevents starting the
 manager from migrating the serving database before approval; retain its database and the
-shared Redis volume across restarts. The executor uses the candidate image with
+management Redis volume across restarts. The executor uses the candidate image with
 `HONUA_COMPOSE_EXECUTOR=true`. It is the
 only service that receives the Docker socket. It accepts an immutable digest for this
 project only, and a different principal has to approve the proposal before anything

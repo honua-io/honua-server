@@ -8,19 +8,6 @@ services:
   honua:
     environment:
       AllowedHosts: "localhost;127.0.0.1;honua"
-      ControlPlane__PlatformRelease__Version: ${HONUA_RELEASE_VERSION:?Set the release version}
-      ControlPlane__ComposeExecutor__SocketPath: /run/honua-compose/executor.sock
-      ControlPlane__ComposeExecutor__ReleaseImage: ${HONUA_RELEASE_IMAGE:?Set the immutable release digest}
-      ControlPlane__PlatformRelease__ServingArtifactReference: ${HONUA_RELEASE_IMAGE:?Set the immutable release digest}
-      ControlPlane__DeployTargets__0__TargetId: compose-local
-      ControlPlane__DeployTargets__0__TargetKind: LocalCompose
-      ControlPlane__DeployTargets__0__Backend: honua-compose
-      ControlPlane__DeployTargets__0__Environment: local
-      ControlPlane__DeployTargets__0__TargetName: honua
-      ControlPlane__DeployTargets__0__RequiresApproval: "true"
-      ControlPlane__DeployTargets__0__ArtifactReference: ${HONUA_RELEASE_IMAGE:?Set the immutable release digest}
-    volumes:
-      - compose-executor-socket:/run/honua-compose
   # This stable management process survives replacement of the serving container. It has
   # its own database so installing the candidate cannot migrate the serving database early.
   compose-manager:
@@ -34,7 +21,7 @@ services:
       AllowedHosts: "localhost;127.0.0.1"
       PUBLIC_BASE_URL: "http://localhost:${HONUA_MANAGER_PORT:-18082}"
       ConnectionStrings__DefaultConnection: "Host=compose-manager-postgres;Database=honua_manager;Username=honua;Password=${POSTGRES_PASSWORD:?Required}"
-      ConnectionStrings__Redis: redis:6379
+      ConnectionStrings__Redis: compose-manager-redis:6379
       HONUA_ADMIN_PASSWORD: ${HONUA_ADMIN_PASSWORD:?Required}
       Security__ConnectionEncryption__MasterKey: ${HONUA_MASTER_KEY:?Required}
       Operations__SecretChannel__KeyRingCertificatePath: /var/lib/honua/keyring.pfx
@@ -56,9 +43,20 @@ services:
     depends_on:
       keyring-init:
         condition: service_completed_successfully
-      compose-manager-postgres:
+      compose-manager-redis:
+    image: redis:7.4-alpine
+    command: redis-server --appendonly yes --maxmemory 64mb --maxmemory-policy noeviction
+    volumes:
+      - compose-manager-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+  compose-manager-postgres:
         condition: service_healthy
-      redis:
+      compose-manager-redis:
         condition: service_healthy
       compose-executor:
         condition: service_started
@@ -149,6 +147,7 @@ services:
       - ${HONUA_COMPOSE_PROJECT_DIRECTORY:?Set the absolute host project directory}:${HONUA_COMPOSE_PROJECT_DIRECTORY:?Set the absolute host project directory}
       - compose-executor-socket:/run/honua-compose
 volumes:
+  compose-manager-redis:
   compose-manager-postgres:
   compose-manager-storage:
   compose-executor-socket:
