@@ -10,6 +10,7 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
 using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
@@ -23,6 +24,74 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 [Operation(Operations.TestInfrastructure)]
 public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
 {
+    [IntegrationTest]
+    public Task SweepActiveJobs_HeartbeatRefreshedBeforeRetryWrite_PreservesRunningClaim()
+        => AssertLateHeartbeatPreservesClaimAsync(maxAttempts: 3);
+
+    [IntegrationTest]
+    public Task SweepActiveJobs_HeartbeatRefreshedBeforeFailureWrite_PreservesRunningClaim()
+        => AssertLateHeartbeatPreservesClaimAsync(maxAttempts: 1);
+
+    private async Task AssertLateHeartbeatPreservesClaimAsync(int maxAttempts)
+    {
+        await using var harness = await ControlPlaneRedisHarness.CreateAsync(redis.ConnectionString);
+        var queued = CreateQueuedJob($"late-heartbeat-{Guid.NewGuid():N}",
+            retryPolicy: new JobRetryPolicy { MaxAttempts = maxAttempts });
+        await harness.JobStore.TryCreateAsync(queued);
+        await harness.Queue.EnqueueAsync(queued.OperationId);
+        (await harness.Queue.TryClaimAsync("live-worker")).Should().Be(queued.OperationId);
+        var claimed = (await harness.JobStore.GetAsync(queued.OperationId))!;
+        var expired = claimed with
+        {
+            Status = ExecutionJobStatus.Running,
+            ClaimedAt = DateTimeOffset.UtcNow.AddSeconds(-92),
+            LastHeartbeatAt = DateTimeOffset.UtcNow.AddSeconds(-91),
+            HeartbeatPolicy = JobHeartbeatPolicy.Default
+        };
+        (await harness.JobStore.TrySetAsync(expired)).Should().BeTrue();
+        var snapshot = (await harness.JobStore.GetAsync(queued.OperationId))!;
+        var refreshedAt = DateTimeOffset.UtcNow;
+        var reads = 0;
+        // Only interpose at the read boundary. Heartbeat and recovery writes still
+        // use real Redis CAS, and claim/requeue use the real Lua queue scripts.
+        var store = Substitute.For<IExecutionJobStore>();
+        store.ListActiveAsync(null, null, Arg.Any<CancellationToken>()).Returns([snapshot]);
+        store.GetAsync(queued.OperationId, Arg.Any<CancellationToken>()).Returns(async _ =>
+        {
+            if (++reads == 2)
+            {
+                var current = (await harness.JobStore.GetAsync(queued.OperationId))!;
+                (await harness.JobStore.TrySetAsync(current with
+                {
+                    LastHeartbeatAt = refreshedAt,
+                    UpdatedAt = refreshedAt
+                })).Should().BeTrue();
+            }
+            return await harness.JobStore.GetAsync(queued.OperationId);
+        });
+        store.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(call => harness.JobStore.TrySetAsync(call.Arg<ExecutionJobRecord>(),
+                call.Arg<TimeSpan?>(), call.Arg<CancellationToken>()));
+        var callback = new RecordingTerminalCallback();
+        using var service = new JobReconciliationService(store, harness.Queue, harness.Queue,
+            new ExecutionJobCancellationTokens(), [callback], harness.LogStore,
+            NullLogger<JobReconciliationService>.Instance);
+
+        await service.SweepActiveJobsAsync(CancellationToken.None);
+
+        reads.Should().Be(2, "the heartbeat must land after the first expiry check");
+        var preserved = (await harness.JobStore.GetAsync(queued.OperationId))!;
+        preserved.Status.Should().Be(ExecutionJobStatus.Running);
+        preserved.LastHeartbeatAt.Should().Be(refreshedAt);
+        preserved.ClaimedBy.Should().Be("live-worker");
+        preserved.AttemptCount.Should().Be(1);
+        callback.IsCompleted.Should().BeFalse();
+        (await harness.Queue.GetQueueDepthAsync()).Should().Be(0);
+        (await harness.Queue.TryClaimAsync("duplicate-worker")).Should().BeNull();
+        (await harness.Database.SortedSetScoreAsync("controlplane:jobqueue:claimed", queued.OperationId))
+            .Should().NotBeNull();
+    }
+
     [IntegrationTest]
     public async Task JobReconciliation_PersistedLocalJobWithoutDelivery_ReplacementWorkerExecutesOnce()
     {
