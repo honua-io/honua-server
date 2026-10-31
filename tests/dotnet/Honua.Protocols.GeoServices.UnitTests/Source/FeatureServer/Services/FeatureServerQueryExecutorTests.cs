@@ -311,6 +311,39 @@ public sealed class FeatureServerQueryExecutorTests
 
     [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
+    public async Task QueryRawGeoServicesPointJsonWithValidationAsync_ComplexFields_ReturnJsonStrings()
+    {
+        var featureReader = Substitute.For<IFeatureReader, IPagedRawGeoServicesFeatureStore>();
+        var rawStore = (IPagedRawGeoServicesFeatureStore)featureReader;
+        var rawFeatures = ImmutableArray.Create(RawGeoServicesFeature.Create(42,
+            attributesJson: """{"object_value":{"name":"A"},"array_value":[1,2],"empty":null,"number":12}""", x: 1.5, y: 2.5));
+        rawStore.QueryGeoServicesRawPointPageAsync(7, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(PagedQueryResult<RawGeoServicesFeature>.Create(rawFeatures)));
+        var sut = CreateSut(featureReader);
+        var service = CreateService();
+        var resource = CreatePointResource() with
+        {
+            SchemaFields = [
+                new MetadataV2Field { Name = "object_value", Type = MetadataV2FieldType.Json },
+                new MetadataV2Field { Name = "array_value", Type = MetadataV2FieldType.Json },
+                new MetadataV2Field { Name = "empty", Type = MetadataV2FieldType.Json },
+                new MetadataV2Field { Name = "number", Type = MetadataV2FieldType.Integer }
+            ]
+        };
+        var (payload, count) = await sut.QueryRawGeoServicesPointJsonWithValidationAsync(
+            service, resource, CreatePublication(service, resource), 7, new FeatureQuery { Limit = 1 },
+            returnGeometry: true, outputSrid: null, cancellationToken: CancellationToken.None);
+        count.Should().Be(1);
+        using var document = JsonDocument.Parse(payload);
+        var attributes = document.RootElement.GetProperty("features")[0].GetProperty("attributes");
+        attributes.GetProperty("object_value").GetString().Should().Be("""{"name":"A"}""");
+        attributes.GetProperty("array_value").GetString().Should().Be("[1,2]");
+        attributes.GetProperty("empty").ValueKind.Should().Be(JsonValueKind.Null);
+        attributes.GetProperty("number").GetInt32().Should().Be(12);
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Fact]
     public async Task QueryRawGeoServicesPointJsonWithValidationAsync_TemporalFields_PreserveCalendarDateAndEpoch()
     {
         var featureReader = Substitute.For<IFeatureReader, IPagedRawGeoServicesFeatureStore>();
