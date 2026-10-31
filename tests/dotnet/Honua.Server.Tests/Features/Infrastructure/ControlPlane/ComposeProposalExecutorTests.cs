@@ -121,6 +121,32 @@ public sealed class ComposeProposalExecutorTests
     }
 
     [UnitTest]
+    public async Task Observe_UnhealthyCandidateDuringProtection_RecommendsRollback()
+    {
+        var release = Digest('a');
+        var client = new RecordingClient { Response = new ComposeExecutorResponse { Ok = false, Code = ComposeExecutorCodes.ReadbackIncomplete } };
+        var backend = Backend(client, release, "/tmp/honua-compose-unit.sock");
+        var operation = Operation(release, "approver");
+        operation = operation with
+        {
+            Status = WorkflowOperationStatus.Reconciling,
+            Deploy = operation.Deploy! with
+            {
+                Protection = new DeployProtectionState
+                {
+                    PreviousRevision = Digest('b'),
+                    CandidateRevision = release,
+                    FirstExposureAt = DateTimeOffset.UtcNow,
+                    ObservationDeadline = DateTimeOffset.UtcNow.AddMinutes(10)
+                }
+            }
+        };
+        var observation = await backend.ObserveAsync(operation);
+        Assert.Equal(WorkflowOperationStatus.Failed, observation.Status);
+        Assert.True(observation.RollbackRecommended);
+    }
+
+    [UnitTest]
     public async Task StartWithoutApproval_DoesNotConverge()
     {
         var client = new RecordingClient { Response = Ready(Digest('a')) };

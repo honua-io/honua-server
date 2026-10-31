@@ -235,13 +235,18 @@ internal sealed partial class ComposeDeployBackend(
                 operation,
                 status,
                 matches ? expected : response.RunningImage,
-                matches ? response.Message : response.Code ?? response.Message);
+                matches ? response.Message : response.Code ?? response.Message,
+                rollbackRecommended: !matches && !rollback && ProtectionIsOpen(operation));
         }
-        catch (Exception ex) when (ex is not OperationCanceledException and not IOException)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            return Observation(operation, WorkflowOperationStatus.Failed, null, ComposeExecutorCodes.ReadbackIncomplete);
+            return Observation(operation, WorkflowOperationStatus.Failed, null, ComposeExecutorCodes.ReadbackIncomplete,
+                rollbackRecommended: !rollback && ProtectionIsOpen(operation));
         }
     }
+
+    private static bool ProtectionIsOpen(WorkflowOperationRecord operation)
+        => operation.Deploy?.Protection?.Phase is DeployProtectionPhase.Observing or DeployProtectionPhase.Protected;
 
     private static bool ApprovedByOtherPrincipal(WorkflowOperationRecord operation)
     {
@@ -288,13 +293,15 @@ internal sealed partial class ComposeDeployBackend(
         WorkflowOperationRecord operation,
         WorkflowOperationStatus status,
         string? revision,
-        string? message)
+        string? message,
+        bool rollbackRecommended = false)
         => new()
         {
             Status = status,
             ProviderOperationId = operation.ProviderOperationId,
             ObservedRevision = revision,
-            Message = message
+            Message = message,
+            RollbackRecommended = rollbackRecommended
         };
 
     private static partial class Log
