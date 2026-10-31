@@ -45,6 +45,23 @@ internal sealed partial class DeployWorkflowReconciler(
         if (operation.CurrentPhase == ICheckpointedDeployBackend.CutoverPhase)
         {
             var cutover = await ((IDeployBackend)backend).PromoteAsync(operation, cancellationToken).ConfigureAwait(false);
+            if (cutover.RollbackRecommended)
+            {
+                var rollback = await ((IDeployBackend)backend).RollbackAsync(operation, cancellationToken).ConfigureAwait(false);
+                var status = rollback.Status is WorkflowOperationStatus.RollbackRequested or WorkflowOperationStatus.RolledBack
+                    ? rollback.Status : WorkflowOperationStatus.ManualInterventionRequired;
+                var recovering = operation with
+                {
+                    Status = status,
+                    CurrentPhase = rollback.Message ?? "Cutover failed; rollback requested.",
+                    UpdatedAt = DateTimeOffset.UtcNow,
+                    CompletedAt = status == WorkflowOperationStatus.ManualInterventionRequired ? DateTimeOffset.UtcNow : null,
+                    Deploy = operation.Deploy! with { TrafficExposedAt = operation.Deploy.TrafficExposedAt ?? DateTimeOffset.UtcNow }
+                };
+                await workflowStore.TrySetAsync(recovering, cancellationToken: cancellationToken).ConfigureAwait(false);
+                return;
+            }
+
             var exposed = operation with
             {
                 Status = cutover.Status,

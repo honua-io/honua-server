@@ -691,6 +691,12 @@ internal sealed partial class DeployWorkflowService
         if (backend is ICheckpointedDeployBackend checkpointed && checkpointed.RequiresCheckpoint(operation) &&
             operation.Deploy.TrafficExposedAt is null)
         {
+            if (!IsCheckpointReadyForManualCutover(operation))
+            {
+                return new DeployPromotionResult(DeployPromotionOutcome.PreconditionFailed, operation,
+                    "Checkpoint preparation and activation must finish before manual cutover.");
+            }
+
             var authorized = operation with
             {
                 Status = WorkflowOperationStatus.Submitted,
@@ -789,6 +795,13 @@ internal sealed partial class DeployWorkflowService
     /// (honua-server#4618) is already past cutover and observing, so it is treated the same as
     /// <see cref="WorkflowOperationStatus.Succeeded"/> here.
     /// </summary>
+    internal static bool IsCheckpointReadyForManualCutover(WorkflowOperationRecord operation)
+        => !string.IsNullOrWhiteSpace(operation.ProviderOperationId) &&
+           !string.IsNullOrWhiteSpace(operation.Deploy?.CurrentRevision) &&
+           operation.CurrentPhase is not (ICheckpointedDeployBackend.PendingPhase or
+               ICheckpointedDeployBackend.PreparingPhase or ICheckpointedDeployBackend.PreparedPhase or
+               ICheckpointedDeployBackend.CutoverPhase);
+
     private static string? DescribePromotionPrecondition(WorkflowOperationRecord operation)
         => operation.Status switch
         {

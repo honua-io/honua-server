@@ -167,6 +167,35 @@ public sealed class DeployWorkflowReconcilerLeaseContentionTests
     }
 
     [Fact]
+    public async Task Checkpoint_UnhealthyCutoverReplayRequestsRollback()
+    {
+        var store = new InMemoryWorkflowOperationStore();
+        var backend = new CheckpointBackend(store) { CutoverNeedsRollback = true };
+        var operation = CreateOperation() with { Status = WorkflowOperationStatus.Submitted, CurrentPhase = ICheckpointedDeployBackend.CutoverPhase };
+        await store.TryCreateAsync(operation);
+        var reconciler = CreateReconciler(store, backend, new NullTelemetryEvaluator());
+        await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
+        backend.RollbackCount.Should().Be(1);
+        var recovered = (await store.GetAsync(operation.OperationId))!;
+        recovered.Status.Should().Be(WorkflowOperationStatus.RollbackRequested);
+        recovered.Deploy!.TrafficExposedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void Checkpoint_ManualCutoverRefusesUnfinishedPreparation()
+    {
+        var operation = CreateOperation() with { ProviderOperationId = "candidate" };
+        foreach (var phase in new[] { ICheckpointedDeployBackend.PendingPhase, ICheckpointedDeployBackend.PreparingPhase,
+                     ICheckpointedDeployBackend.PreparedPhase, ICheckpointedDeployBackend.CutoverPhase })
+        {
+            DeployWorkflowService.IsCheckpointReadyForManualCutover(operation with { CurrentPhase = phase }).Should().BeFalse();
+        }
+
+        DeployWorkflowService.IsCheckpointReadyForManualCutover(operation with { CurrentPhase = ICheckpointedDeployBackend.ActivatedPhase }).Should().BeTrue();
+        DeployWorkflowService.IsCheckpointReadyForManualCutover(operation with { ProviderOperationId = null }).Should().BeFalse();
+    }
+
+    [Fact]
     public async Task Checkpoint_FailedCanaryRampRequestsRollback()
     {
         var store = new InMemoryWorkflowOperationStore();
@@ -337,6 +366,7 @@ public sealed class DeployWorkflowReconcilerLeaseContentionTests
         public bool RecommendRollback { get; init; }
         public bool FailRamp { get; init; }
         public bool ReadyForCutover { get; init; }
+        public bool CutoverNeedsRollback { get; init; }
         public int PromotionCount { get; private set; }
         public bool StageOneObservation { get; init; }
         public int ObserveCount { get; private set; }
@@ -381,7 +411,7 @@ public sealed class DeployWorkflowReconcilerLeaseContentionTests
         public Task<DeployObservation> PromoteAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken = default)
         {
             PromotionCount++;
-            return Task.FromResult(new DeployObservation { Status = WorkflowOperationStatus.Reconciling });
+            return Task.FromResult(new DeployObservation { Status = WorkflowOperationStatus.Reconciling, RollbackRecommended = CutoverNeedsRollback });
         }
         public Task<DeployObservation> RollbackAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken = default)
         {

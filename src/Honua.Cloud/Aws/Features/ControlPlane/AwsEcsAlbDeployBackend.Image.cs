@@ -80,11 +80,26 @@ internal sealed partial class AwsEcsAlbDeployBackend
         var weights = SummarizeAlbWeights(rule, target);
         _ = TryResolveCanaryWeightPercentage(spec.Parameters, out var configuredWeight, out _);
         var share = spec.CanaryRamp is { IsValid: true } ramp ? ramp.CurrentStepWeight ?? 100 : configuredWeight ?? 100;
-        if (!EvaluateDeploymentConvergence(service, operation.ProviderOperationId!).IsConverged ||
-            service.DesiredCount <= 0 || health.HealthyCount < service.DesiredCount ||
-            (!weights.MatchesExpectedShare(0) && !weights.MatchesExpectedShare(share)))
+        if (!weights.MatchesExpectedShare(0) && !weights.MatchesExpectedShare(share))
         {
-            throw new InvalidOperationException("ECS candidate or routing changed before cutover.");
+            throw new InvalidOperationException("ECS routing changed before cutover.");
+        }
+
+        if (!EvaluateDeploymentConvergence(service, operation.ProviderOperationId!).IsConverged ||
+            service.DesiredCount <= 0 || health.HealthyCount < service.DesiredCount)
+        {
+            if (weights.MatchesExpectedShare(share))
+            {
+                return new DeployObservation
+                {
+                    Status = WorkflowOperationStatus.Reconciling,
+                    ProviderOperationId = operation.ProviderOperationId,
+                    RollbackRecommended = true,
+                    Message = "ECS candidate became unhealthy after cutover; rollback is required."
+                };
+            }
+
+            throw new InvalidOperationException("ECS candidate changed before cutover.");
         }
 
         if (!weights.MatchesExpectedShare(share))
