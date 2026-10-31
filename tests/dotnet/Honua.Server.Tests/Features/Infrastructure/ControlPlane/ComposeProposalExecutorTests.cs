@@ -201,6 +201,16 @@ public sealed class ComposeProposalExecutorTests
     }
 
     [UnitTest]
+    public async Task Observe_InterruptedCutoverWithPriorCheckpoint_RecommendsRollback()
+    {
+        var release = Digest('a');
+        var client = new RecordingClient { Response = new ComposeExecutorResponse { Ok = false, Code = ComposeExecutorCodes.ReadbackIncomplete } };
+        var observation = await Backend(client, release, "/tmp/honua-compose-unit.sock").ObserveAsync(Operation(release, "approver"));
+        Assert.Equal(WorkflowOperationStatus.Failed, observation.Status);
+        Assert.True(observation.RollbackRecommended);
+    }
+
+    [UnitTest]
     public async Task StartWithoutApproval_DoesNotConverge()
     {
         var client = new RecordingClient { Response = Ready(Digest('a')) };
