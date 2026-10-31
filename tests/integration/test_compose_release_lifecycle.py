@@ -96,6 +96,14 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
         "HONUA_PRIOR_MAX_SCHEMA": "140", "DOCKER_GID": str(os.stat("/var/run/docker.sock").st_gid),
         "DOCKER_COMPOSE_PLUGIN": plugins[0], "HONUA_COMPOSE_PROJECT_DIRECTORY": str(project_dir),
         "HONUA_COMPOSE_CUSTOMER_PROBE": "http://honua:8080/healthz/ready"})
+    # The executor invokes Compose in its own container. Preserve the fixture's
+    # interpolation values beside compose.yaml, as a real quickstart install does.
+    fixture_keys = ["COMPOSE_PROJECT_NAME", "HONUA_IMAGE", "HONUA_HTTP_PORT", "HONUA_GRPC_PORT", "HONUA_MANAGER_PORT",
+        "POSTGRES_PASSWORD", "HONUA_ADMIN_PASSWORD", "HONUA_MASTER_KEY", "HONUA_KEYRING_PASSWORD", "HONUA_RELEASE_IMAGE",
+        "HONUA_RELEASE_VERSION", "HONUA_PRIOR_IMAGE", "HONUA_PRIOR_MAX_SCHEMA", "DOCKER_GID", "DOCKER_COMPOSE_PLUGIN",
+        "HONUA_COMPOSE_PROJECT_DIRECTORY", "HONUA_COMPOSE_CUSTOMER_PROBE"]
+    (project_dir / ".env").write_text("".join(f"{name}={env[name]}\n" for name in fixture_keys))
+    (project_dir / ".env").chmod(0o600)
     compose = ["docker", "compose", "--project-directory", str(project_dir), "-p", project,
         "-f", str(project_dir / "compose.yaml"), "-f", str(project_dir / "compose.executor.yaml")]
     # The executor runs as uid 1001 and owns only this disposable fixture directory.
