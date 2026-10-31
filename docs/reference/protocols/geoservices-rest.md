@@ -1,6 +1,6 @@
 ---
 type: reference
-title: "GeoServices REST (ArcGIS-compatible)"
+title: "GeoServices REST"
 description: "Honua serves a GeoServices REST surface under /rest/services, plus a Portal Sharing slice under /sharing/rest for token issuance and item discovery."
 resource: "honua://capability/serve.geoservices-root"
 resources:
@@ -14,9 +14,9 @@ resources:
   - "honua://capability/printing.pdf-output"
   - "honua://capability/printing.layout-templates"
 ---
-# GeoServices REST (ArcGIS-compatible)
+# GeoServices REST
 
-Honua serves a GeoServices REST surface under `/rest/services`, plus a Portal Sharing slice under `/sharing/rest` for token issuance and item discovery. Compatibility is limited to the operations documented in the [GeoServices parity matrix](../compatibility/geoservices-parity.md) and the certified client workflows; it does not imply blanket support for ArcGIS Pro, Field Maps, Koop, or the ArcGIS Maps SDK for JavaScript.
+Honua serves a GeoServices REST surface under `/rest/services`, plus a Portal Sharing slice under `/sharing/rest` for token issuance and item discovery. Compatibility is limited to the operations documented in the [GeoServices parity matrix](../compatibility/geoservices-parity.md) and the certified client workflows; it does not imply blanket support for desktop GIS client, Field Maps, Koop, or the JavaScript GIS client SDK.
 
 ## Catalog and portal routes
 
@@ -24,7 +24,7 @@ Honua serves a GeoServices REST surface under `/rest/services`, plus a Portal Sh
 | --- | --- | --- |
 | GET | `/rest/info` | Compatibility info (`currentVersion: 10.8`, SOAP URLs, and `authInfo.isTokenBasedSecurity: false`; no token endpoint is emitted). |
 | GET | `/rest/services` | Service catalog listing. |
-| GET, POST | `/sharing/rest/generateToken` | ArcGIS token issuance. |
+| GET, POST | `/sharing/rest/generateToken` | GeoServices REST token issuance. |
 | GET | `/sharing/rest/info` | Portal sharing info. |
 | GET | `/sharing/rest/portals/self`, `/sharing/rest/community/self` | Portal/community self documents. |
 | GET | `/sharing/rest/search` | Portal item search. |
@@ -39,7 +39,7 @@ Base: `/rest/services/{serviceId}/FeatureServer` (service and `/{layerId}` metad
 
 ### Calendar dates and timestamps
 
-Esri service imports preserve `esriFieldTypeDateOnly` as PostgreSQL `DATE` and
+GeoServices REST service imports preserve `esriFieldTypeDateOnly` as PostgreSQL `DATE` and
 canonical `Date`. GeoServices metadata advertises `esriFieldTypeDateOnly`, and
 JSON/PBF attributes carry ISO `yyyy-MM-dd` calendar dates or null. Calendar dates
 have no time zone. Date-only filters use SQL `DATE` literals, for example
@@ -99,7 +99,7 @@ cached tiles, MapServer WMTS and tile-package export. Dynamic services advertise
 `singleFusedMapCache: false`, omit `tileInfo`, and disable tile export. Their tile
 and tile-export requests return 400; MapServer WMTS requests return 404. Map
 export, identify, legend, find and REST query remain available in both modes.
-This option does not enable the separate ArcGIS `dynamicLayers` contract.
+This option does not enable the separate GeoServices REST `dynamicLayers` contract.
 
 The canonical `/ogc/services/{serviceId}/wmts` publication remains independent
 of MapServer drawing mode when the service enables WMTS. To expose cached and
@@ -119,9 +119,9 @@ the same resources and storage bindings, with the corresponding drawing modes.
 | Cached tiles | `/tile/{z}/{y}/{x}` | |
 | OGC pass-through | `/WMS`, `/WMTS`, `/WMTS/{**restPath}` | See [WMS, WFS, WCS, WMTS](wms-wfs-wcs-wmts.md). |
 
-Map export accepts `bbox` as either `xmin,ymin,xmax,ymax` or an Esri JSON envelope
+Map export accepts `bbox` as either `xmin,ymin,xmax,ymax` or a GeoServices REST JSON envelope
 with those four properties, including the envelope representation emitted by
-ArcGIS Pro. Both representations use CRS x/y coordinate order and the same finite
+desktop GIS client. Both representations use CRS x/y coordinate order and the same finite
 coordinate, extent and geographic-range validation. `bboxSR` controls the input
 CRS and defaults to the service CRS when omitted.
 
@@ -153,16 +153,16 @@ Base: `/rest/services/{serviceId}/ImageServer` (raster-backed services).
 
 ### Tiled-consumption metadata (`tileInfo`)
 
-By default an ImageServer advertises a **dynamic** service (`singleFusedMapCache: false`, no `tileInfo`). This keeps the descriptor — which the ArcGIS Maps SDK for .NET native runtime reads verbatim from `/conf.json` — compatible with the dynamic `exportImage` load path; advertising a cache makes that native runtime treat the service as cached and reject the configuration.
+By default an ImageServer advertises a **dynamic** service (`singleFusedMapCache: false`, no `tileInfo`). This keeps the descriptor — which the .NET GIS client SDK native runtime reads verbatim from `/conf.json` — compatible with the dynamic `exportImage` load path; advertising a cache makes that native runtime treat the service as cached and reject the configuration.
 
-The `/tile/{level}/{row}/{col}` route is always served. To let tiled Esri clients (for example `L.esri.tiledMapLayer`, which keys off `metadata.tileInfo.lods`) consume it directly, opt in to the static WebMercatorQuad cache descriptor:
+The `/tile/{level}/{row}/{col}` route is always served. To let tiled GeoServices REST clients that use `metadata.tileInfo.lods` consume it directly, opt in to the static WebMercatorQuad cache descriptor:
 
 | Setting | Default | Effect |
 | --- | --- | --- |
 | `GeoServices:ImageServer:TileMetadata:Enabled` | `false` | When `true`, ImageServer metadata reports `singleFusedMapCache: true` plus a WebMercatorQuad `tileInfo` block (256×256 tiles, origin `(-20037508.34, 20037508.34)`, spatial reference 102100/3857, and the standard level-of-detail array). |
 | `GeoServices:ImageServer:TileMetadata:MaxLevel` | `23` | Highest zoom level emitted in `tileInfo.lods` (the tile route accepts up to 28). |
 
-Enable it only for deployments that primarily serve tiled Esri clients; the native ArcGIS Maps SDK for .NET dynamic `exportImage` path expects the default (dynamic) contract.
+Enable it only for deployments that primarily serve tiled GeoServices REST clients; the native .NET GIS client SDK dynamic `exportImage` path expects the default (dynamic) contract.
 
 See [GeoServices parity — ImageServer](../compatibility/geoservices-parity.md#imageserver).
 
@@ -200,11 +200,11 @@ Operations: `findAddressCandidates`, `reverseGeocode`, `suggest`, `geocodeAddres
 
 Route and ServiceArea solves are available over GET and POST; ClosestFacility, ODCostMatrix, and LocationAllocation solves are POST-only. All five live under `/rest/services/{serviceId}/NAServer` and read query-string or form parameters; see the parity matrix for per-solver limitations.
 
-The synchronous `FindRoutes` subset is available at both `GPServer/FindRoutes/execute` and `NAServer/FindRoutes/execute` over GET and POST, with task metadata at the corresponding `FindRoutes` URL. It visits stops in input order and reports travel time in minutes. `Measurement_Units` supports only `Minutes`; `Reorder_Stops_to_Find_Optimal_Routes` supports only `false`. Other units, reordering, unknown options and conflicting aliases return errors before solving. An omitted `Travel_Mode` uses the provider default; supplied modes and barriers must be supported by that provider. This subset does not establish full `arcpy.nax` ready-to-use routing compatibility (tracked in #5192).
+The synchronous `FindRoutes` subset is available at both `GPServer/FindRoutes/execute` and `NAServer/FindRoutes/execute` over GET and POST, with task metadata at the corresponding `FindRoutes` URL. It visits stops in input order and reports travel time in minutes. `Measurement_Units` supports only `Minutes`; `Reorder_Stops_to_Find_Optimal_Routes` supports only `false`. Other units, reordering, unknown options and conflicting aliases return errors before solving. An omitted `Travel_Mode` uses the provider default; supplied modes and barriers must be supported by that provider. This subset does not establish compatibility with every native routing client (tracked in #5192).
 
 ## SceneServer (I3S)
 
-`GET /scenes/{sceneId}/SceneServer` and `.../SceneServer/layers/{layerId}` serve Esri I3S scene layers only when experimental capability `serve.i3s-scene` is enabled. The default is 404; an enabled route without the Enterprise entitlement returns 402. See [3D Tiles and scenes](3d-tiles-and-scenes.md).
+`GET /scenes/{sceneId}/SceneServer` and `.../SceneServer/layers/{layerId}` serve GeoServices REST I3S scene layers only when experimental capability `serve.i3s-scene` is enabled. The default is 404; an enabled route without the Enterprise entitlement returns 402. See [3D Tiles and scenes](3d-tiles-and-scenes.md).
 
 ## Conformance
 
@@ -212,8 +212,8 @@ GeoServices REST parity is tracked per surface in [GeoServices parity](../compat
 
 ## Guides that use this
 
-- [Migrate from ArcGIS Server](../../guides/migrate/from-arcgis-server.md)
-- [Connect from ArcGIS Pro](../../guides/connect/arcgis-pro.md)
+- [Migrate from GeoServices REST server](../../guides/migrate/from-geoservices-rest.md)
+- [Connect from desktop GIS client](../../guides/migrate/from-geoservices-rest.md)
 - [Query features](../../guides/query-analyze/query-features.md)
 - [Edit features](../../guides/edit/edit-features.md)
 - [Run geoprocessing](../../guides/query-analyze/run-geoprocessing.md)

@@ -108,7 +108,7 @@ native-client coverage and does not prove every optional protocol parameter.
 Vendor procedure and source-inspection notes stay with those evidence commits.
 
 The generated checklist carries the current operation-by-operation status. The
-[first audit](client-exclusion-audit-2026-09-20.md) and [earlier Python report](python-lane-status-2026-09-20.md)
+[first audit](client-exclusion-audit-2026-09-20.md)
 retain their original totals as historical stages of this investigation.
 
 Server checklist validation: 158 tests and 43 subtests passed; generated JSON/Markdown checks and diff whitespace checks passed.

@@ -35,7 +35,7 @@ This section is for people **building or extending** Honua (core contributors, a
 - [GeoTIFF Georeferencing Property Tests](geotiff-georeferencing-fuzzing.md) — bounded structured corpus, regression seeds, and opt-in local soak
 - [Public Interface Quality Model](public-interface-quality-model.md) — canonical proof ledger, release evidence rules, and ticket reconciliation for public surfaces
 - [Python Integration Tests](testing-python.md) — pytest OGC and FeatureServer tests
-- [JavaScript Integration Tests](testing-javascript.md) — Vitest protocol coverage plus Playwright Esri Leaflet browser compatibility tests
+- [JavaScript Integration Tests](testing-javascript.md) — Vitest protocol coverage plus Playwright REST-enabled Leaflet client browser compatibility tests
 - [Shared Seed Data](test-seed-data.md) — YAML seed format for cross-language tests
 - [OGC Certification Path](ogc-certification-path.md) — formal certification decision, evidence taxonomy, and current baseline results
 - [CITE Conformance Runbook](cite-runbook.md) — single runbook covering all CITE suites (Features, Tiles, Maps, WMS, WMTS, WFS 2.0, WCS, KML, GML, GeoPackage)

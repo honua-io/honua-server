@@ -31,7 +31,7 @@ fall back to scanning for an arbitrary date column.
 
 Honua deliberately **rejects** a non-empty time filter against a layer that is
 not time-aware with **HTTP 400**, rather than silently ignoring it. This is an
-intentional divergence from Esri's lenient "ignore time" behavior (issue #1444):
+intentional divergence from GeoServices REST lenient "ignore time" behavior (issue #1444):
 clients learn the layer has no temporal dimension instead of receiving a full,
 unfiltered result they believe is time-scoped.
 
@@ -43,20 +43,6 @@ filters. This follows [WMTS 1.0 sections 7.2.2.2 and 7.3.2.2](https://docs.ogc.o
 ## Time parameter grammar
 
 The GeoServices `time=` parameter accepts:
-
-- `time=<start>,<end>` — a bounded interval. Each bound is a Unix epoch
-  milliseconds value **or** an ISO-8601 date-time.
-- `time=<start>,null` / `time=null,<end>` — an open-ended interval.
-- `time=null,null` — a documented **no-op**: parsed as valid and treated exactly
-  like omitting the parameter (so animation clients can hold a constant parameter
-  slot).
-- `time=<instant>` — a single value; treated as `start == end`.
-- `time=[<start>, <end>]` — the same interval written as a two-element JSON
-  array, the form the ArcGIS API for Python sends from a layer's
-  `timeInfo.timeExtent`. Elements are epoch milliseconds, `null`, or quoted
-  ISO-8601 strings, and results are identical to `time=<start>,<end>`. Any other
-  element count or unbalanced brackets are rejected like other unparseable
-  values.
 
 An inverted interval (`start > end`) and any unparseable value are rejected with
 **HTTP 400**. Interval semantics are inclusive intersection: a feature matches

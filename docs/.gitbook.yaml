@@ -32,7 +32,6 @@ redirects:
   operator/monitoring: guides/deploy/monitoring.md
   operator/operations: guides/deploy/backup-and-restore.md
   operator/CONTROL_PLANE_API: reference/admin-api/overview.md
-  operator/arcgis-inventory-discovery: guides/migrate/from-arcgis-server.md
   operator/feature-change-webhooks: guides/edit/react-to-changes.md
   operator/feature-streaming: guides/edit/react-to-changes.md
   operator/tile-operations-runbook: guides/publish/publish-tiles.md
@@ -134,8 +133,7 @@ redirects:
   guides/publish/pmtiles-publishing: guides/publish/publish-tiles.md
   guides/edit/feature-streaming: guides/edit/react-to-changes.md
   guides/secure/client-certificate-authentication: guides/secure/tls-and-mtls.md
-  guides/migrate/arcgis-inventory-discovery: guides/migrate/from-arcgis-server.md
-  guides/migrate/migration-pilot-cutover-checklist: guides/migrate/from-arcgis-server.md
+  guides/migrate/migration-pilot-cutover-checklist: guides/migrate/from-geoservices-rest.md
   guides/deploy/deployment-scenarios: guides/deploy/cloud-deployments.md
   guides/deploy/http-client-resilience: guides/deploy/scaling-and-performance.md
   guides/deploy/operations: guides/deploy/backup-and-restore.md

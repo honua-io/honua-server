@@ -1,15 +1,15 @@
 ---
 type: capability
-title: "ArcGIS Portal Token Issuance"
-description: "Expose POST/GET /sharing/rest/generateToken so Esri clients can authenticate against Honua-secured /rest/services."
+title: "GeoServices REST Portal Token Issuance"
+description: "Expose POST/GET /sharing/rest/generateToken so GeoServices REST clients can authenticate against Honua-secured /rest/services."
 resource: "honua://capability/identity.portal-token"
 tags: [capability, identity, community]
 ---
 <!-- GENERATED FILE - DO NOT EDIT. Regenerate with scripts/ci/generate-capability-concepts.py -->
 
-# ArcGIS Portal Token Issuance
+# GeoServices REST Portal Token Issuance
 
-Expose POST/GET /sharing/rest/generateToken so Esri clients can authenticate against Honua-secured /rest/services.
+Expose POST/GET /sharing/rest/generateToken so GeoServices REST clients can authenticate against Honua-secured /rest/services.
 
 | | |
 | --- | --- |
@@ -24,4 +24,4 @@ The facts above come from the server's capability registry and capability matrix
 
 ## Documented in
 
-- [Connect ArcGIS Pro to Honua](../../guides/connect/arcgis-pro.md)
+- [Connect desktop GIS client to Honua](../../guides/migrate/from-geoservices-rest.md)

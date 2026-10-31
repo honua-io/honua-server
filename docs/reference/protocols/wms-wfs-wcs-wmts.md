@@ -30,7 +30,7 @@ Honua serves the classic OGC KVP/XML web services for clients that have not move
 | GET | `/ogc/services/{serviceId}/wmts` | WMTS KVP. |
 | GET | `/rest/services/{serviceId}/MapServer/WMTS`, `.../WMTS/{**restPath}` | WMTS KVP + RESTful tile paths. |
 | GET | `/ogc/services/{serviceId}/wcs` | WCS 2.0.1, scoped to one service. |
-| GET | `/ogc/wcs/{serviceId}` | The same service-scoped WCS 2.0.1 without a `services` segment. Use this form in ArcGIS Pro. |
+| GET | `/ogc/wcs/{serviceId}` | The same service-scoped WCS 2.0.1 without a `services` segment. Use this form in desktop GIS client. |
 | GET | `/rest/services/{serviceId}/ImageServer/WCS` | WCS 2.0.1, layer-scoped (`COVERAGEID` is the bare integer layer id). |
 
 ### Why WFS has no `/ogc/services/{serviceId}/wfs`
@@ -50,7 +50,7 @@ make the same feature addressable by more than one URL.
 
 So WFS is served **only** at the root `/wfs`. There is no service-scoped form
 and no GeoServices alias — `FeatureServer` has no `WFS` endpoint here for the
-same reason Esri's own `FeatureServer` does not expose one.
+same reason GeoServices REST own `FeatureServer` does not expose one.
 
 Asking for `/ogc/services/{serviceId}/wfs` returns **404**. A client configured to
 fail hard on HTTP errors and stay quiet reports that as a transport-style failure
@@ -181,13 +181,13 @@ anonymous services. Tenant restrictions apply to services, resources, and
 publications before scoped grants. Ordinary user role policies remain in force;
 authorization failures retain WCS XML exception responses.
 
-### Connecting ArcGIS Pro
+### Connecting desktop GIS client
 
 Add the WCS server connection (or run `MakeWCSLayer`) with
 `https://server.example.com/ogc/wcs/{serviceId}`, not the `/ogc/services/{serviceId}/wcs`
-form. Over HTTPS, ArcGIS Pro 3.7 reads a URL containing `/services/{name}/` as an ArcGIS
+form. Over HTTPS, desktop GIS client 3.7 reads a URL containing `/services/{name}/` as a GeoServices REST
 Server site. It probes discovery resources such as `{root}/rest/info` and
-`{root}/rest/services/`, and when those are not ArcGIS Server resources it fails with
+`{root}/rest/services/`, and when those are not GeoServices REST server resources it fails with
 `ERROR 999999`. The `/ogc/wcs/{serviceId}` form serves the same service, access policy
 and bytes, and its `GetCapabilities` advertises operation URLs in the same form, so Pro
 never re-enters the `/services/` shape.

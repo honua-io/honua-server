@@ -7,7 +7,7 @@ opaque-token path is unchanged.
 
 ## Context
 
-ADR-0049/0053 fixed a single token foundation: every Esri-shaped token (the
+ADR-0049/0053 fixed a single token foundation: every GeoServices REST-shaped token (the
 `?token=` bearer, the `generateToken` response, and the `oauth2/token` response) is
 an **opaque, distributed-cache-backed** value minted through `IPortalTokenIssuer`,
 validated by one request-path validator (`PortalTokenAuthenticationHandler`), and

@@ -10,7 +10,7 @@ resources:
 ---
 # 3D Tiles and scenes
 
-Honua hosts registered 3D scene datasets as OGC 3D Tiles (`tileset.json` + assets) for CesiumJS and `<honua-scene>` clients, with an SDK-facing discovery API, an Esri I3S SceneServer adapter, and an admin registry for dataset lifecycle.
+Honua hosts registered 3D scene datasets as OGC 3D Tiles (`tileset.json` + assets) for CesiumJS and `<honua-scene>` clients, with an SDK-facing discovery API, a GeoServices REST I3S SceneServer adapter, and an admin registry for dataset lifecycle.
 
 **Edition and lifecycle:** Existing 3D Tiles serving, scene discovery, elevation, and generation from feature layers remain **Community**. Specialised CityGML/BIM and point-cloud ingest and I3S remain **Enterprise**. These 3D surfaces remain **Experimental in 2026.1**; edition does not imply GA or production support. See [commercial boundaries](../../concepts/editions-and-licensing.md#commercial-boundaries-for-20261).
 
@@ -30,7 +30,7 @@ Honua hosts registered 3D scene datasets as OGC 3D Tiles (`tileset.json` + asset
 | GET, HEAD | `/scenes/{sceneId}/{*assetPath}` | Tile content and sub-tileset assets. |
 | POST | `/scenes/{sceneId}/access-envelope` | Issue an access envelope for protected scenes. |
 | GET | `/scenes/{sceneId}/exports/openusd/stage.usda` | OpenUSD stage export. |
-| GET | `/scenes/{sceneId}/SceneServer` | Esri I3S SceneServer document (Enterprise-gated). |
+| GET | `/scenes/{sceneId}/SceneServer` | GeoServices REST I3S SceneServer document (Enterprise-gated). |
 | GET | `/scenes/{sceneId}/SceneServer/layers/{layerId}` | I3S scene layer (Enterprise-gated). |
 
 `{sceneId}` is the registered URL slug (`[a-z0-9-]{1,64}`). Protected datasets (`requiresAuth`) refuse anonymous access; caching follows the dataset's `cachePolicy` (`maxAgeSeconds` bounded to `[0, 86400]`, or `noStore`).
@@ -42,7 +42,7 @@ family and the `/scenes` alias. Each advertised mesh resource belongs to the
 same validated source revision. Malformed assets or unsupported mesh encodings
 make that revision unavailable; the descriptor does not advertise resources
 that cannot be decoded. This remains Experimental, and source implementation
-does not establish stock ArcGIS certification. All shipped I3S routes require
+does not establish stock GeoServices REST certification. All shipped I3S routes require
 the Enterprise `serve.i3s-scene` entitlement and return HTTP `402` when it is
 unavailable.
 
@@ -106,7 +106,7 @@ The registered tileset serves through the standard [hosted serving](#hosted-3d-t
 
 ## Conformance
 
-Hosted tilesets follow the OGC 3D Tiles 1.x content format; the serving routes themselves are Honua surfaces and not CITE-covered. I3S SceneServer is an Esri-compatibility adapter (Enterprise-gated). Standards status: [API standards summary](../compatibility/ogc-conformance.md).
+Hosted tilesets follow the OGC 3D Tiles 1.x content format; the serving routes themselves are Honua surfaces and not CITE-covered. I3S SceneServer is a GeoServices REST-compatibility adapter (Enterprise-gated). Standards status: [API standards summary](../compatibility/ogc-conformance.md).
 
 ## Capability truth table
 

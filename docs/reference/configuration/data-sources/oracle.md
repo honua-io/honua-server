@@ -206,7 +206,7 @@ Simple WHERE expressions are parsed and parameterized in-process. Supported toke
 - Any number of the above joined with `AND`
 
 Anything outside this grammar is rejected with `ArgumentException`; full-CQL2 / OData /
-ArcGIS expression translation is not part of this slice.
+GeoServices REST expression translation is not part of this slice.
 
 When a request supplies both `Where` and a translated `SqlFilter`, the provider always
 re-parses the canonical `Where` text with its own Oracle parser and ignores the

@@ -187,7 +187,7 @@ Choose a path based on where the data already lives:
 
 | Starting point | Example request | Procedure and result |
 | --- | --- | --- |
-| ArcGIS service | “Import these shelter layers into a new Honua dataset; preserve the original service and report anything that does not transfer.” | [Service import](../guides/publish/import-from-arcgis-services.md). Discover the service root, select layers, import, and inspect fidelity and job completion. |
+| GeoServices REST service | “Import these shelter layers into a new Honua dataset; preserve the original service and report anything that does not transfer.” | [Service import](../guides/publish/import-from-geoservices-rest.md). Discover the service root, select layers, import, and inspect fidelity and job completion. |
 | GeoServer | “Assess and bring these GeoServer layers into Honua.” | [GeoServer migration](../guides/migrate/from-geoserver.md), with supported-source and operation limits checked first. |
 | Local or uploaded file | “Import this GeoPackage as a new dataset, then publish it to the emergency service.” | [File import](../guides/publish/import-files.md). Inspect schema/CRS, select a fresh destination, follow any job, then publish. |
 | Existing database | “Connect our planning PostGIS database and expose its parcels table without copying it.” | [Existing databases](../guides/publish/serve-existing-databases.md). Register/test the connection, discover tables, and select source-backed publication. |

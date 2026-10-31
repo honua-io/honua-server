@@ -2,7 +2,7 @@
 
 Historical stage: see the [deeper exclusion follow-up](client-exclusion-followup-2026-09-20.md) for current totals and additional native paths.
 
-Follow-up: the [Python lane report](python-lane-status-2026-09-20.md) resolves six
+Follow-up: the Python lane follow-up resolves six
 of these audited exclusions with native SDK receipts. The counts and observations
 below describe the initial audit; the generated checklist carries current totals.
 

@@ -22,7 +22,7 @@ Uploaded via `POST /api/v1/admin/import/upload` (or `upload-url`, with `preview`
 | WKT | `.wkt` | Well-known text geometries. |
 | CSV | `.csv` | Needs lon/lat columns or a WKT geometry column. WKT geometry preserves XY, Z and M ordinates on import and bulk export. Bulk, OGC API Features and WFS CSV output share null/empty string escaping. |
 | FlatGeobuf | `.fgb` | Compact binary format. |
-| File Geodatabase | `.gdb.zip` | Zipped Esri `.gdb` directory. |
+| File Geodatabase | `.gdb.zip` | Zipped GeoServices REST `.gdb` directory. |
 | GeoParquet | `.parquet`, `.geoparquet` | GeoParquet 1.0.0/1.1.0, one WKB geometry column, planar edges; null-geometry rows retain attributes. CRS validation and outstanding nested/epoch/dimension fidelity work are described in the [input contract](../guides/publish/import-files.md#geoparquet-input-contract). |
 
 New import tables enforce the requested SRID; existing append/upsert tables keep their declared geometry constraints. Dimension preservation is format-specific (for example, GPX elevations above); GeoParquet declared empty-geometry dimensions remain under verification in the linked input contract.
@@ -60,9 +60,9 @@ Cloud-optimized HDF5 (`.h5`/`.hdf5`) and NetCDF4 multidimensional coverages are 
 
 | `f` value | Media type | Notes |
 | --- | --- | --- |
-| `json`, `pjson` | `application/json` | Esri JSON feature sets (default). |
+| `json`, `pjson` | `application/json` | GeoServices REST JSON feature sets (default). |
 | `geojson` | `application/geo+json` | GeoJSON FeatureCollection. |
-| `pbf` | `application/x-protobuf` | Esri FeatureCollection protocol buffers. |
+| `pbf` | `application/x-protobuf` | GeoServices REST FeatureCollection protocol buffers. |
 | `fgb` | FlatGeobuf | Encoded export; PostGIS-backed layers, including source-backed (provider-routed) layers. |
 | `geobuf` | `application/geobuf` | Encoded export; PostGIS-backed layers, including source-backed (provider-routed) layers. |
 | `parquet` | `application/vnd.apache.parquet` | GeoParquet 1.1.0, WKB geometry + authoritative PROJJSON `geo` metadata. Honors resolved `outSR` values (EPSG:4326 returns OGC:CRS84); rejects unresolvable `outSR`. `returnGeometry=false` short-circuits feature re-projection. Requires a glibc-based runtime image (see [runtime requirement](#geoparquet-runtime-requirement)). |

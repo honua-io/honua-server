@@ -77,13 +77,13 @@ Typing every STAC extension would chase a moving target.
 
 ---
 
-### `esri-*` — Esri runtime fields
+### `esri-*` — GeoServices REST runtime fields
 
 | Key | Location | Shape | Consumer |
 |---|---|---|---|
 | `esri-popup` | `Resource.Extensions["esri-popup"]` | `{ htmlPopupType: "esriServerHTMLPopupTypeAsHTMLText" \| "esriServerHTMLPopupTypeAsURL" \| "esriServerHTMLPopupTypeNone", popupInfo: {...} }` | FeatureServer / MapServer layer info emitter |
 | `esri-templates` | `Resource.Extensions["esri-templates"]` | `{ templates: [{ name, description, prototype: { attributes, geometry }, drawingTool }] }` | FeatureServer layer info |
-| `esri-subtypes` | `Resource.Extensions["esri-subtypes"]` | `{ subtypeFieldName, defaultSubtypeCode, subtypes: [{ code, name, fieldOverrides }] }` | FeatureServer / MapServer (legacy ArcGIS subtypes) |
+| `esri-subtypes` | `Resource.Extensions["esri-subtypes"]` | `{ subtypeFieldName, defaultSubtypeCode, subtypes: [{ code, name, fieldOverrides }] }` | FeatureServer / MapServer (legacy GeoServices REST subtypes) |
 | `esri-sync` | `Service.Extensions["esri-sync"]` | `{ syncEnabled: bool, syncCapabilities: { supportsAsync, supportsRegisteringExistingData, supportsSyncDirectionControl, supportsPerLayerSync, supportsPerReplicaSync, supportsRollbackOnFailure, syncReturnsMessages } }` | FeatureServer service-level metadata |
 | `esri-render` | `Resource.Extensions["esri-render"]` | `{ canScaleSymbols: bool, hasLabels: bool, htmlPopupType: string }` | FeatureServer / MapServer layer info |
 | `esri-time` | `Resource.Extensions["esri-time"]` | `{ dateFieldsTimeReference: { timeZone, respectsDaylightSaving }, preferredTimeReference, dateInUnknownTimezone: bool, hasLiveData: bool }` | FeatureServer / MapServer timeInfo emitter |
@@ -93,10 +93,6 @@ Typing every STAC extension would chase a moving target.
 | `esri-versioning` | `Service.Extensions["esri-versioning"]` | `{ hasVersionedData, hasArchivedData, defaultVersion, versions: [...] }` | FeatureServer versioning-aware queries (not currently consumed) |
 | `esri-portal` | `Resource.Extensions["esri-portal"]` | `{ serviceItemId, cimVersion, sourceSpatialReference }` | informational — pass-through from imports |
 | `esri-feature-template` | `Resource.Extensions["esri-feature-template"]` | `{ types: [{ id, name, domains, templates }] }` | FeatureServer typeIdField + types[] |
-
-**Reason for namespace**: Esri runtime metadata that doesn't map cleanly to OGC
-or other standards. Some of these are informational pass-through from
-ArcGIS Pro / Server imports.
 
 Feature-type import uses the typed `Resource.Subtypes` slot when the source can
 be represented there. Both `subtypeField`/`subtypes` and
@@ -112,7 +108,7 @@ An explicit null field default is persisted as `defaultValue: null` with
 from an absent default after JSON persistence. Older metadata with a null
 default and no marker retains its existing absent-default meaning. The
 FeatureServer projection emits the ordinary null prototype attribute; the
-marker is part of canonical metadata, not the Esri wire format. Template names,
+marker is part of canonical metadata, not the GeoServices REST wire format. Template names,
 descriptions and drawing tools are currently derived by the public mapper;
 capturing defaults does not establish full source-template fidelity.
 
@@ -125,7 +121,7 @@ publishing dimensional data must supply the matching flags. This metadata does
 not invent missing ordinates or flatten stored geometry.
 
 **Conventions**:
-- Use Esri's JSON shape verbatim under each key.
+- Use GeoServices REST JSON shape verbatim under each key.
 - When a value is computed at render time from V2 typed slots (e.g.
   `capabilities` CSV from `Resource.Editing.*`), don't store it here.
 
@@ -196,7 +192,7 @@ non-derivable ones go here.
 
 **Reason for namespace**: Index declarations on the underlying DB table.
 Informational — server doesn't enforce or create indexes from this; populated
-by import tools when ingesting from sources that declare them (Esri FGDB,
+by import tools when ingesting from sources that declare them (GeoServices REST FGDB,
 PostGIS).
 
 ---

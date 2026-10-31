@@ -338,7 +338,7 @@ canonical process/runtime path plus the Honua gRPC process surface:
 `honua-io/honua-server#721`, `honua-io/geospatial-grpc#6`, and
 `honua-io/honua-server#722`. The older framework and protocol tickets
 `honua-io/honua-server#360` and `honua-io/honua-server#529` still matter: treat
-`#360` as the comparative research and target-model umbrella for Esri GPServer,
+`#360` as the comparative research and target-model umbrella for GeoServices REST GPServer,
 GeoServer-style process exposure, and OGC API Processes, and treat `#529` as
 the downstream OGC API Processes adapter over the canonical runtime rather than
 as duplicate implementation scope. GeoServices `GPServer`, OGC API Processes,

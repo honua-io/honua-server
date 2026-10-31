@@ -38,7 +38,7 @@ Honua is configured entirely through environment variables (or the equivalent `a
 | `Oracle__CommandTimeoutSeconds` | `60` | Oracle read command timeout. |
 | `MySql__ConnectionString` | — | MySQL/MariaDB connection string (when `DataSource__Provider=mysql`). |
 | `MySql__EngineFlavor` | `Mysql` | `Mysql` or `MariaDb` — controls WKB axis-order handling. |
-| `ArcGisRest__Enabled` | `true` | Register the federated ArcGIS REST read-through provider. |
+| `ArcGisRest__Enabled` | `true` | Register the federated GeoServices REST read-through provider. |
 
 Provider capabilities and versions: [data sources](data-sources/README.md).
 
@@ -59,7 +59,7 @@ Provider capabilities and versions: [data sources](data-sources/README.md).
 | `Authentication__ClientCertificates__TrustProfiles__N__*` | — | Trust-profile definitions (issuer subjects, SAN types, principal mappings, roles). |
 | `Authentication__ClientCertificates__ForwardedCertificate__Enabled` | `false` | Accept proxy-forwarded client certificates. |
 | `Authentication__ClientCertificates__ForwardedCertificate__TrustedProxyNetworks__N` | — | CIDR ranges allowed to forward certificates. |
-| `Authentication__PortalToken__OAuth2__AllowedRedirectUris__N` | — (empty rejects all) | Redirect-URI allow-list for the ArcGIS Portal OAuth2 bridge. |
+| `Authentication__PortalToken__OAuth2__AllowedRedirectUris__N` | — (empty rejects all) | Redirect-URI allow-list for the GeoServices REST Portal OAuth2 bridge. |
 | `Authentication__PortalToken__OAuth2__RequirePkce` | `true` | Require PKCE on every authorization-code flow. |
 | `Authentication__PortalToken__OAuth2__RotateRefreshTokens` | `true` | Rotate refresh tokens on each use. |
 | `SecurityHeaders__EnableHsts` | — | Emit HSTS headers (recommended `true` in production). |

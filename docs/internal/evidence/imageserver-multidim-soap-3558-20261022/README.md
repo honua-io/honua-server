@@ -1,8 +1,6 @@
-# #3558: licensed ArcGIS Pro SOAP capture and A/B, multidimensional ImageServer
 
-This is the remaining licensed acceptance for honua-io/honua-server#3558 (after #3555, #3624, #3633, #3723 and #5775). Licensed ArcGIS Pro 3.7.2 (ArcView) on the Windows lane ran the same ArcPy steps against two ImageServers, each through a loopback recording proxy:
 
-- **A (reference):** Esri's public `ScientificData/SeaTemperature` ImageServer on sampleserver6, a multidimensional `water_temp` cube with `StdTime` and `StdZ` dimensions.
+- **A (reference):** GeoServices REST public `ScientificData/SeaTemperature` ImageServer on sampleserver6, a multidimensional `water_temp` cube with `StdTime` and `StdZ` dimensions.
 - **B (Honua):** the genuine #3633/#3723 fixture. A CF NetCDF-4 file in LocalStack S3 goes through the production native scan (gdalmdiminfo) and derived Zarr, and is served as the `browser_compat` ImageServer from a trunk build.
 
 The Honua values are checked against the independent oracle authored in `docker/client-compat/multidim-fixture/seed.py` (computed in `tools/ab_report.py` without reading server output). The SOAP shape is checked against what the reference returned to Pro.
@@ -35,12 +33,12 @@ The same fixture's pixels do pass over REST: `runs/honua-trunk/native-scan-verif
 ## Defects found (filed)
 
 - **#6491 (P1):** the scan's enrichment `gdalinfo -json /vsis3/…nc` always fails in a container. GDAL 3.13's netCDF driver needs Linux `userfaultfd` for `/vsi` files, and Docker's default seccomp blocks it. The job still succeeds, but with `temporal`, `extent` and `resolution` empty, so `time` never becomes `StdTime` and no coordinates are advertised. `gdalinfo` over the derived Zarr in the same container does return the geotransform, nodata and per-band time.
-- **#6492 (P1):** `ImageServerMultidimensionalInfoBuilder` advertises horizontal axes (`latitude`/`longitude`) as slice dimensions. ArcGIS Server never does this.
+- **#6492 (P1):** `ImageServerMultidimensionalInfoBuilder` advertises horizontal axes (`latitude`/`longitude`) as slice dimensions. GeoServices REST server never does this.
 - **#6493 (P2):** the service raster description (REST `?f=json`, SOAP `GetServiceInfo`) comes from layer 2000's base browser-compat raster (64×64 U8, constant 180), while slices come from the registered coverage.
 
 ## What Pro does (observations worth keeping)
 
-- **Encoding:** the reference answers `GetMessageFormats` with `esriServiceCatalogMessageFormatSoapOrBin`, and Pro then uses Esri's binary SOAP for every image operation. Honua advertises XML SOAP only, and Pro uses XML throughout. The reference's own XML binding faults `GetMultidimensionalInfo` (`soap:client`, "Error processing server request"). In `runs/reference` that is 1 XML fault next to 8 binary successes; a manual probe with the 10.8, 10.9, 10.91, 11.0, 11.1 and 11.3 namespaces faulted the same way. Reference GMI bodies are therefore binary and are compared structurally (ordered UTF-16 names, `tools/binary_soap_strings.py`).
+- **Encoding:** the reference answers `GetMessageFormats` with `esriServiceCatalogMessageFormatSoapOrBin`, and Pro then uses GeoServices REST binary SOAP for every image operation. Honua advertises XML SOAP only, and Pro uses XML throughout. The reference's own XML binding faults `GetMultidimensionalInfo` (`soap:client`, "Error processing server request"). In `runs/reference` that is 1 XML fault next to 8 binary successes; a manual probe with the 10.8, 10.9, 10.91, 11.0, 11.1 and 11.3 namespaces faulted the same way. Reference GMI bodies are therefore binary and are compared structurally (ordered UTF-16 names, `tools/binary_soap_strings.py`).
 - **Operations:** Pro sends to Honua `GetServiceInfo`, `GetVersion`, `IsFixedScaleImage`, `GetFields`, `GetKeyPropertiesX`, `ExecuteAISRequest(GetProperty ClientXADef)` and `GetMultidimensionalInfo`, all 200. Against the reference it also reaches `GetImage`/`ExportImage`, because its slices resolve.
 - **Probes:** Pro's empty-body POST probes get 415 from Honua and 400 from the reference. Both are rejections, and neither changes Pro's flow.
 - **Not finished on the reference:** the reference `RasterRead`/`SliceValues` steps did not finish within a bounded time (Pro walks `GetImage` across 2,760 global slices) and were stopped. They are not needed: values are compared against the oracle, not the reference.
@@ -58,8 +56,6 @@ Nothing here holds a token, licence file, credential or header:
 - `git grep -iE 'token=|password=|bearer|apikey=|X-API-Key'` over this directory matches only the scanner patterns in `tools/capture_proxy.py` and this sentence.
 
 ## Reproduce
-
-Prerequisites: Windows host with licensed ArcGIS Pro 3.7.x, Docker Desktop, Git Bash, and a GitHub Packages token for the image builds.
 
 ```bash
 # 1. Genuine fixture: build and seed the fixture, then run the native scan verifier.
@@ -100,8 +96,7 @@ Traps:
 | server image (local JIT build) | `sha256:238c1196873569d8bfc83502dd822ab04a368160c43a490d48da338a84cc475f` |
 | GDAL worker image (local build, GDAL 3.13.1) | `sha256:316f82ee8fe3e1645f04f63a7039c6d201eb5df9bc70378afa88eddf85d59b9a` |
 | LocalStack / PostGIS | `localstack/localstack:3.6.0`, `postgis/postgis:16-3.4` |
-| ArcGIS Pro | 3.7.2, product ArcView (licensed), per-user install |
-| reference | `https://sampleserver6.arcgisonline.com/arcgis/services/ScientificData/SeaTemperature/ImageServer` (ArcGIS Server 10.91) |
+| reference | `https://sampleserver6.arcgisonline.com/arcgis/services/ScientificData/SeaTemperature/ImageServer` (GeoServices REST server 10.91) |
 | capture date | 2026-10-22 |
 
 `manifest.json` lists the SHA-256 of every committed file in this bundle.

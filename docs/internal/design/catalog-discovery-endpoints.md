@@ -7,7 +7,7 @@ detail, and per-item editor)
 **Audience:** the engineer/agent implementing the honua-server side
 **Goal:** populate the catalog discovery-endpoints registry from **real published catalog state** and add
 the **enable/disable (and auto-default vs opt-in) mutation** the `/operate/catalogs` surface needs, so the
-page renders live discovery endpoints (Esri / OGC API Records / OData / STAC / DCAT) instead of the honest
+page renders live discovery endpoints (GeoServices REST / OGC API Records / OData / STAC / DCAT) instead of the honest
 missing-binding/empty state it shows today.
 
 ---

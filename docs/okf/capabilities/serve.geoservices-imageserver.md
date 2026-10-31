@@ -1,7 +1,7 @@
 ---
 type: capability
 title: "ImageServer"
-description: "Serve raster imagery and coverage metadata through the Esri GeoServices ImageServer surface."
+description: "Serve raster imagery and coverage metadata through the GeoServices REST ImageServer surface."
 resource: "honua://capability/serve.geoservices-imageserver"
 tags: [capability, serve, community]
 ---
@@ -9,7 +9,7 @@ tags: [capability, serve, community]
 
 # ImageServer
 
-Serve raster imagery and coverage metadata through the Esri GeoServices ImageServer surface.
+Serve raster imagery and coverage metadata through the GeoServices REST ImageServer surface.
 
 | | |
 | --- | --- |

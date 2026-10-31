@@ -71,7 +71,7 @@ Landing, conformance, and OpenAPI metadata use bounded anonymous output-cache po
 
 ## Relationship To Other Raster APIs
 
-OGC API Coverages is for modern coverage discovery and raw coverage export. WCS remains the classic OGC KVP/XML adapter. ImageServer remains the Esri-compatible raster surface for service metadata, identify, catalog query, tiles, statistics, histograms, and legend. OGC API Maps remains the modern rendered-map surface. All raster export routes share the same raster store and raster query/export infrastructure.
+OGC API Coverages is for modern coverage discovery and raw coverage export. WCS remains the classic OGC KVP/XML adapter. ImageServer remains the GeoServices REST-compatible raster surface for service metadata, identify, catalog query, tiles, statistics, histograms, and legend. OGC API Maps remains the modern rendered-map surface. All raster export routes share the same raster store and raster query/export infrastructure.
 
 ## Known Deferrals
 

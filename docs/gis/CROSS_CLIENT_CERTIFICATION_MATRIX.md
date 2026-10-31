@@ -2,11 +2,7 @@
 
 This matrix defines the shared certification vocabulary for cross-client interoperability testing. It establishes a common core of test cases that all client lanes must address, plus lane-specific extensions.
 
-For QGIS UI, PyQGIS, ArcGIS Pro UI and ArcPy scope and completion, use the
-[four-client certification checklist](CLIENT_CERTIFICATION_CHECKLIST.md).
-This document supplies shared evidence IDs across clients; it is not a second
-desktop completion denominator. Server parity inventories and platform release
-requirements retain their separate roles.
+This document supplies shared evidence IDs across clients. Server parity inventories and platform release requirements retain their separate roles.
 
 **Scope boundary**: this matrix tracks _client interoperability_ — whether a given client can successfully consume Honua Server APIs. It does not replace the [FeatureServer Coverage Matrix](../reference/compatibility/geoservices-parity.md), [MapServer Coverage Matrix](../reference/compatibility/geoservices-parity.md), or OGC coverage docs, which track _server API parity_.
 
@@ -61,7 +57,6 @@ These test cases form the shared certification baseline. Every client lane must 
 
 The six `CERT-RNDR-{SYM,LIN,FIL,LBL,SPR,URL}-01` IDs above are the visual / style certification slice that ticket [`#478`](https://github.com/honua-io/honua-server/issues/478) introduces. They are append-only additions to the matrix — `CERT-RNDR-01` and `CERT-RNDR-02` are unchanged. The slice spec at [`visual-style-certification-slice.md`](../internal/evidence/visual-style-certification-slice.md) defines per-scenario fixtures, expected colors, pass criteria, and lane substantiation.
 
-§ **MapServer rendering lane:** The "FS" abbreviation covers both `featureserver` and `mapserver` evidence files. When MapServer is a rendering-only connection, for example a `desktop-arcgis` mapserver envelope, CERT-QFLT, CERT-PAGE, CERT-GEOM, and CERT-ERRH-02 are `not-applicable` unless that evidence identifier says the layer query was exercised. See [ArcGIS Pro](CLIENT_TEMPLATE_RUNBOOK.md#arcgis-pro).
 
 ### Geometry Tolerance (CERT-GEOM-01)
 

@@ -82,7 +82,7 @@ A wrong or missing key raises an authentication error from the client. Confirm `
 | Accessor | Returns | Use it for |
 |---|---|---|
 | `client.source(SourceDescriptor(...))` | a `Source` | Protocol-neutral `Query` / `Result` over any layer |
-| `client.feature_server(service_id)` | FeatureServer client | ArcGIS-style FeatureServer queries |
+| `client.feature_server(service_id)` | FeatureServer client | GeoServices REST-style FeatureServer queries |
 | `client.ogc_features()` | OGC Features client | OGC API Features collections and items |
 | `client.stac()` | STAC client | STAC collections and item search |
 | `HonuaAdminClient(base_url, api_key=...)` (from `honua_admin`) | admin client | Control plane — compatibility, connections, imports |

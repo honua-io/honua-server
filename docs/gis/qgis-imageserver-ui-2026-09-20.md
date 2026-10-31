@@ -2,7 +2,7 @@
 
 Fresh inspected QGIS 3.44.14 LTR computer-use receipts close exactly two UI
 operations: ImageServer service-info and exportImage. The operator used the
-native ArcGIS REST connection tree, added the ImageServer, inspected layer
+native GeoServices REST connection tree, added the ImageServer, inspected layer
 information and its rendered canvas, and compared the image to the independent
 pre-execution PNG control. The UI showed an existing native authentication
 configuration reference; this is not an anonymous-native claim. Separate server

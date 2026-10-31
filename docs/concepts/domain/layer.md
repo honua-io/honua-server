@@ -25,7 +25,7 @@ This familiar API term is interpreted through Metadata v2's [resource](resource.
 
 Source-backed publication keeps the source table authoritative and does not offer feature writes through that binding. Managed publication copies records into Honua's managed store, which becomes authoritative for that layer. Edit capabilities must be supported and permitted; a PostGIS source alone does not imply write-through editing.
 
-A renderer's “layer” is different: it describes how features are drawn inside a [map](map.md). Several drawing layers can use one source. An OGC collection or Esri layer can be a protocol projection of a published layer, but resolve the returned identifier instead of assuming names match across protocols.
+A renderer's “layer” is different: it describes how features are drawn inside a [map](map.md). Several drawing layers can use one source. An OGC collection or GeoServices REST layer can be a protocol projection of a published layer, but resolve the returned identifier instead of assuming names match across protocols.
 
 “Add a layer” may mean publish server data or add a reference to a map. Identify which object should exist afterward.
 

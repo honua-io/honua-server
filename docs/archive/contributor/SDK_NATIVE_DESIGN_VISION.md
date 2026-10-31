@@ -2,11 +2,11 @@
 
 **Status:** Draft — for team review
 **Date:** February 28, 2026
-**Scope:** `@honua/sdk` native API direction — complementary to the compat layer (see [Compat Lifecycle Policy](ESRI_MIGRATION_PLATFORM_PLAN.md#compat-lifecycle-policy))
+**Scope:** `@honua/sdk` native API direction — complementary to the compat layer (see [Compat Lifecycle Policy]())
 
 ## Problem Statement
 
-The Honua JS SDK has two layers: a Honua-native core (`HonuaClient`, surfaces, streaming pagination) and a large Esri compatibility facade (`@honua/sdk-esri-compat`). The compat layer is a durable, supported product surface (see [Compat Lifecycle Policy](ESRI_MIGRATION_PLATFORM_PLAN.md#compat-lifecycle-policy)) — it gets Esri shops migrated and stays available for as long as customers need it. Deprecation is not planned for the V1 horizon.
+The Honua JS SDK has two layers: a Honua-native core (`HonuaClient`, surfaces, streaming pagination) and a compatibility facade for GeoServices REST clients. The facade is a durable, supported product surface — it helps existing users migrate and stays available for as long as customers need it. Deprecation is not planned for the V1 horizon.
 
 This document proposes design directions for the **native** SDK (`@honua/sdk`) that give customers reasons to adopt Honua-native APIs organically — not because the compat layer is going away, but because the native experience is genuinely better. New capability work lands in `@honua/sdk` first; the compat layer receives wrappers only for migration-critical patterns. The two surfaces coexist and interoperate.
 
@@ -16,33 +16,33 @@ Before proposing new directions, the existing native patterns worth preserving a
 
 | Pattern | Where it lives | Why it matters |
 |---------|---------------|----------------|
-| Async generator pagination | `queryFeaturesStream()` on surfaces | Memory-efficient streaming that neither Esri nor Mapbox offer |
+| Async generator pagination | `queryFeaturesStream()` on surfaces | Memory-efficient streaming that neither GeoServices REST nor Mapbox offer |
 | Explicit protocol surfaces | `HonuaFeatureLayer` vs `HonuaOgcFeatures` vs `HonuaMapService` | Honest about what protocol is being spoken, not hidden behind class hierarchies |
-| Request interceptors | `HonuaRequestInterceptor` with before/after/error lifecycle | Composable, testable, transparent — unlike Esri's implicit request handling |
-| Typed request parameters | `QueryFeaturesRequest`, `ExportMapRequest`, etc. | IDE autocomplete and compile-time safety for query parameters Esri leaves undocumented |
+| Request interceptors | `HonuaRequestInterceptor` with before/after/error lifecycle | Composable, testable, transparent — unlike GeoServices REST implicit request handling |
+| Typed request parameters | `QueryFeaturesRequest`, `ExportMapRequest`, etc. | IDE autocomplete and compile-time safety for query parameters GeoServices REST leaves undocumented |
 | Migration tooling | Scanner + codemod + parity matrix + reconciliation | No other geospatial SDK ships structured migration tooling. This is a moat. |
 | Declarative time binding | `TimeSlider.connectLayer()` via event bus | Component composition through events, not tight coupling |
 
-These are not incremental improvements over Esri — they are architectural departures. The proposals below extend this trajectory.
+These are not incremental improvements over GeoServices REST — they are architectural departures. The proposals below extend this trajectory.
 
 ## Lessons from Mapbox GL JS
 
 ### What Mapbox gets right
 
 **1. The map is a document, not an object tree.**
-Mapbox's Style Specification is a single JSON document that fully describes a map's sources, layers, and styling. It is portable (works in GL JS, GL Native, MapLibre), serializable, version-controllable, and hot-swappable at runtime via `map.setStyle(json)`. Esri has no equivalent — map configuration is scattered across class constructor options, property mutations, and imperative method calls.
+Mapbox's Style Specification is a single JSON document that fully describes a map's sources, layers, and styling. It is portable (works in GL JS, GL Native, MapLibre), serializable, version-controllable, and hot-swappable at runtime via `map.setStyle(json)`. GeoServices REST has no equivalent — map configuration is scattered across class constructor options, property mutations, and imperative method calls.
 
 **2. Data and presentation are decoupled.**
-A Mapbox "source" is data. A "layer" is a rendering pass over that data. One GeoJSON source can back a fill layer, a line layer, and a symbol layer simultaneously. In Esri (and in our compat layer), a `FeatureLayer` fuses data source, query parameters, renderer, popup template, and labels into a single class.
+A Mapbox "source" is data. A "layer" is a rendering pass over that data. One GeoJSON source can back a fill layer, a line layer, and a symbol layer simultaneously. In GeoServices REST (and in our compat layer), a `FeatureLayer` fuses data source, query parameters, renderer, popup template, and labels into a single class.
 
 **3. Styling is an expression engine, not a class hierarchy.**
-Mapbox expressions (`["interpolate", ["linear"], ["get", "population"], 0, "#fff", 1000000, "#f00"]`) are declarative, serializable, evaluable per-feature, and composable. Esri's renderer model (`SimpleRenderer` → `UniqueValueRenderer` → `ClassBreaksRenderer`, each containing `Symbol` subclasses) is imperative, non-serializable without custom logic, and hard to compose.
+Mapbox expressions (`["interpolate", ["linear"], ["get", "population"], 0, "#fff", 1000000, "#f00"]`) are declarative, serializable, evaluable per-feature, and composable. GeoServices REST renderer model (`SimpleRenderer` → `UniqueValueRenderer` → `ClassBreaksRenderer`, each containing `Symbol` subclasses) is imperative, non-serializable without custom logic, and hard to compose.
 
 **4. Interaction state is separate from data state.**
-`map.setFeatureState({ source, id }, { hover: true })` changes how a feature looks without touching the data source. Paint expressions read `feature-state` at render time. This enables hover/select/highlight effects with zero re-queries. Esri requires either client-side graphic manipulation or re-querying to achieve the same.
+`map.setFeatureState({ source, id }, { hover: true })` changes how a feature looks without touching the data source. Paint expressions read `feature-state` at render time. This enables hover/select/highlight effects with zero re-queries. GeoServices REST requires either client-side graphic manipulation or re-querying to achieve the same.
 
 **5. Style composition (v3).**
-Style imports + named slots solve "where in a 200-layer basemap do I insert my layer?" Esri has no answer to this. Mapbox v3 lets you import a base style and inject layers at semantic positions (`"slot": "middle"`) rather than numeric indices.
+Style imports + named slots solve "where in a 200-layer basemap do I insert my layer?" GeoServices REST has no answer to this. Mapbox v3 lets you import a base style and inject layers at semantic positions (`"slot": "middle"`) rather than numeric indices.
 
 ### What Mapbox gets wrong (Honua opportunities)
 
@@ -58,7 +58,7 @@ Style imports + named slots solve "where in a 200-layer basemap do I insert my l
 CARTO stores nothing. `vectorQuerySource({ sqlQuery: "SELECT ... FROM ..." })` executes arbitrary SQL in BigQuery/Snowflake/Redshift at read time. Tile generation happens inside the warehouse. This eliminates data duplication, leverages warehouse-scale compute, and keeps the freshest data always visible.
 
 **2. SQL is the API.**
-Instead of wrapping SQL behind proprietary query languages (Esri's REST query syntax) or filter expressions, CARTO exposes SQL directly. Their Analytics Toolbox adds 100+ spatial UDFs as native warehouse functions (`CARTO.ST_CLUSTERDBSCAN()`, `CARTO.H3_POLYFILL()`). Analysis runs where the data lives, not in a separate geoprocessing service.
+Instead of wrapping SQL behind proprietary query languages (GeoServices REST query syntax) or filter expressions, CARTO exposes SQL directly. Their Analytics Toolbox adds 100+ spatial UDFs as native warehouse functions (`CARTO.ST_CLUSTERDBSCAN()`, `CARTO.H3_POLYFILL()`). Analysis runs where the data lives, not in a separate geoprocessing service.
 
 **3. `fetchMap()` bridges design-time and runtime.**
 Non-engineers design maps in CARTO Builder (no-code). Engineers call `fetchMap(mapId)` and get runnable deck.gl layers. This decouples visual design from application code and eliminates redeployment for style changes.
@@ -127,7 +127,7 @@ Instead of embedding query logic in client code (`sqlQuery: "SELECT ... FROM sen
 
 **Open questions:**
 - How does the expression engine interact with server-side WHERE clauses? (Proposed: `definitionExpression` on the source is server-side; `filter` on the layer is client-side; a future `server-filter` property could push layer filters server-side when the source supports it.)
-- What is the relationship to Esri's WebMap JSON? (Proposed: a separate import utility that converts WebMap JSON sources and renderers into HonuaMapSpec, reusing the existing GeoServices → MapLibre style converter from ADR-0002.)
+- What is the relationship to GeoServices REST WebMap JSON? (Proposed: a separate import utility that converts WebMap JSON sources and renderers into HonuaMapSpec, reusing the existing GeoServices → MapLibre style converter from ADR-0002.)
 
 ### Direction 2: Source/Layer Separation in the Native API
 
@@ -175,7 +175,7 @@ map.addLayer({
 
 **What:** A `HonuaSqlSource` that lets the SDK send parameterized SQL queries to Honua Server, which executes them against PostGIS and returns features or tiles.
 
-**Why:** This is Honua's version of CARTO's biggest strength. Honua Server already sits on PostGIS — exposing SQL-driven queries breaks free from the "everything through REST query parameters" constraint that limits both Esri and the current SDK.
+**Why:** This is Honua's version of CARTO's biggest strength. Honua Server already sits on PostGIS — exposing SQL-driven queries breaks free from the "everything through REST query parameters" constraint that limits both GeoServices REST and the current SDK.
 
 **Sketch:**
 ```typescript
@@ -213,7 +213,7 @@ SQL pass-through does **not** mean arbitrary SQL execution. The server enforces 
 
 **What:** When the SDK fetches features for a map viewport, it can simultaneously request aggregated statistics (counts, sums, category breakdowns) in the same roundtrip.
 
-**Why:** Every Esri dashboard built on Feature Services makes N+1 queries: one for the map, one for each widget. These queries race, may see different data snapshots, and waste bandwidth. CARTO solves this with `widgetSource`. Honua should too.
+**Why:** Every GeoServices REST dashboard built on Feature Services makes N+1 queries: one for the map, one for each widget. These queries race, may see different data snapshots, and waste bandwidth. CARTO solves this with `widgetSource`. Honua should too.
 
 **Sketch:**
 ```typescript
@@ -235,7 +235,7 @@ const stats = await source.aggregate({
 
 **What:** A TypeScript API for building style expressions with full autocomplete, type checking, and composability. Compiles to the same JSON expression format used by MapLibre/Mapbox.
 
-**Why:** Mapbox expressions are powerful but error-prone (untyped JSON arrays, no IDE support). Esri's renderers are type-safe but not serializable or composable. Honua can have both.
+**Why:** Mapbox expressions are powerful but error-prone (untyped JSON arrays, no IDE support). GeoServices REST renderers are type-safe but not serializable or composable. Honua can have both.
 
 **Sketch:**
 ```typescript
@@ -292,17 +292,17 @@ map.on("mouseleave", "parcel-fill", () => {
 // "fill-opacity": ["case", ["boolean", ["feature-state", "hover"], false], 1.0, 0.5]
 ```
 
-**Key differentiator vs Esri:** Esri requires creating a separate `GraphicsLayer` with highlight graphics, or using `FeatureLayerView.highlight()` which is tightly coupled to the view lifecycle. Feature state is declarative, layer-independent, and serializable.
+**Key differentiator vs GeoServices REST:** GeoServices REST requires creating a separate `GraphicsLayer` with highlight graphics, or using `FeatureLayerView.highlight()` which is tightly coupled to the view lifecycle. Feature state is declarative, layer-independent, and serializable.
 
 ### Direction 7: Binary Wire Formats (Protobuf, FlatGeobuf, GeoArrow)
 
 The SDK and server currently speak JSON exclusively for feature queries. MVT tiles are the sole binary format, generated by PostGIS `ST_AsMVT()`. There are three tiers of binary format opportunity, each at a different layer of the stack.
 
-#### Tier A: `f=pbf` on Feature Query Responses (Esri-Compatible)
+#### Tier A: `f=pbf` on Feature Query Responses (GeoServices REST-Compatible)
 
-**What:** Add `f=pbf` as a supported output format on the existing `/query` REST endpoint, using Esri's published protobuf schema (`Esri/arcgis-pbf`).
+**What:** Add `f=pbf` as a supported output format on the existing `/query` REST endpoint, using the published GeoServices REST protobuf schema ([source](https://github.com/Esri/arcgis-pbf)).
 
-**Why:** This is the highest-ROI binary format change. Esri's ArcGIS Maps SDK for JS 4.x requests `f=pbf` by default when the server advertises it in `supportedQueryFormats`. Implementing it means Esri clients that discover Honua endpoints automatically negotiate binary transfer with zero SDK changes on their side.
+**Why:** JavaScript GIS clients request `f=pbf` by default when the server advertises it in `supportedQueryFormats`. Implementing it means clients that discover Honua endpoints can negotiate binary transfer without SDK changes.
 
 **Performance data:**
 - ~50-60% smaller payloads vs JSON (before compression)
@@ -310,7 +310,7 @@ The SDK and server currently speak JSON exclusively for feature queries. MVT til
 - 3.9x less memory, 3.9x faster deserialization (benchmarked in Rust; JS gains are smaller but geometry parsing still wins because integer delta-encoded coordinates avoid float string parsing entirely)
 - Attribute key/value interning: 10k features with the same 5 fields store each key once, not 50k times
 
-**How it works:** All geometry coordinates are integer-only and delta-encoded. A `Transform` message carries `scale` and `translate` so clients recover world coordinates: `worldCoord = (deltaDecodedInt * scale) + translate`. Attribute `Value` uses a `oneof` pattern (string, float, double, sint32, sint64, uint64, bool, null). The schema is public at [github.com/Esri/arcgis-pbf](https://github.com/Esri/arcgis-pbf).
+**How it works:** All geometry coordinates are integer-only and delta-encoded. A `Transform` message carries `scale` and `translate` so clients recover world coordinates: `worldCoord = (deltaDecodedInt * scale) + translate`. Attribute `Value` uses a `oneof` pattern (string, float, double, sint32, sint64, uint64, bool, null). The schema remains available from its publisher.
 
 **Server-side:** `Google.Protobuf` NuGet package or `protobuf-net` for source-generated (AOT-compatible) serialization. Honua Server's existing `QueryFormatters` infrastructure already switches on format — adding a PBF formatter is a natural extension.
 
@@ -467,7 +467,7 @@ Lower priority, but worth designing for:
 
 | Tier | What | Server changes | SDK changes | Impact |
 |------|------|---------------|-------------|--------|
-| A. `f=pbf` | Protobuf query responses (Esri-compatible) | New `PbfQueryFormatter` | Protobuf decoder in client | Immediate: 50-60% smaller payloads, Esri client compatibility |
+| A. `f=pbf` | Protobuf query responses (GeoServices REST-compatible) | New `PbfQueryFormatter` | Protobuf decoder in client | Immediate: 50-60% smaller payloads, GeoServices REST client compatibility |
 | B. Connect RPC | Native SDK wire protocol | New Connect endpoints alongside REST | Generated typed client | Architectural: typed streaming, eliminates hand-built pagination |
 | C. Cloud-native formats | FlatGeobuf, PMTiles, GeoArrow | Export/packaging endpoints | Per-format npm packages | Bulk/analytics: serverless distribution, GPU rendering |
 
@@ -479,7 +479,7 @@ Tier A is additive (a new formatter on existing endpoints) and can ship independ
 |-----------|----------------------|------|--------|
 | 5. Type-safe expression builder | None | Small | High DX win, immediate use |
 | 6. Feature state | None (MapLibre native) | Small | High interaction quality |
-| 7A. `f=pbf` query responses | New PbfQueryFormatter | Small-Medium | 50-60% smaller payloads, Esri client compat |
+| 7A. `f=pbf` query responses | New PbfQueryFormatter | Small-Medium | 50-60% smaller payloads, GeoServices REST client compat |
 | 2. Source/layer separation | None | Medium | Architectural foundation |
 | 1. HonuaMapSpec | None (Phase 1: uses existing endpoints) | Medium | Ecosystem enabler |
 | 7B. Connect protocol for native SDK | New Connect endpoints | Medium-Large | Typed streaming, eliminates hand-built pagination |
@@ -491,16 +491,16 @@ Directions 5, 6, and 7A can ship quickly with no or minimal server changes. Dire
 
 ## Strategic Framing
 
-The compat layer says **"you can leave Esri."**
+The compat layer says **"you can leave GeoServices REST."**
 
 The native SDK should say **"here's why you'd want to."**
 
-| | Esri | Mapbox | CARTO | Honua (proposed) |
+| | GeoServices REST | Mapbox | CARTO | Honua (proposed) |
 |-|------|--------|-------|-----------------|
 | **Data model** | Imperative OOP class tree | Declarative JSON style doc | SQL queries to your warehouse | Protocol-aware declarative spec with SQL escape hatch |
 | **Styling** | Renderer class hierarchy | JSON expression engine (untyped) | deck.gl layer props | Type-safe expression builder compiling to MapLibre-compatible JSON |
 | **Data/style coupling** | Fused (FeatureLayer owns both) | Separated (source + layer) | Separated (source + deck.gl layer) | Separated, with server-aware sources |
-| **Wire format** | JSON + PBF (proprietary schema) | MVT tiles only (protobuf) | JSON + dynamic tiles | JSON + Esri-compatible PBF + Connect RPC (binary streaming) + MVT + FlatGeobuf/PMTiles |
+| **Wire format** | JSON + PBF (proprietary schema) | MVT tiles only (protobuf) | JSON + dynamic tiles | JSON + GeoServices REST-compatible PBF + Connect RPC (binary streaming) + MVT + FlatGeobuf/PMTiles |
 | **Editing** | Full CRUD via Feature Service | None | Warehouse-direct only | Full CRUD via Feature Service + OGC + OData |
 | **Streaming** | Manual pagination | Not applicable (tiles) | Tile streaming | Connect server-streaming RPC + async generators, protocol-transparent |
 | **Analytics** | Separate geoprocessing service | Client-side (Turf.js) | Warehouse UDFs + widget sources | Coordinated widget queries + PostGIS |
@@ -511,7 +511,7 @@ The native SDK should say **"here's why you'd want to."**
 
 1. Review this document with the team.
 2. Decide which directions to prototype first (recommendation: 5 → 6 → 7A → 2 → 1).
-3. For Direction 7A (`f=pbf`): prototype a `PbfQueryFormatter` using the Esri PBF schema and benchmark against the existing JSON formatter.
+3. For Direction 7A (`f=pbf`): prototype a `PbfQueryFormatter` using the GeoServices REST PBF schema and benchmark against the existing JSON formatter.
 4. For Direction 7B (Connect RPC): draft a `honua/v1/feature_service.proto` schema covering query, streaming query, and aggregation. Evaluate `protobuf-net.Grpc` for the server side and `@connectrpc/connect-web` for the SDK. Publish proto files to Buf Schema Registry with `buf breaking` CI checks.
 5. For Directions 3 and 4, draft a paired Honua Server RFC for the new endpoints, including the SQL security model and named-query configuration format.
 6. For Direction 2: draft the `HonuaFeatureLayer` → source/layer decomposition, including the convenience wrapper API and codemod rule.

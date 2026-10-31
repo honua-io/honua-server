@@ -8,9 +8,9 @@ tracked by honua-io/honua-esri-assess#33).
 ## Context
 
 `honua-io/honua-server#1265` / `#1266` introduce a Network Analyst routing
-capability for the GeoServices REST surface: an Esri-compatible `NAServer`
+capability for the GeoServices REST surface: a GeoServices REST-compatible `NAServer`
 exposing route (point-to-point) and service-area (drive-time / drive-distance
-polygon) solves. Esri clients reach this surface through the
+polygon) solves. GeoServices REST clients reach this surface through the
 `NAServer/Route/solve` and `NAServer/ServiceArea/solveServiceArea` operations,
 and Honua adapts them into a shared routing pipeline behind an
 `IRoutingProvider` abstraction, exactly as the other GeoServices services adapt
@@ -31,8 +31,8 @@ constraints dominate:
    service-area solves. An engine that does point-to-point routing well but has
    no native isochrone surface only satisfies half the capability.
 3. **Data-licensing compliance.** The routing network must come from open data
-   (OpenStreetMap) or the customer's own network data. Honua must not lift Esri
-   network datasets or Esri-licensed street data. The Esri NAServer *API shape*
+   (OpenStreetMap) or the customer's own network data. Honua must not lift GeoServices REST
+   network datasets or GeoServices REST-licensed street data. The GeoServices REST NAServer *API shape*
    is reimplemented as a compatibility surface — APIs are fair use per
    *Google v. Oracle* — but the network *data* behind it is open or
    customer-owned.
@@ -45,7 +45,7 @@ service-area solves.
 - **Route solves** map to `pgr_dijkstra` over the topology network table.
 - **Service-area solves** map to `pgr_drivingDistance` to compute the reachable
   edge/node set, then an alpha-shape / concave-hull polygonization of the
-  reachable vertices to produce the Esri `saPolygons` output.
+  reachable vertices to produce the GeoServices REST `saPolygons` output.
 - **`travelDirection`** (`esriNATravelDirectionFromFacility` /
   `esriNATravelDirectionToFacility`) is honored: `FromFacility` runs
   driving-distance over the outbound graph (outbound coverage); `ToFacility` runs
@@ -63,7 +63,7 @@ service-area solves.
   Postgres provider path. There is no new transport, no new client library, and
   no new network hop.
 - **Geometry stays in-DB.** Route geometry and service-area polygons are
-  produced in PostgreSQL, so the Esri JSON shaping happens in the existing
+  produced in PostgreSQL, so the GeoServices REST JSON shaping happens in the existing
   Postgres adapter path alongside the other GeoServices responses. No round-trip
   to an external engine and back is needed to assemble the response.
 
@@ -89,8 +89,8 @@ Legal sign-off on this GPL-over-SQL posture (and the bundled-image source-offer
 obligation) is tracked by **honua-io/honua-esri-assess#33**
 (`epic-esri-ip-compliance-guardrails`). The data-licensing constraint from
 `#1266` is independent and absolute: routing networks come from **open data
-(OSM)** or the **customer's own network data**; Honua does not lift Esri network
-datasets or Esri-licensed street data. The NAServer API shape itself is a
+(OSM)** or the **customer's own network data**; Honua does not lift GeoServices REST network
+datasets or GeoServices REST-licensed street data. The NAServer API shape itself is a
 compatibility reimplementation and is fair use per *Google v. Oracle*.
 
 ### Alternatives considered
@@ -98,7 +98,7 @@ compatibility reimplementation and is fair use per *Google v. Oracle*.
 | Engine | License | New infra | Native service-area / isochrone | .NET call path | Verdict |
 |---|---|---|---|---|---|
 | **pgRouting** | GPL-2.0-or-later | None (extension in existing PostGIS) | Via `pgr_drivingDistance` + alpha-shape/concave-hull (coarser) | SQL over Npgsql, existing Postgres path | **Chosen** — lowest infra, in-DB geometry, SQL-only boundary |
-| Valhalla | MIT | +1 sidecar container; heavier OSM tile build | Yes — best-in-class native isochrone, maps cleanly to Esri `saPolygons` | HTTP to sidecar | **Documented fallback** — switch here if legal rejects the GPL-over-SQL posture or if production isochrone quality demands it |
+| Valhalla | MIT | +1 sidecar container; heavier OSM tile build | Yes — best-in-class native isochrone, maps cleanly to GeoServices REST `saPolygons` | HTTP to sidecar | **Documented fallback** — switch here if legal rejects the GPL-over-SQL posture or if production isochrone quality demands it |
 | OSRM | BSD | +1 sidecar container | **No native isochrone** | HTTP to sidecar | Rejected — service areas are half the requirement, and OSRM cannot produce them natively |
 | GraphHopper | Apache-2.0 | +1 sidecar container; adds a JVM | Yes — native isochrone | HTTP to sidecar (JVM) | Rejected — adds a JVM with no advantage over Valhalla as the non-GPL fallback |
 
@@ -116,7 +116,7 @@ provider without changing the NAServer adapter contract.
   already in the stack. Operators who never deploy a second image gain the
   NAServer capability for free.
 - **Single data path.** Routing reuses the existing Npgsql/Postgres adapter,
-  error mapping, telemetry, and Esri JSON shaping. There is no parallel client,
+  error mapping, telemetry, and GeoServices REST JSON shaping. There is no parallel client,
   transport, or response assembler.
 - **Engine is swappable.** The `IRoutingProvider` abstraction means Valhalla
   (or another provider) is a clean replacement behind a stable NAServer
@@ -305,7 +305,7 @@ history entry rather than re-promoting) and recorded in the immutable
 are now delivered:
 
 - **Barriers (point/line/polygon)** are implemented. The NAServer adapter parses
-  `barriers` / `polylineBarriers` / `polygonBarriers` Esri FeatureSets into a
+  `barriers` / `polylineBarriers` / `polygonBarriers` GeoServices REST FeatureSets into a
   protocol-neutral `RouteBarrier` (kind + GeoJSON) and threads them into both
   Route and ServiceArea solves. The pgRouting provider honours them by excluding
   the graph edges each barrier restricts (point → nearest edge via the GiST `<->`
@@ -314,7 +314,7 @@ are now delivered:
   barrier kind (e.g. the straight-line mock) returns a GeoServices 400 rather than
   silently dropping the barrier. Bounded by `Routing:MaxBarriers` (default 1000).
 - **Multiple travel modes** are dataset-backed: the request surface
-  (`travelMode`, bare token or Esri object `name`), validation against the
+  (`travelMode`, bare token or GeoServices REST object `name`), validation against the
   provider's advertised `SupportedTravelModes`, and capability advertisement are
   wired. Migration 083 stores validated profile-to-forward/reverse-column mappings
   on each network dataset; only mappings whose columns actually exist are
@@ -347,9 +347,9 @@ driving-distance query). The caps are configurable via the `Routing` section
 - `honua-io/honua-esri-assess#33` — `epic-esri-ip-compliance-guardrails`
   (tracks legal sign-off on the GPL-over-SQL posture and the bundled-image
   source-offer obligation).
-- [Esri Network Analyst Service (NAServer)](https://developers.arcgis.com/rest/services-reference/enterprise/network-analyst-service/) —
+- [GeoServices REST Network Analyst Service (NAServer)](https://developers.arcgis.com/rest/services-reference/enterprise/network-analyst-service/) —
   route sync service and ServiceArea solve response shapes (`saPolygons`).
-- [Esri Route synchronous service](https://developers.arcgis.com/rest/services-reference/enterprise/route-synchronous-service/).
+- [GeoServices REST Route synchronous service](https://developers.arcgis.com/rest/services-reference/enterprise/route-synchronous-service/).
 - [pgRouting `pgr_dijkstra`](https://docs.pgrouting.org/latest/en/pgr_dijkstra.html) —
   route solves.
 - [pgRouting `pgr_drivingDistance`](https://docs.pgrouting.org/latest/en/pgr_drivingDistance.html) —

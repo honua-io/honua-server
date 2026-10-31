@@ -25,7 +25,7 @@ Honua does not terminate TLS, so a reverse proxy, ingress, or load balancer alwa
 ```mermaid
 flowchart LR
   subgraph clients["Clients"]
-    esri["ArcGIS Pro / Esri SDKs"]
+    geoservices["GeoServices REST clients"]
     ogc["QGIS / MapLibre / Cesium"]
     bi["Excel / Power BI"]
     sdk["SDKs / gRPC / AI agents (MCP)"]
@@ -48,7 +48,7 @@ flowchart LR
   redis["Redis — optional<br/>shared cache · durable jobs"]
   files["File storage<br/>local · S3 · Azure Blob"]
 
-  esri --> adapters
+  geoservices --> adapters
   ogc --> adapters
   bi --> adapters
   sdk --> adapters
@@ -173,7 +173,7 @@ Server instances are stateless: catalog state lives in PostGIS, shared cache and
 ## Observability and security
 
 - Structured JSON logging (Serilog), OpenTelemetry tracing, and a Prometheus metrics endpoint.
-- Authentication: API key, OIDC (license-gated), ArcGIS portal token compatibility (`/sharing/rest/generateToken`), and optional mTLS client certificates.
+- Authentication: API key, OIDC (license-gated), GeoServices REST portal token compatibility (`/sharing/rest/generateToken`), and optional mTLS client certificates.
 - Authorization: per-service and per-layer access policies with role-based control, enforced in the shared pipeline for every protocol.
 
 See [Authentication](../guides/secure/authentication.md) and [TLS and mTLS](../guides/secure/tls-and-mtls.md).

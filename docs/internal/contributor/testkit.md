@@ -152,13 +152,13 @@ export HONUA_TEST_REDIS_URL="localhost:6379"
 
 #### External Service Tests (opt-in)
 
-Enable Geoportal-backed Esri import integration tests:
+Enable Geoportal-backed GeoServices REST import integration tests:
 
 ```bash
 export HONUA_TEST_ESRI_GEOPORTAL="1"
 ```
 
-Enable ArcGIS parity import checks (source snapshot vs imported table parity):
+Enable GeoServices REST parity import checks (source snapshot vs imported table parity):
 
 ```bash
 export HONUA_TEST_ESRI_PARITY="1"
@@ -286,7 +286,7 @@ maps to the CI schedule defined in ADR-0037 (`docs/contributor/adr/0037-unified-
 | `[IntegrationTest]` | `Integration` | `Integration` | Targeted shards on PRs; full matrix on scheduled/manual full integration runs and PRs labeled `ci/full`. PR shard step composes `(matrix.filter)&Tier!=Slow&Tier!=Fast` so Slow-tagged siblings skip and Fast tests run only once in the foundation lane. |
 | `[EmulatorTest]` | `Integration,Emulator` | `Slow` | `nightly-slow-tier.yml` — runs `Tier=Slow&Category=Emulator` against LocalStack S3 + Azurite + Postgres. |
 | `[ScaleTest]` | `Integration,Scale` | `Slow` | Currently **not** scheduled. Multi-node compose fixtures are tracked as a separate workflow; the trait is in place for the future workflow to opt in. |
-| `[ExternalServiceTest]` | `Integration,External` | `Slow` | Currently **not** scheduled. External service credentials (e.g. Esri Geoportal) are tracked as a separate workflow. |
+| `[ExternalServiceTest]` | `Integration,External` | `Slow` | Currently **not** scheduled. External service credentials (e.g. GeoServices REST Geoportal) are tracked as a separate workflow. |
 | `[CloudTest]` | `Integration,Cloud` | `Slow` | Currently **not** scheduled. Real-cloud credentials are tracked as a separate workflow. |
 | `[FlakyTest("reason")]` | (additive) | (inherits sibling tier) | Always runs on its tier's normal schedule; surfaced separately by `flaky-detection.yml`. |
 

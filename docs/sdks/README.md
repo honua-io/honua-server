@@ -27,7 +27,7 @@ Every SDK authenticates the same way the server does — see [Authenticate clien
 
 - **API key** — sent as the `X-API-Key` header. Use a scoped key for automation; the admin password is the root key for `/api/v1/admin/*`. This is the default path for the SDKs and what the getting-started pages use.
 - **Bearer token** — `Authorization: Bearer <token>` for OIDC sign-in. Each SDK takes a static token or a refreshable token provider.
-- **ArcGIS portal tokens** — for Esri clients; not needed when you use an SDK directly.
+- **GeoServices REST portal tokens** — for GeoServices REST clients; not needed when you use an SDK directly.
 
 Mint a scoped key once and reuse it across SDKs:
 

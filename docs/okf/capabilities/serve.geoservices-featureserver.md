@@ -1,7 +1,7 @@
 ---
 type: capability
 title: "FeatureServer Query"
-description: "Query and read features through the Esri GeoServices FeatureServer surface (query, metadata, related records, domains, shared templates)."
+description: "Query and read features through the GeoServices REST FeatureServer surface (query, metadata, related records, domains, shared templates)."
 resource: "honua://capability/serve.geoservices-featureserver"
 tags: [capability, serve, community]
 ---
@@ -9,7 +9,7 @@ tags: [capability, serve, community]
 
 # FeatureServer Query
 
-Query and read features through the Esri GeoServices FeatureServer surface (query, metadata, related records, domains, shared templates).
+Query and read features through the GeoServices REST FeatureServer surface (query, metadata, related records, domains, shared templates).
 
 | | |
 | --- | --- |
@@ -24,4 +24,4 @@ The facts above come from the server's capability registry and capability matrix
 
 ## Documented in
 
-- [GeoServices REST (ArcGIS-compatible)](../../reference/protocols/geoservices-rest.md)
+- [GeoServices REST reference](../../reference/protocols/geoservices-rest.md)

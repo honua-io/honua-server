@@ -72,11 +72,11 @@ public interface IUnifiedResponseService
 
 ## Supported Protocols
 
-### GeoServices (ArcGIS REST API)
+### GeoServices (GeoServices REST API)
 - **Serializer**: `GeoServicesSerializer`
 - **Options**: `GeoServicesSerializationOptions`
 - **Formats**: JSON, JSONP
-- **Features**: Field metadata, geometry normalization, ESRI spatial reference
+- **Features**: Field metadata, geometry normalization, GeoServices REST spatial reference
 
 ### OGC API Features
 - **Serializer**: `OgcApiFeaturesSerializer`

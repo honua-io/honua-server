@@ -22,7 +22,7 @@ match the surface labels already emitted in
 | Surface label | What the SDK must drive | Server contract entry point |
 |---|---|---|
 | `migration-scan` | Run a source inventory scan and read the resulting scan artifact through typed SDK models. | `POST /api/v1/admin/import/scan` (source kinds: `arcgis-feature-service`, `geoserver`, `ogc-wfs`, `ogc-wms`, `ogc-wmts`). |
-| `arcgis-import` | Start an ArcGIS GeoServices import job, poll its status, and read the resulting job evidence. | `POST /api/v1/admin/import/geoservices/start`, `GET /api/v1/admin/import/geoservices/jobs/{id}`. |
+| `arcgis-import` | Start a GeoServices REST import job, poll its status, and read the resulting job evidence. | `POST /api/v1/admin/import/geoservices/start`, `GET /api/v1/admin/import/geoservices/jobs/{id}`. |
 | `geoserver-dry-run` | Generate a GeoServer dry-run apply-plan artifact and validate the typed artifact model. | `POST /api/v1/admin/import/geoserver/start` with dry-run options. |
 | `migration-evidence` | Retrieve the artifact chain (inventory, manifest, parity evidence) and deserialize via SDK models. | Server migration artifact models exposed through `Honua.Sdk.Abstractions.Migration.*` equivalents per language. |
 
@@ -123,10 +123,10 @@ The `artifact.artifact_path` is relative to the cell evidence root and must be
 uploaded alongside `compat-result.json`. The central summary collects these
 paths and references them in the matrix run artifact.
 
-## Sample Row: JS SDK ArcGIS Scan + Import (Reference Fixture)
+## Sample Row: JS SDK GeoServices REST Scan + Import (Reference Fixture)
 
 The smallest non-trivial submission a JS SDK lane can target is the seeded
-ArcGIS feature service scan followed by a queued import job. The expected cell
+GeoServices REST feature service scan followed by a queued import job. The expected cell
 shape, given the current `HONUA_SDK_SEED_PROFILE`
 (`tests/seed/base-schema.sql:test_service:layer0`), is:
 

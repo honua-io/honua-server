@@ -33,19 +33,6 @@ records do not answer:
 
 Both are scoped to the **server**. Neither answers:
 
-1. **Where GP computation is allowed to live.** May the SDKs run geoprocessing
-   client-side (Shapely/geopandas in Python, NetTopologySuite/GDAL in .NET), or
-   must they delegate to the canonical server engine? Today the Python SDK is
-   already a thin OGC API Processes client (its `honua-arcpy`/compat analysis
-   surface is stubbed), and the .NET SDK has a small genuine local **vector**
-   tier (`Honua.Sdk.Geometry`, NTS/ProjNet). Without a decision, both are free to
-   grow into parallel GP engines.
-2. **How machine-learning / imagery analysis is delivered.** GDAL gives raster
-   I/O and arithmetic but no learning; ArcGIS-style image classification needs a
-   model runtime. Do we bundle one (scikit-learn / PyTorch / ONNX) into the
-   server or SDKs, or delegate to managed cloud inference?
-3. **Whether distributed analysis is in scope** for first release.
-
 If left implicit, the predictable failure mode is **three divergent GP
 implementations** — server, Python, .NET — that disagree on buffers, overlays,
 CRS handling, and edge cases. That is the exact drift the "thin adapters over one
@@ -153,13 +140,3 @@ photogrammetry worker.
   change the public GP contract.
 
 ## References
-
-- [ADR-0026: AI-First Operator Contract](0026-ai-first-operator-contract.md)
-- [ADR-0029: Geoprocess Canonical Model Mappings](0029-geoprocess-canonical-model-mappings.md)
-- [ADR-0038: GeoETL Pipeline Architecture and Runtime Boundary](0038-geoetl-pipeline-architecture-and-runtime-boundary.md)
-- [ADR-0071: Raster Execution Boundary — Single GDAL-Worker Engine, PostGIS as Serving/Storage Plane](0071-raster-execution-boundary.md)
-- Epic: honua-io/honua-server#1259 (port Esri GP services) — holistic plan in its comments
-- honua-io/honua-server#2239 (raster map-algebra + spectral indices), #2240
-  (proximity/terrain pack), #2241 (imagery/ML cloud delegation)
-- honua-io/honua-sdk-python#123 (rename `honua-arcpy` → `honua-gp`), #124 (Python
-  GP = interop + process client)

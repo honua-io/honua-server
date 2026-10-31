@@ -6,7 +6,7 @@ resource: "honua://capability/process.geoprocessing"
 ---
 # Geoprocessing operations
 
-Catalog of the built-in geoprocessing processes (process catalog `honua.process_catalog.builtin.v1`). Protocol adapters consume the catalog's execution-capability metadata instead of maintaining their own callable-process lists: OGC API Processes (`/ogc/processes/processes`) projects job processes and honors their advertised synchronous/asynchronous modes, the ArcGIS-compatible GPServer adapter (`/rest/services/{serviceId}/GPServer`) derives synchronous execution from the declared modes, and MCP exposes the complete classification. For a submit/poll/fetch walkthrough see [run geoprocessing](../guides/query-analyze/run-geoprocessing.md); to write your own process, see [author a geoprocessing process](../guides/query-analyze/gp-devkit-authoring.md).
+Catalog of the built-in geoprocessing processes (process catalog `honua.process_catalog.builtin.v1`). Protocol adapters consume the catalog's execution-capability metadata instead of maintaining their own callable-process lists: OGC API Processes (`/ogc/processes/processes`) projects job processes and honors their advertised synchronous/asynchronous modes, the GeoServices REST-compatible GPServer adapter (`/rest/services/{serviceId}/GPServer`) derives synchronous execution from the declared modes, and MCP exposes the complete classification. For a submit/poll/fetch walkthrough see [run geoprocessing](../guides/query-analyze/run-geoprocessing.md); to write your own process, see [author a geoprocessing process](../guides/query-analyze/gp-devkit-authoring.md).
 
 The catalog currently registers **101 processes** across 16 families. A build gate keeps this page in step with the catalog: a registered process id missing here, or a count that drifts, fails the build.
 
@@ -93,16 +93,16 @@ Asynchronous batch counterpart of the synchronous `POST /api/enrich` endpoint. R
 
 ## Overlay (6)
 
-Managed (NetTopologySuite) overlay ops over **two inline FeatureCollections** addressed by data URI — the layer-aware counterparts of the single-WKB `geometry.*` primitives, covering the Esri Clip/Intersect/Union/Erase/Merge/Split toolset. No Postgres or GDAL dependency.
+Managed (NetTopologySuite) overlay ops over **two inline FeatureCollections** addressed by data URI — the layer-aware counterparts of the single-WKB `geometry.*` primitives, covering the GeoServices REST Clip/Intersect/Union/Erase/Merge/Split toolset. No Postgres or GDAL dependency.
 
 | Process ID | Description | Key parameters | Entry points |
 | --- | --- | --- | --- |
-| `overlay.clip` | Truncate input geometries to the clip layer's union (Esri Clip; also layer-level Extract). | `input`, `clip` | job, workflow |
-| `overlay.intersect` | Pairwise intersection of input × overlay, merging attributes (Esri Intersect). | `input`, `overlay` | job, workflow |
-| `overlay.union` | Planar union: input-only, overlay-only, and intersection pieces (Esri Union). | `input`, `overlay` | job, workflow |
-| `overlay.erase` | Subtract the erase layer's union from each input geometry (Esri Erase). | `input`, `erase` | job, workflow |
-| `overlay.merge` | Concatenate two FeatureCollections into a union-schema output (Esri Merge). | `input`, `merge` | job, workflow |
-| `overlay.split` | Partition the input, tagging each output with `SPLIT_TARGET` (Esri Split). | `input`, `split`, `splitField` | job, workflow |
+| `overlay.clip` | Truncate input geometries to the clip layer's union (GeoServices REST Clip; also layer-level Extract). | `input`, `clip` | job, workflow |
+| `overlay.intersect` | Pairwise intersection of input × overlay, merging attributes (GeoServices REST Intersect). | `input`, `overlay` | job, workflow |
+| `overlay.union` | Planar union: input-only, overlay-only, and intersection pieces (GeoServices REST Union). | `input`, `overlay` | job, workflow |
+| `overlay.erase` | Subtract the erase layer's union from each input geometry (GeoServices REST Erase). | `input`, `erase` | job, workflow |
+| `overlay.merge` | Concatenate two FeatureCollections into a union-schema output (GeoServices REST Merge). | `input`, `merge` | job, workflow |
+| `overlay.split` | Partition the input, tagging each output with `SPLIT_TARGET` (GeoServices REST Split). | `input`, `split`, `splitField` | job, workflow |
 
 ## Proximity (4)
 
@@ -110,8 +110,8 @@ Nearest-feature and Euclidean-distance tools.
 
 | Process ID | Description | Key parameters | Profile | Entry points |
 | --- | --- | --- | --- | --- |
-| `proximity.near` | Append `NEAR_FID`/`NEAR_DIST` for the closest near-layer feature (Esri Near). Planar CRS units. | `input`, `near`, `nearIdField`, `searchRadius` | managed | job, workflow |
-| `proximity.near-table` | Emit a table of `IN_FID`/`NEAR_FID`/`NEAR_DIST` rows (Esri GenerateNearTable). | `input`, `near`, `inputIdField`, `nearIdField`, `searchRadius` | managed | job, workflow |
+| `proximity.near` | Append `NEAR_FID`/`NEAR_DIST` for the closest near-layer feature (GeoServices REST Near). Planar CRS units. | `input`, `near`, `nearIdField`, `searchRadius` | managed | job, workflow |
+| `proximity.near-table` | Emit a table of `IN_FID`/`NEAR_FID`/`NEAR_DIST` rows (GeoServices REST GenerateNearTable). | `input`, `near`, `inputIdField`, `nearIdField`, `searchRadius` | managed | job, workflow |
 | `proximity.euclidean-distance` | Raster of distance from each cell to the nearest source cell (`gdal_proximity.py`). | `source` (base64 GeoTIFF), `maxDistance`, `distUnits`, `values` | **native** | job, workflow |
 | `proximity.euclidean-allocation` | Nearest-source allocation raster (discrete Voronoi): each cell takes the value/id of its nearest source cell. Custom worker step (`gdal_euclidean_allocation.py`, GDAL bindings + SciPy distance transform) since stock `gdal_proximity` computes distance only. | `source` (base64 GeoTIFF), `maxDistance`, `distUnits`, `values` | **native** | job, workflow |
 
@@ -121,8 +121,8 @@ Managed table-producing aggregates over a single inline FeatureCollection. Table
 
 | Process ID | Description | Key parameters | Entry points |
 | --- | --- | --- | --- |
-| `statistics.summarize` | Per-group summary stats over `caseFields` (Esri Summary Statistics); `FREQUENCY` plus SUM/MEAN/MIN/MAX/STDDEV. | `input`, `caseFields`, `statistics` | job, workflow |
-| `statistics.frequency` | Count of each distinct `frequencyFields` combination (Esri Frequency); optional `SUM_<field>`. | `input`, `frequencyFields`, `summaryFields` | job, workflow |
+| `statistics.summarize` | Per-group summary stats over `caseFields` (GeoServices REST Summary Statistics); `FREQUENCY` plus SUM/MEAN/MIN/MAX/STDDEV. | `input`, `caseFields`, `statistics` | job, workflow |
+| `statistics.frequency` | Count of each distinct `frequencyFields` combination (GeoServices REST Frequency); optional `SUM_<field>`. | `input`, `frequencyFields`, `summaryFields` | job, workflow |
 | `statistics.calculate` | Descriptive stats (COUNT/MIN/MAX/MEAN/SUM/STDDEV) per requested field across the dataset. | `input`, `fields` | job, workflow |
 
 ## Generalization (2)
@@ -189,7 +189,7 @@ Explicit format/CRS conversion idioms. Two are managed; the rest run in the GDAL
 | `conversion.raster-reproject` | Raster CRS conversion via real GDAL `gdalwarp`. | `source`, `targetSrid`, `resampling` | **native** | job, workflow |
 | `conversion.polygonize` | Vectorize a raster into polygons per connected region (`gdal_polygonize.py`). | `source`, `band`, `connectedness`, `fieldName` | **native** | job, workflow |
 | `conversion.rasterize` | Burn vector features into a new raster grid (`gdal_rasterize`). | `source`, `burnValue`/`attribute`, `cellSize`/`width`+`height`, `nodata` | **native** | job, workflow |
-| `gdal.ogr2ogr` | Vector format conversion via the GDAL worker. Target drivers: GeoJSON, GPKG, CSV, FlatGeobuf, ESRI Shapefile. | `source`, `targetFormat`, `sourceFormat` | **native** | job, workflow |
+| `gdal.ogr2ogr` | Vector format conversion via the GDAL worker. Target drivers: GeoJSON, GPKG, CSV, FlatGeobuf, Shapefile. | `source`, `targetFormat`, `sourceFormat` | **native** | job, workflow |
 | `pcloud.translate` | Decompress LAZ/COPC to uncompressed LAS, optionally reprojecting to EPSG:4979 (`pdal translate`). | `source`, `sourceSrs` | **native** | job, workflow |
 
 ## Data management (4)
@@ -199,7 +199,7 @@ Bulk, layer-level mutation workflows. `delete-features` and `calculate-field` ar
 | Process ID | Description | Key parameters | Entry points |
 | --- | --- | --- | --- |
 | `data-management.copy-features` | Copy (optionally filtered) features into a new layer; non-destructive. | `sourceLayerId`, `targetLayerName`, `where`, `objectIds` | job, workflow |
-| `data-management.append` | Append a source FeatureCollection into the target's schema (Esri Append), with optional `fieldMap`. | `input` (target), `append` (source), `fieldMap` | job, workflow |
+| `data-management.append` | Append a source FeatureCollection into the target's schema (GeoServices REST Append), with optional `fieldMap`. | `input` (target), `append` (source), `fieldMap` | job, workflow |
 | `data-management.delete-features` | Delete matching features. **Destructive — requires approval**; `where` or `objectIds` is mandatory. | `layerId`, `where`, `objectIds` | protocol |
 | `data-management.calculate-field` | Set a field via constant or allow-listed SQL expression. **Destructive — requires approval.** | `layerId`, `fieldName`, `expression`, `where`, `objectIds` | protocol |
 
@@ -237,7 +237,7 @@ GeoETL DAG sources that produce a FeatureCollection artifact. Seven are managed 
 | `source.geojson` | Parse inline GeoJSON (or a data URI) into the standard FeatureCollection. | `inline` or `input` | managed | workflow |
 | `source.csv` | Parse inline CSV; geometry from a WKT column or lon/lat pair. | `inline`, `delimiter` | managed | workflow |
 | `source.honua-layer` | Stream a Honua catalog layer through the canonical query pipeline. | `layerId`, `where`, `bbox`, `outFields`, `outSrid`, `since`, `watermarkField` | managed | workflow |
-| `source.esri-featureserver` | Stream an ArcGIS FeatureServer/MapServer layer (paged), Esri-JSON → GeoJSON. | `serviceUrl`, `esriLayerId`, `where`, `outFields`, `outSrid`, `pageSize`, token/credential params, `since` | managed | workflow |
+| `source.esri-featureserver` | Stream a GeoServices REST FeatureServer/MapServer layer (paged), GeoServices JSON → GeoJSON. | `serviceUrl`, `esriLayerId`, `where`, `outFields`, `outSrid`, `pageSize`, token/credential params, `since` | managed | workflow |
 | `source.ogc-features` | Stream an OGC API Features collection via `rel=next` link paging; `where` is CQL2-text. | `serviceUrl`, `collectionId`, `where`, `bbox`, `pageSize`, credential params, `since` | managed | workflow |
 | `source.wfs` | Stream a WFS GetFeature endpoint with startIndex/count paging, GeoJSON output. | `serviceUrl`, `typeName`, `bbox`, `pageSize`, credential params | managed | workflow |
 | `source.postgis` | Stream a customer-owned PostGIS table/view via a registered secure connection. | `connectionName`/`connectionId`, `table`, `schema`, `geometryColumn`, `where`, `bbox`, `outSrid`, `since`, `watermarkField` | managed | workflow |
