@@ -582,11 +582,31 @@ public sealed class AlertEvaluationLeaderHandoffQualificationTests
         public bool IsLeader => inner.IsLeader;
         public bool LastAcquireFaulted => inner.LastAcquireFaulted;
         public string InstanceId => inner.InstanceId;
-        public Task PauseAsync() => _gate.WaitAsync();
+        private readonly TaskCompletionSource _blocked = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async Task PauseAsync()
+        {
+            await _gate.WaitAsync();
+            try
+            {
+                // The next acquisition is attempted only after the preceding evaluation pass ends.
+                await _blocked.Task.WaitAsync(TimeSpan.FromSeconds(20));
+            }
+            catch
+            {
+                _gate.Release();
+                throw;
+            }
+        }
         public void Resume() => _gate.Release();
         public async Task<bool> TryAcquireAsync(CancellationToken cancellationToken = default)
         {
-            await _gate.WaitAsync(cancellationToken);
+            var wait = _gate.WaitAsync(cancellationToken);
+            if (!wait.IsCompleted)
+            {
+                _blocked.TrySetResult();
+            }
+            await wait;
             try
             {
                 return await inner.TryAcquireAsync(cancellationToken);
