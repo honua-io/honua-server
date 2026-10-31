@@ -111,6 +111,7 @@ public sealed class AlertEvaluationLeaderHandoffQualificationTests
 
             await PublishAsync(dataSource, 1);
             await WaitUntilAsync(() => attempts.Any(static attempt => attempt.Generation == 1 && attempt.Wrote));
+            await WaitUntilAsync(async () => await SampleCheckpointAsync(dataSource, checkpointSamples) == 1);
             var firstLeader = replicas.Single(static replica => replica.Service.IsLeader);
             var firstFollower = replicas.Single(static replica => !replica.Service.IsLeader);
             attempts.Where(static attempt => attempt.Generation == 1).Select(static attempt => attempt.Replica)
@@ -119,14 +120,23 @@ public sealed class AlertEvaluationLeaderHandoffQualificationTests
                 .Equal(firstLeader.Name);
             Note(timeline, $"generation 1 evaluated by {firstLeader.Name}; follower {firstFollower.Name}");
 
-            var leaderPid = await ReadLockPidAsync(dataSource);
-            leaderPid.Should().BeGreaterThan(0);
-            var lostAt = DateTimeOffset.UtcNow;
-            await TerminateBackendAsync(dataSource, leaderPid);
-            Note(timeline, $"severed advisory-lock backend {leaderPid} of {firstLeader.Name}");
-            await PublishAsync(dataSource, 2);
-            await WaitUntilAsync(() => attempts.Any(attempt =>
-                attempt.Generation == 2 && attempt.Wrote && attempt.Replica == firstFollower.Name));
+            await firstLeader.Gate.PauseAsync();
+            DateTimeOffset lostAt;
+            try
+            {
+                var leaderPid = await ReadLockPidAsync(dataSource);
+                leaderPid.Should().BeGreaterThan(0);
+                lostAt = DateTimeOffset.UtcNow;
+                await TerminateBackendAsync(dataSource, leaderPid);
+                Note(timeline, $"severed advisory-lock backend {leaderPid} of {firstLeader.Name}");
+                await PublishAsync(dataSource, 2);
+                await WaitUntilAsync(() => attempts.Any(attempt =>
+                    attempt.Generation == 2 && attempt.Wrote && attempt.Replica == firstFollower.Name));
+            }
+            finally
+            {
+                firstLeader.Gate.Resume();
+            }
             var handoffAt = attempts.Where(attempt => attempt.Generation == 2 && attempt.Wrote).Min(static attempt => attempt.At);
             var handoffBudget = LeaderLease + IdleDelay + IdleDelay;
             handoffAt.Should().BeOnOrBefore(lostAt + handoffBudget);
@@ -144,7 +154,8 @@ public sealed class AlertEvaluationLeaderHandoffQualificationTests
             await PublishAsync(dataSource, 3);
             await PublishAsync(dataSource, 4);
             await PublishAsync(dataSource, 5);
-            await WaitUntilAsync(async () => await CountEventsAsync(dataSource) == 5);
+            await WaitUntilAsync(async () => await CountEventsAsync(dataSource) == 5
+                && await SampleCheckpointAsync(dataSource, checkpointSamples) == 5);
             (await SampleCheckpointAsync(dataSource, checkpointSamples)).Should().Be(5);
 
             await container.StopAsync();
@@ -177,7 +188,8 @@ public sealed class AlertEvaluationLeaderHandoffQualificationTests
             await PublishAfterRecoveryAsync(dataSource, 6);
             await PublishAfterRecoveryAsync(dataSource, 7);
             await PublishAfterRecoveryAsync(dataSource, 8);
-            await WaitUntilAsync(async () => await CountEventsAsync(dataSource) == 8);
+            await WaitUntilAsync(async () => await CountEventsAsync(dataSource) == 8
+                && await SampleCheckpointAsync(dataSource, checkpointSamples) == 8);
             await WaitUntilAsync(() => replicas.All(static replica => HealthOf(replica).Status == HealthStatus.Healthy)
                 && replicas.Count(static replica => replica.Service.IsLeader) == 1);
             Note(timeline, "recovered " + Describe(replicas));
@@ -192,10 +204,12 @@ public sealed class AlertEvaluationLeaderHandoffQualificationTests
             var secondName = replicas[1].Name;
             replicas = await ReplaceReplicaAsync(replicas, firstName, dataSource, options, store, attempts, timeline);
             await PublishAsync(dataSource, 9);
-            await WaitUntilAsync(async () => await CountEventsAsync(dataSource) == 9);
+            await WaitUntilAsync(async () => await CountEventsAsync(dataSource) == 9
+                && await SampleCheckpointAsync(dataSource, checkpointSamples) == 9);
             replicas = await ReplaceReplicaAsync(replicas, secondName, dataSource, options, store, attempts, timeline);
             await PublishAsync(dataSource, 10);
-            await WaitUntilAsync(async () => await CountEventsAsync(dataSource) == 10);
+            await WaitUntilAsync(async () => await CountEventsAsync(dataSource) == 10
+                && await SampleCheckpointAsync(dataSource, checkpointSamples) == 10);
             var finalCheckpoint = await SampleCheckpointAsync(dataSource, checkpointSamples);
             finalCheckpoint.Should().Be(10);
 
@@ -337,6 +351,7 @@ public sealed class AlertEvaluationLeaderHandoffQualificationTests
             dataSource,
             NullLogger<PostgresAdvisoryLockLeaderElectionStrategy>.Instance,
             optionValues);
+        var gate = new GatedLeaderStrategy(strategy);
         var pipeline = new NumberedGenerationPipeline(dataSource, name, attempts);
         var services = new ServiceCollection();
         services.AddSingleton(store);
@@ -344,12 +359,12 @@ public sealed class AlertEvaluationLeaderHandoffQualificationTests
         var provider = services.BuildServiceProvider();
         var service = new AlertEvaluationBackgroundService(
             provider.GetRequiredService<IServiceScopeFactory>(),
-            strategy,
+            gate,
             optionValues,
             TestTelemetry.CreateAlertPipelineMetrics(),
             NullLogger<AlertEvaluationBackgroundService>.Instance);
         var health = new AlertEvaluationHealthCheck(service, optionValues);
-        return new Replica(name, service, strategy, provider, health, pipeline);
+        return new Replica(name, service, strategy, gate, provider, health, pipeline);
     }
 
     private static HealthCheckResult HealthOf(Replica replica) => replica.Health.Evaluate(DateTimeOffset.UtcNow);
@@ -559,10 +574,36 @@ public sealed class AlertEvaluationLeaderHandoffQualificationTests
         return "unknown";
     }
 
+    // Pause only the old leader's acquisition calls while its session is severed.
+    // The real strategy still performs every acquisition and health decision.
+    private sealed class GatedLeaderStrategy(ILeaderElectionStrategy inner) : ILeaderElectionStrategy
+    {
+        private readonly SemaphoreSlim _gate = new(1, 1);
+        public bool IsLeader => inner.IsLeader;
+        public bool LastAcquireFaulted => inner.LastAcquireFaulted;
+        public string InstanceId => inner.InstanceId;
+        public Task PauseAsync() => _gate.WaitAsync();
+        public void Resume() => _gate.Release();
+        public async Task<bool> TryAcquireAsync(CancellationToken cancellationToken = default)
+        {
+            await _gate.WaitAsync(cancellationToken);
+            try
+            {
+                return await inner.TryAcquireAsync(cancellationToken);
+            }
+            finally
+            {
+                _gate.Release();
+            }
+        }
+        public Task ReleaseAsync(CancellationToken cancellationToken = default) => inner.ReleaseAsync(cancellationToken);
+    }
+
     private sealed record Replica(
         string Name,
         AlertEvaluationBackgroundService Service,
         PostgresAdvisoryLockLeaderElectionStrategy Strategy,
+        GatedLeaderStrategy Gate,
         ServiceProvider Provider,
         AlertEvaluationHealthCheck Health,
         NumberedGenerationPipeline Pipeline) : IAsyncDisposable
