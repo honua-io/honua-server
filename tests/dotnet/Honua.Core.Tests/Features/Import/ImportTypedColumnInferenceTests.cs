@@ -16,7 +16,6 @@ public sealed class ImportTypedColumnInferenceTests
 {
     [UnitTest]
     [Operation(Operations.Import)]
-    [Endpoint("ImportTypedColumnInference.Resolve")]
     public void Resolve_Integers_PromotesBigint()
     {
         var inference = new ImportTypedColumnInference();
@@ -29,7 +28,6 @@ public sealed class ImportTypedColumnInferenceTests
 
     [UnitTest]
     [Operation(Operations.Import)]
-    [Endpoint("ImportTypedColumnInference.Resolve")]
     public void Resolve_IntegralDecimalWithScale_PromotesBigint()
     {
         var inference = new ImportTypedColumnInference();
@@ -39,7 +37,6 @@ public sealed class ImportTypedColumnInferenceTests
 
     [UnitTest]
     [Operation(Operations.Import)]
-    [Endpoint("ImportTypedColumnInference.Resolve")]
     public void Resolve_IntegerThenFraction_PromotesDouble()
     {
         var inference = new ImportTypedColumnInference();
@@ -51,7 +48,6 @@ public sealed class ImportTypedColumnInferenceTests
 
     [UnitTest]
     [Operation(Operations.Import)]
-    [Endpoint("ImportTypedColumnInference.Resolve")]
     public void Resolve_BoolThenText_PromotesText()
     {
         var inference = new ImportTypedColumnInference();
@@ -63,7 +59,6 @@ public sealed class ImportTypedColumnInferenceTests
 
     [UnitTest]
     [Operation(Operations.Import)]
-    [Endpoint("ImportTypedColumnInference.Resolve")]
     public void Resolve_StringScalars_UsesTheNarrowestMatchingType()
     {
         var dates = new ImportTypedColumnInference();
@@ -86,7 +81,6 @@ public sealed class ImportTypedColumnInferenceTests
 
     [UnitTest]
     [Operation(Operations.Import)]
-    [Endpoint("ImportTypedColumnInference.Resolve")]
     public void Resolve_ExplicitStringScalars_PreservesTextAndRecognizesDates()
     {
         var inference = new ImportTypedColumnInference(preserveStringScalars: true);
@@ -104,7 +98,6 @@ public sealed class ImportTypedColumnInferenceTests
 
     [UnitTest]
     [Operation(Operations.Import)]
-    [Endpoint("ImportTypedColumnInference.Resolve")]
     public void Resolve_TypedFormatTextThatLooksLikeDate_PreservesText()
     {
         var inference = new ImportTypedColumnInference(preserveStringScalars: true, inferTemporalStrings: false);
@@ -114,7 +107,6 @@ public sealed class ImportTypedColumnInferenceTests
 
     [UnitTest]
     [Operation(Operations.Import)]
-    [Endpoint("ImportTypedColumnInference.Resolve")]
     public void Resolve_CaseCollidingNames_KeepsBothOutOfTypedColumns()
     {
         var inference = new ImportTypedColumnInference();
@@ -127,7 +119,6 @@ public sealed class ImportTypedColumnInferenceTests
 
     [UnitTest]
     [Operation(Operations.Import)]
-    [Endpoint("ImportTypedColumnInference.Resolve")]
     public void Resolve_NestedUnsafeAndReservedNames_StayUnpromoted()
     {
         var inference = new ImportTypedColumnInference();
@@ -144,7 +135,6 @@ public sealed class ImportTypedColumnInferenceTests
 
     [UnitTest]
     [Operation(Operations.Import)]
-    [Endpoint("ImportTypedColumnInference.Resolve")]
     public void Resolve_NullThenValue_UsesTheValueType()
     {
         var inference = new ImportTypedColumnInference();
@@ -157,7 +147,6 @@ public sealed class ImportTypedColumnInferenceTests
 
     [UnitTest]
     [Operation(Operations.Import)]
-    [Endpoint("ImportTypedColumnInference.Resolve")]
     public void Resolve_Guid_PromotesText()
     {
         var inference = new ImportTypedColumnInference();
@@ -168,7 +157,6 @@ public sealed class ImportTypedColumnInferenceTests
 
     [UnitTest]
     [Operation(Operations.Import)]
-    [Endpoint("ImportTypedColumnInference.Resolve")]
     public void Resolve_PastTheColumnCap_KeepsTheFirstSeenNames()
     {
         var inference = new ImportTypedColumnInference();

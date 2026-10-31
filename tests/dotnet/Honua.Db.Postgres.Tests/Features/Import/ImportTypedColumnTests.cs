@@ -30,7 +30,6 @@ public sealed class ImportTypedColumnTests(PostgresFixture fixture)
 {
     [IntegrationTest]
     [Operation(Operations.Import)]
-    [Endpoint("IFileImportService.ImportFileAsync")]
     public async Task ImportTypedBigint_ScaledIntegralNumeric_PreservesValueAndRejectsInvalidValues()
     {
         await InstallImportFunctionsAsync();
@@ -52,7 +51,6 @@ public sealed class ImportTypedColumnTests(PostgresFixture fixture)
 
     [IntegrationTest]
     [Operation(Operations.Import)]
-    [Endpoint("IFileImportService.ImportFileAsync")]
     public async Task ImportTypedDouble_ExpandedJsonNumbers_PreservesFiniteValues()
     {
         await InstallImportFunctionsAsync();
@@ -70,7 +68,6 @@ public sealed class ImportTypedColumnTests(PostgresFixture fixture)
 
     [IntegrationTest]
     [Operation(Operations.Import)]
-    [Endpoint("IFileImportService.ImportFileAsync")]
     public async Task ImportFileAsync_GeoJsonAttributes_AreTypedFilterableAndSortable()
     {
         const string json = """
@@ -96,7 +93,6 @@ public sealed class ImportTypedColumnTests(PostgresFixture fixture)
 
     [IntegrationTest]
     [Operation(Operations.Import)]
-    [Endpoint("IFileImportService.ImportFileAsync")]
     public async Task ImportFileAsync_GeoJson_PromotesTypedColumnsAndKeepsJsonOverflow()
     {
         const string geoJson = """
@@ -177,7 +173,6 @@ public sealed class ImportTypedColumnTests(PostgresFixture fixture)
 
     [IntegrationTest]
     [Operation(Operations.Import)]
-    [Endpoint("IFileImportService.ImportFileAsync")]
     public async Task ImportFileAsync_GeoPackage_PromotesIntegerAndTextColumns()
     {
         var path = Path.Join(Path.GetTempPath(), $"honua-typed-{Guid.NewGuid():N}.gpkg");
@@ -227,7 +222,6 @@ public sealed class ImportTypedColumnTests(PostgresFixture fixture)
 
     [IntegrationTest]
     [Operation(Operations.Import)]
-    [Endpoint("IFileImportService.ImportFileAsync")]
     public async Task ImportFileAsync_Shapefile_PromotesAttributes()
     {
         var zip = CreateShapefileZip();
@@ -253,7 +247,6 @@ public sealed class ImportTypedColumnTests(PostgresFixture fixture)
 
     [IntegrationTest]
     [Operation(Operations.Import)]
-    [Endpoint("IFileImportService.ImportFileAsync")]
     public async Task ImportFileAsync_Csv_PromotesInferredStringColumns()
     {
         const string csv = """
@@ -293,7 +286,6 @@ public sealed class ImportTypedColumnTests(PostgresFixture fixture)
 
     [IntegrationTest]
     [Operation(Operations.Import)]
-    [Endpoint("IFileImportService.ImportFileAsync")]
     public async Task ImportFileAsync_GeoParquet_PromotesLongAndTextColumns()
     {
         await using var parquet = await GeoParquetTestFactory.CreateStreamAsync();
@@ -316,7 +308,6 @@ public sealed class ImportTypedColumnTests(PostgresFixture fixture)
 
     [IntegrationTest]
     [Operation(Operations.Import)]
-    [Endpoint("IFileImportService.ImportFileAsync")]
     public async Task ImportFileAsync_SystemColumnNames_StayInProperties()
     {
         const string geoJson = """
@@ -351,7 +342,6 @@ public sealed class ImportTypedColumnTests(PostgresFixture fixture)
 
     [IntegrationTest]
     [Operation(Operations.Import)]
-    [Endpoint("IFileImportService.ImportFileAsync")]
     public async Task ImportFileAsync_UpsertOmitsPromotedKey_ClearsTheTypedValue()
     {
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(ImportTypedColumnTests));
@@ -405,7 +395,6 @@ public sealed class ImportTypedColumnTests(PostgresFixture fixture)
 
     [IntegrationTest]
     [Operation(Operations.Import)]
-    [Endpoint("IFileImportService.ImportFileAsync")]
     public async Task ImportFileAsync_InterruptedUpsert_RefreshesCommittedTypedValues()
     {
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(ImportTypedColumnTests));
@@ -467,7 +456,6 @@ public sealed class ImportTypedColumnTests(PostgresFixture fixture)
 
     [IntegrationTest]
     [Operation(Operations.Import)]
-    [Endpoint("honua.backfill_import_typed_columns")]
     public async Task BackfillImportTypedColumns_OneRowBatch_AdvancesByPrimaryKey()
     {
         var imported = await ImportAsync("batch_places", "batch.geojson", Encoding.UTF8.GetBytes("""
@@ -501,7 +489,6 @@ public sealed class ImportTypedColumnTests(PostgresFixture fixture)
 
     [IntegrationTest]
     [Operation(Operations.Import)]
-    [Endpoint("honua.promote_import_typed_columns")]
     public async Task PromoteImportTypedColumns_UnownedTable_DoesNotAddColumns()
     {
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(ImportTypedColumnTests));
