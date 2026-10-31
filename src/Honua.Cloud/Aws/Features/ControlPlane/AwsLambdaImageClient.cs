@@ -1,0 +1,126 @@
+// Copyright (c) Honua Geo Inc. All rights reserved.
+// Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
+
+using Amazon.Lambda;
+using Amazon.Lambda.Model;
+
+namespace Honua.ControlPlane;
+
+/// <summary>
+/// Publishes an immutable container image as a numbered Lambda version.
+/// Alias movement stays on <see cref="IAwsLambdaAliasClient"/> so a failed publish
+/// cannot move the alias.
+/// </summary>
+internal interface IAwsLambdaImageClient
+{
+    /// <summary>
+    /// Updates the function image, waits until the update succeeds, and publishes a version.
+    /// Returns the numeric version. Does not change an alias.
+    /// </summary>
+    Task<string> PublishImageAsync(
+        string functionName,
+        string imageUri,
+        string? region,
+        string? serviceUrl,
+        int maxAttempts,
+        int delayMilliseconds,
+        CancellationToken cancellationToken = default);
+}
+
+internal sealed class AwsSdkLambdaImageClient : IAwsLambdaImageClient
+{
+    public async Task<string> PublishImageAsync(
+        string functionName,
+        string imageUri,
+        string? region,
+        string? serviceUrl,
+        int maxAttempts,
+        int delayMilliseconds,
+        CancellationToken cancellationToken = default)
+    {
+        using var client = AwsSdkLambdaAliasClient.CreateClient(region, serviceUrl);
+        var current = await client.GetFunctionConfigurationAsync(
+                new GetFunctionConfigurationRequest { FunctionName = functionName },
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (!string.Equals(current.PackageType?.Value, PackageType.Image.Value, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                "Lambda image convergence requires a function whose package type is Image.");
+        }
+
+        var updated = await client.UpdateFunctionCodeAsync(
+                new UpdateFunctionCodeRequest
+                {
+                    FunctionName = functionName,
+                    ImageUri = imageUri
+                },
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (!await WaitUntilSuccessfulAsync(client, functionName, updated.LastUpdateStatus, maxAttempts, delayMilliseconds, cancellationToken)
+                .ConfigureAwait(false))
+        {
+            throw new InvalidOperationException(
+                "Lambda function image update did not succeed. The alias was not moved.");
+        }
+
+        var published = await client.PublishVersionAsync(
+                new PublishVersionRequest { FunctionName = functionName },
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(published.Version) ||
+            !long.TryParse(published.Version, out var version) ||
+            version <= 0)
+        {
+            throw new InvalidOperationException(
+                "Lambda image publish did not return a numeric version. The alias was not moved.");
+        }
+
+        return published.Version;
+    }
+
+    private static async Task<bool> WaitUntilSuccessfulAsync(
+        AmazonLambdaClient client,
+        string functionName,
+        LastUpdateStatus? initial,
+        int maxAttempts,
+        int delayMilliseconds,
+        CancellationToken cancellationToken)
+    {
+        var attempts = Math.Clamp(maxAttempts, 1, 60);
+        var delay = Math.Clamp(delayMilliseconds, 0, 30_000);
+        var status = initial;
+        for (var attempt = 0; attempt < attempts; attempt++)
+        {
+            if (IsStatus(status, LastUpdateStatus.Successful))
+            {
+                return true;
+            }
+
+            if (IsStatus(status, LastUpdateStatus.Failed))
+            {
+                return false;
+            }
+
+            if (attempt > 0 && delay > 0)
+            {
+                await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
+            }
+            else if (attempt == 0 && IsStatus(status, LastUpdateStatus.InProgress) && delay > 0)
+            {
+                await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
+            }
+
+            var configuration = await client.GetFunctionConfigurationAsync(
+                    new GetFunctionConfigurationRequest { FunctionName = functionName },
+                    cancellationToken)
+                .ConfigureAwait(false);
+            status = configuration.LastUpdateStatus;
+        }
+
+        return IsStatus(status, LastUpdateStatus.Successful);
+    }
+
+    private static bool IsStatus(LastUpdateStatus? status, LastUpdateStatus expected)
+        => string.Equals(status?.Value, expected.Value, StringComparison.Ordinal);
+}

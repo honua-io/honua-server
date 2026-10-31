@@ -200,6 +200,56 @@ internal interface IAwsEcsClient
         string taskDefinitionArn,
         string? region,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Reads a task definition so a release can clone it. The default throws so existing
+    /// test doubles keep compiling; the digest path is the only caller.
+    /// </summary>
+    Task<TaskDefinition> DescribeTaskDefinitionAsync(
+        string taskDefinition,
+        string? region,
+        CancellationToken cancellationToken = default)
+        => System.Threading.Tasks.Task.FromException<TaskDefinition>(new NotSupportedException(
+            "ECS task definition describe is not available on this client."));
+
+    /// <summary>Registers a cloned task definition and returns its ARN.</summary>
+    Task<string> RegisterTaskDefinitionAsync(
+        RegisterTaskDefinitionRequest request,
+        string? region,
+        CancellationToken cancellationToken = default)
+        => System.Threading.Tasks.Task.FromException<string>(new NotSupportedException(
+            "ECS task definition registration is not available on this client."));
+
+    /// <summary>Starts one migrate-only task. The caller waits for it to stop.</summary>
+    Task<string> RunTaskAsync(
+        string cluster,
+        string taskDefinitionArn,
+        IReadOnlyList<string> subnets,
+        IReadOnlyList<string> securityGroups,
+        string? region,
+        CancellationToken cancellationToken = default)
+        => System.Threading.Tasks.Task.FromException<string>(new NotSupportedException(
+            "ECS RunTask is not available on this client."));
+
+    /// <summary>
+    /// Reads task stop state. <see cref="AwsEcsStoppedTask"/> deliberately omits the
+    /// provider stop reason so an operator message cannot carry it.
+    /// </summary>
+    Task<AwsEcsStoppedTask> DescribeStoppedTaskAsync(
+        string cluster,
+        string taskArn,
+        string? region,
+        CancellationToken cancellationToken = default)
+        => System.Threading.Tasks.Task.FromException<AwsEcsStoppedTask>(new NotSupportedException(
+            "ECS task describe is not available on this client."));
+}
+
+/// <summary>Stop state for a migrate-only task. The provider stop reason is not copied.</summary>
+internal sealed record AwsEcsStoppedTask
+{
+    public required string LastStatus { get; init; }
+
+    public int? ExitCode { get; init; }
 }
 
 /// <summary>
@@ -410,7 +460,7 @@ internal static class AwsAlbActionMutator
 /// <summary>
 /// AWS SDK implementation of <see cref="IAwsEcsClient"/> backed by <c>AmazonECSClient</c>.
 /// </summary>
-internal sealed class AwsSdkEcsClient : IAwsEcsClient, IDisposable
+internal sealed partial class AwsSdkEcsClient : IAwsEcsClient, IDisposable
 {
     // AWS SDK clients are thread-safe and meant to be reused for the process lifetime. This client
     // is a singleton, but its construction varies by region, so cache one AmazonECSClient per
@@ -597,6 +647,8 @@ internal sealed partial class AwsEcsAlbDeployBackend(
             blockingReasons.Add("AWS ECS/ALB canary traffic shifting requires telemetry.connection so the rollout can be promoted or rolled back automatically.");
         }
 
+        AppendImageConvergencePlan(spec, blockingReasons, warnings);
+
         return System.Threading.Tasks.Task.FromResult(new DeployPlan
         {
             IsReadyToSubmit = blockingReasons.Count == 0 && !spec.RequiresApproval,
@@ -629,6 +681,20 @@ internal sealed partial class AwsEcsAlbDeployBackend(
 
         try
         {
+            var appliedTaskDefinition = spec.DesiredRevision;
+            var imageConvergence = ReleaseImageDigest.IsImmutable(spec.DesiredRevision);
+            if (imageConvergence)
+            {
+                var prepared = await PrepareReleaseImageAsync(operation, spec, target, cancellationToken)
+                    .ConfigureAwait(false);
+                if (prepared.Failure is not null)
+                {
+                    return prepared.Failure;
+                }
+
+                appliedTaskDefinition = prepared.TaskDefinitionArn!;
+            }
+
             var canaryServiceState = await ecsClient.DescribeServiceAsync(
                     target.Cluster!,
                     target.CanaryService!,
@@ -666,10 +732,30 @@ internal sealed partial class AwsEcsAlbDeployBackend(
             await ecsClient.UpdateServiceTaskDefinitionAsync(
                     target.Cluster!,
                     target.CanaryService!,
-                    spec.DesiredRevision,
+                    appliedTaskDefinition,
                     target.Region,
                     cancellationToken)
                 .ConfigureAwait(false);
+
+            if (imageConvergence)
+            {
+                var steady = await AwaitReleaseImageSteadyAsync(
+                        operation,
+                        spec,
+                        target,
+                        appliedTaskDefinition,
+                        canaryWeight,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                if (steady.Status == WorkflowOperationStatus.Failed && albWeightsShifted && originalRuleState is not null)
+                {
+                    await RestoreAlbWeightsAsync(operation, spec, target, originalRuleState, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+
+                Log.OperationSubmitted(logger, operation.OperationId, spec.TargetId, target.Cluster!, target.CanaryService!, appliedTaskDefinition);
+                return steady;
+            }
 
             Log.OperationSubmitted(logger, operation.OperationId, spec.TargetId, target.Cluster!, target.CanaryService!, spec.DesiredRevision);
             return new DeploySubmissionResult
@@ -779,7 +865,38 @@ internal sealed partial class AwsEcsAlbDeployBackend(
             // still serving traffic. Aggregate service counts can satisfy
             // RunningCount >= DesiredCount while ECS is still draining a previous
             // deployment, so deployment-level state is the source of truth here.
-            var convergence = EvaluateDeploymentConvergence(serviceState, spec.DesiredRevision);
+            // A digest is not itself a task definition. Convergence compares the
+            // registered ARN recorded when the rollout started.
+            var desiredTaskDefinition = spec.DesiredRevision;
+            if (ReleaseImageDigest.IsImmutable(spec.DesiredRevision))
+            {
+                if (!ReleaseImageDigest.IsEcsTaskDefinitionArn(operation.ProviderOperationId))
+                {
+                    return new DeployObservation
+                    {
+                        Status = WorkflowOperationStatus.Reconciling,
+                        ProviderOperationId = operation.ProviderOperationId,
+                        ObservedRevision = serviceState.TaskDefinitionArn,
+                        Message = "ECS image convergence is waiting for the registered task definition."
+                    };
+                }
+
+                desiredTaskDefinition = operation.ProviderOperationId!;
+                var primary = serviceState.Deployments.FirstOrDefault(deployment =>
+                    string.Equals(deployment.Status, "PRIMARY", StringComparison.OrdinalIgnoreCase));
+                if (string.Equals(primary?.RolloutState, "FAILED", StringComparison.OrdinalIgnoreCase))
+                {
+                    return new DeployObservation
+                    {
+                        Status = WorkflowOperationStatus.Failed,
+                        ProviderOperationId = operation.ProviderOperationId,
+                        ObservedRevision = primary?.TaskDefinitionArn ?? serviceState.TaskDefinitionArn,
+                        Message = "ECS rollout failed before the service reached steady state."
+                    };
+                }
+            }
+
+            var convergence = EvaluateDeploymentConvergence(serviceState, desiredTaskDefinition);
             var primaryRevision = convergence.PrimaryTaskDefinitionArn ?? serviceState.TaskDefinitionArn;
 
             // ALB target-group weights are relative; the deploy controller writes
@@ -796,7 +913,7 @@ internal sealed partial class AwsEcsAlbDeployBackend(
                     Status = WorkflowOperationStatus.Succeeded,
                     ProviderOperationId = operation.ProviderOperationId,
                     ObservedRevision = primaryRevision,
-                    Message = $"ECS canary service '{target.CanaryService}' is serving 100% of traffic on task definition '{spec.DesiredRevision}'."
+                    Message = $"ECS canary service '{target.CanaryService}' is serving 100% of traffic on task definition '{desiredTaskDefinition}'."
                 };
             }
 
@@ -810,7 +927,7 @@ internal sealed partial class AwsEcsAlbDeployBackend(
                     ProviderOperationId = operation.ProviderOperationId,
                     ObservedRevision = primaryRevision,
                     PromotionRecommended = true,
-                    Message = $"ECS canary service '{target.CanaryService}' is holding {albWeights.CanaryShare}% of traffic on task definition '{spec.DesiredRevision}' and is ready for promotion."
+                    Message = $"ECS canary service '{target.CanaryService}' is holding {albWeights.CanaryShare}% of traffic on task definition '{desiredTaskDefinition}' and is ready for promotion."
                 };
             }
 
