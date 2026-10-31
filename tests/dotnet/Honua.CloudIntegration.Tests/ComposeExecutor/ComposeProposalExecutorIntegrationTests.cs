@@ -594,7 +594,7 @@ public sealed class ComposeProposalExecutorIntegrationTests
 
     private static int FreePort()
     {
-        var listener = new TcpListener(IPAddress.Loopback, 0);
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
         listener.Start();
         try
         {
@@ -667,7 +667,7 @@ public sealed class ComposeProposalExecutorIntegrationTests
             """;
 
     private const string SchemaSql =
-        "SELECT COALESCE(MAX((regexp_match(scriptname, '^([0-9]+)'))[1]::int), 0) FROM public.schema_versions";
+        "SELECT COALESCE(MAX((regexp_match(scriptname, '(^|[./])0*([0-9]+)_'))[2]::int), 0) FROM public.schema_versions";
 
     private const string InitSql =
         """
@@ -682,7 +682,7 @@ public sealed class ComposeProposalExecutorIntegrationTests
             scriptname varchar(255) NOT NULL,
             applied timestamp NOT NULL
         );
-        INSERT INTO public.schema_versions (scriptname, applied) VALUES ('141_Expand.sql', now());
+        INSERT INTO public.schema_versions (scriptname, applied) VALUES ('Honua.Server.Migrations.141_Expand.sql', now());
         CREATE TABLE public.schema_version_reader_compatibility (
             script_name varchar(255) PRIMARY KEY,
             declaration_format integer NOT NULL,
@@ -694,7 +694,7 @@ public sealed class ComposeProposalExecutorIntegrationTests
         );
         INSERT INTO public.schema_version_reader_compatibility
             (script_name, declaration_format, classification, script_sha256, min_reader_schema, script_text)
-        VALUES ('141_Expand.sql', 1, 'expand', repeat('cd', 32), 141, 'fixture');
+        VALUES ('Honua.Server.Migrations.141_Expand.sql', 1, 'expand', repeat('cd', 32), 141, 'fixture');
         """;
 
     private sealed class NotRequiredApproval : IOperatorApprovalEvaluator

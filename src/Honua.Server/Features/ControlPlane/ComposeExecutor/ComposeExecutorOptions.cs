@@ -24,8 +24,17 @@ internal sealed class ComposeExecutorOptions
     /// <summary>Compose project name. Taken from configuration, never from a model request.</summary>
     public string ProjectName { get; set; } = string.Empty;
 
-    /// <summary>Compose file relative to <see cref="ProjectDirectory"/>.</summary>
+    /// <summary>
+    /// Compose file relative to <see cref="ProjectDirectory"/>. Used when <see cref="ComposeFiles"/> is empty.
+    /// </summary>
     public string ComposeFile { get; set; } = "compose.yaml";
+
+    /// <summary>
+    /// Ordered compose files relative to <see cref="ProjectDirectory"/>. Later files add to earlier ones.
+    /// The image override is appended after this list. Empty means <see cref="ComposeFile"/> alone.
+    /// The model cannot add a file.
+    /// </summary>
+    public string[] ComposeFiles { get; set; } = [];
 
     /// <summary>Service whose image the executor replaces.</summary>
     public string ServiceName { get; set; } = "honua";
@@ -98,24 +107,27 @@ internal sealed class ComposeExecutorOptions
             return Scope("Database name and user are limited to SQL identifiers from configuration.");
         }
 
-        if (string.IsNullOrWhiteSpace(ComposeFile)
-            || Path.IsPathRooted(ComposeFile)
-            || ComposeFile.Contains("..", StringComparison.Ordinal))
+        foreach (var composeFile in EffectiveComposeFiles())
         {
-            return Scope("The compose file must be a relative path inside the project directory.");
-        }
+            if (string.IsNullOrWhiteSpace(composeFile)
+                || Path.IsPathRooted(composeFile)
+                || composeFile.Contains("..", StringComparison.Ordinal))
+            {
+                return Scope("The compose file must be a relative path inside the project directory.");
+            }
 
-        var root = Path.GetFullPath(ProjectDirectory);
-        var composePath = Path.GetFullPath(Path.Combine(root, ComposeFile));
-        var prefix = root.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
-        if (!composePath.StartsWith(prefix, StringComparison.Ordinal))
-        {
-            return Scope("The compose file must stay inside the project directory.");
-        }
+            var root = Path.GetFullPath(ProjectDirectory);
+            var composePath = Path.GetFullPath(Path.Combine(root, composeFile));
+            var prefix = root.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+            if (!composePath.StartsWith(prefix, StringComparison.Ordinal))
+            {
+                return Scope("The compose file must stay inside the project directory.");
+            }
 
-        if (!File.Exists(composePath))
-        {
-            return Unconfigured("The configured compose file does not exist.");
+            if (!File.Exists(composePath))
+            {
+                return Unconfigured("The configured compose file does not exist.");
+            }
         }
 
         if (!IsHttpUrl(HealthProbeUrl) || !IsHttpUrl(CustomerProbeUrl))
@@ -143,8 +155,26 @@ internal sealed class ComposeExecutorOptions
         return null;
     }
 
-    internal string ComposeFilePath()
-        => Path.GetFullPath(Path.Combine(Path.GetFullPath(ProjectDirectory), ComposeFile));
+    /// <summary>Absolute paths of the configured compose files, in operator order.</summary>
+    internal string[] ComposeFilePaths()
+    {
+        var root = Path.GetFullPath(ProjectDirectory);
+        var paths = new List<string>(EffectiveComposeFiles().Length);
+        foreach (var composeFile in EffectiveComposeFiles())
+        {
+            if (Path.IsPathRooted(composeFile))
+            {
+                throw new InvalidOperationException("A compose file path must stay relative.");
+            }
+
+            paths.Add(Path.GetFullPath(Path.Combine(root, composeFile)));
+        }
+
+        return paths.ToArray();
+    }
+
+    private string[] EffectiveComposeFiles()
+        => ComposeFiles is { Length: > 0 } ? ComposeFiles : [ComposeFile];
 
     private static bool IsHttpUrl(string value)
         => Uri.TryCreate(value, UriKind.Absolute, out var uri)

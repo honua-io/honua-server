@@ -7,6 +7,7 @@ using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Honua.Core.Features.Infrastructure.Migrations;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.ControlPlane;
@@ -20,10 +21,9 @@ internal sealed partial class ComposeProjectController : IDisposable
 {
     private const string MaxSchemaLabel = "org.honua.max-schema";
     private const string CompatibilityTableSql = "SELECT to_regclass('public.schema_version_reader_compatibility')";
-    private const string IncompatibleScriptsSql =
-        "SELECT script_name FROM public.schema_version_reader_compatibility WHERE classification = 'reader-incompatible' ORDER BY script_name";
-    private const string SchemaVersionSql =
-        "SELECT COALESCE(MAX((regexp_match(scriptname, '^([0-9]+)'))[1]::int), 0) FROM public.schema_versions";
+    private const string JournalSql = "SELECT scriptname FROM public.schema_versions ORDER BY scriptname";
+    private const string CompatibilityRowsSql =
+        "SELECT script_name || E'\\x1f' || declaration_format::text || E'\\x1f' || classification || E'\\x1f' || min_reader_schema::text FROM public.schema_version_reader_compatibility ORDER BY script_name";
     private const string MaintenanceDatabase = "postgres";
     private const int CustomerBodyCapBytes = 4096;
 
@@ -254,12 +254,12 @@ internal sealed partial class ComposeProjectController : IDisposable
 
         var labelMissing = inspected.MaxSchema == null;
         var priorMax = inspected.MaxSchema ?? -1;
-        if (labelMissing && database.IncompatibleSchemas.Count > 0)
+        if (labelMissing && ComposeReaderGate.LabelMissingBlocks(database.Journal, database.Rows))
         {
             return Refuse(
                 request,
                 ComposeExecutorCodes.BackupSchemaAhead,
-                "The prior image has no org.honua.max-schema label and reader-incompatible scripts are recorded.");
+                "The prior image has no org.honua.max-schema label and a journal entry is not expand-only.");
         }
 
         if (!labelMissing && manifest.SchemaVersion > priorMax)
@@ -270,7 +270,29 @@ internal sealed partial class ComposeProjectController : IDisposable
                 "The backup schema is newer than the prior image can read.");
         }
 
-        var restoreRequired = database.IncompatibleSchemas.Any(number => number > priorMax);
+        var restoreRequired = false;
+        if (!labelMissing)
+        {
+            var assessment = ComposeReaderGate.Assess(database.Journal, database.Rows, priorMax);
+            if (assessment.Required)
+            {
+                restoreRequired = true;
+            }
+            else
+            {
+                var rejected = await ExpandScriptsRejectedAsync(assessment.ExpandScriptsToVerify, priorMax, cancellationToken)
+                    .ConfigureAwait(false);
+                if (rejected is null)
+                {
+                    return Refuse(
+                        request,
+                        ComposeExecutorCodes.ReadbackIncomplete,
+                        "Reader compatibility could not be verified, so the prior image was not started.");
+                }
+
+                restoreRequired = rejected.Value;
+            }
+        }
         if (live.IsComplete && string.Equals(live.ImageId, inspected.Id, StringComparison.Ordinal) && !restoreRequired)
         {
             return Success(request, request.Image!, live, manifest.BackupId);
@@ -292,9 +314,13 @@ internal sealed partial class ComposeProjectController : IDisposable
             }
 
             var after = await ReadDatabaseAsync(cancellationToken).ConfigureAwait(false);
+            var afterAssessment = after.CompatibilityKnown
+                ? ComposeReaderGate.Assess(after.Journal, after.Rows, priorMax)
+                : new ComposeRestoreAssessment(true, []);
             if (!after.CompatibilityKnown
                 || after.SchemaVersion != manifest.SchemaVersion
-                || after.IncompatibleSchemas.Any(number => number > priorMax))
+                || afterAssessment.Required
+                || afterAssessment.ExpandScriptsToVerify.Count > 0)
             {
                 return Refuse(
                     request,
@@ -672,36 +698,113 @@ internal sealed partial class ComposeProjectController : IDisposable
             return DatabaseView.Unknown();
         }
 
-        var schemaText = await PsqlAsync(_options.DatabaseName, SchemaVersionSql, cancellationToken).ConfigureAwait(false);
-        if (schemaText == null
-            || !int.TryParse(schemaText.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var schema))
+        var journalText = await PsqlAsync(_options.DatabaseName, JournalSql, cancellationToken).ConfigureAwait(false);
+        if (journalText == null)
+        {
+            return DatabaseView.Unknown();
+        }
+
+        var journal = journalText.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var schema = ComposeReaderGate.SchemaVersion(journal);
+        if (schema is null)
         {
             return DatabaseView.Unknown();
         }
 
         if (string.IsNullOrWhiteSpace(table))
         {
-            return new DatabaseView(false, schema, []);
+            return new DatabaseView(false, schema, journal, []);
         }
 
-        var scripts = await PsqlAsync(_options.DatabaseName, IncompatibleScriptsSql, cancellationToken).ConfigureAwait(false);
-        if (scripts == null)
+        var scripts = await PsqlAsync(_options.DatabaseName, CompatibilityRowsSql, cancellationToken).ConfigureAwait(false);
+        if (scripts == null || !TryParseCompatibilityRows(scripts, out var rows))
         {
             return DatabaseView.Unknown();
         }
 
-        var numbers = new List<int>();
-        foreach (var line in scripts.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        return new DatabaseView(true, schema, journal, rows);
+    }
+
+    private async Task<bool?> ExpandScriptsRejectedAsync(
+        IReadOnlyList<string> scripts,
+        int priorMax,
+        CancellationToken cancellationToken)
+    {
+        foreach (var script in scripts)
         {
-            if (!TryScriptNumber(line, out var number))
+            if (!ComposeReaderGate.IsSafeScriptName(script))
             {
-                return DatabaseView.Unknown();
+                return null;
             }
 
-            numbers.Add(number);
+            var sql = "SELECT declaration_format::text || E'\\x1f' || classification || E'\\x1f' || script_sha256 || E'\\x1f' || min_reader_schema::text || E'\\x1f' || replace(encode(convert_to(script_text, 'UTF8'), 'base64'), E'\\n', '') FROM public.schema_version_reader_compatibility WHERE script_name = '"
+                + script.Replace("'", "''", StringComparison.Ordinal)
+                + "'";
+            var text = await PsqlAsync(_options.DatabaseName, sql, cancellationToken).ConfigureAwait(false);
+            if (text == null || !TryParseDeclaration(script, text.Trim(), out var declaration))
+            {
+                return null;
+            }
+
+            if (!MigrationReaderCompatibility.Verify(declaration, script, priorMax).Accepted)
+            {
+                return true;
+            }
         }
 
-        return new DatabaseView(true, schema, numbers);
+        return false;
+    }
+
+    private static bool TryParseCompatibilityRows(string scripts, out List<ComposeCompatibilityRow> rows)
+    {
+        rows = [];
+        foreach (var line in scripts.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var parts = line.Split('\u001f');
+            if (parts.Length != 4
+                || !int.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var format)
+                || !int.TryParse(parts[3], NumberStyles.Integer, CultureInfo.InvariantCulture, out var minReader))
+            {
+                return false;
+            }
+
+            rows.Add(new ComposeCompatibilityRow(parts[0], format, parts[2], minReader));
+        }
+
+        return true;
+    }
+
+    private static bool TryParseDeclaration(string scriptName, string line, out MigrationReaderCompatibilityDeclaration declaration)
+    {
+        declaration = null!;
+        var parts = line.Split('\u001f');
+        if (parts.Length != 5
+            || !int.TryParse(parts[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out var format)
+            || !int.TryParse(parts[3], NumberStyles.Integer, CultureInfo.InvariantCulture, out var minReader))
+        {
+            return false;
+        }
+
+        byte[] text;
+        try
+        {
+            text = Convert.FromBase64String(parts[4]);
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
+
+        declaration = new MigrationReaderCompatibilityDeclaration
+        {
+            ScriptName = scriptName,
+            DeclarationFormat = format,
+            Classification = parts[1],
+            ScriptSha256 = parts[2],
+            MinReaderSchema = minReader,
+            ScriptText = Encoding.UTF8.GetString(text)
+        };
+        return true;
     }
 
     private async Task<InspectedImage?> InspectImageAsync(string image, CancellationToken cancellationToken)
@@ -788,10 +891,13 @@ internal sealed partial class ComposeProjectController : IDisposable
             "--project-directory",
             Path.GetFullPath(_options.ProjectDirectory),
             "--project-name",
-            _options.ProjectName,
-            "-f",
-            _options.ComposeFilePath()
+            _options.ProjectName
         };
+        foreach (var composeFile in _options.ComposeFilePaths())
+        {
+            args.Add("-f");
+            args.Add(composeFile);
+        }
         var over = Path.Combine(Path.GetFullPath(_options.ProjectDirectory), ComposeExecutorProtocol.OverrideFileName);
         if (File.Exists(over))
         {
@@ -896,19 +1002,6 @@ internal sealed partial class ComposeProjectController : IDisposable
         return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
     }
 
-    private static bool TryScriptNumber(string scriptName, out int number)
-    {
-        number = 0;
-        var index = 0;
-        while (index < scriptName.Length && scriptName[index] is >= '0' and <= '9')
-        {
-            index++;
-        }
-
-        return index > 0
-            && int.TryParse(scriptName.AsSpan(0, index), NumberStyles.None, CultureInfo.InvariantCulture, out number);
-    }
-
     private static string Cap(string body)
     {
         var bytes = Encoding.UTF8.GetBytes(body);
@@ -967,9 +1060,13 @@ internal sealed partial class ComposeProjectController : IDisposable
 
     private sealed record InspectedImage(string Id, int? MaxSchema);
 
-    private readonly record struct DatabaseView(bool CompatibilityKnown, int? SchemaVersion, IReadOnlyList<int> IncompatibleSchemas)
+    private readonly record struct DatabaseView(
+        bool CompatibilityKnown,
+        int? SchemaVersion,
+        IReadOnlyList<string> Journal,
+        IReadOnlyList<ComposeCompatibilityRow> Rows)
     {
-        public static DatabaseView Unknown() => new(false, null, []);
+        public static DatabaseView Unknown() => new(false, null, [], []);
     }
 
     private readonly record struct LiveView(

@@ -30,6 +30,10 @@ internal static partial class ComposeExecutorRules
     [GeneratedRegex(@"^backup-[a-f0-9]{32}$", RegexOptions.CultureInvariant)]
     internal static partial Regex BackupId();
 
+    /// <summary>DbUp script identity safe to embed in a fixed psql statement.</summary>
+    [GeneratedRegex(@"^[A-Za-z0-9_./-]{1,240}$", RegexOptions.CultureInvariant)]
+    internal static partial Regex ScriptName();
+
     /// <summary>Whether <paramref name="image"/> is an immutable digest reference.</summary>
     internal static bool IsImmutableImage(string? image)
         => !string.IsNullOrWhiteSpace(image) && ImmutableImage().IsMatch(image);

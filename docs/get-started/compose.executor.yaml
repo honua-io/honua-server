@@ -19,6 +19,19 @@ services:
       ControlPlane__DeployTargets__0__ArtifactReference: ${HONUA_RELEASE_IMAGE:?Set the immutable release digest}
     volumes:
       - compose-executor-socket:/run/honua-compose
+  # A fresh named volume is root-owned. This one-shot command makes it writable by uid 1001
+  # before the executor binds the socket. The Debian runtime image provides chown.
+  compose-executor-init:
+    image: ${HONUA_IMAGE:?Set the server image}
+    user: "0:0"
+    entrypoint: ["chown", "1001:1001", "/run/honua-compose"]
+    restart: "no"
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [CHOWN]
+    security_opt: ["no-new-privileges:true"]
+    volumes:
+      - compose-executor-socket:/run/honua-compose
   compose-executor:
     image: ${HONUA_IMAGE:?Set the server image}
     user: "1001:1001"
@@ -29,6 +42,9 @@ services:
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     restart: unless-stopped
+    depends_on:
+      compose-executor-init:
+        condition: service_completed_successfully
     tmpfs:
       - /tmp:nosuid,size=100m
     environment:
@@ -38,6 +54,9 @@ services:
       # docker compose ls names the project. The quickstart project name is the directory name.
       ControlPlane__ComposeExecutor__ProjectName: ${COMPOSE_PROJECT_NAME:?Set the Compose project name}
       ControlPlane__ComposeExecutor__ComposeFile: compose.yaml
+      # Ordered files for later image changes. The override is appended after this list.
+      ControlPlane__ComposeExecutor__ComposeFiles__0: compose.yaml
+      ControlPlane__ComposeExecutor__ComposeFiles__1: compose.executor.yaml
       ControlPlane__ComposeExecutor__ServiceName: honua
       ControlPlane__ComposeExecutor__PostgresService: postgres
       ControlPlane__ComposeExecutor__DatabaseName: honua

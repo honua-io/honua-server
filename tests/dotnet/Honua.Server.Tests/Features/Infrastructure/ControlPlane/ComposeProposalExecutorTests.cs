@@ -9,6 +9,8 @@ using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Infrastructure.Migrations;
+using Honua.TestKit.Attributes;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -23,7 +25,7 @@ public sealed class ComposeProposalExecutorTests
 {
     private static string Digest(char hex) => "sha256:" + new string(hex, 64);
 
-    [Fact]
+    [UnitTest]
     public void ExtraProjectOrCommand_IsScopeViolation_AndDoesNotParse()
     {
         Assert.False(ComposeExecutorProtocol.TryReadRequest(
@@ -39,7 +41,7 @@ public sealed class ComposeProposalExecutorTests
         Assert.Equal(ComposeExecutorCodes.ScopeViolation, commandFailure!.Code);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task ChecksumMismatch_DoesNotCallDocker()
     {
         var root = Path.Combine(Path.GetTempPath(), "honua-compose-unit", Guid.NewGuid().ToString("N"));
@@ -82,7 +84,7 @@ public sealed class ComposeProposalExecutorTests
         Assert.Equal(ComposeExecutorCodes.BackupChecksumMismatch, response.Code);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task Plan_BlocksScopeImageAndConfig_BeforeCallingTheExecutor()
     {
         var client = new RecordingClient();
@@ -101,7 +103,7 @@ public sealed class ComposeProposalExecutorTests
         Assert.Empty(client.Ops);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task StartWithoutApproval_DoesNotConverge()
     {
         var client = new RecordingClient { Response = Ready(Digest('a')) };
@@ -113,7 +115,7 @@ public sealed class ComposeProposalExecutorTests
         Assert.Empty(client.Ops);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task SamePrincipalSubmit_ThrowsBeforeConverge_AndADifferentPrincipalConverges()
     {
         var release = Digest('a');
@@ -166,7 +168,7 @@ public sealed class ComposeProposalExecutorTests
         Assert.Equal(["status", "converge"], client.Ops);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task ApplyConfig_AndRestartScope_FailBeforeTheExecutor()
     {
         var client = new RecordingClient { Response = Ready(Digest('a')) };
@@ -190,6 +192,83 @@ public sealed class ComposeProposalExecutorTests
         Assert.Equal(ComposeExecutorCodes.ScopeViolation, scope.Message);
         Assert.Equal(ComposeExecutorCodes.ConfigUnsupported, parameters.Message);
         Assert.Empty(client.Ops);
+    }
+
+    [UnitTest]
+    public void QualifiedJournalNames_AndContractMigrations_RequireRestore()
+    {
+        const string incompatible = "Honua.Server.Migrations.142_CreateAiFinancialAccounting.sql";
+        const string contract = "Honua.Server.Migrations.143_Narrow.sql";
+        const string expand = "Honua.Server.Migrations.140_CreateAiExecutionAdmission.sql";
+        const string newerExpand = "Honua.Server.Migrations.144_Expand.sql";
+
+        Assert.Equal(142, MigrationReaderCompatibility.ReadSchemaNumber(incompatible));
+        Assert.Null(ComposeReaderGate.SchemaVersion(["not-a-migration"]));
+        Assert.Equal(142, ComposeReaderGate.SchemaVersion([incompatible, "Honua.Server.Migrations.141_Expand.sql"]));
+
+        Assert.True(ComposeReaderGate.Assess(
+            [incompatible],
+            [new ComposeCompatibilityRow(incompatible, 1, MigrationReaderCompatibilityClassification.ReaderIncompatible, 142)],
+            141).Required);
+        Assert.True(ComposeReaderGate.Assess(
+            [contract],
+            [new ComposeCompatibilityRow(contract, 1, MigrationReaderCompatibilityClassification.Contract, 0)],
+            141).Required);
+        Assert.True(ComposeReaderGate.LabelMissingBlocks(
+            [contract],
+            [new ComposeCompatibilityRow(contract, 1, MigrationReaderCompatibilityClassification.Contract, 0)]));
+
+        var shipped = ComposeReaderGate.Assess(
+            [expand],
+            [new ComposeCompatibilityRow(expand, 1, MigrationReaderCompatibilityClassification.Expand, 0)],
+            141);
+        Assert.False(shipped.Required);
+        Assert.Empty(shipped.ExpandScriptsToVerify);
+
+        var ahead = ComposeReaderGate.Assess(
+            [newerExpand],
+            [new ComposeCompatibilityRow(newerExpand, 1, MigrationReaderCompatibilityClassification.Expand, 0)],
+            141);
+        Assert.False(ahead.Required);
+        Assert.Equal([newerExpand], ahead.ExpandScriptsToVerify);
+        Assert.False(ComposeReaderGate.LabelMissingBlocks(
+            [expand],
+            [new ComposeCompatibilityRow(expand, 1, MigrationReaderCompatibilityClassification.Expand, 0)]));
+    }
+
+    [UnitTest]
+    public async Task ConfiguredComposeFiles_ArePassedInOrderBeforeTheImageOverride()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "honua-compose-unit", Guid.NewGuid().ToString("N"));
+        var options = ValidOptions(root, Digest('a'));
+        var overlay = Path.Combine(options.ProjectDirectory, "compose.executor.yaml");
+        var imageOverride = Path.Combine(options.ProjectDirectory, ComposeExecutorProtocol.OverrideFileName);
+        await File.WriteAllTextAsync(overlay, "services: {}\n");
+        await File.WriteAllTextAsync(imageOverride, "services: {}\n");
+        options.ComposeFiles = ["compose.yaml", "compose.executor.yaml"];
+
+        var docker = new RecordingDocker();
+        using var controller = new ComposeProjectController(options, docker);
+        await controller.ExecuteAsync(new ComposeExecutorRequest { Op = "status", RequestId = "files" });
+
+        Assert.NotEmpty(docker.Argv);
+        var files = new List<string>();
+        var args = docker.Argv[0];
+        for (var index = 0; index < args.Length - 1; index++)
+        {
+            if (args[index] == "-f")
+            {
+                files.Add(Path.GetFullPath(args[index + 1]));
+            }
+        }
+
+        Assert.Equal(
+            [
+                Path.GetFullPath(Path.Combine(options.ProjectDirectory, "compose.yaml")),
+                Path.GetFullPath(overlay),
+                Path.GetFullPath(imageOverride)
+            ],
+            files);
     }
 
     private static ComposeExecutorOptions ValidOptions(string root, string release)

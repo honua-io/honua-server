@@ -307,7 +307,9 @@ The Compose file above does not mount the Docker socket into the server. To let
 project, copy [`compose.executor.yaml`](compose.executor.yaml) beside `compose.yaml`,
 create a `backups` directory, and make both that directory and this Compose
 directory writable by uid 1001 (the sidecar writes backups and
-`compose.executor.image.yaml` as that user). Load the immutable release image on the host before
+`compose.executor.image.yaml` as that user). The overlay's init service changes the socket
+volume to that user before the executor binds it, and lists both compose files so a later
+image change keeps the socket mount. Load the immutable release image on the host before
 anyone approves it (`docker compose up` for the executor uses `--pull never`). Set
 `HONUA_RELEASE_IMAGE` to that digest, `COMPOSE_PROJECT_NAME` to the project name
 (`docker compose ls` prints it; for this quickstart it is the directory name),
@@ -321,8 +323,9 @@ mounts neither. Then start both files with
 The executor is the same server image with `HONUA_COMPOSE_EXECUTOR=true`. It is the
 only service that receives the Docker socket. It accepts an immutable digest for this
 project only, and a different principal has to approve the proposal before anything
-changes. A rollback to an image that cannot read a reader-incompatible migration
-restores a verified database backup from `backups` before that image starts. Rollback
+changes. A rollback to an image that cannot read the live journal, including a
+reader-incompatible or contract migration, restores a verified database backup from
+`backups` before that image starts. Rollback
 uses the image id recorded in that backup. File storage is not part of this restore;
 the backup recipe in the Compose deploy guide still covers it. Contract-migration
 nonces stay on `HONUA_MIGRATE_ONLY` and are not bypassed here.

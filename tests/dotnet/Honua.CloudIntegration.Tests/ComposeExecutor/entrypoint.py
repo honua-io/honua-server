@@ -1,6 +1,8 @@
 # Stand-in entrypoint. rc1 refuses to serve when a reader-incompatible script is above its label.
 # The candidate applies the real 140 and 142 scripts, then serves.
+# Journal identities match DbUp (Honua.Server.Migrations.<number>_Name.sql), not bare filenames.
 import os
+import re
 import subprocess
 import sys
 import time
@@ -30,14 +32,18 @@ def wait_for_postgres():
     sys.exit(1)
 
 
+_SCRIPT_NUMBER = re.compile(r"(?:^|[./\\])0*(\d+)_")
+JOURNAL_140 = "Honua.Server.Migrations.140_CreateAiExecutionAdmission.sql"
+JOURNAL_142 = "Honua.Server.Migrations.142_CreateAiFinancialAccounting.sql"
+SCHEMA_SQL = (
+    "SELECT COALESCE(MAX((regexp_match(scriptname, '(^|[./])0*([0-9]+)_'))[2]::int), 0) "
+    "FROM public.schema_versions"
+)
+
+
 def script_number(name):
-    digits = []
-    for char in name:
-        if char.isdigit():
-            digits.append(char)
-        else:
-            break
-    return int("".join(digits)) if digits else None
+    match = _SCRIPT_NUMBER.search(name)
+    return int(match.group(1)) if match else None
 
 
 def refuse_incompatible():
@@ -60,9 +66,11 @@ def refuse_incompatible():
 
 def apply_candidate():
     for name in ("140_CreateAiExecutionAdmission.sql", "142_CreateAiFinancialAccounting.sql"):
-        text = open(f"/migrations/{name}", encoding="utf-8").read().replace("$HonuaSchema$", "public")
+        with open(f"/migrations/{name}", encoding="utf-8") as source:
+            text = source.read().replace("$HonuaSchema$", "public")
         path = f"/tmp/{name}"
-        open(path, "w", encoding="utf-8").write(text)
+        with open(path, "w", encoding="utf-8") as destination:
+            destination.write(text)
         applied = subprocess.run(
             ["psql", "-h", HOST, "-U", USER, "-d", DATABASE, "-v", "ON_ERROR_STOP=1", "-f", path],
             check=False,
@@ -71,15 +79,15 @@ def apply_candidate():
             sys.exit(1)
     journal = psql(
         "INSERT INTO public.schema_versions (scriptname, applied) VALUES "
-        "('140_CreateAiExecutionAdmission.sql', now()), "
-        "('142_CreateAiFinancialAccounting.sql', now())"
+        f"('{JOURNAL_140}', now()), "
+        f"('{JOURNAL_142}', now())"
     )
     if journal.returncode != 0:
         sys.exit(1)
     compatibility = psql(
         "INSERT INTO public.schema_version_reader_compatibility "
         "(script_name, declaration_format, classification, script_sha256, min_reader_schema, script_text) "
-        "VALUES ('142_CreateAiFinancialAccounting.sql', 1, 'reader-incompatible', repeat('ab', 32), 142, 'fixture') "
+        f"VALUES ('{JOURNAL_142}', 1, 'reader-incompatible', repeat('ab', 32), 142, 'fixture') "
         "ON CONFLICT (script_name) DO NOTHING"
     )
     if compatibility.returncode != 0:
@@ -92,10 +100,7 @@ class Handler(BaseHTTPRequestHandler):
             body = b"ok"
         elif self.path.startswith("/customer"):
             marker = psql("SELECT marker FROM public.customer_marker WHERE id = 1")
-            schema = psql(
-                "SELECT COALESCE(MAX((regexp_match(scriptname, '^([0-9]+)'))[1]::int), 0) "
-                "FROM public.schema_versions"
-            )
+            schema = psql(SCHEMA_SQL)
             if marker.returncode != 0 or schema.returncode != 0:
                 self.send_response(500)
                 self.end_headers()
