@@ -24,6 +24,9 @@ internal static class BatchAndDeployBackendsRegistration
         services.AddSingleton<IAwsLambdaAliasClient, AwsSdkLambdaAliasClient>();
         services.AddSingleton<IAwsAlbClient, AwsSdkAlbClient>();
         services.AddSingleton<IAwsEcsClient, AwsSdkEcsClient>();
+        services.AddSingleton<IEcsWorkloadControl, AwsSdkEcsWorkloadControl>();
+        services.AddSingleton<ILambdaAliasRecycle, AwsSdkLambdaAliasRecycle>();
+        services.AddSingleton<Honua.ControlPlane.Executors.IGovernedWorkloadExecutor, Honua.ControlPlane.Executors.AwsGovernedWorkloadExecutor>();
 #endif
 #if !HONUA_EXCLUDE_AZURE
         services.AddSingleton<IAzureFunctionsSlotClient, AzureManagementFunctionsSlotClient>();
@@ -58,6 +61,7 @@ internal static class BatchAndDeployBackendsRegistration
         // Shared Kubernetes API request factory (in-cluster / out-of-cluster auth) consumed
         // by both the Argo Rollouts deploy client and the Kubernetes Job batch client.
         services.AddSingleton<KubernetesApiRequestFactory>();
+        services.AddSingleton<IKubernetesWorkloadRestart, KubernetesDeploymentRestartClient>();
         services.AddSingleton<IArgoRolloutsClient, ArgoRolloutsClient>();
 
         // Deploy backend concrete singletons. Order matters for the IEnumerable<IDeployBackend>

@@ -29,6 +29,18 @@ internal static class OpsActionNames
 
     /// <summary>Transiently tunes the bounded database admission target.</summary>
     public const string TuneBoundedAdmission = "db.tune_bounded_admission";
+
+    /// <summary>Forces a new deployment of the registered ECS service. Does not change its task definition.</summary>
+    public const string RestartEcs = "workload.restart_ecs";
+
+    /// <summary>Sets the restartedAt annotation on the registered Kubernetes Deployment.</summary>
+    public const string RestartEks = "workload.restart_eks";
+
+    /// <summary>Republishes the registered Lambda alias's current image and moves the alias to that version.</summary>
+    public const string RestartLambda = "workload.restart_lambda";
+
+    /// <summary>Changes one allowlisted field on the registered deployment. Currently <c>ecs.desired_count</c>.</summary>
+    public const string SetConfig = "workload.set_config";
 }
 
 /// <summary>
@@ -53,6 +65,10 @@ internal static class OpsActionCatalog
                 new(OpsActionNames.PauseChannel, new OpsActionDescriptor(GuardrailTier.RequiresApproval, false)),
                 new(OpsActionNames.ResumeChannel, new OpsActionDescriptor(GuardrailTier.DirectExecute, false)),
                 new(OpsActionNames.TuneBoundedAdmission, new OpsActionDescriptor(GuardrailTier.RequiresApproval, false)),
+                new(OpsActionNames.RestartEcs, new OpsActionDescriptor(GuardrailTier.RequiresApproval, false)),
+                new(OpsActionNames.RestartEks, new OpsActionDescriptor(GuardrailTier.RequiresApproval, false)),
+                new(OpsActionNames.RestartLambda, new OpsActionDescriptor(GuardrailTier.RequiresApproval, false)),
+                new(OpsActionNames.SetConfig, new OpsActionDescriptor(GuardrailTier.RequiresApproval, false)),
             });
 
     /// <summary>Compatibility projection of registered ops-action guardrail tiers.</summary>
@@ -140,6 +156,15 @@ internal sealed record OpsActionRequest
     /// <summary>Optional <c>limit</c> parameter (bounded-admission tune target).</summary>
     public int? Limit { get; init; }
 
+    /// <summary>Optional <c>field</c> parameter for <see cref="OpsActionNames.SetConfig"/>.</summary>
+    public string? ConfigField { get; init; }
+
+    /// <summary>Optional <c>value</c> parameter for <see cref="OpsActionNames.SetConfig"/>.</summary>
+    public int? ConfigValue { get; init; }
+
+    /// <summary>Parameter names present on the payload. Empty when <c>params</c> was omitted.</summary>
+    public IReadOnlyList<string> ParameterNames { get; init; } = [];
+
     /// <summary>
     /// Parses and validates the payload structure. Throws <see cref="OpsActionException"/>
     /// for an empty, non-object, non-JSON, or action-less payload — the fail-closed path.
@@ -184,11 +209,21 @@ internal sealed record OpsActionRequest
             int? maxCount = null;
             int? limit = null;
             string? channel = null;
+            string? configField = null;
+            int? configValue = null;
+            var parameterNames = new List<string>();
             if (root.TryGetProperty("params", out var paramsElement) && paramsElement.ValueKind == JsonValueKind.Object)
             {
+                foreach (var property in paramsElement.EnumerateObject())
+                {
+                    parameterNames.Add(property.Name);
+                }
+
                 maxCount = ReadInt(paramsElement, "maxCount");
                 limit = ReadInt(paramsElement, "limit");
                 channel = ReadString(paramsElement, "channel");
+                configField = ReadString(paramsElement, "field");
+                configValue = ReadInt(paramsElement, "value");
             }
 
             return new OpsActionRequest
@@ -198,6 +233,9 @@ internal sealed record OpsActionRequest
                 MaxCount = maxCount,
                 Limit = limit,
                 Channel = string.IsNullOrWhiteSpace(channel) ? (string.IsNullOrWhiteSpace(target) ? null : target) : channel,
+                ConfigField = string.IsNullOrWhiteSpace(configField) ? null : configField,
+                ConfigValue = configValue,
+                ParameterNames = parameterNames,
             };
         }
     }
