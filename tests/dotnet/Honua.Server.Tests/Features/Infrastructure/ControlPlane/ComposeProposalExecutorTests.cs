@@ -256,6 +256,37 @@ public sealed class ComposeProposalExecutorTests
     }
 
     [UnitTest]
+    public async Task SocketClient_InternalTimeoutIsTransportFailure_CallerCancellationIsPreserved()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "honua-sock-" + Guid.NewGuid().ToString("N"));
+        using var listener = new System.Net.Sockets.Socket(System.Net.Sockets.AddressFamily.Unix,
+            System.Net.Sockets.SocketType.Stream, System.Net.Sockets.ProtocolType.Unspecified);
+        listener.Bind(new System.Net.Sockets.UnixDomainSocketEndPoint(path));
+        listener.Listen(2);
+        try
+        {
+            var options = Options.Create(new ComposeExecutorOptions { SocketPath = path });
+            var client = new ComposeSocketClient(options, NullLogger<ComposeSocketClient>.Instance)
+            {
+                Timeout = TimeSpan.FromMilliseconds(150)
+            };
+            var request = new ComposeExecutorRequest { Op = "status" };
+            var timedOut = client.ExecuteAsync(request, CancellationToken.None);
+            using var first = await listener.AcceptAsync();
+            await Assert.ThrowsAsync<IOException>(() => timedOut);
+            using var caller = new CancellationTokenSource();
+            var cancelled = client.ExecuteAsync(request, caller.Token);
+            using var second = await listener.AcceptAsync();
+            caller.Cancel();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => cancelled);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [UnitTest]
     public async Task LostConvergeResponse_RemainsReconcilableWithPriorRevision()
     {
         var release = Digest('a');

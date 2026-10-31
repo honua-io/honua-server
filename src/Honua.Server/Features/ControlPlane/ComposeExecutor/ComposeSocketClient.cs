@@ -26,6 +26,8 @@ internal sealed partial class ComposeSocketClient(
 {
     private static readonly TimeSpan RequestTimeout = TimeSpan.FromMinutes(10);
 
+    internal TimeSpan Timeout { get; init; } = RequestTimeout;
+
     /// <inheritdoc />
     public async Task<ComposeExecutorResponse> ExecuteAsync(
         ComposeExecutorRequest request,
@@ -39,7 +41,7 @@ internal sealed partial class ComposeSocketClient(
         }
 
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(RequestTimeout);
+        timeout.CancelAfter(Timeout);
         using var socket = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
         try
         {
@@ -56,6 +58,10 @@ internal sealed partial class ComposeSocketClient(
 
             return JsonSerializer.Deserialize(responseLine, ComposeExecutorJsonContext.Default.ComposeExecutorResponse)
                 ?? throw new IOException("The Compose executor returned an empty response.");
+        }
+        catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested && timeout.IsCancellationRequested)
+        {
+            throw new IOException("The Compose executor socket request timed out.", ex);
         }
         catch (Exception ex) when (ex is SocketException or JsonException)
         {
