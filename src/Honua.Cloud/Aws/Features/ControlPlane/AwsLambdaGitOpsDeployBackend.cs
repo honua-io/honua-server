@@ -16,8 +16,7 @@ namespace Honua.ControlPlane;
 internal sealed partial class AwsLambdaGitOpsDeployBackend(
     IAwsLambdaAliasClient aliasClient,
     ILogger<AwsLambdaGitOpsDeployBackend> logger,
-    IRollbackDataPlaneProbe? dataPlaneProbe = null,
-    IAwsLambdaImageClient? imageClient = null) : IDeployBackend
+    IRollbackDataPlaneProbe? dataPlaneProbe = null) : IDeployBackend
 {
     private static readonly Regex LambdaArnRegionPattern = new("^arn:(aws[a-zA-Z-]*)?:lambda:(?<region>[^:]+):", RegexOptions.Compiled);
 
@@ -57,20 +56,9 @@ internal sealed partial class AwsLambdaGitOpsDeployBackend(
         {
             blockingReasons.Add("AWS Lambda deploy workflows require a published function version, not $LATEST.");
         }
-        else if (ReleaseImageDigest.IsImmutable(spec.DesiredRevision))
-        {
-            if (imageClient is null)
-            {
-                blockingReasons.Add("Lambda image publish is not configured for this process.");
-            }
-
-            warnings.Add(
-                "Migrate-only is not run inside Lambda. Schema migrations stay on the product migration path and are not implied by the function update.");
-        }
         else if (!long.TryParse(spec.DesiredRevision, out var desiredVersion) || desiredVersion <= 0)
         {
-            blockingReasons.Add(
-                "AWS Lambda deploy workflows require desiredRevision to be an immutable image digest (@sha256:) or a published numeric version.");
+            blockingReasons.Add("AWS Lambda deploy workflows require desiredRevision to be a published numeric version.");
         }
 
         if (string.IsNullOrWhiteSpace(ResolveFunctionName(spec)))
@@ -91,11 +79,6 @@ internal sealed partial class AwsLambdaGitOpsDeployBackend(
         if (!TryResolveCanaryWeightFraction(spec.Parameters, out var canaryWeightFraction, out var canaryWeightError))
         {
             blockingReasons.Add(canaryWeightError ?? "AWS Lambda canary weight is invalid.");
-        }
-        else if (canaryWeightFraction.HasValue && ReleaseImageDigest.IsImmutable(spec.DesiredRevision))
-        {
-            blockingReasons.Add(
-                "Lambda image convergence refuses canary weight. Publish the digest, then move the alias.");
         }
         else if (canaryWeightFraction.HasValue &&
             (!spec.Parameters.TryGetValue("telemetry.connection", out var telemetryConnection) ||
@@ -126,36 +109,16 @@ internal sealed partial class AwsLambdaGitOpsDeployBackend(
         var aliasName = ResolveAliasName(spec.Parameters);
         var region = ResolveRegion(spec.Parameters);
         var serviceUrl = ResolveServiceUrl(spec.Parameters);
-        _ = TryResolveCanaryWeightFraction(spec.Parameters, out var canaryWeightFraction, out _);
-        var imageConvergence = ReleaseImageDigest.IsImmutable(spec.DesiredRevision);
-        var aliasTargetVersion = spec.DesiredRevision;
-        if (imageConvergence)
-        {
-            var published = await PublishReleaseImageAsync(
-                    operation,
-                    spec,
-                    functionName,
-                    region,
-                    serviceUrl,
-                    canaryWeightFraction.HasValue,
-                    cancellationToken)
-                .ConfigureAwait(false);
-            if (published.Failure is not null)
-            {
-                return published.Failure;
-            }
-
-            aliasTargetVersion = published.Version!;
-        }
 
         try
         {
             var aliasState = await aliasClient.GetAliasAsync(functionName, aliasName, region, serviceUrl, cancellationToken).ConfigureAwait(false);
+            _ = TryResolveCanaryWeightFraction(spec.Parameters, out var canaryWeightFraction, out _);
             var currentStableVersion = aliasState.FunctionVersion;
 
             if (canaryWeightFraction.HasValue &&
                 !string.IsNullOrWhiteSpace(currentStableVersion) &&
-                !string.Equals(currentStableVersion, aliasTargetVersion, StringComparison.Ordinal))
+                !string.Equals(currentStableVersion, spec.DesiredRevision, StringComparison.Ordinal))
             {
                 await aliasClient.UpdateAliasAsync(
                         functionName,
@@ -163,20 +126,20 @@ internal sealed partial class AwsLambdaGitOpsDeployBackend(
                         currentStableVersion,
                         new Dictionary<string, double>(StringComparer.Ordinal)
                         {
-                            [aliasTargetVersion] = canaryWeightFraction.Value
+                            [spec.DesiredRevision] = canaryWeightFraction.Value
                         },
                         region,
                         serviceUrl,
                         cancellationToken)
                     .ConfigureAwait(false);
             }
-            else if (!string.Equals(aliasState.FunctionVersion, aliasTargetVersion, StringComparison.Ordinal) ||
+            else if (!string.Equals(aliasState.FunctionVersion, spec.DesiredRevision, StringComparison.Ordinal) ||
                      aliasState.AdditionalVersionWeights.Count > 0)
             {
                 await aliasClient.UpdateAliasAsync(
                         functionName,
                         aliasName,
-                        aliasTargetVersion,
+                        spec.DesiredRevision,
                         null,
                         region,
                         serviceUrl,
@@ -184,17 +147,15 @@ internal sealed partial class AwsLambdaGitOpsDeployBackend(
                     .ConfigureAwait(false);
             }
 
-            Log.OperationSubmitted(logger, operation.OperationId, spec.TargetId, functionName, aliasName, aliasTargetVersion);
+            Log.OperationSubmitted(logger, operation.OperationId, spec.TargetId, functionName, aliasName, spec.DesiredRevision);
             return new DeploySubmissionResult
             {
                 Status = WorkflowOperationStatus.Submitted,
-                ProviderOperationId = imageConvergence
-                    ? aliasTargetVersion
-                    : aliasState.AliasArn ?? $"{functionName}:{aliasName}",
+                ProviderOperationId = aliasState.AliasArn ?? $"{functionName}:{aliasName}",
                 ObservedRevision = aliasState.FunctionVersion,
-                Message = canaryWeightFraction.HasValue && !string.IsNullOrWhiteSpace(currentStableVersion) && !string.Equals(currentStableVersion, aliasTargetVersion, StringComparison.Ordinal)
-                    ? $"Lambda alias '{aliasName}' is routing {Math.Round(canaryWeightFraction.Value * 100, 3):0.###}% of traffic to published version '{aliasTargetVersion}'."
-                    : $"Lambda alias '{aliasName}' is moving to published version '{aliasTargetVersion}'."
+                Message = canaryWeightFraction.HasValue && !string.IsNullOrWhiteSpace(currentStableVersion) && !string.Equals(currentStableVersion, spec.DesiredRevision, StringComparison.Ordinal)
+                    ? $"Lambda alias '{aliasName}' is routing {Math.Round(canaryWeightFraction.Value * 100, 3):0.###}% of traffic to published version '{spec.DesiredRevision}'."
+                    : $"Lambda alias '{aliasName}' is moving to published version '{spec.DesiredRevision}'."
             };
         }
         catch (Exception ex) when (ex is AmazonServiceException or AmazonClientException)
@@ -249,40 +210,6 @@ internal sealed partial class AwsLambdaGitOpsDeployBackend(
                     ProviderOperationId = aliasState.AliasArn ?? operation.ProviderOperationId,
                     ObservedRevision = aliasState.FunctionVersion,
                     Message = $"Lambda alias '{aliasName}' is still converging on rollback version '{rollbackVersion ?? "unknown"}'."
-                };
-            }
-
-            if (ReleaseImageDigest.IsImmutable(spec.DesiredRevision))
-            {
-                var publishedVersion = operation.ProviderOperationId;
-                if (string.IsNullOrWhiteSpace(publishedVersion) || !long.TryParse(publishedVersion, out _))
-                {
-                    return new DeployObservation
-                    {
-                        Status = WorkflowOperationStatus.Reconciling,
-                        ProviderOperationId = operation.ProviderOperationId,
-                        ObservedRevision = aliasState.FunctionVersion,
-                        Message = "Lambda image convergence is waiting for a published version."
-                    };
-                }
-
-                if (string.Equals(aliasState.FunctionVersion, publishedVersion, StringComparison.Ordinal) && !hasWeightedTraffic)
-                {
-                    return new DeployObservation
-                    {
-                        Status = WorkflowOperationStatus.Succeeded,
-                        ProviderOperationId = publishedVersion,
-                        ObservedRevision = spec.DesiredRevision,
-                        Message = $"Lambda alias '{aliasName}' now points to published version '{publishedVersion}'."
-                    };
-                }
-
-                return new DeployObservation
-                {
-                    Status = WorkflowOperationStatus.Reconciling,
-                    ProviderOperationId = publishedVersion,
-                    ObservedRevision = aliasState.FunctionVersion,
-                    Message = $"Lambda alias '{aliasName}' is still converging to published version '{publishedVersion}'."
                 };
             }
 
@@ -488,83 +415,6 @@ internal sealed partial class AwsLambdaGitOpsDeployBackend(
                 Message = "Lambda alias rollback failed due to a transient AWS error. The reconciler will retry on a bounded budget before escalating for manual intervention."
             };
         }
-    }
-
-    private async Task<(string? Version, DeploySubmissionResult? Failure)> PublishReleaseImageAsync(
-        WorkflowOperationRecord operation,
-        DeployOperationSpec spec,
-        string functionName,
-        string? region,
-        string? serviceUrl,
-        bool canaryRequested,
-        CancellationToken cancellationToken)
-    {
-        if (imageClient is null)
-        {
-            return (null, LambdaImageFailure("Lambda image publish is not configured for this process."));
-        }
-
-        if (canaryRequested)
-        {
-            return (null, LambdaImageFailure(
-                "Lambda image convergence refuses canary weight. Publish the digest, then move the alias."));
-        }
-
-        try
-        {
-            var attempts = ReadBoundedInt(spec.Parameters, "aws.lambda.image_update_attempts", 15, 60);
-            var delayMs = ReadBoundedInt(spec.Parameters, "aws.lambda.image_update_delay_ms", 2000, 30_000);
-            var version = await imageClient.PublishImageAsync(
-                    functionName,
-                    spec.DesiredRevision.Trim(),
-                    region,
-                    serviceUrl,
-                    attempts,
-                    delayMs,
-                    cancellationToken)
-                .ConfigureAwait(false);
-            if (!long.TryParse(version, out var parsed) || parsed <= 0)
-            {
-                return (null, LambdaImageFailure(
-                    "Lambda image publish did not return a numeric version. The alias was not moved."));
-            }
-
-            return (version, null);
-        }
-        catch (InvalidOperationException ex)
-        {
-            Log.AwsCallFailed(logger, operation.OperationId, spec.TargetId, ex.Message);
-            return (null, LambdaImageFailure("Lambda image update failed. The alias was not moved."));
-        }
-        catch (Exception ex) when (ex is AmazonServiceException or AmazonClientException)
-        {
-            Log.AwsCallFailed(logger, operation.OperationId, spec.TargetId, ex.Message);
-            return (null, LambdaImageFailure(
-                "Lambda image update failed due to a transient AWS error. Check the deploy controller logs for details."));
-        }
-    }
-
-    private static DeploySubmissionResult LambdaImageFailure(string message)
-        => new()
-        {
-            Status = WorkflowOperationStatus.Failed,
-            Message = message
-        };
-
-    private static int ReadBoundedInt(IReadOnlyDictionary<string, string> parameters, string key, int defaultValue, int max)
-    {
-        var raw = GetParameter(parameters, key);
-        if (raw is null || !int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
-        {
-            return defaultValue;
-        }
-
-        if (parsed < 1)
-        {
-            return 1;
-        }
-
-        return Math.Min(parsed, max);
     }
 
     private static string ResolveFunctionName(DeployOperationSpec spec)

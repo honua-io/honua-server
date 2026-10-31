@@ -22,7 +22,6 @@ internal static class BatchAndDeployBackendsRegistration
         // Cloud SDK adapter clients used by deploy + batch backends below.
 #if !HONUA_EXCLUDE_AWS
         services.AddSingleton<IAwsLambdaAliasClient, AwsSdkLambdaAliasClient>();
-        services.AddSingleton<IAwsLambdaImageClient, AwsSdkLambdaImageClient>();
         services.AddSingleton<IAwsAlbClient, AwsSdkAlbClient>();
         services.AddSingleton<IAwsEcsClient, AwsSdkEcsClient>();
 #endif

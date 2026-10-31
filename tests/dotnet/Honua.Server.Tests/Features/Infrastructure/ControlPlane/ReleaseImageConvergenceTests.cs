@@ -318,119 +318,6 @@ public sealed class ReleaseImageConvergenceTests
     }
 
     [Fact]
-    public void LambdaImagePublish_BindsToTheCodeAndRevisionReturnedByUpdate()
-    {
-        var request = AwsSdkLambdaImageClient.BuildPublishRequest("function", "code-sha", "revision");
-        request.CodeSha256.Should().Be("code-sha");
-        request.RevisionId.Should().Be("revision");
-        var missing = () => AwsSdkLambdaImageClient.BuildPublishRequest("function", null, "revision");
-        missing.Should().Throw<InvalidOperationException>();
-    }
-
-    [Fact]
-    [Trait("Category", "ReleaseCellHook")]
-    public async Task LambdaDigest_PublishesVersionThenMovesAlias()
-    {
-        var images = new DigestLambdaImageClient { PublishedVersion = "43" };
-        var aliases = new DigestLambdaAliasClient();
-        var backend = LambdaBackend(aliases, images);
-
-        var submission = await backend.StartAsync(LambdaOperation(Digest));
-
-        submission.Status.Should().Be(WorkflowOperationStatus.Submitted);
-        submission.ProviderOperationId.Should().Be("43");
-        images.PublishedImage.Should().Be(Digest);
-        aliases.LastUpdatedVersion.Should().Be("43");
-        aliases.UpdateCount.Should().Be(1);
-
-        var observation = await backend.ObserveAsync(LambdaOperation(Digest) with
-        {
-            ProviderOperationId = "43",
-            Status = WorkflowOperationStatus.Reconciling
-        });
-        aliases.CurrentState = aliases.CurrentState with { FunctionVersion = "43" };
-        observation = await backend.ObserveAsync(LambdaOperation(Digest) with
-        {
-            ProviderOperationId = "43",
-            Status = WorkflowOperationStatus.Reconciling
-        });
-        observation.Status.Should().Be(WorkflowOperationStatus.Succeeded);
-        observation.ObservedRevision.Should().Be(Digest);
-    }
-
-    [Fact]
-    public async Task LambdaNumericVersion_DoesNotPublishAnImage()
-    {
-        var images = new DigestLambdaImageClient();
-        var aliases = new DigestLambdaAliasClient();
-
-        var submission = await LambdaBackend(aliases, images).StartAsync(LambdaOperation("42"));
-
-        submission.Status.Should().Be(WorkflowOperationStatus.Submitted);
-        images.PublishCount.Should().Be(0);
-        aliases.LastUpdatedVersion.Should().Be("42");
-    }
-
-    [Fact]
-    public async Task LambdaPublishFailure_DoesNotMoveTheAlias()
-    {
-        var images = new DigestLambdaImageClient { Exception = new InvalidOperationException("update failed") };
-        var aliases = new DigestLambdaAliasClient();
-
-        var submission = await LambdaBackend(aliases, images).StartAsync(LambdaOperation(Digest));
-
-        submission.Status.Should().Be(WorkflowOperationStatus.Failed);
-        submission.Message.Should().Contain("alias was not moved");
-        aliases.UpdateCount.Should().Be(0);
-    }
-
-    [Fact]
-    public async Task LambdaMissingFunction_FailsClosed()
-    {
-        var images = new DigestLambdaImageClient { Exception = new AmazonClientException("function missing") };
-        var aliases = new DigestLambdaAliasClient();
-
-        var submission = await LambdaBackend(aliases, images).StartAsync(LambdaOperation(Digest));
-
-        submission.Status.Should().Be(WorkflowOperationStatus.Failed);
-        submission.Message.Should().NotContain("function missing");
-        aliases.UpdateCount.Should().Be(0);
-    }
-
-    [Fact]
-    public async Task LambdaDigestWithoutImageClient_IsNotReadyAndDoesNotMoveAlias()
-    {
-        var aliases = new DigestLambdaAliasClient();
-        var backend = new AwsLambdaGitOpsDeployBackend(aliases, NullLogger<AwsLambdaGitOpsDeployBackend>.Instance);
-
-        var plan = await backend.PlanAsync(LambdaSpec(Digest));
-        plan.IsReadyToSubmit.Should().BeFalse();
-        plan.BlockingReasons.Should().Contain(reason => reason.Contains("not configured", StringComparison.Ordinal));
-        plan.Warnings.Should().Contain(warning => warning.Contains("not implied", StringComparison.Ordinal));
-
-        var submission = await backend.StartAsync(LambdaOperation(Digest));
-        submission.Status.Should().Be(WorkflowOperationStatus.Failed);
-        aliases.UpdateCount.Should().Be(0);
-    }
-
-    [Fact]
-    public async Task LambdaDigest_RefusesCanaryWeight()
-    {
-        var parameters = LambdaParameters();
-        parameters["lambda.canary_weight_percentage"] = "10";
-        parameters["telemetry.connection"] = "prod-prom";
-        var images = new DigestLambdaImageClient();
-        var backend = LambdaBackend(new DigestLambdaAliasClient(), images);
-
-        var plan = await backend.PlanAsync(LambdaSpec(Digest, parameters));
-        plan.BlockingReasons.Should().Contain(reason => reason.Contains("canary", StringComparison.OrdinalIgnoreCase));
-
-        var submission = await backend.StartAsync(LambdaOperation(Digest, parameters));
-        submission.Status.Should().Be(WorkflowOperationStatus.Failed);
-        images.PublishCount.Should().Be(0);
-    }
-
-    [Fact]
     [Trait("Category", "ReleaseCellHook")]
     public async Task EksDigest_SetsContainerImage_AndWaitsUntilReady()
     {
@@ -606,9 +493,6 @@ public sealed class ReleaseImageConvergenceTests
 
     private static AwsEcsAlbDeployBackend Backend(DigestAlbClient alb, DigestEcsClient ecs)
         => new(alb, ecs, NullLogger<AwsEcsAlbDeployBackend>.Instance);
-
-    private static AwsLambdaGitOpsDeployBackend LambdaBackend(DigestLambdaAliasClient aliases, DigestLambdaImageClient images)
-        => new(aliases, NullLogger<AwsLambdaGitOpsDeployBackend>.Instance, imageClient: images);
 
     private static Dictionary<string, string> EcsParameters()
         => new(StringComparer.Ordinal)
@@ -942,36 +826,6 @@ public sealed class ReleaseImageConvergenceTests
             LastUpdatedVersion = functionVersion;
             CurrentState = CurrentState with { FunctionVersion = functionVersion };
             return Task.FromResult(CurrentState);
-        }
-    }
-
-    private sealed class DigestLambdaImageClient : IAwsLambdaImageClient
-    {
-        public string PublishedVersion { get; init; } = "43";
-
-        public Exception? Exception { get; init; }
-
-        public string? PublishedImage { get; private set; }
-
-        public int PublishCount { get; private set; }
-
-        public Task<string> PublishImageAsync(
-            string functionName,
-            string imageUri,
-            string? region,
-            string? serviceUrl,
-            int maxAttempts,
-            int delayMilliseconds,
-            CancellationToken cancellationToken = default)
-        {
-            PublishCount++;
-            if (Exception is not null)
-            {
-                throw Exception;
-            }
-
-            PublishedImage = imageUri;
-            return Task.FromResult(PublishedVersion);
         }
     }
 
