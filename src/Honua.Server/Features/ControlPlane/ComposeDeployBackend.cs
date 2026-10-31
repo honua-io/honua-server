@@ -110,6 +110,7 @@ internal sealed partial class ComposeDeployBackend(
                         Op = op,
                         Image = desired,
                         BackupId = deploy.PreMigrationBackupId,
+                        ContractMigrationApprovalNonce = deploy.Parameters.GetValueOrDefault("deployment.contract_migration_nonce"),
                         RequestId = operation.OperationId
                     },
                     cancellationToken)
@@ -241,6 +242,9 @@ internal sealed partial class ComposeDeployBackend(
     {
         foreach (var key in parameters.Keys)
         {
+            if (string.Equals(key, "deployment.contract_migration_nonce", StringComparison.Ordinal)
+                && parameters[key].Length == 16 && parameters[key].All(character => char.IsAsciiHexDigitLower(character) || char.IsAsciiDigit(character)))
+                continue;
             if (string.Equals(key, DeployPromotionPolicy.PromotionGateParameterKey, StringComparison.Ordinal)
                 || key.StartsWith("deployment.protection.", StringComparison.Ordinal))
             {

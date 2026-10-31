@@ -45,6 +45,22 @@ public sealed class ComposeProposalExecutorTests
     }
 
     [UnitTest]
+    public async Task Converge_MalformedMigrationApprovalToken_RefusesBeforeDocker()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "honua-compose-unit", Guid.NewGuid().ToString("N"));
+        var release = Digest('a');
+        var docker = new RecordingDocker();
+        using var controller = new ComposeProjectController(ValidOptions(root, release), docker);
+        var result = await controller.ExecuteAsync(new ComposeExecutorRequest
+        {
+            Op = "converge", Image = release, ContractMigrationApprovalNonce = "invalid"
+        });
+        Assert.False(result.Ok);
+        Assert.Equal(ComposeExecutorCodes.ConfigUnsupported, result.Code);
+        Assert.Empty(docker.Argv);
+    }
+
+    [UnitTest]
     public async Task ChecksumMismatch_DoesNotCallDocker()
     {
         var root = Path.Combine(Path.GetTempPath(), "honua-compose-unit", Guid.NewGuid().ToString("N"));

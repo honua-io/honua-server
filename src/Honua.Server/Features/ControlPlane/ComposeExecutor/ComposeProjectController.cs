@@ -124,7 +124,10 @@ internal sealed partial class ComposeProjectController : IDisposable
         var running = live.ImageId;
         if (ComposeExecutorRules.IsImmutableImage(request.Image))
         {
-            var inspected = await InspectImageAsync(request.Image!, cancellationToken).ConfigureAwait(false);
+            var nonce = request.ContractMigrationApprovalNonce;
+        if (nonce is not null && (nonce.Length != 16 || nonce.Any(character => !(char.IsAsciiHexDigitLower(character) || char.IsAsciiDigit(character)))))
+            return Refuse(request, ComposeExecutorCodes.ConfigUnsupported, "The migration approval token is malformed.");
+        var inspected = await InspectImageAsync(request.Image!, cancellationToken).ConfigureAwait(false);
             if (inspected != null && string.Equals(live.ImageId, inspected.Id, StringComparison.Ordinal))
             {
                 running = request.Image;
@@ -198,7 +201,7 @@ internal sealed partial class ComposeProjectController : IDisposable
             return backup.Failure with { RequestId = request.RequestId };
         }
 
-        var started = await StartImageAsync(request.Image!, cancellationToken).ConfigureAwait(false);
+        var started = await StartImageAsync(request.Image!, cancellationToken, nonce).ConfigureAwait(false);
         if (started != null)
         {
             return started with { RequestId = request.RequestId, BackupId = backup.BackupId };
@@ -468,16 +471,30 @@ internal sealed partial class ComposeProjectController : IDisposable
         return null;
     }
 
-    private async Task<ComposeExecutorResponse?> StartImageAsync(string image, CancellationToken cancellationToken)
+    private async Task<ComposeExecutorResponse?> StartImageAsync(string image, CancellationToken cancellationToken, string? nonce = null)
     {
         var overridePath = Path.Combine(Path.GetFullPath(_options.ProjectDirectory), ComposeExecutorProtocol.OverrideFileName);
         var yaml = "services:\n  " + _options.ServiceName + ":\n    image: \"" + image + "\"\n";
+        if (nonce is not null) yaml += "    environment:\n      HONUA_APPROVE_CONTRACT_MIGRATIONS: \"" + nonce + "\"\n";
         var temporary = overridePath + ".tmp";
         await File.WriteAllTextAsync(temporary, yaml, cancellationToken).ConfigureAwait(false);
         File.Move(temporary, overridePath, overwrite: true);
         var wait = _options.ComposeWaitTimeoutSeconds.ToString(CultureInfo.InvariantCulture);
-        var up = await ComposeAsync(TimeSpan.FromSeconds(_options.ComposeWaitTimeoutSeconds + 60), ["up", "-d", "--no-deps", "--pull", "never", "--wait", "--wait-timeout", wait, "--", _options.ServiceName], cancellationToken)
-            .ConfigureAwait(false);
+        DockerProcessResult up;
+        try
+        {
+            up = await ComposeAsync(TimeSpan.FromSeconds(_options.ComposeWaitTimeoutSeconds + 60), ["up", "-d", "--no-deps", "--pull", "never", "--wait", "--wait-timeout", wait, "--", _options.ServiceName], cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            if (nonce is not null)
+            {
+                var clean = "services:\n  " + _options.ServiceName + ":\n    image: \"" + image + "\"\n";
+                await File.WriteAllTextAsync(temporary, clean, CancellationToken.None).ConfigureAwait(false);
+                File.Move(temporary, overridePath, overwrite: true);
+            }
+        }
         if (up.ExitCode != 0)
         {
             return Refuse(null, ComposeExecutorCodes.ReadbackIncomplete, "docker compose up did not become healthy.");

@@ -309,7 +309,14 @@ internal sealed class McpPlatformOpsReader(
                 outcomes.Add(new() { TargetId = target.TargetId, Outcome = "already-converged" });
                 continue;
             }
-            var payload = new DeployExecutionPayload { TargetId = target.TargetId, DesiredRevision = desiredRevision }.Serialize();
+            var nonce = Clean(argument.ContractMigrationApprovalNonce);
+            if (nonce is not null && (nonce.Length != 16 || nonce.Any(character => !Uri.IsHexDigit(character)) || nonce != nonce.ToLowerInvariant()))
+                throw new GeoprocessingValidationException("The contract migration approval token must be 16 lowercase hexadecimal characters.");
+            var payload = new DeployExecutionPayload
+            {
+                TargetId = target.TargetId, DesiredRevision = desiredRevision,
+                ParameterOverrides = nonce is null ? null : new Dictionary<string, string> { ["deployment.contract_migration_nonce"] = nonce }
+            }.Serialize();
             var requestedKey = Clean(argument.IdempotencyKey);
             var proposal = await SealProposalAsync(principal, OperationClass.Deploy, payload,
                 Clean(argument.Reason) ?? $"Converge serving targets to platform release {release.Version}.",
