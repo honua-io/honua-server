@@ -195,7 +195,7 @@ internal sealed partial class DurableRestoreWorker(
                 await FailAsync(acting, PreMigrationRestoreCodes.AuditFailed, lostLease.Token).ConfigureAwait(false);
                 return;
             }
-            var starter = new CheckpointStarter(store, deploy, acting);
+            var starter = new CheckpointStarter(store, deploy, verifier, acting);
             var completion = await coordinator.ExecuteAsync(payload, request, starter, lostLease.Token).ConfigureAwait(false);
             var latest = await store.GetAsync(id, lostLease.Token).ConfigureAwait(false);
             if (latest?.PreMigrationRestore?.Phase is "awaiting-deploy" or "awaiting-compatible-deploy") return;
@@ -389,11 +389,13 @@ internal sealed partial class DurableRestoreWorker(
         internal static partial void LeaseFailed(ILogger logger, string exceptionType);
     }
 
-    private sealed class CheckpointStarter(IWorkflowOperationStore store, DeployOperationExecutor deploy, WorkflowOperationRecord record) : IDurablePriorImageStarter
+    private sealed class CheckpointStarter(IWorkflowOperationStore store, DeployOperationExecutor deploy, DurableRestoreCompletionVerifier verifier, WorkflowOperationRecord record) : IDurablePriorImageStarter
     {
         public async Task<string?> StartAsync(OperationGatewayRequest request, string? executionPayload, CancellationToken cancellationToken)
         {
             if (string.IsNullOrWhiteSpace(executionPayload)) return null;
+            var hostHash = await verifier.CaptureHostHashAsync(cancellationToken).ConfigureAwait(false);
+            if (hostHash is null) return null;
             var workflowId = DeployWorkflowService.CreateOperationId(request.IdempotencyKey);
             var checkpoint = record with
             {
@@ -402,7 +404,8 @@ internal sealed partial class DurableRestoreWorker(
                 PreMigrationRestore = record.PreMigrationRestore! with
                 {
                     Phase = "awaiting-compatible-deploy",
-                    DeployOperationId = workflowId
+                    DeployOperationId = workflowId,
+                    RestoredHostHash = hostHash
                 }
             };
             if (!await store.TrySetAsync(checkpoint, cancellationToken: cancellationToken).ConfigureAwait(false)) return null;
@@ -477,7 +480,12 @@ internal sealed class DurableRestoreCompletionVerifier(
     /// <summary>Checks customer readback and records an already-compatible rollback.</summary>
     public async Task<string?> VerifyCompatibleAsync(WorkflowOperationRecord record, DeployExecutionPayload payload, CancellationToken cancellationToken)
     {
-        if (!await customerProbe.SucceededAsync(cancellationToken).ConfigureAwait(false)) return PreMigrationRestoreCodes.ReadbackIncomplete;
+        var expected = record.PreMigrationRestore?.RestoredHostHash;
+        var host = await secrets.ReadHostAsync(options.Value.ConnectionSecretId, cancellationToken).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(host) || !HostMatches(host, expected)
+            || !await customerProbe.SucceededAsync(cancellationToken).ConfigureAwait(false)) return PreMigrationRestoreCodes.ReadbackIncomplete;
+        var confirmed = await secrets.ReadHostAsync(options.Value.ConnectionSecretId, cancellationToken).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(confirmed) || !HostMatches(confirmed, expected)) return PreMigrationRestoreCodes.ReadbackIncomplete;
         var written = await audit.AppendAsync(new PreMigrationRestoreAuditLine
         {
             Time = DateTimeOffset.UtcNow,
@@ -490,6 +498,13 @@ internal sealed class DurableRestoreCompletionVerifier(
             OperationId = record.OperationId
         }, cancellationToken).ConfigureAwait(false);
         return written ? null : PreMigrationRestoreCodes.AuditFailed;
+    }
+
+    /// <summary>Captures the current database binding without persisting its host name.</summary>
+    public async Task<string?> CaptureHostHashAsync(CancellationToken cancellationToken)
+    {
+        var host = await secrets.ReadHostAsync(options.Value.ConnectionSecretId, cancellationToken).ConfigureAwait(false);
+        return string.IsNullOrWhiteSpace(host) ? null : Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(host))).ToLowerInvariant();
     }
 
     private static bool HostMatches(string host, string? expected)
