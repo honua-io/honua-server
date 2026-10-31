@@ -119,6 +119,7 @@ internal sealed class DeployOperationExecutor(DeployWorkflowService deployWorkfl
                 principal: null,
                 preMigrationBackupId: payload.Rollback ? payload.BackupId : null,
                 restoreOwnerId,
+                request.ApprovedBy,
                 cancellationToken)
             .ConfigureAwait(false);
 

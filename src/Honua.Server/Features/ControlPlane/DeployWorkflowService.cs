@@ -356,7 +356,7 @@ internal sealed partial class DeployWorkflowService
         CancellationToken cancellationToken = default)
         => CreateWithBackupAsync(targetId, desiredRevision, currentRevision, requestedBy, reason,
             idempotencyKey, correlationId, priority, submitImmediately, parameterOverrides, principal,
-            preMigrationBackupId: null, restoreOwnerId: null, cancellationToken);
+            preMigrationBackupId: null, restoreOwnerId: null, approvedBy: null, cancellationToken);
 
     internal async Task<WorkflowOperationRecord?> CreateWithBackupAsync(
         string targetId,
@@ -372,6 +372,7 @@ internal sealed partial class DeployWorkflowService
         ClaimsPrincipal? principal,
         string? preMigrationBackupId,
         string? restoreOwnerId,
+        string? approvedBy,
         CancellationToken cancellationToken)
     {
         EnsureDurableStoreConfigured();
@@ -427,6 +428,7 @@ internal sealed partial class DeployWorkflowService
             Audit = new OperationAuditInfo
             {
                 RequestedBy = requestedBy,
+                ApprovedBy = planningResult.Target.TargetKind == DeployTargetKind.LocalCompose ? approvedBy : null,
                 // honua-server#4958: the tenant binding is captured from the validated identity here,
                 // so the protection window sealed at activation can bind recovery to the same pair.
                 TenantId = Honua.Server.Features.Admin.PlatformDeployAuthority.ResolveTenantId(principal, _tenantOptions?.Value),

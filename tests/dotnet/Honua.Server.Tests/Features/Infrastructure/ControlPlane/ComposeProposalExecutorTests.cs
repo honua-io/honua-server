@@ -306,6 +306,41 @@ public sealed class ComposeProposalExecutorTests
     }
 
     [UnitTest]
+    public async Task ApprovedProposal_WithoutTargetApprovalFlag_PreservesApprover()
+    {
+        var release = Digest('a');
+        var prior = Digest('b');
+        var client = new RecordingClient { Response = Ready(prior) };
+        var store = new MemoryWorkflows();
+        var service = new DeployWorkflowService(new MemoryTargets(new DeployTargetDefinition
+        {
+            TargetId = "compose-local",
+            TargetKind = DeployTargetKind.LocalCompose,
+            Backend = ComposeDeployBackend.AdapterBackendName,
+            Environment = "local",
+            TargetName = "honua",
+            ArtifactReference = release,
+            RequiresApproval = false
+        }), [store], [Backend(client, release, "/tmp/compose-test.sock")],
+            new NotRequiredApproval(), NullLogger<DeployWorkflowService>.Instance);
+        var executor = new DeployOperationExecutor(service);
+        var payload = new DeployExecutionPayload { TargetId = "compose-local", DesiredRevision = release, CurrentRevision = prior };
+        var request = new OperationGatewayRequest
+        {
+            Kind = OperationClass.Deploy,
+            RequestedBy = "proposer",
+            ApprovedBy = "approver",
+            IdempotencyKey = "compose-immediate-approval",
+            ExecutionPayload = payload.Serialize()
+        };
+        var id = await executor.ExecuteAsync(request, payload.Serialize());
+        var workflow = await service.GetAsync(id!);
+        Assert.Equal(WorkflowOperationStatus.Reconciling, workflow!.Status);
+        Assert.Equal("approver", workflow.Audit.ApprovedBy);
+        Assert.Contains("converge", client.Ops);
+    }
+
+    [UnitTest]
     public async Task ApplyConfig_AndRestartScope_FailBeforeTheExecutor()
     {
         var client = new RecordingClient { Response = Ready(Digest('a')) };
