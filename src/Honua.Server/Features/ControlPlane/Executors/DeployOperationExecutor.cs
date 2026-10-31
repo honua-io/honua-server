@@ -150,6 +150,13 @@ internal sealed record DeployExecutionPayload
     /// <summary>Backend parameter overrides.</summary>
     public Dictionary<string, string>? ParameterOverrides { get; init; }
 
+    /// <summary>True only when <c>honua_propose_rollback</c> sealed this payload.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Rollback { get; init; }
+
+    /// <summary>Pre-migration backup id. Ignored unless <see cref="Rollback"/> is true. Never read from parameter overrides.</summary>
+    public string? BackupId { get; init; }
+
     /// <summary>Parses a serialized payload, returning null when missing/malformed.</summary>
     public static DeployExecutionPayload? Parse(string? json)
     {
