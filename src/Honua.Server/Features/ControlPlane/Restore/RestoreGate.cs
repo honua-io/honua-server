@@ -388,6 +388,8 @@ internal sealed class PreMigrationRestoreExecutionService(
         {
             var started = await starter.StartAsync(request, payload.Serialize(), cancellationToken).ConfigureAwait(false);
             var operationId = string.IsNullOrWhiteSpace(started) ? null : started;
+            if (starter is IDurablePriorImageStarter && operationId is not null)
+                return new RestoreCompletion { Decision = RestoreDecisionKind.NotRequired, OperationId = operationId };
             var persisted = await WriteAsync(payload, request, operationId, ok: operationId != null, code: operationId == null ? PreMigrationRestoreCodes.ProviderFailed : null, schema: null, readback: false, cancellationToken).ConfigureAwait(false);
             return new RestoreCompletion
             {
@@ -427,7 +429,9 @@ internal sealed class PreMigrationRestoreExecutionService(
 
         var observed = await probe.ProbeAsync(endpoint: null, cancellationToken).ConfigureAwait(false);
         var priorMax = revisions.MaxSchema(payload.DesiredRevision) ?? -1;
-        var matched = observed.Known && ReaderIncompatibleRestorePolicy.SchemaMatchesBackup(decision.ExpectedSchema!.Value, Max(observed.Applied), observed.Applied, priorMax);
+        var observedMax = Max(observed.Applied);
+        var matched = observed.Known && observedMax >= decision.ExpectedSchema!.Value && observedMax <= priorMax
+            && observed.Applied.All(migration => migration.Number <= priorMax);
         if (!matched || !sidecar.ReadbackComplete)
         {
             return await FailAsync(
