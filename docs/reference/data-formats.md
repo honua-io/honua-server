@@ -70,6 +70,8 @@ Cloud-optimized HDF5 (`.h5`/`.hdf5`) and NetCDF4 multidimensional coverages are 
 
 `fgb`, `geobuf`, `parquet`, and `arrow` are advertised in `supportedQueryFormats` only when the backing feature store can emit encoded output (PostGIS); other providers return HTTP 400 for them. `fgb`/`geobuf` work on both natively-stored and source-backed (provider-routed) PostGIS layers. FlatGeobuf encodes the authorized query result through a shared writer; Geobuf uses `ST_AsGeobuf` over the mapped table. Content negotiation via `Accept` headers maps to the same formats. Binary formats carry no `exceededTransferLimit` flag — page with `resultOffset`/`resultRecordCount` for complete exports.
 
+GeoParquet (`f=parquet` and OData `$format=parquet`) and GeoArrow (`f=arrow`) DateTime columns are Arrow timestamps in UTC with microsecond resolution, matching PostgreSQL `timestamptz`. Integer attributes that already mean Unix epoch milliseconds stay milliseconds. Time-of-day columns stay Time32 milliseconds, the finest unit that type stores.
+
 FlatGeobuf responses include a readable header even when no rows match. The header describes the selected fields and the CRS of the returned coordinates. Null attributes retain their column identities. A DateTime column carries UTC ISO-8601 text ending in `Z` with seven fractional digits (28 bytes), which stays inside the 32-byte value GDAL's FlatGeobuf reader accepts. Standalone times and UUIDs use strings. Null and empty geometries retain their rows. Responses include a packed spatial index when every returned geometry has a nonempty, finite bounding box; otherwise the index is omitted.
 
 #### GeoParquet runtime requirement

@@ -571,8 +571,8 @@ public static partial class GeoParquetFeatureWriter
             DateOnly => new Date32Type(),
             TimeOnly => new Time32Type(TimeUnit.Millisecond),
             TimeSpan => new Time32Type(TimeUnit.Millisecond),
-            DateTime => new TimestampType(TimeUnit.Millisecond, TimeZoneInfo.Utc),
-            DateTimeOffset => new TimestampType(TimeUnit.Millisecond, TimeZoneInfo.Utc),
+            DateTime => new TimestampType(TimeUnit.Microsecond, TimeZoneInfo.Utc),
+            DateTimeOffset => new TimestampType(TimeUnit.Microsecond, TimeZoneInfo.Utc),
             _ => null
         };
     }
@@ -614,7 +614,7 @@ public static partial class GeoParquetFeatureWriter
             "boolean" or "bool" => new BooleanType(),
             "date" => new Date32Type(),
             "time" => new Time32Type(TimeUnit.Millisecond),
-            "timestamp" or "timestamptz" or "timestamp with time zone" or "timestamp without time zone" => new TimestampType(TimeUnit.Millisecond, TimeZoneInfo.Utc),
+            "timestamp" or "timestamptz" or "timestamp with time zone" or "timestamp without time zone" => new TimestampType(TimeUnit.Microsecond, TimeZoneInfo.Utc),
             "bytea" => new BinaryType(),
             "uuid" => new StringType(),
             "json" or "jsonb" => new StringType(),
@@ -1163,7 +1163,7 @@ public static partial class GeoParquetFeatureWriter
 
     private static TimestampArray BuildTimestampAttributeArray(ImmutableArray<Feature> features, string fieldName, ILogger? logger = null)
     {
-        var builder = new TimestampArray.Builder(TimeUnit.Millisecond, TimeZoneInfo.Utc);
+        var builder = new TimestampArray.Builder(TimeUnit.Microsecond, TimeZoneInfo.Utc);
         ForEachAttribute(
             features,
             fieldName,

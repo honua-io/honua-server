@@ -172,7 +172,7 @@ internal sealed class GeoArrowQueryFormatter
             MetadataV2FieldType.Float => FloatType.Default,
             MetadataV2FieldType.Double => DoubleType.Default,
             MetadataV2FieldType.Boolean => BooleanType.Default,
-            MetadataV2FieldType.DateTime => new TimestampType(TimeUnit.Millisecond, "UTC"),
+            MetadataV2FieldType.DateTime => new TimestampType(TimeUnit.Microsecond, "UTC"),
             MetadataV2FieldType.Date => Date32Type.Default,
             MetadataV2FieldType.Time => new Time64Type(TimeUnit.Microsecond),
             MetadataV2FieldType.Binary => BinaryType.Default,
@@ -294,7 +294,7 @@ internal sealed class GeoArrowQueryFormatter
 
     private static TimestampArray BuildTimestampArrayByName(IReadOnlyList<Feature> features, string fieldName)
     {
-        var builder = new TimestampArray.Builder(new TimestampType(TimeUnit.Millisecond, "UTC"));
+        var builder = new TimestampArray.Builder(new TimestampType(TimeUnit.Microsecond, "UTC"));
         for (var i = 0; i < features.Count; i++)
         {
             var value = TryConvertDateTimeOffset(GeoParquetQueryFormatter.GetAttributeValue(features[i], fieldName));
@@ -463,7 +463,7 @@ internal sealed class GeoArrowQueryFormatter
 
     private static TimestampArray BuildTimestampArray(IReadOnlyList<Feature> features, string fieldName)
     {
-        var builder = new TimestampArray.Builder(new TimestampType(TimeUnit.Millisecond, "UTC"));
+        var builder = new TimestampArray.Builder(new TimestampType(TimeUnit.Microsecond, "UTC"));
         for (var i = 0; i < features.Count; i++)
         {
             var value = TryConvertDateTimeOffset(GeoParquetQueryFormatter.GetAttributeValue(features[i], fieldName));
