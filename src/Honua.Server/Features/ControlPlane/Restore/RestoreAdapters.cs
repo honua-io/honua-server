@@ -44,8 +44,8 @@ internal static class ConnectionStringHostSwap
             using var document = JsonDocument.Parse(secret);
             if (document.RootElement.ValueKind != JsonValueKind.Object) return false;
             var root = document.RootElement;
-            var envelope = root.TryGetProperty("connectionString", out _) ? "connectionString"
-                : root.TryGetProperty("ConnectionString", out _) ? "ConnectionString" : null;
+            var envelope = HasString(root, "connectionString") ? "connectionString"
+                : HasString(root, "ConnectionString") ? "ConnectionString" : null;
             var propertyName = envelope ?? "host";
             if (!root.TryGetProperty(propertyName, out var property) || property.ValueKind != JsonValueKind.String) return false;
             using var output = new MemoryStream();
@@ -84,6 +84,10 @@ internal static class ConnectionStringHostSwap
             return null;
         }
     }
+
+    private static bool HasString(JsonElement root, string name)
+        => root.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String
+            && !string.IsNullOrWhiteSpace(value.GetString());
 
     private static bool IsHost(string host)
         => !string.IsNullOrWhiteSpace(host)
