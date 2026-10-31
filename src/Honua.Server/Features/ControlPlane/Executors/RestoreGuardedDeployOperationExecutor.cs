@@ -70,7 +70,12 @@ internal sealed class RestoreGuardedDeployOperationExecutor(
         CancellationToken cancellationToken = default)
     {
         var payload = DeployExecutionPayload.Parse(executionPayload);
-        if (payload is not { Rollback: true } || IsLocalCompose(payload))
+        if (payload is not null && IsLocalCompose(payload))
+        {
+            if (queue is null) throw new InvalidOperationException(PreMigrationRestoreCodes.TransportUnavailable);
+            return await queue.EnqueueAsync(request, executionPayload!, cancellationToken).ConfigureAwait(false);
+        }
+        if (payload is not { Rollback: true })
         {
             return await inner.ExecuteAsync(request, executionPayload, cancellationToken).ConfigureAwait(false);
         }

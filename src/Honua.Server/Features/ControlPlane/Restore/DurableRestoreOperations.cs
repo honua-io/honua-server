@@ -103,7 +103,9 @@ internal sealed partial class DurableRestoreWorker(
     DeployOperationExecutor deploy,
     DurableRestoreCompletionVerifier verifier,
     IPreMigrationRestoreAudit audit,
-    ILogger<DurableRestoreWorker> logger) : BackgroundService
+    ILogger<DurableRestoreWorker> logger,
+    IOptionsMonitor<ControlPlaneOptions>? controlPlane = null,
+    IComposeExecutorClient? compose = null) : BackgroundService
 {
     private static readonly TimeSpan Lease = TimeSpan.FromMinutes(2);
     private readonly string _owner = $"restore:{Environment.MachineName}:{Guid.NewGuid():N}";
@@ -123,6 +125,11 @@ internal sealed partial class DurableRestoreWorker(
             if (context.Phase == "acting")
             {
                 await FailAsync(record, PreMigrationRestoreCodes.RestoreIncomplete, lostLease.Token).ConfigureAwait(false);
+                return;
+            }
+            if (context.Phase == "awaiting-local-deploy")
+            {
+                await CompleteLocalAsync(record, lostLease.Token).ConfigureAwait(false);
                 return;
             }
             if (context.Phase == "awaiting-deploy")
@@ -147,7 +154,20 @@ internal sealed partial class DurableRestoreWorker(
                 return;
             }
             var payload = DeployExecutionPayload.Parse(context.Payload);
-            if (payload is null || !payload.Rollback)
+            if (payload is null)
+            {
+                await FailAsync(record, PreMigrationRestoreCodes.RestoreIncomplete, lostLease.Token).ConfigureAwait(false);
+                return;
+            }
+            var local = controlPlane?.CurrentValue.DeployTargets.Any(target =>
+                target.TargetKind == DeployTargetKind.LocalCompose &&
+                string.Equals(target.TargetId, payload.TargetId, StringComparison.Ordinal)) == true;
+            if (local)
+            {
+                await StartLocalAsync(record, payload, lostLease.Token).ConfigureAwait(false);
+                return;
+            }
+            if (!payload.Rollback)
             {
                 await FailAsync(record, PreMigrationRestoreCodes.RestoreIncomplete, lostLease.Token).ConfigureAwait(false);
                 return;
@@ -210,6 +230,55 @@ internal sealed partial class DurableRestoreWorker(
             try { await renewal.ConfigureAwait(false); } catch (OperationCanceledException) { }
             await store.ReleaseLeaseAsync(id, _owner, CancellationToken.None).ConfigureAwait(false);
         }
+    }
+
+    private async Task StartLocalAsync(WorkflowOperationRecord record, DeployExecutionPayload payload, CancellationToken cancellationToken)
+    {
+        var workflowId = DeployWorkflowService.CreateOperationId(record.OperationId);
+        var checkpoint = record with
+        {
+            Status = WorkflowOperationStatus.Reconciling,
+            UpdatedAt = DateTimeOffset.UtcNow,
+            CurrentPhase = "Waiting for the local deployment and its protection window.",
+            PreMigrationRestore = record.PreMigrationRestore! with { Phase = "awaiting-local-deploy", DeployOperationId = workflowId }
+        };
+        if (!await store.TrySetAsync(checkpoint, cancellationToken: cancellationToken).ConfigureAwait(false)) return;
+        var request = new OperationGatewayRequest
+        {
+            Kind = OperationClass.Deploy, RequestedBy = record.Audit.RequestedBy,
+            ApprovedBy = record.PreMigrationRestore!.ApprovedBy, ApprovedProposalId = record.Audit.ProposalId,
+            IdempotencyKey = record.OperationId, CorrelationId = record.Audit.CorrelationId,
+            Reason = record.Audit.Reason, TenantId = record.Audit.TenantId
+        };
+        var actual = await deploy.ExecuteAsync(request, record.PreMigrationRestore.Payload, cancellationToken).ConfigureAwait(false);
+        if (!string.Equals(actual, workflowId, StringComparison.Ordinal))
+            throw new InvalidOperationException("Deploy operation did not match the saved checkpoint.");
+    }
+
+    private async Task CompleteLocalAsync(WorkflowOperationRecord record, CancellationToken cancellationToken)
+    {
+        var checkpoint = record.PreMigrationRestore!;
+        var payload = DeployExecutionPayload.Parse(checkpoint.Payload);
+        if (payload is null || string.IsNullOrWhiteSpace(checkpoint.DeployOperationId) || compose is null)
+        {
+            await FailAsync(record, PreMigrationRestoreCodes.RestoreIncomplete, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+        var workflow = await deploy.GetWorkflowAsync(checkpoint.DeployOperationId, cancellationToken).ConfigureAwait(false);
+        if (workflow is null || workflow.Status is not (WorkflowOperationStatus.Submitted or WorkflowOperationStatus.Reconciling or WorkflowOperationStatus.Succeeded))
+        {
+            await FailAsync(record, PreMigrationRestoreCodes.RestoreIncomplete, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+        if (workflow.Status != WorkflowOperationStatus.Succeeded) return;
+        var observed = await compose.ExecuteAsync(new ComposeExecutorRequest
+        {
+            Op = "status", Image = payload.DesiredRevision, RequestId = record.OperationId
+        }, cancellationToken).ConfigureAwait(false);
+        var valid = observed.Ok && observed.ReadbackComplete &&
+            string.Equals(observed.RunningImage, payload.DesiredRevision, StringComparison.Ordinal);
+        await FinishAsync(record, valid ? WorkflowOperationStatus.Succeeded : WorkflowOperationStatus.Failed,
+            valid ? null : PreMigrationRestoreCodes.RestoreIncomplete, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task CompleteAsync(WorkflowOperationRecord record, CancellationToken cancellationToken)

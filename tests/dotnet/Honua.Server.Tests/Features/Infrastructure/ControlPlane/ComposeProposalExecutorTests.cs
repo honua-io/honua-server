@@ -302,13 +302,7 @@ public sealed class ComposeProposalExecutorTests
             }),
             [store], [Backend(client, release, "/tmp/compose-test.sock")],
             new NotRequiredApproval(), NullLogger<DeployWorkflowService>.Instance);
-        var monitor = Substitute.For<IOptionsMonitor<ControlPlaneOptions>>();
-        monitor.CurrentValue.Returns(new ControlPlaneOptions
-        {
-            DeployTargets = [new DeployTargetOptions { TargetId = "compose-local", TargetKind = DeployTargetKind.LocalCompose }]
-        });
-        // The cloud coordinator must not run for a project whose real journal is owned by the sidecar.
-        var executor = new RestoreGuardedDeployOperationExecutor(new DeployOperationExecutor(service), null!, controlPlane: monitor);
+        var executor = new DeployOperationExecutor(service);
         var payload = new DeployExecutionPayload
         {
             TargetId = "compose-local",

@@ -22,7 +22,7 @@ services:
   # A fresh named volume is root-owned. This one-shot command makes it writable by uid 1001
   # before the executor binds the socket. The Debian runtime image provides chown.
   compose-executor-init:
-    image: ${HONUA_IMAGE:?Set the server image}
+    image: ${HONUA_RELEASE_IMAGE:?Set the immutable release digest}
     user: "0:0"
     entrypoint: ["chown", "1001:1001", "/run/honua-compose"]
     restart: "no"
@@ -33,7 +33,7 @@ services:
     volumes:
       - compose-executor-socket:/run/honua-compose
   compose-executor:
-    image: ${HONUA_IMAGE:?Set the server image}
+    image: ${HONUA_RELEASE_IMAGE:?Set the immutable release digest}
     user: "1001:1001"
     # Host docker group, so uid 1001 can use the mounted socket. `getent group docker` prints it.
     group_add:
