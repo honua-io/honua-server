@@ -270,7 +270,7 @@ internal sealed partial class ComposeDeployBackend(
         => operation.Deploy?.Protection?.Phase is DeployProtectionPhase.Observing or DeployProtectionPhase.Protected
             || (operation.Deploy?.Protection is null
                 && (operation.Deploy?.TrafficExposedAt is not null || operation.Status == WorkflowOperationStatus.Submitted)
-                && !string.IsNullOrWhiteSpace(operation.Deploy.CurrentRevision));
+                && !string.IsNullOrWhiteSpace(operation.Deploy?.CurrentRevision));
 
     private static bool ApprovedByOtherPrincipal(WorkflowOperationRecord operation)
     {
