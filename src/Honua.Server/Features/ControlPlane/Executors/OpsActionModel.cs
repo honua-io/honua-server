@@ -29,6 +29,14 @@ internal static class OpsActionNames
 
     /// <summary>Transiently tunes the bounded database admission target.</summary>
     public const string TuneBoundedAdmission = "db.tune_bounded_admission";
+
+    /// <summary>Restarts the registered Compose service and requires a completed readback.</summary>
+    public const string ComposeRestartService = "compose.restart_service";
+
+    /// <summary>
+    /// Reserved Compose config change. Always refused: the executor does not apply arbitrary config.
+    /// </summary>
+    public const string ComposeApplyConfig = "compose.apply_config";
 }
 
 /// <summary>
@@ -53,6 +61,8 @@ internal static class OpsActionCatalog
                 new(OpsActionNames.PauseChannel, new OpsActionDescriptor(GuardrailTier.RequiresApproval, false)),
                 new(OpsActionNames.ResumeChannel, new OpsActionDescriptor(GuardrailTier.DirectExecute, false)),
                 new(OpsActionNames.TuneBoundedAdmission, new OpsActionDescriptor(GuardrailTier.RequiresApproval, false)),
+                new(OpsActionNames.ComposeRestartService, new OpsActionDescriptor(GuardrailTier.RequiresApproval, false)),
+                new(OpsActionNames.ComposeApplyConfig, new OpsActionDescriptor(GuardrailTier.RequiresApproval, false)),
             });
 
     /// <summary>Compatibility projection of registered ops-action guardrail tiers.</summary>
@@ -140,6 +150,9 @@ internal sealed record OpsActionRequest
     /// <summary>Optional <c>limit</c> parameter (bounded-admission tune target).</summary>
     public int? Limit { get; init; }
 
+    /// <summary>Whether the payload carried any <c>params</c> value.</summary>
+    public bool HasParameters { get; init; }
+
     /// <summary>
     /// Parses and validates the payload structure. Throws <see cref="OpsActionException"/>
     /// for an empty, non-object, non-JSON, or action-less payload — the fail-closed path.
@@ -184,11 +197,20 @@ internal sealed record OpsActionRequest
             int? maxCount = null;
             int? limit = null;
             string? channel = null;
-            if (root.TryGetProperty("params", out var paramsElement) && paramsElement.ValueKind == JsonValueKind.Object)
+            var hasParameters = false;
+            if (root.TryGetProperty("params", out var paramsElement))
             {
-                maxCount = ReadInt(paramsElement, "maxCount");
-                limit = ReadInt(paramsElement, "limit");
-                channel = ReadString(paramsElement, "channel");
+                if (paramsElement.ValueKind == JsonValueKind.Object)
+                {
+                    hasParameters = paramsElement.EnumerateObject().Any();
+                    maxCount = ReadInt(paramsElement, "maxCount");
+                    limit = ReadInt(paramsElement, "limit");
+                    channel = ReadString(paramsElement, "channel");
+                }
+                else if (paramsElement.ValueKind is not JsonValueKind.Null and not JsonValueKind.Undefined)
+                {
+                    hasParameters = true;
+                }
             }
 
             return new OpsActionRequest
@@ -198,6 +220,7 @@ internal sealed record OpsActionRequest
                 MaxCount = maxCount,
                 Limit = limit,
                 Channel = string.IsNullOrWhiteSpace(channel) ? (string.IsNullOrWhiteSpace(target) ? null : target) : channel,
+                HasParameters = hasParameters,
             };
         }
     }

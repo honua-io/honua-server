@@ -174,6 +174,8 @@ internal sealed class McpPlatformOpsReader(
             DesiredRevision = selection.DesiredRevision,
             CurrentRevision = selection.CurrentRevision,
             ParameterOverrides = argument.ParameterOverrides,
+            Rollback = true,
+            BackupId = Clean(argument.BackupId),
         }.Serialize();
 
         return await SealProposalAsync(principal, OperationClass.Deploy, payload,

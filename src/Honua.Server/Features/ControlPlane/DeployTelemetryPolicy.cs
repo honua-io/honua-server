@@ -572,6 +572,9 @@ internal sealed record DeployTelemetryPolicy
             // (no metrics substrate on-prem/air-gapped) must select telemetry.policy = health-only
             // explicitly; the backend's own standby health gate drives promotion either way.
             DeployTargetKind.SelfHostedRolling => "honua-http",
+            // Local Compose readback uses the executor's operator-configured probe URLs. It must not
+            // select a metrics preset or a localhost telemetry gate.
+            DeployTargetKind.LocalCompose => null,
             _ => null
         };
 

@@ -77,6 +77,21 @@ public sealed class OperationReconcileDispatcherTests
     }
 
     [Fact]
+    public async Task ReconcileOnceAsync_PreMigrationRestore_RoutesToDurableWorker()
+    {
+        var restore = Substitute.For<IPreMigrationRestoreReconciler>();
+        var sut = new OperationReconcileDispatcher(
+            Substitute.For<IWorkflowOperationReconciler>(),
+            Substitute.For<IExecutionJobReconciler>(),
+            Substitute.For<IMetadataReleaseOperationReconciler>(),
+            Substitute.For<ICoordinatedReleaseReconciler>(), restore);
+
+        await sut.ReconcileOnceAsync(new OperationRef(OperationKind.PreMigrationRestore, "restore-1"));
+
+        await restore.Received(1).ReconcileAsync("restore-1", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task ReconcileOnceAsync_EmptyOperationId_IsNoOp()
     {
         var execution = Substitute.For<IExecutionJobReconciler>();

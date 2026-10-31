@@ -50,10 +50,10 @@ internal static class DeployPromotionPolicy
 
     /// <summary>
     /// Resolves the promotion gate for the supplied deploy spec. An explicit
-    /// <see cref="PromotionGateParameterKey"/> wins; otherwise self-hosted rolling deploys default to
-    /// <see cref="DeployPromotionGateMode.Health"/> (no cloud metrics substrate exists on-prem) and
-    /// every other target kind defaults to <see cref="DeployPromotionGateMode.Telemetry"/>, preserving
-    /// the strict cloud gate.
+    /// <see cref="PromotionGateParameterKey"/> wins; otherwise self-hosted rolling and local Compose
+    /// deploys default to <see cref="DeployPromotionGateMode.Health"/> (no cloud metrics substrate is
+    /// required) and every other target kind defaults to <see cref="DeployPromotionGateMode.Telemetry"/>,
+    /// preserving the strict cloud gate.
     /// </summary>
     public static DeployPromotionGateMode Resolve(DeployOperationSpec? spec)
     {
@@ -81,7 +81,7 @@ internal static class DeployPromotionPolicy
             }
         }
 
-        return spec.TargetKind == DeployTargetKind.SelfHostedRolling
+        return spec.TargetKind is DeployTargetKind.SelfHostedRolling or DeployTargetKind.LocalCompose
             ? DeployPromotionGateMode.Health
             : DeployPromotionGateMode.Telemetry;
     }
