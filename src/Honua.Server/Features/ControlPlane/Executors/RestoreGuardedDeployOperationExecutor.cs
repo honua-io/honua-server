@@ -31,6 +31,10 @@ internal sealed class RestoreGuardedDeployOperationExecutor(
     {
         var plan = await inner.PlanAsync(request, cancellationToken).ConfigureAwait(false);
         var payload = DeployExecutionPayload.Parse(request.ExecutionPayload);
+        if (plan is not null && payload is { Rollback: false } && IsKnownPriorRevision(payload))
+        {
+            return plan with { BlockingReasons = plan.BlockingReasons.Concat(["A catalogued prior image requires a rollback proposal."]).ToArray(), RiskLevel = ProposalRiskLevel.High };
+        }
         if (plan is null || payload is not { Rollback: true })
         {
             return plan;
@@ -69,6 +73,8 @@ internal sealed class RestoreGuardedDeployOperationExecutor(
         CancellationToken cancellationToken = default)
     {
         var payload = DeployExecutionPayload.Parse(executionPayload);
+        if (payload is { Rollback: false } && IsKnownPriorRevision(payload))
+            throw new InvalidOperationException("A catalogued prior image requires a rollback proposal.");
         if (payload is not { Rollback: true })
         {
             return await inner.ExecuteAsync(request, executionPayload, cancellationToken).ConfigureAwait(false);
@@ -84,6 +90,10 @@ internal sealed class RestoreGuardedDeployOperationExecutor(
             throw new InvalidOperationException(PreMigrationRestoreCodes.TransportUnavailable);
         return await queue.EnqueueAsync(request, executionPayload!, cancellationToken).ConfigureAwait(false);
     }
+
+    private bool IsKnownPriorRevision(DeployExecutionPayload payload)
+        => restoreOptions?.Value.Revisions.Any(revision =>
+            string.Equals(revision.Revision, payload.DesiredRevision, StringComparison.Ordinal)) == true;
 
     /// <inheritdoc />
     public async Task<OperationBackendStatus?> GetBackendStatusAsync(

@@ -90,11 +90,11 @@ internal static class SchemaJournalReader
             await using var command = connection.CreateCommand();
             command.CommandText = compatibility
                 ? """
-                  SELECT v.scriptname, c.classification, c.min_reader_schema
+                  SELECT v.scriptname, c.classification, c.min_reader_schema, c.declaration_format, c.script_sha256, c.script_text
                   FROM public.schema_versions v
                   LEFT JOIN public.schema_version_reader_compatibility c ON c.script_name = v.scriptname
                   """
-                : "SELECT scriptname, NULL::text, NULL::integer FROM public.schema_versions";
+                : "SELECT scriptname, NULL::text, NULL::integer, NULL::integer, NULL::text, NULL::text FROM public.schema_versions";
             var applied = new List<AppliedSchemaMigration>();
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -108,6 +108,21 @@ internal static class SchemaJournalReader
 
                 var classification = reader.IsDBNull(1) ? null : reader.GetString(1);
                 var minReader = reader.IsDBNull(2) ? 0 : reader.GetInt32(2);
+                if (classification == MigrationReaderCompatibilityClassification.Expand)
+                {
+                    if (reader.IsDBNull(3) || reader.IsDBNull(4) || reader.IsDBNull(5))
+                        classification = null;
+                    else
+                    {
+                        var declaration = new MigrationReaderCompatibilityDeclaration
+                        {
+                            ScriptName = name!, DeclarationFormat = reader.GetInt32(3), Classification = classification,
+                            MinReaderSchema = minReader, ScriptSha256 = reader.GetString(4), ScriptText = reader.GetString(5)
+                        };
+                        if (!MigrationReaderCompatibility.Verify(declaration, name!, int.MaxValue).Accepted)
+                            classification = null;
+                    }
+                }
                 applied.Add(new AppliedSchemaMigration(number.Value, classification, minReader));
             }
 
