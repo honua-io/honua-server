@@ -193,10 +193,20 @@ internal sealed partial class ComposeProjectController : IDisposable
             return Refuse(request, ComposeExecutorCodes.ReadbackIncomplete, "The service could not be stopped, so no backup was taken.");
         }
 
-        var backup = await TakeBackupAsync(live.ImageId, live.SchemaVersion.Value, cancellationToken).ConfigureAwait(false);
+        (string? BackupId, ComposeExecutorResponse? Failure) backup;
+        try
+        {
+            backup = await TakeBackupAsync(live.ImageId, live.SchemaVersion.Value, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            await RestartAfterBackupFailureAsync().ConfigureAwait(false);
+            if (ex is OperationCanceledException) throw;
+            return Refuse(request, ComposeExecutorCodes.BackupFailed, "The backup failed; restarting the prior service was attempted.");
+        }
         if (backup.Failure != null)
         {
-            await ComposeAsync(CommandTimeout, ["start", "--", _options.ServiceName], cancellationToken).ConfigureAwait(false);
+            await RestartAfterBackupFailureAsync().ConfigureAwait(false);
             return backup.Failure with { RequestId = request.RequestId };
         }
 
@@ -208,6 +218,18 @@ internal sealed partial class ComposeProjectController : IDisposable
 
         var confirmed = await ConfirmAsync(request, request.Image!, inspected.Id, cancellationToken).ConfigureAwait(false);
         return confirmed with { BackupId = backup.BackupId };
+    }
+
+    private async Task RestartAfterBackupFailureAsync()
+    {
+        try
+        {
+            await ComposeAsync(CommandTimeout, ["start", "--", _options.ServiceName], CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            // The response remains a failure; a restart exception cannot turn it into success.
+        }
     }
 
     private async Task<ComposeExecutorResponse> RollbackCoreAsync(
