@@ -123,7 +123,8 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
             });
             Assert.NotNull(secondRoute.ProposalId);
             var second = await gateway.ApplyApprovedProposalAsync(secondRoute.ProposalId, "approver");
-            Assert.NotNull(second?.ExecutionOperationId);
+            Assert.NotNull(second);
+            Assert.NotNull(second.ExecutionOperationId);
             var verifier = new DurableRestoreCompletionVerifier(probe, revisions, customer, audit, secrets, cell);
             DurableRestoreWorker NewWorker() => new(workflows, proposals, coordinator, deploy, verifier, audit, NullLogger<DurableRestoreWorker>.Instance);
             await NewWorker().ReconcileAsync(approved.ExecutionOperationId, CancellationToken.None);
