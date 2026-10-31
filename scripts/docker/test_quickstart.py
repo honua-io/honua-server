@@ -58,7 +58,7 @@ class QuickstartTests(unittest.TestCase):
             services = self.render(env_file.name, POSTGRES_PASSWORD=os.urandom(32).hex(),
                                    MINIO_ROOT_PASSWORD=os.urandom(32).hex())
             image = services["console"]["image"]
-            self.assertEqual(image, "ghcr.io/honua-io/honua-console@sha256:a34b0fc8b8b50762d026122a057787a95711de61412cf5595d7620cfb81d75f4")
+            self.assertEqual(image, "ghcr.io/honua-io/honua-console@sha256:38a1c2b38c09697f90716a3abbab5471e2ea5b79ed494c2a77fb7a80faa52da1")
             self.assertEqual(services["console"]["environment"]["HONUA_SERVER_BASE_URL"], "http://honua:8080")
             self.assertEqual(services["honua"]["environment"]["PUBLIC_BASE_URL"], "http://localhost:8080")
 
