@@ -253,10 +253,6 @@ internal sealed class McpMetadataReleaseMutationArgument
 
 internal sealed class McpPlatformReleaseConvergenceArgument
 {
-    /// <summary>Exact pending contract migration approval token reviewed by the approver.</summary>
-    [JsonPropertyName("contractMigrationApprovalNonce")]
-    public string? ContractMigrationApprovalNonce { get; set; }
-
     /// <summary>
     /// Optional release the agent intends to converge to (for example <c>2026.1-rc.3</c>). When set
     /// and it does not name the declared <c>ControlPlane:PlatformRelease:Version</c> (compared with

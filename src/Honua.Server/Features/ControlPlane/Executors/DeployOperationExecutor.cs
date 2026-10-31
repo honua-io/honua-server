@@ -66,11 +66,6 @@ internal sealed class DeployOperationExecutor(DeployWorkflowService deployWorkfl
             diff.Add($"backup: {payload.BackupId}");
         }
 
-        if (payload.ParameterOverrides?.TryGetValue("deployment.contract_migration_nonce", out var nonce) == true)
-        {
-            diff.Add($"contract migration approval: {nonce}");
-        }
-
         return new OperationProposalPlan
         {
             Summary = $"Deploy {payload.DesiredRevision} to {planResult.Target.TargetId}",

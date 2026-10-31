@@ -21,9 +21,6 @@ internal sealed record ComposeExecutorRequest
     /// <summary>Optional backup id. When omitted, rollback selects the newest verifying manifest.</summary>
     public string? BackupId { get; init; }
 
-    /// <summary>Exact migration approval token sealed in the approved proposal.</summary>
-    public string? ContractMigrationApprovalNonce { get; init; }
-
     /// <summary>Caller correlation id copied onto the audit line.</summary>
     public string? RequestId { get; init; }
 }

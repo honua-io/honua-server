@@ -345,11 +345,8 @@ changes. A rollback to an image that cannot read the live journal, including a
 reader-incompatible or contract migration, restores a verified database backup from
 `backups` before that image starts. Rollback
 uses the image id recorded in that backup. File storage is not part of this restore;
-the backup recipe in the Compose deploy guide still covers it. For a pending contract migration, use the candidate image's migrate-only preflight as
-shown in the [upgrade guide](../guides/deploy/upgrade-and-rollback.md#run-migrations-out-of-band).
-Review its pending scripts and include the exact `contractApproval.nonce` as
-`contractMigrationApprovalNonce` in the convergence proposal. The separate approver sees
-the token in the plan; the migration runner still checks it against the pending scripts.
+the backup recipe in the Compose deploy guide still covers it. Contract-migration
+nonces stay on `HONUA_MIGRATE_ONLY` and are not bypassed here.
 
 ## What to do next
 
