@@ -189,7 +189,7 @@ internal sealed partial class ControlPlaneEventHandler(
             return Task.CompletedTask;
         }
 
-        if (kind is not (OperationKind.MetadataRelease or OperationKind.CoordinatedRelease))
+        if (kind is not (OperationKind.MetadataRelease or OperationKind.CoordinatedRelease or OperationKind.PreMigrationRestore))
         {
             Log.UnsupportedStagedContinue(logger, kind.ToString(), operationId);
             return Task.CompletedTask;

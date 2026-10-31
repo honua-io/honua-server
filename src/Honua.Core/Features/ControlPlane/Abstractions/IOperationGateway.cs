@@ -102,6 +102,14 @@ public sealed record OperationGatewayRequest
     public string? RequestedBy { get; init; }
 
     /// <summary>
+    /// Principal that approved this replay. Set by the gateway after separate-principal approval.
+    /// </summary>
+    public string? ApprovedBy { get; init; }
+
+    /// <summary>Proposal identity assigned by the gateway on approved replay.</summary>
+    public string? ApprovedProposalId { get; init; }
+
+    /// <summary>
     /// Agent identifier when the request originated from an autonomous agent.
     /// </summary>
     public string? RequestedByAgent { get; init; }

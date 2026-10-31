@@ -263,6 +263,7 @@ public sealed class OpsFindingsServiceTests
         // The rollback payload must target the prior revision (rev-9), not the failing desired revision.
         Assert.Contains("rev-9", finding.RecommendedAction.ExecutionPayload, StringComparison.Ordinal);
         Assert.Contains("\"targetId\":\"target-op-1\"", finding.RecommendedAction.ExecutionPayload, StringComparison.Ordinal);
+        Assert.Contains("\"rollback\":true", finding.RecommendedAction.ExecutionPayload, StringComparison.Ordinal);
     }
 
     [UnitTest]

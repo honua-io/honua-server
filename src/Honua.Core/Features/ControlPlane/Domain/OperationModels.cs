@@ -34,7 +34,10 @@ public enum WorkflowOperationKind
     /// Conduct a coordinated platform-upgrade release that composes a container rollout, an additive DB
     /// script migration, and a metadata-v2 activation as one ordered, gated, rollback-able operation.
     /// </summary>
-    CoordinatedRelease
+    CoordinatedRelease,
+
+    /// <summary>Restore a verified pre-migration backup before a rollback.</summary>
+    PreMigrationRestore
 }
 
 /// <summary>
@@ -1123,6 +1126,31 @@ public sealed record WorkflowOperationRecord
     /// that conduct a container rollout, a DB script migration, and a metadata-v2 activation as one op.
     /// </summary>
     public CoordinatedReleaseContext? CoordinatedRelease { get; init; }
+
+    /// <summary>Durable, non-secret checkpoint for a pre-migration restore.</summary>
+    public PreMigrationRestoreContext? PreMigrationRestore { get; init; }
+}
+
+/// <summary>Saved inputs and phase for a governed pre-migration restore.</summary>
+public sealed record PreMigrationRestoreContext
+{
+    /// <summary>Sealed deploy payload; it contains no connection credentials.</summary>
+    public required string Payload { get; init; }
+
+    /// <summary>Restore phase: queued, acting, or awaiting-deploy.</summary>
+    public required string Phase { get; init; }
+
+    /// <summary>Separate principal who approved the operation.</summary>
+    public required string ApprovedBy { get; init; }
+
+    /// <summary>Prior deploy workflow id, persisted before its submission.</summary>
+    public string? DeployOperationId { get; init; }
+
+    /// <summary>Verified backup schema expected after restoration.</summary>
+    public int? ExpectedSchema { get; init; }
+
+    /// <summary>SHA-256 of the restored database host, without credentials.</summary>
+    public string? RestoredHostHash { get; init; }
 }
 
 /// <summary>

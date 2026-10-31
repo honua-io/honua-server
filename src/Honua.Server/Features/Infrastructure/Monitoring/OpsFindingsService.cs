@@ -846,6 +846,7 @@ internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
                     TargetId = deploy!.TargetId,
                     DesiredRevision = deploy.CurrentRevision!,
                     CurrentRevision = deploy.DesiredRevision,
+                    Rollback = true,
                 }.Serialize();
 
                 action = new OpsFindingRecommendedAction

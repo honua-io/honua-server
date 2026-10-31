@@ -45,6 +45,7 @@ internal sealed partial class DeployWorkflowService
     private readonly ILogger<DeployWorkflowService> _logger;
     private readonly IOptionsMonitor<ControlPlaneOptions>? _controlPlaneOptions;
     private readonly IOptions<Honua.Infrastructure.MultiTenancy.TenantContextOptions>? _tenantOptions;
+    private readonly IOptions<RestoreCellOptions>? _restoreOptions;
 
     public DeployWorkflowService(
         IDeployTargetRegistry targetRegistry,
@@ -53,10 +54,12 @@ internal sealed partial class DeployWorkflowService
         IOperatorApprovalEvaluator approvalEvaluator,
         ILogger<DeployWorkflowService> logger,
         IOptionsMonitor<ControlPlaneOptions>? controlPlaneOptions = null,
-        IOptions<Honua.Infrastructure.MultiTenancy.TenantContextOptions>? tenantOptions = null)
+        IOptions<Honua.Infrastructure.MultiTenancy.TenantContextOptions>? tenantOptions = null,
+        IOptions<RestoreCellOptions>? restoreOptions = null)
     {
         _controlPlaneOptions = controlPlaneOptions;
         _tenantOptions = tenantOptions;
+        _restoreOptions = restoreOptions;
         _targetRegistry = targetRegistry;
         _workflowStore = workflowStores.FirstOrDefault();
         _backends = backends.ToDictionary(
@@ -68,6 +71,9 @@ internal sealed partial class DeployWorkflowService
     }
 
     public bool HasDurableStore => _workflowStore != null;
+
+    private bool RestoreAdmissionEnabled => _restoreOptions?.Value is { } options &&
+        (!string.IsNullOrWhiteSpace(options.CellPrefix) || options.Revisions.Count != 0);
 
     public async Task<DeployWorkflowPlanResult?> PlanAsync(
         string targetId,
@@ -335,7 +341,7 @@ internal sealed partial class DeployWorkflowService
         return await _workflowStore!.GetMostRecentSucceededDeployByTargetAsync(targetId, cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task<WorkflowOperationRecord?> CreateAsync(
+    public Task<WorkflowOperationRecord?> CreateAsync(
         string targetId,
         string desiredRevision,
         string? currentRevision,
@@ -348,8 +354,30 @@ internal sealed partial class DeployWorkflowService
         IReadOnlyDictionary<string, string>? parameterOverrides,
         ClaimsPrincipal? principal = null,
         CancellationToken cancellationToken = default)
+        => CreateWithRestoreAsync(targetId, desiredRevision, currentRevision, requestedBy, reason,
+            idempotencyKey, correlationId, priority, submitImmediately, parameterOverrides, principal,
+            restoreOwnerId: null, cancellationToken);
+
+    internal async Task<WorkflowOperationRecord?> CreateWithRestoreAsync(
+        string targetId,
+        string desiredRevision,
+        string? currentRevision,
+        string? requestedBy,
+        string? reason,
+        string? idempotencyKey,
+        string? correlationId,
+        OperationPriority priority,
+        bool submitImmediately,
+        IReadOnlyDictionary<string, string>? parameterOverrides,
+        ClaimsPrincipal? principal,
+        string? restoreOwnerId,
+        CancellationToken cancellationToken)
     {
         EnsureDurableStoreConfigured();
+        await using var admission = RestoreAdmissionEnabled
+            ? await RestoreDeployAdmission.AcquireAsync(_workflowStore!, CreateOperationId(idempotencyKey), restoreOwnerId, false, cancellationToken).ConfigureAwait(false)
+            : null;
+        if (admission is not null) cancellationToken = admission.Token;
 
         var planningResult = await PlanAsync(
                 targetId,
@@ -381,7 +409,10 @@ internal sealed partial class DeployWorkflowService
         {
             OperationId = operationId,
             Kind = WorkflowOperationKind.Deploy,
-            Status = DeterminePersistedStatus(planningResult.Plan),
+            // A crash during provider submission must leave an active durable record so
+            // restore admission cannot mistake an in-flight deployment for a safe cell.
+            Status = submitImmediately && planningResult.Plan.IsReadyToSubmit
+                ? WorkflowOperationStatus.Submitted : DeterminePersistedStatus(planningResult.Plan),
             Priority = priority,
             CreatedAt = now,
             UpdatedAt = now,
@@ -474,13 +505,25 @@ internal sealed partial class DeployWorkflowService
         return operation;
     }
 
-    public async Task<WorkflowOperationRecord?> SubmitAsync(
+    public Task<WorkflowOperationRecord?> SubmitAsync(
         string operationId,
         string? requestedBy,
         string? reason,
         CancellationToken cancellationToken = default)
+        => SubmitWithRestoreAsync(operationId, requestedBy, reason, restoreOwnerId: null, cancellationToken);
+
+    internal async Task<WorkflowOperationRecord?> SubmitWithRestoreAsync(
+        string operationId,
+        string? requestedBy,
+        string? reason,
+        string? restoreOwnerId,
+        CancellationToken cancellationToken)
     {
         EnsureDurableStoreConfigured();
+        await using var admission = RestoreAdmissionEnabled
+            ? await RestoreDeployAdmission.AcquireAsync(_workflowStore!, operationId, restoreOwnerId, false, cancellationToken).ConfigureAwait(false)
+            : null;
+        if (admission is not null) cancellationToken = admission.Token;
 
         var operation = await _workflowStore!.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
         if (operation == null)
@@ -637,6 +680,10 @@ internal sealed partial class DeployWorkflowService
         CancellationToken cancellationToken = default)
     {
         EnsureDurableStoreConfigured();
+        await using var admission = RestoreAdmissionEnabled
+            ? await RestoreDeployAdmission.AcquireAsync(_workflowStore!, operationId, null, true, cancellationToken).ConfigureAwait(false)
+            : null;
+        if (admission is not null) cancellationToken = admission.Token;
 
         var operation = await _workflowStore!.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
         if (operation == null)
@@ -795,6 +842,10 @@ internal sealed partial class DeployWorkflowService
         CancellationToken cancellationToken = default)
     {
         EnsureDurableStoreConfigured();
+        await using var admission = RestoreAdmissionEnabled
+            ? await RestoreDeployAdmission.AcquireAsync(_workflowStore!, operationId, null, false, cancellationToken).ConfigureAwait(false)
+            : null;
+        if (admission is not null) cancellationToken = admission.Token;
 
         var operation = await _workflowStore!.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
         if (operation == null)
@@ -1092,7 +1143,7 @@ internal sealed partial class DeployWorkflowService
         return "Planned and ready for submission.";
     }
 
-    private static string CreateOperationId(string? idempotencyKey)
+    internal static string CreateOperationId(string? idempotencyKey)
     {
         if (string.IsNullOrWhiteSpace(idempotencyKey))
         {
