@@ -7,6 +7,8 @@
 services:
   honua:
     environment:
+      AllowedHosts: "localhost;127.0.0.1;honua"
+      ControlPlane__PlatformRelease__Version: ${HONUA_RELEASE_VERSION:?Set the release version}
       ControlPlane__ComposeExecutor__SocketPath: /run/honua-compose/executor.sock
       ControlPlane__ComposeExecutor__ReleaseImage: ${HONUA_RELEASE_IMAGE:?Set the immutable release digest}
       ControlPlane__PlatformRelease__ServingArtifactReference: ${HONUA_RELEASE_IMAGE:?Set the immutable release digest}
@@ -40,6 +42,7 @@ services:
       Database__MigrationSafety__ContractApplyPolicy: Gate
       FileStorage__Provider: Local
       FileStorage__LocalStorage__BasePath: /var/lib/honua/storage
+      ControlPlane__PlatformRelease__Version: ${HONUA_RELEASE_VERSION:?Set the release version}
       ControlPlane__ComposeExecutor__SocketPath: /run/honua-compose/executor.sock
       ControlPlane__ComposeExecutor__ReleaseImage: ${HONUA_RELEASE_IMAGE:?Set the immutable release digest}
       ControlPlane__PlatformRelease__ServingArtifactReference: ${HONUA_RELEASE_IMAGE:?Set the immutable release digest}
