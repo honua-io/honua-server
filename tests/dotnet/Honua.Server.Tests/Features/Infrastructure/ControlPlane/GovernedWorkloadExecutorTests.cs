@@ -166,8 +166,9 @@ public sealed class GovernedWorkloadExecutorTests
         var publish = LambdaAliasRecycleRequests.Publish("honua-prod-lambda");
         publish.FunctionName.Should().Be("honua-prod-lambda");
 
-        var alias = LambdaAliasRecycleRequests.MoveAlias("honua-prod-lambda", "live", "44");
+        var alias = LambdaAliasRecycleRequests.MoveAlias("honua-prod-lambda", "live", "44", "revision-1");
         alias.FunctionVersion.Should().Be("44");
+        alias.RevisionId.Should().Be("revision-1");
         alias.RoutingConfig.Should().BeNull();
 
         LambdaImageGuard.RequireUnchanged(Image, Image).Should().Be(Image);
@@ -236,6 +237,15 @@ public sealed class GovernedWorkloadExecutorTests
         control.Writes.Should().Equal("description", "publish", "alias");
         control.MovedVersion.Should().Be("42");
         control.Descriptions.Should().ContainSingle().Which.Should().Be("honua-workload-restart:1");
+    }
+
+    [Fact]
+    public async Task LambdaRecycle_RejectsConcurrentAliasChange()
+    {
+        var control = new FakeLambdaControl { ChangeAliasBeforeMove = true };
+        var act = () => LambdaAliasRecycleExecution.ExecuteAsync(control, "honua-prod-lambda", "live", "restart", CancellationToken.None);
+        await act.Should().ThrowAsync<Amazon.Lambda.Model.PreconditionFailedException>();
+        control.MovedVersion.Should().BeNull();
     }
 
     [Fact]
@@ -530,8 +540,12 @@ public sealed class GovernedWorkloadExecutorTests
 
         public string? MovedVersion { get; private set; }
 
+        public string? AliasRevision { get; set; } = "revision-1";
+
+        public bool ChangeAliasBeforeMove { get; set; }
+
         public Task<LambdaAliasView> ReadAliasAsync(string functionName, string aliasName, CancellationToken cancellationToken)
-            => Task.FromResult(new LambdaAliasView(MovedVersion ?? "41", Serving.Image));
+            => Task.FromResult(new LambdaAliasView(MovedVersion ?? "41", Serving.Image, AliasRevision));
 
         public Task<LambdaWorkloadSnapshot> ReadAsync(string functionName, string qualifier, CancellationToken cancellationToken)
             => Task.FromResult(qualifier == "$LATEST"
@@ -557,8 +571,13 @@ public sealed class GovernedWorkloadExecutorTests
             return Task.FromResult(PublishedVersion);
         }
 
-        public Task MoveAliasAsync(string functionName, string aliasName, string functionVersion, CancellationToken cancellationToken)
+        public Task MoveAliasAsync(string functionName, string aliasName, string functionVersion, string revisionId, CancellationToken cancellationToken)
         {
+            if (ChangeAliasBeforeMove || revisionId != AliasRevision)
+            {
+                throw new Amazon.Lambda.Model.PreconditionFailedException("Alias revision changed");
+            }
+
             Writes.Add("alias");
             MovedVersion = functionVersion;
             return Task.CompletedTask;

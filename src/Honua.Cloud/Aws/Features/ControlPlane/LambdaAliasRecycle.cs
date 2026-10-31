@@ -37,12 +37,13 @@ internal static class LambdaAliasRecycleRequests
     public static PublishVersionRequest Publish(string functionName)
         => new() { FunctionName = functionName };
 
-    public static UpdateAliasRequest MoveAlias(string functionName, string aliasName, string functionVersion)
+    public static UpdateAliasRequest MoveAlias(string functionName, string aliasName, string functionVersion, string revisionId)
         => new()
         {
             FunctionName = functionName,
             Name = aliasName,
-            FunctionVersion = functionVersion
+            FunctionVersion = functionVersion,
+            RevisionId = revisionId
         };
 }
 
@@ -312,7 +313,7 @@ internal static class LambdaWorkloadIdentity
     }
 }
 
-internal sealed record LambdaAliasView(string? FunctionVersion, string? Image);
+internal sealed record LambdaAliasView(string? FunctionVersion, string? Image, string? RevisionId);
 
 internal interface ILambdaFunctionControl
 {
@@ -324,7 +325,7 @@ internal interface ILambdaFunctionControl
 
     Task<string> PublishAsync(string functionName, CancellationToken cancellationToken);
 
-    Task MoveAliasAsync(string functionName, string aliasName, string functionVersion, CancellationToken cancellationToken);
+    Task MoveAliasAsync(string functionName, string aliasName, string functionVersion, string revisionId, CancellationToken cancellationToken);
 }
 
 /// <summary>Decides the recycle. A configuration mismatch throws before the description write.</summary>
@@ -345,6 +346,11 @@ internal static class LambdaAliasRecycleExecution
         {
             throw new InvalidOperationException(
                 "Lambda restart requires a published numeric alias version. The alias was not moved.");
+        }
+
+        if (string.IsNullOrWhiteSpace(alias.RevisionId))
+        {
+            throw new InvalidOperationException("Lambda restart requires an alias revision ID. The alias was not moved.");
         }
 
         var image = LambdaImageGuard.RequireImmutable(alias.Image);
@@ -389,7 +395,7 @@ internal static class LambdaAliasRecycleExecution
                 throw new InvalidOperationException(LambdaWorkloadIdentity.DivergedMessage);
             }
 
-            await control.MoveAliasAsync(functionName, aliasName, published, cancellationToken).ConfigureAwait(false);
+            await control.MoveAliasAsync(functionName, aliasName, published, alias.RevisionId, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not InvalidOperationException and not OperationCanceledException)
         {
@@ -466,7 +472,7 @@ internal sealed class AwsSdkLambdaAliasRecycle : ILambdaAliasRecycle
                     new GetFunctionRequest { FunctionName = functionName, Qualifier = aliasName },
                     cancellationToken)
                 .ConfigureAwait(false);
-            return new LambdaAliasView(alias.FunctionVersion, ImageOf(function));
+            return new LambdaAliasView(alias.FunctionVersion, ImageOf(function), alias.RevisionId);
         }
 
         public async Task<LambdaWorkloadSnapshot> ReadAsync(
@@ -515,9 +521,10 @@ internal sealed class AwsSdkLambdaAliasRecycle : ILambdaAliasRecycle
             string functionName,
             string aliasName,
             string functionVersion,
+            string revisionId,
             CancellationToken cancellationToken)
             => client.UpdateAliasAsync(
-                LambdaAliasRecycleRequests.MoveAlias(functionName, aliasName, functionVersion),
+                LambdaAliasRecycleRequests.MoveAlias(functionName, aliasName, functionVersion, revisionId),
                 cancellationToken);
     }
 
