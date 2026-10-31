@@ -1,38 +1,15 @@
-# Service path prefix
+# Service route roots
 
-Honua accepts both its root routes and the `/arcgis` path prefix. For example,
-`/rest/services` and `/arcgis/rest/services` use the same
-catalog endpoint. SOAP `/services`, compatibility `/admin/services`, and sharing
-routes are available under the same prefix. A separate rewriting proxy is not
-required to reach the prefixed endpoints.
+Honua serves GeoServices REST services from the root-mounted `/rest/services`
+route. For example, a FeatureServer is available at
+`/rest/services/{name}/FeatureServer`; MapServer, ImageServer, and other
+services use the same root.
 
-The prefix becomes ASP.NET Core `PathBase` before routing. Authentication,
-authorization, tenancy, and other middleware receive the canonical request path.
-Generated base URLs retain the prefix. If `Public:BaseUrl` or `PUBLIC_BASE_URL` is
-configured, that explicit public URL remains authoritative for service links.
-The SOAP URLs in `/rest/info` (`soapUrl` and `secureSoapUrl`) and the GeocodeServer
-directory URL also advertise `/arcgis` when the resolved base is an origin. A base
-that already ends in `/arcgis`, or that already has any other path, is left unchanged.
-Portal discovery (`owningSystemUrl` and `authInfo.tokenServicesUrl`) uses the actual
-public portal root in both `/rest/info` and `/sharing/rest/info`.
+Configure clients with the service URL rooted at `/rest/services`. If a saved
+connection includes a removed application mount before that route, update the
+connection to use the root-mounted service URL.
 
-The alias addresses URL routing. It does not establish native portal sign-in,
-branch-version recognition, or client certification. Those behaviors require
-separate native client receipts. Root and prefixed requests use the same existing
-error envelopes and HTTP status contracts.
-
-Native portal discovery also exposes `/arcgisuris.xml` at either mount point.
-The XML uses its defined `ArcGISOnlineURIList` element name, identifies the service
-as Honua, and advertises its actual base URL and Sharing info ping endpoint.
-It advertises `Secure` only when the resolved public base URL is HTTPS. Account,
-password-recovery, update, and basemap links are not advertised. The route
-uses the same configuration and entitlement gate as the Sharing read surface.
-This bootstrap document alone does not establish native sign-in compatibility.
-
-Sharing info also publishes `owningSystemUrl` as the actual public portal root,
-including the application prefix. It agrees with `authInfo.tokenServicesUrl` so
-native clients can resolve Sharing resources from the portal root. This
-discovery URL does not advertise a client release or relax token bindings.
-
-The alias does not implement missing routing tools. Ready-to-use GP tool contracts
-remain tracked in [#5192](https://github.com/honua-io/honua-server/issues/5192).
+Generated public links use `Public:BaseUrl` or `PUBLIC_BASE_URL` when configured.
+That explicit public URL remains authoritative for service links. Portal
+discovery publishes `owningSystemUrl` and `authInfo.tokenServicesUrl` from the
+public portal root in `/rest/info` and `/sharing/rest/info`.
