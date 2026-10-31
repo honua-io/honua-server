@@ -95,7 +95,7 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
     env.update({"COMPOSE_PROJECT_NAME": project, "HONUA_IMAGE": RC1, "HONUA_HTTP_PORT": str(port),
         "HONUA_GRPC_PORT": str(free_port()), "HONUA_MANAGER_PORT": str(manager_port), "POSTGRES_PASSWORD": postgres,
         "HONUA_ADMIN_PASSWORD": key, "HONUA_MASTER_KEY": secrets.token_hex(32), "HONUA_KEYRING_PASSWORD": keyring,
-        "HONUA_RELEASE_IMAGE": candidate, "HONUA_RELEASE_VERSION": "2026.1-rc.2", "HONUA_PRIOR_IMAGE": RC1,
+        "HONUA_RELEASE_IMAGE": candidate, "HONUA_RELEASE_WORKER_IMAGE": candidate, "HONUA_RELEASE_VERSION": "2026.1-rc.2", "HONUA_PRIOR_IMAGE": RC1,
         "HONUA_PRIOR_MAX_SCHEMA": "140", "DOCKER_GID": str(os.stat("/var/run/docker.sock").st_gid),
         "DOCKER_COMPOSE_PLUGIN": plugins[0], "HONUA_COMPOSE_PROJECT_DIRECTORY": str(project_dir),
         "HONUA_COMPOSE_CUSTOMER_PROBE": "http://honua:8080/healthz/ready"})
@@ -103,7 +103,7 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
     # interpolation values beside compose.yaml, as a real quickstart install does.
     fixture_keys = ["COMPOSE_PROJECT_NAME", "HONUA_IMAGE", "HONUA_HTTP_PORT", "HONUA_GRPC_PORT", "HONUA_MANAGER_PORT",
         "POSTGRES_PASSWORD", "HONUA_ADMIN_PASSWORD", "HONUA_MASTER_KEY", "HONUA_KEYRING_PASSWORD", "HONUA_RELEASE_IMAGE",
-        "HONUA_RELEASE_VERSION", "HONUA_PRIOR_IMAGE", "HONUA_PRIOR_MAX_SCHEMA", "DOCKER_GID", "DOCKER_COMPOSE_PLUGIN",
+        "HONUA_RELEASE_VERSION", "HONUA_RELEASE_WORKER_IMAGE", "HONUA_PRIOR_IMAGE", "HONUA_PRIOR_MAX_SCHEMA", "DOCKER_GID", "DOCKER_COMPOSE_PLUGIN",
         "HONUA_COMPOSE_PROJECT_DIRECTORY", "HONUA_COMPOSE_CUSTOMER_PROBE"]
     (project_dir / ".env").write_text("".join(f"{name}={env[name]}\n" for name in fixture_keys))
     (project_dir / ".env").chmod(0o600)

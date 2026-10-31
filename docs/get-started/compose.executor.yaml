@@ -31,6 +31,8 @@ services:
       ControlPlane__ComposeExecutor__SocketPath: /run/honua-compose/executor.sock
       ControlPlane__ComposeExecutor__ReleaseImage: ${HONUA_RELEASE_IMAGE:?Set the immutable release digest}
       ControlPlane__PlatformRelease__ServingArtifactReference: ${HONUA_RELEASE_IMAGE:?Set the immutable release digest}
+      # Both artifacts must come from the same signed release lock.
+      ControlPlane__PlatformRelease__Workers__0__ArtifactReference: ${HONUA_RELEASE_WORKER_IMAGE:?Set the co-versioned worker image digest}
       ControlPlane__DeployTargets__0__TargetId: compose-local
       ControlPlane__DeployTargets__0__TargetKind: LocalCompose
       ControlPlane__DeployTargets__0__Backend: honua-compose
