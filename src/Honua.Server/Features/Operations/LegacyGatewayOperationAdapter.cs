@@ -74,6 +74,7 @@ internal sealed class LegacyGatewayOperationAdapter : TypedExecutor
         {
             OperationInstanceId = context.OperationInstanceId,
             CorrelationId = context.CorrelationId,
+            ApprovedProposalId = context.ApprovedProposalId,
         };
         var executionId = await Actuator
             .ExecuteAsync(gatewayRequest, gatewayRequest.ExecutionPayload, cancellationToken)

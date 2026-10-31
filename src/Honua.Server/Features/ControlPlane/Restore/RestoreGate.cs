@@ -120,6 +120,9 @@ internal interface IConnectionSecretRetarget
 
     /// <summary>Updates the host and confirms the value that was read back.</summary>
     Task<bool> PointAtAsync(string secretId, string host, CancellationToken cancellationToken);
+
+    /// <summary>Returns the current host without exposing the connection string.</summary>
+    Task<string?> ReadHostAsync(string secretId, CancellationToken cancellationToken);
 }
 
 /// <summary>Compose sidecar that restores a dump and starts the prior image only after its own readback.</summary>
@@ -211,6 +214,13 @@ internal interface IPriorImageStarter
     Task<string?> StartAsync(OperationGatewayRequest request, string? executionPayload, CancellationToken cancellationToken);
 }
 
+/// <summary>Persists the restore checkpoint before submitting the prior-image workflow.</summary>
+internal interface IDurablePriorImageStarter : IPriorImageStarter
+{
+    /// <summary>Submits the prior image after recording its deterministic workflow id and verified schema.</summary>
+    Task<string?> StartRestoredAsync(OperationGatewayRequest request, string payload, int expectedSchema, string restoredHostHash, CancellationToken cancellationToken);
+}
+
 /// <summary>Assesses an approved rollback, then delegates its effects and durable readback.</summary>
 internal sealed class PreMigrationRestoreCoordinator(
     PreMigrationRestoreAssessmentService assessment,
@@ -269,7 +279,7 @@ internal sealed class PreMigrationRestoreAssessmentService(
             InPlaceDatabase = inPlace,
         });
         if (decision.Kind == RestoreDecisionKind.RestoreBeforeStart
-            && target.TargetKind is DeployTargetKind.AzureContainerApps or DeployTargetKind.AzureFunctions)
+            && target.TargetKind is DeployTargetKind.AzureContainerApps or DeployTargetKind.AzureFunctions or DeployTargetKind.AwsLambda)
         {
             return (Refuse(PreMigrationRestoreCodes.RetargetUnsupported, "This target has no product restore executor."), target, null);
         }
@@ -485,7 +495,14 @@ internal sealed class PreMigrationRestoreExecutionService(
             return await FailAsync(PreMigrationRestoreCodes.ProviderFailed, "The serving connection was not observed on the restored database. The prior image was not started.", payload, request, decision.Kind, cancellationToken).ConfigureAwait(false);
         }
 
-        var imageId = await starter.StartAsync(request, payload.Serialize(), cancellationToken).ConfigureAwait(false);
+        var imageId = starter is IDurablePriorImageStarter durable
+            ? await durable.StartRestoredAsync(request, payload.Serialize(), decision.ExpectedSchema!.Value, Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(restored.Endpoint))).ToLowerInvariant(), cancellationToken).ConfigureAwait(false)
+            : await starter.StartAsync(request, payload.Serialize(), cancellationToken).ConfigureAwait(false);
+        if (starter is IDurablePriorImageStarter && !string.IsNullOrWhiteSpace(imageId))
+        {
+            // The durable reconciler owns protection-window completion and final readback.
+            return new RestoreCompletion { Decision = decision.Kind, OperationId = imageId, RestoreInvoked = true, SchemaMatched = true, ServingPointed = true };
+        }
         if (string.IsNullOrWhiteSpace(imageId))
         {
             return await FailAsync(PreMigrationRestoreCodes.ProviderFailed, "The prior image did not start after the database was restored.", payload, request, decision.Kind, cancellationToken, restoreInvoked: true, schemaMatched: true, servingPointed: true).ConfigureAwait(false);

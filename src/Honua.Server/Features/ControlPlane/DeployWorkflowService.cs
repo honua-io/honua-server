@@ -1092,7 +1092,7 @@ internal sealed partial class DeployWorkflowService
         return "Planned and ready for submission.";
     }
 
-    private static string CreateOperationId(string? idempotencyKey)
+    internal static string CreateOperationId(string? idempotencyKey)
     {
         if (string.IsNullOrWhiteSpace(idempotencyKey))
         {
