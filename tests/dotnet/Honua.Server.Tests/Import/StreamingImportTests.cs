@@ -1215,7 +1215,14 @@ public class StreamingImportTests : IAsyncLifetime
             {
                 while (await reader.ReadAsync()) columns.Add((reader.GetString(0), reader.GetString(1)));
             }
-            columns.Should().Equal(("id", "int4"), ("geometry", "geometry"), ("properties", "jsonb"), ("created_at", "timestamptz"));
+            columns.Should().Equal(
+                ("id", "int4"),
+                ("geometry", "geometry"),
+                ("properties", "jsonb"),
+                ("created_at", "timestamptz"),
+                ("key", "text"),
+                ("name", "text"),
+                ("value", "int8"));
             command.CommandText = "SELECT indexdef FROM pg_indexes WHERE schemaname='honua_data' AND tablename=@table";
             var indexes = new List<string>();
             await using (var reader = await command.ExecuteReaderAsync())

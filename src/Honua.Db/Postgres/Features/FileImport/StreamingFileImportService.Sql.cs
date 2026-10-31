@@ -14,7 +14,9 @@ using Honua.Core.Features.FileImport.Services;
 using Honua.Db.Postgres.Features.FileImport;
 using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.Db.Postgres.Features.Migration;
+using NetTopologySuite.Features;
 using Npgsql;
+using NpgsqlTypes;
 
 namespace Honua.Db.Postgres.Features.FileImport;
 
@@ -25,6 +27,11 @@ internal sealed partial class StreamingFileImportService
     // truncates longer identifiers, which can otherwise make the geometry and
     // properties indexes collide with SQLSTATE 42P07.
     private const int MaxImportTableNameLength = 40;
+    private const int TypedColumnBackfillBatchSize = 50_000;
+    private const string PromoteImportTypedColumnsSql =
+        "SELECT column_name, postgres_type FROM honua.promote_import_typed_columns(@schema_name, @table_name, @columns::jsonb)";
+    private const string BackfillImportTypedColumnsSql =
+        "SELECT honua.backfill_import_typed_columns(@schema_name, @table_name, @columns::jsonb, @after_id, @batch_size)";
     private const string ImportTableExistsSql = """
         SELECT EXISTS (
             SELECT 1
@@ -106,6 +113,122 @@ internal sealed partial class StreamingFileImportService
         command.Parameters.AddWithValue("schema_name", schemaName);
         command.Parameters.AddWithValue("table_name", tableName);
         return (bool?)await command.ExecuteScalarAsync(cancellationToken) == true;
+    }
+
+    /// <summary>
+    /// Projects inferred attributes onto nullable typed columns of an import-owned table.
+    /// The properties jsonb document is left intact. A missing ownership comment makes the
+    /// database function return without changing the table. The catalog change commits
+    /// before the row backfill, and each backfill batch commits on its own, so the
+    /// access-exclusive lock is not held while existing rows are rewritten.
+    /// </summary>
+    private static async Task<IReadOnlyList<ImportTypedColumn>> PromoteTypedColumnsAsync(
+        NpgsqlConnection connection,
+        string schemaName,
+        string tableName,
+        IReadOnlyList<ImportTypedColumn> columns,
+        CancellationToken cancellationToken)
+    {
+        List<ImportTypedColumn> promoted;
+        await using (var command = new NpgsqlCommand(PromoteImportTypedColumnsSql, connection))
+        {
+            // A wide table's catalog pass can exceed the 30-second default.
+            command.CommandTimeout = 0;
+            command.Parameters.AddWithValue("schema_name", schemaName);
+            command.Parameters.AddWithValue("table_name", tableName);
+            command.Parameters.Add(new NpgsqlParameter("columns", NpgsqlDbType.Jsonb)
+            {
+                Value = BuildTypedColumnPayload(columns)
+            });
+
+            promoted = new List<ImportTypedColumn>(columns.Count);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                promoted.Add(new ImportTypedColumn
+                {
+                    Name = reader.GetString(0),
+                    PostgresType = reader.GetString(1)
+                });
+            }
+        }
+
+        if (promoted.Count == 0)
+        {
+            return promoted;
+        }
+
+        // Promotion also returns columns an earlier import already created. Backfill
+        // that full set so an upsert that drops a key clears the typed value.
+        var payload = BuildTypedColumnPayload(promoted);
+        long afterId = 0;
+        while (true)
+        {
+            await using var command = new NpgsqlCommand(BackfillImportTypedColumnsSql, connection);
+            command.CommandTimeout = 0;
+            command.Parameters.AddWithValue("schema_name", schemaName);
+            command.Parameters.AddWithValue("table_name", tableName);
+            command.Parameters.Add(new NpgsqlParameter("columns", NpgsqlDbType.Jsonb) { Value = payload });
+            command.Parameters.AddWithValue("after_id", afterId);
+            command.Parameters.AddWithValue("batch_size", TypedColumnBackfillBatchSize);
+            var written = await command.ExecuteScalarAsync(cancellationToken);
+            if (written is null or DBNull)
+            {
+                break;
+            }
+
+            var nextId = Convert.ToInt64(written, System.Globalization.CultureInfo.InvariantCulture);
+            if (nextId <= afterId)
+            {
+                break;
+            }
+
+            afterId = nextId;
+        }
+
+        return promoted;
+    }
+
+    private static string BuildTypedColumnPayload(IReadOnlyList<ImportTypedColumn> columns)
+    {
+        if (columns.Count == 0)
+        {
+            return "[]";
+        }
+
+        var payload = new StringBuilder(columns.Count * 48);
+        payload.Append('[');
+        for (var i = 0; i < columns.Count; i++)
+        {
+            if (i > 0)
+            {
+                payload.Append(',');
+            }
+
+            payload.Append("{\"name\":\"");
+            payload.Append(columns[i].Name);
+            payload.Append("\",\"pgType\":\"");
+            payload.Append(columns[i].PostgresType);
+            payload.Append("\"}");
+        }
+
+        payload.Append(']');
+        return payload.ToString();
+    }
+
+    private static void ObserveTypedColumns(ImportTypedColumnInference inference, IFeature feature)
+    {
+        if (feature.Attributes is null)
+        {
+            return;
+        }
+
+        var names = feature.Attributes.GetNames();
+        var values = feature.Attributes.GetValues();
+        for (var i = 0; i < names.Length; i++)
+        {
+            inference.Observe(names[i], values[i]);
+        }
     }
 
     private static async Task CreateTableAsync(

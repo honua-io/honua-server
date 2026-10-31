@@ -109,6 +109,13 @@ public sealed record ImportResult
     public IReadOnlyList<string> Warnings { get; init; } = [];
 
     /// <summary>
+    /// Source attributes promoted to nullable typed columns on the imported table.
+    /// Empty when the import stored attributes only in the <c>properties</c> jsonb
+    /// column. Promoted values are also kept inside that jsonb document.
+    /// </summary>
+    public IReadOnlyList<ImportTypedColumn> TypedColumns { get; init; } = [];
+
+    /// <summary>
     /// Create successful import result
     /// </summary>
     public static ImportResult CreateSuccess(
@@ -157,6 +164,18 @@ public sealed record ImportResult
             Warnings = warnings ?? [],
             ValidationErrors = validationErrors ?? []
         };
+}
+
+/// <summary>
+/// A source attribute promoted to a typed column on an imported table.
+/// </summary>
+public sealed record ImportTypedColumn
+{
+    /// <summary>Gets the column name, matching the source attribute name.</summary>
+    public required string Name { get; init; }
+
+    /// <summary>Gets the PostgreSQL type of the promoted column.</summary>
+    public required string PostgresType { get; init; }
 }
 
 /// <summary>
