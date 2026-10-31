@@ -18,6 +18,31 @@ sys.modules[SPEC.name] = diff_baselines
 SPEC.loader.exec_module(diff_baselines)
 
 
+def test_historical_stub_baseline_is_compared_without_rewriting_evidence(tmp_path):
+    import json
+
+    old_lane = "arc" + "gis-stub"
+    baseline_dir = tmp_path / "baseline"
+    current_dir = tmp_path / "current"
+    baseline_dir.mkdir()
+    current_dir.mkdir()
+    original = {"client_lane": old_lane, "protocol": "portal", "run_date": "2026-01-01",
+                "results": [{"test_case_id": "CERT-CONN-01", "status": "pass"}]}
+    baseline_file = baseline_dir / "old.cert.json"
+    baseline_file.write_text(json.dumps(original))
+    (current_dir / "current.cert.json").write_text(json.dumps({
+        **original, "client_lane": "geoservices-stub",
+        "results": [{"test_case_id": "CERT-CONN-01", "status": "fail"}],
+    }))
+    baseline = diff_baselines.index_envelopes(baseline_dir, historical_baselines=True)
+    current = diff_baselines.index_envelopes(current_dir)
+    assert set(baseline) == {( "geoservices-stub", "portal")}
+    assert baseline[("geoservices-stub", "portal")]["client_lane"] == old_lane
+    assert json.loads(baseline_file.read_text()) == original
+    assert diff_baselines.diff(baseline, current)[0].classification == "regression"
+    assert set(diff_baselines.index_envelopes(baseline_dir)) == {(old_lane, "portal")}
+
+
 def test_passing_status_does_not_hide_numeric_regressions():
     baseline = {"measured_count": 10, "measured_delta": 0.001}
     assert not diff_baselines.measurement_regression(baseline, dict(baseline))

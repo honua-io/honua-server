@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""arcgis-stub REST runner.
+"""geoservices-stub REST runner.
 
 Records pass/fail per CERT-* ID and writes one ``.cert.json`` envelope per
-protocol (``featureserver``, ``mapserver``) to ``ARCGIS_STUB_OUTPUT_DIR``.
+protocol (``featureserver``, ``mapserver``) to ``GEOSERVICES_STUB_OUTPUT_DIR``.
 
 This is a REST stub. It does not exercise a desktop client. Render CERT IDs
 are recorded as ``skip`` with note ``evidence id desktop-arcgis`` rather
@@ -20,18 +20,18 @@ from pathlib import Path
 import httpx
 
 BASE_URL = os.environ["HONUA_BASE_URL"].rstrip("/")
-SERVICE_NAME = os.environ["ARCGIS_STUB_SERVICE_NAME"]
-LAYER_ID = os.environ["ARCGIS_STUB_LAYER_ID"]
-OUTPUT_DIR = Path(os.environ["ARCGIS_STUB_OUTPUT_DIR"])
-TIMEOUT = float(os.environ.get("ARCGIS_STUB_TIMEOUT", "30"))
+SERVICE_NAME = os.environ["GEOSERVICES_STUB_SERVICE_NAME"]
+LAYER_ID = os.environ["GEOSERVICES_STUB_LAYER_ID"]
+OUTPUT_DIR = Path(os.environ["GEOSERVICES_STUB_OUTPUT_DIR"])
+TIMEOUT = float(os.environ.get("GEOSERVICES_STUB_TIMEOUT", "30"))
 SPATIAL_QUERY_ENVELOPE = "-122.50,37.70,-122.35,37.81"
 
 # Portal/Sharing facade lane (epic #1240 / #1372). Optional admin credentials the
 # stub uses to mint a named-user token via /sharing/rest/generateToken so the
 # authenticated-discovery and token-shape checks can run. When unset, those
 # checks record `skip` rather than `fail`.
-PORTAL_ADMIN_USERNAME = os.environ.get("ARCGIS_STUB_ADMIN_USERNAME")
-PORTAL_ADMIN_PASSWORD = os.environ.get("ARCGIS_STUB_ADMIN_PASSWORD")
+PORTAL_ADMIN_USERNAME = os.environ.get("GEOSERVICES_STUB_ADMIN_USERNAME")
+PORTAL_ADMIN_PASSWORD = os.environ.get("GEOSERVICES_STUB_ADMIN_PASSWORD")
 
 # CERT-PRTL-* — the Portal/Sharing facade certification slice. These IDs cover
 # info, portals/self, community/self, search, and content/items, plus token
@@ -136,7 +136,7 @@ def _write_envelope(protocol: str, results: dict[str, dict], run_id: str) -> Pat
         "run_id": run_id,
         "run_date": _utc_now_iso(),
         "server_version": os.environ.get("GITHUB_SHA", "local"),
-        "client_lane": "arcgis-stub",
+        "client_lane": "geoservices-stub",
         "client_version": "stub-1.0",
         "protocol": protocol,
         "environment": "ci" if os.environ.get("CI") else "local",
@@ -145,7 +145,7 @@ def _write_envelope(protocol: str, results: dict[str, dict], run_id: str) -> Pat
         "cite_results": None,
         "extensions": [],
     }
-    out_path = OUTPUT_DIR / f"{run_id}-arcgis-stub-{protocol}.cert.json"
+    out_path = OUTPUT_DIR / f"{run_id}-geoservices-stub-{protocol}.cert.json"
     out_path.write_text(json.dumps(envelope, indent=2) + "\n")
     print(f"Wrote {out_path}")
     return out_path
@@ -172,7 +172,7 @@ def _finalize(results: dict[str, dict]) -> dict[str, dict]:
 
 
 def _exercise_mapserver(client: httpx.Client) -> dict[str, dict]:
-    """Issue the MapServer REST sequence for the arcgis-stub lane.
+    """Issue the MapServer REST sequence for the geoservices-stub lane.
 
     The stub records:
       * CONN/AUTH/DISC/SCHM via /MapServer and /MapServer/{layer}
@@ -347,7 +347,7 @@ def _write_portal_envelope(results: dict[str, dict], run_id: str) -> Path:
         "run_id": run_id,
         "run_date": _utc_now_iso(),
         "server_version": os.environ.get("GITHUB_SHA", "local"),
-        "client_lane": "arcgis-stub",
+        "client_lane": "geoservices-stub",
         "client_version": "stub-1.0",
         "protocol": "portal",
         "environment": "ci" if os.environ.get("CI") else "local",
@@ -356,7 +356,7 @@ def _write_portal_envelope(results: dict[str, dict], run_id: str) -> Path:
         "cite_results": None,
         "extensions": [],
     }
-    out_path = OUTPUT_DIR / f"{run_id}-arcgis-stub-portal.cert.json"
+    out_path = OUTPUT_DIR / f"{run_id}-geoservices-stub-portal.cert.json"
     out_path.write_text(json.dumps(envelope, indent=2) + "\n")
     print(f"Wrote {out_path}")
     return out_path
@@ -410,7 +410,7 @@ def _issue_portal_token(client: httpx.Client) -> str | None:
 
 
 def _exercise_portal(client: httpx.Client) -> dict[str, dict]:
-    """Issue the Portal/Sharing REST sequence for the arcgis-stub lane.
+    """Issue the Portal/Sharing REST sequence for the geoservices-stub lane.
 
     Covers info, portals/self, community/self, search, item open, and token
     exchange, including bad-credential and invalid-refresh error shapes.
@@ -501,7 +501,7 @@ def _exercise_portal(client: httpx.Client) -> dict[str, dict]:
     if not PORTAL_ADMIN_USERNAME or not PORTAL_ADMIN_PASSWORD:
         results["CERT-PRTL-TOKN-01"] = _new_result(
             "CERT-PRTL-TOKN-01", "skip",
-            notes="ARCGIS_STUB_ADMIN_USERNAME/PASSWORD not configured.",
+            notes="GEOSERVICES_STUB_ADMIN_USERNAME/PASSWORD not configured.",
         )
     else:
         tokn_ok = False
@@ -708,7 +708,7 @@ def _exercise_portal(client: httpx.Client) -> dict[str, dict]:
             data={
                 "grant_type": "refresh_token",
                 "refresh_token": "portal-stub-invalid-refresh-token",
-                "client_id": "arcgis-stub",
+                "client_id": "geoservices-stub",
                 "f": "json",
             },
         )

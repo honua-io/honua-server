@@ -4,7 +4,7 @@ name: Real-Client Interop Matrix (Nightly)
 # nightly passes are observed across all lanes (#806 design).
 #
 # Exercises Honua against the actual GIS clients customers use (QGIS, GDAL,
-# OpenLayers, Cesium, arcgis-stub) and the canonical analyst clients
+# OpenLayers, Cesium, geoservices-stub) and the canonical analyst clients
 # (GeoPandas, OWSLib, DuckDB Spatial, R sf/ows4R, pystac-client — #3392)
 # via Docker harnesses under
 # docker/client-compat/. CITE conformance suites prove spec compliance; this
@@ -18,7 +18,7 @@ on:
       lanes:
         description: 'Comma-separated lane subset (default = all)'
         required: false
-        default: 'gdal,pyqgis,openlayers,cesium,arcgis-stub,geopandas,owslib,duckdb,r-sf,pystac'
+        default: 'gdal,pyqgis,openlayers,cesium,geoservices-stub,geopandas,owslib,duckdb,r-sf,pystac'
 
 permissions:
   contents: read    # gap-report is published as a workflow artifact, not pushed to trunk
@@ -46,7 +46,7 @@ jobs:
         run: |
           set -euo pipefail
           # Schedule and dispatch-with-empty-input default to the full matrix.
-          default='gdal,pyqgis,openlayers,cesium,arcgis-stub,geopandas,owslib,duckdb,r-sf,pystac'
+          default='gdal,pyqgis,openlayers,cesium,geoservices-stub,geopandas,owslib,duckdb,r-sf,pystac'
           raw="${LANES_INPUT:-}"
           # Strip whitespace and trailing/leading commas.
           raw="${raw// /}"
@@ -61,7 +61,7 @@ jobs:
           pyqgis
           openlayers
           cesium
-          arcgis-stub
+          geoservices-stub
           geopandas
           owslib
           duckdb
@@ -87,7 +87,7 @@ jobs:
             [pyqgis]="desktop-qgis"
             [openlayers]="js"
             [cesium]="js-cesium"
-            [arcgis-stub]="arcgis-stub"
+            [geoservices-stub]="geoservices-stub"
             [geopandas]="py-geopandas"
             [owslib]="py-owslib"
             [duckdb]="duckdb"

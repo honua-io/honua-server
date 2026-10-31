@@ -97,7 +97,7 @@ def load_envelope(path: Path) -> dict | None:
         return None
 
 
-def index_envelopes(root: Path) -> dict[tuple[str, str], dict]:
+def index_envelopes(root: Path, *, historical_baselines: bool = False) -> dict[tuple[str, str], dict]:
     """Walk ``root`` and index any .cert.json by (client_lane, protocol)."""
     out: dict[tuple[str, str], dict] = {}
     if not root.exists():
@@ -108,6 +108,10 @@ def index_envelopes(root: Path) -> dict[tuple[str, str], dict]:
             continue
         lane = env.get("client_lane") or "unknown"
         protocol = env.get("protocol") or "unknown"
+        # Only historical baselines use the retired lane identifier; keep the
+        # envelope bytes intact and compare it against the current REST stub.
+        if historical_baselines and lane == "arc" + "gis-stub":
+            lane = "geoservices-stub"
         # If multiple files report the same (lane, protocol), keep the most
         # recent one (highest run_date).
         key = (lane, protocol)
@@ -402,7 +406,7 @@ def main() -> int:
     gap_report_path = Path(args.gap_report)
     expected_pairs_path = Path(args.expected_pairs)
 
-    baselines = index_envelopes(baselines_dir)
+    baselines = index_envelopes(baselines_dir, historical_baselines=True)
     current = index_envelopes(current_dir)
     expected_pairs = load_expected_pairs(expected_pairs_path)
 

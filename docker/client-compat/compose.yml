@@ -156,7 +156,7 @@ services:
       Licensing__DevGrantEdition: ${HONUA_CLIENT_COMPAT_DEV_GRANT_EDITION:-Enterprise}
       # Portal/Sharing facade token issuance (epic #1240). The client-compat docker
       # network is HTTP-only, so relax the HTTPS-only guard on generateToken /
-      # oauth2 so the arcgis-stub Portal lane can mint and exercise a named-user
+      # oauth2 so the geoservices-stub Portal lane can mint and exercise a named-user
       # token. Production keeps the RequireHttps=true default. The read surface
       # (info/portals-self/search/content-items) is anonymous and needs no token.
       Authentication__PortalToken__RequireHttps: "false"
@@ -348,21 +348,21 @@ services:
       - ../../tests:/workspace/tests:rw
       - ./output/cesium:/output
 
-  arcgis-stub:
-    profiles: ["matrix", "arcgis-stub"]
+  geoservices-stub:
+    profiles: ["matrix", "geoservices-stub"]
     build:
       context: ../..
-      dockerfile: docker/client-compat/arcgis-stub/Dockerfile
+      dockerfile: docker/client-compat/geoservices-stub/Dockerfile
     environment:
       GITHUB_SHA: "${HONUA_SERVER_COMMIT:-}"
       HONUA_BASE_URL: http://honua:5000
-      ARCGIS_STUB_SERVICE_NAME: browser_compat
-      ARCGIS_STUB_LAYER_ID: "2000"
+      GEOSERVICES_STUB_SERVICE_NAME: browser_compat
+      GEOSERVICES_STUB_LAYER_ID: "2000"
       # Portal/Sharing facade lane (epic #1240 / #1372). The stub discovers the
       # tiered portal-compat fixture through /sharing/rest and mints a named-user
       # token with these admin credentials (mirrors the honua service env above).
-      ARCGIS_STUB_ADMIN_USERNAME: admin
-      ARCGIS_STUB_ADMIN_PASSWORD: ClientCompatAdmin123!
+      GEOSERVICES_STUB_ADMIN_USERNAME: admin
+      GEOSERVICES_STUB_ADMIN_PASSWORD: ClientCompatAdmin123!
     depends_on:
       honua:
         condition: service_healthy
@@ -371,7 +371,7 @@ services:
     networks:
       - compat
     volumes:
-      - ./output/arcgis-stub:/output
+      - ./output/geoservices-stub:/output
 
   # ---------------------------------------------------------------------
   # Canonical analyst-client lanes (#3392, parent #3389).
