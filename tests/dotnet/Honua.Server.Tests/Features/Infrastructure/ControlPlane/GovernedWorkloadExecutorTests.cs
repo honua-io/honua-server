@@ -361,15 +361,34 @@ public sealed class GovernedWorkloadExecutorTests
         };
 
     [Fact]
+    public void KubernetesRestart_RequiresPinnedContainersAndResourceVersion()
+    {
+        static string Deployment(string image, string initImage) => JsonSerializer.Serialize(new
+        {
+            metadata = new { resourceVersion = "123" },
+            spec = new { template = new { spec = new { containers = new[] { new { image } }, initContainers = new[] { new { image = initImage } } } } }
+        });
+        using var document = JsonDocument.Parse(Deployment(Image, Image));
+        KubernetesRestartPatch.ValidateAndGetResourceVersion(document.RootElement).Should().Be("123");
+        using var mutable = JsonDocument.Parse(Deployment("server:latest", Image));
+        var act = () => KubernetesRestartPatch.ValidateAndGetResourceVersion(mutable.RootElement);
+        act.Should().Throw<InvalidOperationException>();
+        using var initMutable = JsonDocument.Parse(Deployment(Image, "init:latest"));
+        var initAct = () => KubernetesRestartPatch.ValidateAndGetResourceVersion(initMutable.RootElement);
+        initAct.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
     public void KubernetesRestartPatch_SetsOnlyRestartedAt()
     {
-        var patch = KubernetesRestartPatch.Serialize(new DateTimeOffset(2026, 11, 1, 4, 0, 0, TimeSpan.Zero));
+        var patch = KubernetesRestartPatch.Serialize(new DateTimeOffset(2026, 11, 1, 4, 0, 0, TimeSpan.Zero), "123");
         using var document = JsonDocument.Parse(patch);
         var annotations = document.RootElement
             .GetProperty("spec")
             .GetProperty("template")
             .GetProperty("metadata")
             .GetProperty("annotations");
+        document.RootElement.GetProperty("metadata").GetProperty("resourceVersion").GetString().Should().Be("123");
         annotations.GetProperty(KubernetesRestartPatch.Annotation).GetString().Should().Be("2026-11-01T04:00:00Z");
         annotations.EnumerateObject().Select(property => property.Name).Should().Equal(KubernetesRestartPatch.Annotation);
         document.RootElement.GetProperty("spec").GetProperty("template").TryGetProperty("spec", out _).Should().BeFalse();
