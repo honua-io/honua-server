@@ -311,7 +311,8 @@ directory writable by uid 1001 (the sidecar writes backups and
 volume to that user before the executor binds it, and lists both compose files so a later
 image change keeps the management services. Load the immutable release image on the host before
 anyone approves it (`docker compose up` for the executor uses `--pull never`). Set
-`HONUA_RELEASE_IMAGE` to that digest, `HONUA_RELEASE_VERSION` to its release version,
+`HONUA_RELEASE_IMAGE` to that digest, `HONUA_RELEASE_WORKER_IMAGE` to the co-versioned
+worker digest from the same release lock, `HONUA_RELEASE_VERSION` to its release version,
 `COMPOSE_PROJECT_NAME` to the project name
 (`docker compose ls` prints it; for this quickstart it is the directory name),
 `DOCKER_GID` to the host docker group (`getent group docker`). The executor needs to
