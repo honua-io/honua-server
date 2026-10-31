@@ -448,7 +448,14 @@ internal sealed partial class DeployWorkflowService
             Deploy = planningResult.Spec with { PreMigrationBackupId = preMigrationBackupId }
         };
 
-        await using var submissionLease = planningResult.Target.TargetKind == DeployTargetKind.LocalCompose && submitImmediately && planningResult.Plan.IsReadyToSubmit
+        var priorOperation = await _workflowStore!.GetAsync(operation.OperationId, cancellationToken).ConfigureAwait(false);
+        if (priorOperation != null)
+        {
+            EnsureMatchingIdempotentRequest(priorOperation, requestFingerprint);
+            return priorOperation;
+        }
+
+        await using var submissionLease = submitImmediately && planningResult.Plan.IsReadyToSubmit
             ? await RestoreDeployAdmission.AcquireWorkflowAsync(_workflowStore!, operation.OperationId, cancellationToken).ConfigureAwait(false)
             : null;
         if (submissionLease is not null) cancellationToken = submissionLease.Token;
