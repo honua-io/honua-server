@@ -229,8 +229,11 @@ internal sealed partial class DurableRestoreWorker(
                 var now = DateTimeOffset.UtcNow;
                 return await store.TryCreateAsync(new WorkflowOperationRecord
                 {
-                    OperationId = CellOwnerId, Kind = WorkflowOperationKind.PreMigrationRestore,
-                    Status = WorkflowOperationStatus.Succeeded, CreatedAt = now, UpdatedAt = now,
+                    OperationId = CellOwnerId,
+                    Kind = WorkflowOperationKind.PreMigrationRestore,
+                    Status = WorkflowOperationStatus.Succeeded,
+                    CreatedAt = now,
+                    UpdatedAt = now,
                     CurrentPhase = id
                 }, OwnerRetention, cancellationToken).ConfigureAwait(false);
             }

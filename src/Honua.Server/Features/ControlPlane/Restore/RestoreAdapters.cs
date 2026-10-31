@@ -133,8 +133,12 @@ internal static class SchemaJournalReader
     {
         var declaration = new MigrationReaderCompatibilityDeclaration
         {
-            ScriptName = name, DeclarationFormat = format, Classification = classification,
-            MinReaderSchema = minReader, ScriptSha256 = hash, ScriptText = text
+            ScriptName = name,
+            DeclarationFormat = format,
+            Classification = classification,
+            MinReaderSchema = minReader,
+            ScriptSha256 = hash,
+            ScriptText = text
         };
         return MigrationReaderCompatibility.Verify(declaration, name, int.MaxValue).Accepted ? classification : null;
     }
