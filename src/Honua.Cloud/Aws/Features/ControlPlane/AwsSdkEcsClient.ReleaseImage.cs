@@ -85,6 +85,7 @@ internal sealed partial class AwsSdkEcsClient
     public async Task<AwsEcsStoppedTask> DescribeStoppedTaskAsync(
         string cluster,
         string taskArn,
+        string containerName,
         string? region,
         CancellationToken cancellationToken = default)
     {
@@ -104,23 +105,7 @@ internal sealed partial class AwsSdkEcsClient
             return new AwsEcsStoppedTask { LastStatus = "MISSING", ExitCode = null };
         }
 
-        int? exitCode = null;
-        if (task.Containers != null)
-        {
-            foreach (var container in task.Containers)
-            {
-                if (!container.ExitCode.HasValue)
-                {
-                    continue;
-                }
-
-                exitCode = container.ExitCode;
-                if (container.ExitCode != 0)
-                {
-                    break;
-                }
-            }
-        }
+        var exitCode = MigrationContainerExitCode(task.Containers, containerName);
 
         return new AwsEcsStoppedTask
         {
@@ -128,4 +113,11 @@ internal sealed partial class AwsSdkEcsClient
             ExitCode = exitCode
         };
     }
+    internal static int? MigrationContainerExitCode(List<Container>? containers, string containerName)
+    {
+        var matches = containers?.Where(container =>
+            string.Equals(container.Name, containerName, StringComparison.Ordinal)).ToArray();
+        return matches?.Length == 1 ? matches[0].ExitCode : null;
+    }
+
 }

@@ -238,6 +238,7 @@ internal interface IAwsEcsClient
     Task<AwsEcsStoppedTask> DescribeStoppedTaskAsync(
         string cluster,
         string taskArn,
+        string containerName,
         string? region,
         CancellationToken cancellationToken = default)
         => System.Threading.Tasks.Task.FromException<AwsEcsStoppedTask>(new NotSupportedException(
@@ -972,12 +973,22 @@ internal sealed partial class AwsEcsAlbDeployBackend(
 
         using var activity = StartActivity(ControlPlaneTelemetry.Activities.BackendPromote, operation, target);
 
+        if (ReleaseImageDigest.IsImmutable(spec.DesiredRevision) &&
+            !ReleaseImageDigest.IsEcsTaskDefinitionArn(operation.ProviderOperationId))
+        {
+            return new DeployObservation
+            {
+                Status = WorkflowOperationStatus.Failed,
+                Message = "ECS image promotion requires the registered task definition."
+            };
+        }
+
         try
         {
             await ecsClient.UpdateServiceTaskDefinitionAsync(
                     target.Cluster!,
                     target.CanaryService!,
-                    spec.CurrentRevision!,
+                    ReleaseImageDigest.IsImmutable(spec.DesiredRevision) ? operation.ProviderOperationId! : spec.CurrentRevision!,
                     target.Region,
                     cancellationToken)
                 .ConfigureAwait(false);

@@ -188,6 +188,7 @@ internal sealed partial class AwsEcsAlbDeployBackend
             var stopped = await ecsClient.DescribeStoppedTaskAsync(
                     target.Cluster!,
                     taskArn,
+                    containerName,
                     target.Region,
                     cancellationToken)
                 .ConfigureAwait(false);

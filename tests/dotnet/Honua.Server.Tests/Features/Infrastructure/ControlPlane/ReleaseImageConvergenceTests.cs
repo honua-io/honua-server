@@ -133,6 +133,20 @@ public sealed class ReleaseImageConvergenceTests
     }
 
     [Fact]
+    public void MigrationExitCode_RequiresTheSelectedContainer()
+    {
+        var containers = new List<Amazon.ECS.Model.Container>
+        {
+            new() { Name = "sidecar", ExitCode = 0 },
+            new() { Name = "honua-migrate" }
+        };
+        AwsSdkEcsClient.MigrationContainerExitCode(containers, "honua-migrate").Should().BeNull();
+        AwsSdkEcsClient.MigrationContainerExitCode(containers, "missing").Should().BeNull();
+        containers[1].ExitCode = 0;
+        AwsSdkEcsClient.MigrationContainerExitCode(containers, "honua-migrate").Should().Be(0);
+    }
+
+    [Fact]
     public async Task EcsDigest_MigrationSuccess_UpdatesServiceOnlyAfterExitZero()
     {
         var ecs = new DigestEcsClient { MigrationExitCode = 0, MigrationLastStatus = "STOPPED" };
@@ -265,6 +279,16 @@ public sealed class ReleaseImageConvergenceTests
             .RollbackAsync(EcsOperation(Digest, currentRevision: null));
 
         observation.Status.Should().Be(WorkflowOperationStatus.ManualInterventionRequired);
+    }
+
+    [Fact]
+    public async Task EcsDigest_PromoteUsesRegisteredRevision()
+    {
+        var ecs = new DigestEcsClient();
+        var operation = EcsOperation(Digest) with { ProviderOperationId = RegisteredTaskDef };
+        var result = await Backend(new DigestAlbClient(), ecs).PromoteAsync(operation);
+        result.Status.Should().Be(WorkflowOperationStatus.Succeeded);
+        ecs.UpdatedTaskDefinition.Should().Be(RegisteredTaskDef);
     }
 
     [Fact]
@@ -835,8 +859,9 @@ public sealed class ReleaseImageConvergenceTests
             return Task.FromResult("arn:aws:ecs:us-east-1:123456789012:task/honua-prod-ecs/migrate");
         }
 
-        public Task<AwsEcsStoppedTask> DescribeStoppedTaskAsync(string cluster, string taskArn, string? region, CancellationToken cancellationToken = default)
+        public Task<AwsEcsStoppedTask> DescribeStoppedTaskAsync(string cluster, string taskArn, string containerName, string? region, CancellationToken cancellationToken = default)
         {
+            containerName.Should().Be("honua-migrate");
             Calls.Add("describe-stopped");
             return Task.FromResult(new AwsEcsStoppedTask
             {
