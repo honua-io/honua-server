@@ -1,0 +1,30 @@
+# Copy to .github/workflows/vendor-terms-event.yml on each target default branch.
+# This immutable guard commit must be reachable before enabling the caller.
+name: vendor-terms-event
+on:
+  issues:
+    types: [opened, edited]
+  pull_request_target:
+    types: [opened, edited, reopened]
+  issue_comment:
+    types: [created, edited]
+  pull_request_review:
+    types: [submitted, edited]
+  pull_request_review_comment:
+    types: [created, edited]
+  commit_comment:
+    types: [created]
+permissions: {}
+jobs:
+  remediate-text:
+    if: github.event_name != 'commit_comment'
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    uses: honua-io/honua-release/.github/workflows/guard-vendor-event.yml@acbcec54eddc1656e7f98c6f71c2cd27b14ac03c
+  remediate-commit-comment:
+    if: github.event_name == 'commit_comment'
+    permissions:
+      contents: write
+    uses: honua-io/honua-release/.github/workflows/guard-vendor-commit-comment.yml@acbcec54eddc1656e7f98c6f71c2cd27b14ac03c
