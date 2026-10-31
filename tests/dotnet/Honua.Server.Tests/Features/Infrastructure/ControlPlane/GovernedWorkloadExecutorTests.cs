@@ -376,6 +376,9 @@ public sealed class GovernedWorkloadExecutorTests
         using var initMutable = JsonDocument.Parse(Deployment(Image, "init:latest"));
         var initAct = () => KubernetesRestartPatch.ValidateAndGetResourceVersion(initMutable.RootElement);
         initAct.Should().Throw<InvalidOperationException>();
+        using var paused = JsonDocument.Parse(Deployment(Image, Image).Replace("\"template\":", "\"paused\":true,\"template\":", StringComparison.Ordinal));
+        var pausedAct = () => KubernetesRestartPatch.ValidateAndGetResourceVersion(paused.RootElement);
+        pausedAct.Should().Throw<InvalidOperationException>();
     }
 
     [Fact]

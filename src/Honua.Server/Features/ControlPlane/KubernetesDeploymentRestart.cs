@@ -70,6 +70,11 @@ internal static class KubernetesRestartPatch
             throw new InvalidOperationException("Kubernetes deployment template could not be verified.");
         }
 
+        if (spec.TryGetProperty("paused", out var paused) && paused.ValueKind != JsonValueKind.False && paused.ValueKind != JsonValueKind.Null)
+        {
+            throw new InvalidOperationException("Kubernetes restart requires an unpaused deployment.");
+        }
+
         ValidateImages(containers);
         if (podSpec.TryGetProperty("initContainers", out var initContainers))
         {
