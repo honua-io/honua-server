@@ -212,6 +212,7 @@ internal sealed partial class AwsEcsAlbDeployBackend
         DeployOperationSpec spec,
         AwsEcsAlbDeployTarget target,
         string taskDefinitionArn,
+        string? priorTaskDefinitionArn,
         int? canaryWeight,
         CancellationToken cancellationToken)
     {
@@ -240,7 +241,7 @@ internal sealed partial class AwsEcsAlbDeployBackend
                 {
                     Status = WorkflowOperationStatus.Failed,
                     ProviderOperationId = taskDefinitionArn,
-                    ObservedRevision = primary?.TaskDefinitionArn,
+                    ObservedRevision = RollbackIdentity(priorTaskDefinitionArn),
                     Message = "ECS rollout failed before the service reached steady state."
                 };
             }
@@ -269,7 +270,7 @@ internal sealed partial class AwsEcsAlbDeployBackend
                 {
                     Status = WorkflowOperationStatus.Submitted,
                     ProviderOperationId = taskDefinitionArn,
-                    ObservedRevision = taskDefinitionArn,
+                    ObservedRevision = RollbackIdentity(priorTaskDefinitionArn),
                     Message = $"ECS canary service '{target.CanaryService}' is routing {expectedShare}% of traffic to task definition '{taskDefinitionArn}'."
                 };
             }
@@ -278,7 +279,7 @@ internal sealed partial class AwsEcsAlbDeployBackend
             {
                 Status = WorkflowOperationStatus.Succeeded,
                 ProviderOperationId = taskDefinitionArn,
-                ObservedRevision = taskDefinitionArn,
+                ObservedRevision = RollbackIdentity(priorTaskDefinitionArn),
                 Message = $"ECS canary service '{target.CanaryService}' is serving 100% of traffic on task definition '{taskDefinitionArn}'."
             };
         }
@@ -287,10 +288,15 @@ internal sealed partial class AwsEcsAlbDeployBackend
         {
             Status = WorkflowOperationStatus.Submitted,
             ProviderOperationId = taskDefinitionArn,
-            ObservedRevision = last?.TaskDefinitionArn,
+            ObservedRevision = RollbackIdentity(priorTaskDefinitionArn),
             Message = $"ECS canary service '{target.CanaryService}' is still converging on task definition '{taskDefinitionArn}'."
         };
     }
+
+    // CurrentRevision is what an in-flight rollback compares to the stable service.
+    // Keep that pre-update task definition here; the new ARN stays on ProviderOperationId.
+    private static string? RollbackIdentity(string? priorTaskDefinitionArn)
+        => string.IsNullOrWhiteSpace(priorTaskDefinitionArn) ? null : priorTaskDefinitionArn;
 
     private async System.Threading.Tasks.Task RestoreAlbWeightsAsync(
         WorkflowOperationRecord operation,

@@ -312,7 +312,9 @@ internal sealed partial class KubernetesDeploymentDeployBackend(
     }
 
     private static bool IsSteady(KubernetesDeploymentImageState state, string containerName, string digest)
-        => state.Replicas > 0 &&
+        => state.Generation > 0 &&
+           state.ObservedGeneration == state.Generation &&
+           state.Replicas > 0 &&
            state.ReadyReplicas == state.Replicas &&
            state.UpdatedReplicas == state.Replicas &&
            state.ContainerImages.TryGetValue(containerName, out var image) &&

@@ -100,6 +100,7 @@ public sealed class ReleaseImageConvergenceTests
 
         submission.Status.Should().Be(WorkflowOperationStatus.Succeeded);
         submission.ProviderOperationId.Should().Be(RegisteredTaskDef);
+        submission.ObservedRevision.Should().Be(CurrentTaskDef);
         ecs.UpdatedTaskDefinition.Should().Be(RegisteredTaskDef);
         ecs.RegisteredImages.Should().ContainSingle().Which.Should().Be(Digest);
         ecs.Calls.Should().NotContain("run-task");
@@ -216,6 +217,33 @@ public sealed class ReleaseImageConvergenceTests
         submission.Status.Should().Be(WorkflowOperationStatus.Failed);
         submission.Message.Should().Contain("failed");
         submission.Message.Should().NotContain("RolloutStateReason");
+        submission.ProviderOperationId.Should().Be(RegisteredTaskDef);
+        submission.ObservedRevision.Should().Be(CurrentTaskDef);
+    }
+
+    [Fact]
+    public async Task EcsDigest_KeepsThePriorTaskDefinition_OnSteadyCanaryAndTimeout()
+    {
+        var steady = new DigestEcsClient();
+        var completed = await Backend(new DigestAlbClient(), steady).StartAsync(EcsOperation(Digest));
+        completed.Status.Should().Be(WorkflowOperationStatus.Succeeded);
+        completed.ProviderOperationId.Should().Be(RegisteredTaskDef);
+        completed.ObservedRevision.Should().Be(CurrentTaskDef);
+
+        var canaryParameters = EcsParameters();
+        canaryParameters["aws.ecs.canary_weight_percentage"] = "10";
+        var canary = await Backend(new DigestAlbClient(), new DigestEcsClient())
+            .StartAsync(EcsOperation(Digest, canaryParameters));
+        canary.Status.Should().Be(WorkflowOperationStatus.Submitted);
+        canary.ProviderOperationId.Should().Be(RegisteredTaskDef);
+        canary.ObservedRevision.Should().Be(CurrentTaskDef);
+        canary.ObservedRevision.Should().NotBe(RegisteredTaskDef);
+
+        var timeout = await Backend(new DigestAlbClient(), new DigestEcsClient { RolloutState = "IN_PROGRESS" })
+            .StartAsync(EcsOperation(Digest, SteadyFast()));
+        timeout.Status.Should().Be(WorkflowOperationStatus.Submitted);
+        timeout.ProviderOperationId.Should().Be(RegisteredTaskDef);
+        timeout.ObservedRevision.Should().Be(CurrentTaskDef);
     }
 
     [Fact]
@@ -364,10 +392,51 @@ public sealed class ReleaseImageConvergenceTests
 
         submission.Status.Should().Be(WorkflowOperationStatus.Succeeded);
         submission.ProviderOperationId.Should().Be("honua/honua-server");
+        submission.ObservedRevision.Should().Be(Digest);
         client.Image.Should().Be(Digest);
         client.PatchedContainer.Should().Be("honua");
         backend.BackendName.Should().Be("honua-kubernetes-deployment");
         (await backend.GetCapabilitiesAsync()).RequiresOutOfBandMigrations.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task EksDigest_DoesNotSucceedUntilControllerObservesTheGeneration()
+    {
+        var client = new DigestKubernetesClient { StaleGetsRemaining = 1 };
+        var backend = new KubernetesDeploymentDeployBackend(client, NullLogger<KubernetesDeploymentDeployBackend>.Instance);
+
+        var early = await backend.StartAsync(EksOperation(Digest, steadyAttempts: 1));
+
+        early.Status.Should().Be(WorkflowOperationStatus.Submitted);
+        early.Status.Should().NotBe(WorkflowOperationStatus.Succeeded);
+        client.Image.Should().Be(Digest);
+        client.GetsAfterPatch.Should().Be(1);
+
+        var ready = await backend.ObserveAsync(EksOperation(Digest));
+
+        ready.Status.Should().Be(WorkflowOperationStatus.Succeeded);
+        ready.ObservedRevision.Should().Be(Digest);
+    }
+
+    [Fact]
+    public void KubernetesDeploymentImage_ParsesGenerationBeforeReplicaCountsCount()
+    {
+        using var stale = JsonDocument.Parse(
+            """
+            {
+              "metadata": { "name": "honua-server", "generation": 4 },
+              "spec": {
+                "replicas": 2,
+                "template": { "spec": { "containers": [ { "name": "honua", "image": "pinned" } ] } }
+              },
+              "status": { "observedGeneration": 3, "readyReplicas": 2, "updatedReplicas": 2 }
+            }
+            """);
+        var parsed = KubernetesDeploymentImagePatch.Parse(stale.RootElement, "honua-server");
+        parsed.Generation.Should().Be(4);
+        parsed.ObservedGeneration.Should().Be(3);
+        parsed.ReadyReplicas.Should().Be(2);
+        parsed.ContainerImages["honua"].Should().Be("pinned");
     }
 
     [Fact]
@@ -534,7 +603,7 @@ public sealed class ReleaseImageConvergenceTests
     private static WorkflowOperationRecord LambdaOperation(string desired, IReadOnlyDictionary<string, string>? parameters = null)
         => Operation(LambdaSpec(desired, parameters) with { CurrentRevision = "41" }, "production:prod-lambda");
 
-    private static WorkflowOperationRecord EksOperation(string desired, string? currentRevision = PriorDigest)
+    private static WorkflowOperationRecord EksOperation(string desired, string? currentRevision = PriorDigest, int steadyAttempts = 2)
         => Operation(new DeployOperationSpec
         {
             TargetId = "prod-eks",
@@ -552,7 +621,7 @@ public sealed class ReleaseImageConvergenceTests
                 ["kubernetes.deployment_name"] = "honua-server",
                 ["kubernetes.container_name"] = "honua",
                 ["kubernetes.steady_delay_ms"] = "0",
-                ["kubernetes.steady_attempts"] = "2"
+                ["kubernetes.steady_attempts"] = steadyAttempts.ToString(System.Globalization.CultureInfo.InvariantCulture)
             }
         }, "production:prod-eks");
 
@@ -836,6 +905,12 @@ public sealed class ReleaseImageConvergenceTests
 
         public int PatchCount { get; private set; }
 
+        public int GetsAfterPatch { get; private set; }
+
+        public int StaleGetsRemaining { get; set; }
+
+        public long Generation { get; set; } = 2;
+
         public Task<KubernetesDeploymentImageState?> GetAsync(string namespaceName, string deploymentName, CancellationToken cancellationToken = default)
         {
             if (Exception is not null)
@@ -849,13 +924,26 @@ public sealed class ReleaseImageConvergenceTests
             }
 
             var image = Image ?? "123456789012.dkr.ecr.us-east-1.amazonaws.com/honua:old";
-            var steady = Image is not null;
+            var patched = Image is not null;
+            var observedGeneration = Generation;
+            if (patched)
+            {
+                GetsAfterPatch++;
+                if (StaleGetsRemaining > 0)
+                {
+                    observedGeneration = Generation - 1;
+                    StaleGetsRemaining--;
+                }
+            }
+
             return Task.FromResult<KubernetesDeploymentImageState?>(new KubernetesDeploymentImageState
             {
                 Name = deploymentName,
                 Replicas = 2,
-                ReadyReplicas = steady ? 2 : 0,
-                UpdatedReplicas = steady ? 2 : 0,
+                ReadyReplicas = patched ? 2 : 0,
+                UpdatedReplicas = patched ? 2 : 0,
+                Generation = Generation,
+                ObservedGeneration = observedGeneration,
                 ContainerImages = new Dictionary<string, string>(StringComparer.Ordinal)
                 {
                     ["honua"] = image,

@@ -744,6 +744,7 @@ internal sealed partial class AwsEcsAlbDeployBackend(
                         spec,
                         target,
                         appliedTaskDefinition,
+                        observedTaskDefinition,
                         canaryWeight,
                         cancellationToken)
                     .ConfigureAwait(false);

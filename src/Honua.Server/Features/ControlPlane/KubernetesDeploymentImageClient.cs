@@ -16,6 +16,12 @@ internal sealed record KubernetesDeploymentImageState
 
     public int UpdatedReplicas { get; init; }
 
+    /// <summary>Deployment <c>metadata.generation</c>. Zero when the API omitted it.</summary>
+    public long Generation { get; init; }
+
+    /// <summary>Deployment <c>status.observedGeneration</c>. Zero when the controller has not reported it.</summary>
+    public long ObservedGeneration { get; init; }
+
     public required IReadOnlyDictionary<string, string> ContainerImages { get; init; }
 }
 
@@ -75,12 +81,16 @@ internal static class KubernetesDeploymentImagePatch
     public static KubernetesDeploymentImageState Parse(JsonElement root, string expectedName)
     {
         var name = expectedName;
-        if (root.TryGetProperty("metadata", out var metadata) &&
-            metadata.TryGetProperty("name", out var nameElement) &&
-            nameElement.ValueKind == JsonValueKind.String &&
-            !string.IsNullOrWhiteSpace(nameElement.GetString()))
+        long generation = 0;
+        if (root.TryGetProperty("metadata", out var metadata))
         {
-            name = nameElement.GetString()!;
+            generation = ReadInt64(metadata, "generation");
+            if (metadata.TryGetProperty("name", out var nameElement) &&
+                nameElement.ValueKind == JsonValueKind.String &&
+                !string.IsNullOrWhiteSpace(nameElement.GetString()))
+            {
+                name = nameElement.GetString()!;
+            }
         }
 
         var replicas = 0;
@@ -121,8 +131,10 @@ internal static class KubernetesDeploymentImagePatch
 
         var ready = 0;
         var updated = 0;
+        long observedGeneration = 0;
         if (root.TryGetProperty("status", out var status))
         {
+            observedGeneration = ReadInt64(status, "observedGeneration");
             if (status.TryGetProperty("readyReplicas", out var readyElement) &&
                 readyElement.TryGetInt32(out var parsedReady))
             {
@@ -142,9 +154,14 @@ internal static class KubernetesDeploymentImagePatch
             Replicas = replicas,
             ReadyReplicas = ready,
             UpdatedReplicas = updated,
+            Generation = generation,
+            ObservedGeneration = observedGeneration,
             ContainerImages = images
         };
     }
+
+    private static long ReadInt64(JsonElement parent, string name)
+        => parent.TryGetProperty(name, out var element) && element.TryGetInt64(out var value) ? value : 0;
 }
 
 internal sealed partial class KubernetesDeploymentImageClient(
