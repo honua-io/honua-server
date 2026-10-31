@@ -298,6 +298,8 @@ internal sealed partial class DurableRestoreWorker(
     private async Task SubmitLocalAsync(WorkflowOperationRecord record, CancellationToken cancellationToken)
     {
         var checkpoint = record.PreMigrationRestore!;
+        if (!string.Equals(checkpoint.DeployOperationId, DeployWorkflowService.CreateOperationId(record.OperationId), StringComparison.Ordinal))
+            throw new InvalidOperationException("Deploy checkpoint identity is inconsistent.");
         var request = new OperationGatewayRequest
         {
             Kind = OperationClass.Deploy,
