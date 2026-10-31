@@ -323,6 +323,10 @@ An MCP agent follows the same path with a human approval in the middle; it never
 
 For an ECS image convergence target, configure `aws.ecs.stable_service` as a distinct service. Before shifting traffic or updating the canary service, the executor records the stable revision, candidate service revision, registered revision, and successful migration preparation in the durable operation. Reconciliation then submits activation and watches the rollout. If the host stops during migration preparation, the operation requires manual verification; it does not automatically repeat a migration whose outcome is unknown.
 
+### Governed restart and config
+
+An approved admin-config proposal can restart the registered deployment or change one allowlisted field. The action names are `workload.restart_ecs`, `workload.restart_lambda`, and `workload.set_config`. The `target` is a deploy-target id. Restart forces a new ECS deployment of that service, or publishes a new Lambda version of the alias's current image. That publish sets only the function description, and only after the unpublished configuration matches the serving version. The alias moves only when the published version is new and the image is unchanged. `workload.set_config` accepts only `ecs.desired_count` (an integer from 0 through 10) and fails if the task definition would change. Any other action or field fails before a provider write. The returned id is the durable `opsaction-…` record. Approval still requires a different principal than the proposer.
+
 Version-to-digest resolution lives in the signed release lock published with each Honua release, not in the server. The provisioning executor writes the lock's resolved artifacts into `ControlPlane__PlatformRelease__Version`, `ControlPlane__PlatformRelease__ServingArtifactReference` and `ControlPlane__PlatformRelease__Workers__*`; to move to another release, re-provision with that release's lock and then propose convergence.
 
 ### Synthetic health-probe gate
