@@ -24,7 +24,7 @@ internal sealed partial class StreamingFileImportService
     /// <summary>
     /// Stream features from source and insert into database in batches.
     /// </summary>
-    private async Task<(int imported, int failed, int repaired, string[] warnings, IReadOnlyList<ImportValidationIssue> rowIssues, string physicalTableName, bool replacementBlocked)> ImportStreamingAsync(
+    private async Task<(int imported, int failed, int repaired, string[] warnings, IReadOnlyList<ImportValidationIssue> rowIssues, string physicalTableName, bool replacementBlocked, IReadOnlyList<ImportTypedColumn> typedColumns)> ImportStreamingAsync(
         ImportRequest request,
         Stream fileStream,
         SupportedFileFormat format,
@@ -93,6 +93,7 @@ internal sealed partial class StreamingFileImportService
                 // Z/M ordinates that PostGIS rejects, dropping otherwise-valid rows).
                 var wkbWriter = new WKBWriter();
                 var batch = new List<IFeature>(_limits.BatchSize);
+                var typedColumnInference = new ImportTypedColumnInference(preserveStringScalars: format == SupportedFileFormat.GeoJson);
                 var totalImported = 0;
                 var totalFailed = 0;
                 var batchesCommitted = 0;
@@ -144,6 +145,7 @@ internal sealed partial class StreamingFileImportService
                     }
 
                     batch.Add(feature);
+                    ObserveTypedColumns(typedColumnInference, feature);
 
                     // Process batch when full
                     if (batch.Count >= _limits.BatchSize)
@@ -239,6 +241,7 @@ internal sealed partial class StreamingFileImportService
                 // whole file has loaded, so a failure before that merge leaves the live table as it was.
                 var replacementBlocked = loadMode == ImportLoadMode.Replace && hadExistingTarget && totalFailed > 0;
                 var stagesIntoSibling = loadMode == ImportLoadMode.Replace || appendUsesStaging;
+                IReadOnlyList<ImportTypedColumn> typedColumns = [];
                 if (stagesIntoSibling)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
@@ -252,6 +255,12 @@ internal sealed partial class StreamingFileImportService
                     }
                     else
                     {
+                        // Finish schema promotion before the swap. If it fails, the existing
+                        // live dataset remains intact and the staging table is discarded.
+                        typedColumns = await PromoteTypedColumnsAsync(
+                            connection, targetSchema, loadTableName,
+                            typedColumnInference.Resolve(), cancellationToken);
+                        cancellationToken.ThrowIfCancellationRequested();
                         await SwapStagingTableAsync(
                             connection,
                             targetSchema,
@@ -348,6 +357,18 @@ internal sealed partial class StreamingFileImportService
 
                 if (dataCommitted)
                 {
+                    if (loadMode != ImportLoadMode.Replace)
+                    {
+                        // Append and upsert write to the live table. Refresh their projections
+                        // before reporting completion, even if cancellation arrived after commit.
+                        typedColumns = await PromoteTypedColumnsAsync(
+                            connection,
+                            targetSchema,
+                            allowedTableName,
+                            typedColumnInference.Resolve(),
+                            CancellationToken.None);
+                    }
+
                     try
                     {
                         await AnalyzeTableAsync(connection, targetSchema, allowedTableName, CancellationToken.None);
@@ -394,7 +415,7 @@ internal sealed partial class StreamingFileImportService
                     CurrentPhase = "Import completed"
                 });
 
-                return (totalImported, totalFailed, repairTally.Repaired, completionWarnings, rowIssues, allowedTableName, replacementBlocked);
+                return (totalImported, totalFailed, repairTally.Repaired, completionWarnings, rowIssues, allowedTableName, replacementBlocked, typedColumns);
             }
             catch when ((loadMode == ImportLoadMode.Replace || appendUsesStaging) && !dataCommitted)
             {
