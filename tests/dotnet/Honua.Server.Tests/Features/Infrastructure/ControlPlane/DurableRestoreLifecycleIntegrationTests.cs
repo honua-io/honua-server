@@ -148,6 +148,11 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
             {
                 await using var admission = await RestoreDeployAdmission.AcquireAsync(workflows, "unrelated-deploy", null, CancellationToken.None);
             });
+            await using (var promotion = await RestoreDeployAdmission.AcquireAsync(workflows,
+                checkpoint!.PreMigrationRestore!.DeployOperationId!, null, CancellationToken.None, allowRestorePromotion: true))
+            {
+                Assert.False(promotion.Token.IsCancellationRequested);
+            }
             await snapshots.Received(1).RestoreNewAsync(Arg.Any<RdsRestoreRequest>(), Arg.Any<CancellationToken>());
             var replacement = NewWorker();
             Assert.False(await replacement.ClaimCellAsync("other-restore", CancellationToken.None));
