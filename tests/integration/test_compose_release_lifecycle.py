@@ -156,6 +156,17 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
         assert backup["image"] == prior_id and backup["schemaVersion"] == 140
         with (manifests[0].parent / "database.dump").open("rb") as dump:
             assert hashlib.file_digest(dump, "sha256").hexdigest() == backup["sha256"]
+        # A wrong backup must be rejected while migration 142 is still applied,
+        # before any prior image can be started against the incompatible schema.
+        wrong = call("honua_propose_rollback", {"targetId": "compose-local", "toRevision": prior_id,
+            "backupId": "backup-" + "0" * 32, "idempotencyKey": "wrong-backup"}, 3)
+        if wrong.get("proposalId"):
+            request(base, f"/api/v1/admin/proposals/{wrong['proposalId']}/approve", approver_key, {})
+            wait_for_proposal(base, approver_key, wrong["proposalId"], "failed")
+        else:
+            assert wrong.get("outcome", "").lower() in ("blocked", "rejected", "failed")
+        assert image_id() == candidate and schema() == candidate_schema
+        assert sql("SELECT value FROM public.rc2_lifecycle_marker WHERE id=1") == "changed-after-upgrade"
         rollback = call("honua_propose_rollback", {"targetId": "compose-local", "toRevision": prior_id,
             "backupId": backup["backupId"], "idempotencyKey": "verified-backup"}, 4)
         assert rollback["proposalId"]
@@ -165,14 +176,6 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
         assert sql("SELECT value FROM public.rc2_lifecycle_marker WHERE id=1") == "retained"
         assert sql("SELECT to_regclass('honua.ai_financial_invocations')") == ""
         assert sql("SELECT PostGIS_Version()")
-        wrong = call("honua_propose_rollback", {"targetId": "compose-local", "toRevision": prior_id,
-            "backupId": "backup-" + "0" * 32, "idempotencyKey": "wrong-backup"}, 3)
-        if wrong.get("proposalId"):
-            request(base, f"/api/v1/admin/proposals/{wrong['proposalId']}/approve", approver_key, {})
-            wait_for_proposal(base, approver_key, wrong["proposalId"], "failed")
-        else:
-            assert wrong.get("outcome", "").lower() in ("blocked", "rejected", "failed")
-        assert image_id() == prior_id and schema() == 140
         # Closing a client early must not terminate the listener or block later requests.
         disconnect = "import socket; s=socket.socket(socket.AF_UNIX); s.connect('/sock/executor.sock'); s.sendall(b'{\"op\":\"status\"}\\n'); s.close()"
         run(["docker", "run", "--rm", "-v", project + "_compose-executor-socket:/sock", "python:3.12-alpine", "python", "-c", disconnect])
