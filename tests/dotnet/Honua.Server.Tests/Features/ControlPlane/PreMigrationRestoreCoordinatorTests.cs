@@ -25,6 +25,19 @@ public sealed class PreMigrationRestoreCoordinatorTests
 {
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
+    public void VerifyClassification_TamperedDeclaration_FailsClosed()
+    {
+        var declaration = Honua.Core.Features.Infrastructure.Migrations.MigrationReaderCompatibility.Declare("143_AddTable.sql", "CREATE TABLE example (id integer);");
+        Assert.Equal("expand", SchemaJournalReader.VerifyClassification(declaration.ScriptName, declaration.DeclarationFormat,
+            declaration.Classification, declaration.MinReaderSchema, declaration.ScriptSha256, declaration.ScriptText));
+        Assert.Null(SchemaJournalReader.VerifyClassification(declaration.ScriptName, declaration.DeclarationFormat + 1,
+            declaration.Classification, declaration.MinReaderSchema, declaration.ScriptSha256, declaration.ScriptText));
+        Assert.Null(SchemaJournalReader.VerifyClassification(declaration.ScriptName, declaration.DeclarationFormat,
+            declaration.Classification, declaration.MinReaderSchema, declaration.ScriptSha256, "DROP TABLE example;"));
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
     public async Task MissingBackup_DoesNotRestoreOrStart()
     {
         var harness = NewHarness();

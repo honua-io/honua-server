@@ -114,13 +114,8 @@ internal static class SchemaJournalReader
                         classification = null;
                     else
                     {
-                        var declaration = new MigrationReaderCompatibilityDeclaration
-                        {
-                            ScriptName = name!, DeclarationFormat = reader.GetInt32(3), Classification = classification,
-                            MinReaderSchema = minReader, ScriptSha256 = reader.GetString(4), ScriptText = reader.GetString(5)
-                        };
-                        if (!MigrationReaderCompatibility.Verify(declaration, name!, int.MaxValue).Accepted)
-                            classification = null;
+                        classification = VerifyClassification(name!, reader.GetInt32(3), classification,
+                            minReader, reader.GetString(4), reader.GetString(5));
                     }
                 }
                 applied.Add(new AppliedSchemaMigration(number.Value, classification, minReader));
@@ -132,6 +127,16 @@ internal static class SchemaJournalReader
         {
             return SchemaJournalSnapshot.Unknown;
         }
+    }
+
+    internal static string? VerifyClassification(string name, int format, string classification, int minReader, string hash, string text)
+    {
+        var declaration = new MigrationReaderCompatibilityDeclaration
+        {
+            ScriptName = name, DeclarationFormat = format, Classification = classification,
+            MinReaderSchema = minReader, ScriptSha256 = hash, ScriptText = text
+        };
+        return MigrationReaderCompatibility.Verify(declaration, name, int.MaxValue).Accepted ? classification : null;
     }
 
     private static async Task<bool> TableExistsAsync(DbConnection connection, string table, CancellationToken cancellationToken)
