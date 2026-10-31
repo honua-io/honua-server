@@ -14,13 +14,15 @@ internal sealed class RestoreDeployAdmission : IAsyncDisposable
     private static readonly TimeSpan Lease = TimeSpan.FromMinutes(2);
     private readonly IWorkflowOperationStore _store;
     private readonly string _leaseOwner;
+    private readonly string _leaseKey;
     private readonly CancellationTokenSource _cancellation;
     private readonly Task _renewal;
 
-    private RestoreDeployAdmission(IWorkflowOperationStore store, string leaseOwner, CancellationToken cancellationToken)
+    private RestoreDeployAdmission(IWorkflowOperationStore store, string leaseKey, string leaseOwner, CancellationToken cancellationToken)
     {
         _store = store;
         _leaseOwner = leaseOwner;
+        _leaseKey = leaseKey;
         _cancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         _renewal = RenewAsync();
     }
@@ -32,7 +34,7 @@ internal sealed class RestoreDeployAdmission : IAsyncDisposable
         var leaseOwner = $"deploy-admission:{Guid.NewGuid():N}";
         if (!await store.TryAcquireLeaseAsync(CellOwnerId, leaseOwner, Lease, cancellationToken).ConfigureAwait(false))
             throw new ResourceConflictException("Deploy admission is busy with a restore or another deploy.");
-        var admission = new RestoreDeployAdmission(store, leaseOwner, cancellationToken);
+        var admission = new RestoreDeployAdmission(store, CellOwnerId, leaseOwner, cancellationToken);
         try
         {
             var owner = await store.GetAsync(CellOwnerId, admission.Token).ConfigureAwait(false);
@@ -65,6 +67,14 @@ internal sealed class RestoreDeployAdmission : IAsyncDisposable
         }
     }
 
+    internal static async Task<RestoreDeployAdmission> AcquireWorkflowAsync(IWorkflowOperationStore store, string workflowId, CancellationToken cancellationToken)
+    {
+        var leaseOwner = $"deploy-submission:{Guid.NewGuid():N}";
+        if (!await store.TryAcquireLeaseAsync(workflowId, leaseOwner, Lease, cancellationToken).ConfigureAwait(false))
+            throw new ResourceConflictException("Deploy submission is being reconciled.");
+        return new RestoreDeployAdmission(store, workflowId, leaseOwner, cancellationToken);
+    }
+
     private async Task RenewAsync()
     {
         try
@@ -72,7 +82,7 @@ internal sealed class RestoreDeployAdmission : IAsyncDisposable
             while (!_cancellation.IsCancellationRequested)
             {
                 await Task.Delay(TimeSpan.FromSeconds(30), _cancellation.Token).ConfigureAwait(false);
-                if (!await _store.RenewLeaseAsync(CellOwnerId, _leaseOwner, Lease, _cancellation.Token).ConfigureAwait(false))
+                if (!await _store.RenewLeaseAsync(_leaseKey, _leaseOwner, Lease, _cancellation.Token).ConfigureAwait(false))
                 {
                     await _cancellation.CancelAsync().ConfigureAwait(false);
                     return;
@@ -90,7 +100,7 @@ internal sealed class RestoreDeployAdmission : IAsyncDisposable
     {
         await _cancellation.CancelAsync().ConfigureAwait(false);
         await _renewal.ConfigureAwait(false);
-        await _store.ReleaseLeaseAsync(CellOwnerId, _leaseOwner, CancellationToken.None).ConfigureAwait(false);
+        await _store.ReleaseLeaseAsync(_leaseKey, _leaseOwner, CancellationToken.None).ConfigureAwait(false);
         _cancellation.Dispose();
     }
 }

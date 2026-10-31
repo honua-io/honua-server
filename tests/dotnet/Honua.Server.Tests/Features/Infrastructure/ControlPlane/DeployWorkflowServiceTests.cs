@@ -55,7 +55,9 @@ public sealed class DeployWorkflowServiceTests
             parameterOverrides: null);
 
         secondCreate.Should().NotBeNull();
-        secondCreate!.Status.Should().Be(WorkflowOperationStatus.Planned);
+        secondCreate!.Status.Should().Be(WorkflowOperationStatus.Submitted);
+        (await store.TryAcquireLeaseAsync(secondCreate.OperationId, "reconciler", TimeSpan.FromMinutes(1)))
+            .Should().BeFalse("reconciliation must wait until the backend submission completes");
 
         backend.AllowStart();
         var firstResult = await firstCreate;
