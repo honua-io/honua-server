@@ -451,8 +451,14 @@ public sealed class ReleaseImageConvergenceTests
     public async Task EcsDigest_PromoteUsesRegisteredRevision()
     {
         var ecs = new DigestEcsClient();
-        var operation = EcsOperation(Digest) with { ProviderOperationId = RegisteredTaskDef };
-        var result = await Backend(new DigestAlbClient(), ecs).PromoteAsync(operation);
+        var backend = Backend(new DigestAlbClient(), ecs);
+        var operation = EcsOperation(Digest);
+        var checkpoint = await backend.PrepareCheckpointAsync(operation, CancellationToken.None);
+        var persisted = Checkpointed(operation, checkpoint);
+        await backend.ActivateCheckpointAsync(persisted, CancellationToken.None);
+        await backend.PromoteAsync(persisted);
+        var exposed = persisted with { Deploy = persisted.Deploy! with { TrafficExposedAt = DateTimeOffset.UtcNow } };
+        var result = await backend.PromoteAsync(exposed);
         result.Status.Should().Be(WorkflowOperationStatus.Succeeded);
         ecs.UpdatedTaskDefinition.Should().Be(RegisteredTaskDef);
     }

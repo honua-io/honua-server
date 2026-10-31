@@ -697,6 +697,13 @@ internal sealed partial class DeployWorkflowService
                     "Checkpoint preparation and activation must finish before manual cutover.");
             }
 
+            var readiness = await backend.ObserveAsync(operation, cancellationToken).ConfigureAwait(false);
+            if (readiness.Status != WorkflowOperationStatus.Submitted || !readiness.PromotionRecommended)
+            {
+                return new DeployPromotionResult(DeployPromotionOutcome.PreconditionFailed, operation,
+                    "The checkpointed candidate must be healthy before manual cutover.");
+            }
+
             var authorized = operation with
             {
                 Status = WorkflowOperationStatus.Submitted,
