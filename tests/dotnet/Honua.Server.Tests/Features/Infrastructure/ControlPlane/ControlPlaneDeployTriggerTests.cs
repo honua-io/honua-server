@@ -138,8 +138,14 @@ public sealed class ControlPlaneDeployTriggerTests
             CreateDeploy("op-deploy", WorkflowOperationStatus.Reconciling, "p-deploy", updatedAt: stale),
             CreateMetadata("op-meta", WorkflowOperationStatus.Reconciling, updatedAt: stale),
             CreateCoordinated("op-coord", WorkflowOperationStatus.Reconciling, updatedAt: stale),
-            new WorkflowOperationRecord { OperationId = "op-restore", Kind = WorkflowOperationKind.PreMigrationRestore,
-                Status = WorkflowOperationStatus.Reconciling, CreatedAt = stale, UpdatedAt = stale });
+            new WorkflowOperationRecord
+            {
+                OperationId = "op-restore",
+                Kind = WorkflowOperationKind.PreMigrationRestore,
+                Status = WorkflowOperationStatus.Reconciling,
+                CreatedAt = stale,
+                UpdatedAt = stale
+            });
         var dispatcher = Substitute.For<IOperationReconcileDispatcher>();
         var sut = BuildWorkflowBackstop(store, dispatcher, TimeSpan.FromSeconds(90));
 
