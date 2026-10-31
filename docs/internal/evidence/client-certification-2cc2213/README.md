@@ -206,7 +206,7 @@ FAIL: the bounded 2026.1 external-client roster is not certified. Missing, skipp
 5. *Missing, skipped, stale, mismatched or source-built cells fail the gate* — met and shown:
    the gate is red on 15 failing cells and 1 missing envelope.
 6. *Planned and excluded clients remain explicit rows* — unchanged (`delegatedClients` in the
-   mirror; ArcGIS stays with honua-esri-compat#74/#75).
+   mirror; GeoServices stays with honua-esri-compat#74/#75).
 7. *No duplicate OWSLib/PySTAC producers* — the nightly matrix lanes (`tests/python/owslib_client`,
    `stac_client`) remain the nightly compatibility suites; this harness is the candidate-bound
    certification producer and emits only governed `client-cert/…` IDs, which the nightly lanes do not.

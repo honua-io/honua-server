@@ -1,0 +1,138 @@
+{
+  "schema_version": "1.0",
+  "run_id": "20260728T180311Z",
+  "run_date": "2026-07-28T18:03:12.238287+00:00",
+  "server_version": "local",
+  "client_lane": "geoservices-rest-stub",
+  "client_version": "stub-1.0",
+  "protocol": "portal",
+  "environment": "local",
+  "results": [
+    {
+      "test_case_id": "CERT-PRTL-INFO-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "authInfo.isTokenBasedSecurity + tokenServicesUrl",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-PRTL-SELF-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-PRTL-SRCH-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 12,
+      "measured_delta": null,
+      "notes": "total/start/num/nextStart/results paging shape",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-PRTL-ITEM-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "content/items/{id}.url points at /rest/services",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-PRTL-RBAC-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "anonymous search projects only public-tier items",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-PRTL-TOKN-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "generateToken expires is Unix milliseconds",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-PRTL-AUTH-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "named-user token surfaces org-tier items",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-PRTL-OAUTH-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "oauth2/token returns RFC 6749 error envelope for an invalid grant",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-PRTL-SELF-02",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "portals/self with a named-user token populates the user block",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-PRTL-COMM-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "anonymous community/self returns GeoServices error envelope 401/499, no user document",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-PRTL-COMM-02",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "community/self with a named-user token returns the user document",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-PRTL-TOKN-02",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "generateToken with invalid credentials returns GeoServices error envelope 401/499, no token",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-PRTL-OAUTH-02",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "oauth2/token refresh_token grant returns invalid_grant for an unknown refresh token",
+      "evidence_ref": ""
+    }
+  ],
+  "summary": {
+    "total": 13,
+    "passed": 13,
+    "failed": 0,
+    "skipped": 0,
+    "not_applicable": 0
+  },
+  "cite_results": null,
+  "extensions": []
+}

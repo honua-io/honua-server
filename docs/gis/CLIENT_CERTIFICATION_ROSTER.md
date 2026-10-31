@@ -101,10 +101,10 @@ linked requirements JSON; version sets here do not imply interchangeable version
 | No duplicate OWSLib/PySTAC producers | Reuse `owslib` and `pystac` in `client-interop-nightly.yml`, their `docker/client-compat` harnesses and `py-owslib` / `py-pystac` bindings. #3386 and #3392 must not add parallel producers for the same cells. |
 
 At qualification, use one immutable local Docker target for the full matrix;
-cloud lanes consume the slim deployment-parity subset. Join licensed ArcGIS
-receipts from [honua-esri-compat #74](https://github.com/honua-io/honua-esri-compat/issues/74)
-and [#75](https://github.com/honua-io/honua-esri-compat/issues/75) by evidence reference.
-Do not substitute the ArcGIS stub for a licensed client. Reaggregate fresh receipts
+cloud lanes consume the slim deployment-parity subset. Join licensed GeoServices
+receipts from
+and.
+Do not substitute the GeoServices stub for a licensed client. Reaggregate fresh receipts
 in honua-evidence, then atomically bind the reviewed ledger commit, requirements
 revision and byte digest in honua-release. #3434 stays open until this handoff is
 executed; releasing candidate-dependent criteria is not a pass or a waiver of
@@ -124,31 +124,30 @@ The note deltas below sum to 3, which closes the gap between 41 and 44. No row w
 | Note | Delta | Entries | Explanation |
 |---|---|---|---|
 | `excluded-bullet-names-two-clients` | +1 | `golden-surfer`, `avenza-maps` | The artifact's Excluded section has four bullets, but the third bullet, 'Golden Surfer, Avenza Maps', names two distinct clients. Splitting it raises the artifact's 41 headline entries to 42 distinct client identities. |
-| `headline-status-split-differs-from-tier-tables` | 0 | `desktop-gis`, `geoservices-dotnet` | The headline tally claims 4 'Built, unrun' and 22 'Proposed'. The tier tables mark only 2 rows 'Built, unrun' (desktop-gis, geoservices-dotnet) and enumerate 24 unbuilt rows (16 Tier 1 'Proposed' plus 8 Tier 2 'On demand'). The two differences offset exactly, so the 41 total is unchanged. The per-row tier tables are authoritative; the artifact gives no basis for identifying which two additional rows the headline counted as built. |
-| `certified-live-headline-counts-partial-rows` | 0 | `esri-js-maps-sdk`, `py-pystac` | The headline '11 certified live' equals the 9 rows the tier tables label Live, Live nightly, or 1117/1117, plus the 2 rows labelled 'Partial'. This roster does not treat 'Partial' as activated at the source artifact's revision: esri-js-maps-sdk was active but awaiting-federation, and py-pystac was planned and awaiting-evidence. esri-js-maps-sdk still declares requiredTier `none`; py-pystac was promoted to `active` with requiredTier `nightly` in #3392, which committed its envelope. The 41 total is unchanged. |
-| `registry-lane-absent-from-artifact` | +1 | `geoservices-rest-stub` | client-certification-matrix.v1.json registers an active `geoservices-rest-stub` lane with committed evidence for featureserver, mapserver, and portal. The artifact has no row for it because it folded the stub into the ArcGIS Pro harness column. It is a distinct identity here because it is a stub harness, not a shipped client, and must never be read as certifying ArcGIS Pro. |
-| `registry-sublane-absent-from-artifact` | +1 | `js-esri-leaflet` | CROSS_CLIENT_CERTIFICATION_MATRIX.md registers an Esri Leaflet browser sub-lane with its own EL-EXT-01..04 extension IDs, and tests/js-browser/leaflet-client implements it, but the artifact has no row for it. Including it makes the gap visible: no lanes-array row declares EL-EXT-* applicability and no envelope is committed under tests/baselines/client-compat. |
+| `headline-status-split-differs-from-tier-tables` | 0 | `desktop-client`, `geoservices-dotnet` | The headline tally claims 4 'Built, unrun' and 22 'Proposed'. The tier tables mark only 2 rows 'Built, unrun' (desktop-client, geoservices-dotnet) and enumerate 24 unbuilt rows (16 Tier 1 'Proposed' plus 8 Tier 2 'On demand'). The two differences offset exactly, so the 41 total is unchanged. The per-row tier tables are authoritative; the artifact gives no basis for identifying which two additional rows the headline counted as built. |
+| `certified-live-headline-counts-partial-rows` | 0 | `js-web-map-sdk`, `py-pystac` | The headline '11 certified live' equals the 9 rows the tier tables label Live, Live nightly, or 1117/1117, plus the 2 rows labelled 'Partial'. This roster does not treat 'Partial' as activated at the source artifact's revision: js-web-map-sdk was active but awaiting-federation, and py-pystac was planned and awaiting-evidence. js-web-map-sdk still declares requiredTier `none`; py-pystac was promoted to `active` with requiredTier `nightly` in #3392, which committed its envelope. The 41 total is unchanged. |
+| `registry-lane-absent-from-artifact` | +1 | `geoservices-rest-stub` | client-certification-matrix.v1.json registers an active `geoservices-rest-stub` lane with committed evidence for featureserver, mapserver, and portal. The artifact has no row for it because it folded the stub into the desktop GIS client harness column. It is a distinct identity here because it is a stub harness, not a shipped client, and must never be read as certifying desktop GIS client. |
+| `registry-sublane-absent-from-artifact` | +1 | `js-leaflet-geoservices` | CROSS_CLIENT_CERTIFICATION_MATRIX.md registers an GeoServices Leaflet browser sub-lane with its own EL-EXT-01..04 extension IDs, and tests/js-browser/leaflet-client implements it, but the artifact has no row for it. Including it makes the gap visible: no lanes-array row declares EL-EXT-* applicability and no envelope is committed under tests/baselines/client-compat. |
 
 ## Roster
 
 ### Tier 0 - migration-blocking
 
-A customer cannot leave Esri without these. Regression in an activated Tier 0 lane is a release blocker.
+A customer cannot leave GeoServices without these. Regression in an activated Tier 0 lane is a release blocker.
 
 | Client | Status | Activation | Target | Required tier | Runtime | Protocol surfaces | Owning issue |
 |---|---|---|---|---|---|---|---|
 | `desktop-qgis` QGIS Desktop LTR (PyQGIS) | active | activated | 2026.1 | nightly | linux-container | `ogc-features`, `wfs` | [honua-server#3434](https://github.com/honua-io/honua-server/issues/3434) |
-| `desktop-gis` ArcGIS Pro (arcpy + honua_gp shim parity) | planned | awaiting-runtime | 2026.2 | none | windows-license | `featureserver`, `mapserver`, `imageserver`, `geometryserver`, `version-management-server`, `portal`, `ogc-features`, `wfs`, `wms`, `wmts` | [honua-esri-compat#75](https://github.com/honua-io/honua-esri-compat/issues/75) |
 | `js` OpenLayers | active | activated | 2026.1 | nightly | browser-playwright | `ogc-features`, `ogc-maps`, `mvt`, `wfs`, `wms`, `wmts` | [honua-server#3434](https://github.com/honua-io/honua-server/issues/3434) |
 | `js-maplibre` MapLibre GL JS | active | activated | 2026.1 | nightly | browser-playwright | `mvt`, `ogc-maps`, `ogc-tiles` | [honua-server#3434](https://github.com/honua-io/honua-server/issues/3434) |
 | `js-cesium` CesiumJS | active | activated | 2026.1 | nightly | browser-playwright | `wms`, `wmts`, `ogc-tiles`, `ogc-maps` | [honua-server#3434](https://github.com/honua-io/honua-server/issues/3434) |
-| `esri-js-maps-sdk` ArcGIS Maps SDK for JavaScript | active | awaiting-federation | 2026.2 | none | browser-playwright | `featureserver`, `mapserver`, `portal` | [honua-esri-compat#74](https://github.com/honua-io/honua-esri-compat/issues/74) |
+| `js-web-map-sdk` GeoServices Maps SDK for JavaScript | active | awaiting-federation | 2026.2 | none | browser-playwright | `featureserver`, `mapserver`, `portal` |  |
 | `cli` GDAL / OGR (ogr2ogr) | active | activated | 2026.1 | nightly | linux-container | `ogc-features`, `wfs`, `admin-api` | [honua-server#3434](https://github.com/honua-io/honua-server/issues/3434) |
-| `esri-arcgis-python` ArcGIS API for Python | active | awaiting-federation | 2026.2 | none | linux-container | `featureserver`, `portal` | [honua-esri-compat#74](https://github.com/honua-io/honua-esri-compat/issues/74) |
-| `geoservices-dotnet` ArcGIS Maps SDK for .NET | planned | awaiting-runtime | 2026.2 | none | windows-license | `featureserver`, `mapserver` | [honua-esri-compat#75](https://github.com/honua-io/honua-esri-compat/issues/75) |
+| `python-geoservices-client` GeoServices REST client | active | awaiting-federation | 2026.2 | none | linux-container | `featureserver`, `portal` |  |
+| `geoservices-dotnet` GeoServices Maps SDK for .NET | planned | awaiting-runtime | 2026.2 | none | windows-license | `featureserver`, `mapserver` |  |
 | `honua-sdks` Honua SDKs (JavaScript, Python, .NET) | active | activated | 2026.1 | nightly | linux-container | `featureserver`, `mapserver`, `ogc-features`, `ogc-maps`, `ogc-tiles`, `odata`, `mvt`, `wfs`, `wms`, `wmts`, `admin-api`, `stac` | [honua-server#3434](https://github.com/honua-io/honua-server/issues/3434) |
 | `ogc-cite` OGC CITE / TEAM Engine (14 suites) | active | activated | 2026.1 | release | linux-container | `wfs`, `wms`, `wmts`, `wcs`, `gml`, `kml`, `gpkg`, `ogc-tiles` | [honua-server#3434](https://github.com/honua-io/honua-server/issues/3434) |
-| `geoservices-rest-stub` ArcGIS REST + Portal facade stub client | active | activated | 2026.1 | nightly | linux-container | `featureserver`, `mapserver`, `portal` | [honua-server#3434](https://github.com/honua-io/honua-server/issues/3434) |
+| `geoservices-rest-stub` GeoServices REST + Portal facade stub client | active | activated | 2026.1 | nightly | linux-container | `featureserver`, `mapserver`, `portal` | [honua-server#3434](https://github.com/honua-io/honua-server/issues/3434) |
 
 ### Tier 1 - high value
 
@@ -163,8 +162,8 @@ Where the roster grows next. The notebook block is headless Linux and nearly fre
 | `jupyter-papermill` Jupyter end-to-end notebook (papermill) | planned | not-activated | later | none | linux-container | `ogc-features`, `mvt` | [honua-server#3389](https://github.com/honua-io/honua-server/issues/3389) (needs its own issue) |
 | `py-pystac` pystac-client | planned | awaiting-evidence | 2026.1 | none | linux-container | `stac` | [honua-server#3392](https://github.com/honua-io/honua-server/issues/3392) |
 | `apache-sedona` Apache Sedona (Databricks / Spark) | planned | not-activated | later | none | linux-container | `ogc-features`, `geoparquet` | [honua-server#3389](https://github.com/honua-io/honua-server/issues/3389) (needs its own issue) |
-| `bi-powerbi` Power BI (Desktop + Service) | planned | awaiting-license | 2026.2 | none | windows-license | `odata`, `wms`, `esri-integration` | [honua-server#3390](https://github.com/honua-io/honua-server/issues/3390) |
-| `bi-excel` Microsoft Excel (Power Query + ArcGIS for Excel) | planned | awaiting-license | 2026.2 | none | windows-license | `odata`, `featureserver` | [honua-server#3390](https://github.com/honua-io/honua-server/issues/3390) |
+| `bi-powerbi` Power BI (Desktop + Service) | planned | awaiting-license | 2026.2 | none | windows-license | `odata`, `wms`, `GeoServices-integration` | [honua-server#3390](https://github.com/honua-io/honua-server/issues/3390) |
+| `bi-excel` Microsoft Excel (Power Query + GeoServices for Excel) | planned | awaiting-license | 2026.2 | none | windows-license | `odata`, `featureserver` | [honua-server#3390](https://github.com/honua-io/honua-server/issues/3390) |
 | `bi-tableau` Tableau (Desktop + Server) | planned | awaiting-license | 2026.2 | none | windows-license | `odata`, `ogc-features`, `wms` | [honua-server#3390](https://github.com/honua-io/honua-server/issues/3390) |
 | `grafana` Grafana (geomap panel) | planned | not-activated | later | none | browser-playwright | `ogc-features`, `mvt` | [honua-server#3389](https://github.com/honua-io/honua-server/issues/3389) (needs its own issue) |
 | `fme` Safe Software FME | planned | awaiting-license | later | none | linux-license | `wfs`, `ogc-features`, `featureserver` | [honua-server#3389](https://github.com/honua-io/honua-server/issues/3389) (needs its own issue) |
@@ -172,8 +171,8 @@ Where the roster grows next. The notebook block is headless Linux and nearly fre
 | `mapserver-pygeoapi-cascade` MapServer / pygeoapi cascade | planned | not-activated | later | none | linux-container | `wms`, `wfs`, `ogc-features` | [honua-server#3389](https://github.com/honua-io/honua-server/issues/3389) (needs its own issue) |
 | `leaflet` Leaflet | planned | not-activated | later | none | browser-playwright | `wms`, `wmts`, `geojson` | [honua-server#3389](https://github.com/honua-io/honua-server/issues/3389) (needs its own issue) |
 | `deckgl` deck.gl | planned | not-activated | later | none | browser-playwright | `mvt`, `geojson` | [honua-server#3389](https://github.com/honua-io/honua-server/issues/3389) (needs its own issue) |
-| `js-esri-leaflet` Esri Leaflet | active | awaiting-evidence | 2026.2 | none | browser-playwright | `featureserver`, `mapserver` | [honua-server#3391](https://github.com/honua-io/honua-server/issues/3391) (needs its own issue) |
-| `arcgis-field-maps` ArcGIS Field Maps | planned | not-activated | later | none | linux-container | `featureserver`, `featureserver-sync`, `portal` | [honua-server#3389](https://github.com/honua-io/honua-server/issues/3389) (needs its own issue) |
+| `js-leaflet-geoservices` GeoServices Leaflet | active | awaiting-evidence | 2026.2 | none | browser-playwright | `featureserver`, `mapserver` | [honua-server#3391](https://github.com/honua-io/honua-server/issues/3391) (needs its own issue) |
+| `mobile-field-client` GeoServices Field Maps | planned | not-activated | later | none | linux-container | `featureserver`, `featureserver-sync`, `portal` | [honua-server#3389](https://github.com/honua-io/honua-server/issues/3389) (needs its own issue) |
 | `qfield-mergin` QField / Mergin Maps | planned | not-activated | later | none | linux-container | `ogc-features`, `wfs`, `gpkg` | [honua-server#3389](https://github.com/honua-io/honua-server/issues/3389) (needs its own issue) |
 
 ### Tier 2 - opportunistic
@@ -182,7 +181,7 @@ Certified on customer demand. Each needs a license and a seat, and none blocks a
 
 | Client | Status | Activation | Target | Required tier | Runtime | Protocol surfaces | Owning issue |
 |---|---|---|---|---|---|---|---|
-| `arcmap-10x` ArcMap 10.x | planned | awaiting-license | later | none | windows-license | `featureserver`, `wfs`, `wms` | [honua-server#3389](https://github.com/honua-io/honua-server/issues/3389) (needs its own issue) |
+| `legacy-desktop-client` legacy desktop GIS client | planned | awaiting-license | later | none | windows-license | `featureserver`, `wfs`, `wms` | [honua-server#3389](https://github.com/honua-io/honua-server/issues/3389) (needs its own issue) |
 | `mapinfo-pro` MapInfo Pro | planned | awaiting-license | later | none | windows-license | `wfs`, `wms` | [honua-server#3389](https://github.com/honua-io/honua-server/issues/3389) (needs its own issue) |
 | `autocad-map-3d` AutoCAD Map 3D / Civil 3D | planned | awaiting-license | later | none | windows-license | `wms`, `wfs` | [honua-server#3389](https://github.com/honua-io/honua-server/issues/3389) (needs its own issue) |
 | `bentley-microstation` Bentley MicroStation / OpenCities | planned | awaiting-license | later | none | windows-license | `wms`, `wfs` | [honua-server#3389](https://github.com/honua-io/honua-server/issues/3389) (needs its own issue) |
@@ -198,7 +197,7 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
 | Client | Status | Activation | Target | Required tier | Runtime | Protocol surfaces | Owning issue |
 |---|---|---|---|---|---|---|---|
 | `mapbox-gl-js-v2-plus` Mapbox GL JS v2+ | excluded | not-activated | (none) | none | not-provisioned | `mvt`, `ogc-tiles` | [honua-server#3395](https://github.com/honua-io/honua-server/issues/3395) |
-| `arcgis-earth` ArcGIS Earth | excluded | not-activated | (none) | none | not-provisioned | `kml`, `mapserver`, `wms` | [honua-server#3395](https://github.com/honua-io/honua-server/issues/3395) |
+| `earth-visualization-client` GeoServices Earth | excluded | not-activated | (none) | none | not-provisioned | `kml`, `mapserver`, `wms` | [honua-server#3395](https://github.com/honua-io/honua-server/issues/3395) |
 | `golden-surfer` Golden Software Surfer | excluded | not-activated | (none) | none | not-provisioned | (none) | [honua-server#3395](https://github.com/honua-io/honua-server/issues/3395) |
 | `avenza-maps` Avenza Maps | excluded | not-activated | (none) | none | not-provisioned | (none) | [honua-server#3395](https://github.com/honua-io/honua-server/issues/3395) |
 | `looker-studio` Looker Studio | excluded | not-activated | (none) | none | not-provisioned | (none) | [honua-server#3395](https://github.com/honua-io/honua-server/issues/3395) |
@@ -207,7 +206,7 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
 
 ### `desktop-qgis` - QGIS Desktop LTR (PyQGIS)
 
-- **Family / tier**: desktop-gis / 0
+- **Family / tier**: desktop-client / 0
 - **Status**: active (activated), target release 2026.1
 - **Required tier**: nightly (intended on activation: nightly)
 - **Roster origin**: artifact; artifact status Live nightly
@@ -224,25 +223,6 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
 - **Evidence producer**: .github/workflows/pyqgis-client-compat-nightly.yml (docker/client-compat/pyqgis)
 - **Owning issue**: https://github.com/honua-io/honua-server/issues/3434
 
-### `desktop-gis` - ArcGIS Pro (arcpy + honua_gp shim parity)
-
-- **Family / tier**: esri-desktop / 0
-- **Status**: planned (awaiting-runtime), target release 2026.2
-- **Required tier**: none (intended on activation: release)
-- **Roster origin**: artifact; artifact status Built, unrun
-- **Lane binding**: desktop-gis (planned-lane)
-- **Client version policy**: ArcGIS Pro build is the build named on the `desktop-gis` evidence identifier in honua-esri-compat. Evidence is content-addressed.
-- **Protocol surfaces**: `featureserver`, `mapserver`, `imageserver`, `geometryserver`, `version-management-server`, `portal`, `ogc-features`, `wfs`, `wms`, `wmts`
-- **Applicable operation families**: `CERT-CONN`, `CERT-AUTH`, `CERT-DISC`, `CERT-SCHM`, `CERT-QFLT`, `CERT-PAGE`, `CERT-GEOM`, `CERT-ERRH`, `CERT-RNDR`, `CERT-PRTL`
-- **Structurally not applicable**: (none)
-- **Scenario facets**: `positive`, `invalid-credential`, `insufficient-role`, `cross-tenant`, `pagination-limit`, `metadata`, `media-schema`
-- **Licensing**: entitlement-bound - desktop entitlement detail stays in honua-esri-compat. This roster does not configure it.
-- **Runtime**: windows-license
-- **Fixture projection**: canonical-client-fixture - Esri-owned fixtures must project onto the #3393 canonical fixture before federation.
-- **Evidence producer**: (none)
-- **Owning issue**: https://github.com/honua-io/honua-esri-compat/issues/75
-- **Notes**: The 2026.1 gate (#3434) joins honua-esri-compat evidence by reference rather than activating this lane. Activation targets 2026.2 via workstream A of #3389. No desktop receipt is linked from this repo.
-
 ### `js` - OpenLayers
 
 - **Family / tier**: web-js / 0
@@ -254,14 +234,14 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
 - **Protocol surfaces**: `ogc-features`, `ogc-maps`, `mvt`, `wfs`, `wms`, `wmts`
 - **Applicable operation families**: `CERT-CONN`, `CERT-AUTH`, `CERT-DISC`, `CERT-SCHM`, `CERT-QFLT`, `CERT-PAGE`, `CERT-GEOM`, `CERT-ERRH`, `CERT-RNDR`
 - **Structurally not applicable**:
-  - `CERT-PRTL`: The ArcGIS Portal/Sharing facade is an Esri-client binding; this client addresses service URLs directly.
+  - `CERT-PRTL`: The GeoServices Portal/Sharing facade is an GeoServices-client binding; this client addresses service URLs directly.
 - **Scenario facets**: `positive`, `invalid-credential`, `insufficient-role`, `cross-tenant`, `pagination-limit`, `metadata`, `media-schema`
 - **Licensing**: open-source - Installs unattended in a container or npm lockfile; no entitlement required.
 - **Runtime**: browser-playwright
 - **Fixture projection**: canonical-client-fixture - Converges on the single logical fixture + server-config revision tracked by #3393.
 - **Evidence producer**: docker/client-compat/openlayers
 - **Owning issue**: https://github.com/honua-io/honua-server/issues/3434
-- **Notes**: OpenLayers owns the `js` matrix lane id. MapLibre GL JS and Esri Leaflet are distinct client identities that emit under the same lane id, which is why they appear as separate roster rows bound to `js` as sub-lanes.
+- **Notes**: OpenLayers owns the `js` matrix lane id. MapLibre GL JS and GeoServices Leaflet are distinct client identities that emit under the same lane id, which is why they appear as separate roster rows bound to `js` as sub-lanes.
 
 ### `js-maplibre` - MapLibre GL JS
 
@@ -278,7 +258,7 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
   - `CERT-QFLT`: Client consumes pre-rendered tiles or server-rendered imagery, not queryable feature endpoints.
   - `CERT-PAGE`: Client consumes pre-rendered tiles or server-rendered imagery, not queryable feature endpoints.
   - `CERT-GEOM`: Client consumes pre-rendered tiles or server-rendered imagery, not queryable feature endpoints.
-  - `CERT-PRTL`: The ArcGIS Portal/Sharing facade is an Esri-client binding; this client addresses service URLs directly.
+  - `CERT-PRTL`: The GeoServices Portal/Sharing facade is an GeoServices-client binding; this client addresses service URLs directly.
 - **Scenario facets**: `positive`, `invalid-credential`, `metadata`, `media-schema`
 - **Licensing**: open-source - Installs unattended in a container or npm lockfile; no entitlement required.
 - **Runtime**: browser-playwright
@@ -302,7 +282,7 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
   - `CERT-QFLT`: Client consumes pre-rendered tiles or server-rendered imagery, not queryable feature endpoints.
   - `CERT-PAGE`: Client consumes pre-rendered tiles or server-rendered imagery, not queryable feature endpoints.
   - `CERT-GEOM`: Client consumes pre-rendered tiles or server-rendered imagery, not queryable feature endpoints.
-  - `CERT-PRTL`: The ArcGIS Portal/Sharing facade is an Esri-client binding; this client addresses service URLs directly.
+  - `CERT-PRTL`: The GeoServices Portal/Sharing facade is an GeoServices-client binding; this client addresses service URLs directly.
 - **Scenario facets**: `positive`, `invalid-credential`, `metadata`, `media-schema`
 - **Licensing**: open-source - Installs unattended in a container or npm lockfile; no entitlement required.
 - **Runtime**: browser-playwright
@@ -311,24 +291,24 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
 - **Owning issue**: https://github.com/honua-io/honua-server/issues/3434
 - **Notes**: Cesium imagery providers consume server-rendered raster output; the matrix Cesium sub-lane footnote governs the not-applicable set.
 
-### `esri-js-maps-sdk` - ArcGIS Maps SDK for JavaScript
+### `js-web-map-sdk` - GeoServices Maps SDK for JavaScript
 
-- **Family / tier**: esri-web / 0
+- **Family / tier**: GeoServices-web / 0
 - **Status**: active (awaiting-federation), target release 2026.2
 - **Required tier**: none (intended on activation: release)
 - **Roster origin**: artifact; artifact status Partial
 - **Lane binding**: (none) (external-producer)
-- **Client version policy**: CDN/npm-pinned ArcGIS Maps SDK for JavaScript version recorded by the honua-esri-compat sdk_matrix/jsapi run.
+- **Client version policy**: CDN/npm-pinned GeoServices Maps SDK for JavaScript version recorded by the honua-GeoServices-compat sdk_matrix/jsapi run.
 - **Protocol surfaces**: `featureserver`, `mapserver`, `portal`
 - **Applicable operation families**: `CERT-CONN`, `CERT-AUTH`, `CERT-DISC`, `CERT-SCHM`, `CERT-QFLT`, `CERT-PAGE`, `CERT-GEOM`, `CERT-ERRH`, `CERT-RNDR`, `CERT-PRTL`
 - **Structurally not applicable**: (none)
 - **Scenario facets**: `positive`, `invalid-credential`, `insufficient-role`, `cross-tenant`, `pagination-limit`, `metadata`, `media-schema`
 - **Licensing**: proprietary-no-cost - Vendor-licensed but installable without a paid seat or activation.
 - **Runtime**: browser-playwright
-- **Fixture projection**: canonical-client-fixture - Esri-owned fixtures must project onto the #3393 canonical fixture before federation.
-- **Evidence producer**: honua-esri-compat (sdk_matrix/jsapi)
-- **Owning issue**: https://github.com/honua-io/honua-esri-compat/issues/74
-- **Notes**: This is the client customers port from, but its evidence is produced in honua-esri-compat and is not yet federated into this registry, so it declares requiredTier `none` and can neither pass nor block a honua-server gate.
+- **Fixture projection**: canonical-client-fixture - GeoServices-owned fixtures must project onto the #3393 canonical fixture before federation.
+- **Evidence producer**: honua-GeoServices-compat (sdk_matrix/jsapi)
+- **Owning issue**:
+- **Notes**: This is the client customers port from, but its evidence is produced in honua-GeoServices-compat and is not yet federated into this registry, so it declares requiredTier `none` and can neither pass nor block a honua-server gate.
 
 ### `cli` - GDAL / OGR (ogr2ogr)
 
@@ -343,7 +323,7 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
 - **Structurally not applicable**:
   - `CERT-GEOM`: Declared not-applicable for the `cli` lane in client-certification-matrix.v1.json; coordinate tolerance is proven by the feature-client lanes.
   - `CERT-RNDR`: Headless data client with no map canvas or table surface; rendering fidelity is not observable.
-  - `CERT-PRTL`: The ArcGIS Portal/Sharing facade is an Esri-client binding; this client addresses service URLs directly.
+  - `CERT-PRTL`: The GeoServices Portal/Sharing facade is an GeoServices-client binding; this client addresses service URLs directly.
 - **Scenario facets**: `positive`, `invalid-credential`, `insufficient-role`, `cross-tenant`, `pagination-limit`, `metadata`, `media-schema`
 - **Licensing**: open-source - Installs unattended in a container or npm lockfile; no entitlement required.
 - **Runtime**: linux-container
@@ -352,33 +332,33 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
 - **Owning issue**: https://github.com/honua-io/honua-server/issues/3434
 - **Notes**: The universal adapter, and the `cli` lane id also carries the CLI/SDK admin-API extensions CLI-EXT-01/02.
 
-### `esri-arcgis-python` - ArcGIS API for Python
+### `python-geoservices-client` - GeoServices REST client
 
-- **Family / tier**: esri-libraries / 0
+- **Family / tier**: GeoServices-libraries / 0
 - **Status**: active (awaiting-federation), target release 2026.2
 - **Required tier**: none (intended on activation: nightly)
 - **Roster origin**: artifact; artifact status Live
 - **Lane binding**: (none) (external-producer)
-- **Client version policy**: pip/conda pin of `arcgis` in the honua-esri-compat arcgis_python lane image.
+- **Client version policy**: pip/conda pin of `GeoServices REST` in the honua-GeoServices-compat GeoServices REST_python lane image.
 - **Protocol surfaces**: `featureserver`, `portal`
 - **Applicable operation families**: `CERT-CONN`, `CERT-AUTH`, `CERT-DISC`, `CERT-SCHM`, `CERT-QFLT`, `CERT-PAGE`, `CERT-GEOM`, `CERT-ERRH`, `CERT-RNDR`, `CERT-PRTL`
 - **Structurally not applicable**: (none)
 - **Scenario facets**: `positive`, `invalid-credential`, `insufficient-role`, `cross-tenant`, `pagination-limit`, `metadata`, `media-schema`
 - **Licensing**: proprietary-no-cost - Vendor-licensed but installable without a paid seat or activation.
 - **Runtime**: linux-container
-- **Fixture projection**: canonical-client-fixture - Esri-owned fixtures must project onto the #3393 canonical fixture before federation.
-- **Evidence producer**: honua-esri-compat (arcgis_python)
-- **Owning issue**: https://github.com/honua-io/honua-esri-compat/issues/74
-- **Notes**: The license-free Esri lane. Live upstream, but not yet joined to this registry's expected pairs, so it declares requiredTier `none`.
+- **Fixture projection**: canonical-client-fixture - GeoServices-owned fixtures must project onto the #3393 canonical fixture before federation.
+- **Evidence producer**: honua-GeoServices-compat (GeoServices REST_python)
+- **Owning issue**:
+- **Notes**: The license-free GeoServices lane. Live upstream, but not yet joined to this registry's expected pairs, so it declares requiredTier `none`.
 
-### `geoservices-dotnet` - ArcGIS Maps SDK for .NET
+### `geoservices-dotnet` - GeoServices Maps SDK for .NET
 
-- **Family / tier**: esri-libraries / 0
+- **Family / tier**: GeoServices-libraries / 0
 - **Status**: planned (awaiting-runtime), target release 2026.2
 - **Required tier**: none (intended on activation: release)
 - **Roster origin**: artifact; artifact status Built, unrun
 - **Lane binding**: (none) (unregistered)
-- **Client version policy**: NuGet-pinned Esri.ArcGISRuntime version plus the licensed runtime deployment key recorded per run.
+- **Client version policy**: NuGet-pinned GeoServices.GeoServicesRuntime version plus the licensed runtime deployment key recorded per run.
 - **Protocol surfaces**: `featureserver`, `mapserver`
 - **Applicable operation families**: `CERT-CONN`, `CERT-AUTH`, `CERT-DISC`, `CERT-SCHM`, `CERT-QFLT`, `CERT-PAGE`, `CERT-GEOM`, `CERT-ERRH`, `CERT-RNDR`
 - **Structurally not applicable**:
@@ -386,10 +366,10 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
 - **Scenario facets**: `positive`, `invalid-credential`, `insufficient-role`, `cross-tenant`, `pagination-limit`, `metadata`, `media-schema`
 - **Licensing**: entitlement-bound - Licensed evidence must be entitlement-bound and content-addressed at release.
 - **Runtime**: windows-license
-- **Fixture projection**: canonical-client-fixture - Esri-owned fixtures must project onto the #3393 canonical fixture before federation.
+- **Fixture projection**: canonical-client-fixture - GeoServices-owned fixtures must project onto the #3393 canonical fixture before federation.
 - **Evidence producer**: (none)
-- **Owning issue**: https://github.com/honua-io/honua-esri-compat/issues/75
-- **Notes**: The second of the two rows the tier tables mark 'Built, unrun'. Unblocked by the same Windows host that unblocks desktop-gis and the BI lanes, but it has no plannedLanes row in client-certification-matrix.v1.json yet.
+- **Owning issue**:
+- **Notes**: The second of the two rows the tier tables mark 'Built, unrun'. Unblocked by the same Windows host that unblocks desktop-client and the BI lanes, but it has no plannedLanes row in client-certification-matrix.v1.json yet.
 
 ### `honua-sdks` - Honua SDKs (JavaScript, Python, .NET)
 
@@ -403,7 +383,7 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
 - **Applicable operation families**: `CERT-CONN`, `CERT-AUTH`, `CERT-DISC`, `CERT-SCHM`, `CERT-QFLT`, `CERT-PAGE`, `CERT-GEOM`, `CERT-ERRH`
 - **Structurally not applicable**:
   - `CERT-RNDR`: Headless data client with no map canvas or table surface; rendering fidelity is not observable.
-  - `CERT-PRTL`: The ArcGIS Portal/Sharing facade is an Esri-client binding; this client addresses service URLs directly.
+  - `CERT-PRTL`: The GeoServices Portal/Sharing facade is an GeoServices-client binding; this client addresses service URLs directly.
 - **Scenario facets**: `positive`, `invalid-credential`, `insufficient-role`, `cross-tenant`, `pagination-limit`, `metadata`, `media-schema`
 - **Licensing**: open-source - Installs unattended in a container or npm lockfile; no entitlement required.
 - **Runtime**: linux-container
@@ -423,7 +403,7 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
 - **Protocol surfaces**: `wfs`, `wms`, `wmts`, `wcs`, `gml`, `kml`, `gpkg`, `ogc-tiles`
 - **Applicable operation families**: `CERT-CONN`, `CERT-AUTH`, `CERT-DISC`, `CERT-SCHM`, `CERT-QFLT`, `CERT-PAGE`, `CERT-GEOM`, `CERT-ERRH`, `CERT-RNDR`
 - **Structurally not applicable**:
-  - `CERT-PRTL`: No OGC conformance suite exercises the Esri Portal/Sharing facade.
+  - `CERT-PRTL`: No OGC conformance suite exercises the GeoServices Portal/Sharing facade.
 - **Scenario facets**: `positive`, `invalid-credential`, `insufficient-role`, `cross-tenant`, `pagination-limit`, `metadata`, `media-schema`
 - **Licensing**: open-source - Installs unattended in a container or npm lockfile; no entitlement required.
 - **Runtime**: linux-container
@@ -432,9 +412,9 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
 - **Owning issue**: https://github.com/honua-io/honua-server/issues/3434
 - **Notes**: The compliance receipt is currently 1137/1138; WFS 2.0 `basic` is 166/167 because multi-layer `rollbackOnFailure=true` transactions are rejected. Keeps its specification-mandated fixtures under the governed fixturePolicy exception and is never relabelled as having used the canonical client fixture.
 
-### `geoservices-rest-stub` - ArcGIS REST + Portal facade stub client
+### `geoservices-rest-stub` - GeoServices REST + Portal facade stub client
 
-- **Family / tier**: esri-harness / 0
+- **Family / tier**: GeoServices-harness / 0
 - **Status**: active (activated), target release 2026.1
 - **Required tier**: nightly (intended on activation: nightly)
 - **Roster origin**: repository-registry; artifact status not-in-artifact
@@ -449,7 +429,7 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
 - **Fixture projection**: canonical-client-fixture - Converges on the single logical fixture + server-config revision tracked by #3393.
 - **Evidence producer**: docker/client-compat/geoservices-rest-stub
 - **Owning issue**: https://github.com/honua-io/honua-server/issues/3434
-- **Notes**: A registered `lanes` entry in client-certification-matrix.v1.json with no row in the source artifact, which folded it into the ArcGIS Pro harness column. It substantiates the license-free Esri REST common core and the CERT-PRTL-* Portal facade slice. Being a stub, it never certifies a real Esri client.
+- **Notes**: A registered `lanes` entry in client-certification-matrix.v1.json with no row in the source artifact, which folded it into the desktop GIS client harness column. It substantiates the license-free GeoServices REST common core and the CERT-PRTL-* Portal facade slice. Being a stub, it never certifies a real GeoServices client.
 
 ### `py-geopandas` - GeoPandas (via pyogrio / Fiona)
 
@@ -463,7 +443,7 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
 - **Applicable operation families**: `CERT-CONN`, `CERT-AUTH`, `CERT-DISC`, `CERT-SCHM`, `CERT-QFLT`, `CERT-PAGE`, `CERT-GEOM`, `CERT-ERRH`
 - **Structurally not applicable**:
   - `CERT-RNDR`: Headless data client with no map canvas or table surface; rendering fidelity is not observable.
-  - `CERT-PRTL`: The ArcGIS Portal/Sharing facade is an Esri-client binding; this client addresses service URLs directly.
+  - `CERT-PRTL`: The GeoServices Portal/Sharing facade is an GeoServices-client binding; this client addresses service URLs directly.
 - **Scenario facets**: `positive`, `invalid-credential`, `insufficient-role`, `cross-tenant`, `pagination-limit`, `metadata`, `media-schema`
 - **Licensing**: open-source - Installs unattended in a container or npm lockfile; no entitlement required.
 - **Runtime**: linux-container
@@ -484,7 +464,7 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
 - **Applicable operation families**: `CERT-CONN`, `CERT-AUTH`, `CERT-DISC`, `CERT-SCHM`, `CERT-QFLT`, `CERT-PAGE`, `CERT-GEOM`, `CERT-ERRH`
 - **Structurally not applicable**:
   - `CERT-RNDR`: Headless data client with no map canvas or table surface; rendering fidelity is not observable.
-  - `CERT-PRTL`: The ArcGIS Portal/Sharing facade is an Esri-client binding; this client addresses service URLs directly.
+  - `CERT-PRTL`: The GeoServices Portal/Sharing facade is an GeoServices-client binding; this client addresses service URLs directly.
 - **Scenario facets**: `positive`, `invalid-credential`, `insufficient-role`, `cross-tenant`, `pagination-limit`, `metadata`, `media-schema`
 - **Licensing**: open-source - Installs unattended in a container or npm lockfile; no entitlement required.
 - **Runtime**: linux-container
@@ -505,7 +485,7 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
 - **Applicable operation families**: `CERT-CONN`, `CERT-AUTH`, `CERT-DISC`, `CERT-SCHM`, `CERT-QFLT`, `CERT-PAGE`, `CERT-GEOM`, `CERT-ERRH`
 - **Structurally not applicable**:
   - `CERT-RNDR`: Headless data client with no map canvas or table surface; rendering fidelity is not observable.
-  - `CERT-PRTL`: The ArcGIS Portal/Sharing facade is an Esri-client binding; this client addresses service URLs directly.
+  - `CERT-PRTL`: The GeoServices Portal/Sharing facade is an GeoServices-client binding; this client addresses service URLs directly.
 - **Scenario facets**: `positive`, `invalid-credential`, `insufficient-role`, `cross-tenant`, `pagination-limit`, `metadata`, `media-schema`
 - **Licensing**: open-source - Installs unattended in a container or npm lockfile; no entitlement required.
 - **Runtime**: linux-container
@@ -526,7 +506,7 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
 - **Applicable operation families**: `CERT-CONN`, `CERT-AUTH`, `CERT-DISC`, `CERT-SCHM`, `CERT-QFLT`, `CERT-PAGE`, `CERT-GEOM`, `CERT-ERRH`
 - **Structurally not applicable**:
   - `CERT-RNDR`: Headless data client with no map canvas or table surface; rendering fidelity is not observable.
-  - `CERT-PRTL`: The ArcGIS Portal/Sharing facade is an Esri-client binding; this client addresses service URLs directly.
+  - `CERT-PRTL`: The GeoServices Portal/Sharing facade is an GeoServices-client binding; this client addresses service URLs directly.
 - **Scenario facets**: `positive`, `invalid-credential`, `insufficient-role`, `cross-tenant`, `pagination-limit`, `metadata`, `media-schema`
 - **Licensing**: open-source - Installs unattended in a container or npm lockfile; no entitlement required.
 - **Runtime**: linux-container
@@ -546,7 +526,7 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
 - **Protocol surfaces**: `ogc-features`, `mvt`
 - **Applicable operation families**: `CERT-CONN`, `CERT-AUTH`, `CERT-DISC`, `CERT-SCHM`, `CERT-QFLT`, `CERT-PAGE`, `CERT-GEOM`, `CERT-ERRH`, `CERT-RNDR`
 - **Structurally not applicable**:
-  - `CERT-PRTL`: The ArcGIS Portal/Sharing facade is an Esri-client binding; this client addresses service URLs directly.
+  - `CERT-PRTL`: The GeoServices Portal/Sharing facade is an GeoServices-client binding; this client addresses service URLs directly.
 - **Scenario facets**: `positive`, `invalid-credential`, `pagination-limit`, `metadata`, `media-schema`
 - **Licensing**: open-source - Installs unattended in a container or npm lockfile; no entitlement required.
 - **Runtime**: linux-container
@@ -568,7 +548,7 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
 - **Structurally not applicable**:
   - `CERT-GEOM`: STAC items expose GeoJSON bbox/geometry metadata in EPSG:4326 only; there is no requested-CRS projection to assert a coordinate tolerance against.
   - `CERT-RNDR`: Headless data client with no map canvas or table surface; rendering fidelity is not observable.
-  - `CERT-PRTL`: The ArcGIS Portal/Sharing facade is an Esri-client binding; this client addresses service URLs directly.
+  - `CERT-PRTL`: The GeoServices Portal/Sharing facade is an GeoServices-client binding; this client addresses service URLs directly.
 - **Scenario facets**: `positive`, `invalid-credential`, `insufficient-role`, `cross-tenant`, `pagination-limit`, `metadata`, `media-schema`
 - **Licensing**: open-source - Installs unattended in a container or npm lockfile; no entitlement required.
 - **Runtime**: linux-container
@@ -589,7 +569,7 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
 - **Applicable operation families**: `CERT-CONN`, `CERT-AUTH`, `CERT-DISC`, `CERT-SCHM`, `CERT-QFLT`, `CERT-PAGE`, `CERT-GEOM`, `CERT-ERRH`
 - **Structurally not applicable**:
   - `CERT-RNDR`: Headless data client with no map canvas or table surface; rendering fidelity is not observable.
-  - `CERT-PRTL`: The ArcGIS Portal/Sharing facade is an Esri-client binding; this client addresses service URLs directly.
+  - `CERT-PRTL`: The GeoServices Portal/Sharing facade is an GeoServices-client binding; this client addresses service URLs directly.
 - **Scenario facets**: `positive`, `invalid-credential`, `pagination-limit`, `metadata`, `media-schema`
 - **Licensing**: open-source - Installs unattended in a container or npm lockfile; no entitlement required.
 - **Runtime**: linux-container
@@ -606,27 +586,27 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
 - **Roster origin**: artifact; artifact status Proposed
 - **Lane binding**: bi-powerbi (planned-lane)
 - **Client version policy**: Licensed Power BI Desktop build number recorded per run from the Windows host; the Service tenant is recorded separately.
-- **Protocol surfaces**: `odata`, `wms`, `esri-integration`
+- **Protocol surfaces**: `odata`, `wms`, `GeoServices-integration`
 - **Applicable operation families**: `CERT-CONN`, `CERT-AUTH`, `CERT-DISC`, `CERT-SCHM`, `CERT-QFLT`, `CERT-PAGE`, `CERT-ERRH`, `CERT-RNDR`
 - **Structurally not applicable**:
   - `CERT-GEOM`: OData-only surface returns no geometry-capable protocol payload (matrix BI footnote).
-  - `CERT-PRTL`: The ArcGIS Portal/Sharing facade is an Esri-client binding; this client addresses service URLs directly.
+  - `CERT-PRTL`: The GeoServices Portal/Sharing facade is an GeoServices-client binding; this client addresses service URLs directly.
 - **Scenario facets**: `positive`, `invalid-credential`, `insufficient-role`, `cross-tenant`, `pagination-limit`, `metadata`, `media-schema`
 - **Licensing**: proprietary-seat - Requires a purchased seat, an activation, and a human sign-in on the runner host.
 - **Runtime**: windows-license
 - **Fixture projection**: not-yet-assigned - Fixture projection is assigned when the lane is implemented (#3390); the canonical fixture contract is #3393.
 - **Evidence producer**: (none)
 - **Owning issue**: https://github.com/honua-io/honua-server/issues/3390
-- **Notes**: Harness plan is XMLA/DAX headless assertions plus visual baselines. The matrix plannedLanes row lists `odata` only; this roster also records the WMS and Esri-integration surfaces the client actually speaks.
+- **Notes**: Harness plan is XMLA/DAX headless assertions plus visual baselines. The matrix plannedLanes row lists `odata` only; this roster also records the WMS and GeoServices-integration surfaces the client actually speaks.
 
-### `bi-excel` - Microsoft Excel (Power Query + ArcGIS for Excel)
+### `bi-excel` - Microsoft Excel (Power Query + GeoServices for Excel)
 
 - **Family / tier**: bi-office / 1
 - **Status**: planned (awaiting-license), target release 2026.2
 - **Required tier**: none (intended on activation: release)
 - **Roster origin**: artifact; artifact status Proposed
 - **Lane binding**: bi-excel (planned-lane)
-- **Client version policy**: Licensed Office build number recorded per run from the Windows host; the ArcGIS for Excel add-in version is recorded alongside it.
+- **Client version policy**: Licensed Office build number recorded per run from the Windows host; the GeoServices for Excel add-in version is recorded alongside it.
 - **Protocol surfaces**: `odata`, `featureserver`
 - **Applicable operation families**: `CERT-CONN`, `CERT-AUTH`, `CERT-DISC`, `CERT-SCHM`, `CERT-QFLT`, `CERT-PAGE`, `CERT-GEOM`, `CERT-ERRH`, `CERT-RNDR`
 - **Structurally not applicable**:
@@ -637,7 +617,7 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
 - **Fixture projection**: not-yet-assigned - Fixture projection is assigned when the lane is implemented (#3390); the canonical fixture contract is #3393.
 - **Evidence producer**: (none)
 - **Owning issue**: https://github.com/honua-io/honua-server/issues/3390
-- **Notes**: Harness plan is COM automation via pywin32. The matrix plannedLanes row lists `odata` only; the ArcGIS for Excel add-in also consumes FeatureServer, which is why CERT-GEOM is applicable here but not on the OData-only Power BI row.
+- **Notes**: Harness plan is COM automation via pywin32. The matrix plannedLanes row lists `odata` only; the GeoServices for Excel add-in also consumes FeatureServer, which is why CERT-GEOM is applicable here but not on the OData-only Power BI row.
 
 ### `bi-tableau` - Tableau (Desktop + Server)
 
@@ -650,7 +630,7 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
 - **Protocol surfaces**: `odata`, `ogc-features`, `wms`
 - **Applicable operation families**: `CERT-CONN`, `CERT-AUTH`, `CERT-DISC`, `CERT-SCHM`, `CERT-QFLT`, `CERT-PAGE`, `CERT-GEOM`, `CERT-ERRH`, `CERT-RNDR`
 - **Structurally not applicable**:
-  - `CERT-PRTL`: The ArcGIS Portal/Sharing facade is an Esri-client binding; this client addresses service URLs directly.
+  - `CERT-PRTL`: The GeoServices Portal/Sharing facade is an GeoServices-client binding; this client addresses service URLs directly.
 - **Scenario facets**: `positive`, `invalid-credential`, `insufficient-role`, `cross-tenant`, `pagination-limit`, `metadata`, `media-schema`
 - **Licensing**: proprietary-seat - Requires a purchased seat, an activation, and a human sign-in on the runner host.
 - **Runtime**: windows-license
@@ -674,7 +654,7 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
   - `CERT-QFLT`: Client consumes pre-rendered tiles or server-rendered imagery, not queryable feature endpoints.
   - `CERT-PAGE`: Client consumes pre-rendered tiles or server-rendered imagery, not queryable feature endpoints.
   - `CERT-GEOM`: Client consumes pre-rendered tiles or server-rendered imagery, not queryable feature endpoints.
-  - `CERT-PRTL`: The ArcGIS Portal/Sharing facade is an Esri-client binding; this client addresses service URLs directly.
+  - `CERT-PRTL`: The GeoServices Portal/Sharing facade is an GeoServices-client binding; this client addresses service URLs directly.
 - **Scenario facets**: `positive`, `invalid-credential`, `metadata`, `media-schema`
 - **Licensing**: open-source - Installs unattended in a container or npm lockfile; no entitlement required.
 - **Runtime**: browser-playwright
@@ -702,7 +682,7 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
 - **Fixture projection**: not-yet-assigned - Fixture projection is assigned when the lane is implemented (#3389); the canonical fixture contract is #3393.
 - **Evidence producer**: (none)
 - **Owning issue**: https://github.com/honua-io/honua-server/issues/3389 (needsOwningIssue: no dedicated issue exists yet)
-- **Notes**: Large in Esri migrations. Harness plan is `fme` CLI workspace runs; the Linux engine means no Windows host is required. No implementation issue exists yet.
+- **Notes**: Large in GeoServices migrations. Harness plan is `fme` CLI workspace runs; the Linux engine means no Windows host is required. No implementation issue exists yet.
 
 ### `geoserver-cascade` - GeoServer cascade (Honua as upstream)
 
@@ -715,7 +695,7 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
 - **Protocol surfaces**: `wms`, `wfs`
 - **Applicable operation families**: `CERT-CONN`, `CERT-AUTH`, `CERT-DISC`, `CERT-SCHM`, `CERT-QFLT`, `CERT-PAGE`, `CERT-GEOM`, `CERT-ERRH`, `CERT-RNDR`
 - **Structurally not applicable**:
-  - `CERT-PRTL`: The ArcGIS Portal/Sharing facade is an Esri-client binding; this client addresses service URLs directly.
+  - `CERT-PRTL`: The GeoServices Portal/Sharing facade is an GeoServices-client binding; this client addresses service URLs directly.
 - **Scenario facets**: `positive`, `invalid-credential`, `pagination-limit`, `metadata`, `media-schema`
 - **Licensing**: open-source - Installs unattended in a container or npm lockfile; no entitlement required.
 - **Runtime**: linux-container
@@ -735,7 +715,7 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
 - **Protocol surfaces**: `wms`, `wfs`, `ogc-features`
 - **Applicable operation families**: `CERT-CONN`, `CERT-AUTH`, `CERT-DISC`, `CERT-SCHM`, `CERT-QFLT`, `CERT-PAGE`, `CERT-GEOM`, `CERT-ERRH`, `CERT-RNDR`
 - **Structurally not applicable**:
-  - `CERT-PRTL`: The ArcGIS Portal/Sharing facade is an Esri-client binding; this client addresses service URLs directly.
+  - `CERT-PRTL`: The GeoServices Portal/Sharing facade is an GeoServices-client binding; this client addresses service URLs directly.
 - **Scenario facets**: `positive`, `invalid-credential`, `pagination-limit`, `metadata`, `media-schema`
 - **Licensing**: open-source - Installs unattended in a container or npm lockfile; no entitlement required.
 - **Runtime**: linux-container
@@ -759,14 +739,14 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
   - `CERT-QFLT`: Client consumes pre-rendered tiles or server-rendered imagery, not queryable feature endpoints.
   - `CERT-PAGE`: Client consumes pre-rendered tiles or server-rendered imagery, not queryable feature endpoints.
   - `CERT-GEOM`: Client consumes pre-rendered tiles or server-rendered imagery, not queryable feature endpoints.
-  - `CERT-PRTL`: The ArcGIS Portal/Sharing facade is an Esri-client binding; this client addresses service URLs directly.
+  - `CERT-PRTL`: The GeoServices Portal/Sharing facade is an GeoServices-client binding; this client addresses service URLs directly.
 - **Scenario facets**: `positive`, `invalid-credential`, `metadata`, `media-schema`
 - **Licensing**: open-source - Installs unattended in a container or npm lockfile; no entitlement required.
 - **Runtime**: browser-playwright
 - **Fixture projection**: not-yet-assigned - Fixture projection is assigned when the lane is implemented (#3389); the canonical fixture contract is #3393.
 - **Evidence producer**: (none)
 - **Owning issue**: https://github.com/honua-io/honua-server/issues/3389 (needsOwningIssue: no dedicated issue exists yet)
-- **Notes**: Still the most-deployed map library. Distinct from the already-registered Esri Leaflet sub-lane: plain Leaflet consumes WMS/WMTS/GeoJSON, not the Esri REST surface.
+- **Notes**: Still the most-deployed map library. Distinct from the already-registered GeoServices Leaflet sub-lane: plain Leaflet consumes WMS/WMTS/GeoJSON, not the GeoServices REST surface.
 
 ### `deckgl` - deck.gl
 
@@ -783,7 +763,7 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
   - `CERT-QFLT`: Client consumes pre-rendered tiles or server-rendered imagery, not queryable feature endpoints.
   - `CERT-PAGE`: Client consumes pre-rendered tiles or server-rendered imagery, not queryable feature endpoints.
   - `CERT-GEOM`: Client consumes pre-rendered tiles or server-rendered imagery, not queryable feature endpoints.
-  - `CERT-PRTL`: The ArcGIS Portal/Sharing facade is an Esri-client binding; this client addresses service URLs directly.
+  - `CERT-PRTL`: The GeoServices Portal/Sharing facade is an GeoServices-client binding; this client addresses service URLs directly.
 - **Scenario facets**: `positive`, `invalid-credential`, `metadata`, `media-schema`
 - **Licensing**: open-source - Installs unattended in a container or npm lockfile; no entitlement required.
 - **Runtime**: browser-playwright
@@ -792,14 +772,14 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
 - **Owning issue**: https://github.com/honua-io/honua-server/issues/3389 (needsOwningIssue: no dedicated issue exists yet)
 - **Notes**: No implementation issue exists yet; parked on the parent epic.
 
-### `js-esri-leaflet` - Esri Leaflet
+### `js-leaflet-geoservices` - GeoServices Leaflet
 
-- **Family / tier**: esri-web / 1
+- **Family / tier**: GeoServices-web / 1
 - **Status**: active (awaiting-evidence), target release 2026.2
 - **Required tier**: none (intended on activation: nightly)
 - **Roster origin**: repository-registry; artifact status not-in-artifact
 - **Lane binding**: js (sub-lane)
-- **Client version policy**: Lockfile-resolved `esri-leaflet` version installed by `npm ci` in tests/js-browser (currently 3.0.19); the reporter falls back to the semver range only when node_modules is absent.
+- **Client version policy**: Lockfile-resolved `GeoServices-leaflet` version installed by `npm ci` in tests/js-browser (currently 3.0.19); the reporter falls back to the semver range only when node_modules is absent.
 - **Protocol surfaces**: `featureserver`, `mapserver`
 - **Applicable operation families**: `CERT-CONN`, `CERT-AUTH`, `CERT-DISC`, `CERT-SCHM`, `CERT-QFLT`, `CERT-PAGE`, `CERT-GEOM`, `CERT-ERRH`, `CERT-RNDR`
 - **Structurally not applicable**:
@@ -812,9 +792,9 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
 - **Owning issue**: https://github.com/honua-io/honua-server/issues/3391 (needsOwningIssue: no dedicated issue exists yet)
 - **Notes**: Registered as a sub-lane in CROSS_CLIENT_CERTIFICATION_MATRIX.md with its own EL-EXT-01..04 extension IDs and implemented in tests/js-browser/leaflet-client, but no lanes-array row declares EL-EXT-* applicability and no envelope is committed under tests/baselines/client-compat. It has no row in the source artifact. It cannot be `activated` until real committed evidence lands, so it declares requiredTier `none`.
 
-### `arcgis-field-maps` - ArcGIS Field Maps
+### `mobile-field-client` - GeoServices Field Maps
 
-- **Family / tier**: esri-mobile / 1
+- **Family / tier**: GeoServices-mobile / 1
 - **Status**: planned (not-activated), target release later
 - **Required tier**: none (intended on activation: release)
 - **Roster origin**: artifact; artifact status Proposed
@@ -842,7 +822,7 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
 - **Protocol surfaces**: `ogc-features`, `wfs`, `gpkg`
 - **Applicable operation families**: `CERT-CONN`, `CERT-AUTH`, `CERT-DISC`, `CERT-SCHM`, `CERT-QFLT`, `CERT-PAGE`, `CERT-GEOM`, `CERT-ERRH`, `CERT-RNDR`
 - **Structurally not applicable**:
-  - `CERT-PRTL`: The ArcGIS Portal/Sharing facade is an Esri-client binding; this client addresses service URLs directly.
+  - `CERT-PRTL`: The GeoServices Portal/Sharing facade is an GeoServices-client binding; this client addresses service URLs directly.
 - **Scenario facets**: `positive`, `invalid-credential`, `pagination-limit`, `metadata`, `media-schema`
 - **Licensing**: open-source - Installs unattended in a container or npm lockfile; no entitlement required.
 - **Runtime**: linux-container
@@ -851,9 +831,9 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
 - **Owning issue**: https://github.com/honua-io/honua-server/issues/3389 (needsOwningIssue: no dedicated issue exists yet)
 - **Notes**: Shares the PyQGIS harness, so its marginal cost is low once the desktop-qgis lane is stable. No implementation issue exists yet.
 
-### `arcmap-10x` - ArcMap 10.x
+### `legacy-desktop-client` - legacy desktop GIS client
 
-- **Family / tier**: esri-desktop / 2
+- **Family / tier**: GeoServices-desktop / 2
 - **Status**: planned (awaiting-license), target release later
 - **Required tier**: none (intended on activation: none)
 - **Roster origin**: artifact; artifact status On demand
@@ -868,11 +848,11 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
 - **Fixture projection**: not-yet-assigned - Fixture projection is assigned when the lane is implemented (#3389); the canonical fixture contract is #3393.
 - **Evidence producer**: (none)
 - **Owning issue**: https://github.com/honua-io/honua-server/issues/3389 (needsOwningIssue: no dedicated issue exists yet)
-- **Notes**: End-of-life but still deployed; the customers most motivated to migrate are the ones still on it. Unblocked by the same Windows host as desktop-gis. Tier 2 is opportunistic: certified on customer demand, and never a release blocker.
+- **Notes**: End-of-life but still deployed; the customers most motivated to migrate are the ones still on it. Unblocked by the same Windows host as desktop-client. Tier 2 is opportunistic: certified on customer demand, and never a release blocker.
 
 ### `mapinfo-pro` - MapInfo Pro
 
-- **Family / tier**: desktop-gis / 2
+- **Family / tier**: desktop-client / 2
 - **Status**: planned (awaiting-license), target release later
 - **Required tier**: none (intended on activation: none)
 - **Roster origin**: artifact; artifact status On demand
@@ -881,7 +861,7 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
 - **Protocol surfaces**: `wfs`, `wms`
 - **Applicable operation families**: `CERT-CONN`, `CERT-AUTH`, `CERT-DISC`, `CERT-SCHM`, `CERT-QFLT`, `CERT-PAGE`, `CERT-GEOM`, `CERT-ERRH`, `CERT-RNDR`
 - **Structurally not applicable**:
-  - `CERT-PRTL`: The ArcGIS Portal/Sharing facade is an Esri-client binding; this client addresses service URLs directly.
+  - `CERT-PRTL`: The GeoServices Portal/Sharing facade is an GeoServices-client binding; this client addresses service URLs directly.
 - **Scenario facets**: `positive`, `invalid-credential`, `pagination-limit`, `metadata`, `media-schema`
 - **Licensing**: proprietary-seat - Requires a purchased seat, an activation, and a human sign-in on the runner host.
 - **Runtime**: windows-license
@@ -901,7 +881,7 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
 - **Protocol surfaces**: `wms`, `wfs`
 - **Applicable operation families**: `CERT-CONN`, `CERT-AUTH`, `CERT-DISC`, `CERT-SCHM`, `CERT-QFLT`, `CERT-PAGE`, `CERT-GEOM`, `CERT-ERRH`, `CERT-RNDR`
 - **Structurally not applicable**:
-  - `CERT-PRTL`: The ArcGIS Portal/Sharing facade is an Esri-client binding; this client addresses service URLs directly.
+  - `CERT-PRTL`: The GeoServices Portal/Sharing facade is an GeoServices-client binding; this client addresses service URLs directly.
 - **Scenario facets**: `positive`, `invalid-credential`, `pagination-limit`, `metadata`, `media-schema`
 - **Licensing**: proprietary-seat - Requires a purchased seat, an activation, and a human sign-in on the runner host.
 - **Runtime**: windows-license
@@ -921,7 +901,7 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
 - **Protocol surfaces**: `wms`, `wfs`
 - **Applicable operation families**: `CERT-CONN`, `CERT-AUTH`, `CERT-DISC`, `CERT-SCHM`, `CERT-QFLT`, `CERT-PAGE`, `CERT-GEOM`, `CERT-ERRH`, `CERT-RNDR`
 - **Structurally not applicable**:
-  - `CERT-PRTL`: The ArcGIS Portal/Sharing facade is an Esri-client binding; this client addresses service URLs directly.
+  - `CERT-PRTL`: The GeoServices Portal/Sharing facade is an GeoServices-client binding; this client addresses service URLs directly.
 - **Scenario facets**: `positive`, `invalid-credential`, `pagination-limit`, `metadata`, `media-schema`
 - **Licensing**: proprietary-seat - Requires a purchased seat, an activation, and a human sign-in on the runner host.
 - **Runtime**: windows-license
@@ -932,7 +912,7 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
 
 ### `global-mapper` - Global Mapper
 
-- **Family / tier**: desktop-gis / 2
+- **Family / tier**: desktop-client / 2
 - **Status**: planned (awaiting-license), target release later
 - **Required tier**: none (intended on activation: none)
 - **Roster origin**: artifact; artifact status On demand
@@ -941,7 +921,7 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
 - **Protocol surfaces**: `wms`, `wmts`, `wfs`
 - **Applicable operation families**: `CERT-CONN`, `CERT-AUTH`, `CERT-DISC`, `CERT-SCHM`, `CERT-QFLT`, `CERT-PAGE`, `CERT-GEOM`, `CERT-ERRH`, `CERT-RNDR`
 - **Structurally not applicable**:
-  - `CERT-PRTL`: The ArcGIS Portal/Sharing facade is an Esri-client binding; this client addresses service URLs directly.
+  - `CERT-PRTL`: The GeoServices Portal/Sharing facade is an GeoServices-client binding; this client addresses service URLs directly.
 - **Scenario facets**: `positive`, `invalid-credential`, `pagination-limit`, `metadata`, `media-schema`
 - **Licensing**: proprietary-seat - Requires a purchased seat, an activation, and a human sign-in on the runner host.
 - **Runtime**: windows-license
@@ -965,7 +945,7 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
   - `CERT-QFLT`: Client consumes pre-rendered tiles or server-rendered imagery, not queryable feature endpoints.
   - `CERT-PAGE`: Client consumes pre-rendered tiles or server-rendered imagery, not queryable feature endpoints.
   - `CERT-GEOM`: Client consumes pre-rendered tiles or server-rendered imagery, not queryable feature endpoints.
-  - `CERT-PRTL`: The ArcGIS Portal/Sharing facade is an Esri-client binding; this client addresses service URLs directly.
+  - `CERT-PRTL`: The GeoServices Portal/Sharing facade is an GeoServices-client binding; this client addresses service URLs directly.
 - **Scenario facets**: `positive`, `invalid-credential`, `pagination-limit`, `metadata`, `media-schema`
 - **Licensing**: proprietary-seat - Requires a purchased seat, an activation, and a human sign-in on the runner host.
 - **Runtime**: browser-playwright
@@ -976,7 +956,7 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
 
 ### `google-earth-pro` - Google Earth Pro
 
-- **Family / tier**: desktop-gis / 2
+- **Family / tier**: desktop-client / 2
 - **Status**: planned (awaiting-license), target release later
 - **Required tier**: none (intended on activation: none)
 - **Roster origin**: artifact; artifact status On demand
@@ -989,7 +969,7 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
   - `CERT-QFLT`: Client consumes pre-rendered tiles or server-rendered imagery, not queryable feature endpoints.
   - `CERT-PAGE`: Client consumes pre-rendered tiles or server-rendered imagery, not queryable feature endpoints.
   - `CERT-GEOM`: Client consumes pre-rendered tiles or server-rendered imagery, not queryable feature endpoints.
-  - `CERT-PRTL`: The ArcGIS Portal/Sharing facade is an Esri-client binding; this client addresses service URLs directly.
+  - `CERT-PRTL`: The GeoServices Portal/Sharing facade is an GeoServices-client binding; this client addresses service URLs directly.
 - **Scenario facets**: `positive`, `invalid-credential`, `pagination-limit`, `metadata`, `media-schema`
 - **Licensing**: proprietary-no-cost - Vendor-licensed but installable without a paid seat or activation.
 - **Runtime**: windows-desktop
@@ -1009,7 +989,7 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
 - **Protocol surfaces**: `wms`, `wmts`, `ogc-features`
 - **Applicable operation families**: `CERT-CONN`, `CERT-AUTH`, `CERT-DISC`, `CERT-SCHM`, `CERT-QFLT`, `CERT-PAGE`, `CERT-GEOM`, `CERT-ERRH`, `CERT-RNDR`
 - **Structurally not applicable**:
-  - `CERT-PRTL`: The ArcGIS Portal/Sharing facade is an Esri-client binding; this client addresses service URLs directly.
+  - `CERT-PRTL`: The GeoServices Portal/Sharing facade is an GeoServices-client binding; this client addresses service URLs directly.
 - **Scenario facets**: `positive`, `invalid-credential`, `pagination-limit`, `metadata`, `media-schema`
 - **Licensing**: open-source - Installs unattended in a container or npm lockfile; no entitlement required.
 - **Runtime**: browser-playwright
@@ -1048,13 +1028,13 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
 - **Exclusion rationale**: Proprietary license and mandatory telemetry make it unsuitable as a CI lane.
 - **Covered alternative**: js-maplibre covers the same protocol surface (MVT, styles, OGC tiles) under an open license.
 
-### `arcgis-earth` - ArcGIS Earth
+### `earth-visualization-client` - GeoServices Earth
 
-- **Family / tier**: esri-desktop / excluded
+- **Family / tier**: GeoServices-desktop / excluded
 - **Status**: excluded (not-activated), target release (none)
 - **Required tier**: none (intended on activation: none)
 - **Roster origin**: artifact; artifact status Excluded
-- **Lane binding**: arcgis-earth (exclusion)
+- **Lane binding**: earth-visualization-client (exclusion)
 - **Client version policy**: Not pinned; the client is deliberately out of scope and is never installed in a lane.
 - **Protocol surfaces**: `kml`, `mapserver`, `wms`
 - **Applicable operation families**: (none)

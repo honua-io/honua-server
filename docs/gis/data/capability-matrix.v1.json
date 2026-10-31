@@ -1093,7 +1093,7 @@
     },
     {
       "key": "identity.portal-sharing",
-      "displayName": "ArcGIS Portal Sharing Read Surface",
+      "displayName": "GeoServices Portal Sharing Read Surface",
       "category": "Identity",
       "edition": "Community",
       "status": null,
@@ -1119,7 +1119,7 @@
     },
     {
       "key": "identity.portal-token",
-      "displayName": "ArcGIS Portal Token Issuance",
+      "displayName": "GeoServices Portal Token Issuance",
       "category": "Identity",
       "edition": "Community",
       "status": null,
@@ -1723,15 +1723,6 @@
           }
         },
         {
-          "clientLane": "desktop-gis",
-          "protocol": "featureserver",
-          "freshness": {
-            "state": "unknown",
-            "ageDays": null,
-            "runDate": null
-          }
-        },
-        {
           "clientLane": "geoservices-rest-stub",
           "protocol": "featureserver",
           "freshness": {
@@ -1866,15 +1857,6 @@
       "interop": [
         {
           "clientLane": "js",
-          "protocol": "mapserver",
-          "freshness": {
-            "state": "unknown",
-            "ageDays": null,
-            "runDate": null
-          }
-        },
-        {
-          "clientLane": "desktop-gis",
           "protocol": "mapserver",
           "freshness": {
             "state": "unknown",

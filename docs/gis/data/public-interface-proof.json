@@ -1125,8 +1125,8 @@
       ]
     },
     {
-      "surfaceId": "arcgis-import",
-      "displayName": "ArcGIS GeoServices import automation",
+      "surfaceId": "geoservices-rest-import",
+      "displayName": "GeoServices GeoServices import automation",
       "surfaceKind": "http-route-family",
       "protocol": "Admin API",
       "canonicalIdentifier": "/api/v1/admin/import/geoservices/**",
@@ -1140,7 +1140,7 @@
       "proofs": [
         {
           "proofClass": "route-coverage",
-          "proofMechanism": "EndpointRegistry coverage plus ArcGIS GeoServices import endpoint tests",
+          "proofMechanism": "EndpointRegistry coverage plus GeoServices GeoServices import endpoint tests",
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Server/EndpointRegistry.cs",
@@ -1154,7 +1154,7 @@
         },
         {
           "proofClass": "tool-interoperability",
-          "proofMechanism": "JavaScript SDK ArcGIS import automation is exercised by sdk-server-compatibility through HonuaClient.request against the admin GeoServices import start and poll endpoints on a real seeded server.",
+          "proofMechanism": "JavaScript SDK GeoServices import automation is exercised by sdk-server-compatibility through HonuaClient.request against the admin GeoServices import start and poll endpoints on a real seeded server.",
           "executionLane": "nightly:sdk-server-compatibility",
           "evidenceLocations": [
             ".github/workflows/sdk-server-compatibility.yml",
@@ -1165,11 +1165,11 @@
           "ownerRepo": "honua-sdk-js",
           "status": "implemented",
           "linkedTicket": "#105",
-          "versionCaptureRule": "The SDK compatibility evidence records @honua/sdk-js package version, Honua Server commit, seed profile, the arcgis-import surface, pass/fail status, artifact path, and bounded failure diagnostics."
+          "versionCaptureRule": "The SDK compatibility evidence records @honua/sdk-js package version, Honua Server commit, seed profile, the geoservices-rest-import surface, pass/fail status, artifact path, and bounded failure diagnostics."
         },
         {
           "proofClass": "tool-interoperability",
-          "proofMechanism": "Python SDK ArcGIS import automation is tracked as a bounded child surface; server compatibility artifacts record unsupported status until the SDK lane exercises start, poll, and cancel where supported.",
+          "proofMechanism": "Python SDK GeoServices import automation is tracked as a bounded child surface; server compatibility artifacts record unsupported status until the SDK lane exercises start, poll, and cancel where supported.",
           "executionLane": "nightly:sdk-server-compatibility",
           "evidenceLocations": [
             ".github/workflows/sdk-server-compatibility.yml",
@@ -1180,11 +1180,11 @@
           "ownerRepo": "honua-sdk-python",
           "status": "bounded-child-ticket",
           "linkedTicket": "#49",
-          "versionCaptureRule": "The SDK compatibility evidence records honua-sdk package version, Honua Server commit, seed profile, the arcgis-import surface, pass/fail status, unsupported status when applicable, and bounded failure diagnostics."
+          "versionCaptureRule": "The SDK compatibility evidence records honua-sdk package version, Honua Server commit, seed profile, the geoservices-rest-import surface, pass/fail status, unsupported status when applicable, and bounded failure diagnostics."
         },
         {
           "proofClass": "tool-interoperability",
-          "proofMechanism": ".NET SDK ArcGIS import automation is tracked as a bounded child surface; server compatibility artifacts record unsupported status until the SDK lane exercises start, poll, and cancel where supported.",
+          "proofMechanism": ".NET SDK GeoServices import automation is tracked as a bounded child surface; server compatibility artifacts record unsupported status until the SDK lane exercises start, poll, and cancel where supported.",
           "executionLane": "nightly:sdk-server-compatibility",
           "evidenceLocations": [
             ".github/workflows/sdk-server-compatibility.yml",
@@ -1195,7 +1195,7 @@
           "ownerRepo": "honua-sdk-dotnet",
           "status": "bounded-child-ticket",
           "linkedTicket": "#134",
-          "versionCaptureRule": "The SDK compatibility evidence records Honua.Sdk.* package versions, Honua Server commit, seed profile, the arcgis-import surface, pass/fail status, unsupported status when applicable, and bounded failure diagnostics."
+          "versionCaptureRule": "The SDK compatibility evidence records Honua.Sdk.* package versions, Honua Server commit, seed profile, the geoservices-rest-import surface, pass/fail status, unsupported status when applicable, and bounded failure diagnostics."
         }
       ]
     },
@@ -1636,7 +1636,7 @@
         },
         {
           "proofClass": "scenario-depth",
-          "proofMechanism": "SOAP 1.1 and 1.2 catalog requests cover the root and service-scoped routes, WSDL Result wrappers for all seven catalog operations, malformed and ambiguous body rejection, and service scoping. The siteless ArcGIS Pro admin alias returns identical GET/POST service metadata with the configured branch-versioning policy.",
+          "proofMechanism": "SOAP 1.1 and 1.2 catalog requests cover the root and service-scoped routes, WSDL Result wrappers for all seven catalog operations, malformed and ambiguous body rejection, and service scoping. The siteless desktop GIS client admin alias returns identical GET/POST service metadata with the configured branch-versioning policy.",
           "executionLane": "ci:test-all",
           "evidenceLocations": [
             "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/Catalog/GeoservicesCatalogEndpointTests.cs",
@@ -1649,7 +1649,7 @@
         },
         {
           "proofClass": "contract-governance",
-          "proofMechanism": "The published GeoServices REST parity matrix is generated, not authored: its route roster is derived from EndpointRegistry.All via the feature-catalog generator and normalized to Esri-relative operation paths (GeoServicesRouteRoster), and only the implemented/partial/stub judgement and gap prose are hand-authored (geoservices-parity-judgment.json). GeoServicesParityMatrixDriftTests gates the join in both directions on every CI run: a served operation with no judgement fails, a judgement naming an unserved operation fails, an operation recorded not-implemented that is in fact served fails, and the committed matrix must equal freshly-generated output. Behavioural accuracy of a status remains human review (the judgement source's lastReviewed date), not a gate.",
+          "proofMechanism": "The published GeoServices REST parity matrix is generated, not authored: its route roster is derived from EndpointRegistry.All via the feature-catalog generator and normalized to GeoServices-relative operation paths (GeoServicesRouteRoster), and only the implemented/partial/stub judgement and gap prose are hand-authored (geoservices-parity-judgment.json). GeoServicesParityMatrixDriftTests gates the join in both directions on every CI run: a served operation with no judgement fails, a judgement naming an unserved operation fails, an operation recorded not-implemented that is in fact served fails, and the committed matrix must equal freshly-generated output. Behavioural accuracy of a status remains human review (the judgement source's lastReviewed date), not a gate.",
           "executionLane": "ci:architecture",
           "evidenceLocations": [
             "tests/dotnet/Honua.Architecture.Tests/GeoServicesParityMatrixDriftTests.cs",
@@ -1666,7 +1666,7 @@
         },
         {
           "proofClass": "real-client-certification",
-          "proofMechanism": ".NET typed client-shaped ImageServer suite exercises metadata, catalog query, legend, inline export bytes, and Esri error envelopes over real HTTP routes; Python client-style tests exercise live metadata/export/error behavior against the pytest server.",
+          "proofMechanism": ".NET typed client-shaped ImageServer suite exercises metadata, catalog query, legend, inline export bytes, and GeoServices error envelopes over real HTTP routes; Python client-style tests exercise live metadata/export/error behavior against the pytest server.",
           "executionLane": "ci:test-all+python-integration",
           "evidenceLocations": [
             "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerClientCompatibilityTests.cs",
@@ -1681,9 +1681,9 @@
     },
     {
       "surfaceId": "arcgis-portal-sharing",
-      "displayName": "ArcGIS Portal Sharing token issuance",
+      "displayName": "GeoServices Portal Sharing token issuance",
       "surfaceKind": "http-route-family",
-      "protocol": "ArcGIS Portal Sharing",
+      "protocol": "GeoServices Portal Sharing",
       "canonicalIdentifier": "/sharing/rest/generateToken",
       "parentSurfaceId": null,
       "endpointPrefixes": [
@@ -1698,7 +1698,7 @@
       "proofs": [
         {
           "proofClass": "route-coverage",
-          "proofMechanism": "EndpointRegistry coverage plus ArcGIS Portal token integration tests",
+          "proofMechanism": "EndpointRegistry coverage plus GeoServices Portal token integration tests",
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Server/EndpointRegistry.cs",
@@ -1713,7 +1713,7 @@
         },
         {
           "proofClass": "contract-governance",
-          "proofMechanism": "The published GeoServices REST parity matrix is generated, not authored: its route roster is derived from EndpointRegistry.All via the feature-catalog generator and normalized to Esri-relative operation paths (GeoServicesRouteRoster), and only the implemented/partial/stub judgement and gap prose are hand-authored (geoservices-parity-judgment.json). GeoServicesParityMatrixDriftTests gates the join in both directions on every CI run: a served operation with no judgement fails, a judgement naming an unserved operation fails, an operation recorded not-implemented that is in fact served fails, and the committed matrix must equal freshly-generated output. Behavioural accuracy of a status remains human review (the judgement source's lastReviewed date), not a gate.",
+          "proofMechanism": "The published GeoServices REST parity matrix is generated, not authored: its route roster is derived from EndpointRegistry.All via the feature-catalog generator and normalized to GeoServices-relative operation paths (GeoServicesRouteRoster), and only the implemented/partial/stub judgement and gap prose are hand-authored (geoservices-parity-judgment.json). GeoServicesParityMatrixDriftTests gates the join in both directions on every CI run: a served operation with no judgement fails, a judgement naming an unserved operation fails, an operation recorded not-implemented that is in fact served fails, and the committed matrix must equal freshly-generated output. Behavioural accuracy of a status remains human review (the judgement source's lastReviewed date), not a gate.",
           "executionLane": "ci:architecture",
           "evidenceLocations": [
             "tests/dotnet/Honua.Architecture.Tests/GeoServicesParityMatrixDriftTests.cs",
@@ -1849,7 +1849,7 @@
         },
         {
           "proofClass": "contract-governance",
-          "proofMechanism": "The published GeoServices REST parity matrix is generated, not authored: its route roster is derived from EndpointRegistry.All via the feature-catalog generator and normalized to Esri-relative operation paths (GeoServicesRouteRoster), and only the implemented/partial/stub judgement and gap prose are hand-authored (geoservices-parity-judgment.json). GeoServicesParityMatrixDriftTests gates the join in both directions on every CI run: a served operation with no judgement fails, a judgement naming an unserved operation fails, an operation recorded not-implemented that is in fact served fails, and the committed matrix must equal freshly-generated output. Behavioural accuracy of a status remains human review (the judgement source's lastReviewed date), not a gate.",
+          "proofMechanism": "The published GeoServices REST parity matrix is generated, not authored: its route roster is derived from EndpointRegistry.All via the feature-catalog generator and normalized to GeoServices-relative operation paths (GeoServicesRouteRoster), and only the implemented/partial/stub judgement and gap prose are hand-authored (geoservices-parity-judgment.json). GeoServicesParityMatrixDriftTests gates the join in both directions on every CI run: a served operation with no judgement fails, a judgement naming an unserved operation fails, an operation recorded not-implemented that is in fact served fails, and the committed matrix must equal freshly-generated output. Behavioural accuracy of a status remains human review (the judgement source's lastReviewed date), not a gate.",
           "executionLane": "ci:architecture",
           "evidenceLocations": [
             "tests/dotnet/Honua.Architecture.Tests/GeoServicesParityMatrixDriftTests.cs",
@@ -1865,26 +1865,8 @@
           "versionCaptureRule": null
         },
         {
-          "proofClass": "real-client-certification",
-          "proofMechanism": "Planned licensed ArcGIS Pro and ArcPy operation-level certification for FeatureServer",
-          "executionLane": "release:desktop-gis",
-          "clientLanes": [
-            "desktop-gis"
-          ],
-          "evidenceLocations": [
-            "docs/gis/CLIENT_TEMPLATE_RUNBOOK.md",
-            "docs/gis/CLIENT_TEMPLATE_VERSION_MATRIX.md",
-            "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
-            "https://github.com/honua-io/honua-esri-compat/issues/75"
-          ],
-          "ownerRepo": "honua-esri-compat",
-          "status": "planned",
-          "linkedTicket": "#75",
-          "versionCaptureRule": "Capture the exact ArcGIS Pro and ArcPy versions, candidate identity, fixture/config revisions, entitlement receipt, and operation-level FeatureServer evidence."
-        },
-        {
           "proofClass": "tool-interoperability",
-          "proofMechanism": "Esri Leaflet 3.x Playwright browser suite proving FeatureServer consumption through leaflet + esri-leaflet + esri-leaflet-renderers",
+          "proofMechanism": "GeoServices Leaflet 3.x Playwright browser suite proving FeatureServer consumption through leaflet + esri-leaflet + esri-leaflet-renderers",
           "executionLane": "ci:esri-leaflet-browser-tests",
           "evidenceLocations": [
             "tests/js-browser/leaflet-client/feature-layer-load.spec.ts",
@@ -1974,22 +1956,6 @@
         "VersionManagementServer::jobStatus"
       ],
       "proofs": [
-        {
-          "proofClass": "real-client-certification",
-          "proofMechanism": "Planned operation-level certification for GeoServices REST VersionManagementServer licensed ArcGIS Pro and ArcPy client",
-          "executionLane": "release:desktop-gis",
-          "clientLanes": [
-            "desktop-gis"
-          ],
-          "evidenceLocations": [
-            "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
-            "https://github.com/honua-io/honua-esri-compat/issues/75"
-          ],
-          "ownerRepo": "honua-esri-compat",
-          "status": "planned",
-          "linkedTicket": "#75",
-          "versionCaptureRule": "Capture the exact client version, candidate identity, fixture/config revisions, governed facets, and operation-level evidence."
-        },
         {
           "proofClass": "route-coverage",
           "proofMechanism": "EndpointRegistry coverage and deployed-route drift checks",
@@ -2096,7 +2062,7 @@
         },
         {
           "proofClass": "contract-governance",
-          "proofMechanism": "The published GeoServices REST parity matrix is generated, not authored: its route roster is derived from EndpointRegistry.All via the feature-catalog generator and normalized to Esri-relative operation paths (GeoServicesRouteRoster), and only the implemented/partial/stub judgement and gap prose are hand-authored (geoservices-parity-judgment.json). GeoServicesParityMatrixDriftTests gates the join in both directions on every CI run: a served operation with no judgement fails, a judgement naming an unserved operation fails, an operation recorded not-implemented that is in fact served fails, and the committed matrix must equal freshly-generated output. Behavioural accuracy of a status remains human review (the judgement source's lastReviewed date), not a gate.",
+          "proofMechanism": "The published GeoServices REST parity matrix is generated, not authored: its route roster is derived from EndpointRegistry.All via the feature-catalog generator and normalized to GeoServices-relative operation paths (GeoServicesRouteRoster), and only the implemented/partial/stub judgement and gap prose are hand-authored (geoservices-parity-judgment.json). GeoServicesParityMatrixDriftTests gates the join in both directions on every CI run: a served operation with no judgement fails, a judgement naming an unserved operation fails, an operation recorded not-implemented that is in fact served fails, and the committed matrix must equal freshly-generated output. Behavioural accuracy of a status remains human review (the judgement source's lastReviewed date), not a gate.",
           "executionLane": "ci:architecture",
           "evidenceLocations": [
             "tests/dotnet/Honua.Architecture.Tests/GeoServicesParityMatrixDriftTests.cs",
@@ -2112,26 +2078,8 @@
           "versionCaptureRule": null
         },
         {
-          "proofClass": "real-client-certification",
-          "proofMechanism": "Planned licensed ArcGIS Pro and ArcPy operation-level certification for MapServer",
-          "executionLane": "release:desktop-gis",
-          "clientLanes": [
-            "desktop-gis"
-          ],
-          "evidenceLocations": [
-            "docs/gis/CLIENT_TEMPLATE_RUNBOOK.md",
-            "docs/gis/CLIENT_TEMPLATE_VERSION_MATRIX.md",
-            "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
-            "https://github.com/honua-io/honua-esri-compat/issues/75"
-          ],
-          "ownerRepo": "honua-esri-compat",
-          "status": "planned",
-          "linkedTicket": "#75",
-          "versionCaptureRule": "Capture the exact ArcGIS Pro and ArcPy versions, candidate identity, fixture/config revisions, entitlement receipt, and operation-level MapServer evidence."
-        },
-        {
           "proofClass": "tool-interoperability",
-          "proofMechanism": "Esri Leaflet 3.x Playwright browser suite proving MapServer consumption through leaflet + esri-leaflet DynamicMapLayer",
+          "proofMechanism": "GeoServices Leaflet 3.x Playwright browser suite proving MapServer consumption through leaflet + esri-leaflet DynamicMapLayer",
           "executionLane": "ci:esri-leaflet-browser-tests",
           "evidenceLocations": [
             "tests/js-browser/leaflet-client/dynamic-map-layer.spec.ts",
@@ -2166,22 +2114,6 @@
         "WMS-1.3.0::GetLegendGraphic"
       ],
       "proofs": [
-        {
-          "proofClass": "real-client-certification",
-          "proofMechanism": "Planned operation-level certification for WMS 1.3 licensed ArcGIS Pro and ArcPy client",
-          "executionLane": "release:desktop-gis",
-          "clientLanes": [
-            "desktop-gis"
-          ],
-          "evidenceLocations": [
-            "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
-            "https://github.com/honua-io/honua-esri-compat/issues/75"
-          ],
-          "ownerRepo": "honua-esri-compat",
-          "status": "planned",
-          "linkedTicket": "#75",
-          "versionCaptureRule": "Capture the exact client version, candidate identity, fixture/config revisions, governed facets, and operation-level evidence."
-        },
         {
           "proofClass": "real-client-certification",
           "proofMechanism": "Planned operation-level certification for WMS 1.3 canonical clients",
@@ -2263,22 +2195,6 @@
       ],
       "proofs": [
         {
-          "proofClass": "real-client-certification",
-          "proofMechanism": "Planned operation-level certification for WMS 1.1.1 licensed ArcGIS Pro and ArcPy client",
-          "executionLane": "release:desktop-gis",
-          "clientLanes": [
-            "desktop-gis"
-          ],
-          "evidenceLocations": [
-            "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
-            "https://github.com/honua-io/honua-esri-compat/issues/75"
-          ],
-          "ownerRepo": "honua-esri-compat",
-          "status": "planned",
-          "linkedTicket": "#75",
-          "versionCaptureRule": "Capture the exact client version, candidate identity, fixture/config revisions, governed facets, and operation-level evidence."
-        },
-        {
           "proofClass": "operation-coverage",
           "proofMechanism": "WMS 1.1.1 endpoint integration tests cover capabilities, map rendering, feature info, exception shape, and EPSG:4326 lon/lat axis order",
           "executionLane": "ci:test-all+architecture",
@@ -2325,22 +2241,6 @@
         "WMTS-1.0.0::GetFeatureInfo"
       ],
       "proofs": [
-        {
-          "proofClass": "real-client-certification",
-          "proofMechanism": "Planned operation-level certification for WMTS 1.0 licensed ArcGIS Pro and ArcPy client",
-          "executionLane": "release:desktop-gis",
-          "clientLanes": [
-            "desktop-gis"
-          ],
-          "evidenceLocations": [
-            "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
-            "https://github.com/honua-io/honua-esri-compat/issues/75"
-          ],
-          "ownerRepo": "honua-esri-compat",
-          "status": "planned",
-          "linkedTicket": "#75",
-          "versionCaptureRule": "Capture the exact client version, candidate identity, fixture/config revisions, governed facets, and operation-level evidence."
-        },
         {
           "proofClass": "real-client-certification",
           "proofMechanism": "Planned operation-level certification for WMTS 1.0 canonical clients",
@@ -2437,22 +2337,6 @@
       ],
       "proofs": [
         {
-          "proofClass": "real-client-certification",
-          "proofMechanism": "Planned operation-level certification for GeoServices REST ImageServer licensed ArcGIS Pro and ArcPy client",
-          "executionLane": "release:desktop-gis",
-          "clientLanes": [
-            "desktop-gis"
-          ],
-          "evidenceLocations": [
-            "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
-            "https://github.com/honua-io/honua-esri-compat/issues/75"
-          ],
-          "ownerRepo": "honua-esri-compat",
-          "status": "planned",
-          "linkedTicket": "#75",
-          "versionCaptureRule": "Capture the exact client version, candidate identity, fixture/config revisions, governed facets, and operation-level evidence."
-        },
-        {
           "proofClass": "route-coverage",
           "proofMechanism": "EndpointRegistry coverage and deployed-route drift checks",
           "executionLane": "ci:test-all+architecture",
@@ -2468,7 +2352,7 @@
         },
         {
           "proofClass": "contract-governance",
-          "proofMechanism": "The published GeoServices REST parity matrix is generated, not authored: its route roster is derived from EndpointRegistry.All via the feature-catalog generator and normalized to Esri-relative operation paths (GeoServicesRouteRoster), and only the implemented/partial/stub judgement and gap prose are hand-authored (geoservices-parity-judgment.json). GeoServicesParityMatrixDriftTests gates the join in both directions on every CI run: a served operation with no judgement fails, a judgement naming an unserved operation fails, an operation recorded not-implemented that is in fact served fails, and the committed matrix must equal freshly-generated output. Behavioural accuracy of a status remains human review (the judgement source's lastReviewed date), not a gate.",
+          "proofMechanism": "The published GeoServices REST parity matrix is generated, not authored: its route roster is derived from EndpointRegistry.All via the feature-catalog generator and normalized to GeoServices-relative operation paths (GeoServicesRouteRoster), and only the implemented/partial/stub judgement and gap prose are hand-authored (geoservices-parity-judgment.json). GeoServicesParityMatrixDriftTests gates the join in both directions on every CI run: a served operation with no judgement fails, a judgement naming an unserved operation fails, an operation recorded not-implemented that is in fact served fails, and the committed matrix must equal freshly-generated output. Behavioural accuracy of a status remains human review (the judgement source's lastReviewed date), not a gate.",
           "executionLane": "ci:architecture",
           "evidenceLocations": [
             "tests/dotnet/Honua.Architecture.Tests/GeoServicesParityMatrixDriftTests.cs",
@@ -2838,23 +2722,6 @@
           "versionCaptureRule": "Capture each exact client version, candidate identity, fixture/config revisions, and operation-level OGC API Features evidence."
         },
         {
-          "proofClass": "real-client-certification",
-          "proofMechanism": "Planned licensed ArcGIS Pro and ArcPy operation-level OGC API Features certification",
-          "executionLane": "release:desktop-gis",
-          "clientLanes": [
-            "desktop-gis"
-          ],
-          "evidenceLocations": [
-            "docs/gis/CLIENT_TEMPLATE_RUNBOOK.md",
-            "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
-            "https://github.com/honua-io/honua-esri-compat/issues/75"
-          ],
-          "ownerRepo": "honua-esri-compat",
-          "status": "planned",
-          "linkedTicket": "#75",
-          "versionCaptureRule": "Capture the exact ArcGIS Pro and ArcPy versions, candidate identity, fixture/config revisions, entitlement receipt, and operation-level OGC API Features evidence."
-        },
-        {
           "proofClass": "tool-interoperability",
           "proofMechanism": "First-party JavaScript SDK integration lane exercises OGC API Features discovery against a real seeded server.",
           "executionLane": "nightly:sdk-server-compatibility",
@@ -3060,22 +2927,6 @@
       "operationKeys": [],
       "proofs": [
         {
-          "proofClass": "real-client-certification",
-          "proofMechanism": "Planned operation-level certification for GeometryServer licensed ArcGIS Pro and ArcPy client",
-          "executionLane": "release:desktop-gis",
-          "clientLanes": [
-            "desktop-gis"
-          ],
-          "evidenceLocations": [
-            "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
-            "https://github.com/honua-io/honua-esri-compat/issues/75"
-          ],
-          "ownerRepo": "honua-esri-compat",
-          "status": "planned",
-          "linkedTicket": "#75",
-          "versionCaptureRule": "Capture the exact client version, candidate identity, fixture/config revisions, governed facets, and operation-level evidence."
-        },
-        {
           "proofClass": "route-coverage",
           "proofMechanism": "EndpointRegistry coverage and deployed-route drift checks",
           "executionLane": "ci:test-all+architecture",
@@ -3107,7 +2958,7 @@
         },
         {
           "proofClass": "contract-governance",
-          "proofMechanism": "The published GeoServices REST parity matrix is generated, not authored: its route roster is derived from EndpointRegistry.All via the feature-catalog generator and normalized to Esri-relative operation paths (GeoServicesRouteRoster), and only the implemented/partial/stub judgement and gap prose are hand-authored (geoservices-parity-judgment.json). GeoServicesParityMatrixDriftTests gates the join in both directions on every CI run: a served operation with no judgement fails, a judgement naming an unserved operation fails, an operation recorded not-implemented that is in fact served fails, and the committed matrix must equal freshly-generated output. Behavioural accuracy of a status remains human review (the judgement source's lastReviewed date), not a gate.",
+          "proofMechanism": "The published GeoServices REST parity matrix is generated, not authored: its route roster is derived from EndpointRegistry.All via the feature-catalog generator and normalized to GeoServices-relative operation paths (GeoServicesRouteRoster), and only the implemented/partial/stub judgement and gap prose are hand-authored (geoservices-parity-judgment.json). GeoServicesParityMatrixDriftTests gates the join in both directions on every CI run: a served operation with no judgement fails, a judgement naming an unserved operation fails, an operation recorded not-implemented that is in fact served fails, and the committed matrix must equal freshly-generated output. Behavioural accuracy of a status remains human review (the judgement source's lastReviewed date), not a gate.",
           "executionLane": "ci:architecture",
           "evidenceLocations": [
             "tests/dotnet/Honua.Architecture.Tests/GeoServicesParityMatrixDriftTests.cs",
@@ -3550,7 +3401,7 @@
       "proofs": [
         {
           "proofClass": "operation-coverage",
-          "proofMechanism": "SOAP discovery integration tests cover the captured ArcPy envelope, task and parameter metadata, Python-safe tool identifiers with metadata round trips, service authorization, malformed envelopes and unsupported operations. SOAP execution and real-client certification are not claimed by this proof.",
+          "proofMechanism": "SOAP discovery integration tests cover the captured GeoServicesPython envelope, task and parameter metadata, Python-safe tool identifiers with metadata round trips, service authorization, malformed envelopes and unsupported operations. SOAP execution and real-client certification are not claimed by this proof.",
           "executionLane": "ci:test-all",
           "evidenceLocations": [
             "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/GPServerSoapEndpointsTests.cs"
@@ -3562,7 +3413,7 @@
         },
         {
           "proofClass": "scenario-depth",
-          "proofMechanism": "SOAP scalar Execute and SubmitJob use the real canonical Redis job runtime and production geometry executor, independently asserting rectangle area 3 * 4 = 12 and all measure/CRS metadata. Adapter regressions cover service/process authorization, ownership and route binding, metadata reads independent of result storage, terminal failure faults, result loading and truthful cancellation outcomes. Installed SDK/ArcPy receipts are retained as diagnostic observations; new-candidate and native Pro desktop certification remain pending.",
+          "proofMechanism": "SOAP scalar Execute and SubmitJob use the real canonical Redis job runtime and production geometry executor, independently asserting rectangle area 3 * 4 = 12 and all measure/CRS metadata. Adapter regressions cover service/process authorization, ownership and route binding, metadata reads independent of result storage, terminal failure faults, result loading and truthful cancellation outcomes. Installed SDK/GeoServicesPython receipts are retained as diagnostic observations; new-candidate and native Pro desktop certification remain pending.",
           "executionLane": "ci:test-all",
           "evidenceLocations": [
             "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/GPServerDurableRuntimeTests.cs",
@@ -3650,22 +3501,6 @@
           "status": "implemented",
           "linkedTicket": "#478",
           "versionCaptureRule": "Record the exact QGIS and PyQGIS versions, candidate identity, fixture revision, and immutable desktop-qgis WFS 2.0 .cert.json envelope."
-        },
-        {
-          "proofClass": "real-client-certification",
-          "proofMechanism": "Planned operation-level certification for WFS 2.0 licensed ArcGIS Pro and ArcPy client",
-          "executionLane": "release:desktop-gis",
-          "clientLanes": [
-            "desktop-gis"
-          ],
-          "evidenceLocations": [
-            "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
-            "https://github.com/honua-io/honua-esri-compat/issues/75"
-          ],
-          "ownerRepo": "honua-esri-compat",
-          "status": "planned",
-          "linkedTicket": "#75",
-          "versionCaptureRule": "Capture the exact client version, candidate identity, fixture/config revisions, governed facets, and operation-level evidence."
         },
         {
           "proofClass": "real-client-certification",
@@ -3763,22 +3598,6 @@
       ],
       "proofs": [
         {
-          "proofClass": "real-client-certification",
-          "proofMechanism": "Planned operation-level certification for WFS 1.1.0 licensed ArcGIS Pro and ArcPy client",
-          "executionLane": "release:desktop-gis",
-          "clientLanes": [
-            "desktop-gis"
-          ],
-          "evidenceLocations": [
-            "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
-            "https://github.com/honua-io/honua-esri-compat/issues/75"
-          ],
-          "ownerRepo": "honua-esri-compat",
-          "status": "planned",
-          "linkedTicket": "#75",
-          "versionCaptureRule": "Capture the exact client version, candidate identity, fixture/config revisions, governed facets, and operation-level evidence."
-        },
-        {
           "proofClass": "operation-coverage",
           "proofMechanism": "WFS 1.1.0 endpoint integration tests cover capabilities, schema, GET/POST GetFeature, and OWS 1.0 exception shape",
           "executionLane": "ci:test-all+architecture",
@@ -3824,22 +3643,6 @@
         "WFS-1.0.0::GetFeature"
       ],
       "proofs": [
-        {
-          "proofClass": "real-client-certification",
-          "proofMechanism": "Planned operation-level certification for WFS 1.0 licensed ArcGIS Pro and ArcPy client",
-          "executionLane": "release:desktop-gis",
-          "clientLanes": [
-            "desktop-gis"
-          ],
-          "evidenceLocations": [
-            "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
-            "https://github.com/honua-io/honua-esri-compat/issues/75"
-          ],
-          "ownerRepo": "honua-esri-compat",
-          "status": "planned",
-          "linkedTicket": "#75",
-          "versionCaptureRule": "Capture the exact client version, candidate identity, fixture/config revisions, governed facets, and operation-level evidence."
-        },
         {
           "proofClass": "operation-coverage",
           "proofMechanism": "WFS 1.0.0 endpoint integration tests cover capabilities, GML 2 schema, GetFeature, and ServiceExceptionReport shape",
@@ -4067,7 +3870,7 @@
     },
     {
       "surfaceId": "i3s-sceneserver",
-      "displayName": "Esri I3S SceneServer serving",
+      "displayName": "GeoServices I3S SceneServer serving",
       "surfaceKind": "http-route-family",
       "protocol": "I3S",
       "canonicalIdentifier": "/scenes/{sceneId}/SceneServer + /scenes/{sceneId}/SceneServer/layers/{layerId}",

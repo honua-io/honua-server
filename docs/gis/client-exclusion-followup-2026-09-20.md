@@ -19,20 +19,18 @@ Totals combine historical and fresh receipts, not one complete image rerun.
 Client procedure stays in the evidence repos (ruling R30). These six are passes
 on Development/JIT source `25fa17d9cfa72340c9de4a33a743f19ff0911800`, image
 `sha256:0ad6f6c9d81ead9772cf0f0a2e282321811bc5d059c53dc78570a4f6f07f7780`.
-ArcPy identity retained: 3.7.1, Pro executable 3.7.1.1904. QGIS 3.44.14, GDAL
+GeoServicesPython identity retained: 3.7.1, Pro executable 3.7.1.1904. QGIS 3.44.14, GDAL
 3.13.3. They are not a GUI pass.
 
 | Lane / operation | State | Limit that remains open |
 | --- | --- | --- |
-| ArcPy GeocodeServer findAddressCandidates | pass | Storage-request variant remains separate |
-| ArcPy GeocodeServer suggest | pass | None recorded on this cell |
+| GeoServicesPython GeocodeServer findAddressCandidates | pass | Storage-request variant remains separate |
+| GeoServicesPython GeocodeServer suggest | pass | None recorded on this cell |
 | PyQGIS TileJSON descriptor | pass | Direct descriptor-as-XYZ still fails |
 | PyQGIS ImageServer service-info | pass | None recorded beyond this operation |
 | PyQGIS ImageServer exportImage | pass | Display colors are not elevations |
 | PyQGIS elevation point-query | pass | Native ImageServer identify remains open |
 
-Evidence: `honua-esri-compat` commit `b691b03`,
-`evidence/arcpy-exclusion-followup-20260920-d/observations.json`;
 `honua-client-compat` commit `046a74c`,
 `evidence/pyqgis-deep-exclusions-20260920-d`.
 
@@ -40,24 +38,24 @@ Evidence: `honua-esri-compat` commit `b691b03`,
 
 | Prior category | Cells | Decision and reason |
 | --- | ---: | --- |
-| ArcPy geocode/suggest | 2 | Reopen and resolve with the native receipts above |
-| ArcPy attachments/relatedRecords/MapServer identify/legend | 4 | Reopen. The old citation is not operation-specific |
-| ArcPy FeatureServer replica/sync | 1 | Reopen. The cited conversion path does not exhaust offline operations |
-| ArcPy WFS property-value, stored queries and transactions | 5 | Reopen. One conversion tool does not close these operations |
-| ArcPy WMS identify | 1 | Reopen. A module-name absence does not close the cell |
-| ArcPy GeometryServer | 4 | Reopen. Local geometry results are not a remote-operation inventory |
+| GeoServicesPython geocode/suggest | 2 | Reopen and resolve with the native receipts above |
+| GeoServicesPython attachments/relatedRecords/MapServer identify/legend | 4 | Reopen. The old citation is not operation-specific |
+| GeoServicesPython FeatureServer replica/sync | 1 | Reopen. The cited conversion path does not exhaust offline operations |
+| GeoServicesPython WFS property-value, stored queries and transactions | 5 | Reopen. One conversion tool does not close these operations |
+| GeoServicesPython WMS identify | 1 | Reopen. A module-name absence does not close the cell |
+| GeoServicesPython GeometryServer | 4 | Reopen. Local geometry results are not a remote-operation inventory |
 | Pro SensorThings | 3 | Reopen. An OGC API connection menu list is not an exhaustive SensorThings client review |
 | Pro other OGC API families | 6 | Reopen. The Features/Tiles menu restriction does not review every alternative native representation, saved layer or extension |
 | QGIS/PyQGIS TileJSON | 2 | Reopen; PyQGIS descriptor consumption resolves with the qualified style-source path |
 | QGIS/PyQGIS elevation | 2 | Reopen; PyQGIS numeric point sampling resolves. Existing ImageServer metadata/export exclusions were already reopened and now resolve for PyQGIS |
 | QGIS/PyQGIS GPServer | 12 | Reopen for citation review. No specialized path found, but processing registry absence does not justify the universal claim across six operations |
-| QGIS/PyQGIS GeocodeServer | 8 | Reopen for citation review. Google/Nominatim geocoders are not Esri clients, and no Esri path was found; the old general absence claim still needs a complete scoped inventory |
+| QGIS/PyQGIS GeocodeServer | 8 | Reopen for citation review. Google/Nominatim geocoders are not GeoServices clients, and no GeoServices path was found; the old general absence claim still needs a complete scoped inventory |
 | QGIS/PyQGIS GeometryServer | 8 | Reopen for citation review. Local GEOS/GDAL results do not certify remote operations or exhaust SDK paths |
 | QGIS/PyQGIS VersionManagementServer | 4 | Reopen for citation review. No specialized class found; source/API review must bound the create/reconcile/post claims |
 | QGIS/PyQGIS SOAP catalog | 2 | Reopen for citation review. Observed REST discovery does not exhaust native SOAP catalog paths; generic HTTP/XML is not a native protocol pass |
 | Pro WFS transactions | 3 | Retain provisionally: current vendor documentation explicitly says native WFS layers are read-only |
 | Pro OGC API Features editing | 1 | Retain provisionally: current vendor documentation explicitly says the native layer is not editable |
-| ArcPy synchronous NAServer solve/service-area | 2 | Retain provisionally. The retained receipt is not that synchronous transport. Honua routing itself exists |
+| GeoServicesPython synchronous NAServer solve/service-area | 2 | Retain provisionally. The retained receipt is not that synchronous transport. Honua routing itself exists |
 | QGIS/PyQGIS WFS GetPropertyValue/ListStoredQueries | 4 | Retain provisionally. Earlier URI controls/request-source audit plus selected pinned GDAL WFS source found no matching request builders |
 | QGIS/PyQGIS FeatureServer attachments/relatedRecords/statistics/replica-sync | 8 | Retain provisionally. Specific prior wire observations and selected pinned native request-source evidence support these narrower provider gaps |
 
@@ -73,7 +71,7 @@ relationship investigations need a dedicated enabled fixture before execution.
 
 ## Server availability versus actual implementation gaps
 
-The Esri detailed manifest generator contained a separate classification bug:
+The GeoServices detailed manifest generator contained a separate classification bug:
 three VectorTileServer and two SceneServer operations were `not_implemented`
 solely because a June fixture lacked per-service enablement or an Enterprise
 grant. The correction retains all five as supported/partial with prerequisites.
@@ -88,10 +86,10 @@ previous raster affine-grid defects needed code repairs, now in
 [PR 5038](https://github.com/honua-io/honua-server/pull/5038).
 
 Honua serves these protocol families, but that does not establish every optional
-Esri contract. The current source parity inventory explicitly records JSON-only
+GeoServices contract. The current source parity inventory explicitly records JSON-only
 replica output and rejection of runtime-geodatabase format, asynchronous replica
 creation and attachment inclusion; some advanced applyEdits payloads are also
-rejected. Current native ArcPy WCS still fails before pixel reads; branch-version
+rejected. Current native GeoServicesPython WCS still fails before pixel reads; branch-version
 workspace authentication remains unresolved. QGIS ImageServer identify parses
 the MapServer results shape and returns empty results for the ImageServer shape.
 These conditions need their own fixes or scoped client-boundary evidence.
@@ -103,7 +101,6 @@ native-client coverage and does not prove every optional protocol parameter.
 
 ## Durable evidence and vendor sources
 
-- Esri: `honua-esri-compat` commit **b691b03**, `docs/reports/arcpy-exclusion-followup-2026-09-20.md` and `evidence/arcpy-exclusion-followup-20260920-d/observations.json`; attempts a-c remain preserved. All 302 tests, fixture-contract validation, template freshness and source-manifest checks passed.
 - QGIS: `honua-client-compat` commit **046a74c**, `docs/reports/pyqgis-deep-exclusion-audit-2026-09-20.md`, final run `evidence/pyqgis-deep-exclusions-20260920-d` and pinned source audit. All 240 tests, shared-snapshot verification and evidence/hash/secret checks passed.
 Vendor procedure and source-inspection notes stay with those evidence commits.
 

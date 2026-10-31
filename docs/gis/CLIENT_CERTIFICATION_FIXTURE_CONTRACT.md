@@ -186,7 +186,7 @@ principal in this fixture, which is what makes the private tier the denial arm o
 |---|---|---|---|
 | `anonymous` | allow on public surfaces, deny elsewhere | realized | the three seeds plus the client-compat server config |
 | `valid-credential` | allow | realized | `X-API-Key` on the admin probe path; `generateToken` for the Portal lane |
-| `invalid-credential` | deny | realized | a wrong key yields 401 with the ApiKey challenge; `generateToken` yields the Esri error envelope |
+| `invalid-credential` | deny | realized | a wrong key yields 401 with the ApiKey challenge; `generateToken` yields the GeoServices error envelope |
 | `expired-credential` | deny | gap (`expired-credential-unrealized`) | no fixture mints a genuinely expired credential |
 | `insufficient-role-or-scope` | deny | realized but not asserted (`insufficient-role-assertion-absent`) | `portal_private` requires `portal-admin`, which no principal holds |
 | `cross-tenant-denial` | deny | gap (`cross-tenant-denial-unrealized`) | the stack seeds a single tenant |
@@ -204,7 +204,6 @@ principal in this fixture, which is what makes the private tier the denial arm o
   same applier. Additive only — it may pin the image digest and enable TLS and may not change any
   seeded identity, count, extent, or access policy. All three revisions carry through unchanged; a
   different value is drift, not an overlay. `CERT-CONN-02` becomes applicable.
-- **licensed** (release): entitlement-bound overlay named for ArcGIS Pro/arcpy, Excel, Power BI, and
   Tableau. Seat and licence configuration stay in the owning evidence repository. The overlay
   binds the same identities and the same auth policy; it may not
   substitute its own seed for the canonical fixture.
@@ -230,7 +229,7 @@ rendering and style `CERT-RNDR-01`, `CERT-RNDR-02`, `CERT-RNDR-SYM-01`, `CERT-RN
 `JS-EXT-OL-ITEMTYPE-01`, `JS-EXT-OL-ITEMS-01`, `JS-EXT-OL-GEOJSON-01`, `JS-EXT-OL-GEOJSON-02`,
 `JS-EXT-OL-WFS-GETFEATURE-01` (unfiltered parsing only; no core filtering credit),
 `JS-EXT-TILES-DISC-01`, `JS-EXT-TILES-DISC-02`, `JS-EXT-TILES-SCHM-01`, `JS-EXT-OGC-MAPS-01`.
-Cesium: `JS-CES-IMG-01`, `JS-CES-TILE-01`. Esri Leaflet: `EL-EXT-01`, `EL-EXT-02`, `EL-EXT-03`,
+Cesium: `JS-CES-IMG-01`, `JS-CES-TILE-01`. GeoServices Leaflet: `EL-EXT-01`, `EL-EXT-02`, `EL-EXT-03`,
 `EL-EXT-04`. Desktop: `DSK-EXT-01`, `DSK-EXT-02`. CLI: `CLI-EXT-01`, `CLI-EXT-02`. BI:
 `BI-EXT-01`, `BI-EXT-02`.
 
@@ -249,7 +248,7 @@ Cesium: `JS-CES-IMG-01`, `JS-CES-TILE-01`. Esri Leaflet: `EL-EXT-01`, `EL-EXT-02
 | `r-sf` | landing | `ogc-features` and `wfs` on the canonical service |
 | `py-pystac` | landing | `stac` on the canonical service |
 
-Six cases are bound by no 2026.1 lane and are governed as unbound in the manifest: the four Esri
+Six cases are bound by no 2026.1 lane and are governed as unbound in the manifest: the four GeoServices
 Leaflet extensions (a documented browser sub-lane with no registered lane id or committed baseline)
 and the two BI extensions (planned, licensed, release-tier lanes).
 

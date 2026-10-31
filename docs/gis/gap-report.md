@@ -49,14 +49,14 @@ against the committed baselines under `tests/baselines/client-compat/`.
 | geoservices-rest-stub | featureserver | CERT-PAGE-02 | pass | — |  |
 | geoservices-rest-stub | featureserver | CERT-QFLT-01 | pass | — |  |
 | geoservices-rest-stub | featureserver | CERT-QFLT-02 | pass | — | HTTP 200 |
-| geoservices-rest-stub | featureserver | CERT-RNDR-01 | skip | — | evidence id desktop-gis |
-| geoservices-rest-stub | featureserver | CERT-RNDR-02 | skip | — | evidence id desktop-gis |
-| geoservices-rest-stub | featureserver | CERT-RNDR-FIL-01 | skip | — | evidence id desktop-gis |
-| geoservices-rest-stub | featureserver | CERT-RNDR-LBL-01 | skip | — | evidence id desktop-gis |
-| geoservices-rest-stub | featureserver | CERT-RNDR-LIN-01 | skip | — | evidence id desktop-gis |
+| geoservices-rest-stub | featureserver | CERT-RNDR-01 | skip | — | visual-style rendering is not exercised by this REST stub |
+| geoservices-rest-stub | featureserver | CERT-RNDR-02 | skip | — | visual-style rendering is not exercised by this REST stub |
+| geoservices-rest-stub | featureserver | CERT-RNDR-FIL-01 | skip | — | visual-style rendering is not exercised by this REST stub |
+| geoservices-rest-stub | featureserver | CERT-RNDR-LBL-01 | skip | — | visual-style rendering is not exercised by this REST stub |
+| geoservices-rest-stub | featureserver | CERT-RNDR-LIN-01 | skip | — | visual-style rendering is not exercised by this REST stub |
 | geoservices-rest-stub | featureserver | CERT-RNDR-SPR-01 | not-applicable | — |  |
-| geoservices-rest-stub | featureserver | CERT-RNDR-SYM-01 | skip | — | evidence id desktop-gis |
-| geoservices-rest-stub | featureserver | CERT-RNDR-URL-01 | skip | — | evidence id desktop-gis |
+| geoservices-rest-stub | featureserver | CERT-RNDR-SYM-01 | skip | — | visual-style rendering is not exercised by this REST stub |
+| geoservices-rest-stub | featureserver | CERT-RNDR-URL-01 | skip | — | visual-style rendering is not exercised by this REST stub |
 | geoservices-rest-stub | featureserver | CERT-SCHM-01 | pass | — |  |
 | geoservices-rest-stub | featureserver | CERT-SCHM-02 | pass | — |  |
 | geoservices-rest-stub | mapserver | CERT-AUTH-01 | pass | — | HTTP 200 |
@@ -73,14 +73,14 @@ against the committed baselines under `tests/baselines/client-compat/`.
 | geoservices-rest-stub | mapserver | CERT-PAGE-02 | pass | — |  |
 | geoservices-rest-stub | mapserver | CERT-QFLT-01 | pass | — |  |
 | geoservices-rest-stub | mapserver | CERT-QFLT-02 | pass | — | HTTP 200 |
-| geoservices-rest-stub | mapserver | CERT-RNDR-01 | skip | — | evidence id desktop-gis |
-| geoservices-rest-stub | mapserver | CERT-RNDR-02 | skip | — | evidence id desktop-gis |
-| geoservices-rest-stub | mapserver | CERT-RNDR-FIL-01 | skip | — | evidence id desktop-gis |
-| geoservices-rest-stub | mapserver | CERT-RNDR-LBL-01 | skip | — | evidence id desktop-gis |
-| geoservices-rest-stub | mapserver | CERT-RNDR-LIN-01 | skip | — | evidence id desktop-gis |
+| geoservices-rest-stub | mapserver | CERT-RNDR-01 | skip | — | visual-style rendering is not exercised by this REST stub |
+| geoservices-rest-stub | mapserver | CERT-RNDR-02 | skip | — | visual-style rendering is not exercised by this REST stub |
+| geoservices-rest-stub | mapserver | CERT-RNDR-FIL-01 | skip | — | visual-style rendering is not exercised by this REST stub |
+| geoservices-rest-stub | mapserver | CERT-RNDR-LBL-01 | skip | — | visual-style rendering is not exercised by this REST stub |
+| geoservices-rest-stub | mapserver | CERT-RNDR-LIN-01 | skip | — | visual-style rendering is not exercised by this REST stub |
 | geoservices-rest-stub | mapserver | CERT-RNDR-SPR-01 | not-applicable | — |  |
-| geoservices-rest-stub | mapserver | CERT-RNDR-SYM-01 | skip | — | evidence id desktop-gis |
-| geoservices-rest-stub | mapserver | CERT-RNDR-URL-01 | skip | — | evidence id desktop-gis |
+| geoservices-rest-stub | mapserver | CERT-RNDR-SYM-01 | skip | — | visual-style rendering is not exercised by this REST stub |
+| geoservices-rest-stub | mapserver | CERT-RNDR-URL-01 | skip | — | visual-style rendering is not exercised by this REST stub |
 | geoservices-rest-stub | mapserver | CERT-SCHM-01 | pass | — |  |
 | geoservices-rest-stub | mapserver | CERT-SCHM-02 | pass | — |  |
 | cli | ogc-features | CERT-AUTH-01 | not-applicable | — |  |

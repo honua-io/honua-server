@@ -43,7 +43,7 @@ public sealed partial class PublicInterfaceProofLedgerTests
         "feature-server",
         "ogc-api-features",
         "migration-scan",
-        "arcgis-import",
+        "geoservices-rest-import",
         "geoserver-dry-run",
         "migration-evidence"
     };
@@ -81,7 +81,7 @@ public sealed partial class PublicInterfaceProofLedgerTests
             ["honua-sdk-dotnet"] = "#134",
             ["honua-sdk-python"] = "#49"
         },
-        ["arcgis-import"] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        ["geoservices-rest-import"] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
             ["honua-sdk-js"] = "#105",
             ["honua-sdk-dotnet"] = "#134",
@@ -109,7 +109,7 @@ public sealed partial class PublicInterfaceProofLedgerTests
             "feature-server",
             "ogc-api-features",
             "migration-scan",
-            "arcgis-import",
+            "geoservices-rest-import",
             "geoserver-dry-run",
             "migration-evidence"
         },
@@ -139,25 +139,6 @@ public sealed partial class PublicInterfaceProofLedgerTests
         ["odata"] = ["odata-v4"],
         ["stac"] = ["stac-api"]
     };
-
-    private static readonly string[] LegacyEsriCompatSurfaceIds =
-        ["wfs-1.0.0", "wfs-1.1.0", "wms-1.1.1"];
-
-    private static readonly string[] GeoServicesEsriCompatSurfaceIds =
-    [
-        "feature-server",
-        "map-server",
-        "image-server",
-        "geometry-service",
-        "version-management-server",
-        "ogc-api-features",
-        "wfs-2.0",
-        "wms-1.3",
-        "wmts-1.0",
-        "wfs-1.0.0",
-        "wfs-1.1.0",
-        "wms-1.1.1"
-    ];
 
     private static readonly Regex MarkdownLinkRegex =
         new(@"\[[^\]]+\]\((?<path>[^)]+)\)", RegexOptions.Compiled);
@@ -382,13 +363,6 @@ public sealed partial class PublicInterfaceProofLedgerTests
         externalProofs.Should().OnlyContain(entry => IsApprovedExternalProof(entry.SurfaceId, entry.Proof),
             "only approved bounded-child surfaces may point at external owner repos");
         externalProofs
-            .Where(entry => string.Equals(entry.Proof.OwnerRepo, "honua-esri-compat", StringComparison.OrdinalIgnoreCase) &&
-                            LegacyEsriCompatSurfaceIds.Contains(entry.SurfaceId, StringComparer.OrdinalIgnoreCase))
-            .Select(entry => entry.SurfaceId)
-            .Should()
-            .BeEquivalentTo(LegacyEsriCompatSurfaceIds,
-                "retained legacy-version ArcGIS obligations must not disappear from the proof ledger");
-        externalProofs
             .Where(entry => string.Equals(entry.SurfaceId, "mcp", StringComparison.OrdinalIgnoreCase) &&
                             string.Equals(entry.Proof.OwnerRepo, "honua-sdk-js", StringComparison.OrdinalIgnoreCase))
             .Select(entry => $"{entry.Proof.ProofClass}:{entry.Proof.ExecutionLane}")
@@ -537,7 +511,7 @@ public sealed partial class PublicInterfaceProofLedgerTests
             "feature-server",
             "ogc-api-features",
             "migration-scan",
-            "arcgis-import",
+            "geoservices-rest-import",
             "geoserver-dry-run",
             "migration-evidence"
         ]);
@@ -590,7 +564,7 @@ public sealed partial class PublicInterfaceProofLedgerTests
         foreach (var surfaceId in new[]
                  {
                      "migration-scan",
-                     "arcgis-import",
+                     "geoservices-rest-import",
                      "geoserver-dry-run",
                      "migration-evidence"
                  })
@@ -721,21 +695,6 @@ public sealed partial class PublicInterfaceProofLedgerTests
                    string.Equals(proof.OwnerRepo, "geospatial-grpc", StringComparison.OrdinalIgnoreCase) &&
                    string.Equals(proof.ExecutionLane, "repo:honua-io/geospatial-grpc", StringComparison.OrdinalIgnoreCase) &&
                    proof.EvidenceLocations.Any(IsGeospatialGrpcRepositoryUrl);
-        }
-
-        var isApprovedEsriCompatSurface =
-            GeoServicesEsriCompatSurfaceIds.Contains(surfaceId, StringComparer.OrdinalIgnoreCase);
-        if (isApprovedEsriCompatSurface &&
-            string.Equals(proof.ProofClass, "real-client-certification", StringComparison.OrdinalIgnoreCase) &&
-            string.Equals(proof.Status, "planned", StringComparison.OrdinalIgnoreCase))
-        {
-            return string.Equals(proof.OwnerRepo, "honua-esri-compat", StringComparison.OrdinalIgnoreCase) &&
-                   string.Equals(proof.LinkedTicket, "#75", StringComparison.Ordinal) &&
-                   string.Equals(proof.ExecutionLane, "release:desktop-gis", StringComparison.OrdinalIgnoreCase) &&
-                   proof.ClientLanes.SequenceEqual(["desktop-gis"], StringComparer.OrdinalIgnoreCase) &&
-                   proof.EvidenceLocations.Contains(
-                       "https://github.com/honua-io/honua-esri-compat/issues/75",
-                       StringComparer.OrdinalIgnoreCase);
         }
 
         if (SdkCompatibilitySurfaceIds.Contains(surfaceId))

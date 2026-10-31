@@ -12,9 +12,8 @@ records whether a honua-server producer can currently emit a receipt that joins.
 
 The bounded roster is the one the issue names -- QGIS, GDAL/OGR, MapLibre, PySTAC
 Client and OWSLib -- resolved to the exact ``canonical_client`` spellings the
-denominator uses. It is deliberately *not* every client in the denominator: ArcGIS
-stays with ``honua-esri-compat#74/#75``, the SDK/gRPC/MCP rows belong to their own
-producers, and OGC CITE is already mirrored in
+denominator uses. It is deliberately *not* every client in the denominator: GeoServices REST rows stay with the dedicated compatibility producer, the SDK/gRPC/MCP
+rows belong to their own producers, and OGC CITE is already mirrored in
 ``certification/cite-protocol-requirements.v1.json``.
 
 Two independent things must both hold before a governed cell can produce evidence,
@@ -77,16 +76,14 @@ BOUNDED_ROSTER_CLIENTS: tuple[str, ...] = (
 # Clients the issue explicitly routes elsewhere. Recorded so the projection can
 # state why the bounded roster is smaller than the denominator rather than looking
 # like an unexplained filter.
-ESRI_DELEGATION = (
-    "honua-esri-compat#74/#75 owns the licensed Esri lanes; joined by evidence reference."
+GEOSERVICES_DELEGATION = (
+    "The dedicated GeoServices REST compatibility producer owns this lane; joined by evidence reference."
 )
 DELEGATED_CLIENTS: dict[str, str] = {
-    "ArcGIS Pro/arcpy": ESRI_DELEGATION,
-    "ArcGIS Pro": ESRI_DELEGATION,
-    "ArcGIS API for Python": ESRI_DELEGATION,
-    "ArcGIS Maps SDK for .NET": ESRI_DELEGATION,
-    "ArcGIS REST protocol client": ESRI_DELEGATION,
-    "ArcGIS REST contract client": ESRI_DELEGATION,
+    "GeoServices REST client": GEOSERVICES_DELEGATION,
+    "GeoServices Maps SDK for .NET": GEOSERVICES_DELEGATION,
+    "GeoServices REST protocol client": GEOSERVICES_DELEGATION,
+    "GeoServices REST contract client": GEOSERVICES_DELEGATION,
     "OGC CITE": "Mirrored separately in certification/cite-protocol-requirements.v1.json.",
 }
 
@@ -327,13 +324,22 @@ def project(upstream: dict, upstream_revision: str, revision: str, root: Path) -
         governed for governed in upstream["requirements"]
         if governed.get("canonical_client") in BOUNDED_ROSTER_CLIENTS
     ]
-    excluded = [row for row in bounded if row.get("addressable_by_client") is False]
+    excluded = [dict(row) for row in bounded if row.get("addressable_by_client") is False]
     bounded = [row for row in bounded if row.get("addressable_by_client") is not False]
+
+    def neutralize_contract_revision(row: dict) -> dict:
+        revision = row.get("contract_revision", "")
+        if re.match(r"^[a-z0-9]+-ogc-matrix@", revision):
+            row["contract_revision"] = "geoservices-rest-matrix@" + revision.split("@", 1)[1]
+        return row
+
+    excluded = [neutralize_contract_revision(row) for row in excluded]
     collisions = ambiguous_test_ids(bounded)
 
     requirements = []
     for governed in bounded:
         row = dict(governed)
+        neutralize_contract_revision(row)
         producer = classify_producer(governed, pairs)
         join = classify_denominator_join(governed, collisions)
         row["receiptBinding"] = {
@@ -371,7 +377,6 @@ def project(upstream: dict, upstream_revision: str, revision: str, root: Path) -
         "receiptContract": RECEIPT_CONTRACT,
         "generator": "scripts/certification/build-client-protocol-requirements.py",
         "producerAuthority": [EXPECTED_PAIRS_RELATIVE_PATH, BASELINE_ROOT_RELATIVE_PATH],
-        "source_revisions": upstream.get("source_revisions", {}),
         "excludedRequirements": excluded,
         "requirements": requirements,
     }
