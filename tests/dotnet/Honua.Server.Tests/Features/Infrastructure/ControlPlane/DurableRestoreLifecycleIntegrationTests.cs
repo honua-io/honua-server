@@ -268,4 +268,78 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
         }
     }
 
+    [IntegrationTest]
+    public async Task LocalCheckpoint_WithoutWorkflow_ResumesDeterministicSubmission()
+    {
+        await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        var database = connection.GetDatabase();
+        await database.KeyDeleteAsync("controlplane:workflow:restore-cell-exclusive-owner");
+        try
+        {
+            var workflows = new RedisWorkflowOperationStore(connection, NullLogger<RedisWorkflowOperationStore>.Instance);
+            var monitor = Substitute.For<IOptionsMonitor<ControlPlaneOptions>>();
+            monitor.CurrentValue.Returns(new ControlPlaneOptions
+            {
+                DeployTargets = [new DeployTargetOptions { TargetId = "local", TargetKind = DeployTargetKind.LocalCompose }]
+            });
+            var targets = Substitute.For<IDeployTargetRegistry>();
+            targets.GetAsync("local", Arg.Any<CancellationToken>()).Returns(new DeployTargetDefinition
+            {
+                TargetId = "local",
+                TargetKind = DeployTargetKind.LocalCompose,
+                Backend = "test",
+                Environment = "local",
+                TargetName = "honua"
+            });
+            var backend = Substitute.For<IDeployBackend>();
+            backend.BackendName.Returns("test");
+            backend.TargetKind.Returns(DeployTargetKind.LocalCompose);
+            backend.GetCapabilitiesAsync(Arg.Any<CancellationToken>()).Returns(new DeployBackendCapabilities());
+            backend.PlanAsync(Arg.Any<DeployOperationSpec>(), Arg.Any<CancellationToken>()).Returns(new DeployPlan { IsReadyToSubmit = true });
+            backend.StartAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>()).Returns(new DeploySubmissionResult { Status = WorkflowOperationStatus.Reconciling });
+            var service = new DeployWorkflowService(targets, [workflows], [backend], Substitute.For<IOperatorApprovalEvaluator>(),
+                NullLogger<DeployWorkflowService>.Instance, monitor);
+            var worker = new DurableRestoreWorker(workflows, null!, null!, new DeployOperationExecutor(service), null!, null!,
+                NullLogger<DurableRestoreWorker>.Instance, monitor, Substitute.For<IComposeExecutorClient>());
+            var now = DateTimeOffset.UtcNow;
+            var id = "restore-local-" + Guid.NewGuid().ToString("N");
+            var workflowId = DeployWorkflowService.CreateOperationId(id);
+            var payload = new DeployExecutionPayload { TargetId = "local", DesiredRevision = "sha256:" + new string('a', 64), CurrentRevision = "sha256:" + new string('b', 64) };
+            Assert.True(await workflows.TryCreateAsync(new WorkflowOperationRecord
+            {
+                OperationId = id,
+                Kind = WorkflowOperationKind.PreMigrationRestore,
+                Status = WorkflowOperationStatus.Reconciling,
+                CreatedAt = now,
+                UpdatedAt = now,
+                Audit = new OperationAuditInfo { RequestedBy = "proposer", ProposalId = "proposal" },
+                PreMigrationRestore = new PreMigrationRestoreContext
+                {
+                    Phase = "awaiting-local-deploy",
+                    DeployOperationId = workflowId,
+                    ApprovedBy = "approver",
+                    Payload = payload.Serialize()
+                }
+            }));
+            Assert.True(await workflows.TryCreateAsync(new WorkflowOperationRecord
+            {
+                OperationId = "restore-cell-exclusive-owner",
+                Kind = WorkflowOperationKind.PreMigrationRestore,
+                Status = WorkflowOperationStatus.Succeeded,
+                CreatedAt = now,
+                UpdatedAt = now,
+                CurrentPhase = id
+            }));
+            await worker.ReconcileAsync(id, CancellationToken.None);
+            Assert.Equal(WorkflowOperationStatus.Reconciling, (await workflows.GetAsync(workflowId))?.Status);
+            await backend.Received(1).StartAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>());
+            await worker.ReconcileAsync(id, CancellationToken.None);
+            await backend.Received(1).StartAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            await database.KeyDeleteAsync("controlplane:workflow:restore-cell-exclusive-owner");
+        }
+    }
+
 }

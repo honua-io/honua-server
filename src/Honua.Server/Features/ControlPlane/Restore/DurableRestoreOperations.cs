@@ -292,6 +292,12 @@ internal sealed partial class DurableRestoreWorker(
             PreMigrationRestore = record.PreMigrationRestore! with { Phase = "awaiting-local-deploy", DeployOperationId = workflowId, Payload = payload.Serialize() }
         };
         if (!await store.TrySetAsync(checkpoint, cancellationToken: cancellationToken).ConfigureAwait(false)) return;
+        await SubmitLocalAsync(checkpoint, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task SubmitLocalAsync(WorkflowOperationRecord record, CancellationToken cancellationToken)
+    {
+        var checkpoint = record.PreMigrationRestore!;
         var request = new OperationGatewayRequest
         {
             Kind = OperationClass.Deploy,
@@ -303,8 +309,8 @@ internal sealed partial class DurableRestoreWorker(
             Reason = record.Audit.Reason,
             TenantId = record.Audit.TenantId
         };
-        var actual = await deploy.ExecuteRestoreAsync(request, checkpoint.PreMigrationRestore!.Payload, record.OperationId, cancellationToken).ConfigureAwait(false);
-        if (!string.Equals(actual, workflowId, StringComparison.Ordinal))
+        var actual = await deploy.ExecuteRestoreAsync(request, checkpoint.Payload, record.OperationId, cancellationToken).ConfigureAwait(false);
+        if (!string.Equals(actual, checkpoint.DeployOperationId, StringComparison.Ordinal))
             throw new InvalidOperationException("Deploy operation did not match the saved checkpoint.");
     }
 
@@ -318,7 +324,14 @@ internal sealed partial class DurableRestoreWorker(
             return;
         }
         var workflow = await deploy.GetWorkflowAsync(checkpoint.DeployOperationId, cancellationToken).ConfigureAwait(false);
-        if (workflow is null || workflow.Status is not (WorkflowOperationStatus.Submitted or WorkflowOperationStatus.Reconciling or WorkflowOperationStatus.Succeeded))
+        if (workflow is null || workflow.Status is WorkflowOperationStatus.Planned or WorkflowOperationStatus.AwaitingApproval)
+        {
+            // The checkpoint was saved before any backend call. Re-create or submit only
+            // the deterministic workflow; its own lease fences concurrent reconciliation.
+            await SubmitLocalAsync(record, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+        if (workflow.Status is not (WorkflowOperationStatus.Submitted or WorkflowOperationStatus.Reconciling or WorkflowOperationStatus.Succeeded))
         {
             await FailAsync(record, PreMigrationRestoreCodes.RestoreIncomplete, cancellationToken).ConfigureAwait(false);
             return;
