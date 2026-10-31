@@ -159,9 +159,6 @@ internal sealed partial class ComposeProjectController : IDisposable
             return Refuse(request, ComposeExecutorCodes.ScopeViolation, "Converge only accepts the configured release image.");
         }
 
-        var nonce = request.ContractMigrationApprovalNonce;
-        if (nonce is not null && (nonce.Length != 16 || nonce.Any(character => !(char.IsAsciiHexDigitLower(character) || char.IsAsciiDigit(character)))))
-            return Refuse(request, ComposeExecutorCodes.ConfigUnsupported, "The migration approval token is malformed.");
         var inspected = await InspectImageAsync(request.Image!, cancellationToken).ConfigureAwait(false);
         if (inspected == null)
         {
