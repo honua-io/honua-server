@@ -65,7 +65,7 @@ internal sealed class AwsSdkLambdaImageClient : IAwsLambdaImageClient
         }
 
         var published = await client.PublishVersionAsync(
-                new PublishVersionRequest { FunctionName = functionName },
+                BuildPublishRequest(functionName, updated.CodeSha256, updated.RevisionId),
                 cancellationToken)
             .ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(published.Version) ||
@@ -76,7 +76,26 @@ internal sealed class AwsSdkLambdaImageClient : IAwsLambdaImageClient
                 "Lambda image publish did not return a numeric version. The alias was not moved.");
         }
 
+        var publishedFunction = await client.GetFunctionAsync(
+                new GetFunctionRequest { FunctionName = functionName, Qualifier = published.Version },
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (!string.Equals(publishedFunction.Code?.ResolvedImageUri, imageUri, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Published Lambda image does not match the approved image. The alias was not moved.");
+        }
+
         return published.Version;
+    }
+
+    internal static PublishVersionRequest BuildPublishRequest(string functionName, string? codeSha256, string? revisionId)
+    {
+        if (string.IsNullOrWhiteSpace(codeSha256) || string.IsNullOrWhiteSpace(revisionId))
+        {
+            throw new InvalidOperationException("Lambda update did not return publication preconditions. The alias was not moved.");
+        }
+
+        return new PublishVersionRequest { FunctionName = functionName, CodeSha256 = codeSha256, RevisionId = revisionId };
     }
 
     private static async Task<bool> WaitUntilSuccessfulAsync(

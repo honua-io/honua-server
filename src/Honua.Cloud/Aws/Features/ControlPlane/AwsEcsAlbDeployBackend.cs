@@ -569,7 +569,7 @@ internal sealed partial class AwsEcsAlbDeployBackend(
     IAwsAlbClient albClient,
     IAwsEcsClient ecsClient,
     ILogger<AwsEcsAlbDeployBackend> logger,
-    IRollbackDataPlaneProbe? dataPlaneProbe = null) : IDeployBackend
+    IRollbackDataPlaneProbe? dataPlaneProbe = null) : IDeployBackend, ICheckpointedDeployBackend
 {
     internal const string AdapterBackendName = "honua-aws-ecs-alb";
 
@@ -670,6 +670,15 @@ internal sealed partial class AwsEcsAlbDeployBackend(
 
         var target = ResolveTarget(spec);
         EnsureValidTarget(target);
+        if (RequiresCheckpoint(operation))
+        {
+            return new DeploySubmissionResult
+            {
+                Status = WorkflowOperationStatus.Submitted,
+                Message = ICheckpointedDeployBackend.PendingPhase
+            };
+        }
+
         _ = TryResolveCanaryWeightPercentage(spec.Parameters, out var canaryWeight, out _);
 
         using var activity = StartActivity(ControlPlaneTelemetry.Activities.BackendStart, operation, target);

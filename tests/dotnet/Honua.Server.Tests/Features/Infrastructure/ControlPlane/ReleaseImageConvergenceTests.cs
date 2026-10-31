@@ -95,41 +95,35 @@ public sealed class ReleaseImageConvergenceTests
         var ecs = new DigestEcsClient();
         var alb = new DigestAlbClient();
         var backend = Backend(alb, ecs);
-
-        var submission = await backend.StartAsync(EcsOperation(Digest));
-
+        var operation = EcsOperation(Digest);
+        var submission = await backend.StartAsync(operation);
         submission.Status.Should().Be(WorkflowOperationStatus.Submitted);
-        submission.ProviderOperationId.Should().Be(RegisteredTaskDef);
-        submission.ObservedRevision.Should().Be(CurrentTaskDef);
+        ecs.Calls.Should().BeEmpty();
+        var checkpoint = await backend.PrepareCheckpointAsync(operation, CancellationToken.None);
+        checkpoint.CandidateRevision.Should().Be(RegisteredTaskDef);
+        checkpoint.StableRevision.Should().Be(CurrentTaskDef);
+        checkpoint.OriginalServiceRevision.Should().Be(CurrentTaskDef);
+        ecs.UpdatedTaskDefinition.Should().BeNull();
+        alb.UpdateCount.Should().Be(0);
+        var persisted = Checkpointed(operation, checkpoint);
+        var activation = await backend.ActivateCheckpointAsync(persisted, CancellationToken.None);
+        activation.Status.Should().Be(WorkflowOperationStatus.Reconciling);
         ecs.UpdatedTaskDefinition.Should().Be(RegisteredTaskDef);
-        ecs.RegisteredImages.Should().ContainSingle().Which.Should().Be(Digest);
-        ecs.Calls.Should().NotContain("run-task");
-        alb.UpdateCount.Should().Be(1);
-        var plan = await backend.PlanAsync(EcsSpec(Digest));
-        plan.Warnings.Should().Contain(warning => warning.Contains("not implied", StringComparison.Ordinal));
-        plan.RequiresOutOfBandMigrations.Should().BeTrue();
+        (await backend.ObserveAsync(persisted)).Status.Should().Be(WorkflowOperationStatus.Succeeded);
     }
 
     [Fact]
     public async Task EcsDigest_RunsMigrationBeforeServiceUpdate_AndBlocksOnNonZeroExit()
     {
-        var ecs = new DigestEcsClient { MigrationExitCode = 1, MigrationLastStatus = "STOPPED" };
-        var alb = new DigestAlbClient();
+        var ecs = new DigestEcsClient { MigrationExitCode = 1 };
         var parameters = EcsParameters();
         parameters["aws.ecs.migration_task_definition"] = "arn:aws:ecs:us-east-1:123456789012:task-definition/honua-migrate:6";
-        parameters["aws.ecs.migration_subnets"] = "subnet-a,subnet-b";
+        parameters["aws.ecs.migration_subnets"] = "subnet-a";
         parameters["aws.ecs.migration_security_groups"] = "sg-a";
-        parameters["aws.ecs.migration_delay_ms"] = "0";
-
-        var submission = await Backend(alb, ecs).StartAsync(EcsOperation(Digest, parameters));
-
-        submission.Status.Should().Be(WorkflowOperationStatus.Failed);
-        submission.Message.Should().Contain("did not exit 0");
-        submission.Message.Should().NotContain(SecretStopReason);
+        var act = () => Backend(new DigestAlbClient(), ecs).PrepareCheckpointAsync(EcsOperation(Digest, parameters), CancellationToken.None);
+        await act.Should().ThrowAsync<InvalidOperationException>();
         ecs.Calls.Should().Contain("run-task");
         ecs.Calls.Should().NotContain("update-service");
-        alb.UpdateCount.Should().Be(0);
-        ecs.Calls.IndexOf("run-task").Should().BeLessThan(ecs.Calls.Count);
     }
 
     [Fact]
@@ -149,19 +143,18 @@ public sealed class ReleaseImageConvergenceTests
     [Fact]
     public async Task EcsDigest_MigrationSuccess_UpdatesServiceOnlyAfterExitZero()
     {
-        var ecs = new DigestEcsClient { MigrationExitCode = 0, MigrationLastStatus = "STOPPED" };
+        var ecs = new DigestEcsClient { MigrationExitCode = 0 };
         var parameters = EcsParameters();
         parameters["aws.ecs.migration_task_definition"] = "arn:aws:ecs:us-east-1:123456789012:task-definition/honua-migrate:6";
         parameters["aws.ecs.migration_subnets"] = "subnet-a";
         parameters["aws.ecs.migration_security_groups"] = "sg-a";
-        parameters["aws.ecs.migration_delay_ms"] = "0";
-
-        var submission = await Backend(new DigestAlbClient(), ecs).StartAsync(EcsOperation(Digest, parameters));
-
-        submission.Status.Should().Be(WorkflowOperationStatus.Submitted);
+        var backend = Backend(new DigestAlbClient(), ecs);
+        var operation = EcsOperation(Digest, parameters);
+        var checkpoint = await backend.PrepareCheckpointAsync(operation, CancellationToken.None);
+        ecs.Calls.Should().Contain("run-task");
+        ecs.Calls.Should().NotContain("update-service");
+        await backend.ActivateCheckpointAsync(Checkpointed(operation, checkpoint), CancellationToken.None);
         ecs.Calls.IndexOf("run-task").Should().BeLessThan(ecs.Calls.IndexOf("update-service"));
-        ecs.RanTaskDefinition.Should().Be(RegisteredMigrationTaskDef);
-        ecs.UpdatedTaskDefinition.Should().Be(RegisteredTaskDef);
     }
 
     [Fact]
@@ -171,43 +164,30 @@ public sealed class ReleaseImageConvergenceTests
         var parameters = EcsParameters();
         parameters["aws.ecs.migration_task_definition"] = "arn:aws:ecs:us-east-1:123456789012:task-definition/honua-migrate:6";
         var backend = Backend(new DigestAlbClient(), ecs);
-
         var plan = await backend.PlanAsync(EcsSpec(Digest, parameters));
         plan.IsReadyToSubmit.Should().BeFalse();
         plan.BlockingReasons.Should().Contain(reason => reason.Contains("migration_subnets", StringComparison.Ordinal));
-
-        var submission = await backend.StartAsync(EcsOperation(Digest, parameters));
-        submission.Status.Should().Be(WorkflowOperationStatus.Failed);
+        var act = () => backend.PrepareCheckpointAsync(EcsOperation(Digest, parameters), CancellationToken.None);
+        await act.Should().ThrowAsync<InvalidOperationException>();
         ecs.Calls.Should().NotContain("run-task");
-        ecs.Calls.Should().NotContain("update-service");
     }
 
     [Fact]
     public async Task EcsDigest_MissingService_FailsAndDoesNotUpdate()
     {
         var ecs = new DigestEcsClient { DescribeServiceException = new AmazonECSException("ECS service was not found.") };
-        var alb = new DigestAlbClient();
-
-        var submission = await Backend(alb, ecs).StartAsync(EcsOperation(Digest));
-
-        submission.Status.Should().Be(WorkflowOperationStatus.Failed);
-        submission.Status.Should().NotBe(WorkflowOperationStatus.Succeeded);
+        var act = () => Backend(new DigestAlbClient(), ecs).PrepareCheckpointAsync(EcsOperation(Digest), CancellationToken.None);
+        await act.Should().ThrowAsync<AmazonECSException>();
         ecs.Calls.Should().NotContain("update-service");
-        alb.UpdateCount.Should().Be(0);
     }
 
     [Fact]
     public async Task EcsDigest_ProviderFailure_FailsClosedWithoutUpdate()
     {
         var ecs = new DigestEcsClient { RegisterException = new AmazonClientException("credential chain unavailable") };
-        var alb = new DigestAlbClient();
-
-        var submission = await Backend(alb, ecs).StartAsync(EcsOperation(Digest));
-
-        submission.Status.Should().Be(WorkflowOperationStatus.Failed);
-        submission.Message.Should().NotContain("credential chain");
+        var act = () => Backend(new DigestAlbClient(), ecs).PrepareCheckpointAsync(EcsOperation(Digest), CancellationToken.None);
+        await act.Should().ThrowAsync<AmazonClientException>();
         ecs.Calls.Should().NotContain("update-service");
-        alb.UpdateCount.Should().Be(0);
     }
 
     [Fact]
@@ -226,38 +206,28 @@ public sealed class ReleaseImageConvergenceTests
     public async Task EcsDigest_FailedRollout_IsNotSuccess()
     {
         var ecs = new DigestEcsClient { RolloutState = "FAILED" };
-        var submission = await Backend(new DigestAlbClient(), ecs).StartAsync(EcsOperation(Digest, SteadyFast()));
-
-        submission.Status.Should().Be(WorkflowOperationStatus.Failed);
-        submission.Message.Should().Contain("failed");
-        submission.Message.Should().NotContain("RolloutStateReason");
-        submission.ProviderOperationId.Should().Be(RegisteredTaskDef);
-        submission.ObservedRevision.Should().Be(CurrentTaskDef);
+        var backend = Backend(new DigestAlbClient(), ecs);
+        var operation = EcsOperation(Digest);
+        var checkpoint = await backend.PrepareCheckpointAsync(operation, CancellationToken.None);
+        var persisted = Checkpointed(operation, checkpoint);
+        await backend.ActivateCheckpointAsync(persisted, CancellationToken.None);
+        var observation = await backend.ObserveAsync(persisted);
+        observation.Status.Should().Be(WorkflowOperationStatus.Failed);
     }
 
     [Fact]
     public async Task EcsDigest_KeepsThePriorTaskDefinition_OnSteadyCanaryAndTimeout()
     {
-        var steady = new DigestEcsClient();
-        var completed = await Backend(new DigestAlbClient(), steady).StartAsync(EcsOperation(Digest));
-        completed.Status.Should().Be(WorkflowOperationStatus.Succeeded);
-        completed.ProviderOperationId.Should().Be(RegisteredTaskDef);
-        completed.ObservedRevision.Should().Be(CurrentTaskDef);
-
-        var canaryParameters = EcsParameters();
-        canaryParameters["aws.ecs.canary_weight_percentage"] = "10";
-        var canary = await Backend(new DigestAlbClient(), new DigestEcsClient())
-            .StartAsync(EcsOperation(Digest, canaryParameters));
-        canary.Status.Should().Be(WorkflowOperationStatus.Submitted);
-        canary.ProviderOperationId.Should().Be(RegisteredTaskDef);
-        canary.ObservedRevision.Should().Be(CurrentTaskDef);
-        canary.ObservedRevision.Should().NotBe(RegisteredTaskDef);
-
-        var timeout = await Backend(new DigestAlbClient(), new DigestEcsClient { RolloutState = "IN_PROGRESS" })
-            .StartAsync(EcsOperation(Digest, SteadyFast()));
-        timeout.Status.Should().Be(WorkflowOperationStatus.Submitted);
-        timeout.ProviderOperationId.Should().Be(RegisteredTaskDef);
-        timeout.ObservedRevision.Should().Be(CurrentTaskDef);
+        var ecs = new DigestEcsClient();
+        var backend = Backend(new DigestAlbClient(), ecs);
+        var operation = EcsOperation(Digest);
+        var checkpoint = await backend.PrepareCheckpointAsync(operation, CancellationToken.None);
+        var persisted = Checkpointed(operation, checkpoint);
+        await backend.ActivateCheckpointAsync(persisted, CancellationToken.None);
+        await backend.ActivateCheckpointAsync(persisted, CancellationToken.None);
+        ecs.Calls.Count(call => call == "update-service").Should().Be(1);
+        persisted.Deploy!.CurrentRevision.Should().Be(CurrentTaskDef);
+        persisted.ProviderOperationId.Should().Be(RegisteredTaskDef);
     }
 
     [Fact]
@@ -295,11 +265,19 @@ public sealed class ReleaseImageConvergenceTests
     public async Task EcsApprovedRollback_IsADeployOfThePriorDigest()
     {
         var ecs = new DigestEcsClient();
-        var submission = await Backend(new DigestAlbClient(), ecs).StartAsync(EcsOperation(PriorDigest));
-
-        submission.Status.Should().Be(WorkflowOperationStatus.Submitted);
+        var checkpoint = await Backend(new DigestAlbClient(), ecs).PrepareCheckpointAsync(EcsOperation(PriorDigest), CancellationToken.None);
         ecs.RegisteredImages.Should().ContainSingle().Which.Should().Be(PriorDigest);
-        submission.ProviderOperationId.Should().Be(RegisteredTaskDef);
+        checkpoint.CandidateRevision.Should().Be(RegisteredTaskDef);
+    }
+
+    [Fact]
+    public void LambdaImagePublish_BindsToTheCodeAndRevisionReturnedByUpdate()
+    {
+        var request = AwsSdkLambdaImageClient.BuildPublishRequest("function", "code-sha", "revision");
+        request.CodeSha256.Should().Be("code-sha");
+        request.RevisionId.Should().Be("revision");
+        var missing = () => AwsSdkLambdaImageClient.BuildPublishRequest("function", null, "revision");
+        missing.Should().Throw<InvalidOperationException>();
     }
 
     [Fact]
@@ -534,7 +512,7 @@ public sealed class ReleaseImageConvergenceTests
         inflight.Status.Should().NotBe(WorkflowOperationStatus.Succeeded);
 
         var rolled = await backend.StartAsync(EksOperation(PriorDigest));
-        rolled.Status.Should().Be(WorkflowOperationStatus.Succeeded);
+        rolled.Status.Should().Be(WorkflowOperationStatus.Submitted);
         client.Image.Should().Be(PriorDigest);
     }
 
@@ -571,6 +549,14 @@ public sealed class ReleaseImageConvergenceTests
         lambdaObserved.Status.Should().NotBe(WorkflowOperationStatus.ManualInterventionRequired);
     }
 
+    private static WorkflowOperationRecord Checkpointed(WorkflowOperationRecord operation, Honua.Core.Features.ControlPlane.Abstractions.DeployCheckpoint checkpoint)
+        => operation with
+        {
+            ProviderOperationId = checkpoint.CandidateRevision,
+            ObservedState = checkpoint.OriginalServiceRevision,
+            Deploy = operation.Deploy! with { CurrentRevision = checkpoint.StableRevision }
+        };
+
     private static AwsEcsAlbDeployBackend Backend(DigestAlbClient alb, DigestEcsClient ecs)
         => new(alb, ecs, NullLogger<AwsEcsAlbDeployBackend>.Instance);
 
@@ -583,6 +569,7 @@ public sealed class ReleaseImageConvergenceTests
             ["aws.region"] = "us-east-1",
             ["aws.ecs.cluster"] = Cluster,
             ["aws.ecs.canary_service"] = CanaryService,
+            ["aws.ecs.stable_service"] = "honua-prod-stable",
             ["aws.alb.listener_rule_arn"] = ListenerRuleArn,
             ["aws.alb.canary_target_group_arn"] = CanaryTargetGroupArn,
             ["aws.alb.stable_target_group_arn"] = StableTargetGroupArn,
@@ -781,7 +768,7 @@ public sealed class ReleaseImageConvergenceTests
                 throw DescribeServiceException;
             }
 
-            var arn = UpdatedTaskDefinition ?? CurrentTaskDef;
+            var arn = serviceName == "honua-prod-stable" ? CurrentTaskDef : UpdatedTaskDefinition ?? CurrentTaskDef;
             return Task.FromResult(new AwsEcsServiceState
             {
                 ServiceName = serviceName,

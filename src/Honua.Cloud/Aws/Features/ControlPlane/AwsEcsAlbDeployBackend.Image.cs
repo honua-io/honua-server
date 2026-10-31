@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using Amazon.ECS.Model;
+using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 
 namespace Honua.ControlPlane;
@@ -44,6 +45,11 @@ internal sealed partial class AwsEcsAlbDeployBackend
             return;
         }
 
+        if (string.IsNullOrWhiteSpace(GetParameter(spec.Parameters, "aws.ecs.stable_service")))
+        {
+            blockingReasons.Add("ECS image convergence requires aws.ecs.stable_service to verify the rollback revision.");
+        }
+
         var migrationTask = GetParameter(spec.Parameters, MigrationTaskParameter);
         if (migrationTask is null)
         {
@@ -58,6 +64,98 @@ internal sealed partial class AwsEcsAlbDeployBackend
             blockingReasons.Add(
                 "ECS image convergence with aws.ecs.migration_task_definition requires aws.ecs.migration_subnets and aws.ecs.migration_security_groups.");
         }
+    }
+
+    public bool RequiresCheckpoint(WorkflowOperationRecord operation)
+        => operation.Deploy is { } spec && ReleaseImageDigest.IsImmutable(spec.DesiredRevision);
+
+    public async Task<DeployCheckpoint> PrepareCheckpointAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken)
+    {
+        var spec = operation.Deploy ?? throw new InvalidOperationException("Deploy metadata is missing.");
+        var target = ResolveTarget(spec);
+        EnsureValidTarget(target);
+        var stableName = GetParameter(spec.Parameters, "aws.ecs.stable_service")
+            ?? throw new InvalidOperationException("Stable ECS service is required to verify rollback identity.");
+        if (string.Equals(stableName, target.CanaryService, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Stable and canary ECS services must be distinct.");
+        }
+
+        var stable = await ecsClient.DescribeServiceAsync(target.Cluster!, stableName, target.Region, cancellationToken).ConfigureAwait(false);
+        var current = await ecsClient.DescribeServiceAsync(target.Cluster!, target.CanaryService!, target.Region, cancellationToken).ConfigureAwait(false);
+        if (!ReleaseImageDigest.IsEcsTaskDefinitionArn(stable.TaskDefinitionArn) ||
+            !ReleaseImageDigest.IsEcsTaskDefinitionArn(current.TaskDefinitionArn))
+        {
+            throw new InvalidOperationException("ECS service revision could not be verified.");
+        }
+
+        var prepared = await PrepareReleaseImageAsync(operation, spec, target, cancellationToken).ConfigureAwait(false);
+        if (prepared.Failure is not null || prepared.TaskDefinitionArn is null)
+        {
+            throw new InvalidOperationException("ECS image or migration preparation failed; verify provider state.");
+        }
+
+        var after = await ecsClient.DescribeServiceAsync(target.Cluster!, target.CanaryService!, target.Region, cancellationToken).ConfigureAwait(false);
+        var stableAfter = await ecsClient.DescribeServiceAsync(target.Cluster!, stableName, target.Region, cancellationToken).ConfigureAwait(false);
+        if (!string.Equals(current.TaskDefinitionArn, after.TaskDefinitionArn, StringComparison.Ordinal) ||
+            !string.Equals(stable.TaskDefinitionArn, stableAfter.TaskDefinitionArn, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("ECS service revision changed during preparation.");
+        }
+
+        return new DeployCheckpoint
+        {
+            CandidateRevision = prepared.TaskDefinitionArn,
+            StableRevision = stable.TaskDefinitionArn!,
+            OriginalServiceRevision = current.TaskDefinitionArn!
+        };
+    }
+
+    public async Task<DeployObservation> ActivateCheckpointAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken)
+    {
+        var spec = operation.Deploy ?? throw new InvalidOperationException("Deploy metadata is missing.");
+        var target = ResolveTarget(spec);
+        EnsureValidTarget(target);
+        var stableName = GetParameter(spec.Parameters, "aws.ecs.stable_service")
+            ?? throw new InvalidOperationException("Stable ECS service is required.");
+        if (!ReleaseImageDigest.IsEcsTaskDefinitionArn(operation.ProviderOperationId) ||
+            !ReleaseImageDigest.IsEcsTaskDefinitionArn(spec.CurrentRevision) ||
+            !ReleaseImageDigest.IsEcsTaskDefinitionArn(operation.ObservedState))
+        {
+            throw new InvalidOperationException("ECS checkpoint is incomplete.");
+        }
+
+        if (string.Equals(stableName, target.CanaryService, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Stable and canary ECS services must be distinct.");
+        }
+
+        var stable = await ecsClient.DescribeServiceAsync(target.Cluster!, stableName, target.Region, cancellationToken).ConfigureAwait(false);
+        var current = await ecsClient.DescribeServiceAsync(target.Cluster!, target.CanaryService!, target.Region, cancellationToken).ConfigureAwait(false);
+        if (!string.Equals(stable.TaskDefinitionArn, spec.CurrentRevision, StringComparison.Ordinal) ||
+            (!string.Equals(current.TaskDefinitionArn, operation.ObservedState, StringComparison.Ordinal) &&
+             !string.Equals(current.TaskDefinitionArn, operation.ProviderOperationId, StringComparison.Ordinal)))
+        {
+            throw new InvalidOperationException("ECS service revision changed after preparation.");
+        }
+
+        _ = TryResolveCanaryWeightPercentage(spec.Parameters, out var canaryWeight, out _);
+        var share = canaryWeight ?? 100;
+        await albClient.UpdateListenerRuleWeightsAsync(target.ListenerRuleArn!,
+            BuildWeights(target.CanaryTargetGroupArn!, share, target.StableTargetGroupArn!, 100 - share),
+            target.Region, cancellationToken).ConfigureAwait(false);
+        if (!string.Equals(current.TaskDefinitionArn, operation.ProviderOperationId, StringComparison.Ordinal))
+        {
+            await ecsClient.UpdateServiceTaskDefinitionAsync(target.Cluster!, target.CanaryService!,
+                operation.ProviderOperationId!, target.Region, cancellationToken).ConfigureAwait(false);
+        }
+
+        return new DeployObservation
+        {
+            Status = WorkflowOperationStatus.Reconciling,
+            ProviderOperationId = operation.ProviderOperationId,
+            Message = "ECS activation submitted; awaiting convergence."
+        };
     }
 
     /// <summary>

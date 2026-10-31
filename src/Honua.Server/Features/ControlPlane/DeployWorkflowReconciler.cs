@@ -18,6 +18,59 @@ internal sealed partial class DeployWorkflowReconciler(
     IDeployTelemetrySignalEvaluator telemetrySignalEvaluator,
     ILogger<DeployWorkflowReconciler> logger) : IWorkflowOperationReconciler
 {
+    private async Task ReconcileCheckpointAsync(
+        WorkflowOperationRecord operation, ICheckpointedDeployBackend backend, CancellationToken cancellationToken)
+    {
+        if (operation.CurrentPhase == ICheckpointedDeployBackend.PendingPhase)
+        {
+            // The marker is committed before migration starts. An interrupted migration is never
+            // automatically repeated because its outcome may be unknown.
+            var preparing = operation with { CurrentPhase = ICheckpointedDeployBackend.PreparingPhase, UpdatedAt = DateTimeOffset.UtcNow };
+            if (!await workflowStore.TrySetAsync(preparing, cancellationToken: cancellationToken).ConfigureAwait(false)) return;
+            var claimed = await workflowStore.GetAsync(operation.OperationId, cancellationToken).ConfigureAwait(false);
+            if (claimed is null || claimed.CurrentPhase != ICheckpointedDeployBackend.PreparingPhase) return;
+            var checkpoint = await backend.PrepareCheckpointAsync(claimed, cancellationToken).ConfigureAwait(false);
+            var prepared = claimed with
+            {
+                CurrentPhase = ICheckpointedDeployBackend.PreparedPhase,
+                ProviderOperationId = checkpoint.CandidateRevision,
+                ObservedState = checkpoint.OriginalServiceRevision,
+                Deploy = claimed.Deploy! with { CurrentRevision = checkpoint.StableRevision },
+                UpdatedAt = DateTimeOffset.UtcNow
+            };
+            await workflowStore.TrySetAsync(prepared, cancellationToken: cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        if (operation.CurrentPhase == ICheckpointedDeployBackend.PreparedPhase)
+        {
+            var result = await backend.ActivateCheckpointAsync(operation, cancellationToken).ConfigureAwait(false);
+            var activated = operation with
+            {
+                Status = result.Status,
+                CurrentPhase = result.Status == WorkflowOperationStatus.Reconciling
+                    ? ICheckpointedDeployBackend.ActivatedPhase : result.Message ?? operation.CurrentPhase,
+                ErrorMessage = result.Status == WorkflowOperationStatus.Failed ? result.Message : null,
+                UpdatedAt = DateTimeOffset.UtcNow,
+                CompletedAt = result.Status is WorkflowOperationStatus.Failed or WorkflowOperationStatus.ManualInterventionRequired
+                    ? DateTimeOffset.UtcNow : null
+            };
+            await workflowStore.TrySetAsync(activated, cancellationToken: cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        // Unknown preparation outcomes cannot safely be replayed, including a process loss after
+        // a migrate task started but before its result was durably recorded.
+        var uncertain = operation with
+        {
+            Status = WorkflowOperationStatus.ManualInterventionRequired,
+            CurrentPhase = "Deploy preparation was interrupted; verify migration and provider state.",
+            UpdatedAt = DateTimeOffset.UtcNow,
+            CompletedAt = DateTimeOffset.UtcNow
+        };
+        await workflowStore.TrySetAsync(uncertain, cancellationToken: cancellationToken).ConfigureAwait(false);
+    }
+
     private static readonly TimeSpan DefaultLeaseDuration = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan DefaultLeaseRenewInterval = TimeSpan.FromSeconds(10);
     private readonly Dictionary<(string Backend, DeployTargetKind TargetKind), IDeployBackend> _backends = backends.ToDictionary(
@@ -78,6 +131,16 @@ internal sealed partial class DeployWorkflowReconciler(
             }
             else
             {
+                if (backend is ICheckpointedDeployBackend checkpointed &&
+                    checkpointed.RequiresCheckpoint(operation) &&
+                    operation.Status != WorkflowOperationStatus.RollbackRequested &&
+                    operation.CurrentPhase is ICheckpointedDeployBackend.PendingPhase or
+                        ICheckpointedDeployBackend.PreparingPhase or ICheckpointedDeployBackend.PreparedPhase)
+                {
+                    await ReconcileCheckpointAsync(operation, checkpointed, reconciliationCancellation.Token).ConfigureAwait(false);
+                    return;
+                }
+
                 var observation = await backend.ObserveAsync(operation, reconciliationCancellation.Token).ConfigureAwait(false);
                 var stagesCandidateWithoutTraffic = await backend.GetCapabilitiesAsync(reconciliationCancellation.Token).ConfigureAwait(false)
                     is { StagesCandidateWithoutTraffic: true };

@@ -428,6 +428,11 @@ internal sealed partial class DeployWorkflowService
         if (submitImmediately && planningResult.Plan.IsReadyToSubmit)
         {
             var backend = ResolveBackend(planningResult.Target);
+            if (backend is ICheckpointedDeployBackend checkpointed && checkpointed.RequiresCheckpoint(operation))
+            {
+                return await SubmitAsync(operation.OperationId, requestedBy, reason, cancellationToken).ConfigureAwait(false);
+            }
+
             if (backend != null)
             {
                 try
@@ -544,7 +549,9 @@ internal sealed partial class DeployWorkflowService
         {
             Status = WorkflowOperationStatus.Submitted,
             UpdatedAt = DateTimeOffset.UtcNow,
-            CurrentPhase = "Submitting to deploy backend.",
+            CurrentPhase = backend is ICheckpointedDeployBackend checkpointed && checkpointed.RequiresCheckpoint(operation)
+                ? ICheckpointedDeployBackend.PendingPhase
+                : "Submitting to deploy backend.",
             Audit = MergeSubmissionAudit(operation.Audit, requestedBy, reason)
         };
 
@@ -553,6 +560,11 @@ internal sealed partial class DeployWorkflowService
         {
             // Another concurrent SubmitAsync already claimed this operation. Re-read and return
             // the current state so the caller sees the latest status without executing twice.
+            return await _workflowStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (preliminary.CurrentPhase == ICheckpointedDeployBackend.PendingPhase)
+        {
             return await _workflowStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
         }
 

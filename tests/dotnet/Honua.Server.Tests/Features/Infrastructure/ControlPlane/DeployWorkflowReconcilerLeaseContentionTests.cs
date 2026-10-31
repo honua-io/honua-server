@@ -101,6 +101,46 @@ public sealed class DeployWorkflowReconcilerLeaseContentionTests
         backend.ObserveCalls.Should().Be(0, "a reconciler that cannot acquire the lease must not drive the backend");
     }
 
+    [Fact]
+    public async Task Checkpoint_PersistsMigrationAndRevisionsBeforeActivation()
+    {
+        var store = new InMemoryWorkflowOperationStore();
+        var backend = new CheckpointBackend(store);
+        var operation = CreateOperation() with { Status = WorkflowOperationStatus.Submitted, CurrentPhase = ICheckpointedDeployBackend.PendingPhase };
+        await store.TryCreateAsync(operation);
+        var reconciler = CreateReconciler(store, backend, new NullTelemetryEvaluator());
+        await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
+        var prepared = (await store.GetAsync(operation.OperationId))!;
+        prepared.CurrentPhase.Should().Be(ICheckpointedDeployBackend.PreparedPhase);
+        prepared.ProviderOperationId.Should().Be("candidate");
+        prepared.Deploy!.CurrentRevision.Should().Be("stable");
+        prepared.ObservedState.Should().Be("original");
+        backend.ActivationCount.Should().Be(0);
+        await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
+        backend.ActivationCount.Should().Be(1);
+        (await store.GetAsync(operation.OperationId))!.CurrentPhase.Should().Be(ICheckpointedDeployBackend.ActivatedPhase);
+    }
+
+    [Fact]
+    public async Task Checkpoint_InterruptedMigrationDoesNotRepeatOrActivate()
+    {
+        var store = new InMemoryWorkflowOperationStore();
+        var backend = new CheckpointBackend(store) { InterruptPreparation = true };
+        var operation = CreateOperation() with { Status = WorkflowOperationStatus.Submitted, CurrentPhase = ICheckpointedDeployBackend.PendingPhase };
+        await store.TryCreateAsync(operation);
+        var reconciler = CreateReconciler(store, backend, new NullTelemetryEvaluator());
+        using var shutdown = new CancellationTokenSource();
+        var running = reconciler.ReconcileWorkflowOperationAsync(operation.OperationId, shutdown.Token);
+        await backend.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        shutdown.Cancel();
+        await running;
+        (await store.GetAsync(operation.OperationId))!.CurrentPhase.Should().Be(ICheckpointedDeployBackend.PreparingPhase);
+        await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
+        (await store.GetAsync(operation.OperationId))!.Status.Should().Be(WorkflowOperationStatus.ManualInterventionRequired);
+        backend.PreparationCount.Should().Be(1);
+        backend.ActivationCount.Should().Be(0);
+    }
+
     // ---- helpers ---------------------------------------------------------
 
     private static DeployWorkflowReconciler CreateReconciler(
@@ -208,6 +248,39 @@ public sealed class DeployWorkflowReconcilerLeaseContentionTests
                 ObservedRevision = operation.Deploy?.CurrentRevision,
                 Message = "Rollback requested"
             });
+    }
+
+    private sealed class CheckpointBackend(InMemoryWorkflowOperationStore store) : IDeployBackend, ICheckpointedDeployBackend
+    {
+        public bool InterruptPreparation { get; init; }
+        public int PreparationCount { get; private set; }
+        public int ActivationCount { get; private set; }
+        public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public string BackendName => "honua-gitops-kubernetes";
+        public DeployTargetKind TargetKind => DeployTargetKind.Kubernetes;
+        public bool RequiresCheckpoint(WorkflowOperationRecord operation) => true;
+        public async Task<DeployCheckpoint> PrepareCheckpointAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken)
+        {
+            PreparationCount++;
+            (await store.GetAsync(operation.OperationId, cancellationToken))!.CurrentPhase.Should().Be(ICheckpointedDeployBackend.PreparingPhase);
+            Entered.TrySetResult();
+            if (InterruptPreparation) await Task.Delay(Timeout.Infinite, cancellationToken);
+            return new DeployCheckpoint { CandidateRevision = "candidate", StableRevision = "stable", OriginalServiceRevision = "original" };
+        }
+        public async Task<DeployObservation> ActivateCheckpointAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken)
+        {
+            var saved = (await store.GetAsync(operation.OperationId, cancellationToken))!;
+            saved.CurrentPhase.Should().Be(ICheckpointedDeployBackend.PreparedPhase);
+            saved.ProviderOperationId.Should().Be("candidate");
+            saved.Deploy!.CurrentRevision.Should().Be("stable");
+            ActivationCount++;
+            return new DeployObservation { Status = WorkflowOperationStatus.Reconciling };
+        }
+        public Task<DeployBackendCapabilities> GetCapabilitiesAsync(CancellationToken cancellationToken = default) => Task.FromResult(new DeployBackendCapabilities());
+        public Task<DeployPlan> PlanAsync(DeployOperationSpec spec, CancellationToken cancellationToken = default) => Task.FromResult(new DeployPlan { IsReadyToSubmit = true });
+        public Task<DeploySubmissionResult> StartAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<DeployObservation> ObserveAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<DeployObservation> RollbackAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
     private sealed class NullTelemetryEvaluator : IDeployTelemetrySignalEvaluator
