@@ -107,6 +107,20 @@ public sealed class ComposeProposalExecutorTests
     }
 
     [UnitTest]
+    public async Task Rollback_WhenServingHealthIsUnavailable_StillReachesRecoveryExecutor()
+    {
+        var prior = Digest('b');
+        var client = new RecordingClient { Response = Ready(prior) };
+        var backend = Backend(client, Digest('a'), "/tmp/honua-compose-unit.sock");
+        var plan = await backend.PlanAsync(Spec(prior, new Dictionary<string, string>()));
+        Assert.Empty(plan.BlockingReasons);
+        Assert.Empty(client.Ops);
+        var result = await backend.StartAsync(Operation(prior, "approver"));
+        Assert.Equal(WorkflowOperationStatus.Reconciling, result.Status);
+        Assert.Equal(["rollback"], client.Ops);
+    }
+
+    [UnitTest]
     public async Task StartWithoutApproval_DoesNotConverge()
     {
         var client = new RecordingClient { Response = Ready(Digest('a')) };
