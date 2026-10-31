@@ -68,7 +68,7 @@ public sealed partial class SensorThingsStreamEndpointsTests : IAsyncLifetime
 
         // The handshake emits a "connected" status frame before any observation.
         var handshake = await ReadUntilAsync(reader, "event: status", cts.Token);
-        handshake.Should().Contain("connected");
+        handshake.Should().Contain("connected").And.Contain("\"semantics\":\"ephemeral\"");
 
         // Ingest an observation on datastream 1; the stream must push it.
         using var adminClient = _fixture.CreateAdminClient();

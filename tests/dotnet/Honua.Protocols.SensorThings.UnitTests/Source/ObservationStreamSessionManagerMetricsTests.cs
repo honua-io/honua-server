@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Diagnostics.Metrics;
+using System.Text.Json;
 using Honua.Core.Features.SensorThings.Domain;
 using Honua.Protocols.SensorThings.Streaming;
 using Honua.TestKit.Attributes;
@@ -75,6 +76,84 @@ public sealed class ObservationStreamSessionManagerMetricsTests
 
         Assert.Equal(1, manager.SlowConsumerDrops);
         Assert.Contains(1, samples);
+    }
+
+    [UnitTest]
+    public void PublishObservations_WhenSessionBufferFull_DisconnectsInsteadOfStayingHealthy()
+    {
+        using var manager = new ObservationStreamSessionManager(
+            NullLogger<ObservationStreamSessionManager>.Instance,
+            redis: null,
+            new ObservationStreamOptions { MaxBufferPerConnection = 1 });
+        var scope = new ObservationStreamScope("tenant-a", "schema_a");
+        var session = manager.TryCreateSession("sse", datastreamId: 7, scope);
+        Assert.NotNull(session);
+        try
+        {
+            manager.PublishObservations(
+                [
+                    CreateObservation(id: 1, datastreamId: 7),
+                    CreateObservation(id: 2, datastreamId: 7)
+                ], scope);
+
+            Assert.Equal(1, manager.SlowConsumerDrops);
+            Assert.Equal(0, manager.SessionCount);
+            Assert.True(session!.DisconnectToken.IsCancellationRequested);
+            Assert.Equal(ObservationStreamDisconnectReason.SlowConsumer, session.DisconnectReason);
+        }
+        finally
+        {
+            session!.Dispose();
+            Assert.Equal(ObservationStreamDisconnectReason.SlowConsumer, session.DisconnectReason);
+        }
+    }
+
+    [UnitTest]
+    public void BroadcastHeartbeat_WhenSessionBufferFull_DisconnectsInsteadOfStayingHealthy()
+    {
+        using var manager = new ObservationStreamSessionManager(
+            NullLogger<ObservationStreamSessionManager>.Instance,
+            redis: null,
+            new ObservationStreamOptions { MaxBufferPerConnection = 1 });
+        var scope = new ObservationStreamScope("tenant-a", "schema_a");
+        var session = manager.TryCreateSession("websocket", datastreamId: null, scope);
+        Assert.NotNull(session);
+        try
+        {
+            manager.PublishObservations([CreateObservation(id: 1, datastreamId: 7)], scope);
+            Assert.Equal(0, manager.SlowConsumerDrops);
+            Assert.Equal(1, manager.SessionCount);
+
+            manager.BroadcastHeartbeat();
+
+            Assert.Equal(1, manager.SlowConsumerDrops);
+            Assert.Equal(0, manager.SessionCount);
+            Assert.True(session!.DisconnectToken.IsCancellationRequested);
+            Assert.Equal(ObservationStreamDisconnectReason.SlowConsumer, session.DisconnectReason);
+        }
+        finally
+        {
+            session!.Dispose();
+            Assert.Equal(ObservationStreamDisconnectReason.SlowConsumer, session.DisconnectReason);
+        }
+    }
+
+    [UnitTest]
+    public void StatusFrames_AdvertiseEphemeralSemanticsAndSlowConsumerGap()
+    {
+        var connected = JsonSerializer.Serialize(
+            ObservationStreamStatus.Connected(7),
+            ObservationStreamJsonContext.Default.ObservationStreamStatus);
+        Assert.Contains("\"status\":\"connected\"", connected, StringComparison.Ordinal);
+        Assert.Contains("\"semantics\":\"ephemeral\"", connected, StringComparison.Ordinal);
+        Assert.DoesNotContain("reason", connected, StringComparison.Ordinal);
+
+        var gap = JsonSerializer.Serialize(
+            ObservationStreamStatus.SlowConsumerGap(7),
+            ObservationStreamJsonContext.Default.ObservationStreamStatus);
+        Assert.Contains("\"status\":\"gap\"", gap, StringComparison.Ordinal);
+        Assert.Contains("\"reason\":\"slow-consumer\"", gap, StringComparison.Ordinal);
+        Assert.Contains("\"semantics\":\"ephemeral\"", gap, StringComparison.Ordinal);
     }
 
     private static SensorThingsObservation CreateObservation(long id, long datastreamId) => new()
