@@ -1,0 +1,21 @@
+# Copy to .github/workflows/vendor-terms-audit.yml on the default branch.
+# The pinned release commit must be reachable from GitHub before enabling.
+name: vendor-terms-github-audit
+on:
+  schedule:
+    - cron: '27 7 * * *'
+  workflow_dispatch:
+    inputs:
+      review_shard:
+        description: 'Optional review shard to rerun (0-15)'
+        required: false
+        type: string
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+jobs:
+  audit:
+    uses: honua-io/honua-release/.github/workflows/audit-vendor-github.yml@acbcec54eddc1656e7f98c6f71c2cd27b14ac03c
+    with:
+      review_shard: ${{ inputs.review_shard || '' }}

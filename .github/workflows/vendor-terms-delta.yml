@@ -1,0 +1,12 @@
+# Copy to .github/workflows/vendor-terms-delta.yml on each target default branch.
+# This immutable guard commit must be reachable before enabling the caller.
+name: vendor-terms-delta
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+  merge_group:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    uses: honua-io/honua-release/.github/workflows/guard-vendor-delta.yml@acbcec54eddc1656e7f98c6f71c2cd27b14ac03c
