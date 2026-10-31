@@ -98,7 +98,7 @@ public sealed class ReleaseImageConvergenceTests
 
         var submission = await backend.StartAsync(EcsOperation(Digest));
 
-        submission.Status.Should().Be(WorkflowOperationStatus.Succeeded);
+        submission.Status.Should().Be(WorkflowOperationStatus.Submitted);
         submission.ProviderOperationId.Should().Be(RegisteredTaskDef);
         submission.ObservedRevision.Should().Be(CurrentTaskDef);
         ecs.UpdatedTaskDefinition.Should().Be(RegisteredTaskDef);
@@ -144,7 +144,7 @@ public sealed class ReleaseImageConvergenceTests
 
         var submission = await Backend(new DigestAlbClient(), ecs).StartAsync(EcsOperation(Digest, parameters));
 
-        submission.Status.Should().Be(WorkflowOperationStatus.Succeeded);
+        submission.Status.Should().Be(WorkflowOperationStatus.Submitted);
         ecs.Calls.IndexOf("run-task").Should().BeLessThan(ecs.Calls.IndexOf("update-service"));
         ecs.RanTaskDefinition.Should().Be(RegisteredMigrationTaskDef);
         ecs.UpdatedTaskDefinition.Should().Be(RegisteredTaskDef);
@@ -273,7 +273,7 @@ public sealed class ReleaseImageConvergenceTests
         var ecs = new DigestEcsClient();
         var submission = await Backend(new DigestAlbClient(), ecs).StartAsync(EcsOperation(PriorDigest));
 
-        submission.Status.Should().Be(WorkflowOperationStatus.Succeeded);
+        submission.Status.Should().Be(WorkflowOperationStatus.Submitted);
         ecs.RegisteredImages.Should().ContainSingle().Which.Should().Be(PriorDigest);
         submission.ProviderOperationId.Should().Be(RegisteredTaskDef);
     }
@@ -390,7 +390,7 @@ public sealed class ReleaseImageConvergenceTests
 
         var submission = await backend.StartAsync(EksOperation(Digest));
 
-        submission.Status.Should().Be(WorkflowOperationStatus.Succeeded);
+        submission.Status.Should().Be(WorkflowOperationStatus.Submitted);
         submission.ProviderOperationId.Should().Be("honua/honua-server");
         submission.ObservedRevision.Should().Be(Digest);
         client.Image.Should().Be(Digest);
@@ -419,6 +419,20 @@ public sealed class ReleaseImageConvergenceTests
     }
 
     [Fact]
+    public async Task EksDigest_DoesNotSucceedWhileOldReplicasRemain()
+    {
+        var client = new DigestKubernetesClient { TotalReplicas = 3 };
+        var backend = new KubernetesDeploymentDeployBackend(client, NullLogger<KubernetesDeploymentDeployBackend>.Instance);
+        await backend.StartAsync(EksOperation(Digest, steadyAttempts: 1));
+
+        var early = await backend.ObserveAsync(EksOperation(Digest));
+        early.Status.Should().Be(WorkflowOperationStatus.Reconciling);
+        client.TotalReplicas = 2;
+        var ready = await backend.ObserveAsync(EksOperation(Digest));
+        ready.Status.Should().Be(WorkflowOperationStatus.Succeeded);
+    }
+
+    [Fact]
     public void KubernetesDeploymentImage_ParsesGenerationBeforeReplicaCountsCount()
     {
         using var stale = JsonDocument.Parse(
@@ -429,12 +443,13 @@ public sealed class ReleaseImageConvergenceTests
                 "replicas": 2,
                 "template": { "spec": { "containers": [ { "name": "honua", "image": "pinned" } ] } }
               },
-              "status": { "observedGeneration": 3, "readyReplicas": 2, "updatedReplicas": 2 }
+              "status": { "observedGeneration": 3, "replicas": 3, "readyReplicas": 2, "updatedReplicas": 2 }
             }
             """);
         var parsed = KubernetesDeploymentImagePatch.Parse(stale.RootElement, "honua-server");
         parsed.Generation.Should().Be(4);
         parsed.ObservedGeneration.Should().Be(3);
+        parsed.TotalReplicas.Should().Be(3);
         parsed.ReadyReplicas.Should().Be(2);
         parsed.ContainerImages["honua"].Should().Be("pinned");
     }
@@ -909,6 +924,8 @@ public sealed class ReleaseImageConvergenceTests
 
         public int StaleGetsRemaining { get; set; }
 
+        public int TotalReplicas { get; set; } = 2;
+
         public long Generation { get; set; } = 2;
 
         public Task<KubernetesDeploymentImageState?> GetAsync(string namespaceName, string deploymentName, CancellationToken cancellationToken = default)
@@ -940,6 +957,7 @@ public sealed class ReleaseImageConvergenceTests
             {
                 Name = deploymentName,
                 Replicas = 2,
+                TotalReplicas = patched ? TotalReplicas : 0,
                 ReadyReplicas = patched ? 2 : 0,
                 UpdatedReplicas = patched ? 2 : 0,
                 Generation = Generation,

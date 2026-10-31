@@ -12,6 +12,8 @@ internal sealed record KubernetesDeploymentImageState
 
     public int Replicas { get; init; }
 
+    public int TotalReplicas { get; init; }
+
     public int ReadyReplicas { get; init; }
 
     public int UpdatedReplicas { get; init; }
@@ -129,12 +131,17 @@ internal static class KubernetesDeploymentImagePatch
             }
         }
 
+        var total = 0;
         var ready = 0;
         var updated = 0;
         long observedGeneration = 0;
         if (root.TryGetProperty("status", out var status))
         {
             observedGeneration = ReadInt64(status, "observedGeneration");
+            if (status.TryGetProperty("replicas", out var totalElement) && totalElement.TryGetInt32(out var parsedTotal))
+            {
+                total = parsedTotal;
+            }
             if (status.TryGetProperty("readyReplicas", out var readyElement) &&
                 readyElement.TryGetInt32(out var parsedReady))
             {
@@ -152,6 +159,7 @@ internal static class KubernetesDeploymentImagePatch
         {
             Name = name,
             Replicas = replicas,
+            TotalReplicas = total,
             ReadyReplicas = ready,
             UpdatedReplicas = updated,
             Generation = generation,

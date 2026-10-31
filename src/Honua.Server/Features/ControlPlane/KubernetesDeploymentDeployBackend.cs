@@ -294,7 +294,7 @@ internal sealed partial class KubernetesDeploymentDeployBackend(
             {
                 return new DeploySubmissionResult
                 {
-                    Status = WorkflowOperationStatus.Succeeded,
+                    Status = WorkflowOperationStatus.Submitted,
                     ProviderOperationId = ProviderId(target),
                     ObservedRevision = digest,
                     Message = $"Kubernetes deployment '{target.DeploymentName}' is ready on image digest '{digest}'."
@@ -315,6 +315,7 @@ internal sealed partial class KubernetesDeploymentDeployBackend(
         => state.Generation > 0 &&
            state.ObservedGeneration == state.Generation &&
            state.Replicas > 0 &&
+           state.TotalReplicas == state.Replicas &&
            state.ReadyReplicas == state.Replicas &&
            state.UpdatedReplicas == state.Replicas &&
            state.ContainerImages.TryGetValue(containerName, out var image) &&

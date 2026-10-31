@@ -277,7 +277,7 @@ internal sealed partial class AwsEcsAlbDeployBackend
 
             return new DeploySubmissionResult
             {
-                Status = WorkflowOperationStatus.Succeeded,
+                Status = WorkflowOperationStatus.Submitted,
                 ProviderOperationId = taskDefinitionArn,
                 ObservedRevision = RollbackIdentity(priorTaskDefinitionArn),
                 Message = $"ECS canary service '{target.CanaryService}' is serving 100% of traffic on task definition '{taskDefinitionArn}'."
