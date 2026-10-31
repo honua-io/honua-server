@@ -32,7 +32,8 @@ internal sealed partial class ImportTypedColumnInference(bool preserveStringScal
         "tableoid"
     };
 
-    private readonly Dictionary<string, Kind> _columns = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, Kind> _columns = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _exactNames = new(StringComparer.Ordinal);
 
     /// <summary>
     /// Records one attribute value. Null and empty strings do not force a type on their own.
@@ -44,10 +45,19 @@ internal sealed partial class ImportTypedColumnInference(bool preserveStringScal
             return;
         }
 
-        if (!_columns.TryGetValue(name, out var current) && _columns.Count >= MaxColumns)
+        var exists = _columns.TryGetValue(name, out var current);
+        if (!exists && _columns.Count >= MaxColumns)
         {
             return;
         }
+
+        if (exists && !_exactNames.Contains(name))
+        {
+            _columns[name] = Kind.Reject;
+            return;
+        }
+
+        _exactNames.Add(name);
 
         var observed = Classify(value, preserveStringScalars);
         _columns[name] = current == Kind.None ? observed : Merge(current, observed);

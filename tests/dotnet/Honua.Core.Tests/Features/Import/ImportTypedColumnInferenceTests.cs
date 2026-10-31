@@ -30,6 +30,16 @@ public sealed class ImportTypedColumnInferenceTests
     [UnitTest]
     [Operation(Operations.Import)]
     [Endpoint("ImportTypedColumnInference.Resolve")]
+    public void Resolve_IntegralDecimalWithScale_PromotesBigint()
+    {
+        var inference = new ImportTypedColumnInference();
+        inference.Observe("count", 2.00m);
+        inference.Resolve().Single().PostgresType.Should().Be("bigint");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Import)]
+    [Endpoint("ImportTypedColumnInference.Resolve")]
     public void Resolve_IntegerThenFraction_PromotesDouble()
     {
         var inference = new ImportTypedColumnInference();
@@ -90,6 +100,19 @@ public sealed class ImportTypedColumnInferenceTests
             ("label", "text"),
             ("opened", "date")
         ]);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Import)]
+    [Endpoint("ImportTypedColumnInference.Resolve")]
+    public void Resolve_CaseCollidingNames_KeepsBothOutOfTypedColumns()
+    {
+        var inference = new ImportTypedColumnInference();
+        inference.Observe("label", "first");
+        inference.Observe("LABEL", "second");
+        inference.Observe("label", "third");
+
+        inference.Resolve().Should().BeEmpty();
     }
 
     [UnitTest]

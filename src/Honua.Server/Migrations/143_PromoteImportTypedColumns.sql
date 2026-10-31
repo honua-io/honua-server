@@ -14,18 +14,26 @@
 
 CREATE OR REPLACE FUNCTION honua.import_typed_bigint(props jsonb, key text)
 RETURNS bigint
-LANGUAGE sql
+LANGUAGE plpgsql
 IMMUTABLE
 AS $$
-    SELECT CASE
-        WHEN props IS NULL OR key IS NULL THEN NULL
-        WHEN jsonb_typeof(props -> key) IN ('number', 'string')
-         AND (props ->> key) ~ '^-?[0-9]+$'
-         AND length(ltrim(props ->> key, '-')) BETWEEN 1 AND 19
-         AND (props ->> key)::numeric BETWEEN -9223372036854775808 AND 9223372036854775807
-        THEN (props ->> key)::bigint
-        ELSE NULL
-    END;
+DECLARE
+    raw text;
+    value numeric;
+BEGIN
+    IF props IS NULL OR key IS NULL OR jsonb_typeof(props -> key) NOT IN ('number', 'string') THEN
+        RETURN NULL;
+    END IF;
+    raw := props ->> key;
+    IF raw IS NULL OR length(raw) NOT BETWEEN 1 AND 64 OR raw !~ '^-?[0-9]+(\.0+)?$' THEN
+        RETURN NULL;
+    END IF;
+    value := raw::numeric;
+    IF value NOT BETWEEN -9223372036854775808 AND 9223372036854775807 THEN
+        RETURN NULL;
+    END IF;
+    RETURN value::bigint;
+END;
 $$;
 
 CREATE OR REPLACE FUNCTION honua.import_typed_double(props jsonb, key text)
@@ -184,6 +192,16 @@ BEGIN
            AND c.column_name = col_name;
 
         IF existing_type IS NULL THEN
+            -- Layer publication treats field names case-insensitively. Do not add
+            -- a second physical column that differs from an existing one only by case.
+            IF EXISTS (
+                SELECT 1 FROM information_schema.columns AS c
+                 WHERE c.table_schema = promote_import_typed_columns.schema_name
+                   AND c.table_name = promote_import_typed_columns.table_name
+                   AND lower(c.column_name) = lower(col_name)) THEN
+                CONTINUE;
+            END IF;
+
             IF existing_promoted + added_count >= 128 THEN
                 CONTINUE;
             END IF;

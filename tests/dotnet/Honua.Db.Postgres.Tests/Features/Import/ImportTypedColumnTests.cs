@@ -31,6 +31,28 @@ public sealed class ImportTypedColumnTests(PostgresFixture fixture)
     [IntegrationTest]
     [Operation(Operations.Import)]
     [Endpoint("IFileImportService.ImportFileAsync")]
+    public async Task ImportTypedBigint_ScaledIntegralNumeric_PreservesValueAndRejectsInvalidValues()
+    {
+        await InstallImportFunctionsAsync();
+        await using var connection = await fixture.DataSource.OpenConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT honua.import_typed_bigint('{"value":2.00}'::jsonb, 'value'),
+                   honua.import_typed_bigint('{"value":2.50}'::jsonb, 'value'),
+                   honua.import_typed_bigint('{"value":9223372036854775808.00}'::jsonb, 'value'),
+                   honua.import_typed_bigint('{"value":"not a number"}'::jsonb, 'value')
+            """;
+        await using var reader = await command.ExecuteReaderAsync();
+        (await reader.ReadAsync()).Should().BeTrue();
+        reader.GetInt64(0).Should().Be(2);
+        reader.IsDBNull(1).Should().BeTrue();
+        reader.IsDBNull(2).Should().BeTrue();
+        reader.IsDBNull(3).Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Import)]
+    [Endpoint("IFileImportService.ImportFileAsync")]
     public async Task ImportFileAsync_GeoJsonAttributes_AreTypedFilterableAndSortable()
     {
         const string json = """
@@ -74,6 +96,7 @@ public sealed class ImportTypedColumnTests(PostgresFixture fixture)
                     "founded": "2020-01-15",
                     "observed": "2020-01-15T12:00:00Z",
                     "notes": { "kind": "park" },
+                    "case_key": "first", "CASE_KEY": "second",
                     "a b": "kept"
                   }
                 },
@@ -130,6 +153,8 @@ public sealed class ImportTypedColumnTests(PostgresFixture fixture)
         columns.Should().Contain("id");
         columns.Should().NotContain("notes");
         columns.Should().NotContain("a b");
+        columns.Should().NotContain("case_key");
+        columns.Should().NotContain("CASE_KEY");
     }
 
     [IntegrationTest]
@@ -147,7 +172,8 @@ public sealed class ImportTypedColumnTests(PostgresFixture fixture)
                 await using var alter = sqlite.CreateCommand();
                 alter.CommandText = """
                     ALTER TABLE sample_layer ADD COLUMN population INTEGER;
-                    UPDATE sample_layer SET population = 10;
+                    ALTER TABLE sample_layer ADD COLUMN source_code TEXT;
+                    UPDATE sample_layer SET population = 10, source_code = '001';
                     """;
                 await alter.ExecuteNonQueryAsync();
             }
@@ -155,12 +181,13 @@ public sealed class ImportTypedColumnTests(PostgresFixture fixture)
             var imported = await ImportAsync("gpkg_places", "places.gpkg", await File.ReadAllBytesAsync(path));
             imported.Result.TypedColumns.Should().Contain(column => column.Name == "name" && column.PostgresType == "text");
             imported.Result.TypedColumns.Should().Contain(column => column.Name == "population" && column.PostgresType == "bigint");
+            imported.Result.TypedColumns.Should().Contain(column => column.Name == "source_code" && column.PostgresType == "text");
             imported.Result.TypedColumns.Should().NotContain(column => column.Name.Equals("id", StringComparison.OrdinalIgnoreCase));
 
             await using var connection = await fixture.DataSource.OpenConnectionAsync();
             await using var command = connection.CreateCommand();
             command.CommandText = $"""
-                SELECT name, population, properties->>'name', properties->>'population'
+                SELECT name, population, properties->>'name', properties->>'population', source_code
                 FROM "{imported.Schema}"."{imported.Table}"
                 """;
             await using var reader = await command.ExecuteReaderAsync();
@@ -169,6 +196,7 @@ public sealed class ImportTypedColumnTests(PostgresFixture fixture)
             reader.GetInt64(1).Should().Be(10);
             reader.GetString(2).Should().Be("Test Feature");
             reader.GetString(3).Should().Be("10");
+            reader.GetString(4).Should().Be("001");
         }
         finally
         {
