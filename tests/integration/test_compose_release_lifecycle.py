@@ -148,6 +148,7 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
         assert image_id() == candidate and schema() == candidate_schema
         assert sql("SELECT count(*) FROM public.schema_versions WHERE scriptname LIKE '%142_CreateAiFinancialAccounting.sql'") == "1"
         assert sql("SELECT value FROM public.rc2_lifecycle_marker WHERE id=1") == "retained"
+        assert sql("SELECT to_regclass('honua.ai_financial_invocations')") == "honua.ai_financial_invocations"
         sql("UPDATE public.rc2_lifecycle_marker SET value='changed-after-upgrade' WHERE id=1")
         manifests = list((project_dir / "backups").glob("backup-*/manifest.json"))
         assert len(manifests) == 1
@@ -162,7 +163,7 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
         wait_for_proposal(base, approver_key, rollback["proposalId"], "succeeded")
         assert image_id() == prior_id and schema() == 140
         assert sql("SELECT value FROM public.rc2_lifecycle_marker WHERE id=1") == "retained"
-        assert sql("SELECT to_regclass('public.ai_financial_invocations')") == ""
+        assert sql("SELECT to_regclass('honua.ai_financial_invocations')") == ""
         assert sql("SELECT PostGIS_Version()")
         wrong = call("honua_propose_rollback", {"targetId": "compose-local", "toRevision": prior_id,
             "backupId": "backup-" + "0" * 32, "idempotencyKey": "wrong-backup"}, 3)
