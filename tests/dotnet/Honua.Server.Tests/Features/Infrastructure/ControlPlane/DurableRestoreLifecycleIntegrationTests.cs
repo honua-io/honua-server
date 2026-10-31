@@ -158,7 +158,7 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
             {
                 OperationId = uncertainId,
                 Version = 0,
-                PreMigrationRestore = checkpoint.PreMigrationRestore! with { Phase = "submitting-rds", RestoredResourceId = null }
+                PreMigrationRestore = checkpoint!.PreMigrationRestore! with { Phase = "submitting-rds", RestoredResourceId = null }
             }));
             await NewWorker().ReconcileAsync(uncertainId, CancellationToken.None);
             var uncertain = await workflows.GetAsync(uncertainId);
