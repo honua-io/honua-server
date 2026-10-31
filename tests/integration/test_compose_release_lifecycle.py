@@ -2,6 +2,7 @@
 # Licensed under the Fair Core License, Version 1.0, ALv2 Future License.
 """Published rc.1 -> approved candidate -> verified restore, using the product MCP path."""
 import glob
+import hashlib
 import json
 import os
 import re
@@ -146,6 +147,8 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
         assert len(manifests) == 1
         backup = json.loads(manifests[0].read_text())
         assert backup["image"] == prior_id and backup["schemaVersion"] == 140
+        with (manifests[0].parent / "database.dump").open("rb") as dump:
+            assert hashlib.file_digest(dump, "sha256").hexdigest() == backup["sha256"]
         rollback = call("honua_propose_rollback", {"targetId": "compose-local", "toRevision": prior_id,
             "backupId": backup["backupId"], "idempotencyKey": "verified-backup"}, 4)
         assert rollback["proposalId"]
