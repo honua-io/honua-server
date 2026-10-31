@@ -139,7 +139,7 @@ internal sealed partial class ComposeDeployBackend(
             {
                 // Once a backup was taken, cutover may have exposed a failing candidate.
                 // Let the reconciler observe the failure and invoke verified recovery.
-                Status = ready || (op == "converge" && !string.IsNullOrWhiteSpace(response.BackupId))
+                Status = ready || (op == "converge" && response.Code != ComposeExecutorCodes.AuditUnrecorded && !string.IsNullOrWhiteSpace(response.BackupId))
                     ? WorkflowOperationStatus.Reconciling : WorkflowOperationStatus.Failed,
                 ProviderOperationId = operation.OperationId,
                 // Keep the prior revision. The workflow copies ObservedRevision onto CurrentRevision.
@@ -241,7 +241,8 @@ internal sealed partial class ComposeDeployBackend(
                     {
                         Op = "status",
                         Image = expected,
-                        RequestId = operation.OperationId
+                        RequestId = operation.OperationId,
+                        RequireAudit = true
                     },
                     cancellationToken)
                 .ConfigureAwait(false);
@@ -256,7 +257,7 @@ internal sealed partial class ComposeDeployBackend(
                 status,
                 matches ? expected : response.RunningImage,
                 matches ? response.Message : response.Code ?? response.Message,
-                rollbackRecommended: !matches && !rollback && ProtectionIsOpen(operation));
+                rollbackRecommended: !matches && !rollback && response.Code != ComposeExecutorCodes.AuditUnrecorded && ProtectionIsOpen(operation));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

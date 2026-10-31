@@ -72,8 +72,9 @@ internal sealed partial class DeployWorkflowService
 
     public bool HasDurableStore => _workflowStore != null;
 
-    private bool RestoreAdmissionEnabled => _restoreOptions?.Value is { } options &&
-        (!string.IsNullOrWhiteSpace(options.CellPrefix) || options.Revisions.Count != 0);
+    private bool RestoreAdmissionEnabled =>
+        (_restoreOptions?.Value is { } options && (!string.IsNullOrWhiteSpace(options.CellPrefix) || options.Revisions.Count != 0)) ||
+        _controlPlaneOptions?.CurrentValue.DeployTargets.Any(target => target.TargetKind == DeployTargetKind.LocalCompose) == true;
 
     public async Task<DeployWorkflowPlanResult?> PlanAsync(
         string targetId,

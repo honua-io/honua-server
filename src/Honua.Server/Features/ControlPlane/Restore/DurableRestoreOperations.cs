@@ -301,7 +301,8 @@ internal sealed partial class DurableRestoreWorker(
         {
             Op = "status",
             Image = payload.DesiredRevision,
-            RequestId = record.OperationId
+            RequestId = checkpoint.DeployOperationId,
+            RequireAudit = true
         }, cancellationToken).ConfigureAwait(false);
         var valid = observed.Ok && observed.ReadbackComplete &&
             string.Equals(observed.RunningImage, payload.DesiredRevision, StringComparison.Ordinal);

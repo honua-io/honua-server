@@ -23,6 +23,9 @@ internal sealed record ComposeExecutorRequest
 
     /// <summary>Caller correlation id copied onto the audit line.</summary>
     public string? RequestId { get; init; }
+
+    /// <summary>Require a matching successful operation audit when readback reports the requested image.</summary>
+    public bool RequireAudit { get; init; }
 }
 
 /// <summary>One newline-delimited response. Success requires <see cref="Ok"/> and <see cref="ReadbackComplete"/>.</summary>

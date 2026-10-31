@@ -132,6 +132,8 @@ internal sealed partial class ComposeProjectController : IDisposable
         }
 
         var complete = live.IsComplete;
+        if (complete && request.RequireAudit && string.Equals(running, request.Image, StringComparison.Ordinal) && !HasSuccessfulAudit(request))
+            return Refuse(request, ComposeExecutorCodes.AuditUnrecorded, "The operation has no matching successful audit record.");
         return new ComposeExecutorResponse
         {
             RequestId = request.RequestId,
@@ -964,6 +966,25 @@ internal sealed partial class ComposeProjectController : IDisposable
         }
 
         return response;
+    }
+
+    private bool HasSuccessfulAudit(ComposeExecutorRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.RequestId) || string.IsNullOrWhiteSpace(request.Image)) return false;
+        try
+        {
+            var path = Path.Combine(Path.GetFullPath(_options.BackupDirectory), "audit.jsonl");
+            foreach (var line in File.ReadLines(path))
+            {
+                var entry = JsonSerializer.Deserialize(line, ComposeExecutorJsonContext.Default.ComposeAuditRecord);
+                if (entry is { Ok: true } && entry.Op is "converge" or "rollback" &&
+                    string.Equals(entry.RequestId, request.RequestId, StringComparison.Ordinal) &&
+                    string.Equals(entry.Image, request.Image, StringComparison.Ordinal) &&
+                    string.Equals(entry.Project, _options.ProjectName, StringComparison.Ordinal)) return true;
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException) { }
+        return false;
     }
 
     private bool TryAudit(ComposeAuditRecord record)

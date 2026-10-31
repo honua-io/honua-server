@@ -238,6 +238,24 @@ public sealed class ComposeProposalExecutorTests
     }
 
     [UnitTest]
+    public async Task MissingAudit_DoesNotBecomeSuccessOrTriggerAutomaticRecovery()
+    {
+        var release = Digest('a');
+        var prior = Digest('b');
+        var client = Substitute.For<IComposeExecutorClient>();
+        client.ExecuteAsync(Arg.Is<ComposeExecutorRequest>(request => request.Op == "status" && !request.RequireAudit), Arg.Any<CancellationToken>())
+            .Returns(Ready(prior));
+        client.ExecuteAsync(Arg.Is<ComposeExecutorRequest>(request => request.Op == "converge" || request.RequireAudit), Arg.Any<CancellationToken>())
+            .Returns(new ComposeExecutorResponse { Ok = false, BackupId = "backup-" + new string('c', 32), Code = ComposeExecutorCodes.AuditUnrecorded });
+        var backend = Backend(client, release, "/tmp/honua-compose-unit.sock");
+        var submission = await backend.StartAsync(Operation(release, "approver"));
+        Assert.Equal(WorkflowOperationStatus.Failed, submission.Status);
+        var observation = await backend.ObserveAsync(Operation(release, "approver"));
+        Assert.Equal(WorkflowOperationStatus.Failed, observation.Status);
+        Assert.False(observation.RollbackRecommended);
+    }
+
+    [UnitTest]
     public async Task LostConvergeResponse_RemainsReconcilableWithPriorRevision()
     {
         var release = Digest('a');
