@@ -168,7 +168,12 @@ internal sealed partial class AwsEcsAlbDeployBackend
         var spec = operation.Deploy ?? throw new InvalidOperationException("Deploy metadata is missing.");
         if (!RequiresCheckpoint(operation))
         {
-            return new DeployObservation { Status = WorkflowOperationStatus.Succeeded, ProviderOperationId = operation.ProviderOperationId };
+            return new DeployObservation
+            {
+                Status = WorkflowOperationStatus.Succeeded,
+                ProviderOperationId = operation.ProviderOperationId,
+                ObservedRevision = spec.Protection?.CandidateRevision ?? spec.CurrentRevision
+            };
         }
 
         var target = ResolveTarget(spec);
@@ -181,8 +186,15 @@ internal sealed partial class AwsEcsAlbDeployBackend
         }
 
         var stable = await ecsClient.DescribeServiceAsync(target.Cluster!, stableName, target.Region, cancellationToken).ConfigureAwait(false);
+        var rule = await albClient.GetListenerRuleWeightsAsync(target.ListenerRuleArn!, target.Region, cancellationToken).ConfigureAwait(false);
+        var weights = SummarizeAlbWeights(rule, target);
         if (!string.Equals(stable.TaskDefinitionArn, operation.ProviderOperationId, StringComparison.Ordinal))
         {
+            if (!weights.MatchesExpectedShare(100))
+            {
+                throw new InvalidOperationException("Candidate must serve traffic while stable is updated.");
+            }
+
             if (!string.Equals(stable.TaskDefinitionArn, spec.CurrentRevision, StringComparison.Ordinal))
             {
                 throw new InvalidOperationException("Stable ECS service revision changed during handoff.");
@@ -190,6 +202,11 @@ internal sealed partial class AwsEcsAlbDeployBackend
 
             await ecsClient.UpdateServiceTaskDefinitionAsync(target.Cluster!, stableName, operation.ProviderOperationId!, target.Region, cancellationToken).ConfigureAwait(false);
             return new DeployObservation { Status = WorkflowOperationStatus.Reconciling, Message = "Updating the stable service after protection." };
+        }
+
+        if (!weights.MatchesExpectedShare(100) && !weights.MatchesExpectedShare(0))
+        {
+            throw new InvalidOperationException("ECS traffic routing changed during stable handoff.");
         }
 
         var convergence = EvaluateDeploymentConvergence(stable, operation.ProviderOperationId!);
@@ -204,7 +221,7 @@ internal sealed partial class AwsEcsAlbDeployBackend
         return new DeployObservation { Status = WorkflowOperationStatus.Succeeded, ProviderOperationId = operation.ProviderOperationId, Message = "Stable service is healthy on the candidate revision." };
     }
 
-    private async Task RestoreStableServiceWhenReadyAsync(
+    private async System.Threading.Tasks.Task RestoreStableServiceWhenReadyAsync(
         WorkflowOperationRecord operation, DeployOperationSpec spec, AwsEcsAlbDeployTarget target, CancellationToken cancellationToken)
     {
         var stableName = GetParameter(spec.Parameters, "aws.ecs.stable_service")
