@@ -879,21 +879,14 @@ internal sealed partial class ODataQueryHandler(
     {
         var limitsOptions = context.RequestServices.GetService<IOptions<LimitsOptions>>();
         var geometryLimits = limitsOptions?.Value?.Geometry ?? new GeometryLimits();
-        var objectIdFieldName = resource.FindPrimaryIdField()?.Name ?? FieldNames.ObjectId;
         var selectedFields = ODataUtilityService.ParseSelect(select);
         var outFields = selectedFields is { Count: > 0 } ? selectedFields.ToArray() : null;
-        var layerSrid = resource.ReadSrid() ?? 4326;
 
         try
         {
-            var (payload, contentType) = GeoParquetFeatureWriter.FormatAsGeoParquet(
+            var (payload, contentType) = ODataGeoParquetExport.FormatPage(
                 queryResult,
                 resource,
-                objectIdFieldName,
-                returnGeometry: true,
-                outputSrid: layerSrid,
-                returnZ: false,
-                returnM: false,
                 geometryLimits,
                 outFields,
                 _logger,
