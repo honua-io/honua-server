@@ -332,7 +332,12 @@ path of the Docker Compose plugin executable (for example,
 `/usr/libexec/docker/cli-plugins/docker-compose`). The overlay mounts that plugin
 alongside the Docker client. Both must run on the image's glibc.
 
-The executor is the same server image with `HONUA_COMPOSE_EXECUTOR=true`. It is the
+The overlay runs the candidate image as a separate management process on loopback port
+`HONUA_MANAGER_PORT` (default 18082). Create distinct proposer and approver credentials
+there and use its MCP and approval endpoints. Its separate database prevents starting the
+manager from migrating the serving database before approval; retain its database and the
+shared Redis volume across restarts. The executor uses the candidate image with
+`HONUA_COMPOSE_EXECUTOR=true`. It is the
 only service that receives the Docker socket. It accepts an immutable digest for this
 project only, and a different principal has to approve the proposal before anything
 changes. A rollback to an image that cannot read the live journal, including a
