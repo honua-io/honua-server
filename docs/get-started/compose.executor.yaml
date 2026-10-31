@@ -46,7 +46,7 @@ services:
       compose-manager-redis:
         condition: service_healthy
       compose-executor:
-        condition: service_started
+        condition: service_healthy
     restart: unless-stopped
     read_only: true
     cap_drop: [ALL]
@@ -109,6 +109,12 @@ services:
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     restart: unless-stopped
+    # The sidecar does not serve HTTP, so replace the server image's HTTP healthcheck.
+    healthcheck:
+      test: ["CMD-SHELL", "test -S /run/honua-compose/executor.sock"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
     depends_on:
       compose-executor-init:
         condition: service_completed_successfully

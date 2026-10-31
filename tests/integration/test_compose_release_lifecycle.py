@@ -124,7 +124,18 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
         return int(sql("SELECT max(substring(scriptname from '([0-9]+)_')::int) FROM public.schema_versions"))
     base = f"http://127.0.0.1:{manager_port}"
     try:
-        dc("up", "-d", "--wait", "--wait-timeout", "300")
+        try:
+            dc("up", "-d", "--wait", "--wait-timeout", "300")
+        except AssertionError as error:
+            # Only report service state; do not print container environments or logs.
+            states = dc("ps", "--all", "--format", "json", check=False)
+            try:
+                services = [json.loads(line) for line in states.splitlines() if line.strip()]
+                summary = [{name: service.get(name) for name in ("Service", "State", "Health", "ExitCode")}
+                           for service in services]
+            except (ValueError, TypeError):
+                summary = []
+            raise AssertionError(f"Compose startup failed; service states: {summary}") from error
         assert image_id() == prior_id and schema() == 140
         sql("CREATE TABLE public.rc2_lifecycle_marker (id integer PRIMARY KEY, value text NOT NULL); INSERT INTO public.rc2_lifecycle_marker VALUES (1, 'retained')")
         proposer, _ = request(base, "/api/v1/admin/api-keys/", key, {"name": "proposer", "permissions": ["admin:*"]})
