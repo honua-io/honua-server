@@ -246,7 +246,9 @@ internal sealed partial class ComposeDeployBackend(
     }
 
     private static bool ProtectionIsOpen(WorkflowOperationRecord operation)
-        => operation.Deploy?.Protection?.Phase is DeployProtectionPhase.Observing or DeployProtectionPhase.Protected;
+        => operation.Deploy?.Protection?.Phase is DeployProtectionPhase.Observing or DeployProtectionPhase.Protected
+            || (operation.Deploy?.Protection is null && operation.Deploy?.TrafficExposedAt is not null
+                && !string.IsNullOrWhiteSpace(operation.Deploy.CurrentRevision));
 
     private static bool ApprovedByOtherPrincipal(WorkflowOperationRecord operation)
     {

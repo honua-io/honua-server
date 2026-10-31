@@ -583,6 +583,10 @@ internal sealed partial class ComposeProjectController : IDisposable
         {
             return named ? BackupHit.Fail(Refuse(null, PreMigrationRestoreCodes.ScopeViolation, "The backup belongs to another service.")) : default;
         }
+        if (!string.Equals(manifest.Project, _options.ProjectName, StringComparison.Ordinal))
+            return named ? BackupHit.Fail(Refuse(null, PreMigrationRestoreCodes.ScopeViolation, "The backup belongs to another project.")) : default;
+        if (!string.Equals(manifest.Image, image, StringComparison.Ordinal))
+            return named ? BackupHit.Fail(Refuse(null, PreMigrationRestoreCodes.BackupImageMismatch, "The backup belongs to another image.")) : default;
         var dump = DumpPath(root, backupId);
         if (!IsUnder(root, dump) || !File.Exists(dump))
         {

@@ -88,6 +88,46 @@ public sealed class ComposeProposalExecutorTests
     }
 
     [UnitTest]
+    public async Task Rollback_NewerIncompleteBackupForAnotherImage_DoesNotMaskMatchingBackup()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "honua-compose-unit", Guid.NewGuid().ToString("N"));
+        var prior = Digest('b');
+        var options = ValidOptions(root, Digest('a'));
+        var older = "backup-" + new string('d', 32);
+        var newer = "backup-" + new string('e', 32);
+        var bytes = System.Text.Encoding.UTF8.GetBytes("backup data");
+        var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes)).ToLowerInvariant();
+        foreach (var (id, image, created) in new[]
+        {
+            (older, prior, DateTimeOffset.UtcNow.AddMinutes(-1)),
+            (newer, Digest('c'), DateTimeOffset.UtcNow)
+        })
+        {
+            var directory = Path.Combine(options.BackupDirectory, id);
+            Directory.CreateDirectory(directory);
+            var manifest = new ComposeBackupManifest
+            {
+                BackupId = id,
+                Project = options.ProjectName,
+                Service = options.ServiceName,
+                Image = image,
+                SchemaVersion = 140,
+                Sha256 = hash,
+                CreatedAt = created,
+                DumpFile = ComposeExecutorProtocol.DumpFileName
+            };
+            await File.WriteAllTextAsync(Path.Combine(directory, "manifest.json"),
+                System.Text.Json.JsonSerializer.Serialize(manifest, ComposeExecutorJsonContext.Default.ComposeBackupManifest));
+            if (id == older) await File.WriteAllBytesAsync(Path.Combine(directory, ComposeExecutorProtocol.DumpFileName), bytes);
+        }
+        var docker = new RecordingDocker();
+        using var controller = new ComposeProjectController(options, docker);
+        var response = await controller.ExecuteAsync(new ComposeExecutorRequest { Op = "rollback", Image = prior });
+        Assert.Equal(ComposeExecutorCodes.ReadbackIncomplete, response.Code);
+        Assert.NotEmpty(docker.Argv);
+    }
+
+    [UnitTest]
     public async Task Plan_BlocksScopeImageAndConfig_BeforeCallingTheExecutor()
     {
         var client = new RecordingClient();
@@ -142,6 +182,19 @@ public sealed class ComposeProposalExecutorTests
                 }
             }
         };
+        var observation = await backend.ObserveAsync(operation);
+        Assert.Equal(WorkflowOperationStatus.Failed, observation.Status);
+        Assert.True(observation.RollbackRecommended);
+    }
+
+    [UnitTest]
+    public async Task Observe_UnhealthyExposedCandidateBeforeProtection_RecommendsRollback()
+    {
+        var release = Digest('a');
+        var client = new RecordingClient { Response = new ComposeExecutorResponse { Ok = false, Code = ComposeExecutorCodes.ReadbackIncomplete } };
+        var backend = Backend(client, release, "/tmp/honua-compose-unit.sock");
+        var operation = Operation(release, "approver");
+        operation = operation with { Status = WorkflowOperationStatus.Reconciling, Deploy = operation.Deploy! with { TrafficExposedAt = DateTimeOffset.UtcNow } };
         var observation = await backend.ObserveAsync(operation);
         Assert.Equal(WorkflowOperationStatus.Failed, observation.Status);
         Assert.True(observation.RollbackRecommended);
