@@ -102,7 +102,7 @@ internal static class McpPlatformOpsSchemas
             },
             "backupId": {
               "type": "string",
-              "description": "Optional pre-migration backup. RDS rollback must name a snapshot in this cell. Compose rollback may omit it and the server selects the newest verifying manifest."
+              "description": "RDS: name a cell snapshot. Compose: omit to use the newest verified backup."
             }
           },
           "additionalProperties": false
