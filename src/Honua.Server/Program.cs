@@ -785,6 +785,8 @@ if (connectedRedis != null && redisCacheEntitled)
         Honua.ControlPlane.OperationProposalEvidenceValidator>();
     builder.Services.AddPreMigrationRestore(builder.Configuration);
     builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor,
+        Honua.ControlPlane.Executors.RestoreGuardedDeployOperationExecutor>();
+    builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor,
         Honua.ControlPlane.Executors.AdminConfigOperationExecutor>();
     // MetadataRelease executor is create-only BY DESIGN (#2563): rollback and the coordinated-release
     // approval-gate model stay endpoint/cockpit-driven — see MetadataReleaseOperationExecutor remarks.

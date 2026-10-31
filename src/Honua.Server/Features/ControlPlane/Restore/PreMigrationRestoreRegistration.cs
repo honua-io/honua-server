@@ -12,7 +12,8 @@ namespace Honua.ControlPlane;
 internal static class PreMigrationRestoreRegistration
 {
     /// <summary>
-    /// Replaces a direct deploy executor registration. Forward deploys still reach
+    /// Registers restore collaborators. Program registers the guarded deploy executor explicitly.
+    /// Forward deploys still reach
     /// <see cref="DeployOperationExecutor"/>. Rollback is assessed by <see cref="PreMigrationRestoreCoordinator"/>.
     /// </summary>
     public static IServiceCollection AddPreMigrationRestore(this IServiceCollection services, IConfiguration configuration)
@@ -26,6 +27,8 @@ internal static class PreMigrationRestoreRegistration
         services.AddSingleton<IComposeRollbackTransport, ComposeRollbackSocketClient>();
         services.AddSingleton<IServingCustomerProbe, HttpServingCustomerProbe>();
         services.AddSingleton<IRestoredSchemaProbe, JournalRestoredSchemaProbe>();
+        services.AddSingleton<PreMigrationRestoreAssessmentService>();
+        services.AddSingleton<PreMigrationRestoreExecutionService>();
         services.AddSingleton<PreMigrationRestoreCoordinator>();
 #if !HONUA_EXCLUDE_AWS
         services.AddSingleton<IRdsSnapshotRestore, AwsRdsSnapshotRestoreAdapter>();
@@ -36,7 +39,6 @@ internal static class PreMigrationRestoreRegistration
         services.AddSingleton<IConnectionSecretRetarget, UnconfiguredConnectionSecretRetarget>();
         services.AddSingleton<IRestoredConnectionOpener, AppDatabaseConnectionOpener>();
 #endif
-        services.AddSingleton<IOperationExecutor, RestoreGuardedDeployOperationExecutor>();
         return services;
     }
 }

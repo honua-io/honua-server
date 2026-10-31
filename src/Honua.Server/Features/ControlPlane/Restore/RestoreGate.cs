@@ -211,12 +211,135 @@ internal interface IPriorImageStarter
     Task<string?> StartAsync(OperationGatewayRequest request, string? executionPayload, CancellationToken cancellationToken);
 }
 
-/// <summary>
-/// Runs the shared restore policy for an approved rollback. A reader-incompatible schema is restored
-/// and read back before the prior image starts. Incomplete work never reports success.
-/// </summary>
+/// <summary>Assesses an approved rollback, then delegates its effects and durable readback.</summary>
 internal sealed class PreMigrationRestoreCoordinator(
+    PreMigrationRestoreAssessmentService assessment,
+    PreMigrationRestoreExecutionService execution)
+{
+    /// <summary>Assesses a rollback without restoring or starting an image.</summary>
+    public async Task<RestoreDecision> AssessAsync(DeployExecutionPayload payload, CancellationToken cancellationToken)
+        => (await assessment.DecideAsync(payload, cancellationToken).ConfigureAwait(false)).Decision;
+
+    /// <summary>Executes only the backup and target selected by the shared assessment.</summary>
+    public async Task<RestoreCompletion> ExecuteAsync(
+        DeployExecutionPayload payload,
+        OperationGatewayRequest request,
+        IPriorImageStarter starter,
+        CancellationToken cancellationToken)
+    {
+        var (decision, target, backup) = await assessment.DecideAsync(payload, cancellationToken).ConfigureAwait(false);
+        return await execution.ExecuteAsync(payload, request, starter, decision, target, backup, cancellationToken).ConfigureAwait(false);
+    }
+}
+
+/// <summary>Reads the configured target, journal and backup without applying a restore.</summary>
+internal sealed class PreMigrationRestoreAssessmentService(
     ISchemaJournal journal,
+    IRevisionSchemaCatalog revisions,
+    IRdsSnapshotRestore rds,
+    IConnectionSecretRetarget secrets,
+    IOptionsMonitor<ControlPlaneOptions> controlPlane,
+    IOptions<RestoreCellOptions> restoreOptions)
+{
+    /// <summary>Returns the policy decision and the exact target and verified backup it used.</summary>
+    public async Task<(RestoreDecision Decision, DeployTargetOptions? Target, VerifiedPreMigrationBackup? Backup)> DecideAsync(
+        DeployExecutionPayload payload,
+        CancellationToken cancellationToken)
+    {
+        var target = controlPlane.CurrentValue.DeployTargets
+            .FirstOrDefault(candidate => string.Equals(candidate.TargetId, payload.TargetId, StringComparison.Ordinal));
+        if (target is null)
+        {
+            return (Refuse(PreMigrationRestoreCodes.TargetUnknown, "The deploy target is not in the server catalog."), null, null);
+        }
+
+        var options = restoreOptions.Value;
+        var inPlace = target.TargetKind == DeployTargetKind.SelfHostedRolling;
+        var journalSnapshot = await journal.ReadAsync(cancellationToken).ConfigureAwait(false);
+        var priorMax = revisions.MaxSchema(payload.DesiredRevision);
+        var (backup, refusal) = await VerifyBackupAsync(payload, options, inPlace, cancellationToken).ConfigureAwait(false);
+        var decision = ReaderIncompatibleRestorePolicy.Decide(new RestoreAssessment
+        {
+            CompatibilityKnown = journalSnapshot.Known,
+            PriorImageMaxSchema = priorMax,
+            Applied = journalSnapshot.Applied,
+            Backup = backup,
+            BackupRefusalCode = refusal,
+            RetargetConfigured = secrets.IsConfigured && !string.IsNullOrWhiteSpace(options.ConnectionSecretId),
+            InPlaceDatabase = inPlace,
+        });
+        if (decision.Kind == RestoreDecisionKind.RestoreBeforeStart
+            && target.TargetKind is DeployTargetKind.AzureContainerApps or DeployTargetKind.AzureFunctions)
+        {
+            return (Refuse(PreMigrationRestoreCodes.RetargetUnsupported, "This target has no product restore executor."), target, null);
+        }
+
+        return (decision, target, backup);
+    }
+
+    private async Task<(VerifiedPreMigrationBackup? Backup, string? Refusal)> VerifyBackupAsync(
+        DeployExecutionPayload payload,
+        RestoreCellOptions options,
+        bool inPlace,
+        CancellationToken cancellationToken)
+    {
+        if (inPlace)
+        {
+            return VerifyComposeBackup(payload, options);
+        }
+
+        if (!RestoreCellScope.IsBoundedPrefix(options.CellPrefix))
+        {
+            return (null, PreMigrationRestoreCodes.ScopeViolation);
+        }
+
+        if (string.IsNullOrWhiteSpace(payload.BackupId))
+        {
+            return (null, PreMigrationRestoreCodes.BackupRequired);
+        }
+
+        if (!BackupEvidenceVerifier.SnapshotInCell(payload.BackupId, options.CellPrefix))
+        {
+            return (null, PreMigrationRestoreCodes.ScopeViolation);
+        }
+
+        var described = await rds.DescribeAsync(payload.BackupId, options.CellPrefix, cancellationToken).ConfigureAwait(false);
+        if (described is null)
+        {
+            return (null, PreMigrationRestoreCodes.BackupUnverified);
+        }
+
+        var verification = BackupEvidenceVerifier.VerifyRdsSnapshot(described);
+        return (verification.Backup, verification.Code);
+    }
+
+    private static (VerifiedPreMigrationBackup? Backup, string? Refusal) VerifyComposeBackup(
+        DeployExecutionPayload payload,
+        RestoreCellOptions options)
+    {
+        if (string.IsNullOrWhiteSpace(options.ComposeBackupDirectory) || string.IsNullOrWhiteSpace(options.ComposeProject))
+        {
+            return (null, null);
+        }
+
+        var evidence = ComposeBackupDirectory.Read(options.ComposeBackupDirectory, options.ComposeProject, payload.DesiredRevision, payload.BackupId);
+        if (evidence is null)
+        {
+            return (null, string.IsNullOrWhiteSpace(payload.BackupId) ? PreMigrationRestoreCodes.BackupRequired : PreMigrationRestoreCodes.BackupUnverified);
+        }
+
+        var verification = BackupEvidenceVerifier.VerifyCompose(evidence);
+        return (verification.Backup, verification.Code);
+    }
+
+    private static RestoreDecision Refuse(string code, string message)
+        => new() { Kind = RestoreDecisionKind.Refuse, Code = code, Message = message };
+
+
+}
+
+/// <summary>Applies the assessed restore and verifies schema, serving state and durable audit.</summary>
+internal sealed class PreMigrationRestoreExecutionService(
     IRevisionSchemaCatalog revisions,
     IRdsSnapshotRestore rds,
     IConnectionSecretRetarget secrets,
@@ -224,16 +347,8 @@ internal sealed class PreMigrationRestoreCoordinator(
     IRestoredSchemaProbe probe,
     IServingCustomerProbe customerProbe,
     IPreMigrationRestoreAudit audit,
-    IOptionsMonitor<ControlPlaneOptions> controlPlane,
     IOptions<RestoreCellOptions> restoreOptions)
 {
-    /// <summary>Assesses a rollback without restoring or starting an image.</summary>
-    public async Task<RestoreDecision> AssessAsync(DeployExecutionPayload payload, CancellationToken cancellationToken)
-    {
-        var (decision, _, _) = await DecideAsync(payload, cancellationToken).ConfigureAwait(false);
-        return decision;
-    }
-
     /// <summary>
     /// Restores when required, then starts the prior image only after schema readback.
     /// Compose starts inside the sidecar; cloud starts through <paramref name="starter"/>.
@@ -242,11 +357,13 @@ internal sealed class PreMigrationRestoreCoordinator(
         DeployExecutionPayload payload,
         OperationGatewayRequest request,
         IPriorImageStarter starter,
+        RestoreDecision decision,
+        DeployTargetOptions? target,
+        VerifiedPreMigrationBackup? backup,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(payload);
         ArgumentNullException.ThrowIfNull(starter);
-        var (decision, target, backup) = await DecideAsync(payload, cancellationToken).ConfigureAwait(false);
         if (decision.Kind == RestoreDecisionKind.Refuse)
         {
             return await FailAsync(decision.Code, decision.Message, payload, request, decision.Kind, cancellationToken)
@@ -337,7 +454,7 @@ internal sealed class PreMigrationRestoreCoordinator(
         CancellationToken cancellationToken)
     {
         var options = restoreOptions.Value;
-        if (!CellPrefixBounded(options.CellPrefix)
+        if (!RestoreCellScope.IsBoundedPrefix(options.CellPrefix)
             || options.EnvironmentTag is not ("cert" or "demo")
             || !SecretInCell(options.ConnectionSecretId, options.CellPrefix)
             || !BackupEvidenceVerifier.InstanceInCell(options.DbSubnetGroupName, options.CellPrefix))
@@ -393,96 +510,6 @@ internal sealed class PreMigrationRestoreCoordinator(
             ReadbackComplete = true,
             AuditPersisted = persisted,
         };
-    }
-
-    private async Task<(RestoreDecision Decision, DeployTargetOptions? Target, VerifiedPreMigrationBackup? Backup)> DecideAsync(
-        DeployExecutionPayload payload,
-        CancellationToken cancellationToken)
-    {
-        var target = controlPlane.CurrentValue.DeployTargets
-            .FirstOrDefault(candidate => string.Equals(candidate.TargetId, payload.TargetId, StringComparison.Ordinal));
-        if (target is null)
-        {
-            return (Refuse(PreMigrationRestoreCodes.TargetUnknown, "The deploy target is not in the server catalog."), null, null);
-        }
-
-        var options = restoreOptions.Value;
-        var inPlace = target.TargetKind == DeployTargetKind.SelfHostedRolling;
-        var journalSnapshot = await journal.ReadAsync(cancellationToken).ConfigureAwait(false);
-        var priorMax = revisions.MaxSchema(payload.DesiredRevision);
-        var (backup, refusal) = await VerifyBackupAsync(payload, options, inPlace, cancellationToken).ConfigureAwait(false);
-        var decision = ReaderIncompatibleRestorePolicy.Decide(new RestoreAssessment
-        {
-            CompatibilityKnown = journalSnapshot.Known,
-            PriorImageMaxSchema = priorMax,
-            Applied = journalSnapshot.Applied,
-            Backup = backup,
-            BackupRefusalCode = refusal,
-            RetargetConfigured = secrets.IsConfigured && !string.IsNullOrWhiteSpace(options.ConnectionSecretId),
-            InPlaceDatabase = inPlace,
-        });
-        if (decision.Kind == RestoreDecisionKind.RestoreBeforeStart
-            && target.TargetKind is DeployTargetKind.AzureContainerApps or DeployTargetKind.AzureFunctions)
-        {
-            return (Refuse(PreMigrationRestoreCodes.RetargetUnsupported, "This target has no product restore executor."), target, null);
-        }
-
-        return (decision, target, backup);
-    }
-
-    private async Task<(VerifiedPreMigrationBackup? Backup, string? Refusal)> VerifyBackupAsync(
-        DeployExecutionPayload payload,
-        RestoreCellOptions options,
-        bool inPlace,
-        CancellationToken cancellationToken)
-    {
-        if (inPlace)
-        {
-            return VerifyComposeBackup(payload, options);
-        }
-
-        if (!CellPrefixBounded(options.CellPrefix))
-        {
-            return (null, PreMigrationRestoreCodes.ScopeViolation);
-        }
-
-        if (string.IsNullOrWhiteSpace(payload.BackupId))
-        {
-            return (null, PreMigrationRestoreCodes.BackupRequired);
-        }
-
-        if (!BackupEvidenceVerifier.SnapshotInCell(payload.BackupId, options.CellPrefix))
-        {
-            return (null, PreMigrationRestoreCodes.ScopeViolation);
-        }
-
-        var described = await rds.DescribeAsync(payload.BackupId, options.CellPrefix, cancellationToken).ConfigureAwait(false);
-        if (described is null)
-        {
-            return (null, PreMigrationRestoreCodes.BackupUnverified);
-        }
-
-        var verification = BackupEvidenceVerifier.VerifyRdsSnapshot(described);
-        return (verification.Backup, verification.Code);
-    }
-
-    private static (VerifiedPreMigrationBackup? Backup, string? Refusal) VerifyComposeBackup(
-        DeployExecutionPayload payload,
-        RestoreCellOptions options)
-    {
-        if (string.IsNullOrWhiteSpace(options.ComposeBackupDirectory) || string.IsNullOrWhiteSpace(options.ComposeProject))
-        {
-            return (null, null);
-        }
-
-        var evidence = ComposeBackupDirectory.Read(options.ComposeBackupDirectory, options.ComposeProject, payload.DesiredRevision, payload.BackupId);
-        if (evidence is null)
-        {
-            return (null, string.IsNullOrWhiteSpace(payload.BackupId) ? PreMigrationRestoreCodes.BackupRequired : PreMigrationRestoreCodes.BackupUnverified);
-        }
-
-        var verification = BackupEvidenceVerifier.VerifyCompose(evidence);
-        return (verification.Backup, verification.Code);
     }
 
     private async Task<RestoreCompletion> FailAsync(
@@ -550,16 +577,9 @@ internal sealed class PreMigrationRestoreCoordinator(
         return identifier.Length <= 63 ? identifier : identifier[..63].TrimEnd('-');
     }
 
-    /// <summary>A trailing hyphen keeps the prefix from matching a sibling name such as <c>honua-certrun</c>.</summary>
-    private static bool CellPrefixBounded(string cellPrefix)
-        => !string.IsNullOrWhiteSpace(cellPrefix)
-           && cellPrefix.EndsWith('-')
-           && !cellPrefix.Contains('/', StringComparison.Ordinal)
-           && !cellPrefix.Contains('\\', StringComparison.Ordinal);
-
     private static bool SecretInCell(string secretId, string cellPrefix)
     {
-        if (!CellPrefixBounded(cellPrefix) || string.IsNullOrWhiteSpace(secretId))
+        if (!RestoreCellScope.IsBoundedPrefix(cellPrefix) || string.IsNullOrWhiteSpace(secretId))
         {
             return false;
         }
@@ -582,6 +602,18 @@ internal sealed class PreMigrationRestoreCoordinator(
         var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(payload.TargetId + "\n" + payload.DesiredRevision + "\n" + backupId)))[..32].ToLowerInvariant();
         return "restore-" + hash;
     }
+}
+
+/// <summary>Boundary shared by restore assessment and application.</summary>
+internal static class RestoreCellScope
+{
+    /// <summary>A trailing hyphen keeps the prefix from matching a sibling name such as <c>honua-certrun</c>.</summary>
+    public static bool IsBoundedPrefix(string cellPrefix)
+        => !string.IsNullOrWhiteSpace(cellPrefix)
+           && cellPrefix.EndsWith('-')
+           && !cellPrefix.Contains('/', StringComparison.Ordinal)
+           && !cellPrefix.Contains('\\', StringComparison.Ordinal);
+
 }
 
 /// <summary>Reads one Compose manifest directory. The model cannot choose the directory or the dump name.</summary>

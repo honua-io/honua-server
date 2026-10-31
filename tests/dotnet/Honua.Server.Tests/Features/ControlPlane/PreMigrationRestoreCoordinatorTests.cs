@@ -433,16 +433,14 @@ public sealed class PreMigrationRestoreCoordinatorTests
         public RecordingStarter Starter => new(this);
 
         public PreMigrationRestoreCoordinator Coordinator => new(
-            new RecordingJournal(this),
-            new RecordingRevisions(this),
-            new RecordingRds(this),
-            new RecordingSecrets(this),
-            new RecordingCompose(this),
-            new RecordingProbe(this),
-            new RecordingCustomer(this),
-            new RecordingAudit(this),
-            new StaticMonitor(this),
-            Options.Create(Cell));
+            new PreMigrationRestoreAssessmentService(
+                new RecordingJournal(this), new RecordingRevisions(this), new RecordingRds(this),
+                new RecordingSecrets(this), new StaticMonitor(this), Options.Create(Cell)),
+            new PreMigrationRestoreExecutionService(
+                new RecordingRevisions(this), new RecordingRds(this), new RecordingSecrets(this),
+                new RecordingCompose(this), new RecordingProbe(this), new RecordingCustomer(this),
+                new RecordingAudit(this), Options.Create(Cell)));
+
     }
 
     private sealed class RecordingStarter(Harness harness) : IPriorImageStarter
