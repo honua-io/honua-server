@@ -320,6 +320,18 @@ sidecar mounts the host `docker` binary and the Docker socket. The `honua` servi
 mounts neither. Then start both files with
 `docker compose -f compose.yaml -f compose.executor.yaml up -d`.
 
+Set `HONUA_PRIOR_IMAGE` to the retained immutable prior image and
+`HONUA_PRIOR_MAX_SCHEMA` to the highest migration shipped in that exact image.
+This operator catalog is required for prior images without a schema label. An
+unknown prior schema refuses rollback.
+
+Set `HONUA_COMPOSE_PROJECT_DIRECTORY` to the absolute path of this directory on the
+Docker host. It is mounted at the same path in the executor so relative bind mounts
+continue to resolve on that host. Set `DOCKER_COMPOSE_PLUGIN` to the absolute host
+path of the Docker Compose plugin executable (for example,
+`/usr/libexec/docker/cli-plugins/docker-compose`). The overlay mounts that plugin
+alongside the Docker client. Both must run on the image's glibc.
+
 The executor is the same server image with `HONUA_COMPOSE_EXECUTOR=true`. It is the
 only service that receives the Docker socket. It accepts an immutable digest for this
 project only, and a different principal has to approve the proposal before anything

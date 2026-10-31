@@ -8,6 +8,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.Infrastructure.Migrations;
+using Honua.Core.Features.ControlPlane.Restore;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.ControlPlane;
@@ -252,47 +253,39 @@ internal sealed partial class ComposeProjectController : IDisposable
                 "Reader compatibility is unknown, so the prior image was not started.");
         }
 
-        var labelMissing = inspected.MaxSchema == null;
         var priorMax = inspected.MaxSchema ?? -1;
-        if (labelMissing && ComposeReaderGate.LabelMissingBlocks(database.Journal, database.Rows))
+        var applied = ComposeReaderGate.Applied(database.Journal, database.Rows);
+        var assessment = new RestoreAssessment
         {
-            return Refuse(
-                request,
-                ComposeExecutorCodes.BackupSchemaAhead,
-                "The prior image has no org.honua.max-schema label and a journal entry is not expand-only.");
+            CompatibilityKnown = database.CompatibilityKnown,
+            PriorImageMaxSchema = inspected.MaxSchema,
+            Applied = applied,
+            Backup = new VerifiedPreMigrationBackup(manifest.BackupId!, manifest.SchemaVersion, ReaderIncompatibleRestorePolicy.ComposeDumpEngine),
+            InPlaceDatabase = true
+        };
+        var decision = ReaderIncompatibleRestorePolicy.Decide(assessment);
+        if (decision.Kind == RestoreDecisionKind.Refuse)
+        {
+            return Refuse(request, decision.Code!, decision.Message!);
         }
 
-        if (!labelMissing && manifest.SchemaVersion > priorMax)
+        if (decision.Kind == RestoreDecisionKind.NotRequired)
         {
-            return Refuse(
-                request,
-                ComposeExecutorCodes.BackupSchemaAhead,
-                "The backup schema is newer than the prior image can read.");
-        }
-
-        var restoreRequired = false;
-        if (!labelMissing)
-        {
-            var assessment = ComposeReaderGate.Assess(database.Journal, database.Rows, priorMax);
-            if (assessment.Required)
+            var expand = ComposeReaderGate.Assess(database.Journal, database.Rows, priorMax);
+            var rejected = await ExpandScriptsRejectedAsync(expand.ExpandScriptsToVerify, priorMax, cancellationToken).ConfigureAwait(false);
+            if (rejected is null)
             {
-                restoreRequired = true;
+                return Refuse(request, PreMigrationRestoreCodes.ReadbackIncomplete, "Reader compatibility could not be verified.");
             }
-            else
+            if (rejected.Value)
             {
-                var rejected = await ExpandScriptsRejectedAsync(assessment.ExpandScriptsToVerify, priorMax, cancellationToken)
-                    .ConfigureAwait(false);
-                if (rejected is null)
+                decision = ReaderIncompatibleRestorePolicy.Decide(assessment with
                 {
-                    return Refuse(
-                        request,
-                        ComposeExecutorCodes.ReadbackIncomplete,
-                        "Reader compatibility could not be verified, so the prior image was not started.");
-                }
-
-                restoreRequired = rejected.Value;
+                    Applied = applied.Select(migration => migration.Number > priorMax ? migration with { Classification = null } : migration).ToArray()
+                });
             }
         }
+        var restoreRequired = decision.Kind == RestoreDecisionKind.RestoreBeforeStart;
         if (live.IsComplete && string.Equals(live.ImageId, inspected.Id, StringComparison.Ordinal) && !restoreRequired)
         {
             return Success(request, request.Image!, live, manifest.BackupId);
@@ -324,7 +317,7 @@ internal sealed partial class ComposeProjectController : IDisposable
             {
                 return Refuse(
                     request,
-                    ComposeExecutorCodes.RestoreIncomplete,
+                    PreMigrationRestoreCodes.RestoreIncomplete,
                     "Restore did not return the database to the backup schema. The service was left stopped.")
                     with
                 { BackupId = manifest.BackupId, SchemaVersion = after.SchemaVersion };
@@ -455,21 +448,21 @@ internal sealed partial class ComposeProjectController : IDisposable
             .ConfigureAwait(false);
         if (copied.ExitCode != 0)
         {
-            return Refuse(null, ComposeExecutorCodes.RestoreIncomplete, "The backup could not be copied into Postgres.");
+            return Refuse(null, PreMigrationRestoreCodes.RestoreIncomplete, "The backup could not be copied into Postgres.");
         }
 
         var dropped = await ComposeAsync(CommandTimeout, ["exec", "-T", "--", _options.PostgresService, "dropdb", "-U", _options.DatabaseUser, "--force", "--if-exists", _options.DatabaseName], cancellationToken)
             .ConfigureAwait(false);
         if (dropped.ExitCode != 0)
         {
-            return Refuse(null, ComposeExecutorCodes.RestoreIncomplete, "The database could not be dropped before restore.");
+            return Refuse(null, PreMigrationRestoreCodes.RestoreIncomplete, "The database could not be dropped before restore.");
         }
 
         var restored = await ComposeAsync(DumpTimeout, ["exec", "-T", "--", _options.PostgresService, "pg_restore", "-U", _options.DatabaseUser, "-d", MaintenanceDatabase, "--create", "--exit-on-error", "/tmp/honua-backup.dump"], cancellationToken)
             .ConfigureAwait(false);
         if (restored.ExitCode != 0)
         {
-            return Refuse(null, ComposeExecutorCodes.RestoreIncomplete, "pg_restore did not complete.");
+            return Refuse(null, PreMigrationRestoreCodes.RestoreIncomplete, "pg_restore did not complete.");
         }
 
         return null;
@@ -531,7 +524,7 @@ internal sealed partial class ComposeProjectController : IDisposable
 
         if (newest == null)
         {
-            return BackupHit.Fail(Refuse(null, ComposeExecutorCodes.BackupImageMismatch, "No backup manifest matches the requested image."));
+            return BackupHit.Fail(Refuse(null, PreMigrationRestoreCodes.BackupImageMismatch, "No backup manifest matches the requested image."));
         }
 
         if (newestChecksumFailure != null)
@@ -548,7 +541,7 @@ internal sealed partial class ComposeProjectController : IDisposable
         if (!IsUnder(root, manifestPath) || !File.Exists(manifestPath))
         {
             return named
-                ? BackupHit.Fail(Refuse(null, ComposeExecutorCodes.BackupImageMismatch, "The backup manifest is missing."))
+                ? BackupHit.Fail(Refuse(null, PreMigrationRestoreCodes.BackupImageMismatch, "The backup manifest is missing."))
                 : default;
         }
 
@@ -562,7 +555,7 @@ internal sealed partial class ComposeProjectController : IDisposable
         catch (JsonException)
         {
             return named
-                ? BackupHit.Fail(Refuse(null, ComposeExecutorCodes.BackupChecksumMismatch, "The backup manifest is not valid."))
+                ? BackupHit.Fail(Refuse(null, PreMigrationRestoreCodes.BackupChecksumMismatch, "The backup manifest is not valid."))
                 : default;
         }
 
@@ -573,42 +566,36 @@ internal sealed partial class ComposeProjectController : IDisposable
                 : default;
         }
 
-        if (!string.Equals(manifest.Project, _options.ProjectName, StringComparison.Ordinal))
+        if (!string.Equals(manifest.Service, _options.ServiceName, StringComparison.Ordinal))
         {
-            return named
-                ? BackupHit.Fail(Refuse(null, ComposeExecutorCodes.ScopeViolation, "The backup belongs to a different Compose project."))
-                : default;
+            return named ? BackupHit.Fail(Refuse(null, PreMigrationRestoreCodes.ScopeViolation, "The backup belongs to another service.")) : default;
         }
-
-        if (!string.Equals(manifest.Image, image, StringComparison.Ordinal))
-        {
-            return named
-                ? BackupHit.Fail(Refuse(null, ComposeExecutorCodes.BackupImageMismatch, "The backup records a different image."))
-                : default;
-        }
-
-        if (!string.IsNullOrWhiteSpace(manifest.DumpFile)
-            && !string.Equals(manifest.DumpFile, ComposeExecutorProtocol.DumpFileName, StringComparison.Ordinal))
-        {
-            return named
-                ? BackupHit.Fail(Refuse(null, ComposeExecutorCodes.ScopeViolation, "The backup names a dump file outside the allowlist."))
-                : default;
-        }
-
         var dump = DumpPath(root, backupId);
         if (!IsUnder(root, dump) || !File.Exists(dump))
         {
             return named
-                ? BackupHit.Fail(Refuse(null, ComposeExecutorCodes.BackupChecksumMismatch, "The backup dump is missing."))
-                : BackupHit.Checksum(manifest, ComposeExecutorCodes.BackupChecksumMismatch);
+                ? BackupHit.Fail(Refuse(null, PreMigrationRestoreCodes.BackupUnverified, "The backup dump is missing."))
+                : BackupHit.Checksum(manifest, PreMigrationRestoreCodes.BackupUnverified);
         }
-
-        var hash = HashFile(dump);
-        if (!string.Equals(hash, manifest.Sha256, StringComparison.Ordinal))
+        var verification = BackupEvidenceVerifier.VerifyCompose(new ComposeBackupManifestEvidence
+        {
+            BackupId = backupId,
+            Project = manifest.Project ?? string.Empty,
+            ExpectedProject = _options.ProjectName,
+            Image = manifest.Image ?? string.Empty,
+            ExpectedImage = image,
+            SchemaVersion = manifest.SchemaVersion,
+            Sha256 = manifest.Sha256 ?? string.Empty,
+            ComputedSha256 = HashFile(dump),
+            DumpFileName = manifest.DumpFile ?? string.Empty
+        });
+        if (verification.Backup is null)
         {
             return named
-                ? BackupHit.Fail(Refuse(null, ComposeExecutorCodes.BackupChecksumMismatch, "The backup checksum does not match the dump."))
-                : BackupHit.Checksum(manifest, ComposeExecutorCodes.BackupChecksumMismatch);
+                ? BackupHit.Fail(Refuse(null, verification.Code!, "The backup evidence did not verify."))
+                : verification.Code == PreMigrationRestoreCodes.BackupChecksumMismatch
+                    ? BackupHit.Checksum(manifest, verification.Code!)
+                    : default;
         }
 
         return BackupHit.Ok(manifest);
@@ -826,11 +813,15 @@ internal sealed partial class ComposeProjectController : IDisposable
             .ConfigureAwait(false);
         int? maxSchema = null;
         if (label.ExitCode == 0
-            && int.TryParse(label.Stdout.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+            && int.TryParse(label.Stdout.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
+            && parsed >= 0)
         {
             maxSchema = parsed;
         }
 
+        maxSchema ??= _options.Revisions.FirstOrDefault(revision =>
+            string.Equals(revision.Image, image, StringComparison.Ordinal)
+            || string.Equals(revision.Image, trimmed, StringComparison.Ordinal))?.MaxSchema;
         return new InspectedImage(trimmed, maxSchema);
     }
 
@@ -935,7 +926,7 @@ internal sealed partial class ComposeProjectController : IDisposable
             {
                 Ok = false,
                 ReadbackComplete = false,
-                Code = ComposeExecutorCodes.AuditUnrecorded,
+                Code = request.Op == "rollback" ? PreMigrationRestoreCodes.AuditFailed : ComposeExecutorCodes.AuditUnrecorded,
                 Message = "The operation was not recorded in the audit log.",
                 CustomerBody = null
             };

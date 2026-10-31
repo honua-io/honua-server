@@ -9,7 +9,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 ROLE = os.environ.get("HONUA_FIXTURE_ROLE", "rc1")
-MAX_SCHEMA = int(os.environ.get("HONUA_MAX_SCHEMA", "141"))
+MAX_SCHEMA = int(os.environ.get("HONUA_MAX_SCHEMA", "140"))
 HOST = os.environ.get("HONUA_PGHOST", "postgres")
 USER = os.environ.get("HONUA_PGUSER", "honua")
 DATABASE = os.environ.get("HONUA_PGDATABASE", "honua")
@@ -78,9 +78,9 @@ def apply_candidate():
         if applied.returncode != 0:
             sys.exit(1)
     journal = psql(
-        "INSERT INTO public.schema_versions (scriptname, applied) VALUES "
-        f"('{JOURNAL_140}', now()), "
-        f"('{JOURNAL_142}', now())"
+        "INSERT INTO public.schema_versions (scriptname, applied) "
+        f"SELECT '{JOURNAL_142}', now() WHERE NOT EXISTS "
+        f"(SELECT 1 FROM public.schema_versions WHERE scriptname = '{JOURNAL_142}')"
     )
     if journal.returncode != 0:
         sys.exit(1)

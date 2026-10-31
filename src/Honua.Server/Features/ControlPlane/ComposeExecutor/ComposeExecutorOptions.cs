@@ -36,6 +36,9 @@ internal sealed class ComposeExecutorOptions
     /// </summary>
     public string[] ComposeFiles { get; set; } = [];
 
+    /// <summary>Exact immutable images and schemas for older images that do not carry a schema label.</summary>
+    public List<ComposeImageSchemaOption> Revisions { get; set; } = [];
+
     /// <summary>Service whose image the executor replaces.</summary>
     public string ServiceName { get; set; } = "honua";
 
@@ -105,6 +108,12 @@ internal sealed class ComposeExecutorOptions
             || !ComposeExecutorRules.SqlIdentifier().IsMatch(DatabaseUser))
         {
             return Scope("Database name and user are limited to SQL identifiers from configuration.");
+        }
+
+        if (Revisions.Any(revision => !ComposeExecutorRules.IsImmutableImage(revision.Image) || revision.MaxSchema < 0)
+            || Revisions.GroupBy(revision => revision.Image, StringComparer.Ordinal).Any(group => group.Count() > 1))
+        {
+            return Scope("Revision schemas must name distinct immutable images and non-negative schema numbers.");
         }
 
         foreach (var composeFile in EffectiveComposeFiles())
@@ -189,3 +198,13 @@ internal sealed class ComposeExecutorOptions
 
 /// <summary>A configuration problem that refuses the executor before docker runs.</summary>
 internal readonly record struct ComposeExecutorConfigProblem(string Code, string Message);
+
+/// <summary>Operator-owned schema catalog entry for an immutable image without a schema label.</summary>
+internal sealed class ComposeImageSchemaOption
+{
+    /// <summary>Exact immutable image reference or image id.</summary>
+    public string Image { get; set; } = string.Empty;
+
+    /// <summary>Highest numbered migration shipped by that image.</summary>
+    public int MaxSchema { get; set; }
+}

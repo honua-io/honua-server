@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Core.Features.Infrastructure.Migrations;
+using Honua.Core.Features.ControlPlane.Restore;
 
 namespace Honua.ControlPlane;
 
@@ -59,33 +60,19 @@ internal static class ComposeReaderGate
         return max;
     }
 
-    /// <summary>
-    /// True when the prior image has no max-schema label and the journal is not entirely expand.
-    /// An expand-only journal may still switch images. A contract or reader-incompatible entry may not.
-    /// </summary>
-    internal static bool LabelMissingBlocks(
+    /// <summary>Maps database declarations to the shared restore policy inputs.</summary>
+    internal static IReadOnlyList<AppliedSchemaMigration> Applied(
         IReadOnlyList<string> journal,
         IReadOnlyList<ComposeCompatibilityRow> rows)
-    {
-        ArgumentNullException.ThrowIfNull(journal);
-        ArgumentNullException.ThrowIfNull(rows);
-        foreach (var script in journal)
+        => journal.Select(script =>
         {
-            if (MigrationReaderCompatibility.ReadSchemaNumber(script) is null)
-            {
-                return true;
-            }
-
             var row = Find(rows, script);
-            if (row is null
-                || !string.Equals(row.Value.Classification, MigrationReaderCompatibilityClassification.Expand, StringComparison.Ordinal))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
+            var number = MigrationReaderCompatibility.ReadSchemaNumber(script);
+            return new AppliedSchemaMigration(
+                number ?? int.MaxValue,
+                number.HasValue && row.HasValue && row.Value.DeclarationFormat == MigrationReaderCompatibilityDeclaration.CurrentFormat ? row.Value.Classification : null,
+                row?.MinReaderSchema ?? int.MaxValue);
+        }).ToArray();
 
     /// <summary>
     /// Decides restore from recorded classification and minimum reader schema. Expand scripts above
@@ -98,28 +85,14 @@ internal static class ComposeReaderGate
     {
         ArgumentNullException.ThrowIfNull(journal);
         ArgumentNullException.ThrowIfNull(rows);
-        var verify = new List<string>();
-        foreach (var script in journal)
+        var applied = Applied(journal, rows);
+        if (applied.Any(migration => !ReaderIncompatibleRestorePolicy.OlderReaderCanAccept(migration, priorMaxSchema)))
         {
-            var number = MigrationReaderCompatibility.ReadSchemaNumber(script);
-            if (number is null || number.Value <= priorMaxSchema)
-            {
-                continue;
-            }
-
-            var row = Find(rows, script);
-            if (row is null
-                || row.Value.DeclarationFormat != MigrationReaderCompatibilityDeclaration.CurrentFormat
-                || !string.Equals(row.Value.Classification, MigrationReaderCompatibilityClassification.Expand, StringComparison.Ordinal)
-                || row.Value.MinReaderSchema > priorMaxSchema)
-            {
-                return new ComposeRestoreAssessment(true, []);
-            }
-
-            verify.Add(script);
+            return new ComposeRestoreAssessment(true, []);
         }
 
-        return new ComposeRestoreAssessment(false, verify);
+        return new ComposeRestoreAssessment(false,
+            journal.Where(script => MigrationReaderCompatibility.ReadSchemaNumber(script) > priorMaxSchema).ToArray());
     }
 
     private static ComposeCompatibilityRow? Find(IReadOnlyList<ComposeCompatibilityRow> rows, string script)

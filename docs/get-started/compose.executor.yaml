@@ -50,18 +50,21 @@ services:
     environment:
       HONUA_COMPOSE_EXECUTOR: "true"
       ControlPlane__ComposeExecutor__SocketPath: /run/honua-compose/executor.sock
-      ControlPlane__ComposeExecutor__ProjectDirectory: /compose
+      ControlPlane__ComposeExecutor__ProjectDirectory: ${HONUA_COMPOSE_PROJECT_DIRECTORY:?Set the absolute host project directory}
       # docker compose ls names the project. The quickstart project name is the directory name.
       ControlPlane__ComposeExecutor__ProjectName: ${COMPOSE_PROJECT_NAME:?Set the Compose project name}
       ControlPlane__ComposeExecutor__ComposeFile: compose.yaml
       # Ordered files for later image changes. The override is appended after this list.
       ControlPlane__ComposeExecutor__ComposeFiles__0: compose.yaml
       ControlPlane__ComposeExecutor__ComposeFiles__1: compose.executor.yaml
+      # Published prior images without a schema label require an operator-owned exact-image catalog.
+      ControlPlane__ComposeExecutor__Revisions__0__Image: ${HONUA_PRIOR_IMAGE:?Set the immutable prior image}
+      ControlPlane__ComposeExecutor__Revisions__0__MaxSchema: ${HONUA_PRIOR_MAX_SCHEMA:?Set the prior image shipped schema number}
       ControlPlane__ComposeExecutor__ServiceName: honua
       ControlPlane__ComposeExecutor__PostgresService: postgres
       ControlPlane__ComposeExecutor__DatabaseName: honua
       ControlPlane__ComposeExecutor__DatabaseUser: honua
-      ControlPlane__ComposeExecutor__BackupDirectory: /backups
+      ControlPlane__ComposeExecutor__BackupDirectory: ${HONUA_COMPOSE_PROJECT_DIRECTORY:?Set the absolute host project directory}/backups
       ControlPlane__ComposeExecutor__HealthProbeUrl: http://honua:8080/healthz/ready
       # A route that returns a non-empty body proving the database is readable.
       ControlPlane__ComposeExecutor__CustomerProbeUrl: ${HONUA_COMPOSE_CUSTOMER_PROBE:?Set a customer readback URL}
@@ -71,8 +74,9 @@ services:
       # The published server image does not ship the Docker client. Mount the host binary.
       # It must run on the image's glibc. The honua service does not receive this mount.
       - /usr/bin/docker:/usr/local/bin/docker:ro
-      - ./:/compose
-      - ./backups:/backups
+      - ${DOCKER_COMPOSE_PLUGIN:?Set the host Compose plugin executable}:/usr/local/lib/docker/cli-plugins/docker-compose:ro
+      # Identical host/container paths keep relative Compose bind mounts on the host project.
+      - ${HONUA_COMPOSE_PROJECT_DIRECTORY:?Set the absolute host project directory}:${HONUA_COMPOSE_PROJECT_DIRECTORY:?Set the absolute host project directory}
       - compose-executor-socket:/run/honua-compose
 volumes:
   compose-executor-socket:

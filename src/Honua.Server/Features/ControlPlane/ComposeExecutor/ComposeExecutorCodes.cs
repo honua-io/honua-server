@@ -1,6 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.ControlPlane.Restore;
+
 namespace Honua.ControlPlane;
 
 /// <summary>
@@ -26,16 +28,16 @@ internal static class ComposeExecutorCodes
     public const string ApprovalRequired = "compose-approval-required";
 
     /// <summary>The backup bytes do not match the manifest checksum. Nothing was stopped.</summary>
-    public const string BackupChecksumMismatch = "compose-backup-checksum-mismatch";
+    public const string BackupChecksumMismatch = PreMigrationRestoreCodes.BackupChecksumMismatch;
 
     /// <summary>The backup manifest records a different image than the one requested.</summary>
-    public const string BackupImageMismatch = "compose-backup-image-mismatch";
+    public const string BackupImageMismatch = PreMigrationRestoreCodes.BackupImageMismatch;
 
     /// <summary>The backup schema is newer than the prior image can read, or the prior image has no schema label.</summary>
-    public const string BackupSchemaAhead = "compose-backup-schema-ahead";
+    public const string BackupSchemaAhead = PreMigrationRestoreCodes.BackupSchemaAhead;
 
     /// <summary>Restore did not return the database to the manifest schema. The service is left stopped.</summary>
-    public const string RestoreIncomplete = "compose-restore-incomplete";
+    public const string RestoreIncomplete = PreMigrationRestoreCodes.RestoreIncomplete;
 
     /// <summary>Live readback did not confirm image, schema, health, and a non-empty customer response.</summary>
     public const string ReadbackIncomplete = "compose-readback-incomplete";

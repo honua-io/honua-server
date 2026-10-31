@@ -3,7 +3,7 @@
 FROM python:3.12-alpine
 RUN apk add --no-cache postgresql-client
 ARG HONUA_FIXTURE_ROLE=rc1
-ARG HONUA_MAX_SCHEMA=141
+ARG HONUA_MAX_SCHEMA=140
 LABEL org.honua.max-schema="${HONUA_MAX_SCHEMA}"
 COPY entrypoint.py /entrypoint.py
 COPY migrations/ /migrations/

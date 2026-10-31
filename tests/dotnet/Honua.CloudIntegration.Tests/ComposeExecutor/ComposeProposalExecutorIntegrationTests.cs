@@ -11,6 +11,7 @@ using System.Text.Json;
 using Honua.ControlPlane;
 using Honua.ControlPlane.Executors;
 using Honua.Core.Exceptions;
+using Honua.Core.Features.ControlPlane.Restore;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
@@ -66,7 +67,9 @@ public sealed class ComposeProposalExecutorIntegrationTests
         Directory.CreateDirectory(Path.Combine(projectDir, "init"));
         Directory.CreateDirectory(otherDir);
         Directory.CreateDirectory(backupDir);
-        await File.WriteAllTextAsync(Path.Combine(projectDir, "init", "01-init.sql"), InitSql).ConfigureAwait(false);
+        var admissionSql = await File.ReadAllTextAsync(Path.Combine(repo, "src", "Honua.Server", "Migrations", "140_CreateAiExecutionAdmission.sql")).ConfigureAwait(false);
+        await File.WriteAllTextAsync(Path.Combine(projectDir, "init", "01-init.sql"),
+            InitSql + "\n" + admissionSql.Replace("$HonuaSchema$", "public", StringComparison.Ordinal)).ConfigureAwait(false);
         await File.WriteAllTextAsync(Path.Combine(projectDir, "compose.yaml"), ComposeYaml(projectName, rc1Tag, port)).ConfigureAwait(false);
         await File.WriteAllTextAsync(Path.Combine(otherDir, "compose.yaml"), OtherYaml(otherName)).ConfigureAwait(false);
 
@@ -74,7 +77,7 @@ public sealed class ComposeProposalExecutorIntegrationTests
         Task<int>? serve = null;
         try
         {
-            await BuildFixtureAsync(repo, rc1Tag, "rc1", "141").ConfigureAwait(false);
+            await BuildFixtureAsync(repo, rc1Tag, "rc1", "140").ConfigureAwait(false);
             await BuildFixtureAsync(repo, candidateTag, "candidate", "142").ConfigureAwait(false);
             var rc1Id = (await DockerAsync(["image", "inspect", "--format", "{{.Id}}", rc1Tag]).ConfigureAwait(false)).Trim();
             var candidateId = (await DockerAsync(["image", "inspect", "--format", "{{.Id}}", candidateTag]).ConfigureAwait(false)).Trim();
@@ -83,7 +86,7 @@ public sealed class ComposeProposalExecutorIntegrationTests
 
             await ComposeAsync(projectDir, projectName, ["up", "-d", "--pull", "never", "--wait", "--wait-timeout", "180"]).ConfigureAwait(false);
             await ComposeAsync(otherDir, otherName, ["up", "-d", "--pull", "never"]).ConfigureAwait(false);
-            await WaitForCustomerAsync(port, "schema=141").ConfigureAwait(false);
+            await WaitForCustomerAsync(port, "schema=140").ConfigureAwait(false);
 
             var options = new ComposeExecutorOptions
             {
@@ -99,6 +102,7 @@ public sealed class ComposeProposalExecutorIntegrationTests
                 CustomerProbeUrl = "http://127.0.0.1:" + port.ToString(CultureInfo.InvariantCulture) + "/customer",
                 HealthProbeUrl = "http://127.0.0.1:" + port.ToString(CultureInfo.InvariantCulture) + "/healthz/ready",
                 ReleaseImage = candidateId,
+                Revisions = [new ComposeImageSchemaOption { Image = rc1Id, MaxSchema = 140 }],
                 ProbeTimeoutSeconds = 10,
                 ComposeWaitTimeoutSeconds = 180
             };
@@ -194,7 +198,7 @@ public sealed class ComposeProposalExecutorIntegrationTests
             var manifest = JsonSerializer.Deserialize(manifestText, ComposeExecutorJsonContext.Default.ComposeBackupManifest);
             Assert.NotNull(manifest);
             Assert.Equal(rc1Id, manifest.Image);
-            Assert.Equal(141, manifest.SchemaVersion);
+            Assert.Equal(140, manifest.SchemaVersion);
             var marker = "\"sha256\":\"" + manifest.Sha256 + "\"";
             var tampered = manifestText.Replace(marker, "\"sha256\":\"" + new string('0', 64) + "\"", StringComparison.Ordinal);
             Assert.NotEqual(manifestText, tampered);
@@ -202,7 +206,7 @@ public sealed class ComposeProposalExecutorIntegrationTests
 
             var bad = await SubmitRollbackAsync(service, rc1Id, candidateId, "compose-it-bad-backup").ConfigureAwait(false);
             Assert.Equal(WorkflowOperationStatus.Failed, bad.Status);
-            Assert.Contains(ComposeExecutorCodes.BackupChecksumMismatch, bad.CurrentPhase, StringComparison.Ordinal);
+            Assert.Contains(PreMigrationRestoreCodes.BackupChecksumMismatch, bad.CurrentPhase, StringComparison.Ordinal);
             Assert.Equal(restartedId, await ServiceContainerIdAsync(projectDir, projectName, "honua").ConfigureAwait(false));
             Assert.Equal("142", (await PsqlAsync(projectDir, projectName, SchemaSql).ConfigureAwait(false)).Trim());
 
@@ -214,10 +218,10 @@ public sealed class ComposeProposalExecutorIntegrationTests
                 Assert.Fail("Rollback did not reconcile: " + rolled.Status + " " + rolled.CurrentPhase);
             }
 
-            await WaitForCustomerAsync(port, "schema=141").ConfigureAwait(false);
+            await WaitForCustomerAsync(port, "schema=140").ConfigureAwait(false);
             var restoredId = await ServiceContainerIdAsync(projectDir, projectName, "honua").ConfigureAwait(false);
             Assert.Equal(rc1Id, (await DockerAsync(["inspect", "--format", "{{.Image}}", restoredId]).ConfigureAwait(false)).Trim());
-            Assert.Equal("141", (await PsqlAsync(projectDir, projectName, SchemaSql).ConfigureAwait(false)).Trim());
+            Assert.Equal("140", (await PsqlAsync(projectDir, projectName, SchemaSql).ConfigureAwait(false)).Trim());
             Assert.True(string.IsNullOrWhiteSpace(await PsqlAsync(projectDir, projectName, "SELECT to_regclass('public.ai_financial_invocations')").ConfigureAwait(false)));
             Assert.Contains("kept", await CustomerAsync(port).ConfigureAwait(false), StringComparison.Ordinal);
             Assert.False(string.IsNullOrWhiteSpace(await PsqlAsync(projectDir, projectName, "SELECT PostGIS_Version()").ConfigureAwait(false)));
@@ -316,6 +320,7 @@ public sealed class ComposeProposalExecutorIntegrationTests
                 "build",
                 "--build-arg", "HONUA_FIXTURE_ROLE=" + role,
                 "--build-arg", "HONUA_MAX_SCHEMA=" + maxSchema,
+                "--label", "org.honua.max-schema=" + (role == "rc1" ? string.Empty : maxSchema),
                 "-t", tag,
                 context
             ], TimeSpan.FromMinutes(8)).ConfigureAwait(false);
@@ -682,7 +687,7 @@ public sealed class ComposeProposalExecutorIntegrationTests
             scriptname varchar(255) NOT NULL,
             applied timestamp NOT NULL
         );
-        INSERT INTO public.schema_versions (scriptname, applied) VALUES ('Honua.Server.Migrations.141_Expand.sql', now());
+        INSERT INTO public.schema_versions (scriptname, applied) VALUES ('Honua.Server.Migrations.140_CreateAiExecutionAdmission.sql', now());
         CREATE TABLE public.schema_version_reader_compatibility (
             script_name varchar(255) PRIMARY KEY,
             declaration_format integer NOT NULL,
@@ -694,7 +699,7 @@ public sealed class ComposeProposalExecutorIntegrationTests
         );
         INSERT INTO public.schema_version_reader_compatibility
             (script_name, declaration_format, classification, script_sha256, min_reader_schema, script_text)
-        VALUES ('Honua.Server.Migrations.141_Expand.sql', 1, 'expand', repeat('cd', 32), 141, 'fixture');
+        VALUES ('Honua.Server.Migrations.140_CreateAiExecutionAdmission.sql', 1, 'expand', repeat('cd', 32), 140, 'fixture');
         """;
 
     private sealed class NotRequiredApproval : IOperatorApprovalEvaluator

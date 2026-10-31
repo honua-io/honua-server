@@ -10,6 +10,7 @@ using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Migrations;
+using Honua.Core.Features.ControlPlane.Restore;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -81,7 +82,7 @@ public sealed class ComposeProposalExecutorTests
         Assert.Empty(docker.Argv);
         Assert.False(response.Ok);
         Assert.False(response.ReadbackComplete);
-        Assert.Equal(ComposeExecutorCodes.BackupChecksumMismatch, response.Code);
+        Assert.Equal(PreMigrationRestoreCodes.BackupChecksumMismatch, response.Code);
     }
 
     [UnitTest]
@@ -214,9 +215,18 @@ public sealed class ComposeProposalExecutorTests
             [contract],
             [new ComposeCompatibilityRow(contract, 1, MigrationReaderCompatibilityClassification.Contract, 0)],
             141).Required);
-        Assert.True(ComposeReaderGate.LabelMissingBlocks(
-            [contract],
-            [new ComposeCompatibilityRow(contract, 1, MigrationReaderCompatibilityClassification.Contract, 0)]));
+
+
+        Assert.True(ComposeReaderGate.Assess(["unrecognized"], [], 141).Required);
+        Assert.True(ComposeReaderGate.Assess(
+            [newerExpand], [new ComposeCompatibilityRow(newerExpand, 99, "expand", 0)], 141).Required);
+        Assert.Equal(RestoreDecisionKind.Refuse, ReaderIncompatibleRestorePolicy.Decide(new RestoreAssessment
+        {
+            CompatibilityKnown = true,
+            PriorImageMaxSchema = null,
+            Applied = ComposeReaderGate.Applied([expand], [new ComposeCompatibilityRow(expand, 1, "expand", 0)]),
+            InPlaceDatabase = true
+        }).Kind);
 
         var shipped = ComposeReaderGate.Assess(
             [expand],
@@ -231,9 +241,7 @@ public sealed class ComposeProposalExecutorTests
             141);
         Assert.False(ahead.Required);
         Assert.Equal([newerExpand], ahead.ExpandScriptsToVerify);
-        Assert.False(ComposeReaderGate.LabelMissingBlocks(
-            [expand],
-            [new ComposeCompatibilityRow(expand, 1, MigrationReaderCompatibilityClassification.Expand, 0)]));
+
     }
 
     [UnitTest]
