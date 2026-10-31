@@ -95,6 +95,11 @@ internal sealed class DurableRestoreQueue(IWorkflowOperationStore store)
     }
 }
 
+internal interface IPreMigrationRestoreReconciler
+{
+    Task ReconcileAsync(string id, CancellationToken cancellationToken);
+}
+
 /// <summary>Runs leased restore work and resumes observation after a serving host is replaced.</summary>
 internal sealed partial class DurableRestoreWorker(
     IWorkflowOperationStore store,
@@ -103,7 +108,7 @@ internal sealed partial class DurableRestoreWorker(
     DeployOperationExecutor deploy,
     DurableRestoreCompletionVerifier verifier,
     IPreMigrationRestoreAudit audit,
-    ILogger<DurableRestoreWorker> logger) : BackgroundService
+    ILogger<DurableRestoreWorker> logger) : BackgroundService, IPreMigrationRestoreReconciler
 {
     private static readonly TimeSpan Lease = TimeSpan.FromMinutes(2);
     private const string CellOwnerId = RestoreDeployAdmission.CellOwnerId;
@@ -111,7 +116,7 @@ internal sealed partial class DurableRestoreWorker(
     private readonly string _owner = $"restore:{Environment.MachineName}:{Guid.NewGuid():N}";
 
     /// <summary>Reconciles one checkpoint. Only the lease owner may advance it.</summary>
-    internal async Task ReconcileAsync(string id, CancellationToken cancellationToken)
+    public async Task ReconcileAsync(string id, CancellationToken cancellationToken)
     {
         if (!await store.TryAcquireLeaseAsync(id, _owner, Lease, cancellationToken).ConfigureAwait(false)) return;
         using var lostLease = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);

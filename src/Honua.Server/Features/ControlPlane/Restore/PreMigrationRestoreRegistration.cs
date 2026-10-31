@@ -33,6 +33,7 @@ internal static class PreMigrationRestoreRegistration
         services.AddSingleton<DurableRestoreQueue>();
         services.AddSingleton<DurableRestoreCompletionVerifier>();
         services.AddSingleton<DurableRestoreWorker>();
+        services.AddSingleton<IPreMigrationRestoreReconciler>(static provider => provider.GetRequiredService<DurableRestoreWorker>());
 #if !HONUA_EXCLUDE_AWS
         services.AddSingleton<IRdsSnapshotRestore, AwsRdsSnapshotRestoreAdapter>();
         services.AddSingleton<IConnectionSecretRetarget, AwsSecretHostRetarget>();
