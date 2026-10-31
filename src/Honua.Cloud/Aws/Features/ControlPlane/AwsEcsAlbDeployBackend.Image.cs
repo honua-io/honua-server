@@ -185,6 +185,11 @@ internal sealed partial class AwsEcsAlbDeployBackend
             throw new InvalidOperationException("ECS checkpoint is incomplete.");
         }
 
+        if (spec.Protection is { } protection && DateTimeOffset.UtcNow > protection.ObservationDeadline.AddMinutes(30))
+        {
+            return new DeployObservation { Status = WorkflowOperationStatus.Failed, Message = "Stable ECS service handoff exceeded its time limit." };
+        }
+
         var stable = await ecsClient.DescribeServiceAsync(target.Cluster!, stableName, target.Region, cancellationToken).ConfigureAwait(false);
         var rule = await albClient.GetListenerRuleWeightsAsync(target.ListenerRuleArn!, target.Region, cancellationToken).ConfigureAwait(false);
         var weights = SummarizeAlbWeights(rule, target);
@@ -207,6 +212,13 @@ internal sealed partial class AwsEcsAlbDeployBackend
         if (!weights.MatchesExpectedShare(100) && !weights.MatchesExpectedShare(0))
         {
             throw new InvalidOperationException("ECS traffic routing changed during stable handoff.");
+        }
+
+        var primary = stable.Deployments.FirstOrDefault(deployment =>
+            string.Equals(deployment.Status, "PRIMARY", StringComparison.OrdinalIgnoreCase));
+        if (string.Equals(primary?.RolloutState, "FAILED", StringComparison.OrdinalIgnoreCase))
+        {
+            return new DeployObservation { Status = WorkflowOperationStatus.Failed, Message = "Stable ECS service handoff failed." };
         }
 
         var convergence = EvaluateDeploymentConvergence(stable, operation.ProviderOperationId!);

@@ -136,6 +136,49 @@ public sealed class ReleaseImageConvergenceTests
     }
 
     [Fact]
+    public async Task EcsProtection_FailedStableRolloutEscalates()
+    {
+        var ecs = new DigestEcsClient();
+        var backend = Backend(new DigestAlbClient(), ecs);
+        var operation = EcsOperation(Digest);
+        var checkpoint = await backend.PrepareCheckpointAsync(operation, CancellationToken.None);
+        var persisted = Checkpointed(operation, checkpoint);
+        await backend.ActivateCheckpointAsync(persisted, CancellationToken.None);
+        await backend.ObserveAsync(persisted);
+        await backend.CompleteProtectionAsync(persisted);
+        ecs.RolloutState = "FAILED";
+        var result = await backend.CompleteProtectionAsync(persisted);
+        result.Status.Should().Be(WorkflowOperationStatus.Failed);
+    }
+
+    [Fact]
+    public async Task EcsProtection_ExpiredHandoffEscalatesWithoutAProviderWrite()
+    {
+        var ecs = new DigestEcsClient();
+        var backend = Backend(new DigestAlbClient(), ecs);
+        var operation = EcsOperation(Digest);
+        var checkpoint = await backend.PrepareCheckpointAsync(operation, CancellationToken.None);
+        var persisted = Checkpointed(operation, checkpoint);
+        persisted = persisted with
+        {
+            Deploy = persisted.Deploy! with
+            {
+                Protection = new DeployProtectionState
+                {
+                    PreviousRevision = CurrentTaskDef,
+                    CandidateRevision = Digest,
+                    FirstExposureAt = DateTimeOffset.UtcNow.AddHours(-2),
+                    ObservationDeadline = DateTimeOffset.UtcNow.AddHours(-1),
+                    PolicyDigest = "policy"
+                }
+            }
+        };
+        var result = await backend.CompleteProtectionAsync(persisted);
+        result.Status.Should().Be(WorkflowOperationStatus.Failed);
+        ecs.Calls.Should().NotContain("update-service");
+    }
+
+    [Fact]
     public async Task EcsRollback_DuringHandoffRestoresPriorStableBeforeRouting()
     {
         var ecs = new DigestEcsClient();
@@ -740,7 +783,7 @@ public sealed class ReleaseImageConvergenceTests
 
         public string MigrationLastStatus { get; init; } = "STOPPED";
 
-        public string RolloutState { get; init; } = "COMPLETED";
+        public string RolloutState { get; set; } = "COMPLETED";
 
         public Task<AwsEcsServiceState> DescribeServiceAsync(string cluster, string serviceName, string? region, CancellationToken cancellationToken = default)
         {
