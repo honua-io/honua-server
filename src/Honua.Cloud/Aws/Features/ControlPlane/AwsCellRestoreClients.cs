@@ -29,13 +29,15 @@ internal sealed record AwsRdsInstanceView(bool Available, string? Endpoint);
 /// <param name="SubnetGroupName">DB subnet group.</param>
 /// <param name="EnvironmentTag"><c>cert</c> or <c>demo</c>.</param>
 /// <param name="WaitSeconds">How long to poll before giving up.</param>
+/// <param name="SecurityGroupIds">Cell-authorized VPC security groups.</param>
 internal sealed record AwsRdsRestoreCommand(
     string SnapshotId,
     string NewInstanceId,
     string CellPrefix,
     string SubnetGroupName,
     string EnvironmentTag,
-    int WaitSeconds);
+    int WaitSeconds,
+    IReadOnlyList<string> SecurityGroupIds);
 
 /// <summary>
 /// RDS snapshot describe and restore. The client is created on first use so a Compose host
@@ -101,6 +103,7 @@ internal sealed class AwsRdsCellRestoreClient : IDisposable
                         DBInstanceIdentifier = command.NewInstanceId,
                         DBSnapshotIdentifier = command.SnapshotId,
                         DBSubnetGroupName = command.SubnetGroupName,
+                        VpcSecurityGroupIds = command.SecurityGroupIds.ToList(),
                         PubliclyAccessible = false,
                         CopyTagsToSnapshot = true,
                         Tags =
@@ -114,7 +117,8 @@ internal sealed class AwsRdsCellRestoreClient : IDisposable
         }
         catch (AmazonRDSException ex) when (string.Equals(ex.ErrorCode, "DBInstanceAlreadyExists", StringComparison.Ordinal))
         {
-            // A repeated rollback reuses the instance id. Poll that instance instead of creating another.
+            // A pre-existing instance is not proof that it came from the approved snapshot.
+            return new AwsRdsInstanceView(false, null);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

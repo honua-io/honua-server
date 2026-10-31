@@ -38,6 +38,32 @@ public sealed class PreMigrationRestoreCoordinatorTests
 
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
+    public async Task CloudRestore_WithoutAuthorizedSecurityGroups_DoesNotMutate()
+    {
+        var harness = NewHarness();
+        harness.Cell.RdsSecurityGroupIds.Clear();
+        var completion = await harness.Coordinator.ExecuteAsync(Payload(SnapshotId), Request(), harness.Starter, CancellationToken.None);
+        Assert.Equal(PreMigrationRestoreCodes.ScopeViolation, completion.Code);
+        harness.Events.Should().NotContain("restore");
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task CloudRestore_PrefixTooLongForUniqueInstance_DoesNotMutate()
+    {
+        var harness = NewHarness();
+        var prefix = new string('a', 54) + "-";
+        harness.Cell.CellPrefix = prefix;
+        harness.Cell.ConnectionSecretId = prefix + "db";
+        harness.Cell.DbSubnetGroupName = prefix + "subnet";
+        harness.Snapshot = harness.Snapshot with { SnapshotId = prefix + "snap", CellPrefix = prefix };
+        var completion = await harness.Coordinator.ExecuteAsync(Payload(prefix + "snap"), Request(), harness.Starter, CancellationToken.None);
+        Assert.NotNull(completion.Code);
+        harness.Events.Should().NotContain("restore");
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
     public async Task MissingBackup_DoesNotRestoreOrStart()
     {
         var harness = NewHarness();
@@ -111,6 +137,7 @@ public sealed class PreMigrationRestoreCoordinatorTests
         var completion = await harness.Coordinator.ExecuteAsync(Payload(SnapshotId), Request(), harness.Starter, CancellationToken.None);
 
         ReaderIncompatibleRestorePolicy.IsReportedSuccess(completion).Should().BeTrue();
+        harness.RestoreRequest!.SecurityGroupIds.Should().Equal("sg-01234567");
         completion.OperationId.Should().Be("op-1");
         harness.Events.Should().ContainInOrder("describe", "restore", "probe", "point", "start", "customer", "audit");
     }
@@ -431,6 +458,7 @@ public sealed class PreMigrationRestoreCoordinatorTests
             CellPrefix = "honua-cert-",
             ConnectionSecretId = "honua-cert-db",
             DbSubnetGroupName = "honua-cert-cert",
+            RdsSecurityGroupIds = ["sg-01234567"],
             EnvironmentTag = "cert",
             AuditPath = "audit.jsonl",
             Revisions = [new RevisionSchemaOption { Revision = "rev-141", MaxSchema = 141 }],
@@ -456,6 +484,8 @@ public sealed class PreMigrationRestoreCoordinatorTests
         };
 
         public RdsNewInstance Restored { get; set; } = new(true, "db.internal", null);
+
+        public RdsRestoreRequest? RestoreRequest { get; set; }
 
         public bool CustomerOk { get; set; } = true;
 
@@ -519,6 +549,7 @@ public sealed class PreMigrationRestoreCoordinatorTests
         public Task<RdsNewInstance> RestoreNewAsync(RdsRestoreRequest request, CancellationToken cancellationToken)
         {
             harness.Events.Add("restore");
+            harness.RestoreRequest = request;
             return Task.FromResult(harness.Restored);
         }
     }

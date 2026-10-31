@@ -31,6 +31,9 @@ internal sealed class RestoreCellOptions
     /// <summary>DB subnet group for the new instance. Must start with <see cref="CellPrefix"/>.</summary>
     public string DbSubnetGroupName { get; set; } = string.Empty;
 
+    /// <summary>Cell-authorized VPC security group IDs for a restored database.</summary>
+    public List<string> RdsSecurityGroupIds { get; set; } = [];
+
     /// <summary>Environment tag written on the new instance. Only <c>cert</c> or <c>demo</c>.</summary>
     public string EnvironmentTag { get; set; } = "cert";
 
@@ -107,7 +110,8 @@ internal sealed record RdsRestoreRequest(
     string CellPrefix,
     string SubnetGroupName,
     string EnvironmentTag,
-    int WaitSeconds);
+    int WaitSeconds,
+    IReadOnlyList<string> SecurityGroupIds);
 
 /// <summary>Provider result. <see cref="Endpoint"/> is set only when the new instance is available.</summary>
 internal sealed record RdsNewInstance(bool Available, string? Endpoint, string? Code);
@@ -467,14 +471,17 @@ internal sealed class PreMigrationRestoreExecutionService(
         if (!RestoreCellScope.IsBoundedPrefix(options.CellPrefix)
             || options.EnvironmentTag is not ("cert" or "demo")
             || !SecretInCell(options.ConnectionSecretId, options.CellPrefix)
-            || !BackupEvidenceVerifier.InstanceInCell(options.DbSubnetGroupName, options.CellPrefix))
+            || !BackupEvidenceVerifier.InstanceInCell(options.DbSubnetGroupName, options.CellPrefix)
+            || options.CellPrefix.TrimEnd('-').Length > 38
+            || options.RdsSecurityGroupIds.Count == 0
+            || options.RdsSecurityGroupIds.Any(id => !IsSecurityGroupId(id)))
         {
             return await FailAsync(PreMigrationRestoreCodes.ScopeViolation, "Restore is limited to this cell's own prefix, secret, and subnet group.", payload, request, decision.Kind, cancellationToken).ConfigureAwait(false);
         }
 
         var instanceId = NewInstanceId(options.CellPrefix, request.IdempotencyKey ?? decision.BackupId!);
         var restored = await rds.RestoreNewAsync(
-            new RdsRestoreRequest(backup.BackupId, instanceId, options.CellPrefix, options.DbSubnetGroupName, options.EnvironmentTag, options.RdsWaitSeconds),
+            new RdsRestoreRequest(backup.BackupId, instanceId, options.CellPrefix, options.DbSubnetGroupName, options.EnvironmentTag, options.RdsWaitSeconds, options.RdsSecurityGroupIds),
             cancellationToken).ConfigureAwait(false);
         if (!restored.Available || string.IsNullOrWhiteSpace(restored.Endpoint))
         {
@@ -589,10 +596,13 @@ internal sealed class PreMigrationRestoreExecutionService(
 
     private static string NewInstanceId(string cellPrefix, string material)
     {
-        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(material)))[..8].ToLowerInvariant();
-        var identifier = string.Concat(cellPrefix.TrimEnd('-'), "-restore-", hash);
-        return identifier.Length <= 63 ? identifier : identifier[..63].TrimEnd('-');
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(material)))[..16].ToLowerInvariant();
+        return string.Concat(cellPrefix.TrimEnd('-'), "-restore-", hash);
     }
+
+    private static bool IsSecurityGroupId(string id)
+        => id.StartsWith("sg-", StringComparison.Ordinal) && id.Length is 11 or 20
+            && id.AsSpan(3).ToString().All(character => char.IsAsciiHexDigitLower(character) || char.IsAsciiDigit(character));
 
     private static bool SecretInCell(string secretId, string cellPrefix)
     {

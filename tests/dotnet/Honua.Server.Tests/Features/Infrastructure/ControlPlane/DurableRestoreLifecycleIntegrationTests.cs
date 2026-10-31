@@ -59,7 +59,7 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
             audit.AppendAsync(Arg.Any<PreMigrationRestoreAuditLine>(), Arg.Any<CancellationToken>()).Returns(true);
             var cell = Options.Create(new RestoreCellOptions
             {
-                CellPrefix = "honua-cert-", ConnectionSecretId = "honua-cert-db", DbSubnetGroupName = "honua-cert-subnet", EnvironmentTag = "cert"
+                CellPrefix = "honua-cert-", ConnectionSecretId = "honua-cert-db", DbSubnetGroupName = "honua-cert-subnet", RdsSecurityGroupIds = ["sg-01234567"], EnvironmentTag = "cert"
             });
             var monitor = Substitute.For<IOptionsMonitor<ControlPlaneOptions>>();
             monitor.CurrentValue.Returns(new ControlPlaneOptions
