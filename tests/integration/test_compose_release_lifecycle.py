@@ -135,7 +135,19 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
                            for service in services]
             except (ValueError, TypeError):
                 summary = []
-            raise AssertionError(f"Compose startup failed; service states: {summary}") from error
+            # Emit bounded diagnostic lines with every generated secret removed.
+            logs = run(compose + ["logs", "--no-color", "--tail", "80", "compose-manager"],
+                       env=env, cwd=project_dir, check=False)
+            for secret in (key, postgres, keyring, env["HONUA_MASTER_KEY"]):
+                logs = logs.replace(secret, "[redacted]")
+            diagnostic = []
+            for line in logs.splitlines():
+                if re.search(r"exception|critical|fail|error", line, re.I):
+                    # Avoid printing values from connection strings or unknown generated credentials.
+                    line = re.sub(r"(?i)(password|token|secret|key)=([^;\s]+)", r"\1=[redacted]", line)
+                    line = re.sub(r"[A-Za-z0-9+/=_-]{32,}", "[redacted]", line)
+                    diagnostic.append(line[:300])
+            raise AssertionError(f"Compose startup failed; service states: {summary}; manager diagnostics: {diagnostic[-8:]}") from error
         assert image_id() == prior_id and schema() == 140
         sql("CREATE TABLE public.rc2_lifecycle_marker (id integer PRIMARY KEY, value text NOT NULL); INSERT INTO public.rc2_lifecycle_marker VALUES (1, 'retained')")
         proposer, _ = request(base, "/api/v1/admin/api-keys/", key, {"name": "proposer", "permissions": ["admin:*"]})
