@@ -59,13 +59,11 @@ internal static class BatchAndDeployBackendsRegistration
         // by both the Argo Rollouts deploy client and the Kubernetes Job batch client.
         services.AddSingleton<KubernetesApiRequestFactory>();
         services.AddSingleton<IArgoRolloutsClient, ArgoRolloutsClient>();
-        services.AddSingleton<IKubernetesDeploymentImageClient, KubernetesDeploymentImageClient>();
 
         // Deploy backend concrete singletons. Order matters for the IEnumerable<IDeployBackend>
         // resolution below — keep the existing K8s/AWS/Azure ordering.
         services.AddSingleton<KubernetesGitOpsDeployBackend>();
         services.AddSingleton<KubernetesArgoRolloutsDeployBackend>();
-        services.AddSingleton<KubernetesDeploymentDeployBackend>();
 #if !HONUA_EXCLUDE_AWS
         services.AddSingleton<AwsEcsGitOpsDeployBackend>();
         services.AddSingleton<AwsEcsAlbDeployBackend>();
@@ -82,7 +80,6 @@ internal static class BatchAndDeployBackendsRegistration
 #endif
         services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<KubernetesGitOpsDeployBackend>());
         services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<KubernetesArgoRolloutsDeployBackend>());
-        services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<KubernetesDeploymentDeployBackend>());
 #if !HONUA_EXCLUDE_AWS
         services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<AwsEcsGitOpsDeployBackend>());
         services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<AwsEcsAlbDeployBackend>());
