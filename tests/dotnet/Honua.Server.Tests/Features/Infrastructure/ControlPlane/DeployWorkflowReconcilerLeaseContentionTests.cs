@@ -102,6 +102,7 @@ public sealed class DeployWorkflowReconcilerLeaseContentionTests
     }
 
     [Fact]
+    [Trait("Tier", "Fast")]
     public async Task Checkpoint_PersistsMigrationAndRevisionsBeforeActivation()
     {
         var store = new InMemoryWorkflowOperationStore();
@@ -125,6 +126,7 @@ public sealed class DeployWorkflowReconcilerLeaseContentionTests
     }
 
     [Fact]
+    [Trait("Tier", "Fast")]
     public async Task Checkpoint_InterruptedMigrationDoesNotRepeatOrActivate()
     {
         var store = new InMemoryWorkflowOperationStore();
@@ -145,6 +147,7 @@ public sealed class DeployWorkflowReconcilerLeaseContentionTests
     }
 
     [Fact]
+    [Trait("Tier", "Fast")]
     public async Task Checkpoint_StagingDoesNotStampExposureUntilTrafficMoves()
     {
         var store = new InMemoryWorkflowOperationStore();
@@ -167,6 +170,7 @@ public sealed class DeployWorkflowReconcilerLeaseContentionTests
     }
 
     [Fact]
+    [Trait("Tier", "Fast")]
     public async Task Checkpoint_UnhealthyCutoverReplayRequestsRollback()
     {
         var store = new InMemoryWorkflowOperationStore();
@@ -182,6 +186,7 @@ public sealed class DeployWorkflowReconcilerLeaseContentionTests
     }
 
     [Fact]
+    [Trait("Tier", "Fast")]
     public void Checkpoint_ManualCutoverRefusesUnfinishedPreparation()
     {
         var operation = CreateOperation() with { ProviderOperationId = "candidate" };
@@ -196,6 +201,7 @@ public sealed class DeployWorkflowReconcilerLeaseContentionTests
     }
 
     [Fact]
+    [Trait("Tier", "Fast")]
     public async Task Checkpoint_CanaryRampPersistsStepBeforeTrafficAndStartsBakeAfterward()
     {
         var store = new InMemoryWorkflowOperationStore();
@@ -221,6 +227,7 @@ public sealed class DeployWorkflowReconcilerLeaseContentionTests
     }
 
     [Fact]
+    [Trait("Tier", "Fast")]
     public async Task Checkpoint_FailedCanaryRampRequestsRollback()
     {
         var store = new InMemoryWorkflowOperationStore();
@@ -246,6 +253,7 @@ public sealed class DeployWorkflowReconcilerLeaseContentionTests
     }
 
     [Fact]
+    [Trait("Tier", "Fast")]
     public async Task Checkpoint_StagedProbeMustPassBeforeCutover()
     {
         var store = new InMemoryWorkflowOperationStore();
@@ -269,6 +277,7 @@ public sealed class DeployWorkflowReconcilerLeaseContentionTests
     }
 
     [Fact]
+    [Trait("Tier", "Fast")]
     public async Task ProviderRollbackRecommendation_DoesNotWaitForTelemetry()
     {
         var store = new InMemoryWorkflowOperationStore();

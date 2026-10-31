@@ -15,6 +15,7 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 /// <c>Category=ReleaseCellHook</c> facts are the hook honua-release eval #1164 runs
 /// against a real cell through this same product executor. These tests do not call AWS.
 /// </summary>
+[Trait("Tier", "Fast")]
 public sealed class ReleaseImageConvergenceTests
 {
     private const string Digest =
