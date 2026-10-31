@@ -70,11 +70,9 @@ A client repoints by pointing at `<base>/sharing/rest` and following the same
 
 - **Automated (unlicensed):** evidence identifier `geoservices-rest-stub`, envelope
   `tests/baselines/client-compat/geoservices-rest-stub/geoservices-rest-stub-portal.cert.json`,
-  exercises the sequence above as CERT-PRTL-\* — see the
+  exercises the sequence above as CERT-PRTL-\*.
 - **Contract/integration (server):**
   `tests/dotnet/Honua.Server.Tests/Features/Sharing/PortalFacadeDiscoveryContractTests.cs`
-  [`ARCGIS_PRO_LICENSED_EVIDENCE.md`](../internal/evidence/ARCGIS_PRO_LICENSED_EVIDENCE.md).
-  No desktop receipt is linked yet (#1372/#1096).
 
 ## Consuming repos
 
