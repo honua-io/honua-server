@@ -170,7 +170,7 @@ internal sealed record DeployExecutionPayload
     /// <summary>Backend parameter overrides.</summary>
     public Dictionary<string, string>? ParameterOverrides { get; init; }
 
-    /// <summary>True only when <c>honua_propose_rollback</c> sealed this payload.</summary>
+    /// <summary>True when the approved operation explicitly targets a rollback.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool Rollback { get; init; }
 
