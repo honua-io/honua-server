@@ -66,6 +66,42 @@ internal sealed partial class AwsEcsAlbDeployBackend
         }
     }
 
+    private async Task<DeployObservation> ExposeCheckpointedCandidateAsync(
+        WorkflowOperationRecord operation, DeployOperationSpec spec, AwsEcsAlbDeployTarget target, CancellationToken cancellationToken)
+    {
+        if (!ReleaseImageDigest.IsEcsTaskDefinitionArn(operation.ProviderOperationId))
+        {
+            throw new InvalidOperationException("ECS checkpoint is incomplete.");
+        }
+
+        var service = await ecsClient.DescribeServiceAsync(target.Cluster!, target.CanaryService!, target.Region, cancellationToken).ConfigureAwait(false);
+        var health = await albClient.DescribeTargetHealthAsync(target.CanaryTargetGroupArn!, target.Region, cancellationToken).ConfigureAwait(false);
+        var rule = await albClient.GetListenerRuleWeightsAsync(target.ListenerRuleArn!, target.Region, cancellationToken).ConfigureAwait(false);
+        var weights = SummarizeAlbWeights(rule, target);
+        _ = TryResolveCanaryWeightPercentage(spec.Parameters, out var configuredWeight, out _);
+        var share = spec.CanaryRamp is { IsValid: true } ramp ? ramp.CurrentStepWeight ?? 100 : configuredWeight ?? 100;
+        if (!EvaluateDeploymentConvergence(service, operation.ProviderOperationId!).IsConverged ||
+            service.DesiredCount <= 0 || health.HealthyCount < service.DesiredCount ||
+            (!weights.MatchesExpectedShare(0) && !weights.MatchesExpectedShare(share)))
+        {
+            throw new InvalidOperationException("ECS candidate or routing changed before cutover.");
+        }
+
+        if (!weights.MatchesExpectedShare(share))
+        {
+            await albClient.UpdateListenerRuleWeightsAsync(target.ListenerRuleArn!,
+                BuildWeights(target.CanaryTargetGroupArn!, share, target.StableTargetGroupArn!, 100 - share),
+                target.Region, cancellationToken).ConfigureAwait(false);
+        }
+
+        return new DeployObservation
+        {
+            Status = WorkflowOperationStatus.Reconciling,
+            ProviderOperationId = operation.ProviderOperationId,
+            Message = "ECS candidate traffic shift was submitted."
+        };
+    }
+
     private async Task<DeploySubmissionResult> AdvanceCheckpointedCanaryAsync(
         WorkflowOperationRecord operation, DeployOperationSpec spec, AwsEcsAlbDeployTarget target, CancellationToken cancellationToken)
     {

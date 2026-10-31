@@ -947,7 +947,7 @@ internal sealed partial class AwsEcsAlbDeployBackend(
             }
 
             if (ReleaseImageDigest.IsImmutable(spec.DesiredRevision) && convergence.IsConverged &&
-                albWeights.MatchesExpectedShare(0) && operation.Deploy?.TrafficExposedAt is null)
+                operation.Deploy?.TrafficExposedAt is null)
             {
                 var health = await albClient.DescribeTargetHealthAsync(target.CanaryTargetGroupArn!, target.Region, cancellationToken).ConfigureAwait(false);
                 if (serviceState.DesiredCount <= 0 || health.HealthyCount < serviceState.DesiredCount)
@@ -960,16 +960,32 @@ internal sealed partial class AwsEcsAlbDeployBackend(
                     };
                 }
 
-                var share = desiredCanaryWeight ?? 100;
-                await albClient.UpdateListenerRuleWeightsAsync(target.ListenerRuleArn!,
-                    BuildWeights(target.CanaryTargetGroupArn!, share, target.StableTargetGroupArn!, 100 - share),
-                    target.Region, cancellationToken).ConfigureAwait(false);
+                if (albWeights.MatchesExpectedShare(0))
+                {
+                    return new DeployObservation
+                    {
+                        Status = WorkflowOperationStatus.Submitted,
+                        ProviderOperationId = operation.ProviderOperationId,
+                        PromotionRecommended = true,
+                        Message = "ECS candidate is ready for the pre-cutover checks."
+                    };
+                }
+
+                if (albWeights.MatchesExpectedShare(desiredCanaryWeight ?? 100))
+                {
+                    return new DeployObservation
+                    {
+                        Status = WorkflowOperationStatus.Reconciling,
+                        ProviderOperationId = operation.ProviderOperationId,
+                        Message = "ECS candidate traffic shift was already submitted."
+                    };
+                }
+
                 return new DeployObservation
                 {
-                    Status = WorkflowOperationStatus.Reconciling,
+                    Status = WorkflowOperationStatus.ManualInterventionRequired,
                     ProviderOperationId = operation.ProviderOperationId,
-                    ObservedRevision = primaryRevision,
-                    Message = "ECS candidate is steady and traffic shift was submitted."
+                    Message = "ECS traffic routing changed before cutover."
                 };
             }
 
@@ -1053,6 +1069,11 @@ internal sealed partial class AwsEcsAlbDeployBackend(
         EnsureValidTarget(target);
 
         using var activity = StartActivity(ControlPlaneTelemetry.Activities.BackendPromote, operation, target);
+
+        if (RequiresCheckpoint(operation) && spec.TrafficExposedAt is null)
+        {
+            return await ExposeCheckpointedCandidateAsync(operation, spec, target, cancellationToken).ConfigureAwait(false);
+        }
 
         if (ReleaseImageDigest.IsImmutable(spec.DesiredRevision) &&
             !ReleaseImageDigest.IsEcsTaskDefinitionArn(operation.ProviderOperationId))

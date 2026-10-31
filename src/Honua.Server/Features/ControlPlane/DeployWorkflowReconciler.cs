@@ -453,7 +453,8 @@ internal sealed partial class DeployWorkflowReconciler(
                 if (!telemetryDecision.RollbackRecommended &&
                     !telemetryDecision.WaitForMoreTelemetry &&
                     promotionRecommended &&
-                    current.Status == WorkflowOperationStatus.Reconciling &&
+                    (current.Status == WorkflowOperationStatus.Reconciling ||
+                        (checkpointStaged && current.Status == WorkflowOperationStatus.Submitted)) &&
                     promotionGate != DeployPromotionGateMode.Manual &&
                     current.Deploy?.Protection == null)
                 {
@@ -470,7 +471,8 @@ internal sealed partial class DeployWorkflowReconciler(
                 promotionGate == DeployPromotionGateMode.Health &&
                 string.IsNullOrWhiteSpace(rollbackReason) &&
                 promotionRecommended &&
-                current.Status == WorkflowOperationStatus.Reconciling &&
+                (current.Status == WorkflowOperationStatus.Reconciling ||
+                    (checkpointStaged && current.Status == WorkflowOperationStatus.Submitted)) &&
                 // codeql[cs/constant-condition]: Protection is nullable; null means no observation window is open
                 current.Deploy?.Protection == null)
             {
@@ -1114,6 +1116,23 @@ internal sealed partial class DeployWorkflowReconciler(
     {
         var deploy = current.Deploy;
         var ramp = deploy?.CanaryRamp;
+
+        if (deploy is { TrafficExposedAt: null } && backend is ICheckpointedDeployBackend checkpointed &&
+            checkpointed.RequiresCheckpoint(current))
+        {
+            var cutover = await backend.PromoteAsync(current, cancellationToken).ConfigureAwait(false);
+            var exposedAt = cutover.Status == WorkflowOperationStatus.Reconciling ? DateTimeOffset.UtcNow : (DateTimeOffset?)null;
+            return current with
+            {
+                Status = cutover.Status,
+                UpdatedAt = DateTimeOffset.UtcNow,
+                CompletedAt = IsTerminal(cutover.Status) ? DateTimeOffset.UtcNow : null,
+                ProviderOperationId = cutover.ProviderOperationId ?? current.ProviderOperationId,
+                CurrentPhase = cutover.Message ?? current.CurrentPhase,
+                Deploy = deploy with { TrafficExposedAt = exposedAt },
+                ErrorMessage = cutover.Status == WorkflowOperationStatus.Failed ? cutover.Message : null
+            };
+        }
 
         if (deploy != null && ramp != null && ramp.IsValid && !ramp.IsFinalStep)
         {

@@ -738,7 +738,10 @@ internal sealed partial class DeployWorkflowService
             {
                 CurrentRevision = string.IsNullOrWhiteSpace(operation.Deploy.CurrentRevision)
                     ? observation.ObservedRevision ?? operation.Deploy.CurrentRevision
-                    : operation.Deploy.CurrentRevision
+                    : operation.Deploy.CurrentRevision,
+                TrafficExposedAt = backend is ICheckpointedDeployBackend checkpointed && checkpointed.RequiresCheckpoint(operation) &&
+                    observation.Status == WorkflowOperationStatus.Reconciling
+                    ? operation.Deploy.TrafficExposedAt ?? now : operation.Deploy.TrafficExposedAt
             },
             Audit = MergePromotionAudit(operation.Audit, requestedBy, reason)
         };

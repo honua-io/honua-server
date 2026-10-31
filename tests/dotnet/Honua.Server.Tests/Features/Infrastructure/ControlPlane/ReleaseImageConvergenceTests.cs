@@ -110,9 +110,14 @@ public sealed class ReleaseImageConvergenceTests
         activation.Status.Should().Be(WorkflowOperationStatus.Submitted);
         ecs.UpdatedTaskDefinition.Should().Be(RegisteredTaskDef);
         alb.UpdateCount.Should().Be(0);
-        (await backend.ObserveAsync(persisted)).Status.Should().Be(WorkflowOperationStatus.Reconciling);
+        var staged = await backend.ObserveAsync(persisted);
+        staged.Status.Should().Be(WorkflowOperationStatus.Submitted);
+        staged.PromotionRecommended.Should().BeTrue();
+        alb.UpdateCount.Should().Be(0);
+        (await backend.PromoteAsync(persisted)).Status.Should().Be(WorkflowOperationStatus.Reconciling);
         alb.UpdateCount.Should().Be(1);
-        (await backend.ObserveAsync(persisted)).Status.Should().Be(WorkflowOperationStatus.Succeeded);
+        var exposed = persisted with { Deploy = persisted.Deploy! with { TrafficExposedAt = DateTimeOffset.UtcNow } };
+        (await backend.ObserveAsync(exposed)).Status.Should().Be(WorkflowOperationStatus.Succeeded);
     }
 
     [Fact]
@@ -127,7 +132,7 @@ public sealed class ReleaseImageConvergenceTests
         var checkpoint = await backend.PrepareCheckpointAsync(operation, CancellationToken.None);
         var persisted = Checkpointed(operation, checkpoint);
         await backend.ActivateCheckpointAsync(persisted, CancellationToken.None);
-        await backend.ObserveAsync(persisted);
+        await backend.PromoteAsync(persisted);
         var next = persisted with { Deploy = persisted.Deploy! with { TrafficExposedAt = DateTimeOffset.UtcNow, CanaryRamp = ramp with { CurrentStepIndex = 1 } } };
         var result = await backend.StartAsync(next);
         result.Status.Should().Be(WorkflowOperationStatus.Submitted);
@@ -149,7 +154,7 @@ public sealed class ReleaseImageConvergenceTests
         var checkpoint = await backend.PrepareCheckpointAsync(operation, CancellationToken.None);
         var persisted = Checkpointed(operation, checkpoint);
         await backend.ActivateCheckpointAsync(persisted, CancellationToken.None);
-        await backend.ObserveAsync(persisted);
+        await backend.PromoteAsync(persisted);
         var pending = await backend.CompleteProtectionAsync(persisted);
         pending.Status.Should().Be(WorkflowOperationStatus.Reconciling);
         ecs.StableTaskDefinition.Should().Be(RegisteredTaskDef);
@@ -168,7 +173,7 @@ public sealed class ReleaseImageConvergenceTests
         var checkpoint = await backend.PrepareCheckpointAsync(operation, CancellationToken.None);
         var persisted = Checkpointed(operation, checkpoint);
         await backend.ActivateCheckpointAsync(persisted, CancellationToken.None);
-        await backend.ObserveAsync(persisted);
+        await backend.PromoteAsync(persisted);
         await backend.CompleteProtectionAsync(persisted);
         ecs.RolloutState = "FAILED";
         var result = await backend.CompleteProtectionAsync(persisted);
@@ -212,7 +217,7 @@ public sealed class ReleaseImageConvergenceTests
         var checkpoint = await backend.PrepareCheckpointAsync(operation, CancellationToken.None);
         var persisted = Checkpointed(operation, checkpoint);
         await backend.ActivateCheckpointAsync(persisted, CancellationToken.None);
-        await backend.ObserveAsync(persisted);
+        await backend.PromoteAsync(persisted);
         await backend.CompleteProtectionAsync(persisted);
         var rollback = await backend.RollbackAsync(persisted);
         rollback.Status.Should().Be(WorkflowOperationStatus.RollbackRequested);
@@ -249,7 +254,7 @@ public sealed class ReleaseImageConvergenceTests
         var checkpoint = await backend.PrepareCheckpointAsync(operation, CancellationToken.None);
         var persisted = Checkpointed(operation, checkpoint);
         await backend.ActivateCheckpointAsync(persisted, CancellationToken.None);
-        await backend.ObserveAsync(persisted);
+        await backend.PromoteAsync(persisted);
         alb.HealthyTargets = 0;
         var exposed = persisted with { Deploy = persisted.Deploy! with { TrafficExposedAt = DateTimeOffset.UtcNow } };
         var observation = await backend.ObserveAsync(exposed);

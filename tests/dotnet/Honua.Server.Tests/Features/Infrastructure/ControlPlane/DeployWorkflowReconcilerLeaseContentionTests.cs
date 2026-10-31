@@ -176,6 +176,7 @@ public sealed class DeployWorkflowReconcilerLeaseContentionTests
         {
             Deploy = original.Deploy! with
             {
+                TrafficExposedAt = DateTimeOffset.UtcNow,
                 CanaryRamp = new CanaryRampSpec { StepWeights = [10, 50, 100], StepBakeDuration = TimeSpan.FromSeconds(1) }
             }
         };
@@ -183,6 +184,24 @@ public sealed class DeployWorkflowReconcilerLeaseContentionTests
         backend.RollbackCount.Should().Be(1);
         result.Status.Should().Be(WorkflowOperationStatus.RollbackRequested);
         result.Deploy!.CanaryRamp!.CurrentStepIndex.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Checkpoint_StagedProbeMustPassBeforeCutover()
+    {
+        var store = new InMemoryWorkflowOperationStore();
+        var backend = new CheckpointBackend(store) { ReadyForCutover = true };
+        var gate = new StagedGate { Wait = true };
+        var operation = CreateOperation() with { Status = WorkflowOperationStatus.Submitted, CurrentPhase = ICheckpointedDeployBackend.ActivatedPhase };
+        await store.TryCreateAsync(operation);
+        var reconciler = CreateReconciler(store, backend, gate);
+        await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
+        backend.PromotionCount.Should().Be(0);
+        (await store.GetAsync(operation.OperationId))!.Deploy!.TrafficExposedAt.Should().BeNull();
+        gate.Wait = false;
+        await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
+        backend.PromotionCount.Should().Be(1);
+        (await store.GetAsync(operation.OperationId))!.Deploy!.TrafficExposedAt.Should().NotBeNull();
     }
 
     [Fact]
@@ -312,6 +331,8 @@ public sealed class DeployWorkflowReconcilerLeaseContentionTests
         public bool InterruptPreparation { get; init; }
         public bool RecommendRollback { get; init; }
         public bool FailRamp { get; init; }
+        public bool ReadyForCutover { get; init; }
+        public int PromotionCount { get; private set; }
         public bool StageOneObservation { get; init; }
         public int ObserveCount { get; private set; }
         public int RollbackCount { get; private set; }
@@ -347,15 +368,30 @@ public sealed class DeployWorkflowReconcilerLeaseContentionTests
             ObserveCount++;
             return Task.FromResult(new DeployObservation
             {
-                Status = StageOneObservation && ObserveCount == 1 ? WorkflowOperationStatus.Submitted : WorkflowOperationStatus.Reconciling,
+                Status = ReadyForCutover || (StageOneObservation && ObserveCount == 1) ? WorkflowOperationStatus.Submitted : WorkflowOperationStatus.Reconciling,
+                PromotionRecommended = ReadyForCutover,
                 RollbackRecommended = RecommendRollback
             });
+        }
+        public Task<DeployObservation> PromoteAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken = default)
+        {
+            PromotionCount++;
+            return Task.FromResult(new DeployObservation { Status = WorkflowOperationStatus.Reconciling });
         }
         public Task<DeployObservation> RollbackAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken = default)
         {
             RollbackCount++;
             return Task.FromResult(new DeployObservation { Status = WorkflowOperationStatus.RollbackRequested });
         }
+    }
+
+    private sealed class StagedGate : IDeployTelemetrySignalEvaluator
+    {
+        public bool Wait { get; set; }
+        public Task<DeployTelemetryDecision?> EvaluateAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken = default)
+            => Task.FromResult<DeployTelemetryDecision?>(null);
+        public Task<DeployTelemetryDecision?> EvaluateStagedCandidateAsync(WorkflowOperationRecord operation, bool candidateReady, CancellationToken cancellationToken = default)
+            => Task.FromResult<DeployTelemetryDecision?>(new DeployTelemetryDecision { WaitForMoreTelemetry = Wait || !candidateReady });
     }
 
     private sealed class FailingTelemetryEvaluator : IDeployTelemetrySignalEvaluator
