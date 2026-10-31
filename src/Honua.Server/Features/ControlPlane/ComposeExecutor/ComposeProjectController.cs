@@ -1,0 +1,1020 @@
+// Copyright (c) Honua Geo Inc. All rights reserved.
+// Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
+
+using System.Globalization;
+using System.Net;
+using System.Net.Http;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using Microsoft.Extensions.Logging.Abstractions;
+
+namespace Honua.ControlPlane;
+
+/// <summary>
+/// Allowlisted Compose controller. Every mutation uses a fixed <c>docker</c> argument list for the
+/// single project in <see cref="ComposeExecutorOptions"/>. A failed checksum, a scope violation, or
+/// an incomplete readback never reports success and does not start a different image.
+/// </summary>
+internal sealed partial class ComposeProjectController : IDisposable
+{
+    private const string MaxSchemaLabel = "org.honua.max-schema";
+    private const string CompatibilityTableSql = "SELECT to_regclass('public.schema_version_reader_compatibility')";
+    private const string IncompatibleScriptsSql =
+        "SELECT script_name FROM public.schema_version_reader_compatibility WHERE classification = 'reader-incompatible' ORDER BY script_name";
+    private const string SchemaVersionSql =
+        "SELECT COALESCE(MAX((regexp_match(scriptname, '^([0-9]+)'))[1]::int), 0) FROM public.schema_versions";
+    private const string MaintenanceDatabase = "postgres";
+    private const int CustomerBodyCapBytes = 4096;
+
+    private static readonly TimeSpan DumpTimeout = TimeSpan.FromMinutes(10);
+    private static readonly TimeSpan CommandTimeout = TimeSpan.FromMinutes(2);
+
+    private readonly ComposeExecutorOptions _options;
+    private readonly IDockerComposeProcess _docker;
+    private readonly ILogger<ComposeProjectController> _logger;
+    private readonly HttpClient _http;
+    private readonly SemaphoreSlim _gate = new(1, 1);
+
+    /// <summary>Creates a controller. The HTTP client probes only the operator-configured URLs.</summary>
+    public ComposeProjectController(
+        ComposeExecutorOptions options,
+        IDockerComposeProcess docker,
+        ILogger<ComposeProjectController>? logger = null)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(docker);
+        _options = options;
+        _docker = docker;
+        _logger = logger ?? NullLogger<ComposeProjectController>.Instance;
+        var handler = new SocketsHttpHandler
+        {
+            AllowAutoRedirect = false,
+            AutomaticDecompression = DecompressionMethods.None
+        };
+        _http = new HttpClient(handler, disposeHandler: true)
+        {
+            Timeout = TimeSpan.FromSeconds(Math.Clamp(options.ProbeTimeoutSeconds, 1, 120))
+        };
+    }
+
+    /// <summary>Runs one allowlisted operation. Docker mutations are serialized.</summary>
+    public async Task<ComposeExecutorResponse> ExecuteAsync(
+        ComposeExecutorRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var problem = _options.ValidateForProcess();
+            if (problem is { } invalid)
+            {
+                return ComposeExecutorProtocol.Refuse(request.RequestId, invalid.Code, invalid.Message);
+            }
+
+            var response = request.Op switch
+            {
+                "status" => await StatusAsync(request, cancellationToken).ConfigureAwait(false),
+                "converge" => await ConvergeAsync(request, cancellationToken).ConfigureAwait(false),
+                "rollback" => await RollbackCoreAsync(request, cancellationToken).ConfigureAwait(false),
+                "restart" => await RestartAsync(request, cancellationToken).ConfigureAwait(false),
+                _ => ComposeExecutorProtocol.Refuse(
+                    request.RequestId,
+                    ComposeExecutorCodes.ConfigUnsupported,
+                    "The executor op is not allowlisted.")
+            };
+
+            if (!string.Equals(request.Op, "status", StringComparison.Ordinal))
+            {
+                response = Finish(request, response);
+            }
+
+            if (!response.Ok)
+            {
+                Log.Refused(_logger, request.Op ?? string.Empty, response.Code ?? string.Empty);
+            }
+
+            return response;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    /// <inheritdoc />
+    public void Dispose()
+    {
+        _http.Dispose();
+        _gate.Dispose();
+    }
+
+    private async Task<ComposeExecutorResponse> StatusAsync(
+        ComposeExecutorRequest request,
+        CancellationToken cancellationToken)
+    {
+        var live = await ReadLiveAsync(cancellationToken).ConfigureAwait(false);
+        if (live.ScopeViolation)
+        {
+            return Refuse(request, ComposeExecutorCodes.ScopeViolation, "A service row belongs to a different Compose project.");
+        }
+
+        var running = live.ImageId;
+        if (ComposeExecutorRules.IsImmutableImage(request.Image))
+        {
+            var inspected = await InspectImageAsync(request.Image!, cancellationToken).ConfigureAwait(false);
+            if (inspected != null && string.Equals(live.ImageId, inspected.Id, StringComparison.Ordinal))
+            {
+                running = request.Image;
+            }
+        }
+
+        var complete = live.IsComplete;
+        return new ComposeExecutorResponse
+        {
+            RequestId = request.RequestId,
+            Ok = complete,
+            Code = complete ? null : ComposeExecutorCodes.ReadbackIncomplete,
+            Message = complete ? "Readback completed." : "Readback is incomplete.",
+            RunningImage = running,
+            ReadbackComplete = complete,
+            SchemaVersion = live.SchemaVersion,
+            CustomerBody = complete ? live.CustomerBody : null
+        };
+    }
+
+    private async Task<ComposeExecutorResponse> ConvergeAsync(
+        ComposeExecutorRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!ComposeExecutorRules.IsImmutableImage(request.Image))
+        {
+            return Refuse(request, ComposeExecutorCodes.ImageNotImmutable, "Converge requires an immutable image digest.");
+        }
+
+        if (!string.Equals(request.Image, _options.ReleaseImage, StringComparison.Ordinal))
+        {
+            return Refuse(request, ComposeExecutorCodes.ScopeViolation, "Converge only accepts the configured release image.");
+        }
+
+        var inspected = await InspectImageAsync(request.Image!, cancellationToken).ConfigureAwait(false);
+        if (inspected == null)
+        {
+            return Refuse(request, ComposeExecutorCodes.ReadbackIncomplete, "The release image is not present on this host.");
+        }
+
+        var live = await ReadLiveAsync(cancellationToken).ConfigureAwait(false);
+        if (live.ScopeViolation)
+        {
+            return Refuse(request, ComposeExecutorCodes.ScopeViolation, "A service row belongs to a different Compose project.");
+        }
+
+        if (live.IsComplete && string.Equals(live.ImageId, inspected.Id, StringComparison.Ordinal))
+        {
+            return Success(request, request.Image!, live, backupId: null);
+        }
+
+        if (!live.IsComplete || string.IsNullOrWhiteSpace(live.ImageId) || live.SchemaVersion == null)
+        {
+            return Refuse(
+                request,
+                ComposeExecutorCodes.ReadbackIncomplete,
+                "The service is not ready to converge, so it was not stopped.");
+        }
+
+        var stopped = await ComposeAsync(CommandTimeout, ["stop", "--", _options.ServiceName], cancellationToken)
+            .ConfigureAwait(false);
+        if (stopped.ExitCode != 0)
+        {
+            return Refuse(request, ComposeExecutorCodes.ReadbackIncomplete, "The service could not be stopped, so no backup was taken.");
+        }
+
+        var backup = await TakeBackupAsync(live.ImageId, live.SchemaVersion.Value, cancellationToken).ConfigureAwait(false);
+        if (backup.Failure != null)
+        {
+            await ComposeAsync(CommandTimeout, ["start", "--", _options.ServiceName], cancellationToken).ConfigureAwait(false);
+            return backup.Failure with { RequestId = request.RequestId };
+        }
+
+        var started = await StartImageAsync(request.Image!, cancellationToken).ConfigureAwait(false);
+        if (started != null)
+        {
+            return started with { RequestId = request.RequestId, BackupId = backup.BackupId };
+        }
+
+        var confirmed = await ConfirmAsync(request, request.Image!, inspected.Id, cancellationToken).ConfigureAwait(false);
+        return confirmed with { BackupId = backup.BackupId };
+    }
+
+    private async Task<ComposeExecutorResponse> RollbackCoreAsync(
+        ComposeExecutorRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!ComposeExecutorRules.IsImmutableImage(request.Image))
+        {
+            return Refuse(request, ComposeExecutorCodes.ImageNotImmutable, "Rollback requires an immutable image digest.");
+        }
+
+        if (string.Equals(request.Image, _options.ReleaseImage, StringComparison.Ordinal))
+        {
+            return Refuse(request, ComposeExecutorCodes.ConfigUnsupported, "Rollback of the configured release image is not supported.");
+        }
+
+        // Checksum, project, and image are verified from the manifest before any docker call.
+        var located = LocateBackup(request.Image!, request.BackupId);
+        if (located.Failure != null)
+        {
+            return located.Failure with { RequestId = request.RequestId };
+        }
+
+        var manifest = located.Manifest!;
+        var inspected = await InspectImageAsync(request.Image!, cancellationToken).ConfigureAwait(false);
+        if (inspected == null)
+        {
+            return Refuse(request, ComposeExecutorCodes.ReadbackIncomplete, "The prior image is not present on this host.");
+        }
+
+        var live = await ReadLiveAsync(cancellationToken).ConfigureAwait(false);
+        if (live.ScopeViolation)
+        {
+            return Refuse(request, ComposeExecutorCodes.ScopeViolation, "A service row belongs to a different Compose project.");
+        }
+
+        var database = live.CompatibilityKnown
+            ? live.Database
+            : await ReadDatabaseAsync(cancellationToken).ConfigureAwait(false);
+        if (!database.CompatibilityKnown)
+        {
+            return Refuse(
+                request,
+                ComposeExecutorCodes.ReadbackIncomplete,
+                "Reader compatibility is unknown, so the prior image was not started.");
+        }
+
+        var labelMissing = inspected.MaxSchema == null;
+        var priorMax = inspected.MaxSchema ?? -1;
+        if (labelMissing && database.IncompatibleSchemas.Count > 0)
+        {
+            return Refuse(
+                request,
+                ComposeExecutorCodes.BackupSchemaAhead,
+                "The prior image has no org.honua.max-schema label and reader-incompatible scripts are recorded.");
+        }
+
+        if (!labelMissing && manifest.SchemaVersion > priorMax)
+        {
+            return Refuse(
+                request,
+                ComposeExecutorCodes.BackupSchemaAhead,
+                "The backup schema is newer than the prior image can read.");
+        }
+
+        var restoreRequired = database.IncompatibleSchemas.Any(number => number > priorMax);
+        if (live.IsComplete && string.Equals(live.ImageId, inspected.Id, StringComparison.Ordinal) && !restoreRequired)
+        {
+            return Success(request, request.Image!, live, manifest.BackupId);
+        }
+
+        var stopped = await ComposeAsync(CommandTimeout, ["stop", "--", _options.ServiceName], cancellationToken)
+            .ConfigureAwait(false);
+        if (stopped.ExitCode != 0)
+        {
+            return Refuse(request, ComposeExecutorCodes.ReadbackIncomplete, "The service could not be stopped.");
+        }
+
+        if (restoreRequired)
+        {
+            var restored = await ApplyDumpAsync(manifest, cancellationToken).ConfigureAwait(false);
+            if (restored != null)
+            {
+                return restored with { RequestId = request.RequestId, BackupId = manifest.BackupId };
+            }
+
+            var after = await ReadDatabaseAsync(cancellationToken).ConfigureAwait(false);
+            if (!after.CompatibilityKnown
+                || after.SchemaVersion != manifest.SchemaVersion
+                || after.IncompatibleSchemas.Any(number => number > priorMax))
+            {
+                return Refuse(
+                    request,
+                    ComposeExecutorCodes.RestoreIncomplete,
+                    "Restore did not return the database to the backup schema. The service was left stopped.")
+                    with { BackupId = manifest.BackupId, SchemaVersion = after.SchemaVersion };
+            }
+        }
+
+        var started = await StartImageAsync(request.Image!, cancellationToken).ConfigureAwait(false);
+        if (started != null)
+        {
+            return started with { RequestId = request.RequestId, BackupId = manifest.BackupId };
+        }
+
+        var confirmed = await ConfirmAsync(request, request.Image!, inspected.Id, cancellationToken).ConfigureAwait(false);
+        return confirmed with { BackupId = manifest.BackupId };
+    }
+
+    private async Task<ComposeExecutorResponse> RestartAsync(
+        ComposeExecutorRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(request.Image) || !string.IsNullOrWhiteSpace(request.BackupId))
+        {
+            return Refuse(request, ComposeExecutorCodes.ConfigUnsupported, "Restart does not accept an image or a backup.");
+        }
+
+        var restarted = await ComposeAsync(CommandTimeout, ["restart", "--", _options.ServiceName], cancellationToken)
+            .ConfigureAwait(false);
+        if (restarted.ExitCode != 0)
+        {
+            return Refuse(request, ComposeExecutorCodes.ReadbackIncomplete, "The service restart did not complete.");
+        }
+
+        // compose restart returns before the healthcheck passes. Poll until the wait budget ends
+        // and only then report incomplete readback. A partial restart never returns success.
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(_options.ComposeWaitTimeoutSeconds);
+        while (true)
+        {
+            var live = await ReadLiveAsync(cancellationToken).ConfigureAwait(false);
+            if (live.ScopeViolation)
+            {
+                return Refuse(request, ComposeExecutorCodes.ScopeViolation, "A service row belongs to a different Compose project.");
+            }
+
+            if (live.IsComplete && !string.IsNullOrWhiteSpace(live.ImageId))
+            {
+                return Success(request, live.ImageId, live, backupId: null);
+            }
+
+            if (DateTimeOffset.UtcNow >= deadline)
+            {
+                return Refuse(request, ComposeExecutorCodes.ReadbackIncomplete, "Readback after restart is incomplete.");
+            }
+
+            await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private async Task<ComposeExecutorResponse> ConfirmAsync(
+        ComposeExecutorRequest request,
+        string requestedImage,
+        string expectedImageId,
+        CancellationToken cancellationToken)
+    {
+        var live = await ReadLiveAsync(cancellationToken).ConfigureAwait(false);
+        if (live.ScopeViolation)
+        {
+            return Refuse(request, ComposeExecutorCodes.ScopeViolation, "A service row belongs to a different Compose project.");
+        }
+
+        if (!live.IsComplete || !string.Equals(live.ImageId, expectedImageId, StringComparison.Ordinal))
+        {
+            return Refuse(request, ComposeExecutorCodes.ReadbackIncomplete, "Readback did not confirm the requested image.");
+        }
+
+        return Success(request, requestedImage, live, backupId: null);
+    }
+
+    private async Task<(string? BackupId, ComposeExecutorResponse? Failure)> TakeBackupAsync(
+        string priorImageId,
+        int schemaVersion,
+        CancellationToken cancellationToken)
+    {
+        var backupId = "backup-" + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
+        var directory = Path.Combine(Path.GetFullPath(_options.BackupDirectory), backupId);
+        Directory.CreateDirectory(directory);
+        const string remote = "/tmp/honua-backup.dump";
+        var dumped = await ComposeAsync(DumpTimeout, ["exec", "-T", "--", _options.PostgresService, "pg_dump", "-U", _options.DatabaseUser, "-d", _options.DatabaseName, "-Fc", "-f", remote], cancellationToken)
+            .ConfigureAwait(false);
+        if (dumped.ExitCode != 0)
+        {
+            return (null, Refuse(null, ComposeExecutorCodes.BackupFailed, "pg_dump did not complete."));
+        }
+
+        var hostDump = Path.Combine(directory, ComposeExecutorProtocol.DumpFileName);
+        var copied = await ComposeAsync(DumpTimeout, ["cp", _options.PostgresService + ":" + remote, hostDump], cancellationToken)
+            .ConfigureAwait(false);
+        if (copied.ExitCode != 0 || !File.Exists(hostDump))
+        {
+            return (null, Refuse(null, ComposeExecutorCodes.BackupFailed, "The backup could not be copied out of Postgres."));
+        }
+
+        var hash = await HashFileAsync(hostDump, cancellationToken).ConfigureAwait(false);
+        var manifest = new ComposeBackupManifest
+        {
+            BackupId = backupId,
+            Project = _options.ProjectName,
+            Service = _options.ServiceName,
+            Image = priorImageId,
+            SchemaVersion = schemaVersion,
+            Sha256 = hash,
+            CreatedAt = DateTimeOffset.UtcNow,
+            DumpFile = ComposeExecutorProtocol.DumpFileName
+        };
+        var json = JsonSerializer.Serialize(manifest, ComposeExecutorJsonContext.Default.ComposeBackupManifest);
+        var manifestPath = Path.Combine(directory, "manifest.json");
+        var temporary = manifestPath + ".tmp";
+        await File.WriteAllTextAsync(temporary, json, cancellationToken).ConfigureAwait(false);
+        File.Move(temporary, manifestPath, overwrite: true);
+        return (backupId, null);
+    }
+
+    private async Task<ComposeExecutorResponse?> ApplyDumpAsync(
+        ComposeBackupManifest manifest,
+        CancellationToken cancellationToken)
+    {
+        var dump = DumpPath(Path.GetFullPath(_options.BackupDirectory), manifest.BackupId!);
+        var copied = await ComposeAsync(DumpTimeout, ["cp", dump, _options.PostgresService + ":/tmp/honua-backup.dump"], cancellationToken)
+            .ConfigureAwait(false);
+        if (copied.ExitCode != 0)
+        {
+            return Refuse(null, ComposeExecutorCodes.RestoreIncomplete, "The backup could not be copied into Postgres.");
+        }
+
+        var dropped = await ComposeAsync(CommandTimeout, ["exec", "-T", "--", _options.PostgresService, "dropdb", "-U", _options.DatabaseUser, "--force", "--if-exists", _options.DatabaseName], cancellationToken)
+            .ConfigureAwait(false);
+        if (dropped.ExitCode != 0)
+        {
+            return Refuse(null, ComposeExecutorCodes.RestoreIncomplete, "The database could not be dropped before restore.");
+        }
+
+        var restored = await ComposeAsync(DumpTimeout, ["exec", "-T", "--", _options.PostgresService, "pg_restore", "-U", _options.DatabaseUser, "-d", MaintenanceDatabase, "--create", "--exit-on-error", "/tmp/honua-backup.dump"], cancellationToken)
+            .ConfigureAwait(false);
+        if (restored.ExitCode != 0)
+        {
+            return Refuse(null, ComposeExecutorCodes.RestoreIncomplete, "pg_restore did not complete.");
+        }
+
+        return null;
+    }
+
+    private async Task<ComposeExecutorResponse?> StartImageAsync(string image, CancellationToken cancellationToken)
+    {
+        var overridePath = Path.Combine(Path.GetFullPath(_options.ProjectDirectory), ComposeExecutorProtocol.OverrideFileName);
+        var yaml = "services:\n  " + _options.ServiceName + ":\n    image: \"" + image + "\"\n";
+        var temporary = overridePath + ".tmp";
+        await File.WriteAllTextAsync(temporary, yaml, cancellationToken).ConfigureAwait(false);
+        File.Move(temporary, overridePath, overwrite: true);
+        var wait = _options.ComposeWaitTimeoutSeconds.ToString(CultureInfo.InvariantCulture);
+        var up = await ComposeAsync(TimeSpan.FromSeconds(_options.ComposeWaitTimeoutSeconds + 60), ["up", "-d", "--no-deps", "--pull", "never", "--wait", "--wait-timeout", wait, "--", _options.ServiceName], cancellationToken)
+            .ConfigureAwait(false);
+        if (up.ExitCode != 0)
+        {
+            return Refuse(null, ComposeExecutorCodes.ReadbackIncomplete, "docker compose up did not become healthy.");
+        }
+
+        return null;
+    }
+
+    private BackupHit LocateBackup(string image, string? backupId)
+    {
+        var root = Path.GetFullPath(_options.BackupDirectory);
+        if (!string.IsNullOrWhiteSpace(backupId))
+        {
+            if (!ComposeExecutorRules.BackupId().IsMatch(backupId))
+            {
+                return BackupHit.Fail(Refuse(null, ComposeExecutorCodes.ScopeViolation, "The backup id is not allowlisted."));
+            }
+
+            return LoadBackup(root, backupId, image, named: true);
+        }
+
+        ComposeBackupManifest? newest = null;
+        string? newestChecksumFailure = null;
+        foreach (var directory in Directory.EnumerateDirectories(root))
+        {
+            var name = Path.GetFileName(directory);
+            if (!ComposeExecutorRules.BackupId().IsMatch(name ?? string.Empty))
+            {
+                continue;
+            }
+
+            var loaded = LoadBackup(root, name!, image, named: false);
+            if (loaded.Manifest == null)
+            {
+                continue;
+            }
+
+            if (newest == null || loaded.Manifest.CreatedAt >= newest.CreatedAt)
+            {
+                newest = loaded.Manifest;
+                newestChecksumFailure = loaded.ChecksumFailure;
+            }
+        }
+
+        if (newest == null)
+        {
+            return BackupHit.Fail(Refuse(null, ComposeExecutorCodes.BackupImageMismatch, "No backup manifest matches the requested image."));
+        }
+
+        if (newestChecksumFailure != null)
+        {
+            return BackupHit.Fail(Refuse(null, newestChecksumFailure, "The newest matching backup failed verification."));
+        }
+
+        return BackupHit.Ok(newest);
+    }
+
+    private BackupHit LoadBackup(string root, string backupId, string image, bool named)
+    {
+        var manifestPath = Path.Combine(root, backupId, "manifest.json");
+        if (!IsUnder(root, manifestPath) || !File.Exists(manifestPath))
+        {
+            return named
+                ? BackupHit.Fail(Refuse(null, ComposeExecutorCodes.BackupImageMismatch, "The backup manifest is missing."))
+                : default;
+        }
+
+        ComposeBackupManifest? manifest;
+        try
+        {
+            manifest = JsonSerializer.Deserialize(
+                File.ReadAllText(manifestPath),
+                ComposeExecutorJsonContext.Default.ComposeBackupManifest);
+        }
+        catch (JsonException)
+        {
+            return named
+                ? BackupHit.Fail(Refuse(null, ComposeExecutorCodes.BackupChecksumMismatch, "The backup manifest is not valid."))
+                : default;
+        }
+
+        if (manifest == null || !string.Equals(manifest.BackupId, backupId, StringComparison.Ordinal))
+        {
+            return named
+                ? BackupHit.Fail(Refuse(null, ComposeExecutorCodes.ScopeViolation, "The backup manifest id does not match its directory."))
+                : default;
+        }
+
+        if (!string.Equals(manifest.Project, _options.ProjectName, StringComparison.Ordinal))
+        {
+            return named
+                ? BackupHit.Fail(Refuse(null, ComposeExecutorCodes.ScopeViolation, "The backup belongs to a different Compose project."))
+                : default;
+        }
+
+        if (!string.Equals(manifest.Image, image, StringComparison.Ordinal))
+        {
+            return named
+                ? BackupHit.Fail(Refuse(null, ComposeExecutorCodes.BackupImageMismatch, "The backup records a different image."))
+                : default;
+        }
+
+        if (!string.IsNullOrWhiteSpace(manifest.DumpFile)
+            && !string.Equals(manifest.DumpFile, ComposeExecutorProtocol.DumpFileName, StringComparison.Ordinal))
+        {
+            return named
+                ? BackupHit.Fail(Refuse(null, ComposeExecutorCodes.ScopeViolation, "The backup names a dump file outside the allowlist."))
+                : default;
+        }
+
+        var dump = DumpPath(root, backupId);
+        if (!IsUnder(root, dump) || !File.Exists(dump))
+        {
+            return named
+                ? BackupHit.Fail(Refuse(null, ComposeExecutorCodes.BackupChecksumMismatch, "The backup dump is missing."))
+                : BackupHit.Checksum(manifest, ComposeExecutorCodes.BackupChecksumMismatch);
+        }
+
+        var hash = HashFile(dump);
+        if (!string.Equals(hash, manifest.Sha256, StringComparison.Ordinal))
+        {
+            return named
+                ? BackupHit.Fail(Refuse(null, ComposeExecutorCodes.BackupChecksumMismatch, "The backup checksum does not match the dump."))
+                : BackupHit.Checksum(manifest, ComposeExecutorCodes.BackupChecksumMismatch);
+        }
+
+        return BackupHit.Ok(manifest);
+    }
+
+    private async Task<LiveView> ReadLiveAsync(CancellationToken cancellationToken)
+    {
+        var ps = await ComposeAsync(CommandTimeout, ["ps", "--all", "--format", "json"], cancellationToken)
+            .ConfigureAwait(false);
+        if (ps.ExitCode != 0)
+        {
+            return LiveView.Incomplete();
+        }
+
+        List<ComposePsRow> rows;
+        try
+        {
+            rows = ParseComposePs(ps.Stdout).ToList();
+        }
+        catch (JsonException)
+        {
+            return LiveView.Incomplete();
+        }
+
+        string? containerId = null;
+        var found = false;
+        var running = false;
+        foreach (var row in rows)
+        {
+            if (!string.Equals(row.Service, _options.ServiceName, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (!string.Equals(row.Project, _options.ProjectName, StringComparison.Ordinal))
+            {
+                if (!string.IsNullOrWhiteSpace(row.Project))
+                {
+                    return LiveView.Scope();
+                }
+
+                continue;
+            }
+
+            found = true;
+            containerId = row.Id;
+            running = string.Equals(row.State, "running", StringComparison.OrdinalIgnoreCase);
+        }
+
+        if (!found || string.IsNullOrWhiteSpace(containerId))
+        {
+            return LiveView.Incomplete();
+        }
+
+        var image = await DockerAsync(CommandTimeout, ["inspect", "--format", "{{.Image}}", containerId], cancellationToken)
+            .ConfigureAwait(false);
+        var imageId = image.ExitCode == 0 ? image.Stdout.Trim() : null;
+        var database = running ? await ReadDatabaseAsync(cancellationToken).ConfigureAwait(false) : DatabaseView.Unknown();
+        var health = false;
+        var customerOk = false;
+        string? customerBody = null;
+        if (running)
+        {
+            health = await ProbeOkAsync(_options.HealthProbeUrl, captureBody: false, cancellationToken).ConfigureAwait(false) is { Ok: true };
+            var customer = await ProbeOkAsync(_options.CustomerProbeUrl, captureBody: true, cancellationToken).ConfigureAwait(false);
+            customerOk = customer.Ok;
+            customerBody = customer.Body;
+        }
+
+        return new LiveView(
+            ScopeViolation: false,
+            Found: true,
+            ContainerId: containerId,
+            ImageId: imageId,
+            Running: running,
+            Database: database,
+            HealthOk: health,
+            CustomerOk: customerOk,
+            CustomerBody: customerOk ? customerBody : null);
+    }
+
+    private async Task<DatabaseView> ReadDatabaseAsync(CancellationToken cancellationToken)
+    {
+        var table = await PsqlAsync(_options.DatabaseName, CompatibilityTableSql, cancellationToken).ConfigureAwait(false);
+        if (table == null)
+        {
+            return DatabaseView.Unknown();
+        }
+
+        var schemaText = await PsqlAsync(_options.DatabaseName, SchemaVersionSql, cancellationToken).ConfigureAwait(false);
+        if (schemaText == null
+            || !int.TryParse(schemaText.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var schema))
+        {
+            return DatabaseView.Unknown();
+        }
+
+        if (string.IsNullOrWhiteSpace(table))
+        {
+            return new DatabaseView(false, schema, []);
+        }
+
+        var scripts = await PsqlAsync(_options.DatabaseName, IncompatibleScriptsSql, cancellationToken).ConfigureAwait(false);
+        if (scripts == null)
+        {
+            return DatabaseView.Unknown();
+        }
+
+        var numbers = new List<int>();
+        foreach (var line in scripts.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (!TryScriptNumber(line, out var number))
+            {
+                return DatabaseView.Unknown();
+            }
+
+            numbers.Add(number);
+        }
+
+        return new DatabaseView(true, schema, numbers);
+    }
+
+    private async Task<InspectedImage?> InspectImageAsync(string image, CancellationToken cancellationToken)
+    {
+        var id = await DockerAsync(CommandTimeout, ["image", "inspect", "--format", "{{.Id}}", image], cancellationToken)
+            .ConfigureAwait(false);
+        if (id.ExitCode != 0)
+        {
+            return null;
+        }
+
+        var trimmed = id.Stdout.Trim();
+        if (!ComposeExecutorRules.IsImmutableImage(trimmed))
+        {
+            return null;
+        }
+
+        var label = await DockerAsync(CommandTimeout, ["image", "inspect", "--format", "{{index .Config.Labels \"" + MaxSchemaLabel + "\"}}", image], cancellationToken)
+            .ConfigureAwait(false);
+        int? maxSchema = null;
+        if (label.ExitCode == 0
+            && int.TryParse(label.Stdout.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+        {
+            maxSchema = parsed;
+        }
+
+        return new InspectedImage(trimmed, maxSchema);
+    }
+
+    private async Task<(bool Ok, string? Body)> ProbeOkAsync(
+        string url,
+        bool captureBody,
+        CancellationToken cancellationToken)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(_options.ProbeTimeoutSeconds));
+        try
+        {
+            using var response = await _http.GetAsync(url, timeout.Token).ConfigureAwait(false);
+            if (response.StatusCode != HttpStatusCode.OK)
+            {
+                return (false, null);
+            }
+
+            if (!captureBody)
+            {
+                return (true, null);
+            }
+
+            var text = await response.Content.ReadAsStringAsync(timeout.Token).ConfigureAwait(false);
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return (false, null);
+            }
+
+            return (true, Cap(text));
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or OperationCanceledException)
+        {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+
+            return (false, null);
+        }
+    }
+
+    private async Task<string?> PsqlAsync(string database, string sql, CancellationToken cancellationToken)
+    {
+        var result = await ComposeAsync(CommandTimeout, ["exec", "-T", "--", _options.PostgresService, "psql", "-U", _options.DatabaseUser, "-d", database, "-tA", "-v", "ON_ERROR_STOP=1", "-c", sql], cancellationToken)
+            .ConfigureAwait(false);
+        return result.ExitCode == 0 ? result.Stdout : null;
+    }
+
+    private Task<DockerProcessResult> ComposeAsync(
+        TimeSpan timeout,
+        string[] tail,
+        CancellationToken cancellationToken)
+    {
+        var args = new List<string>
+        {
+            "compose",
+            "--project-directory",
+            Path.GetFullPath(_options.ProjectDirectory),
+            "--project-name",
+            _options.ProjectName,
+            "-f",
+            _options.ComposeFilePath()
+        };
+        var over = Path.Combine(Path.GetFullPath(_options.ProjectDirectory), ComposeExecutorProtocol.OverrideFileName);
+        if (File.Exists(over))
+        {
+            args.Add("-f");
+            args.Add(over);
+        }
+
+        args.AddRange(tail);
+        return _docker.RunAsync(args, timeout, cancellationToken);
+    }
+
+    private Task<DockerProcessResult> DockerAsync(
+        TimeSpan timeout,
+        string[] arguments,
+        CancellationToken cancellationToken)
+        => _docker.RunAsync(arguments, timeout, cancellationToken);
+
+    private ComposeExecutorResponse Finish(ComposeExecutorRequest request, ComposeExecutorResponse response)
+    {
+        var recorded = TryAudit(new ComposeAuditRecord
+        {
+            Time = DateTimeOffset.UtcNow,
+            Op = request.Op,
+            RequestId = request.RequestId,
+            Image = request.Image,
+            BackupId = response.BackupId,
+            Ok = response.Ok,
+            Code = response.Code,
+            SchemaVersion = response.SchemaVersion,
+            Project = _options.ProjectName
+        });
+        if (response.Ok && !recorded)
+        {
+            return response with
+            {
+                Ok = false,
+                ReadbackComplete = false,
+                Code = ComposeExecutorCodes.AuditUnrecorded,
+                Message = "The operation was not recorded in the audit log.",
+                CustomerBody = null
+            };
+        }
+
+        return response;
+    }
+
+    private bool TryAudit(ComposeAuditRecord record)
+    {
+        try
+        {
+            var path = Path.Combine(Path.GetFullPath(_options.BackupDirectory), "audit.jsonl");
+            var line = JsonSerializer.Serialize(record, ComposeExecutorJsonContext.Default.ComposeAuditRecord) + "\n";
+            File.AppendAllText(path, line);
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    private static ComposeExecutorResponse Success(
+        ComposeExecutorRequest request,
+        string runningImage,
+        LiveView live,
+        string? backupId)
+        => new()
+        {
+            RequestId = request.RequestId,
+            Ok = true,
+            ReadbackComplete = true,
+            RunningImage = runningImage,
+            SchemaVersion = live.SchemaVersion,
+            CustomerBody = live.CustomerBody,
+            BackupId = backupId,
+            Message = "Readback completed for the requested image."
+        };
+
+    private static ComposeExecutorResponse Refuse(ComposeExecutorRequest? request, string code, string message)
+        => ComposeExecutorProtocol.Refuse(request?.RequestId, code, message);
+
+    private static string DumpPath(string root, string backupId)
+        => Path.Combine(root, backupId, ComposeExecutorProtocol.DumpFileName);
+
+    private static bool IsUnder(string root, string path)
+    {
+        var fullRoot = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        var fullPath = Path.GetFullPath(path);
+        return fullPath.StartsWith(fullRoot, StringComparison.Ordinal);
+    }
+
+    private static async Task<string> HashFileAsync(string path, CancellationToken cancellationToken)
+    {
+        await using var stream = File.OpenRead(path);
+        var hash = await SHA256.HashDataAsync(stream, cancellationToken).ConfigureAwait(false);
+        return Convert.ToHexString(hash).ToLowerInvariant();
+    }
+
+    private static string HashFile(string path)
+    {
+        using var stream = File.OpenRead(path);
+        return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
+    }
+
+    private static bool TryScriptNumber(string scriptName, out int number)
+    {
+        number = 0;
+        var index = 0;
+        while (index < scriptName.Length && scriptName[index] is >= '0' and <= '9')
+        {
+            index++;
+        }
+
+        return index > 0
+            && int.TryParse(scriptName.AsSpan(0, index), NumberStyles.None, CultureInfo.InvariantCulture, out number);
+    }
+
+    private static string Cap(string body)
+    {
+        var bytes = Encoding.UTF8.GetBytes(body);
+        return bytes.Length <= CustomerBodyCapBytes
+            ? body
+            : Encoding.UTF8.GetString(bytes, 0, CustomerBodyCapBytes);
+    }
+
+    private static IEnumerable<ComposePsRow> ParseComposePs(string stdout)
+    {
+        var trimmed = stdout.Trim();
+        if (trimmed.Length == 0)
+        {
+            yield break;
+        }
+
+        if (trimmed.StartsWith('['))
+        {
+            using var document = JsonDocument.Parse(trimmed);
+            foreach (var element in document.RootElement.EnumerateArray())
+            {
+                yield return ReadRow(element);
+            }
+
+            yield break;
+        }
+
+        foreach (var line in stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            using var document = JsonDocument.Parse(line);
+            yield return ReadRow(document.RootElement);
+        }
+    }
+
+    private static ComposePsRow ReadRow(JsonElement element)
+        => new(
+            Service: ReadString(element, "Service"),
+            Project: ReadString(element, "Project"),
+            Id: ReadString(element, "ID").Length > 0 ? ReadString(element, "ID") : ReadString(element, "Id"),
+            State: ReadString(element, "State"));
+
+    private static string ReadString(JsonElement element, string name)
+    {
+        if (element.ValueKind != JsonValueKind.Object)
+        {
+            return string.Empty;
+        }
+
+        if (element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String)
+        {
+            return value.GetString() ?? string.Empty;
+        }
+
+        return string.Empty;
+    }
+
+    private sealed record InspectedImage(string Id, int? MaxSchema);
+
+    private readonly record struct DatabaseView(bool CompatibilityKnown, int? SchemaVersion, IReadOnlyList<int> IncompatibleSchemas)
+    {
+        public static DatabaseView Unknown() => new(false, null, []);
+    }
+
+    private readonly record struct LiveView(
+        bool ScopeViolation,
+        bool Found,
+        string? ContainerId,
+        string? ImageId,
+        bool Running,
+        DatabaseView Database,
+        bool HealthOk,
+        bool CustomerOk,
+        string? CustomerBody)
+    {
+        public int? SchemaVersion => Database.SchemaVersion;
+
+        public bool CompatibilityKnown => Database.CompatibilityKnown;
+
+        public bool IsComplete
+            => Found
+               && Running
+               && !ScopeViolation
+               && !string.IsNullOrWhiteSpace(ImageId)
+               && Database.CompatibilityKnown
+               && Database.SchemaVersion != null
+               && HealthOk
+               && CustomerOk;
+
+        public static LiveView Incomplete() => new(false, false, null, null, false, DatabaseView.Unknown(), false, false, null);
+
+        public static LiveView Scope() => new(true, false, null, null, false, DatabaseView.Unknown(), false, false, null);
+    }
+
+    private readonly record struct ComposePsRow(string Service, string Project, string Id, string State);
+
+    private readonly record struct BackupHit(ComposeBackupManifest? Manifest, ComposeExecutorResponse? Failure, string? ChecksumFailure)
+    {
+        public static BackupHit Ok(ComposeBackupManifest manifest) => new(manifest, null, null);
+
+        public static BackupHit Fail(ComposeExecutorResponse failure) => new(null, failure, null);
+
+        public static BackupHit Checksum(ComposeBackupManifest manifest, string code) => new(manifest, null, code);
+    }
+
+    private static partial class Log
+    {
+        [LoggerMessage(EventId = 9531, Level = LogLevel.Warning, Message = "Compose executor op {Op} refused with {Code}.")]
+        public static partial void Refused(ILogger logger, string op, string code);
+    }
+}

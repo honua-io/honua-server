@@ -536,6 +536,20 @@ internal sealed partial class DeployWorkflowService
                 $"No deploy backend is registered for target '{operation.Deploy.TargetId}' ({operation.Deploy.Backend}).");
         }
 
+        var audit = MergeSubmissionAudit(operation.Audit, requestedBy, reason);
+        if (operation.Deploy.TargetKind == DeployTargetKind.LocalCompose)
+        {
+            // Checked before the claim so a same-principal submit cannot change the Compose project.
+            if (string.IsNullOrWhiteSpace(requestedBy) ||
+                string.Equals(requestedBy, operation.Audit.RequestedBy, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ResourceConflictException(
+                    "Separation of duties: a different principal must submit this Compose operation.");
+            }
+
+            audit = audit with { ApprovedBy = requestedBy };
+        }
+
         // Atomically claim the operation before calling the backend. Transitions Planned -> Submitted
         // via CAS (version check): only one concurrent SubmitAsync wins; the loser re-reads the
         // current state, which is already Submitted/Reconciling/etc., and returns it directly without
@@ -545,7 +559,7 @@ internal sealed partial class DeployWorkflowService
             Status = WorkflowOperationStatus.Submitted,
             UpdatedAt = DateTimeOffset.UtcNow,
             CurrentPhase = "Submitting to deploy backend.",
-            Audit = MergeSubmissionAudit(operation.Audit, requestedBy, reason)
+            Audit = audit
         };
 
         var claimed = await _workflowStore!.TrySetAsync(preliminary, cancellationToken: cancellationToken).ConfigureAwait(false);

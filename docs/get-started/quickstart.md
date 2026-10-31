@@ -300,6 +300,33 @@ one publish — OGC API Features at `/ogc/features/collections`, GeoServices RES
 rest. `admin.list_services()` and `admin.get_capabilities()` report what this
 deployment actually exposes, rather than what the list above assumes.
 
+## Optional: let an approved proposal update this stack
+
+The Compose file above does not mount the Docker socket into the server. To let
+`honua_propose_platform_release_convergence` and `honua_propose_rollback` change this
+project, copy [`compose.executor.yaml`](compose.executor.yaml) beside `compose.yaml`,
+create a `backups` directory, and make both that directory and this Compose
+directory writable by uid 1001 (the sidecar writes backups and
+`compose.executor.image.yaml` as that user). Load the immutable release image on the host before
+anyone approves it (`docker compose up` for the executor uses `--pull never`). Set
+`HONUA_RELEASE_IMAGE` to that digest, `COMPOSE_PROJECT_NAME` to the project name
+(`docker compose ls` prints it; for this quickstart it is the directory name),
+`DOCKER_GID` to the host docker group (`getent group docker`), and
+`HONUA_COMPOSE_CUSTOMER_PROBE` to an `http://honua:8080/...` route that returns a
+non-empty body. The published image does not include the Docker client, so the
+sidecar mounts the host `docker` binary and the Docker socket. The `honua` service
+mounts neither. Then start both files with
+`docker compose -f compose.yaml -f compose.executor.yaml up -d`.
+
+The executor is the same server image with `HONUA_COMPOSE_EXECUTOR=true`. It is the
+only service that receives the Docker socket. It accepts an immutable digest for this
+project only, and a different principal has to approve the proposal before anything
+changes. A rollback to an image that cannot read a reader-incompatible migration
+restores a verified database backup from `backups` before that image starts. Rollback
+uses the image id recorded in that backup. File storage is not part of this restore;
+the backup recipe in the Compose deploy guide still covers it. Contract-migration
+nonces stay on `HONUA_MIGRATE_ONLY` and are not bypassed here.
+
 ## What to do next
 
 | | |

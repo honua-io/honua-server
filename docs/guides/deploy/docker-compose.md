@@ -390,6 +390,8 @@ dc up -d --wait --wait-timeout 180
 
 ## Upgrade & Rollback
 
+When the Compose executor from the [quickstart](../../get-started/quickstart.md#optional-let-an-approved-proposal-update-this-stack) is enabled, convergence and rollback of the registered project are product-managed. The server asks a sidecar over a local socket. A reader-incompatible rollback restores a verified database backup before the prior image starts. The file-storage archive in the backup recipe above stays an operator step. The executor does not run arbitrary Compose commands, and contract-migration nonces stay on the migrate-only path.
+
 Use the signed release lock's next server digest and compatible clients together.
 Retain the previous `.env`, installed-package list and backup. A single-node
 Compose upgrade has downtime. Review migration preflight through the published

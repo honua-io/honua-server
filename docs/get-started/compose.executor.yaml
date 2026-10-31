@@ -1,0 +1,59 @@
+# Optional overlay for the quickstart Compose file. Copy it beside compose.yaml.
+# The server service stays read-only and does not receive the Docker socket.
+# The executor sidecar is the same server image and is the only service that mounts the socket.
+# Compose merges sequences, so this file adds the socket volume to honua. An older Compose
+# that replaces volumes instead of appending them must copy the honua volumes from compose.yaml
+# into this file as well.
+services:
+  honua:
+    environment:
+      ControlPlane__ComposeExecutor__SocketPath: /run/honua-compose/executor.sock
+      ControlPlane__ComposeExecutor__ReleaseImage: ${HONUA_RELEASE_IMAGE:?Set the immutable release digest}
+      ControlPlane__PlatformRelease__ServingArtifactReference: ${HONUA_RELEASE_IMAGE:?Set the immutable release digest}
+      ControlPlane__DeployTargets__0__TargetId: compose-local
+      ControlPlane__DeployTargets__0__TargetKind: LocalCompose
+      ControlPlane__DeployTargets__0__Backend: honua-compose
+      ControlPlane__DeployTargets__0__Environment: local
+      ControlPlane__DeployTargets__0__TargetName: honua
+      ControlPlane__DeployTargets__0__RequiresApproval: "true"
+      ControlPlane__DeployTargets__0__ArtifactReference: ${HONUA_RELEASE_IMAGE:?Set the immutable release digest}
+    volumes:
+      - compose-executor-socket:/run/honua-compose
+  compose-executor:
+    image: ${HONUA_IMAGE:?Set the server image}
+    user: "1001:1001"
+    # Host docker group, so uid 1001 can use the mounted socket. `getent group docker` prints it.
+    group_add:
+      - "${DOCKER_GID:?Set the host docker group id}"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+    tmpfs:
+      - /tmp:nosuid,size=100m
+    environment:
+      HONUA_COMPOSE_EXECUTOR: "true"
+      ControlPlane__ComposeExecutor__SocketPath: /run/honua-compose/executor.sock
+      ControlPlane__ComposeExecutor__ProjectDirectory: /compose
+      # docker compose ls names the project. The quickstart project name is the directory name.
+      ControlPlane__ComposeExecutor__ProjectName: ${COMPOSE_PROJECT_NAME:?Set the Compose project name}
+      ControlPlane__ComposeExecutor__ComposeFile: compose.yaml
+      ControlPlane__ComposeExecutor__ServiceName: honua
+      ControlPlane__ComposeExecutor__PostgresService: postgres
+      ControlPlane__ComposeExecutor__DatabaseName: honua
+      ControlPlane__ComposeExecutor__DatabaseUser: honua
+      ControlPlane__ComposeExecutor__BackupDirectory: /backups
+      ControlPlane__ComposeExecutor__HealthProbeUrl: http://honua:8080/healthz/ready
+      # A route that returns a non-empty body proving the database is readable.
+      ControlPlane__ComposeExecutor__CustomerProbeUrl: ${HONUA_COMPOSE_CUSTOMER_PROBE:?Set a customer readback URL}
+      ControlPlane__ComposeExecutor__ReleaseImage: ${HONUA_RELEASE_IMAGE:?Set the immutable release digest}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      # The published server image does not ship the Docker client. Mount the host binary.
+      # It must run on the image's glibc. The honua service does not receive this mount.
+      - /usr/bin/docker:/usr/local/bin/docker:ro
+      - ./:/compose
+      - ./backups:/backups
+      - compose-executor-socket:/run/honua-compose
+volumes:
+  compose-executor-socket:

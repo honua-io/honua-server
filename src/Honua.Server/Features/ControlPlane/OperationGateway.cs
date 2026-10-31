@@ -328,7 +328,7 @@ internal sealed partial class OperationGateway : IOperationGateway
         // throw, preventing double-execution of non-idempotent operations (BH4-031).
         proposal = await ClaimForExecutionAsync(proposal, cancellationToken).ConfigureAwait(false);
 
-        var request = RebuildRequest(proposal);
+        var request = RebuildRequest(proposal) with { ApprovedBy = approvedBy };
         string? executionOperationId = null;
         var status = OperationProposalStatus.Failed;
         string? failureMessage = null;
