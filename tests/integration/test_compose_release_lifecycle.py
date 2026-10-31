@@ -109,6 +109,8 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
         "-f", str(project_dir / "compose.yaml"), "-f", str(project_dir / "compose.executor.yaml")]
     # The executor runs as uid 1001 and owns only this disposable fixture directory.
     run(["docker", "run", "--rm", "-v", f"{project_dir}:{project_dir}", "redis:7.4-alpine", "chown", "-R", "1001:1001", str(project_dir)])
+    run(["docker", "run", "--rm", "-v", f"{project_dir}:{project_dir}", "redis:7.4-alpine", "chown", f"{os.getuid()}:{env['DOCKER_GID']}", str(project_dir / ".env")])
+    run(["docker", "run", "--rm", "-v", f"{project_dir}:{project_dir}", "redis:7.4-alpine", "chmod", "640", str(project_dir / ".env")])
     def dc(*args, check=True):
         return run(compose + list(args), env=env, cwd=project_dir, check=check)
     def sql(statement):
