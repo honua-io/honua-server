@@ -287,8 +287,7 @@ public sealed class GovernedWorkloadExecutorTests
                 TargetName = "honua-prod-canary",
                 Parameters = new Dictionary<string, string>(StringComparer.Ordinal)
                 {
-                    ["aws.ecs.cluster"] = "honua-prod-ecs",
-                    ["aws.ecs.canary_service"] = "honua-prod-canary"
+                    ["aws.ecs.cluster"] = "honua-prod-ecs"
                 }
             });
             options.DeployTargets.Add(EksOptions("prod-eks", "honua-kubernetes-deployment"));

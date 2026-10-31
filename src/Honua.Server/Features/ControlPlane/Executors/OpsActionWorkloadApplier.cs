@@ -162,7 +162,9 @@ internal sealed partial class OpsActionAdminConfigChangeApplier
     private static (string Cluster, string ServiceName, string? Region) RequireEcsAddress(DeployTargetDefinition target)
     {
         var cluster = Parameter(target, "aws.ecs.cluster");
-        var serviceName = Parameter(target, "aws.ecs.canary_service") ?? Parameter(target, "aws.ecs.service");
+        var serviceName = Parameter(target, "aws.ecs.canary_service")
+            ?? (!string.IsNullOrWhiteSpace(target.TargetName) ? target.TargetName.Trim() : null)
+            ?? Parameter(target, "aws.ecs.service");
         if (cluster is null || serviceName is null)
         {
             throw new OpsActionException(WorkloadExecutorCodes.TargetMissing);
