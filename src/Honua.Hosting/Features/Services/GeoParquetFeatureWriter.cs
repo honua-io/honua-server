@@ -569,8 +569,8 @@ public static partial class GeoParquetFeatureWriter
             bool => new BooleanType(),
             string => new StringType(),
             DateOnly => new Date32Type(),
-            TimeOnly => new Time32Type(TimeUnit.Millisecond),
-            TimeSpan => new Time32Type(TimeUnit.Millisecond),
+            TimeOnly => new Time64Type(TimeUnit.Microsecond),
+            TimeSpan => new Time64Type(TimeUnit.Microsecond),
             DateTime => new TimestampType(TimeUnit.Microsecond, TimeZoneInfo.Utc),
             DateTimeOffset => new TimestampType(TimeUnit.Microsecond, TimeZoneInfo.Utc),
             _ => null
@@ -613,7 +613,7 @@ public static partial class GeoParquetFeatureWriter
             "double precision" or "float8" => new DoubleType(),
             "boolean" or "bool" => new BooleanType(),
             "date" => new Date32Type(),
-            "time" => new Time32Type(TimeUnit.Millisecond),
+            "time" => new Time64Type(TimeUnit.Microsecond),
             "timestamp" or "timestamptz" or "timestamp with time zone" or "timestamp without time zone" => new TimestampType(TimeUnit.Microsecond, TimeZoneInfo.Utc),
             "bytea" => new BinaryType(),
             "uuid" => new StringType(),
@@ -1030,7 +1030,7 @@ public static partial class GeoParquetFeatureWriter
             "boolean" or "bool" => BuildBooleanAttributeArray(features, fieldName, logger),
             "bytea" => BuildBinaryAttributeArray(features, fieldName, logger),
             "date" => BuildDate32AttributeArray(features, fieldName, logger),
-            "time" => BuildTime32AttributeArray(features, fieldName, logger),
+            "time" => BuildTime64AttributeArray(features, fieldName, logger),
             "timestamp" or "timestamptz" or "timestamp with time zone" or "timestamp without time zone" => BuildTimestampAttributeArray(features, fieldName, logger),
             var resolved when resolved.StartsWith("numeric", StringComparison.OrdinalIgnoreCase) => BuildDoubleAttributeArray(features, fieldName, logger),
             var resolved when resolved.StartsWith("decimal", StringComparison.OrdinalIgnoreCase) => BuildDoubleAttributeArray(features, fieldName, logger),
@@ -1138,18 +1138,21 @@ public static partial class GeoParquetFeatureWriter
         return builder.Build();
     }
 
-    private static Time32Array BuildTime32AttributeArray(ImmutableArray<Feature> features, string fieldName, ILogger? logger = null)
+    private static Time64Array BuildTime64AttributeArray(ImmutableArray<Feature> features, string fieldName, ILogger? logger = null)
     {
-        var builder = new Time32Array.Builder(TimeUnit.Millisecond);
+        // Time64 has no builder in Apache.Arrow 22. Build the microsecond values as
+        // int64, then view that buffer as Time64. PostgreSQL time is microseconds;
+        // Time32 cannot store them.
+        var builder = new Int64Array.Builder();
         ForEachAttribute(
             features,
             fieldName,
             v =>
             {
-                var milliseconds = TryConvertTimeMilliseconds(v);
-                if (milliseconds.HasValue)
+                var microseconds = TryConvertTimeMicroseconds(v);
+                if (microseconds.HasValue)
                 {
-                    builder.Append(milliseconds.Value);
+                    builder.Append(microseconds.Value);
                 }
                 else
                 {
@@ -1158,7 +1161,14 @@ public static partial class GeoParquetFeatureWriter
             },
             () => builder.AppendNull(),
             logger);
-        return builder.Build();
+        var values = builder.Build();
+        return new Time64Array(
+            new Time64Type(TimeUnit.Microsecond),
+            values.ValueBuffer,
+            values.NullBitmapBuffer,
+            values.Length,
+            values.NullCount,
+            values.Offset);
     }
 
     private static TimestampArray BuildTimestampAttributeArray(ImmutableArray<Feature> features, string fieldName, ILogger? logger = null)
@@ -1238,7 +1248,7 @@ public static partial class GeoParquetFeatureWriter
             Int64Type => BuildInt64AttributeArray(features, field.Name, logger),
             BooleanType => BuildBooleanAttributeArray(features, field.Name, logger),
             Date32Type => BuildDate32AttributeArray(features, field.Name, logger),
-            Time32Type => BuildTime32AttributeArray(features, field.Name, logger),
+            Time64Type => BuildTime64AttributeArray(features, field.Name, logger),
             TimestampType => BuildTimestampAttributeArray(features, field.Name, logger),
             _ => BuildStringAttributeArray(features, field.Name, logger)
         };
@@ -1281,25 +1291,28 @@ public static partial class GeoParquetFeatureWriter
         };
     }
 
-    private static int? TryConvertTimeMilliseconds(object? value)
+    private static long? TryConvertTimeMicroseconds(object? value)
     {
+        // One microsecond is 10 ticks. Integer division drops only the 100 ns remainder,
+        // which PostgreSQL time does not store.
+        const long ticksPerMicrosecond = TimeSpan.TicksPerMillisecond / 1000;
         return value switch
         {
             null => null,
-            TimeOnly timeOnly => checked((int)(timeOnly.Ticks / TimeSpan.TicksPerMillisecond)),
-            TimeSpan timeSpan => checked((int)(timeSpan.Ticks / TimeSpan.TicksPerMillisecond)),
-            DateTime dateTime => checked((int)(TimeOnly.FromDateTime(dateTime).Ticks / TimeSpan.TicksPerMillisecond)),
-            DateTimeOffset dateTimeOffset => checked((int)(TimeOnly.FromDateTime(dateTimeOffset.UtcDateTime).Ticks / TimeSpan.TicksPerMillisecond)),
-            JsonElement element => TryConvertTimeMillisecondsElement(element),
+            TimeOnly timeOnly => timeOnly.Ticks / ticksPerMicrosecond,
+            TimeSpan timeSpan => timeSpan.Ticks / ticksPerMicrosecond,
+            DateTime dateTime => TimeOnly.FromDateTime(dateTime).Ticks / ticksPerMicrosecond,
+            DateTimeOffset dateTimeOffset => TimeOnly.FromDateTime(dateTimeOffset.UtcDateTime).Ticks / ticksPerMicrosecond,
+            JsonElement element => TryConvertTimeMicrosecondsElement(element),
             string stringValue when TimeOnly.TryParse(
                 stringValue,
                 CultureInfo.InvariantCulture,
                 DateTimeStyles.AllowWhiteSpaces,
-                out var parsedTimeOnly) => checked((int)(parsedTimeOnly.Ticks / TimeSpan.TicksPerMillisecond)),
+                out var parsedTimeOnly) => parsedTimeOnly.Ticks / ticksPerMicrosecond,
             string stringValue when TimeSpan.TryParse(
                 stringValue,
                 CultureInfo.InvariantCulture,
-                out var parsedTimeSpan) => checked((int)(parsedTimeSpan.Ticks / TimeSpan.TicksPerMillisecond)),
+                out var parsedTimeSpan) => parsedTimeSpan.Ticks / ticksPerMicrosecond,
             _ => null
         };
     }
@@ -1322,11 +1335,11 @@ public static partial class GeoParquetFeatureWriter
         };
     }
 
-    private static int? TryConvertTimeMillisecondsElement(JsonElement element)
+    private static long? TryConvertTimeMicrosecondsElement(JsonElement element)
     {
         return element.ValueKind switch
         {
-            JsonValueKind.String => TryConvertTimeMilliseconds(element.GetString()),
+            JsonValueKind.String => TryConvertTimeMicroseconds(element.GetString()),
             _ => null
         };
     }
