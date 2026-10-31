@@ -93,7 +93,9 @@ internal sealed partial class StreamingFileImportService
                 // Z/M ordinates that PostGIS rejects, dropping otherwise-valid rows).
                 var wkbWriter = new WKBWriter();
                 var batch = new List<IFeature>(_limits.BatchSize);
-                var typedColumnInference = new ImportTypedColumnInference(preserveStringScalars: format != SupportedFileFormat.Csv);
+                var typedColumnInference = new ImportTypedColumnInference(
+                    preserveStringScalars: format != SupportedFileFormat.Csv,
+                    inferTemporalStrings: format is SupportedFileFormat.GeoJson or SupportedFileFormat.Csv);
                 var totalImported = 0;
                 var totalFailed = 0;
                 var batchesCommitted = 0;

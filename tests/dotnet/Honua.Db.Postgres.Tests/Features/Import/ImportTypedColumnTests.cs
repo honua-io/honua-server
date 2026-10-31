@@ -173,7 +173,8 @@ public sealed class ImportTypedColumnTests(PostgresFixture fixture)
                 alter.CommandText = """
                     ALTER TABLE sample_layer ADD COLUMN population INTEGER;
                     ALTER TABLE sample_layer ADD COLUMN source_code TEXT;
-                    UPDATE sample_layer SET population = 10, source_code = '001';
+                    ALTER TABLE sample_layer ADD COLUMN source_label TEXT;
+                    UPDATE sample_layer SET population = 10, source_code = '001', source_label = '2020-01-15';
                     """;
                 await alter.ExecuteNonQueryAsync();
             }
@@ -182,12 +183,13 @@ public sealed class ImportTypedColumnTests(PostgresFixture fixture)
             imported.Result.TypedColumns.Should().Contain(column => column.Name == "name" && column.PostgresType == "text");
             imported.Result.TypedColumns.Should().Contain(column => column.Name == "population" && column.PostgresType == "bigint");
             imported.Result.TypedColumns.Should().Contain(column => column.Name == "source_code" && column.PostgresType == "text");
+            imported.Result.TypedColumns.Should().Contain(column => column.Name == "source_label" && column.PostgresType == "text");
             imported.Result.TypedColumns.Should().NotContain(column => column.Name.Equals("id", StringComparison.OrdinalIgnoreCase));
 
             await using var connection = await fixture.DataSource.OpenConnectionAsync();
             await using var command = connection.CreateCommand();
             command.CommandText = $"""
-                SELECT name, population, properties->>'name', properties->>'population', source_code
+                SELECT name, population, properties->>'name', properties->>'population', source_code, source_label
                 FROM "{imported.Schema}"."{imported.Table}"
                 """;
             await using var reader = await command.ExecuteReaderAsync();
@@ -197,6 +199,7 @@ public sealed class ImportTypedColumnTests(PostgresFixture fixture)
             reader.GetString(2).Should().Be("Test Feature");
             reader.GetString(3).Should().Be("10");
             reader.GetString(4).Should().Be("001");
+            reader.GetString(5).Should().Be("2020-01-15");
         }
         finally
         {

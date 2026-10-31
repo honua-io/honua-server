@@ -14,7 +14,7 @@ namespace Honua.Core.Features.FileImport.Services;
 /// Unsafe names, reserved import columns, PostgreSQL system columns, nested values, and keys
 /// past the column cap stay out of the result so they remain only in the properties document.
 /// </summary>
-internal sealed partial class ImportTypedColumnInference(bool preserveStringScalars = false)
+internal sealed partial class ImportTypedColumnInference(bool preserveStringScalars = false, bool inferTemporalStrings = true)
 {
     internal const int MaxColumns = 128;
 
@@ -59,7 +59,7 @@ internal sealed partial class ImportTypedColumnInference(bool preserveStringScal
 
         _exactNames.Add(name);
 
-        var observed = Classify(value, preserveStringScalars);
+        var observed = Classify(value, preserveStringScalars, inferTemporalStrings);
         _columns[name] = current == Kind.None ? observed : Merge(current, observed);
     }
 
@@ -85,12 +85,12 @@ internal sealed partial class ImportTypedColumnInference(bool preserveStringScal
             && IdentifierPattern().IsMatch(name)
             && !ReservedNames.Contains(name);
 
-    private static Kind Classify(object? value, bool preserveStringScalars) => value switch
+    private static Kind Classify(object? value, bool preserveStringScalars, bool inferTemporalStrings) => value switch
     {
         null or DBNull => Kind.Null,
-        string text => ClassifyString(text, preserveStringScalars),
+        string text => ClassifyString(text, preserveStringScalars, inferTemporalStrings),
         bool => Kind.Boolean,
-        JsonElement element => ClassifyJsonElement(element, preserveStringScalars),
+        JsonElement element => ClassifyJsonElement(element, preserveStringScalars, inferTemporalStrings),
         byte or sbyte or short or ushort or int or uint or long => Kind.Bigint,
         ulong unsigned => ClassifyUnsigned(unsigned),
         float or double => Kind.Double,
@@ -124,29 +124,29 @@ internal sealed partial class ImportTypedColumnInference(bool preserveStringScal
         return Kind.Double;
     }
 
-    private static Kind ClassifyJsonElement(JsonElement element, bool preserveStringScalars) => element.ValueKind switch
+    private static Kind ClassifyJsonElement(JsonElement element, bool preserveStringScalars, bool inferTemporalStrings) => element.ValueKind switch
     {
         JsonValueKind.Null or JsonValueKind.Undefined => Kind.Null,
         JsonValueKind.True or JsonValueKind.False => Kind.Boolean,
-        JsonValueKind.String => ClassifyString(element.GetString() ?? string.Empty, preserveStringScalars),
+        JsonValueKind.String => ClassifyString(element.GetString() ?? string.Empty, preserveStringScalars, inferTemporalStrings),
         JsonValueKind.Number when element.TryGetInt64(out _) => Kind.Bigint,
         JsonValueKind.Number when element.TryGetDouble(out var number) && double.IsFinite(number) => Kind.Double,
         _ => Kind.Reject
     };
 
-    private static Kind ClassifyString(string value, bool preserveStringScalars)
+    private static Kind ClassifyString(string value, bool preserveStringScalars, bool inferTemporalStrings)
     {
-        // JSON has explicit scalar types. Preserve numeric and boolean-looking strings,
-        // such as source identifiers with leading zeroes, while still recognizing dates.
+        // Preserve explicit strings, such as identifiers with leading zeroes. GeoJSON
+        // has no native date scalar, so its caller can also request temporal inference.
         if (preserveStringScalars)
         {
-            if (DatePattern().IsMatch(value)
+            if (inferTemporalStrings && DatePattern().IsMatch(value)
                 && DateOnly.TryParseExact(value, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out _))
             {
                 return Kind.Date;
             }
 
-            if (TimestampPrefixPattern().IsMatch(value)
+            if (inferTemporalStrings && TimestampPrefixPattern().IsMatch(value)
                 && DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out _))
             {
                 return Kind.Timestamp;

@@ -105,6 +105,16 @@ public sealed class ImportTypedColumnInferenceTests
     [UnitTest]
     [Operation(Operations.Import)]
     [Endpoint("ImportTypedColumnInference.Resolve")]
+    public void Resolve_TypedFormatTextThatLooksLikeDate_PreservesText()
+    {
+        var inference = new ImportTypedColumnInference(preserveStringScalars: true, inferTemporalStrings: false);
+        inference.Observe("label", "2020-01-15");
+        inference.Resolve().Single().PostgresType.Should().Be("text");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Import)]
+    [Endpoint("ImportTypedColumnInference.Resolve")]
     public void Resolve_CaseCollidingNames_KeepsBothOutOfTypedColumns()
     {
         var inference = new ImportTypedColumnInference();
