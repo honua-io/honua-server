@@ -21,9 +21,14 @@ internal sealed class AwsGovernedWorkloadExecutor(IEcsWorkloadControl ecs, ILamb
         var before = await DescribeAsync(cluster, serviceName, region, cancellationToken).ConfigureAwait(false);
         try
         {
+            if (!await ecs.HasImmutableImagesAsync(before.TaskDefinitionArn, region, cancellationToken).ConfigureAwait(false))
+            {
+                throw new OpsActionException(WorkloadExecutorCodes.FingerprintChanged);
+            }
+
             await ecs.ForceNewDeploymentAsync(cluster, serviceName, region, cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (ex is not OperationCanceledException and not OpsActionException)
         {
             throw MapProviderFailure(ex);
         }

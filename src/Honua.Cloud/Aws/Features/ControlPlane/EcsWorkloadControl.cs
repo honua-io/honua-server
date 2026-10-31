@@ -27,6 +27,8 @@ internal interface IEcsWorkloadControl
         string? region,
         CancellationToken cancellationToken = default);
 
+    Task<bool> HasImmutableImagesAsync(string taskDefinitionArn, string? region, CancellationToken cancellationToken = default);
+
     System.Threading.Tasks.Task ForceNewDeploymentAsync(
         string cluster,
         string serviceName,
@@ -93,6 +95,23 @@ internal sealed class AwsSdkEcsWorkloadControl : IEcsWorkloadControl
             TaskDefinitionArn = service.TaskDefinition,
             DesiredCount = service.DesiredCount ?? 0
         };
+    }
+
+    public async Task<bool> HasImmutableImagesAsync(string taskDefinitionArn, string? region, CancellationToken cancellationToken = default)
+    {
+        using var client = CreateClient(region);
+        var response = await client.DescribeTaskDefinitionAsync(
+            new DescribeTaskDefinitionRequest { TaskDefinition = taskDefinitionArn }, cancellationToken).ConfigureAwait(false);
+        var containers = response.TaskDefinition?.ContainerDefinitions;
+        return containers is { Count: > 0 } && containers.All(container => IsImmutableImage(container.Image));
+    }
+
+    internal static bool IsImmutableImage(string? image)
+    {
+        if (string.IsNullOrWhiteSpace(image)) return false;
+        var index = image.LastIndexOf("@sha256:", StringComparison.Ordinal);
+        if (index <= 0 || image.Length != index + 8 + 64) return false;
+        return image.AsSpan(index + 8).IndexOfAnyExcept("0123456789abcdef") < 0;
     }
 
     public async System.Threading.Tasks.Task ForceNewDeploymentAsync(

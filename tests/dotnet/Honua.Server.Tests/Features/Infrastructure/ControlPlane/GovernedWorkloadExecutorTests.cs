@@ -136,6 +136,18 @@ public sealed class GovernedWorkloadExecutorTests
     }
 
     [Fact]
+    public async Task RestartEcs_RejectsMutableImagesBeforeWrite()
+    {
+        var ecs = new RecordingEcs { ImmutableImages = false };
+        var executor = new AwsGovernedWorkloadExecutor(ecs, new RecordingLambda());
+        var act = () => executor.RestartEcsAsync("cluster", "service", null);
+        await act.Should().ThrowAsync<OpsActionException>().WithMessage(WorkloadExecutorCodes.FingerprintChanged);
+        ecs.Calls.Should().NotContain("force");
+        AwsSdkEcsWorkloadControl.IsImmutableImage("image:latest").Should().BeFalse();
+        AwsSdkEcsWorkloadControl.IsImmutableImage(Image).Should().BeTrue();
+    }
+
+    [Fact]
     public void EcsRequests_SetOnlyTheGovernedBehavior()
     {
         var restart = EcsWorkloadUpdate.ForceNewDeployment("honua-prod-ecs", "honua-prod-canary");
@@ -493,6 +505,11 @@ public sealed class GovernedWorkloadExecutorTests
         public int DesiredCount { get; private set; } = 1;
 
         public bool ChangeTaskDefinitionOnSet { get; init; }
+
+        public bool ImmutableImages { get; init; } = true;
+
+        public Task<bool> HasImmutableImagesAsync(string taskDefinitionArn, string? region, CancellationToken cancellationToken = default)
+            => Task.FromResult(ImmutableImages);
 
         public Task<EcsWorkloadSnapshot> DescribeAsync(string cluster, string serviceName, string? region, CancellationToken cancellationToken = default)
         {
