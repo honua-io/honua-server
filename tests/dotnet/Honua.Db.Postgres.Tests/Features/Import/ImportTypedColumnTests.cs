@@ -439,8 +439,14 @@ public sealed class ImportTypedColumnTests(PostgresFixture fixture)
             });
             var result = await service.ImportFileAsync(new ImportRequest
             {
-                FileStream = stream, FileName = "places.geojson", TableName = "places", TargetSchema = schema,
-                SourceSrid = 4326, TargetSrid = 4326, LoadMode = ImportLoadMode.Upsert, KeyColumns = ["name"]
+                FileStream = stream,
+                FileName = "places.geojson",
+                TableName = "places",
+                TargetSchema = schema,
+                SourceSrid = 4326,
+                TargetSrid = 4326,
+                LoadMode = ImportLoadMode.Upsert,
+                KeyColumns = ["name"]
             }, progress);
             result.Success.Should().BeFalse();
             await using var connection = await fixture.DataSource.OpenConnectionAsync();
