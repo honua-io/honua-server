@@ -506,13 +506,21 @@ internal sealed partial class ComposeProjectController : IDisposable
         return null;
     }
 
-    private async Task<ComposeExecutorResponse?> StartImageAsync(string image, CancellationToken cancellationToken)
+    internal async Task<ComposeExecutorResponse?> StartImageAsync(string image, CancellationToken cancellationToken)
     {
         var overridePath = Path.Combine(Path.GetFullPath(_options.ProjectDirectory), ComposeExecutorProtocol.OverrideFileName);
         var yaml = "services:\n  " + _options.ServiceName + ":\n    image: \"" + image + "\"\n";
         var temporary = overridePath + ".tmp";
-        await File.WriteAllTextAsync(temporary, yaml, cancellationToken).ConfigureAwait(false);
-        File.Move(temporary, overridePath, overwrite: true);
+        try
+        {
+            await File.WriteAllTextAsync(temporary, yaml, cancellationToken).ConfigureAwait(false);
+            File.Move(temporary, overridePath, overwrite: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // The caller attaches the verified backup so the workflow can recover.
+            return Refuse(null, ComposeExecutorCodes.ReadbackIncomplete, "The image override could not be written.");
+        }
         var wait = _options.ComposeWaitTimeoutSeconds.ToString(CultureInfo.InvariantCulture);
         var up = await ComposeAsync(TimeSpan.FromSeconds(_options.ComposeWaitTimeoutSeconds + 60), ["up", "-d", "--no-deps", "--pull", "never", "--wait", "--wait-timeout", wait, "--", _options.ServiceName], cancellationToken)
             .ConfigureAwait(false);

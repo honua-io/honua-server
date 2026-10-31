@@ -45,6 +45,23 @@ public sealed class ComposeProposalExecutorTests
     }
 
     [UnitTest]
+    public async Task ImageOverrideWriteFailure_ReturnsFailureBeforeStartingImage()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "honua-compose-unit", Guid.NewGuid().ToString("N"));
+        var options = ValidOptions(root, Digest('a'));
+        Directory.CreateDirectory(Path.Combine(options.ProjectDirectory, ComposeExecutorProtocol.OverrideFileName + ".tmp"));
+        var docker = new RecordingDocker();
+        using var controller = new ComposeProjectController(options, docker);
+
+        var response = await controller.StartImageAsync(Digest('a'), CancellationToken.None);
+
+        Assert.NotNull(response);
+        Assert.False(response.Ok);
+        Assert.Equal(ComposeExecutorCodes.ReadbackIncomplete, response.Code);
+        Assert.Empty(docker.Argv);
+    }
+
+    [UnitTest]
     public async Task ChecksumMismatch_DoesNotCallDocker()
     {
         var root = Path.Combine(Path.GetTempPath(), "honua-compose-unit", Guid.NewGuid().ToString("N"));
