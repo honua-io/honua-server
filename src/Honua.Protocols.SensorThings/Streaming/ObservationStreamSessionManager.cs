@@ -15,8 +15,8 @@ namespace Honua.Protocols.SensorThings.Streaming;
 /// Manages OGC SensorThings real-time observation-stream sessions (Phase 3, #1747).
 /// This mirrors the proven transport pattern of the server feature-change stream
 /// (<c>FeatureStreamSessionManager</c>): each connected client (SSE or WebSocket) gets
-/// a bounded channel, a heartbeat keeps idle connections alive, slow consumers whose
-/// buffer fills are dropped, and — when Redis is present — newly-ingested observations
+/// a bounded channel, a heartbeat keeps idle connections alive, a slow consumer whose
+/// buffer fills is disconnected, and — when Redis is present — newly-ingested observations
 /// are fanned out across nodes via pub/sub. The request-scoped publisher captures the
 /// resolved tenant and schema before calling this singleton. Observations are scoped
 /// to that boundary and optionally a Datastream so a client can tail a single feed.
@@ -65,7 +65,7 @@ internal sealed class ObservationStreamSessionManager : IDisposable
         _meter = new Meter(MeterName);
         _observationStreamDrops = _meter.CreateCounter<long>(
             "honua_sensorthings_observation_stream_drops_total",
-            description: "Observation-stream frames dropped because a slow consumer's bounded channel was full.");
+            description: "Observation-stream frames that overflowed a session buffer and disconnected that session.");
         _sessionRejections = _meter.CreateCounter<long>(
             "honua_sensorthings_observation_stream_rejections_total",
             description: "Observation-stream sessions refused because a principal, tenant, or node admission cap was reached.");
@@ -147,7 +147,11 @@ internal sealed class ObservationStreamSessionManager : IDisposable
             SingleWriter = false
         });
         var cts = new CancellationTokenSource();
-        var entry = new SessionEntry(channel, cts, datastreamId, transport, scope, principal);
+        // Capture before the session is visible. Overflow on another thread can remove
+        // it and dispose this source before the return, and Token then throws.
+        var disconnectToken = cts.Token;
+        var state = new ObservationStreamSessionState();
+        var entry = new SessionEntry(channel, cts, datastreamId, transport, scope, principal, state);
         if (!_sessions.TryAdd(id, entry))
         {
             ReleaseSlot(principal);
@@ -157,7 +161,7 @@ internal sealed class ObservationStreamSessionManager : IDisposable
         }
 
         ObservationStreamLog.SessionCreated(_logger, id, transport, datastreamId);
-        return new ObservationStreamSession(id, channel.Reader, this, cts.Token);
+        return new ObservationStreamSession(id, channel.Reader, this, state, disconnectToken);
     }
 
     private ObservationStreamAdmissionLimit TryReserveSlot(string tenant, (string Tenant, string Principal) principal)
@@ -216,15 +220,30 @@ internal sealed class ObservationStreamSessionManager : IDisposable
         }
     }
 
-    /// <summary>Removes a session and releases its slot.</summary>
+    /// <summary>Removes a session the client closed and releases its slot.</summary>
     public void RemoveSession(Guid sessionId)
+        => RemoveSession(sessionId, ObservationStreamDisconnectReason.ClientClosed);
+
+    /// <summary>
+    /// Removes a session. The first reason wins, so a later client dispose cannot
+    /// overwrite a slow-consumer gap that the transport still has to emit.
+    /// </summary>
+    private void RemoveSession(Guid sessionId, ObservationStreamDisconnectReason reason)
     {
-        if (_sessions.TryRemove(sessionId, out var entry))
+        if (!_sessions.TryRemove(sessionId, out var entry))
         {
-            ReleaseSlot(entry.Principal);
-            entry.Cts.Cancel();
-            entry.Cts.Dispose();
+            return;
         }
+
+        entry.State.TrySet(reason);
+        if (reason == ObservationStreamDisconnectReason.SlowConsumer)
+        {
+            ObservationStreamLog.SlowConsumerDisconnected(_logger, sessionId);
+        }
+
+        ReleaseSlot(entry.Principal);
+        entry.Cts.Cancel();
+        entry.Cts.Dispose();
     }
 
     /// <summary>Publishes committed observations only within their captured request scope.</summary>
@@ -295,6 +314,7 @@ internal sealed class ObservationStreamSessionManager : IDisposable
 
     private void BroadcastLocally(ObservationStreamFrame frame, ObservationStreamScope scope)
     {
+        List<Guid>? overflow = null;
         foreach (var (id, entry) in _sessions)
         {
             if (entry.Cts.IsCancellationRequested || entry.Scope != scope)
@@ -308,25 +328,55 @@ internal sealed class ObservationStreamSessionManager : IDisposable
             }
 
             // Wait-mode bounded channel with non-blocking TryWrite: a full buffer
-            // reports false, allowing this fan-out path to drop the new frame and
-            // count the slow-consumer gap without blocking ingest.
+            // reports false. Count the lost frame, then disconnect that session so
+            // the transport can emit a gap instead of leaving it looking healthy.
             if (!entry.Channel.Writer.TryWrite(frame))
             {
-                Interlocked.Increment(ref _slowConsumerDrops);
-                _observationStreamDrops.Add(1, new KeyValuePair<string, object?>("datastream.id", frame.DatastreamId));
+                NoteOverflow(id, frame.DatastreamId, ref overflow);
             }
         }
+
+        DisconnectOverflow(overflow);
     }
 
     /// <summary>Sends a heartbeat frame to every active session.</summary>
     public void BroadcastHeartbeat()
     {
-        foreach (var (_, entry) in _sessions)
+        List<Guid>? overflow = null;
+        foreach (var (id, entry) in _sessions)
         {
-            if (!entry.Cts.IsCancellationRequested)
+            if (entry.Cts.IsCancellationRequested)
             {
-                entry.Channel.Writer.TryWrite(ObservationStreamFrame.Heartbeat());
+                continue;
             }
+
+            if (!entry.Channel.Writer.TryWrite(ObservationStreamFrame.Heartbeat()))
+            {
+                NoteOverflow(id, entry.DatastreamId, ref overflow);
+            }
+        }
+
+        DisconnectOverflow(overflow);
+    }
+
+    private void NoteOverflow(Guid sessionId, long? datastreamId, ref List<Guid>? overflow)
+    {
+        Interlocked.Increment(ref _slowConsumerDrops);
+        _observationStreamDrops.Add(1, new KeyValuePair<string, object?>("datastream.id", datastreamId));
+        overflow ??= new List<Guid>();
+        overflow.Add(sessionId);
+    }
+
+    private void DisconnectOverflow(List<Guid>? overflow)
+    {
+        if (overflow is null)
+        {
+            return;
+        }
+
+        foreach (var sessionId in overflow)
+        {
+            RemoveSession(sessionId, ObservationStreamDisconnectReason.SlowConsumer);
         }
     }
 
@@ -370,7 +420,8 @@ internal sealed class ObservationStreamSessionManager : IDisposable
             long? datastreamId,
             string transport,
             ObservationStreamScope scope,
-            (string Tenant, string Principal) principal)
+            (string Tenant, string Principal) principal,
+            ObservationStreamSessionState state)
         {
             Channel = channel;
             Cts = cts;
@@ -378,6 +429,7 @@ internal sealed class ObservationStreamSessionManager : IDisposable
             Transport = transport;
             Scope = scope;
             Principal = principal;
+            State = state;
         }
 
         public Channel<ObservationStreamFrame> Channel { get; }
@@ -386,7 +438,37 @@ internal sealed class ObservationStreamSessionManager : IDisposable
         public string Transport { get; }
         public ObservationStreamScope Scope { get; }
         public (string Tenant, string Principal) Principal { get; }
+        public ObservationStreamSessionState State { get; }
     }
+}
+
+/// <summary>Why an observation-stream session ended. The first writer wins.</summary>
+internal enum ObservationStreamDisconnectReason
+{
+    /// <summary>The session is still registered.</summary>
+    None = 0,
+
+    /// <summary>The client or the request finished.</summary>
+    ClientClosed = 1,
+
+    /// <summary>The bounded buffer overflowed and the missed frames will not be replayed.</summary>
+    SlowConsumer = 2,
+}
+
+/// <summary>
+/// Disconnect reason stored off the session token. The token source is disposed as soon as
+/// the session is removed, and the transport still needs the reason after that.
+/// </summary>
+internal sealed class ObservationStreamSessionState
+{
+    private int _reason;
+
+    public ObservationStreamDisconnectReason Reason
+        => (ObservationStreamDisconnectReason)Volatile.Read(ref _reason);
+
+    public bool TrySet(ObservationStreamDisconnectReason reason)
+        => Interlocked.CompareExchange(ref _reason, (int)reason, (int)ObservationStreamDisconnectReason.None)
+            == (int)ObservationStreamDisconnectReason.None;
 }
 
 /// <summary>The admission cap that refused an observation-stream session.</summary>
@@ -412,16 +494,20 @@ internal sealed class ObservationStreamSession : IDisposable
 {
     private readonly ObservationStreamSessionManager _manager;
 
+    private readonly ObservationStreamSessionState _state;
+
     public ObservationStreamSession(
         Guid sessionId,
         ChannelReader<ObservationStreamFrame> reader,
         ObservationStreamSessionManager manager,
+        ObservationStreamSessionState state,
         CancellationToken disconnectToken)
     {
         SessionId = sessionId;
         Reader = reader;
         DisconnectToken = disconnectToken;
         _manager = manager;
+        _state = state;
     }
 
     /// <summary>Unique session identifier.</summary>
@@ -432,6 +518,9 @@ internal sealed class ObservationStreamSession : IDisposable
 
     /// <summary>Fires when the session is removed.</summary>
     public CancellationToken DisconnectToken { get; }
+
+    /// <summary>Why the session was removed. Stays <see cref="ObservationStreamDisconnectReason.None"/> until then.</summary>
+    public ObservationStreamDisconnectReason DisconnectReason => _state.Reason;
 
     public void Dispose() => _manager.RemoveSession(SessionId);
 }
