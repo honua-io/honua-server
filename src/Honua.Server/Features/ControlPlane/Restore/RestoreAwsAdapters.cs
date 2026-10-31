@@ -8,6 +8,7 @@ using Honua.Core.Features.ControlPlane.Restore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Npgsql;
+using Honua.Db.Postgres.Features.Security.ConnectionSecretResolvers;
 
 namespace Honua.ControlPlane;
 
@@ -129,12 +130,13 @@ internal sealed class AwsRestoredConnectionOpener(IServiceProvider services, IOp
             return null;
         }
 
-        var connectionString = current;
-        if (endpoint.Length > 0 && !ConnectionStringHostSwap.TrySwapHost(current, endpoint, out connectionString))
+        var secret = current;
+        if (endpoint.Length > 0 && !ConnectionStringHostSwap.TrySwapHost(current, endpoint, out secret))
         {
             return null;
         }
 
+        var connectionString = SecretValueExtractor.ExtractValue(secret);
         var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         return connection;
