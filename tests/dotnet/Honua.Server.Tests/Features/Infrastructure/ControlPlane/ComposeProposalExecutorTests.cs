@@ -344,7 +344,7 @@ public sealed class ComposeProposalExecutorTests
 
         await Assert.ThrowsAsync<ResourceConflictException>(() => executor.ExecuteAsync(
             request, (payload with { BackupId = "backup-" + new string('d', 32) }).Serialize()));
-        Assert.Single(client.Requests.Where(value => value.Op == "rollback"));
+        Assert.Single(client.Requests, value => value.Op == "rollback");
     }
 
     private static ComposeExecutorOptions ValidOptions(string root, string release)
