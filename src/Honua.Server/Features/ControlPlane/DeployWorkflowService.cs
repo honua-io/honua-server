@@ -691,7 +691,7 @@ internal sealed partial class DeployWorkflowService
     {
         EnsureDurableStoreConfigured();
         await using var admission = RestoreAdmissionEnabled
-            ? await RestoreDeployAdmission.AcquireAsync(_workflowStore!, operationId, null, cancellationToken).ConfigureAwait(false)
+            ? await RestoreDeployAdmission.AcquireAsync(_workflowStore!, operationId, null, cancellationToken, allowRestorePromotion: true).ConfigureAwait(false)
             : null;
         if (admission is not null) cancellationToken = admission.Token;
 

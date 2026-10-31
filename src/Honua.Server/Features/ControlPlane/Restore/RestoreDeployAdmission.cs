@@ -26,7 +26,7 @@ internal sealed class RestoreDeployAdmission : IAsyncDisposable
 
     internal CancellationToken Token => _cancellation.Token;
 
-    internal static async Task<RestoreDeployAdmission> AcquireAsync(IWorkflowOperationStore store, string workflowId, string? restoreOwnerId, CancellationToken cancellationToken)
+    internal static async Task<RestoreDeployAdmission> AcquireAsync(IWorkflowOperationStore store, string workflowId, string? restoreOwnerId, CancellationToken cancellationToken, bool allowRestorePromotion = false)
     {
         var leaseOwner = $"deploy-admission:{Guid.NewGuid():N}";
         if (!await store.TryAcquireLeaseAsync(CellOwnerId, leaseOwner, Lease, cancellationToken).ConfigureAwait(false))
@@ -39,7 +39,7 @@ internal sealed class RestoreDeployAdmission : IAsyncDisposable
             {
                 var restore = await store.GetAsync(owner.CurrentPhase, admission.Token).ConfigureAwait(false);
                 var checkpoint = restore?.PreMigrationRestore;
-                if (!string.Equals(owner.CurrentPhase, restoreOwnerId, StringComparison.Ordinal) ||
+                if ((!allowRestorePromotion && !string.Equals(owner.CurrentPhase, restoreOwnerId, StringComparison.Ordinal)) ||
                     checkpoint?.Phase is not ("awaiting-deploy" or "awaiting-compatible-deploy" or "awaiting-local-deploy") ||
                     !string.Equals(checkpoint.DeployOperationId, workflowId, StringComparison.Ordinal))
                     throw new ResourceConflictException("Deploy admission is blocked by a durable restore.");
