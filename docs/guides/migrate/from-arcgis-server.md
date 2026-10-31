@@ -1,16 +1,16 @@
 ---
 type: guide
-title: "Migrate from ArcGIS Server"
-description: "Use honua-migrate to discover an ArcGIS FeatureServer or MapServer, create a reviewable plan, apply it with explicit acknowledgement, and monitor the resulting Honua job."
+title: "Migrate from GeoServices REST service"
+description: "Use honua-migrate to discover an GeoServices FeatureServer or MapServer, create a reviewable plan, apply it with explicit acknowledgement, and monitor the resulting Honua job."
 resource: "honua://capability/import.geoservices"
 ---
-# Migrate from ArcGIS Server
+# Migrate from GeoServices REST service
 
-Use `honua-migrate` to discover an ArcGIS FeatureServer or MapServer, create a reviewable plan, apply it with explicit acknowledgement, and monitor the resulting Honua job. The service workflow is deliberately staged so discovery and planning cannot mutate either system.
+Use `honua-migrate` to discover an GeoServices FeatureServer or MapServer, create a reviewable plan, apply it with explicit acknowledgement, and monitor the resulting Honua job. The service workflow is deliberately staged so discovery and planning cannot mutate either system.
 
 **Prerequisites:** a running Honua server ([quickstart](../../get-started/quickstart.md)), admin credentials ([authentication](../secure/authentication.md)), the `honua-migrate` CLI (`pipx install honua-migrate` - pipx keeps it isolated,
 which avoids the [console-script collision](https://github.com/honua-io/honua-migrate/blob/trunk/docs/console-script-collision.md)
-with `honua-sdk`'s legacy launcher), and an ArcGIS service root ending in `FeatureServer` or `MapServer`.
+with `honua-sdk`'s legacy launcher), and an GeoServices service root ending in `FeatureServer` or `MapServer`.
 
 Set the Honua connection once. The CLI reads these values without writing them to artifacts:
 
@@ -48,7 +48,7 @@ honua-migrate plan verify parcels-plan.json
 
 Planning is local and does not contact either server. The plan is a shared v1 migration contract with a canonical digest. Review table and service names, the target SRID, overwrite behavior, query filters, output fields, and auto-publish behavior before applying it. Existing output files are rejected unless you intentionally pass `--force`.
 
-The current ArcGIS service command creates a single-layer plan. A multi-layer batch command is not exposed yet; keep multiple plans under the same change record and apply them in dependency order.
+The current GeoServices service command creates a single-layer plan. A multi-layer batch command is not exposed yet; keep multiple plans under the same change record and apply them in dependency order.
 
 ## 3. Apply the reviewed plan
 
@@ -96,7 +96,7 @@ honua query parcels/0 --count
 honua query parcels/0 --limit 5 --format geojson
 ```
 
-Compare those results with the source inventory and ArcGIS Pro or another source-native client. Check feature counts, schemas, extents, representative records, relationships, and metadata before cutover.
+Compare those results with the source inventory and desktop GIS client or another source-native client. Check feature counts, schemas, extents, representative records, relationships, and metadata before cutover.
 
 ### Read the fidelity verdict
 
@@ -211,11 +211,11 @@ run. It refuses when any blocking difference is found, or when there is no reada
 from. Constructs that only need review do not block the start, but the run can finish no better than
 `unverified` until an operator confirms them.
 
-The runtime-neutral `honua-migrate reconcile compare` command exists for a durable `MigrationRun` plus portable source and target snapshots. The ArcGIS service adapter does not yet emit that run/snapshot bundle, so this guide does not present a command that would fail. Automated ArcGIS reconciliation remains deferred until that adapter is wired.
+The runtime-neutral `honua-migrate reconcile compare` command exists for a durable `MigrationRun` plus portable source and target snapshots. The GeoServices service adapter does not yet emit that run/snapshot bundle, so this guide does not present a command that would fail. Automated GeoServices reconciliation remains deferred until that adapter is wired.
 
 ## 6. Repoint clients
 
-Existing Esri clients keep their workflow and replace only the service URL. Desktop setup is covered in [connect ArcGIS Pro](../connect/arcgis-pro.md); web and SDK migrations are covered in [ArcGIS apps and SDKs](arcgis-apps-and-sdks.md). ArcGIS Pro and ArcGIS Maps SDK licensing remains an Esri client concern; Honua replaces the server, not client licensing.
+Existing GeoServices clients keep their workflow and replace only the service URL. web and SDK migrations are covered in [GeoServices apps and SDKs](arcgis-apps-and-sdks.md). desktop GIS client and GeoServices Maps SDK licensing remains an GeoServices client concern; Honua replaces the server, not client licensing.
 
 ## Cutover checklist
 

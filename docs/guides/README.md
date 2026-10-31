@@ -52,7 +52,6 @@ Examples use `http://localhost:8080`, the repository Compose default. A quicksta
 | I want to… | Guide |
 |---|---|
 | Connect QGIS | [QGIS](connect/qgis.md) |
-| Connect desktop GIS client | [desktop GIS client](connect/arcgis-pro.md) |
 | Analyze layers in Excel or Power BI | [Excel and Power BI](connect/excel-power-bi.md) |
 | Build MapLibre web maps | [MapLibre web maps](connect/maplibre-web-maps.md) |
 | Let AI agents use the server via MCP | [AI agents (MCP)](connect/ai-agents-mcp.md) |
