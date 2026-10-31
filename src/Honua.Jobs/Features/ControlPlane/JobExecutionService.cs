@@ -309,7 +309,10 @@ internal sealed partial class JobExecutionService(
     /// fault is logged and reconciliation recovers the job. The per-job token registration is
     /// always dropped.
     /// </summary>
-    private async Task ReleaseFaultedClaimAsync(string operationId, string workerId)
+    private async Task ReleaseFaultedClaimAsync(
+        string operationId,
+        string workerId,
+        string reason = "Job store fault before execution started.")
     {
         try
         {
@@ -327,7 +330,7 @@ internal sealed partial class JobExecutionService(
                 await AbandonJobAsync(
                         job,
                         workerId,
-                        "Job store fault before execution started.",
+                        reason,
                         CancellationToken.None,
                         requeueDelayOverride: TimeSpan.Zero)
                     .ConfigureAwait(false);
@@ -427,7 +430,11 @@ internal sealed partial class JobExecutionService(
         if (!await jobStore.TrySetAsync(running, cancellationToken: stoppingToken).ConfigureAwait(false))
         {
             Log.TerminalStateSkipped(logger, operationId, "CAS conflict on Running transition");
-            cancellationTokens.Remove(operationId, workerId);
+            // No executor or heartbeat pump has started. Recover a still-owned claim
+            // immediately instead of leaving it idle until the 90-second heartbeat
+            // timeout. The recovery re-read honours cancellation or a moved owner.
+            await ReleaseFaultedClaimAsync(operationId, workerId,
+                "Job state changed before execution started.").ConfigureAwait(false);
             return;
         }
 
