@@ -145,6 +145,7 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
         wait_for_proposal(base, approver_key, proposal, "succeeded")
         assert image_id() == candidate and schema() == 142
         assert sql("SELECT value FROM public.rc2_lifecycle_marker WHERE id=1") == "retained"
+        sql("UPDATE public.rc2_lifecycle_marker SET value='changed-after-upgrade' WHERE id=1")
         manifests = list((project_dir / "backups").glob("backup-*/manifest.json"))
         assert len(manifests) == 1
         backup = json.loads(manifests[0].read_text())
