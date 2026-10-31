@@ -3,6 +3,7 @@
 
 using Honua.Core.Exceptions;
 using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.ControlPlane.Domain;
 
 namespace Honua.ControlPlane;
 
@@ -38,11 +39,23 @@ internal sealed class RestoreDeployAdmission : IAsyncDisposable
             if (!string.IsNullOrEmpty(owner?.CurrentPhase))
             {
                 var restore = await store.GetAsync(owner.CurrentPhase, admission.Token).ConfigureAwait(false);
-                var checkpoint = restore?.PreMigrationRestore;
-                if ((!allowRestorePromotion && !string.Equals(owner.CurrentPhase, restoreOwnerId, StringComparison.Ordinal)) ||
-                    checkpoint?.Phase is not ("awaiting-deploy" or "awaiting-compatible-deploy" or "awaiting-local-deploy") ||
-                    !string.Equals(checkpoint.DeployOperationId, workflowId, StringComparison.Ordinal))
-                    throw new ResourceConflictException("Deploy admission is blocked by a durable restore.");
+                if (restore?.Kind == WorkflowOperationKind.PreMigrationRestore && restore.Status == WorkflowOperationStatus.Succeeded)
+                {
+                    // Completion can race another lease holder. Clear only a durably successful owner,
+                    // under the same lease, and fail closed if the versioned write loses a race.
+                    if (!await store.TrySetAsync(owner with { CurrentPhase = null, UpdatedAt = DateTimeOffset.UtcNow },
+                            TimeSpan.FromDays(365), admission.Token).ConfigureAwait(false))
+                        throw new ResourceConflictException("Restore owner cleanup must be retried.");
+                }
+                else
+                {
+                    var checkpoint = restore?.PreMigrationRestore;
+                    if ((!allowRestorePromotion && !string.Equals(owner.CurrentPhase, restoreOwnerId, StringComparison.Ordinal)) ||
+                        checkpoint?.Phase is not ("awaiting-deploy" or "awaiting-compatible-deploy" or "awaiting-local-deploy") ||
+                        !string.Equals(checkpoint.DeployOperationId, workflowId, StringComparison.Ordinal))
+                        throw new ResourceConflictException("Deploy admission is blocked by a durable restore.");
+                }
+
             }
             return admission;
         }
