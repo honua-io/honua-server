@@ -470,6 +470,11 @@ internal sealed partial class DeployWorkflowService
         if (submitImmediately && planningResult.Plan.IsReadyToSubmit)
         {
             var backend = ResolveBackend(planningResult.Target);
+            if (backend is ICheckpointedDeployBackend checkpointed && checkpointed.RequiresCheckpoint(operation))
+            {
+                return await SubmitAsync(operation.OperationId, requestedBy, reason, cancellationToken).ConfigureAwait(false);
+            }
+
             if (backend != null)
             {
                 try
@@ -598,7 +603,9 @@ internal sealed partial class DeployWorkflowService
         {
             Status = WorkflowOperationStatus.Submitted,
             UpdatedAt = DateTimeOffset.UtcNow,
-            CurrentPhase = "Submitting to deploy backend.",
+            CurrentPhase = backend is ICheckpointedDeployBackend checkpointed && checkpointed.RequiresCheckpoint(operation)
+                ? ICheckpointedDeployBackend.PendingPhase
+                : "Submitting to deploy backend.",
             Audit = MergeSubmissionAudit(operation.Audit, requestedBy, reason)
         };
 
@@ -607,6 +614,11 @@ internal sealed partial class DeployWorkflowService
         {
             // Another concurrent SubmitAsync already claimed this operation. Re-read and return
             // the current state so the caller sees the latest status without executing twice.
+            return await _workflowStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (preliminary.CurrentPhase == ICheckpointedDeployBackend.PendingPhase)
+        {
             return await _workflowStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
         }
 
@@ -734,6 +746,38 @@ internal sealed partial class DeployWorkflowService
             return new DeployPromotionResult(DeployPromotionOutcome.Promoted, updatedNoBackend, null);
         }
 
+        if (backend is ICheckpointedDeployBackend checkpointed && checkpointed.RequiresCheckpoint(operation) &&
+            operation.Deploy.TrafficExposedAt is null)
+        {
+            if (!IsCheckpointReadyForManualCutover(operation))
+            {
+                return new DeployPromotionResult(DeployPromotionOutcome.PreconditionFailed, operation,
+                    "Checkpoint preparation and activation must finish before manual cutover.");
+            }
+
+            var readiness = await backend.ObserveAsync(operation, cancellationToken).ConfigureAwait(false);
+            if (readiness.Status != WorkflowOperationStatus.Submitted || !readiness.PromotionRecommended)
+            {
+                return new DeployPromotionResult(DeployPromotionOutcome.PreconditionFailed, operation,
+                    "The checkpointed candidate must be healthy before manual cutover.");
+            }
+
+            var authorized = operation with
+            {
+                Status = WorkflowOperationStatus.Submitted,
+                CurrentPhase = ICheckpointedDeployBackend.CutoverPhase,
+                UpdatedAt = DateTimeOffset.UtcNow,
+                Audit = MergePromotionAudit(operation.Audit, requestedBy, reason)
+            };
+            if (!await _workflowStore.TrySetAsync(authorized, cancellationToken: cancellationToken).ConfigureAwait(false))
+            {
+                throw new ResourceConflictException("Deploy operation changed while cutover was being authorized.");
+            }
+
+            var saved = await _workflowStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
+            return new DeployPromotionResult(DeployPromotionOutcome.Promoted, saved, null);
+        }
+
         DeployObservation observation;
         try
         {
@@ -784,7 +828,8 @@ internal sealed partial class DeployWorkflowService
             {
                 CurrentRevision = string.IsNullOrWhiteSpace(operation.Deploy.CurrentRevision)
                     ? observation.ObservedRevision ?? operation.Deploy.CurrentRevision
-                    : operation.Deploy.CurrentRevision
+                    : operation.Deploy.CurrentRevision,
+                TrafficExposedAt = operation.Deploy.TrafficExposedAt
             },
             Audit = MergePromotionAudit(operation.Audit, requestedBy, reason)
         };
@@ -815,6 +860,13 @@ internal sealed partial class DeployWorkflowService
     /// (honua-server#4618) is already past cutover and observing, so it is treated the same as
     /// <see cref="WorkflowOperationStatus.Succeeded"/> here.
     /// </summary>
+    internal static bool IsCheckpointReadyForManualCutover(WorkflowOperationRecord operation)
+        => !string.IsNullOrWhiteSpace(operation.ProviderOperationId) &&
+           !string.IsNullOrWhiteSpace(operation.Deploy?.CurrentRevision) &&
+           operation.CurrentPhase is not (ICheckpointedDeployBackend.PendingPhase or
+               ICheckpointedDeployBackend.PreparingPhase or ICheckpointedDeployBackend.PreparedPhase or
+               ICheckpointedDeployBackend.CutoverPhase);
+
     private static string? DescribePromotionPrecondition(WorkflowOperationRecord operation)
         => operation.Status switch
         {

@@ -368,6 +368,41 @@ public interface IDeployBackend
         });
 }
 
+/// <summary>A deploy backend that checkpoints preparation before activating a workload.</summary>
+public interface ICheckpointedDeployBackend
+{
+    /// <summary>The durable phase before preparation starts.</summary>
+    public const string PendingPhase = "Deploy preparation pending.";
+    /// <summary>The durable phase while migration and preparation may have side effects.</summary>
+    public const string PreparingPhase = "Deploy preparation in progress; outcome must be verified if interrupted.";
+    /// <summary>The durable phase after migration and revision identities have been recorded.</summary>
+    public const string PreparedPhase = "Deploy preparation completed and migration outcome recorded.";
+    /// <summary>The durable phase after pre-cutover checks authorize the traffic shift.</summary>
+    public const string CutoverPhase = "Deploy cutover authorized; submitting traffic shift.";
+    /// <summary>The durable phase after a canary ramp step is authorized.</summary>
+    public const string RampPhase = "Deploy canary step authorized; submitting traffic shift.";
+    /// <summary>The durable phase after activation has been submitted.</summary>
+    public const string ActivatedPhase = "Deploy activation submitted; awaiting convergence.";
+
+    /// <summary>True when this particular operation requires checkpointed preparation.</summary>
+    bool RequiresCheckpoint(WorkflowOperationRecord operation);
+    /// <summary>Prepares the candidate and migration; callers must first persist PreparingPhase.</summary>
+    Task<DeployCheckpoint> PrepareCheckpointAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken);
+    /// <summary>Idempotently submits activation after the checkpoint has been persisted.</summary>
+    Task<DeployObservation> ActivateCheckpointAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken);
+}
+
+/// <summary>Provider identities recorded before workload activation.</summary>
+public sealed record DeployCheckpoint
+{
+    /// <summary>The registered candidate provider revision.</summary>
+    public required string CandidateRevision { get; init; }
+    /// <summary>The verified stable revision used for rollback.</summary>
+    public required string StableRevision { get; init; }
+    /// <summary>The pre-activation candidate service revision.</summary>
+    public required string OriginalServiceRevision { get; init; }
+}
+
 /// <summary>Prepares durable per-attempt submission parameters before any provider side effect.</summary>
 public interface IBatchComputeSubmissionPreparer
 {
