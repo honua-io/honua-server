@@ -161,6 +161,31 @@ public sealed partial class LayerPublishingIntegrationTests
         using var odata = JsonDocument.Parse(odataPayload);
         odata.RootElement.GetProperty("value").GetArrayLength().Should().Be(1, odataPayload);
 
+        foreach (var (field, filter) in new[]
+        {
+            ("source_id", "source_id eq '002'"),
+            ("is_open", "is_open eq true"),
+            ("population", "population eq 10"),
+            ("score", "score eq 2.5"),
+            ("opened", "opened eq '2021-06-01'")
+        })
+        {
+            var filteredResponse = await _client.GetAsync(
+                $"/odata/Features({_layerId})?$filter={Uri.EscapeDataString(filter)}");
+            var filteredBody = await filteredResponse.Content.ReadAsStringAsync();
+            filteredResponse.StatusCode.Should().Be(HttpStatusCode.OK, filteredBody);
+            using var filteredOdata = JsonDocument.Parse(filteredBody);
+            filteredOdata.RootElement.GetProperty("value").GetArrayLength().Should().Be(1, field);
+
+            var orderedResponse = await _client.GetAsync($"/odata/Features({_layerId})?$orderby={field}%20desc");
+            var orderedBody = await orderedResponse.Content.ReadAsStringAsync();
+            orderedResponse.StatusCode.Should().Be(HttpStatusCode.OK, orderedBody);
+            using var orderedOdata = JsonDocument.Parse(orderedBody);
+            var first = orderedOdata.RootElement.GetProperty("value")[0];
+            Honua.TestKit.Helpers.ODataTestHelpers.ParseAttributes(first).GetProperty("name")
+                .GetString().Should().Be("Bravo", field);
+        }
+
         var mcp = await CallQueryFeaturesAsync("population = 2");
         if (mcp.TryGetProperty("isError", out var isError))
         {
