@@ -171,8 +171,12 @@ class GitHub:
         result = self.fetch(f"repos/{self.repository}/compare/{sha}...{branch}")
         return isinstance(result, dict) and result.get("status") in {"ahead", "identical"}
 
-    def runs(self, sha: str) -> list[dict]:
-        return list(self.pages(f"repos/{self.repository}/actions/runs?head_sha={sha}", "workflow_runs"))
+    def runs(self, sha: str, workflow: str) -> list[dict]:
+        # Scoped to the certifying workflow: the repo-wide listing for a busy sha passes GitHub's
+        # 1,000-result cap, after which total_count drops to 0 mid-walk and the walk refuses.
+        name = workflow.rsplit("/", 1)[-1]
+        return list(self.pages(f"repos/{self.repository}/actions/workflows/{name}/runs?head_sha={sha}",
+                               "workflow_runs"))
 
     def check_runs(self, sha: str) -> list[dict]:
         return list(self.pages(f"repos/{self.repository}/commits/{sha}/check-runs", "check_runs"))
@@ -197,7 +201,7 @@ def _attempt_marker(check: dict) -> tuple[int, str]:
 def certify(github: GitHub, sha: str, workflow: str, lanes: Iterable[str]) -> tuple[bool, str, dict | None]:
     """(certified, why, deciding run) for one sha, by the resolver's full-matrix rule."""
     candidates = [
-        run for run in github.runs(sha)
+        run for run in github.runs(sha, workflow)
         if str(run.get("path", "")) == workflow and str(run.get("event", "")) in CERTIFYING_EVENTS
         and str(run.get("head_sha", "")) == sha
     ]

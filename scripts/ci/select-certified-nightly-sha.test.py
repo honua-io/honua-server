@@ -72,8 +72,9 @@ class Recording:
         page = int(params.get("page", "1"))
         if base == f"repos/{REPOSITORY}/commits":
             return [{"sha": s} for s in self.trunk[(page - 1) * 100:page * 100]]
-        if base == f"repos/{REPOSITORY}/actions/runs":
-            rows = self.runs.get(params["head_sha"], [])
+        if base.startswith(f"repos/{REPOSITORY}/actions/workflows/") and base.endswith("/runs"):
+            name = base.split("/")[5]
+            rows = [r for r in self.runs.get(params["head_sha"], []) if r["path"].rsplit("/", 1)[-1] == name]
             return {"total_count": len(rows), "workflow_runs": rows[(page - 1) * 100:page * 100]}
         if base.startswith(f"repos/{REPOSITORY}/commits/") and base.endswith("/check-runs"):
             rows = self.checks.get(base.split("/")[4], [])
@@ -114,6 +115,21 @@ class LaneListTests(unittest.TestCase):
 
 
 class SelectionTests(unittest.TestCase):
+    def test_runs_are_read_per_workflow_so_a_busy_sha_is_not_truncated(self) -> None:
+        # 2026-10-31: the repo-wide listing for a sha with 1,163 runs reported total_count 0 past
+        # GitHub's 1,000-result cap and the nightly refused. Other workflows' runs must not be paged.
+        head = sha("e")
+        recording = Recording([head])
+        for _ in range(1200):
+            recording.run(head, path=".github/workflows/review-gate.yml", lanes=[])
+        run_id = recording.run(head)
+        chosen, run, _ = choose(recording)
+        self.assertEqual((chosen, run["id"]), (head, run_id))
+        run_reads = [c for c in recording.calls if "/runs?" in c]
+        self.assertTrue(run_reads)
+        self.assertTrue(all(c.startswith(f"repos/{REPOSITORY}/actions/workflows/ci.yml/runs?") for c in run_reads),
+                        run_reads)
+
     def test_head_without_a_completed_matrix_is_not_imaged(self) -> None:
         head, certified = sha("a"), sha("b")
         recording = Recording([head, certified])
