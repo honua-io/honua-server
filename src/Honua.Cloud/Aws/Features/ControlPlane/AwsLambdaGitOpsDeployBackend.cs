@@ -186,10 +186,9 @@ internal sealed partial class AwsLambdaGitOpsDeployBackend(
         var spec = operation.Deploy ?? throw new InvalidOperationException("Deploy workflow operation is missing deploy metadata.");
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (RequiresCheckpoint(operation)) return await ObserveImageAsync(operation, cancellationToken).ConfigureAwait(false);
-
         try
         {
+            if (RequiresCheckpoint(operation)) return await ObserveImageAsync(operation, cancellationToken).ConfigureAwait(false);
             var functionName = ResolveFunctionName(spec);
             var aliasName = ResolveAliasName(spec.Parameters);
             var region = ResolveRegion(spec.Parameters);
@@ -326,8 +325,6 @@ internal sealed partial class AwsLambdaGitOpsDeployBackend(
         var spec = operation.Deploy ?? throw new InvalidOperationException("Deploy workflow operation is missing deploy metadata.");
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (RequiresCheckpoint(operation)) return await MoveImageAliasAsync(operation, false, cancellationToken).ConfigureAwait(false);
-
         var functionName = ResolveFunctionName(spec);
         var aliasName = ResolveAliasName(spec.Parameters);
         var region = ResolveRegion(spec.Parameters);
@@ -335,6 +332,8 @@ internal sealed partial class AwsLambdaGitOpsDeployBackend(
 
         try
         {
+            if (RequiresCheckpoint(operation)) return await MoveImageAliasAsync(operation, false, cancellationToken).ConfigureAwait(false);
+
             var updatedAlias = await aliasClient.UpdateAliasAsync(
                     functionName,
                     aliasName,
@@ -363,10 +362,10 @@ internal sealed partial class AwsLambdaGitOpsDeployBackend(
             Log.AwsCallFailed(logger, operation.OperationId, spec.TargetId, ex.Message);
             return new DeployObservation
             {
-                Status = operation.Status,
+                Status = RequiresCheckpoint(operation) ? WorkflowOperationStatus.Submitted : operation.Status,
                 ProviderOperationId = operation.ProviderOperationId,
                 ObservedRevision = operation.ObservedState,
-                Message = "Lambda alias promotion failed due to a transient AWS error. The reconciler will retry."
+                Message = RequiresCheckpoint(operation) ? ICheckpointedDeployBackend.CutoverPhase : "Lambda alias promotion failed due to a transient AWS error. The reconciler will retry."
             };
         }
     }
@@ -378,8 +377,6 @@ internal sealed partial class AwsLambdaGitOpsDeployBackend(
         ArgumentNullException.ThrowIfNull(operation);
         var spec = operation.Deploy ?? throw new InvalidOperationException("Deploy workflow operation is missing deploy metadata.");
         cancellationToken.ThrowIfCancellationRequested();
-
-        if (RequiresCheckpoint(operation)) return await MoveImageAliasAsync(operation, true, cancellationToken).ConfigureAwait(false);
 
         var rollbackVersion = spec.CurrentRevision;
         if (string.IsNullOrWhiteSpace(rollbackVersion))
@@ -400,6 +397,8 @@ internal sealed partial class AwsLambdaGitOpsDeployBackend(
 
         try
         {
+            if (RequiresCheckpoint(operation)) return await MoveImageAliasAsync(operation, true, cancellationToken).ConfigureAwait(false);
+
             var updatedAlias = await aliasClient.UpdateAliasAsync(
                     functionName,
                     aliasName,

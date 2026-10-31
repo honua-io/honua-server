@@ -6,13 +6,9 @@ using Amazon.Lambda.Model;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Publishes an immutable container image as a numbered Lambda version.
-/// Keeps image publication separate from revision-guarded alias movement so a failed
-/// publish cannot move the alias.
-/// </summary>
 internal sealed record LambdaImageAlias(string Version, string RevisionId, bool HasWeightedTraffic);
 
+/// <summary>Publishes immutable images and moves aliases using revision guards.</summary>
 internal interface IAwsLambdaImageClient
 {
     Task<LambdaImageAlias> GetAliasAsync(string functionName, string aliasName, string? region, string? serviceUrl, CancellationToken cancellationToken);

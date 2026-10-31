@@ -57,6 +57,21 @@ public sealed class LambdaImageCheckpointTests
     }
 
     [Fact]
+    public async Task TransientAliasFailure_PreservesObservationAndCutoverForRetry()
+    {
+        var client = new FakeImageClient { FailAliasRead = true };
+        var backend = CreateBackend(client);
+        var operation = CreateOperation() with { ProviderOperationId = "43", ObservedState = "rev1", Deploy = CreateOperation().Deploy! with { CurrentRevision = "41" } };
+        var observation = await backend.ObserveAsync(operation);
+        observation.Status.Should().Be(WorkflowOperationStatus.Submitted);
+        observation.Message.Should().Contain("retry");
+        var promotion = await backend.PromoteAsync(operation);
+        promotion.Status.Should().Be(WorkflowOperationStatus.Submitted);
+        promotion.Message.Should().Be(Honua.Core.Features.ControlPlane.Abstractions.ICheckpointedDeployBackend.CutoverPhase);
+        client.Moves.Should().Be(0);
+    }
+
+    [Fact]
     public async Task Preparation_RefusesAliasChangeDuringPublication()
     {
         var client = new FakeImageClient { ChangeAliasOnPublish = true };
@@ -108,7 +123,8 @@ public sealed class LambdaImageCheckpointTests
         public int Moves { get; private set; }
         public int PublishCount { get; private set; }
         public bool ChangeAliasOnPublish { get; init; }
-        public Task<LambdaImageAlias> GetAliasAsync(string functionName, string aliasName, string? region, string? serviceUrl, CancellationToken cancellationToken) => Task.FromResult(Alias);
+        public bool FailAliasRead { get; init; }
+        public Task<LambdaImageAlias> GetAliasAsync(string functionName, string aliasName, string? region, string? serviceUrl, CancellationToken cancellationToken) => FailAliasRead ? throw new Amazon.Runtime.AmazonClientException("transient") : Task.FromResult(Alias);
         public Task MoveAliasAsync(string functionName, string aliasName, string version, string expectedRevisionId, string? region, string? serviceUrl, CancellationToken cancellationToken)
         {
             expectedRevisionId.Should().Be(Alias.RevisionId);
