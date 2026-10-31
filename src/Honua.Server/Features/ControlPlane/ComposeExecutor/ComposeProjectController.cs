@@ -475,25 +475,26 @@ internal sealed partial class ComposeProjectController : IDisposable
     {
         var overridePath = Path.Combine(Path.GetFullPath(_options.ProjectDirectory), ComposeExecutorProtocol.OverrideFileName);
         var yaml = "services:\n  " + _options.ServiceName + ":\n    image: \"" + image + "\"\n";
-        if (nonce is not null) yaml += "    environment:\n      HONUA_APPROVE_CONTRACT_MIGRATIONS: \"" + nonce + "\"\n";
         var temporary = overridePath + ".tmp";
         await File.WriteAllTextAsync(temporary, yaml, cancellationToken).ConfigureAwait(false);
         File.Move(temporary, overridePath, overwrite: true);
         var wait = _options.ComposeWaitTimeoutSeconds.ToString(CultureInfo.InvariantCulture);
+        var migrationOverride = nonce is null ? null : Path.Combine(Path.GetFullPath(_options.ProjectDirectory),
+            ".compose-migration-" + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture) + ".yaml");
+        if (migrationOverride is not null)
+        {
+            await File.WriteAllTextAsync(migrationOverride, "services:\n  " + _options.ServiceName +
+                ":\n    environment:\n      HONUA_APPROVE_CONTRACT_MIGRATIONS: \"" + nonce + "\"\n", cancellationToken).ConfigureAwait(false);
+        }
         DockerProcessResult up;
         try
         {
-            up = await ComposeAsync(TimeSpan.FromSeconds(_options.ComposeWaitTimeoutSeconds + 60), ["up", "-d", "--no-deps", "--pull", "never", "--wait", "--wait-timeout", wait, "--", _options.ServiceName], cancellationToken)
+            up = await ComposeAsync(TimeSpan.FromSeconds(_options.ComposeWaitTimeoutSeconds + 60), ["up", "-d", "--no-deps", "--pull", "never", "--wait", "--wait-timeout", wait, "--", _options.ServiceName], cancellationToken, migrationOverride)
                 .ConfigureAwait(false);
         }
         finally
         {
-            if (nonce is not null)
-            {
-                var clean = "services:\n  " + _options.ServiceName + ":\n    image: \"" + image + "\"\n";
-                await File.WriteAllTextAsync(temporary, clean, CancellationToken.None).ConfigureAwait(false);
-                File.Move(temporary, overridePath, overwrite: true);
-            }
+            if (migrationOverride is not null) File.Delete(migrationOverride);
         }
         if (up.ExitCode != 0)
         {
@@ -891,7 +892,8 @@ internal sealed partial class ComposeProjectController : IDisposable
     private Task<DockerProcessResult> ComposeAsync(
         TimeSpan timeout,
         string[] tail,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? migrationOverride = null)
     {
         var args = new List<string>
         {
@@ -913,6 +915,11 @@ internal sealed partial class ComposeProjectController : IDisposable
             args.Add(over);
         }
 
+        if (migrationOverride is not null)
+        {
+            args.Add("-f");
+            args.Add(migrationOverride);
+        }
         args.AddRange(tail);
         return _docker.RunAsync(args, timeout, cancellationToken);
     }
