@@ -69,6 +69,8 @@ def wait_for_proposal(base, key, proposal, expected, timeout=1500):
 
 def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
     candidate = os.environ["HONUA_LIFECYCLE_IMAGE"]
+    candidate_schema = max(int(path.name.split("_", 1)[0]) for path in (ROOT / "src/Honua.Server/Migrations").glob("[0-9]*_*.sql"))
+    assert candidate_schema >= 142
     assert re.fullmatch(r"sha256:[a-f0-9]{64}", candidate)
     run(["docker", "pull", "--platform", "linux/amd64", RC1])
     prior_id = run(["docker", "image", "inspect", "--format", "{{.Id}}", RC1])
@@ -143,7 +145,8 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
             assert error.code in (400, 403, 409)
         request(base, f"/api/v1/admin/proposals/{proposal}/approve", approver_key, {})
         wait_for_proposal(base, approver_key, proposal, "succeeded")
-        assert image_id() == candidate and schema() == 142
+        assert image_id() == candidate and schema() == candidate_schema
+        assert sql("SELECT count(*) FROM public.schema_versions WHERE scriptname LIKE '%142_CreateAiFinancialAccounting.sql'") == "1"
         assert sql("SELECT value FROM public.rc2_lifecycle_marker WHERE id=1") == "retained"
         sql("UPDATE public.rc2_lifecycle_marker SET value='changed-after-upgrade' WHERE id=1")
         manifests = list((project_dir / "backups").glob("backup-*/manifest.json"))

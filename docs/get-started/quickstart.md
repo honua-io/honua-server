@@ -314,8 +314,11 @@ anyone approves it (`docker compose up` for the executor uses `--pull never`). S
 `HONUA_RELEASE_IMAGE` to that digest, `HONUA_RELEASE_VERSION` to its release version,
 `COMPOSE_PROJECT_NAME` to the project name
 (`docker compose ls` prints it; for this quickstart it is the directory name),
-`DOCKER_GID` to the host docker group (`getent group docker`), and
-`HONUA_COMPOSE_CUSTOMER_PROBE` to an `http://honua:8080/...` route that returns a
+`DOCKER_GID` to the host docker group (`getent group docker`). The executor needs to
+read the quickstart `.env` file when it invokes Compose. Keep its owner unchanged, set
+its group to that Docker group (`sudo chgrp "$DOCKER_GID" .env`), and grant only owner
+and group access (`chmod 0640 .env`). Membership in that group also grants Docker
+socket access. Set `HONUA_COMPOSE_CUSTOMER_PROBE` to an `http://honua:8080/...` route that returns a
 non-empty body. The published image does not include the Docker client, so the
 sidecar mounts the host `docker` binary and the Docker socket. The `honua` service
 mounts neither. Then start both files with
