@@ -377,6 +377,8 @@ public interface ICheckpointedDeployBackend
     public const string PreparingPhase = "Deploy preparation in progress; outcome must be verified if interrupted.";
     /// <summary>The durable phase after migration and revision identities have been recorded.</summary>
     public const string PreparedPhase = "Deploy preparation completed and migration outcome recorded.";
+    /// <summary>The durable phase after pre-cutover checks authorize the traffic shift.</summary>
+    public const string CutoverPhase = "Deploy cutover authorized; submitting traffic shift.";
     /// <summary>The durable phase after activation has been submitted.</summary>
     public const string ActivatedPhase = "Deploy activation submitted; awaiting convergence.";
 

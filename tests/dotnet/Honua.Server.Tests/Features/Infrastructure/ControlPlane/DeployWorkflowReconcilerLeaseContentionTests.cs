@@ -200,6 +200,11 @@ public sealed class DeployWorkflowReconcilerLeaseContentionTests
         (await store.GetAsync(operation.OperationId))!.Deploy!.TrafficExposedAt.Should().BeNull();
         gate.Wait = false;
         await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
+        backend.PromotionCount.Should().Be(0);
+        var authorized = (await store.GetAsync(operation.OperationId))!;
+        authorized.CurrentPhase.Should().Be(ICheckpointedDeployBackend.CutoverPhase);
+        authorized.Deploy!.TrafficExposedAt.Should().BeNull();
+        await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
         backend.PromotionCount.Should().Be(1);
         (await store.GetAsync(operation.OperationId))!.Deploy!.TrafficExposedAt.Should().NotBeNull();
     }

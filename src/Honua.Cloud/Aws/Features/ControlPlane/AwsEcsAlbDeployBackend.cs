@@ -971,16 +971,6 @@ internal sealed partial class AwsEcsAlbDeployBackend(
                     };
                 }
 
-                if (albWeights.MatchesExpectedShare(desiredCanaryWeight ?? 100))
-                {
-                    return new DeployObservation
-                    {
-                        Status = WorkflowOperationStatus.Reconciling,
-                        ProviderOperationId = operation.ProviderOperationId,
-                        Message = "ECS candidate traffic shift was already submitted."
-                    };
-                }
-
                 return new DeployObservation
                 {
                     Status = WorkflowOperationStatus.ManualInterventionRequired,

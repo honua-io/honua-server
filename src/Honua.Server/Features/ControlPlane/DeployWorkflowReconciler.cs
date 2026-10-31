@@ -42,6 +42,25 @@ internal sealed partial class DeployWorkflowReconciler(
             return;
         }
 
+        if (operation.CurrentPhase == ICheckpointedDeployBackend.CutoverPhase)
+        {
+            var cutover = await ((IDeployBackend)backend).PromoteAsync(operation, cancellationToken).ConfigureAwait(false);
+            var exposed = operation with
+            {
+                Status = cutover.Status,
+                CurrentPhase = cutover.Message ?? "Deploy traffic shift submitted.",
+                UpdatedAt = DateTimeOffset.UtcNow,
+                CompletedAt = IsTerminal(cutover.Status) ? DateTimeOffset.UtcNow : null,
+                Deploy = operation.Deploy! with
+                {
+                    TrafficExposedAt = cutover.Status == WorkflowOperationStatus.Reconciling
+                        ? operation.Deploy.TrafficExposedAt ?? DateTimeOffset.UtcNow : operation.Deploy.TrafficExposedAt
+                }
+            };
+            await workflowStore.TrySetAsync(exposed, cancellationToken: cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
         if (operation.CurrentPhase == ICheckpointedDeployBackend.PreparedPhase)
         {
             var result = await backend.ActivateCheckpointAsync(operation, cancellationToken).ConfigureAwait(false);
@@ -141,7 +160,8 @@ internal sealed partial class DeployWorkflowReconciler(
                     checkpointed.RequiresCheckpoint(operation) &&
                     operation.Status != WorkflowOperationStatus.RollbackRequested &&
                     operation.CurrentPhase is ICheckpointedDeployBackend.PendingPhase or
-                        ICheckpointedDeployBackend.PreparingPhase or ICheckpointedDeployBackend.PreparedPhase)
+                        ICheckpointedDeployBackend.PreparingPhase or ICheckpointedDeployBackend.PreparedPhase or
+                        ICheckpointedDeployBackend.CutoverPhase)
                 {
                     await ReconcileCheckpointAsync(operation, checkpointed, reconciliationCancellation.Token).ConfigureAwait(false);
                     return;
@@ -1120,17 +1140,13 @@ internal sealed partial class DeployWorkflowReconciler(
         if (deploy is { TrafficExposedAt: null } && backend is ICheckpointedDeployBackend checkpointed &&
             checkpointed.RequiresCheckpoint(current))
         {
-            var cutover = await backend.PromoteAsync(current, cancellationToken).ConfigureAwait(false);
-            var exposedAt = cutover.Status == WorkflowOperationStatus.Reconciling ? DateTimeOffset.UtcNow : (DateTimeOffset?)null;
+            // Persist the gate decision before the routing write. The next leased reconciliation
+            // performs the idempotent cutover, including after process loss.
             return current with
             {
-                Status = cutover.Status,
-                UpdatedAt = DateTimeOffset.UtcNow,
-                CompletedAt = IsTerminal(cutover.Status) ? DateTimeOffset.UtcNow : null,
-                ProviderOperationId = cutover.ProviderOperationId ?? current.ProviderOperationId,
-                CurrentPhase = cutover.Message ?? current.CurrentPhase,
-                Deploy = deploy with { TrafficExposedAt = exposedAt },
-                ErrorMessage = cutover.Status == WorkflowOperationStatus.Failed ? cutover.Message : null
+                Status = WorkflowOperationStatus.Submitted,
+                CurrentPhase = ICheckpointedDeployBackend.CutoverPhase,
+                UpdatedAt = DateTimeOffset.UtcNow
             };
         }
 
