@@ -93,7 +93,7 @@ class ExclusionReviewTests(unittest.TestCase):
         self.assertEqual([], checklist.validate(rows))
         cells = [cell for row in rows for cell in row["lanes"].values()]
         self.assertEqual(188, len(cells))
-        self.assertEqual(115, sum(cell["state"] == "pass" for cell in cells))
+        self.assertEqual(116, sum(cell["state"] == "pass" for cell in cells))
         self.assertEqual(0, sum(cell["state"] == "fail" for cell in cells))
         self.assertEqual(13, sum(cell["state"] == "blocked" for cell in cells))
         reopened = [cell for cell in cells if "previous_exclusion" in cell]

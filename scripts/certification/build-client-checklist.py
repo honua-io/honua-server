@@ -1170,7 +1170,7 @@ for protocol, version, operation, detail in (
     ("tilejson", "3.0.0", "descriptor", "stock updateUriSources consumes a remote TileJSON URL from a standard Mapbox GL style; exact template and native decoded feature geometry validated within MVT grid tolerance; direct descriptor-as-XYZ still fails"),
     ("imageserver", "GeoServices REST", "service-info", "stock GeoServices RESTmapserver constructor CRS and extent match independent ImageServer metadata"),
     ("imageserver", "GeoServices REST", "exportImage", "stock GeoServices RESTmapserver 64x64 ARGB block corner colors match independent exportImage PNG; dynamic provider 0x0 native dimensions do not prevent rendering"),
-    ("elevation", "GeoServices", "point-query", "stock GDAL AGS TIFF numeric sample 10 at [-122.498828125,37.83890625] matches independent ImageServer identify at the same point; four corners/affine grid match SQL and native project reload repeats samples; does not certify native identify endpoint"),
+    ("elevation", "1.0", "point-query", "stock GDAL AGS TIFF numeric sample 10 at [-122.498828125,37.83890625] matches independent ImageServer identify at the same point; four corners/affine grid match SQL and native project reload repeats samples; does not certify native identify endpoint"),
 ):
     RESOLVED_EXCLUSION_EVIDENCE[(protocol, version, operation, "pyqgis")] = (
         "honua-client-compat/evidence/pyqgis-deep-exclusions-20260920-d/observations.json (retained at commit 046a74c); "
