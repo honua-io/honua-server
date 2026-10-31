@@ -443,6 +443,14 @@ internal sealed partial class DeployWorkflowService
             Deploy = planningResult.Spec
         };
 
+        var immediateBackend = submitImmediately && planningResult.Plan.IsReadyToSubmit
+            ? ResolveBackend(planningResult.Target) : null;
+        if (immediateBackend is ICheckpointedDeployBackend checkpointedBackend && checkpointedBackend.RequiresCheckpoint(operation))
+        {
+            // Persist the checkpoint before releasing admission; the reconciler owns the next step.
+            operation = operation with { CurrentPhase = ICheckpointedDeployBackend.PendingPhase };
+        }
+
         var priorOperation = await _workflowStore!.GetAsync(operation.OperationId, cancellationToken).ConfigureAwait(false);
         if (priorOperation != null)
         {
@@ -469,10 +477,10 @@ internal sealed partial class DeployWorkflowService
 
         if (submitImmediately && planningResult.Plan.IsReadyToSubmit)
         {
-            var backend = ResolveBackend(planningResult.Target);
-            if (backend is ICheckpointedDeployBackend checkpointed && checkpointed.RequiresCheckpoint(operation))
+            var backend = immediateBackend;
+            if (operation.CurrentPhase == ICheckpointedDeployBackend.PendingPhase)
             {
-                return await SubmitAsync(operation.OperationId, requestedBy, reason, cancellationToken).ConfigureAwait(false);
+                return operation;
             }
 
             if (backend != null)
