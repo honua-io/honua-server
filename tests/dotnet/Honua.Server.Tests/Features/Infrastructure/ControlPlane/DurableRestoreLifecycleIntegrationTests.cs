@@ -126,6 +126,11 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
             var second = await gateway.ApplyApprovedProposalAsync(secondRoute.ProposalId, "approver");
             Assert.NotNull(second);
             Assert.NotNull(second.ExecutionOperationId);
+            // Simulate a crash after the durable enqueue but before the gateway's final resolution write.
+            var claimedProposal = await proposals.GetAsync(approved.ProposalId);
+            Assert.True(await proposals.TrySetAsync(claimedProposal! with { Status = OperationProposalStatus.Executing, ResolvedAt = null }));
+            var queuedRestore = await workflows.GetAsync(approved.ExecutionOperationId);
+            Assert.True(await workflows.TrySetAsync(queuedRestore! with { CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-6) }));
             var verifier = new DurableRestoreCompletionVerifier(probe, revisions, customer, audit, secrets, cell);
             DurableRestoreWorker NewWorker() => new(workflows, proposals, coordinator, deploy, verifier, audit, NullLogger<DurableRestoreWorker>.Instance);
             var activeDeploy = new WorkflowOperationRecord
@@ -139,6 +144,7 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
             Assert.True(await workflows.TryCreateAsync(activeDeploy));
             await NewWorker().ReconcileAsync(approved.ExecutionOperationId, CancellationToken.None);
             await snapshots.DidNotReceive().RestoreNewAsync(Arg.Any<RdsRestoreRequest>(), Arg.Any<CancellationToken>());
+            Assert.Equal(OperationProposalStatus.Submitted, (await proposals.GetAsync(approved.ProposalId))?.Status);
             var savedActive = await workflows.GetAsync(activeDeploy.OperationId);
             Assert.True(await workflows.TrySetAsync(savedActive! with { Status = WorkflowOperationStatus.Succeeded }));
             await NewWorker().ReconcileAsync(approved.ExecutionOperationId, CancellationToken.None);

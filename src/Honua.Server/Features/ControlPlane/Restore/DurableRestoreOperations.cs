@@ -150,6 +150,25 @@ internal sealed partial class DurableRestoreWorker(
             // Approval and the operation id must be durable before the side effects begin.
             var proposal = string.IsNullOrWhiteSpace(record.Audit.ProposalId)
                 ? null : await proposals.GetAsync(record.Audit.ProposalId, lostLease.Token).ConfigureAwait(false);
+            if (proposal is { Status: OperationProposalStatus.Executing } &&
+                DateTimeOffset.UtcNow - record.CreatedAt > TimeSpan.FromMinutes(5))
+            {
+                // Recover only an already-claimed, sealed proposal whose durable enqueue exactly
+                // matches the original approval. The delay avoids racing the live gateway write.
+                var validClaim = proposal.Kind == OperationClass.Deploy &&
+                    !string.IsNullOrWhiteSpace(proposal.SealedPlanHash) &&
+                    string.Equals(proposal.SealedPlanHash, Honua.Server.Features.Operations.OperationApprovalPlanSeal.Compute(proposal.Plan), StringComparison.Ordinal) &&
+                    string.Equals(proposal.Plan.ExecutionPayload, context.Payload, StringComparison.Ordinal) &&
+                    string.Equals(proposal.ExecutionOperationId, record.OperationId, StringComparison.Ordinal) &&
+                    string.Equals(proposal.RequestedBy, record.Audit.RequestedBy, StringComparison.Ordinal) &&
+                    string.Equals(proposal.ResolvedBy, context.ApprovedBy, StringComparison.Ordinal) &&
+                    !string.Equals(proposal.RequestedBy, proposal.ResolvedBy, StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(proposal.TenantId, record.Audit.TenantId, StringComparison.Ordinal);
+                if (!validClaim || !await proposals.TrySetAsync(proposal with
+                    { Status = OperationProposalStatus.Submitted, ResolvedAt = DateTimeOffset.UtcNow },
+                    cancellationToken: lostLease.Token).ConfigureAwait(false)) return;
+                proposal = await proposals.GetAsync(proposal.ProposalId, lostLease.Token).ConfigureAwait(false);
+            }
             if (proposal is null || proposal.Status is not (OperationProposalStatus.Submitted or OperationProposalStatus.Reconciling)
                 || !string.Equals(proposal.ExecutionOperationId, record.OperationId, StringComparison.Ordinal)
                 || !string.Equals(proposal.ResolvedBy, context.ApprovedBy, StringComparison.Ordinal))
