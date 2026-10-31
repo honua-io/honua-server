@@ -3,6 +3,7 @@
 
 using Honua.ControlPlane;
 using Honua.ControlPlane.Executors;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
@@ -90,7 +91,7 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
             backend.StartAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>()).Returns(new DeploySubmissionResult { Status = WorkflowOperationStatus.Reconciling });
             var approvals = Substitute.For<IOperatorApprovalEvaluator>();
             approvals.Evaluate(Arg.Any<System.Security.Claims.ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>()).Returns(ApprovalRequirement.NotRequired());
-            var deploy = new DeployOperationExecutor(new DeployWorkflowService(targets, [workflows], [backend], approvals, NullLogger<DeployWorkflowService>.Instance));
+            var deploy = new DeployOperationExecutor(new DeployWorkflowService(targets, [workflows], [backend], approvals, NullLogger<DeployWorkflowService>.Instance, restoreOptions: cell));
             var queue = new DurableRestoreQueue(workflows);
             var guarded = new RestoreGuardedDeployOperationExecutor(deploy, coordinator, audit, cell, queue);
             var ladder = Substitute.For<IGuardrailLadder>();
@@ -127,9 +128,26 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
             Assert.NotNull(second.ExecutionOperationId);
             var verifier = new DurableRestoreCompletionVerifier(probe, revisions, customer, audit, secrets, cell);
             DurableRestoreWorker NewWorker() => new(workflows, proposals, coordinator, deploy, verifier, audit, NullLogger<DurableRestoreWorker>.Instance);
+            var activeDeploy = new WorkflowOperationRecord
+            {
+                OperationId = "active-deploy-" + Guid.NewGuid().ToString("N"),
+                Kind = WorkflowOperationKind.Deploy,
+                Status = WorkflowOperationStatus.Reconciling,
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow
+            };
+            Assert.True(await workflows.TryCreateAsync(activeDeploy));
+            await NewWorker().ReconcileAsync(approved.ExecutionOperationId, CancellationToken.None);
+            await snapshots.DidNotReceive().RestoreNewAsync(Arg.Any<RdsRestoreRequest>(), Arg.Any<CancellationToken>());
+            var savedActive = await workflows.GetAsync(activeDeploy.OperationId);
+            Assert.True(await workflows.TrySetAsync(savedActive! with { Status = WorkflowOperationStatus.Succeeded }));
             await NewWorker().ReconcileAsync(approved.ExecutionOperationId, CancellationToken.None);
             var checkpoint = await workflows.GetAsync(approved.ExecutionOperationId);
             Assert.Equal("awaiting-deploy", checkpoint?.PreMigrationRestore?.Phase);
+            await Assert.ThrowsAsync<ResourceConflictException>(async () =>
+            {
+                await using var admission = await RestoreDeployAdmission.AcquireAsync(workflows, "unrelated-deploy", null, CancellationToken.None);
+            });
             await snapshots.Received(1).RestoreNewAsync(Arg.Any<RdsRestoreRequest>(), Arg.Any<CancellationToken>());
             var replacement = NewWorker();
             Assert.False(await replacement.ClaimCellAsync("other-restore", CancellationToken.None));

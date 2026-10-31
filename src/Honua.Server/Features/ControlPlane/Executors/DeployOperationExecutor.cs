@@ -80,10 +80,24 @@ internal sealed class DeployOperationExecutor(DeployWorkflowService deployWorkfl
         };
     }
 
-    public async Task<string?> ExecuteAsync(
+    public Task<string?> ExecuteAsync(
         OperationGatewayRequest request,
         string? executionPayload,
         CancellationToken cancellationToken = default)
+        => ExecuteCoreAsync(request, executionPayload, null, cancellationToken);
+
+    internal Task<string?> ExecuteRestoreAsync(
+        OperationGatewayRequest request,
+        string? executionPayload,
+        string restoreOwnerId,
+        CancellationToken cancellationToken)
+        => ExecuteCoreAsync(request, executionPayload, restoreOwnerId, cancellationToken);
+
+    private async Task<string?> ExecuteCoreAsync(
+        OperationGatewayRequest request,
+        string? executionPayload,
+        string? restoreOwnerId,
+        CancellationToken cancellationToken)
     {
         var payload = DeployExecutionPayload.Parse(executionPayload);
         if (payload == null)
@@ -104,7 +118,8 @@ internal sealed class DeployOperationExecutor(DeployWorkflowService deployWorkfl
                 payload.ParameterOverrides,
                 principal: null,
                 preMigrationBackupId: payload.Rollback ? payload.BackupId : null,
-                cancellationToken)
+                cancellationToken,
+                restoreOwnerId)
             .ConfigureAwait(false);
 
         // Approval persists the workflow and returns before Start when the target requires it.
@@ -119,7 +134,8 @@ internal sealed class DeployOperationExecutor(DeployWorkflowService deployWorkfl
                     record.OperationId,
                     request.ApprovedBy,
                     request.Reason,
-                    cancellationToken)
+                    cancellationToken,
+                    restoreOwnerId)
                 .ConfigureAwait(false);
         }
 
