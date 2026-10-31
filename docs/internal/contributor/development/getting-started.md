@@ -40,9 +40,8 @@ Database migrations run automatically on first boot. The root compose stack also
 Add these as needed — none are required for basic development:
 
 ```bash
-# Console ops dashboard (requires a compatible published honua-console image)
-HONUA_CONSOLE_IMAGE=ghcr.io/honua-io/honua-console:replace-with-compatible-tag \
-  docker compose --profile console up -d
+# Console and embedded Studio
+docker compose --profile console up -d
 
 # MinIO (S3-compatible storage for file imports)
 HONUA_STORAGE_PROVIDER=AwsS3 HONUA_S3_BUCKET=honua-dev \

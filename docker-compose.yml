@@ -90,7 +90,14 @@ services:
       ConnectionStrings__Redis: "${HONUA_REDIS_URL:-redis:6379}"
       # These values make the documented local reverse-proxy/Console hostnames valid
       # inputs to the production host-validation middleware when this file is reused.
+      # For local Console OIDC set HONUA_PUBLIC_BASE_URL to the Console origin.
+      # Deployed installations can instead override Oidc__AdminAuthCallbackUri.
       PUBLIC_BASE_URL: "${HONUA_PUBLIC_BASE_URL:-http://localhost:8080}"
+      Oidc__Enabled: "${OIDC_ENABLED:-false}"
+      Oidc__Generic__Enabled: "${OIDC_GENERIC_ENABLED:-false}"
+      Oidc__Generic__Authority: "${OIDC_GENERIC_AUTHORITY:-}"
+      Oidc__Generic__ClientId: "${OIDC_GENERIC_CLIENT_ID:-}"
+      Oidc__Generic__ClientSecret: "${OIDC_GENERIC_CLIENT_SECRET:-}"
       HostValidation__AllowedHosts__0: "${HONUA_ALLOWED_HOST_0:-localhost}"
       HostValidation__AllowedHosts__1: "${HONUA_ALLOWED_HOST_1:-127.0.0.1}"
       HostValidation__AllowedHosts__2: "${HONUA_ALLOWED_HOST_2:-honua}"
@@ -146,11 +153,9 @@ services:
       - honua_cache:/tmp/honua-cache
       - dotnet_diagnostics:/tmp/dotnet-diagnostics
 
-  # Honua Console ops dashboard. Enable with:
-  #   HONUA_CONSOLE_IMAGE=<compatible-image> docker compose --profile console up -d
-  # until the public Console image is available for the default quickstart.
+  # Console and embedded Studio. Keep this digest aligned with the release manifest.
   console:
-    image: "${HONUA_CONSOLE_IMAGE:-ghcr.io/honua-io/honua-console:pending}"
+    image: "${HONUA_CONSOLE_IMAGE:-ghcr.io/honua-io/honua-console@sha256:6612319d53ed9d3fab1a62848b6402d4340f57c227296003614ac88fe48de4f3}"
     profiles:
       - console
     ports:
