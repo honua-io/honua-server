@@ -704,6 +704,7 @@ internal static class ComposeBackupDirectory
     private static ComposeBackupManifestEvidence? Load(string root, string project, string image, string backupId, out DateTimeOffset createdAt)
     {
         createdAt = DateTimeOffset.MinValue;
+        if (!BackupEvidenceVerifier.IsValidBackupId(backupId)) return null;
         if (!TryChild(root, backupId, "manifest.json", out var manifestPath)
             || !TryChild(root, backupId, BackupEvidenceVerifier.DumpFileName, out var dumpPath))
         {

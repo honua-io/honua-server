@@ -168,6 +168,9 @@ public static partial class BackupEvidenceVerifier
     [GeneratedRegex(@"^backup-[a-f0-9]{32}$", RegexOptions.CultureInvariant)]
     private static partial Regex BackupIdPattern();
 
+    /// <summary>Whether a backup identifier is safe to use as a single directory name.</summary>
+    public static bool IsValidBackupId(string backupId) => BackupIdPattern().IsMatch(backupId);
+
     [GeneratedRegex(@"^[a-z][a-z0-9-]{0,62}$", RegexOptions.CultureInvariant)]
     private static partial Regex RdsIdentifier();
 
