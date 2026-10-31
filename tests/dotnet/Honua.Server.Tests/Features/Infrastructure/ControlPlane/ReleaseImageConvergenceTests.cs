@@ -116,6 +116,36 @@ public sealed class ReleaseImageConvergenceTests
     }
 
     [Fact]
+    public async Task EcsActivation_WaitsForSteadyStateBeforeExposingTraffic()
+    {
+        var ecs = new DigestEcsClient { RolloutState = "IN_PROGRESS" };
+        var alb = new DigestAlbClient();
+        var backend = Backend(alb, ecs);
+        var operation = EcsOperation(Digest);
+        var checkpoint = await backend.PrepareCheckpointAsync(operation, CancellationToken.None);
+        var persisted = Checkpointed(operation, checkpoint);
+        await backend.ActivateCheckpointAsync(persisted, CancellationToken.None);
+        var observation = await backend.ObserveAsync(persisted);
+        observation.Status.Should().Be(WorkflowOperationStatus.Submitted);
+        alb.UpdateCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task EcsActivation_WaitsForHealthyTargetsBeforeTrafficShift()
+    {
+        var ecs = new DigestEcsClient();
+        var alb = new DigestAlbClient { HealthyTargets = 0 };
+        var backend = Backend(alb, ecs);
+        var operation = EcsOperation(Digest);
+        var checkpoint = await backend.PrepareCheckpointAsync(operation, CancellationToken.None);
+        var persisted = Checkpointed(operation, checkpoint);
+        await backend.ActivateCheckpointAsync(persisted, CancellationToken.None);
+        var observation = await backend.ObserveAsync(persisted);
+        observation.Status.Should().Be(WorkflowOperationStatus.Submitted);
+        alb.UpdateCount.Should().Be(0);
+    }
+
+    [Fact]
     public async Task EcsActivation_ServiceUpdateFailureDoesNotShiftTraffic()
     {
         var ecs = new DigestEcsClient { UpdateServiceException = new AmazonECSException("update failed") };
@@ -753,8 +783,13 @@ public sealed class ReleaseImageConvergenceTests
             return Task.FromResult(_rule);
         }
 
+        public int HealthyTargets { get; init; } = 2;
+
         public Task<AwsAlbTargetHealthState> DescribeTargetHealthAsync(string targetGroupArn, string? region, CancellationToken cancellationToken = default)
-            => Task.FromResult(new AwsAlbTargetHealthState());
+            => Task.FromResult(new AwsAlbTargetHealthState
+            {
+                Targets = Enumerable.Range(0, HealthyTargets).Select(_ => new AwsAlbTargetHealth { TargetId = "target", State = "healthy" }).ToArray()
+            });
     }
 
     private sealed class DigestEcsClient : IAwsEcsClient

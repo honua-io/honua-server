@@ -918,9 +918,32 @@ internal sealed partial class AwsEcsAlbDeployBackend(
             // cannot be treated as a stable rollout endpoint regardless of the
             // canary share, so PromotionRecommended and Succeeded both require
             // MatchesExpectedShare on the configured share.
+            if (ReleaseImageDigest.IsImmutable(spec.DesiredRevision) && !convergence.IsConverged &&
+                operation.Deploy?.TrafficExposedAt is null)
+            {
+                return new DeployObservation
+                {
+                    Status = WorkflowOperationStatus.Submitted,
+                    ProviderOperationId = operation.ProviderOperationId,
+                    ObservedRevision = primaryRevision,
+                    Message = "ECS candidate is converging before traffic shift."
+                };
+            }
+
             if (ReleaseImageDigest.IsImmutable(spec.DesiredRevision) && convergence.IsConverged &&
                 albWeights.MatchesExpectedShare(0) && operation.Deploy?.TrafficExposedAt is null)
             {
+                var health = await albClient.DescribeTargetHealthAsync(target.CanaryTargetGroupArn!, target.Region, cancellationToken).ConfigureAwait(false);
+                if (serviceState.DesiredCount <= 0 || health.HealthyCount < serviceState.DesiredCount)
+                {
+                    return new DeployObservation
+                    {
+                        Status = WorkflowOperationStatus.Submitted,
+                        ProviderOperationId = operation.ProviderOperationId,
+                        Message = "ECS candidate is waiting for healthy load balancer targets."
+                    };
+                }
+
                 var share = desiredCanaryWeight ?? 100;
                 await albClient.UpdateListenerRuleWeightsAsync(target.ListenerRuleArn!,
                     BuildWeights(target.CanaryTargetGroupArn!, share, target.StableTargetGroupArn!, 100 - share),
