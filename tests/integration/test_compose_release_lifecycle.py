@@ -160,11 +160,14 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
         if wrong.get("proposalId"):
             request(base, f"/api/v1/admin/proposals/{wrong['proposalId']}/approve", approver_key, {})
             wait_for_proposal(base, approver_key, wrong["proposalId"], "failed")
+        else:
+            assert wrong.get("outcome", "").lower() in ("blocked", "rejected", "failed")
         assert image_id() == prior_id and schema() == 140
         # Send an out-of-scope field to the sidecar's actual socket.
         socket_test = "import socket; s=socket.socket(socket.AF_UNIX); s.connect('/sock/executor.sock'); s.sendall(b'{\"op\":\"status\",\"project\":\"other\"}\\n'); print(s.recv(65536).decode())"
         rejected = run(["docker", "run", "--rm", "-v", project + "_compose-executor-socket:/sock", "python:3.12-alpine", "python", "-c", socket_test])
-        assert not json.loads(rejected)["ok"]
+        scope = json.loads(rejected)
+        assert not scope["ok"] and scope["code"] == "compose-scope-violation"
         assert image_id() == prior_id and schema() == 140
     finally:
         dc("down", "-v", "--remove-orphans", check=False)
