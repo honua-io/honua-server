@@ -3,6 +3,7 @@
 
 using System.Collections.Concurrent;
 using System.Text.RegularExpressions;
+using Honua.Core.Features.Caching;
 using Honua.Core.Features.Caching.Abstractions;
 using Honua.Core.Features.Infrastructure.Caching;
 
@@ -34,10 +35,17 @@ internal sealed class CacheServiceResponseCache : IResponseCache
     private static readonly Regex OgcPattern = new("^(?:response:)?query:ogc:collection:\\*$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     private readonly ICacheService _cacheService;
+    private readonly int _maxEntryBytes;
+    private readonly int _maxBytes;
+    private readonly object _budgetLock = new();
+    private readonly Dictionary<string, ResponseReservation> _reservations = new(StringComparer.Ordinal);
 
-    public CacheServiceResponseCache(ICacheService cacheService)
+    public CacheServiceResponseCache(ICacheService cacheService, CacheOptions? options = null)
     {
         _cacheService = cacheService ?? throw new ArgumentNullException(nameof(cacheService));
+        options ??= new CacheOptions();
+        _maxEntryBytes = options.ResponseCacheMaxEntryBytes;
+        _maxBytes = options.ResponseCacheMaxBytes;
     }
 
     public async Task<string> BindKeyAsync(string key, CancellationToken cancellationToken = default)
@@ -47,7 +55,37 @@ internal sealed class CacheServiceResponseCache : IResponseCache
         => await _cacheService.GetAsync<T>(await BuildStorageKeyAsync(key, allowLocalVersionCache: false, cancellationToken).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
 
     public async Task SetAsync<T>(string key, T value, TimeSpan expiration, CancellationToken cancellationToken = default) where T : class
-        => await _cacheService.SetAsync(await BuildStorageKeyAsync(key, allowLocalVersionCache: true, cancellationToken).ConfigureAwait(false), value, expiration, cancellationToken).ConfigureAwait(false);
+    {
+        var reserved = false;
+        if (value is CachedResponse cached)
+        {
+            if (cached.Payload.Length > _maxEntryBytes ||
+                !TryReserve(key, cached.Payload.Length, expiration))
+            {
+                return;
+            }
+
+            reserved = true;
+        }
+
+        try
+        {
+            await _cacheService.SetAsync(
+                await BuildStorageKeyAsync(key, allowLocalVersionCache: true, cancellationToken).ConfigureAwait(false),
+                value,
+                expiration,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            if (reserved)
+            {
+                ReleaseReservation(key);
+            }
+
+            throw;
+        }
+    }
 
     public async Task<T> GetOrCreateAsync<T>(
         string key,
@@ -68,7 +106,10 @@ internal sealed class CacheServiceResponseCache : IResponseCache
     }
 
     public async Task RemoveAsync(string key, CancellationToken cancellationToken = default)
-        => await _cacheService.RemoveAsync(await BuildStorageKeyAsync(key, allowLocalVersionCache: false, cancellationToken).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
+    {
+        ReleaseReservation(key);
+        await _cacheService.RemoveAsync(await BuildStorageKeyAsync(key, allowLocalVersionCache: false, cancellationToken).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
+    }
 
     public async Task RemoveByPatternAsync(string pattern, CancellationToken cancellationToken = default)
     {
@@ -270,6 +311,61 @@ internal sealed class CacheServiceResponseCache : IResponseCache
 
         return Array.Empty<string>();
     }
+
+    private bool TryReserve(string key, int bytes, TimeSpan expiration)
+    {
+        var now = DateTimeOffset.UtcNow;
+        lock (_budgetLock)
+        {
+            PruneExpiredReservations(now);
+            var existing = _reservations.TryGetValue(key, out var current) ? current.Bytes : 0;
+            long resident = 0;
+            foreach (var reservation in _reservations.Values)
+            {
+                resident += reservation.Bytes;
+            }
+
+            if (resident - existing + bytes > _maxBytes)
+            {
+                return false;
+            }
+
+            _reservations[key] = new ResponseReservation(bytes, now.Add(expiration));
+            return true;
+        }
+    }
+
+    private void ReleaseReservation(string key)
+    {
+        lock (_budgetLock)
+        {
+            _reservations.Remove(key);
+        }
+    }
+
+    private void PruneExpiredReservations(DateTimeOffset now)
+    {
+        List<string>? expired = null;
+        foreach (var pair in _reservations)
+        {
+            if (pair.Value.ExpiresAt <= now)
+            {
+                (expired ??= []).Add(pair.Key);
+            }
+        }
+
+        if (expired is null)
+        {
+            return;
+        }
+
+        foreach (var key in expired)
+        {
+            _reservations.Remove(key);
+        }
+    }
+
+    private readonly record struct ResponseReservation(int Bytes, DateTimeOffset ExpiresAt);
 
     private static string NormalizeKey(string key)
     {

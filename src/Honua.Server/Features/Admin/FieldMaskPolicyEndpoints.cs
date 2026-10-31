@@ -7,6 +7,7 @@ using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Services;
 using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
@@ -174,6 +175,7 @@ internal static partial class FieldMaskPolicyEndpoints
             };
 
             var created = await store.CreatePolicyAsync(policy, context.RequestAborted);
+            await ResponseCacheUtilities.InvalidateSharedQueryResponsesAsync(context).ConfigureAwait(false);
             FieldMaskPolicyLog.PolicyCreated(logger, created.PolicyId, created.Role, created.Service, created.Layer, created.Attribute);
             return TypedResults.Created(
                 $"/api/v1/admin/field-mask-policies/{created.PolicyId}",
@@ -212,6 +214,7 @@ internal static partial class FieldMaskPolicyEndpoints
                 return TypedResults.NotFound(ApiResponse<object>.Failure("Field-mask policy not found"));
             }
 
+            await ResponseCacheUtilities.InvalidateSharedQueryResponsesAsync(context).ConfigureAwait(false);
             FieldMaskPolicyLog.PolicyDeleted(logger, id);
             return TypedResults.Ok(ApiResponse<object>.SuccessWithMessage("Field-mask policy deleted"));
         }

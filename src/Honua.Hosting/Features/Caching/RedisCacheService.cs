@@ -136,6 +136,9 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
     /// <inheritdoc />
     public bool IsUsingFallback => _isUsingFallback;
 
+    /// <inheritdoc />
+    public bool IsProcessLocal => _distributedCache is null or MemoryDistributedCache || _isUsingFallback;
+
     public async Task<CacheStorageMetrics> GetStorageMetricsAsync(CancellationToken cancellationToken = default)
     {
         var backend = _distributedCache == null || _isUsingFallback ? "memory" : "redis";
@@ -307,6 +310,11 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
 
         string prefixedKey = GetPrefixedKey(key);
         if (!TrySerialize(value, prefixedKey, out var data))
+        {
+            return;
+        }
+
+        if (ExceedsQueryResponseEntryCap(prefixedKey, data))
         {
             return;
         }
@@ -1118,6 +1126,12 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
             _keyLocks.TryRemove(kvp);
         }
     }
+
+    private bool ExceedsQueryResponseEntryCap(string prefixedKey, byte[] data)
+        => data.Length > _options.ResponseCacheMaxEntryBytes &&
+           (prefixedKey.Contains("query:featureserver", StringComparison.Ordinal) ||
+            prefixedKey.Contains("query:ogc", StringComparison.Ordinal) ||
+            prefixedKey.Contains("query:odata", StringComparison.Ordinal));
 
     private string GetPrefixedKey(string key)
     {

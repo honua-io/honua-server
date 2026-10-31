@@ -7,6 +7,7 @@ using Honua.Core.Features.Infrastructure.Caching;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Middleware;
+using Honua.Infrastructure.Validation;
 using Microsoft.AspNetCore.OutputCaching;
 
 namespace Honua.Infrastructure.Caching;
@@ -14,7 +15,7 @@ namespace Honua.Infrastructure.Caching;
 /// <summary>
 /// Centralized output cache invalidation for data mutations.
 /// </summary>
-internal sealed partial class OutputCacheInvalidationService
+internal sealed partial class OutputCacheInvalidationService : IQueryResponseCacheInvalidator
 {
     private readonly IOutputCacheStore? _cacheStore;
     private readonly IResponseCache? _responseCache;
@@ -115,6 +116,18 @@ internal sealed partial class OutputCacheInvalidationService
             EvictTagsAsync(tags, cancellationToken),
             EvictResponseCacheAsync(responsePatterns, cancellationToken)).ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// Bumps the FeatureServer, OGC, and OData query-response namespaces.
+    /// </summary>
+    public Task InvalidateQueryResponsesAsync(CancellationToken cancellationToken = default)
+        => EvictResponseCacheAsync(
+            [
+                ResponseCacheUtilities.BuildFeatureServerPattern(),
+                ResponseCacheUtilities.BuildOgcPattern(),
+                ResponseCacheUtilities.BuildODataPattern(),
+            ],
+            cancellationToken);
 
     public Task InvalidateOgcMetadataAsync(CancellationToken cancellationToken)
     {
@@ -377,15 +390,15 @@ internal sealed partial class OutputCacheInvalidationService
             var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
             foreach (var pub in snapshot.Graph.Publications)
             {
-                if (pub.LayerIndex != layerId)
+                var resource = snapshot.ResolveResource(pub);
+                // LayerIndex is the service-local id. Publications with a non-numeric
+                // identifier keep that null and are reached through the storage binding.
+                if (pub.LayerIndex != layerId && snapshot.ResolveStorageLayerId(pub, resource) != layerId)
                 {
                     continue;
                 }
-                var resource = snapshot.ResolveResource(pub);
-                if (resource is not null && !string.IsNullOrWhiteSpace(resource.Metadata.Name))
-                {
-                    collectionIds.Add(resource.Metadata.Name);
-                }
+
+                AddPublicationCollectionAliases(collectionIds, pub, resource);
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -443,16 +456,13 @@ internal sealed partial class OutputCacheInvalidationService
                 }
             }
 
-            if (matchedResource is not null)
+            if (matchedPub is not null)
             {
-                if (matchedPub?.LayerIndex.HasValue == true)
-                {
-                    collectionIds.Add(matchedPub.LayerIndex.Value.ToString(CultureInfo.InvariantCulture));
-                }
-                if (!string.IsNullOrWhiteSpace(matchedResource.Metadata.Name))
-                {
-                    collectionIds.Add(matchedResource.Metadata.Name);
-                }
+                AddPublicationCollectionAliases(collectionIds, matchedPub, matchedResource);
+            }
+            else if (matchedResource is not null)
+            {
+                AddResourceCollectionAliases(collectionIds, matchedResource);
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -461,6 +471,61 @@ internal sealed partial class OutputCacheInvalidationService
         }
 
         return collectionIds.ToArray();
+    }
+
+    private static void AddPublicationCollectionAliases(
+        HashSet<string> collectionIds,
+        MetadataV2Publication publication,
+        MetadataV2Resource? resource)
+    {
+        if (!string.IsNullOrWhiteSpace(publication.Metadata.Id))
+        {
+            collectionIds.Add(publication.Metadata.Id);
+        }
+
+        var advertised = LayerValidationHelpers.AdvertisedCollectionId(publication, resource);
+        if (!string.IsNullOrWhiteSpace(advertised))
+        {
+            collectionIds.Add(advertised);
+        }
+
+        if (!string.IsNullOrWhiteSpace(publication.ServiceLocalId))
+        {
+            collectionIds.Add(publication.ServiceLocalId);
+        }
+
+        if (!string.IsNullOrWhiteSpace(publication.Path))
+        {
+            collectionIds.Add(publication.Path);
+        }
+
+        if (publication.LayerIndex.HasValue)
+        {
+            collectionIds.Add(publication.LayerIndex.Value.ToString(CultureInfo.InvariantCulture));
+        }
+
+        if (resource is not null)
+        {
+            AddResourceCollectionAliases(collectionIds, resource);
+        }
+    }
+
+    private static void AddResourceCollectionAliases(HashSet<string> collectionIds, MetadataV2Resource resource)
+    {
+        if (!string.IsNullOrWhiteSpace(resource.Metadata.Id))
+        {
+            collectionIds.Add(resource.Metadata.Id);
+        }
+
+        if (!string.IsNullOrWhiteSpace(resource.Metadata.Name))
+        {
+            collectionIds.Add(resource.Metadata.Name);
+        }
+
+        if (!string.IsNullOrWhiteSpace(resource.Metadata.Title))
+        {
+            collectionIds.Add(resource.Metadata.Title);
+        }
     }
 
     private static string NormalizeServiceId(string serviceId)

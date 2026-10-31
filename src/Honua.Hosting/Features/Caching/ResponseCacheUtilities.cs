@@ -3,13 +3,17 @@
 
 using System.Globalization;
 using System.Linq;
+using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using Honua.Core.Features.Caching;
+using Honua.Core.Features.Caching.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Queries.Filters;
 using Honua.Infrastructure.Authentication;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Infrastructure.Caching;
 
@@ -33,14 +37,30 @@ internal static class ResponseCacheUtilities
             return false;
         }
 
-        if (context.User?.Identity?.IsAuthenticated == true)
+        // Admission requires an empty principal: no authenticated identity and no claims.
+        if (context.User?.Identity?.IsAuthenticated == true || HasClaims(context.User))
         {
             return false;
         }
 
-        var cacheControl = context.Request.Headers.CacheControl.ToString();
-        if (cacheControl.Contains("no-cache", StringComparison.OrdinalIgnoreCase) ||
-            cacheControl.Contains("no-store", StringComparison.OrdinalIgnoreCase))
+        // Credentials the authentication middleware does not turn into a principal
+        // (portal tokens, API keys, embed keys, cookies, client certificates) must
+        // still miss the shared cache.
+        if (BypassOutputCacheOnCredentialedRequestPolicy.CarriesCredential(context))
+        {
+            return false;
+        }
+
+        if (ResponseCachingBlockedByInMemoryFallback(context, options))
+        {
+            return false;
+        }
+
+        // Only Cache-Control already written on the request or response is visible
+        // here. A later middleware that sets Cache-Control is not part of this check.
+        // Admission still requires an empty principal.
+        if (HeaderSuppressesSharedCache(context.Request.Headers.CacheControl.ToString()) ||
+            HeaderSuppressesSharedCache(context.Response.Headers.CacheControl.ToString()))
         {
             return false;
         }
@@ -71,6 +91,20 @@ internal static class ResponseCacheUtilities
     internal static string BuildFeatureServerLayerPattern(string serviceId, int layerId)
         => $"{FeatureServerPrefix}{NormalizeKeyPart(serviceId)}:layer:{layerId}:*";
 
+    /// <summary>
+    /// Collection id used in an OGC query-response cache key. Prefers the publication
+    /// id resolved after validation so every alias of that publication shares one prefix.
+    /// </summary>
+    internal static string CanonicalOgcCollectionId(string? publicationId, string? advertisedCollectionId)
+    {
+        if (!string.IsNullOrWhiteSpace(publicationId))
+        {
+            return publicationId;
+        }
+
+        return string.IsNullOrWhiteSpace(advertisedCollectionId) ? string.Empty : advertisedCollectionId;
+    }
+
     internal static string BuildOgcCollectionKey(string collectionId, HttpRequest request)
         => BuildKey($"{OgcPrefix}{NormalizeKeyPart(collectionId)}:", request);
 
@@ -91,6 +125,27 @@ internal static class ResponseCacheUtilities
 
     internal static string BuildODataPattern()
         => $"{ODataPrefix}*";
+
+    /// <summary>
+    /// Bumps the FeatureServer, OGC, and OData query-response namespaces when an
+    /// invalidator is registered. The bump is not tied to the request lifetime:
+    /// a cancelled request must not skip it. A missing registration leaves the cache unchanged.
+    /// </summary>
+    internal static async Task InvalidateSharedQueryResponsesAsync(HttpContext context)
+    {
+        if (!TryGetRequestServices(context, out var services))
+        {
+            return;
+        }
+
+        var invalidator = services.GetService<IQueryResponseCacheInvalidator>();
+        if (invalidator is null)
+        {
+            return;
+        }
+
+        await invalidator.InvalidateQueryResponsesAsync(CancellationToken.None).ConfigureAwait(false);
+    }
 
     internal static CachedResponse CreateCachedResponse(byte[] payload, string contentType, IETagService etagService)
     {
@@ -140,6 +195,10 @@ internal static class ResponseCacheUtilities
         var accept = request.Headers.Accept.ToString();
         var prefer = request.Headers["Prefer"].ToString();
         var tenant = TenantScopeHelpers.ResolveRequestTenantId(request.HttpContext) ?? "<none>";
+        // Same fingerprint the output cache varies on (#1983). Anonymous metadata
+        // and query bodies that differ by edition must not share an entry.
+        var license = ResolveLicenseKey(request);
+        var testSchema = ResolveTestSchemaKey(request);
         var keyMaterial = string.Concat(
             request.Method, '|',
             request.Scheme, '|',
@@ -149,7 +208,9 @@ internal static class ResponseCacheUtilities
             canonicalQuery, '|',
             accept, '|',
             prefer, '|',
-            tenant);
+            tenant, '|',
+            license, '|',
+            testSchema);
 
         var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(keyMaterial)))
             .ToLowerInvariant();
@@ -167,10 +228,12 @@ internal static class ResponseCacheUtilities
         var parts = new List<string>(query.Count);
         foreach (var entry in query.OrderBy(kvp => kvp.Key, StringComparer.OrdinalIgnoreCase))
         {
-            parts.AddRange(entry.Value.OrderBy(v => v, StringComparer.Ordinal).Select(value =>
+            // Parameter names are sorted. Repeated values stay in arrival order so
+            // orderByFields=NAME&orderByFields=POP and the reverse do not share a key.
+            foreach (var value in entry.Value)
             {
                 var valueText = value ?? string.Empty;
-                return string.Concat(
+                parts.Add(string.Concat(
                     "k",
                     entry.Key.Length.ToString(CultureInfo.InvariantCulture),
                     ":",
@@ -178,11 +241,97 @@ internal static class ResponseCacheUtilities
                     "v",
                     valueText.Length.ToString(CultureInfo.InvariantCulture),
                     ":",
-                    valueText);
-            }));
+                    valueText));
+            }
         }
 
         return string.Join('&', parts);
+    }
+
+    private static bool HasClaims(ClaimsPrincipal? user)
+    {
+        if (user is null)
+        {
+            return false;
+        }
+
+        foreach (var identity in user.Identities)
+        {
+            if (identity.Claims.Any())
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    // A process-local store (no distributed cache, distributed memory, or the
+    // fallback dictionary) is not shared across instances. Response caching stays
+    // off there unless the single-instance opt-in is set. Unit tests that do not
+    // register a health checker keep the previous allow behavior.
+    private static bool ResponseCachingBlockedByInMemoryFallback(HttpContext context, CacheOptions options)
+    {
+        if (options.ResponseCachingAllowInMemoryFallback)
+        {
+            return false;
+        }
+
+        if (!TryGetRequestServices(context, out var services))
+        {
+            return false;
+        }
+
+        var health = services.GetService<ICacheHealthChecker>();
+        return health?.IsProcessLocal == true;
+    }
+
+    private static bool HeaderSuppressesSharedCache(string header)
+        => header.Contains("no-cache", StringComparison.OrdinalIgnoreCase) ||
+           header.Contains("no-store", StringComparison.OrdinalIgnoreCase);
+
+    // DefaultHttpContext throws when RequestServices was never assigned. Key
+    // helpers run from unit tests that do not install a provider; those requests
+    // have no license to vary on.
+    private static bool TryGetRequestServices(HttpContext context, out IServiceProvider services)
+    {
+        try
+        {
+            services = context.RequestServices;
+        }
+        catch (InvalidOperationException)
+        {
+            services = null!;
+            return false;
+        }
+
+        return services is not null;
+    }
+
+    private static string ResolveLicenseKey(HttpRequest request)
+    {
+        if (!TryGetRequestServices(request.HttpContext, out _))
+        {
+            return "<none>";
+        }
+
+        return OutputCachingRegistration.ResolveLicenseOutputCacheKey(request.HttpContext).Value;
+    }
+
+    private static string ResolveTestSchemaKey(HttpRequest request)
+    {
+        if (!TryGetRequestServices(request.HttpContext, out var services))
+        {
+            return string.Empty;
+        }
+
+        var configuration = services.GetService<IConfiguration>();
+        if (configuration?.GetValue<bool>("HONUA_TEST_SCHEMA_HEADERS") != true)
+        {
+            return string.Empty;
+        }
+
+        return request.Headers["X-Honua-Test-Schema"].ToString();
     }
 
     private static bool SqlFilterContainsSpatialOperation(SqlFragment? sqlFilter)

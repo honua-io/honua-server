@@ -105,6 +105,9 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
             var resource = layerValidation.Resource!;
             var publication = layerValidation.Publication!;
+            var ogcCacheCollectionId = ResponseCacheUtilities.CanonicalOgcCollectionId(
+                publication.Metadata.Id,
+                LayerValidationHelpers.AdvertisedCollectionId(publication, resource));
             var service = layerValidation.Service;
 
             var snapshot = layerValidation.Snapshot!;
@@ -231,7 +234,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
             }
 
             var cacheKey = canCache
-                ? ResponseCacheUtilities.BuildOgcCollectionKey(collectionId, request)
+                ? ResponseCacheUtilities.BuildOgcCollectionKey(ogcCacheCollectionId, request)
                 : null;
 
             if (canCache && cacheKey != null)
@@ -508,7 +511,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
                     ? MediaTypes.GeoJson
                     : MediaTypes.Json;
                 var payload = CreateRawPointFeatureCollectionPayload(pagedRawPointResult.Value.Items, resource, links, queryTotalCount);
-                if (canCache && cacheKey != null)
+                if (canCache && cacheKey != null && ResponseCacheUtilities.ShouldCache(context, _cacheOptions))
                 {
                     var cachedResponse = ResponseCacheUtilities.CreateCachedResponse(payload.ToArray(), contentType, _etagService);
                     await _responseCache.SetAsync(cacheKey, cachedResponse, cacheTtl, cancellationToken);
@@ -524,7 +527,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
                     ? MediaTypes.GeoJson
                     : MediaTypes.Json;
                 var payload = CreateRawFeatureCollectionPayload(pagedRawResult.Value.Items, resource, links, queryTotalCount);
-                if (canCache && cacheKey != null)
+                if (canCache && cacheKey != null && ResponseCacheUtilities.ShouldCache(context, _cacheOptions))
                 {
                     var cachedResponse = ResponseCacheUtilities.CreateCachedResponse(payload.ToArray(), contentType, _etagService);
                     await _responseCache.SetAsync(cacheKey, cachedResponse, cacheTtl, cancellationToken);
@@ -553,7 +556,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 return Results.Text(csv, MediaTypes.Csv);
             }
 
-            if (canCache && cacheKey != null)
+            if (canCache && cacheKey != null && ResponseCacheUtilities.ShouldCache(context, _cacheOptions))
             {
                 var contentType = string.Equals(outputFormat, MediaTypes.GeoJson, StringComparison.OrdinalIgnoreCase)
                     ? MediaTypes.GeoJson
@@ -636,6 +639,9 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
             var resource = layerValidation.Resource!;
             var publication = layerValidation.Publication!;
+            var ogcCacheCollectionId = ResponseCacheUtilities.CanonicalOgcCollectionId(
+                publication.Metadata.Id,
+                LayerValidationHelpers.AdvertisedCollectionId(publication, resource));
             var service = layerValidation.Service;
 
             var snapshot = layerValidation.Snapshot!;
@@ -662,6 +668,46 @@ internal sealed partial class OgcFeaturesQueryHandler(
             featureActivity?.SetTag(HonuaTelemetry.Tags.CollectionId, collectionId);
 
             OgcFeaturesLog.ItemRequested(_logger, collectionId, featureId);
+
+            // A JSON/GeoJSON hit is a pure function of the request. Serve it before the
+            // feature read. Invalid format or CRS falls through, so a missing feature
+            // still returns 404 before those parameter errors.
+            string? boundItemCacheKey = null;
+            if (OgcCommonUtilities.TryGetOutputFormat(f, context, isFeatureContent: true, out var earlyFormat, out _)
+                && (string.Equals(earlyFormat, MediaTypes.Json, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(earlyFormat, MediaTypes.GeoJson, StringComparison.OrdinalIgnoreCase))
+                && ResponseCacheUtilities.ShouldCache(context, _cacheOptions))
+            {
+                var earlyTtl = _cacheOptions.GetQueryTtlWithJitter();
+                if (earlyTtl > TimeSpan.Zero)
+                {
+                    var earlySupportedCrs = await OgcFeaturesUtilities.GetSupportedCrsDefinitionsAsync(
+                        resource,
+                        _crsRegistry,
+                        cancellationToken).ConfigureAwait(false);
+                    var earlyCrs = await OgcFeaturesUtilities.TryResolveCrsAsync(
+                        crs,
+                        earlySupportedCrs,
+                        _crsRegistry,
+                        cancellationToken).ConfigureAwait(false);
+                    if (earlyCrs.IsSuccess)
+                    {
+                        var earlyKey = await _responseCache.BindKeyAsync(
+                            ResponseCacheUtilities.BuildOgcCollectionKey(ogcCacheCollectionId, request),
+                            cancellationToken).ConfigureAwait(false);
+                        var earlyCached = await _responseCache.GetAsync<CachedResponse>(earlyKey, cancellationToken)
+                            .ConfigureAwait(false);
+                        if (earlyCached != null)
+                        {
+                            context.Response.Headers["Content-Crs"] = FormatContentCrs(earlyCrs.Definition.Uri);
+                            return ResponseCacheUtilities.CreateResultFromCachedResponse(context, earlyCached, _etagService);
+                        }
+
+                        boundItemCacheKey = earlyKey;
+                    }
+                }
+            }
+
             var featureReader = await ResolveReaderAsync(
                 snapshot,
                 service,
@@ -716,11 +762,11 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 canCache = false;
             }
 
-            var cacheKey = canCache
-                ? ResponseCacheUtilities.BuildOgcCollectionKey(collectionId, request)
-                : null;
+            var cacheKey = boundItemCacheKey ?? (canCache
+                ? ResponseCacheUtilities.BuildOgcCollectionKey(ogcCacheCollectionId, request)
+                : null);
 
-            if (canCache && cacheKey != null)
+            if (canCache && cacheKey != null && boundItemCacheKey == null)
             {
                 cacheKey = await _responseCache.BindKeyAsync(cacheKey, cancellationToken);
                 var cached = await _responseCache.GetAsync<CachedResponse>(cacheKey, cancellationToken);
@@ -845,7 +891,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 var payload = JsonSerializer.SerializeToUtf8Bytes(ogcFeature, OgcJsonContext.Default.GeoJsonFeature);
                 var representationETag = OgcFeatureEntityTag.ComputeRepresentation(payload, entityETag, _etagService);
                 var cachedResponse = new CachedResponse(payload, contentType, representationETag);
-                if (canCache && cacheKey != null)
+                if (canCache && cacheKey != null && ResponseCacheUtilities.ShouldCache(context, _cacheOptions))
                 {
                     await _responseCache.SetAsync(cacheKey, cachedResponse, cacheTtl, cancellationToken);
                 }

@@ -675,6 +675,8 @@ internal sealed class ThrowingCacheHealthChecker : ICacheHealthChecker
 {
     public bool IsUsingFallback => false;
 
+    public bool IsProcessLocal => false;
+
     public Task<bool> IsCacheHealthyAsync(CancellationToken cancellationToken = default)
         => throw new InvalidOperationException("Cache connection failed");
 }
@@ -750,6 +752,8 @@ internal sealed class MockCacheHealthChecker : ICacheHealthChecker
     }
 
     public bool IsUsingFallback => _usingFallback;
+
+    public bool IsProcessLocal => _usingFallback;
 
     public Task<bool> IsCacheHealthyAsync(CancellationToken cancellationToken = default)
     {

@@ -575,6 +575,14 @@ internal sealed partial class FeatureServerQueryHandler(
                     payload = JsonReindenter.ToIndentedUtf8Bytes(payload);
                 }
 
+                // Re-check admission at store time. Only headers already written on the
+                // response are visible; a later middleware that sets Cache-Control is
+                // not part of this check. Admission still requires an empty principal.
+                if (!ResponseCacheUtilities.ShouldCache(context, _cacheOptions))
+                {
+                    return Results.Bytes(payload, contentType);
+                }
+
                 var cachedResponse = ResponseCacheUtilities.CreateCachedResponse(payload, contentType, _etagService);
                 await _responseCache.SetAsync(currentCacheKey, cachedResponse, cacheTtl, cancellationToken);
                 return ResponseCacheUtilities.CreateResultFromCachedResponse(context, cachedResponse, _etagService);
@@ -584,6 +592,11 @@ internal sealed partial class FeatureServerQueryHandler(
             {
                 var currentCacheKey = GetCacheKey();
                 if (currentCacheKey is null)
+                {
+                    return Results.Bytes(payload, contentType);
+                }
+
+                if (!ResponseCacheUtilities.ShouldCache(context, _cacheOptions))
                 {
                     return Results.Bytes(payload, contentType);
                 }
@@ -602,9 +615,26 @@ internal sealed partial class FeatureServerQueryHandler(
                 }
 
                 var payloadArray = payload.ToArray();
+                if (!ResponseCacheUtilities.ShouldCache(context, _cacheOptions))
+                {
+                    return Results.Bytes(payloadArray, contentType);
+                }
+
                 var cachedResponse = ResponseCacheUtilities.CreateCachedResponse(payloadArray, contentType, _etagService);
                 await _responseCache.SetAsync(currentCacheKey, cachedResponse, cacheTtl, cancellationToken);
                 return ResponseCacheUtilities.CreateResultFromCachedResponse(context, cachedResponse, _etagService);
+            }
+
+            // Ordinary reads look up before query preparation. Statistics reads defer
+            // the lookup until field access has been checked. A miss falls through and
+            // the bound key is reused on store.
+            if (string.IsNullOrWhiteSpace(validatedParams.OutStatistics))
+            {
+                var earlyCached = await TryGetCachedResponseAsync().ConfigureAwait(false);
+                if (earlyCached != null)
+                {
+                    return earlyCached;
+                }
             }
 
             var (preparedQuery, outputSrid, preparationError) = await PrepareFeatureQueryAsync(
@@ -724,10 +754,12 @@ internal sealed partial class FeatureServerQueryHandler(
                     Distinct = false
                 };
 
-                var cached = await TryGetCachedResponseAsync();
-                if (cached != null)
+                // Field access has been checked. A hit reuses the bound key; a miss
+                // stores under that same key.
+                var statisticsCached = await TryGetCachedResponseAsync().ConfigureAwait(false);
+                if (statisticsCached != null)
                 {
-                    return cached;
+                    return statisticsCached;
                 }
 
                 var stopwatch = Stopwatch.StartNew();
@@ -758,12 +790,6 @@ internal sealed partial class FeatureServerQueryHandler(
             // takes precedence over the count-only branch.
             if (validatedParams.ReturnCountOnly && !validatedParams.ReturnExtentOnly)
             {
-                var cached = await TryGetCachedResponseAsync();
-                if (cached != null)
-                {
-                    return cached;
-                }
-
                 var stopwatch = Stopwatch.StartNew();
                 var (count, countError) = await ResolveReturnCountAsync(
                     queryLayer.Service,
@@ -804,12 +830,6 @@ internal sealed partial class FeatureServerQueryHandler(
 
             if (validatedParams.ReturnExtentOnly)
             {
-                var cached = await TryGetCachedResponseAsync();
-                if (cached != null)
-                {
-                    return cached;
-                }
-
                 var stopwatch = Stopwatch.StartNew();
                 var extent = await _queryExecutor.GetExtentAsync(
                     queryLayer.Service,
@@ -879,12 +899,6 @@ internal sealed partial class FeatureServerQueryHandler(
                         context,
                         cancellationToken);
                     return _streamingResult;
-                }
-
-                var cached = await TryGetCachedResponseAsync();
-                if (cached != null)
-                {
-                    return cached;
                 }
 
                 var stopwatch = Stopwatch.StartNew();
@@ -976,12 +990,6 @@ internal sealed partial class FeatureServerQueryHandler(
 
             if (!useStreaming)
             {
-                var cached = await TryGetCachedResponseAsync();
-                if (cached != null)
-                {
-                    return cached;
-                }
-
                 if (isFgb)
                 {
                     if (validatedParams.ReturnDistinctValues)
@@ -1437,7 +1445,13 @@ internal sealed partial class FeatureServerQueryHandler(
            parameters.Distance.HasValue ||
            !string.IsNullOrWhiteSpace(parameters.Units) ||
            parameters.ReturnDistance ||
-           !string.IsNullOrWhiteSpace(parameters.SpatialRel);
+           !string.IsNullOrWhiteSpace(parameters.SpatialRel) ||
+           IsNonDefaultGdbVersion(parameters.GdbVersion);
+
+    // Same default as FeatureServerVersioning: blank or sde.default only.
+    private static bool IsNonDefaultGdbVersion(string? gdbVersion)
+        => !string.IsNullOrWhiteSpace(gdbVersion) &&
+           !gdbVersion.Trim().Equals("sde.default", StringComparison.OrdinalIgnoreCase);
 
     private async Task<(FeatureQuery? Query, int? OutputSrid, IResult? Error)> PrepareFeatureQueryAsync(
         HttpContext context,

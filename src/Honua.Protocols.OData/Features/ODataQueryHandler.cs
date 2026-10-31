@@ -757,7 +757,7 @@ internal sealed partial class ODataQueryHandler(
             }
 
             var contentType = ODataUtilityService.GetODataContentType(context.Request, format);
-            if (canCache && cacheKey != null)
+            if (canCache && cacheKey != null && ResponseCacheUtilities.ShouldCache(context, _cacheOptions))
             {
                 var payload = JsonSerializer.SerializeToUtf8Bytes(response, ODataJsonContext.Default.ODataResponse);
                 var cachedResponse = ResponseCacheUtilities.CreateCachedResponse(payload, contentType, _etagService);

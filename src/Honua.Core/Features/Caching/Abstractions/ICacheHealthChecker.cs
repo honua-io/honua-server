@@ -19,4 +19,11 @@ public interface ICacheHealthChecker
     /// Gets whether the cache is currently using the fallback (in-memory) mode.
     /// </summary>
     bool IsUsingFallback { get; }
+
+    /// <summary>
+    /// True when cached values stay in this process. This is true when no distributed
+    /// cache is configured, the distributed cache is process-local memory, or
+    /// <see cref="IsUsingFallback"/> is true.
+    /// </summary>
+    bool IsProcessLocal { get; }
 }

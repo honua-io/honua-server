@@ -35,6 +35,38 @@ internal sealed class FeatureMutationEventService(
         => _outputCacheInvalidationService?.InvalidateLayerAsync(serviceId, layerId, cancellationToken)
            ?? Task.CompletedTask;
 
+    /// <summary>
+    /// Drops query responses for one publication id. A blank id is a no-op.
+    /// </summary>
+    public Task InvalidateCollectionAsync(string? collectionId, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(collectionId) || _outputCacheInvalidationService is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        return _outputCacheInvalidationService.InvalidateCollectionAsync(collectionId, cancellationToken);
+    }
+
+    /// <summary>
+    /// Drops query responses for an OGC feature mutation. Invalidates the storage
+    /// layer and the publication id. Neither call is tied to the request lifetime.
+    /// </summary>
+    public async Task InvalidatePublishedLayerAsync(MetadataV2Publication publication, int storageLayerId)
+    {
+        ArgumentNullException.ThrowIfNull(publication);
+        await InvalidateLayerAsync(
+            null,
+            LayerValidationHelpers.QueryCacheLayerId(publication, storageLayerId),
+            CancellationToken.None).ConfigureAwait(false);
+
+        var publicationId = publication.Metadata.Id;
+        if (!string.IsNullOrWhiteSpace(publicationId))
+        {
+            await InvalidateCollectionAsync(publicationId, CancellationToken.None).ConfigureAwait(false);
+        }
+    }
+
     public static async Task<string> ResolveServiceIdAsync(
         HttpContext context,
         int layerId,

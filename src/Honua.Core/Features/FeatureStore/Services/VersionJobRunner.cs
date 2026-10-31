@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Diagnostics;
+using Honua.Core.Features.Caching.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Microsoft.Extensions.DependencyInjection;
@@ -154,6 +155,10 @@ public sealed partial class VersionJobRunner : IVersionJobRunner
             activity?.SetTag("honua.version.outcome", "succeeded");
             activity?.SetStatus(ActivityStatusCode.Ok);
             await store.SaveAsync(completed, CancellationToken.None).ConfigureAwait(false);
+            if (completed.Status == VersionJobStatus.Succeeded)
+            {
+                await InvalidateQueryResponsesBestEffortAsync(scope.ServiceProvider).ConfigureAwait(false);
+            }
         }
         catch (OperationCanceledException) when (shutdownToken.IsCancellationRequested)
         {
@@ -208,6 +213,24 @@ public sealed partial class VersionJobRunner : IVersionJobRunner
     // Best-effort: the terminal transition is recorded through the singleton job store (the DI scope
     // may already be gone when the failure was in the prologue), and a store outage while saving must
     // not become a second unobserved exception on this detached task.
+    private async Task InvalidateQueryResponsesBestEffortAsync(IServiceProvider services)
+    {
+        try
+        {
+            var invalidator = services.GetService<IQueryResponseCacheInvalidator>();
+            if (invalidator is null)
+            {
+                return;
+            }
+
+            await invalidator.InvalidateQueryResponsesAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            Log.QueryResponseInvalidationFailed(_logger, ex);
+        }
+    }
+
     private async Task SaveTerminalStateAsync(VersionJob job)
     {
         try
@@ -280,5 +303,11 @@ public sealed partial class VersionJobRunner : IVersionJobRunner
             Level = LogLevel.Warning,
             Message = "Version {JobKind} job for version {VersionId} (job {JobId}) aborted: server is shutting down.")]
         public static partial void JobAbortedForShutdown(ILogger logger, string jobKind, Guid versionId, Guid jobId);
+
+        [LoggerMessage(
+            EventId = 7104,
+            Level = LogLevel.Warning,
+            Message = "Query response cache invalidation failed after a version job completed.")]
+        public static partial void QueryResponseInvalidationFailed(ILogger logger, Exception exception);
     }
 }
