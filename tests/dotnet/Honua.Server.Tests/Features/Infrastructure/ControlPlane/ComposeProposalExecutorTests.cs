@@ -275,7 +275,8 @@ public sealed class ComposeProposalExecutorTests
             using var first = await listener.AcceptAsync();
             await Assert.ThrowsAsync<IOException>(() => timedOut);
             using var caller = new CancellationTokenSource();
-            var cancelled = client.ExecuteAsync(request, caller.Token);
+            var cancellationClient = new ComposeSocketClient(options, NullLogger<ComposeSocketClient>.Instance);
+            var cancelled = cancellationClient.ExecuteAsync(request, caller.Token);
             using var second = await listener.AcceptAsync();
             caller.Cancel();
             await Assert.ThrowsAnyAsync<OperationCanceledException>(() => cancelled);
