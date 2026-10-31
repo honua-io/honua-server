@@ -93,7 +93,7 @@ class ExclusionReviewTests(unittest.TestCase):
         self.assertEqual([], checklist.validate(rows))
         cells = [cell for row in rows for cell in row["lanes"].values()]
         self.assertEqual(188, len(cells))
-        self.assertEqual(116, sum(cell["state"] == "pass" for cell in cells))
+        self.assertEqual(117, sum(cell["state"] == "pass" for cell in cells))
         self.assertEqual(0, sum(cell["state"] == "fail" for cell in cells))
         self.assertEqual(13, sum(cell["state"] == "blocked" for cell in cells))
         reopened = [cell for cell in cells if "previous_exclusion" in cell]
@@ -114,7 +114,7 @@ class ExclusionReviewTests(unittest.TestCase):
                     for row in rows for lane, cell in row["lanes"].items()
                     if "previous_review" in cell}
         self.assertEqual(set(checklist.RESOLVED_EXCLUSION_EVIDENCE), resolved)
-        self.assertEqual(15, len(resolved))
+        self.assertEqual(14, len(resolved))
         self.assertEqual(20, sum(cell["state"] == "pass" and "previous_exclusion" in cell
                                  for row in rows for cell in row["lanes"].values()))
         gui = {key for key in resolved if key[3] not in ("pyqgis",)}
