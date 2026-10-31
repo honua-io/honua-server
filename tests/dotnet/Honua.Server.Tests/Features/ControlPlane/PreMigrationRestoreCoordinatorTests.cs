@@ -187,6 +187,25 @@ public sealed class PreMigrationRestoreCoordinatorTests
 
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
+    public async Task ComposeRestore_PriorImageAppliesItsMigrations_CompletesReadback()
+    {
+        using var root = new TempBackup();
+        var harness = NewHarness();
+        harness.TargetKind = DeployTargetKind.SelfHostedRolling;
+        harness.Cell.ComposeBackupDirectory = root.Path;
+        harness.Cell.ComposeProject = "honua";
+        harness.Cell.ComposeSocketPath = "/tmp/honua-compose.sock";
+        harness.Cell.Revisions = [new RevisionSchemaOption { Revision = "rev-141", MaxSchema = 142 }];
+        harness.JournalSnapshot = Journal(143, "reader-incompatible");
+        harness.Probed = Journal(142, "expand");
+        harness.ComposeConfigured = true;
+        harness.ComposeResult = new ComposeRollbackResult(true, null, true, 141, true);
+        var completion = await harness.Coordinator.ExecuteAsync(Payload(root.BackupId), Request(), harness.Starter, CancellationToken.None);
+        ReaderIncompatibleRestorePolicy.IsReportedSuccess(completion).Should().BeTrue();
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
     public async Task ComposeSuccess_DoesNotCallTheDeployStarter()
     {
         using var root = new TempBackup();

@@ -113,6 +113,17 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
             Assert.NotNull(approved);
             Assert.Equal(OperationProposalStatus.Submitted, approved.Status);
             Assert.NotNull(approved.ExecutionOperationId);
+            var secondRoute = await gateway.CreateApprovalProposalAsync("opinst-restore-" + Guid.NewGuid().ToString("N"), new OperationGatewayRequest
+            {
+                Kind = OperationClass.Deploy,
+                RequestedBy = "proposer",
+                IdempotencyKey = Guid.NewGuid().ToString("N"),
+                ExecutionPayload = payload,
+                Plan = new OperationProposalPlan { Summary = "Restore prior image", ExecutionPayload = payload }
+            });
+            Assert.NotNull(secondRoute.ProposalId);
+            var second = await gateway.ApplyApprovedProposalAsync(secondRoute.ProposalId, "approver");
+            Assert.NotNull(second?.ExecutionOperationId);
             var verifier = new DurableRestoreCompletionVerifier(probe, revisions, customer, audit, secrets, cell);
             DurableRestoreWorker NewWorker() => new(workflows, proposals, coordinator, deploy, verifier, audit, NullLogger<DurableRestoreWorker>.Instance);
             await NewWorker().ReconcileAsync(approved.ExecutionOperationId, CancellationToken.None);
@@ -130,6 +141,18 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
             await replacement.ReconcileAsync(approved.ExecutionOperationId, CancellationToken.None);
             Assert.Equal(WorkflowOperationStatus.Succeeded, (await workflows.GetAsync(approved.ExecutionOperationId))?.Status);
             await customer.Received(1).SucceededAsync(Arg.Any<CancellationToken>());
+            journal.ReadAsync(Arg.Any<CancellationToken>()).Returns(new SchemaJournalSnapshot(true,
+                [new AppliedSchemaMigration(141, "expand", 0)]));
+            await replacement.ReconcileAsync(second.ExecutionOperationId, CancellationToken.None);
+            var compatible = await workflows.GetAsync(second.ExecutionOperationId);
+            Assert.Equal("awaiting-compatible-deploy", compatible?.PreMigrationRestore?.Phase);
+            await snapshots.Received(1).RestoreNewAsync(Arg.Any<RdsRestoreRequest>(), Arg.Any<CancellationToken>());
+            var compatibleDeployment = await workflows.GetAsync(compatible!.PreMigrationRestore!.DeployOperationId!);
+            Assert.NotNull(compatibleDeployment);
+            Assert.True(await workflows.TrySetAsync(compatibleDeployment with { Status = WorkflowOperationStatus.Succeeded }));
+            await NewWorker().ReconcileAsync(second.ExecutionOperationId, CancellationToken.None);
+            Assert.Equal(WorkflowOperationStatus.Succeeded, (await workflows.GetAsync(second.ExecutionOperationId))?.Status);
+            await customer.Received(2).SucceededAsync(Arg.Any<CancellationToken>());
             Assert.True(await replacement.ClaimCellAsync("other-restore", CancellationToken.None));
         }
         finally

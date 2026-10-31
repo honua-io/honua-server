@@ -134,6 +134,11 @@ internal sealed partial class DurableRestoreWorker(
                 await CompleteLocalAsync(record, lostLease.Token).ConfigureAwait(false);
                 return;
             }
+            if (context.Phase == "awaiting-compatible-deploy")
+            {
+                await CompleteCompatibleAsync(record, lostLease.Token).ConfigureAwait(false);
+                return;
+            }
             if (context.Phase == "awaiting-deploy")
             {
                 await CompleteAsync(record, lostLease.Token).ConfigureAwait(false);
@@ -214,7 +219,7 @@ internal sealed partial class DurableRestoreWorker(
             var starter = new CheckpointStarter(store, deploy, acting);
             var completion = await coordinator.ExecuteAsync(payload, request, starter, lostLease.Token).ConfigureAwait(false);
             var latest = await store.GetAsync(id, lostLease.Token).ConfigureAwait(false);
-            if (latest?.PreMigrationRestore?.Phase == "awaiting-deploy") return;
+            if (latest?.PreMigrationRestore?.Phase is "awaiting-deploy" or "awaiting-compatible-deploy") return;
             if (latest is null) return;
             if (ReaderIncompatibleRestorePolicy.IsReportedSuccess(completion))
                 await FinishAsync(latest, WorkflowOperationStatus.Succeeded, null, lostLease.Token).ConfigureAwait(false);
@@ -328,6 +333,30 @@ internal sealed partial class DurableRestoreWorker(
         }
     }
 
+    private async Task CompleteCompatibleAsync(WorkflowOperationRecord record, CancellationToken cancellationToken)
+    {
+        var checkpoint = record.PreMigrationRestore!;
+        var payload = DeployExecutionPayload.Parse(checkpoint.Payload);
+        if (payload is null || string.IsNullOrWhiteSpace(checkpoint.DeployOperationId))
+        {
+            await FailAsync(record, PreMigrationRestoreCodes.RestoreIncomplete, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+        var workflow = await deploy.GetWorkflowAsync(checkpoint.DeployOperationId, cancellationToken).ConfigureAwait(false);
+        if (workflow is null || workflow.Status is not (WorkflowOperationStatus.Submitted or WorkflowOperationStatus.Reconciling or WorkflowOperationStatus.Succeeded))
+        {
+            await FailAsync(record, PreMigrationRestoreCodes.RestoreIncomplete, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+        if (workflow.Status != WorkflowOperationStatus.Succeeded) return;
+        var decision = await coordinator.AssessAsync(payload, cancellationToken).ConfigureAwait(false);
+        var code = decision.Kind != RestoreDecisionKind.NotRequired
+            ? PreMigrationRestoreCodes.ReadbackIncomplete
+            : await verifier.VerifyCompatibleAsync(record, payload, cancellationToken).ConfigureAwait(false);
+        await FinishAsync(record, code is null ? WorkflowOperationStatus.Succeeded : WorkflowOperationStatus.Failed,
+            code, cancellationToken).ConfigureAwait(false);
+    }
+
     private async Task CompleteAsync(WorkflowOperationRecord record, CancellationToken cancellationToken)
     {
         var checkpoint = record.PreMigrationRestore!;
@@ -438,8 +467,25 @@ internal sealed partial class DurableRestoreWorker(
 
     private sealed class CheckpointStarter(IWorkflowOperationStore store, DeployOperationExecutor deploy, WorkflowOperationRecord record) : IDurablePriorImageStarter
     {
-        public Task<string?> StartAsync(OperationGatewayRequest request, string? executionPayload, CancellationToken cancellationToken)
-            => Task.FromResult<string?>(null);
+        public async Task<string?> StartAsync(OperationGatewayRequest request, string? executionPayload, CancellationToken cancellationToken)
+        {
+            if (string.IsNullOrWhiteSpace(executionPayload)) return null;
+            var workflowId = DeployWorkflowService.CreateOperationId(request.IdempotencyKey);
+            var checkpoint = record with
+            {
+                UpdatedAt = DateTimeOffset.UtcNow,
+                CurrentPhase = "Waiting for compatible prior image and its protection window.",
+                PreMigrationRestore = record.PreMigrationRestore! with
+                {
+                    Phase = "awaiting-compatible-deploy",
+                    DeployOperationId = workflowId
+                }
+            };
+            if (!await store.TrySetAsync(checkpoint, cancellationToken: cancellationToken).ConfigureAwait(false)) return null;
+            var actual = await deploy.ExecuteAsync(request, executionPayload, cancellationToken).ConfigureAwait(false);
+            if (!string.Equals(actual, workflowId, StringComparison.Ordinal)) throw new InvalidOperationException("Deploy operation did not match the saved checkpoint.");
+            return workflowId;
+        }
 
         public async Task<string?> StartRestoredAsync(OperationGatewayRequest request, string payload, int expectedSchema, string restoredHostHash, CancellationToken cancellationToken)
         {
@@ -498,6 +544,24 @@ internal sealed class DurableRestoreCompletionVerifier(
             BackupId = payload.BackupId,
             Ok = true,
             SchemaVersion = expectedSchema,
+            ReadbackComplete = true,
+            OperationId = record.OperationId
+        }, cancellationToken).ConfigureAwait(false);
+        return written ? null : PreMigrationRestoreCodes.AuditFailed;
+    }
+
+    /// <summary>Checks customer readback and records an already-compatible rollback.</summary>
+    public async Task<string?> VerifyCompatibleAsync(WorkflowOperationRecord record, DeployExecutionPayload payload, CancellationToken cancellationToken)
+    {
+        if (!await customerProbe.SucceededAsync(cancellationToken).ConfigureAwait(false)) return PreMigrationRestoreCodes.ReadbackIncomplete;
+        var written = await audit.AppendAsync(new PreMigrationRestoreAuditLine
+        {
+            Time = DateTimeOffset.UtcNow,
+            Op = "rollback",
+            RequestId = record.Audit.CorrelationId,
+            Image = payload.DesiredRevision,
+            BackupId = payload.BackupId,
+            Ok = true,
             ReadbackComplete = true,
             OperationId = record.OperationId
         }, cancellationToken).ConfigureAwait(false);
