@@ -46,7 +46,9 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
             var snapshots = Substitute.For<IRdsSnapshotRestore>();
             snapshots.DescribeAsync("honua-cert-snapshot", "honua-cert-", Arg.Any<CancellationToken>()).Returns(
                 new RdsSnapshotEvidence { SnapshotId = "honua-cert-snapshot", CellPrefix = "honua-cert-", Status = "available", SchemaVersion = 141, CellTagMatches = true });
-            snapshots.RestoreNewAsync(Arg.Any<RdsRestoreRequest>(), Arg.Any<CancellationToken>()).Returns(new RdsNewInstance(true, "restored.internal", null));
+            snapshots.BeginAsync(Arg.Any<RdsRestoreRequest>(), Arg.Any<CancellationToken>()).Returns(new RdsRestoreSubmission(true, "db-resource-1", null));
+            snapshots.ObserveAsync(Arg.Any<string>(), "db-resource-1", Arg.Any<CancellationToken>()).Returns(
+                new RdsNewInstance(false, null, "restore-pending"), new RdsNewInstance(true, "restored.internal", null));
             var secrets = Substitute.For<IConnectionSecretRetarget>();
             secrets.IsConfigured.Returns(true);
             secrets.PointAtAsync(Arg.Any<string>(), "restored.internal", Arg.Any<CancellationToken>()).Returns(true);
@@ -109,7 +111,7 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
             Assert.Equal(OperationGatewayOutcome.ProposalCreated, routed.Outcome);
             Assert.NotNull(routed.ProposalId);
             await Assert.ThrowsAsync<InvalidOperationException>(() => gateway.ApplyApprovedProposalAsync(routed.ProposalId, "proposer"));
-            await snapshots.DidNotReceive().RestoreNewAsync(Arg.Any<RdsRestoreRequest>(), Arg.Any<CancellationToken>());
+            await snapshots.DidNotReceive().BeginAsync(Arg.Any<RdsRestoreRequest>(), Arg.Any<CancellationToken>());
             var approved = await gateway.ApplyApprovedProposalAsync(routed.ProposalId, "approver");
             Assert.NotNull(approved);
             Assert.Equal(OperationProposalStatus.Submitted, approved.Status);
@@ -143,12 +145,30 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
             };
             Assert.True(await workflows.TryCreateAsync(activeDeploy));
             await NewWorker().ReconcileAsync(approved.ExecutionOperationId, CancellationToken.None);
-            await snapshots.DidNotReceive().RestoreNewAsync(Arg.Any<RdsRestoreRequest>(), Arg.Any<CancellationToken>());
+            await snapshots.DidNotReceive().BeginAsync(Arg.Any<RdsRestoreRequest>(), Arg.Any<CancellationToken>());
             Assert.Equal(OperationProposalStatus.Submitted, (await proposals.GetAsync(approved.ProposalId))?.Status);
             var savedActive = await workflows.GetAsync(activeDeploy.OperationId);
             Assert.True(await workflows.TrySetAsync(savedActive! with { Status = WorkflowOperationStatus.Succeeded }));
             await NewWorker().ReconcileAsync(approved.ExecutionOperationId, CancellationToken.None);
             var checkpoint = await workflows.GetAsync(approved.ExecutionOperationId);
+            Assert.Equal("awaiting-rds", checkpoint?.PreMigrationRestore?.Phase);
+            Assert.Equal("db-resource-1", checkpoint?.PreMigrationRestore?.RestoredResourceId);
+            var uncertainId = "restore-uncertain-" + Guid.NewGuid().ToString("N");
+            Assert.True(await workflows.TryCreateAsync(checkpoint! with
+            {
+                OperationId = uncertainId,
+                Version = 0,
+                PreMigrationRestore = checkpoint!.PreMigrationRestore! with { Phase = "submitting-rds", RestoredResourceId = null }
+            }));
+            await NewWorker().ReconcileAsync(uncertainId, CancellationToken.None);
+            var uncertain = await workflows.GetAsync(uncertainId);
+            Assert.Equal(WorkflowOperationStatus.Failed, uncertain?.Status);
+            Assert.Equal(PreMigrationRestoreCodes.RestoreIncomplete, uncertain?.ErrorMessage);
+            var restarted = NewWorker();
+            await restarted.ReconcileAsync(approved.ExecutionOperationId, CancellationToken.None);
+            Assert.Equal("awaiting-rds", (await workflows.GetAsync(approved.ExecutionOperationId))?.PreMigrationRestore?.Phase);
+            await restarted.ReconcileAsync(approved.ExecutionOperationId, CancellationToken.None);
+            checkpoint = await workflows.GetAsync(approved.ExecutionOperationId);
             Assert.Equal("awaiting-deploy", checkpoint?.PreMigrationRestore?.Phase);
             await Assert.ThrowsAsync<ResourceConflictException>(async () =>
             {
@@ -159,7 +179,7 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
             {
                 Assert.False(promotion.Token.IsCancellationRequested);
             }
-            await snapshots.Received(1).RestoreNewAsync(Arg.Any<RdsRestoreRequest>(), Arg.Any<CancellationToken>());
+            await snapshots.Received(1).BeginAsync(Arg.Any<RdsRestoreRequest>(), Arg.Any<CancellationToken>());
             var replacement = NewWorker();
             Assert.False(await replacement.ClaimCellAsync("other-restore", CancellationToken.None));
             await replacement.ReconcileAsync(approved.ExecutionOperationId, CancellationToken.None);
@@ -182,7 +202,7 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
             await replacement.ReconcileAsync(second.ExecutionOperationId, CancellationToken.None);
             var compatible = await workflows.GetAsync(second.ExecutionOperationId);
             Assert.Equal("awaiting-compatible-deploy", compatible?.PreMigrationRestore?.Phase);
-            await snapshots.Received(1).RestoreNewAsync(Arg.Any<RdsRestoreRequest>(), Arg.Any<CancellationToken>());
+            await snapshots.Received(1).BeginAsync(Arg.Any<RdsRestoreRequest>(), Arg.Any<CancellationToken>());
             var compatibleDeployment = await workflows.GetAsync(compatible!.PreMigrationRestore!.DeployOperationId!);
             Assert.NotNull(compatibleDeployment);
             Assert.True(await workflows.TrySetAsync(compatibleDeployment with { Status = WorkflowOperationStatus.Succeeded }));

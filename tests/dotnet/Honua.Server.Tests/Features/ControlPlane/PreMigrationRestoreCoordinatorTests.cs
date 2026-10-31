@@ -585,6 +585,12 @@ public sealed class PreMigrationRestoreCoordinatorTests
             harness.RestoreRequest = request;
             return Task.FromResult(harness.Restored);
         }
+
+        public Task<RdsRestoreSubmission> BeginAsync(RdsRestoreRequest request, CancellationToken cancellationToken)
+            => Task.FromResult(new RdsRestoreSubmission(false, null, PreMigrationRestoreCodes.ProviderFailed));
+
+        public Task<RdsNewInstance> ObserveAsync(string instanceId, string resourceId, CancellationToken cancellationToken)
+            => Task.FromResult(new RdsNewInstance(false, null, PreMigrationRestoreCodes.ProviderFailed));
     }
 
     private sealed class RecordingSecrets(Harness harness) : IConnectionSecretRetarget

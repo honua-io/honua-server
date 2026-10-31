@@ -101,6 +101,12 @@ internal interface IRdsSnapshotRestore
 
     /// <summary>Restores a new instance. Never reports an endpoint the provider did not mark available.</summary>
     Task<RdsNewInstance> RestoreNewAsync(RdsRestoreRequest request, CancellationToken cancellationToken);
+
+    /// <summary>Starts one restore and returns the immutable provider identity without polling.</summary>
+    Task<RdsRestoreSubmission> BeginAsync(RdsRestoreRequest request, CancellationToken cancellationToken);
+
+    /// <summary>Observes the same provider resource without creating a new instance.</summary>
+    Task<RdsNewInstance> ObserveAsync(string instanceId, string resourceId, CancellationToken cancellationToken);
 }
 
 /// <summary>Request to restore one cell snapshot into a new instance.</summary>
@@ -112,6 +118,9 @@ internal sealed record RdsRestoreRequest(
     string EnvironmentTag,
     int WaitSeconds,
     IReadOnlyList<string> SecurityGroupIds);
+
+/// <summary>Identity returned by the provider after accepting a new restore.</summary>
+internal sealed record RdsRestoreSubmission(bool Accepted, string? ResourceId, string? Code);
 
 /// <summary>Provider result. <see cref="Endpoint"/> is set only when the new instance is available.</summary>
 internal sealed record RdsNewInstance(bool Available, string? Endpoint, string? Code);
@@ -223,6 +232,9 @@ internal interface IDurablePriorImageStarter : IPriorImageStarter
 {
     /// <summary>Submits the prior image after recording its deterministic workflow id and verified schema.</summary>
     Task<string?> StartRestoredAsync(OperationGatewayRequest request, string payload, int expectedSchema, string restoredHostHash, CancellationToken cancellationToken);
+
+    /// <summary>Records intent before the provider call, then the provider identity after acceptance.</summary>
+    Task<bool> CheckpointRdsAsync(string phase, string instanceId, string? resourceId, int expectedSchema, CancellationToken cancellationToken);
 }
 
 /// <summary>Assesses an approved rollback, then delegates its effects and durable readback.</summary>
@@ -244,6 +256,11 @@ internal sealed class PreMigrationRestoreCoordinator(
         var (decision, target, backup) = await assessment.DecideAsync(payload, cancellationToken).ConfigureAwait(false);
         return await execution.ExecuteAsync(payload, request, starter, decision, target, backup, cancellationToken).ConfigureAwait(false);
     }
+
+    /// <summary>Continues observation of the exact provider resource captured before restart.</summary>
+    public Task<RestoreCompletion> ResumeCloudAsync(DeployExecutionPayload payload, OperationGatewayRequest request,
+        IDurablePriorImageStarter starter, string instanceId, string resourceId, int expectedSchema, DateTimeOffset submittedAt, CancellationToken cancellationToken)
+        => execution.ResumeCloudAsync(payload, request, starter, instanceId, resourceId, expectedSchema, submittedAt, cancellationToken);
 }
 
 /// <summary>Reads the configured target, journal and backup without applying a restore.</summary>
@@ -484,15 +501,52 @@ internal sealed class PreMigrationRestoreExecutionService(
         }
 
         var instanceId = NewInstanceId(options.CellPrefix, request.IdempotencyKey ?? decision.BackupId!);
-        var restored = await rds.RestoreNewAsync(
-            new RdsRestoreRequest(backup.BackupId, instanceId, options.CellPrefix, options.DbSubnetGroupName, options.EnvironmentTag, options.RdsWaitSeconds, options.RdsSecurityGroupIds),
-            cancellationToken).ConfigureAwait(false);
+        var restoreRequest = new RdsRestoreRequest(backup.BackupId, instanceId, options.CellPrefix, options.DbSubnetGroupName, options.EnvironmentTag, options.RdsWaitSeconds, options.RdsSecurityGroupIds);
+        if (starter is IDurablePriorImageStarter durableStarter)
+        {
+            if (!await durableStarter.CheckpointRdsAsync("submitting-rds", instanceId, null, decision.ExpectedSchema!.Value, cancellationToken).ConfigureAwait(false))
+                return new RestoreCompletion { Decision = decision.Kind, Code = PreMigrationRestoreCodes.RestoreIncomplete };
+            var submitted = await rds.BeginAsync(restoreRequest, cancellationToken).ConfigureAwait(false);
+            if (!submitted.Accepted || string.IsNullOrWhiteSpace(submitted.ResourceId))
+                return await FailAsync(submitted.Code ?? PreMigrationRestoreCodes.ProviderFailed, "The restore submission was not confirmed.", payload, request, decision.Kind, cancellationToken).ConfigureAwait(false);
+            if (!await durableStarter.CheckpointRdsAsync("awaiting-rds", instanceId, submitted.ResourceId, decision.ExpectedSchema!.Value, cancellationToken).ConfigureAwait(false))
+                return new RestoreCompletion { Decision = decision.Kind, Code = PreMigrationRestoreCodes.RestoreIncomplete };
+            return new RestoreCompletion { Decision = decision.Kind, Code = "restore-pending", RestoreInvoked = true };
+        }
+        var restored = await rds.RestoreNewAsync(restoreRequest, cancellationToken).ConfigureAwait(false);
         if (!restored.Available || string.IsNullOrWhiteSpace(restored.Endpoint))
         {
             return await FailAsync(restored.Code ?? PreMigrationRestoreCodes.ProviderFailed, "The new database instance did not become available.", payload, request, decision.Kind, cancellationToken).ConfigureAwait(false);
         }
 
-        var observed = await probe.ProbeAsync(restored.Endpoint, cancellationToken).ConfigureAwait(false);
+        return await FinishCloudAsync(payload, request, starter, decision, restored.Endpoint, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Polls the checkpointed RDS identity and resumes the verified cutover when available.</summary>
+    public async Task<RestoreCompletion> ResumeCloudAsync(DeployExecutionPayload payload, OperationGatewayRequest request,
+        IDurablePriorImageStarter starter, string instanceId, string resourceId, int expectedSchema, DateTimeOffset submittedAt, CancellationToken cancellationToken)
+    {
+        var options = restoreOptions.Value;
+        var decision = new RestoreDecision { Kind = RestoreDecisionKind.RestoreBeforeStart, ExpectedSchema = expectedSchema, BackupId = payload.BackupId };
+        if (!RestoreCellScope.IsBoundedPrefix(options.CellPrefix) || !BackupEvidenceVerifier.InstanceInCell(instanceId, options.CellPrefix) ||
+            string.IsNullOrWhiteSpace(resourceId) || !SecretInCell(options.ConnectionSecretId, options.CellPrefix))
+            return await FailAsync(PreMigrationRestoreCodes.ScopeViolation, "The restored instance is outside the configured cell.", payload, request, decision.Kind, cancellationToken).ConfigureAwait(false);
+        var restored = await rds.ObserveAsync(instanceId, resourceId, cancellationToken).ConfigureAwait(false);
+        if (!restored.Available || string.IsNullOrWhiteSpace(restored.Endpoint))
+        {
+            if (restored.Code == "restore-pending" && DateTimeOffset.UtcNow - submittedAt < TimeSpan.FromSeconds(Math.Clamp(options.RdsWaitSeconds, 1, 3600)))
+                return new RestoreCompletion { Decision = decision.Kind, Code = "restore-pending", RestoreInvoked = true };
+            return await FailAsync(restored.Code == "restore-pending" ? PreMigrationRestoreCodes.ProviderFailed : restored.Code,
+                "The restored instance could not be verified as available.", payload, request, decision.Kind, cancellationToken).ConfigureAwait(false);
+        }
+        return await FinishCloudAsync(payload, request, starter, decision, restored.Endpoint, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<RestoreCompletion> FinishCloudAsync(DeployExecutionPayload payload, OperationGatewayRequest request,
+        IPriorImageStarter starter, RestoreDecision decision, string endpoint, CancellationToken cancellationToken)
+    {
+        var options = restoreOptions.Value;
+        var observed = await probe.ProbeAsync(endpoint, cancellationToken).ConfigureAwait(false);
         var priorMax = revisions.MaxSchema(payload.DesiredRevision) ?? -1;
         var matched = observed.Known && ReaderIncompatibleRestorePolicy.SchemaMatchesBackup(decision.ExpectedSchema!.Value, Max(observed.Applied), observed.Applied, priorMax);
         if (!matched)
@@ -500,14 +554,14 @@ internal sealed class PreMigrationRestoreExecutionService(
             return await FailAsync(PreMigrationRestoreCodes.RestoreIncomplete, "The restored database is not the backup schema. The prior image was not started.", payload, request, decision.Kind, cancellationToken).ConfigureAwait(false);
         }
 
-        var pointed = await secrets.PointAtAsync(options.ConnectionSecretId, restored.Endpoint, cancellationToken).ConfigureAwait(false);
+        var pointed = await secrets.PointAtAsync(options.ConnectionSecretId, endpoint, cancellationToken).ConfigureAwait(false);
         if (!pointed)
         {
             return await FailAsync(PreMigrationRestoreCodes.ProviderFailed, "The serving connection was not observed on the restored database. The prior image was not started.", payload, request, decision.Kind, cancellationToken).ConfigureAwait(false);
         }
 
         var imageId = starter is IDurablePriorImageStarter durable
-            ? await durable.StartRestoredAsync(request, payload.Serialize(), decision.ExpectedSchema!.Value, Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(restored.Endpoint))).ToLowerInvariant(), cancellationToken).ConfigureAwait(false)
+            ? await durable.StartRestoredAsync(request, payload.Serialize(), decision.ExpectedSchema!.Value, Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(endpoint))).ToLowerInvariant(), cancellationToken).ConfigureAwait(false)
             : await starter.StartAsync(request, payload.Serialize(), cancellationToken).ConfigureAwait(false);
         if (starter is IDurablePriorImageStarter && !string.IsNullOrWhiteSpace(imageId))
         {

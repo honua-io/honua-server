@@ -466,6 +466,14 @@ internal sealed class UnconfiguredRdsSnapshotRestore : IRdsSnapshotRestore
     /// <inheritdoc />
     public Task<RdsNewInstance> RestoreNewAsync(RdsRestoreRequest request, CancellationToken cancellationToken)
         => Task.FromResult(new RdsNewInstance(false, null, PreMigrationRestoreCodes.RetargetUnsupported));
+
+    /// <inheritdoc />
+    public Task<RdsRestoreSubmission> BeginAsync(RdsRestoreRequest request, CancellationToken cancellationToken)
+        => Task.FromResult(new RdsRestoreSubmission(false, null, PreMigrationRestoreCodes.RetargetUnsupported));
+
+    /// <inheritdoc />
+    public Task<RdsNewInstance> ObserveAsync(string instanceId, string resourceId, CancellationToken cancellationToken)
+        => Task.FromResult(new RdsNewInstance(false, null, PreMigrationRestoreCodes.RetargetUnsupported));
 }
 
 /// <summary>No connection secret can be repointed in this build.</summary>
