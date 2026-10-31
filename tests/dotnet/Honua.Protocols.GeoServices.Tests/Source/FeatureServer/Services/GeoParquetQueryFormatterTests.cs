@@ -1357,7 +1357,7 @@ public sealed class GeoParquetQueryFormatterTests(ITestOutputHelper output)
             .Which.Unit.Should().Be(Apache.Arrow.Types.TimeUnit.Microsecond);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task FormatAsGeoParquet_TimeWithMicroseconds_PreservesMicroseconds()
     {
         var layer = CreateLayer(
