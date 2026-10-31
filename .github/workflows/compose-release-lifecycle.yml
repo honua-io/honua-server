@@ -29,6 +29,10 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
+      - name: Prepare runner disk space
+        run: |
+          scripts/ci/server-test-shard-free-disk.sh
+          scripts/ci/server-test-shard-free-disk.sh --await
       - name: Build production candidate image
         env:
           GITHUB_TOKEN: ${{ github.token }}
