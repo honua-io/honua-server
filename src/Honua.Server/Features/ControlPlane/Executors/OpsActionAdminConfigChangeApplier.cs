@@ -49,6 +49,9 @@ internal sealed partial class OpsActionAdminConfigChangeApplier(
             OpsActionNames.TuneBoundedAdmission => TuneBoundedAdmission(services, request),
             OpsActionNames.ComposeApplyConfig => throw new OpsActionException(ComposeExecutorCodes.ConfigUnsupported),
             OpsActionNames.ComposeRestartService => await RestartComposeServiceAsync(services, request, cancellationToken).ConfigureAwait(false),
+            OpsActionNames.RestartEcs => await RestartRegisteredEcsAsync(services, request, cancellationToken).ConfigureAwait(false),
+            OpsActionNames.RestartLambda => await RestartRegisteredLambdaAsync(services, request, cancellationToken).ConfigureAwait(false),
+            OpsActionNames.SetConfig => await SetRegisteredConfigAsync(services, request, cancellationToken).ConfigureAwait(false),
             _ => throw new OpsActionException($"Unknown ops action '{request.Name}'."),
         };
 

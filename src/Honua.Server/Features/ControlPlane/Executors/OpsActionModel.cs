@@ -37,6 +37,14 @@ internal static class OpsActionNames
     /// Reserved Compose config change. Always refused: the executor does not apply arbitrary config.
     /// </summary>
     public const string ComposeApplyConfig = "compose.apply_config";
+    /// <summary>Forces a new deployment of the registered ECS service. Does not change its task definition.</summary>
+    public const string RestartEcs = "workload.restart_ecs";
+
+    /// <summary>Republishes the registered Lambda alias's current image and moves the alias to that version.</summary>
+    public const string RestartLambda = "workload.restart_lambda";
+
+    /// <summary>Changes one allowlisted field on the registered deployment. Currently <c>ecs.desired_count</c>.</summary>
+    public const string SetConfig = "workload.set_config";
 }
 
 /// <summary>
@@ -63,6 +71,9 @@ internal static class OpsActionCatalog
                 new(OpsActionNames.TuneBoundedAdmission, new OpsActionDescriptor(GuardrailTier.RequiresApproval, false)),
                 new(OpsActionNames.ComposeRestartService, new OpsActionDescriptor(GuardrailTier.RequiresApproval, false)),
                 new(OpsActionNames.ComposeApplyConfig, new OpsActionDescriptor(GuardrailTier.RequiresApproval, false)),
+                new(OpsActionNames.RestartEcs, new OpsActionDescriptor(GuardrailTier.RequiresApproval, false)),
+                new(OpsActionNames.RestartLambda, new OpsActionDescriptor(GuardrailTier.RequiresApproval, false)),
+                new(OpsActionNames.SetConfig, new OpsActionDescriptor(GuardrailTier.RequiresApproval, false)),
             });
 
     /// <summary>Compatibility projection of registered ops-action guardrail tiers.</summary>
@@ -152,6 +163,14 @@ internal sealed record OpsActionRequest
 
     /// <summary>Whether the payload carried any <c>params</c> value.</summary>
     public bool HasParameters { get; init; }
+    /// <summary>Optional <c>field</c> parameter for <see cref="OpsActionNames.SetConfig"/>.</summary>
+    public string? ConfigField { get; init; }
+
+    /// <summary>Optional <c>value</c> parameter for <see cref="OpsActionNames.SetConfig"/>.</summary>
+    public int? ConfigValue { get; init; }
+
+    /// <summary>Parameter names present on the payload. Empty when <c>params</c> was omitted.</summary>
+    public IReadOnlyList<string> ParameterNames { get; init; } = [];
 
     /// <summary>
     /// Parses and validates the payload structure. Throws <see cref="OpsActionException"/>
@@ -198,14 +217,23 @@ internal sealed record OpsActionRequest
             int? limit = null;
             string? channel = null;
             var hasParameters = false;
+            string? configField = null;
+            int? configValue = null;
+            var parameterNames = new List<string>();
             if (root.TryGetProperty("params", out var paramsElement))
             {
                 if (paramsElement.ValueKind == JsonValueKind.Object)
                 {
-                    hasParameters = paramsElement.EnumerateObject().Any();
+                    foreach (var property in paramsElement.EnumerateObject())
+                    {
+                        parameterNames.Add(property.Name);
+                    }
+                    hasParameters = parameterNames.Count > 0;
                     maxCount = ReadInt(paramsElement, "maxCount");
                     limit = ReadInt(paramsElement, "limit");
                     channel = ReadString(paramsElement, "channel");
+                    configField = ReadString(paramsElement, "field");
+                    configValue = ReadInt(paramsElement, "value");
                 }
                 else if (paramsElement.ValueKind is not JsonValueKind.Null and not JsonValueKind.Undefined)
                 {
@@ -221,6 +249,9 @@ internal sealed record OpsActionRequest
                 Limit = limit,
                 Channel = string.IsNullOrWhiteSpace(channel) ? (string.IsNullOrWhiteSpace(target) ? null : target) : channel,
                 HasParameters = hasParameters,
+                ConfigField = string.IsNullOrWhiteSpace(configField) ? null : configField,
+                ConfigValue = configValue,
+                ParameterNames = parameterNames,
             };
         }
     }

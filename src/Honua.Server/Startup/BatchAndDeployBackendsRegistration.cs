@@ -24,6 +24,9 @@ internal static class BatchAndDeployBackendsRegistration
         services.AddSingleton<IAwsLambdaAliasClient, AwsSdkLambdaAliasClient>();
         services.AddSingleton<IAwsAlbClient, AwsSdkAlbClient>();
         services.AddSingleton<IAwsEcsClient, AwsSdkEcsClient>();
+        services.AddSingleton<IEcsWorkloadControl, AwsSdkEcsWorkloadControl>();
+        services.AddSingleton<ILambdaAliasRecycle, AwsSdkLambdaAliasRecycle>();
+        services.AddSingleton<Honua.ControlPlane.Executors.IGovernedWorkloadExecutor, Honua.ControlPlane.Executors.AwsGovernedWorkloadExecutor>();
 #endif
 #if !HONUA_EXCLUDE_AZURE
         services.AddSingleton<IAzureFunctionsSlotClient, AzureManagementFunctionsSlotClient>();
