@@ -793,6 +793,10 @@ if (connectedRedis != null && redisCacheEntitled)
     builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationProposalEvidenceValidator,
         Honua.ControlPlane.OperationProposalEvidenceValidator>();
     builder.Services.AddPreMigrationRestore(builder.Configuration);
+    if (!isTestEnvironment && !Honua.ControlPlane.ControlPlaneLambdaConnectionRelease.IsEventHandlerProfile(builder.Configuration))
+    {
+        builder.Services.AddHostedService(static provider => provider.GetRequiredService<Honua.ControlPlane.DurableRestoreWorker>());
+    }
     builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor,
         Honua.ControlPlane.Executors.RestoreGuardedDeployOperationExecutor>();
     builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor,

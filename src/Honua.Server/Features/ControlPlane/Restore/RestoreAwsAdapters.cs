@@ -90,6 +90,13 @@ internal sealed class AwsSecretHostRetarget(IOptions<RestoreCellOptions> options
     }
 
     /// <inheritdoc />
+    public async Task<string?> ReadHostAsync(string secretId, CancellationToken cancellationToken)
+    {
+        var value = await _secrets.GetAsync(secretId, cancellationToken).ConfigureAwait(false);
+        return value is null ? null : ConnectionStringHostSwap.ReadHost(value);
+    }
+
+    /// <inheritdoc />
     public void Dispose() => _secrets.Dispose();
 }
 
@@ -116,12 +123,18 @@ internal sealed class AwsRestoredConnectionOpener(IServiceProvider services, IOp
         }
 
         var current = await _secrets.GetAsync(secretId, cancellationToken).ConfigureAwait(false);
-        if (current is null || !ConnectionStringHostSwap.TrySwapHost(current, endpoint, out var swapped))
+        if (current is null)
         {
             return null;
         }
 
-        var connection = new NpgsqlConnection(swapped);
+        var connectionString = current;
+        if (endpoint.Length > 0 && !ConnectionStringHostSwap.TrySwapHost(current, endpoint, out connectionString))
+        {
+            return null;
+        }
+
+        var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         return connection;
     }

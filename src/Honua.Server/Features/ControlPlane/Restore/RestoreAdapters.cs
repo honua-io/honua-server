@@ -429,6 +429,10 @@ internal sealed class UnconfiguredConnectionSecretRetarget : IConnectionSecretRe
     /// <inheritdoc />
     public Task<bool> PointAtAsync(string secretId, string host, CancellationToken cancellationToken)
         => Task.FromResult(false);
+
+    /// <inheritdoc />
+    public Task<string?> ReadHostAsync(string secretId, CancellationToken cancellationToken)
+        => Task.FromResult<string?>(null);
 }
 
 /// <summary>Opens only the process database. A restored endpoint cannot be probed without the cloud secret.</summary>

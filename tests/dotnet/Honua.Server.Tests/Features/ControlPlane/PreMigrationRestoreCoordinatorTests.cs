@@ -237,6 +237,19 @@ public sealed class PreMigrationRestoreCoordinatorTests
 
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
+    public async Task LambdaRestoreRequired_FailsClosedWhenNoDurableWorkerIsAvailable()
+    {
+        var harness = NewHarness();
+        harness.TargetKind = DeployTargetKind.AwsLambda;
+        var completion = await harness.Coordinator.ExecuteAsync(Payload(SnapshotId), Request(), harness.Starter, CancellationToken.None);
+
+        completion.Code.Should().Be(PreMigrationRestoreCodes.RetargetUnsupported);
+        harness.Events.Should().NotContain("restore");
+        harness.Events.Should().NotContain("start");
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
     public async Task AzureRestoreRequired_DoesNotStartThePriorImage()
     {
         var harness = NewHarness();
@@ -491,6 +504,9 @@ public sealed class PreMigrationRestoreCoordinatorTests
             harness.Events.Add("point");
             return Task.FromResult(true);
         }
+
+        public Task<string?> ReadHostAsync(string secretId, CancellationToken cancellationToken)
+            => Task.FromResult<string?>("db.internal");
     }
 
     private sealed class RecordingCompose(Harness harness) : IComposeRollbackTransport

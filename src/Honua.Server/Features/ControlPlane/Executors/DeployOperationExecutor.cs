@@ -134,6 +134,10 @@ internal sealed class DeployOperationExecutor(DeployWorkflowService deployWorkfl
         return operation is null ? null : BackendStatus(operation.Status);
     }
 
+    /// <summary>Reads the saved deploy workflow without collapsing approval and execution phases.</summary>
+    internal Task<WorkflowOperationRecord?> GetWorkflowAsync(string operationId, CancellationToken cancellationToken)
+        => deployWorkflowService.GetAsync(operationId, cancellationToken);
+
     private static OperationBackendStatus BackendStatus(WorkflowOperationStatus status) => new()
     {
         State = status switch

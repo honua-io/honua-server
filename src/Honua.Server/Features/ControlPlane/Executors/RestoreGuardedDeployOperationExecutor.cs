@@ -20,6 +20,7 @@ internal sealed class RestoreGuardedDeployOperationExecutor(
     PreMigrationRestoreCoordinator coordinator,
     IPreMigrationRestoreAudit? audit = null,
     IOptions<RestoreCellOptions>? restoreOptions = null,
+    DurableRestoreQueue? queue = null,
     IOptionsMonitor<ControlPlaneOptions>? controlPlane = null) : IOperationExecutor
 {
     public OperationClass OperationClass => OperationClass.Deploy;
@@ -74,19 +75,15 @@ internal sealed class RestoreGuardedDeployOperationExecutor(
             return await inner.ExecuteAsync(request, executionPayload, cancellationToken).ConfigureAwait(false);
         }
 
-        var seconds = restoreOptions?.Value.ImageWaitSeconds ?? RestoreCellOptions.DefaultImageWaitSeconds;
-        var completion = await coordinator.ExecuteAsync(
-                payload,
-                request,
-                new DeployPriorImageStarter(inner, TimeSpan.FromSeconds(Math.Clamp(seconds, 0, 3600))),
-                cancellationToken)
-            .ConfigureAwait(false);
-        if (!ReaderIncompatibleRestorePolicy.IsReportedSuccess(completion))
-        {
-            throw new InvalidOperationException(completion.Code ?? PreMigrationRestoreCodes.RestoreIncomplete);
-        }
-
-        return completion.OperationId;
+        _ = restoreOptions;
+        var decision = await coordinator.AssessAsync(payload, cancellationToken).ConfigureAwait(false);
+        if (decision.Kind == RestoreDecisionKind.Refuse)
+            throw new InvalidOperationException(decision.Code ?? PreMigrationRestoreCodes.BackupRequired);
+        if (decision.Kind == RestoreDecisionKind.NotRequired)
+            return await inner.ExecuteAsync(request, executionPayload, cancellationToken).ConfigureAwait(false);
+        if (queue is null)
+            throw new InvalidOperationException(PreMigrationRestoreCodes.TransportUnavailable);
+        return await queue.EnqueueAsync(request, executionPayload!, cancellationToken).ConfigureAwait(false);
     }
 
     // Local Compose verifies the actual project journal, image and backup inside the sidecar.
@@ -101,6 +98,8 @@ internal sealed class RestoreGuardedDeployOperationExecutor(
         string executionOperationId,
         CancellationToken cancellationToken = default)
     {
+        var durable = queue is null ? null : await queue.GetStatusAsync(executionOperationId, cancellationToken).ConfigureAwait(false);
+        if (durable is not null) return durable;
         var live = await inner.GetBackendStatusAsync(executionOperationId, cancellationToken).ConfigureAwait(false);
         if (live is not null || audit is null)
         {
