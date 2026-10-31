@@ -229,6 +229,7 @@ internal sealed partial class ComposeProjectController : IDisposable
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // The response remains a failure; a restart exception cannot turn it into success.
+            Log.Refused(_logger, "restart", ComposeExecutorCodes.BackupFailed);
         }
     }
 
