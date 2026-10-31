@@ -32,9 +32,9 @@ internal sealed class RestoreGuardedDeployOperationExecutor(
     {
         var plan = await inner.PlanAsync(request, cancellationToken).ConfigureAwait(false);
         var payload = DeployExecutionPayload.Parse(request.ExecutionPayload);
-        if (plan is not null && payload is { Rollback: false } && !IsLocalCompose(payload) && IsKnownPriorRevision(payload))
+        if (plan is not null && payload is { Rollback: false } && !IsLocalCompose(payload) && RequiresRollbackProposal(payload))
         {
-            return plan with { BlockingReasons = plan.BlockingReasons.Concat(["A catalogued prior image requires a rollback proposal."]).ToArray(), RiskLevel = ProposalRiskLevel.High };
+            return plan with { BlockingReasons = plan.BlockingReasons.Concat(["An undeclared or prior image requires a rollback proposal."]).ToArray(), RiskLevel = ProposalRiskLevel.High };
         }
         if (plan is null || payload is not { Rollback: true } || IsLocalCompose(payload))
         {
@@ -79,8 +79,8 @@ internal sealed class RestoreGuardedDeployOperationExecutor(
             if (queue is null) throw new InvalidOperationException(PreMigrationRestoreCodes.TransportUnavailable);
             return await queue.EnqueueAsync(request, executionPayload!, cancellationToken).ConfigureAwait(false);
         }
-        if (payload is { Rollback: false } && IsKnownPriorRevision(payload))
-            throw new InvalidOperationException("A catalogued prior image requires a rollback proposal.");
+        if (payload is { Rollback: false } && RequiresRollbackProposal(payload))
+            throw new InvalidOperationException("An undeclared or prior image requires a rollback proposal.");
         if (payload is not { Rollback: true })
         {
             return await inner.ExecuteAsync(request, executionPayload, cancellationToken).ConfigureAwait(false);
@@ -103,9 +103,18 @@ internal sealed class RestoreGuardedDeployOperationExecutor(
             target.TargetKind == DeployTargetKind.LocalCompose
             && string.Equals(target.TargetId, payload.TargetId, StringComparison.Ordinal)) == true;
 
-    private bool IsKnownPriorRevision(DeployExecutionPayload payload)
-        => restoreOptions?.Value.Revisions.Any(revision =>
-            string.Equals(revision.Revision, payload.DesiredRevision, StringComparison.Ordinal)) == true;
+    private bool RequiresRollbackProposal(DeployExecutionPayload payload)
+    {
+        var restore = restoreOptions?.Value;
+        if (restore is null || (string.IsNullOrWhiteSpace(restore.CellPrefix) && restore.Revisions.Count == 0)) return false;
+        if (restore.Revisions.Any(revision => string.Equals(revision.Revision, payload.DesiredRevision, StringComparison.Ordinal))) return true;
+        var options = controlPlane?.CurrentValue;
+        var declared = options?.DeployTargets.FirstOrDefault(target =>
+            string.Equals(target.TargetId, payload.TargetId, StringComparison.Ordinal))?.ArtifactReference;
+        declared = string.IsNullOrWhiteSpace(declared) ? options?.PlatformRelease.ServingArtifactReference : declared;
+        return string.IsNullOrWhiteSpace(declared) || !string.Equals(declared, payload.DesiredRevision, StringComparison.Ordinal);
+    }
+
 
     /// <inheritdoc />
     public async Task<OperationBackendStatus?> GetBackendStatusAsync(
