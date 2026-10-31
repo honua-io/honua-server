@@ -142,7 +142,8 @@ internal sealed partial class KubernetesDeploymentDeployBackend(
                     .ConfigureAwait(false);
             }
 
-            var steady = await WaitUntilSteadyAsync(target, digest, spec.Parameters, cancellationToken)
+            var priorRevision = alreadySet ? spec.CurrentRevision : image;
+            var steady = await WaitUntilSteadyAsync(target, digest, priorRevision, spec.Parameters, cancellationToken)
                 .ConfigureAwait(false);
             Log.OperationSubmitted(logger, operation.OperationId, spec.TargetId, target.Namespace!, target.DeploymentName!, digest);
             return steady;
@@ -276,6 +277,7 @@ internal sealed partial class KubernetesDeploymentDeployBackend(
     private async Task<DeploySubmissionResult> WaitUntilSteadyAsync(
         DeploymentTarget target,
         string digest,
+        string? priorRevision,
         IReadOnlyDictionary<string, string> parameters,
         CancellationToken cancellationToken)
     {
@@ -296,7 +298,7 @@ internal sealed partial class KubernetesDeploymentDeployBackend(
                 {
                     Status = WorkflowOperationStatus.Submitted,
                     ProviderOperationId = ProviderId(target),
-                    ObservedRevision = digest,
+                    ObservedRevision = priorRevision,
                     Message = $"Kubernetes deployment '{target.DeploymentName}' is ready on image digest '{digest}'."
                 };
             }
@@ -306,7 +308,7 @@ internal sealed partial class KubernetesDeploymentDeployBackend(
         {
             Status = WorkflowOperationStatus.Submitted,
             ProviderOperationId = ProviderId(target),
-            ObservedRevision = digest,
+            ObservedRevision = priorRevision,
             Message = $"Kubernetes deployment '{target.DeploymentName}' is still converging on image digest '{digest}'."
         };
     }

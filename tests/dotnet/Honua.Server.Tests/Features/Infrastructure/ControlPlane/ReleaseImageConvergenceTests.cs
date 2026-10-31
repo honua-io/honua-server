@@ -483,7 +483,7 @@ public sealed class ReleaseImageConvergenceTests
 
         submission.Status.Should().Be(WorkflowOperationStatus.Submitted);
         submission.ProviderOperationId.Should().Be("honua/honua-server");
-        submission.ObservedRevision.Should().Be(Digest);
+        submission.ObservedRevision.Should().Be("123456789012.dkr.ecr.us-east-1.amazonaws.com/honua:old");
         client.Image.Should().Be(Digest);
         client.PatchedContainer.Should().Be("honua");
         backend.BackendName.Should().Be("honua-kubernetes-deployment");
@@ -500,6 +500,7 @@ public sealed class ReleaseImageConvergenceTests
 
         early.Status.Should().Be(WorkflowOperationStatus.Submitted);
         early.Status.Should().NotBe(WorkflowOperationStatus.Succeeded);
+        early.ObservedRevision.Should().Be("123456789012.dkr.ecr.us-east-1.amazonaws.com/honua:old");
         client.Image.Should().Be(Digest);
         client.GetsAfterPatch.Should().Be(1);
 
