@@ -50,7 +50,8 @@ internal sealed class AwsRdsSnapshotRestoreAdapter : IRdsSnapshotRestore, IDispo
                     request.CellPrefix,
                     request.SubnetGroupName,
                     request.EnvironmentTag,
-                    request.WaitSeconds),
+                    request.WaitSeconds,
+                    request.SecurityGroupIds),
                 cancellationToken)
             .ConfigureAwait(false);
         return view.Available && !string.IsNullOrWhiteSpace(view.Endpoint)
