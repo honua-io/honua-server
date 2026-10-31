@@ -283,6 +283,7 @@ public sealed class PreMigrationRestoreCoordinatorTests
     [InlineData("{\"connectionString\":\"Host=old.example;Username=user;Password=test;Database=db\",\"extra\":\"retained\"}")]
     [InlineData("{\"ConnectionString\":\"Host=old.example;Username=user;Password=test;Database=db\",\"extra\":\"retained\"}")]
     [InlineData("{\"host\":\"old.example\",\"username\":\"user\",\"password\":\"a;b=c\",\"dbname\":\"db\",\"extra\":\"retained\"}")]
+    [InlineData("{\"connectionString\":\"\",\"host\":\"old.example\",\"username\":\"user\",\"password\":\"test\",\"dbname\":\"db\",\"extra\":\"retained\"}")]
     [Operation(Operations.TestInfrastructure)]
     public void HostSwap_JsonSecret_PreservesEnvelopeAndOtherFields(string secret)
     {
