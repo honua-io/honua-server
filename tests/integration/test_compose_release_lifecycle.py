@@ -93,7 +93,7 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
     env.update({"COMPOSE_PROJECT_NAME": project, "HONUA_IMAGE": RC1, "HONUA_HTTP_PORT": str(port),
         "HONUA_GRPC_PORT": str(free_port()), "HONUA_MANAGER_PORT": str(manager_port), "POSTGRES_PASSWORD": postgres,
         "HONUA_ADMIN_PASSWORD": key, "HONUA_MASTER_KEY": secrets.token_hex(32), "HONUA_KEYRING_PASSWORD": keyring,
-        "HONUA_RELEASE_IMAGE": candidate, "HONUA_RELEASE_VERSION": "2026.1-rc.2", "HONUA_PRIOR_IMAGE": prior_id,
+        "HONUA_RELEASE_IMAGE": candidate, "HONUA_RELEASE_VERSION": "2026.1-rc.2", "HONUA_PRIOR_IMAGE": RC1,
         "HONUA_PRIOR_MAX_SCHEMA": "140", "DOCKER_GID": str(os.stat("/var/run/docker.sock").st_gid),
         "DOCKER_COMPOSE_PLUGIN": plugins[0], "HONUA_COMPOSE_PROJECT_DIRECTORY": str(project_dir),
         "HONUA_COMPOSE_CUSTOMER_PROBE": "http://honua:8080/healthz/ready"})
@@ -168,6 +168,9 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
         else:
             assert wrong.get("outcome", "").lower() in ("blocked", "rejected", "failed")
         assert image_id() == prior_id and schema() == 140
+        # Closing a client early must not terminate the listener or block later requests.
+        disconnect = "import socket; s=socket.socket(socket.AF_UNIX); s.connect('/sock/executor.sock'); s.sendall(b'{\"op\":\"status\"}\\n'); s.close()"
+        run(["docker", "run", "--rm", "-v", project + "_compose-executor-socket:/sock", "python:3.12-alpine", "python", "-c", disconnect])
         # Send an out-of-scope field to the sidecar's actual socket.
         socket_test = "import socket; s=socket.socket(socket.AF_UNIX); s.connect('/sock/executor.sock'); s.sendall(b'{\"op\":\"status\",\"project\":\"other\"}\\n'); print(s.recv(65536).decode())"
         rejected = run(["docker", "run", "--rm", "-v", project + "_compose-executor-socket:/sock", "python:3.12-alpine", "python", "-c", socket_test])
