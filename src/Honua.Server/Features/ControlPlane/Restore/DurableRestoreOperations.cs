@@ -27,7 +27,7 @@ internal sealed class DurableRestoreQueue(IWorkflowOperationStore store)
         }
 
         var material = !string.IsNullOrWhiteSpace(request.IdempotencyKey) ? request.IdempotencyKey! : request.ApprovedProposalId!;
-        var id = "restore-" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(material)))[..32].ToLowerInvariant();
+        var id = CreateId(material);
         var now = DateTimeOffset.UtcNow;
         var record = new WorkflowOperationRecord
         {
@@ -70,6 +70,10 @@ internal sealed class DurableRestoreQueue(IWorkflowOperationStore store)
         }
         return id;
     }
+
+    /// <summary>Returns the stable checkpoint identity for a proposal or its idempotency key.</summary>
+    internal static string CreateId(string material)
+        => "restore-" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(material)))[..32].ToLowerInvariant();
 
     /// <summary>Returns the durable restore state, or null for another kind of operation.</summary>
     public async Task<OperationBackendStatus?> GetStatusAsync(string id, CancellationToken cancellationToken)
