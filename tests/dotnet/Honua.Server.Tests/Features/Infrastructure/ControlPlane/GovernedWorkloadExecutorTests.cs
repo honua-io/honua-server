@@ -151,12 +151,17 @@ public sealed class GovernedWorkloadExecutorTests
     }
 
     [Fact]
-    public void LambdaRecycle_RepublishesTheSameImage_AndRefusesADifferentOne()
+    public void LambdaRecycle_ChangesOnlyTheDescription_AndRefusesADifferentImage()
     {
-        var code = LambdaAliasRecycleRequests.UpdateCode("honua-prod-lambda", Image);
-        code.ImageUri.Should().Be(Image);
-        code.S3Bucket.Should().BeNull();
-        code.ZipFile.Should().BeNull();
+        var revision = LambdaAliasRecycleRequests.ForceNewRevision("honua-prod-lambda", "honua-workload-restart:1");
+        revision.FunctionName.Should().Be("honua-prod-lambda");
+        revision.Description.Should().Be("honua-workload-restart:1");
+        revision.Environment.Should().BeNull();
+        revision.Role.Should().BeNull();
+        revision.VpcConfig.Should().BeNull();
+        revision.MemorySize.Should().BeNull();
+        revision.Timeout.Should().BeNull();
+        revision.KMSKeyArn.Should().BeNull();
 
         var publish = LambdaAliasRecycleRequests.Publish("honua-prod-lambda");
         publish.FunctionName.Should().Be("honua-prod-lambda");
@@ -171,6 +176,168 @@ public sealed class GovernedWorkloadExecutorTests
         var mutable = () => LambdaImageGuard.RequireImmutable("honua:latest");
         mutable.Should().Throw<InvalidOperationException>().WithMessage("*immutable*");
     }
+
+    [Fact]
+    public void LambdaWorkload_IgnoresDescription_AndRefusesEnvironmentDrift()
+    {
+        var serving = SampleWorkload();
+        LambdaWorkloadIdentity.Same(serving, serving with { Description = "honua-workload-restart:1" }).Should().BeTrue();
+        var drifted = serving with
+        {
+            Environment = new Dictionary<string, string>(StringComparer.Ordinal) { ["HONUA_EXTRA"] = "1" }
+        };
+        LambdaWorkloadIdentity.Same(serving, drifted).Should().BeFalse();
+        LambdaWorkloadIdentity.IsNewVersion("41", "41").Should().BeFalse();
+        LambdaWorkloadIdentity.IsNewVersion("41", "42").Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task LambdaRecycle_RefusesDivergentConfiguration_BeforeAnyWrite()
+    {
+        var control = new FakeLambdaControl
+        {
+            Latest = SampleWorkload() with
+            {
+                Environment = new Dictionary<string, string>(StringComparer.Ordinal) { ["HONUA_EXTRA"] = "1" }
+            }
+        };
+
+        var act = () => LambdaAliasRecycleExecution.ExecuteAsync(control, "honua-prod-lambda", "live", "honua-workload-restart:1", CancellationToken.None);
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage(LambdaWorkloadIdentity.DivergedMessage);
+        control.Writes.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task LambdaRecycle_DoesNotMoveTheAlias_WhenPublishReturnsTheCurrentVersion()
+    {
+        var control = new FakeLambdaControl { PublishedVersion = "41" };
+
+        var act = () => LambdaAliasRecycleExecution.ExecuteAsync(control, "honua-prod-lambda", "live", "honua-workload-restart:1", CancellationToken.None);
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage(LambdaWorkloadIdentity.SameVersionMessage);
+        control.Writes.Should().Equal("description", "publish", "restore");
+        control.MovedVersion.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task LambdaRecycle_MovesTheAlias_OnlyAfterANewMatchingVersion()
+    {
+        var control = new FakeLambdaControl();
+
+        var image = await LambdaAliasRecycleExecution.ExecuteAsync(
+            control,
+            "honua-prod-lambda",
+            "live",
+            "honua-workload-restart:1",
+            CancellationToken.None);
+
+        image.Should().Be(Image);
+        control.Writes.Should().Equal("description", "publish", "alias");
+        control.MovedVersion.Should().Be("42");
+        control.Descriptions.Should().ContainSingle().Which.Should().Be("honua-workload-restart:1");
+    }
+
+    [Fact]
+    public async Task ConfigurationRegistry_ResolvesDeployTargetAddresses()
+    {
+        var executor = new RecordingExecutor();
+        var kubernetes = new RecordingKubernetes();
+        var services = new ServiceCollection();
+        services.AddOptions<ControlPlaneOptions>().Configure(options =>
+        {
+            options.DeployTargets.Add(new DeployTargetOptions
+            {
+                TargetId = "prod-lambda",
+                TargetKind = DeployTargetKind.AwsLambda,
+                Backend = "honua-gitops-aws-lambda",
+                Environment = "production",
+                TargetName = "ignored-when-parameter-set",
+                Parameters = new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["aws.lambda.function_name"] = "honua-prod-lambda",
+                    ["aws.lambda.alias_name"] = "live",
+                    ["aws.region"] = "us-east-1"
+                }
+            });
+            options.DeployTargets.Add(new DeployTargetOptions
+            {
+                TargetId = "name-only-lambda",
+                TargetKind = DeployTargetKind.AwsLambda,
+                Backend = "honua-gitops-aws-lambda",
+                Environment = "production",
+                TargetName = "honua-from-target-name"
+            });
+            options.DeployTargets.Add(new DeployTargetOptions
+            {
+                TargetId = "prod-ecs",
+                TargetKind = DeployTargetKind.AwsEcs,
+                Backend = "honua-aws-ecs-alb",
+                Environment = "production",
+                TargetName = "honua-prod-canary",
+                Parameters = new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["aws.ecs.cluster"] = "honua-prod-ecs",
+                    ["aws.ecs.canary_service"] = "honua-prod-canary"
+                }
+            });
+            options.DeployTargets.Add(EksOptions("prod-eks", "honua-kubernetes-deployment"));
+            options.DeployTargets.Add(EksOptions("gitops-eks", "honua-gitops-kubernetes"));
+            options.DeployTargets.Add(EksOptions("argo-eks", "honua-kubernetes-argo-rollouts"));
+        });
+        services.AddSingleton<IDeployTargetRegistry, ConfigurationDeployTargetRegistry>();
+        services.AddSingleton<IKubernetesWorkloadRestart>(kubernetes);
+        services.AddSingleton<IGovernedWorkloadExecutor>(executor);
+        var provider = services.BuildServiceProvider();
+        var applier = new OpsActionAdminConfigChangeApplier(
+            provider.GetRequiredService<IServiceScopeFactory>(),
+            TimeProvider.System,
+            NullLogger<OpsActionAdminConfigChangeApplier>.Instance);
+
+        await applier.ApplyAsync("""{"action":"workload.restart_lambda","target":"prod-lambda"}""");
+        await applier.ApplyAsync("""{"action":"workload.restart_lambda","target":"name-only-lambda"}""");
+        await applier.ApplyAsync("""{"action":"workload.restart_ecs","target":"prod-ecs"}""");
+        await applier.ApplyAsync("""{"action":"workload.restart_eks","target":"prod-eks"}""");
+        var gitops = () => applier.ApplyAsync("""{"action":"workload.restart_eks","target":"gitops-eks"}""");
+        var argo = () => applier.ApplyAsync("""{"action":"workload.restart_eks","target":"argo-eks"}""");
+
+        executor.LambdaCalls.Should().Equal("honua-prod-lambda:live", "honua-from-target-name:live");
+        executor.EcsCalls.Should().Equal("honua-prod-ecs/honua-prod-canary");
+        kubernetes.Calls.Should().Equal("honua/honua-server");
+        await gitops.Should().ThrowAsync<OpsActionException>().WithMessage(WorkloadExecutorCodes.TargetKindMismatch);
+        await argo.Should().ThrowAsync<OpsActionException>().WithMessage(WorkloadExecutorCodes.TargetKindMismatch);
+        kubernetes.Calls.Should().Equal("honua/honua-server");
+    }
+
+    private static DeployTargetOptions EksOptions(string targetId, string backend)
+        => new()
+        {
+            TargetId = targetId,
+            TargetKind = DeployTargetKind.Kubernetes,
+            Backend = backend,
+            Environment = "production",
+            TargetName = "honua-server",
+            Parameters = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["kubernetes.namespace"] = "honua",
+                ["kubernetes.deployment_name"] = "honua-server"
+            }
+        };
+
+    private static LambdaWorkloadSnapshot SampleWorkload()
+        => new()
+        {
+            Image = Image,
+            PackageType = "Image",
+            Role = "arn:aws:iam::123456789012:role/honua-lambda",
+            Timeout = 30,
+            MemorySize = 512,
+            Description = "serving",
+            Environment = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["HONUA_SKIP_MIGRATIONS"] = "true"
+            }
+        };
 
     [Fact]
     public void KubernetesRestartPatch_SetsOnlyRestartedAt()
@@ -280,11 +447,16 @@ public sealed class GovernedWorkloadExecutorTests
     {
         public List<string> Calls { get; } = [];
 
+        public List<string> LambdaCalls { get; } = [];
+
+        public List<string> EcsCalls { get; } = [];
+
         public string? LambdaImage { get; private set; }
 
         public Task RestartEcsAsync(string cluster, string serviceName, string? region, CancellationToken cancellationToken = default)
         {
             Calls.Add("restart-ecs");
+            EcsCalls.Add($"{cluster}/{serviceName}");
             return Task.CompletedTask;
         }
 
@@ -297,6 +469,7 @@ public sealed class GovernedWorkloadExecutorTests
         public Task RestartLambdaAliasAsync(string functionName, string aliasName, string? region, string? serviceUrl, CancellationToken cancellationToken = default)
         {
             Calls.Add("restart-lambda");
+            LambdaCalls.Add($"{functionName}:{aliasName}");
             LambdaImage = Image;
             return Task.CompletedTask;
         }
@@ -341,6 +514,55 @@ public sealed class GovernedWorkloadExecutorTests
     {
         public Task<string> RecycleAsync(string functionName, string aliasName, string? region, string? serviceUrl, CancellationToken cancellationToken = default)
             => Task.FromResult(Image);
+    }
+
+    private sealed class FakeLambdaControl : ILambdaFunctionControl
+    {
+        public List<string> Writes { get; } = [];
+
+        public List<string> Descriptions { get; } = [];
+
+        public LambdaWorkloadSnapshot Serving { get; init; } = SampleWorkload();
+
+        public LambdaWorkloadSnapshot Latest { get; init; } = SampleWorkload();
+
+        public string PublishedVersion { get; init; } = "42";
+
+        public string? MovedVersion { get; private set; }
+
+        public Task<LambdaAliasView> ReadAliasAsync(string functionName, string aliasName, CancellationToken cancellationToken)
+            => Task.FromResult(new LambdaAliasView(MovedVersion ?? "41", Serving.Image));
+
+        public Task<LambdaWorkloadSnapshot> ReadAsync(string functionName, string qualifier, CancellationToken cancellationToken)
+            => Task.FromResult(qualifier == "$LATEST"
+                ? Latest
+                : qualifier == PublishedVersion
+                    ? Serving
+                    : Serving);
+
+        public Task UpdateDescriptionAsync(string functionName, string description, CancellationToken cancellationToken)
+        {
+            Writes.Add(description == Serving.Description ? "restore" : "description");
+            if (description != Serving.Description)
+            {
+                Descriptions.Add(description);
+            }
+
+            return Task.CompletedTask;
+        }
+
+        public Task<string> PublishAsync(string functionName, CancellationToken cancellationToken)
+        {
+            Writes.Add("publish");
+            return Task.FromResult(PublishedVersion);
+        }
+
+        public Task MoveAliasAsync(string functionName, string aliasName, string functionVersion, CancellationToken cancellationToken)
+        {
+            Writes.Add("alias");
+            MovedVersion = functionVersion;
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class RecordingKubernetes : IKubernetesWorkloadRestart

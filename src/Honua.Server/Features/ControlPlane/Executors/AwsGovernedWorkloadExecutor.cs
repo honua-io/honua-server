@@ -78,7 +78,7 @@ internal sealed class AwsGovernedWorkloadExecutor(IEcsWorkloadControl ecs, ILamb
             _ = await lambda.RecycleAsync(functionName, aliasName, region, serviceUrl, cancellationToken)
                 .ConfigureAwait(false);
         }
-        catch (InvalidOperationException ex) when (ex.Message == LambdaImageGuard.ChangedMessage)
+        catch (InvalidOperationException ex) when (ex.Message is LambdaImageGuard.ChangedMessage or LambdaWorkloadIdentity.DivergedMessage)
         {
             throw new OpsActionException(WorkloadExecutorCodes.FingerprintChanged);
         }

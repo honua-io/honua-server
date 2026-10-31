@@ -41,6 +41,8 @@ internal sealed partial class OpsActionAdminConfigChangeApplier
     {
         RejectUnexpectedParameters(request);
         var target = await RequireTargetAsync(services, request, cancellationToken).ConfigureAwait(false);
+        // GitOps and Argo Rollouts do not name a Deployment this executor can restart.
+        // honua-kubernetes-deployment is the product backend registered with the release-image executor.
         if (target.TargetKind != DeployTargetKind.Kubernetes ||
             !string.Equals(target.Backend, KubernetesDeploymentBackend, StringComparison.Ordinal))
         {
@@ -80,10 +82,15 @@ internal sealed partial class OpsActionAdminConfigChangeApplier
             throw new OpsActionException(WorkloadExecutorCodes.TargetKindMismatch);
         }
 
-        var functionName = RequireParameter(target, "lambda.function_name");
-        var aliasName = RequireParameter(target, "lambda.alias_name");
-        var region = Parameter(target, "aws.region");
-        var serviceUrl = Parameter(target, "lambda.service_url");
+        var functionName = LambdaTargetAddress.ResolveFunctionName(target.TargetName, target.Parameters);
+        var aliasName = LambdaTargetAddress.ResolveAliasName(target.Parameters);
+        if (string.IsNullOrWhiteSpace(functionName))
+        {
+            throw new OpsActionException(WorkloadExecutorCodes.TargetMissing);
+        }
+
+        var region = LambdaTargetAddress.ResolveRegion(target.Parameters);
+        var serviceUrl = LambdaTargetAddress.ResolveServiceUrl(target.Parameters);
         var executor = RequireExecutor(services);
         await executor.RestartLambdaAliasAsync(functionName, aliasName, region, serviceUrl, cancellationToken)
             .ConfigureAwait(false);
