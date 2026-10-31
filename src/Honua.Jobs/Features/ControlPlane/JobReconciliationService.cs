@@ -233,6 +233,15 @@ internal sealed partial class JobReconciliationService(
                 return await TransitionToCancelledFromDurableSignalAsync(preRetry, snapshot.ClaimedBy!, cancellationToken).ConfigureAwait(false);
             }
 
+            // The cancellation read above also observes concurrent heartbeat writes.
+            // Validate that exact CAS version: an earlier expiry check cannot authorize
+            // recovery of a worker that has since reported it is alive.
+            if (!ShouldExpireHeartbeat(preRetry, DateTimeOffset.UtcNow))
+            {
+                Log.ReconciliationSkippedHeartbeatRefreshed(logger, snapshot.OperationId);
+                return false;
+            }
+
             Log.HeartbeatExpiredRetrying(logger, preRetry.OperationId, preRetry.AttemptCount, retryPolicy.MaxAttempts);
 
             var delay = retryPolicy.ComputeDelay(preRetry.AttemptCount + 1);
@@ -282,6 +291,15 @@ internal sealed partial class JobReconciliationService(
             if (preFail!.CancellationRequestedAt.HasValue)
             {
                 return await TransitionToCancelledFromDurableSignalAsync(preFail, snapshot.ClaimedBy!, cancellationToken).ConfigureAwait(false);
+            }
+
+            // The cancellation read above also observes concurrent heartbeat writes.
+            // Validate that exact CAS version: an earlier expiry check cannot authorize
+            // recovery of a worker that has since reported it is alive.
+            if (!ShouldExpireHeartbeat(preFail, DateTimeOffset.UtcNow))
+            {
+                Log.ReconciliationSkippedHeartbeatRefreshed(logger, snapshot.OperationId);
+                return false;
             }
 
             Log.HeartbeatExpiredFailed(logger, preFail.OperationId, preFail.AttemptCount);
