@@ -6,6 +6,7 @@ using Honua.ControlPlane.Executors;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Guardrails.Domain;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
@@ -20,7 +21,9 @@ public sealed class ApprovedDeployOperationExecutorTests
         var (executor, backend, read) = Create();
         var id = await executor.ExecuteAsync(new OperationGatewayRequest
         {
-            Kind = OperationClass.Deploy, RequestedBy = "requester", ApprovedBy = "approver"
+            Kind = OperationClass.Deploy,
+            RequestedBy = "requester",
+            ApprovedBy = "approver"
         }, Payload());
 
         Assert.NotNull(id);
@@ -34,7 +37,8 @@ public sealed class ApprovedDeployOperationExecutorTests
         var (executor, backend, read) = Create();
         await executor.ExecuteAsync(new OperationGatewayRequest
         {
-            Kind = OperationClass.Deploy, RequestedBy = "requester"
+            Kind = OperationClass.Deploy,
+            RequestedBy = "requester"
         }, Payload());
 
         await backend.DidNotReceive().StartAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>());
@@ -43,7 +47,10 @@ public sealed class ApprovedDeployOperationExecutorTests
 
     private static string Payload() => new DeployExecutionPayload
     {
-        TargetId = "cell", DesiredRevision = "prior", CurrentRevision = "candidate", Rollback = true
+        TargetId = "cell",
+        DesiredRevision = "prior",
+        CurrentRevision = "candidate",
+        Rollback = true
     }.Serialize();
 
     private static (DeployOperationExecutor Executor, IDeployBackend Backend, Func<WorkflowOperationRecord?> Read) Create()
@@ -51,14 +58,18 @@ public sealed class ApprovedDeployOperationExecutorTests
         WorkflowOperationRecord? saved = null;
         var target = new DeployTargetDefinition
         {
-            TargetId = "cell", Backend = "test", TargetKind = DeployTargetKind.AwsEcsAlb,
-            TargetName = "service", Environment = "test", RequiresApproval = true
+            TargetId = "cell",
+            Backend = "test",
+            TargetKind = DeployTargetKind.AwsEcs,
+            TargetName = "service",
+            Environment = "test",
+            RequiresApproval = true
         };
         var targets = Substitute.For<IDeployTargetRegistry>();
         targets.GetAsync("cell", Arg.Any<CancellationToken>()).Returns(target);
         var backend = Substitute.For<IDeployBackend>();
         backend.BackendName.Returns("test");
-        backend.TargetKind.Returns(DeployTargetKind.AwsEcsAlb);
+        backend.TargetKind.Returns(DeployTargetKind.AwsEcs);
         backend.GetCapabilitiesAsync(Arg.Any<CancellationToken>()).Returns(new DeployBackendCapabilities());
         backend.PlanAsync(Arg.Any<DeployOperationSpec>(), Arg.Any<CancellationToken>())
             .Returns(new DeployPlan { RequiresApproval = true });

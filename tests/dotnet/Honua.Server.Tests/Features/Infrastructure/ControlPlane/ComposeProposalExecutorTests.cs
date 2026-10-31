@@ -9,6 +9,7 @@ using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Infrastructure.Migrations;
 using Honua.Core.Features.ControlPlane.Restore;
 using Honua.TestKit.Attributes;
@@ -291,9 +292,13 @@ public sealed class ComposeProposalExecutorTests
         var service = new DeployWorkflowService(
             new MemoryTargets(new DeployTargetDefinition
             {
-                TargetId = "compose-local", TargetKind = DeployTargetKind.LocalCompose,
-                Backend = ComposeDeployBackend.AdapterBackendName, Environment = "local",
-                TargetName = "honua", ArtifactReference = release, RequiresApproval = true
+                TargetId = "compose-local",
+                TargetKind = DeployTargetKind.LocalCompose,
+                Backend = ComposeDeployBackend.AdapterBackendName,
+                Environment = "local",
+                TargetName = "honua",
+                ArtifactReference = release,
+                RequiresApproval = true
             }),
             [store], [Backend(client, release, "/tmp/compose-test.sock")],
             new NotRequiredApproval(), NullLogger<DeployWorkflowService>.Instance);
@@ -306,13 +311,19 @@ public sealed class ComposeProposalExecutorTests
         var executor = new RestoreGuardedDeployOperationExecutor(new DeployOperationExecutor(service), null!, controlPlane: monitor);
         var payload = new DeployExecutionPayload
         {
-            TargetId = "compose-local", DesiredRevision = prior, CurrentRevision = release,
-            Rollback = true, BackupId = backup
+            TargetId = "compose-local",
+            DesiredRevision = prior,
+            CurrentRevision = release,
+            Rollback = true,
+            BackupId = backup
         };
         var request = new OperationGatewayRequest
         {
-            Kind = OperationClass.Deploy, RequestedBy = "agent", ApprovedBy = "approver",
-            IdempotencyKey = "compose-sealed-backup", ExecutionPayload = payload.Serialize()
+            Kind = OperationClass.Deploy,
+            RequestedBy = "agent",
+            ApprovedBy = "approver",
+            IdempotencyKey = "compose-sealed-backup",
+            ExecutionPayload = payload.Serialize()
         };
         var plan = await executor.PlanAsync(request);
         Assert.NotNull(plan);
