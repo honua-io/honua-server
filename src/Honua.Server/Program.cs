@@ -792,8 +792,9 @@ if (connectedRedis != null && redisCacheEntitled)
     builder.Services.AddSingleton<Honua.ControlPlane.OperationProposerApiKeyAuthority>();
     builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationProposalEvidenceValidator,
         Honua.ControlPlane.OperationProposalEvidenceValidator>();
+    builder.Services.AddPreMigrationRestore(builder.Configuration);
     builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor,
-        Honua.ControlPlane.Executors.DeployOperationExecutor>();
+        Honua.ControlPlane.Executors.RestoreGuardedDeployOperationExecutor>();
     builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor,
         Honua.ControlPlane.Executors.AdminConfigOperationExecutor>();
     // MetadataRelease executor is create-only BY DESIGN (#2563): rollback and the coordinated-release

@@ -99,6 +99,10 @@ internal static class McpPlatformOpsSchemas
               "type": "object",
               "additionalProperties": { "type": "string" },
               "description": "Backend-specific parameters required to perform the forward deploy."
+            },
+            "backupId": {
+              "type": "string",
+              "description": "Optional pre-migration backup. RDS rollback must name a snapshot in this cell. Compose rollback may omit it and the server selects the newest verifying manifest."
             }
           },
           "additionalProperties": false
