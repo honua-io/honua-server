@@ -137,7 +137,8 @@ public sealed class ComposeProposalExecutorTests
                     PreviousRevision = Digest('b'),
                     CandidateRevision = release,
                     FirstExposureAt = DateTimeOffset.UtcNow,
-                    ObservationDeadline = DateTimeOffset.UtcNow.AddMinutes(10)
+                    ObservationDeadline = DateTimeOffset.UtcNow.AddMinutes(10),
+                    PolicyDigest = "test-policy"
                 }
             }
         };
