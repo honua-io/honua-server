@@ -153,6 +153,17 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
             var checkpoint = await workflows.GetAsync(approved.ExecutionOperationId);
             Assert.Equal("awaiting-rds", checkpoint?.PreMigrationRestore?.Phase);
             Assert.Equal("db-resource-1", checkpoint?.PreMigrationRestore?.RestoredResourceId);
+            var uncertainId = "restore-uncertain-" + Guid.NewGuid().ToString("N");
+            Assert.True(await workflows.TryCreateAsync(checkpoint! with
+            {
+                OperationId = uncertainId,
+                Version = 0,
+                PreMigrationRestore = checkpoint.PreMigrationRestore! with { Phase = "submitting-rds", RestoredResourceId = null }
+            }));
+            await NewWorker().ReconcileAsync(uncertainId, CancellationToken.None);
+            var uncertain = await workflows.GetAsync(uncertainId);
+            Assert.Equal(WorkflowOperationStatus.Failed, uncertain?.Status);
+            Assert.Equal(PreMigrationRestoreCodes.RestoreIncomplete, uncertain?.ErrorMessage);
             var restarted = NewWorker();
             await restarted.ReconcileAsync(approved.ExecutionOperationId, CancellationToken.None);
             Assert.Equal("awaiting-rds", (await workflows.GetAsync(approved.ExecutionOperationId))?.PreMigrationRestore?.Phase);
