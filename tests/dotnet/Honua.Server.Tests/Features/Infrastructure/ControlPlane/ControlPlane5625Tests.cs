@@ -92,6 +92,8 @@ public sealed class ControlPlane5625Tests
     public async Task ContainerStep_PassesRestoredPrincipalAndTenantToChildDeploy()
     {
         var store = Substitute.For<IWorkflowOperationStore>();
+        store.TryAcquireLeaseAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .Returns(true);
         WorkflowOperationRecord? child = null;
         store.TryCreateAsync(
                 Arg.Do<WorkflowOperationRecord>(operation => child = operation),
