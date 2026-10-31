@@ -1893,6 +1893,10 @@ echo "Checking shard filter/test-class coverage in both directions..."
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
     "Server Features Admin Integrations and Automation" \
   --assert-owner \
+    "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Server Features Admin Alert Endpoints" \
+  --assert-owner \
     "Honua.Server.Tests.Features.Admin.AgenticOpsLoopDeadLetterE2eTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
     "Server Features Admin Integrations and Automation" \

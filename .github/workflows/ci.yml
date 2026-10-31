@@ -1492,6 +1492,7 @@ jobs:
             'Server Features Admin Authorization Matrix'| \
             'Server Features Admin Network and Jobs'| \
             'Server Features Admin Integrations and Automation'| \
+            'Server Features Admin Alert Endpoints'| \
             'Server Features Streaming Snapshot and Conformance'| \
             'Server Features Data Enrichment and Capabilities'| \
             'Server Features Miscellaneous'| \
