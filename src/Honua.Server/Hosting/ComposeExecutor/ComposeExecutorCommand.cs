@@ -153,8 +153,13 @@ internal static class ComposeExecutorCommand
                     break;
                 }
 
-                // One request per connection. The next accept waits so a slow docker call cannot overlap.
-                await HandleAsync(controller, accepted, cancellationToken).ConfigureAwait(false);
+                // One request per connection. A disconnected client must not stop the listener.
+                try
+                {
+                    await HandleAsync(controller, accepted, cancellationToken).ConfigureAwait(false);
+                }
+                catch (IOException) { }
+                catch (SocketException) { }
             }
         }
         finally

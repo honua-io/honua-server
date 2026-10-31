@@ -838,6 +838,20 @@ internal sealed partial class ComposeProjectController : IDisposable
         maxSchema ??= _options.Revisions.FirstOrDefault(revision =>
             string.Equals(revision.Image, image, StringComparison.Ordinal)
             || string.Equals(revision.Image, trimmed, StringComparison.Ordinal))?.MaxSchema;
+        if (maxSchema is null)
+        {
+            foreach (var revision in _options.Revisions)
+            {
+                if (!ComposeExecutorRules.IsImmutableImage(revision.Image)) continue;
+                var catalogImage = await DockerAsync(CommandTimeout,
+                    ["image", "inspect", "--format", "{{.Id}}", revision.Image], cancellationToken).ConfigureAwait(false);
+                if (catalogImage.ExitCode == 0 && string.Equals(catalogImage.Stdout.Trim(), trimmed, StringComparison.Ordinal))
+                {
+                    maxSchema = revision.MaxSchema;
+                    break;
+                }
+            }
+        }
         return new InspectedImage(trimmed, maxSchema);
     }
 
