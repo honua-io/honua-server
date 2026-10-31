@@ -103,9 +103,10 @@ internal sealed partial class ComposeDeployBackend(
 
         var desired = deploy.DesiredRevision;
         var op = string.Equals(desired, _options.ReleaseImage, StringComparison.Ordinal) ? "converge" : "rollback";
+        var priorRevision = deploy.CurrentRevision;
+        var dispatched = false;
         try
         {
-            var priorRevision = deploy.CurrentRevision;
             if (op == "converge")
             {
                 var prior = await client.ExecuteAsync(new ComposeExecutorRequest
@@ -120,6 +121,7 @@ internal sealed partial class ComposeDeployBackend(
                     return Submission(operation, WorkflowOperationStatus.Failed, ComposeExecutorCodes.ReadbackIncomplete);
                 priorRevision = prior.RunningImage;
             }
+            dispatched = true;
             var response = await client.ExecuteAsync(
                     new ComposeExecutorRequest
                     {
@@ -145,8 +147,20 @@ internal sealed partial class ComposeDeployBackend(
                 Message = ready ? response.Message : response.Code ?? response.Message
             };
         }
-        catch (Exception ex) when (ex is not OperationCanceledException and not IOException)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
+            // A lost response cannot prove whether cutover ran. Reconcile the saved prior
+            // revision and let recovery independently verify any backup before restoring.
+            if (dispatched && op == "converge" && !string.IsNullOrWhiteSpace(priorRevision))
+            {
+                return new DeploySubmissionResult
+                {
+                    Status = WorkflowOperationStatus.Reconciling,
+                    ProviderOperationId = operation.OperationId,
+                    ObservedRevision = priorRevision,
+                    Message = ComposeExecutorCodes.ReadbackIncomplete
+                };
+            }
             return Submission(operation, WorkflowOperationStatus.Failed, ComposeExecutorCodes.ReadbackIncomplete);
         }
     }
