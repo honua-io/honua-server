@@ -155,7 +155,7 @@ services:
 
   # Console and embedded Studio. Keep this digest aligned with the release manifest.
   console:
-    image: "${HONUA_CONSOLE_IMAGE:-ghcr.io/honua-io/honua-console@sha256:6612319d53ed9d3fab1a62848b6402d4340f57c227296003614ac88fe48de4f3}"
+    image: "${HONUA_CONSOLE_IMAGE:-ghcr.io/honua-io/honua-console@sha256:a34b0fc8b8b50762d026122a057787a95711de61412cf5595d7620cfb81d75f4}"
     profiles:
       - console
     ports:
