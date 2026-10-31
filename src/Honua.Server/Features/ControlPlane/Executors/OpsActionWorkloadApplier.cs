@@ -13,7 +13,6 @@ internal sealed partial class OpsActionAdminConfigChangeApplier
     private const string DesiredCountField = "ecs.desired_count";
     private const int MinDesiredCount = 0;
     private const int MaxDesiredCount = 10;
-    private const string KubernetesDeploymentBackend = "honua-kubernetes-deployment";
 
     private static async Task<OpsActionOutcome> RestartRegisteredEcsAsync(
         IServiceProvider services,
@@ -31,43 +30,6 @@ internal sealed partial class OpsActionAdminConfigChangeApplier
         var executor = RequireExecutor(services);
         await executor.RestartEcsAsync(cluster, serviceName, region, cancellationToken).ConfigureAwait(false);
         return new OpsActionOutcome("ecs-service", serviceName, $"Restarted ECS service '{serviceName}'.");
-    }
-
-    private static async Task<OpsActionOutcome> RestartRegisteredEksAsync(
-        IServiceProvider services,
-        OpsActionRequest request,
-        DateTimeOffset restartedAt,
-        CancellationToken cancellationToken)
-    {
-        RejectUnexpectedParameters(request);
-        var target = await RequireTargetAsync(services, request, cancellationToken).ConfigureAwait(false);
-        // GitOps and Argo Rollouts do not name a Deployment this executor can restart.
-        // honua-kubernetes-deployment is the product backend registered with the release-image executor.
-        if (target.TargetKind != DeployTargetKind.Kubernetes ||
-            !string.Equals(target.Backend, KubernetesDeploymentBackend, StringComparison.Ordinal))
-        {
-            throw new OpsActionException(WorkloadExecutorCodes.TargetKindMismatch);
-        }
-
-        var namespaceName = RequireParameter(target, "kubernetes.namespace");
-        var deploymentName = RequireParameter(target, "kubernetes.deployment_name");
-        var restart = services.GetService<IKubernetesWorkloadRestart>()
-            ?? throw new OpsActionException(WorkloadExecutorCodes.Unconfigured);
-        try
-        {
-            await restart.RestartDeploymentAsync(namespaceName, deploymentName, restartedAt, cancellationToken)
-                .ConfigureAwait(false);
-        }
-        catch (InvalidOperationException ex) when (ex.Message == "Kubernetes deployment was not found.")
-        {
-            throw new OpsActionException(WorkloadExecutorCodes.TargetMissing);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException and not OpsActionException)
-        {
-            throw new OpsActionException(WorkloadExecutorCodes.ProviderFailed);
-        }
-
-        return new OpsActionOutcome("kubernetes-deployment", $"{namespaceName}/{deploymentName}", $"Restarted Kubernetes deployment '{deploymentName}'.");
     }
 
     private static async Task<OpsActionOutcome> RestartRegisteredLambdaAsync(
@@ -172,9 +134,6 @@ internal sealed partial class OpsActionAdminConfigChangeApplier
 
         return (cluster, serviceName, Parameter(target, "aws.region"));
     }
-
-    private static string RequireParameter(DeployTargetDefinition target, string key)
-        => Parameter(target, key) ?? throw new OpsActionException(WorkloadExecutorCodes.TargetMissing);
 
     private static string? Parameter(DeployTargetDefinition target, string key)
         => target.Parameters.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value)

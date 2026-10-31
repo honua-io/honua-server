@@ -61,7 +61,6 @@ internal static class BatchAndDeployBackendsRegistration
         // Shared Kubernetes API request factory (in-cluster / out-of-cluster auth) consumed
         // by both the Argo Rollouts deploy client and the Kubernetes Job batch client.
         services.AddSingleton<KubernetesApiRequestFactory>();
-        services.AddSingleton<IKubernetesWorkloadRestart, KubernetesDeploymentRestartClient>();
         services.AddSingleton<IArgoRolloutsClient, ArgoRolloutsClient>();
 
         // Deploy backend concrete singletons. Order matters for the IEnumerable<IDeployBackend>

@@ -33,9 +33,6 @@ internal static class OpsActionNames
     /// <summary>Forces a new deployment of the registered ECS service. Does not change its task definition.</summary>
     public const string RestartEcs = "workload.restart_ecs";
 
-    /// <summary>Sets the restartedAt annotation on the registered Kubernetes Deployment.</summary>
-    public const string RestartEks = "workload.restart_eks";
-
     /// <summary>Republishes the registered Lambda alias's current image and moves the alias to that version.</summary>
     public const string RestartLambda = "workload.restart_lambda";
 
@@ -66,7 +63,6 @@ internal static class OpsActionCatalog
                 new(OpsActionNames.ResumeChannel, new OpsActionDescriptor(GuardrailTier.DirectExecute, false)),
                 new(OpsActionNames.TuneBoundedAdmission, new OpsActionDescriptor(GuardrailTier.RequiresApproval, false)),
                 new(OpsActionNames.RestartEcs, new OpsActionDescriptor(GuardrailTier.RequiresApproval, false)),
-                new(OpsActionNames.RestartEks, new OpsActionDescriptor(GuardrailTier.RequiresApproval, false)),
                 new(OpsActionNames.RestartLambda, new OpsActionDescriptor(GuardrailTier.RequiresApproval, false)),
                 new(OpsActionNames.SetConfig, new OpsActionDescriptor(GuardrailTier.RequiresApproval, false)),
             });

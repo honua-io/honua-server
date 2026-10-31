@@ -1,7 +1,6 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Text.Json;
 using FluentAssertions;
 using Honua.ControlPlane;
 using Honua.ControlPlane.Executors;
@@ -32,18 +31,6 @@ public sealed class GovernedWorkloadExecutorTests
 
         changeId.Should().StartWith("opsaction-");
         harness.Executor.Calls.Should().Equal("restart-ecs");
-    }
-
-    [Fact]
-    public async Task RestartEks_PatchesOnlyRestartedAt()
-    {
-        var harness = Harness(EksTarget());
-
-        var changeId = await harness.Applier.ApplyAsync("""{"action":"workload.restart_eks","target":"prod-eks"}""");
-
-        changeId.Should().StartWith("opsaction-");
-        harness.Kubernetes.Calls.Should().Equal("honua/honua-server");
-        harness.Executor.Calls.Should().BeEmpty();
     }
 
     [Fact]
@@ -95,7 +82,6 @@ public sealed class GovernedWorkloadExecutorTests
 
         await act.Should().ThrowAsync<OpsActionException>().WithMessage("Unknown ops action 'workload.drop_database'.");
         harness.Executor.Calls.Should().BeEmpty();
-        harness.Kubernetes.Calls.Should().BeEmpty();
     }
 
     [Fact]
@@ -264,7 +250,6 @@ public sealed class GovernedWorkloadExecutorTests
     public async Task ConfigurationRegistry_ResolvesDeployTargetAddresses()
     {
         var executor = new RecordingExecutor();
-        var kubernetes = new RecordingKubernetes();
         var services = new ServiceCollection();
         services.AddOptions<ControlPlaneOptions>().Configure(options =>
         {
@@ -302,12 +287,8 @@ public sealed class GovernedWorkloadExecutorTests
                     ["aws.ecs.cluster"] = "honua-prod-ecs"
                 }
             });
-            options.DeployTargets.Add(EksOptions("prod-eks", "honua-kubernetes-deployment"));
-            options.DeployTargets.Add(EksOptions("gitops-eks", "honua-gitops-kubernetes"));
-            options.DeployTargets.Add(EksOptions("argo-eks", "honua-kubernetes-argo-rollouts"));
         });
         services.AddSingleton<IDeployTargetRegistry, ConfigurationDeployTargetRegistry>();
-        services.AddSingleton<IKubernetesWorkloadRestart>(kubernetes);
         services.AddSingleton<IGovernedWorkloadExecutor>(executor);
         var provider = services.BuildServiceProvider();
         var applier = new OpsActionAdminConfigChangeApplier(
@@ -318,32 +299,10 @@ public sealed class GovernedWorkloadExecutorTests
         await applier.ApplyAsync("""{"action":"workload.restart_lambda","target":"prod-lambda"}""");
         await applier.ApplyAsync("""{"action":"workload.restart_lambda","target":"name-only-lambda"}""");
         await applier.ApplyAsync("""{"action":"workload.restart_ecs","target":"prod-ecs"}""");
-        await applier.ApplyAsync("""{"action":"workload.restart_eks","target":"prod-eks"}""");
-        var gitops = () => applier.ApplyAsync("""{"action":"workload.restart_eks","target":"gitops-eks"}""");
-        var argo = () => applier.ApplyAsync("""{"action":"workload.restart_eks","target":"argo-eks"}""");
 
         executor.LambdaCalls.Should().Equal("honua-prod-lambda:live", "honua-from-target-name:live");
         executor.EcsCalls.Should().Equal("honua-prod-ecs/honua-prod-canary");
-        kubernetes.Calls.Should().Equal("honua/honua-server");
-        await gitops.Should().ThrowAsync<OpsActionException>().WithMessage(WorkloadExecutorCodes.TargetKindMismatch);
-        await argo.Should().ThrowAsync<OpsActionException>().WithMessage(WorkloadExecutorCodes.TargetKindMismatch);
-        kubernetes.Calls.Should().Equal("honua/honua-server");
     }
-
-    private static DeployTargetOptions EksOptions(string targetId, string backend)
-        => new()
-        {
-            TargetId = targetId,
-            TargetKind = DeployTargetKind.Kubernetes,
-            Backend = backend,
-            Environment = "production",
-            TargetName = "honua-server",
-            Parameters = new Dictionary<string, string>(StringComparer.Ordinal)
-            {
-                ["kubernetes.namespace"] = "honua",
-                ["kubernetes.deployment_name"] = "honua-server"
-            }
-        };
 
     private static LambdaWorkloadSnapshot SampleWorkload()
         => new()
@@ -360,51 +319,12 @@ public sealed class GovernedWorkloadExecutorTests
             }
         };
 
-    [Fact]
-    public void KubernetesRestart_RequiresPinnedContainersAndResourceVersion()
-    {
-        static string Deployment(string image, string initImage) => JsonSerializer.Serialize(new
-        {
-            metadata = new { resourceVersion = "123" },
-            spec = new { template = new { spec = new { containers = new[] { new { image } }, initContainers = new[] { new { image = initImage } } } } }
-        });
-        using var document = JsonDocument.Parse(Deployment(Image, Image));
-        KubernetesRestartPatch.ValidateAndGetResourceVersion(document.RootElement).Should().Be("123");
-        using var mutable = JsonDocument.Parse(Deployment("server:latest", Image));
-        var act = () => KubernetesRestartPatch.ValidateAndGetResourceVersion(mutable.RootElement);
-        act.Should().Throw<InvalidOperationException>();
-        using var initMutable = JsonDocument.Parse(Deployment(Image, "init:latest"));
-        var initAct = () => KubernetesRestartPatch.ValidateAndGetResourceVersion(initMutable.RootElement);
-        initAct.Should().Throw<InvalidOperationException>();
-        using var paused = JsonDocument.Parse(Deployment(Image, Image).Replace("\"template\":", "\"paused\":true,\"template\":", StringComparison.Ordinal));
-        var pausedAct = () => KubernetesRestartPatch.ValidateAndGetResourceVersion(paused.RootElement);
-        pausedAct.Should().Throw<InvalidOperationException>();
-    }
-
-    [Fact]
-    public void KubernetesRestartPatch_SetsOnlyRestartedAt()
-    {
-        var patch = KubernetesRestartPatch.Serialize(new DateTimeOffset(2026, 11, 1, 4, 0, 0, TimeSpan.Zero), "123");
-        using var document = JsonDocument.Parse(patch);
-        var annotations = document.RootElement
-            .GetProperty("spec")
-            .GetProperty("template")
-            .GetProperty("metadata")
-            .GetProperty("annotations");
-        document.RootElement.GetProperty("metadata").GetProperty("resourceVersion").GetString().Should().Be("123");
-        annotations.GetProperty(KubernetesRestartPatch.Annotation).GetString().Should().Be("2026-11-01T04:00:00Z");
-        annotations.EnumerateObject().Select(property => property.Name).Should().Equal(KubernetesRestartPatch.Annotation);
-        document.RootElement.GetProperty("spec").GetProperty("template").TryGetProperty("spec", out _).Should().BeFalse();
-    }
-
     private static WorkloadHarness Harness(DeployTargetDefinition target, IGovernedWorkloadExecutor? executor = null, bool defaultExecutor = true)
     {
         var recording = executor as RecordingExecutor ?? new RecordingExecutor();
-        var kubernetes = new RecordingKubernetes();
         var ecsProbe = new RecordingEcs();
         var services = new ServiceCollection();
         services.AddSingleton<IDeployTargetRegistry>(new FakeRegistry(target));
-        services.AddSingleton<IKubernetesWorkloadRestart>(kubernetes);
         services.AddSingleton<IEcsWorkloadControl>(ecsProbe);
         if (executor is not null)
         {
@@ -420,7 +340,7 @@ public sealed class GovernedWorkloadExecutorTests
             provider.GetRequiredService<IServiceScopeFactory>(),
             TimeProvider.System,
             NullLogger<OpsActionAdminConfigChangeApplier>.Instance);
-        return new WorkloadHarness(applier, recording, kubernetes, ecsProbe);
+        return new WorkloadHarness(applier, recording, ecsProbe);
     }
 
     private static DeployTargetDefinition EcsTarget()
@@ -436,22 +356,6 @@ public sealed class GovernedWorkloadExecutorTests
                 ["aws.region"] = "us-east-1",
                 ["aws.ecs.cluster"] = "honua-prod-ecs",
                 ["aws.ecs.canary_service"] = "honua-prod-canary"
-            }
-        };
-
-    private static DeployTargetDefinition EksTarget()
-        => new()
-        {
-            TargetId = "prod-eks",
-            TargetKind = DeployTargetKind.Kubernetes,
-            Backend = "honua-kubernetes-deployment",
-            Environment = "production",
-            TargetName = "honua-server",
-            Parameters = new Dictionary<string, string>(StringComparer.Ordinal)
-            {
-                ["kubernetes.namespace"] = "honua",
-                ["kubernetes.deployment_name"] = "honua-server",
-                ["kubernetes.container_name"] = "honua"
             }
         };
 
@@ -474,7 +378,6 @@ public sealed class GovernedWorkloadExecutorTests
     private sealed record WorkloadHarness(
         OpsActionAdminConfigChangeApplier Applier,
         RecordingExecutor Executor,
-        RecordingKubernetes Kubernetes,
         RecordingEcs EcsProbe);
 
     private sealed class FakeRegistry(DeployTargetDefinition target) : IDeployTargetRegistry
@@ -622,14 +525,4 @@ public sealed class GovernedWorkloadExecutorTests
         }
     }
 
-    private sealed class RecordingKubernetes : IKubernetesWorkloadRestart
-    {
-        public List<string> Calls { get; } = [];
-
-        public Task RestartDeploymentAsync(string namespaceName, string deploymentName, DateTimeOffset restartedAt, CancellationToken cancellationToken = default)
-        {
-            Calls.Add($"{namespaceName}/{deploymentName}");
-            return Task.CompletedTask;
-        }
-    }
 }
