@@ -48,7 +48,7 @@ internal sealed partial class DeployWorkflowReconciler(
             var activated = operation with
             {
                 Status = result.Status,
-                CurrentPhase = result.Status == WorkflowOperationStatus.Reconciling
+                CurrentPhase = result.Status is WorkflowOperationStatus.Submitted or WorkflowOperationStatus.Reconciling
                     ? ICheckpointedDeployBackend.ActivatedPhase : result.Message ?? operation.CurrentPhase,
                 ErrorMessage = result.Status == WorkflowOperationStatus.Failed ? result.Message : null,
                 Deploy = operation.Deploy! with

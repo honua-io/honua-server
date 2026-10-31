@@ -139,11 +139,16 @@ internal sealed partial class AwsEcsAlbDeployBackend
             throw new InvalidOperationException("ECS service revision changed after preparation.");
         }
 
-        _ = TryResolveCanaryWeightPercentage(spec.Parameters, out var canaryWeight, out _);
-        var share = canaryWeight ?? 100;
-        await albClient.UpdateListenerRuleWeightsAsync(target.ListenerRuleArn!,
-            BuildWeights(target.CanaryTargetGroupArn!, share, target.StableTargetGroupArn!, 100 - share),
-            target.Region, cancellationToken).ConfigureAwait(false);
+        // Keep new traffic on stable while the candidate service is updated. Routing is shifted
+        // only by observation after ECS has proved the candidate revision is steady.
+        var rule = await albClient.GetListenerRuleWeightsAsync(target.ListenerRuleArn!, target.Region, cancellationToken).ConfigureAwait(false);
+        var weights = SummarizeAlbWeights(rule, target);
+        if (!string.Equals(current.TaskDefinitionArn, operation.ProviderOperationId, StringComparison.Ordinal) &&
+            !weights.MatchesExpectedShare(0))
+        {
+            throw new InvalidOperationException("ECS candidate service must have zero traffic before activation.");
+        }
+
         if (!string.Equals(current.TaskDefinitionArn, operation.ProviderOperationId, StringComparison.Ordinal))
         {
             await ecsClient.UpdateServiceTaskDefinitionAsync(target.Cluster!, target.CanaryService!,
@@ -152,9 +157,9 @@ internal sealed partial class AwsEcsAlbDeployBackend
 
         return new DeployObservation
         {
-            Status = WorkflowOperationStatus.Reconciling,
+            Status = WorkflowOperationStatus.Submitted,
             ProviderOperationId = operation.ProviderOperationId,
-            Message = "ECS activation submitted; awaiting convergence."
+            Message = "ECS activation submitted; awaiting convergence before traffic shift."
         };
     }
 
