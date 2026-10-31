@@ -341,7 +341,7 @@ internal sealed partial class DeployWorkflowService
         return await _workflowStore!.GetMostRecentSucceededDeployByTargetAsync(targetId, cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task<WorkflowOperationRecord?> CreateAsync(
+    public Task<WorkflowOperationRecord?> CreateAsync(
         string targetId,
         string desiredRevision,
         string? currentRevision,
@@ -353,12 +353,29 @@ internal sealed partial class DeployWorkflowService
         bool submitImmediately,
         IReadOnlyDictionary<string, string>? parameterOverrides,
         ClaimsPrincipal? principal = null,
-        CancellationToken cancellationToken = default,
-        string? restoreOwnerId = null)
+        CancellationToken cancellationToken = default)
+        => CreateWithRestoreAsync(targetId, desiredRevision, currentRevision, requestedBy, reason,
+            idempotencyKey, correlationId, priority, submitImmediately, parameterOverrides, principal,
+            restoreOwnerId: null, cancellationToken);
+
+    internal async Task<WorkflowOperationRecord?> CreateWithRestoreAsync(
+        string targetId,
+        string desiredRevision,
+        string? currentRevision,
+        string? requestedBy,
+        string? reason,
+        string? idempotencyKey,
+        string? correlationId,
+        OperationPriority priority,
+        bool submitImmediately,
+        IReadOnlyDictionary<string, string>? parameterOverrides,
+        ClaimsPrincipal? principal,
+        string? restoreOwnerId,
+        CancellationToken cancellationToken)
     {
         EnsureDurableStoreConfigured();
         await using var admission = RestoreAdmissionEnabled
-            ? await RestoreDeployAdmission.AcquireAsync(_workflowStore!, CreateOperationId(idempotencyKey), restoreOwnerId, cancellationToken).ConfigureAwait(false)
+            ? await RestoreDeployAdmission.AcquireAsync(_workflowStore!, CreateOperationId(idempotencyKey), restoreOwnerId, false, cancellationToken).ConfigureAwait(false)
             : null;
         if (admission is not null) cancellationToken = admission.Token;
 
@@ -488,16 +505,23 @@ internal sealed partial class DeployWorkflowService
         return operation;
     }
 
-    public async Task<WorkflowOperationRecord?> SubmitAsync(
+    public Task<WorkflowOperationRecord?> SubmitAsync(
         string operationId,
         string? requestedBy,
         string? reason,
-        CancellationToken cancellationToken = default,
-        string? restoreOwnerId = null)
+        CancellationToken cancellationToken = default)
+        => SubmitWithRestoreAsync(operationId, requestedBy, reason, restoreOwnerId: null, cancellationToken);
+
+    internal async Task<WorkflowOperationRecord?> SubmitWithRestoreAsync(
+        string operationId,
+        string? requestedBy,
+        string? reason,
+        string? restoreOwnerId,
+        CancellationToken cancellationToken)
     {
         EnsureDurableStoreConfigured();
         await using var admission = RestoreAdmissionEnabled
-            ? await RestoreDeployAdmission.AcquireAsync(_workflowStore!, operationId, restoreOwnerId, cancellationToken).ConfigureAwait(false)
+            ? await RestoreDeployAdmission.AcquireAsync(_workflowStore!, operationId, restoreOwnerId, false, cancellationToken).ConfigureAwait(false)
             : null;
         if (admission is not null) cancellationToken = admission.Token;
 
@@ -657,7 +681,7 @@ internal sealed partial class DeployWorkflowService
     {
         EnsureDurableStoreConfigured();
         await using var admission = RestoreAdmissionEnabled
-            ? await RestoreDeployAdmission.AcquireAsync(_workflowStore!, operationId, null, cancellationToken, allowRestorePromotion: true).ConfigureAwait(false)
+            ? await RestoreDeployAdmission.AcquireAsync(_workflowStore!, operationId, null, true, cancellationToken).ConfigureAwait(false)
             : null;
         if (admission is not null) cancellationToken = admission.Token;
 
@@ -819,7 +843,7 @@ internal sealed partial class DeployWorkflowService
     {
         EnsureDurableStoreConfigured();
         await using var admission = RestoreAdmissionEnabled
-            ? await RestoreDeployAdmission.AcquireAsync(_workflowStore!, operationId, null, cancellationToken).ConfigureAwait(false)
+            ? await RestoreDeployAdmission.AcquireAsync(_workflowStore!, operationId, null, false, cancellationToken).ConfigureAwait(false)
             : null;
         if (admission is not null) cancellationToken = admission.Token;
 

@@ -146,10 +146,10 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
             Assert.Equal("awaiting-deploy", checkpoint?.PreMigrationRestore?.Phase);
             await Assert.ThrowsAsync<ResourceConflictException>(async () =>
             {
-                await using var admission = await RestoreDeployAdmission.AcquireAsync(workflows, "unrelated-deploy", null, CancellationToken.None);
+                await using var admission = await RestoreDeployAdmission.AcquireAsync(workflows, "unrelated-deploy", null, false, CancellationToken.None);
             });
             await using (var promotion = await RestoreDeployAdmission.AcquireAsync(workflows,
-                checkpoint!.PreMigrationRestore!.DeployOperationId!, null, CancellationToken.None, allowRestorePromotion: true))
+                checkpoint!.PreMigrationRestore!.DeployOperationId!, null, true, CancellationToken.None))
             {
                 Assert.False(promotion.Token.IsCancellationRequested);
             }
