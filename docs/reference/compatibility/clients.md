@@ -106,7 +106,7 @@ Current gaps, stated as fact. Protocol-level GeoServices REST parity detail live
   Native table/export testing retained a missing-column failure; correcting
   Honua's former invalid `esriFieldTypeInteger64` token does not establish a
   QGIS type-preservation pass. See [the server defect](https://github.com/honua-io/honua-server/issues/4551)
-  and [the version-specific QGIS converter](https://github.com/qgis/QGIS/blob/final-3_40_15/src/core/providers/arcgis/qgsarcgisrestutils.cpp#L59).
+  and the version-specific QGIS converter.
 - **WMS 1.1.1 passes its CITE profile.** It is served (with `SRS`, `X`/`Y`, and
   lon/lat EPSG:4326 BBOX order); both WMS 1.1.1 and WMS 1.3 have current
   all-pass CITE evidence.

@@ -3,7 +3,6 @@
 ## Status
 
 Accepted (MVP scope — pgRouting; legal sign-off on the GPL-over-SQL posture
-tracked by honua-io/honua-esri-assess#33).
 
 ## Context
 
@@ -86,8 +85,6 @@ There is one redistribution caveat to honor:
   binaries carry their GPL obligations into any image we publish.
 
 Legal sign-off on this GPL-over-SQL posture (and the bundled-image source-offer
-obligation) is tracked by **honua-io/honua-esri-assess#33**
-(`epic-esri-ip-compliance-guardrails`). The data-licensing constraint from
 `#1266` is independent and absolute: routing networks come from **open data
 (OSM)** or the **customer's own network data**; Honua does not lift GeoServices REST network
 datasets or GeoServices REST-licensed street data. The NAServer API shape itself is a
@@ -344,12 +341,11 @@ driving-distance query). The caps are configurable via the `Routing` section
 
 - `honua-io/honua-server#1265` / `#1266` — Network Analyst routing capability
   (NAServer route + service-area solves; open-data / GPL-compliance constraints).
-- `honua-io/honua-esri-assess#33` — `epic-esri-ip-compliance-guardrails`
   (tracks legal sign-off on the GPL-over-SQL posture and the bundled-image
   source-offer obligation).
-- [GeoServices REST Network Analyst Service (NAServer)](https://developers.arcgis.com/rest/services-reference/enterprise/network-analyst-service/) —
+- GeoServices REST Network Analyst Service (NAServer) —
   route sync service and ServiceArea solve response shapes (`saPolygons`).
-- [GeoServices REST Route synchronous service](https://developers.arcgis.com/rest/services-reference/enterprise/route-synchronous-service/).
+- GeoServices REST Route synchronous service.
 - [pgRouting `pgr_dijkstra`](https://docs.pgrouting.org/latest/en/pgr_dijkstra.html) —
   route solves.
 - [pgRouting `pgr_drivingDistance`](https://docs.pgrouting.org/latest/en/pgr_drivingDistance.html) —

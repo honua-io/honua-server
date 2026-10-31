@@ -97,7 +97,6 @@ FlatGeobuf responses include a readable header even when no rows match. The head
 | JSON | `application/json`. |
 | CSV | `text/csv` (or `csv`). Uses shared CSV escaping: null is an unquoted blank; an empty string is `""`. |
 
-
 ### OData v4 (`/odata`)
 
 JSON (`application/json`) responses by default; geometry is emitted as GeoJSON-shaped values inside the JSON payload. `$format=parquet` exports GeoParquet via the shared writer (same [glibc runtime requirement](#geoparquet-runtime-requirement) — returns HTTP 501 on a musl image). See the [OData reference](protocols/odata.md).

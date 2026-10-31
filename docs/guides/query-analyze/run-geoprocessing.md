@@ -84,7 +84,6 @@ WGS 84 when no explicit working reference is supplied; equivalent GeoServices RE
 normalized before comparison. Merge rejects incompatible geometry types before creating a job.
 An unavailable artifact remains an explicit fallback label rather than a fictitious download URL.
 
-
 ### SOAP remote toolbox execution
 
 Python geoprocessing clients discover the same catalog through `POST /services/{serviceId}/GPServer`.

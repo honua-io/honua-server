@@ -106,12 +106,6 @@ mechanism. For example:
 > existing runtime identity, permit that reference for this connection, and test
 > connectivity. Report the reference and test result without displaying the value.
 
-Or, for a local secured source import:
-
-> Use `env:HONUA_IMPORT_ARCGIS_TOKEN` for this ArcGIS import. The variable is
-> already injected into the server environment. Allow that exact reference and
-> test access without printing the token.
-
 The agent needs to distinguish three steps:
 
 1. **Provision or locate the value.** Use the authorized secret-manager or host

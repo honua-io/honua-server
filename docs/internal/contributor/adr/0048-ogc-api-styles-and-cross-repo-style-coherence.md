@@ -63,8 +63,8 @@ OGC API – Styles' **`styleId`** is the natural unifying primitive, and the
 A style is a first-class `MetadataV2ResourceType.Style` resource with a stable **`styleId`**,
 decoupled from any single layer. Data resources reference styles via `StyleResourceIds`
 (`[0]` = primary), so one style can render many layers. Each style resource carries N encodings
-(`mapbox-style` canonical; `sld-1.0.0`, `sld-1.1.0`, `esri-drawing-info`, `esri-image-renderer`,
-`3d-tiles-styling`, `x-*` derived), each either inline (`Body`) or external (`StorageBindingId`).
+(`mapbox-style` canonical; OGC SLD, GeoServices REST renderer/image encodings,
+`3d-tiles-styling`, and other derived encodings), each either inline (`Body`) or external (`StorageBindingId`).
 
 This is the strategically-correct end state and is what the metadata-v2 type system already
 anticipates. It **supersedes ADR-0002's "one style per layer" storage framing** as the target

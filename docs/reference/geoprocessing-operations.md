@@ -237,7 +237,6 @@ GeoETL DAG sources that produce a FeatureCollection artifact. Seven are managed 
 | `source.geojson` | Parse inline GeoJSON (or a data URI) into the standard FeatureCollection. | `inline` or `input` | managed | workflow |
 | `source.csv` | Parse inline CSV; geometry from a WKT column or lon/lat pair. | `inline`, `delimiter` | managed | workflow |
 | `source.honua-layer` | Stream a Honua catalog layer through the canonical query pipeline. | `layerId`, `where`, `bbox`, `outFields`, `outSrid`, `since`, `watermarkField` | managed | workflow |
-| `source.esri-featureserver` | Stream a GeoServices REST FeatureServer/MapServer layer (paged), GeoServices JSON → GeoJSON. | `serviceUrl`, `esriLayerId`, `where`, `outFields`, `outSrid`, `pageSize`, token/credential params, `since` | managed | workflow |
 | `source.ogc-features` | Stream an OGC API Features collection via `rel=next` link paging; `where` is CQL2-text. | `serviceUrl`, `collectionId`, `where`, `bbox`, `pageSize`, credential params, `since` | managed | workflow |
 | `source.wfs` | Stream a WFS GetFeature endpoint with startIndex/count paging, GeoJSON output. | `serviceUrl`, `typeName`, `bbox`, `pageSize`, credential params | managed | workflow |
 | `source.postgis` | Stream a customer-owned PostGIS table/view via a registered secure connection. | `connectionName`/`connectionId`, `table`, `schema`, `geometryColumn`, `where`, `bbox`, `outSrid`, `since`, `watermarkField` | managed | workflow |
@@ -263,7 +262,7 @@ Managed routing jobs use the configured canonical routing provider. They fail ex
 The virtual `Routing/GPServer` utility service also exposes synchronous
 `FindRoutes`, `GenerateServiceAreas`, `GetTravelModes`, and `GetToolInfo` tasks,
 limited by the configured provider's capabilities. SOAP discovery at
-`/services/Routing/GPServer` (also under the conventional `/arcgis` path base)
+`/services/Routing/GPServer`
 uses the same task definitions as REST. SOAP `Execute` decodes typed GP values
 and invokes the same synchronous handlers, returning typed record sets with
 their field schemas. These tools do not create asynchronous jobs. A catalog

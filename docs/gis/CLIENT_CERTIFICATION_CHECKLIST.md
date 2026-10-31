@@ -1,4 +1,3 @@
-# QGIS, PyQGIS, ArcGIS Pro and ArcPy certification
 
 This is the current scope and completion contract for the four native clients.
 Its [JSON projection](data/client-certification-checklist.v1.json) contains the
@@ -16,7 +15,6 @@ adding inventory rows does not establish a complete executable test suite.
 |---|---|
 | This checklist and its JSON | Four-client scope, open coverage work and completion criteria |
 | [honua-client-compat inventory](https://github.com/honua-io/honua-client-compat/blob/main/desktop/certification-matrix.json) | QGIS capabilities, providers, algorithms, authentication and workflow review obligations; QGIS/PyQGIS execution belongs there |
-| [honua-esri-compat](https://github.com/honua-io/honua-esri-compat) | Esri operation/parameter inventories and native evidence. Runner and licence setup stay there |
 | [Shared CERT vocabulary](CROSS_CLIENT_CERTIFICATION_MATRIX.md) | Common evidence IDs across desktop, SDK and other clients |
 | [Platform roster](data/client-certification-roster.v1.json) | Governed platform identities and release projection; platform release policy remains owned by honua-release |
 | Dated plans and receipts | Historical observations and provenance, not competing current completion rules |
@@ -24,15 +22,11 @@ adding inventory rows does not establish a complete executable test suite.
 The [pre-audit checklist](https://github.com/honua-io/honua-server/blob/ab2e3ed3d58196658fbd98567de65eec4db7dc64/docs/gis/CLIENT_CERTIFICATION_CHECKLIST.md)
 preserves the former baseline narrative. Existing operation cells, receipt
 references and exclusions are retained. A new finding must preserve the observation
-it supersedes. The [first exclusion review](client-exclusion-audit-2026-09-20.md)
-and [follow-up](client-exclusion-followup-2026-09-20.md) remain evidence history.
 
 ## Targets and profiles
 
 | Lane | Historical baseline build | Evidence owner |
 |---|---|---|
-| `pro-ui` | ArcGIS Pro 3.7.1.1904 | honua-esri-compat; actual application operations |
-| `arcpy` | ArcPy bundled with Pro 3.7.1.1904 | honua-esri-compat; native Python operations |
 | `qgis-ui` | QGIS 3.44.14 LTR | honua-client-compat; actual application operations |
 | `pyqgis` | PyQGIS bundled with QGIS 3.44.14 LTR | honua-client-compat; native Python operations |
 
@@ -41,7 +35,6 @@ only QGIS 3.44.14 LTR**, per the September 30 scope instruction. The wider inven
 and diagnostics retain QGIS/PyQGIS 4.2.2 as historical records; no 4.2.2 certification
 rerun is required and its unresolved reviews cannot block LTR acceptance.
 Verify installed versions before running and create a new target revision for a
-different build. ArcGIS Pro/ArcPy's updated 3.7.2 installation remains an open target
 binding; 3.7.1 receipts retain their historical identities.
 
 Licence, extension, and portal-entitlement detail stays in the client evidence
@@ -81,11 +74,7 @@ read-only controls; edits and failure cases use owned fixtures. Manuals establis
 paths and limitations, not successful Honua execution.
 
 The current manual review covers [QGIS 3.44 service paths](https://doc.qgis.org/3.44/en/docs/user_manual/working_with_ogc/ogc_client_support.html),
-[service-backed Pro routing](https://doc.esri.com/en/arcgis-pro/latest/help/analysis/networks/what-is-network-analysis-using-web-services.html),
-[branch-version prerequisites](https://doc.esri.com/en/arcgis-pro/latest/help/data/geodatabases/overview/manage-branch-versions.html)
-and [Pro OGC API limits](https://doc.esri.com/en/arcgis-pro/latest/help/data/services/use-ogc-api-services.html).
 The JSON records the review date, affected protocols, limitations and next native
-checks. Esri's `latest` pages still require confirmation against the installed build.
 
 The September 29 vector review adds exact installed QGIS source revisions
 `1a4cda5f262` (3.44.14) and `f1431de8676` (4.2.2). Independent 107-record fixtures
@@ -195,7 +184,6 @@ Missing receipts, failed required cases, unresolved harness defects and stale
 candidate bindings prevent that claim. Licensed skips and N/A are separately
 reported limitations, never successful execution of those operations.
 
-UI results require actual inspected UI evidence. ArcPy/PyQGIS, REST probes,
 conformance suites, mocks and adapted/plugin paths retain their own identities.
 A parent operation cannot inherit success from one passing child or tool alias.
 Historical JIT receipts remain useful diagnostics and regression evidence.
@@ -217,8 +205,6 @@ No new native passes or exclusions are awarded by this scope update.
 
 ### Customer-readiness goal
 
-Demonstrate that customers can reliably use Honua's advertised supported workflows in QGIS, PyQGIS, ArcGIS Pro and ArcPy on declared client versions and license profiles. Reconcile the client surface into one traceable matrix, repair server and harness defects, and pass every required native workflow and regression gate against the same frozen shipping NativeAOT/Production candidate. Publish reproducible setup instructions, evidence and precise limitations. Accept documented client exclusions and licensed skips only within their stated profile; keep preview/experimental readiness separate.
-
 ### Coverage review
 
 **Certification: not assessed. The applicable denominator and shipping receipt join remain open.**
@@ -228,13 +214,10 @@ to executable native cases, not additional test passes or a new denominator.
 | Review | State | Required work |
 |---|---|---|
 | `source-inventory` | open | Reconcile both directions: 118 capability keys and 1,306 server surfaces; the QGIS base has 117 and 1,270, with an overlay at 1,271. |
-| `native-case-crosswalk` | open | Map the 367 Esri operation/parameter cases and active LTR reviews from the retained 6,767-row QGIS inventory to native child cases, shared witnesses or evidenced dispositions. QGIS 4.2.2 rows are historical only and require no certification replay. Inventory counts are not test counts. |
 | `authentication` | open | Bind valid, denied, scoped, expired, revoked and rotated credentials to native workflows and dependent resource requests; the 94-row baseline has no explicit authentication rows. Preserve default WFS failures, cache-disabled provider reads, Browser catalog transitions and protected-first GetFeature denial as distinct PyQGIS diagnostics. Disabling both URL-only memory caches before the first request restores catalog recovery on both installed versions; catalog visibility does not prove a denied data request. Complete retained-layer reload, other auth methods, least-privilege roles, dependent resources and authenticated project reopen on the shipping candidate; no N/A or shipping promotion. |
 | `workflow-variants` | open | Bind schema/paging, edits/relationships/attachments, offline/versioning, imagery/tiles, processing parameters, project reopen and recovery variants to executable cases and independent oracles. |
 | `native-editing` | open | Map single-feature, bulk and multi-layer edits to independent inputs, SQL persistence, native readback, denied commits, retained buffers and recovery. Final Debug/JIT PyQGIS diagnostics at server 64066504d2e5578ec781ef1c2722a6696a7e1084 pass 9/9 FeatureServer and 9/9 OAPIF per installed version; WFS passes 8/9 per version and retains empty-string-to-null readback failures. Separate default WFS batch diagnostics pass 5/5 per version: two-feature insert/delete, storage-rejected insert/update, atomic SQL rollback and correction/retry in the same retained buffer. These are individual single-layer requests, not a mixed editing session or a multi-layer transaction. Complete best-effort/unknown-commit, mixed-stage and concurrent-edit recovery, other geometry/CRS, scoped roles, relationships/attachments and project-reopen variants, plus the other native lanes and the frozen shipping replay. Do not count unit or historical receipt validation as fresh native acceptance. |
 | `vector-data-fidelity` | open | Bind fractional timestamps, empty strings versus null, provider-specific IDs/CRS, all page contents, export and cold project reopen to native children on QGIS/PyQGIS 3.44.14 LTR only. Replay the GeoJSON timestamp fix merged in server PR5335 on the shipping candidate. Both installed GML decoders turn seven independent empty-string encodings into null while five controls match; this is decoder evidence, not a live workflow pass. Preserve the WFS data-loss failure and original oracle, review other installed native entrypoints and customer workarounds, and do not award whole-client/protocol N/A. |
-| `versions-and-licenses` | open | Require only QGIS/PyQGIS 3.44.14 LTR certification. Retain 4.2.2 inventory and diagnostics as historical records without requiring certification reruns or blocking LTR acceptance. ArcGIS Pro 3.7.2/build1901 and ArcGISPro.exe 3.7.2.1904 remain an open target; keep 3.7.1 receipts historical. Licence, extension, and portal-entitlement binding stays with evidence id desktop-arcgis in honua-esri-compat. |
-| `native-versioning` | open | Keep the preview branch profile separate. The 367-case Esri inventory already includes an 11-case VersionManagementServer manifest: seven implemented/partial groups and four recorded gaps. Its geoservices rules wire only service metadata and list/version-info REST probes; five supported lifecycle groups remain pending. Map those grouped operations to independent native cases and repair stale descriptions, including the capability-string claim corrected by server PR5335. On server fa2c29dc4 with the experimental branch flag, evidence id desktop-arcgis records workspace recognition through root and /arcgis URLs, and failed branch-layer recognition, ListVersions and CreateVersion. An independent replay on ba7f4ba96 fails during portal discovery before token issuance, with the same later native failures. Preserve both authentication failures and ERROR 000301 as repair work; six passing REST/SQL checks on fa2c29dc4 and 57 regression tests on ba7f4ba96 do not certify native workflows or prove a licence exclusion. Runner and licence configuration stay in honua-esri-compat. |
 | `maturity-and-profile` | open | Classify source maturity and selected configuration independently of client support; retain lower-priority preview/experimental work and explicit priorities 5238, 5192 and 5036. |
 | `exclusion-review` | open | Review operation-specific N/A and skip evidence. Preserve genuine exclusions; repair harness failures. A missing fixture, disabled flag or failed connection alone proves no server implementation gap. |
 | `candidate-and-receipts` | open | Join native cases to hashed receipts, independent expected results and the same frozen NativeAOT/Production candidate. The historical checklist string validator is not this acceptance join. |
@@ -243,8 +226,6 @@ to executable native cases, not additional test passes or a new denominator.
 
 | Lane | Client build | Recorded passes | Excluded | Open |
 |---|---|---|---|---|
-| `pro-ui` | ArcGIS Pro 3.7.1.1904 | 40 | 23 | 31 |
-| `arcpy` | ArcPy (ships with ArcGIS Pro 3.7.1.1904) | 42 | 47 | 5 |
 | `qgis-ui` | QGIS 3.44.14 LTR | 50 | 31 | 13 |
 | `pyqgis` | QGIS 3.44.14 LTR | 65 | 29 | 0 |
 
@@ -259,7 +240,6 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 
 #### wms 1.3.0
 
-| Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
 | GetCapabilities | pass | pass | pass | pass |
 | GetMap | pass | pass | pass | pass |
@@ -270,7 +250,6 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 
 #### wmts 1.0.0
 
-| Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
 | GetCapabilities | pass | n/a-no-client | pass | pass |
 | GetTile | pass | n/a-no-client | pass | pass |
@@ -279,7 +258,6 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 
 #### wfs 2.0.0
 
-| Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
 | GetCapabilities | pass | pass | pass | pass |
 | DescribeFeatureType | pass | pass | pass | pass |
@@ -292,7 +270,6 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 
 #### wcs 1.0.0
 
-| Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
 | GetCapabilities | pass | pass | pass | pass |
 | DescribeCoverage | pass | pass | pass | pass |
@@ -300,7 +277,6 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 
 #### wcs 2.0.1
 
-| Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
 | GetCapabilities | not-started | pass | pass | pass |
 | DescribeCoverage | not-started | pass | pass | n/a-no-client |
@@ -308,7 +284,6 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 
 #### ogc-api-features 1.0
 
-| Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
 | landing-page | pass | n/a-no-client | pass | pass |
 | conformance | pass | n/a-no-client | pass | pass |
@@ -321,14 +296,12 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 
 #### ogc-api-tiles 1.0
 
-| Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
 | landing-tilesets | blocked | n/a-no-client | n/a-no-client | pass |
 | tile | blocked | n/a-no-client | blocked | pass |
 
 #### stac 1.0.0
 
-| Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
 | catalog-landing | pass | pass | pass | pass |
 | collections | pass | pass | pass | pass |
@@ -337,7 +310,6 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 
 #### sensorthings 1.1
 
-| Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
 | entity-sets | n/a-no-client | n/a-no-client | pass | pass |
 | expand | n/a-no-client | n/a-no-client | blocked | pass |
@@ -345,7 +317,6 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 
 #### featureserver GeoServices REST
 
-| Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
 | service-info | pass | pass | pass | pass |
 | layer-metadata | pass | pass | pass | pass |
@@ -360,7 +331,6 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 
 #### mapserver GeoServices REST
 
-| Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
 | service-info | pass | pass | pass | pass |
 | export | pass | pass | blocked | pass |
@@ -369,7 +339,6 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 
 #### imageserver GeoServices REST
 
-| Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
 | service-info | pass | pass | pass | pass |
 | exportImage | not-started | pass | pass | pass |
@@ -377,7 +346,6 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 
 #### vectortileserver GeoServices REST
 
-| Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
 | service-info | pass | pass | pass | pass |
 | tile | pass | pass | pass | pass |
@@ -385,7 +353,6 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 
 #### gpserver GeoServices REST
 
-| Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
 | service-info | pass | pass | n/a-no-client | n/a-no-client |
 | task-info | pass | pass | n/a-no-client | n/a-no-client |
@@ -396,7 +363,6 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 
 #### geocodeserver GeoServices REST
 
-| Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
 | findAddressCandidates | blocked | pass | n/a-no-client | n/a-no-client |
 | suggest | blocked | n/a-no-client | n/a-no-client | n/a-no-client |
@@ -405,7 +371,6 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 
 #### geometryserver GeoServices REST
 
-| Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
 | project | n/a-no-client | n/a-no-client | n/a-no-client | n/a-no-client |
 | buffer | n/a-no-client | n/a-no-client | n/a-no-client | n/a-no-client |
@@ -414,100 +379,82 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 
 #### naserver GeoServices REST
 
-| Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
 | route-solve | blocked | blocked | n/a-no-client | n/a-no-client |
 | service-area | blocked | blocked | n/a-no-client | n/a-no-client |
 
 #### versionmanagementserver GeoServices REST
 
-| Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
 | create-version | blocked | fail | n/a-no-client | n/a-no-client |
 | reconcile-post | blocked | blocked | n/a-no-client | n/a-no-client |
 
 #### geoservices-soap GeoServices SOAP
 
-| Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
 | catalog-discovery | not-started | n/a-no-client | n/a-no-client | n/a-no-client |
 
 #### odata v4
 
-| Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
 | metadata | n/a-no-client | n/a-no-client | n/a-no-client | n/a-no-client |
 | entity-query | n/a-no-client | n/a-no-client | n/a-no-client | n/a-no-client |
 
 #### ogc-api-maps 1.0
 
-| Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
 | map | n/a-no-client | n/a-no-client | n/a-no-client | pass |
 
 #### ogc-api-coverages 1.0
 
-| Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
 | coverage | n/a-no-client | n/a-no-client | n/a-no-client | pass |
 
 #### ogc-api-records 1.0
 
-| Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
 | records | n/a-no-client | n/a-no-client | pass | pass |
 
 #### ogc-api-processes 1.0
 
-| Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
 | processes-execute | n/a-no-client | n/a-no-client | n/a-no-client | n/a-no-client |
 
 #### ogc-api-styles 1.0
 
-| Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
 | styles | n/a-no-client | n/a-no-client | n/a-no-client | pass |
 
 #### ogc-api-edr 1.0
 
-| Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
 | edr-query | n/a-no-client | n/a-no-client | n/a-no-client | n/a-no-client |
 
 #### pmtiles 3
 
-| Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
 | archive-read | not-started | n/a-no-client | pass | pass |
 
 #### tilejson 3.0.0
 
-| Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
 | descriptor | not-started | n/a-no-client | pass | pass |
 
 #### cog GeoTIFF
 
-| Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
 | range-read | not-started | pass | pass | pass |
 
 #### i3s-sceneserver 1.x
 
-| Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
 | scene-layer | not-started | pass | n/a-no-client | n/a-no-client |
 
 #### 3d-tiles 1.0
 
-| Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
 | tileset | not-started | n/a-no-client | pass | pass |
 
-#### elevation Esri
-
-| Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
 | point-query | not-started | n/a-no-client | pass | pass |
 

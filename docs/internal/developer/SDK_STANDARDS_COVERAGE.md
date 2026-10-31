@@ -46,12 +46,12 @@ The current server-owned SDK compatibility lane records these exercised surfaces
 
 | SDK | Surfaces currently exercised by server compatibility evidence |
 |---|---|
-| JavaScript / TypeScript | `control-plane-admin`, `geoservices-catalog`, `feature-server`, `ogc-api-features`, `migration-scan`, `arcgis-import`, `geoserver-dry-run`, `migration-evidence` |
+| JavaScript / TypeScript | `control-plane-admin`, `geoservices-catalog`, `feature-server`, `ogc-api-features`, `migration-scan`, `geoserver-dry-run`, `migration-evidence` |
 | Python | `control-plane-admin`, `platform-http`, `geoservices-catalog`, `feature-server` |
 | .NET | `control-plane-admin`, `migration-scan` |
 
 The same artifact also records migration automation surfaces:
-`migration-scan`, `arcgis-import`, `geoserver-dry-run`, and
+`migration-scan`, `geoserver-dry-run`, and
 `migration-evidence`. These are visible in `protocol_surfaces_by_sdk` and carry
 per-SDK `migration_automation_by_sdk` status. They are release claims only when
 the relevant SDK cell records `supported` with an uploaded artifact path and the

@@ -70,7 +70,6 @@ The uploaded contract is:
 
 Since ticket #415, the workflow defaults to the `full` profile and emits per-protocol `.cert.json` certification envelopes under a `certification/` subdirectory covering 18 CERT-\* test cases across 4 protocol lanes. Use `--profile smoke` for the original 11-check MVP subset.
 
-
 The full profile covers:
 
 | Protocol lane | Client lane | CERT-\* scope |
@@ -122,8 +121,7 @@ If `envsubst` is unavailable, replace placeholder tokens manually in each templa
 
 5. Save the QGIS, Power BI, and Excel artifacts named in the client sections below.
 
-
-`arcgis-stub` is a different, REST-only evidence identifier.
+`geoservices-rest-stub` is a different, REST-only evidence identifier.
 
 FeatureServer evidence uses the common-core CERT-\* IDs. MapServer evidence
 records CERT-QFLT, CERT-PAGE, CERT-GEOM, and CERT-ERRH-02 as `not-applicable`
@@ -197,7 +195,6 @@ Each smoke step maps to shared certification test cases from the [Cross-Client C
 | Cross-cutting | Error handling | CERT-ERRH-01, CERT-ERRH-02 |
 
 \* **BI lanes (Power BI, Excel):** CERT-GEOM-01, CERT-GEOM-02, CERT-SCHM-02, and CERT-QFLT-02 do not apply to OData-only clients (these require geometry-capable protocols). Record as `not-applicable` in the evidence envelope.
-
 
 ## Tested-Version Evidence
 

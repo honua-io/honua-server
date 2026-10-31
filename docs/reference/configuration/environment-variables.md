@@ -371,7 +371,6 @@ size, and oversized bodies get HTTP 413.
 - [PostGIS configuration](data-sources/postgis.md) — connection strings, extensions, managed-Postgres notes.
 - [OpenAPI and the API explorer](../openapi-and-explorer.md) — `/docs` and the runtime spec endpoints.
 
-
 ### GeoParquet query memory budgets
 
 GeoServices `f=parquet` and OData `$format=parquet` share the configured
@@ -412,7 +411,6 @@ and accepted multi-row-group imports are unchanged.
 ## AI disclosure approvals
 
 Enabled remote AI transfers require exact operator approval rules. See [AI model disclosure approvals](ai-disclosure-policy.md) for configuration, secure defaults, migration and classification limits.
-
 
 ## AI invocation admission
 

@@ -112,7 +112,7 @@ These server integration checks do not establish a native desktop certification 
 
 ## FeatureServer
 
-GeoServices REST spec: [Feature Service](https://developers.arcgis.com/rest/services-reference/enterprise/feature-service/).
+GeoServices REST spec: Feature Service.
 
 ### Operations
 
@@ -267,10 +267,9 @@ The `layers` and `allLayersAndTables` metadata resources accept GET and POST.
 Both verbs return the same layer/table document through the existing metadata
 access checks. These server contract tests do not establish native client certification.
 
-
 WMTS is **Preview in 2026.1**, including the MapServer and OGC service aliases.
 
-GeoServices REST spec: [Map Service](https://developers.arcgis.com/rest/services-reference/enterprise/map-service/).
+GeoServices REST spec: Map Service.
 
 ### Operations
 
@@ -307,7 +306,7 @@ configured raster provider cannot load the requested output driver. Transient
 database export outages return code `503`; provider details are not exposed.
 These envelopes retain the GeoServices HTTP 200 transport convention.
 
-GeoServices REST spec: [Image Service](https://developers.arcgis.com/rest/services-reference/enterprise/image-service/).
+GeoServices REST spec: Image Service.
 Routes are layer-scoped: `{id}` in `GET /rest/services/{id}/ImageServer` is the
 raster layer identifier.
 
@@ -385,7 +384,7 @@ sensor/orientation) field and the remaining unmodeled methods (`esriMosaicCenter
 
 ## Geometry Service
 
-GeoServices REST spec: [Geometry Service](https://developers.arcgis.com/rest/services-reference/enterprise/geometry-service/).
+GeoServices REST spec: Geometry Service.
 All operations are served at the canonical GeoServices REST route
 `/rest/services/Utilities/Geometry/GeometryServer/<operation>` (GET + POST) over
 NetTopologySuite, a PROJ-backed projection service, and a geography-based geodesic
@@ -414,7 +413,7 @@ Known parameter-level caveats:
 
 ## NAServer
 
-GeoServices REST spec: [Network Analyst Service](https://developers.arcgis.com/rest/services-reference/enterprise/network-analyst-service/).
+GeoServices REST spec: Network Analyst Service.
 `Route/solve` accepts GET query parameters or POST form parameters; `ServiceArea`, `ClosestFacility`, `ODCostMatrix`, and
 `LocationAllocation` solves are served over POST only. All routes live under `/rest/services/{serviceId}/NAServer` and adapt to
 the shared `IRoutingProvider` routing pipeline.
@@ -433,7 +432,7 @@ inputs declare different references, or whose `inSR` contradicts a declared refe
 | ServiceArea/solveServiceArea | Implemented | GET query parameters and POST form parameters use the same handler. Parses `facilities`, `defaultBreaks`, `inSR`/`outSR`, `travelDirection`, `barriers`/`polylineBarriers`/`polygonBarriers`, and `travelMode`; honours provider-advertised FromFacility/ToFacility support and returns GeoServices REST `saPolygons`. |
 | ClosestFacility/solveClosestFacility | Implemented | Parses `incidents`, `facilities`, `defaultTargetFacilityCount`, `travelDirection`, `defaultCutoff`/`cutoff`, barriers, and `travelMode`; ranks facilities per incident by the selected dataset-backed profile impedance over `pgr_dijkstraCost` and materializes the closest routes, returning ranked GeoServices REST routes (`IncidentID`/`FacilityID`/`FacilityRank`/`Total_*`) plus optional directions. Bounded by `Routing:MaxIncidents`/`Routing:MaxClosestFacilities`. |
 | ODCostMatrix/solveODCostMatrix | Partial (cost-only + straight lines) | Parses `origins`, `destinations`, `inSR`/`outSR`, `defaultCutoff`, `defaultTargetDestinationCount` (k-nearest), `outputType`, barriers, and `travelMode`; computes an origins×destinations impedance matrix via `pgr_dijkstraCost`. `esriNAODOutputNoLines` preserves the attribute-only fast path. `esriNAODOutputStraightLines` adds a two-vertex GeoServices REST polyline from each original origin to destination in the requested `outSR`; the pgRouting provider batch-transforms all returned cells through PostGIS in one query, while providers that do not advertise straight-line support receive a precise 400. `esriNAODOutputTrueShape` and `esriNAODOutputTrueShapeWithMeasure` return a precise GeoServices 400 until bounded provider path geometry is implemented. Bounded by `Routing:MaxOrigins`/`Routing:MaxDestinations`. Asymmetric per-mode impedance remains deferred. |
-| LocationAllocation/solveLocationAllocation | Partial (minimize-impedance + maximize-coverage + minimize-facilities) | Parses candidate `facilities`, weighted `demandPoints`, `problemType`, `numberFacilitiesToFind`, and `impedanceCutoff`; builds a candidate×demand cost matrix over `pgr_dijkstraCost` and returns chosen facilities plus per-demand allocations. `esriMFPMinimizeFacilities` requires a cutoff and uses deterministic greedy set cover: O(F²D) time, O(D) memory, and the standard H(D)-approximation bound on facility count (exact for a single candidate/pick), with cancellation checks and configured facility/demand caps. The remaining GeoServices REST inventory is intentionally rejected with a precise GeoServices 400 because the canonical request lacks required semantics: maximize-attendance needs impedance transformation model/factor, maximize-capacitated-coverage needs facility capacities, and maximize/target-market-share need competitor facilities and attractiveness weights. This inventory follows the [GeoServices REST Location Allocation REST contract](https://developers.arcgis.com/rest/routing/location-allocation-service/). |
+| LocationAllocation/solveLocationAllocation | Partial (minimize-impedance + maximize-coverage + minimize-facilities) | Parses candidate `facilities`, weighted `demandPoints`, `problemType`, `numberFacilitiesToFind`, and `impedanceCutoff`; builds a candidate×demand cost matrix over `pgr_dijkstraCost` and returns chosen facilities plus per-demand allocations. `esriMFPMinimizeFacilities` requires a cutoff and uses deterministic greedy set cover: O(F²D) time, O(D) memory, and the standard H(D)-approximation bound on facility count (exact for a single candidate/pick), with cancellation checks and configured facility/demand caps. The remaining GeoServices REST inventory is intentionally rejected with a precise GeoServices 400 because the canonical request lacks required semantics: maximize-attendance needs impedance transformation model/factor, maximize-capacitated-coverage needs facility capacities, and maximize/target-market-share need competitor facilities and attractiveness weights. This inventory follows the GeoServices REST Location Allocation REST contract. |
 | Service metadata | Not implemented | Route, service-area, closest-facility, OD-cost-matrix, and location-allocation solves are the routing scope. Unsupported provider capabilities return GeoServices 400 error envelopes rather than fabricated solves. |
 
 ### Solve parameters
@@ -476,7 +475,7 @@ are never advertised.
 
 ## VectorTileServer
 
-GeoServices REST spec: [Vector Tile Service](https://developers.arcgis.com/rest/services-reference/enterprise/vector-tile-service/).
+GeoServices REST spec: Vector Tile Service.
 
 | Operation(s) | Status | Notes |
 | --- | --- | --- |
@@ -490,7 +489,7 @@ GeoServices REST spec: [Vector Tile Service](https://developers.arcgis.com/rest/
 
 ## VersionManagementServer (branch versioning)
 
-GeoServices REST spec: [Version Management Service](https://developers.arcgis.com/rest/services-reference/enterprise/version-management-service/).
+GeoServices REST spec: Version Management Service.
 
 > **Experimental, off by default.** Every route below is gated by the `versioning.branch`
 > capability and returns **404** unless `Capabilities:Experimental:versioning.branch:Enabled=true`
@@ -515,7 +514,7 @@ manager whose mutations return **501** rather than fabricating success.
 
 ## Catalog / REST Info
 
-GeoServices REST spec: [Catalog](https://developers.arcgis.com/rest/services-reference/enterprise/catalog/) and [REST Info](https://developers.arcgis.com/rest/services-reference/enterprise/info/).
+GeoServices REST spec: Catalog and REST Info.
 
 | Operation(s) | Status | Notes |
 | --- | --- | --- |
@@ -544,7 +543,7 @@ support for an undocumented progress-message response extension.
 
 ## Portal Sharing
 
-GeoServices REST spec: [GeoServices REST API - Users, groups, and items](https://developers.arcgis.com/rest/users-groups-and-items/).
+GeoServices REST spec: GeoServices REST API - Users, groups, and items.
 
 The read surface (`info`, `portals/self`, `community/self`, `search`, `content/items/*`)
 and the whole community/sharing surface are gated by `Sharing:ReadSurface:Enabled` plus

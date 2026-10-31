@@ -123,7 +123,6 @@ this table records runtime truth without promoting it.
 | `serve.elevation` | Community | Elevation profile/value routes | Not edition-gated |
 | `raster.terrain-rgb` | Community | Terrain-RGB tiles | Not edition-gated |
 
-
 ## Guides that use this
 
 - [Publish 3D scenes](../../guides/publish/publish-3d-scenes.md) — generation, extrusion, hosting, and CesiumJS rendering.

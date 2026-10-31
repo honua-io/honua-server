@@ -66,7 +66,6 @@ The three HTTP surfaces answer the same questions with different syntax: OGC ite
    honua query my_service/0 --where "population > 10000" --count
    ```
 
-
 ## Verify
 
 ```bash

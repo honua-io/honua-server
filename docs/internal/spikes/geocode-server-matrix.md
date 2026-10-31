@@ -2,9 +2,6 @@
 
 Canonical GeoServices entry point: [GeoServices REST Parity](../../reference/compatibility/geoservices-parity.md)
 
-Sources:
-- https://developers.arcgis.com/rest/services-reference/enterprise/geocode-service/
-- https://developers.arcgis.com/rest/geocode/api-reference/overview-world-geocoding-service.htm
 
 ## Status vocabulary
 

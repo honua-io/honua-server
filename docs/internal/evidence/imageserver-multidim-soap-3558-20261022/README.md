@@ -73,7 +73,6 @@ cd docs/internal/evidence/imageserver-multidim-soap-3558-20261022
 export HONUA_3558_RAW=<dir outside the repo>
 bash tools/run_capture.sh honua-trunk http://127.0.0.1:18658 18659 /services/browser_compat/ImageServer \
      sea_surface_temperature --rewrite-origin http://honua:5000=http://127.0.0.1:18659
-bash tools/run_capture.sh reference https://sampleserver6.arcgisonline.com/arcgis 18661 \
      /services/ScientificData/SeaTemperature/ImageServer water_temp
 
 # 3. A/B report, then the replay without Pro (needs only the fixture).
@@ -96,7 +95,6 @@ Traps:
 | server image (local JIT build) | `sha256:238c1196873569d8bfc83502dd822ab04a368160c43a490d48da338a84cc475f` |
 | GDAL worker image (local build, GDAL 3.13.1) | `sha256:316f82ee8fe3e1645f04f63a7039c6d201eb5df9bc70378afa88eddf85d59b9a` |
 | LocalStack / PostGIS | `localstack/localstack:3.6.0`, `postgis/postgis:16-3.4` |
-| reference | `https://sampleserver6.arcgisonline.com/arcgis/services/ScientificData/SeaTemperature/ImageServer` (GeoServices REST server 10.91) |
 | capture date | 2026-10-22 |
 
 `manifest.json` lists the SHA-256 of every committed file in this bundle.

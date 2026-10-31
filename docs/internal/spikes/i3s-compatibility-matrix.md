@@ -178,7 +178,7 @@ that use different canvas/FOV assumptions; it is the same tradeoff the
 ### Schema and specification reference
 
 The upstream I3S specification repository
-(<https://github.com/Esri/i3s-spec>) is the authoritative source for I3S
+(the public community specification) is the authoritative source for I3S
 schema text, profile READMEs, JSON definition files, and worked examples
 embedded in the spec documents. The repository's specification text is
 licensed **Creative Commons Attribution-NoDerivs (CC BY-ND)**. CC BY-ND
@@ -389,4 +389,4 @@ that are wrong before child issues are opened.
 
 - Launch contract entry: [MVP Compatibility Contract](../../reference/compatibility/clients.md) — see the I3S / GeoServices REST Scene Layer row.
 - Sibling 3D scene tickets: `honua-server-837` (hosted 3D Tiles), `honua-server-838` (Cesium smoke), `honua-server-842` (3D Tiles generation), `honua-server-849` (protected scene envelope).
-- The I3S community specification (<https://github.com/Esri/i3s-spec>, CC BY-ND) and the corresponding **OGC I3S Community Standard 1.3** (document `17-014r9`) are the conformance references for any future implementation child. Community specification versions 1.7 (MeshPyramids/Points/Building) and 2.0 (PointClouds) both map to OGC I3S 1.3 in the upstream synchronization table.
+- The I3S community specification (CC BY-ND) and the corresponding **OGC I3S Community Standard 1.3** (document `17-014r9`) are the conformance references for any future implementation child. Community specification versions 1.7 (MeshPyramids/Points/Building) and 2.0 (PointClouds) both map to OGC I3S 1.3 in the upstream synchronization table.

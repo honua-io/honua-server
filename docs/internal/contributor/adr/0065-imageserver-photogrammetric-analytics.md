@@ -278,4 +278,3 @@ integrating over the DEM pixels inside each area-of-interest.
   #1880 (orientation-ranked find), #1881 (image-CS project / RPC first-order),
   #2707 (durable job envelope), #2795 (501 pass-through)
 - GeoServices REST reference: Compute Tie Points (Image Service) —
-  `developers.arcgis.com/rest/services-reference/enterprise/compute-tie-points/`

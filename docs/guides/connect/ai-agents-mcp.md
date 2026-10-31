@@ -98,7 +98,6 @@ import asyncio
 from mcp import ClientSessionGroup
 from mcp.client.session_group import StreamableHttpParameters
 
-
 async def discover():
     server = StreamableHttpParameters(url="http://localhost:18080/mcp")
     async with ClientSessionGroup() as group:
@@ -108,7 +107,6 @@ async def discover():
     if not any(name.startswith("honua_") for name in names):
         raise SystemExit(names)
     print("\n".join(names))
-
 
 asyncio.run(discover())
 PY

@@ -21,8 +21,7 @@ match the surface labels already emitted in
 
 | Surface label | What the SDK must drive | Server contract entry point |
 |---|---|---|
-| `migration-scan` | Run a source inventory scan and read the resulting scan artifact through typed SDK models. | `POST /api/v1/admin/import/scan` (source kinds: `arcgis-feature-service`, `geoserver`, `ogc-wfs`, `ogc-wms`, `ogc-wmts`). |
-| `arcgis-import` | Start a GeoServices REST import job, poll its status, and read the resulting job evidence. | `POST /api/v1/admin/import/geoservices/start`, `GET /api/v1/admin/import/geoservices/jobs/{id}`. |
+| `migration-scan` | Run a source inventory scan and read the resulting scan artifact through typed SDK models. | `POST /api/v1/admin/import/scan` (supported source kinds follow the server import contract). |
 | `geoserver-dry-run` | Generate a GeoServer dry-run apply-plan artifact and validate the typed artifact model. | `POST /api/v1/admin/import/geoserver/start` with dry-run options. |
 | `migration-evidence` | Retrieve the artifact chain (inventory, manifest, parity evidence) and deserialize via SDK models. | Server migration artifact models exposed through `Honua.Sdk.Abstractions.Migration.*` equivalents per language. |
 
@@ -69,24 +68,9 @@ and the additional artifact fields.
         "linked_ticket": "honua-sdk-js#105",
         "artifact": {
           "kind": "scan",
-          "source_kind": "arcgis-feature-service",
           "scan_id": "scan-2026-05-20-abc123",
           "artifact_path": "results/sdk-js/migration-scan.json",
           "duration_ms": 4821
-        }
-      },
-      {
-        "surface": "arcgis-import",
-        "status": "supported",
-        "passed": true,
-        "linked_ticket": "honua-sdk-js#105",
-        "artifact": {
-          "kind": "import-job",
-          "job_id": "job-2026-05-20-def456",
-          "terminal_status": "succeeded",
-          "artifact_path": "results/sdk-js/arcgis-import.json",
-          "poll_count": 7,
-          "duration_ms": 18204
         }
       },
       {
@@ -138,7 +122,6 @@ shape, given the current `HONUA_SDK_SEED_PROFILE`
   "linked_ticket": "honua-sdk-js#105",
   "artifact": {
     "kind": "scan",
-    "source_kind": "arcgis-feature-service",
     "scan_id": "<scan-id-from-server>",
     "artifact_path": "results/sdk-js/migration-scan.json",
     "duration_ms": 0

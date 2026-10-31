@@ -234,7 +234,6 @@ the existing evidence pipelines.
 | Lane | Job | PR-blocking | Snapshot policy |
 |---|---|---|---|
 | OpenLayers | `js-integration-tests` (`.github/workflows/ci.yml`) | yes | `updateSnapshots: 'none'` (CI), `'missing'` (local) |
-| REST-enabled Leaflet client | `esri-leaflet-browser-tests` (`.github/workflows/ci.yml`) | yes | `updateSnapshots: 'none'` (CI), `'missing'` (local) |
 | PyQGIS | `pyqgis-client-compat-nightly` (`.github/workflows/pyqgis-client-compat-nightly.yml`) | nightly (not PR-blocking) | structural assertion + envelope validation |
 
 The PyQGIS lane stays nightly because its runtime budget (QGIS

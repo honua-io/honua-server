@@ -132,7 +132,6 @@ More help: [troubleshooting](../deploy/troubleshooting.md).
 - [Import from GeoServices REST services](import-from-geoservices-rest.md) — import from a live service instead of a file.
 - [Publish rasters](publish-rasters.md) — GeoTIFF and other raster imports use a separate endpoint.
 
-
 ## Replacing tables and legacy imports
 
 Imports mark newly created tables with the database comment `honua:import-owned:v1`.

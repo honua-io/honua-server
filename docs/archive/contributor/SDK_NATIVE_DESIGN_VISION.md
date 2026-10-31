@@ -300,7 +300,7 @@ The SDK and server currently speak JSON exclusively for feature queries. MVT til
 
 #### Tier A: `f=pbf` on Feature Query Responses (GeoServices REST-Compatible)
 
-**What:** Add `f=pbf` as a supported output format on the existing `/query` REST endpoint, using the published GeoServices REST protobuf schema ([source](https://github.com/Esri/arcgis-pbf)).
+**What:** Add `f=pbf` as a supported output format on the existing `/query` REST endpoint, using the published GeoServices REST protobuf schema .
 
 **Why:** JavaScript GIS clients request `f=pbf` by default when the server advertises it in `supportedQueryFormats`. Implementing it means clients that discover Honua endpoints can negotiate binary transfer without SDK changes.
 

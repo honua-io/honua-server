@@ -1,12 +1,7 @@
 # Portal Facade Seed & Bootstrap Contract
 
-_Epic #1240 (ArcGIS Portal/Sharing facade) · child #1372 (conformance) · child #1373 (client repoint)._
-
 This document is the **server-owned contract** that downstream consumers — the
-`honua-sdk-js` `@honua/sdk-esri-compat` repoint path, the `honua-sdk-dotnet` /
-`honua-sdk-python` clients, the `arcgis-stub` `portal` conformance lane, and the
-licensed ArcGIS Pro / Field Maps evidence runs — target when validating that a
-packaged Esri client can discover and open Honua content as Portal items.
+`honua-sdk-python` clients, the `geoservices-rest-stub` `portal` conformance lane, and the
 
 Per the repo ownership split (`AGENTS.md`): **honua-server owns the seed +
 bootstrap contract and the release-proof interop; the SDK repos own the
@@ -42,18 +37,15 @@ spanning the access ladder:
 | `portal_private` | `allowAnonymous: false`, `allowedRoles: [portal-admin]` | `private` | ❌ hidden | ❌ hidden | ✅ visible |
 
 > **Note on Metadata v2 fan-out.** `seed_metadata_v2_compat_snapshot()` projects
-> each seeded service into `feature`/`map`/`image` Esri service nodes (item ids
 > `svc-<name>-feature`, `-map`, `-image`). Consumers should therefore be
 > **data-driven**: discover item ids via `search`, do not hard-code them.
 
 ## Bootstrap / discovery sequence (the contract SDK CI targets)
 
 A client repoints by pointing at `<base>/sharing/rest` and following the same
-sequence ArcGIS Pro "Add Portal" and Field Maps issue:
 
 1. `GET /sharing/rest/info?f=json`
    → `{ "authInfo": { "isTokenBasedSecurity": true, "tokenServicesUrl": "<base>/sharing/rest/generateToken" } }`
-   (no `currentVersion`/`fullVersion` — Honua does not impersonate an ArcGIS release).
 2. `GET /sharing/rest/portals/self?f=json`
    → `{ "id", "isPortal": true, "name", "portalName", "user": <block|null> }`.
    The `user` block is populated only when a token authenticates the request.
@@ -74,26 +66,18 @@ sequence ArcGIS Pro "Add Portal" and Field Maps issue:
 
 `PortalItem` shape: `id, owner, created(ms), modified(ms), type("Feature Service"|"Map Service"|"Image Service"), typeKeywords[], title, snippet, description, tags[], url, access("public"|"org"|"private"), extent([[xmin,ymin],[xmax,ymax]]), spatialReference, culture, numComments, numViews`.
 
-Errors follow the Esri envelope `{ "error": { "code", "message", "details" } }`.
-
 ## Conformance & evidence
 
-- **Automated (unlicensed):** evidence identifier `arcgis-stub`, envelope
-  `tests/baselines/client-compat/arcgis-stub/arcgis-stub-portal.cert.json`,
+- **Automated (unlicensed):** evidence identifier `geoservices-rest-stub`, envelope
+  `tests/baselines/client-compat/geoservices-rest-stub/geoservices-rest-stub-portal.cert.json`,
   exercises the sequence above as CERT-PRTL-\* — see the
-  [certification matrix](CROSS_CLIENT_CERTIFICATION_MATRIX.md#arcgis-portal-facade-lane-arcgis-stub-portal-protocol).
 - **Contract/integration (server):**
   `tests/dotnet/Honua.Server.Tests/Features/Sharing/PortalFacadeDiscoveryContractTests.cs`
-  asserts the tiered projection and Esri wire shapes in-process.
-- **Desktop client:** ArcGIS Pro / Field Maps compatibility is nominative. The
-  evidence identifier is `client_lane: "desktop-arcgis"`. Receipts stay in
-  private `honua-esri-compat`; see
   [`ARCGIS_PRO_LICENSED_EVIDENCE.md`](../internal/evidence/ARCGIS_PRO_LICENSED_EVIDENCE.md).
   No desktop receipt is linked yet (#1372/#1096).
 
 ## Consuming repos
 
-- `honua-sdk-js` (`@honua/sdk-esri-compat`) — Portal repoint client
   ([honua-sdk-js#383](https://github.com/honua-io/honua-sdk-js/pull/383)) and
   current×current `sdk-server-compatibility` coverage (#2614).
 - `honua-sdk-dotnet` — typed Portal repoint path tracked in

@@ -55,5 +55,4 @@ agent.
 Regression checks allow only these two specifically receipted GUI exclusion
 resolutions and keep the three unperformed UI operations blocked. Historical
 exclusion citations and review states are retained. The
-[previous deeper audit](client-exclusion-followup-2026-09-20.md) describes the
 earlier SDK-only stage and its provisional exclusions.

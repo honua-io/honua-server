@@ -6,14 +6,7 @@ object. Its `features` contain `attributes.OBJECTID`, `attributes.Name`, and, wh
 `id`/`name`/`footprint` records is not this contract. Clients that consumed Honua's
 previous array should read `catalogItems.features` and its feature attributes.
 
-The wire shape is specified by the
-[GeoServices REST identify reference](https://developers.arcgis.com/rest/services-reference/enterprise/identify-image-service/)
-and was checked on 2026-09-28 against two public GeoServices REST sample services:
-
-- [NLCDLandCover2001](https://sampleserver6.arcgisonline.com/arcgis/rest/services/NLCDLandCover2001/ImageServer),
-  used by the [ImageryLayer JavaScript sample](https://developers.arcgis.com/javascript/latest/sample-code/layers-imagerylayer/).
-- [CharlotteLAS](https://sampleserver6.arcgisonline.com/arcgis/rest/services/CharlotteLAS/ImageServer),
-  used by the [Image Service REST reference](https://developers.arcgis.com/rest/services-reference/enterprise/image-service/).
+The response follows the GeoServices REST identify contract.
 
 For each service, request its metadata, use the center of its own extent with the
 declared spatial reference, and request `identify` with `f=json`,
