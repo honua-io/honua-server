@@ -144,6 +144,19 @@ public sealed class DeployWorkflowReconcilerLeaseContentionTests
         backend.ActivationCount.Should().Be(0);
     }
 
+    [Fact]
+    public async Task ProviderRollbackRecommendation_DoesNotWaitForTelemetry()
+    {
+        var store = new InMemoryWorkflowOperationStore();
+        var backend = new CheckpointBackend(store) { RecommendRollback = true };
+        var operation = CreateOperation() with { CurrentPhase = ICheckpointedDeployBackend.ActivatedPhase };
+        await store.TryCreateAsync(operation);
+        var reconciler = CreateReconciler(store, backend, new FailingTelemetryEvaluator());
+        await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
+        backend.RollbackCount.Should().Be(1);
+        (await store.GetAsync(operation.OperationId))!.Status.Should().Be(WorkflowOperationStatus.RollbackRequested);
+    }
+
     // ---- helpers ---------------------------------------------------------
 
     private static DeployWorkflowReconciler CreateReconciler(
@@ -256,6 +269,8 @@ public sealed class DeployWorkflowReconcilerLeaseContentionTests
     private sealed class CheckpointBackend(InMemoryWorkflowOperationStore store) : IDeployBackend, ICheckpointedDeployBackend
     {
         public bool InterruptPreparation { get; init; }
+        public bool RecommendRollback { get; init; }
+        public int RollbackCount { get; private set; }
         public int PreparationCount { get; private set; }
         public int ActivationCount { get; private set; }
         public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -282,8 +297,19 @@ public sealed class DeployWorkflowReconcilerLeaseContentionTests
         public Task<DeployBackendCapabilities> GetCapabilitiesAsync(CancellationToken cancellationToken = default) => Task.FromResult(new DeployBackendCapabilities());
         public Task<DeployPlan> PlanAsync(DeployOperationSpec spec, CancellationToken cancellationToken = default) => Task.FromResult(new DeployPlan { IsReadyToSubmit = true });
         public Task<DeploySubmissionResult> StartAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<DeployObservation> ObserveAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<DeployObservation> RollbackAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<DeployObservation> ObserveAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken = default)
+            => Task.FromResult(new DeployObservation { Status = WorkflowOperationStatus.Reconciling, RollbackRecommended = RecommendRollback });
+        public Task<DeployObservation> RollbackAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken = default)
+        {
+            RollbackCount++;
+            return Task.FromResult(new DeployObservation { Status = WorkflowOperationStatus.RollbackRequested });
+        }
+    }
+
+    private sealed class FailingTelemetryEvaluator : IDeployTelemetrySignalEvaluator
+    {
+        public Task<DeployTelemetryDecision?> EvaluateAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException("Telemetry is unavailable.");
     }
 
     private sealed class NullTelemetryEvaluator : IDeployTelemetrySignalEvaluator

@@ -382,9 +382,12 @@ internal sealed partial class DeployWorkflowReconciler(
             var stagedBeforeExposure = stagesCandidateWithoutTraffic &&
                 current.Deploy is { TrafficExposedAt: null, Protection: null } &&
                 current.Status is WorkflowOperationStatus.Submitted or WorkflowOperationStatus.Reconciling;
-            var telemetryDecision = stagedBeforeExposure
-                ? await telemetrySignalEvaluator.EvaluateStagedCandidateAsync(current, promotionRecommended, cancellationToken).ConfigureAwait(false)
-                : await telemetrySignalEvaluator.EvaluateAsync(current, cancellationToken).ConfigureAwait(false);
+            // Provider-detected failure must not wait on telemetry before restoring traffic.
+            var telemetryDecision = !string.IsNullOrWhiteSpace(rollbackReason)
+                ? null
+                : stagedBeforeExposure
+                    ? await telemetrySignalEvaluator.EvaluateStagedCandidateAsync(current, promotionRecommended, cancellationToken).ConfigureAwait(false)
+                    : await telemetrySignalEvaluator.EvaluateAsync(current, cancellationToken).ConfigureAwait(false);
             if (telemetryDecision != null)
             {
                 // Persist any parameter updates the evaluator carried back (e.g. the anti-flap
