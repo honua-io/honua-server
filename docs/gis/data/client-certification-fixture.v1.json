@@ -568,7 +568,7 @@
     "mapAndDashboard": {
       "status": "partial",
       "source": "tests/seed/portal-compat.yaml",
-      "description": "The Portal/Sharing facade projects the three tiered services as Feature/Map/Image Service items, which is the map-catalogue input the 2026.1 arcgis-stub lane consumes.",
+      "description": "The Portal/Sharing facade projects the three tiered services as Feature/Map/Image Service items, which is the map-catalogue input the 2026.1 geoservices-stub lane consumes.",
       "gapId": "portal-map-and-dashboard-items-absent"
     }
   },
@@ -3074,8 +3074,8 @@
       "notes": "The cli lane's OData sub-surface is certified by an in-process xUnit producer bound to tests/seed/odata.yaml, not to this manifest; see gap odata-surface-uses-separate-seed."
     },
     {
-      "laneId": "arcgis-stub",
-      "client": "Esri REST reference client stub",
+      "laneId": "geoservices-stub",
+      "client": "GeoServices REST reference stub",
       "status": "active",
       "requiredTier": "nightly",
       "protocols": [
@@ -3120,7 +3120,7 @@
               "CERT-CONN-02"
             ]
           },
-          "notes": "ARCGIS_STUB_SERVICE_NAME/ARCGIS_STUB_LAYER_ID point this lane at browser_compat layer 2000, not the canonical vector service; see gap active-lanes-bind-render-fixture-not-canonical-vector."
+          "notes": "GEOSERVICES_STUB_SERVICE_NAME/GEOSERVICES_STUB_LAYER_ID point this lane at browser_compat layer 2000, not the canonical vector service; see gap active-lanes-bind-render-fixture-not-canonical-vector."
         },
         {
           "protocol": "mapserver",
@@ -4155,7 +4155,7 @@
     {
       "id": "active-lanes-bind-render-fixture-not-canonical-vector",
       "area": "lane-binding",
-      "reason": "Two of the five active lanes run their query, schema, and geometry facets against browser_compat layer 2000 rather than the canonical vector service: the js lane through HONUA_SERVICE_ID/HONUA_LAYER_ID and the arcgis-stub lane through ARCGIS_STUB_SERVICE_NAME/ARCGIS_STUB_LAYER_ID. That layer holds three point features and only objectid, name, and shape, so those lanes do not exercise the canonical attribute-type spread, the null geometry, or the ten-feature pagination shape.",
+      "reason": "Two of the five active lanes run their query, schema, and geometry facets against browser_compat layer 2000 rather than the canonical vector service: the js lane through HONUA_SERVICE_ID/HONUA_LAYER_ID and the geoservices-stub lane through GEOSERVICES_STUB_SERVICE_NAME/GEOSERVICES_STUB_LAYER_ID. That layer holds three point features and only objectid, name, and shape, so those lanes do not exercise the canonical attribute-type spread, the null geometry, or the ten-feature pagination shape.",
       "trackingIssue": "https://github.com/honua-io/honua-server/issues/3392"
     },
     {

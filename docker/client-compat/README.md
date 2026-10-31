@@ -183,3 +183,12 @@ docker compose -f docker/client-compat/compose.yml --profile multidim-fixture do
 
 The lane's command must produce one or more `.cert.json` envelopes under
 `/output` so the baseline diff can compare deterministically.
+
+### Lane identifier transition
+
+The REST stub lane and its Compose profile are now `geoservices-stub`; callers
+must update their lane selection and use the `GEOSERVICES_STUB_` environment
+settings. The previous profile is retired and Compose rejects it. The runner
+rejects retired environment settings rather than silently dropping credentials
+or timeout overrides. Historical baseline envelopes retain their original
+identity and are mapped only for baseline comparison; they are not new receipts.

@@ -64,7 +64,7 @@ def test_geoservices_stub_envelopes_are_neutral_and_never_claim_desktop_renderin
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    results = module._finalize({})
+    results = module._finalize({key: module._new_result(key, "pass") for key in module.DESKTOP_ONLY})
     for protocol in ("featureserver", "mapserver"):
         envelope = json.loads(module._write_envelope(protocol, results, "test").read_text())
         assert envelope["client_lane"] == "geoservices-stub"
@@ -73,3 +73,17 @@ def test_geoservices_stub_envelopes_are_neutral_and_never_claim_desktop_renderin
     portal_results = {key: module._new_result(key, "skip") for key in module.PORTAL_IDS}
     portal = json.loads(module._write_portal_envelope(portal_results, "test").read_text())
     assert portal["client_lane"] == "geoservices-stub" and portal["protocol"] == "portal"
+
+
+def test_retired_stub_environment_fails_closed(monkeypatch):
+    import importlib.util
+    import sys
+    import types
+    import pytest
+
+    monkeypatch.setitem(sys.modules, "httpx", types.ModuleType("httpx"))
+    monkeypatch.setenv("ARC" + "GIS_STUB_TIMEOUT", "1")
+    spec = importlib.util.spec_from_file_location("retired_stub_test", ROOT / "docker/client-compat/geoservices-stub/stub_runner.py")
+    assert spec and spec.loader
+    with pytest.raises(SystemExit, match="Retired stub environment settings"):
+        spec.loader.exec_module(importlib.util.module_from_spec(spec))

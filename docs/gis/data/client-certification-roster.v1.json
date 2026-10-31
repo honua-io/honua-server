@@ -57,9 +57,9 @@
       "id": "registry-lane-absent-from-artifact",
       "delta": 1,
       "affectedEntryIds": [
-        "arcgis-stub"
+        "geoservices-stub"
       ],
-      "note": "client-certification-matrix.v1.json registers an active `arcgis-stub` lane with committed evidence for featureserver, mapserver, and portal. The artifact has no row for it because it folded the stub into the ArcGIS Pro harness column. It is a distinct identity here because it is a stub harness, not a shipped client, and must never be read as certifying ArcGIS Pro."
+      "note": "client-certification-matrix.v1.json registers an active `geoservices-stub` lane. Historical baseline evidence was recorded under its retired lane identifier; new-identity receipts remain pending. The artifact has no row for it because it folded the stub into the ArcGIS Pro harness column. It is a distinct identity here because it is a stub harness, not a shipped client, and must never be read as certifying ArcGIS Pro."
     },
     {
       "id": "registry-sublane-absent-from-artifact",
@@ -1103,8 +1103,8 @@
       "notes": "The compliance receipt is currently 1137/1138; WFS 2.0 basic is 166/167 because multi-layer rollbackOnFailure=true transactions are rejected. Keeps its specification-mandated fixtures under the governed fixturePolicy exception and is never relabelled as having used the canonical client fixture."
     },
     {
-      "id": "arcgis-stub",
-      "displayName": "ArcGIS REST + Portal facade stub client",
+      "id": "geoservices-stub",
+      "displayName": "GeoServices REST + Portal facade stub",
       "family": "esri-harness",
       "tier": 0,
       "status": "active",
@@ -1159,9 +1159,9 @@
         ],
         "note": "Converges on the single logical fixture + server-config revision tracked by #3393."
       },
-      "evidenceProducer": "docker/client-compat/arcgis-stub",
+      "evidenceProducer": "docker/client-compat/geoservices-stub",
       "laneBinding": {
-        "matrixLaneId": "arcgis-stub",
+        "matrixLaneId": "geoservices-stub",
         "role": "lane"
       },
       "owningIssue": "https://github.com/honua-io/honua-server/issues/3434",

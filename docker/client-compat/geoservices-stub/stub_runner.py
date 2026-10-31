@@ -19,6 +19,10 @@ from pathlib import Path
 
 import httpx
 
+# Reject retired settings instead of silently dropping credentials or timeout overrides.
+if any(key.startswith("ARC" + "GIS_STUB_") for key in os.environ):
+    raise SystemExit("Retired stub environment settings are unsupported; migrate to GEOSERVICES_STUB_*.")
+
 BASE_URL = os.environ["HONUA_BASE_URL"].rstrip("/")
 SERVICE_NAME = os.environ["GEOSERVICES_STUB_SERVICE_NAME"]
 LAYER_ID = os.environ["GEOSERVICES_STUB_LAYER_ID"]
@@ -154,10 +158,8 @@ def _write_envelope(protocol: str, results: dict[str, dict], run_id: str) -> Pat
 def _finalize(results: dict[str, dict]) -> dict[str, dict]:
     """Fill in desktop-only and unhandled CERT-* IDs to keep a 24-row envelope."""
     for cid in DESKTOP_ONLY:
-        results.setdefault(cid, _new_result(
-            cid, "skip",
-            notes="evidence id desktop-arcgis",
-        ))
+        # This REST-only runner can never certify desktop rendering.
+        results[cid] = _new_result(cid, "skip", notes="desktop rendering requires separate evidence")
     for cid in CORE_IDS:
         if cid in results:
             continue

@@ -1375,7 +1375,7 @@
       ]
     },
     {
-      "id": "arcgis-stub",
+      "id": "geoservices-stub",
       "requiredTier": "nightly",
       "automated": [
         "CERT-CONN-*",
