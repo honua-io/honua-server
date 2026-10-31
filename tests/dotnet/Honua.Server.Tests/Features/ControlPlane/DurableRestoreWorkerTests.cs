@@ -108,6 +108,19 @@ public sealed class DurableRestoreWorkerTests
         await store.DidNotReceive().TryCreateAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
     }
 
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Reconcile_PriorImageAppliesCompatibleMigrations_CompletesReadback()
+    {
+        var harness = new Harness("awaiting-deploy");
+        harness.Deployment = harness.Deployment with { Status = WorkflowOperationStatus.Succeeded };
+        harness.Revisions.MaxSchema("prior").Returns(141);
+        harness.Probe.ProbeAsync("db.internal", Arg.Any<CancellationToken>()).Returns(
+            new SchemaJournalSnapshot(true, [new AppliedSchemaMigration(140, "expand", 0), new AppliedSchemaMigration(141, "contract", 0)]));
+        await harness.Worker.ReconcileAsync(harness.RestoreId, CancellationToken.None);
+        Assert.Equal(WorkflowOperationStatus.Succeeded, harness.Restore.Status);
+    }
+
     private sealed class Harness
     {
         public string RestoreId => "restore-test";
@@ -117,6 +130,8 @@ public sealed class DurableRestoreWorkerTests
         public WorkflowOperationRecord Restore { get; private set; }
         public WorkflowOperationRecord Deployment { get; set; }
         public DurableRestoreWorker Worker { get; }
+        public IRevisionSchemaCatalog Revisions { get; } = Substitute.For<IRevisionSchemaCatalog>();
+        public IRestoredSchemaProbe Probe { get; } = Substitute.For<IRestoredSchemaProbe>();
 
         public Harness(string phase)
         {
@@ -156,14 +171,12 @@ public sealed class DurableRestoreWorkerTests
                 Restore = call.Arg<WorkflowOperationRecord>() with { Version = Restore.Version + 1 };
                 return true;
             });
-            var revisions = Substitute.For<IRevisionSchemaCatalog>();
-            revisions.MaxSchema("prior").Returns(140);
-            var probe = Substitute.For<IRestoredSchemaProbe>();
-            probe.ProbeAsync(host, Arg.Any<CancellationToken>()).Returns(new SchemaJournalSnapshot(true, [new AppliedSchemaMigration(140, "expand", 0)]));
+            Revisions.MaxSchema("prior").Returns(140);
+            Probe.ProbeAsync(host, Arg.Any<CancellationToken>()).Returns(new SchemaJournalSnapshot(true, [new AppliedSchemaMigration(140, "expand", 0)]));
             Secrets.ReadHostAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(host);
             Customer.SucceededAsync(Arg.Any<CancellationToken>()).Returns(true);
             Audit.AppendAsync(Arg.Any<PreMigrationRestoreAuditLine>(), Arg.Any<CancellationToken>()).Returns(true);
-            var verifier = new DurableRestoreCompletionVerifier(probe, revisions, Customer, Audit, Secrets,
+            var verifier = new DurableRestoreCompletionVerifier(Probe, Revisions, Customer, Audit, Secrets,
                 Options.Create(new RestoreCellOptions { ConnectionSecretId = "honua-cert-db" }));
             var workflow = new DeployWorkflowService(Substitute.For<IDeployTargetRegistry>(), [store], [],
                 Substitute.For<IOperatorApprovalEvaluator>(), NullLogger<DeployWorkflowService>.Instance);

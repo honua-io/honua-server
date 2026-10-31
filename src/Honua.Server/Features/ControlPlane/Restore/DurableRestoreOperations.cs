@@ -108,6 +108,8 @@ internal sealed partial class DurableRestoreWorker(
     IComposeExecutorClient? compose = null) : BackgroundService
 {
     private static readonly TimeSpan Lease = TimeSpan.FromMinutes(2);
+    private const string CellOwnerId = "restore-cell-exclusive-owner";
+    private static readonly TimeSpan OwnerRetention = TimeSpan.FromDays(365);
     private readonly string _owner = $"restore:{Environment.MachineName}:{Guid.NewGuid():N}";
 
     /// <summary>Reconciles one checkpoint. Only the lease owner may advance it.</summary>
@@ -164,6 +166,7 @@ internal sealed partial class DurableRestoreWorker(
                 string.Equals(target.TargetId, payload.TargetId, StringComparison.Ordinal)) == true;
             if (local)
             {
+                if (!await ClaimCellAsync(id, lostLease.Token).ConfigureAwait(false)) return;
                 await StartLocalAsync(record, payload, lostLease.Token).ConfigureAwait(false);
                 return;
             }
@@ -172,6 +175,7 @@ internal sealed partial class DurableRestoreWorker(
                 await FailAsync(record, PreMigrationRestoreCodes.RestoreIncomplete, lostLease.Token).ConfigureAwait(false);
                 return;
             }
+            if (!await ClaimCellAsync(id, lostLease.Token).ConfigureAwait(false)) return;
             var acting = record with
             {
                 Status = WorkflowOperationStatus.Reconciling,
@@ -279,6 +283,40 @@ internal sealed partial class DurableRestoreWorker(
             string.Equals(observed.RunningImage, payload.DesiredRevision, StringComparison.Ordinal);
         await FinishAsync(record, valid ? WorkflowOperationStatus.Succeeded : WorkflowOperationStatus.Failed,
             valid ? null : PreMigrationRestoreCodes.RestoreIncomplete, cancellationToken).ConfigureAwait(false);
+    }
+
+    // A short Redis lease serializes updates to the durable owner record. The owner survives
+    // process replacement and remains held until the full deploy and readback have succeeded.
+    // Failed or missing owners require operator intervention rather than another restore.
+    internal async Task<bool> ClaimCellAsync(string id, CancellationToken cancellationToken)
+    {
+        if (!await store.TryAcquireLeaseAsync(CellOwnerId, _owner, Lease, cancellationToken).ConfigureAwait(false)) return false;
+        try
+        {
+            var owner = await store.GetAsync(CellOwnerId, cancellationToken).ConfigureAwait(false);
+            if (owner is null)
+            {
+                var now = DateTimeOffset.UtcNow;
+                return await store.TryCreateAsync(new WorkflowOperationRecord
+                {
+                    OperationId = CellOwnerId, Kind = WorkflowOperationKind.PreMigrationRestore,
+                    Status = WorkflowOperationStatus.Succeeded, CreatedAt = now, UpdatedAt = now,
+                    CurrentPhase = id
+                }, OwnerRetention, cancellationToken).ConfigureAwait(false);
+            }
+            if (string.Equals(owner.CurrentPhase, id, StringComparison.Ordinal)) return true;
+            if (!string.IsNullOrEmpty(owner.CurrentPhase))
+            {
+                var previous = await store.GetAsync(owner.CurrentPhase, cancellationToken).ConfigureAwait(false);
+                if (previous?.Status != WorkflowOperationStatus.Succeeded) return false;
+            }
+            return await store.TrySetAsync(owner with { CurrentPhase = id, UpdatedAt = DateTimeOffset.UtcNow },
+                OwnerRetention, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            await store.ReleaseLeaseAsync(CellOwnerId, _owner, CancellationToken.None).ConfigureAwait(false);
+        }
     }
 
     private async Task CompleteAsync(WorkflowOperationRecord record, CancellationToken cancellationToken)
@@ -419,7 +457,7 @@ internal sealed class DurableRestoreCompletionVerifier(
         var observed = await schemaProbe.ProbeAsync(host, cancellationToken).ConfigureAwait(false);
         var max = observed.Applied.Count == 0 ? (int?)null : observed.Applied.Max(item => item.Number);
         var priorMax = revisions.MaxSchema(payload.DesiredRevision) ?? -1;
-        if (!observed.Known || !ReaderIncompatibleRestorePolicy.SchemaMatchesBackup(expectedSchema, max, observed.Applied, priorMax)
+        if (!observed.Known || !(max >= expectedSchema && max <= priorMax && observed.Applied.All(item => item.Number <= priorMax))
             || !await customerProbe.SucceededAsync(cancellationToken).ConfigureAwait(false))
             return PreMigrationRestoreCodes.ReadbackIncomplete;
         var confirmedHost = await secrets.ReadHostAsync(options.Value.ConnectionSecretId, cancellationToken).ConfigureAwait(false);
