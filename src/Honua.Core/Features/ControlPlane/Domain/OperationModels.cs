@@ -568,6 +568,10 @@ public sealed record DeployOperationSpec
     /// </summary>
     public bool RequiresApproval { get; init; }
 
+    /// <summary>Verified recovery selection carried from a sealed rollback proposal, never from backend parameters.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? PreMigrationBackupId { get; init; }
+
     /// <summary>
     /// Opaque backend-specific parameters.
     /// </summary>

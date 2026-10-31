@@ -61,6 +61,11 @@ internal sealed class DeployOperationExecutor(DeployWorkflowService deployWorkfl
             $"revision: {planResult.Spec.CurrentRevision ?? "(unknown)"} -> {planResult.Spec.DesiredRevision}",
         };
 
+        if (payload.Rollback && !string.IsNullOrWhiteSpace(payload.BackupId))
+        {
+            diff.Add($"backup: {payload.BackupId}");
+        }
+
         return new OperationProposalPlan
         {
             Summary = $"Deploy {payload.DesiredRevision} to {planResult.Target.TargetId}",
@@ -98,7 +103,8 @@ internal sealed class DeployOperationExecutor(DeployWorkflowService deployWorkfl
                 submitImmediately: true,
                 payload.ParameterOverrides,
                 principal: null,
-                cancellationToken)
+                cancellationToken,
+                preMigrationBackupId: payload.Rollback ? payload.BackupId : null)
             .ConfigureAwait(false);
 
         // Approval persists the workflow and returns before Start when the target requires it.

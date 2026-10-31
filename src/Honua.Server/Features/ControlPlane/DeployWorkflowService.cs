@@ -347,7 +347,8 @@ internal sealed partial class DeployWorkflowService
         bool submitImmediately,
         IReadOnlyDictionary<string, string>? parameterOverrides,
         ClaimsPrincipal? principal = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? preMigrationBackupId = null)
     {
         EnsureDurableStoreConfigured();
 
@@ -375,7 +376,8 @@ internal sealed partial class DeployWorkflowService
             currentRevision,
             priority,
             submitImmediately,
-            parameterOverrides);
+            parameterOverrides,
+            preMigrationBackupId);
 
         var operation = new WorkflowOperationRecord
         {
@@ -409,7 +411,7 @@ internal sealed partial class DeployWorkflowService
                 PartitionKey = $"{planningResult.Target.Environment}:{planningResult.Target.TargetId}",
                 RequiresExclusiveLease = true
             },
-            Deploy = planningResult.Spec
+            Deploy = planningResult.Spec with { PreMigrationBackupId = preMigrationBackupId }
         };
 
         var created = await _workflowStore!.TryCreateAsync(operation, cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -1141,7 +1143,8 @@ internal sealed partial class DeployWorkflowService
         string? currentRevision,
         OperationPriority priority,
         bool submitImmediately,
-        IReadOnlyDictionary<string, string>? parameterOverrides)
+        IReadOnlyDictionary<string, string>? parameterOverrides,
+        string? preMigrationBackupId)
     {
         var normalizedParameters = parameterOverrides == null
             ? Array.Empty<DeployRequestFingerprintParameter>()
@@ -1168,6 +1171,7 @@ internal sealed partial class DeployWorkflowService
                 CurrentRevision = currentRevision?.Trim(),
                 Priority = priority.ToString(),
                 SubmitImmediately = submitImmediately,
+                PreMigrationBackupId = preMigrationBackupId,
                 Parameters = normalizedParameters
             },
             DeployControlJsonContext.Default.DeployRequestFingerprintPayload);
@@ -1371,6 +1375,10 @@ internal sealed partial class DeployWorkflowService
 
 internal sealed record DeployRequestFingerprintPayload
 {
+    /// <summary>Sealed backup selection. Omission preserves fingerprints of existing forward deploys.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? PreMigrationBackupId { get; init; }
+
     public required string TargetId { get; init; }
     public string? Backend { get; init; }
     public string? TargetKind { get; init; }

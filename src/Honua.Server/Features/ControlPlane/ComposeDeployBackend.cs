@@ -109,6 +109,7 @@ internal sealed partial class ComposeDeployBackend(
                     {
                         Op = op,
                         Image = desired,
+                        BackupId = deploy.PreMigrationBackupId,
                         RequestId = operation.OperationId
                     },
                     cancellationToken)
@@ -162,6 +163,7 @@ internal sealed partial class ComposeDeployBackend(
                     {
                         Op = "rollback",
                         Image = prior,
+                        BackupId = operation.Deploy?.PreMigrationBackupId,
                         RequestId = operation.OperationId
                     },
                     cancellationToken)

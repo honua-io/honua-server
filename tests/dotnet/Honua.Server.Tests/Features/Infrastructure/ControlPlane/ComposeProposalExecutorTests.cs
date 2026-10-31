@@ -15,6 +15,7 @@ using Honua.TestKit.Attributes;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using NSubstitute;
 using Xunit;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
@@ -279,6 +280,54 @@ public sealed class ComposeProposalExecutorTests
             files);
     }
 
+    [UnitTest]
+    public async Task LocalComposeRollback_PreservesTheSealedBackupAndRejectsAnIdempotencyChange()
+    {
+        var release = Digest('a');
+        var prior = Digest('b');
+        var backup = "backup-" + new string('c', 32);
+        var client = new RecordingClient { Response = Ready(prior) };
+        var store = new MemoryWorkflows();
+        var service = new DeployWorkflowService(
+            new MemoryTargets(new DeployTargetDefinition
+            {
+                TargetId = "compose-local", TargetKind = DeployTargetKind.LocalCompose,
+                Backend = ComposeDeployBackend.AdapterBackendName, Environment = "local",
+                TargetName = "honua", ArtifactReference = release, RequiresApproval = true
+            }),
+            [store], [Backend(client, release, "/tmp/compose-test.sock")],
+            new NotRequiredApproval(), NullLogger<DeployWorkflowService>.Instance);
+        var monitor = Substitute.For<IOptionsMonitor<ControlPlaneOptions>>();
+        monitor.CurrentValue.Returns(new ControlPlaneOptions
+        {
+            DeployTargets = [new DeployTargetOptions { TargetId = "compose-local", TargetKind = DeployTargetKind.LocalCompose }]
+        });
+        // The cloud coordinator must not run for a project whose real journal is owned by the sidecar.
+        var executor = new RestoreGuardedDeployOperationExecutor(new DeployOperationExecutor(service), null!, controlPlane: monitor);
+        var payload = new DeployExecutionPayload
+        {
+            TargetId = "compose-local", DesiredRevision = prior, CurrentRevision = release,
+            Rollback = true, BackupId = backup
+        };
+        var request = new OperationGatewayRequest
+        {
+            Kind = OperationClass.Deploy, RequestedBy = "agent", ApprovedBy = "approver",
+            IdempotencyKey = "compose-sealed-backup", ExecutionPayload = payload.Serialize()
+        };
+        var plan = await executor.PlanAsync(request);
+        Assert.NotNull(plan);
+        Assert.Empty(plan.BlockingReasons);
+        var id = await executor.ExecuteAsync(request, payload.Serialize());
+        Assert.NotNull(id);
+        var operation = await service.GetAsync(id);
+        Assert.Equal(backup, operation!.Deploy!.PreMigrationBackupId);
+        Assert.Equal(backup, client.Requests.Single(value => value.Op == "rollback").BackupId);
+
+        await Assert.ThrowsAsync<ResourceConflictException>(() => executor.ExecuteAsync(
+            request, (payload with { BackupId = "backup-" + new string('d', 32) }).Serialize()));
+        Assert.Single(client.Requests.Where(value => value.Op == "rollback"));
+    }
+
     private static ComposeExecutorOptions ValidOptions(string root, string release)
     {
         var project = Path.Combine(root, "project");
@@ -373,9 +422,12 @@ public sealed class ComposeProposalExecutorTests
 
         public ComposeExecutorResponse Response { get; set; } = new();
 
+        public List<ComposeExecutorRequest> Requests { get; } = [];
+
         public Task<ComposeExecutorResponse> ExecuteAsync(ComposeExecutorRequest request, CancellationToken cancellationToken)
         {
             Ops.Add(request.Op);
+            Requests.Add(request);
             var running = string.Equals(request.Op, "status", StringComparison.Ordinal)
                 ? Response.RunningImage
                 : request.Image ?? Response.RunningImage;

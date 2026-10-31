@@ -19,7 +19,8 @@ internal sealed class RestoreGuardedDeployOperationExecutor(
     DeployOperationExecutor inner,
     PreMigrationRestoreCoordinator coordinator,
     IPreMigrationRestoreAudit? audit = null,
-    IOptions<RestoreCellOptions>? restoreOptions = null) : IOperationExecutor
+    IOptions<RestoreCellOptions>? restoreOptions = null,
+    IOptionsMonitor<ControlPlaneOptions>? controlPlane = null) : IOperationExecutor
 {
     public OperationClass OperationClass => OperationClass.Deploy;
 
@@ -30,7 +31,7 @@ internal sealed class RestoreGuardedDeployOperationExecutor(
     {
         var plan = await inner.PlanAsync(request, cancellationToken).ConfigureAwait(false);
         var payload = DeployExecutionPayload.Parse(request.ExecutionPayload);
-        if (plan is null || payload is not { Rollback: true })
+        if (plan is null || payload is not { Rollback: true } || IsLocalCompose(payload))
         {
             return plan;
         }
@@ -68,7 +69,7 @@ internal sealed class RestoreGuardedDeployOperationExecutor(
         CancellationToken cancellationToken = default)
     {
         var payload = DeployExecutionPayload.Parse(executionPayload);
-        if (payload is not { Rollback: true })
+        if (payload is not { Rollback: true } || IsLocalCompose(payload))
         {
             return await inner.ExecuteAsync(request, executionPayload, cancellationToken).ConfigureAwait(false);
         }
@@ -87,6 +88,13 @@ internal sealed class RestoreGuardedDeployOperationExecutor(
 
         return completion.OperationId;
     }
+
+    // Local Compose verifies the actual project journal, image and backup inside the sidecar.
+    // It uses the same Core policy; cloud assessment cannot substitute its revision catalog for it.
+    private bool IsLocalCompose(DeployExecutionPayload payload)
+        => controlPlane?.CurrentValue.DeployTargets.Any(target =>
+            target.TargetKind == DeployTargetKind.LocalCompose
+            && string.Equals(target.TargetId, payload.TargetId, StringComparison.Ordinal)) == true;
 
     /// <inheritdoc />
     public async Task<OperationBackendStatus?> GetBackendStatusAsync(
