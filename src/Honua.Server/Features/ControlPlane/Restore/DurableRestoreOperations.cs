@@ -347,14 +347,31 @@ internal sealed partial class DurableRestoreWorker(
 
     private async Task FinishAsync(WorkflowOperationRecord record, WorkflowOperationStatus status, string? code, CancellationToken cancellationToken)
     {
-        await store.TrySetAsync(record with
+        var written = await store.TrySetAsync(record with
         {
             Status = status,
             UpdatedAt = DateTimeOffset.UtcNow,
             CompletedAt = DateTimeOffset.UtcNow,
             CurrentPhase = status == WorkflowOperationStatus.Succeeded ? "Restore and protection window completed." : "Restore requires operator attention.",
             ErrorMessage = code
-        }, cancellationToken: cancellationToken).ConfigureAwait(false);
+        }, status == WorkflowOperationStatus.Succeeded ? OwnerRetention : null, cancellationToken).ConfigureAwait(false);
+        if (written && status == WorkflowOperationStatus.Succeeded)
+            await ReleaseCellAsync(record.OperationId, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task ReleaseCellAsync(string id, CancellationToken cancellationToken)
+    {
+        if (!await store.TryAcquireLeaseAsync(CellOwnerId, _owner, Lease, cancellationToken).ConfigureAwait(false)) return;
+        try
+        {
+            var owner = await store.GetAsync(CellOwnerId, cancellationToken).ConfigureAwait(false);
+            if (owner is not null && string.Equals(owner.CurrentPhase, id, StringComparison.Ordinal))
+                await store.TrySetAsync(owner with { CurrentPhase = null, UpdatedAt = DateTimeOffset.UtcNow }, OwnerRetention, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            await store.ReleaseLeaseAsync(CellOwnerId, _owner, CancellationToken.None).ConfigureAwait(false);
+        }
     }
 
     private async Task RenewAsync(string id, CancellationTokenSource cancellation)
