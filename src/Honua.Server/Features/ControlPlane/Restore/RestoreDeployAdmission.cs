@@ -26,7 +26,7 @@ internal sealed class RestoreDeployAdmission : IAsyncDisposable
 
     internal CancellationToken Token => _cancellation.Token;
 
-    internal static async Task<RestoreDeployAdmission> AcquireAsync(IWorkflowOperationStore store, string workflowId, string? restoreOwnerId, CancellationToken cancellationToken, bool allowRestorePromotion = false)
+    internal static async Task<RestoreDeployAdmission> AcquireAsync(IWorkflowOperationStore store, string workflowId, string? restoreOwnerId, bool allowRestorePromotion, CancellationToken cancellationToken)
     {
         var leaseOwner = $"deploy-admission:{Guid.NewGuid():N}";
         if (!await store.TryAcquireLeaseAsync(CellOwnerId, leaseOwner, Lease, cancellationToken).ConfigureAwait(false))

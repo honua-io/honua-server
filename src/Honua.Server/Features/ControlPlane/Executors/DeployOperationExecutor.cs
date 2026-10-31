@@ -118,8 +118,8 @@ internal sealed class DeployOperationExecutor(DeployWorkflowService deployWorkfl
                 payload.ParameterOverrides,
                 principal: null,
                 preMigrationBackupId: payload.Rollback ? payload.BackupId : null,
-                cancellationToken,
-                restoreOwnerId)
+                restoreOwnerId,
+                cancellationToken)
             .ConfigureAwait(false);
 
         // Approval persists the workflow and returns before Start when the target requires it.
@@ -130,12 +130,12 @@ internal sealed class DeployOperationExecutor(DeployWorkflowService deployWorkfl
             record.BlockingReasons.Count == 0 &&
             record.Status is WorkflowOperationStatus.AwaitingApproval or WorkflowOperationStatus.Planned)
         {
-            record = await deployWorkflowService.SubmitAsync(
+            record = await deployWorkflowService.SubmitWithRestoreAsync(
                     record.OperationId,
                     request.ApprovedBy,
                     request.Reason,
-                    cancellationToken,
-                    restoreOwnerId)
+                    restoreOwnerId,
+                    cancellationToken)
                 .ConfigureAwait(false);
         }
 
