@@ -25,6 +25,11 @@ public sealed class PostgresFixture : IAsyncLifetime
         ["113_AddDurableQuerySnapshots.sql", "119_CreateGeoprocessingWorkspaces.sql", "122_CreateWorkflowPackages.sql",
             "141_CreateImportedDatasetSpatialMetadata.sql"];
 
+    // Upload tests run with HONUA_SKIP_MIGRATIONS and a seed that mirrors older import
+    // functions, not this script. The importer calls these after every committed load.
+    private static readonly string[] SharedImportFunctionMigrations =
+        ["070_AddImportLoadModes.sql", "143_PromoteImportTypedColumns.sql"];
+
     private sealed class PostgresSharedState
     {
         public PostgreSqlContainer? SharedContainer { get; set; }
@@ -119,7 +124,7 @@ public sealed class PostgresFixture : IAsyncLifetime
                         // so registered providers have their required tables.
                         var assembly = typeof(PostgresFixture).Assembly;
                         // codeql[cs/linq/missed-select]: executes each embedded migration before the next script is read
-                        foreach (var filename in SharedStoreMigrations)
+                        foreach (var filename in SharedStoreMigrations.Concat(SharedImportFunctionMigrations))
                         {
                             var migration = assembly.GetManifestResourceNames().Single(name =>
                                 name.EndsWith(filename, StringComparison.Ordinal));

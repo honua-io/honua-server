@@ -617,7 +617,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             int repairedCount;
             string physicalTableName;
             bool replacementBlocked;
-            (importedCount, failedCount, repairedCount, warnings, rowIssues, physicalTableName, replacementBlocked) = await ImportStreamingAsync(
+            IReadOnlyList<ImportTypedColumn> typedColumns;
+            (importedCount, failedCount, repairedCount, warnings, rowIssues, physicalTableName, replacementBlocked, typedColumns) = await ImportStreamingAsync(
                 request,
                 fileStream,
                 format.Value,
@@ -693,7 +694,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 // be relayed to the caller alongside the warnings.
                 ValidationErrors = preflightWarnings.Length == 0
                     ? rowIssues
-                    : [.. preflightWarnings, .. rowIssues]
+                    : [.. preflightWarnings, .. rowIssues],
+                TypedColumns = typedColumns
             };
             return result;
         }
