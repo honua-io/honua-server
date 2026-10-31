@@ -106,7 +106,7 @@ internal sealed partial class DurableRestoreWorker(
     ILogger<DurableRestoreWorker> logger) : BackgroundService
 {
     private static readonly TimeSpan Lease = TimeSpan.FromMinutes(2);
-    private const string CellOwnerId = "restore-cell-exclusive-owner";
+    private const string CellOwnerId = RestoreDeployAdmission.CellOwnerId;
     private static readonly TimeSpan OwnerRetention = TimeSpan.FromDays(365);
     private readonly string _owner = $"restore:{Environment.MachineName}:{Guid.NewGuid():N}";
 
@@ -229,6 +229,11 @@ internal sealed partial class DurableRestoreWorker(
         try
         {
             var owner = await store.GetAsync(CellOwnerId, cancellationToken).ConfigureAwait(false);
+            if (!string.Equals(owner?.CurrentPhase, id, StringComparison.Ordinal))
+            {
+                var activeDeploys = await store.ListActiveAsync(WorkflowOperationKind.Deploy, cancellationToken).ConfigureAwait(false);
+                if (activeDeploys.Any(operation => operation.Status is WorkflowOperationStatus.Submitted or WorkflowOperationStatus.Reconciling or WorkflowOperationStatus.RollbackRequested)) return false;
+            }
             if (owner is null)
             {
                 var now = DateTimeOffset.UtcNow;
@@ -409,7 +414,7 @@ internal sealed partial class DurableRestoreWorker(
                 }
             };
             if (!await store.TrySetAsync(checkpoint, cancellationToken: cancellationToken).ConfigureAwait(false)) return null;
-            var actual = await deploy.ExecuteAsync(request, executionPayload, cancellationToken).ConfigureAwait(false);
+            var actual = await deploy.ExecuteRestoreAsync(request, executionPayload, record.OperationId, cancellationToken).ConfigureAwait(false);
             if (!string.Equals(actual, workflowId, StringComparison.Ordinal)) throw new InvalidOperationException("Deploy operation did not match the saved checkpoint.");
             return workflowId;
         }
@@ -430,7 +435,7 @@ internal sealed partial class DurableRestoreWorker(
                 }
             };
             if (!await store.TrySetAsync(checkpoint, cancellationToken: cancellationToken).ConfigureAwait(false)) return null;
-            var actual = await deploy.ExecuteAsync(request, payload, cancellationToken).ConfigureAwait(false);
+            var actual = await deploy.ExecuteRestoreAsync(request, payload, record.OperationId, cancellationToken).ConfigureAwait(false);
             if (!string.Equals(actual, workflowId, StringComparison.Ordinal)) throw new InvalidOperationException("Deploy operation did not match the saved checkpoint.");
             return workflowId;
         }
