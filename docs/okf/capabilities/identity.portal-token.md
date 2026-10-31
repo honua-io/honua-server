@@ -22,4 +22,10 @@ Expose POST/GET /sharing/rest/generateToken so GeoServices clients can authentic
 
 The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
 
-## Documented in
+## Where to look
+
+This capability ships - the counts above are routes in the server's generated feature catalog and tests that prove them - but no page in this bundle documents it yet. Until one does:
+
+- [All capabilities](README.md) — the full index with editions and status
+- [Editions and licensing](../../concepts/editions-and-licensing.md) — what each edition includes
+- [Capability matrix](../../gis/data/capability-matrix.v1.json) — the generated evidence for this key

@@ -25,4 +25,4 @@ The facts above come from the server's capability registry and capability matrix
 ## Documented in
 
 - [GeoServices REST parity](../../reference/compatibility/geoservices-parity.md)
-- [GeoServices REST (ArcGIS-compatible)](../../reference/protocols/geoservices-rest.md)
+- [GeoServices REST (GeoServices-compatible)](../../reference/protocols/geoservices-rest.md)
