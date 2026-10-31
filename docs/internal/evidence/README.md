@@ -39,7 +39,6 @@ How Honua's GeoServices REST surface compares to Esri's.
 - **GeoServices REST parity overview** — [`gis/geoservices-rest-parity.md`](../../reference/compatibility/geoservices-parity.md). Canonical landing page.
 - **Per-service matrices** — [FeatureServer](../../reference/compatibility/geoservices-parity.md), [MapServer / WMS / WMTS](../../reference/compatibility/geoservices-parity.md), [ImageServer](../../reference/compatibility/geoservices-parity.md), [Geometry Service](../../reference/compatibility/geoservices-parity.md).
 - **I3S scene compatibility** — [`gis/i3s-compatibility-matrix.md`](../spikes/i3s-compatibility-matrix.md).
-- **ArcGIS Pro licensed evidence** — [`ARCGIS_PRO_LICENSED_EVIDENCE.md`](ARCGIS_PRO_LICENSED_EVIDENCE.md). Evidence identifier `desktop-arcgis`. Procedure stays in honua-esri-compat.
 
 ## Client interop (real-world clients against Honua)
 

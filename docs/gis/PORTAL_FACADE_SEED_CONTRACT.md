@@ -88,7 +88,6 @@ Errors follow the Esri envelope `{ "error": { "code", "message", "details" } }`.
 - **Desktop client:** ArcGIS Pro / Field Maps compatibility is nominative. The
   evidence identifier is `client_lane: "desktop-arcgis"`. Receipts stay in
   private `honua-esri-compat`; see
-  [`ARCGIS_PRO_LICENSED_EVIDENCE.md`](../internal/evidence/ARCGIS_PRO_LICENSED_EVIDENCE.md).
   No desktop receipt is linked yet (#1372/#1096).
 
 ## Consuming repos

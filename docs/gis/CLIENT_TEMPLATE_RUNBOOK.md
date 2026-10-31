@@ -131,7 +131,6 @@ Do not run an ArcGIS Pro smoke procedure from this repository. Cite lane
 `*-desktop-arcgis-featureserver.cert.json` and
 `*-desktop-arcgis-mapserver.cert.json`. The procedure and any licence or runner
 setup stay in private `honua-esri-compat`. No successful desktop run is linked
-([Licensed ArcGIS Pro Desktop Evidence](../internal/evidence/ARCGIS_PRO_LICENSED_EVIDENCE.md)).
 `geoservices-rest-stub` is a different, REST-only evidence identifier.
 
 FeatureServer evidence uses the common-core CERT-\* IDs. MapServer evidence
