@@ -91,7 +91,7 @@ internal sealed class DeployOperationExecutor(DeployWorkflowService deployWorkfl
             throw new InvalidOperationException("Deploy execution payload is missing or malformed.");
         }
 
-        var record = await deployWorkflowService.CreateAsync(
+        var record = await deployWorkflowService.CreateWithBackupAsync(
                 payload.TargetId,
                 payload.DesiredRevision,
                 payload.CurrentRevision,
@@ -103,8 +103,8 @@ internal sealed class DeployOperationExecutor(DeployWorkflowService deployWorkfl
                 submitImmediately: true,
                 payload.ParameterOverrides,
                 principal: null,
-                cancellationToken,
-                preMigrationBackupId: payload.Rollback ? payload.BackupId : null)
+                preMigrationBackupId: payload.Rollback ? payload.BackupId : null,
+                cancellationToken)
             .ConfigureAwait(false);
 
         // Approval persists the workflow and returns before Start when the target requires it.

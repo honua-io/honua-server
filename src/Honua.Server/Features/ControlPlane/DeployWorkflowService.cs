@@ -335,7 +335,7 @@ internal sealed partial class DeployWorkflowService
         return await _workflowStore!.GetMostRecentSucceededDeployByTargetAsync(targetId, cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task<WorkflowOperationRecord?> CreateAsync(
+    public Task<WorkflowOperationRecord?> CreateAsync(
         string targetId,
         string desiredRevision,
         string? currentRevision,
@@ -347,8 +347,25 @@ internal sealed partial class DeployWorkflowService
         bool submitImmediately,
         IReadOnlyDictionary<string, string>? parameterOverrides,
         ClaimsPrincipal? principal = null,
-        CancellationToken cancellationToken = default,
-        string? preMigrationBackupId = null)
+        CancellationToken cancellationToken = default)
+        => CreateWithBackupAsync(targetId, desiredRevision, currentRevision, requestedBy, reason,
+            idempotencyKey, correlationId, priority, submitImmediately, parameterOverrides, principal,
+            preMigrationBackupId: null, cancellationToken);
+
+    internal async Task<WorkflowOperationRecord?> CreateWithBackupAsync(
+        string targetId,
+        string desiredRevision,
+        string? currentRevision,
+        string? requestedBy,
+        string? reason,
+        string? idempotencyKey,
+        string? correlationId,
+        OperationPriority priority,
+        bool submitImmediately,
+        IReadOnlyDictionary<string, string>? parameterOverrides,
+        ClaimsPrincipal? principal,
+        string? preMigrationBackupId,
+        CancellationToken cancellationToken = default)
     {
         EnsureDurableStoreConfigured();
 
