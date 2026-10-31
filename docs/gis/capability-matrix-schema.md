@@ -84,7 +84,7 @@ file (drift gate), printing the regeneration command above.
         { "suite": "WMS 1.3", "profile": "default", "passed": 213, "total": 213, "passRate": 100.0 }
       ],
       "parity": [],
-      "esriAssess": [],
+      "geoservicesAssess": [],
       "interop": [
         { "clientLane": "js", "protocol": "wms", "freshness": { "state": "stale", "ageDays": 62, "runDate": "2026-05-07T14:05:53.364Z" } },
         { "clientLane": "js-cesium", "protocol": "wms", "freshness": { "state": "unknown", "ageDays": null, "runDate": null } }
@@ -106,8 +106,8 @@ file (drift gate), printing the regeneration command above.
 | `maturity` | object | Count per maturity tier (`implemented`, `partial`, `preview`, `experimental`, `deferred`, `planned`) among this capability's entries. |
 | `noSurface` | object \| null | The matching row from `capability-no-surface-allowlist.v1.json` when `entryCount` is `0`; otherwise `null`. |
 | `cite` | array | Zero or one OGC CITE suite result (`{ suite, profile, passed, total, passRate }`) when this capability's protocol has an official ETS (see `CAPABILITY_TO_CITE_SUITE` in the generator script). Empty for capabilities with no CITE suite. |
-| `parity` | array | Esri GeoServices REST parity rows (`{ serviceId, displayName, parity }`) from `geoservices-rest-parity.json`, joined via the `esriCompatMatrix` crosswalk. |
-| `esriAssess` | array of string | `honua-esri-assess` registry keys that crosswalk to this capability. |
+| `parity` | array | Esri GeoServices REST parity rows (`{ serviceId, displayName, parity }`) from `geoservices-rest-parity.json`, joined via the `geoservicesCompatMatrix` crosswalk. |
+| `geoservicesAssess` | array of string | `honua-esri-assess` registry keys that crosswalk to this capability. |
 | `interop` | array | `{ clientLane, protocol, freshness }` pairs from the client-interop crosswalk. `freshness` is the per-pair evidence-freshness stamp (issue #2897 item 4): `state` is `fresh`, `stale`, or `unknown`; `ageDays` is the whole-day distance between this pair's committed envelope `run_date` and the top-level `evidenceFreshness.anchor`; `runDate` echoes the envelope's authoritative observation timestamp. `unknown` means no committed envelope (or no usable timestamp) exists for the pair; `stale` means the envelope is not green under the strict all-pass/terminal criteria shared with `scripts/ci/capability-impact.py`, or its observation is more than `maxAgeDays` behind the anchor, or (defensively) it claims an observation newer than the anchor — negative `ageDays` fails closed as `stale` with an explicit `reason` field. Future-dated `run_date` values never get this far: the generator rejects them outright as corrupt input. |
 | `geobench` | array of string | geobench scenario names that benchmark this capability. |
 

@@ -1315,7 +1315,7 @@ builder.Services.AddHonuaJsonContexts();
 // filter so the HEAD -> GET rewrite runs ahead of WebApplication's implicit UseRouting;
 // the matching restoration middleware below puts HEAD back once the endpoint is selected.
 // Normalize the optional ArcGIS application prefix before HEAD's endpoint inspection.
-builder.Services.AddSingleton<IStartupFilter, ArcGisPathBaseStartupFilter>();
+builder.Services.AddSingleton<IStartupFilter, GeoServicesPathBaseStartupFilter>();
 builder.Services.AddHonuaHeadRequestSupport();
 
 // Add comprehensive IOptions configuration validation
@@ -2129,7 +2129,7 @@ if (app.Environment.IsDevelopment())
 // Configure file import endpoints
 app.MapImportEndpoints();
 app.MapMigrationScannerEndpoints();
-app.MapArcGisMigrationEvidenceEndpoints();
+app.MapGeoServicesMigrationEvidenceEndpoints();
 app.MapToolboxTranslationEndpoints();
 app.MapMigrationPerformanceEvidenceEndpoints();
 app.MapRasterImportEndpoints();

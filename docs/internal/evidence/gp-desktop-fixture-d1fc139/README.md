@@ -37,19 +37,19 @@ prove this image.
 
 [Attempt 2](https://github.com/honua-io/honua-esri-compat/actions/runs/35151843737/attempts/2)
 passed on 2026-09-19. The retained
-[SDK/ArcPy receipt](../../../../tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/Fixtures/EsriToolboxReplay/candidate-d1fc139-arcpy-and-sdk-scalar-verified.json)
+[SDK/ArcPy receipt](../../../../tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/Fixtures/GeoServicesToolboxReplay/candidate-d1fc139-arcpy-and-sdk-scalar-verified.json)
 records four passing checks: ArcGIS API for Python 2.4.3 and ArcPy 3.7.1 each
 import 119 tasks and return area 12. The attempt 1 failure stays in the run
 history. The later pass does not explain it.
 
 The retained
-[SOAP auth receipt](../../../../tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/Fixtures/EsriToolboxReplay/candidate-d1fc139-soap-auth-controls-verified.json)
+[SOAP auth receipt](../../../../tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/Fixtures/GeoServicesToolboxReplay/candidate-d1fc139-soap-auth-controls-verified.json)
 passes 24/24 over verified HTTPS: authorized area 12, 401 for anonymous, invalid
 key, and invalid bearer callers, and 400 for malformed authorized input.
 
 The [complex-value replay](https://github.com/honua-io/honua-esri-compat/actions/runs/35433375337)
 passed on 2026-09-19. Its
-[receipt](../../../../tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/Fixtures/EsriToolboxReplay/candidate-d1fc139-arcpy-complex-values-verified.json)
+[receipt](../../../../tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/Fixtures/GeoServicesToolboxReplay/candidate-d1fc139-arcpy-complex-values-verified.json)
 records six passing ArcPy checks. `desktop_ui_exercised` is false.
 
 Producer revisions: `903a0663a0dad13c6276ddbf4bc7f530ef5bfe38` (scalar) and

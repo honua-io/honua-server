@@ -13,7 +13,7 @@ namespace Honua.Infrastructure.HealthCheck;
 /// </summary>
 public static class HttpClientHealthCheckConfiguration
 {
-    private static readonly string[] ArcGisRestTags = ["external", "arcgis", "import"];
+    private static readonly string[] GeoServicesRestTags = ["external", "arcgis", "import"];
     private static readonly string[] GeoServerRestTags = ["external", "geoserver", "import"];
     private static readonly string[] AwsSecretsManagerTags = ["external", "aws", "secrets"];
     private static readonly string[] AzureKeyVaultTags = ["external", "azure", "secrets"];
@@ -37,7 +37,7 @@ public static class HttpClientHealthCheckConfiguration
             "arcgis-rest",
             "https://services.arcgis.com/health", // Placeholder - replace with actual health endpoint
             timeout: TimeSpan.FromSeconds(15),
-            tags: ArcGisRestTags);
+            tags: GeoServicesRestTags);
 
         // GeoServer REST services
         builder.AddHttpClientHealthCheck(

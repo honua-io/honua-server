@@ -40,7 +40,7 @@ namespace Honua.Migration;
 [JsonSerializable(typeof(GeoservicesLayerInfo[]))]
 [JsonSerializable(typeof(GeoservicesFieldInfo))]
 [JsonSerializable(typeof(GeoservicesFieldInfo[]))]
-[JsonSerializable(typeof(EsriExtent))]
+[JsonSerializable(typeof(GeoServicesExtent))]
 [JsonSerializable(typeof(GeoservicesCredentialRequest))]
 [JsonSerializable(typeof(GeoservicesCredentialDescriptor))]
 [JsonSerializable(typeof(GeoservicesImportRequest))]

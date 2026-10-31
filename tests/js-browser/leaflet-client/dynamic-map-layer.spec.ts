@@ -63,7 +63,7 @@ test.describe('DynamicMapLayer — MapServer Consumption', () => {
     expect(metadataResult.metadata.mapName).toBeTruthy();
     // Honua is an independent Esri-compatible server and intentionally does NOT advertise an
     // ArcGIS Server/Portal version (no `currentVersion`) — see honua-server #1857 and the
-    // NoArcGisServerVersionTests guard. Validate the fields Honua DOES emit instead: a layer
+    // NoGeoServicesServerVersionTests guard. Validate the fields Honua DOES emit instead: a layer
     // catalog (`layers`) for the consumed MapServer. `currentVersion` is deliberately absent.
     expect(metadataResult.metadata.currentVersion).toBeNull();
     expect(metadataResult.metadata.layersCount).toBeGreaterThan(0);

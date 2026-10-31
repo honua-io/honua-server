@@ -145,7 +145,7 @@ public sealed class FeatureServerAttachmentCapabilityAdvertisementTests
                 .AddStorageBinding(bindingId, resourceId, $"test.layers.{item.LayerId}", storageLayerId: item.LayerId)
                 .AddPublication($"attachment-publication-{item.LayerId}", "attachment-service", resourceId,
                     layerIndex: item.LayerId, storageBindingId: bindingId,
-                    publicationType: MetadataV2PublicationType.EsriFeatureLayer);
+                    publicationType: MetadataV2PublicationType.GeoServicesFeatureLayer);
         }
 
         var graph = builder.Build();

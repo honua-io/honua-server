@@ -3,7 +3,7 @@ name: Real Multidimensional Raster Fixture
 # Hardening pillar 2 for the portable raster chain: continuously prove that the
 # canonical fixture is backed by real NetCDF bytes, scanned by the native GDAL
 # worker, materialized as Zarr in LocalStack/S3, and readable as a selected
-# ImageServer slice. Desktop evidence is identifier desktop-arcgis in
+# ImageServer slice. Desktop evidence is identifier desktop-gis in
 # honua-esri-compat. This workflow owns the portable production-path prerequisite.
 
 on:

@@ -165,7 +165,7 @@ internal static class GeoServicesRouteRoster
         var derived = operations
             .Select(pair => new GeoServicesOperation
             {
-                EsriPath = pair.Key,
+                GeoServicesPath = pair.Key,
                 ServiceType = serviceTypes[pair.Key],
                 HonuaEndpoints = pair.Value
                     .Select(route => EndpointKey.Format(route.Method, route.Route))
@@ -174,7 +174,7 @@ internal static class GeoServicesRouteRoster
                     .ToArray(),
                 Maturity = ResolveMaturity(pair.Value.Select(route => route.Maturity)),
             })
-            .OrderBy(operation => operation.EsriPath, StringComparer.Ordinal)
+            .OrderBy(operation => operation.GeoServicesPath, StringComparer.Ordinal)
             .ToArray();
 
         return new GeoServicesRoster
@@ -200,7 +200,7 @@ internal static class GeoServicesRouteRoster
     /// Returns <c>null</c> when the route is under a GeoServices family but carries no
     /// recognizable service type, which the join gate reports rather than swallows.
     /// </summary>
-    public static (string ServiceType, string EsriPath)? Normalize(string route)
+    public static (string ServiceType, string GeoServicesPath)? Normalize(string route)
     {
         var path = RouteConstraintRegex.Replace(route.Trim(), "{${name}}");
 
@@ -256,12 +256,12 @@ internal static class GeoServicesRouteRoster
 internal sealed class GeoServicesOperation
 {
     /// <summary>Esri-relative operation path; the join key between roster and judgement.</summary>
-    public required string EsriPath { get; init; }
+    public required string GeoServicesPath { get; init; }
 
     /// <summary>Esri service type that owns the operation (<c>FeatureServer</c>, …).</summary>
     public required string ServiceType { get; init; }
 
-    /// <summary>Every served <c>METHOD /path</c> that normalizes to <see cref="EsriPath"/>.</summary>
+    /// <summary>Every served <c>METHOD /path</c> that normalizes to <see cref="GeoServicesPath"/>.</summary>
     public required string[] HonuaEndpoints { get; init; }
 
     /// <summary>Capability-registry maturity tier carried through from the feature catalog.</summary>
@@ -271,7 +271,7 @@ internal sealed class GeoServicesOperation
 /// <summary>The derived GeoServices roster plus what the derivation could not place.</summary>
 internal sealed class GeoServicesRoster
 {
-    /// <summary>Served operations, ordered by <see cref="GeoServicesOperation.EsriPath"/>.</summary>
+    /// <summary>Served operations, ordered by <see cref="GeoServicesOperation.GeoServicesPath"/>.</summary>
     public required GeoServicesOperation[] Operations { get; init; }
 
     /// <summary>Served GeoServices-family routes that carry no recognizable service type.</summary>

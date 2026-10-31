@@ -129,7 +129,7 @@ public sealed partial class LayerPublishingIntegrationTests
         var service = graph.Services.Single(candidate => candidate.Metadata.Name == _serviceName);
         var publications = graph.Publications.Where(candidate => candidate.ServiceId == service.Metadata.Id).ToArray();
         publications.Select(candidate => candidate.PublicationType).Should().BeEquivalentTo(
-            [MetadataV2PublicationType.EsriFeatureLayer, MetadataV2PublicationType.StacCollection]);
+            [MetadataV2PublicationType.GeoServicesFeatureLayer, MetadataV2PublicationType.StacCollection]);
         var resource = graph.Resources.Single(candidate => candidate.Metadata.Id == publications[0].ResourceId);
         var binding = graph.StorageBindings.Single(candidate => candidate.Metadata.Id == publications[0].StorageBindingId);
         foreach (var metadata in publications.Select(candidate => candidate.Metadata)
@@ -221,7 +221,7 @@ public sealed partial class LayerPublishingIntegrationTests
         var existing = new MetadataV2Service
         {
             Metadata = new() { Id = _serviceName, Name = _serviceName, Namespace = existingNamespace, Tenant = existingTenant },
-            ServiceType = MetadataV2ServiceType.EsriFeatureService
+            ServiceType = MetadataV2ServiceType.GeoServicesFeatureService
         };
         await SaveMetadataGraphAsync(graph with { Revision = graph.Revision + 1, Services = [.. graph.Services, existing] });
         using var response = await _client.PostAsync($"/api/v1/admin/connections/{_connectionId}/layers",

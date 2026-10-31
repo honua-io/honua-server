@@ -145,22 +145,22 @@ public static class ServiceProtocols
 
         if (string.Equals(protocol, FeatureServer, StringComparison.OrdinalIgnoreCase))
         {
-            return publicationType == MetadataV2PublicationType.EsriFeatureLayer;
+            return publicationType == MetadataV2PublicationType.GeoServicesFeatureLayer;
         }
 
         if (string.Equals(protocol, MapServer, StringComparison.OrdinalIgnoreCase))
         {
-            return publicationType == MetadataV2PublicationType.EsriMapLayer;
+            return publicationType == MetadataV2PublicationType.GeoServicesMapLayer;
         }
 
         if (string.Equals(protocol, ImageServer, StringComparison.OrdinalIgnoreCase))
         {
-            return publicationType == MetadataV2PublicationType.EsriImageLayer;
+            return publicationType == MetadataV2PublicationType.GeoServicesImageLayer;
         }
 
         if (string.Equals(protocol, VectorTileServer, StringComparison.OrdinalIgnoreCase))
         {
-            return publicationType == MetadataV2PublicationType.EsriVectorTileLayer;
+            return publicationType == MetadataV2PublicationType.GeoServicesVectorTileLayer;
         }
 
         if (string.Equals(protocol, OData, StringComparison.OrdinalIgnoreCase))

@@ -46,7 +46,7 @@ public sealed class ImageServerExportTilesHandlerAuthorizationTests
                 "replacement-resource",
                 layerIndex: 41,
                 storageBindingId: "replacement-binding",
-                publicationType: MetadataV2PublicationType.EsriImageLayer)
+                publicationType: MetadataV2PublicationType.GeoServicesImageLayer)
             .BuildProvider();
         var rasterStore = Substitute.For<IRasterStore>();
         var tileExportJobService = Substitute.For<ITileExportJobService>();

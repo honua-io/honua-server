@@ -74,7 +74,7 @@ public sealed class FederationMetricsTests
         var executor = BuildExecutor(new StubConnector(FederatedSourceKind.HonuaGrpc, ImmutableArray<Feature>.Empty), capture.Metrics);
 
         await Assert.ThrowsAsync<FederatedSourceUnavailableException>(
-            () => executor.ExecuteAsync(Source(FederatedSourceKind.EsriRest), new FeatureQuery()));
+            () => executor.ExecuteAsync(Source(FederatedSourceKind.GeoServicesRest), new FeatureQuery()));
         capture.Flush();
 
         var request = Assert.Single(capture.Measurements, m => m.Instrument == "honua_federation_source_requests_total");
@@ -85,10 +85,10 @@ public sealed class FederationMetricsTests
     public async Task ExecuteAsync_RemoteFault_RecordsFaultedOutcome()
     {
         using var capture = new MetricCapture();
-        var executor = BuildExecutor(new ThrowingConnector(FederatedSourceKind.EsriRest), capture.Metrics);
+        var executor = BuildExecutor(new ThrowingConnector(FederatedSourceKind.GeoServicesRest), capture.Metrics);
 
         await Assert.ThrowsAsync<FederatedSourceUnavailableException>(
-            () => executor.ExecuteAsync(Source(FederatedSourceKind.EsriRest), new FeatureQuery()));
+            () => executor.ExecuteAsync(Source(FederatedSourceKind.GeoServicesRest), new FeatureQuery()));
         capture.Flush();
 
         Assert.Contains(

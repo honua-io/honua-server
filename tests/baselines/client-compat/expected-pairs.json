@@ -59,15 +59,15 @@
       "protocol": "wfs"
     },
     {
-      "client_lane": "arcgis-stub",
+      "client_lane": "geoservices-rest-stub",
       "protocol": "featureserver"
     },
     {
-      "client_lane": "arcgis-stub",
+      "client_lane": "geoservices-rest-stub",
       "protocol": "mapserver"
     },
     {
-      "client_lane": "arcgis-stub",
+      "client_lane": "geoservices-rest-stub",
       "protocol": "portal"
     },
     {

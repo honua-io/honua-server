@@ -664,7 +664,7 @@ internal sealed class QueryFormatter : IQueryFormatter
         {
             Name = field.Name,
             Type = geoServicesType,
-            SqlType = EsriSqlType(field),
+            SqlType = GeoServicesSqlType(field),
             Alias = field.Alias ?? field.Title ?? field.Name,
             // Esri clients (arcpy/.NET SDK) require a positive length on string fields;
             // a null length is mapped to 0 and breaks inserts. Fall back to the
@@ -691,7 +691,7 @@ internal sealed class QueryFormatter : IQueryFormatter
     /// the object id as <c>INTEGER</c> where the layer resource described it as
     /// <c>sqlTypeInteger</c>. Both now resolve through the same mapping (#5197).
     /// </remarks>
-    private static string EsriSqlType(MetadataV2Field field)
+    private static string GeoServicesSqlType(MetadataV2Field field)
         => GeoServicesFieldConventions.MapSqlType(field.Type);
 
 

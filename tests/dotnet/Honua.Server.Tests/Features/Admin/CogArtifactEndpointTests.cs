@@ -433,7 +433,7 @@ public sealed class CogArtifactEndpointTests : IAsyncLifetime
 
     private static MetadataV2Publication ImagePublication(MetadataV2Graph graph)
         => graph.Publications.Single(publication => publication.LayerIndex == WebAppFixture.TestLayerId &&
-            publication.PublicationType == MetadataV2PublicationType.EsriImageLayer);
+            publication.PublicationType == MetadataV2PublicationType.GeoServicesImageLayer);
 
     private void SetGraph(MetadataV2Graph graph)
         => _fixture.Services.GetRequiredService<TestMetadataV2GraphProvider>()

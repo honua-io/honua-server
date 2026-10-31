@@ -284,9 +284,9 @@ public sealed class GeoservicesImportFidelityGateTests(PostgresFixture fixture)
         bool catalogReadBack = true,
         ILayerPublishingService? publishingOverride = null)
     {
-        var restClient = new ArcGisRestClient(
+        var restClient = new GeoServicesRestClient(
             new HttpClient(new FidelityFeatureServerHandler(faithful)),
-            NullLogger<ArcGisRestClient>.Instance,
+            NullLogger<GeoServicesRestClient>.Instance,
             (_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
 
         var crsRegistry = new Mock<ICrsRegistry>(MockBehavior.Loose);
@@ -310,7 +310,7 @@ public sealed class GeoservicesImportFidelityGateTests(PostgresFixture fixture)
             restClient,
             connectionProvider,
             crsRegistry.Object,
-            new EsriConstructCapabilityRegistry(EsriConstructCapabilityRegistry.BuiltInDescriptors),
+            new GeoServicesConstructCapabilityRegistry(GeoServicesConstructCapabilityRegistry.BuiltInDescriptors),
             NullLogger<GeoservicesImportService>.Instance,
             new GeoservicesLayerPublicationService(
                 NullLogger<GeoservicesLayerPublicationService>.Instance,

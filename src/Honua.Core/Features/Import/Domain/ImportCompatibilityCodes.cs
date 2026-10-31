@@ -20,82 +20,82 @@ public static class ImportCompatibilityCodes
     public const string Empty = "EMPTY";
 
     /// <summary>ArcGIS renderer type cannot be portably translated.</summary>
-    public const string ArcGisUnsupportedRenderer = "ARCGIS_UNSUPPORTED_RENDERER";
+    public const string GeoServicesUnsupportedRenderer = "GEOSERVICES_UNSUPPORTED_RENDERER";
 
     /// <summary>ArcGIS renderer mixes supported and unsupported renderer types.</summary>
-    public const string ArcGisMixedRenderers = "ARCGIS_MIXED_RENDERERS";
+    public const string GeoServicesMixedRenderers = "GEOSERVICES_MIXED_RENDERERS";
 
     /// <summary>ArcGIS renderer references one or more external symbol URLs.</summary>
-    public const string ArcGisExternalSymbol = "ARCGIS_EXTERNAL_SYMBOL";
+    public const string GeoServicesExternalSymbol = "GEOSERVICES_EXTERNAL_SYMBOL";
 
     /// <summary>ArcGIS resource lacks spatial reference metadata.</summary>
-    public const string ArcGisMissingSpatialRef = "ARCGIS_MISSING_SPATIAL_REF";
+    public const string GeoServicesMissingSpatialRef = "GEOSERVICES_MISSING_SPATIAL_REF";
 
     /// <summary>ArcGIS resource advertises a geometry type that the import path does not support.</summary>
-    public const string ArcGisUnsupportedGeometry = "ARCGIS_UNSUPPORTED_GEOMETRY";
+    public const string GeoServicesUnsupportedGeometry = "GEOSERVICES_UNSUPPORTED_GEOMETRY";
 
     /// <summary>ArcGIS resource lacks query capability.</summary>
-    public const string ArcGisQueryCapabilityMissing = "ARCGIS_QUERY_CAPABILITY_MISSING";
+    public const string GeoServicesQueryCapabilityMissing = "GEOSERVICES_QUERY_CAPABILITY_MISSING";
 
     /// <summary>ArcGIS resource advertises attachments requiring a separate migration.</summary>
-    public const string ArcGisAttachments = "ARCGIS_ATTACHMENTS";
+    public const string GeoServicesAttachments = "GEOSERVICES_ATTACHMENTS";
 
     /// <summary>ArcGIS service requires a token before scanning may proceed.</summary>
-    public const string ArcGisTokenRequired = "ARCGIS_TOKEN_REQUIRED";
+    public const string GeoServicesTokenRequired = "GEOSERVICES_TOKEN_REQUIRED";
 
     /// <summary>ArcGIS service rejected the supplied token as invalid or expired.</summary>
-    public const string ArcGisTokenExpired = "ARCGIS_TOKEN_EXPIRED";
+    public const string GeoServicesTokenExpired = "GEOSERVICES_TOKEN_EXPIRED";
 
     /// <summary>ArcGIS service rejected the scan with an access-denied response.</summary>
-    public const string ArcGisAccessDenied = "ARCGIS_ACCESS_DENIED";
+    public const string GeoServicesAccessDenied = "GEOSERVICES_ACCESS_DENIED";
 
     /// <summary>ArcGIS service returned a generic non-auth error response.</summary>
-    public const string ArcGisServiceError = "ARCGIS_SERVICE_ERROR";
+    public const string GeoServicesServiceError = "GEOSERVICES_SERVICE_ERROR";
 
     /// <summary>ArcGIS import stopped for a reason the importer states (for example no pagination progress).</summary>
-    public const string ArcGisImportAborted = "ARCGIS_IMPORT_ABORTED";
+    public const string GeoServicesImportAborted = "GEOSERVICES_IMPORT_ABORTED";
 
     /// <summary>ArcGIS import failed because the target database rejected a source geometry.</summary>
-    public const string ArcGisImportGeometryRejected = "ARCGIS_IMPORT_GEOMETRY_REJECTED";
+    public const string GeoServicesImportGeometryRejected = "GEOSERVICES_IMPORT_GEOMETRY_REJECTED";
 
     /// <summary>ArcGIS import failed because the target database rejected a statement (reported by SQLSTATE).</summary>
-    public const string ArcGisImportDatabaseError = "ARCGIS_IMPORT_DATABASE_ERROR";
+    public const string GeoServicesImportDatabaseError = "GEOSERVICES_IMPORT_DATABASE_ERROR";
 
     /// <summary>ArcGIS import failed because the target database connection was lost, refused or out of resources.</summary>
-    public const string ArcGisImportDatabaseUnavailable = "ARCGIS_IMPORT_DATABASE_UNAVAILABLE";
+    public const string GeoServicesImportDatabaseUnavailable = "GEOSERVICES_IMPORT_DATABASE_UNAVAILABLE";
 
     /// <summary>ArcGIS import failed for a reason that is not classified further; the step that failed is reported.</summary>
-    public const string ArcGisImportFailed = "ARCGIS_IMPORT_FAILED";
+    public const string GeoServicesImportFailed = "GEOSERVICES_IMPORT_FAILED";
 
     /// <summary>ArcGIS coded-value domain exceeded the deterministic capture cap.</summary>
-    public const string ArcGisDomainTruncated = "ARCGIS_DOMAIN_TRUNCATED";
+    public const string GeoServicesDomainTruncated = "GEOSERVICES_DOMAIN_TRUNCATED";
 
     /// <summary>ArcGIS subtype metadata is captured but not automatically migrated by this slice.</summary>
-    public const string ArcGisSubtypesManualReview = "ARCGIS_SUBTYPES_MANUAL_REVIEW";
+    public const string GeoServicesSubtypesManualReview = "GEOSERVICES_SUBTYPES_MANUAL_REVIEW";
 
     /// <summary>
     /// An ArcGIS feature type declares more than one editing template. The canonical model
     /// carries a single prototype per type, so the type's editing defaults are not captured.
     /// </summary>
-    public const string ArcGisFeatureTypeTemplatesUnsupported = "ARCGIS_FEATURE_TYPE_TEMPLATES_UNSUPPORTED";
+    public const string GeoServicesFeatureTypeTemplatesUnsupported = "GEOSERVICES_FEATURE_TYPE_TEMPLATES_UNSUPPORTED";
 
     /// <summary>
     /// An ArcGIS feature type explicitly clears a field domain. The canonical model expresses
     /// only inheritance or replacement, so the cleared domain is not captured.
     /// </summary>
-    public const string ArcGisFeatureTypeDomainClearingUnsupported = "ARCGIS_FEATURE_TYPE_DOMAIN_CLEARING_UNSUPPORTED";
+    public const string GeoServicesFeatureTypeDomainClearingUnsupported = "GEOSERVICES_FEATURE_TYPE_DOMAIN_CLEARING_UNSUPPORTED";
 
     /// <summary>
     /// An ArcGIS feature type carries no scalar identifier or no name, so it cannot be
     /// projected onto a canonical subtype entry.
     /// </summary>
-    public const string ArcGisFeatureTypeIdentityUnsupported = "ARCGIS_FEATURE_TYPE_IDENTITY_UNSUPPORTED";
+    public const string GeoServicesFeatureTypeIdentityUnsupported = "GEOSERVICES_FEATURE_TYPE_IDENTITY_UNSUPPORTED";
 
     /// <summary>ArcGIS relationship metadata is captured but not automatically migrated by this slice.</summary>
-    public const string ArcGisRelationshipsManualReview = "ARCGIS_RELATIONSHIPS_MANUAL_REVIEW";
+    public const string GeoServicesRelationshipsManualReview = "GEOSERVICES_RELATIONSHIPS_MANUAL_REVIEW";
 
     /// <summary>ArcGIS time metadata is captured but not automatically migrated by this slice.</summary>
-    public const string ArcGisTimeMetadataManualReview = "ARCGIS_TIME_METADATA_MANUAL_REVIEW";
+    public const string GeoServicesTimeMetadataManualReview = "GEOSERVICES_TIME_METADATA_MANUAL_REVIEW";
 
     /// <summary>GeoServer resource or endpoint is supported by the scanner's migration path.</summary>
     public const string GeoServerSupported = "GEOSERVER_SUPPORTED";

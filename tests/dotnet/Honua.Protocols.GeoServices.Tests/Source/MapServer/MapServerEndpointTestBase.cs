@@ -246,7 +246,7 @@ public abstract class MapServerEndpointTestBase : IAsyncLifetime
             ResourceId = resourceId,
             StorageBindingId = bindingId,
             Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
-            PublicationType = MetadataV2PublicationType.EsriMapLayer,
+            PublicationType = MetadataV2PublicationType.GeoServicesMapLayer,
             Identifier = new MetadataV2PublicationIdentifier
             {
                 Value = layerId.ToString(CultureInfo.InvariantCulture),

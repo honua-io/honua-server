@@ -354,7 +354,7 @@ public sealed class MapServerDynamicJoinTests
                 layerIndex: LeftLayerId,
                 storageBindingId: "binding-left",
                 serviceLocalId: LeftLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                publicationType: MetadataV2PublicationType.EsriMapLayer)
+                publicationType: MetadataV2PublicationType.GeoServicesMapLayer)
             .AddResource(
                 "res-right",
                 "right_parcels",
@@ -375,7 +375,7 @@ public sealed class MapServerDynamicJoinTests
                 layerIndex: RightLayerId,
                 storageBindingId: "binding-right",
                 serviceLocalId: RightLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                publicationType: MetadataV2PublicationType.EsriMapLayer)
+                publicationType: MetadataV2PublicationType.GeoServicesMapLayer)
             .BuildProvider();
     }
 

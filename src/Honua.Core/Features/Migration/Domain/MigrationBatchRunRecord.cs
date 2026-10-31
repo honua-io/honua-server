@@ -30,7 +30,7 @@ public sealed record MigrationBatchRunRecord
     public required string BatchId { get; init; }
 
     /// <summary>
-    /// Source kind identifier such as <c>arcgis-geoservices-rest</c>.
+    /// Source kind identifier such as <c>geoservices-rest</c>.
     /// </summary>
     public required string SourceKind { get; init; }
 

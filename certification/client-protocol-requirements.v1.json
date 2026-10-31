@@ -254,7 +254,7 @@
           "status": "absent",
           "producer": null,
           "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are geoservices-rest-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -302,7 +302,7 @@
           "status": "absent",
           "producer": null,
           "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are geoservices-rest-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -350,7 +350,7 @@
           "status": "absent",
           "producer": null,
           "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are geoservices-rest-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -397,7 +397,7 @@
           "status": "absent",
           "producer": null,
           "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are geoservices-rest-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -466,7 +466,7 @@
           "status": "absent",
           "producer": null,
           "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal-cog'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal-cog'; the lanes this repository is contracted to emit are geoservices-rest-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -535,7 +535,7 @@
           "status": "absent",
           "producer": null,
           "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal-flatgeobuf'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal-flatgeobuf'; the lanes this repository is contracted to emit are geoservices-rest-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -608,7 +608,7 @@
           "status": "absent",
           "producer": null,
           "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal-geoparquet'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal-geoparquet'; the lanes this repository is contracted to emit are geoservices-rest-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -654,7 +654,7 @@
           "status": "absent",
           "producer": null,
           "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are geoservices-rest-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -700,7 +700,7 @@
           "status": "absent",
           "producer": null,
           "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are geoservices-rest-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -746,7 +746,7 @@
           "status": "absent",
           "producer": null,
           "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are geoservices-rest-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -792,7 +792,7 @@
           "status": "absent",
           "producer": null,
           "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are geoservices-rest-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -838,7 +838,7 @@
           "status": "absent",
           "producer": null,
           "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are geoservices-rest-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -884,7 +884,7 @@
           "status": "absent",
           "producer": null,
           "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are geoservices-rest-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -930,7 +930,7 @@
           "status": "absent",
           "producer": null,
           "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are geoservices-rest-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -978,7 +978,7 @@
           "status": "absent",
           "producer": null,
           "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are geoservices-rest-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -1026,7 +1026,7 @@
           "status": "absent",
           "producer": null,
           "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are geoservices-rest-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -1072,7 +1072,7 @@
           "status": "absent",
           "producer": null,
           "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'js-maplibre'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'js-maplibre'; the lanes this repository is contracted to emit are geoservices-rest-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -1118,7 +1118,7 @@
           "status": "absent",
           "producer": null,
           "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'js-maplibre'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'js-maplibre'; the lanes this repository is contracted to emit are geoservices-rest-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -1164,7 +1164,7 @@
           "status": "absent",
           "producer": null,
           "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'js-maplibre'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'js-maplibre'; the lanes this repository is contracted to emit are geoservices-rest-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -1210,7 +1210,7 @@
           "status": "absent",
           "producer": null,
           "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'js-maplibre'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'js-maplibre'; the lanes this repository is contracted to emit are geoservices-rest-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -1256,7 +1256,7 @@
           "status": "absent",
           "producer": null,
           "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'js-maplibre'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'js-maplibre'; the lanes this repository is contracted to emit are geoservices-rest-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -1301,7 +1301,7 @@
           "status": "absent",
           "producer": null,
           "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'js-maplibre'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'js-maplibre'; the lanes this repository is contracted to emit are geoservices-rest-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -1347,7 +1347,7 @@
           "status": "absent",
           "producer": null,
           "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'js-maplibre'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'js-maplibre'; the lanes this repository is contracted to emit are geoservices-rest-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -1394,7 +1394,7 @@
           "status": "absent",
           "producer": null,
           "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'js-maplibre'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'js-maplibre'; the lanes this repository is contracted to emit are geoservices-rest-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -1440,7 +1440,7 @@
           "status": "absent",
           "producer": null,
           "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'js-maplibre'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'js-maplibre'; the lanes this repository is contracted to emit are geoservices-rest-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
         },
         "denominatorJoin": {
           "status": "joinable",

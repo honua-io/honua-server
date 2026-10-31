@@ -1222,7 +1222,7 @@
   ],
   "plannedLanes": [
     {
-      "id": "desktop-arcgis",
+      "id": "desktop-gis",
       "client": "ArcGIS Pro and arcpy",
       "protocols": [
         "featureserver",
@@ -1375,7 +1375,7 @@
       ]
     },
     {
-      "id": "arcgis-stub",
+      "id": "geoservices-rest-stub",
       "requiredTier": "nightly",
       "automated": [
         "CERT-CONN-*",

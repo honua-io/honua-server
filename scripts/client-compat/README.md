@@ -10,8 +10,8 @@ Validates that desktop GIS and BI clients can connect to and work with Honua Ser
 > `docker/client-compat-compose.yml` and `docker/client-compat-seed.sql` names;
 > update that script before using it for release evidence.
 >
-> Desktop ArcGIS evidence is identifier `desktop-arcgis`.
-> `docs/internal/evidence/ARCGIS_PRO_LICENSED_EVIDENCE.md` names it.
+> Desktop ArcGIS evidence is identifier `desktop-gis`.
+> `docs/internal/evidence/GEOSERVICES_PRO_LICENSED_EVIDENCE.md` names it.
 > Procedure stays in private honua-esri-compat. Ordinary PR gates do not
 > require ArcGIS Pro. This helper does not configure that lane.
 
@@ -20,7 +20,7 @@ Validates that desktop GIS and BI clients can connect to and work with Honua Ser
 - Docker (accessible from WSL)
 - One or more desktop clients installed on Windows:
   - [QGIS](https://qgis.org/) 3.34+
-  - ArcGIS Pro is not produced by this helper. Cite `desktop-arcgis` in honua-esri-compat.
+  - ArcGIS Pro is not produced by this helper. Cite `desktop-gis` in honua-esri-compat.
   - [Excel](https://www.microsoft.com/en-us/microsoft-365/excel) (Microsoft 365 / Office 2019+)
   - [Power BI Desktop](https://powerbi.microsoft.com/desktop/)
 
@@ -71,7 +71,7 @@ For each installed client, the script:
 | Client | Connection File | How It Opens |
 |--------|----------------|-------------|
 | QGIS | `.qgs` project (WMS + OGC Features layers) | Opens with layers already loaded |
-| ArcGIS Pro | not produced here | Cite evidence id `desktop-arcgis` in honua-esri-compat |
+| ArcGIS Pro | not produced here | Cite evidence id `desktop-gis` in honua-esri-compat |
 | Excel | `.odc` connection file | Use Data > Get Data > OData Feed |
 | Power BI | `.pbids` OData connection file | Navigator opens to the OData feed |
 

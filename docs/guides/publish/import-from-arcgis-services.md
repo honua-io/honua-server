@@ -92,7 +92,7 @@ For a token stored in an environment-backed secret, run `POST /api/v1/admin/impo
   "tableName": "private_parcels",
   "credentials": {
     "mode": "token",
-    "accessTokenSecretReference": "env:ARCGIS_PRIVATE_TOKEN"
+    "accessTokenSecretReference": "env:GEOSERVICES_PRIVATE_TOKEN"
   }
 }
 ```

@@ -83,7 +83,7 @@ internal sealed record GeocodeServerInfoResponse
     // No ArcGIS Server version (currentVersion/fullVersion) is advertised. Honua is an
     // independent, Esri-compatible server and must not impersonate a specific ArcGIS Server
     // release. Do NOT add a currentVersion/fullVersion field (guarded by
-    // NoHonuaServerArcGisVersionTests / NoArcGisServerVersionTests).
+    // NoHonuaServerGeoServicesVersionTests / NoGeoServicesServerVersionTests).
 
     [JsonPropertyName("serviceDescription")]
     public string ServiceDescription { get; init; } = "Honua GeocodeServer";

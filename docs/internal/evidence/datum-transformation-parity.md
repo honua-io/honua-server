@@ -15,7 +15,7 @@ so the selected (Esri-parity) pipeline is used.
 - `IDatumTransformationCatalog` (`Honua.Core.Features.Infrastructure.Crs`) resolves a
   `(fromSrid, toSrid)` reprojection to a `DatumTransformationSelection` carrying the
   Esri WKID, EPSG operation code, and explicit PROJ pipeline string.
-- `EsriDatumTransformationCatalog` is backed by the embedded table
+- `GeoServicesDatumTransformationCatalog` is backed by the embedded table
   `src/Honua.Core/Features/Infrastructure/Crs/Resources/esri-default-datum-transformations.json`.
 - The GeoServices FeatureServer query handler:
   - **Honors** a client-supplied `datumTransformation` (bare WKID or

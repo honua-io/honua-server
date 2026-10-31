@@ -143,7 +143,7 @@ public sealed partial class PublicInterfaceProofLedgerTests
     private static readonly string[] LegacyEsriCompatSurfaceIds =
         ["wfs-1.0.0", "wfs-1.1.0", "wms-1.1.1"];
 
-    private static readonly string[] ArcGisEsriCompatSurfaceIds =
+    private static readonly string[] GeoServicesEsriCompatSurfaceIds =
     [
         "feature-server",
         "map-server",
@@ -724,15 +724,15 @@ public sealed partial class PublicInterfaceProofLedgerTests
         }
 
         var isApprovedEsriCompatSurface =
-            ArcGisEsriCompatSurfaceIds.Contains(surfaceId, StringComparer.OrdinalIgnoreCase);
+            GeoServicesEsriCompatSurfaceIds.Contains(surfaceId, StringComparer.OrdinalIgnoreCase);
         if (isApprovedEsriCompatSurface &&
             string.Equals(proof.ProofClass, "real-client-certification", StringComparison.OrdinalIgnoreCase) &&
             string.Equals(proof.Status, "planned", StringComparison.OrdinalIgnoreCase))
         {
             return string.Equals(proof.OwnerRepo, "honua-esri-compat", StringComparison.OrdinalIgnoreCase) &&
                    string.Equals(proof.LinkedTicket, "#75", StringComparison.Ordinal) &&
-                   string.Equals(proof.ExecutionLane, "release:desktop-arcgis", StringComparison.OrdinalIgnoreCase) &&
-                   proof.ClientLanes.SequenceEqual(["desktop-arcgis"], StringComparer.OrdinalIgnoreCase) &&
+                   string.Equals(proof.ExecutionLane, "release:desktop-gis", StringComparison.OrdinalIgnoreCase) &&
+                   proof.ClientLanes.SequenceEqual(["desktop-gis"], StringComparer.OrdinalIgnoreCase) &&
                    proof.EvidenceLocations.Contains(
                        "https://github.com/honua-io/honua-esri-compat/issues/75",
                        StringComparer.OrdinalIgnoreCase);

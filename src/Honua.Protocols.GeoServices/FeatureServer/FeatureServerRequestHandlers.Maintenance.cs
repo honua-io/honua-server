@@ -582,7 +582,7 @@ internal static partial class FeatureServerEndpoints
         if (!string.IsNullOrWhiteSpace(whereClause) && whereClause != "1=1")
         {
             var filterService = context.RequestServices.GetRequiredService<IFilterExpressionService>();
-            var parseResult = filterService.Parse(FilterLanguage.ArcGisSql, whereClause);
+            var parseResult = filterService.Parse(FilterLanguage.GeoServicesSql, whereClause);
             if (!parseResult.IsSuccess)
             {
                 return StandardErrorHelpers.CreateBadRequest(context,
@@ -1738,7 +1738,7 @@ internal static partial class FeatureServerEndpoints
         }
 
         // Dialect (standard|native) or omitted: parse the SQL expression using the filter service.
-        var parseResult = filterService.Parse(FilterLanguage.ArcGisSql, sqlExpression);
+        var parseResult = filterService.Parse(FilterLanguage.GeoServicesSql, sqlExpression);
 
         if (!parseResult.IsSuccess)
         {
@@ -1951,7 +1951,7 @@ internal static partial class FeatureServerEndpoints
         // where + expression both validate as ArcGIS SQL filter expressions. Parse for
         // syntax, then translate against the layer schema so unknown fields / type
         // mismatches are reported as invalid rather than passing a syntactic-only check.
-        var parseResult = filterService.Parse(FilterLanguage.ArcGisSql, sqlExpression);
+        var parseResult = filterService.Parse(FilterLanguage.GeoServicesSql, sqlExpression);
         if (!parseResult.IsSuccess)
         {
             return (false, parseResult.ErrorMessage ?? "Invalid SQL syntax.");

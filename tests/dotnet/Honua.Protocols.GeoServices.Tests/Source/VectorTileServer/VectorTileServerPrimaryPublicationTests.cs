@@ -46,8 +46,8 @@ public sealed class VectorTileServerPrimaryPublicationTests :
     [Endpoint("GET /rest/services/{serviceId}/VectorTileServer/tile/{z}/{y}/{x}.pbf")]
     public async Task VectorTileServer_PrimaryFeatureLayerAndVectorTileLayer_StyleAndTileUseVectorTileLayer()
     {
-        // Publication A is an EsriFeatureLayer flagged IsPrimary at layer index 0; publication B
-        // is the EsriVectorTileLayer at layer index 1. The adapter prefers the vector tile
+        // Publication A is an GeoServicesFeatureLayer flagged IsPrimary at layer index 0; publication B
+        // is the GeoServicesVectorTileLayer at layer index 1. The adapter prefers the vector tile
         // publication, so both the style and the tile must come from B.
         using var client = _fixture.App.CreateClient();
 
@@ -63,7 +63,7 @@ public sealed class VectorTileServerPrimaryPublicationTests :
     [Endpoint("GET /rest/services/{serviceId}/VectorTileServer/tile/{z}/{y}/{x}.pbf")]
     public async Task VectorTileServer_AnonymousCallerWithoutAccessToVectorTileLayer_StyleAndTileUseSameAccessiblePublication()
     {
-        // The EsriVectorTileLayer publication's resource denies anonymous access. An anonymous
+        // The GeoServicesVectorTileLayer publication's resource denies anonymous access. An anonymous
         // caller must get the style AND the tiles of the next accessible publication (the
         // primary feature layer), never a style for one layer over tiles of another.
         using var client = _fixture.App.CreateClient();
@@ -181,10 +181,10 @@ public sealed class VectorTileServerPrimaryPublicationTests :
                 .AddService("svc-vts-mixed", "vts-mixed", protocols: [ServiceProtocols.VectorTileServer], accessPolicy: openPolicy)
                 .AddPublication(
                     "pub-mixed-feature", "svc-vts-mixed", "res-mixed-feature",
-                    layerIndex: 0, publicationType: MetadataV2PublicationType.EsriFeatureLayer, isPrimary: true)
+                    layerIndex: 0, publicationType: MetadataV2PublicationType.GeoServicesFeatureLayer, isPrimary: true)
                 .AddPublication(
                     "pub-mixed-vector", "svc-vts-mixed", "res-mixed-vector",
-                    layerIndex: 1, publicationType: MetadataV2PublicationType.EsriVectorTileLayer)
+                    layerIndex: 1, publicationType: MetadataV2PublicationType.GeoServicesVectorTileLayer)
                 .AddResource("res-restricted-open", "restricted-open-layer", accessPolicy: openPolicy)
                 .AddStorageBinding("binding-restricted-open", "res-restricted-open", "features", storageLayerId: RestrictedOpenStorageId)
                 .AddResource("res-restricted-private", "restricted-private-layer", accessPolicy: privatePolicy)
@@ -192,10 +192,10 @@ public sealed class VectorTileServerPrimaryPublicationTests :
                 .AddService("svc-vts-restricted", "vts-restricted", protocols: [ServiceProtocols.VectorTileServer], accessPolicy: openPolicy)
                 .AddPublication(
                     "pub-restricted-open", "svc-vts-restricted", "res-restricted-open",
-                    layerIndex: 0, publicationType: MetadataV2PublicationType.EsriFeatureLayer, isPrimary: true)
+                    layerIndex: 0, publicationType: MetadataV2PublicationType.GeoServicesFeatureLayer, isPrimary: true)
                 .AddPublication(
                     "pub-restricted-private", "svc-vts-restricted", "res-restricted-private",
-                    layerIndex: 1, publicationType: MetadataV2PublicationType.EsriVectorTileLayer)
+                    layerIndex: 1, publicationType: MetadataV2PublicationType.GeoServicesVectorTileLayer)
                 .BuildProvider();
         }
     }

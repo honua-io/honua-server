@@ -1,0 +1,441 @@
+// Copyright (c) Honua Geo Inc. All rights reserved.
+// Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
+
+using System.Text.Json;
+using Honua.Core.Features.Shared.Models;
+using Honua.Geoprocessing.Execution;
+using Honua.Protocols.GeoServices.FeatureServer.Models;
+using NetTopologySuite.IO;
+
+namespace Honua.Protocols.GeoServices.GPServer;
+
+/// <summary>
+/// Translates stock ArcGIS GP geometry inputs — <c>esriGeometry</c> JSON
+/// (point / polyline / polygon / multipoint / envelope) and the
+/// <c>GPFeatureRecordSetLayer</c> / <c>GPRecordSet</c> <c>FeatureSet</c>
+/// envelope — into the canonical WKB or GeoJSON FeatureCollection contract
+/// declared by the process parameter.
+///
+/// This is additive: native string inputs and base64-WKB inputs pass through
+/// untouched. Only values whose JSON shape matches a recognised Esri geometry
+/// or FeatureSet payload are rewritten.
+///
+/// Honua <c>geometry.*</c> processes execute on a SINGLE geometry + SRID, so a
+/// multi-feature FeatureSet cannot be flattened to a single canonical input
+/// without losing data. Such inputs are surfaced through
+/// <see cref="GeoServicesInputTranslationResult.RequiresFeatureCollectionExecution"/>
+/// so the adapter can return an honest capability message rather than silently
+/// dropping features.
+/// </summary>
+internal static class GPServerEsriInputTranslation
+{
+    /// <summary>
+    /// Outcome of attempting to translate Esri geometry/FeatureSet inputs.
+    /// </summary>
+    internal readonly record struct GeoServicesInputTranslationResult(
+        Dictionary<string, string> Inputs,
+        bool RequiresFeatureCollectionExecution,
+        string? CapabilityMessage,
+        int? InputSpatialReference)
+    {
+        public bool Translated { get; init; }
+    }
+
+    /// <summary>
+    /// Walks every supplied input value and rewrites recognised Esri geometry
+    /// JSON / FeatureSet payloads into canonical base64-WKB strings.
+    /// </summary>
+    /// <param name="inputs">
+    /// The raw, protocol-control-stripped GP inputs (native names already in
+    /// place). Values may be simple strings, base64 WKB, GP unit objects, or
+    /// Esri geometry / FeatureSet JSON.
+    /// </param>
+    /// <param name="featureCollectionParameters">Catalog parameters consuming complete FeatureCollections.</param>
+    /// <param name="includeDerivedSrid">Whether the process declares a canonical srid parameter.</param>
+    /// <param name="maxCurveVertices">
+    /// True-curve densification budget. Null uses the converter default.
+    /// </param>
+    public static GeoServicesInputTranslationResult Translate(
+        IReadOnlyDictionary<string, string> inputs,
+        IReadOnlySet<string>? featureCollectionParameters = null,
+        bool includeDerivedSrid = true,
+        int? maxCurveVertices = null)
+    {
+        ArgumentNullException.ThrowIfNull(inputs);
+
+        var translated = new Dictionary<string, string>(inputs.Count, StringComparer.OrdinalIgnoreCase);
+        var anyTranslated = false;
+        int? inputSpatialReference = null;
+
+        foreach (var (key, value) in inputs)
+        {
+            if (!LooksLikeJsonObject(value))
+            {
+                translated[key] = value;
+                continue;
+            }
+
+            JsonDocument doc;
+            try
+            {
+                doc = JsonDocument.Parse(value);
+            }
+            catch (JsonException)
+            {
+                translated[key] = value;
+                continue;
+            }
+
+            using (doc)
+            {
+                var root = doc.RootElement;
+                if (root.ValueKind != JsonValueKind.Object)
+                {
+                    translated[key] = value;
+                    continue;
+                }
+
+                // Canonical GeoJSON has its own discriminator and also contains a features array.
+                // Preserve it for source.geojson's inline reader instead of treating it as Esri JSON.
+                if (root.TryGetProperty("type", out var type) && type.ValueKind == JsonValueKind.String &&
+                    type.GetString() == "FeatureCollection")
+                {
+                    translated[key] = value;
+                    continue;
+                }
+
+                // FeatureSet (GPFeatureRecordSetLayer / GPRecordSet): { "features": [...], "geometryType": "...", "spatialReference": {...} }
+                if (root.TryGetProperty("features", out var featuresProp) &&
+                    featuresProp.ValueKind == JsonValueKind.Array)
+                {
+                    if (featureCollectionParameters?.Contains(key) == true)
+                    {
+                        if (!TryConvertFeatureSet(root, maxCurveVertices, out var collection, out var collectionSrid, out var collectionError))
+                        {
+                            return new GeoServicesInputTranslationResult(translated, false,
+                                $"Input '{key}': {collectionError}", inputSpatialReference);
+                        }
+                        if (inputSpatialReference is { } previous && collectionSrid is { } current && previous != current)
+                        {
+                            return new GeoServicesInputTranslationResult(translated, false,
+                                "FeatureSet inputs must use the same spatial reference.", inputSpatialReference);
+                        }
+                        translated[key] = collection;
+                        inputSpatialReference ??= collectionSrid;
+                        anyTranslated = true;
+                        continue;
+                    }
+
+                    var featureCount = featuresProp.GetArrayLength();
+                    if (featureCount == 0)
+                    {
+                        return new GeoServicesInputTranslationResult(
+                            translated,
+                            RequiresFeatureCollectionExecution: false,
+                            CapabilityMessage:
+                                $"Input '{key}' is an empty FeatureSet; supply at least one feature with a geometry.",
+                            InputSpatialReference: inputSpatialReference)
+                        { Translated = false };
+                    }
+
+                    if (featureCount > 1)
+                    {
+                        // Multi-feature execution requires the server feature-collection /
+                        // layer-level execution stream, which is not part of the
+                        // single-geometry geometry.* contract. Do not fake a result.
+                        return new GeoServicesInputTranslationResult(
+                            translated,
+                            RequiresFeatureCollectionExecution: true,
+                            CapabilityMessage:
+                                $"Input '{key}' is a FeatureSet carrying {featureCount} features. " +
+                                "Honua geometry.* tasks execute on a single geometry; multi-feature " +
+                                "execution requires the feature-collection/layer-level execution stream " +
+                                "(use a layer-scoped task such as analytics.* / generalization.* / " +
+                                "conversion.feature-project, or submit one feature per request).",
+                            InputSpatialReference: inputSpatialReference)
+                        { Translated = false };
+                    }
+
+                    var feature = featuresProp[0];
+                    var setSr = ReadSpatialReference(root);
+                    if (!feature.TryGetProperty("geometry", out var featureGeometry) ||
+                        featureGeometry.ValueKind != JsonValueKind.Object)
+                    {
+                        return new GeoServicesInputTranslationResult(
+                            translated,
+                            RequiresFeatureCollectionExecution: false,
+                            CapabilityMessage:
+                                $"Input '{key}' FeatureSet feature is missing a 'geometry' object.",
+                            InputSpatialReference: inputSpatialReference)
+                        { Translated = false };
+                    }
+
+                    if (!TryConvertEsriGeometry(featureGeometry, setSr, maxCurveVertices, out var wkbBase64, out var sr, out var convertError))
+                    {
+                        return new GeoServicesInputTranslationResult(
+                            translated,
+                            RequiresFeatureCollectionExecution: false,
+                            CapabilityMessage: $"Input '{key}' FeatureSet geometry could not be translated: {convertError}",
+                            InputSpatialReference: inputSpatialReference)
+                        { Translated = false };
+                    }
+
+                    translated[key] = wkbBase64;
+                    inputSpatialReference ??= sr;
+                    anyTranslated = true;
+                    continue;
+                }
+
+                // Bare esriGeometry JSON: point/polyline/polygon/multipoint/envelope.
+                if (IsEsriGeometryShape(root))
+                {
+                    if (!TryConvertEsriGeometry(root, parentSpatialReference: null, maxCurveVertices, out var wkbBase64, out var sr, out var convertError))
+                    {
+                        return new GeoServicesInputTranslationResult(
+                            translated,
+                            RequiresFeatureCollectionExecution: false,
+                            CapabilityMessage: $"Input '{key}' esriGeometry could not be translated: {convertError}",
+                            InputSpatialReference: inputSpatialReference)
+                        { Translated = false };
+                    }
+
+                    translated[key] = wkbBase64;
+                    inputSpatialReference ??= sr;
+                    anyTranslated = true;
+                    continue;
+                }
+
+                // Unrecognised JSON object (e.g. GP unit / data-file shapes) — pass through.
+                translated[key] = value;
+            }
+        }
+
+        // When the caller supplied an esriGeometry/FeatureSet but no explicit
+        // 'srid' input, surface the geometry's spatial reference so the adapter
+        // can populate the canonical srid parameter the engine requires.
+        if (includeDerivedSrid && anyTranslated && inputSpatialReference is { } sridValue && !translated.ContainsKey("srid"))
+        {
+            translated["srid"] = sridValue.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        return new GeoServicesInputTranslationResult(
+            translated,
+            RequiresFeatureCollectionExecution: false,
+            CapabilityMessage: null,
+            InputSpatialReference: inputSpatialReference)
+        { Translated = anyTranslated };
+    }
+
+    private static bool TryConvertFeatureSet(
+        JsonElement root, int? maxCurveVertices, out string value, out int? srid, out string? error)
+    {
+        value = string.Empty;
+        srid = ReadSpatialReference(root);
+        error = null;
+        if (root.TryGetProperty("hasM", out var hasM) && hasM.ValueKind == JsonValueKind.True)
+        {
+            error = "Measured FeatureSets cannot be represented by the canonical GeoJSON input. Remove M ordinates before submission.";
+            return false;
+        }
+        using var buffer = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(buffer))
+        {
+            writer.WriteStartObject();
+            writer.WriteString("type", "FeatureCollection");
+            writer.WriteStartArray("features");
+            foreach (var feature in root.GetProperty("features").EnumerateArray())
+            {
+                if (feature.ValueKind != JsonValueKind.Object)
+                {
+                    error = "FeatureSet entries must be feature objects.";
+                    return false;
+                }
+                writer.WriteStartObject();
+                writer.WriteString("type", "Feature");
+                writer.WritePropertyName("properties");
+                if (feature.TryGetProperty("attributes", out var attributes) && attributes.ValueKind == JsonValueKind.Object)
+                {
+                    attributes.WriteTo(writer);
+                }
+                else if (attributes.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null)
+                {
+                    writer.WriteStartObject();
+                    writer.WriteEndObject();
+                }
+                else
+                {
+                    error = "FeatureSet attributes must be an object or null.";
+                    return false;
+                }
+                writer.WritePropertyName("geometry");
+                if (!feature.TryGetProperty("geometry", out var geometry) || geometry.ValueKind == JsonValueKind.Null)
+                {
+                    writer.WriteNullValue();
+                }
+                else
+                {
+                    if (!TryConvertEsriGeometry(InheritDimensions(geometry, root), srid, maxCurveVertices, out var encoded, out var geometrySrid, out error))
+                    {
+                        return false;
+                    }
+                    if (srid is { } setSrid && geometrySrid is { } featureSrid && setSrid != featureSrid)
+                    {
+                        error = "FeatureSet geometries must use the same spatial reference.";
+                        return false;
+                    }
+                    srid ??= geometrySrid;
+                    var nts = new WKBReader().Read(Convert.FromBase64String(encoded));
+                    if (nts.Coordinates.Any(coordinate => !double.IsNaN(coordinate.M)))
+                    {
+                        error = "Measured FeatureSets cannot be represented by the canonical GeoJSON input. Remove M ordinates before submission.";
+                        return false;
+                    }
+                    using var geoJson = JsonDocument.Parse(GeoJsonArtifactCodec.CreateWriter().Write(nts));
+                    geoJson.RootElement.WriteTo(writer);
+                }
+                writer.WriteEndObject();
+            }
+            writer.WriteEndArray();
+            writer.WriteEndObject();
+        }
+        value = "data:application/geo+json;base64," + Convert.ToBase64String(buffer.ToArray());
+        return true;
+    }
+
+    private static JsonElement InheritDimensions(JsonElement geometry, JsonElement featureSet)
+    {
+        if (geometry.ValueKind != JsonValueKind.Object || geometry.TryGetProperty("hasZ", out _) ||
+            !featureSet.TryGetProperty("hasZ", out var hasZ))
+        {
+            return geometry;
+        }
+
+        using var buffer = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(buffer))
+        {
+            writer.WriteStartObject();
+            foreach (var property in geometry.EnumerateObject())
+            {
+                property.WriteTo(writer);
+            }
+            writer.WritePropertyName("hasZ");
+            hasZ.WriteTo(writer);
+            writer.WriteEndObject();
+        }
+        using var document = JsonDocument.Parse(buffer.ToArray());
+        return document.RootElement.Clone();
+    }
+
+    private static bool LooksLikeJsonObject(string? value)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return false;
+        }
+
+        var span = value.AsSpan().TrimStart();
+        return span.Length > 0 && span[0] == '{';
+    }
+
+    private static bool IsEsriGeometryShape(JsonElement root)
+    {
+        // esriGeometryPoint: { x, y }
+        if (root.TryGetProperty("x", out _) && root.TryGetProperty("y", out _))
+        {
+            return true;
+        }
+
+        // esriGeometryEnvelope: { xmin, ymin, xmax, ymax }
+        if (root.TryGetProperty("xmin", out _) && root.TryGetProperty("ymin", out _) &&
+            root.TryGetProperty("xmax", out _) && root.TryGetProperty("ymax", out _))
+        {
+            return true;
+        }
+
+        // esriGeometryPolyline / esriGeometryPolygon / esriGeometryMultipoint
+        return root.TryGetProperty("paths", out _)
+            || root.TryGetProperty("rings", out _)
+            || root.TryGetProperty("points", out _);
+    }
+
+    private static bool TryConvertEsriGeometry(
+        JsonElement geometryElement,
+        int? parentSpatialReference,
+        int? maxCurveVertices,
+        out string wkbBase64,
+        out int? spatialReference,
+        out string? error)
+    {
+        wkbBase64 = string.Empty;
+        spatialReference = null;
+        error = null;
+
+        var rawJson = geometryElement.GetRawText();
+        GeoServicesGeometry? geometry;
+        try
+        {
+            geometry = JsonSerializer.Deserialize(rawJson, FeatureServerJsonContext.Default.GeoServicesGeometry);
+        }
+        catch (JsonException)
+        {
+            error = "Geometry JSON could not be parsed.";
+            return false;
+        }
+
+        if (geometry is null)
+        {
+            error = "geometry JSON deserialized to null.";
+            return false;
+        }
+
+        // Esri's Web Mercator aliases (102100/102113/900913) are normalized before they are embedded in the
+        // EWKB, not only on the reported spatial reference (#4033). The executors read the embedded SRID:
+        // geometry.project checks it against fromSrid and raster.clip writes it as the cutline EPSG code,
+        // so an un-normalized 102100 rejected a 3857 projection and named a CRS EPSG does not define.
+        var srid = (geometry.SpatialReference?.Wkid
+            ?? geometry.SpatialReference?.LatestWkid
+            ?? parentSpatialReference) is { } declared
+            ? SpatialReferenceExtensions.NormalizeWebMercatorSrid(declared)
+            : (int?)null;
+
+        try
+        {
+            var wkb = GeoServicesGeometryConverter.ConvertGeoServicesGeometryToWkb(geometry, srid, maxCurveVertices);
+            wkbBase64 = Convert.ToBase64String(wkb);
+            spatialReference = srid;
+            return true;
+        }
+        catch (ArgumentException)
+        {
+            error = "Geometry could not be converted.";
+            return false;
+        }
+    }
+
+    private static int? ReadSpatialReference(JsonElement root)
+    {
+        if (!root.TryGetProperty("spatialReference", out var srElement) ||
+            srElement.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        // TryGetInt32: a non-integer wkid is treated as an absent/invalid spatial
+        // reference rather than throwing FormatException into a generic 500.
+        if (srElement.TryGetProperty("wkid", out var wkid) &&
+            wkid.ValueKind == JsonValueKind.Number &&
+            wkid.TryGetInt32(out var wkidValue))
+        {
+            return SpatialReferenceExtensions.NormalizeWebMercatorSrid(wkidValue);
+        }
+
+        if (srElement.TryGetProperty("latestWkid", out var latest) &&
+            latest.ValueKind == JsonValueKind.Number &&
+            latest.TryGetInt32(out var latestValue))
+        {
+            return SpatialReferenceExtensions.NormalizeWebMercatorSrid(latestValue);
+        }
+
+        return null;
+    }
+}

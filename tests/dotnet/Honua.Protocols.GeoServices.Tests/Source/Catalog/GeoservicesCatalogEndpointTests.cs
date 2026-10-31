@@ -73,7 +73,7 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
 
         var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        // Honua does not advertise an ArcGIS Server version (see NoArcGisServerVersionTests).
+        // Honua does not advertise an ArcGIS Server version (see NoGeoServicesServerVersionTests).
         payload.RootElement.TryGetProperty("currentVersion", out _).Should().BeFalse();
         payload.RootElement.TryGetProperty("fullVersion", out _).Should().BeFalse();
         payload.RootElement.TryGetProperty("folders", out var folders).Should().BeTrue();
@@ -254,7 +254,7 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
                 string.Equals(type.GetString(), "VectorTileServer", StringComparison.Ordinal))
             .ToArray();
 
-        // The default test graph seeds an EsriVectorTileLayer publication on the "test"
+        // The default test graph seeds an GeoServicesVectorTileLayer publication on the "test"
         // service, so the catalog must advertise a VectorTileServer entry with a
         // service-name-scoped URL, matching every other service type.
         vectorTileEntries.Should().NotBeEmpty();
@@ -515,7 +515,7 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
     [Operation(Operations.GetMetadata)]
     [InterfaceOperation(TestProtocols.GeoservicesCatalog, "GetMessageVersion")]
     [Endpoint("POST /services")]
-    public async Task PostSoapCatalog_ArcGisPro37LegacyNamespace_NegotiatesCatalogVersion()
+    public async Task PostSoapCatalog_GeoServicesPro37LegacyNamespace_NegotiatesCatalogVersion()
     {
         const string request = """<?xml version="1.0" encoding="utf-8" ?><soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:tns="http://www.esri.com/schemas/ArcGIS/9.0"><soap:Body><tns:GetMessageVersion></tns:GetMessageVersion></soap:Body></soap:Envelope>""";
         using var content = new StringContent(request, Encoding.UTF8, "text/xml");
@@ -524,19 +524,19 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
 
         response.Be200Ok();
         var payload = XDocument.Parse(await response.Content.ReadAsStringAsync());
-        XNamespace legacyArcGis = "http://www.esri.com/schemas/ArcGIS/9.0";
+        XNamespace legacyGeoServices = "http://www.esri.com/schemas/ArcGIS/9.0";
         payload.Descendants().Should().ContainSingle(
             element => element.Name == XNamespace.None + "MessageVersion"
                 && element.Value == "esriArcGISVersion108");
         payload.Descendants().Should().ContainSingle(
-            element => element.Name == legacyArcGis + "GetMessageVersionResponse");
+            element => element.Name == legacyGeoServices + "GetMessageVersionResponse");
     }
 
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [InterfaceOperation(TestProtocols.ImageServer, "GetVersion")]
     [Endpoint("POST /services/{serviceId}/ImageServer")]
-    public async Task PostSoapImageServer_ArcGisPro37LegacyNamespace_EchoesNegotiatedNamespace()
+    public async Task PostSoapImageServer_GeoServicesPro37LegacyNamespace_EchoesNegotiatedNamespace()
     {
         var rasterStore = CreateSoapRasterStore();
         var fixture = new WebAppFixture().ConfigureServices(services => services.AddSingleton(rasterStore));
@@ -552,9 +552,9 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
 
             response.Be200Ok();
             var payload = XDocument.Parse(await response.Content.ReadAsStringAsync());
-            XNamespace legacyArcGis = "http://www.esri.com/schemas/ArcGIS/9.0";
+            XNamespace legacyGeoServices = "http://www.esri.com/schemas/ArcGIS/9.0";
             payload.Descendants().Should().ContainSingle(
-                element => element.Name == legacyArcGis + "GetVersionResponse");
+                element => element.Name == legacyGeoServices + "GetVersionResponse");
             payload.Descendants().Should().ContainSingle(
                 element => element.Name == XNamespace.None + "Result" && element.Value == "10.8");
         }
@@ -761,7 +761,7 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("POST /services")]
-    public async Task PostSoapCatalog_OperationOutsideArcGisNamespace_ReturnsSoapFault()
+    public async Task PostSoapCatalog_OperationOutsideGeoServicesNamespace_ReturnsSoapFault()
     {
         const string request = """
             <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
@@ -949,7 +949,7 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
                 "res-soap-competing",
                 layerIndex: publicationLayerIndex,
                 serviceLocalId: publicationLayerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                publicationType: MetadataV2PublicationType.EsriImageLayer)
+                publicationType: MetadataV2PublicationType.GeoServicesImageLayer)
             .AddResource(
                 "res-soap-storage",
                 "SOAP storage raster",
@@ -972,7 +972,7 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
                 "res-soap-storage",
                 layerIndex: publicationLayerIndex,
                 serviceLocalId: publicationLayerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                publicationType: MetadataV2PublicationType.EsriImageLayer)
+                publicationType: MetadataV2PublicationType.GeoServicesImageLayer)
             .Build();
         var provider = new TestMetadataV2GraphProvider(graph);
         var rasterStore = Substitute.For<IRasterStore>();
@@ -1102,13 +1102,13 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
                 "selection-image",
                 "res-soap-empty",
                 layerIndex: 0,
-                publicationType: MetadataV2PublicationType.EsriImageLayer)
+                publicationType: MetadataV2PublicationType.GeoServicesImageLayer)
             .AddPublication(
                 "pub-soap-data",
                 "selection-image",
                 "res-soap-data",
                 layerIndex: 1,
-                publicationType: MetadataV2PublicationType.EsriImageLayer)
+                publicationType: MetadataV2PublicationType.GeoServicesImageLayer)
             .Build();
         var provider = new TestMetadataV2GraphProvider(graph);
         var rasterStore = Substitute.For<IRasterStore>();
@@ -1173,7 +1173,7 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
     [InterfaceOperation(TestProtocols.ImageServer, "GetMultidimensionalInfo")]
     [InterfaceOperation(TestProtocols.ImageServer, "ExecuteAISRequest")]
     [Endpoint("POST /services/{serviceId}/ImageServer")]
-    public async Task PostSoapImageServer_MetadataFieldsAndVersion_AreArcGisShaped()
+    public async Task PostSoapImageServer_MetadataFieldsAndVersion_AreGeoServicesShaped()
     {
         var rasterStore = CreateSoapRasterStore();
         var fixture = new WebAppFixture().ConfigureServices(services => services.AddSingleton(rasterStore));
@@ -2057,7 +2057,7 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("POST /services/{serviceId}/ImageServer")]
-    public async Task PostSoapImageServer_NonArcGisOperationNamespace_ReturnsClientFault()
+    public async Task PostSoapImageServer_NonGeoServicesOperationNamespace_ReturnsClientFault()
     {
         const string request = """
             <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">

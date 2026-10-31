@@ -32,7 +32,7 @@ public sealed record DagSourceRequest
     /// <summary>
     /// ArcGIS layer index within the FeatureServer for <c>source.esri-featureserver</c>.
     /// </summary>
-    public int? EsriLayerId { get; init; }
+    public int? GeoServicesLayerId { get; init; }
 
     /// <summary>
     /// OGC API Features collection id, or WFS feature type name, for the OGC/WFS sources.
@@ -140,7 +140,7 @@ public sealed record DagSourceRequest
     /// Optional ArcGIS credential descriptor for <c>source.esri-featureserver</c>,
     /// reusing the import path's portal-token / secret-reference mechanism.
     /// </summary>
-    public GeoservicesCredentialDescriptor? EsriCredentials { get; init; }
+    public GeoservicesCredentialDescriptor? GeoServicesCredentials { get; init; }
 
     /// <summary>
     /// Optional HTTP Basic username for the OGC/WFS sources.

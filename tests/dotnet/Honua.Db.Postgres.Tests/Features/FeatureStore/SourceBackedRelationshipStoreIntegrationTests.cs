@@ -149,7 +149,7 @@ public sealed class SourceBackedRelationshipStoreIntegrationTests(PostgresFixtur
         var filters = new FilterExpressionService(
             new FilterExpressionTranslator(new PostgresSqlFilterTranslator(useJsonAttributes: true)));
         const string where = "details = 'low'";
-        var translated = filters.Translate(filters.Parse(FilterLanguage.ArcGisSql, where).Expression!,
+        var translated = filters.Translate(filters.Parse(FilterLanguage.GeoServicesSql, where).Expression!,
             Resource("children", 14, MetadataV2FieldType.Integer));
 
         var result = await CreateStore(providerName: DataProviderNames.SqlServer, readerOverride: reader)

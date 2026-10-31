@@ -177,7 +177,7 @@ problems (Principles 1–4) would persist in the adapter outputs, propagating
 through every cluster handler.
 
 ### Alternative B: Per-protocol metadata classes
-`EsriLayerDefinition`, `StacCollection`, `OgcApiFeatureCollection`, etc. — each
+`GeoServicesLayerDefinition`, `StacCollection`, `OgcApiFeatureCollection`, etc. — each
 cluster gets its own typed shape.
 
 **Rejected because**: shared concepts (license, attribution, spatial extent,
@@ -193,7 +193,7 @@ specs, vendor-specific Esri fields evolve faster than canonical type can be
 updated). Extensions bag with documented vocabulary is the right escape hatch.
 
 ### Alternative D: Inline storage of every format's payload
-`Resource.Esri = <EsriJson>`, `Resource.Stac = <StacItem>`, etc. — store the
+`Resource.Esri = <GeoServicesJson>`, `Resource.Stac = <StacItem>`, etc. — store the
 literal projection alongside the canonical form.
 
 **Rejected because**: storage explodes, sync drift between canonical and

@@ -115,7 +115,7 @@ public sealed class QueryOnlyCompositeRelationshipApplyTests
                     Cardinality = "one-to-many",
                     OriginField = "Join_ID",
                     DestinationField = "Join_ID",
-                    EsriRelationshipId = 0,
+                    GeoServicesRelationshipId = 0,
                     Composite = false
                 }
             ]
@@ -192,7 +192,7 @@ public sealed class QueryOnlyCompositeRelationshipApplyTests
         => new()
         {
             SourceRelationshipId = id,
-            EsriRelationshipId = 0,
+            GeoServicesRelationshipId = 0,
             Name = "Summary",
             OriginLayerId = origin,
             RelatedLayerId = related,

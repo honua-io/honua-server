@@ -135,7 +135,7 @@ public sealed class ImportDatumTransformationTests(PostgresFixture fixture)
 
             // The real catalog resolves NAD83->WGS84 to the Esri-default null transformation
             // (+proj=noop), so the import must succeed and land on the input coordinate.
-            var service = CreateService(schema, EsriDatumTransformationCatalog.Create());
+            var service = CreateService(schema, GeoServicesDatumTransformationCatalog.Create());
             var result = await ImportPointAsync(service, schema, "datum_real", sourceSrid: 4269, targetSrid: 4326);
 
             result.Success.Should().BeTrue(result.ErrorMessage);

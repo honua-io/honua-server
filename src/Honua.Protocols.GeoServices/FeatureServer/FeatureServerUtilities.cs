@@ -61,7 +61,7 @@ internal static partial class FeatureServerEndpoints
         // the layer as "does not exist or is not supported" (MakeFeatureLayer /
         // Add Data fails). Accept and ignore them, mirroring the layer-query
         // treatment of unsupported-but-harmless ArcGIS client parameters (#1276).
-        private static readonly string[] EsriMetadataClientParameters =
+        private static readonly string[] GeoServicesMetadataClientParameters =
         [
             "returnFieldGroups",
             "returnPbfFeatureEncodings",
@@ -78,12 +78,12 @@ internal static partial class FeatureServerEndpoints
 
         public static readonly FrozenSet<string> ServiceMetadata =
             new[] { "f" }
-                .Concat(EsriMetadataClientParameters)
+                .Concat(GeoServicesMetadataClientParameters)
                 .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
         public static readonly FrozenSet<string> LayerMetadata =
             new[] { "f" }
-                .Concat(EsriMetadataClientParameters)
+                .Concat(GeoServicesMetadataClientParameters)
                 .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
         public static readonly FrozenSet<string> Query = GeoServicesRequestValueHelpers.LayerQueryAllowedParameters;

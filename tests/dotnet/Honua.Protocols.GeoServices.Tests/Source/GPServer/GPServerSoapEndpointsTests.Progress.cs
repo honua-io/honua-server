@@ -45,7 +45,7 @@ public sealed partial class GPServerSoapEndpointsTests
             $"<JobID>soap-job</JobID><GetProgressMsg>{progressHint}</GetProgressMsg>");
         var body = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, body);
-        var operation = XDocument.Parse(body).Descendants(XName.Get("GetJobStatusResponse", ArcGis)).Single();
+        var operation = XDocument.Parse(body).Descendants(XName.Get("GetJobStatusResponse", GeoServices)).Single();
         operation.Elements().Should().ContainSingle().Which.Name.Should().Be(XName.Get("Result"));
         operation.Element("Result")!.Value.Should().Be("esriJobSucceeded");
         operation.Element("Result")!.HasElements.Should().BeFalse();

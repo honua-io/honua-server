@@ -45,7 +45,7 @@ public sealed class GeoservicesImportSavepointTests(PostgresFixture fixture)
 
         for (var batch = 0; batch < 3; batch++)
         {
-            var features = Enumerable.Range(batch * 128, 128).Select(index => new ArcGisFeature
+            var features = Enumerable.Range(batch * 128, 128).Select(index => new GeoServicesFeature
             {
                 Attributes = new Dictionary<string, JsonElement>
                 {
@@ -84,7 +84,7 @@ public sealed class GeoservicesImportSavepointTests(PostgresFixture fixture)
         cancellation.Cancel();
         var action = () => InsertAsync(CreateService(), connection, transaction,
             new GeoservicesLayerInfo { Id = 0, Name = "Cancelled", Fields = [] },
-            [new ArcGisFeature()], cancellation.Token);
+            [new GeoServicesFeature()], cancellation.Token);
         await action.Should().ThrowAsync<OperationCanceledException>();
     }
 
@@ -116,7 +116,7 @@ public sealed class GeoservicesImportSavepointTests(PostgresFixture fixture)
                 Name = "Cancellation fixture",
                 Fields = [new() { Name = "Name", Type = "esriFieldTypeString" }]
             },
-            [new ArcGisFeature { Attributes = new() { ["Name"] = JsonSerializer.SerializeToElement("cancel") } }],
+            [new GeoServicesFeature { Attributes = new() { ["Name"] = JsonSerializer.SerializeToElement("cancel") } }],
             cancellation.Token);
 
         var observedInFlight = false;
@@ -153,7 +153,7 @@ public sealed class GeoservicesImportSavepointTests(PostgresFixture fixture)
 
     private static Task<GeoservicesImportService.InsertFeaturesResult> InsertAsync(
         GeoservicesImportService service, NpgsqlConnection connection, NpgsqlTransaction transaction,
-        GeoservicesLayerInfo layer, ArcGisFeature[] features, CancellationToken cancellationToken)
+        GeoservicesLayerInfo layer, GeoServicesFeature[] features, CancellationToken cancellationToken)
     {
         var method = typeof(GeoservicesImportService).GetMethod("InsertFeaturesAsync", BindingFlags.NonPublic | BindingFlags.Instance)!;
         return (Task<GeoservicesImportService.InsertFeaturesResult>)method.Invoke(service,
@@ -161,10 +161,10 @@ public sealed class GeoservicesImportSavepointTests(PostgresFixture fixture)
     }
 
     private static GeoservicesImportService CreateService() => new(
-        new ArcGisRestClient(new HttpClient(), NullLogger<ArcGisRestClient>.Instance),
+        new GeoServicesRestClient(new HttpClient(), NullLogger<GeoServicesRestClient>.Instance),
         Mock.Of<IAdoNetDatabaseConnectionProvider>(),
         Mock.Of<ICrsRegistry>(),
-        new EsriConstructCapabilityRegistry(EsriConstructCapabilityRegistry.BuiltInDescriptors),
+        new GeoServicesConstructCapabilityRegistry(GeoServicesConstructCapabilityRegistry.BuiltInDescriptors),
         NullLogger<GeoservicesImportService>.Instance,
         new GeoservicesLayerPublicationService(NullLogger<GeoservicesLayerPublicationService>.Instance));
 }

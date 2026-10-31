@@ -69,7 +69,7 @@ def test_oauth_userinfo_is_served() -> None:
         f"{BASE_URL}/sharing/rest/generateToken",
         data={
             "username": "admin",
-            "password": "EsriProbeAdmin123!",
+            "password": "GeoServicesProbeAdmin123!",
             "client": "requestip",
             "f": "json",
         },
@@ -91,7 +91,7 @@ def test_services_directory_does_not_duplicate_name_and_type() -> None:
         f"{BASE_URL}/sharing/rest/generateToken",
         data={
             "username": "admin",
-            "password": "EsriProbeAdmin123!",
+            "password": "GeoServicesProbeAdmin123!",
             "client": "requestip",
             "expiration": "60",
             "f": "json",
@@ -119,7 +119,7 @@ def test_arcgis_python_username_password_login_and_feature_query() -> None:
     gis = GIS(
         base,
         username="admin",
-        password="EsriProbeAdmin123!",
+        password="GeoServicesProbeAdmin123!",
         verify_cert=False,
     )
     layer = FeatureLayer(

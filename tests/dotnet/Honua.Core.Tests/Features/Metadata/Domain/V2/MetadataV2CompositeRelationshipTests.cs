@@ -84,7 +84,7 @@ public sealed class MetadataV2CompositeRelationshipTests
                     Cardinality = "one-to-many",
                     OriginField = "Join_ID",
                     DestinationField = "Join_ID",
-                    EsriRelationshipId = 0
+                    GeoServicesRelationshipId = 0
                 }
             ]
         };

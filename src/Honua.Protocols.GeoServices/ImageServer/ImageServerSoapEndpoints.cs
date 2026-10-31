@@ -21,7 +21,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using Microsoft.OpenApi;
 using SkiaSharp;
-using static Honua.Protocols.GeoServices.Soap.ArcGisSoapProtocol;
+using static Honua.Protocols.GeoServices.Soap.GeoServicesSoapProtocol;
 
 namespace Honua.Protocols.GeoServices.ImageServer;
 
@@ -40,7 +40,7 @@ internal static partial class ImageServerSoapEndpoints
     {
         endpoints.MapPost("/services/{serviceId}/ImageServer", HandlePostSoapImageServer)
             .WithDisplayName("ArcGIS SOAP ImageServer")
-            .WithName("ArcGisSoapImageServer")
+            .WithName("GeoServicesSoapImageServer")
             .WithSummary("Read and render an ImageServer through ArcGIS SOAP")
             .WithDescription("Implements the bounded ArcGIS Pro ImageServer SOAP compatibility surface over Honua's canonical raster service.")
             .WithTags("ImageServer")

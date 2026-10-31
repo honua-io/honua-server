@@ -418,7 +418,7 @@ public sealed class OutputCacheInvalidationServiceTests
                     resourceId: $"res-layer-{layerId}",
                     layerIndex: layerId,
                     serviceLocalId: layerId.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                    publicationType: MetadataV2PublicationType.EsriFeatureLayer);
+                    publicationType: MetadataV2PublicationType.GeoServicesFeatureLayer);
             }
         }
 

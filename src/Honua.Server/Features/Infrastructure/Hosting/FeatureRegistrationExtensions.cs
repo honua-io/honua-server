@@ -332,7 +332,7 @@ internal static class FeatureRegistrationExtensions
 #if !HONUA_EXCLUDE_GEOSERVICES
         endpoints.MapGeoservicesCatalogEndpoints();
         endpoints.MapSharingRestEndpoints();
-        endpoints.MapArcGisServerAdminEndpoints();
+        endpoints.MapGeoServicesServerAdminEndpoints();
         endpoints.MapImageServerEndpoints();
         endpoints.MapMapServerEndpoints();
         endpoints.MapVectorTileServerEndpoints();

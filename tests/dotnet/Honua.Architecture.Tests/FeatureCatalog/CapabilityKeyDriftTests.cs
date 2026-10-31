@@ -420,20 +420,20 @@ internal sealed class CapabilityKeyJson
 internal sealed class CapabilityCrosswalksJson
 {
     /// <summary>honua-esri-assess verdict-registry crosswalk rows.</summary>
-    public EsriAssessCrosswalkRow[] EsriAssess { get; init; } = [];
+    public GeoServicesAssessCrosswalkRow[] GeoServicesAssess { get; init; } = [];
 
     /// <summary>Client-interop (client_lane x protocol) crosswalk rows.</summary>
     public InteropCrosswalkRow[] Interop { get; init; } = [];
 
     /// <summary>geoservices-rest-parity.json service-id crosswalk rows.</summary>
-    public EsriCompatMatrixCrosswalkRow[] EsriCompatMatrix { get; init; } = [];
+    public GeoServicesCompatMatrixCrosswalkRow[] GeoServicesCompatMatrix { get; init; } = [];
 
     /// <summary>geobench scenario crosswalk rows.</summary>
     public GeobenchCrosswalkRow[] Geobench { get; init; } = [];
 }
 
 /// <summary>A single honua-esri-assess crosswalk row.</summary>
-internal sealed class EsriAssessCrosswalkRow
+internal sealed class GeoServicesAssessCrosswalkRow
 {
     /// <summary>The assess registry key.</summary>
     public string AssessKey { get; init; } = string.Empty;
@@ -456,7 +456,7 @@ internal sealed class InteropCrosswalkRow
 }
 
 /// <summary>A single esri-compat matrix crosswalk row.</summary>
-internal sealed class EsriCompatMatrixCrosswalkRow
+internal sealed class GeoServicesCompatMatrixCrosswalkRow
 {
     /// <summary>The geoservices-rest-parity.json service id.</summary>
     public string ServiceId { get; init; } = string.Empty;

@@ -29,7 +29,7 @@ public static class ServiceCollectionExtensions
     /// options binding (default timeout, retry policy); no settings are read in the
     /// MVP slice.</param>
     /// <returns>The same service collection for chaining.</returns>
-    public static IServiceCollection AddArcGisRestFeatureProvider(this IServiceCollection services, IConfiguration configuration)
+    public static IServiceCollection AddGeoServicesRestFeatureProvider(this IServiceCollection services, IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
@@ -51,17 +51,17 @@ public static class ServiceCollectionExtensions
         // guard against a slow/unresponsive federated ArcGIS endpoint hanging a request or
         // hammering a downed one (#2404 PA-123).
         services
-            .AddHttpClient<IArcGisRestFeatureClient, ArcGisRestFeatureClient>(ArcGisRestServiceClientName.Default)
+            .AddHttpClient<IGeoServicesRestFeatureClient, GeoServicesRestFeatureClient>(GeoServicesRestServiceClientName.Default)
             .ConfigurePrimaryHttpMessageHandler(
-                static () => ArcGisRestOutboundGuard.CreatePinnedDnsHttpMessageHandler())
+                static () => GeoServicesRestOutboundGuard.CreatePinnedDnsHttpMessageHandler())
             .ConfigureHttpClient(static client => client.Timeout = TimeSpan.FromSeconds(30))
             .AddHttpResiliencePolicy("arcgis-rest");
 
-        services.AddScoped<ArcGisRestFeatureStore>(sp => new ArcGisRestFeatureStore(
-            sp.GetRequiredService<IArcGisRestFeatureClient>(),
-            sp.GetRequiredService<ILogger<ArcGisRestFeatureStore>>(),
+        services.AddScoped<GeoServicesRestFeatureStore>(sp => new GeoServicesRestFeatureStore(
+            sp.GetRequiredService<IGeoServicesRestFeatureClient>(),
+            sp.GetRequiredService<ILogger<GeoServicesRestFeatureStore>>(),
             Honua.Core.Features.FeatureStore.Services.LayerReadSecurityResolver.FromServices(sp)));
-        services.AddScoped<IFeatureDataProvider>(sp => sp.GetRequiredService<ArcGisRestFeatureStore>());
+        services.AddScoped<IFeatureDataProvider>(sp => sp.GetRequiredService<GeoServicesRestFeatureStore>());
 
         return services;
     }

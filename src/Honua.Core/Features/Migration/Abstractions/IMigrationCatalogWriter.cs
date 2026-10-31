@@ -362,11 +362,11 @@ public sealed record MigrationRelationshipApplyRequest
     /// <summary>
     /// Optional original integer relationship id advertised by the ArcGIS
     /// service. Persisted to <c>honua.relationships.relationship_id</c> and
-    /// surfaced as <see cref="Honua.Core.Features.Metadata.Domain.V2.MetadataV2Relationship.EsriRelationshipId"/>
+    /// surfaced as <see cref="Honua.Core.Features.Metadata.Domain.V2.MetadataV2Relationship.GeoServicesRelationshipId"/>
     /// so Esri-style clients can call <c>queryRelatedRecords</c> with the same
     /// integer the source service advertised.
     /// </summary>
-    public int? EsriRelationshipId { get; init; }
+    public int? GeoServicesRelationshipId { get; init; }
 
     /// <summary>
     /// Optional display name for the relationship.

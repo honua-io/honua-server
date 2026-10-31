@@ -54,7 +54,7 @@ public sealed class LayerRelationshipUpdateItem
 
     public required string DestinationField { get; init; }
 
-    public int? EsriRelationshipId { get; init; }
+    public int? GeoServicesRelationshipId { get; init; }
 
     /// <summary>Retains composite ownership; both ends must be declared and remain read-only.</summary>
     public bool Composite { get; init; }
@@ -87,7 +87,7 @@ public sealed class LayerRelationshipItem
 
     public required string DestinationField { get; init; }
 
-    public int? EsriRelationshipId { get; init; }
+    public int? GeoServicesRelationshipId { get; init; }
 
     /// <summary>Whether the persisted relationship retains composite ownership.</summary>
     public bool Composite { get; init; }

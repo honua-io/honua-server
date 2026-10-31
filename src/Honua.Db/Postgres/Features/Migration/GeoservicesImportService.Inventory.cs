@@ -26,7 +26,7 @@ internal sealed partial class GeoservicesImportService
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        var normalizedUrl = ArcGisRestClient.NormalizeServiceUrl(request.ServiceUrl);
+        var normalizedUrl = GeoServicesRestClient.NormalizeServiceUrl(request.ServiceUrl);
 
         try
         {
@@ -104,7 +104,7 @@ internal sealed partial class GeoservicesImportService
             {
                 containerAssessment = containerAssessment with
                 {
-                    Code = ImportCompatibilityCodes.ArcGisMixedRenderers
+                    Code = ImportCompatibilityCodes.GeoServicesMixedRenderers
                 };
             }
 
@@ -145,7 +145,7 @@ internal sealed partial class GeoservicesImportService
 
             return new MigrationSourceInventoryArtifact
             {
-                SourceKind = "arcgis-geoservices-rest",
+                SourceKind = "geoservices-rest",
                 Source = new MigrationSourceIdentity
                 {
                     DisplayName = serviceDisplayName,
@@ -166,10 +166,10 @@ internal sealed partial class GeoservicesImportService
                 FidelityMatrix = MigrationFidelityMatrixBuilder.Build(orderedFidelityClassifications)
             };
         }
-        catch (ArcGisAuthenticationException ex)
+        catch (GeoServicesAuthenticationException ex)
         {
             Log.InventoryScanFailed(_logger, normalizedUrl, ex);
-            var (authMode, code) = ClassifyArcGisError(ex.UpstreamStatusCode, request.Credentials);
+            var (authMode, code) = ClassifyGeoServicesError(ex.UpstreamStatusCode, request.Credentials);
             return CreateFailedScanArtifact(
                 normalizedUrl,
                 authMode,
@@ -187,8 +187,8 @@ internal sealed partial class GeoservicesImportService
                     ? GeoservicesAuthenticationModes.Denied
                     : GeoservicesAuthenticationModes.AuthRequired,
                 ex.StatusCode == HttpStatusCode.Forbidden
-                    ? ImportCompatibilityCodes.ArcGisAccessDenied
-                    : ImportCompatibilityCodes.ArcGisTokenRequired,
+                    ? ImportCompatibilityCodes.GeoServicesAccessDenied
+                    : ImportCompatibilityCodes.GeoServicesTokenRequired,
                 "The ArcGIS service requires authentication for discovery.",
                 ExtractServiceType(normalizedUrl),
                 HasCredentialMaterial(request.Credentials));
@@ -199,7 +199,7 @@ internal sealed partial class GeoservicesImportService
             return CreateFailedScanArtifact(
                 normalizedUrl,
                 "unknown",
-                ImportCompatibilityCodes.ArcGisServiceError,
+                ImportCompatibilityCodes.GeoServicesServiceError,
                 "The ArcGIS service could not be scanned.",
                 ExtractServiceType(normalizedUrl),
                 HasCredentialMaterial(request.Credentials));
@@ -244,7 +244,7 @@ internal sealed partial class GeoservicesImportService
             Log.InventoryFeatureCountFailed(_logger, normalizedUrl, resourceReference.Id, ex);
         }
 
-        var spatialReferences = await BuildArcGisSpatialReferencesAsync(resourceDocument.RootElement, cancellationToken).ConfigureAwait(false);
+        var spatialReferences = await BuildGeoServicesSpatialReferencesAsync(resourceDocument.RootElement, cancellationToken).ConfigureAwait(false);
 
         var fields = ExtractFieldMetadata(
             resourceDocument.RootElement,
@@ -347,15 +347,15 @@ internal sealed partial class GeoservicesImportService
         string serviceType,
         bool credentialsSupplied)
     {
-        var manualSteps = compatibilityCode is ImportCompatibilityCodes.ArcGisTokenRequired or ImportCompatibilityCodes.ArcGisTokenExpired
+        var manualSteps = compatibilityCode is ImportCompatibilityCodes.GeoServicesTokenRequired or ImportCompatibilityCodes.GeoServicesTokenExpired
             ? new[] { "Provide a valid ArcGIS token or credentials and rerun the scan." }
-            : compatibilityCode == ImportCompatibilityCodes.ArcGisAccessDenied
+            : compatibilityCode == ImportCompatibilityCodes.GeoServicesAccessDenied
                 ? ["Confirm the supplied identity has read access to the service and rerun the scan."]
                 : new[] { "Verify service reachability, access, and metadata exposure before rerunning the scan." };
 
         return new MigrationSourceInventoryArtifact
         {
-            SourceKind = "arcgis-geoservices-rest",
+            SourceKind = "geoservices-rest",
             Source = new MigrationSourceIdentity
             {
                 DisplayName = ExtractServiceName(normalizedUrl),

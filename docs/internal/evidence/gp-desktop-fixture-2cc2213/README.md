@@ -17,7 +17,7 @@ Runner, licence, and session setup stay in private `honua-esri-compat`.
 ## Receipts
 
 Receipts are under
-`tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/Fixtures/EsriToolboxReplay/`.
+`tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/Fixtures/GeoServicesToolboxReplay/`.
 
 | Receipt | Run | Result |
 |---|---|---|

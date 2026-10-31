@@ -49,7 +49,7 @@ public sealed class ApiKeyTokenParameterTests : IAsyncLifetime
 
     private const string QueryTransport = "query";
     private const string FormTransport = "form";
-    private const string EsriHeaderTransport = "x-esri-authorization";
+    private const string GeoServicesHeaderTransport = "x-esri-authorization";
 
     private const string BootstrapKey = "bootstrap";
     private const string ManagedKey = "managed";
@@ -86,7 +86,7 @@ public sealed class ApiKeyTokenParameterTests : IAsyncLifetime
         var data = new TheoryData<string, string>();
         foreach (var keyKind in new[] { BootstrapKey, ManagedKey })
         {
-            foreach (var transport in new[] { QueryTransport, FormTransport, EsriHeaderTransport })
+            foreach (var transport in new[] { QueryTransport, FormTransport, GeoServicesHeaderTransport })
             {
                 // The bootstrap key is always an admin credential and is refused in the URL.
                 if (keyKind == BootstrapKey && transport == QueryTransport)
@@ -121,8 +121,8 @@ public sealed class ApiKeyTokenParameterTests : IAsyncLifetime
     /// </summary>
     [IntegrationTheory]
     [InlineData(ManagedKey, QueryTransport)]
-    [InlineData(BootstrapKey, EsriHeaderTransport)]
-    [InlineData(ManagedKey, EsriHeaderTransport)]
+    [InlineData(BootstrapKey, GeoServicesHeaderTransport)]
+    [InlineData(ManagedKey, GeoServicesHeaderTransport)]
     [Endpoint("GET /sharing/rest/portals/self")]
     public async Task PortalsSelf_ApiKeyPresentedAsToken_DescribesTheKeyUser(string keyKind, string transport)
     {
@@ -248,7 +248,7 @@ public sealed class ApiKeyTokenParameterTests : IAsyncLifetime
             ReadErrorCode(body).Should().Be(498, "an admin key in the URL must be refused: {0}", body);
         }
 
-        using var viaHeader = await SendAsync(client, HttpMethod.Get, ProtectedQueryPath, CountParameters, key, EsriHeaderTransport);
+        using var viaHeader = await SendAsync(client, HttpMethod.Get, ProtectedQueryPath, CountParameters, key, GeoServicesHeaderTransport);
         (await ReadCountAsync(viaHeader)).Should().NotBeNull("header transports are unaffected");
     }
 
@@ -354,7 +354,7 @@ public sealed class ApiKeyTokenParameterTests : IAsyncLifetime
     [IntegrationTheory]
     [InlineData(QueryTransport)]
     [InlineData(FormTransport)]
-    [InlineData(EsriHeaderTransport)]
+    [InlineData(GeoServicesHeaderTransport)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task ProtectedQuery_ScopedApiKeyPresentedAsToken_IsNotWidened(string transport)
@@ -553,7 +553,7 @@ public sealed class ApiKeyTokenParameterTests : IAsyncLifetime
                         "application/x-www-form-urlencoded"),
                 };
                 break;
-            case EsriHeaderTransport:
+            case GeoServicesHeaderTransport:
                 request = new HttpRequestMessage(method, $"{path}?{parameters}");
                 request.Headers.TryAddWithoutValidation("X-Esri-Authorization", $"Bearer {key}");
                 break;

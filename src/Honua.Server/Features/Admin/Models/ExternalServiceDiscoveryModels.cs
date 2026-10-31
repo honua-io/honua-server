@@ -293,7 +293,7 @@ internal sealed record ExternalServiceField
     public bool? Nullable { get; init; }
 }
 
-internal sealed record ArcGisServiceDocument
+internal sealed record GeoServicesServiceDocument
 {
     [JsonPropertyName("serviceDescription")]
     public string? ServiceDescription { get; init; }
@@ -308,31 +308,31 @@ internal sealed record ArcGisServiceDocument
     public string? Description { get; init; }
 
     [JsonPropertyName("spatialReference")]
-    public ArcGisSpatialReferenceDocument? SpatialReference { get; init; }
+    public GeoServicesSpatialReferenceDocument? SpatialReference { get; init; }
 
     [JsonPropertyName("layers")]
-    public ArcGisLayerReferenceDocument[]? Layers { get; init; }
+    public GeoServicesLayerReferenceDocument[]? Layers { get; init; }
 
     [JsonPropertyName("tables")]
-    public ArcGisLayerReferenceDocument[]? Tables { get; init; }
+    public GeoServicesLayerReferenceDocument[]? Tables { get; init; }
 
     [JsonPropertyName("error")]
-    public ArcGisErrorDocument? Error { get; init; }
+    public GeoServicesErrorDocument? Error { get; init; }
 }
 
-internal sealed record ArcGisCatalogDocument
+internal sealed record GeoServicesCatalogDocument
 {
     [JsonPropertyName("folders")]
     public string[]? Folders { get; init; }
 
     [JsonPropertyName("services")]
-    public ArcGisCatalogServiceDocument[]? Services { get; init; }
+    public GeoServicesCatalogServiceDocument[]? Services { get; init; }
 
     [JsonPropertyName("error")]
-    public ArcGisErrorDocument? Error { get; init; }
+    public GeoServicesErrorDocument? Error { get; init; }
 }
 
-internal sealed record ArcGisCatalogServiceDocument
+internal sealed record GeoServicesCatalogServiceDocument
 {
     [JsonPropertyName("name")]
     public string? Name { get; init; }
@@ -341,7 +341,7 @@ internal sealed record ArcGisCatalogServiceDocument
     public string? Type { get; init; }
 }
 
-internal sealed record ArcGisTokenDocument
+internal sealed record GeoServicesTokenDocument
 {
     [JsonPropertyName("token")]
     public string? Token { get; init; }
@@ -350,7 +350,7 @@ internal sealed record ArcGisTokenDocument
     public long? Expires { get; init; }
 
     [JsonPropertyName("error")]
-    public ArcGisErrorDocument? Error { get; init; }
+    public GeoServicesErrorDocument? Error { get; init; }
 }
 
 internal sealed record OAuthTokenDocument
@@ -365,7 +365,7 @@ internal sealed record OAuthTokenDocument
     public string? ErrorDescription { get; init; }
 }
 
-internal sealed record ArcGisLayerReferenceDocument
+internal sealed record GeoServicesLayerReferenceDocument
 {
     [JsonPropertyName("id")]
     public int Id { get; init; }
@@ -374,7 +374,7 @@ internal sealed record ArcGisLayerReferenceDocument
     public string? Name { get; init; }
 }
 
-internal sealed record ArcGisLayerDocument
+internal sealed record GeoServicesLayerDocument
 {
     [JsonPropertyName("id")]
     public int Id { get; init; }
@@ -392,10 +392,10 @@ internal sealed record ArcGisLayerDocument
     public string? GeometryType { get; init; }
 
     [JsonPropertyName("extent")]
-    public ArcGisExtentDocument? Extent { get; init; }
+    public GeoServicesExtentDocument? Extent { get; init; }
 
     [JsonPropertyName("fields")]
-    public ArcGisFieldDocument[]? Fields { get; init; }
+    public GeoServicesFieldDocument[]? Fields { get; init; }
 
     [JsonPropertyName("count")]
     public int? Count { get; init; }
@@ -404,19 +404,19 @@ internal sealed record ArcGisLayerDocument
     public int? FeatureCount { get; init; }
 
     [JsonPropertyName("error")]
-    public ArcGisErrorDocument? Error { get; init; }
+    public GeoServicesErrorDocument? Error { get; init; }
 }
 
-internal sealed record ArcGisCountDocument
+internal sealed record GeoServicesCountDocument
 {
     [JsonPropertyName("count")]
     public int? Count { get; init; }
 
     [JsonPropertyName("error")]
-    public ArcGisErrorDocument? Error { get; init; }
+    public GeoServicesErrorDocument? Error { get; init; }
 }
 
-internal sealed record ArcGisExtentDocument
+internal sealed record GeoServicesExtentDocument
 {
     [JsonPropertyName("xmin")]
     public double XMin { get; init; }
@@ -431,10 +431,10 @@ internal sealed record ArcGisExtentDocument
     public double YMax { get; init; }
 
     [JsonPropertyName("spatialReference")]
-    public ArcGisSpatialReferenceDocument? SpatialReference { get; init; }
+    public GeoServicesSpatialReferenceDocument? SpatialReference { get; init; }
 }
 
-internal sealed record ArcGisSpatialReferenceDocument
+internal sealed record GeoServicesSpatialReferenceDocument
 {
     [JsonPropertyName("wkid")]
     public int? Wkid { get; init; }
@@ -443,7 +443,7 @@ internal sealed record ArcGisSpatialReferenceDocument
     public int? LatestWkid { get; init; }
 }
 
-internal sealed record ArcGisFieldDocument
+internal sealed record GeoServicesFieldDocument
 {
     [JsonPropertyName("name")]
     public string? Name { get; init; }
@@ -461,7 +461,7 @@ internal sealed record ArcGisFieldDocument
     public bool? Nullable { get; init; }
 }
 
-internal sealed record ArcGisErrorDocument
+internal sealed record GeoServicesErrorDocument
 {
     [JsonPropertyName("code")]
     public int Code { get; init; }

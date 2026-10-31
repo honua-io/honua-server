@@ -4253,7 +4253,7 @@
             Service for discovering and importing data from ArcGIS Server services.
             </summary>
         </member>
-        <member name="M:Honua.Core.Features.Import.Abstractions.IEsriImportService.DiscoverServiceAsync(Honua.Core.Features.Import.Domain.EsriDiscoveryRequest,System.Threading.CancellationToken)">
+        <member name="M:Honua.Core.Features.Import.Abstractions.IEsriImportService.DiscoverServiceAsync(Honua.Core.Features.Import.Domain.GeoServicesDiscoveryRequest,System.Threading.CancellationToken)">
             <summary>
             Discover available layers from an ArcGIS Server service URL.
             </summary>
@@ -4261,7 +4261,7 @@
             <param name="cancellationToken">Cancellation token</param>
             <returns>Service information including available layers</returns>
         </member>
-        <member name="M:Honua.Core.Features.Import.Abstractions.IEsriImportService.ImportLayerAsync(Honua.Core.Features.Import.Domain.EsriImportRequest,System.Threading.CancellationToken)">
+        <member name="M:Honua.Core.Features.Import.Abstractions.IEsriImportService.ImportLayerAsync(Honua.Core.Features.Import.Domain.GeoServicesImportRequest,System.Threading.CancellationToken)">
             <summary>
             Import a layer from an ArcGIS Server service into PostGIS.
             </summary>
@@ -4269,7 +4269,7 @@
             <param name="cancellationToken">Cancellation token</param>
             <returns>Import result with success/failure details</returns>
         </member>
-        <member name="M:Honua.Core.Features.Import.Abstractions.IEsriImportService.ImportLayerAsync(Honua.Core.Features.Import.Domain.EsriImportRequest,System.IProgress{Honua.Core.Features.Import.Abstractions.EsriImportProgress},System.Threading.CancellationToken)">
+        <member name="M:Honua.Core.Features.Import.Abstractions.IEsriImportService.ImportLayerAsync(Honua.Core.Features.Import.Domain.GeoServicesImportRequest,System.IProgress{Honua.Core.Features.Import.Abstractions.GeoServicesImportProgress},System.Threading.CancellationToken)">
             <summary>
             Import a layer with progress reporting.
             </summary>
@@ -4284,7 +4284,7 @@
             Designed to support distributed execution with Redis leader election.
             </summary>
         </member>
-        <member name="M:Honua.Core.Features.Import.Abstractions.IEsriImportJobService.QueueImportAsync(Honua.Core.Features.Import.Domain.EsriImportRequest,System.Threading.CancellationToken)">
+        <member name="M:Honua.Core.Features.Import.Abstractions.IEsriImportJobService.QueueImportAsync(Honua.Core.Features.Import.Domain.GeoServicesImportRequest,System.Threading.CancellationToken)">
             <summary>
             Queue a layer import for background processing.
             </summary>
@@ -4334,152 +4334,152 @@
             Check if this instance currently holds leadership.
             </summary>
         </member>
-        <member name="T:Honua.Core.Features.Import.Abstractions.EsriImportProgress">
+        <member name="T:Honua.Core.Features.Import.Abstractions.GeoServicesImportProgress">
             <summary>
             Progress information for an Esri import operation.
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Abstractions.EsriImportProgress.JobId">
+        <member name="P:Honua.Core.Features.Import.Abstractions.GeoServicesImportProgress.JobId">
             <summary>
             Unique identifier for this import job.
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Abstractions.EsriImportProgress.Status">
+        <member name="P:Honua.Core.Features.Import.Abstractions.GeoServicesImportProgress.Status">
             <summary>
             Current status of the import.
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Abstractions.EsriImportProgress.FeaturesProcessed">
+        <member name="P:Honua.Core.Features.Import.Abstractions.GeoServicesImportProgress.FeaturesProcessed">
             <summary>
             Number of features processed so far.
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Abstractions.EsriImportProgress.EstimatedTotalFeatures">
+        <member name="P:Honua.Core.Features.Import.Abstractions.GeoServicesImportProgress.EstimatedTotalFeatures">
             <summary>
             Estimated total number of features.
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Abstractions.EsriImportProgress.BatchesCompleted">
+        <member name="P:Honua.Core.Features.Import.Abstractions.GeoServicesImportProgress.BatchesCompleted">
             <summary>
             Number of batches completed.
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Abstractions.EsriImportProgress.TotalBatches">
+        <member name="P:Honua.Core.Features.Import.Abstractions.GeoServicesImportProgress.TotalBatches">
             <summary>
             Total number of batches (if known).
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Abstractions.EsriImportProgress.FailedFeatures">
+        <member name="P:Honua.Core.Features.Import.Abstractions.GeoServicesImportProgress.FailedFeatures">
             <summary>
             Number of features that failed to import.
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Abstractions.EsriImportProgress.PercentComplete">
+        <member name="P:Honua.Core.Features.Import.Abstractions.GeoServicesImportProgress.PercentComplete">
             <summary>
             Progress percentage (0-100), null if total is unknown.
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Abstractions.EsriImportProgress.SourceServiceUrl">
+        <member name="P:Honua.Core.Features.Import.Abstractions.GeoServicesImportProgress.SourceServiceUrl">
             <summary>
             Source ArcGIS service URL.
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Abstractions.EsriImportProgress.SourceLayerId">
+        <member name="P:Honua.Core.Features.Import.Abstractions.GeoServicesImportProgress.SourceLayerId">
             <summary>
             Source layer ID.
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Abstractions.EsriImportProgress.SourceLayerName">
+        <member name="P:Honua.Core.Features.Import.Abstractions.GeoServicesImportProgress.SourceLayerName">
             <summary>
             Source layer name.
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Abstractions.EsriImportProgress.TableName">
+        <member name="P:Honua.Core.Features.Import.Abstractions.GeoServicesImportProgress.TableName">
             <summary>
             Target table name.
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Abstractions.EsriImportProgress.StartedAt">
+        <member name="P:Honua.Core.Features.Import.Abstractions.GeoServicesImportProgress.StartedAt">
             <summary>
             When the import started.
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Abstractions.EsriImportProgress.CompletedAt">
+        <member name="P:Honua.Core.Features.Import.Abstractions.GeoServicesImportProgress.CompletedAt">
             <summary>
             When the import completed (null if still running).
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Abstractions.EsriImportProgress.Duration">
+        <member name="P:Honua.Core.Features.Import.Abstractions.GeoServicesImportProgress.Duration">
             <summary>
             Duration of the import operation.
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Abstractions.EsriImportProgress.ErrorMessage">
+        <member name="P:Honua.Core.Features.Import.Abstractions.GeoServicesImportProgress.ErrorMessage">
             <summary>
             Error message if the import failed.
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Abstractions.EsriImportProgress.Warnings">
+        <member name="P:Honua.Core.Features.Import.Abstractions.GeoServicesImportProgress.Warnings">
             <summary>
             List of warning messages encountered during import.
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Abstractions.EsriImportProgress.CurrentPhase">
+        <member name="P:Honua.Core.Features.Import.Abstractions.GeoServicesImportProgress.CurrentPhase">
             <summary>
             Current processing phase description.
             </summary>
         </member>
-        <member name="M:Honua.Core.Features.Import.Abstractions.EsriImportProgress.CreateInitial(System.String,System.String,System.Int32,System.String,System.String,System.Nullable{System.Int32})">
+        <member name="M:Honua.Core.Features.Import.Abstractions.GeoServicesImportProgress.CreateInitial(System.String,System.String,System.Int32,System.String,System.String,System.Nullable{System.Int32})">
             <summary>
             Create an initial progress record for a new import job.
             </summary>
         </member>
-        <member name="T:Honua.Core.Features.Import.Abstractions.EsriImportStatus">
+        <member name="T:Honua.Core.Features.Import.Abstractions.GeoServicesImportStatus">
             <summary>
             Status of an Esri import operation.
             </summary>
         </member>
-        <member name="F:Honua.Core.Features.Import.Abstractions.EsriImportStatus.Queued">
+        <member name="F:Honua.Core.Features.Import.Abstractions.GeoServicesImportStatus.Queued">
             <summary>
             Import is queued for processing.
             </summary>
         </member>
-        <member name="F:Honua.Core.Features.Import.Abstractions.EsriImportStatus.Discovering">
+        <member name="F:Honua.Core.Features.Import.Abstractions.GeoServicesImportStatus.Discovering">
             <summary>
             Discovering service metadata.
             </summary>
         </member>
-        <member name="F:Honua.Core.Features.Import.Abstractions.EsriImportStatus.RetrievingFeatures">
+        <member name="F:Honua.Core.Features.Import.Abstractions.GeoServicesImportStatus.RetrievingFeatures">
             <summary>
             Retrieving features from remote service.
             </summary>
         </member>
-        <member name="F:Honua.Core.Features.Import.Abstractions.EsriImportStatus.CreatingTable">
+        <member name="F:Honua.Core.Features.Import.Abstractions.GeoServicesImportStatus.CreatingTable">
             <summary>
             Creating PostGIS table.
             </summary>
         </member>
-        <member name="F:Honua.Core.Features.Import.Abstractions.EsriImportStatus.InsertingFeatures">
+        <member name="F:Honua.Core.Features.Import.Abstractions.GeoServicesImportStatus.InsertingFeatures">
             <summary>
             Inserting features into PostGIS.
             </summary>
         </member>
-        <member name="F:Honua.Core.Features.Import.Abstractions.EsriImportStatus.Publishing">
+        <member name="F:Honua.Core.Features.Import.Abstractions.GeoServicesImportStatus.Publishing">
             <summary>
             Publishing the imported layer.
             </summary>
         </member>
-        <member name="F:Honua.Core.Features.Import.Abstractions.EsriImportStatus.Completed">
+        <member name="F:Honua.Core.Features.Import.Abstractions.GeoServicesImportStatus.Completed">
             <summary>
             Import completed successfully.
             </summary>
         </member>
-        <member name="F:Honua.Core.Features.Import.Abstractions.EsriImportStatus.Failed">
+        <member name="F:Honua.Core.Features.Import.Abstractions.GeoServicesImportStatus.Failed">
             <summary>
             Import failed with errors.
             </summary>
         </member>
-        <member name="F:Honua.Core.Features.Import.Abstractions.EsriImportStatus.Cancelled">
+        <member name="F:Honua.Core.Features.Import.Abstractions.GeoServicesImportStatus.Cancelled">
             <summary>
             Import was cancelled.
             </summary>
@@ -4649,12 +4649,12 @@
             Available layers (for multi-layer formats like GeoPackage)
             </summary>
         </member>
-        <member name="T:Honua.Core.Features.Import.Domain.EsriDiscoveryRequest">
+        <member name="T:Honua.Core.Features.Import.Domain.GeoServicesDiscoveryRequest">
             <summary>
             Request to discover services and layers from an ArcGIS Server URL.
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Domain.EsriDiscoveryRequest.ServiceUrl">
+        <member name="P:Honua.Core.Features.Import.Domain.GeoServicesDiscoveryRequest.ServiceUrl">
             <summary>
             The base URL of the ArcGIS Server service.
             Examples:
@@ -4662,320 +4662,320 @@
             - https://server.example.com/arcgis/rest/services/MyFolder/MyService/MapServer
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Domain.EsriDiscoveryRequest.TimeoutSeconds">
+        <member name="P:Honua.Core.Features.Import.Domain.GeoServicesDiscoveryRequest.TimeoutSeconds">
             <summary>
             Optional timeout for the discovery request in seconds.
             </summary>
         </member>
-        <member name="T:Honua.Core.Features.Import.Domain.EsriImportRequest">
+        <member name="T:Honua.Core.Features.Import.Domain.GeoServicesImportRequest">
             <summary>
             Request to import a layer from an ArcGIS Server into PostGIS.
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Domain.EsriImportRequest.ServiceUrl">
+        <member name="P:Honua.Core.Features.Import.Domain.GeoServicesImportRequest.ServiceUrl">
             <summary>
             The base URL of the ArcGIS Server service.
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Domain.EsriImportRequest.LayerId">
+        <member name="P:Honua.Core.Features.Import.Domain.GeoServicesImportRequest.LayerId">
             <summary>
             The ID of the layer to import.
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Domain.EsriImportRequest.TableName">
+        <member name="P:Honua.Core.Features.Import.Domain.GeoServicesImportRequest.TableName">
             <summary>
             Target table name in PostgreSQL.
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Domain.EsriImportRequest.TargetSrid">
+        <member name="P:Honua.Core.Features.Import.Domain.GeoServicesImportRequest.TargetSrid">
             <summary>
             Target coordinate reference system ID (for transformation).
             Default is 4326 (WGS84).
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Domain.EsriImportRequest.OverwriteExisting">
+        <member name="P:Honua.Core.Features.Import.Domain.GeoServicesImportRequest.OverwriteExisting">
             <summary>
             Whether to overwrite an existing table.
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Domain.EsriImportRequest.WhereClause">
+        <member name="P:Honua.Core.Features.Import.Domain.GeoServicesImportRequest.WhereClause">
             <summary>
             Optional WHERE clause to filter features during import.
             Uses Esri SQL syntax.
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Domain.EsriImportRequest.OutputFields">
+        <member name="P:Honua.Core.Features.Import.Domain.GeoServicesImportRequest.OutputFields">
             <summary>
             Optional output fields to import (null imports all fields).
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Domain.EsriImportRequest.BatchSize">
+        <member name="P:Honua.Core.Features.Import.Domain.GeoServicesImportRequest.BatchSize">
             <summary>
             Batch size for paginated feature retrieval.
             Default is determined by service's maxRecordCount.
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Domain.EsriImportRequest.RequestTimeoutSeconds">
+        <member name="P:Honua.Core.Features.Import.Domain.GeoServicesImportRequest.RequestTimeoutSeconds">
             <summary>
             Request timeout in seconds for each batch request.
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Domain.EsriImportRequest.MaxRetries">
+        <member name="P:Honua.Core.Features.Import.Domain.GeoServicesImportRequest.MaxRetries">
             <summary>
             Maximum number of retry attempts for failed requests.
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Domain.EsriImportRequest.AutoPublish">
+        <member name="P:Honua.Core.Features.Import.Domain.GeoServicesImportRequest.AutoPublish">
             <summary>
             Whether to automatically publish the imported layer.
             </summary>
         </member>
-        <member name="T:Honua.Core.Features.Import.Domain.EsriImportResult">
+        <member name="T:Honua.Core.Features.Import.Domain.GeoServicesImportResult">
             <summary>
             Result of an Esri import operation.
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Domain.EsriImportResult.Success">
+        <member name="P:Honua.Core.Features.Import.Domain.GeoServicesImportResult.Success">
             <summary>
             Whether the import was successful.
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Domain.EsriImportResult.FeatureCount">
+        <member name="P:Honua.Core.Features.Import.Domain.GeoServicesImportResult.FeatureCount">
             <summary>
             Number of features imported.
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Domain.EsriImportResult.FailedFeatures">
+        <member name="P:Honua.Core.Features.Import.Domain.GeoServicesImportResult.FailedFeatures">
             <summary>
             Number of features that failed to import.
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Domain.EsriImportResult.TableName">
+        <member name="P:Honua.Core.Features.Import.Domain.GeoServicesImportResult.TableName">
             <summary>
             Table name created/updated.
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Domain.EsriImportResult.PublishedLayerId">
+        <member name="P:Honua.Core.Features.Import.Domain.GeoServicesImportResult.PublishedLayerId">
             <summary>
             The ID of the published layer (if auto-publish was enabled).
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Domain.EsriImportResult.SourceServiceUrl">
+        <member name="P:Honua.Core.Features.Import.Domain.GeoServicesImportResult.SourceServiceUrl">
             <summary>
             The service URL that was imported from.
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Domain.EsriImportResult.SourceLayerId">
+        <member name="P:Honua.Core.Features.Import.Domain.GeoServicesImportResult.SourceLayerId">
             <summary>
             The layer ID that was imported.
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Domain.EsriImportResult.ErrorMessage">
+        <member name="P:Honua.Core.Features.Import.Domain.GeoServicesImportResult.ErrorMessage">
             <summary>
             Error message if import failed.
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Domain.EsriImportResult.Duration">
+        <member name="P:Honua.Core.Features.Import.Domain.GeoServicesImportResult.Duration">
             <summary>
             Import duration.
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Domain.EsriImportResult.Warnings">
+        <member name="P:Honua.Core.Features.Import.Domain.GeoServicesImportResult.Warnings">
             <summary>
             Warnings encountered during import.
             </summary>
         </member>
-        <member name="M:Honua.Core.Features.Import.Domain.EsriImportResult.CreateSuccess(System.String,System.String,System.Int32,System.Int32,System.Int32,System.Nullable{System.Int32},System.TimeSpan,System.Collections.Generic.IReadOnlyList{System.String})">
+        <member name="M:Honua.Core.Features.Import.Domain.GeoServicesImportResult.CreateSuccess(System.String,System.String,System.Int32,System.Int32,System.Int32,System.Nullable{System.Int32},System.TimeSpan,System.Collections.Generic.IReadOnlyList{System.String})">
             <summary>
             Create successful import result.
             </summary>
         </member>
-        <member name="M:Honua.Core.Features.Import.Domain.EsriImportResult.CreateFailure(System.String,System.String,System.Int32,System.String,System.TimeSpan)">
+        <member name="M:Honua.Core.Features.Import.Domain.GeoServicesImportResult.CreateFailure(System.String,System.String,System.Int32,System.String,System.TimeSpan)">
             <summary>
             Create failed import result.
             </summary>
         </member>
-        <member name="T:Honua.Core.Features.Import.Domain.EsriServiceInfo">
+        <member name="T:Honua.Core.Features.Import.Domain.GeoServicesServiceInfo">
             <summary>
             Represents metadata about an ArcGIS Server service discovered from a remote URL.
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Domain.EsriServiceInfo.ServiceUrl">
+        <member name="P:Honua.Core.Features.Import.Domain.GeoServicesServiceInfo.ServiceUrl">
             <summary>
             The URL of the ArcGIS service.
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Domain.EsriServiceInfo.ServiceName">
+        <member name="P:Honua.Core.Features.Import.Domain.GeoServicesServiceInfo.ServiceName">
             <summary>
             The name of the service.
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Domain.EsriServiceInfo.Description">
+        <member name="P:Honua.Core.Features.Import.Domain.GeoServicesServiceInfo.Description">
             <summary>
             Description of the service (if available).
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Domain.EsriServiceInfo.SpatialReferenceWkid">
+        <member name="P:Honua.Core.Features.Import.Domain.GeoServicesServiceInfo.SpatialReferenceWkid">
             <summary>
             The spatial reference WKID of the service.
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Domain.EsriServiceInfo.MaxRecordCount">
+        <member name="P:Honua.Core.Features.Import.Domain.GeoServicesServiceInfo.MaxRecordCount">
             <summary>
             Maximum number of records the service returns per query.
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Domain.EsriServiceInfo.Capabilities">
+        <member name="P:Honua.Core.Features.Import.Domain.GeoServicesServiceInfo.Capabilities">
             <summary>
             Capabilities supported by the service (e.g., "Query", "Create", "Update", "Delete").
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Domain.EsriServiceInfo.Layers">
+        <member name="P:Honua.Core.Features.Import.Domain.GeoServicesServiceInfo.Layers">
             <summary>
             Layers available in this service.
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Domain.EsriServiceInfo.Version">
+        <member name="P:Honua.Core.Features.Import.Domain.GeoServicesServiceInfo.Version">
             <summary>
             The service version (e.g., "10.91", "11.0").
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Domain.EsriServiceInfo.SupportedQueryFormats">
+        <member name="P:Honua.Core.Features.Import.Domain.GeoServicesServiceInfo.SupportedQueryFormats">
             <summary>
             Supported query formats.
             </summary>
         </member>
-        <member name="T:Honua.Core.Features.Import.Domain.EsriLayerInfo">
+        <member name="T:Honua.Core.Features.Import.Domain.GeoServicesLayerInfo">
             <summary>
             Represents metadata about a single layer within an ArcGIS service.
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Domain.EsriLayerInfo.Id">
+        <member name="P:Honua.Core.Features.Import.Domain.GeoServicesLayerInfo.Id">
             <summary>
             The layer ID within the service.
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Domain.EsriLayerInfo.Name">
+        <member name="P:Honua.Core.Features.Import.Domain.GeoServicesLayerInfo.Name">
             <summary>
             The name of the layer.
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Domain.EsriLayerInfo.Description">
+        <member name="P:Honua.Core.Features.Import.Domain.GeoServicesLayerInfo.Description">
             <summary>
             Description of the layer (if available).
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Domain.EsriLayerInfo.GeometryType">
+        <member name="P:Honua.Core.Features.Import.Domain.GeoServicesLayerInfo.GeometryType">
             <summary>
             The geometry type (esriGeometryPoint, esriGeometryPolyline, esriGeometryPolygon, etc.).
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Domain.EsriLayerInfo.SpatialReferenceWkid">
+        <member name="P:Honua.Core.Features.Import.Domain.GeoServicesLayerInfo.SpatialReferenceWkid">
             <summary>
             The spatial reference WKID of the layer.
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Domain.EsriLayerInfo.MaxRecordCount">
+        <member name="P:Honua.Core.Features.Import.Domain.GeoServicesLayerInfo.MaxRecordCount">
             <summary>
             Maximum number of records the layer returns per query.
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Domain.EsriLayerInfo.Fields">
+        <member name="P:Honua.Core.Features.Import.Domain.GeoServicesLayerInfo.Fields">
             <summary>
             Fields available in the layer.
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Domain.EsriLayerInfo.Type">
+        <member name="P:Honua.Core.Features.Import.Domain.GeoServicesLayerInfo.Type">
             <summary>
             The type of layer (e.g., "Feature Layer", "Table").
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Domain.EsriLayerInfo.HasAttachments">
+        <member name="P:Honua.Core.Features.Import.Domain.GeoServicesLayerInfo.HasAttachments">
             <summary>
             Whether the layer supports attachments.
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Domain.EsriLayerInfo.MinScale">
+        <member name="P:Honua.Core.Features.Import.Domain.GeoServicesLayerInfo.MinScale">
             <summary>
             Minimum scale at which the layer is visible.
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Domain.EsriLayerInfo.MaxScale">
+        <member name="P:Honua.Core.Features.Import.Domain.GeoServicesLayerInfo.MaxScale">
             <summary>
             Maximum scale at which the layer is visible.
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Domain.EsriLayerInfo.Extent">
+        <member name="P:Honua.Core.Features.Import.Domain.GeoServicesLayerInfo.Extent">
             <summary>
             The extent of the layer's data.
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Domain.EsriLayerInfo.FeatureCount">
+        <member name="P:Honua.Core.Features.Import.Domain.GeoServicesLayerInfo.FeatureCount">
             <summary>
             Estimated feature count (if available from service).
             </summary>
         </member>
-        <member name="T:Honua.Core.Features.Import.Domain.EsriFieldInfo">
+        <member name="T:Honua.Core.Features.Import.Domain.GeoServicesFieldInfo">
             <summary>
             Represents a field definition from an ArcGIS layer.
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Domain.EsriFieldInfo.Name">
+        <member name="P:Honua.Core.Features.Import.Domain.GeoServicesFieldInfo.Name">
             <summary>
             The field name.
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Domain.EsriFieldInfo.Type">
+        <member name="P:Honua.Core.Features.Import.Domain.GeoServicesFieldInfo.Type">
             <summary>
             The Esri field type (e.g., "esriFieldTypeOID", "esriFieldTypeString", "esriFieldTypeDouble").
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Domain.EsriFieldInfo.Alias">
+        <member name="P:Honua.Core.Features.Import.Domain.GeoServicesFieldInfo.Alias">
             <summary>
             Human-readable alias for the field.
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Domain.EsriFieldInfo.Length">
+        <member name="P:Honua.Core.Features.Import.Domain.GeoServicesFieldInfo.Length">
             <summary>
             Maximum length for string fields.
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Domain.EsriFieldInfo.Nullable">
+        <member name="P:Honua.Core.Features.Import.Domain.GeoServicesFieldInfo.Nullable">
             <summary>
             Whether the field can contain null values.
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Domain.EsriFieldInfo.IsObjectId">
+        <member name="P:Honua.Core.Features.Import.Domain.GeoServicesFieldInfo.IsObjectId">
             <summary>
             Whether this is the ObjectID field.
             </summary>
         </member>
-        <member name="T:Honua.Core.Features.Import.Domain.EsriExtent">
+        <member name="T:Honua.Core.Features.Import.Domain.GeoServicesExtent">
             <summary>
             Represents the spatial extent from an ArcGIS service.
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Domain.EsriExtent.Xmin">
+        <member name="P:Honua.Core.Features.Import.Domain.GeoServicesExtent.Xmin">
             <summary>
             Minimum X coordinate.
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Domain.EsriExtent.Ymin">
+        <member name="P:Honua.Core.Features.Import.Domain.GeoServicesExtent.Ymin">
             <summary>
             Minimum Y coordinate.
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Domain.EsriExtent.Xmax">
+        <member name="P:Honua.Core.Features.Import.Domain.GeoServicesExtent.Xmax">
             <summary>
             Maximum X coordinate.
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Domain.EsriExtent.Ymax">
+        <member name="P:Honua.Core.Features.Import.Domain.GeoServicesExtent.Ymax">
             <summary>
             Maximum Y coordinate.
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.Import.Domain.EsriExtent.SpatialReferenceWkid">
+        <member name="P:Honua.Core.Features.Import.Domain.GeoServicesExtent.SpatialReferenceWkid">
             <summary>
             Spatial reference WKID.
             </summary>

@@ -301,7 +301,7 @@ public class ImageServerMetadataHandlerTests
 
     [UnitTest]
     [Operation(Operations.GetServiceInfo)]
-    public async Task GetServiceInfoAsync_DynamicService_MatchesEsriShapeForArcGisRuntime()
+    public async Task GetServiceInfoAsync_DynamicService_MatchesEsriShapeForGeoServicesRuntime()
     {
         // #1456: the native .NET ImageServiceRaster.LoadAsync ALWAYS fetches the
         // ImageServer config (served at both the root descriptor and conf.json) and
@@ -667,7 +667,7 @@ public class ImageServerMetadataHandlerTests
                     "resource-1",
                     layerIndex: 1,
                     serviceLocalId: "test-layer",
-                    publicationType: MetadataV2PublicationType.EsriImageLayer)
+                    publicationType: MetadataV2PublicationType.GeoServicesImageLayer)
                 .BuildProvider(),
             _rasterStore,
             _multidimensionalInfoBuilder,
@@ -724,7 +724,7 @@ public class ImageServerMetadataHandlerTests
                 $"resource-{layerIndex}",
                 layerIndex: layerIndex,
                 serviceLocalId: "test-layer",
-                publicationType: MetadataV2PublicationType.EsriImageLayer)
+                publicationType: MetadataV2PublicationType.GeoServicesImageLayer)
             .BuildProvider();
 
     private static RasterInfo CreateTestRasterInfo(int? srid = 4326) => new()

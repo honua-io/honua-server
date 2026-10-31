@@ -36,8 +36,8 @@ internal static class MapServerPublicationResolver
             .Where(snapshot.IsRoutable)
             .OrderBy(static publication => publication.PublicationType switch
             {
-                MetadataV2PublicationType.EsriMapLayer => 0,
-                MetadataV2PublicationType.EsriFeatureLayer => 1,
+                MetadataV2PublicationType.GeoServicesMapLayer => 0,
+                MetadataV2PublicationType.GeoServicesFeatureLayer => 1,
                 _ => 2,
             })
             .ThenBy(static publication => publication.Metadata.Id, StringComparer.Ordinal);

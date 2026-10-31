@@ -642,7 +642,7 @@ internal static class DataEnrichmentRequestHandlers
         }
 
         var filterService = context.RequestServices.GetRequiredService<IFilterExpressionService>();
-        var parseResult = filterService.Parse(FilterLanguage.ArcGisSql, where);
+        var parseResult = filterService.Parse(FilterLanguage.GeoServicesSql, where);
         if (!parseResult.IsSuccess || parseResult.Expression is null)
         {
             return (null, StandardErrorHelpers.CreateBadRequest(

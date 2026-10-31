@@ -27,7 +27,7 @@ public sealed record MigrationSourceInventoryArtifact
     public string ArtifactVersion { get; init; } = "1.0";
 
     /// <summary>
-    /// Source kind identifier such as <c>geoserver-rest</c> or <c>arcgis-geoservices-rest</c>.
+    /// Source kind identifier such as <c>geoserver-rest</c> or <c>geoservices-rest</c>.
     /// </summary>
     public required string SourceKind { get; init; }
 
@@ -416,7 +416,7 @@ public sealed record MigrationCompatibilityAssessment
 
     /// <summary>
     /// Stable machine-readable compatibility code such as <c>COMPATIBLE</c> or
-    /// <c>ARCGIS_UNSUPPORTED_RENDERER</c>. Codes are namespaced per source kind so
+    /// <c>GEOSERVICES_UNSUPPORTED_RENDERER</c>. Codes are namespaced per source kind so
     /// downstream automation can branch deterministically.
     /// </summary>
     public string? Code { get; init; }

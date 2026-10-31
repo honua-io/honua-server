@@ -258,7 +258,7 @@ internal sealed class GetStyleTool : IMcpTool
             "mapbox-style" => OgcStyleEncoding.MapboxStyle,
             "sld-1.0.0" => OgcStyleEncoding.Sld10,
             "sld-1.1.0" => OgcStyleEncoding.Sld11,
-            "esri-drawing-info" => OgcStyleEncoding.EsriDrawingInfo,
+            "esri-drawing-info" => OgcStyleEncoding.GeoServicesDrawingInfo,
             _ => throw new GeoprocessingValidationException(
                 $"Unsupported style encoding '{encoding}'. Supported encodings: "
                 + "mapbox-style, sld-1.0.0, sld-1.1.0, esri-drawing-info.")
@@ -270,7 +270,7 @@ internal sealed class GetStyleTool : IMcpTool
     private static readonly (OgcStyleEncoding Encoding, string Wire, string MediaType)[] SupportedEncodings =
     [
         (OgcStyleEncoding.MapboxStyle, "mapbox-style", "application/vnd.mapbox.style+json"),
-        (OgcStyleEncoding.EsriDrawingInfo, "esri-drawing-info", "application/vnd.esri.drawinginfo+json"),
+        (OgcStyleEncoding.GeoServicesDrawingInfo, "esri-drawing-info", "application/vnd.esri.drawinginfo+json"),
         (OgcStyleEncoding.Sld10, "sld-1.0.0", "application/vnd.ogc.sld+xml;version=1.0"),
         (OgcStyleEncoding.Sld11, "sld-1.1.0", "application/vnd.ogc.sld+xml;version=1.1"),
     ];

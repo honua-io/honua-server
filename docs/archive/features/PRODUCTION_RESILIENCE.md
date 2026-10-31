@@ -32,7 +32,7 @@ Circuit breaker behavior is configurable per service type:
 {
   "ExternalServices": {
     "CircuitBreaker": {
-      "ArcGisRest": {
+      "GeoServicesRest": {
         "FailureThreshold": 3,
         "DurationOfBreakSeconds": 60,
         "SuccessThreshold": 2,

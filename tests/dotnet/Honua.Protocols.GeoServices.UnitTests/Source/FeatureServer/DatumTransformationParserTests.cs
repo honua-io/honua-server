@@ -79,7 +79,7 @@ public sealed class DatumTransformationParserTests
     public void TryResolve_ReverseComposite_KeepsCatalogInverseDirection()
     {
         const string composite = """{"geoTransforms":[{"wkid":108001,"transformForward":false}]}""";
-        var catalog = EsriDatumTransformationCatalog.Create();
+        var catalog = GeoServicesDatumTransformationCatalog.Create();
 
         var resolved = GeoServicesDatumTransformationResolver.TryResolve(
             catalog,

@@ -28,7 +28,7 @@ public sealed class CompositeRelationshipMetadataTests
                 new MetadataV2Relationship
                 {
                     Id = "summary",
-                    EsriRelationshipId = 0,
+                    GeoServicesRelationshipId = 0,
                     Composite = true,
                     RelatedResourceId = "child",
                     Role = "esriRelRoleOrigin",
@@ -160,7 +160,7 @@ public sealed class CompositeRelationshipMetadataTests
                 "parent",
                 layerIndex: 0,
                 storageBindingId: "bind-parent",
-                publicationType: MetadataV2PublicationType.EsriFeatureLayer,
+                publicationType: MetadataV2PublicationType.GeoServicesFeatureLayer,
                 isPrimary: true)
             .AddPublication(
                 "pub-child",
@@ -168,7 +168,7 @@ public sealed class CompositeRelationshipMetadataTests
                 "child",
                 layerIndex: 1,
                 storageBindingId: "bind-child",
-                publicationType: MetadataV2PublicationType.EsriFeatureLayer,
+                publicationType: MetadataV2PublicationType.GeoServicesFeatureLayer,
                 isPrimary: true);
 
         var drafted = builder.Build();
@@ -187,7 +187,7 @@ public sealed class CompositeRelationshipMetadataTests
                     Cardinality = "one-to-many",
                     OriginField = "Join_ID",
                     DestinationField = "Join_ID",
-                    EsriRelationshipId = 0
+                    GeoServicesRelationshipId = 0
                 }
             ]
         };
@@ -283,7 +283,7 @@ public sealed class CompositeRelationshipMetadataTests
             var resource = resources[index];
             builder.AddResource(resource.Metadata.Id, resource.Metadata.Id)
                 .AddPublication($"publication-{index}", "service", resource.Metadata.Id,
-                    layerIndex: index, publicationType: MetadataV2PublicationType.EsriFeatureLayer);
+                    layerIndex: index, publicationType: MetadataV2PublicationType.GeoServicesFeatureLayer);
         }
 
         var graph = builder.Build() with

@@ -334,7 +334,7 @@ internal static partial class MigrationBatchEndpoints
 /// </summary>
 public sealed record MigrationBatchStartApiRequest
 {
-    /// <summary>Source kind identifier such as <c>arcgis-geoservices-rest</c>.</summary>
+    /// <summary>Source kind identifier such as <c>geoservices-rest</c>.</summary>
     public string? SourceKind { get; init; }
 
     /// <summary>Redacted source URL describing the footprint origin (display only).</summary>

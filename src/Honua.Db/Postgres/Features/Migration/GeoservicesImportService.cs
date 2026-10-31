@@ -20,7 +20,7 @@ namespace Honua.Db.Postgres.Features.Migration;
 /// </summary>
 internal sealed partial class GeoservicesImportService : IGeoservicesImportService
 {
-    private readonly ArcGisRestClient _restClient;
+    private readonly GeoServicesRestClient _restClient;
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly PostgresSessionLockConnections _sessionLockConnections;
     private readonly ICrsRegistry _crsRegistry;
@@ -32,7 +32,7 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
     private readonly PostgresSchemaConfiguration _schemaConfiguration;
 
     public GeoservicesImportService(
-        ArcGisRestClient restClient,
+        GeoServicesRestClient restClient,
         IAdoNetDatabaseConnectionProvider connectionProvider,
         ICrsRegistry crsRegistry,
         IEsriConstructCapabilityRegistry constructCapabilityRegistry,

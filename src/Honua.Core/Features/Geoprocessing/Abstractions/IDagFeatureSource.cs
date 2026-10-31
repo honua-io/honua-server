@@ -17,7 +17,7 @@ namespace Honua.Core.Features.Geoprocessing.Abstractions;
 ///
 /// Implementations REUSE the existing one-shot <c>Honua.Import</c> readers'
 /// pagination/streaming rather than re-implementing transport: the ArcGIS reader
-/// wraps the migration <c>ArcGisRestClient</c>; the catalog reader wraps the shared
+/// wraps the migration <c>GeoServicesRestClient</c>; the catalog reader wraps the shared
 /// query pipeline (<c>IStreamingFeatureStore</c>/<c>IFeatureReader</c>); the OGC/WFS
 /// readers reuse the migration HTTP/paging path; the PostGIS reader reuses the same
 /// secure-connection secret handling as <c>sink.external-postgis</c>.

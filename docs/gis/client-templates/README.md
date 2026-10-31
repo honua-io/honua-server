@@ -13,7 +13,7 @@ artifacts/client-compat/<service>-<timestamp>/pack/templates/
 ## Files
 
 - `./.env.example`: placeholder values for endpoint and credential substitution.
-- `./arcgis-pro/Honua-Desktop-Smoke.aprx.template.md`: name-only pointer for evidence identifier `desktop-arcgis`. No project-build steps.
+- `./arcgis-pro/Honua-Desktop-Smoke.aprx.template.md`: name-only pointer for evidence identifier `desktop-gis`. No project-build steps.
 - `../../user/client-templates/qgis/Honua-Desktop-Smoke.qgs.template`: QGIS project template file with placeholders.
 - `./power-bi/Honua-OData-Smoke.pq.template`: Power Query script template for Power BI.
 - `./power-bi/Honua-OData-Smoke.pbix.template.md`: Power BI save/package instructions.

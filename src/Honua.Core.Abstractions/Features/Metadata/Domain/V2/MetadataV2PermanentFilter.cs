@@ -37,7 +37,7 @@ public sealed record MetadataV2PermanentFilter
     /// the filter.
     /// </summary>
     [JsonPropertyName("language")]
-    public string Language { get; init; } = MetadataV2PermanentFilterLanguages.ArcGisSql;
+    public string Language { get; init; } = MetadataV2PermanentFilterLanguages.GeoServicesSql;
 }
 
 /// <summary>
@@ -48,7 +48,7 @@ public static class MetadataV2PermanentFilterLanguages
     /// <summary>
     /// GeoServices SQL where-clause syntax.
     /// </summary>
-    public const string ArcGisSql = "arcgis-sql";
+    public const string GeoServicesSql = "arcgis-sql";
 
     /// <summary>
     /// OGC CQL2 text syntax.

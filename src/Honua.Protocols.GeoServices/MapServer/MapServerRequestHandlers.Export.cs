@@ -583,13 +583,13 @@ internal static partial class MapServerEndpoints
                 Href = imageUrl,
                 Width = imageWidth,
                 Height = imageHeight,
-                Extent = new EsriExtent
+                Extent = new GeoServicesExtent
                 {
                     Xmin = extent.MinX,
                     Ymin = extent.MinY,
                     Xmax = extent.MaxX,
                     Ymax = extent.MaxY,
-                    SpatialReference = new EsriSpatialReference
+                    SpatialReference = new GeoServicesSpatialReference
                     {
                         Wkid = imageSrid
                     }

@@ -296,7 +296,7 @@ public sealed class McpPublishedServicePostgresDurabilityTests : IAsyncLifetime
         var service = snapshot.Graph.Services.Single(candidate => candidate.Metadata.Name == _serviceName);
         var publications = snapshot.Graph.Publications.Where(publication =>
             publication.ServiceId == service.Metadata.Id &&
-            publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer).ToArray();
+            publication.PublicationType == MetadataV2PublicationType.GeoServicesFeatureLayer).ToArray();
         publications.Should().HaveCount(2);
         var storageIds = publications.Select(publication =>
             snapshot.ResolveStorageBinding(publication)!.StorageLayerId).ToArray();

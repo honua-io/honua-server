@@ -27,18 +27,18 @@ public sealed class MigrationAcceptanceEvidenceBuilderTests
         var suite = MigrationAcceptanceEvidenceBuilder.Build(
             "nightly-20260518",
             [
-                AutomatedInput("arcgis", "arcgis-geoservices-rest"),
+                AutomatedInput("arcgis", "geoservices-rest"),
                 AutomatedInput("geoserver", "geoserver-rest")
             ],
             new MigrationAcceptanceEvidenceOptions
             {
-                RequiredSourceKinds = ["geoserver-rest", "arcgis-geoservices-rest"]
+                RequiredSourceKinds = ["geoserver-rest", "geoservices-rest"]
             });
 
         suite.Summary.OverallState.Should().Be(MigrationEvidenceStates.Pass);
         suite.Summary.SourceCount.Should().Be(2);
         suite.Summary.AutomatedSourceCount.Should().Be(2);
-        suite.Summary.CoveredSourceKinds.Should().Equal("arcgis-geoservices-rest", "geoserver-rest");
+        suite.Summary.CoveredSourceKinds.Should().Equal("geoservices-rest", "geoserver-rest");
         suite.BlockingGaps.Should().BeEmpty();
         suite.Entries.Select(entry => entry.Id).Should().Equal("arcgis", "geoserver");
         suite.Entries.Should().OnlyContain(entry => entry.AutomationLevel == MigrationAutomationLevels.Automated);
@@ -53,14 +53,14 @@ public sealed class MigrationAcceptanceEvidenceBuilderTests
     {
         var suite = MigrationAcceptanceEvidenceBuilder.Build(
             "nightly-20260518",
-            [AutomatedInput("arcgis", "arcgis-geoservices-rest")],
+            [AutomatedInput("arcgis", "geoservices-rest")],
             new MigrationAcceptanceEvidenceOptions
             {
-                RequiredSourceKinds = ["arcgis-geoservices-rest", "geoserver-rest", "ogc-api-features"]
+                RequiredSourceKinds = ["geoservices-rest", "geoserver-rest", "ogc-api-features"]
             });
 
         suite.Summary.OverallState.Should().Be(MigrationEvidenceStates.Fail);
-        suite.Summary.RequiredSourceKinds.Should().Equal("arcgis-geoservices-rest", "geoserver-rest", "ogc-api-features");
+        suite.Summary.RequiredSourceKinds.Should().Equal("geoservices-rest", "geoserver-rest", "ogc-api-features");
         suite.BlockingGaps.Select(gap => gap.Id).Should().Equal(
             "missing-source-kind:geoserver-rest",
             "missing-source-kind:ogc-api-features");
@@ -115,7 +115,7 @@ public sealed class MigrationAcceptanceEvidenceBuilderTests
             [
                 AutomatedInput(
                     "arcgis",
-                    "arcgis-geoservices-rest",
+                    "geoservices-rest",
                     includeApplyAndPublishEvidence: false)
             ]);
 
@@ -142,7 +142,7 @@ public sealed class MigrationAcceptanceEvidenceBuilderTests
             [
                 AutomatedInput(
                     "arcgis",
-                    "arcgis-geoservices-rest",
+                    "geoservices-rest",
                     [
                         "https://user:password@example.test/evidence/inventory.json?token=secret#fragment",
                         " s3://migration-evidence/run/parity.json?X-Amz-Signature=secret "
@@ -168,7 +168,7 @@ public sealed class MigrationAcceptanceEvidenceBuilderTests
     [Fact]
     public void Build_WithMismatchedManifestSourceKind_Throws()
     {
-        var input = AutomatedInput("arcgis", "arcgis-geoservices-rest");
+        var input = AutomatedInput("arcgis", "geoservices-rest");
         var otherManifest = MigrationManifestTranslator.Translate(CreateInventory(
             "geoserver-rest",
             [CreateResource("workspace:roads", "Roads", "compatible", "Schema can be mapped.")]));
@@ -185,7 +185,7 @@ public sealed class MigrationAcceptanceEvidenceBuilderTests
     [Fact]
     public void Build_WithMismatchedParitySourceIdentity_Throws()
     {
-        var input = AutomatedInput("arcgis", "arcgis-geoservices-rest");
+        var input = AutomatedInput("arcgis", "geoservices-rest");
         var parity = MigrationParityEvidenceGenerator.Generate(
             input.Inventory,
             MigrationManifestTranslator.Translate(input.Inventory),
@@ -206,7 +206,7 @@ public sealed class MigrationAcceptanceEvidenceBuilderTests
     [Fact]
     public void Build_WithSuppliedManifestAndStaleParityManifestFlag_ReportsManifestAvailable()
     {
-        var input = AutomatedInput("arcgis", "arcgis-geoservices-rest");
+        var input = AutomatedInput("arcgis", "geoservices-rest");
         var manifest = MigrationManifestTranslator.Translate(input.Inventory);
         var parity = MigrationParityEvidenceGenerator.Generate(
             input.Inventory,
@@ -231,7 +231,7 @@ public sealed class MigrationAcceptanceEvidenceBuilderTests
             [
                 AutomatedInput(
                     "arcgis",
-                    "arcgis-geoservices-rest",
+                    "geoservices-rest",
                     performanceCost: CompletePerformanceCostEvidence())
             ],
             new MigrationAcceptanceEvidenceOptions
@@ -285,7 +285,7 @@ public sealed class MigrationAcceptanceEvidenceBuilderTests
     {
         var suite = MigrationAcceptanceEvidenceBuilder.Build(
             "nightly-20260518",
-            [AutomatedInput("arcgis", "arcgis-geoservices-rest")],
+            [AutomatedInput("arcgis", "geoservices-rest")],
             new MigrationAcceptanceEvidenceOptions
             {
                 RequireCostEvidence = true,
@@ -310,7 +310,7 @@ public sealed class MigrationAcceptanceEvidenceBuilderTests
             [
                 AutomatedInput(
                     "arcgis",
-                    "arcgis-geoservices-rest",
+                    "geoservices-rest",
                     performanceCost: CompletePerformanceCostEvidence(manualReviewCount: 1, resourceCount: 4))
             ],
             new MigrationAcceptanceEvidenceOptions
@@ -343,7 +343,7 @@ public sealed class MigrationAcceptanceEvidenceBuilderTests
             [
                 AutomatedInput(
                     "arcgis",
-                    "arcgis-geoservices-rest",
+                    "geoservices-rest",
                     performanceCost: IncompletePerformanceCostEvidence())
             ],
             new MigrationAcceptanceEvidenceOptions

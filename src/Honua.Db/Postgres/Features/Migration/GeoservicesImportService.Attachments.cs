@@ -104,7 +104,7 @@ internal sealed partial class GeoservicesImportService
             var batch = new long[batchLength];
             Array.Copy(sourceObjectIds, batchStart, batch, 0, batchLength);
 
-            ArcGisAttachmentQueryResponse queryResponse;
+            GeoServicesAttachmentQueryResponse queryResponse;
             try
             {
                 queryResponse = await _restClient.QueryAttachmentsAsync(

@@ -27,7 +27,7 @@ MIGRATION_GEOSERVER_FIXTURE="${HONUA_SDK_MIGRATION_GEOSERVER_FIXTURE:-tests/dotn
 # declares a composite relationship, which single-layer import deliberately
 # reports as NeedsReview since #4834 (#4864). Wildfire layer 0 has the same
 # point/Web Mercator/attachments shape and declares no relationships.
-MIGRATION_ARCGIS_SERVICE_URL="${HONUA_SDK_MIGRATION_ARCGIS_SERVICE_URL:-https://sampleserver6.arcgisonline.com/arcgis/rest/services/Wildfire/FeatureServer}"
+MIGRATION_GEOSERVICES_SERVICE_URL="${HONUA_SDK_MIGRATION_GEOSERVICES_SERVICE_URL:-https://sampleserver6.arcgisonline.com/arcgis/rest/services/Wildfire/FeatureServer}"
 MIGRATION_AUTOMATION_REQUIRED="${HONUA_SDK_MIGRATION_AUTOMATION_REQUIRED:-true}"
 MIGRATION_SERVER_IMAGE="${HONUA_SDK_MIGRATION_SERVER_IMAGE:-}"
 COMPAT_SERVER_LABEL="${HONUA_SDK_COMPAT_SERVER_LABEL:-unknown-server}"
@@ -350,7 +350,7 @@ require_dir "$JS_DIR" "honua-sdk-js"
     HONUA_SDK_LAYER_ID="$LAYER_ID" \
     HONUA_SDK_MIGRATION_SERVER_BASE_URL="$MIGRATION_SERVER_BASE_URL" \
     HONUA_SDK_MIGRATION_GEOSERVER_URL="$MIGRATION_GEOSERVER_URL" \
-    HONUA_SDK_MIGRATION_ARCGIS_SERVICE_URL="$MIGRATION_ARCGIS_SERVICE_URL" \
+    HONUA_SDK_MIGRATION_GEOSERVICES_SERVICE_URL="$MIGRATION_GEOSERVICES_SERVICE_URL" \
     HONUA_SDK_MIGRATION_JS_RESULTS_DIR="$JS_MIGRATION_RESULTS_DIR" \
     HONUA_SDK_MIGRATION_AUTOMATION_REQUIRED="$MIGRATION_AUTOMATION_REQUIRED" \
     HONUA_SDK_PORTAL_COMPAT_ENABLED="$PORTAL_COMPAT_ENABLED" \
@@ -367,7 +367,7 @@ const serviceId = process.env.HONUA_SDK_SERVICE_ID;
 const layerId = Number(process.env.HONUA_SDK_LAYER_ID);
 const migrationBaseUrl = process.env.HONUA_SDK_MIGRATION_SERVER_BASE_URL;
 const migrationGeoServerUrl = process.env.HONUA_SDK_MIGRATION_GEOSERVER_URL;
-const migrationArcGisServiceUrl = process.env.HONUA_SDK_MIGRATION_ARCGIS_SERVICE_URL;
+const migrationGeoServicesServiceUrl = process.env.HONUA_SDK_MIGRATION_GEOSERVICES_SERVICE_URL;
 const migrationResultsDir = process.env.HONUA_SDK_MIGRATION_JS_RESULTS_DIR;
 const migrationAutomationRequired = process.env.HONUA_SDK_MIGRATION_AUTOMATION_REQUIRED === "true";
 const portalCompatEnabled = process.env.HONUA_SDK_PORTAL_COMPAT_ENABLED === "true";
@@ -621,7 +621,7 @@ const arcgisImport = await measure(async () => {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      serviceUrl: migrationArcGisServiceUrl,
+      serviceUrl: migrationGeoServicesServiceUrl,
       layerId: 0,
       tableName: `sdk_migration_${Date.now().toString(36)}`,
       whereClause: "1=0",

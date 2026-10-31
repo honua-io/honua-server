@@ -8,7 +8,7 @@ using Honua.Protocols.GeoServices.GPServer.Models;
 using Honua.Protocols.GeoServices.NAServer;
 using Honua.Routing.Features.Routing.Abstractions;
 using Microsoft.AspNetCore.Http.HttpResults;
-using static Honua.Protocols.GeoServices.Soap.ArcGisSoapProtocol;
+using static Honua.Protocols.GeoServices.Soap.GeoServicesSoapProtocol;
 
 namespace Honua.Protocols.GeoServices.GPServer;
 

@@ -111,7 +111,7 @@ public sealed class CompositeRelationshipSqlReplayTests(PostgresFixture fixture)
     private static MigrationRelationshipApplyRequest Request(int origin, int related, string role) => new()
     {
         SourceRelationshipId = "3",
-        EsriRelationshipId = 3,
+        GeoServicesRelationshipId = 3,
         Name = "Summary",
         OriginLayerId = origin,
         RelatedLayerId = related,

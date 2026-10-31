@@ -45,7 +45,7 @@ public sealed class FeatureServerReplicaSyncTests : IAsyncLifetime
     {
         var updateId = await AddFeatureWithGeometryAsync("shape-original", -100, 40);
         var deleteId = await AddFeatureAsync("shape-deleted");
-        var replicaId = await CreateReplicaAsync("EsriShape", "0");
+        var replicaId = await CreateReplicaAsync("GeoServicesShape", "0");
         await SynchronizeDownloadAsync(replicaId);
         var adds = new[] { new { attributes = new { name = "shape-added" }, geometry = new { x = -101.25, y = 41.5 } } };
         var updates = new[] { new { attributes = new { objectid = updateId, name = "shape-updated" } } };

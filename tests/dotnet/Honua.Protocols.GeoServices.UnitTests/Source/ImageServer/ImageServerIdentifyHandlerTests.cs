@@ -1182,7 +1182,7 @@ public class ImageServerIdentifyHandlerTests
                 $"resource-{layerIndex}",
                 layerIndex: layerIndex,
                 serviceLocalId: "test-layer",
-                publicationType: MetadataV2PublicationType.EsriImageLayer)
+                publicationType: MetadataV2PublicationType.GeoServicesImageLayer)
             .BuildProvider();
 
     private static RasterInfo CreateTestRasterInfo() => new()

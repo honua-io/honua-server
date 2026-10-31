@@ -41,7 +41,7 @@ public sealed class DatumGridProvisioningTests : IAsyncLifetime
     private const string GridTestGateEnv = "HONUA_PROJ_GRID_TEST";
 
     private readonly PostgresFixture _fixture = new();
-    private readonly IDatumTransformationCatalog _catalog = EsriDatumTransformationCatalog.Create();
+    private readonly IDatumTransformationCatalog _catalog = GeoServicesDatumTransformationCatalog.Create();
     private PostGisCoordinateTransformService? _service;
 
     private static bool GridTestEnabled =>

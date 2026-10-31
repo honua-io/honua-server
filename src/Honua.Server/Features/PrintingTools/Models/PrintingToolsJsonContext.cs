@@ -27,10 +27,10 @@ namespace Honua.Server.Features.PrintingTools.Models;
 [JsonSerializable(typeof(PrintJobMessage))]
 [JsonSerializable(typeof(PrintJobMessage[]))]
 [JsonSerializable(typeof(PrintSubmitJobResponse))]
-[JsonSerializable(typeof(EsriLayoutTemplateInfo))]
-[JsonSerializable(typeof(EsriLayoutTemplateInfo[]))]
-[JsonSerializable(typeof(EsriLayoutOptions))]
-[JsonSerializable(typeof(EsriLayoutElement))]
+[JsonSerializable(typeof(GeoServicesLayoutTemplateInfo))]
+[JsonSerializable(typeof(GeoServicesLayoutTemplateInfo[]))]
+[JsonSerializable(typeof(GeoServicesLayoutOptions))]
+[JsonSerializable(typeof(GeoServicesLayoutElement))]
 [JsonSerializable(typeof(double[]))]
 [JsonSerializable(typeof(PrintServiceInfoResponse))]
 [JsonSerializable(typeof(LayoutTemplatesInfoResponse))]
@@ -48,7 +48,7 @@ internal sealed partial class PrintingToolsJsonContext : JsonSerializerContext;
 /// Fields match the documented response shape: layoutTemplate, pageSize, pageUnits,
 /// webMapFrameSize, layoutOptions.
 /// </summary>
-internal sealed class EsriLayoutTemplateInfo
+internal sealed class GeoServicesLayoutTemplateInfo
 {
     /// <summary>
     /// Template name.
@@ -73,39 +73,39 @@ internal sealed class EsriLayoutTemplateInfo
     /// <summary>
     /// Layout element visibility flags.
     /// </summary>
-    public EsriLayoutOptions? LayoutOptions { get; set; }
+    public GeoServicesLayoutOptions? LayoutOptions { get; set; }
 }
 
 /// <summary>
 /// Layout element visibility flags per the Esri template info contract.
 /// </summary>
-internal sealed class EsriLayoutOptions
+internal sealed class GeoServicesLayoutOptions
 {
     /// <summary>
     /// Title text element visibility.
     /// </summary>
-    public EsriLayoutElement? TitleText { get; set; }
+    public GeoServicesLayoutElement? TitleText { get; set; }
 
     /// <summary>
     /// Legend element visibility.
     /// </summary>
-    public EsriLayoutElement? LegendOptions { get; set; }
+    public GeoServicesLayoutElement? LegendOptions { get; set; }
 
     /// <summary>
     /// Scale bar element visibility.
     /// </summary>
-    public EsriLayoutElement? ScaleBarOptions { get; set; }
+    public GeoServicesLayoutElement? ScaleBarOptions { get; set; }
 
     /// <summary>
     /// Copyright text element visibility.
     /// </summary>
-    public EsriLayoutElement? CopyrightText { get; set; }
+    public GeoServicesLayoutElement? CopyrightText { get; set; }
 }
 
 /// <summary>
 /// Describes a layout element's type and visibility.
 /// </summary>
-internal sealed class EsriLayoutElement
+internal sealed class GeoServicesLayoutElement
 {
     /// <summary>
     /// Element type (e.g. "esriLayoutTextElement", "esriLayoutLegendElement").

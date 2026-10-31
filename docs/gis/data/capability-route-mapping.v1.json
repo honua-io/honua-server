@@ -204,7 +204,7 @@
     },
     {
       "family": "Admin API",
-      "routePrefix": "/api/v1/admin/import/arcgis",
+      "routePrefix": "/api/v1/admin/import/geoservices-rest",
       "capability": "import.geoservices"
     },
     {

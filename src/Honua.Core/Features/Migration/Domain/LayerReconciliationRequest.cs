@@ -19,7 +19,7 @@ public sealed record LayerReconciliationRequest
 
     /// <summary>
     /// Source kind that produced the layers being reconciled, for example
-    /// <c>geoserver-rest</c> or <c>arcgis-geoservices-rest</c>.
+    /// <c>geoserver-rest</c> or <c>geoservices-rest</c>.
     /// </summary>
     public required string SourceKind { get; init; }
 

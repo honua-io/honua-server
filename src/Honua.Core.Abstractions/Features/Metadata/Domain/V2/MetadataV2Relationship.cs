@@ -23,7 +23,7 @@ public sealed record MetadataV2Relationship
     /// <summary>
     /// Stable identifier for this relationship within the resource. Esri client
     /// compatibility: when callers need a numeric relationship id, pass
-    /// <see cref="EsriRelationshipId"/>.
+    /// <see cref="GeoServicesRelationshipId"/>.
     /// </summary>
     [JsonPropertyName("id")]
     public string Id { get; init; } = string.Empty;
@@ -85,5 +85,5 @@ public sealed record MetadataV2Relationship
     /// derive a stable integer from a hash of <see cref="Id"/>.
     /// </summary>
     [JsonPropertyName("esriRelationshipId")]
-    public int? EsriRelationshipId { get; init; }
+    public int? GeoServicesRelationshipId { get; init; }
 }

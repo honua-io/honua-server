@@ -199,7 +199,7 @@ internal sealed class FeatureServerRelatedRecordsHandler(
             SqlFragment? sqlFilter = null;
             if (!string.IsNullOrWhiteSpace(validatedParams.Where))
             {
-                var parseResult = _filterExpressionService.Parse(FilterLanguage.ArcGisSql, validatedParams.Where);
+                var parseResult = _filterExpressionService.Parse(FilterLanguage.GeoServicesSql, validatedParams.Where);
                 if (!parseResult.IsSuccess)
                 {
                     return StandardErrorHelpers.CreateBadRequest(httpContext,
@@ -402,7 +402,7 @@ internal sealed class FeatureServerRelatedRecordsHandler(
     }
 
     private static int ResolveRelationshipId(MetadataV2Relationship relationship)
-        => relationship.EsriRelationshipId ?? FeatureServerEndpoints.StableStringHash(relationship.Id);
+        => relationship.GeoServicesRelationshipId ?? FeatureServerEndpoints.StableStringHash(relationship.Id);
 
     private static bool TryResolveRelatedResource(
         MetadataV2GraphSnapshot snapshot,

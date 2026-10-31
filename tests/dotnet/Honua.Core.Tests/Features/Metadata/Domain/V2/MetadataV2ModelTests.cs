@@ -142,7 +142,7 @@ public sealed class MetadataV2ModelTests
 
     [UnitTest]
     [Operation(Operations.Query)]
-    public void EsriServiceLayers_AreServiceLocalPublicationSlots()
+    public void GeoServicesServiceLayers_AreServiceLocalPublicationSlots()
     {
         var parcels = new MetadataV2Resource
         {
@@ -195,7 +195,7 @@ public sealed class MetadataV2ModelTests
             },
             ResourceId = parcels.Metadata.Id,
             ServiceId = "service.public-works-feature-server",
-            PublicationType = MetadataV2PublicationType.EsriFeatureLayer,
+            PublicationType = MetadataV2PublicationType.GeoServicesFeatureLayer,
             Identifier = new MetadataV2PublicationIdentifier
             {
                 Value = "0",
@@ -213,7 +213,7 @@ public sealed class MetadataV2ModelTests
             },
             ResourceId = hydrants.Metadata.Id,
             ServiceId = "service.public-works-feature-server",
-            PublicationType = MetadataV2PublicationType.EsriFeatureLayer,
+            PublicationType = MetadataV2PublicationType.GeoServicesFeatureLayer,
             Identifier = new MetadataV2PublicationIdentifier
             {
                 Value = "1",
@@ -257,7 +257,7 @@ public sealed class MetadataV2ModelTests
         graph.Services.Single().PrimaryProtocol.Should().Be(ServiceProtocols.FeatureServer);
         graph.Publications.Should().OnlyContain(publication =>
             publication.ServiceId == "service.public-works-feature-server" &&
-            publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer);
+            publication.PublicationType == MetadataV2PublicationType.GeoServicesFeatureLayer);
         graph.Publications.Select(publication => publication.LayerIndex).Should().BeEquivalentTo(
             new int?[] { 0, 1 });
         graph.Publications.Select(publication => publication.ResourceId).Should().BeEquivalentTo(
@@ -332,9 +332,9 @@ public sealed class MetadataV2ModelTests
                 nameof(MetadataV2PublicationType.WfsFeatureType),
                 nameof(MetadataV2PublicationType.WmsLayer),
                 nameof(MetadataV2PublicationType.WmtsLayer),
-                nameof(MetadataV2PublicationType.EsriFeatureLayer),
-                nameof(MetadataV2PublicationType.EsriMapLayer),
-                nameof(MetadataV2PublicationType.EsriImageLayer),
+                nameof(MetadataV2PublicationType.GeoServicesFeatureLayer),
+                nameof(MetadataV2PublicationType.GeoServicesMapLayer),
+                nameof(MetadataV2PublicationType.GeoServicesImageLayer),
                 nameof(MetadataV2PublicationType.StacCollection),
                 nameof(MetadataV2PublicationType.DcatDistribution),
                 nameof(MetadataV2PublicationType.OgcRecord),
@@ -1081,14 +1081,14 @@ public sealed class MetadataV2ModelTests
         ServiceProtocols.IsPreferredPublicationType(
             ServiceProtocols.OgcFeatures, MetadataV2PublicationType.OgcCollection).Should().BeTrue();
         ServiceProtocols.IsPreferredPublicationType(
-            ServiceProtocols.OgcFeatures, MetadataV2PublicationType.EsriImageLayer).Should().BeFalse();
+            ServiceProtocols.OgcFeatures, MetadataV2PublicationType.GeoServicesImageLayer).Should().BeFalse();
 
         ServiceProtocols.IsPreferredPublicationType(
             ServiceProtocols.Stac, MetadataV2PublicationType.StacCollection).Should().BeTrue();
         ServiceProtocols.IsPreferredPublicationType(
-            ServiceProtocols.FeatureServer, MetadataV2PublicationType.EsriFeatureLayer).Should().BeTrue();
+            ServiceProtocols.FeatureServer, MetadataV2PublicationType.GeoServicesFeatureLayer).Should().BeTrue();
         ServiceProtocols.IsPreferredPublicationType(
-            ServiceProtocols.ImageServer, MetadataV2PublicationType.EsriImageLayer).Should().BeTrue();
+            ServiceProtocols.ImageServer, MetadataV2PublicationType.GeoServicesImageLayer).Should().BeTrue();
         ServiceProtocols.IsPreferredPublicationType(
             ServiceProtocols.Wfs20, MetadataV2PublicationType.WfsFeatureType).Should().BeTrue();
 

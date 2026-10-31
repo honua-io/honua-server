@@ -359,13 +359,13 @@ internal class OptimizedQueryFormatter : IQueryFormatter
         string[]? outFields)
     {
         // Use source-generated JSON context for optimal performance
-        var response = new EsriFeatureSet
+        var response = new GeoServicesFeatureSet
         {
             ObjectIdFieldName = layer.ObjectIdField,
             GlobalIdFieldName = layer.GlobalIdField,
             GeometryType = layer.GeometryType,
             SpatialReference = new { Wkid = layer.SpatialReference },
-            Features = result.Features.Select(f => new EsriFeature
+            Features = result.Features.Select(f => new GeoServicesFeature
             {
                 Geometry = returnGeometry ? ConvertToEsriGeometry(f.Geometry) : null,
                 Attributes = FilterAttributes(f.Attributes, outFields)
@@ -373,7 +373,7 @@ internal class OptimizedQueryFormatter : IQueryFormatter
             ExceededTransferLimit = result.HasMore
         };
 
-        var json = JsonSerializer.Serialize(response, FeatureServerJsonContext.Default.EsriFeatureSet);
+        var json = JsonSerializer.Serialize(response, FeatureServerJsonContext.Default.GeoServicesFeatureSet);
         return (json, "application/json");
     }
 

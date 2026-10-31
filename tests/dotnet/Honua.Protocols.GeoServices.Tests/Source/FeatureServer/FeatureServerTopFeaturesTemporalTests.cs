@@ -41,7 +41,7 @@ public sealed class FeatureServerTopFeaturesTemporalTests
                 ], accessPolicy: access)
             .AddStorageBinding("binding", "res", "public.dates", storageLayerId: 0)
             .AddPublication("pub", "svc", "res", layerIndex: 0, storageBindingId: "binding",
-                serviceLocalId: "0", publicationType: MetadataV2PublicationType.EsriFeatureLayer)
+                serviceLocalId: "0", publicationType: MetadataV2PublicationType.GeoServicesFeatureLayer)
             .BuildProvider();
         var reader = Substitute.For<IFeatureReader>();
         var feature = Feature.Create(1, null, ImmutableDictionary<string, object?>.Empty

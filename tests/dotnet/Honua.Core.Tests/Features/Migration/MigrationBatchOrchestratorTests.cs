@@ -49,7 +49,7 @@ public sealed class MigrationBatchOrchestratorTests
         // must order the origin (layer:0) before the related (layer:1).
         var request = new MigrationBatchStartRequest
         {
-            SourceKind = "arcgis-geoservices-rest",
+            SourceKind = "geoservices-rest",
             Layers =
             [
                 new MigrationBatchLayerSpec
@@ -468,7 +468,7 @@ public sealed class MigrationBatchOrchestratorTests
         return System.Text.Json.JsonSerializer.Serialize(
             new MigrationManifestArtifact
             {
-                SourceKind = "arcgis-geoservices-rest",
+                SourceKind = "geoservices-rest",
                 Source = new MigrationSourceIdentity
                 {
                     DisplayName = "Example",
@@ -537,7 +537,7 @@ public sealed class MigrationBatchOrchestratorTests
 
     private static MigrationBatchStartRequest NewRequest() => new()
     {
-        SourceKind = "arcgis-geoservices-rest",
+        SourceKind = "geoservices-rest",
         Layers =
         [
             new MigrationBatchLayerSpec

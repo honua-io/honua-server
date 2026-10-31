@@ -26,7 +26,7 @@ public sealed class RoutingVirtualSoapContractTests(NAServerEndpointTestsFixture
     : IClassFixture<NAServerEndpointTestsFixture>
 {
     private static readonly XNamespace Soap = "http://schemas.xmlsoap.org/soap/envelope/";
-    private static readonly XNamespace ArcGis = "http://www.esri.com/schemas/ArcGIS/10.8";
+    private static readonly XNamespace GeoServices = "http://www.esri.com/schemas/ArcGIS/10.8";
     private static readonly string[] Tasks = ["FindRoutes", "GenerateServiceAreas", "GetTravelModes", "GetToolInfo"];
 
     [IntegrationTheory]
@@ -214,8 +214,8 @@ public sealed class RoutingVirtualSoapContractTests(NAServerEndpointTestsFixture
     private static StringContent SoapContent(string method, params XElement[] arguments)
     {
         var document = new XDocument(new XElement(Soap + "Envelope",
-            new XAttribute(XNamespace.Xmlns + "tns", ArcGis.NamespaceName),
-            new XElement(Soap + "Body", new XElement(ArcGis + method, arguments))));
+            new XAttribute(XNamespace.Xmlns + "tns", GeoServices.NamespaceName),
+            new XElement(Soap + "Body", new XElement(GeoServices + method, arguments))));
         return new StringContent(document.ToString(), Encoding.UTF8, "text/xml");
     }
 }

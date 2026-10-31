@@ -10,7 +10,7 @@ namespace Honua.Db.Postgres.Features.Migration;
 
 internal sealed partial class GeoservicesImportService
 {
-    private const string ArcGisSourceKind = "arcgis-geoservices-rest";
+    private const string GeoServicesSourceKind = "geoservices-rest";
 
     /// <summary>
     /// Single-layer import has not run the separate relationship-apply stage. Retain every
@@ -50,7 +50,7 @@ internal sealed partial class GeoservicesImportService
         ArgumentNullException.ThrowIfNull(manifest);
         ArgumentNullException.ThrowIfNull(publishedLayerMap);
 
-        if (!string.Equals(manifest.SourceKind, ArcGisSourceKind, StringComparison.Ordinal))
+        if (!string.Equals(manifest.SourceKind, GeoServicesSourceKind, StringComparison.Ordinal))
         {
             // Other source kinds (geoserver-rest, ogc-wfs, etc.) do not currently
             // emit per-relationship records into the manifest. Returning an empty
@@ -140,7 +140,7 @@ internal sealed partial class GeoservicesImportService
                 requests.Add(new MigrationRelationshipApplyRequest
                 {
                     SourceRelationshipId = relationship.SourceRelationshipId,
-                    EsriRelationshipId = relationship.EsriRelationshipId,
+                    GeoServicesRelationshipId = relationship.GeoServicesRelationshipId,
                     Name = relationship.Name,
                     OriginLayerId = originLayerId,
                     RelatedLayerId = relatedLayerId,
@@ -288,7 +288,7 @@ internal sealed partial class GeoservicesImportService
         // parity probe can report missing origin-side persistence as a manual
         // review record rather than a zero-coverage hole.
         var refValue = originLayerId.HasValue
-            ? $"rel-{originLayerId.Value}-{(relationship.EsriRelationshipId?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "deferred")}"
+            ? $"rel-{originLayerId.Value}-{(relationship.GeoServicesRelationshipId?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "deferred")}"
             : relationship.TargetRelationshipRef ?? sourceRelationshipId;
         return new MigrationRelationshipApplyOutcome
         {

@@ -169,7 +169,7 @@ public sealed class MigrationManifestTranslatorTests
     public void Translate_WithFidelityClassifications_EmitsManifestFidelityMatrixWithTargetIds()
     {
         var inventory = CreateInventory(
-            sourceKind: "arcgis-geoservices-rest",
+            sourceKind: "geoservices-rest",
             serviceType: "FeatureServer",
             resources:
             [
@@ -178,7 +178,7 @@ public sealed class MigrationManifestTranslatorTests
                     "Inspections",
                     "partial",
                     "Attachments and relationships require review.",
-                    code: ImportCompatibilityCodes.ArcGisAttachments,
+                    code: ImportCompatibilityCodes.GeoServicesAttachments,
                     capabilities: ["Query", "Extract"],
                     manualSteps: ["Plan attachment migration."])
             ],
@@ -205,7 +205,7 @@ public sealed class MigrationManifestTranslatorTests
                     "attachment",
                     "attachments",
                     MigrationFidelityAutomationStatuses.ManualReview,
-                    ImportCompatibilityCodes.ArcGisAttachments,
+                    ImportCompatibilityCodes.GeoServicesAttachments,
                     manualSteps: ["Plan attachment migration."]),
                 CreateFidelity(
                     "classification:renderer:fidelity:0:renderer",
@@ -352,9 +352,9 @@ public sealed class MigrationManifestTranslatorTests
 
     [Trait("Tier", "Fast")]
     [Fact]
-    public void Translate_WithArcGisInventory_RecordsResourceIdentityEvidence()
+    public void Translate_WithGeoServicesInventory_RecordsResourceIdentityEvidence()
     {
-        var inventory = CreateArcGisInventory(
+        var inventory = CreateGeoServicesInventory(
             serviceUrl: "https://example.com/arcgis/rest/services/Roads/FeatureServer",
             containers:
             [
@@ -414,9 +414,9 @@ public sealed class MigrationManifestTranslatorTests
 
     [Trait("Tier", "Fast")]
     [Fact]
-    public void Translate_WithArcGisFolderUrl_CapturesSourceFolderPath()
+    public void Translate_WithGeoServicesFolderUrl_CapturesSourceFolderPath()
     {
-        var inventory = CreateArcGisInventory(
+        var inventory = CreateGeoServicesInventory(
             serviceUrl: "https://example.com/arcgis/rest/services/Utilities/Water/FeatureServer",
             containers:
             [
@@ -453,7 +453,7 @@ public sealed class MigrationManifestTranslatorTests
 
     [Trait("Tier", "Fast")]
     [Fact]
-    public void Translate_WithNonArcGisInventory_OmitsLayerIdentityFields()
+    public void Translate_WithNonGeoServicesInventory_OmitsLayerIdentityFields()
     {
         var inventory = CreateInventory(
             resources:
@@ -483,7 +483,7 @@ public sealed class MigrationManifestTranslatorTests
         // reasonably construct an end-to-end "preserved" remap via the public Translate path. Verify
         // the filter directly: only remapped/synthesized entries appear in IdentityRemapping, so any
         // remap entry whose stability is Preserved must be absent from the dictionary.
-        var inventory = CreateArcGisInventory(
+        var inventory = CreateGeoServicesInventory(
             serviceUrl: "https://example.com/arcgis/rest/services/Mixed/FeatureServer",
             containers:
             [
@@ -552,7 +552,7 @@ public sealed class MigrationManifestTranslatorTests
     [Fact]
     public void Translate_IdentityRemapEvidence_RoundTripsThroughSystemTextJson()
     {
-        var inventory = CreateArcGisInventory(
+        var inventory = CreateGeoServicesInventory(
             serviceUrl: "https://example.com/arcgis/rest/services/Parcels/FeatureServer",
             containers:
             [
@@ -612,9 +612,9 @@ public sealed class MigrationManifestTranslatorTests
 
     [Trait("Tier", "Fast")]
     [Fact]
-    public void Translate_WithArcGisAttachmentUnderSizeThreshold_ClassifiesAsAutomated()
+    public void Translate_WithGeoServicesAttachmentUnderSizeThreshold_ClassifiesAsAutomated()
     {
-        var inventory = CreateArcGisAttachmentInventory(
+        var inventory = CreateGeoServicesAttachmentInventory(
             attachmentMetadata: new Dictionary<string, string>(StringComparer.Ordinal)
             {
                 ["attachmentId"] = "42",
@@ -642,10 +642,10 @@ public sealed class MigrationManifestTranslatorTests
 
     [Trait("Tier", "Fast")]
     [Fact]
-    public void Translate_WithArcGisAttachmentOverAutomatedLane_ClassifiesAsAssisted()
+    public void Translate_WithGeoServicesAttachmentOverAutomatedLane_ClassifiesAsAssisted()
     {
         // 25 MiB exceeds the automated lane (10 MiB) but is well under the assisted ceiling (100 MiB).
-        var inventory = CreateArcGisAttachmentInventory(
+        var inventory = CreateGeoServicesAttachmentInventory(
             attachmentMetadata: new Dictionary<string, string>(StringComparer.Ordinal)
             {
                 ["attachmentId"] = "77",
@@ -668,10 +668,10 @@ public sealed class MigrationManifestTranslatorTests
 
     [Trait("Tier", "Fast")]
     [Fact]
-    public void Translate_WithArcGisAttachmentOverAssistedLane_ClassifiesAsManualReview()
+    public void Translate_WithGeoServicesAttachmentOverAssistedLane_ClassifiesAsManualReview()
     {
         // 200 MiB exceeds the 100 MiB assisted ceiling and must be planned out of band.
-        var inventory = CreateArcGisAttachmentInventory(
+        var inventory = CreateGeoServicesAttachmentInventory(
             attachmentMetadata: new Dictionary<string, string>(StringComparer.Ordinal)
             {
                 ["attachmentId"] = "9001",
@@ -693,9 +693,9 @@ public sealed class MigrationManifestTranslatorTests
 
     [Trait("Tier", "Fast")]
     [Fact]
-    public void Translate_WithArcGisAttachmentMissingSize_ClassifiesAsManualReview()
+    public void Translate_WithGeoServicesAttachmentMissingSize_ClassifiesAsManualReview()
     {
-        var inventory = CreateArcGisAttachmentInventory(
+        var inventory = CreateGeoServicesAttachmentInventory(
             attachmentMetadata: new Dictionary<string, string>(StringComparer.Ordinal)
             {
                 ["attachmentId"] = "100",
@@ -713,14 +713,14 @@ public sealed class MigrationManifestTranslatorTests
 
     [Trait("Tier", "Fast")]
     [Fact]
-    public void Translate_WithArcGisRelationshipKeyFields_PropagatesOriginAndDestinationFields()
+    public void Translate_WithGeoServicesRelationshipKeyFields_PropagatesOriginAndDestinationFields()
     {
         // Issue #1256: simple ArcGIS relationships use the same keyField on
         // both sides; the fidelity scanner now records originKeyField and
         // destinationKeyField metadata. The translator surfaces them on the
         // emitted MigrationManifestRelationshipRecord so the apply pass can
         // build foreign-key references without re-fetching the source JSON.
-        var inventory = CreateArcGisRelationshipInventory(
+        var inventory = CreateGeoServicesRelationshipInventory(
             classifications:
             [
                 CreateRelationshipClassification(
@@ -744,14 +744,14 @@ public sealed class MigrationManifestTranslatorTests
         record.OriginKeyField.Should().Be("INSPECTION_ID");
         record.DestinationKeyField.Should().Be("INSPECTION_ID");
         record.Role.Should().Be("esriRelRoleOrigin");
-        record.EsriRelationshipId.Should().Be(3);
+        record.GeoServicesRelationshipId.Should().Be(3);
     }
 
     [Trait("Tier", "Fast")]
     [Fact]
-    public void Translate_WithArcGisOneToManyRelationship_ClassifiesAsAssisted()
+    public void Translate_WithGeoServicesOneToManyRelationship_ClassifiesAsAssisted()
     {
-        var inventory = CreateArcGisRelationshipInventory(
+        var inventory = CreateGeoServicesRelationshipInventory(
             classifications:
             [
                 CreateRelationshipClassification(
@@ -785,9 +785,9 @@ public sealed class MigrationManifestTranslatorTests
 
     [Trait("Tier", "Fast")]
     [Fact]
-    public void Translate_WithArcGisManyToManyRelationship_ClassifiesAsAssisted()
+    public void Translate_WithGeoServicesManyToManyRelationship_ClassifiesAsAssisted()
     {
-        var inventory = CreateArcGisRelationshipInventory(
+        var inventory = CreateGeoServicesRelationshipInventory(
             classifications:
             [
                 CreateRelationshipClassification(
@@ -813,9 +813,9 @@ public sealed class MigrationManifestTranslatorTests
 
     [Trait("Tier", "Fast")]
     [Fact]
-    public void Translate_WithArcGisCompositeRelationship_ClassifiesAsManualReviewWithReason()
+    public void Translate_WithGeoServicesCompositeRelationship_ClassifiesAsManualReviewWithReason()
     {
-        var inventory = CreateArcGisRelationshipInventory(
+        var inventory = CreateGeoServicesRelationshipInventory(
             classifications:
             [
                 CreateRelationshipClassification(
@@ -840,7 +840,7 @@ public sealed class MigrationManifestTranslatorTests
 
     [Trait("Tier", "Fast")]
     [Fact]
-    public void Translate_WithNonArcGisInventory_OmitsAttachmentAndRelationshipRecords()
+    public void Translate_WithNonGeoServicesInventory_OmitsAttachmentAndRelationshipRecords()
     {
         var inventory = CreateInventory(
             resources:
@@ -858,7 +858,7 @@ public sealed class MigrationManifestTranslatorTests
     [Fact]
     public void Translate_AttachmentAndRelationshipRecords_RoundTripThroughSystemTextJson()
     {
-        var inventory = CreateArcGisInventory(
+        var inventory = CreateGeoServicesInventory(
             serviceUrl: "https://example.com/arcgis/rest/services/Inspections/FeatureServer",
             containers:
             [
@@ -948,9 +948,9 @@ public sealed class MigrationManifestTranslatorTests
 
     [Trait("Tier", "Fast")]
     [Fact]
-    public void Translate_WithArcGisSimpleRenderer_ClassifiesAsAutomatedWithSuggestedStyleId()
+    public void Translate_WithGeoServicesSimpleRenderer_ClassifiesAsAutomatedWithSuggestedStyleId()
     {
-        var inventory = CreateArcGisRendererInventory(
+        var inventory = CreateGeoServicesRendererInventory(
             rendererMetadata: new Dictionary<string, string>(StringComparer.Ordinal)
             {
                 ["rendererType"] = "simple"
@@ -972,9 +972,9 @@ public sealed class MigrationManifestTranslatorTests
 
     [Trait("Tier", "Fast")]
     [Fact]
-    public void Translate_WithArcGisUniqueValueRenderer_ClassifiesAsAssistedUnderCategoryLimit()
+    public void Translate_WithGeoServicesUniqueValueRenderer_ClassifiesAsAssistedUnderCategoryLimit()
     {
-        var inventory = CreateArcGisRendererInventory(
+        var inventory = CreateGeoServicesRendererInventory(
             rendererMetadata: new Dictionary<string, string>(StringComparer.Ordinal)
             {
                 ["rendererType"] = "uniqueValue",
@@ -995,9 +995,9 @@ public sealed class MigrationManifestTranslatorTests
 
     [Trait("Tier", "Fast")]
     [Fact]
-    public void Translate_WithArcGisClassBreaksRenderer_ClassifiesAsAssistedUnderBreakLimit()
+    public void Translate_WithGeoServicesClassBreaksRenderer_ClassifiesAsAssistedUnderBreakLimit()
     {
-        var inventory = CreateArcGisRendererInventory(
+        var inventory = CreateGeoServicesRendererInventory(
             rendererMetadata: new Dictionary<string, string>(StringComparer.Ordinal)
             {
                 ["rendererType"] = "classBreaks",
@@ -1017,9 +1017,9 @@ public sealed class MigrationManifestTranslatorTests
 
     [Trait("Tier", "Fast")]
     [Fact]
-    public void Translate_WithArcGisUniqueValueRenderer_OverCategoryLimit_ClassifiesAsManualReview()
+    public void Translate_WithGeoServicesUniqueValueRenderer_OverCategoryLimit_ClassifiesAsManualReview()
     {
-        var inventory = CreateArcGisRendererInventory(
+        var inventory = CreateGeoServicesRendererInventory(
             rendererMetadata: new Dictionary<string, string>(StringComparer.Ordinal)
             {
                 ["rendererType"] = "uniqueValue",
@@ -1036,9 +1036,9 @@ public sealed class MigrationManifestTranslatorTests
 
     [Trait("Tier", "Fast")]
     [Fact]
-    public void Translate_WithArcGisDictionaryRenderer_ClassifiesAsManualReview()
+    public void Translate_WithGeoServicesDictionaryRenderer_ClassifiesAsManualReview()
     {
-        var inventory = CreateArcGisRendererInventory(
+        var inventory = CreateGeoServicesRendererInventory(
             rendererMetadata: new Dictionary<string, string>(StringComparer.Ordinal)
             {
                 ["rendererType"] = "dictionary"
@@ -1054,9 +1054,9 @@ public sealed class MigrationManifestTranslatorTests
 
     [Trait("Tier", "Fast")]
     [Fact]
-    public void Translate_WithArcGisUnknownRenderer_ClassifiesAsUnsupported()
+    public void Translate_WithGeoServicesUnknownRenderer_ClassifiesAsUnsupported()
     {
-        var inventory = CreateArcGisRendererInventory(
+        var inventory = CreateGeoServicesRendererInventory(
             rendererMetadata: new Dictionary<string, string>(StringComparer.Ordinal)
             {
                 ["rendererType"] = "experimentalQuantumGradient"
@@ -1071,9 +1071,9 @@ public sealed class MigrationManifestTranslatorTests
 
     [Trait("Tier", "Fast")]
     [Fact]
-    public void Translate_WithArcGisFieldTokenLabelExpression_ClassifiesAsAutomated()
+    public void Translate_WithGeoServicesFieldTokenLabelExpression_ClassifiesAsAutomated()
     {
-        var inventory = CreateArcGisRendererInventory(
+        var inventory = CreateGeoServicesRendererInventory(
             rendererMetadata: new Dictionary<string, string>(StringComparer.Ordinal)
             {
                 ["rendererType"] = "simple",
@@ -1091,9 +1091,9 @@ public sealed class MigrationManifestTranslatorTests
 
     [Trait("Tier", "Fast")]
     [Fact]
-    public void Translate_WithArcGisArcadeLabelExpression_ClassifiesAsAssisted()
+    public void Translate_WithGeoServicesArcadeLabelExpression_ClassifiesAsAssisted()
     {
-        var inventory = CreateArcGisRendererInventory(
+        var inventory = CreateGeoServicesRendererInventory(
             rendererMetadata: new Dictionary<string, string>(StringComparer.Ordinal)
             {
                 ["rendererType"] = "simple",
@@ -1111,9 +1111,9 @@ public sealed class MigrationManifestTranslatorTests
 
     [Trait("Tier", "Fast")]
     [Fact]
-    public void Translate_WithArcGisVBScriptLabelExpression_ClassifiesAsUnsupported()
+    public void Translate_WithGeoServicesVBScriptLabelExpression_ClassifiesAsUnsupported()
     {
-        var inventory = CreateArcGisRendererInventory(
+        var inventory = CreateGeoServicesRendererInventory(
             rendererMetadata: new Dictionary<string, string>(StringComparer.Ordinal)
             {
                 ["rendererType"] = "simple",
@@ -1131,9 +1131,9 @@ public sealed class MigrationManifestTranslatorTests
 
     [Trait("Tier", "Fast")]
     [Fact]
-    public void Translate_WithMultipleArcGisLabelClasses_EmitsOneDiagnosticPerIndex()
+    public void Translate_WithMultipleGeoServicesLabelClasses_EmitsOneDiagnosticPerIndex()
     {
-        var inventory = CreateArcGisRendererInventory(
+        var inventory = CreateGeoServicesRendererInventory(
             rendererMetadata: new Dictionary<string, string>(StringComparer.Ordinal)
             {
                 ["rendererType"] = "simple",
@@ -1157,7 +1157,7 @@ public sealed class MigrationManifestTranslatorTests
 
     [Trait("Tier", "Fast")]
     [Fact]
-    public void Translate_WithNonArcGisInventory_OmitsRendererAndLabelClassDiagnostics()
+    public void Translate_WithNonGeoServicesInventory_OmitsRendererAndLabelClassDiagnostics()
     {
         var inventory = CreateInventory(
             resources:
@@ -1175,7 +1175,7 @@ public sealed class MigrationManifestTranslatorTests
     [Fact]
     public void Translate_RendererAndLabelDiagnostics_RoundTripThroughSystemTextJson()
     {
-        var inventory = CreateArcGisRendererInventory(
+        var inventory = CreateGeoServicesRendererInventory(
             rendererMetadata: new Dictionary<string, string>(StringComparer.Ordinal)
             {
                 ["rendererType"] = "uniqueValue",
@@ -1213,12 +1213,12 @@ public sealed class MigrationManifestTranslatorTests
         resource.LabelClassDiagnostics[0].Classification.Should().Be(MigrationManifestLabelClassClassifications.Automated);
     }
 
-    private static MigrationSourceInventoryArtifact CreateArcGisRendererInventory(
+    private static MigrationSourceInventoryArtifact CreateGeoServicesRendererInventory(
         Dictionary<string, string> rendererMetadata)
     {
         const string resourceId = "resource:Inspections:layer:0";
         const string styleId = "renderer:Inspections:0";
-        return CreateArcGisInventory(
+        return CreateGeoServicesInventory(
             serviceUrl: "https://example.com/arcgis/rest/services/Inspections/FeatureServer",
             containers:
             [
@@ -1260,12 +1260,12 @@ public sealed class MigrationManifestTranslatorTests
             ]);
     }
 
-    private static MigrationSourceInventoryArtifact CreateArcGisAttachmentInventory(
+    private static MigrationSourceInventoryArtifact CreateGeoServicesAttachmentInventory(
         Dictionary<string, string> attachmentMetadata)
     {
         const string resourceId = "resource:Inspections:layer:0";
         var dependencyId = $"dependency:Inspections:layer:{resourceId}:attachments";
-        return CreateArcGisInventory(
+        return CreateGeoServicesInventory(
             serviceUrl: "https://example.com/arcgis/rest/services/Inspections/FeatureServer",
             containers:
             [
@@ -1307,10 +1307,10 @@ public sealed class MigrationManifestTranslatorTests
             ]);
     }
 
-    private static MigrationSourceInventoryArtifact CreateArcGisRelationshipInventory(
+    private static MigrationSourceInventoryArtifact CreateGeoServicesRelationshipInventory(
         MigrationFidelityClassificationRecord[] classifications)
     {
-        return CreateArcGisInventory(
+        return CreateGeoServicesInventory(
             serviceUrl: "https://example.com/arcgis/rest/services/Inspections/FeatureServer",
             containers:
             [
@@ -1351,14 +1351,14 @@ public sealed class MigrationManifestTranslatorTests
             Category = "relationships",
             Name = name,
             AutomationStatus = MigrationFidelityAutomationStatuses.ManualReview,
-            Code = ImportCompatibilityCodes.ArcGisRelationshipsManualReview,
+            Code = ImportCompatibilityCodes.GeoServicesRelationshipsManualReview,
             Reason = "Relationship metadata captured.",
             ManualSteps = [],
             RelatedIds = [],
             Metadata = metadata
         };
 
-    private static MigrationSourceInventoryArtifact CreateArcGisInventory(
+    private static MigrationSourceInventoryArtifact CreateGeoServicesInventory(
         string serviceUrl,
         MigrationInventoryContainer[] containers,
         MigrationInventoryResource[] resources,
@@ -1372,7 +1372,7 @@ public sealed class MigrationManifestTranslatorTests
 
         return new MigrationSourceInventoryArtifact
         {
-            SourceKind = "arcgis-geoservices-rest",
+            SourceKind = "geoservices-rest",
             Source = new MigrationSourceIdentity
             {
                 DisplayName = "ArcGIS Source",

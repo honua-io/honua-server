@@ -58,9 +58,21 @@ With a durable runner the job document is stored in Redis, so it survives a rest
 |---|---|---|
 | POST | `/api/v1/admin/import/scan` | Scan a GeoServer or ArcGIS GeoServices source and return a deterministic migration inventory artifact (`?export=json` returns it as a JSON attachment) |
 
-`sourceKind` accepts `geoserver`, `geoserver-rest`, `geoservices`, and `arcgis-geoservices-rest`. Run a scan before any migration import job; use `scanCompleteness.status` and `overallCompatibility.level` as the planning gate.
+`sourceKind` accepts `geoserver`, `geoserver-rest`, `geoservices`, and `geoservices-rest`. Run a scan before any migration import job; use `scanCompleteness.status` and `overallCompatibility.level` as the planning gate.
 
-Run `POST /api/v1/admin/import/scan` with `{"sourceKind":"geoservices","sourceUrl":"https://example.com/arcgis/rest/services/Parcels/FeatureServer"}`.
+Run `POST /api/v1/admin/import/scan` with `{"sourceKind":"geoservices","sourceUrl":"https://example.com/gis/rest/services/Parcels/FeatureServer"}`.
+
+## Migration evidence API
+
+**Breaking change:** use `sourceKind: "geoservices-rest"` and the new evidence routes below. The previous discriminator and route are no longer accepted. Coordinate the server and SDK releases before updating clients.
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/v1/admin/import/geoservices-rest/migrations` | List migration runs |
+| POST | `/api/v1/admin/import/geoservices-rest/migrations/{runId}/manifest` | Save a run manifest |
+| GET | `/api/v1/admin/import/geoservices-rest/migrations/{runId}/manifest` | Read a run manifest |
+| POST | `/api/v1/admin/import/geoservices-rest/migrations/{runId}/parity` | Save parity evidence |
+| GET | `/api/v1/admin/import/geoservices-rest/migrations/{runId}/parity` | Read parity evidence |
 
 ## GeoServer migration import
 
@@ -74,7 +86,7 @@ Run `POST /api/v1/admin/import/scan` with `{"sourceKind":"geoservices","sourceUr
 
 Queued jobs persist request state before a worker runs, so credentials must use secret references (for example `"passwordSecretReference": "env:GEOSERVER_PASSWORD"`); plaintext passwords are rejected. Secret references are refused unless the operator has permitted them under `Security__RequestSecretReferences__*` ([References supplied in a request](../../guides/deploy/configuration.md#references-supplied-in-a-request)); nothing is permitted by default.
 
-## GeoServices (ArcGIS) migration import
+## GeoServices migration import
 
 | Method | Path | Purpose |
 |---|---|---|
@@ -86,7 +98,7 @@ Queued jobs persist request state before a worker runs, so credentials must use 
 
 Authenticated sources send credentials in the request `credentials` object, never in the URL. Queued jobs must use `accessTokenSecretReference` or `passwordSecretReference`; plaintext token/password values are accepted only by the synchronous discover and scan endpoints. The same operator allowlist applies to these references.
 
-Run `POST /api/v1/admin/import/geoservices/discover` with `{"serviceUrl":"https://example.com/arcgis/rest/services/Parcels/FeatureServer"}`.
+Run `POST /api/v1/admin/import/geoservices/discover` with `{"serviceUrl":"https://example.com/gis/rest/services/Parcels/FeatureServer"}`.
 
 ## Raster import and cloud raster registration
 

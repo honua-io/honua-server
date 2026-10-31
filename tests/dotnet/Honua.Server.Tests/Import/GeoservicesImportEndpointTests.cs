@@ -95,15 +95,15 @@ public class GeoservicesImportEndpointTests : IAsyncLifetime
     [InlineData(1, HttpStatusCode.Unauthorized, "credentials have expired")]
     [InlineData(2, HttpStatusCode.Forbidden, "credentials were denied")]
     [Endpoint("POST /api/v1/admin/import/geoservices/discover")]
-    public async Task Discover_WithArcGisAuthenticationFailure_PreservesClientStatus(
+    public async Task Discover_WithGeoServicesAuthenticationFailure_PreservesClientStatus(
         int kindValue,
         HttpStatusCode expectedStatus,
         string expectedMessage)
     {
-        var kind = (ArcGisAuthenticationFailureKind)kindValue;
+        var kind = (GeoServicesAuthenticationFailureKind)kindValue;
         var service = new TestGeoservicesImportService(
             TimeSpan.Zero,
-            new ArcGisAuthenticationException(kind, kind == ArcGisAuthenticationFailureKind.CredentialDenied ? 403 : 498, "upstream secret"));
+            new GeoServicesAuthenticationException(kind, kind == GeoServicesAuthenticationFailureKind.CredentialDenied ? 403 : 498, "upstream secret"));
         var fixture = new WebAppFixture()
             .WithTestLicense(HonuaEdition.Enterprise)
             .ReplaceService<IGeoservicesImportService>(service);
@@ -498,7 +498,7 @@ public class GeoservicesImportEndpointTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/import/geoservices/start")]
     public async Task Start_WithSecretReferenceToken_DoesNotPersistPlaintextSecrets_AndWorkerReceivesResolvedValue()
     {
-        const string envKey = "HONUA_TEST_ARCGIS_IMPORT_TOKEN";
+        const string envKey = "HONUA_TEST_GEOSERVICES_IMPORT_TOKEN";
         const string envValue = "resolved-arcgis-token-secret";
         var previousValue = Environment.GetEnvironmentVariable(envKey);
         var distributedCache = new TrackingDistributedCache();
@@ -997,7 +997,7 @@ internal sealed class TestGeoservicesImportService(TimeSpan delay, Exception? di
         CancellationToken cancellationToken = default)
         => Task.FromResult(new MigrationSourceInventoryArtifact
         {
-            SourceKind = "arcgis-geoservices-rest",
+            SourceKind = "geoservices-rest",
             Source = new MigrationSourceIdentity
             {
                 DisplayName = "Test",

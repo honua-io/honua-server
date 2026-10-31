@@ -247,7 +247,7 @@ public sealed partial class LayerReadSecurityResolverTests
         Type = MetadataV2ResourceType.FeatureDataset,
         StorageBindingIds = ["binding-parcels"],
         PermanentFilter = withPermanentFilter
-            ? new MetadataV2PermanentFilter { Expression = "status = 'active'", Language = MetadataV2PermanentFilterLanguages.ArcGisSql }
+            ? new MetadataV2PermanentFilter { Expression = "status = 'active'", Language = MetadataV2PermanentFilterLanguages.GeoServicesSql }
             : null
     };
 

@@ -14,7 +14,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.VectorTileServer;
 
 /// <summary>
 /// Integration tests for the GeoServices VectorTileServer service-metadata foundation
-/// (honua-server#1777). The service is resolved by NAME against an EsriVectorTileLayer
+/// (honua-server#1777). The service is resolved by NAME against an GeoServicesVectorTileLayer
 /// publication seeded into the default Metadata v2 test graph. The tile / resources /
 /// tileMap routes are stubbed (501) in the foundation and asserted here so the API-surface
 /// coverage gate is satisfied before the parallel wave fills them in.
@@ -120,7 +120,7 @@ public sealed class VectorTileServerEndpointTests : IAsyncLifetime
     public async Task VectorTileServer_Tile_InRange_ReturnsMvtBytesWithCacheHeader()
     {
         // Zoom 1, tile (0,0) covers a quadrant of the world; the seeded "test" service
-        // resolves its EsriVectorTileLayer publication -> storage layer 0 and renders MVT.
+        // resolves its GeoServicesVectorTileLayer publication -> storage layer 0 and renders MVT.
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/VectorTileServer/tile/1/0/0.pbf");
 

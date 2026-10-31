@@ -39,11 +39,11 @@ These decisions were ratified under epic **#1776** (VectorTileServer) and its ch
   directly. A stored source `url` is always replaced. The tile and style handlers share one
   resolver for the service's **primary** tiled publication, so `root.json` is always composed for
   the layer the tile route renders. Among the routable publications the caller may read (resource
-  and service access policy, tenant scope), it prefers the `EsriVectorTileLayer` publication, then
+  and service access policy, tenant scope), it prefers the `GeoServicesVectorTileLayer` publication, then
   the publication flagged primary, then the lowest layer index. A caller who cannot read the
   preferred publication gets the style and the tiles of the next accessible publication.
-- **`EsriVectorTileLayer` publication type.** VectorTileServer services publish their tiled layer
-  under the `EsriVectorTileLayer` Metadata v2 publication type (wire value `esri-vector-tile-layer`),
+- **`GeoServicesVectorTileLayer` publication type.** VectorTileServer services publish their tiled layer
+  under the `GeoServicesVectorTileLayer` Metadata v2 publication type (wire value `esri-vector-tile-layer`),
   which is the preferred publication type the adapter resolves.
 - **Sprites scoped-minimal, glyphs from one bundled face.** Honua does not author per-service
   sprite sheets or glyph stacks. The `resources/sprites/*` routes serve deterministic in-process

@@ -90,7 +90,7 @@ public sealed class MobileOfflineDemoFixtureReplicationTests : IAsyncLifetime
                 Title = ServiceId,
                 Description = "Deterministic SDK-backed mobile offline field operations fixture"
             },
-            ServiceType = MetadataV2ServiceType.EsriFeatureService,
+            ServiceType = MetadataV2ServiceType.GeoServicesFeatureService,
             Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
             Route = $"/rest/services/{ServiceId}/FeatureServer",
             Protocols = [MetadataV2ServiceProtocols.FeatureServer],
@@ -294,7 +294,7 @@ public sealed class MobileOfflineDemoFixtureReplicationTests : IAsyncLifetime
                 Value = layerId.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 IsNumeric = true
             },
-            PublicationType = MetadataV2PublicationType.EsriFeatureLayer
+            PublicationType = MetadataV2PublicationType.GeoServicesFeatureLayer
         };
 
     private static MetadataV2Field Field(

@@ -34,7 +34,7 @@ public sealed class MetadataClientParameterTests : IClassFixture<WebAppFixture>
 {
     private const string TestServiceId = "test";
     private const int TestLayerId = 0;
-    private const string ArcGisProMetadataParameters = "returnFieldGroups=true&returnPbfFeatureEncodings=true&returnAdvancedSymbols=true";
+    private const string GeoServicesProMetadataParameters = "returnFieldGroups=true&returnPbfFeatureEncodings=true&returnAdvancedSymbols=true";
 
     private readonly WebAppFixture _fixture;
 
@@ -43,11 +43,11 @@ public sealed class MetadataClientParameterTests : IClassFixture<WebAppFixture>
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer")]
-    public async Task FeatureServer_ServiceMetadata_WithArcGisProClientParameters_ReturnsSameAsPlain()
+    public async Task FeatureServer_ServiceMetadata_WithGeoServicesProClientParameters_ReturnsSameAsPlain()
     {
         var plain = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer?f=json");
         var withParams = await _fixture.Client.GetAsync(
-            $"/rest/services/{TestServiceId}/FeatureServer?f=json&{ArcGisProMetadataParameters}");
+            $"/rest/services/{TestServiceId}/FeatureServer?f=json&{GeoServicesProMetadataParameters}");
 
         var withParamsBody = await withParams.Content.ReadAsStringAsync();
         withParams.StatusCode.Should().Be(HttpStatusCode.OK, withParamsBody);
@@ -60,12 +60,12 @@ public sealed class MetadataClientParameterTests : IClassFixture<WebAppFixture>
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
-    public async Task FeatureServer_LayerMetadata_WithArcGisProClientParameters_ReturnsSameAsPlain()
+    public async Task FeatureServer_LayerMetadata_WithGeoServicesProClientParameters_ReturnsSameAsPlain()
     {
         var plain = await _fixture.Client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}?f=json");
         var withParams = await _fixture.Client.GetAsync(
-            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}?f=json&{ArcGisProMetadataParameters}");
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}?f=json&{GeoServicesProMetadataParameters}");
 
         var withParamsBody = await withParams.Content.ReadAsStringAsync();
         withParams.StatusCode.Should().Be(HttpStatusCode.OK, withParamsBody);

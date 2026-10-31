@@ -103,7 +103,7 @@ internal static class ImageServerServiceCollectionExtensions
         // Shared Esri datum-transformation catalog (WKID -> PROJ pipeline) used by the
         // project operation. TryAdd keeps a single instance shared with the FeatureServer
         // registration regardless of protocol registration order.
-        services.TryAddSingleton<IDatumTransformationCatalog>(static _ => EsriDatumTransformationCatalog.Create());
+        services.TryAddSingleton<IDatumTransformationCatalog>(static _ => GeoServicesDatumTransformationCatalog.Create());
         services.AddScoped<IImageServerLayerResolver, MetadataV2ImageServerLayerResolver>();
         services.AddScoped<IImageServerCatalogReader, ImageServerCatalogReader>();
         services.AddSingleton<IImageServerCatalogFilterEvaluator, ImageServerCatalogFilterEvaluator>();

@@ -39,10 +39,10 @@
       "id": "headline-status-split-differs-from-tier-tables",
       "delta": 0,
       "affectedEntryIds": [
-        "desktop-arcgis",
-        "esri-dotnet"
+        "desktop-gis",
+        "geoservices-dotnet"
       ],
-      "note": "The headline tally claims 4 'Built, unrun' and 22 'Proposed'. The tier tables mark only 2 rows 'Built, unrun' (desktop-arcgis, esri-dotnet) and enumerate 24 unbuilt rows (16 Tier 1 'Proposed' plus 8 Tier 2 'On demand'). The two differences offset exactly, so the 41 total is unchanged. The per-row tier tables are authoritative; the artifact gives no basis for identifying which two additional rows the headline counted as built."
+      "note": "The headline tally claims 4 'Built, unrun' and 22 'Proposed'. The tier tables mark only 2 rows 'Built, unrun' (desktop-gis, geoservices-dotnet) and enumerate 24 unbuilt rows (16 Tier 1 'Proposed' plus 8 Tier 2 'On demand'). The two differences offset exactly, so the 41 total is unchanged. The per-row tier tables are authoritative; the artifact gives no basis for identifying which two additional rows the headline counted as built."
     },
     {
       "id": "certified-live-headline-counts-partial-rows",
@@ -57,9 +57,9 @@
       "id": "registry-lane-absent-from-artifact",
       "delta": 1,
       "affectedEntryIds": [
-        "arcgis-stub"
+        "geoservices-rest-stub"
       ],
-      "note": "client-certification-matrix.v1.json registers an active `arcgis-stub` lane with committed evidence for featureserver, mapserver, and portal. The artifact has no row for it because it folded the stub into the ArcGIS Pro harness column. It is a distinct identity here because it is a stub harness, not a shipped client, and must never be read as certifying ArcGIS Pro."
+      "note": "client-certification-matrix.v1.json registers an active `geoservices-rest-stub` lane with committed evidence for featureserver, mapserver, and portal. The artifact has no row for it because it folded the stub into the ArcGIS Pro harness column. It is a distinct identity here because it is a stub harness, not a shipped client, and must never be read as certifying ArcGIS Pro."
     },
     {
       "id": "registry-sublane-absent-from-artifact",
@@ -160,15 +160,15 @@
         },
         {
           "id": "imageserver",
-          "reason": "Esri ImageServer; used by the desktop-arcgis plannedLanes row."
+          "reason": "Esri ImageServer; used by the desktop-gis plannedLanes row."
         },
         {
           "id": "geometryserver",
-          "reason": "Esri GeometryServer; used by the desktop-arcgis plannedLanes row."
+          "reason": "Esri GeometryServer; used by the desktop-gis plannedLanes row."
         },
         {
           "id": "version-management-server",
-          "reason": "Esri VersionManagementServer; used by the desktop-arcgis plannedLanes row."
+          "reason": "Esri VersionManagementServer; used by the desktop-gis plannedLanes row."
         },
         {
           "id": "featureserver-sync",
@@ -310,7 +310,7 @@
         "notApplicable": [
           {
             "family": "CERT-PRTL",
-            "reason": "Portal/Sharing discovery is substantiated by the arcgis-stub portal envelope, not by this lane."
+            "reason": "Portal/Sharing discovery is substantiated by the geoservices-rest-stub portal envelope, not by this lane."
           }
         ]
       },
@@ -351,7 +351,7 @@
       "notes": null
     },
     {
-      "id": "desktop-arcgis",
+      "id": "desktop-gis",
       "displayName": "ArcGIS Pro (arcpy + honua_gp shim parity)",
       "family": "esri-desktop",
       "tier": 0,
@@ -360,7 +360,7 @@
       "activationState": "awaiting-runtime",
       "rosterOrigin": "artifact",
       "sourceStatus": "Built, unrun",
-      "clientVersionPolicy": "ArcGIS Pro build is the build named on the desktop-arcgis evidence identifier in honua-esri-compat. Evidence is content-addressed.",
+      "clientVersionPolicy": "ArcGIS Pro build is the build named on the desktop-gis evidence identifier in honua-esri-compat. Evidence is content-addressed.",
       "protocolSurfaces": [
         "featureserver",
         "mapserver",
@@ -415,7 +415,7 @@
       },
       "evidenceProducer": null,
       "laneBinding": {
-        "matrixLaneId": "desktop-arcgis",
+        "matrixLaneId": "desktop-gis",
         "role": "planned-lane"
       },
       "owningIssue": "https://github.com/honua-io/honua-esri-compat/issues/75",
@@ -873,7 +873,7 @@
       "notes": "The license-free Esri lane. Live upstream, but not yet joined to this registry's expected pairs, so it declares requiredTier `none`."
     },
     {
-      "id": "esri-dotnet",
+      "id": "geoservices-dotnet",
       "displayName": "ArcGIS Maps SDK for .NET",
       "family": "esri-libraries",
       "tier": 0,
@@ -902,7 +902,7 @@
         "notApplicable": [
           {
             "family": "CERT-PRTL",
-            "reason": "Portal/Sharing discovery is substantiated by the arcgis-stub portal envelope, not by this lane."
+            "reason": "Portal/Sharing discovery is substantiated by the geoservices-rest-stub portal envelope, not by this lane."
           }
         ]
       },
@@ -940,7 +940,7 @@
       "needsOwningIssue": false,
       "exclusionRationale": null,
       "coveredAlternative": null,
-      "notes": "The second of the two rows the tier tables mark 'Built, unrun'. Unblocked by the same Windows host that unblocks desktop-arcgis and the BI lanes, but it has no plannedLanes row in client-certification-matrix.v1.json yet."
+      "notes": "The second of the two rows the tier tables mark 'Built, unrun'. Unblocked by the same Windows host that unblocks desktop-gis and the BI lanes, but it has no plannedLanes row in client-certification-matrix.v1.json yet."
     },
     {
       "id": "honua-sdks",
@@ -1103,7 +1103,7 @@
       "notes": "The compliance receipt is currently 1137/1138; WFS 2.0 basic is 166/167 because multi-layer rollbackOnFailure=true transactions are rejected. Keeps its specification-mandated fixtures under the governed fixturePolicy exception and is never relabelled as having used the canonical client fixture."
     },
     {
-      "id": "arcgis-stub",
+      "id": "geoservices-rest-stub",
       "displayName": "ArcGIS REST + Portal facade stub client",
       "family": "esri-harness",
       "tier": 0,
@@ -1159,9 +1159,9 @@
         ],
         "note": "Converges on the single logical fixture + server-config revision tracked by #3393."
       },
-      "evidenceProducer": "docker/client-compat/arcgis-stub",
+      "evidenceProducer": "docker/client-compat/geoservices-rest-stub",
       "laneBinding": {
-        "matrixLaneId": "arcgis-stub",
+        "matrixLaneId": "geoservices-rest-stub",
         "role": "lane"
       },
       "owningIssue": "https://github.com/honua-io/honua-server/issues/3434",
@@ -1765,7 +1765,7 @@
         "notApplicable": [
           {
             "family": "CERT-PRTL",
-            "reason": "Portal/Sharing discovery is substantiated by the arcgis-stub portal envelope, not by this lane."
+            "reason": "Portal/Sharing discovery is substantiated by the geoservices-rest-stub portal envelope, not by this lane."
           }
         ]
       },
@@ -1983,7 +1983,7 @@
           },
           {
             "family": "CERT-PRTL",
-            "reason": "Portal/Sharing discovery is substantiated by the arcgis-stub portal envelope, not by this lane."
+            "reason": "Portal/Sharing discovery is substantiated by the geoservices-rest-stub portal envelope, not by this lane."
           }
         ]
       },
@@ -2339,7 +2339,7 @@
         "notApplicable": [
           {
             "family": "CERT-PRTL",
-            "reason": "Portal/Sharing discovery is substantiated by the arcgis-stub portal envelope, not by this lane."
+            "reason": "Portal/Sharing discovery is substantiated by the geoservices-rest-stub portal envelope, not by this lane."
           }
         ]
       },
@@ -2440,7 +2440,7 @@
       "needsOwningIssue": true,
       "exclusionRationale": null,
       "coveredAlternative": null,
-      "notes": "Offline sync is the hard part. Field Maps binds through the Portal facade (epic #1240), so the arcgis-stub CERT-PRTL-* slice partially de-risks it; the sync protocol itself is unproven. No implementation issue exists yet."
+      "notes": "Offline sync is the hard part. Field Maps binds through the Portal facade (epic #1240), so the geoservices-rest-stub CERT-PRTL-* slice partially de-risks it; the sync protocol itself is unproven. No implementation issue exists yet."
     },
     {
       "id": "qfield-mergin",
@@ -2570,7 +2570,7 @@
       "needsOwningIssue": true,
       "exclusionRationale": null,
       "coveredAlternative": null,
-      "notes": "End-of-life but still deployed; the customers most motivated to migrate are the ones still on it. Unblocked by the same Windows host as desktop-arcgis. Tier 2 is opportunistic: certified on customer demand, and never a release blocker."
+      "notes": "End-of-life but still deployed; the customers most motivated to migrate are the ones still on it. Unblocked by the same Windows host as desktop-gis. Tier 2 is opportunistic: certified on customer demand, and never a release blocker."
     },
     {
       "id": "mapinfo-pro",
@@ -3230,7 +3230,7 @@
       "owningIssue": "https://github.com/honua-io/honua-server/issues/3395",
       "needsOwningIssue": false,
       "exclusionRationale": "No distinct server surface beyond the governed MapServer and KML lanes.",
-      "coveredAlternative": "arcgis-stub (mapserver) and ogc-cite (KML 2.2) already prove everything it consumes.",
+      "coveredAlternative": "geoservices-rest-stub (mapserver) and ogc-cite (KML 2.2) already prove everything it consumes.",
       "notes": null
     },
     {

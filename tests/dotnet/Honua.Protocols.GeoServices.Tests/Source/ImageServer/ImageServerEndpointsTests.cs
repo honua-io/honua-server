@@ -727,7 +727,7 @@ public class ImageServerEndpointsTests
                     "aliased-image-resource",
                     layerIndex: publicationLayerIndex,
                     storageBindingId: "aliased-image-binding",
-                    publicationType: MetadataV2PublicationType.EsriImageLayer)
+                    publicationType: MetadataV2PublicationType.GeoServicesImageLayer)
                 .Build());
         var rasterStore = CreateTileExportRasterStoreSubstitute();
         var fixture = new WebAppFixture().ConfigureServices(services =>
@@ -802,7 +802,7 @@ public class ImageServerEndpointsTests
                     protocols: [MetadataV2ServiceProtocols.ImageServer], accessPolicy: anonymous)
                 .AddPublication("aliased-image-publication", "aliased-image-service", "aliased-image-resource",
                     layerIndex: aliasedLayerIndex, storageBindingId: "aliased-image-binding",
-                    publicationType: MetadataV2PublicationType.EsriImageLayer)
+                    publicationType: MetadataV2PublicationType.GeoServicesImageLayer)
                 .AddResource("colliding-image-resource", "Colliding image", MetadataV2ResourceType.RasterDataset, accessPolicy: anonymous)
                 .AddStorageBinding("colliding-image-binding", "colliding-image-resource", "raster_data_other",
                     storageType: MetadataV2StorageType.RelationalTable, storageLayerId: collidingStorageLayerId)
@@ -810,7 +810,7 @@ public class ImageServerEndpointsTests
                     protocols: [MetadataV2ServiceProtocols.ImageServer], accessPolicy: anonymous)
                 .AddPublication("colliding-image-publication", "colliding-image-service", "colliding-image-resource",
                     layerIndex: TestLayerId, storageBindingId: "colliding-image-binding",
-                    publicationType: MetadataV2PublicationType.EsriImageLayer)
+                    publicationType: MetadataV2PublicationType.GeoServicesImageLayer)
                 .Build());
         var rasterStore = CreateSamplingRasterStoreSubstitute();
         var fixture = new WebAppFixture().ConfigureServices(services =>
@@ -4340,7 +4340,7 @@ public class ImageServerEndpointsTests
     [IntegrationTest]
     [Endpoint("GET /rest/services/{id}/ImageServer/conf.json")]
     [Operation(Operations.GetServiceInfo)]
-    public async Task ConfJson_ReturnsServiceDescriptor_InArcGisRuntimeCompatibleShape()
+    public async Task ConfJson_ReturnsServiceDescriptor_InGeoServicesRuntimeCompatibleShape()
     {
         // Regression for #1456: the ArcGIS Maps SDK for .NET ImageServiceRaster
         // unconditionally fetches conf.json while loading and parses it strictly.
@@ -4361,7 +4361,7 @@ public class ImageServerEndpointsTests
             var root = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
 
             // conf.json returns the service descriptor. Honua does not advertise an ArcGIS
-            // Server version (see NoArcGisServerVersionTests).
+            // Server version (see NoGeoServicesServerVersionTests).
             root.TryGetProperty("currentVersion", out _).Should().BeFalse();
             root.TryGetProperty("extent", out _).Should().BeTrue();
 

@@ -34,7 +34,7 @@ namespace Honua.Core.Features.Migration.Services;
 [JsonSerializable(typeof(MigrationEvidencePackStyleDiagnostic[]))]
 [JsonSerializable(typeof(MigrationSourceInventoryArtifact))]
 [JsonSerializable(typeof(MigrationManifestArtifact))]
-[JsonSerializable(typeof(ArcGisMigrationParityArtifact))]
+[JsonSerializable(typeof(GeoServicesMigrationParityArtifact))]
 [JsonSerializable(typeof(MigrationApplyExecutionArtifact))]
 [JsonSerializable(typeof(MigrationApplyExecutionStepResult))]
 [JsonSerializable(typeof(MigrationApplyExecutionStepResult[]))]

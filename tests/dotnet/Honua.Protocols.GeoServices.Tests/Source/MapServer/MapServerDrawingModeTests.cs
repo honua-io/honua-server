@@ -204,7 +204,7 @@ public sealed class MapServerDrawingModeTests : MapServerEndpointTestBase
         var snapshot = fixture.GetCurrentV2GraphSnapshot();
         var graph = snapshot.Graph;
         var originalPublication = graph.Publications.Single(publication =>
-            publication.PublicationType == MetadataV2PublicationType.EsriMapLayer &&
+            publication.PublicationType == MetadataV2PublicationType.GeoServicesMapLayer &&
             publication.LayerIndex == WebAppFixture.TestLayerId &&
             snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var owningService) &&
             owningService.Metadata.Name == WebAppFixture.TestServiceId &&

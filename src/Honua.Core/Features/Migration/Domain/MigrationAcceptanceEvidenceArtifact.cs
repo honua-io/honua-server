@@ -195,7 +195,7 @@ public sealed record MigrationAcceptanceEvidenceEntry
     public required string Id { get; init; }
 
     /// <summary>
-    /// Source kind identifier, such as <c>arcgis-geoservices-rest</c> or <c>geoserver-rest</c>.
+    /// Source kind identifier, such as <c>geoservices-rest</c> or <c>geoserver-rest</c>.
     /// </summary>
     public required string SourceKind { get; init; }
 

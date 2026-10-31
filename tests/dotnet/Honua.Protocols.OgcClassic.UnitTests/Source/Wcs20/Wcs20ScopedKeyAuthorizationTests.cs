@@ -265,7 +265,7 @@ public sealed class Wcs20ScopedKeyAuthorizationTests
         var feature = new MetadataV2Service
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "service-features", Name = "features" },
-            ServiceType = MetadataV2ServiceType.EsriFeatureService,
+            ServiceType = MetadataV2ServiceType.GeoServicesFeatureService,
             Protocols = ["FeatureServer"],
             EnabledProtocols = ["FeatureServer"],
             AccessPolicy = new AccessPolicy { AllowAnonymous = false, AllowedRoles = ["reader"] }
@@ -367,7 +367,7 @@ public sealed class Wcs20ScopedKeyAuthorizationTests
             Services = [new MetadataV2Service
             {
                 Metadata = new MetadataV2ObjectMetadata { Id = "service-imagery", Name = "imagery" },
-                ServiceType = MetadataV2ServiceType.EsriImageService,
+                ServiceType = MetadataV2ServiceType.GeoServicesImageService,
                 Protocols = ["Wcs", "ImageServer"], EnabledProtocols = ["Wcs", "ImageServer"], AccessPolicy = policy
             }],
             Resources = resources,

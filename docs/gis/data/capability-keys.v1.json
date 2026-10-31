@@ -2,7 +2,7 @@
   "schemaVersion": "1.1.0",
   "generator": "src/Honua.Core/Features/Licensing/Domain/CapabilityKeyCatalog.cs",
   "trackingIssue": "#2893",
-  "description": "Canonical customer-facing capability key vocabulary (Community + Pro + Enterprise) and its crosswalks to the evidence vocabularies that don't otherwise join: honua-esri-assess's verdict registry, client-interop certification envelopes (client_lane x protocol), the geoservices REST parity index, and geobench benchmark scenarios. Hard Esri lock-ins (Utility Network, Parcel Fabric, Linear Referencing) are intentionally absent from esriAssess below -- see capability-no-go-allowlist.v1.json.",
+  "description": "Canonical customer-facing capability key vocabulary (Community + Pro + Enterprise) and its crosswalks to the evidence vocabularies that don't otherwise join: honua-esri-assess's verdict registry, client-interop certification envelopes (client_lane x protocol), the geoservices REST parity index, and geobench benchmark scenarios. Hard Esri lock-ins (Utility Network, Parcel Fabric, Linear Referencing) are intentionally absent from geoservicesAssess below -- see capability-no-go-allowlist.v1.json.",
   "capabilities": [
     {
       "key": "admin.control-plane",
@@ -863,7 +863,7 @@
     }
   ],
   "crosswalks": {
-    "esriAssess": [
+    "geoservicesAssess": [
       {
         "assessKey": "web-map",
         "capability": "identity.portal-sharing",
@@ -996,22 +996,22 @@
         "capability": "serve.wmts"
       },
       {
-        "clientLane": "desktop-arcgis",
+        "clientLane": "desktop-gis",
         "protocol": "featureserver",
         "capability": "serve.geoservices-featureserver"
       },
       {
-        "clientLane": "desktop-arcgis",
+        "clientLane": "desktop-gis",
         "protocol": "mapserver",
         "capability": "serve.geoservices-mapserver"
       },
       {
-        "clientLane": "arcgis-stub",
+        "clientLane": "geoservices-rest-stub",
         "protocol": "featureserver",
         "capability": "serve.geoservices-featureserver"
       },
       {
-        "clientLane": "arcgis-stub",
+        "clientLane": "geoservices-rest-stub",
         "protocol": "mapserver",
         "capability": "serve.geoservices-mapserver"
       },
@@ -1071,7 +1071,7 @@
         "capability": "serve.odata"
       }
     ],
-    "esriCompatMatrix": [
+    "geoservicesCompatMatrix": [
       {
         "serviceId": "feature-server",
         "capability": "serve.geoservices-featureserver"

@@ -238,7 +238,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
     {
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
         var publication = snapshot.Graph.Publications.First(candidate =>
-            candidate.PublicationType == MetadataV2PublicationType.EsriFeatureLayer && candidate.LayerIndex == 0);
+            candidate.PublicationType == MetadataV2PublicationType.GeoServicesFeatureLayer && candidate.LayerIndex == 0);
         var provider = _fixture.Services.GetRequiredService<TestMetadataV2GraphProvider>();
         provider.SetGraph(snapshot.Graph with
         {
@@ -275,7 +275,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
     {
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
         var publication = snapshot.Graph.Publications.First(candidate =>
-            candidate.PublicationType == MetadataV2PublicationType.EsriFeatureLayer && candidate.LayerIndex == 0);
+            candidate.PublicationType == MetadataV2PublicationType.GeoServicesFeatureLayer && candidate.LayerIndex == 0);
         var provider = _fixture.Services.GetRequiredService<TestMetadataV2GraphProvider>();
         provider.SetGraph(snapshot.Graph with
         {
@@ -312,7 +312,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
     {
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
         var publication = snapshot.Graph.Publications.First(candidate =>
-            candidate.PublicationType == MetadataV2PublicationType.EsriFeatureLayer && candidate.LayerIndex == 0);
+            candidate.PublicationType == MetadataV2PublicationType.GeoServicesFeatureLayer && candidate.LayerIndex == 0);
         var parent = snapshot.Graph.Resources.Single(resource => resource.Metadata.Id == publication.ResourceId);
         var child = snapshot.Graph.Resources.First(resource => resource.Metadata.Id != parent.Metadata.Id && resource.SchemaFields.Count > 0);
         var relationship = new MetadataV2Relationship
@@ -421,7 +421,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
         var futureUpdatedAt = DateTimeOffset.UtcNow.AddDays(1);
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
         var publication = snapshot.Graph.Publications.First(candidate =>
-            candidate.PublicationType == MetadataV2PublicationType.EsriFeatureLayer &&
+            candidate.PublicationType == MetadataV2PublicationType.GeoServicesFeatureLayer &&
             candidate.LayerIndex == 0);
         var resources = snapshot.Graph.Resources
             .Select(resource => resource.Metadata.Id == publication.ResourceId
@@ -451,7 +451,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
     {
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
         var featurePublication = snapshot.Graph.Publications.First(publication =>
-            publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer &&
+            publication.PublicationType == MetadataV2PublicationType.GeoServicesFeatureLayer &&
             publication.LayerIndex == 0);
         var featureService = snapshot.Graph.Services.Single(service =>
             string.Equals(service.Metadata.Id, featurePublication.ServiceId, StringComparison.Ordinal));
@@ -509,7 +509,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
     {
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
         var publication = snapshot.Graph.Publications.First(candidate =>
-            candidate.PublicationType == MetadataV2PublicationType.EsriFeatureLayer &&
+            candidate.PublicationType == MetadataV2PublicationType.GeoServicesFeatureLayer &&
             candidate.LayerIndex == 0);
         var provider = _fixture.Services.GetRequiredService<TestMetadataV2GraphProvider>();
         provider.SetGraph(snapshot.Graph with
@@ -542,7 +542,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
     {
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
         var activePublication = snapshot.Graph.Publications.First(candidate =>
-            candidate.PublicationType == MetadataV2PublicationType.EsriFeatureLayer &&
+            candidate.PublicationType == MetadataV2PublicationType.GeoServicesFeatureLayer &&
             candidate.LayerIndex == 0);
         var activeResource = snapshot.Graph.Resources.Single(candidate =>
             string.Equals(candidate.Metadata.Id, activePublication.ResourceId, StringComparison.Ordinal));
@@ -599,7 +599,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
     {
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
         var activePublication = snapshot.Graph.Publications.First(candidate =>
-            candidate.PublicationType == MetadataV2PublicationType.EsriFeatureLayer &&
+            candidate.PublicationType == MetadataV2PublicationType.GeoServicesFeatureLayer &&
             candidate.LayerIndex == 0);
         var activeResource = snapshot.ResolveResource(activePublication)!;
         var activeBinding = snapshot.ResolveStorageBinding(activePublication)!;
@@ -655,7 +655,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
     {
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
         var publication = snapshot.Graph.Publications.First(candidate =>
-            candidate.PublicationType == MetadataV2PublicationType.EsriFeatureLayer &&
+            candidate.PublicationType == MetadataV2PublicationType.GeoServicesFeatureLayer &&
             candidate.LayerIndex == 0);
         var activatedGraph = snapshot.Graph with
         {
@@ -704,7 +704,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
     {
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
         var publication = snapshot.Graph.Publications.First(candidate =>
-            candidate.PublicationType == MetadataV2PublicationType.EsriFeatureLayer &&
+            candidate.PublicationType == MetadataV2PublicationType.GeoServicesFeatureLayer &&
             candidate.LayerIndex == 0);
         var binding = snapshot.ResolveStorageBinding(publication)!;
         var activatedGraph = snapshot.Graph with
@@ -736,7 +736,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
     {
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
         var publication = snapshot.Graph.Publications.First(candidate =>
-            candidate.PublicationType == MetadataV2PublicationType.EsriFeatureLayer &&
+            candidate.PublicationType == MetadataV2PublicationType.GeoServicesFeatureLayer &&
             candidate.LayerIndex == 0);
         var originalResource = snapshot.Graph.Resources.Single(candidate =>
             string.Equals(candidate.Metadata.Id, publication.ResourceId, StringComparison.Ordinal));
@@ -783,7 +783,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
     {
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
         var enabledPublication = snapshot.Graph.Publications.First(publication =>
-            publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer &&
+            publication.PublicationType == MetadataV2PublicationType.GeoServicesFeatureLayer &&
             publication.LayerIndex == 0);
         var enabledService = snapshot.Graph.Services.Single(service =>
             string.Equals(service.Metadata.Id, enabledPublication.ServiceId, StringComparison.Ordinal));
@@ -838,7 +838,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
     {
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
         var featurePublication = snapshot.Graph.Publications.First(publication =>
-            publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer &&
+            publication.PublicationType == MetadataV2PublicationType.GeoServicesFeatureLayer &&
             publication.LayerIndex == 0);
         var featureResource = snapshot.Graph.Resources.Single(resource =>
             string.Equals(resource.Metadata.Id, featurePublication.ResourceId, StringComparison.Ordinal));

@@ -790,14 +790,14 @@ internal static class NAServerParameterTranslation
                              .Where(geometry => geometry.HasValue)
                              .Select(geometry => geometry.GetValueOrDefault()))
                 {
-                    sink.Add(new RouteBarrier(kind, EsriGeometryToGeoJson(geometry, kind, parameterName)));
+                    sink.Add(new RouteBarrier(kind, GeoServicesGeometryToGeoJson(geometry, kind, parameterName)));
                 }
 
                 return;
             }
 
             // A bare geometry object (no FeatureSet wrapper).
-            sink.Add(new RouteBarrier(kind, EsriGeometryToGeoJson(root, kind, parameterName)));
+            sink.Add(new RouteBarrier(kind, GeoServicesGeometryToGeoJson(root, kind, parameterName)));
         }
     }
 
@@ -806,7 +806,7 @@ internal static class NAServerParameterTranslation
     /// or polygon <c>{rings}</c>) into a GeoJSON geometry string for the barrier's
     /// declared <paramref name="kind"/>.
     /// </summary>
-    private static string EsriGeometryToGeoJson(JsonElement geometry, RouteBarrierKind kind, string parameterName)
+    private static string GeoServicesGeometryToGeoJson(JsonElement geometry, RouteBarrierKind kind, string parameterName)
     {
         if (geometry.ValueKind != JsonValueKind.Object)
         {

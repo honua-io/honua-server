@@ -70,8 +70,8 @@ internal static class NAServerMetadata
         string Name,
         string LayerType,
         string ServiceCollection,
-        string EsriServiceName,
-        string EsriToolName,
+        string GeoServicesServiceName,
+        string GeoServicesToolName,
         Func<RoutingProviderCapabilities, bool> IsSupported);
 
     private static readonly AnalysisLayer[] Layers =
@@ -436,7 +436,7 @@ internal static class NAServerMetadata
         foreach (var layer in Layers)
         {
             if (!string.IsNullOrWhiteSpace(toolName)
-                && (layer.EsriToolName.Equals(toolName, StringComparison.OrdinalIgnoreCase)
+                && (layer.GeoServicesToolName.Equals(toolName, StringComparison.OrdinalIgnoreCase)
                     || layer.Name.Equals(toolName, StringComparison.OrdinalIgnoreCase)))
             {
                 return layer;
@@ -445,7 +445,7 @@ internal static class NAServerMetadata
 
         return Layers.FirstOrDefault(layer =>
             !string.IsNullOrWhiteSpace(serviceName)
-            && (layer.EsriServiceName.Equals(serviceName, StringComparison.OrdinalIgnoreCase)
+            && (layer.GeoServicesServiceName.Equals(serviceName, StringComparison.OrdinalIgnoreCase)
                 || layer.Name.Equals(serviceName, StringComparison.OrdinalIgnoreCase)));
     }
 

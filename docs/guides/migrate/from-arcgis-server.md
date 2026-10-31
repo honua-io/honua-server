@@ -17,17 +17,17 @@ Set the Honua connection once. The CLI reads these values without writing them t
 ```bash
 export HONUA_URL=https://honua.example.com
 export HONUA_API_KEY=your-admin-api-key
-export ARCGIS_SERVICE=https://gis.example.com/arcgis/rest/services/Public/Parcels/FeatureServer
+export GEOSERVICES_SERVICE=https://gis.example.com/arcgis/rest/services/Public/Parcels/FeatureServer
 ```
 
 ## 1. Assess with read-only discovery
 
 ```bash
-honua-migrate services arcgis discover "$ARCGIS_SERVICE" \
+honua-migrate services arcgis discover "$GEOSERVICES_SERVICE" \
   --output arcgis-discovery.json
 ```
 
-`discover` reads the source and emits a versioned, credential-free artifact. For a secured source, pass a server-side secret reference such as `--token-secret-ref env:ARCGIS_TOKEN`; the secret value must be available to Honua, and the reference is not retained in the artifact.
+`discover` reads the source and emits a versioned, credential-free artifact. For a secured source, pass a server-side secret reference such as `--token-secret-ref env:GEOSERVICES_TOKEN`; the secret value must be available to Honua, and the reference is not retained in the artifact.
 
 Review the discovered layers, fields, spatial references, relationships, styles, attachments, and unsupported capabilities before planning. The current command works on one service root at a time; organization-wide Portal content assessment remains a separate inventory workflow.
 
@@ -36,7 +36,7 @@ Review the discovered layers, fields, spatial references, relationships, styles,
 Create one plan per source layer:
 
 ```bash
-honua-migrate services arcgis plan "$ARCGIS_SERVICE" \
+honua-migrate services arcgis plan "$GEOSERVICES_SERVICE" \
   --layer-id 0 \
   --table-name parcels \
   --service-name parcels \
@@ -58,7 +58,7 @@ honua-migrate services arcgis apply parcels-plan.json \
   --output parcels-apply.json
 ```
 
-`--yes` is required before the CLI resolves credentials, reads the plan, or contacts Honua. For a secured source, repeat the server-side token reference with `--token-secret-ref env:ARCGIS_TOKEN`. The command never retries the mutation automatically. Record the returned job ID from `parcels-apply.json`.
+`--yes` is required before the CLI resolves credentials, reads the plan, or contacts Honua. For a secured source, repeat the server-side token reference with `--token-secret-ref env:GEOSERVICES_TOKEN`. The command never retries the mutation automatically. Record the returned job ID from `parcels-apply.json`.
 
 ## 4. Monitor the job
 

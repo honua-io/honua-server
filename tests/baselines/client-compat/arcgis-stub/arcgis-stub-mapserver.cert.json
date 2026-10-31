@@ -3,7 +3,7 @@
   "run_id": "20260507T140519Z",
   "run_date": "2026-05-07T14:05:19.321037+00:00",
   "server_version": "local",
-  "client_lane": "arcgis-stub",
+  "client_lane": "geoservices-rest-stub",
   "client_version": "stub-1.0",
   "protocol": "mapserver",
   "environment": "local",
@@ -158,7 +158,7 @@
       "duration_ms": null,
       "measured_count": null,
       "measured_delta": null,
-      "notes": "evidence id desktop-arcgis",
+      "notes": "evidence id desktop-gis",
       "evidence_ref": ""
     },
     {
@@ -167,7 +167,7 @@
       "duration_ms": null,
       "measured_count": null,
       "measured_delta": null,
-      "notes": "evidence id desktop-arcgis",
+      "notes": "evidence id desktop-gis",
       "evidence_ref": ""
     },
     {
@@ -176,7 +176,7 @@
       "duration_ms": null,
       "measured_count": null,
       "measured_delta": null,
-      "notes": "evidence id desktop-arcgis",
+      "notes": "evidence id desktop-gis",
       "evidence_ref": ""
     },
     {
@@ -185,7 +185,7 @@
       "duration_ms": null,
       "measured_count": null,
       "measured_delta": null,
-      "notes": "evidence id desktop-arcgis",
+      "notes": "evidence id desktop-gis",
       "evidence_ref": ""
     },
     {
@@ -194,7 +194,7 @@
       "duration_ms": null,
       "measured_count": null,
       "measured_delta": null,
-      "notes": "evidence id desktop-arcgis",
+      "notes": "evidence id desktop-gis",
       "evidence_ref": ""
     },
     {
@@ -203,7 +203,7 @@
       "duration_ms": null,
       "measured_count": null,
       "measured_delta": null,
-      "notes": "evidence id desktop-arcgis",
+      "notes": "evidence id desktop-gis",
       "evidence_ref": ""
     },
     {
@@ -221,7 +221,7 @@
       "duration_ms": null,
       "measured_count": null,
       "measured_delta": null,
-      "notes": "evidence id desktop-arcgis",
+      "notes": "evidence id desktop-gis",
       "evidence_ref": ""
     }
   ],

@@ -41,7 +41,7 @@ public sealed class ImageServerClientCompatibilityTests
             var catalogCount = await client.QueryCatalogCountAsync();
             var legendCount = await client.GetLegendClassCountAsync();
 
-            // Honua does not advertise an ArcGIS Server version (see NoArcGisServerVersionTests).
+            // Honua does not advertise an ArcGIS Server version (see NoGeoServicesServerVersionTests).
             metadata.HasCurrentVersion.Should().BeFalse();
             metadata.BandCount.Should().Be(1);
             metadata.PixelType.Should().Be("U8");
@@ -247,18 +247,18 @@ public sealed class ImageServerClientCompatibilityTests
                 await response.Content.ReadAsByteArrayAsync());
         }
 
-        public Task<EsriError> GetInvalidFormatErrorAsync()
+        public Task<GeoServicesError> GetInvalidFormatErrorAsync()
             => ReadEsriErrorAsync($"/rest/services/{layerId}/ImageServer?f=xml");
 
-        public Task<EsriError> ExportInvalidFormatErrorAsync()
+        public Task<GeoServicesError> ExportInvalidFormatErrorAsync()
             => ReadEsriErrorAsync($"/rest/services/{layerId}/ImageServer/exportImage?f=xml&bbox=-180,-90,180,90");
 
-        private async Task<EsriError> ReadEsriErrorAsync(string path)
+        private async Task<GeoServicesError> ReadEsriErrorAsync(string path)
         {
             using var response = await httpClient.GetAsync(path);
             using var doc = await ReadJsonAsync(response);
             var error = doc.RootElement.GetProperty("error");
-            return new EsriError(
+            return new GeoServicesError(
                 response.StatusCode,
                 error.GetProperty("code").GetInt32(),
                 error.GetProperty("message").GetString()!,
@@ -273,5 +273,5 @@ public sealed class ImageServerClientCompatibilityTests
 
     private sealed record ImageBytes(string ContentType, byte[] Data);
 
-    private sealed record EsriError(HttpStatusCode StatusCode, int Code, string Message, string[] Details);
+    private sealed record GeoServicesError(HttpStatusCode StatusCode, int Code, string Message, string[] Details);
 }

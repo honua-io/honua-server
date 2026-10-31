@@ -27,11 +27,11 @@ public sealed class GeoServicesFieldTypeClientContractTests
         var contract = LoadClientContractFieldTypes();
 
         var advertised = Enum.GetValues<MetadataV2FieldType>()
-            .Select(type => (Type: type, EsriType: GeoServicesFieldConventions.MapFieldType(type)))
+            .Select(type => (Type: type, GeoServicesType: GeoServicesFieldConventions.MapFieldType(type)))
             .ToList();
 
-        advertised.Where(pair => !contract.Contains(pair.EsriType))
-            .Select(pair => $"{pair.Type} -> {pair.EsriType}")
+        advertised.Where(pair => !contract.Contains(pair.GeoServicesType))
+            .Select(pair => $"{pair.Type} -> {pair.GeoServicesType}")
             .Should()
             .BeEmpty("every field type GeoServices advertises must be accepted by the client contract in tests/js/shared/esri-field-types.json");
         contract.Should().Contain(FixedIdentityFieldTypes);

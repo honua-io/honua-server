@@ -15,28 +15,28 @@ import type { Geometry, Point, MultiPoint, LineString, MultiLineString, Position
 // =============================================================================
 
 /** Esri JSON geometry types */
-export interface EsriPoint {
+export interface GeoServicesPoint {
   x: number;
   y: number;
   spatialReference: { wkid: number };
 }
 
-export interface EsriMultiPoint {
+export interface GeoServicesMultiPoint {
   points: Position[];
   spatialReference: { wkid: number };
 }
 
-export interface EsriPolyline {
+export interface GeoServicesPolyline {
   paths: Position[][];
   spatialReference: { wkid: number };
 }
 
-export interface EsriPolygon {
+export interface GeoServicesPolygon {
   rings: Position[][];
   spatialReference: { wkid: number };
 }
 
-export interface EsriEnvelope {
+export interface GeoServicesEnvelope {
   xmin: number;
   ymin: number;
   xmax: number;
@@ -44,13 +44,13 @@ export interface EsriEnvelope {
   spatialReference: { wkid: number };
 }
 
-export type EsriGeometry = EsriPoint | EsriMultiPoint | EsriPolyline | EsriPolygon | EsriEnvelope | null;
+export type GeoServicesGeometry = GeoServicesPoint | GeoServicesMultiPoint | GeoServicesPolyline | GeoServicesPolygon | GeoServicesEnvelope | null;
 
 /** Test geometry with metadata */
 export interface TestGeometry {
   name: string;
   geojson: Geometry | null;
-  esriJson: EsriGeometry;
+  esriJson: GeoServicesGeometry;
   geometryType: string;
   hasHoles: boolean;
   isMulti: boolean;
@@ -84,7 +84,7 @@ const geometryFixtures = JSON.parse(readFileSync(fixturesPath, 'utf8')) as Geome
 /**
  * Convert GeoJSON geometry to Esri JSON format.
  */
-export function geojsonToEsri(geojson: Geometry | null): EsriGeometry {
+export function geojsonToEsri(geojson: Geometry | null): GeoServicesGeometry {
   if (!geojson) return null;
 
   const wkid = 4326;
@@ -411,7 +411,7 @@ export class GeometryGenerator {
     minLat?: number,
     maxLon?: number,
     maxLat?: number,
-  ): EsriEnvelope {
+  ): GeoServicesEnvelope {
     const [xmin, ymin, xmax, ymax] = this.bbox(minLon, minLat, maxLon, maxLat);
     return {
       xmin,

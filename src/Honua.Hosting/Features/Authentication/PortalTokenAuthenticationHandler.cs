@@ -43,7 +43,7 @@ internal sealed class PortalTokenAuthenticationHandler(
 {
     internal const string TokenQueryParameter = "token";
     internal const string BearerPrefix = "Bearer ";
-    internal const string EsriAuthorizationHeader = "X-Esri-Authorization";
+    internal const string GeoServicesAuthorizationHeader = "X-Esri-Authorization";
 
     private const string InvalidTokenMessage = "The supplied portal token is invalid, expired, or bound to a different client.";
 
@@ -147,7 +147,7 @@ internal sealed class PortalTokenAuthenticationHandler(
             }
         }
 
-        if (Request.Headers.TryGetValue(EsriAuthorizationHeader, out var esriHeader))
+        if (Request.Headers.TryGetValue(GeoServicesAuthorizationHeader, out var esriHeader))
         {
             var fromEsri = TryReadBearerHeader(esriHeader);
             if (!string.IsNullOrEmpty(fromEsri))

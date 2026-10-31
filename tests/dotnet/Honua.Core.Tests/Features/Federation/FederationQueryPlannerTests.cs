@@ -59,7 +59,7 @@ public sealed class FederationQueryPlannerTests
     [UnitTest]
     public void ResolveCapabilities_EsriRest_RefinesExactSpatialAndTemporalLocally()
     {
-        var caps = _planner.ResolveCapabilities(FederatedSourceKind.EsriRest);
+        var caps = _planner.ResolveCapabilities(FederatedSourceKind.GeoServicesRest);
 
         Assert.True(caps.SupportsAttributeFilterPushdown);
         Assert.True(caps.SupportsSpatialFilterPushdown);
@@ -100,7 +100,7 @@ public sealed class FederationQueryPlannerTests
             SpatialRelationship = SpatialRelationship.Within,
         });
 
-        var plan = _planner.Plan(Source(FederatedSourceKind.EsriRest), in query, joinsLocalLayer: false);
+        var plan = _planner.Plan(Source(FederatedSourceKind.GeoServicesRest), in query, joinsLocalLayer: false);
 
         var spatial = Assert.Single(plan.Decisions, d => d.Predicate == FederationPredicateKind.SpatialFilter);
         Assert.False(spatial.PushedDown);
@@ -117,7 +117,7 @@ public sealed class FederationQueryPlannerTests
             IsSimpleEnvelope = true,
         });
 
-        var plan = _planner.Plan(Source(FederatedSourceKind.EsriRest), in query, joinsLocalLayer: false);
+        var plan = _planner.Plan(Source(FederatedSourceKind.GeoServicesRest), in query, joinsLocalLayer: false);
 
         var spatial = Assert.Single(plan.Decisions, d => d.Predicate == FederationPredicateKind.SpatialFilter);
         Assert.True(spatial.PushedDown);
@@ -136,7 +136,7 @@ public sealed class FederationQueryPlannerTests
             },
         };
 
-        var plan = _planner.Plan(Source(FederatedSourceKind.EsriRest), in query, joinsLocalLayer: false);
+        var plan = _planner.Plan(Source(FederatedSourceKind.GeoServicesRest), in query, joinsLocalLayer: false);
 
         var temporal = Assert.Single(plan.Decisions, d => d.Predicate == FederationPredicateKind.TemporalFilter);
         Assert.False(temporal.PushedDown);

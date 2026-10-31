@@ -727,22 +727,22 @@ internal sealed partial class GeoservicesImportService
             return ownership.Message;
         }
 
-        if (exception is ArcGisAuthenticationException auth)
+        if (exception is GeoServicesAuthenticationException auth)
         {
             return auth.Kind switch
             {
-                ArcGisAuthenticationFailureKind.CredentialExpired =>
-                    $"{ImportCompatibilityCodes.ArcGisTokenExpired}: ArcGIS credentials are expired. Provide a refreshed token or credential reference and retry.",
-                ArcGisAuthenticationFailureKind.CredentialDenied =>
-                    $"{ImportCompatibilityCodes.ArcGisAccessDenied}: ArcGIS rejected the supplied credentials. Verify access to the layer and retry.",
+                GeoServicesAuthenticationFailureKind.CredentialExpired =>
+                    $"{ImportCompatibilityCodes.GeoServicesTokenExpired}: ArcGIS credentials are expired. Provide a refreshed token or credential reference and retry.",
+                GeoServicesAuthenticationFailureKind.CredentialDenied =>
+                    $"{ImportCompatibilityCodes.GeoServicesAccessDenied}: ArcGIS rejected the supplied credentials. Verify access to the layer and retry.",
                 _ =>
-                    $"{ImportCompatibilityCodes.ArcGisTokenRequired}: ArcGIS service requires authentication. Provide a token or credential reference and retry."
+                    $"{ImportCompatibilityCodes.GeoServicesTokenRequired}: ArcGIS service requires authentication. Provide a token or credential reference and retry."
             };
         }
 
         if (exception is GeoservicesImportAbortedException aborted)
         {
-            return $"{ImportCompatibilityCodes.ArcGisImportAborted}: {aborted.Message}";
+            return $"{ImportCompatibilityCodes.GeoServicesImportAborted}: {aborted.Message}";
         }
 
         var step = stage switch
@@ -778,24 +778,24 @@ internal sealed partial class GeoservicesImportService
         return databaseFailure switch
         {
             PostgresException postgres when IsGeometryRejection(postgres) =>
-                $"{ImportCompatibilityCodes.ArcGisImportGeometryRejected}: The target database rejected a source geometry while {step} "
+                $"{ImportCompatibilityCodes.GeoServicesImportGeometryRejected}: The target database rejected a source geometry while {step} "
                 + $"(SQLSTATE {postgres.SqlState}). Check that the layer's advertised geometry type and Z/M flags match the source coordinates. {outcome}",
             PostgresException postgres when IsDatabaseUnavailable(postgres.SqlState) =>
-                $"{ImportCompatibilityCodes.ArcGisImportDatabaseUnavailable}: The target database connection was lost or refused while {step} "
+                $"{ImportCompatibilityCodes.GeoServicesImportDatabaseUnavailable}: The target database connection was lost or refused while {step} "
                 + $"(SQLSTATE {postgres.SqlState}). {outcome}",
             PostgresException postgres =>
-                $"{ImportCompatibilityCodes.ArcGisImportDatabaseError}: The target database rejected the import while {step} "
+                $"{ImportCompatibilityCodes.GeoServicesImportDatabaseError}: The target database rejected the import while {step} "
                 + $"(SQLSTATE {postgres.SqlState}). {outcome}",
             NpgsqlException or TimeoutException =>
-                $"{ImportCompatibilityCodes.ArcGisImportDatabaseUnavailable}: The target database connection failed while {step}. {outcome}",
+                $"{ImportCompatibilityCodes.GeoServicesImportDatabaseUnavailable}: The target database connection failed while {step}. {outcome}",
             HttpRequestException { StatusCode: { } status } =>
-                $"{ImportCompatibilityCodes.ArcGisServiceError}: The ArcGIS service request failed with HTTP {(int)status} while {step}. {outcome}",
+                $"{ImportCompatibilityCodes.GeoServicesServiceError}: The ArcGIS service request failed with HTTP {(int)status} while {step}. {outcome}",
             HttpRequestException =>
-                $"{ImportCompatibilityCodes.ArcGisServiceError}: The ArcGIS service could not be reached while {step}. {outcome}",
+                $"{ImportCompatibilityCodes.GeoServicesServiceError}: The ArcGIS service could not be reached while {step}. {outcome}",
             OperationCanceledException =>
-                $"{ImportCompatibilityCodes.ArcGisServiceError}: An ArcGIS service request timed out while {step}. {outcome}",
+                $"{ImportCompatibilityCodes.GeoServicesServiceError}: An ArcGIS service request timed out while {step}. {outcome}",
             _ =>
-                $"{ImportCompatibilityCodes.ArcGisImportFailed}: Import from ArcGIS service failed while {step}. {outcome}"
+                $"{ImportCompatibilityCodes.GeoServicesImportFailed}: Import from ArcGIS service failed while {step}. {outcome}"
         };
     }
 
@@ -1087,8 +1087,8 @@ internal sealed partial class GeoservicesImportService
     private static string GetGeometryDimensionSuffix(bool hasZ, bool hasM)
         => hasZ && hasM ? "ZM" : hasZ ? "Z" : hasM ? "M" : string.Empty;
 
-    private static ArcGisFeature[] FilterUnseenFeatures(
-        ArcGisFeature[] features,
+    private static GeoServicesFeature[] FilterUnseenFeatures(
+        GeoServicesFeature[] features,
         GeoservicesLayerInfo layerInfo,
         HashSet<long> seenObjectIds,
         IReadOnlyCollection<long>? allowedObjectIds)
@@ -1099,7 +1099,7 @@ internal sealed partial class GeoservicesImportService
             return features;
         }
 
-        var newFeatures = new List<ArcGisFeature>(features.Length);
+        var newFeatures = new List<GeoServicesFeature>(features.Length);
         var allowed = allowedObjectIds is null ? null : allowedObjectIds.ToHashSet();
         foreach (var feature in features)
         {

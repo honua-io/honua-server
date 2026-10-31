@@ -161,7 +161,7 @@ public enum OgcStyleEncoding
     Sld11,
 
     /// <summary>Esri GeoServices <c>drawingInfo</c> renderer, derived from the MapLibre style (ADR-0002).</summary>
-    EsriDrawingInfo
+    GeoServicesDrawingInfo
 }
 
 /// <summary>

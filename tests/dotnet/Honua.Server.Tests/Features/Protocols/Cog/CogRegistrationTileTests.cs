@@ -165,19 +165,19 @@ public sealed class CogRegistrationTileTests
             .AddStorageBinding("binding-a", "resource-a", "rasters:42", storageLayerId: 42)
             .AddService("service-a", "imagery-a", protocols: [ServiceProtocols.ImageServer])
             .AddPublication("publication-a", "service-a", "resource-a", layerIndex: 1,
-                storageBindingId: "binding-a", publicationType: MetadataV2PublicationType.EsriImageLayer)
+                storageBindingId: "binding-a", publicationType: MetadataV2PublicationType.GeoServicesImageLayer)
             .AddResource("resource-b", "imagery-b", MetadataV2ResourceType.RasterDataset)
             .AddStorageBinding("binding-b", "resource-b", "rasters:1", storageLayerId: 1)
             .AddService("service-b", "imagery-b", protocols: [ServiceProtocols.ImageServer])
             .AddPublication("publication-b", "service-b", "resource-b", layerIndex: 2,
-                storageBindingId: "binding-b", publicationType: MetadataV2PublicationType.EsriImageLayer);
+                storageBindingId: "binding-b", publicationType: MetadataV2PublicationType.GeoServicesImageLayer);
         return withCollision
             ? builder
                 .AddResource("resource-c", "imagery-c", MetadataV2ResourceType.RasterDataset)
                 .AddStorageBinding("binding-c", "resource-c", "rasters:7", storageLayerId: 7)
                 .AddService("service-c", "imagery-c", protocols: [ServiceProtocols.ImageServer])
                 .AddPublication("publication-c", "service-c", "resource-c", layerIndex: 1,
-                    storageBindingId: "binding-c", publicationType: MetadataV2PublicationType.EsriImageLayer)
+                    storageBindingId: "binding-c", publicationType: MetadataV2PublicationType.GeoServicesImageLayer)
             : builder;
     }
 

@@ -8,7 +8,7 @@ or a failing Honua endpoint. The client procedure stays in private
 
 Evidence identifier, unchanged:
 
-`honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-featureserver.cert.json`
+`honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-gis-featureserver.cert.json`
 
 SHA-256 `73951d19013f5490ccba86c6c5730a192d14544a9d9cd4e25df9f375eb35bf98`.
 

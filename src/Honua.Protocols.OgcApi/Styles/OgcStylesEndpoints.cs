@@ -88,7 +88,7 @@ public static class OgcStylesEndpoints
             .Produces<object>(StatusCodes.Status200OK, MediaTypes.MapboxStyle)
             .Produces(StatusCodes.Status200OK, contentType: MediaTypes.Sld10)
             .Produces(StatusCodes.Status200OK, contentType: MediaTypes.Sld11)
-            .Produces(StatusCodes.Status200OK, contentType: MediaTypes.EsriDrawingInfo)
+            .Produces(StatusCodes.Status200OK, contentType: MediaTypes.GeoServicesDrawingInfo)
             .Produces(StatusCodes.Status404NotFound)
             .Produces(StatusCodes.Status406NotAcceptable)
             .CacheOutput("OgcStylesStylesheet");
@@ -629,7 +629,7 @@ public static class OgcStylesEndpoints
         links.Add(Link.Create(
             href: stylesheetHref,
             rel: RelationTypes.Stylesheet,
-            type: MediaTypes.EsriDrawingInfo,
+            type: MediaTypes.GeoServicesDrawingInfo,
             title: "Esri drawingInfo stylesheet (derived)"));
         links.Add(Link.Create(
             href: $"{baseUrl}/ogc/styles/{encoded}/metadata",
@@ -659,7 +659,7 @@ public static class OgcStylesEndpoints
             OgcStyleEncoding.MapboxStyle,
             OgcStyleEncoding.Sld10,
             OgcStyleEncoding.Sld11,
-            OgcStyleEncoding.EsriDrawingInfo
+            OgcStyleEncoding.GeoServicesDrawingInfo
         ];
 
         foreach (var headerValue in accept)
@@ -803,7 +803,7 @@ public static class OgcStylesEndpoints
                 encoding = OgcStyleEncoding.MapboxStyle;
                 return true;
             case "application/vnd.esri.drawinginfo+json":
-                encoding = OgcStyleEncoding.EsriDrawingInfo;
+                encoding = OgcStyleEncoding.GeoServicesDrawingInfo;
                 return true;
             default:
                 return false;

@@ -13,7 +13,7 @@ public sealed class LayerResponse
 {
     // No ArcGIS Server version (currentVersion/fullVersion) is advertised. Honua is an
     // independent, Esri-compatible server and must not impersonate a specific ArcGIS Server
-    // release. Do NOT add a currentVersion/fullVersion field (guarded by NoArcGisServerVersionTests).
+    // release. Do NOT add a currentVersion/fullVersion field (guarded by NoGeoServicesServerVersionTests).
 
     /// <summary>
     /// Layer identifier

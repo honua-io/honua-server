@@ -138,7 +138,7 @@ public sealed class ODataQueryHandlerTests
                     odataPublication with
                     {
                         Metadata = odataPublication.Metadata with { Id = "pub-alpha-layer-1-feature" },
-                        PublicationType = MetadataV2PublicationType.EsriFeatureLayer,
+                        PublicationType = MetadataV2PublicationType.GeoServicesFeatureLayer,
                     },
                 ],
             };

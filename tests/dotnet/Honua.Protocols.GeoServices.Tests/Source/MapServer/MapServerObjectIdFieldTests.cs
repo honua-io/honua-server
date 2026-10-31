@@ -172,7 +172,7 @@ public sealed class MapServerObjectIdFieldTests
                 layerIndex: StringIdLayerId,
                 storageBindingId: "binding-string-id-layer",
                 serviceLocalId: StringIdLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                publicationType: MetadataV2PublicationType.EsriMapLayer)
+                publicationType: MetadataV2PublicationType.GeoServicesMapLayer)
             .BuildProvider();
     }
 

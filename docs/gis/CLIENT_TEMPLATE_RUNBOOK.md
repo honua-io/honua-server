@@ -5,7 +5,7 @@ description: "How to produce and refresh the desktop and BI client templates use
 ---
 # Client Templates and Manual Smoke Runbook
 
-This runbook provides first-party template starters and repeatable manual smoke checks for QGIS and the BI clients. ArcGIS Pro certification detail is not executed from this page: cite lane `desktop-arcgis` and keep the procedure in private `honua-esri-compat` (ruling R30).
+This runbook provides first-party template starters and repeatable manual smoke checks for QGIS and the BI clients. ArcGIS Pro certification detail is not executed from this page: cite lane `desktop-gis` and keep the procedure in private `honua-esri-compat` (ruling R30).
 
 - QGIS (`.qgz`)
 - Power BI Desktop (`.pbix`)
@@ -19,7 +19,7 @@ Template sources are split between [`docs/gis/client-templates`](client-template
 
 | Client | Template Source | Saved Output Artifact |
 |---|---|---|
-| ArcGIS Pro | Evidence identifier `desktop-arcgis` in [`honua-esri-compat`](https://github.com/honua-io/honua-esri-compat). The public name-only pointer is [`arcgis-pro/Honua-Desktop-Smoke.aprx.template.md`](client-templates/arcgis-pro/Honua-Desktop-Smoke.aprx.template.md). | `Honua-Desktop-Smoke.aprx` (not certified here) |
+| ArcGIS Pro | Evidence identifier `desktop-gis` in [`honua-esri-compat`](https://github.com/honua-io/honua-esri-compat). The public name-only pointer is [`arcgis-pro/Honua-Desktop-Smoke.aprx.template.md`](client-templates/arcgis-pro/Honua-Desktop-Smoke.aprx.template.md). | `Honua-Desktop-Smoke.aprx` (not certified here) |
 | QGIS | [`../user/client-templates/qgis/Honua-Desktop-Smoke.qgs.template`](../user/client-templates/qgis/Honua-Desktop-Smoke.qgs.template) | `Honua-Desktop-Smoke.qgz` |
 | Power BI Desktop | [`power-bi/Honua-OData-Smoke.pq.template`](client-templates/power-bi/Honua-OData-Smoke.pq.template) and [`power-bi/Honua-OData-Smoke.pbix.template.md`](client-templates/power-bi/Honua-OData-Smoke.pbix.template.md) | `Honua-OData-Smoke.pbix` |
 | Excel | [`excel/Honua-OData-Smoke.pq.template`](client-templates/excel/Honua-OData-Smoke.pq.template) and [`excel/Honua-OData-Smoke.xlsx.template.md`](client-templates/excel/Honua-OData-Smoke.xlsx.template.md) | `Honua-OData-Smoke.xlsx` |
@@ -71,7 +71,7 @@ The uploaded contract is:
 
 Since ticket #415, the workflow defaults to the `full` profile and emits per-protocol `.cert.json` certification envelopes under a `certification/` subdirectory covering 18 CERT-\* test cases across 4 protocol lanes. Use `--profile smoke` for the original 11-check MVP subset.
 
-Automated `.cert.json` envelopes use the `ci-desktop` and `ci-bi` client lane values. Manual lanes (desktop-arcgis, desktop-qgis, bi-powerbi, bi-excel) still require operator-produced evidence per the steps below.
+Automated `.cert.json` envelopes use the `ci-desktop` and `ci-bi` client lane values. Manual lanes (desktop-gis, desktop-qgis, bi-powerbi, bi-excel) still require operator-produced evidence per the steps below.
 
 The full profile covers:
 
@@ -127,12 +127,12 @@ If `envsubst` is unavailable, replace placeholder tokens manually in each templa
 ## ArcGIS Pro
 
 Do not run an ArcGIS Pro smoke procedure from this repository. Cite lane
-`desktop-arcgis` and the envelopes
-`*-desktop-arcgis-featureserver.cert.json` and
-`*-desktop-arcgis-mapserver.cert.json`. The procedure and any licence or runner
+`desktop-gis` and the envelopes
+`*-desktop-gis-featureserver.cert.json` and
+`*-desktop-gis-mapserver.cert.json`. The procedure and any licence or runner
 setup stay in private `honua-esri-compat`. No successful desktop run is linked
-([Licensed ArcGIS Pro Desktop Evidence](../internal/evidence/ARCGIS_PRO_LICENSED_EVIDENCE.md)).
-`arcgis-stub` is a different, REST-only evidence identifier.
+([Licensed ArcGIS Pro Desktop Evidence](../internal/evidence/GEOSERVICES_PRO_LICENSED_EVIDENCE.md)).
+`geoservices-rest-stub` is a different, REST-only evidence identifier.
 
 FeatureServer evidence uses the common-core CERT-\* IDs. MapServer evidence
 records CERT-QFLT, CERT-PAGE, CERT-GEOM, and CERT-ERRH-02 as `not-applicable`
@@ -207,7 +207,7 @@ Each smoke step maps to shared certification test cases from the [Cross-Client C
 
 \* **BI lanes (Power BI, Excel):** CERT-GEOM-01, CERT-GEOM-02, CERT-SCHM-02, and CERT-QFLT-02 do not apply to OData-only clients (these require geometry-capable protocols). Record as `not-applicable` in the evidence envelope.
 
-Each smoke run on this page should produce one `.cert.json` evidence file per exercised QGIS or BI protocol. ArcGIS Pro envelopes are the `desktop-arcgis` evidence identifiers, not products of this runbook. See the [Evidence Specification](CROSS_CLIENT_CERTIFICATION_EVIDENCE.md) for the envelope format and naming convention.
+Each smoke run on this page should produce one `.cert.json` evidence file per exercised QGIS or BI protocol. ArcGIS Pro envelopes are the `desktop-gis` evidence identifiers, not products of this runbook. See the [Evidence Specification](CROSS_CLIENT_CERTIFICATION_EVIDENCE.md) for the envelope format and naming convention.
 
 ## Tested-Version Evidence
 
@@ -222,6 +222,6 @@ For each client entry, include:
 ## Optional Automation Feasibility
 
 Desktop automation can reduce manual effort but should be treated as non-blocking MVP support work:
-- ArcGIS Pro: not automated here. Cite `desktop-arcgis` in `honua-esri-compat`.
+- ArcGIS Pro: not automated here. Cite `desktop-gis` in `honua-esri-compat`.
 - QGIS: **automated via PyQGIS** — the `pyqgis-client-compat-nightly.yml` workflow exercises OGC API Features and WFS programmatically with real QGIS providers, including headless rendering. The automated lane covers the 18 base CERT-\* cases (with documented skips for TLS/auth on the anonymous seed) plus the three substantiated visual / style slice IDs from ticket `#478` (`CERT-RNDR-SYM-01`, `CERT-RNDR-LIN-01`, `CERT-RNDR-FIL-01`) via [`tests/python/pyqgis/test_render_path.py`](../../tests/python/pyqgis/test_render_path.py). The `CERT-RNDR-{LBL,SPR,URL}-01` slice IDs ride the pending-fixture follow-on and are tracked in the slice spec rather than seeded into the PyQGIS envelope. The manual QGIS template flow remains OGC-first unless a later ticket broadens it.
 - Power BI/Excel: query-refresh automation is feasible, but end-to-end desktop UI automation is brittle and environment-specific.

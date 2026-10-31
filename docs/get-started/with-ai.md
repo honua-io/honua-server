@@ -108,7 +108,7 @@ mechanism. For example:
 
 Or, for a local secured source import:
 
-> Use `env:HONUA_IMPORT_ARCGIS_TOKEN` for this ArcGIS import. The variable is
+> Use `env:HONUA_IMPORT_GEOSERVICES_TOKEN` for this ArcGIS import. The variable is
 > already injected into the server environment. Allow that exact reference and
 > test access without printing the token.
 

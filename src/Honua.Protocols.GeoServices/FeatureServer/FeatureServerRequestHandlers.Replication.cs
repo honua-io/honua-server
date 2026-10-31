@@ -2358,7 +2358,7 @@ internal static partial class FeatureServerEndpoints
                 // Replication needs one deterministic feature/table resource per public
                 // ID; otherwise dictionary lookups throw before access checks run.
                 .Where(layer => layer.Resource.Type is MetadataV2ResourceType.FeatureDataset or MetadataV2ResourceType.Table)
-                .OrderBy(layer => layer.Publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer ? 0 : 1)
+                .OrderBy(layer => layer.Publication.PublicationType == MetadataV2PublicationType.GeoServicesFeatureLayer ? 0 : 1)
                 .ThenByDescending(layer => layer.Publication.IsPrimary)
                 .ThenBy(layer => layer.Publication.Metadata.Id, StringComparer.Ordinal)
                 .DistinctBy(layer => layer.PublicLayerId)

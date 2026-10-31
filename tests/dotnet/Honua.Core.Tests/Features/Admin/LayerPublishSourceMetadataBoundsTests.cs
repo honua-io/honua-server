@@ -32,26 +32,26 @@ public sealed class LayerPublishSourceMetadataBoundsTests
     [Fact]
     public void Bounds_MatchImportCaptureCaps()
     {
-        LayerPublishSourceMetadataBounds.MaxCodedValuesPerDomain.Should().Be(EsriFieldDomainParser.CodedValueDomainCap);
-        LayerPublishSourceMetadataBounds.MaxSubtypes.Should().Be(EsriSubtypeParser.SubtypeCap);
-        LayerPublishSourceMetadataBounds.MaxAttributeRules.Should().Be(EsriAttributeRuleParser.AttributeRuleCap);
+        LayerPublishSourceMetadataBounds.MaxCodedValuesPerDomain.Should().Be(GeoServicesFieldDomainParser.CodedValueDomainCap);
+        LayerPublishSourceMetadataBounds.MaxSubtypes.Should().Be(GeoServicesSubtypeParser.SubtypeCap);
+        LayerPublishSourceMetadataBounds.MaxAttributeRules.Should().Be(GeoServicesAttributeRuleParser.AttributeRuleCap);
     }
 
     [Trait("Tier", "Fast")]
     [Fact]
     public void TryValidate_WithImportParserOutputAtEveryCap_Accepts()
     {
-        var domain = EsriFieldDomainParser.ParseDomain(Json($$"""
-            { "type": "codedValue", "name": "Status", "codedValues": [{{CodedValues(EsriFieldDomainParser.CodedValueDomainCap)}}] }
+        var domain = GeoServicesFieldDomainParser.ParseDomain(Json($$"""
+            { "type": "codedValue", "name": "Status", "codedValues": [{{CodedValues(GeoServicesFieldDomainParser.CodedValueDomainCap)}}] }
             """)).Domain;
-        var subtypes = EsriSubtypeParser.Parse(
+        var subtypes = GeoServicesSubtypeParser.Parse(
             "kind",
             Json("1"),
-            Json($"[{Subtypes(EsriSubtypeParser.SubtypeCap, overrideCodedValues: EsriFieldDomainParser.CodedValueDomainCap)}]")).Subtypes;
-        var rules = EsriAttributeRuleParser.Parse((JsonElement?)Json($"[{Rules(EsriAttributeRuleParser.AttributeRuleCap)}]")).Rules;
+            Json($"[{Subtypes(GeoServicesSubtypeParser.SubtypeCap, overrideCodedValues: GeoServicesFieldDomainParser.CodedValueDomainCap)}]")).Subtypes;
+        var rules = GeoServicesAttributeRuleParser.Parse((JsonElement?)Json($"[{Rules(GeoServicesAttributeRuleParser.AttributeRuleCap)}]")).Rules;
         domain.Should().NotBeNull();
         subtypes.Should().NotBeNull();
-        rules.Should().HaveCount(EsriAttributeRuleParser.AttributeRuleCap);
+        rules.Should().HaveCount(GeoServicesAttributeRuleParser.AttributeRuleCap);
 
         var accepted = LayerPublishSourceMetadataBounds.TryValidate(
             new Dictionary<string, MetadataV2FieldDomain> { ["status"] = domain! },
@@ -75,7 +75,7 @@ public sealed class LayerPublishSourceMetadataBoundsTests
         {
             Name = "Status",
             Type = domainType,
-            CodedValues = Enumerable.Range(1, EsriFieldDomainParser.CodedValueDomainCap + 1)
+            CodedValues = Enumerable.Range(1, GeoServicesFieldDomainParser.CodedValueDomainCap + 1)
                 .Select(code => new MetadataV2CodedValue { Code = JsonSerializer.SerializeToElement(code), Name = $"v{code}" })
                 .ToArray()
         };
@@ -93,11 +93,11 @@ public sealed class LayerPublishSourceMetadataBoundsTests
     [InlineData("futureDomain")]
     public void TryValidate_WithSubtypeOverrideDomainOverCap_Rejects(string domainType)
     {
-        var subtypes = EsriSubtypeParser.Parse("kind", null, Json($"[{Subtypes(1, overrideCodedValues: 1)}]")).Subtypes!;
+        var subtypes = GeoServicesSubtypeParser.Parse("kind", null, Json($"[{Subtypes(1, overrideCodedValues: 1)}]")).Subtypes!;
         var oversized = new MetadataV2FieldDomain
         {
             Type = domainType,
-            CodedValues = Enumerable.Range(1, EsriFieldDomainParser.CodedValueDomainCap + 1)
+            CodedValues = Enumerable.Range(1, GeoServicesFieldDomainParser.CodedValueDomainCap + 1)
                 .Select(code => new MetadataV2CodedValue { Code = JsonSerializer.SerializeToElement(code), Name = $"v{code}" })
                 .ToArray()
         };
@@ -136,7 +136,7 @@ public sealed class LayerPublishSourceMetadataBoundsTests
     [InlineData("futureDomain")]
     public void TryValidate_WithImportParserIdentityOnlyDomain_Accepts(string domainType)
     {
-        var domain = EsriFieldDomainParser.ParseDomain(
+        var domain = GeoServicesFieldDomainParser.ParseDomain(
             JsonSerializer.SerializeToElement(new { type = domainType, name = "Identity only" })).Domain;
         domain.Should().NotBeNull();
 
@@ -152,7 +152,7 @@ public sealed class LayerPublishSourceMetadataBoundsTests
         var subtypes = new MetadataV2Subtypes
         {
             SubtypeField = "kind",
-            Subtypes = Enumerable.Range(1, EsriSubtypeParser.SubtypeCap + 1)
+            Subtypes = Enumerable.Range(1, GeoServicesSubtypeParser.SubtypeCap + 1)
                 .Select(code => new MetadataV2Subtype { Code = JsonSerializer.SerializeToElement(code), Name = $"s{code}" })
                 .ToArray()
         };
@@ -164,7 +164,7 @@ public sealed class LayerPublishSourceMetadataBoundsTests
     [Fact]
     public void TryValidate_WithAttributeRulesOverCap_Rejects()
     {
-        var rules = Enumerable.Range(1, EsriAttributeRuleParser.AttributeRuleCap + 1)
+        var rules = Enumerable.Range(1, GeoServicesAttributeRuleParser.AttributeRuleCap + 1)
             .Select(index => new MetadataV2AttributeRule
             {
                 Name = $"rule-{index}",

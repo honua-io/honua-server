@@ -191,7 +191,7 @@ public sealed class MapServerExportEndpointTests : MapServerEndpointTestBase
     [Operation(Operations.Export)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
     [Endpoint("POST /rest/services/{serviceId}/MapServer/export")]
-    public async Task MapServer_Export_WithArcGisProJsonEnvelope_MatchesCommaEnvelope(bool usePost)
+    public async Task MapServer_Export_WithGeoServicesProJsonEnvelope_MatchesCommaEnvelope(bool usePost)
     {
         // Regression (#4501), captured from stock ArcGIS Pro 3.7.1: changing only bbox to CSV made
         // its blank-map HTTP400 become PNG200. Retain the native precision.

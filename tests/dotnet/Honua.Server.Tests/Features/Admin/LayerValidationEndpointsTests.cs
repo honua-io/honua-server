@@ -295,7 +295,7 @@ public sealed class LayerValidationEndpointsTests : IAsyncLifetime
                 Value = layerIdText,
                 IsNumeric = true
             },
-            PublicationType = MetadataV2PublicationType.EsriFeatureLayer,
+            PublicationType = MetadataV2PublicationType.GeoServicesFeatureLayer,
             IsPrimary = true
         };
 

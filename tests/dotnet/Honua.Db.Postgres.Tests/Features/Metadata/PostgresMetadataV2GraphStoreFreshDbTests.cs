@@ -544,7 +544,7 @@ public sealed class PostgresMetadataV2GraphStoreFreshDbTests(PostgresFixture fix
                 reader.GetBoolean(2).Should().BeFalse();
                 reader.GetInt32(3).Should().Be(7);
                 reader.GetString(4).Should().Be("7");
-                reader.GetString(5).Should().Be("EsriFeatureLayer");
+                reader.GetString(5).Should().Be("GeoServicesFeatureLayer");
                 (await reader.ReadAsync()).Should().BeTrue();
                 reader.GetString(0).Should().Be("pub-2");
                 reader.GetBoolean(1).Should().BeTrue();
@@ -623,7 +623,7 @@ public sealed class PostgresMetadataV2GraphStoreFreshDbTests(PostgresFixture fix
                     ResourceId = "res-1",
                     ServiceId = "svc-1",
                     StorageBindingId = "bind-1",
-                    PublicationType = MetadataV2PublicationType.EsriFeatureLayer,
+                    PublicationType = MetadataV2PublicationType.GeoServicesFeatureLayer,
                     Identifier = new MetadataV2PublicationIdentifier { Value = "7", IsNumeric = true },
                     IsPrimary = true,
                 },

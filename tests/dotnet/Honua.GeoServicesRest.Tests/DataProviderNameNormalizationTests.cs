@@ -11,16 +11,16 @@ public class DataProviderNameNormalizationTests
     [Theory]
     [InlineData("arcgis-rest")]
     [InlineData("arcgis_rest")]
-    [InlineData("ArcGisRest")]
+    [InlineData("GeoServicesRest")]
     [InlineData("ARCGIS-REST")]
     [InlineData("arcgis")]
     [InlineData("esri")]
     [InlineData("esri-rest")]
     [InlineData("Esri-FeatureServer")]
     [InlineData("FeatureServer")]
-    public void Normalize_AllAliases_ResolveToCanonicalArcGisRest(string provider)
+    public void Normalize_AllAliases_ResolveToCanonicalGeoServicesRest(string provider)
     {
-        Assert.Equal(DataProviderNames.ArcGisRest, DataProviderNames.Normalize(provider));
+        Assert.Equal(DataProviderNames.GeoServicesRest, DataProviderNames.Normalize(provider));
     }
 
     [Trait("Tier", "Fast")]

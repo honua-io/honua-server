@@ -36,7 +36,7 @@ public sealed record MigrationRunMetricsArtifact
 
     /// <summary>
     /// Source kind identifier such as <c>geoserver-rest</c>, <c>ogc-wfs</c>, or
-    /// <c>arcgis-geoservices-rest</c>.
+    /// <c>geoservices-rest</c>.
     /// </summary>
     public required string SourceKind { get; init; }
 

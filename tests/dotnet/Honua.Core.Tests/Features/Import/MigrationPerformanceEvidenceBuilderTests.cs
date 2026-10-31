@@ -111,7 +111,7 @@ public sealed class MigrationPerformanceEvidenceBuilderTests
     public void Build_ThrowsWhenRunAndBaselineFamiliesDisagree()
     {
         var baseline = MigrationFixtureBaselineCatalog.GeoServerSmallBaseline();
-        var run = BuildRun(PassingTotals(), sourceFamily: MigrationCostPerformanceSourceFamilies.ArcGisGeoServicesRest);
+        var run = BuildRun(PassingTotals(), sourceFamily: MigrationCostPerformanceSourceFamilies.GeoServicesGeoServicesRest);
         var evaluation = MigrationRunMetricsBaselineEvaluator.Evaluate(BuildRun(PassingTotals()), baseline);
 
         var act = () => MigrationPerformanceEvidenceBuilder.Build(

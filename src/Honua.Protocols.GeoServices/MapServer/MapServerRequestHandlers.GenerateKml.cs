@@ -669,7 +669,7 @@ internal static partial class MapServerEndpoints
         FilterExpression? filterExpression = null;
         if (!string.IsNullOrWhiteSpace(where))
         {
-            var parseResult = filterExpressionService.Parse(FilterLanguage.ArcGisSql, where);
+            var parseResult = filterExpressionService.Parse(FilterLanguage.GeoServicesSql, where);
             if (!parseResult.IsSuccess)
             {
                 error = parseResult.ErrorMessage ?? "Invalid filter syntax.";

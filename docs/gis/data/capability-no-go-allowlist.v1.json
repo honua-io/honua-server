@@ -2,7 +2,7 @@
   "schemaVersion": "1.0.0",
   "generator": "docs/gis/data/capability-keys.v1.json (hand-maintained companion file)",
   "trackingIssue": "#2893",
-  "description": "Explicit allowlist of known evidence-source keys that intentionally have NO capability crosswalk because Honua does not support them. This file exists so a hard Esri lock-in (Utility Network, Parcel Fabric, Linear Referencing) is a loud, reviewed 'not-supported' marker rather than a silent omission from capability-keys.v1.json. CapabilityCrosswalkDriftTests requires every honua-esri-assess CAPABILITY_REGISTRY 'no-go' (hard_lock_in) key to appear here, and forbids it from also appearing in capability-keys.v1.json's crosswalks.esriAssess section.",
+  "description": "Explicit allowlist of known evidence-source keys that intentionally have NO capability crosswalk because Honua does not support them. This file exists so a hard Esri lock-in (Utility Network, Parcel Fabric, Linear Referencing) is a loud, reviewed 'not-supported' marker rather than a silent omission from capability-keys.v1.json. CapabilityCrosswalkDriftTests requires every honua-esri-assess CAPABILITY_REGISTRY 'no-go' (hard_lock_in) key to appear here, and forbids it from also appearing in capability-keys.v1.json's crosswalks.geoservicesAssess section.",
   "notSupported": [
     {
       "source": "esri-assess",

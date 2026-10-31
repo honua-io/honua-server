@@ -111,7 +111,7 @@ public sealed class FeatureServerServiceEstimateLayerIdsTests
             ResourceId = resourceId,
             ServiceId = "service.features",
             StorageBindingId = storageBindingId,
-            PublicationType = MetadataV2PublicationType.EsriFeatureLayer,
+            PublicationType = MetadataV2PublicationType.GeoServicesFeatureLayer,
             IsPrimary = true,
             LayerIndex = layerIndex,
         };

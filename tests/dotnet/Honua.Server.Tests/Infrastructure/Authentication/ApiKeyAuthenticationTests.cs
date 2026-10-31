@@ -181,7 +181,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
                 "res-test-layer-0",
                 layerIndex: 0,
                 storageBindingId: "binding-test-layer-0",
-                publicationType: MetadataV2PublicationType.EsriFeatureLayer)
+                publicationType: MetadataV2PublicationType.GeoServicesFeatureLayer)
             .BuildProvider();
     }
 

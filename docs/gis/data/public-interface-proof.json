@@ -1867,9 +1867,9 @@
         {
           "proofClass": "real-client-certification",
           "proofMechanism": "Planned licensed ArcGIS Pro and ArcPy operation-level certification for FeatureServer",
-          "executionLane": "release:desktop-arcgis",
+          "executionLane": "release:desktop-gis",
           "clientLanes": [
-            "desktop-arcgis"
+            "desktop-gis"
           ],
           "evidenceLocations": [
             "docs/gis/CLIENT_TEMPLATE_RUNBOOK.md",
@@ -1977,9 +1977,9 @@
         {
           "proofClass": "real-client-certification",
           "proofMechanism": "Planned operation-level certification for GeoServices REST VersionManagementServer licensed ArcGIS Pro and ArcPy client",
-          "executionLane": "release:desktop-arcgis",
+          "executionLane": "release:desktop-gis",
           "clientLanes": [
-            "desktop-arcgis"
+            "desktop-gis"
           ],
           "evidenceLocations": [
             "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
@@ -2114,9 +2114,9 @@
         {
           "proofClass": "real-client-certification",
           "proofMechanism": "Planned licensed ArcGIS Pro and ArcPy operation-level certification for MapServer",
-          "executionLane": "release:desktop-arcgis",
+          "executionLane": "release:desktop-gis",
           "clientLanes": [
-            "desktop-arcgis"
+            "desktop-gis"
           ],
           "evidenceLocations": [
             "docs/gis/CLIENT_TEMPLATE_RUNBOOK.md",
@@ -2169,9 +2169,9 @@
         {
           "proofClass": "real-client-certification",
           "proofMechanism": "Planned operation-level certification for WMS 1.3 licensed ArcGIS Pro and ArcPy client",
-          "executionLane": "release:desktop-arcgis",
+          "executionLane": "release:desktop-gis",
           "clientLanes": [
-            "desktop-arcgis"
+            "desktop-gis"
           ],
           "evidenceLocations": [
             "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
@@ -2265,9 +2265,9 @@
         {
           "proofClass": "real-client-certification",
           "proofMechanism": "Planned operation-level certification for WMS 1.1.1 licensed ArcGIS Pro and ArcPy client",
-          "executionLane": "release:desktop-arcgis",
+          "executionLane": "release:desktop-gis",
           "clientLanes": [
-            "desktop-arcgis"
+            "desktop-gis"
           ],
           "evidenceLocations": [
             "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
@@ -2328,9 +2328,9 @@
         {
           "proofClass": "real-client-certification",
           "proofMechanism": "Planned operation-level certification for WMTS 1.0 licensed ArcGIS Pro and ArcPy client",
-          "executionLane": "release:desktop-arcgis",
+          "executionLane": "release:desktop-gis",
           "clientLanes": [
-            "desktop-arcgis"
+            "desktop-gis"
           ],
           "evidenceLocations": [
             "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
@@ -2439,9 +2439,9 @@
         {
           "proofClass": "real-client-certification",
           "proofMechanism": "Planned operation-level certification for GeoServices REST ImageServer licensed ArcGIS Pro and ArcPy client",
-          "executionLane": "release:desktop-arcgis",
+          "executionLane": "release:desktop-gis",
           "clientLanes": [
-            "desktop-arcgis"
+            "desktop-gis"
           ],
           "evidenceLocations": [
             "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
@@ -2840,9 +2840,9 @@
         {
           "proofClass": "real-client-certification",
           "proofMechanism": "Planned licensed ArcGIS Pro and ArcPy operation-level OGC API Features certification",
-          "executionLane": "release:desktop-arcgis",
+          "executionLane": "release:desktop-gis",
           "clientLanes": [
-            "desktop-arcgis"
+            "desktop-gis"
           ],
           "evidenceLocations": [
             "docs/gis/CLIENT_TEMPLATE_RUNBOOK.md",
@@ -3062,9 +3062,9 @@
         {
           "proofClass": "real-client-certification",
           "proofMechanism": "Planned operation-level certification for GeometryServer licensed ArcGIS Pro and ArcPy client",
-          "executionLane": "release:desktop-arcgis",
+          "executionLane": "release:desktop-gis",
           "clientLanes": [
-            "desktop-arcgis"
+            "desktop-gis"
           ],
           "evidenceLocations": [
             "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
@@ -3568,7 +3568,7 @@
             "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/GPServerDurableRuntimeTests.cs",
             "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/GPServerSoapEndpointsTests.Execution.cs",
             "tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Source/GPServer/GPServerSoapExecutionTests.cs",
-            "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/Fixtures/EsriToolboxReplay/README.md"
+            "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/Fixtures/GeoServicesToolboxReplay/README.md"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -3654,9 +3654,9 @@
         {
           "proofClass": "real-client-certification",
           "proofMechanism": "Planned operation-level certification for WFS 2.0 licensed ArcGIS Pro and ArcPy client",
-          "executionLane": "release:desktop-arcgis",
+          "executionLane": "release:desktop-gis",
           "clientLanes": [
-            "desktop-arcgis"
+            "desktop-gis"
           ],
           "evidenceLocations": [
             "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
@@ -3765,9 +3765,9 @@
         {
           "proofClass": "real-client-certification",
           "proofMechanism": "Planned operation-level certification for WFS 1.1.0 licensed ArcGIS Pro and ArcPy client",
-          "executionLane": "release:desktop-arcgis",
+          "executionLane": "release:desktop-gis",
           "clientLanes": [
-            "desktop-arcgis"
+            "desktop-gis"
           ],
           "evidenceLocations": [
             "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
@@ -3827,9 +3827,9 @@
         {
           "proofClass": "real-client-certification",
           "proofMechanism": "Planned operation-level certification for WFS 1.0 licensed ArcGIS Pro and ArcPy client",
-          "executionLane": "release:desktop-arcgis",
+          "executionLane": "release:desktop-gis",
           "clientLanes": [
-            "desktop-arcgis"
+            "desktop-gis"
           ],
           "evidenceLocations": [
             "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",

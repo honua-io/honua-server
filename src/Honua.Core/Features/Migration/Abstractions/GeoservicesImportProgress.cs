@@ -79,7 +79,7 @@ public sealed record GeoservicesImportProgress : IOperationProgress, ICancellabl
     /// <summary>
     /// Stable source kind for admin clients that render mixed import job results.
     /// </summary>
-    public string SourceKind { get; init; } = "arcgis-geoservices-rest";
+    public string SourceKind { get; init; } = "geoservices-rest";
 
     /// <summary>
     /// Source URL alias used by generic admin import result views.

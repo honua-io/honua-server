@@ -37,7 +37,7 @@ public sealed class ReconciliationQueryBuilder(IMetadataV2GraphProvider metadata
             throw new ArgumentException("Reconciliation target metadata is unavailable.");
         }
 
-        var parsed = filters.Parse(FilterLanguage.ArcGisSql, layer.FilterMirror);
+        var parsed = filters.Parse(FilterLanguage.GeoServicesSql, layer.FilterMirror);
         if (!parsed.IsSuccess || parsed.Expression is null)
         {
             throw new ArgumentException("Invalid reconciliation filter.");

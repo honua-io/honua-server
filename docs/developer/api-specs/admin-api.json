@@ -6190,14 +6190,14 @@
         }
       }
     },
-    "/import/arcgis/migrations": {
+    "/import/geoservices-rest/migrations": {
       "get": {
         "tags": [
           "Import"
         ],
         "summary": "List ArcGIS Migration Runs",
         "description": "Returns a page of ArcGIS migration run summaries that have persisted manifest (and optionally parity) evidence. Results are newest-first. `pageSize` is clamped to a maximum of 100.",
-        "operationId": "listArcGisMigrationRuns",
+        "operationId": "listGeoServicesMigrationRuns",
         "parameters": [
           {
             "name": "sourceUrl",
@@ -6255,7 +6255,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ImportArcGisMigrationRunListResult"
+                  "$ref": "#/components/schemas/ImportGeoServicesMigrationRunListResult"
                 }
               }
             }
@@ -6272,14 +6272,14 @@
         }
       }
     },
-    "/import/arcgis/migrations/{runId}/manifest": {
+    "/import/geoservices-rest/migrations/{runId}/manifest": {
       "get": {
         "tags": [
           "Import"
         ],
         "summary": "Get ArcGIS Migration Manifest",
         "description": "Returns the persisted migration manifest artifact for an ArcGIS migration run. The response body is the artifact itself and is not wrapped in a success/data admin envelope.",
-        "operationId": "getArcGisMigrationManifest",
+        "operationId": "getGeoServicesMigrationManifest",
         "parameters": [
           {
             "name": "runId",
@@ -6322,7 +6322,7 @@
         ],
         "summary": "Record ArcGIS Migration Manifest",
         "description": "Persists the manifest evidence artifact produced by the ArcGIS migration planning pipeline against the supplied run id, creating or replacing the run record. Returns the stored run record.",
-        "operationId": "recordArcGisMigrationManifest",
+        "operationId": "recordGeoServicesMigrationManifest",
         "parameters": [
           {
             "name": "runId",
@@ -6339,7 +6339,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ImportArcGisMigrationManifestIngestionRequest"
+                "$ref": "#/components/schemas/ImportGeoServicesMigrationManifestIngestionRequest"
               }
             }
           }
@@ -6350,7 +6350,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ImportArcGisMigrationRunRecord"
+                  "$ref": "#/components/schemas/ImportGeoServicesMigrationRunRecord"
                 }
               }
             }
@@ -6367,14 +6367,14 @@
         }
       }
     },
-    "/import/arcgis/migrations/{runId}/parity": {
+    "/import/geoservices-rest/migrations/{runId}/parity": {
       "get": {
         "tags": [
           "Import"
         ],
         "summary": "Get ArcGIS Migration Parity",
         "description": "Returns the persisted post-apply parity artifact for an ArcGIS migration run. Responds 404 when the run is unknown and, separately, when the run has a manifest but no parity artifact yet.",
-        "operationId": "getArcGisMigrationParity",
+        "operationId": "getGeoServicesMigrationParity",
         "parameters": [
           {
             "name": "runId",
@@ -6392,7 +6392,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ImportArcGisMigrationParityArtifact"
+                  "$ref": "#/components/schemas/ImportGeoServicesMigrationParityArtifact"
                 }
               }
             }
@@ -6417,7 +6417,7 @@
         ],
         "summary": "Record ArcGIS Migration Parity",
         "description": "Persists the post-apply parity artifact for an ArcGIS migration run. The manifest for the run must already be recorded; otherwise the request is rejected with 409. `parity.classification` must be one of pass, warn, or fail (case-insensitive). Returns the stored parity artifact.",
-        "operationId": "recordArcGisMigrationParity",
+        "operationId": "recordGeoServicesMigrationParity",
         "parameters": [
           {
             "name": "runId",
@@ -6434,7 +6434,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ImportArcGisMigrationParityIngestionRequest"
+                "$ref": "#/components/schemas/ImportGeoServicesMigrationParityIngestionRequest"
               }
             }
           }
@@ -6445,7 +6445,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ImportArcGisMigrationParityArtifact"
+                  "$ref": "#/components/schemas/ImportGeoServicesMigrationParityArtifact"
                 }
               }
             }
@@ -14543,7 +14543,7 @@
             "name": "sourceKind",
             "in": "query",
             "required": false,
-            "description": "Restrict to a single source kind, for example `geoserver-rest` or `arcgis-geoservices-rest`.",
+            "description": "Restrict to a single source kind, for example `geoserver-rest` or `geoservices-rest`.",
             "schema": {
               "type": "string"
             }
@@ -21897,7 +21897,7 @@
               "FileGdb",
               "FlatGeobuf",
               "GeoParquet",
-              "EsriJson",
+              "GeoServicesJson",
               "Wkb"
             ]
           },
@@ -24545,12 +24545,12 @@
         "properties": {
           "sourceKind": {
             "type": "string",
-            "description": "Source kind alias. Accepted values normalize to either geoserver-rest or arcgis-geoservices-rest in the response artifact.",
+            "description": "Source kind alias. Accepted values normalize to either geoserver-rest or geoservices-rest in the response artifact.",
             "enum": [
               "geoserver",
               "geoserver-rest",
               "geoservices",
-              "arcgis-geoservices-rest"
+              "geoservices-rest"
             ]
           },
           "sourceUrl": {
@@ -24608,7 +24608,7 @@
             "description": "Canonical source kind returned by the scanner.",
             "enum": [
               "geoserver-rest",
-              "arcgis-geoservices-rest"
+              "geoservices-rest"
             ]
           },
           "source": {
@@ -24801,7 +24801,7 @@
           },
           "code": {
             "type": "string",
-            "description": "Optional stable machine-readable compatibility code such as COMPATIBLE, MANUAL_REVIEW, ARCGIS_UNSUPPORTED_RENDERER, or ARCGIS_TOKEN_REQUIRED when the scanner can assign one deterministically. Source-specific codes are namespaced per source kind so downstream automation can branch deterministically. Omitted on aggregate assessments where no single code applies and on source-specific assessments that do not yet define a stable code."
+            "description": "Optional stable machine-readable compatibility code such as COMPATIBLE, MANUAL_REVIEW, GEOSERVICES_UNSUPPORTED_RENDERER, or GEOSERVICES_TOKEN_REQUIRED when the scanner can assign one deterministically. Source-specific codes are namespaced per source kind so downstream automation can branch deterministically. Omitted on aggregate assessments where no single code applies and on source-specific assessments that do not yet define a stable code."
           },
           "reason": {
             "type": "string",
@@ -24973,7 +24973,7 @@
           },
           "domainValues": {
             "type": "array",
-            "description": "Coded values for codedValue domains. Bounded; coded-value domains exceeding the cap surface as the ARCGIS_DOMAIN_TRUNCATED warning rather than silent truncation.",
+            "description": "Coded values for codedValue domains. Bounded; coded-value domains exceeding the cap surface as the GEOSERVICES_DOMAIN_TRUNCATED warning rather than silent truncation.",
             "items": {
               "$ref": "#/components/schemas/MigrationInventoryCodedValue"
             }
@@ -30911,7 +30911,7 @@
           },
           "sourceKind": {
             "type": "string",
-            "description": "Source kind identifier such as geoserver-rest or arcgis-geoservices-rest."
+            "description": "Source kind identifier such as geoserver-rest or geoservices-rest."
           },
           "source": {
             "$ref": "#/components/schemas/ImportMigrationSourceIdentity"
@@ -30984,7 +30984,7 @@
           }
         }
       },
-      "ImportArcGisMigrationRunSummary": {
+      "ImportGeoServicesMigrationRunSummary": {
         "type": "object",
         "description": "Lightweight ArcGIS migration run summary returned by the admin list endpoint.",
         "required": [
@@ -31041,7 +31041,7 @@
           }
         }
       },
-      "ImportArcGisMigrationRunListResult": {
+      "ImportGeoServicesMigrationRunListResult": {
         "type": "object",
         "description": "Page of ArcGIS migration run summaries.",
         "properties": {
@@ -31049,7 +31049,7 @@
             "type": "array",
             "description": "Run summaries on this page, newest first.",
             "items": {
-              "$ref": "#/components/schemas/ImportArcGisMigrationRunSummary"
+              "$ref": "#/components/schemas/ImportGeoServicesMigrationRunSummary"
             }
           },
           "totalCount": {
@@ -31069,7 +31069,7 @@
           }
         }
       },
-      "ImportArcGisMigrationRunRecord": {
+      "ImportGeoServicesMigrationRunRecord": {
         "type": "object",
         "description": "Run-level metadata persisted alongside the manifest and parity artifacts.",
         "required": [
@@ -31103,7 +31103,7 @@
           }
         }
       },
-      "ImportArcGisMigrationManifestIngestionRequest": {
+      "ImportGeoServicesMigrationManifestIngestionRequest": {
         "type": "object",
         "description": "Request body for recording an ArcGIS migration manifest artifact. `sourceUrl` and `manifest` are validated as required by the handler.",
         "properties": {
@@ -31134,16 +31134,16 @@
           }
         }
       },
-      "ImportArcGisMigrationParityIngestionRequest": {
+      "ImportGeoServicesMigrationParityIngestionRequest": {
         "type": "object",
         "description": "Request body for recording an ArcGIS migration parity artifact. `parity` is validated as required by the handler.",
         "properties": {
           "parity": {
-            "$ref": "#/components/schemas/ImportArcGisMigrationParityArtifact"
+            "$ref": "#/components/schemas/ImportGeoServicesMigrationParityArtifact"
           }
         }
       },
-      "ImportArcGisMigrationParityArtifact": {
+      "ImportGeoServicesMigrationParityArtifact": {
         "type": "object",
         "description": "Deterministic post-apply parity outcome for an ArcGIS migration source.",
         "required": [
@@ -31162,7 +31162,7 @@
           },
           "sourceKind": {
             "type": "string",
-            "example": "arcgis-geoservices-rest"
+            "example": "geoservices-rest"
           },
           "source": {
             "$ref": "#/components/schemas/ImportMigrationSourceIdentity"
@@ -31187,12 +31187,12 @@
             "type": "array",
             "description": "Per-target-resource probe outcomes, sorted by targetResourceId.",
             "items": {
-              "$ref": "#/components/schemas/ImportArcGisMigrationParityResourceProbe"
+              "$ref": "#/components/schemas/ImportGeoServicesMigrationParityResourceProbe"
             }
           }
         }
       },
-      "ImportArcGisMigrationParityResourceProbe": {
+      "ImportGeoServicesMigrationParityResourceProbe": {
         "type": "object",
         "description": "Per-target-resource parity probe bundle.",
         "required": [
@@ -31221,23 +31221,23 @@
             ]
           },
           "featureCount": {
-            "$ref": "#/components/schemas/ImportArcGisMigrationParityFeatureCountProbe"
+            "$ref": "#/components/schemas/ImportGeoServicesMigrationParityFeatureCountProbe"
           },
           "schema": {
-            "$ref": "#/components/schemas/ImportArcGisMigrationParitySchemaProbe"
+            "$ref": "#/components/schemas/ImportGeoServicesMigrationParitySchemaProbe"
           },
           "identityCoverage": {
-            "$ref": "#/components/schemas/ImportArcGisMigrationParityCoverageProbe"
+            "$ref": "#/components/schemas/ImportGeoServicesMigrationParityCoverageProbe"
           },
           "attachmentCoverage": {
-            "$ref": "#/components/schemas/ImportArcGisMigrationParityCoverageProbe"
+            "$ref": "#/components/schemas/ImportGeoServicesMigrationParityCoverageProbe"
           },
           "relationshipCoverage": {
-            "$ref": "#/components/schemas/ImportArcGisMigrationParityCoverageProbe"
+            "$ref": "#/components/schemas/ImportGeoServicesMigrationParityCoverageProbe"
           }
         }
       },
-      "ImportArcGisMigrationParityFeatureCountProbe": {
+      "ImportGeoServicesMigrationParityFeatureCountProbe": {
         "type": "object",
         "description": "Feature-count probe. Bands: pass when the absolute delta ratio is <= 5%, warn when > 5% and <= 20% (or when the source advertised no count), fail when > 20%.",
         "required": [
@@ -31278,7 +31278,7 @@
           }
         }
       },
-      "ImportArcGisMigrationParitySchemaProbe": {
+      "ImportGeoServicesMigrationParitySchemaProbe": {
         "type": "object",
         "description": "Schema match probe. Bands: pass when no expected field is missing from the target, fail otherwise. There is no warn band.",
         "required": [
@@ -31316,7 +31316,7 @@
           }
         }
       },
-      "ImportArcGisMigrationParityCoverageProbe": {
+      "ImportGeoServicesMigrationParityCoverageProbe": {
         "type": "object",
         "description": "Generic coverage probe. Bands: pass when coverage >= 0.99, warn when >= 0.80 and < 0.99, fail when < 0.80. A zero denominator reports pass.",
         "required": [
@@ -32106,7 +32106,7 @@
           },
           "sourceKind": {
             "type": "string",
-            "example": "arcgis-geoservices-rest"
+            "example": "geoservices-rest"
           },
           "sourceUrl": {
             "type": "string",
@@ -32274,7 +32274,7 @@
         "properties": {
           "sourceKind": {
             "type": "string",
-            "description": "Source kind identifier such as arcgis-geoservices-rest. Required."
+            "description": "Source kind identifier such as geoservices-rest. Required."
           },
           "sourceUrl": {
             "type": "string",
@@ -41811,7 +41811,7 @@
           },
           "sourceKind": {
             "type": "string",
-            "description": "Source kind identifier such as `geoserver-rest` or `arcgis-geoservices-rest`."
+            "description": "Source kind identifier such as `geoserver-rest` or `geoservices-rest`."
           },
           "sourceFamily": {
             "type": "string",
@@ -42327,7 +42327,7 @@
           },
           "sourceKind": {
             "type": "string",
-            "description": "Source kind identifier, for example `arcgis-geoservices-rest`. Required."
+            "description": "Source kind identifier, for example `geoservices-rest`. Required."
           },
           "sourceUrl": {
             "type": "string",
@@ -48046,7 +48046,7 @@
           },
           "kind": {
             "type": "string",
-            "description": "Transport family: `HonuaGrpc`, `EsriRest`, or `OgcWfs`."
+            "description": "Transport family: `HonuaGrpc`, `GeoServicesRest`, or `OgcWfs`."
           },
           "endpoint": {
             "type": "string",

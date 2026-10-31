@@ -56,7 +56,7 @@ public sealed class PublishedServicePreservationTests
 
         published.Metadata.Id.Should().Be("svc-publish-Roads-A");
         published.Metadata.Name.Should().Be("Roads A");
-        published.ServiceType.Should().Be(MetadataV2ServiceType.EsriFeatureService);
+        published.ServiceType.Should().Be(MetadataV2ServiceType.GeoServicesFeatureService);
         published.Protocols.Should().Equal(ServiceProtocols.All);
         published.Status.Lifecycle.Should().Be(MetadataV2LifecycleStatus.Active);
     }

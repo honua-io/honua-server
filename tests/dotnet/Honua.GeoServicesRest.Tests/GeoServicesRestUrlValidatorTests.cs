@@ -1,0 +1,37 @@
+// Copyright (c) Honua Geo Inc. All rights reserved.
+// Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
+
+using Honua.GeoServicesRest.Features.FeatureStore.Services;
+
+namespace Honua.GeoServicesRest.Tests;
+
+public sealed class GeoServicesRestUrlValidatorTests
+{
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("https://10.1.2.3/arcgis/rest/services/parcels/FeatureServer")]
+    [InlineData("https://172.16.2.3/arcgis/rest/services/parcels/FeatureServer")]
+    [InlineData("https://192.168.2.3/arcgis/rest/services/parcels/FeatureServer")]
+    [InlineData("https://169.254.169.254/arcgis/rest/services/parcels/FeatureServer")]
+    [InlineData("https://[::1]/arcgis/rest/services/parcels/FeatureServer")]
+    [InlineData("https://[fc00::1]/arcgis/rest/services/parcels/FeatureServer")]
+    public void NormalizeServiceRootUrl_WithNonPublicAddress_Throws(string url)
+    {
+        var ex = Assert.Throws<ArgumentException>(
+            () => GeoServicesRestUrlValidator.NormalizeServiceRootUrl(url));
+
+        Assert.Contains("private", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public void NormalizeServiceRootUrl_WithPublicServiceRoot_ReturnsCanonicalRoot()
+    {
+        var normalized = GeoServicesRestUrlValidator.NormalizeServiceRootUrl(
+            "https://8.8.8.8/arcgis/rest/services/parcels/FeatureServer/?f=json");
+
+        Assert.Equal(
+            "https://8.8.8.8/arcgis/rest/services/parcels/FeatureServer",
+            normalized);
+    }
+}
