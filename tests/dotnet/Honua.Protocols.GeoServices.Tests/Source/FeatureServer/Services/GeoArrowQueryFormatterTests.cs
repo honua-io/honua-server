@@ -326,7 +326,7 @@ public sealed class GeoArrowQueryFormatterTests
         batch.Column("timestamp").Should().BeOfType<TimestampArray>().Subject.GetTimestamp(0).Should().Be(timestamp);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task FormatAsGeoArrowAsync_DateTimeWithMicroseconds_PreservesMicroseconds()
     {
         var resource = CreateResource(

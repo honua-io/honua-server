@@ -891,7 +891,7 @@ public sealed class GeoParquetQueryFormatterTests(ITestOutputHelper output)
         dateArray.GetValue(0).Should().Be(expectedDate.DayNumber - epoch.DayNumber);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task FormatAsGeoParquet_DateTimeWithMicroseconds_PreservesMicroseconds()
     {
         var layer = CreateLayer(
