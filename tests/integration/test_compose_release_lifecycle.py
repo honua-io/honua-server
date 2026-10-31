@@ -184,7 +184,7 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
         assert image_id() == candidate and schema() == candidate_schema
         assert sql("SELECT count(*) FROM public.schema_versions WHERE scriptname LIKE '%142_CreateAiFinancialAccounting.sql'") == "1"
         assert sql("SELECT value FROM public.rc2_lifecycle_marker WHERE id=1") == "retained"
-        assert sql("SELECT to_regclass('honua.ai_financial_invocations')") == "honua.ai_financial_invocations"
+        assert sql("SELECT to_regclass('honua.ai_financial_invocations') IS NOT NULL") == "t"
         sql("UPDATE public.rc2_lifecycle_marker SET value='changed-after-upgrade' WHERE id=1")
         manifests = list((project_dir / "backups").glob("backup-*/manifest.json"))
         assert len(manifests) == 1
@@ -210,7 +210,7 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
         wait_for_proposal(base, approver_key, rollback["proposalId"], "succeeded", proposer_key, session)
         assert image_id() == prior_id and schema() == 140
         assert sql("SELECT value FROM public.rc2_lifecycle_marker WHERE id=1") == "retained"
-        assert sql("SELECT to_regclass('honua.ai_financial_invocations')") == ""
+        assert sql("SELECT to_regclass('honua.ai_financial_invocations') IS NULL") == "t"
         assert sql("SELECT PostGIS_Version()")
         # Closing a client early must not terminate the listener or block later requests.
         disconnect = "import socket; s=socket.socket(socket.AF_UNIX); s.connect('/sock/executor.sock'); s.sendall(b'{\"op\":\"status\"}\\n'); s.close()"
