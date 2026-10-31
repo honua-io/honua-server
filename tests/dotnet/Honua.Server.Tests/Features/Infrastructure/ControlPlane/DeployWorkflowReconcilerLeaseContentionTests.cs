@@ -145,6 +145,20 @@ public sealed class DeployWorkflowReconcilerLeaseContentionTests
     }
 
     [Fact]
+    public async Task Checkpoint_StagingDoesNotStampExposureUntilTrafficMoves()
+    {
+        var store = new InMemoryWorkflowOperationStore();
+        var backend = new CheckpointBackend(store) { StageOneObservation = true };
+        var operation = CreateOperation() with { Status = WorkflowOperationStatus.Submitted, CurrentPhase = ICheckpointedDeployBackend.ActivatedPhase };
+        await store.TryCreateAsync(operation);
+        var reconciler = CreateReconciler(store, backend, new NullTelemetryEvaluator());
+        await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
+        (await store.GetAsync(operation.OperationId))!.Deploy!.TrafficExposedAt.Should().BeNull();
+        await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
+        (await store.GetAsync(operation.OperationId))!.Deploy!.TrafficExposedAt.Should().NotBeNull();
+    }
+
+    [Fact]
     public async Task ProviderRollbackRecommendation_DoesNotWaitForTelemetry()
     {
         var store = new InMemoryWorkflowOperationStore();
@@ -270,6 +284,8 @@ public sealed class DeployWorkflowReconcilerLeaseContentionTests
     {
         public bool InterruptPreparation { get; init; }
         public bool RecommendRollback { get; init; }
+        public bool StageOneObservation { get; init; }
+        public int ObserveCount { get; private set; }
         public int RollbackCount { get; private set; }
         public int PreparationCount { get; private set; }
         public int ActivationCount { get; private set; }
@@ -298,7 +314,14 @@ public sealed class DeployWorkflowReconcilerLeaseContentionTests
         public Task<DeployPlan> PlanAsync(DeployOperationSpec spec, CancellationToken cancellationToken = default) => Task.FromResult(new DeployPlan { IsReadyToSubmit = true });
         public Task<DeploySubmissionResult> StartAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<DeployObservation> ObserveAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken = default)
-            => Task.FromResult(new DeployObservation { Status = WorkflowOperationStatus.Reconciling, RollbackRecommended = RecommendRollback });
+        {
+            ObserveCount++;
+            return Task.FromResult(new DeployObservation
+            {
+                Status = StageOneObservation && ObserveCount == 1 ? WorkflowOperationStatus.Submitted : WorkflowOperationStatus.Reconciling,
+                RollbackRecommended = RecommendRollback
+            });
+        }
         public Task<DeployObservation> RollbackAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken = default)
         {
             RollbackCount++;
