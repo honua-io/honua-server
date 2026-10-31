@@ -374,6 +374,21 @@ public sealed class PreMigrationRestoreCoordinatorTests
         }
     }
 
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Execute_CataloguedPriorImageWithoutRollbackFlag_IsRefused()
+    {
+        var harness = NewHarness();
+        var workflow = new DeployWorkflowService(Substitute.For<IDeployTargetRegistry>(),
+            [Substitute.For<IWorkflowOperationStore>()], [], Substitute.For<IOperatorApprovalEvaluator>(),
+            NullLogger<DeployWorkflowService>.Instance);
+        var guard = new RestoreGuardedDeployOperationExecutor(new DeployOperationExecutor(workflow), harness.Coordinator,
+            restoreOptions: Options.Create(harness.Cell));
+        var payload = Payload(SnapshotId) with { Rollback = false };
+        await Assert.ThrowsAsync<InvalidOperationException>(() => guard.ExecuteAsync(Request(), payload.Serialize()));
+        harness.Events.Should().BeEmpty();
+    }
+
     private const string SnapshotId = "honua-cert-snap";
 
     private static DeployExecutionPayload Payload(string? backupId)
