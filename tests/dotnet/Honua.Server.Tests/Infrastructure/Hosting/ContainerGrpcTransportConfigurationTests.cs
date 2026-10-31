@@ -80,7 +80,9 @@ public sealed class ContainerGrpcTransportConfigurationTests
         var openLayersService = GetComposeServiceBlock(compose, "openlayers", "cesium");
         Assert.Contains("HONUA_SERVICE_ID: browser_compat", openLayersService, StringComparison.Ordinal);
         Assert.Contains("HONUA_LAYER_ID: \"2000\"", openLayersService, StringComparison.Ordinal);
-        Assert.Contains("http://localhost:5000/healthz/ready", compose, StringComparison.Ordinal);
+        var honuaService = GetComposeServiceBlock(compose, "honua", "gdal-worker");
+        Assert.Contains("/dev/tcp/127.0.0.1/5000", honuaService, StringComparison.Ordinal);
+        Assert.Contains("GET /healthz/ready HTTP/1.0", honuaService, StringComparison.Ordinal);
         Assert.Contains("image: redis:7.4-alpine", compose, StringComparison.Ordinal);
     }
 
