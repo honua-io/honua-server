@@ -64,6 +64,7 @@ public sealed class ContainerGrpcTransportConfigurationTests
     }
 
     [Fact]
+    [Trait("Tier", "Fast")]
     public void ClientCompatComposeFile_OverridesContainerHttpPortForLaneBaseUrls()
     {
         var compose = ReadRepoFile("docker/client-compat/compose.yml");
