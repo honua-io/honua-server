@@ -164,6 +164,12 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
             Assert.True(await workflows.TrySetAsync(deployment with { Status = WorkflowOperationStatus.Succeeded }));
             await replacement.ReconcileAsync(approved.ExecutionOperationId, CancellationToken.None);
             Assert.Equal(WorkflowOperationStatus.Succeeded, (await workflows.GetAsync(approved.ExecutionOperationId))?.Status);
+            var owner = await workflows.GetAsync("restore-cell-exclusive-owner");
+            Assert.True(await workflows.TrySetAsync(owner! with { CurrentPhase = approved.ExecutionOperationId }));
+            await using (var admission = await RestoreDeployAdmission.AcquireAsync(workflows, "next-deploy", null, false, CancellationToken.None))
+            {
+                Assert.Null((await workflows.GetAsync("restore-cell-exclusive-owner"))?.CurrentPhase);
+            }
             await customer.Received(1).SucceededAsync(Arg.Any<CancellationToken>());
             journal.ReadAsync(Arg.Any<CancellationToken>()).Returns(new SchemaJournalSnapshot(true,
                 [new AppliedSchemaMigration(141, "expand", 0)]));
