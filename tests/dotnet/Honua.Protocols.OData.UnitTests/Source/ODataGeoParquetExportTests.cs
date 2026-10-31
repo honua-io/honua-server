@@ -9,6 +9,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Protocols.OData;
+using Honua.TestKit.Attributes;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 
@@ -20,7 +21,7 @@ namespace Honua.Server.Tests.Features.Protocols.OData;
 /// </summary>
 public sealed class ODataGeoParquetExportTests
 {
-    [Fact]
+    [UnitTest]
     public async Task FormatPage_PointWithZ_PreservesZ()
     {
         var resource = new MetadataV2Resource
