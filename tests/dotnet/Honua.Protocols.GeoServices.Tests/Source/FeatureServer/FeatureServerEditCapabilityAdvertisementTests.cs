@@ -189,7 +189,7 @@ public sealed class FeatureServerEditCapabilityAdvertisementTests
             .AddPublication($"pub-{key}", serviceId, resourceId,
                 layerIndex: layerId, serviceLocalId: layerId.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 storageBindingId: bindingId,
-                publicationType: MetadataV2PublicationType.EsriFeatureLayer);
+                publicationType: MetadataV2PublicationType.GeoServicesFeatureLayer);
     }
 
     private static Dictionary<string, JsonElement>? BuildServiceOptions(string[]? capabilities)

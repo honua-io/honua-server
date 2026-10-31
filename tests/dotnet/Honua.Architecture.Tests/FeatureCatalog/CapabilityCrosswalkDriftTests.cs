@@ -26,7 +26,7 @@ public sealed class CapabilityCrosswalkDriftTests
     /// here so the drift guard can assert they never silently reappear in the
     /// mapped-capability crosswalk and always appear in the no-go allowlist.
     /// </summary>
-    private static readonly string[] EsriAssessHardLockInKeys = ["utility-network", "parcel-fabric", "lrs"];
+    private static readonly string[] GeoServicesAssessHardLockInKeys = ["utility-network", "parcel-fabric", "lrs"];
 
     [ArchitectureTest]
     public void EveryEsriAssessCrosswalkRow_ResolvesToACanonicalCapability()
@@ -34,12 +34,12 @@ public sealed class CapabilityCrosswalkDriftTests
         var document = LoadCapabilityKeys();
         var canonicalKeys = CapabilityKeyCatalog.All.Select(c => c.Key).ToHashSet(StringComparer.Ordinal);
 
-        var unknown = document.Crosswalks.EsriAssess
+        var unknown = document.Crosswalks.GeoServicesAssess
             .Where(row => !canonicalKeys.Contains(row.Capability))
             .Select(row => $"{row.AssessKey} -> {row.Capability}")
             .ToArray();
 
-        unknown.Should().BeEmpty("every esriAssess crosswalk row must map to a capability key that exists in CapabilityKeyCatalog.All.");
+        unknown.Should().BeEmpty("every geoservicesAssess crosswalk row must map to a capability key that exists in CapabilityKeyCatalog.All.");
     }
 
     [ArchitectureTest]
@@ -62,12 +62,12 @@ public sealed class CapabilityCrosswalkDriftTests
         var document = LoadCapabilityKeys();
         var canonicalKeys = CapabilityKeyCatalog.All.Select(c => c.Key).ToHashSet(StringComparer.Ordinal);
 
-        var unknown = document.Crosswalks.EsriCompatMatrix
+        var unknown = document.Crosswalks.GeoServicesCompatMatrix
             .Where(row => !canonicalKeys.Contains(row.Capability))
             .Select(row => $"{row.ServiceId} -> {row.Capability}")
             .ToArray();
 
-        unknown.Should().BeEmpty("every esriCompatMatrix crosswalk row must map to a capability key that exists in CapabilityKeyCatalog.All.");
+        unknown.Should().BeEmpty("every geoservicesCompatMatrix crosswalk row must map to a capability key that exists in CapabilityKeyCatalog.All.");
     }
 
     [ArchitectureTest]
@@ -85,7 +85,7 @@ public sealed class CapabilityCrosswalkDriftTests
     }
 
     [ArchitectureTest]
-    public void EsriCompatMatrixServiceIds_AreCoveredByTheParityIndex()
+    public void GeoServicesCompatMatrixServiceIds_AreCoveredByTheParityIndex()
     {
         // Every geoservices-rest-parity.json service id the crosswalk claims
         // must actually exist in the parity index -- catches a stale crosswalk
@@ -93,14 +93,14 @@ public sealed class CapabilityCrosswalkDriftTests
         var document = LoadCapabilityKeys();
         var parityServiceIds = LoadParityServiceIds();
 
-        var unknown = document.Crosswalks.EsriCompatMatrix
+        var unknown = document.Crosswalks.GeoServicesCompatMatrix
             .Select(row => row.ServiceId)
             .Where(serviceId => !parityServiceIds.Contains(serviceId))
             .Distinct(StringComparer.Ordinal)
             .ToArray();
 
         unknown.Should().BeEmpty(
-            "every esriCompatMatrix crosswalk row's serviceId must exist in "
+            "every geoservicesCompatMatrix crosswalk row's serviceId must exist in "
             + "docs/gis/data/geoservices-rest-parity.json's services[].id.");
     }
 
@@ -110,7 +110,7 @@ public sealed class CapabilityCrosswalkDriftTests
         var document = LoadCapabilityKeys();
         var noGoAllowlist = LoadNoGoAllowlist();
 
-        var mappedAssessKeys = document.Crosswalks.EsriAssess
+        var mappedAssessKeys = document.Crosswalks.GeoServicesAssess
             .Select(row => row.AssessKey)
             .ToHashSet(StringComparer.Ordinal);
         var noGoKeys = noGoAllowlist.NotSupported
@@ -118,12 +118,12 @@ public sealed class CapabilityCrosswalkDriftTests
             .Select(entry => entry.Key)
             .ToHashSet(StringComparer.Ordinal);
 
-        foreach (var hardLockInKey in EsriAssessHardLockInKeys)
+        foreach (var hardLockInKey in GeoServicesAssessHardLockInKeys)
         {
             mappedAssessKeys.Should().NotContain(
                 hardLockInKey,
                 "'{0}' is a honua-esri-assess hard Esri lock-in and must never be silently "
-                + "mapped to a capability in the esriAssess crosswalk — it belongs only in "
+                + "mapped to a capability in the geoservicesAssess crosswalk — it belongs only in "
                 + "capability-no-go-allowlist.v1.json.",
                 hardLockInKey);
 

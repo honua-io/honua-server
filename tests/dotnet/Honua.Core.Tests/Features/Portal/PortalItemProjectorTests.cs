@@ -279,7 +279,7 @@ public sealed class PortalItemProjectorTests
             resourceAccess: AnonymousPolicy());
         var projector = new PortalItemProjector(
             new FakeAccessPolicyEvaluator(),
-            new EsriConstructCapabilityRegistry(NonServableFacadeDescriptors()),
+            new GeoServicesConstructCapabilityRegistry(NonServableFacadeDescriptors()),
             new FakePortalReadAuthorizer());
 
         var items = projector.ProjectVisibleItems(snapshot, Anonymous(), ProxyBaseUrl);
@@ -293,24 +293,24 @@ public sealed class PortalItemProjectorTests
     {
         // Behaviour-preservation guard: every Esri service construct the private
         // table used to accept is served by the built-in registry descriptors.
-        var registry = new EsriConstructCapabilityRegistry(EsriConstructCapabilityRegistry.BuiltInDescriptors);
-        registry.ResolveOrUnknown(EsriConstructCapabilityRegistry.Keys.FacadeFeatureService).CanServe.Should().BeTrue();
-        registry.ResolveOrUnknown(EsriConstructCapabilityRegistry.Keys.FacadeMapService).CanServe.Should().BeTrue();
-        registry.ResolveOrUnknown(EsriConstructCapabilityRegistry.Keys.FacadeImageService).CanServe.Should().BeTrue();
+        var registry = new GeoServicesConstructCapabilityRegistry(GeoServicesConstructCapabilityRegistry.BuiltInDescriptors);
+        registry.ResolveOrUnknown(GeoServicesConstructCapabilityRegistry.Keys.FacadeFeatureService).CanServe.Should().BeTrue();
+        registry.ResolveOrUnknown(GeoServicesConstructCapabilityRegistry.Keys.FacadeMapService).CanServe.Should().BeTrue();
+        registry.ResolveOrUnknown(GeoServicesConstructCapabilityRegistry.Keys.FacadeImageService).CanServe.Should().BeTrue();
     }
 
     private static PortalItemProjector CreateProjector()
         => new(
             new FakeAccessPolicyEvaluator(),
-            new EsriConstructCapabilityRegistry(EsriConstructCapabilityRegistry.BuiltInDescriptors),
+            new GeoServicesConstructCapabilityRegistry(GeoServicesConstructCapabilityRegistry.BuiltInDescriptors),
             new FakePortalReadAuthorizer());
 
-    private static EsriConstructCapabilityDescriptor[] NonServableFacadeDescriptors()
+    private static GeoServicesConstructCapabilityDescriptor[] NonServableFacadeDescriptors()
         =>
         [
-            new EsriConstructCapabilityDescriptor
+            new GeoServicesConstructCapabilityDescriptor
             {
-                ConstructKey = EsriConstructCapabilityRegistry.Keys.FacadeFeatureService,
+                ConstructKey = GeoServicesConstructCapabilityRegistry.Keys.FacadeFeatureService,
                 AutomationStatus = MigrationFidelityAutomationStatuses.ManualReview,
                 Code = ImportCompatibilityCodes.ManualReview,
                 Reason = "Test override: feature-service facade construct is not servable.",
@@ -385,7 +385,7 @@ public sealed class PortalItemProjectorTests
                     Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
                     ResourceId = resource.Metadata.Id,
                     ServiceId = service.Metadata.Id,
-                    PublicationType = MetadataV2PublicationType.EsriFeatureLayer,
+                    PublicationType = MetadataV2PublicationType.GeoServicesFeatureLayer,
                     Identifier = new MetadataV2PublicationIdentifier { Value = "0", IsNumeric = true },
                 }
             ],

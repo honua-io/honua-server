@@ -68,7 +68,7 @@ public sealed class ResourceValidatorTests
 
         result.IsValid.Should().BeTrue();
         result.Resource.Resource.Metadata.Id.Should().Be("res-feature");
-        result.Resource.Publication.PublicationType.Should().Be(MetadataV2PublicationType.EsriFeatureLayer);
+        result.Resource.Publication.PublicationType.Should().Be(MetadataV2PublicationType.GeoServicesFeatureLayer);
         result.Resource.Snapshot.Should().BeSameAs(await provider.GetCurrentAsync());
     }
 
@@ -96,7 +96,7 @@ public sealed class ResourceValidatorTests
 
         result.IsValid.Should().BeTrue();
         result.Resource.Resource.Metadata.Id.Should().Be("res-feature");
-        result.Resource.Publication.PublicationType.Should().Be(MetadataV2PublicationType.EsriFeatureLayer);
+        result.Resource.Publication.PublicationType.Should().Be(MetadataV2PublicationType.GeoServicesFeatureLayer);
     }
 
     [UnitTest]
@@ -146,7 +146,7 @@ public sealed class ResourceValidatorTests
         result.IsValid.Should().BeTrue();
         result.Resource.Service.Metadata.Id.Should().Be("service-feature");
         result.Resource.Resource.Metadata.Id.Should().Be("res-feature");
-        result.Resource.Publication.PublicationType.Should().Be(MetadataV2PublicationType.EsriFeatureLayer);
+        result.Resource.Publication.PublicationType.Should().Be(MetadataV2PublicationType.GeoServicesFeatureLayer);
     }
 
     [UnitTest]
@@ -265,10 +265,10 @@ public sealed class ResourceValidatorTests
     public async Task ValidateServiceV2Async_VectorTileServerOnSplitServices_ResolvesFeatureLayerService()
     {
         // A name split into per-publication services, all listing VectorTileServer (e.g. after a
-        // by-name protocol update). No EsriVectorTileLayer exists; the feature layer is tileable.
+        // by-name protocol update). No GeoServicesVectorTileLayer exists; the feature layer is tileable.
         var validator = new ResourceValidator(new TestMetadataV2GraphProvider(
             SplitVectorTileGraph(("service-ogc", MetadataV2PublicationType.OgcCollection),
-                                 ("service-feature", MetadataV2PublicationType.EsriFeatureLayer))));
+                                 ("service-feature", MetadataV2PublicationType.GeoServicesFeatureLayer))));
 
         var result = await validator.ValidateServiceV2Async("shared", ServiceProtocols.VectorTileServer);
 
@@ -281,8 +281,8 @@ public sealed class ResourceValidatorTests
     public async Task ValidateServiceV2Async_VectorTileServerWithTwoFeatureLayerServices_RemainsNotFound()
     {
         var validator = new ResourceValidator(new TestMetadataV2GraphProvider(
-            SplitVectorTileGraph(("service-feature-a", MetadataV2PublicationType.EsriFeatureLayer),
-                                 ("service-feature-b", MetadataV2PublicationType.EsriFeatureLayer))));
+            SplitVectorTileGraph(("service-feature-a", MetadataV2PublicationType.GeoServicesFeatureLayer),
+                                 ("service-feature-b", MetadataV2PublicationType.GeoServicesFeatureLayer))));
 
         var result = await validator.ValidateServiceV2Async("shared", ServiceProtocols.VectorTileServer);
 
@@ -368,7 +368,7 @@ public sealed class ResourceValidatorTests
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "service-aggregate", Name = "shared" },
                     Status = ActiveStatus(),
-                    ServiceType = MetadataV2ServiceType.EsriFeatureService,
+                    ServiceType = MetadataV2ServiceType.GeoServicesFeatureService,
                     Route = "/rest/services/shared/FeatureServer",
                     Protocols = ServiceProtocols.All,
                 },
@@ -498,7 +498,7 @@ public sealed class ResourceValidatorTests
                     Status = ActiveStatus(),
                     ResourceId = "res-feature",
                     ServiceId = "mixed-service",
-                    PublicationType = MetadataV2PublicationType.EsriFeatureLayer,
+                    PublicationType = MetadataV2PublicationType.GeoServicesFeatureLayer,
                     Identifier = new MetadataV2PublicationIdentifier { Value = "7", IsNumeric = true },
                 },
             ],
@@ -585,7 +585,7 @@ public sealed class ResourceValidatorTests
                     ResourceId = "res-image-layer-2000",
                     ServiceId = "svc-browser-compat-image",
                     StorageBindingId = "storage-image-layer-2000",
-                    PublicationType = MetadataV2PublicationType.EsriImageLayer,
+                    PublicationType = MetadataV2PublicationType.GeoServicesImageLayer,
                     Identifier = new MetadataV2PublicationIdentifier { Value = "2000", IsNumeric = true },
                 },
                 new MetadataV2Publication
@@ -595,7 +595,7 @@ public sealed class ResourceValidatorTests
                     ResourceId = "res-layer-2000",
                     ServiceId = "svc-browser-compat-map",
                     StorageBindingId = "storage-layer-2000",
-                    PublicationType = MetadataV2PublicationType.EsriMapLayer,
+                    PublicationType = MetadataV2PublicationType.GeoServicesMapLayer,
                     Identifier = new MetadataV2PublicationIdentifier { Value = "2000", IsNumeric = true },
                 },
             ],

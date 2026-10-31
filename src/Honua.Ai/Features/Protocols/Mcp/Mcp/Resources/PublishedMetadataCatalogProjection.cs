@@ -153,7 +153,7 @@ internal static class PublishedMetadataCatalogProjection
         var publications = snapshot.Graph.Publications
             .Where(publication =>
                 string.Equals(publication.ServiceId, service.Metadata.Id, StringComparison.Ordinal) &&
-                publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer &&
+                publication.PublicationType == MetadataV2PublicationType.GeoServicesFeatureLayer &&
                 publication.LayerIndex is >= 0)
             .Select(publication =>
             {

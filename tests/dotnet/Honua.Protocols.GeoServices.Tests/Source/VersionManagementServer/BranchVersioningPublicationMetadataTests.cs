@@ -331,7 +331,7 @@ public sealed class BranchVersioningPublicationFixture : IAsyncLifetime
         var snapshot = app.GetCurrentV2GraphSnapshot();
         var service = snapshot.Index.ServicesByName[WebAppFixture.TestServiceId];
         var publications = snapshot.Graph.Publications.Select(publication => publication.ServiceId == service.Metadata.Id
-            ? publication with { PublicationType = MetadataV2PublicationType.EsriFeatureLayer } : publication).ToArray();
+            ? publication with { PublicationType = MetadataV2PublicationType.GeoServicesFeatureLayer } : publication).ToArray();
         var bindingIds = publications.Where(publication => publication.ServiceId == service.Metadata.Id)
             .Select(publication => snapshot.ResolveStorageBinding(publication)!.Metadata.Id).ToHashSet(StringComparer.Ordinal);
         var bindings = snapshot.Graph.StorageBindings.Select(binding => bindingIds.Contains(binding.Metadata.Id)

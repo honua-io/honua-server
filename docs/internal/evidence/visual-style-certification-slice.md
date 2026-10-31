@@ -294,7 +294,7 @@ a `Cache-Control: no-cache` override.
   drawingInfo generation gap noted in the design brief is a separate
   ticket and not closed by this slice.
 - **Desktop and BI client lanes.** ArcGIS Pro certification detail stays in
-  private `honua-esri-compat` (evidence identifier `desktop-arcgis`). Power BI
+  private `honua-esri-compat` (evidence identifier `desktop-gis`). Power BI
   and Excel remain on the manual lanes in
   [`CLIENT_TEMPLATE_RUNBOOK.md`](../../gis/CLIENT_TEMPLATE_RUNBOOK.md). None of
   them are in scope for this slice.

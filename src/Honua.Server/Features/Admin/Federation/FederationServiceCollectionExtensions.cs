@@ -37,7 +37,7 @@ public static class FederationServiceCollectionExtensions
 
         // Transport connectors are additive: the executor maps each registered connector by its
         // FederatedSourceKind, so a deployment without a kind simply cannot federate to it.
-        services.AddSingleton<IFederatedSourceConnector, EsriRestFederatedSourceConnector>();
+        services.AddSingleton<IFederatedSourceConnector, GeoServicesRestFederatedSourceConnector>();
         services.AddSingleton<IFederatedSourceConnector, OgcFeaturesFederatedSourceConnector>();
 
         return services;

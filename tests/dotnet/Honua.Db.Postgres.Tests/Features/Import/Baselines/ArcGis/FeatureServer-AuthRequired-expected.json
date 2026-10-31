@@ -1,7 +1,7 @@
 {
   "artifactKind": "honua.migration.source-inventory",
   "artifactVersion": "1.0",
-  "sourceKind": "arcgis-geoservices-rest",
+  "sourceKind": "geoservices-rest",
   "source": {
     "displayName": "SecureLayer",
     "baseUrl": "https://example.com/arcgis/rest/services/SecureLayer/FeatureServer",
@@ -36,7 +36,7 @@
   },
   "overallCompatibility": {
     "level": "partial",
-    "code": "ARCGIS_TOKEN_REQUIRED",
+    "code": "GEOSERVICES_TOKEN_REQUIRED",
     "reason": "The scan did not complete successfully.",
     "warnings": [
       "The ArcGIS service requires valid credentials with read access for discovery."

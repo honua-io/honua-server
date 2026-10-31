@@ -11,15 +11,15 @@ namespace Honua.Core.Features.TileCachePackage.Services;
 /// are modelled; the documented schema is published at
 /// https://github.com/Esri/tile-package-spec.
 /// </summary>
-internal sealed record EsriRootJson
+internal sealed record GeoServicesRootJson
 {
     /// <summary>Tile data format string, e.g. <c>PNG</c>, <c>JPEG</c>, <c>PBF</c>.</summary>
     [JsonPropertyName("tileInfo")]
-    public EsriTileInfo? TileInfo { get; init; }
+    public GeoServicesTileInfo? TileInfo { get; init; }
 
     /// <summary>Storage info (storage format + packet size).</summary>
     [JsonPropertyName("storageInfo")]
-    public EsriStorageInfo? StorageInfo { get; init; }
+    public GeoServicesStorageInfo? StorageInfo { get; init; }
 
     /// <summary>Relative path to the tile bundles, e.g. <c>./tile</c>.</summary>
     [JsonPropertyName("tileBundlesPath")]
@@ -35,7 +35,7 @@ internal sealed record EsriRootJson
 }
 
 /// <summary>Tile info block of <c>root.json</c>.</summary>
-internal sealed record EsriTileInfo
+internal sealed record GeoServicesTileInfo
 {
     /// <summary>Tile width in pixels.</summary>
     [JsonPropertyName("cols")]
@@ -51,19 +51,19 @@ internal sealed record EsriTileInfo
 
     /// <summary>Spatial reference of the tiling scheme.</summary>
     [JsonPropertyName("spatialReference")]
-    public EsriSpatialReference? SpatialReference { get; init; }
+    public GeoServicesSpatialReference? SpatialReference { get; init; }
 
     /// <summary>Tiling-scheme origin. WebMercatorQuad is about (-20037508.34, 20037508.34).</summary>
     [JsonPropertyName("origin")]
-    public EsriPoint? Origin { get; init; }
+    public GeoServicesPoint? Origin { get; init; }
 
     /// <summary>Levels of detail.</summary>
     [JsonPropertyName("lods")]
-    public EsriLod[]? Lods { get; init; }
+    public GeoServicesLod[]? Lods { get; init; }
 }
 
 /// <summary>Spatial reference block.</summary>
-internal sealed record EsriSpatialReference
+internal sealed record GeoServicesSpatialReference
 {
     /// <summary>Well-known id.</summary>
     [JsonPropertyName("wkid")]
@@ -75,7 +75,7 @@ internal sealed record EsriSpatialReference
 }
 
 /// <summary>Level-of-detail entry.</summary>
-internal sealed record EsriLod
+internal sealed record GeoServicesLod
 {
     /// <summary>Level id.</summary>
     [JsonPropertyName("level")]
@@ -91,7 +91,7 @@ internal sealed record EsriLod
 }
 
 /// <summary>Point used for the tile-scheme origin.</summary>
-internal sealed record EsriPoint
+internal sealed record GeoServicesPoint
 {
     [JsonPropertyName("x")]
     public double? X { get; init; }
@@ -101,7 +101,7 @@ internal sealed record EsriPoint
 }
 
 /// <summary>Storage info block.</summary>
-internal sealed record EsriStorageInfo
+internal sealed record GeoServicesStorageInfo
 {
     /// <summary>Storage format, e.g. <c>esriMapCacheStorageModeCompactV2</c>.</summary>
     [JsonPropertyName("storageFormat")]
@@ -117,8 +117,8 @@ internal sealed record EsriStorageInfo
 /// reader AOT-safe (no runtime reflection-based deserialization).
 /// </summary>
 [JsonSourceGenerationOptions(PropertyNameCaseInsensitive = true)]
-[JsonSerializable(typeof(EsriRootJson))]
-[JsonSerializable(typeof(EsriPoint))]
+[JsonSerializable(typeof(GeoServicesRootJson))]
+[JsonSerializable(typeof(GeoServicesPoint))]
 internal sealed partial class TileCachePackageJsonContext : System.Text.Json.Serialization.JsonSerializerContext
 {
 }

@@ -151,7 +151,7 @@ public sealed class GeoservicesRelationshipApplyTests
                         SourceRelationshipId = r.SourceRelationshipId,
                         Outcome = MigrationCatalogWriteOutcome.Created,
                         Message = "applied",
-                        TargetRelationshipRef = $"rel-{r.OriginLayerId}-{r.EsriRelationshipId ?? 0}"
+                        TargetRelationshipRef = $"rel-{r.OriginLayerId}-{r.GeoServicesRelationshipId ?? 0}"
                     }).ToArray());
                 });
 
@@ -180,7 +180,7 @@ public sealed class GeoservicesRelationshipApplyTests
         request.RelatedLayerId.Should().Be(201);
         request.OriginKeyField.Should().Be("INSPECTION_ID");
         request.DestinationKeyField.Should().Be("INSPECTION_ID");
-        request.EsriRelationshipId.Should().Be(3);
+        request.GeoServicesRelationshipId.Should().Be(3);
         request.Cardinality.Should().Be("1:N");
         request.Role.Should().Be("esriRelRoleOrigin");
     }
@@ -363,7 +363,7 @@ public sealed class GeoservicesRelationshipApplyTests
     }
 
     [Fact]
-    public async Task ApplyRelationshipsAsync_NonArcGisSource_ReturnsEmpty()
+    public async Task ApplyRelationshipsAsync_NonGeoServicesSource_ReturnsEmpty()
     {
         var writer = new Mock<IMigrationCatalogWriter>(MockBehavior.Strict);
         var service = CreateService(writer.Object);
@@ -418,7 +418,7 @@ public sealed class GeoservicesRelationshipApplyTests
                     Role = "esriRelRoleOrigin",
                     OriginKeyField = "INSPECTION_ID",
                     DestinationKeyField = "INSPECTION_ID",
-                    EsriRelationshipId = esriRelationshipId,
+                    GeoServicesRelationshipId = esriRelationshipId,
                     Classification = classification,
                     TargetRelationshipRef = classification != MigrationManifestRelationshipClassifications.ManualReview
                         ? $"target:relationship:inspections:inspection-points:{esriRelationshipId}"
@@ -440,7 +440,7 @@ public sealed class GeoservicesRelationshipApplyTests
 
         return new MigrationManifestArtifact
         {
-            SourceKind = "arcgis-geoservices-rest",
+            SourceKind = "geoservices-rest",
             Source = new MigrationSourceIdentity
             {
                 DisplayName = "Inspections",
@@ -458,9 +458,9 @@ public sealed class GeoservicesRelationshipApplyTests
     private static GeoservicesImportService CreateService(IMigrationCatalogWriter catalogWriter)
     {
         var httpClient = new HttpClient(new NoopHandler());
-        var restClient = new ArcGisRestClient(
+        var restClient = new GeoServicesRestClient(
             httpClient,
-            NullLogger<ArcGisRestClient>.Instance,
+            NullLogger<GeoServicesRestClient>.Instance,
             (_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
         var connectionProvider = new Mock<IAdoNetDatabaseConnectionProvider>(MockBehavior.Loose);
         connectionProvider.Setup(p => p.GetConnectionString()).Returns("Host=localhost;Database=test");
@@ -470,7 +470,7 @@ public sealed class GeoservicesRelationshipApplyTests
             restClient,
             connectionProvider.Object,
             crsRegistry.Object,
-            new EsriConstructCapabilityRegistry(EsriConstructCapabilityRegistry.BuiltInDescriptors),
+            new GeoServicesConstructCapabilityRegistry(GeoServicesConstructCapabilityRegistry.BuiltInDescriptors),
             NullLogger<GeoservicesImportService>.Instance,
             new GeoservicesLayerPublicationService(NullLogger<GeoservicesLayerPublicationService>.Instance),
             catalogWriter: catalogWriter);

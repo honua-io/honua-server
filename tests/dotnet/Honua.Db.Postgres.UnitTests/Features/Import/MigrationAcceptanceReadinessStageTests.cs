@@ -40,7 +40,7 @@ public sealed class MigrationAcceptanceReadinessStageTests
     };
 
     [Fact]
-    public async Task ReadinessStage_AcrossArcGisGeoServerAndOgcApiFeatures_ProducesDeterministicReport()
+    public async Task ReadinessStage_AcrossGeoServicesGeoServerAndOgcApiFeatures_ProducesDeterministicReport()
     {
         var first = await BuildReportAsync();
         var second = await BuildReportAsync();
@@ -81,7 +81,7 @@ public sealed class MigrationAcceptanceReadinessStageTests
 
         report.Sources.Select(entry => entry.SourceKind)
             .Should().Equal(
-                "arcgis-geoservices-rest",
+                "geoservices-rest",
                 "geoserver-rest",
                 "ogc-api-features");
 
@@ -264,7 +264,7 @@ public sealed class MigrationAcceptanceReadinessStageTests
     {
         // Drive the readiness stage with a parity report whose probe fails so the readiness stage
         // must classify the source as not-ready and surface a fail reason.
-        var inventory = await ScanArcGisAsync();
+        var inventory = await ScanGeoServicesAsync();
         var manifest = MigrationManifestTranslator.Translate(inventory);
         var publishableResources = manifest.TargetResources
             .Where(resource => resource.Action == "publish")
@@ -506,7 +506,7 @@ public sealed class MigrationAcceptanceReadinessStageTests
 
     private static async Task<MigrationReadinessStageReport> BuildReportAsync()
     {
-        var arcgisInventory = await ScanArcGisAsync();
+        var arcgisInventory = await ScanGeoServicesAsync();
         var geoServerInventory = await ScanGeoServerAsync();
         var ogcInventory = ScanOgcApiFeatures();
 
@@ -575,9 +575,9 @@ public sealed class MigrationAcceptanceReadinessStageTests
             parityReport);
     }
 
-    private static async Task<MigrationSourceInventoryArtifact> ScanArcGisAsync()
+    private static async Task<MigrationSourceInventoryArtifact> ScanGeoServicesAsync()
     {
-        var fixture = LoadFixture("ArcGis", "MapServer-MixedRenderers");
+        var fixture = LoadFixture("GeoServices", "MapServer-MixedRenderers");
         var service = CreateGeoservicesService(new FixtureHttpHandler(fixture.Responses));
 
         return await service.ScanSourceAsync(new GeoservicesDiscoveryRequest
@@ -692,9 +692,9 @@ public sealed class MigrationAcceptanceReadinessStageTests
     private static GeoservicesImportService CreateGeoservicesService(HttpMessageHandler handler)
     {
         var httpClient = new HttpClient(handler);
-        var restClient = new ArcGisRestClient(
+        var restClient = new GeoServicesRestClient(
             httpClient,
-            NullLogger<ArcGisRestClient>.Instance,
+            NullLogger<GeoServicesRestClient>.Instance,
             (_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
         var connectionProvider = new Mock<IAdoNetDatabaseConnectionProvider>(MockBehavior.Strict);
         var crsRegistry = CreateCrsRegistry();
@@ -703,7 +703,7 @@ public sealed class MigrationAcceptanceReadinessStageTests
             restClient,
             connectionProvider.Object,
             crsRegistry,
-            new EsriConstructCapabilityRegistry(EsriConstructCapabilityRegistry.BuiltInDescriptors),
+            new GeoServicesConstructCapabilityRegistry(GeoServicesConstructCapabilityRegistry.BuiltInDescriptors),
             NullLogger<GeoservicesImportService>.Instance,
             new GeoservicesLayerPublicationService(NullLogger<GeoservicesLayerPublicationService>.Instance));
     }

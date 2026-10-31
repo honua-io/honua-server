@@ -12,7 +12,7 @@ class ClientCompatBootstrapTests(unittest.TestCase):
         services = yaml.safe_load((ROOT / "docker/client-compat/compose.yml").read_text(encoding="utf-8"))["services"]
         self.assertNotIn("seed", services["honua"]["depends_on"])
         self.assertEqual(services["seed"]["depends_on"]["honua"]["condition"], "service_healthy")
-        lanes = {"gdal", "pyqgis", "openlayers", "cesium", "arcgis-stub", "geopandas",
+        lanes = {"gdal", "pyqgis", "openlayers", "cesium", "geoservices-rest-stub", "geopandas",
                  "owslib", "duckdb", "r-sf", "pystac", "multidim-fixture"}
         for lane in lanes:
             with self.subTest(lane=lane):

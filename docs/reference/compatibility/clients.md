@@ -13,10 +13,9 @@ server; rows without checked-in evidence are marked accordingly rather than clai
 
 | Client | Protocols | Tested version | Evidence and guides |
 |---|---|---|---|
-| ArcGIS Pro | GeoServices REST FeatureServer, MapServer | 3.4.0 (2026-04-02 evidence) | [Connect ArcGIS Pro](../../guides/connect/arcgis-pro.md) |
 | QGIS | OGC API Features, WFS 2.0, WMS, WMTS | 3.40.0 (manual smoke) + nightly automated PyQGIS runs | [Connect QGIS](../../guides/connect/qgis.md) |
 | MapLibre GL JS | Vector tiles (MVT), TileJSON, auto-generated styles | 4.7.1 baseline; re-certified per CI run at the installed version | [Publish tiles](../../guides/publish/publish-tiles.md) |
-| Esri Leaflet | FeatureServer, MapServer | 3.0.19 (lockfile-resolved, automated Playwright suite) | Automated browser suite |
+| GeoServices Leaflet | FeatureServer, MapServer | 3.0.19 (lockfile-resolved, automated Playwright suite) | Automated browser suite |
 | CesiumJS | WMS, WMTS, OGC API Tiles, OGC API Maps (imagery providers), hosted 3D Tiles | Automated Playwright suite; version not pinned in the evidence matrix | [Publish 3D scenes](../../guides/publish/publish-3d-scenes.md) |
 | Power BI Desktop | OData v4 | 2.142.1053.0 (2026-04-02 evidence) | [Connect Excel and Power BI](../../guides/connect/excel-power-bi.md) |
 | Excel | OData v4 | 2402 (Build 17328.20174) (2026-04-02 evidence) | [Connect Excel and Power BI](../../guides/connect/excel-power-bi.md) |
@@ -26,8 +25,7 @@ server; rows without checked-in evidence are marked accordingly rather than clai
 | gRPC SDKs | `Geospatial.V1` gRPC surface | Generated from the stable proto contract; no per-client version matrix | [gRPC reference](../protocols/grpc.md) |
 | AI agents / MCP | MCP over admin + query surfaces | — | [Connect AI agents](../../guides/connect/ai-agents-mcp.md) |
 
-ArcGIS Pro, QGIS (manual lane), Power BI, and Excel evidence is the 2026-04-02
-certification snapshot; the PyQGIS, MapLibre, Esri Leaflet, and Cesium lanes are
+certification snapshot; the PyQGIS, MapLibre, GeoServices Leaflet, and Cesium lanes are
 re-certified automatically on every run.
 
 ## Public URL and host validation
@@ -53,7 +51,7 @@ restored. See the [managed-key lifecycle guide](../../guides/secure/authenticati
 The default local admin bridge for `/sharing/rest/generateToken` accepts bootstrap
 admin credentials and managed keys with full administrative authority. Scoped
 service/layer keys, narrow admin or operations keys, and approved-operation replay
-keys receive an Esri `400` issuance error rather than an elevated admin token.
+keys receive an GeoServices `400` issuance error rather than an elevated admin token.
 The restriction applies with both `admin` and other supplied usernames. Direct
 API-key authorization retains the key's existing grants; configured OIDC token
 issuance uses its existing identity projection.
@@ -90,7 +88,7 @@ in a tight loop.
 
 ## Known limitations
 
-Current gaps, stated as fact. Protocol-level Esri parity detail lives in
+Current gaps, stated as fact. Protocol-level GeoServices parity detail lives in
 [GeoServices REST parity](geoservices-parity.md); OGC pass rates live in
 [OGC conformance](ogc-conformance.md).
 
@@ -98,11 +96,11 @@ Current gaps, stated as fact. Protocol-level Esri parity detail lives in
   `synchronizeReplica`, and `unRegisterReplica` are implemented, but the first sync
   reports the full add set and later syncs do not provide DB-level incremental
   change tracking. Suitable for short-lived sync and client validation, not a full
-  ArcGIS offline-geodatabase replacement.
+  GeoServices offline-geodatabase replacement.
 - **GeoServices 64-bit fields require client support.** Ordinary BigInteger
-  fields use Esri's `esriFieldTypeBigInteger` in layer metadata and JSON queries,
+  fields use GeoServices's `esriFieldTypeBigInteger` in layer metadata and JSON queries,
   and field enum 13 in PBF; object identifiers retain `esriFieldTypeOID`.
-  Stock QGIS 3.40.15's ArcGIS REST provider does not recognize BigInteger fields.
+  Stock QGIS 3.40.15's GeoServices REST provider does not recognize BigInteger fields.
   Native table/export testing retained a missing-column failure; correcting
   Honua's former invalid `esriFieldTypeInteger64` token does not establish a
   QGIS type-preservation pass. See [the server defect](https://github.com/honua-io/honua-server/issues/4551)
@@ -150,7 +148,6 @@ Current gaps, stated as fact. Protocol-level Esri parity detail lives in
   do not change these values. If an axis has no usable geotransform scale,
   metadata retains the aggregate-extent/primary-dimension fallback. This
   contract is covered by HTTP regressions and does not establish native
-  QGIS or ArcGIS Pro raster certification.
 - **OGC API Coverages is MVP-scoped**: GeoTIFF/PNG retrieval with bbox/CRS/scale
   parameters; `datetime`, `subset`, CoverageJSON, NetCDF, and tiled coverage
   delivery are not implemented. Collection discovery emits each accessible
@@ -172,7 +169,7 @@ Current gaps, stated as fact. Protocol-level Esri parity detail lives in
   environment controls (`env:*`) are rejected on `submitJob` (sync `execute`
   honors `env:outSR`); heavyweight `surface.*` / `raster.*` processes are
   catalog/validation-only pending executor wiring.
-- **I3S / ArcGIS Scene Layer is a bounded Enterprise adapter, not a certification claim.**
+- **I3S / GeoServices Scene Layer is a bounded Enterprise adapter, not a certification claim.**
   Service/layer descriptors, node pages, statistics, geometry buffers, and
   attribute buffers are served under the canonical `SceneServer` routes and
   `/scenes` aliases. The entitlement gate returns `402`. Broader I3S

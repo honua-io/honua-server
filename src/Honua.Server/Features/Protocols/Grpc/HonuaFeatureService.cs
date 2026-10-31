@@ -1110,7 +1110,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         var filterService = requestServices.GetService<IFilterExpressionService>()
             ?? throw new InvalidOperationException("A where clause requires the shared filter expression service.");
 
-        var parse = filterService.Parse(FilterLanguage.ArcGisSql, where);
+        var parse = filterService.Parse(FilterLanguage.GeoServicesSql, where);
         if (!parse.IsSuccess || parse.Expression is null)
         {
             throw new RpcException(new Status(

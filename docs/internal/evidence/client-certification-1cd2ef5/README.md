@@ -58,8 +58,8 @@ The supplemental CRS probe uses the same GDAL client image and exact candidate, 
 the candidate network directly. Its independent expected features come from the SQL seed;
 it is diagnostic evidence, not an extra passing receipt. The raw raster responses are
 also supplemental diagnostics, captured during the earlier replay of the same image and
-fixture; they are not counted as client receipts. No licensed Esri runner is required by these 52 cells;
-ArcGIS certification remains delegated to honua-esri-compat.
+fixture; they are not counted as client receipts. No licensed GeoServices runner is required by these 52 cells;
+GeoServices certification remains delegated to honua-esri-compat.
 
 ## Acceptance disposition
 

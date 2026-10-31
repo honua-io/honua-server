@@ -77,8 +77,8 @@ each page. Some entitlement keys are deliberately not published here at all.
 | [mTLS Client-Certificate Authentication](identity.mtls-client-certificate.md) | Identity | Enterprise | ga |
 | [OIDC Authentication](identity.oidc.md) | Identity | Pro | ga |
 | [OIDC Multi-Provider SSO](identity.oidc-multi-provider.md) | Identity | Enterprise | ga |
-| [ArcGIS Portal Sharing Read Surface](identity.portal-sharing.md) | Identity | Community | ga |
-| [ArcGIS Portal Token Issuance](identity.portal-token.md) | Identity | Community | ga |
+| [GeoServices Portal Sharing Read Surface](identity.portal-sharing.md) | Identity | Community | ga |
+| [GeoServices Portal Token Issuance](identity.portal-token.md) | Identity | Community | ga |
 | [SAML 2.0 Authentication](identity.saml.md) | Identity | Enterprise | ga |
 | [SCIM 2.0 Provisioning](identity.scim.md) | Identity | Enterprise | ga |
 | [File Import](import.file.md) | Import | Community | ga |

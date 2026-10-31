@@ -53,8 +53,8 @@ tracked under [honua-server#1018](https://github.com/honua-io/honua-server/issue
 | Raster import | Production path | `POST /api/v1/admin/import/raster`; GeoTIFF/COG and PNG/JPEG world-file paths | Raster import is separate from coverage-service import. |
 | ArcGIS GeoServices REST discovery | Production path | `POST /api/v1/admin/import/geoservices/discover` | Requires an HTTPS service-root URL ending in `FeatureServer` or `MapServer`; layer URLs, embedded credentials, and credential query parameters are rejected. Token/OAuth/Basic credentials are accepted through the `credentials` object for synchronous discovery only. |
 | ArcGIS GeoServices REST layer import | Production path | `POST /api/v1/admin/import/geoservices/start`; background job uses paged `/query` reads, creates a PostGIS table, inserts attributes/geometries, builds a spatial index, and can auto-publish | Queryable public and credentialed feature/map-service layers are supported. Queued credentialed imports must use secret references; plaintext tokens/passwords are not persisted. Attachments and renderers are inventoried or flagged for manual follow-up, not imported as first-class data. |
-| ArcGIS Server service-fidelity migration | Delivered for the four-bucket fidelity matrix | Fidelity matrix + manifest identity remap + attachments/relationships classification + renderer/label diagnostics + post-migration parity probes + admin evidence endpoints (`PostgresArcGisMigrationEvidenceStore`); merged via [#1075](https://github.com/honua-io/honua-server/pull/1075), [#1103](https://github.com/honua-io/honua-server/pull/1103), [#1139](https://github.com/honua-io/honua-server/pull/1139) closing [honua-server#1025](https://github.com/honua-io/honua-server/issues/1025) | Authenticated private-source parity remains tracked by [honua-server#1017](https://github.com/honua-io/honua-server/issues/1017); SceneServer/I3S, Network Analyst, Utility Network remain explicitly out of scope. |
-| Unified migration scanner | Production path | `POST /api/v1/admin/import/scan` with `sourceKind=geoserver-rest` or `sourceKind=arcgis-geoservices-rest` | The scanner returns deterministic planning artifacts. It does not mutate catalog or data tables. |
+| ArcGIS Server service-fidelity migration | Delivered for the four-bucket fidelity matrix | Fidelity matrix + manifest identity remap + attachments/relationships classification + renderer/label diagnostics + post-migration parity probes + admin evidence endpoints (`PostgresGeoServicesMigrationEvidenceStore`); merged via [#1075](https://github.com/honua-io/honua-server/pull/1075), [#1103](https://github.com/honua-io/honua-server/pull/1103), [#1139](https://github.com/honua-io/honua-server/pull/1139) closing [honua-server#1025](https://github.com/honua-io/honua-server/issues/1025) | Authenticated private-source parity remains tracked by [honua-server#1017](https://github.com/honua-io/honua-server/issues/1017); SceneServer/I3S, Network Analyst, Utility Network remain explicitly out of scope. |
+| Unified migration scanner | Production path | `POST /api/v1/admin/import/scan` with `sourceKind=geoserver-rest` or `sourceKind=geoservices-rest` | The scanner returns deterministic planning artifacts. It does not mutate catalog or data tables. |
 | GeoServer REST discovery | Production path | `POST /api/v1/admin/import/geoserver/discover` and scanner support | HTTPS public URL required outside test mode. Basic auth is supported when both username and password are supplied. |
 | GeoServer REST import job | Applied migration path | `POST /api/v1/admin/import/geoserver/start` supports `dryRun=true` validation and `dryRun=false` apply jobs that emit deterministic apply-plan + apply-execution artifacts, persist data sources, copy feature data, and persist styles with conversion diagnostics. `/api/v1/admin/migration/runs` admin endpoints list/inspect/cancel runs and serve evidence packs. Merged via [#1095](https://github.com/honua-io/honua-server/pull/1095), [#1107](https://github.com/honua-io/honua-server/pull/1107), [#1140](https://github.com/honua-io/honua-server/pull/1140) closing [honua-server#1015](https://github.com/honua-io/honua-server/issues/1015). | Layer-group, WMS/WFS/WMTS service-exposure mutations, and non-PostGIS data-source migration remain manual-review/unsupported execution records. Pre-existing trunk PG-compat flake on `GeoServerImportServiceStyleApplyTests` must clear before linking a current nightly pass. |
 | GeoServer SLD migration | Partial supporting path | Admin SLD import/export endpoints and `ISldStyleConverter` integration | Bulk GeoServer import validates/converts SLD content for diagnostics, but per-layer style persistence is handled by the admin SLD endpoint. |
@@ -73,11 +73,11 @@ tracked under [honua-server#1018](https://github.com/honua-io/honua-server/issue
 
 - Endpoint group: `src/Honua.Server/Features/Import/GeoservicesImportEndpoints.cs`
 - Service implementation: `src/Honua.Db/Postgres/Features/Import/GeoservicesImportService.cs`
-- REST client: `src/Honua.Core/Features/Import/Services/ArcGisRestClient.cs`
+- REST client: `src/Honua.Core/Features/Import/Services/GeoServicesRestClient.cs`
 - URL validation: `src/Honua.Server/Features/Import/GeoservicesServiceUrlValidation.cs`
 - Inventory fixtures and baselines:
-  `tests/dotnet/Honua.Db.Postgres.Tests/Features/Import/Fixtures/ArcGis/`
-  and `tests/dotnet/Honua.Db.Postgres.Tests/Features/Import/Baselines/ArcGis/`
+  `tests/dotnet/Honua.Db.Postgres.Tests/Features/Import/Fixtures/GeoServices/`
+  and `tests/dotnet/Honua.Db.Postgres.Tests/Features/Import/Baselines/GeoServices/`
 - Integration coverage:
   `tests/dotnet/Honua.Server.Tests/Import/GeoservicesImportEndpointTests.cs`,
   `tests/dotnet/Honua.Db.Postgres.Tests/Features/Import/GeoservicesImportServiceAuthenticatedImportTests.cs`,
@@ -203,10 +203,10 @@ dotnet test tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj \
   --filter "FullyQualifiedName~OgcServiceMigrationScannerTests|FullyQualifiedName~MigrationManifestTranslatorTests|FullyQualifiedName~MigrationParityEvidenceGeneratorTests"
 
 dotnet test tests/dotnet/Honua.Db.Postgres.Tests/Honua.Postgres.Tests.csproj \
-  --filter "FullyQualifiedName~GeoservicesImportServiceScanTests|FullyQualifiedName~GeoServerImportServiceScanTests|FullyQualifiedName~GeoservicesArcGisInventoryBaselineTests|FullyQualifiedName~GeoServerInventoryBaselineTests"
+  --filter "FullyQualifiedName~GeoservicesImportServiceScanTests|FullyQualifiedName~GeoServerImportServiceScanTests|FullyQualifiedName~GeoservicesGeoServicesInventoryBaselineTests|FullyQualifiedName~GeoServerInventoryBaselineTests"
 
 dotnet test tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj \
-  --filter "FullyQualifiedName~ArcGisRestClientSecurityTests"
+  --filter "FullyQualifiedName~GeoServicesRestClientSecurityTests"
 
 dotnet test tests/dotnet/Honua.Db.Postgres.Tests/Honua.Postgres.Tests.csproj \
   --filter "FullyQualifiedName~GeoservicesImportServiceAuthenticatedImportTests"

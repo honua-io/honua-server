@@ -612,7 +612,7 @@ public sealed record MigrationRunStartRequest
     /// <summary>Stable run identifier supplied by the migration producer.</summary>
     public string? RunId { get; init; }
 
-    /// <summary>Source kind identifier, for example <c>arcgis-geoservices-rest</c>.</summary>
+    /// <summary>Source kind identifier, for example <c>geoservices-rest</c>.</summary>
     public string? SourceKind { get; init; }
 
     /// <summary>Redacted source URL. Optional for offline-manifest runs.</summary>

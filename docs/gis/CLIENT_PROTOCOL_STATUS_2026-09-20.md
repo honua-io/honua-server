@@ -2,16 +2,12 @@
 
 **173 passes, 4 recorded failures, 137 blocked, 52 not started and 10 provisional exclusions** across 94 operations and four client lanes (376 cells). This is a rollup of retained evidence from multiple runs and candidates, not a complete certification of the current runtime. Blocked means the operation still needs proof; it does not mean Honua lacks the protocol.
 
-The active server fix branch is `feat/wcs-10-serving`, [PR 5038](https://github.com/honua-io/honua-server/pull/5038). The earlier WFS and Tiles evidence is committed in `honua-client-compat` at [a294c9c](https://github.com/honua-io/honua-client-compat/commit/a294c9caa7606fe0b93b52ca76cb0cf9e6d1482d), following the statistics/raster replay commit [9d6e362](https://github.com/honua-io/honua-client-compat/commit/9d6e362c4bd46d56ced7ea1ffedc5b8aac84698e). ArcPy follow-up evidence is on `fix/native-evidence-scope-20260920` at [58e23f3](https://github.com/honua-io/honua-esri-compat/commit/58e23f3f87a40688611010f954865d25f9f4d3ca); the later source-only routing/extension inventory is committed at [f923cc3](https://github.com/honua-io/honua-esri-compat/commit/f923cc3bb52b9731a75030bd4d66d7c7c80aeba9).
-
-The latest additional native Maps evidence is [a37a12e](https://github.com/honua-io/honua-client-compat/commit/a37a12e3f19f9b9f2ecfecc2f68af3a5df77c13d). The later qualified-version-name and same-host HTTP WCS diagnostics are [9b2315d](https://github.com/honua-io/honua-esri-compat/commit/9b2315d06988a32fcbab79608676826870f09c65); those diagnostics add no native certification credit.
-
 ## Client totals
 
 | Client | Pass | Fail | Blocked | Not started | Provisional exclusions | Total |
 |---|---:|---:|---:|---:|---:|---:|
-| ArcGIS Pro UI 3.7.1.1904 | 20 | 2 | 16 | 52 | 4 | 94 |
-| ArcPy 3.7.1 | 36 | 2 | 56 | 0 | 0 | 94 |
+| desktop GIS client UI 3.7.1.1904 | 20 | 2 | 16 | 52 | 4 | 94 |
+| GeoServicesPython 3.7.1 | 36 | 2 | 56 | 0 | 0 | 94 |
 | QGIS UI 3.44.14 LTR | 53 | 0 | 38 | 0 | 3 | 94 |
 | PyQGIS 3.44.14 LTR | 64 | 0 | 27 | 0 | 3 | 94 |
 
@@ -19,7 +15,7 @@ The latest additional native Maps evidence is [a37a12e](https://github.com/honua
 
 Each cell describes the operations in that protocol/version for one client. The operation count is per lane. GUI and Python results are independent. Missing result categories have zero operations.
 
-| Protocol | Version | Operations | Pro UI | ArcPy | QGIS UI | PyQGIS |
+| Protocol | Version | Operations | Pro UI | GeoServicesPython | QGIS UI | PyQGIS |
 |---|---|---:|---|---|---|---|
 | wms | 1.3.0 | 6 | 3 pass, 3 unstarted | 2 pass, 4 blocked | 6 pass | 6 pass |
 | wmts | 1.0.0 | 4 | 2 pass, 2 unstarted | 4 blocked | 4 pass | 4 pass |
@@ -52,7 +48,7 @@ Each cell describes the operations in that protocol/version for one client. The 
 | cog | GeoTIFF | 1 | 1 unstarted | 1 pass | 1 pass | 1 pass |
 | i3s-sceneserver | 1.x | 1 | 1 unstarted | 1 pass | 1 blocked | 1 blocked |
 | 3d-tiles | 1.0 | 1 | 1 unstarted | 1 blocked | 1 pass | 1 pass |
-| elevation | Esri | 1 | 1 unstarted | 1 pass | 1 blocked | 1 pass |
+| elevation | GeoServices | 1 | 1 unstarted | 1 pass | 1 blocked | 1 pass |
 
 Full operation names, client build bindings, issue references and historical evidence are in the [operation checklist](CLIENT_CERTIFICATION_CHECKLIST.md) and its [JSON](data/client-certification-checklist.v1.json). The checksum below binds this dated snapshot; later checklist changes do not retroactively change this report.
 
@@ -60,8 +56,7 @@ Full operation names, client build bindings, issue references and historical evi
 
 Operation names, client build bindings and historical cells stay in the
 [operation checklist](CLIENT_CERTIFICATION_CHECKLIST.md) and its
-[JSON](data/client-certification-checklist.v1.json). Desktop ArcGIS Pro and
-ArcPy procedure stays in private `honua-esri-compat` (ruling R30). This page
+[JSON](data/client-certification-checklist.v1.json). Desktop desktop GIS client and
 does not restate those recipes. The checksum below binds this dated snapshot.
 
 Recorded failures, not new results:
@@ -70,17 +65,8 @@ Recorded failures, not new results:
 |---|---|---|---|
 | Pro UI | FeatureServer attachments | fail | honua-server#5012 |
 | Pro UI | FeatureServer relatedRecords | fail | honua-server#5021 |
-| ArcPy | VersionManagementServer create-version | fail | honua-server#5036; earlier Admin 404 retained |
-| ArcPy | VersionManagementServer reconcile-post | fail | honua-server#5036 |
-
-The statistics cell's earlier pass is retained as invalid history. The passing
-receipt does not validate that earlier pass. See
-[verdict audit](arcpy-local-calculation-verdict-audit-2026-09-20.md).
-
-Evidence commits already cited above, with no new certification claimed here:
-
-- `honua-client-compat` `a294c9c`, `9d6e362`, `a37a12e`
-- `honua-esri-compat` `58e23f3`, `f923cc3`, `9b2315d` (diagnostics add no native certification credit)
+| GeoServicesPython | VersionManagementServer create-version | fail | honua-server#5036; earlier Admin 404 retained |
+| GeoServicesPython | VersionManagementServer reconcile-post | fail | honua-server#5036 |
 
 ## Server conformance is a separate result
 
@@ -93,9 +79,9 @@ The authoritative [CITE snapshot](../cite-status.md), reviewed September 15, rep
 - Counts were recomputed from every retained lane state; no excluded or blocked case was removed.
 - Native QGIS evidence contract, input and image hashes, secret scan and all 243 client harness tests passed. The latest replay commit retained 43 immutable evidence files with staged-byte verification; its first gate failure identified two stale report hashes, and the regenerated artifacts passed the complete gate. The original native run gate remains blocked by three unattempted operations; the follow-up run retains all five blocked cases, including the partially performed elevation check.
 - The GetPropertyValue/geographic-tiles package passed 252 harness tests, but commit `94b6dcc` normalized 21 of its 56 evidence files from CRLF to LF. Earlier staged-byte preservation claims were incorrect. Commit `a294c9c` restores the untouched originals, adds scoped binary-preservation attributes and records the [packaging correction](https://github.com/honua-io/honua-client-compat/blob/a294c9caa7606fe0b93b52ca76cb0cf9e6d1482d/docs/reports/native-evidence-packaging-correction-2026-09-20.md), retaining the old commit history. Its ListStoredQueries package passes 256 harness tests, all three native receipt validators and regenerated planning checks. Binary comparison of all 152 evidence files against both the final index and immutable commit found zero mismatches. Packaging correction changes no native outcome or GUI credit.
-- The latest Esri evidence commit passed all 303 harness tests in 46.04 seconds, evidence and fixture contract validation, exact template-byte comparison and source manifest freshness checks. Its 327 immutable evidence files were checked against staged bytes and scanned for credentials; offline gates add no native-client passes.
-- The subsequent Esri routing/extension inventory at `f923cc3` passes all 303 tests in 52.75 seconds plus fixture execution/validation, exact regeneration and matrix freshness checks. Its six immutable evidence files match staged bytes; it adds source-backed review obligations and no native passes.
+- The latest GeoServices evidence commit passed all 303 harness tests in 46.04 seconds, evidence and fixture contract validation, exact template-byte comparison and source manifest freshness checks. Its 327 immutable evidence files were checked against staged bytes and scanned for credentials; offline gates add no native-client passes.
+- The subsequent GeoServices routing/extension inventory at `f923cc3` passes all 303 tests in 52.75 seconds plus fixture execution/validation, exact regeneration and matrix freshness checks. Its six immutable evidence files match staged bytes; it adds source-backed review obligations and no native passes.
 
 - The Maps evidence package at `a37a12e` passes 271 harness tests and shared snapshot checks. All 189 selected immutable evidence files match their originals with zero missing or changed blobs. The verifier now fails committed-revision mismatches and missing files unless explicit historical audit mode is selected; eight real-Git regressions cover that distinction.
-- Esri diagnostic package `9b2315d` passes 303 tests, fixture checks and corrected source-matrix freshness. The initial freshness failure is retained; canonical regeneration changed only the existing partial VMS descriptor's GET/POST route text and notes, preserving every operation and status. All 25 new evidence files match their immutable Git bytes.
+- GeoServices diagnostic package `9b2315d` passes 303 tests, fixture checks and corrected source-matrix freshness. The initial freshness failure is retained; canonical regeneration changed only the existing partial VMS descriptor's GET/POST route text and notes, preserving every operation and status. All 25 new evidence files match their immutable Git bytes.
 - Eleven checklist tests pass; an independent comparison confirms all 32 protocol groups and 128 lane summaries match the 376 JSON cells and the recorded checksum.

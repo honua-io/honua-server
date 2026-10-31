@@ -236,7 +236,7 @@ internal static partial class AttachmentEndpoints
         if (!string.IsNullOrWhiteSpace(definitionExpression))
         {
             var filterService = context.RequestServices.GetRequiredService<IFilterExpressionService>();
-            var parseResult = filterService.Parse(FilterLanguage.ArcGisSql, definitionExpression);
+            var parseResult = filterService.Parse(FilterLanguage.GeoServicesSql, definitionExpression);
             if (!parseResult.IsSuccess)
             {
                 await RouteValidationHelpers.WriteValidationErrorAsync(

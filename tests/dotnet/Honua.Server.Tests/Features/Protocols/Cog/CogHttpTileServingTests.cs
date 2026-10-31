@@ -170,7 +170,7 @@ public sealed class CogHttpTileServingTests : IAsyncLifetime
                 "cog-http-resource",
                 layerIndex: CogLayerId,
                 storageBindingId: "cog-http-binding",
-                publicationType: MetadataV2PublicationType.EsriImageLayer)
+                publicationType: MetadataV2PublicationType.GeoServicesImageLayer)
             .AddResource("cog-missing-resource", "cog-missing-resource", MetadataV2ResourceType.RasterDataset)
             .AddStorageBinding("cog-missing-binding", "cog-missing-resource", "rasters", storageLayerId: MissingCogLayerId)
             .AddService("cog-missing-service", "cog-missing-service", protocols: [ServiceProtocols.ImageServer])
@@ -180,7 +180,7 @@ public sealed class CogHttpTileServingTests : IAsyncLifetime
                 "cog-missing-resource",
                 layerIndex: MissingCogLayerId,
                 storageBindingId: "cog-missing-binding",
-                publicationType: MetadataV2PublicationType.EsriImageLayer)
+                publicationType: MetadataV2PublicationType.GeoServicesImageLayer)
             .BuildProvider();
 
         _fixture = new WebAppFixture()

@@ -61,7 +61,7 @@ public static class MobileOfflineDemoGraphPublisher
                 Title = ServiceName,
                 Description = "Deterministic SDK-backed mobile offline field operations fixture"
             },
-            ServiceType = MetadataV2ServiceType.EsriFeatureService,
+            ServiceType = MetadataV2ServiceType.GeoServicesFeatureService,
             Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
             Route = $"/rest/services/{ServiceName}/FeatureServer",
             Protocols = [MetadataV2ServiceProtocols.FeatureServer],
@@ -289,7 +289,7 @@ public static class MobileOfflineDemoGraphPublisher
                 Value = layerId.ToString(CultureInfo.InvariantCulture),
                 IsNumeric = true
             },
-            PublicationType = MetadataV2PublicationType.EsriFeatureLayer
+            PublicationType = MetadataV2PublicationType.GeoServicesFeatureLayer
         };
 
     private static MetadataV2Publication CreateOgcPublication(int layerId)

@@ -23,7 +23,7 @@ namespace Honua.Db.Postgres.Tests.Features.Import;
 public sealed class GeoservicesImportServiceScanTests
 {
     [Fact]
-    public async Task ScanSourceAsync_ArcGisWebMercatorAlias_NormalizesToEpsg3857()
+    public async Task ScanSourceAsync_GeoServicesWebMercatorAlias_NormalizesToEpsg3857()
     {
         var service = CreateService(
             new GeoservicesScanHandler(
@@ -43,7 +43,7 @@ public sealed class GeoservicesImportServiceScanTests
     }
 
     [Fact]
-    public async Task ScanSourceAsync_UnknownArcGisWkid_DoesNotInventEpsgUri()
+    public async Task ScanSourceAsync_UnknownGeoServicesWkid_DoesNotInventEpsgUri()
     {
         var service = CreateService(
             new GeoservicesScanHandler(
@@ -143,7 +143,7 @@ public sealed class GeoservicesImportServiceScanTests
             {
                 Mode = GeoservicesAuthenticationModes.Token,
                 AccessToken = accessToken,
-                AccessTokenSecretReference = "env:ARCGIS_TOKEN"
+                AccessTokenSecretReference = "env:GEOSERVICES_TOKEN"
             }
         });
 
@@ -154,14 +154,14 @@ public sealed class GeoservicesImportServiceScanTests
 
         var artifactJson = JsonSerializer.Serialize(artifact);
         artifactJson.Should().NotContain(accessToken);
-        artifactJson.Should().NotContain("env:ARCGIS_TOKEN");
+        artifactJson.Should().NotContain("env:GEOSERVICES_TOKEN");
     }
 
     [Fact]
     public async Task ScanSourceAsync_WithExpiredTokenError_ReportsExpiredTokenPostureWithoutSecretValues()
     {
         const string accessToken = "expired-arcgis-token";
-        var service = CreateService(new ArcGisErrorHandler(498, $"Invalid token: {accessToken}."));
+        var service = CreateService(new GeoServicesErrorHandler(498, $"Invalid token: {accessToken}."));
 
         var artifact = await service.ScanSourceAsync(new GeoservicesDiscoveryRequest
         {
@@ -171,24 +171,24 @@ public sealed class GeoservicesImportServiceScanTests
             {
                 Mode = GeoservicesAuthenticationModes.Token,
                 AccessToken = accessToken,
-                AccessTokenSecretReference = "env:ARCGIS_TOKEN"
+                AccessTokenSecretReference = "env:GEOSERVICES_TOKEN"
             }
         });
 
         artifact.AuthPosture.Mode.Should().Be(GeoservicesAuthenticationModes.ExpiredToken);
         artifact.AuthPosture.CredentialsSupplied.Should().BeTrue();
         artifact.AuthPosture.AccessConfirmed.Should().BeFalse();
-        artifact.OverallCompatibility.Code.Should().Be(ImportCompatibilityCodes.ArcGisTokenExpired);
+        artifact.OverallCompatibility.Code.Should().Be(ImportCompatibilityCodes.GeoServicesTokenExpired);
 
         var artifactJson = JsonSerializer.Serialize(artifact);
         artifactJson.Should().NotContain(accessToken);
-        artifactJson.Should().NotContain("env:ARCGIS_TOKEN");
+        artifactJson.Should().NotContain("env:GEOSERVICES_TOKEN");
     }
 
     [Fact]
     public async Task ScanSourceAsync_WithForbiddenError_ReportsDeniedPosture()
     {
-        var service = CreateService(new ArcGisErrorHandler(403, "Forbidden."));
+        var service = CreateService(new GeoServicesErrorHandler(403, "Forbidden."));
 
         var artifact = await service.ScanSourceAsync(new GeoservicesDiscoveryRequest
         {
@@ -199,14 +199,14 @@ public sealed class GeoservicesImportServiceScanTests
                 Mode = GeoservicesAuthenticationModes.Basic,
                 Username = "scanner",
                 Password = "resolved-basic-secret",
-                PasswordSecretReference = "env:ARCGIS_PASSWORD"
+                PasswordSecretReference = "env:GEOSERVICES_PASSWORD"
             }
         });
 
         artifact.AuthPosture.Mode.Should().Be(GeoservicesAuthenticationModes.Denied);
         artifact.AuthPosture.CredentialsSupplied.Should().BeTrue();
         artifact.AuthPosture.AccessConfirmed.Should().BeFalse();
-        artifact.OverallCompatibility.Code.Should().Be(ImportCompatibilityCodes.ArcGisAccessDenied);
+        artifact.OverallCompatibility.Code.Should().Be(ImportCompatibilityCodes.GeoServicesAccessDenied);
     }
 
     [Fact]
@@ -324,9 +324,9 @@ public sealed class GeoservicesImportServiceScanTests
     private static GeoservicesImportService CreateService(HttpMessageHandler handler)
     {
         var httpClient = new HttpClient(handler);
-        var restClient = new ArcGisRestClient(
+        var restClient = new GeoServicesRestClient(
             httpClient,
-            NullLogger<ArcGisRestClient>.Instance,
+            NullLogger<GeoServicesRestClient>.Instance,
             (_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
         var connectionProvider = new Mock<IAdoNetDatabaseConnectionProvider>(MockBehavior.Strict);
         var crsRegistry = new Mock<ICrsRegistry>(MockBehavior.Strict);
@@ -343,7 +343,7 @@ public sealed class GeoservicesImportServiceScanTests
             restClient,
             connectionProvider.Object,
             crsRegistry.Object,
-            new EsriConstructCapabilityRegistry(EsriConstructCapabilityRegistry.BuiltInDescriptors),
+            new GeoServicesConstructCapabilityRegistry(GeoServicesConstructCapabilityRegistry.BuiltInDescriptors),
             NullLogger<GeoservicesImportService>.Instance,
             new GeoservicesLayerPublicationService(NullLogger<GeoservicesLayerPublicationService>.Instance));
     }
@@ -384,7 +384,7 @@ public sealed class GeoservicesImportServiceScanTests
         var service = CreateService(new GeoservicesScanHandler(
             serviceDescription: "Parcel Viewer",
             spatialReferenceJson: """{"wkid":3857}""",
-            fieldsJson: FieldsWithCodedValueDomain(entryCount: EsriFieldDomainParser.CodedValueDomainCap + 1)));
+            fieldsJson: FieldsWithCodedValueDomain(entryCount: GeoServicesFieldDomainParser.CodedValueDomainCap + 1)));
 
         var artifact = await service.ScanSourceAsync(new GeoservicesDiscoveryRequest
         {
@@ -394,7 +394,7 @@ public sealed class GeoservicesImportServiceScanTests
 
         var domains = artifact.FidelityClassifications.Should().ContainSingle(c => c.Category == "domains").Subject;
         domains.AutomationStatus.Should().Be(MigrationFidelityAutomationStatuses.ManualReview);
-        domains.Code.Should().Be(ImportCompatibilityCodes.ArcGisDomainTruncated);
+        domains.Code.Should().Be(ImportCompatibilityCodes.GeoServicesDomainTruncated);
         domains.ManualSteps.Should().ContainSingle();
         domains.Metadata.Should().Contain("domainFieldCount", "2").And.Contain("truncatedDomainCount", "1");
     }
@@ -568,7 +568,7 @@ public sealed class GeoservicesImportServiceScanTests
         }
     }
 
-    private sealed class ArcGisErrorHandler(int code, string message) : HttpMessageHandler
+    private sealed class GeoServicesErrorHandler(int code, string message) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {

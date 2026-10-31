@@ -38,7 +38,7 @@ Honua is configured entirely through environment variables (or the equivalent `a
 | `Oracle__CommandTimeoutSeconds` | `60` | Oracle read command timeout. |
 | `MySql__ConnectionString` | — | MySQL/MariaDB connection string (when `DataSource__Provider=mysql`). |
 | `MySql__EngineFlavor` | `Mysql` | `Mysql` or `MariaDb` — controls WKB axis-order handling. |
-| `ArcGisRest__Enabled` | `true` | Register the federated ArcGIS REST read-through provider. |
+| `GeoServicesRest__Enabled` | `true` | Register the federated GeoServices REST read-through provider. |
 
 Provider capabilities and versions: [data sources](data-sources/README.md).
 

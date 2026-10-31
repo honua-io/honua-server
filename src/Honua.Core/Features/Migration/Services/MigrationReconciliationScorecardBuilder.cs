@@ -19,7 +19,7 @@ public static class MigrationReconciliationScorecardBuilder
     /// Build and sign a scorecard from a completed reconciliation run.
     /// </summary>
     /// <param name="runId">Stable migration run identifier.</param>
-    /// <param name="sourceKind">Source kind, e.g. <c>arcgis-geoservices-rest</c>.</param>
+    /// <param name="sourceKind">Source kind, e.g. <c>geoservices-rest</c>.</param>
     /// <param name="generatedAt">UTC instant the scorecard is generated.</param>
     /// <param name="dataArtifact">
     /// Per-layer data-reconciliation artifact (count/geometry/content/extent). Required: this is the

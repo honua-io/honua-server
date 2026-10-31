@@ -14,7 +14,7 @@ internal sealed class MapServerResponse
 {
     // No ArcGIS Server version (currentVersion/fullVersion) is advertised. Honua is an
     // independent, Esri-compatible server and must not impersonate a specific ArcGIS Server
-    // release. Do NOT add a currentVersion/fullVersion field (guarded by NoArcGisServerVersionTests).
+    // release. Do NOT add a currentVersion/fullVersion field (guarded by NoGeoServicesServerVersionTests).
 
     /// <summary>
     /// Service description displayed by ArcGIS clients.
@@ -56,7 +56,7 @@ internal sealed class MapServerResponse
     /// Spatial reference.
     /// </summary>
     [JsonPropertyName("spatialReference")]
-    public EsriSpatialReference? SpatialReference { get; init; }
+    public GeoServicesSpatialReference? SpatialReference { get; init; }
 
     /// <summary>
     /// Layers in the service.
@@ -110,13 +110,13 @@ internal sealed class MapServerResponse
     /// Full extent of the service.
     /// </summary>
     [JsonPropertyName("fullExtent")]
-    public EsriExtent? FullExtent { get; init; }
+    public GeoServicesExtent? FullExtent { get; init; }
 
     /// <summary>
     /// Initial extent of the service.
     /// </summary>
     [JsonPropertyName("initialExtent")]
-    public EsriExtent? InitialExtent { get; init; }
+    public GeoServicesExtent? InitialExtent { get; init; }
 
     /// <summary>
     /// Display units for map scale and measurements.
@@ -549,7 +549,7 @@ internal sealed class MapServerLayerResponse
 {
     // No ArcGIS Server version (currentVersion/fullVersion) is advertised. Honua is an
     // independent, Esri-compatible server and must not impersonate a specific ArcGIS Server
-    // release. Do NOT add a currentVersion/fullVersion field (guarded by NoArcGisServerVersionTests).
+    // release. Do NOT add a currentVersion/fullVersion field (guarded by NoGeoServicesServerVersionTests).
 
     /// <summary>
     /// Layer identifier.
@@ -601,19 +601,19 @@ internal sealed class MapServerLayerResponse
     /// Layer extent.
     /// </summary>
     [JsonPropertyName("extent")]
-    public EsriExtent? Extent { get; init; }
+    public GeoServicesExtent? Extent { get; init; }
 
     /// <summary>
     /// Layer spatial reference.
     /// </summary>
     [JsonPropertyName("spatialReference")]
-    public EsriSpatialReference? SpatialReference { get; init; }
+    public GeoServicesSpatialReference? SpatialReference { get; init; }
 
     /// <summary>
     /// Spatial reference of the source dataset, which can differ from the map CRS.
     /// </summary>
     [JsonPropertyName("sourceSpatialReference")]
-    public EsriSpatialReference? SourceSpatialReference { get; init; }
+    public GeoServicesSpatialReference? SourceSpatialReference { get; init; }
 
     /// <summary>
     /// Field name used by clients for display.
@@ -1100,7 +1100,7 @@ internal sealed class ExportImageResponse
     /// Extent of the exported image.
     /// </summary>
     [JsonPropertyName("extent")]
-    public EsriExtent? Extent { get; init; }
+    public GeoServicesExtent? Extent { get; init; }
 
     /// <summary>
     /// Map scale denominator.
@@ -1214,7 +1214,7 @@ internal sealed class TileInfo
     /// Spatial reference of the tile scheme.
     /// </summary>
     [JsonPropertyName("spatialReference")]
-    public EsriSpatialReference? SpatialReference { get; init; }
+    public GeoServicesSpatialReference? SpatialReference { get; init; }
 
     /// <summary>
     /// Levels of detail (zoom levels) available for tile access.

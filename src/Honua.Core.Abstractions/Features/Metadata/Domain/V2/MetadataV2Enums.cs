@@ -282,19 +282,19 @@ public enum MetadataV2ServiceType
     /// An Esri feature service.
     /// </summary>
     [JsonStringEnumMemberName("esri-feature-service")]
-    EsriFeatureService,
+    GeoServicesFeatureService,
 
     /// <summary>
     /// An Esri map service.
     /// </summary>
     [JsonStringEnumMemberName("esri-map-service")]
-    EsriMapService,
+    GeoServicesMapService,
 
     /// <summary>
     /// An Esri image service.
     /// </summary>
     [JsonStringEnumMemberName("esri-image-service")]
-    EsriImageService,
+    GeoServicesImageService,
 
     /// <summary>
     /// A STAC API.
@@ -367,25 +367,25 @@ public enum MetadataV2PublicationType
     /// An Esri feature layer publication.
     /// </summary>
     [JsonStringEnumMemberName("esri-feature-layer")]
-    EsriFeatureLayer,
+    GeoServicesFeatureLayer,
 
     /// <summary>
     /// An Esri map layer publication.
     /// </summary>
     [JsonStringEnumMemberName("esri-map-layer")]
-    EsriMapLayer,
+    GeoServicesMapLayer,
 
     /// <summary>
     /// An Esri image layer publication.
     /// </summary>
     [JsonStringEnumMemberName("esri-image-layer")]
-    EsriImageLayer,
+    GeoServicesImageLayer,
 
     /// <summary>
     /// An Esri vector tile layer publication (GeoServices VectorTileServer).
     /// </summary>
     [JsonStringEnumMemberName("esri-vector-tile-layer")]
-    EsriVectorTileLayer,
+    GeoServicesVectorTileLayer,
 
     /// <summary>
     /// A STAC collection publication.

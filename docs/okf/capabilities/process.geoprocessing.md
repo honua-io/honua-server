@@ -1,7 +1,7 @@
 ---
 type: capability
 title: "Geoprocessing Task Execution"
-description: "Submit and poll geoprocessing tasks through the Esri GeoServices GPServer surface. Print/export-specific tasks are gated by printing.* entitlement keys."
+description: "Submit and poll geoprocessing tasks through the GeoServices GeoServices GPServer surface. Print/export-specific tasks are gated by printing.* entitlement keys."
 resource: "honua://capability/process.geoprocessing"
 tags: [capability, process, community]
 ---
@@ -9,7 +9,7 @@ tags: [capability, process, community]
 
 # Geoprocessing Task Execution
 
-Submit and poll geoprocessing tasks through the Esri GeoServices GPServer surface. Print/export-specific tasks are gated by printing.* entitlement keys.
+Submit and poll geoprocessing tasks through the GeoServices GeoServices GPServer surface. Print/export-specific tasks are gated by printing.* entitlement keys.
 
 | | |
 | --- | --- |

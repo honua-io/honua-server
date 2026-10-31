@@ -12,5 +12,5 @@ namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 /// </summary>
 internal static class DatumCatalog
 {
-    internal static readonly IDatumTransformationCatalog Shared = EsriDatumTransformationCatalog.Create();
+    internal static readonly IDatumTransformationCatalog Shared = GeoServicesDatumTransformationCatalog.Create();
 }

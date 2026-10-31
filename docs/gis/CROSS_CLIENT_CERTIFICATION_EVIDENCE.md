@@ -20,7 +20,6 @@ Each certification run produces one JSON file per client lane per protocol. The 
   "server_commit": "<full tested honua-server commit SHA>",
   "fixture_revision": "sha256:<digest of the executed seed fixture>",
   "server_config_revision": "sha256:<digest of the executed server configuration>",
-  "client_lane": "<js|js-cesium|desktop-arcgis|desktop-qgis|cli|bi-powerbi|bi-excel|ci-desktop|ci-bi|arcgis-stub|py-geopandas|py-owslib|duckdb|r-sf|py-pystac>",
   "client_version": "<client tool version>",
   "protocol": "<featureserver|mapserver|ogc-features|ogc-maps|ogc-tiles|odata|mvt|wfs|wms|wmts|stac|portal|admin-api>",
   "protocol_version": "<protocol version the client negotiated, e.g. 2.0.0 for WFS>",
@@ -61,10 +60,9 @@ Each certification run produces one JSON file per client lane per protocol. The 
 | `server_commit` | string | Required for certifying client lanes | Full 40-character commit SHA of the tested Honua Server source |
 | `fixture_revision` | string | Required for certifying client lanes | SHA-256 digest of the exact seed fixture executed by the client lane |
 | `server_config_revision` | string | Required for certifying client lanes | SHA-256 digest of the exact server configuration the lane ran against. Together with `fixture_revision` these are the `requiredReceiptFields` in `docs/gis/data/client-certification-matrix.v1.json`; the canonical contract for both is [`CLIENT_CERTIFICATION_FIXTURE_CONTRACT.md`](CLIENT_CERTIFICATION_FIXTURE_CONTRACT.md) ([#3393](https://github.com/honua-io/honua-server/issues/3393)). |
-| `client_lane` | string | Yes | One of: `js`, `js-cesium`, `desktop-arcgis`, `desktop-qgis`, `cli`, `bi-powerbi`, `bi-excel`, `ci-desktop`, `ci-bi`, `arcgis-stub`, `py-geopandas`, `py-owslib`, `duckdb`, `r-sf`, `py-pystac`. The five canonical analyst lanes ([#3392](https://github.com/honua-io/honua-server/issues/3392)) each name the client library rather than its host language runtime, so a second Python client cannot silently reuse another's lane identity. The Cesium browser sub-lane uses `js-cesium` (rather than the umbrella `js`) so it is independently identifiable in the docker/client-compat baseline-diff; the ArcGIS Pro REST stub uses `arcgis-stub` to keep its evidence distinct from a future licensed `desktop-arcgis` runner. |
 | `client_version` | string | Yes | Version of the client tool under test. Lanes that exercise more than one library pin all of them in one string, semicolon-separated (e.g. `geopandas=1.0.1;pyogrio=0.10.0;GDAL=3.9.3`). |
 | `protocol_version` | string | No | The protocol version the client actually negotiated (e.g. `2.0.0` for WFS, `1.3.0` for WMS, `1.0` for OGC API Features). Emitted by the PyQGIS lane and by every canonical analyst lane; lets a receipt distinguish a WFS 1.1.0 pass from a WFS 2.0 pass. |
-| `protocol` | string | Yes | One of: `featureserver`, `mapserver`, `ogc-features`, `ogc-maps`, `ogc-tiles`, `odata`, `mvt`, `wfs`, `wms`, `wmts`, `stac`, `portal`, `admin-api`. `portal` is emitted by the ArcGIS Portal/Sharing facade lane and `stac` by the pystac-client lane. The `ogc-maps` and `ogc-tiles` values are emitted by the Cesium imagery lane (and by future OGC API Maps / Tiles producers) and align with the protocol abbreviations in [`CROSS_CLIENT_CERTIFICATION_MATRIX.md`](CROSS_CLIENT_CERTIFICATION_MATRIX.md#protocol-abbreviations). |
+| `protocol` | string | Yes | One of: `featureserver`, `mapserver`, `ogc-features`, `ogc-maps`, `ogc-tiles`, `odata`, `mvt`, `wfs`, `wms`, `wmts`, `stac`, `portal`, `admin-api`. `portal` is emitted by the GeoServices Portal/Sharing facade lane and `stac` by the pystac-client lane. The `ogc-maps` and `ogc-tiles` values are emitted by the Cesium imagery lane (and by future OGC API Maps / Tiles producers) and align with the protocol abbreviations in [`CROSS_CLIENT_CERTIFICATION_MATRIX.md`](CROSS_CLIENT_CERTIFICATION_MATRIX.md#protocol-abbreviations). |
 | `environment` | string | Yes | One of: `local`, `ci`, `staging` |
 | `results` | array | Yes | Array of common-core CERT-\* test case result objects |
 | `results[].test_case_id` | string | Yes | CERT-\* ID from the matrix |
@@ -112,8 +110,6 @@ Each certification run produces one JSON file per client lane per protocol. The 
 
 Examples:
 - `20260316T1430Z-js-featureserver.cert.json`
-- `20260316T1430Z-desktop-arcgis-featureserver.cert.json`
-- `20260316T1430Z-desktop-arcgis-mapserver.cert.json`
 - `20260316T1430Z-cli-admin-api.cert.json`
 - `20260316T1430Z-cli-odata.cert.json`
 - `20260316T1430Z-bi-powerbi-odata.cert.json`
@@ -131,8 +127,6 @@ Example directory for a common-core certification run:
 ```
 docs/gis/certification-evidence/20260316T1430Z/
 ├── 20260316T1430Z-js-featureserver.cert.json
-├── 20260316T1430Z-desktop-arcgis-featureserver.cert.json
-├── 20260316T1430Z-desktop-arcgis-mapserver.cert.json
 ├── 20260316T1430Z-desktop-qgis-ogc-features.cert.json
 ├── 20260316T1430Z-desktop-qgis-wfs.cert.json
 ├── 20260316T1430Z-cli-featureserver.cert.json
@@ -143,7 +137,7 @@ docs/gis/certification-evidence/20260316T1430Z/
 └── 20260316T1430Z-bi-excel-odata.cert.json
 ```
 
-The JS lane covers FeatureServer direct JS tests and OpenLayers protocol-client tests for OGC API Features, OGC API Maps, OGC Tiles/MVT, WFS 2.0, WMS 1.3, and WMTS 1.0 via Vitest, plus browser rendering via Playwright for MVT and an OGC API Maps image-source smoke. The OpenLayers lane emits `*-js-ogc-features.cert.json`, `*-js-ogc-maps.cert.json`, `*-js-mvt.cert.json`, `*-js-wfs.cert.json`, `*-js-wms.cert.json`, and `*-js-wmts.cert.json` evidence files. The Esri Leaflet sub-lane adds Playwright-generated `*-js-featureserver.cert.json` and `*-js-mapserver.cert.json` evidence (written to `tests/js-browser/evidence/`, not this curated directory). Additional protocols (OData) will produce evidence files once automated suites are added.
+The JS lane covers FeatureServer direct JS tests and OpenLayers protocol-client tests for OGC API Features, OGC API Maps, OGC Tiles/MVT, WFS 2.0, WMS 1.3, and WMTS 1.0 via Vitest, plus browser rendering via Playwright for MVT and an OGC API Maps image-source smoke. The OpenLayers lane emits `*-js-ogc-features.cert.json`, `*-js-ogc-maps.cert.json`, `*-js-mvt.cert.json`, `*-js-wfs.cert.json`, `*-js-wms.cert.json`, and `*-js-wmts.cert.json` evidence files. The GeoServices Leaflet sub-lane adds Playwright-generated `*-js-featureserver.cert.json` and `*-js-mapserver.cert.json` evidence (written to `tests/js-browser/evidence/`, not this curated directory). Additional protocols (OData) will produce evidence files once automated suites are added.
 
 The CLI lane lists FeatureServer, OGC API Features, OData, and Admin API evidence files. The OData envelope (`*-cli-odata.cert.json`) is produced automatically by `tests/dotnet/Honua.Server.Tests/Features/Protocols/OData/ODataClientCertificationTests.cs` (Microsoft.OData.Client 8.4.3) on every `test-all` run; FeatureServer and OGC API Features files will follow once `@pytest.mark.cert` markers and xUnit `[Trait("CertId", …)]` attributes are added to those suites; the Admin API file covers CLI-EXT-01/CLI-EXT-02 extensions.
 
@@ -158,8 +152,6 @@ The `client-compat-smoke-nightly.yml` workflow introduced in ticket `#320` uploa
 ```text
 artifacts/client-compat/<service>-<timestamp>/
 ```
-
-Since ticket `#415`, that artifact includes automated `.cert.json` envelopes for the `ci-desktop` and `ci-bi` lanes under `certification/`. Manual lanes (desktop-arcgis, desktop-qgis, bi-powerbi, bi-excel) still require operator-produced per-client evidence. The artifact also captures stable server-response evidence and packages the reusable client templates needed for manual Windows follow-through.
 
 | Artifact path | Format | Contract |
 |---|---|---|
@@ -188,8 +180,6 @@ artifacts/client-compat/<service>-<timestamp>/
 
 These automated envelopes use the `ci-desktop` and `ci-bi` client lane values to distinguish script-driven protocol validation from actual client interoperability evidence. The `environment` field is `"ci"`.
 
-Manual lanes (desktop-arcgis, desktop-qgis, bi-powerbi, bi-excel) still require operator-produced evidence per the [Client Templates and Manual Smoke Runbook](CLIENT_TEMPLATE_RUNBOOK.md).
-
 ## Real-Client Interop Matrix Workflow Output
 
 The `client-interop-nightly.yml` workflow (added by ticket [`#806`](https://github.com/honua-io/honua-server/issues/806) and restored as release evidence by ticket [`#938`](https://github.com/honua-io/honua-server/issues/938)) runs the docker/client-compat matrix once per night and emits one `.cert.json` envelope per `(lane, protocol)` pair. Lane services are defined in `docker/client-compat/compose.yml` and write their envelopes into `docker/client-compat/output/<lane>/`:
@@ -201,7 +191,7 @@ docker/client-compat/output/
   pyqgis/        <run-id>-desktop-qgis-{ogc-features,wfs}.cert.json
   gdal/          gdal-ogr-results.json
                  <run-id>-cli-gdal-{ogc-features,wfs}.cert.json
-  arcgis-stub/   <run-id>-arcgis-stub-{featureserver,mapserver}.cert.json
+  geoservices-rest-stub/   <run-id>-geoservices-rest-stub-{featureserver,mapserver}.cert.json
 ```
 
 The full scheduled matrix is contractually complete only when these 16
@@ -213,17 +203,16 @@ The full scheduled matrix is contractually complete only when these 16
 | `js` | `ogc-features`, `ogc-maps`, `mvt`, `wfs`, `wms`, `wmts` |
 | `desktop-qgis` | `ogc-features`, `wfs` |
 | `cli` | `ogc-features`, `wfs` |
-| `arcgis-stub` | `featureserver`, `mapserver` |
+| `geoservices-rest-stub` | `featureserver`, `mapserver` |
 
 The lane → `client_lane` mapping is intentional:
 
-- `cesium` lane → `client_lane: "js-cesium"` (separate from the umbrella `js` lane so the Docker matrix can be diff-baselined independently of the merge-blocking Esri Leaflet / MapLibre lanes that ride on `ci.yml`)
-- `arcgis-stub` lane → `client_lane: "arcgis-stub"` (REST-only stub; the FeatureServer-applicable render IDs `CERT-RNDR-01`, `CERT-RNDR-02`, and the visual / style slice IDs `CERT-RNDR-{SYM,LIN,FIL,LBL,URL}-01` are recorded as `skip` with note `evidence id desktop-arcgis` rather than `pass`. `CERT-RNDR-SPR-01` is MVT-only per the [matrix](CROSS_CLIENT_CERTIFICATION_MATRIX.md#common-core-test-cases) and is recorded as `not-applicable` for this lane); both `featureserver` and `mapserver` envelopes are emitted from the same run
+- `cesium` lane → `client_lane: "js-cesium"` (separate from the umbrella `js` lane so the Docker matrix can be diff-baselined independently of the merge-blocking GeoServices Leaflet / MapLibre lanes that ride on `ci.yml`)
 - `pyqgis` lane → `client_lane: "desktop-qgis"` (same lane as the standalone `pyqgis-client-compat-nightly.yml`)
 - `openlayers` lane → `client_lane: "js"` (same lane as the in-tree OpenLayers Vitest tests)
 - `gdal` lane → emits the raw `gdal-ogr-results.json` for human inspection plus per-protocol cert envelopes via `scripts/client-compat/convert-gdal-results.py` under `client_lane: "cli"` (`oapif`→`ogc-features`, `wfs`→`wfs`); the converter projects the GDAL test category labels many-to-one onto CERT-* IDs with worst-status aggregation (`fail > pass > skip > not-applicable`): `discovery` and `feature_count` → CERT-DISC-01; `schema_introspection` → CERT-SCHM-01; `feature_read`/`read` → CERT-CONN-01; `attribute_query`/`spatial_query`/`query` → CERT-QFLT-01. The `export_geojson`/`export_gpkg`/`export_csv`/`export` categories are intentionally **unmapped** — they exercise ogr2ogr serialization paths and the [matrix CLI/SDK lane row](CROSS_CLIENT_CERTIFICATION_MATRIX.md#client-lane-coverage) excludes CERT-RNDR for this lane, so a passing GDAL export does not certify CERT-RNDR-01 in the cert envelope (the raw `gdal-ogr-results.json` still records the export pass/fail status). The remaining 24-ID common-core IDs are seeded as `skip` (applicable but not exercised) or `not-applicable`; CERT-RNDR-01 / CERT-RNDR-02 and the visual / style slice IDs always appear as `not-applicable` for this lane. Unknown category labels emit a stderr warning so newly-added test categories stay visible until `CATEGORY_MAP` is updated.
 
-A pre-honua **seed** service applies `tests/seed/client-compat-v1.sql` (schema + `test_service`/layer 0 — both the `pyqgis` and `gdal` lanes target this pair via `HONUA_PYQGIS_SERVICE_ID`/`HONUA_PYQGIS_COLLECTION_ID` and `HONUA_GDAL_SERVICE_ID`/`HONUA_GDAL_COLLECTION_ID` respectively) and `tests/seed/browser-compat.yaml` (`browser_compat`/layers 2000-2002 used by cesium/openlayers/arcgis-stub) before honua starts, so lane services always observe the seeded data their specs reference. The compose runtime also starts Redis and binds Honua HTTP/1 on `5000` plus h2c gRPC on `5001`, matching the split transport expected by container deployments while keeping client base URLs stable at `http://honua:5000`.
+A pre-honua **seed** service applies `tests/seed/client-compat-v1.sql` (schema + `test_service`/layer 0 — both the `pyqgis` and `gdal` lanes target this pair via `HONUA_PYQGIS_SERVICE_ID`/`HONUA_PYQGIS_COLLECTION_ID` and `HONUA_GDAL_SERVICE_ID`/`HONUA_GDAL_COLLECTION_ID` respectively) and `tests/seed/browser-compat.yaml` (`browser_compat`/layers 2000-2002 used by cesium/openlayers/geoservices-rest-stub) before honua starts, so lane services always observe the seeded data their specs reference. The compose runtime also starts Redis and binds Honua HTTP/1 on `5000` plus h2c gRPC on `5001`, matching the split transport expected by container deployments while keeping client base URLs stable at `http://honua:5000`.
 
 Baselines are committed as `tests/baselines/client-compat/<lane>/<lane>-<protocol>.cert.json` (with the `run_id` prefix stripped for stable diffing). `scripts/client-compat/diff-baselines.py` indexes envelopes by `(client_lane, protocol)` from the JSON body — directory names are documentary only — and refreshes [`docs/gis/gap-report.md`](gap-report.md) on every run. An accompanying [`expected-pairs.json`](../../tests/baselines/client-compat/expected-pairs.json) manifest enumerates every `(client_lane, protocol)` pair the matrix is required to emit. The workflow `--strict` flag fails on (1) any baseline `pass` that does not stay `pass` in the current run — `pass`→`fail`, `pass`→`skip`, and `pass`→`not-applicable` are all regressions, so an endpoint going from up to down (or a test silently being skipped) cannot hide; (2) baseline test cases missing from the current run; (3) baseline envelopes missing entirely (a crashed lane); (4) no current-run evidence at all; (5) any expected-pairs manifest entry absent from both baseline and current run; (6) any current `fail` against a missing baseline OR a non-fail baseline (`skip`/`not-applicable`/placeholder) — so a placeholder skip cannot mask a current failure; and (7) any expected-pairs manifest entry without a committed baseline at all (even when the current run produced evidence) — so a never-baselined lane cannot pass by emitting unreviewed evidence.
 
@@ -240,15 +229,13 @@ This section describes how each evidence source will map to the evidence envelop
 | Vitest JSON reporter | JS | Automated: map `describe`/`it` blocks to CERT-\* IDs via test name convention |
 | Playwright browser test | JS (MVT) | Automated: headless Chromium renders OGC Tiles via OpenLayers, records CERT-RNDR-01 and JS-EXT-02 |
 | OpenLayers OGC API Maps test | JS (OGC Maps) | Automated: `tests/js/openlayers/maps/` configures `ol/source/ImageStatic` against `/ogc/maps`, records discovery/error handling, and records render as `skip` when the live collection has no raster fixture |
-| Playwright cert reporter | JS (Esri Leaflet) | Automated: custom Playwright reporter extracts `[CERT-*]` and `[EL-EXT-*]` annotations from test titles and writes per-protocol envelopes for `featureserver` and `mapserver`. Uses `client_lane: "js"`. See [Esri Leaflet evidence note](#esri-leaflet-evidence-note) below. |
 | pytest markers | CLI | Planned: add `@pytest.mark.cert("CERT-CONN-01")` markers and map to result entries |
 | xUnit attributes | CLI | Live (OData lane): each test in `tests/dotnet/Honua.Server.Tests/Features/Protocols/OData/ODataClientCertificationTests.cs` carries `[Trait("CertId", "CERT-…")]` alongside `[Protocol]`, and the class fixture flushes a `<run-id>-cli-odata.cert.json` envelope to `tests/TestResults/`. Filter the lane in isolation with `dotnet test --filter "CertId~CERT-"` |
 | CITE testng-results XML | OGC conformance | Reference: link via `cite_results` field; CITE tests are protocol-scoped, not client-scoped |
 | Manual runbook | Desktop, BI | Manual: operator fills a JSON template or markdown checklist, converted to `.cert.json` |
 | Playwright MapLibre suite | JS (MVT) | Automated: `tests/js-browser/maplibre/` renders MapLibre GL JS against live TileJSON/MVT endpoints and emits a `<run-id>-js-mvt.cert.json` envelope via the custom reporter. See [MapLibre MVT automated workflow](#maplibre-mvt-automated-workflow) below. A manual fallback remains documented for ad-hoc visual verification. |
 | Playwright CesiumJS suite | JS — Cesium (`js-cesium`) | Automated: `tests/js-browser/cesium/` exercises CesiumJS imagery providers (WMS, WMTS, OGC API Tiles, OGC API Maps) under `docker/client-compat/cesium/` in `client-interop-nightly.yml`; emits one envelope per protocol (`<run-id>-js-cesium-{wms,wmts,ogc-tiles,ogc-maps}.cert.json`). Vector-feature CERT-\* IDs and the visual / style slice IDs are recorded as `not-applicable` because Cesium imagery providers consume server-rendered raster output. |
-| ArcGIS Pro REST stub | `arcgis-stub` | REST-only lane, distinct from a desktop client. Evidence identifiers: `*-arcgis-stub-featureserver.cert.json` and `*-arcgis-stub-mapserver.cert.json`. FeatureServer render IDs `CERT-RNDR-01`, `CERT-RNDR-02`, and `CERT-RNDR-{SYM,LIN,FIL,LBL,URL}-01` are `skip`. `CERT-RNDR-SPR-01` is `not-applicable` (MVT-only). |
-| ArcGIS Pro desktop client | `desktop-arcgis` | Certification detail stays in [`honua-esri-compat`](https://github.com/honua-io/honua-esri-compat) (ruling R30). Evidence identifiers: `*-desktop-arcgis-featureserver.cert.json` and `*-desktop-arcgis-mapserver.cert.json`, distinct from `arcgis-stub`. Ordinary PR gates do not require ArcGIS Pro. No successful desktop run is linked. See [Licensed ArcGIS Pro Desktop Evidence](../internal/evidence/ARCGIS_PRO_LICENSED_EVIDENCE.md). |
+| desktop GIS client REST stub | `geoservices-rest-stub` | REST-only lane, distinct from a desktop client. Evidence identifiers: `*-geoservices-rest-stub-featureserver.cert.json` and `*-geoservices-rest-stub-mapserver.cert.json`. FeatureServer render IDs `CERT-RNDR-01`, `CERT-RNDR-02`, and `CERT-RNDR-{SYM,LIN,FIL,LBL,URL}-01` are `skip`. `CERT-RNDR-SPR-01` is `not-applicable` (MVT-only). |
 | GDAL/OGR pytest suite | CLI (`cli` via converter) | Automated: `tests/python/gdal_ogr/conftest.py:EvidenceCollector` writes `gdal-ogr-results.json`; the `gdal` lane runner invokes `scripts/client-compat/convert-gdal-results.py` to emit one cert envelope per protocol (`<run-id>-cli-gdal-ogc-features.cert.json`, `<run-id>-cli-gdal-wfs.cert.json`). The converter maps the GDAL category labels many-to-one onto CERT-* IDs with worst-status aggregation (`fail > pass > skip > not-applicable`): `discovery`/`feature_count` → CERT-DISC-01, `schema_introspection` → CERT-SCHM-01, `feature_read`/`read` → CERT-CONN-01, `attribute_query`/`spatial_query`/`query` → CERT-QFLT-01. The `export_*` categories are intentionally unmapped per the matrix CLI/SDK lane row (which excludes CERT-RNDR), so CERT-RNDR-01 and CERT-RNDR-02 are recorded as `not-applicable` rather than certified by an ogr2ogr export. Unknown labels surface as `::warning::` so test-side additions stay visible. |
 
 ### Manual Lane Workflow
@@ -312,11 +299,7 @@ For desktop, BI, and JS/MVT lanes where automation is not available:
 
 The visual / style certification slice (ticket [`#478`](https://github.com/honua-io/honua-server/issues/478)) adds the six `CERT-RNDR-{SYM,LIN,FIL,LBL,SPR,URL}-01` IDs to the common core. They are append-only — the original 18 IDs are unchanged. See [`visual-style-certification-slice.md`](../internal/evidence/visual-style-certification-slice.md) for the per-scenario fixtures, expected colors, and lane substantiation. Lanes that do not exercise a slice category emit `skip` (or `not-applicable` for protocols where the category does not apply) so the gap is visible in the rollup.
 
-### Esri Leaflet Evidence Note
-
-The Esri Leaflet Playwright suite (`tests/js-browser/`) emits `client_lane: "js"` evidence envelopes — the same lane value as the Vitest JS suite. This is intentional: Esri Leaflet is a sub-lane of the JS lane in the [Certification Matrix](CROSS_CLIENT_CERTIFICATION_MATRIX.md#esri-leaflet-browser-sub-lane), not a separate client tool.
-
-The reporter resolves `client_version` from the installed `esri-leaflet` package in `node_modules` and falls back to the semver range in `tests/js-browser/package.json` only when dependencies have not yet been installed.
+### GeoServices Leaflet Evidence Note
 
 Evidence files are written to `tests/js-browser/evidence/` during test runs (not to the curated `docs/gis/certification-evidence/` directory). The Playwright cert reporter produces one envelope per protocol exercised:
 
@@ -326,8 +309,6 @@ Evidence files are written to `tests/js-browser/evidence/` during test runs (not
 The reporter seeds the full 24 common-core CERT-\* IDs (the original 18 base IDs plus the six visual / style slice IDs `CERT-RNDR-{SYM,LIN,FIL,LBL,SPR,URL}-01` introduced by ticket [`#478`](https://github.com/honua-io/honua-server/issues/478)) into each envelope. FeatureServer cases that the browser suite does not currently exercise are recorded as `skip`. On the `mapserver` envelope the six slice IDs are additionally recorded as `not-applicable` because drawingInfo per-category style assertions live on FeatureServer, not the MapServer export endpoint.
 
 The reporter skips evidence emission when the run is interrupted, timed out, or when no tests passed or failed (setup abort guard).
-
-To distinguish Esri Leaflet evidence from Vitest JS evidence in a shared evidence directory, check for the presence of `EL-EXT-*` entries in the `extensions` array. A future follow-on may introduce a dedicated `js-esri-leaflet` client lane value if disambiguation at the envelope level becomes necessary.
 
 ### MapLibre MVT Automated Workflow
 
@@ -481,22 +462,18 @@ generic HTTP probe as an application client.
 | 1.0.7 | 2026-03-31 | Document the `client-compat-smoke-nightly.yml` smoke-evidence artifact contract and clarify that it is upstream of final `.cert.json` envelopes |
 | 1.0.8 | 2026-04-02 | Add `ci-desktop` and `ci-bi` client lane values for automated CI certification evidence; document `certification/` output layout |
 | 1.0.9 | 2026-04-03 | Add `wfs` to allowed protocol values; add `desktop-qgis-wfs.cert.json` to examples; document PyQGIS nightly evidence output |
-| 1.0.10 | 2026-04-03 | Add Esri Leaflet Playwright reporter to integration mapping; document evidence output path and disambiguation note |
-| 1.0.11 | 2026-04-03 | Clarify Esri Leaflet `client_version` resolution and that unexercised CERT-\* IDs are emitted as `skip` |
+| 1.0.10 | 2026-04-03 | Add GeoServices Leaflet Playwright reporter to integration mapping; document evidence output path and disambiguation note |
+| 1.0.11 | 2026-04-03 | Clarify GeoServices Leaflet `client_version` resolution and that unexercised CERT-\* IDs are emitted as `skip` |
 | 1.0.12 | 2026-04-06 | Mark xUnit `[Trait("CertId", …)]` mapping as live for the CLI/OData lane; add `cli-odata.cert.json` example produced by `ODataClientCertificationTests` |
 | 1.0.13 | 2026-04-06 | Document the visual / style certification slice append-only IDs (`CERT-RNDR-{SYM,LIN,FIL,LBL,SPR,URL}-01`) and update the example envelope template to the new 24-case core total |
-| 1.0.14 | 2026-04-07 | Update the Esri Leaflet evidence note to reference the 24-case common-core total and document slice-ID `not-applicable` on the mapserver envelope |
+| 1.0.14 | 2026-04-07 | Update the GeoServices Leaflet evidence note to reference the 24-case common-core total and document slice-ID `not-applicable` on the mapserver envelope |
 | 1.0.15 | 2026-04-08 | Add MapLibre MVT automated workflow section for the Playwright suite landed by ticket `#464`; retarget the version-matrix footnote and integration-mapping row at the new anchor |
 | 1.0.16 | 2026-04-25 | Add OGC API Maps OpenLayers evidence envelope and MapLibre image-source smoke coverage note |
-| 1.0.17 | 2026-04-26 | Add `js-cesium` and `arcgis-stub` `client_lane` values, `ogc-maps` and `ogc-tiles` `protocol` values, the Real-Client Interop Matrix Workflow Output section, and the Cesium / ArcGIS-stub / GDAL-converter integration mapping rows (#806) |
+| 1.0.17 | 2026-04-26 | Add `js-cesium` and `geoservices-rest-stub` `client_lane` values, `ogc-maps` and `ogc-tiles` `protocol` values, the Real-Client Interop Matrix Workflow Output section, and the Cesium / GeoServices-stub / GDAL-converter integration mapping rows (#806) |
 | 1.0.18 | 2026-04-26 | Tighten `client-interop-nightly` strict-mode gate: `pass`→`skip` and `pass`→`not-applicable` now count as regressions; add `expected-pairs.json` manifest gate; new `fail` in unbaselined test cases now blocks the gate (#806) |
 | 1.0.19 | 2026-04-26 | Close two skip-baseline loopholes: `skip`→`fail` and `not-applicable`→`fail` are now classified as `new-fail` (placeholder skip baselines can no longer hide current failures); strict mode also fails when any `expected-pairs.json` entry has no committed baseline at all (so a never-baselined lane cannot pass by emitting unreviewed evidence). Drop the placeholder Cesium WMS baseline that triggered the original loophole (#806) |
 | 1.0.20 | 2026-04-26 | `diff-baselines.py` accepts `--client-lanes` to scope strict mode to a workflow_dispatch lane subset; the `prepare` job emits a `client_lanes` filter that mirrors the matrix selection, so a manual subset dispatch no longer fails strict against the full-matrix manifest. GDAL converter recognises the actual category labels emitted by `tests/python/gdal_ogr/test_*.py` (`feature_read`, `attribute_query`, `spatial_query`, `export_geojson`/`export_gpkg`/`export_csv`, `schema_introspection`, `feature_count`) and aggregates many-to-one statuses with `fail > pass > skip > not-applicable`; previously the converter dropped passed evidence as `skip`. `scripts/client-compat/refresh-baselines.sh` iterates lanes sequentially with `--exit-code-from <lane>` instead of `--profile matrix --abort-on-container-exit` so partial baselines no longer slip through when the first lane completes (#806) |
 | 1.0.21 | 2026-04-26 | Align GDAL converter with the matrix CLI/SDK lane contract (matrix line 99 — "All CERT-\* except CERT-RNDR"): `export_geojson`/`export_gpkg`/`export_csv`/`export` categories are no longer mapped to CERT-RNDR-01 (the raw `gdal-ogr-results.json` still records their pass/fail); CERT-RNDR-01 / CERT-RNDR-02 / visual-style slice IDs now appear as `not-applicable` for the GDAL lane. `schema_introspection` now maps to CERT-SCHM-01 (the schema-coverage ID) instead of CERT-DISC-01. `diff-baselines.py write_gap_report` no longer prints the "No deviations from baseline ✅" success section when expected-pair gap sections were also written, so a strict-mode failure for an absent or never-baselined expected pair is no longer contradicted by a green checkmark in the same gap report (#806) |
 | 1.0.22 | 2026-04-26 | Stabilise the docker/client-compat `gdal` and `pyqgis` lanes against the read-only `tests/` bind mount. The GDAL lane now honours `HONUA_BASE_URL` to skip the local `honua_server`/`postgis` fixture chain (which cannot start inside the read-only image), targets the seeded `test_service`/layer 0 pair via `HONUA_GDAL_SERVICE_ID` / `HONUA_GDAL_COLLECTION_ID`, and writes its raw `gdal-ogr-results.json` to `HONUA_GDAL_RESULTS_PATH` (set to `/output/gdal-ogr-results.json` by `docker/client-compat/gdal/run.sh`). The PyQGIS lane writes its `.cert.json` envelopes to `HONUA_PYQGIS_OUTPUT_DIR` (set to `/output` by `docker/client-compat/pyqgis/run.sh`). The seed-data note now records that both lanes share `test_service`/layer 0; behaviour change is testing-only and the envelope schema is unchanged (#806) |
-| 1.0.23 | 2026-04-26 | Narrow the `arcgis-stub` render-coverage wording to the envelope: FeatureServer-applicable render IDs (`CERT-RNDR-01`, `CERT-RNDR-02`, `CERT-RNDR-{SYM,LIN,FIL,LBL,URL}-01`) are `skip`; `CERT-RNDR-SPR-01` is `not-applicable`. Desktop substantiation is evidence identifier `desktop-arcgis` in honua-esri-compat (#806) |
 | 1.0.24 | 2026-05-07 | Record the restored #938 release-evidence contract for `client-interop-nightly.yml`: the full scheduled matrix requires one current envelope with a committed baseline for every pair in `expected-pairs.json`, the compose runtime includes Redis and split HTTP/gRPC ports, lane failures upload `lane-exit-code.txt` and `compose.log`, and manual dispatch subsets are scoped by `--client-lanes`. |
-| 1.0.25 | 2026-05-18 | Name `client_lane: "desktop-arcgis"` as distinct from `arcgis-stub`. Desktop procedure stays in honua-esri-compat. Ordinary PR gates do not require ArcGIS Pro (#1019). |
-| 1.0.26 | 2026-05-18 | `desktop-arcgis` remains an evidence identifier only. Runner and artefact layout stay in honua-esri-compat (#1019). |
 | 1.0.27 | 2026-09-07 | Document the release-tier receipt contract for the bounded 2026.1 external-client roster: the candidate/producer/auth bindings, the governed client identity and per-result request provenance the `client-interop-cert-v1` consumer requires, the underscored `not_applicable` status vocabulary, and the omit-rather-than-invent rule. The nightly envelope is unchanged (#3434). |
-| 1.0.28 | 2026-10-16 | The public `arcgis-stub` render skip note is `evidence id desktop-arcgis`. It no longer restates a desktop runner. Status values are unchanged (#5408). |

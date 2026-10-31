@@ -502,7 +502,7 @@ public sealed class GeoservicesImportTransferSemanticsTests(PostgresFixture fixt
             terminated.Should().Be(1, "the test ends exactly the import's own session");
             result.Success.Should().BeFalse();
             result.ErrorMessage.Should().StartWith(
-                "ARCGIS_IMPORT_DATABASE_UNAVAILABLE:",
+                "GEOSERVICES_IMPORT_DATABASE_UNAVAILABLE:",
                 "the lost session is the originating failure, not the rollback that could not run on it");
             result.ErrorMessage.Should().Contain("No imported data was committed");
             result.ErrorMessage.Should().NotContainAny(
@@ -552,16 +552,16 @@ public sealed class GeoservicesImportTransferSemanticsTests(PostgresFixture fixt
 
     private GeoservicesImportService CreateService(HttpMessageHandler handler, string? applicationName = null, string? targetSchema = null)
     {
-        var restClient = new ArcGisRestClient(
+        var restClient = new GeoServicesRestClient(
             new HttpClient(handler),
-            NullLogger<ArcGisRestClient>.Instance,
+            NullLogger<GeoServicesRestClient>.Instance,
             (_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
 
         return new GeoservicesImportService(
             restClient,
             new FixtureConnectionProvider(fixture, applicationName),
             new Mock<ICrsRegistry>(MockBehavior.Loose).Object,
-            new EsriConstructCapabilityRegistry(EsriConstructCapabilityRegistry.BuiltInDescriptors),
+            new GeoServicesConstructCapabilityRegistry(GeoServicesConstructCapabilityRegistry.BuiltInDescriptors),
             NullLogger<GeoservicesImportService>.Instance,
             new GeoservicesLayerPublicationService(NullLogger<GeoservicesLayerPublicationService>.Instance),
             schemaConfiguration: ImportTestSchemaConfiguration.WithOperational(targetSchema));

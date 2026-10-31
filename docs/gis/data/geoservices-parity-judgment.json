@@ -2847,7 +2847,7 @@
           "esriPaths": [
             "/sharing/rest/info"
           ],
-          "notes": "Emits isTokenBasedSecurity from the live portal-token configuration plus a real tokenServicesUrl. currentVersion/fullVersion are deliberately omitted (Honua does not advertise an ArcGIS Server version; guarded by NoArcGisServerVersionTests) \u2014 a known, intentional divergence from the Esri document."
+          "notes": "Emits isTokenBasedSecurity from the live portal-token configuration plus a real tokenServicesUrl. currentVersion/fullVersion are deliberately omitted (Honua does not advertise an ArcGIS Server version; guarded by NoGeoServicesServerVersionTests) \u2014 a known, intentional divergence from the Esri document."
         },
         {
           "name": "Portal Self",

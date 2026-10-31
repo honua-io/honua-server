@@ -243,14 +243,14 @@ public sealed class OgcMapsDuplicateStorageBindingEndpointTests : IAsyncLifetime
                 "raster-resource",
                 layerIndex: LayerId,
                 storageBindingId: "storage-image-layer-2000",
-                publicationType: MetadataV2PublicationType.EsriImageLayer)
+                publicationType: MetadataV2PublicationType.GeoServicesImageLayer)
             .AddPublication(
                 "maps-publication",
                 "maps-service",
                 "vector-resource",
                 layerIndex: LayerId,
                 storageBindingId: "storage-layer-2000",
-                publicationType: MetadataV2PublicationType.EsriMapLayer)
+                publicationType: MetadataV2PublicationType.GeoServicesMapLayer)
             .Build();
 
         return new TestMetadataV2GraphProvider(graph);

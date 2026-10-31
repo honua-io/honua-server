@@ -175,4 +175,4 @@ export type DistanceSpatialRel = typeof DISTANCE_SPATIAL_RELS[number];
 export type DistanceUnit = typeof DISTANCE_UNITS[number];
 export type GeometryMethod = typeof ALL_GEOMETRY_METHODS[number];
 export type OutputFormat = typeof OUTPUT_FORMATS[number];
-export type EsriGeometryType = typeof VALID_ESRI_GEOMETRY_TYPES[number];
+export type GeoServicesGeometryType = typeof VALID_ESRI_GEOMETRY_TYPES[number];

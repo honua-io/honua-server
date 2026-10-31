@@ -739,9 +739,9 @@ Layer:        L1
 V2 source:    Resource.Relationships[] (MetadataV2Relationship)
               Each carries: Id, Name, RelatedResourceId, Role ("origin" | "destination"),
               Cardinality ("one-to-one" | "one-to-many" | "many-to-many"),
-              OriginField, DestinationField, EsriRelationshipId? (int)
+              OriginField, DestinationField, GeoServicesRelationshipId? (int)
 Standards:    Esri-FeatureServer.layer.relationships[]                  ← Relationships with mappings:
-                id          ← EsriRelationshipId ?? FNV1a(Id) mod 2^31
+                id          ← GeoServicesRelationshipId ?? FNV1a(Id) mod 2^31
                 name        ← Name
                 relatedTableId ← snapshot.ResolveStorageLayerId(RelatedResourceId)
                 role        ← Role

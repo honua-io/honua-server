@@ -48,7 +48,7 @@ namespace Honua.Server.Tests.Import;
 [Operation(Operations.Import)]
 public sealed class MigrationAdminSdkLifecycleTests : IClassFixture<MigrationAdminSdkLifecycleTests.SdkMigrationHost>
 {
-    private const string SourceKind = "arcgis-geoservices-rest";
+    private const string SourceKind = "geoservices-rest";
     private const string HydrantsId = "resource:FieldOps:layer:0";
     private const string InspectionsId = "resource:FieldOps:table:1";
     private const string TargetServiceName = "field_ops";
@@ -343,7 +343,7 @@ public sealed class MigrationAdminSdkLifecycleTests : IClassFixture<MigrationAdm
     private async Task AssertHydrantsReadBackAsync(string schema, string table)
     {
         await using var scope = _host.Web.Services.CreateAsyncScope();
-        var sourceClient = scope.ServiceProvider.GetRequiredService<ArcGisRestClient>();
+        var sourceClient = scope.ServiceProvider.GetRequiredService<GeoServicesRestClient>();
         using var sourceMetadata = await sourceClient.GetLayerMetadataAsync(
             FieldOpsFeatureServer.ServiceUrl, 0, 0, 30, null, CancellationToken.None);
         var sourceFields = sourceMetadata.RootElement.GetProperty("fields").EnumerateArray()
@@ -473,11 +473,11 @@ public sealed class MigrationAdminSdkLifecycleTests : IClassFixture<MigrationAdm
                 .ConfigureServices(services =>
                 {
                     services.AddHostedService<MigrationBatchBackgroundService>();
-                    services.AddHttpClient<ArcGisRestClient>()
+                    services.AddHttpClient<GeoServicesRestClient>()
                         .ConfigurePrimaryHttpMessageHandler(() => new FieldOpsFeatureServerHandler(source));
-                    services.AddTransient(serviceProvider => new ArcGisRestClient(
-                        serviceProvider.GetRequiredService<IHttpClientFactory>().CreateClient(nameof(ArcGisRestClient)),
-                        serviceProvider.GetRequiredService<ILogger<ArcGisRestClient>>(),
+                    services.AddTransient(serviceProvider => new GeoServicesRestClient(
+                        serviceProvider.GetRequiredService<IHttpClientFactory>().CreateClient(nameof(GeoServicesRestClient)),
+                        serviceProvider.GetRequiredService<ILogger<GeoServicesRestClient>>(),
                         static (_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") })));
                 })
                 // Auto-publish opens its own connection from the provider's connection string. A deployed

@@ -302,7 +302,7 @@ UI: "Test filter" button runs against the storage backend and shows match count.
 | `Cardinality` | enum | ✏️ — radio (1:1 / 1:N / N:M) |
 | `OriginField` | string | ✏️ — picker from current resource's fields |
 | `DestinationField` | string | ✏️ — picker from related resource's fields (after RelatedResourceId set) |
-| `EsriRelationshipId` | int? | 🧮 — auto-assigned stable int from Id hash; operator can override |
+| `GeoServicesRelationshipId` | int? | 🧮 — auto-assigned stable int from Id hash; operator can override |
 
 ---
 
@@ -368,7 +368,7 @@ override:
 | `ServiceId` | FK | ✏️ — already set by navigation context |
 | `ResourceId` | FK | ✏️ — picker from available resources |
 | `StorageBindingId` | FK? | ✏️ — picker; auto = resource's primary binding |
-| `PublicationType` | enum (OgcCollection / EsriFeatureLayer / WfsFeatureType / WmsLayer / WmtsLayer / StacCollection / OgcRecord / ODataEntitySet / Custom) | 🧮 — derived from Service.Protocols + Resource.Type |
+| `PublicationType` | enum (OgcCollection / GeoServicesFeatureLayer / WfsFeatureType / WmsLayer / WmtsLayer / StacCollection / OgcRecord / ODataEntitySet / Custom) | 🧮 — derived from Service.Protocols + Resource.Type |
 | `Identifier.Value` | string | ✏️ — operator picks or auto-assigns ("0", "1", ... for Esri-style numeric; resource name for OGC-style) |
 | `Identifier.IsNumeric` | bool | 🧮 — derived from Value (digit-only) |
 | `Identifier.PathOverride` | string? | ✏️ — rare; operator only sets for non-default URLs |

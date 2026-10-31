@@ -729,7 +729,7 @@ jobs:
                 or .processId == "sink.honua-layer")
             | select(.status == "proven")
             | .evidence[]
-            | select(.path | test("/Execution/(LayerSource|EsriSource|LayerSink)ExecutionProofTests[.]cs$"))
+            | select(.path | test("/Execution/(LayerSource|GeoServicesSource|LayerSink)ExecutionProofTests[.]cs$"))
             | .test' certification/gp-operation-matrix.v1.json | sort -u)
           echo "matrix cites ${#required[@]} layer execution receipt(s)"
           # A broken selection must not pass vacuously: process substitution hides

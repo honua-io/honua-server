@@ -275,17 +275,17 @@ public sealed class PortalItemProjector : IPortalItemProjector
             case ServiceProtocols.FeatureServer:
                 itemType = PortalItemTypes.FeatureService;
                 urlType = ServiceProtocols.FeatureServer;
-                constructKey = EsriConstructCapabilityRegistry.Keys.FacadeFeatureService;
+                constructKey = GeoServicesConstructCapabilityRegistry.Keys.FacadeFeatureService;
                 return true;
             case ServiceProtocols.MapServer:
                 itemType = PortalItemTypes.MapService;
                 urlType = ServiceProtocols.MapServer;
-                constructKey = EsriConstructCapabilityRegistry.Keys.FacadeMapService;
+                constructKey = GeoServicesConstructCapabilityRegistry.Keys.FacadeMapService;
                 return true;
             case ServiceProtocols.ImageServer:
                 itemType = PortalItemTypes.ImageService;
                 urlType = ServiceProtocols.ImageServer;
-                constructKey = EsriConstructCapabilityRegistry.Keys.FacadeImageService;
+                constructKey = GeoServicesConstructCapabilityRegistry.Keys.FacadeImageService;
                 return true;
             default:
                 itemType = string.Empty;

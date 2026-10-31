@@ -110,7 +110,7 @@ public sealed partial class GeoservicesImportSubtypePersistenceTests(PostgresFix
             statusOverride.DefaultValue.Should().NotBeNull();
             statusOverride.DefaultValue!.Value.GetString().Should().Be("occupied");
             statusOverride.Domain.Should().NotBeNull();
-            statusOverride.Domain!.Type.Should().Be(EsriFieldDomainParser.CodedValueDomainType);
+            statusOverride.Domain!.Type.Should().Be(GeoServicesFieldDomainParser.CodedValueDomainType);
             statusOverride.Domain.CodedValues.Select(v => v.Name)
                 .Should().BeEquivalentTo(["Occupied", "Vacant"]);
 
@@ -276,9 +276,9 @@ public sealed partial class GeoservicesImportSubtypePersistenceTests(PostgresFix
         Honua.Core.Features.Attachments.Abstractions.IAttachmentStore? attachmentStore = null,
         bool nonSpatial = false, bool temporalFields = false)
     {
-        var restClient = new ArcGisRestClient(
+        var restClient = new GeoServicesRestClient(
             new HttpClient(handler ?? new SubtypeFeatureServerHandler(featureTypes, hasZ, hasM, nonSpatial, temporalFields)),
-            NullLogger<ArcGisRestClient>.Instance,
+            NullLogger<GeoServicesRestClient>.Instance,
             (_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
 
         var crsRegistry = new Mock<ICrsRegistry>(MockBehavior.Loose);
@@ -303,7 +303,7 @@ public sealed partial class GeoservicesImportSubtypePersistenceTests(PostgresFix
             restClient,
             connectionProvider,
             crsRegistry.Object,
-            new EsriConstructCapabilityRegistry(EsriConstructCapabilityRegistry.BuiltInDescriptors),
+            new GeoServicesConstructCapabilityRegistry(GeoServicesConstructCapabilityRegistry.BuiltInDescriptors),
             NullLogger<GeoservicesImportService>.Instance,
             new GeoservicesLayerPublicationService(
                 NullLogger<GeoservicesLayerPublicationService>.Instance,

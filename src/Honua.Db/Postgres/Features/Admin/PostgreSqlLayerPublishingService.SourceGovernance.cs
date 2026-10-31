@@ -52,7 +52,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         var metadataByLayerId = new Dictionary<int, MetadataV2ObjectMetadata>();
         foreach (var publication in graph.Publications.Where(publication =>
                      string.Equals(publication.ServiceId, service.Metadata.Id, StringComparison.Ordinal) &&
-                     publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer)
+                     publication.PublicationType == MetadataV2PublicationType.GeoServicesFeatureLayer)
                  .OrderByDescending(snapshot.IsRoutable)
                  .ThenByDescending(publication =>
                      publication.Status.Lifecycle != MetadataV2LifecycleStatus.Retired &&

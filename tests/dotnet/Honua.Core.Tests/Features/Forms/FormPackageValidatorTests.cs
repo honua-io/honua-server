@@ -320,7 +320,7 @@ public sealed class FormPackageValidatorTests
     }
 
     [UnitTest]
-    public async Task ValidateSubmission_WithArcGisWebMercatorLatestWkid_AcceptsLayerSrid()
+    public async Task ValidateSubmission_WithGeoServicesWebMercatorLatestWkid_AcceptsLayerSrid()
     {
         var validator = CreateValidator(spatialReference: MetadataV2SpatialReference.WebMercator);
         var packageVersion = new FormPackageVersion

@@ -98,7 +98,7 @@ public sealed class GeoServerRestClientSecurityTests
 
         // Drain pending socket finalizers so the FD count reflects actual leaks rather
         // than queued finalizable state from cancelled ConnectAsync calls (mirrors the
-        // ArcGisRestClientSecurityTests descriptor-leak check).
+        // GeoServicesRestClientSecurityTests descriptor-leak check).
         _ = GC.GetTotalMemory(forceFullCollection: true);
         GC.WaitForPendingFinalizers();
         _ = GC.GetTotalMemory(forceFullCollection: true);

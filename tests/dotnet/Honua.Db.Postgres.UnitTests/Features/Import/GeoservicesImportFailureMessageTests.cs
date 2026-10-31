@@ -26,7 +26,7 @@ public sealed class GeoservicesImportFailureMessageTests
         var message = GeoservicesImportService.BuildImportFailureMessage(
             exception, GeoservicesImportService.ImportFailureStage.TransferringFeatures);
 
-        message.Should().StartWith("ARCGIS_IMPORT_GEOMETRY_REJECTED:");
+        message.Should().StartWith("GEOSERVICES_IMPORT_GEOMETRY_REJECTED:");
         message.Should().Contain("SQLSTATE XX000");
         message.Should().Contain("Z/M");
         message.Should().Contain("No imported data was committed");
@@ -34,12 +34,12 @@ public sealed class GeoservicesImportFailureMessageTests
     }
 
     [Theory]
-    [InlineData("22P02", "ARCGIS_IMPORT_DATABASE_ERROR:")]
-    [InlineData("23505", "ARCGIS_IMPORT_DATABASE_ERROR:")]
-    [InlineData("42701", "ARCGIS_IMPORT_DATABASE_ERROR:")]
-    [InlineData("57P01", "ARCGIS_IMPORT_DATABASE_UNAVAILABLE:")]
-    [InlineData("08006", "ARCGIS_IMPORT_DATABASE_UNAVAILABLE:")]
-    [InlineData("53300", "ARCGIS_IMPORT_DATABASE_UNAVAILABLE:")]
+    [InlineData("22P02", "GEOSERVICES_IMPORT_DATABASE_ERROR:")]
+    [InlineData("23505", "GEOSERVICES_IMPORT_DATABASE_ERROR:")]
+    [InlineData("42701", "GEOSERVICES_IMPORT_DATABASE_ERROR:")]
+    [InlineData("57P01", "GEOSERVICES_IMPORT_DATABASE_UNAVAILABLE:")]
+    [InlineData("08006", "GEOSERVICES_IMPORT_DATABASE_UNAVAILABLE:")]
+    [InlineData("53300", "GEOSERVICES_IMPORT_DATABASE_UNAVAILABLE:")]
     public void BuildImportFailureMessage_DatabaseError_ReportsSqlStateWithoutMessageText(string sqlState, string expectedPrefix)
     {
         var exception = new PostgresException(
@@ -66,7 +66,7 @@ public sealed class GeoservicesImportFailureMessageTests
         var message = GeoservicesImportService.BuildImportFailureMessage(
             exception, GeoservicesImportService.ImportFailureStage.TransferringFeatures);
 
-        message.Should().StartWith("ARCGIS_IMPORT_DATABASE_UNAVAILABLE:");
+        message.Should().StartWith("GEOSERVICES_IMPORT_DATABASE_UNAVAILABLE:");
         message.Should().Contain("SQLSTATE 57P01");
         message.Should().NotContain("terminating connection").And.NotContain("NpgsqlTransaction");
     }
@@ -79,7 +79,7 @@ public sealed class GeoservicesImportFailureMessageTests
         var message = GeoservicesImportService.BuildImportFailureMessage(
             exception, GeoservicesImportService.ImportFailureStage.TransferringFeatures);
 
-        message.Should().StartWith("ARCGIS_IMPORT_DATABASE_UNAVAILABLE:");
+        message.Should().StartWith("GEOSERVICES_IMPORT_DATABASE_UNAVAILABLE:");
         message.Should().NotContain(Secret).And.NotContain("db.internal");
     }
 
@@ -92,7 +92,7 @@ public sealed class GeoservicesImportFailureMessageTests
         var message = GeoservicesImportService.BuildImportFailureMessage(
             exception, GeoservicesImportService.ImportFailureStage.TransferringFeatures);
 
-        message.Should().StartWith("ARCGIS_SERVICE_ERROR:");
+        message.Should().StartWith("GEOSERVICES_SERVICE_ERROR:");
         message.Should().Contain("HTTP 502");
         message.Should().NotContain(Secret).And.NotContain("gis.example");
     }
@@ -107,7 +107,7 @@ public sealed class GeoservicesImportFailureMessageTests
             exception, GeoservicesImportService.ImportFailureStage.TransferringFeatures);
 
         message.Should().Be(
-            "ARCGIS_IMPORT_ABORTED: ArcGIS object-id window 3 exceeded the source transfer limit; the import was not completed.");
+            "GEOSERVICES_IMPORT_ABORTED: ArcGIS object-id window 3 exceeded the source transfer limit; the import was not completed.");
     }
 
     [Fact]
@@ -118,7 +118,7 @@ public sealed class GeoservicesImportFailureMessageTests
         var message = GeoservicesImportService.BuildImportFailureMessage(
             exception, GeoservicesImportService.ImportFailureStage.DiscoveringLayer);
 
-        message.Should().StartWith("ARCGIS_IMPORT_FAILED:");
+        message.Should().StartWith("GEOSERVICES_IMPORT_FAILED:");
         message.Should().Contain("discovering source layer metadata");
         message.Should().NotContain(Secret);
     }
@@ -132,7 +132,7 @@ public sealed class GeoservicesImportFailureMessageTests
         var message = GeoservicesImportService.BuildImportFailureMessage(
             exception, GeoservicesImportService.ImportFailureStage.Committing);
 
-        message.Should().StartWith("ARCGIS_IMPORT_DATABASE_UNAVAILABLE:");
+        message.Should().StartWith("GEOSERVICES_IMPORT_DATABASE_UNAVAILABLE:");
         message.Should().Contain("while committing the imported table");
         message.Should().Contain("commit outcome could not be confirmed");
         message.Should().Contain("check the target table and its publication before retrying");

@@ -388,7 +388,7 @@ public sealed class ResourceValidator : IResourceValidator
            // service's feature publication can answer either protocol.
            ((string.Equals(protocol, ServiceProtocols.MapServer, StringComparison.OrdinalIgnoreCase) ||
              string.Equals(protocol, ServiceProtocols.VectorTileServer, StringComparison.OrdinalIgnoreCase)) &&
-            publicationType == MetadataV2PublicationType.EsriFeatureLayer);
+            publicationType == MetadataV2PublicationType.GeoServicesFeatureLayer);
 
     private async Task<MetadataV2GraphSnapshot> RequireV2SnapshotAsync(CancellationToken cancellationToken)
     {

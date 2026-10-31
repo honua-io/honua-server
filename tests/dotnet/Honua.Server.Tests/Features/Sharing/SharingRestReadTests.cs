@@ -99,7 +99,7 @@ public sealed class SharingRestReadTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var root = doc.RootElement;
-        // Honua does not advertise an ArcGIS Portal/Server version (see NoArcGisServerVersionTests).
+        // Honua does not advertise an ArcGIS Portal/Server version (see NoGeoServicesServerVersionTests).
         root.TryGetProperty("currentVersion", out _).Should().BeFalse();
         root.TryGetProperty("fullVersion", out _).Should().BeFalse();
         var authInfo = root.GetProperty("authInfo");
@@ -205,7 +205,7 @@ public sealed class SharingRestReadTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         // Portal discovery uses the actual public root, and owningSystemUrl agrees
-        // with tokenServicesUrl (docs/gis/ARCGIS_PATH_PREFIX.md).
+        // with tokenServicesUrl (docs/gis/GEOSERVICES_PATH_PREFIX.md).
         var owningSystemUrl = doc.RootElement.GetProperty("owningSystemUrl").GetString();
         owningSystemUrl.Should().Be("http://localhost");
         var authInfo = doc.RootElement.GetProperty("authInfo");

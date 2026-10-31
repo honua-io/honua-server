@@ -12,8 +12,8 @@ namespace Honua.Core.Features.Admin.Domain;
 /// <see cref="LayerPublishRequest"/> carries into the Metadata v2 graph.
 /// <para>
 /// The Esri import path only ever produces this metadata through
-/// <see cref="EsriFieldDomainParser"/>, <see cref="EsriSubtypeParser"/> and
-/// <see cref="EsriAttributeRuleParser"/>, which cap each structure and drop malformed
+/// <see cref="GeoServicesFieldDomainParser"/>, <see cref="GeoServicesSubtypeParser"/> and
+/// <see cref="GeoServicesAttributeRuleParser"/>, which cap each structure and drop malformed
 /// entries. Publication accepts the same structures from other callers (the admin publish
 /// endpoint), so this check applies the parsers' caps and the shape guarantees their output
 /// already satisfies. Parser output therefore always passes; anything the parsers could not
@@ -23,13 +23,13 @@ namespace Honua.Core.Features.Admin.Domain;
 public static class LayerPublishSourceMetadataBounds
 {
     /// <summary>Maximum coded values per domain; the import capture cap.</summary>
-    public const int MaxCodedValuesPerDomain = EsriFieldDomainParser.CodedValueDomainCap;
+    public const int MaxCodedValuesPerDomain = GeoServicesFieldDomainParser.CodedValueDomainCap;
 
     /// <summary>Maximum subtypes per layer; the import capture cap.</summary>
-    public const int MaxSubtypes = EsriSubtypeParser.SubtypeCap;
+    public const int MaxSubtypes = GeoServicesSubtypeParser.SubtypeCap;
 
     /// <summary>Maximum attribute rules per layer; the import capture cap.</summary>
-    public const int MaxAttributeRules = EsriAttributeRuleParser.AttributeRuleCap;
+    public const int MaxAttributeRules = GeoServicesAttributeRuleParser.AttributeRuleCap;
 
     /// <summary>
     /// Validates the captured source metadata on a publish request.
@@ -114,7 +114,7 @@ public static class LayerPublishSourceMetadataBounds
         }
 
         if (codedValues is null
-            && string.Equals(domain.Type, EsriFieldDomainParser.CodedValueDomainType, StringComparison.OrdinalIgnoreCase))
+            && string.Equals(domain.Type, GeoServicesFieldDomainParser.CodedValueDomainType, StringComparison.OrdinalIgnoreCase))
         {
             return $"{slot} coded-value domains must list their coded values.";
         }

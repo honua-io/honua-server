@@ -98,7 +98,7 @@ public class ImageServerTileHandlerTests
                 "replacement-resource",
                 layerIndex: 1,
                 storageBindingId: "replacement-binding",
-                publicationType: MetadataV2PublicationType.EsriImageLayer)
+                publicationType: MetadataV2PublicationType.GeoServicesImageLayer)
             .BuildProvider();
         var handler = new ImageServerTileHandler(
             graphProvider,
@@ -143,7 +143,7 @@ public class ImageServerTileHandlerTests
                 "resource-imagery",
                 storageBindingId: "binding-imagery",
                 serviceLocalId: "primary",
-                publicationType: MetadataV2PublicationType.EsriImageLayer)
+                publicationType: MetadataV2PublicationType.GeoServicesImageLayer)
             .BuildProvider();
         // #3366: drive the resolver through the production ResourceValidator rather than a
         // substitute. The resolver reaches IResourceValidator via the protocol-scoped
@@ -189,7 +189,7 @@ public class ImageServerTileHandlerTests
                 "service-imagery",
                 "resource-imagery",
                 storageBindingId: "binding-imagery",
-                publicationType: MetadataV2PublicationType.EsriImageLayer)
+                publicationType: MetadataV2PublicationType.GeoServicesImageLayer)
             .BuildProvider();
         var resolver = new MetadataV2ImageServerLayerResolver(
             new ResourceValidator(graphProvider),
@@ -234,7 +234,7 @@ public class ImageServerTileHandlerTests
                 "service-imagery",
                 "resource-imagery",
                 storageBindingId: "binding-imagery",
-                publicationType: MetadataV2PublicationType.EsriImageLayer)
+                publicationType: MetadataV2PublicationType.GeoServicesImageLayer)
             .BuildProvider();
         var resolver = new MetadataV2ImageServerLayerResolver(
             new ResourceValidator(graphProvider),
@@ -377,7 +377,7 @@ public class ImageServerTileHandlerTests
                 layerIndex: 7,
                 storageBindingId: "binding-cog",
                 serviceLocalId: "cog-layer",
-                publicationType: MetadataV2PublicationType.EsriImageLayer)
+                publicationType: MetadataV2PublicationType.GeoServicesImageLayer)
             .BuildProvider();
         var cogResolver = Substitute.For<ICogTileResolver>();
         cogResolver.GetTileForLayerAsync(
@@ -433,12 +433,12 @@ public class ImageServerTileHandlerTests
                 layerIndex: 7,
                 storageBindingId: "binding-cog",
                 serviceLocalId: "cog-layer",
-                publicationType: MetadataV2PublicationType.EsriImageLayer)
+                publicationType: MetadataV2PublicationType.GeoServicesImageLayer)
             .AddResource("resource-other", "other-layer", MetadataV2ResourceType.RasterDataset)
             .AddStorageBinding("binding-other", "resource-other", "other.rasters", storageLayerId: 99)
             .AddService("service-other", "other-service", protocols: [ServiceProtocols.ImageServer])
             .AddPublication("publication-other", "service-other", "resource-other", layerIndex: 7,
-                storageBindingId: "binding-other", publicationType: MetadataV2PublicationType.EsriImageLayer)
+                storageBindingId: "binding-other", publicationType: MetadataV2PublicationType.GeoServicesImageLayer)
             .BuildProvider();
         var cogResolver = Substitute.For<ICogTileResolver>();
         cogResolver.GetTileForLayerAsync(
@@ -588,7 +588,7 @@ public class ImageServerTileHandlerTests
                 layerIndex: 7,
                 storageBindingId: "binding-1",
                 serviceLocalId: "test-layer",
-                publicationType: MetadataV2PublicationType.EsriImageLayer)
+                publicationType: MetadataV2PublicationType.GeoServicesImageLayer)
             .BuildProvider();
         var handler = new ImageServerTileHandler(
             graphProvider,
@@ -683,7 +683,7 @@ public class ImageServerTileHandlerTests
                 $"resource-{layerIndex}",
                 layerIndex: layerIndex,
                 serviceLocalId: "test-layer",
-                publicationType: MetadataV2PublicationType.EsriImageLayer)
+                publicationType: MetadataV2PublicationType.GeoServicesImageLayer)
             .BuildProvider();
 
     private static RasterInfo CreateTestRasterInfo() => new()

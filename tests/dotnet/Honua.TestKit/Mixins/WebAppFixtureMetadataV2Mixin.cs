@@ -167,11 +167,11 @@ internal static class WebAppFixtureMetadataV2Mixin
                 resourceId: "res-image-test",
                 layerIndex: TestLayerId,
                 serviceLocalId: "test-layer",
-                publicationType: MetadataV2PublicationType.EsriImageLayer);
+                publicationType: MetadataV2PublicationType.GeoServicesImageLayer);
 
         // VectorTileServer publication for the canonical "test" service. The
         // GeoServices VectorTileServer adapter resolves the service by NAME against
-        // an EsriVectorTileLayer publication (honua-server#1777). Publish layer 0 so
+        // an GeoServicesVectorTileLayer publication (honua-server#1777). Publish layer 0 so
         // /rest/services/test/VectorTileServer resolves and inherits the seeded bbox.
         builder
             .AddService("svc-test-vectortile", "test", protocols: [MetadataV2ServiceProtocols.VectorTileServer])
@@ -181,12 +181,12 @@ internal static class WebAppFixtureMetadataV2Mixin
                 resourceId: "res-layer-0",
                 layerIndex: 0,
                 serviceLocalId: "0",
-                publicationType: MetadataV2PublicationType.EsriVectorTileLayer);
+                publicationType: MetadataV2PublicationType.GeoServicesVectorTileLayer);
 
         // FeatureServer and MapServer publications for the canonical "test" service.
         // The GeoServices REST catalog endpoint enumerates these directly from the V2
         // graph, so the directory only emits FeatureServer/MapServer entries when matching
-        // EsriFeatureService / EsriMapService publications exist. We publish the same
+        // GeoServicesFeatureService / GeoServicesMapService publications exist. We publish the same
         // layer ids that server.yaml seeds so /rest/services has services to return and
         // downstream FeatureServer/MapServer handler ports can resolve them by layer id.
         builder
@@ -203,14 +203,14 @@ internal static class WebAppFixtureMetadataV2Mixin
                     resourceId: resourceId,
                     layerIndex: layerIndex,
                     serviceLocalId: layerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                    publicationType: MetadataV2PublicationType.EsriFeatureLayer)
+                    publicationType: MetadataV2PublicationType.GeoServicesFeatureLayer)
                 .AddPublication(
                     id: $"pub-map-{layerIndex}",
                     serviceId: "svc-test-map",
                     resourceId: resourceId,
                     layerIndex: layerIndex,
                     serviceLocalId: layerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                    publicationType: MetadataV2PublicationType.EsriMapLayer)
+                    publicationType: MetadataV2PublicationType.GeoServicesMapLayer)
                 .AddPublication(
                     id: $"pub-stac-{layerIndex}",
                     serviceId: "svc-test-stac",
@@ -272,7 +272,7 @@ internal static class WebAppFixtureMetadataV2Mixin
                         Role = "esriRelRoleOrigin",
                         OriginField = "objectid",
                         DestinationField = "related_id",
-                        EsriRelationshipId = 1
+                        GeoServicesRelationshipId = 1
                     },
                     new MetadataV2Relationship
                     {
@@ -283,7 +283,7 @@ internal static class WebAppFixtureMetadataV2Mixin
                         Role = "esriRelRoleOrigin",
                         OriginField = "objectid",
                         DestinationField = "secondary_id",
-                        EsriRelationshipId = 2
+                        GeoServicesRelationshipId = 2
                     }
                 ]
             };
@@ -359,7 +359,7 @@ internal static class WebAppFixtureMetadataV2Mixin
                         Role = "esriRelRoleOrigin",
                         OriginField = "objectid",
                         DestinationField = "city_id",
-                        EsriRelationshipId = 1
+                        GeoServicesRelationshipId = 1
                     }
                 ]
             };
@@ -440,7 +440,7 @@ internal static class WebAppFixtureMetadataV2Mixin
                     Value = layerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture),
                     IsNumeric = true
                 },
-                PublicationType = MetadataV2PublicationType.EsriFeatureLayer
+                PublicationType = MetadataV2PublicationType.GeoServicesFeatureLayer
             });
             publications.Add(new MetadataV2Publication
             {
@@ -537,7 +537,7 @@ internal static class WebAppFixtureMetadataV2Mixin
                     resourceId: resourceId,
                     layerIndex: layerIndex,
                     serviceLocalId: layerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                    publicationType: MetadataV2PublicationType.EsriFeatureLayer);
+                    publicationType: MetadataV2PublicationType.GeoServicesFeatureLayer);
         }
 
         return builder.Build();

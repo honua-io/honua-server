@@ -1243,7 +1243,7 @@ public class PostgresSqlFilterTranslatorTests
     // reach the database, and every literal becomes a bound parameter.
 
     [Fact]
-    public void Translate_ArcGisExtractYear_EmitsExtractAndParameterizesLiteral()
+    public void Translate_GeoServicesExtractYear_EmitsExtractAndParameterizesLiteral()
     {
         var expression = new GeoServicesSqlParser().Parse("EXTRACT(YEAR FROM timestamp) = 2024");
 
@@ -1254,7 +1254,7 @@ public class PostgresSqlFilterTranslatorTests
     }
 
     [Fact]
-    public void Translate_ArcGisCastAs_EmitsTypeCastWithoutParameterizingType()
+    public void Translate_GeoServicesCastAs_EmitsTypeCastWithoutParameterizingType()
     {
         var expression = new GeoServicesSqlParser().Parse("CAST(age AS TEXT) = '42'");
 
@@ -1267,7 +1267,7 @@ public class PostgresSqlFilterTranslatorTests
     }
 
     [Fact]
-    public void Translate_ArcGisCastVarcharWithLength_EmitsLengthBoundedCast()
+    public void Translate_GeoServicesCastVarcharWithLength_EmitsLengthBoundedCast()
     {
         var expression = new GeoServicesSqlParser().Parse("CAST(age AS VARCHAR(20)) = '42'");
 
@@ -1280,7 +1280,7 @@ public class PostgresSqlFilterTranslatorTests
     }
 
     [Fact]
-    public void Translate_ArcGisCastDecimalWithPrecisionScale_EmitsNumericWithArguments()
+    public void Translate_GeoServicesCastDecimalWithPrecisionScale_EmitsNumericWithArguments()
     {
         var expression = new GeoServicesSqlParser().Parse("CAST(age AS DECIMAL(10, 2)) > 1");
 
@@ -1291,7 +1291,7 @@ public class PostgresSqlFilterTranslatorTests
     }
 
     [Fact]
-    public void Translate_ArcGisStringConcatenation_EmitsConcatWithBoundLiterals()
+    public void Translate_GeoServicesStringConcatenation_EmitsConcatWithBoundLiterals()
     {
         var expression = new GeoServicesSqlParser().Parse("name || ' ' || description = 'a b'");
 
@@ -1310,7 +1310,7 @@ public class PostgresSqlFilterTranslatorTests
     // ------------------------------------------------------------------
 
     [Fact]
-    public void Translate_ArcGisLikeEscape_EmitsEscapeClauseWithBoundParameters()
+    public void Translate_GeoServicesLikeEscape_EmitsEscapeClauseWithBoundParameters()
     {
         var expression = new GeoServicesSqlParser().Parse("name LIKE '%50!%%' ESCAPE '!'");
 
@@ -1325,7 +1325,7 @@ public class PostgresSqlFilterTranslatorTests
     }
 
     [Fact]
-    public void Translate_ArcGisNotLikeEscape_EmitsNotLikeEscapeClause()
+    public void Translate_GeoServicesNotLikeEscape_EmitsNotLikeEscapeClause()
     {
         var expression = new GeoServicesSqlParser().Parse("name NOT LIKE 'a!_b' ESCAPE '!'");
 
@@ -1343,7 +1343,7 @@ public class PostgresSqlFilterTranslatorTests
     [InlineData("QUARTER", "QUARTER")]
     [InlineData("WEEK", "WEEK")]
     [InlineData("EPOCH", "EPOCH")]
-    public void Translate_ArcGisExtendedExtractField_EmitsExtractWithBoundComparand(string field, string sqlField)
+    public void Translate_GeoServicesExtendedExtractField_EmitsExtractWithBoundComparand(string field, string sqlField)
     {
         var expression = new GeoServicesSqlParser().Parse($"EXTRACT({field} FROM timestamp) >= 1");
 
@@ -1354,7 +1354,7 @@ public class PostgresSqlFilterTranslatorTests
     }
 
     [Fact]
-    public void Translate_ArcGisSearchedCase_EmitsCaseExpressionWithBoundResults()
+    public void Translate_GeoServicesSearchedCase_EmitsCaseExpressionWithBoundResults()
     {
         var expression = new GeoServicesSqlParser().Parse(
             "CASE WHEN age >= 18 THEN 'adult' ELSE 'minor' END = 'adult'");
@@ -1370,7 +1370,7 @@ public class PostgresSqlFilterTranslatorTests
     }
 
     [Fact]
-    public void Translate_ArcGisSearchedCaseWithoutElse_OmitsElseBranch()
+    public void Translate_GeoServicesSearchedCaseWithoutElse_OmitsElseBranch()
     {
         var expression = new GeoServicesSqlParser().Parse(
             "CASE WHEN active = TRUE THEN 1 END > 0");
@@ -1385,7 +1385,7 @@ public class PostgresSqlFilterTranslatorTests
     }
 
     [Fact]
-    public void Translate_ArcGisSimpleCase_DesugarsSelectorEqualityWithBoundValues()
+    public void Translate_GeoServicesSimpleCase_DesugarsSelectorEqualityWithBoundValues()
     {
         var expression = new GeoServicesSqlParser().Parse(
             "CASE status WHEN 'A' THEN 1 WHEN 'B' THEN 2 ELSE 0 END = 1");

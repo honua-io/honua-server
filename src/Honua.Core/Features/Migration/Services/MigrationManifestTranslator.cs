@@ -419,7 +419,7 @@ public static partial class MigrationManifestTranslator
     private static (string? SourceServiceId, string? SourceQualifiedName, string? SourceFolderPath) ExtractServiceSourceIdentity(
         MigrationSourceInventoryArtifact inventory)
     {
-        if (IsArcGisSource(inventory.SourceKind))
+        if (IsGeoServicesSource(inventory.SourceKind))
         {
             // Honua inventory uses container ids like "service:{serviceKey}" for ArcGIS sources.
             var container = inventory.Containers
@@ -427,7 +427,7 @@ public static partial class MigrationManifestTranslator
             string? folderPath = null;
             if (!string.IsNullOrEmpty(inventory.Source.BaseUrl))
             {
-                folderPath = ExtractArcGisFolderPath(inventory.Source.BaseUrl);
+                folderPath = ExtractGeoServicesFolderPath(inventory.Source.BaseUrl);
             }
 
             if (container is not null)
@@ -447,7 +447,7 @@ public static partial class MigrationManifestTranslator
         MigrationSourceInventoryArtifact inventory,
         MigrationInventoryResource resource)
     {
-        if (IsArcGisSource(inventory.SourceKind))
+        if (IsGeoServicesSource(inventory.SourceKind))
         {
             // Honua inventory uses resource ids like "resource:{serviceName}:{kind}:{id}" for ArcGIS sources.
             const string prefix = "resource:";
@@ -484,7 +484,7 @@ public static partial class MigrationManifestTranslator
             : $"{serviceQualifiedName}/{leaf}";
     }
 
-    private static string? ExtractArcGisFolderPath(string baseUrl)
+    private static string? ExtractGeoServicesFolderPath(string baseUrl)
     {
         // ArcGIS REST URLs follow .../rest/services/{folder?}/{service}/{serviceType}.
         // Capture an optional folder segment that sits between "services" and the service name.
@@ -533,8 +533,8 @@ public static partial class MigrationManifestTranslator
         return folderSegments.Count == 0 ? null : string.Join('/', folderSegments.ToArray());
     }
 
-    private static bool IsArcGisSource(string sourceKind)
-        => string.Equals(sourceKind, "arcgis-geoservices-rest", StringComparison.OrdinalIgnoreCase);
+    private static bool IsGeoServicesSource(string sourceKind)
+        => string.Equals(sourceKind, "geoservices-rest", StringComparison.OrdinalIgnoreCase);
 
     // Attachments at or below this size are small enough for the automated migration lane.
     // Above this size we capture the metadata but require an operator-supervised follow-up so the
@@ -563,7 +563,7 @@ public static partial class MigrationManifestTranslator
         string targetServiceName,
         string targetResourceName)
     {
-        if (!IsArcGisSource(inventory.SourceKind))
+        if (!IsGeoServicesSource(inventory.SourceKind))
         {
             return [];
         }
@@ -662,7 +662,7 @@ public static partial class MigrationManifestTranslator
         string targetServiceName,
         string targetResourceName)
     {
-        if (!IsArcGisSource(inventory.SourceKind))
+        if (!IsGeoServicesSource(inventory.SourceKind))
         {
             return [];
         }
@@ -730,7 +730,7 @@ public static partial class MigrationManifestTranslator
                 Role = role,
                 OriginKeyField = originKeyField,
                 DestinationKeyField = destinationKeyField,
-                EsriRelationshipId = esriRelationshipId,
+                GeoServicesRelationshipId = esriRelationshipId,
                 Classification = cls,
                 TargetRelationshipRef = targetRef,
                 Reason = reason
@@ -834,7 +834,7 @@ public static partial class MigrationManifestTranslator
         string targetServiceName,
         string targetResourceName)
     {
-        if (!IsArcGisSource(inventory.SourceKind))
+        if (!IsGeoServicesSource(inventory.SourceKind))
         {
             return [];
         }
@@ -981,7 +981,7 @@ public static partial class MigrationManifestTranslator
         MigrationSourceInventoryArtifact inventory,
         MigrationInventoryResource resource)
     {
-        if (!IsArcGisSource(inventory.SourceKind))
+        if (!IsGeoServicesSource(inventory.SourceKind))
         {
             return [];
         }

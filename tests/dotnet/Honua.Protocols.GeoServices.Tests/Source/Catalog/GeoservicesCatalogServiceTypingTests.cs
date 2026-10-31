@@ -149,7 +149,7 @@ public sealed class GeoservicesCatalogServiceTypingTests
                     protocols: [ServiceProtocols.FeatureServer], accessPolicy: anonymous)
                 .AddPublication($"pub-typing-duplicate-{suffix}", $"svc-typing-duplicate-{suffix}",
                     $"res-typing-duplicate-{suffix}", layerIndex: 710, serviceLocalId: "710",
-                    publicationType: MetadataV2PublicationType.EsriFeatureLayer);
+                    publicationType: MetadataV2PublicationType.GeoServicesFeatureLayer);
         }
 
         await using var fixture = await CreateFixtureAsync(
@@ -233,7 +233,7 @@ public sealed class GeoservicesCatalogServiceTypingTests
                 protocols: [ServiceProtocols.FeatureServer], accessPolicy: anonymous)
             .AddPublication("pub-typing-vector", "svc-typing-vector", "res-typing-vector",
                 layerIndex: 700, serviceLocalId: "700",
-                publicationType: MetadataV2PublicationType.EsriFeatureLayer);
+                publicationType: MetadataV2PublicationType.GeoServicesFeatureLayer);
 
         // Raster/coverage service -> ImageServer (must not flatten to FeatureServer).
         builder
@@ -249,7 +249,7 @@ public sealed class GeoservicesCatalogServiceTypingTests
                 protocols: [ServiceProtocols.ImageServer], accessPolicy: anonymous)
             .AddPublication("pub-typing-raster", "svc-typing-raster", "res-typing-raster",
                 layerIndex: 701, serviceLocalId: "701",
-                publicationType: MetadataV2PublicationType.EsriImageLayer);
+                publicationType: MetadataV2PublicationType.GeoServicesImageLayer);
 
         // Service reachable under multiple Esri types -> one entry per type.
         builder
@@ -260,7 +260,7 @@ public sealed class GeoservicesCatalogServiceTypingTests
                 accessPolicy: anonymous)
             .AddPublication("pub-typing-multi", "svc-typing-multi", "res-typing-multi",
                 layerIndex: 702, serviceLocalId: "702",
-                publicationType: MetadataV2PublicationType.EsriFeatureLayer);
+                publicationType: MetadataV2PublicationType.GeoServicesFeatureLayer);
 
         // GPServer is service-scoped and must remain discoverable without a layer
         // publication, matching the default geoprocessing service seeded at startup.

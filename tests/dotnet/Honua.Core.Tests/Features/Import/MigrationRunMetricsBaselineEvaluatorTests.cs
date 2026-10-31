@@ -39,7 +39,7 @@ public sealed class MigrationRunMetricsBaselineEvaluatorTests
         geoServerSmall.Bands.Should().NotBeEmpty();
 
         MigrationFixtureBaselineCatalog
-            .TryGet(MigrationCostPerformanceSourceFamilies.ArcGisGeoServicesRest, MigrationCostPerformanceFixtureSizes.Small, out _)
+            .TryGet(MigrationCostPerformanceSourceFamilies.GeoServicesGeoServicesRest, MigrationCostPerformanceFixtureSizes.Small, out _)
             .Should().BeFalse("ArcGIS seed is deferred to slice 3+");
 
         MigrationFixtureBaselineCatalog
@@ -243,7 +243,7 @@ public sealed class MigrationRunMetricsBaselineEvaluatorTests
     {
         var run = BuildRun(
             new MigrationRunMetricsValues { DurationMilliseconds = 30_000 },
-            sourceFamily: MigrationCostPerformanceSourceFamilies.ArcGisGeoServicesRest);
+            sourceFamily: MigrationCostPerformanceSourceFamilies.GeoServicesGeoServicesRest);
 
         var result = MigrationRunMetricsBaselineEvaluator.TryEvaluate(
             run,

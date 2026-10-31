@@ -1,6 +1,6 @@
 # GP toolbox execution evidence (#4614, #4616)
 
-Installed-client observations are evidence identifier `desktop-arcgis` in
+Installed-client observations are evidence identifier `desktop-gis` in
 private `honua-esri-compat`. These retained observations are not desktop
 certificates.
 
@@ -20,7 +20,7 @@ The successful run is
 [34741056478](https://github.com/honua-io/honua-esri-compat/actions/runs/34741056478).
 Source and image identities are retained in each receipt. The managed diagnostic
 is explicitly labelled and must not be represented as a cut NativeAOT candidate.
-Runner and licence configuration stay with evidence id `desktop-arcgis`.
+Runner and licence configuration stay with evidence id `desktop-gis`.
 
 `GPServerDurableRuntimeTests.SoapArea_WithProductionExecutor` separately proves
 SOAP Execute and SubmitJob against the real canonical Redis job runtime and
@@ -61,7 +61,7 @@ rectangles. `GPServerSoapExecutionTests` reads the RecordSet captured from ArcPy
 FeatureSet result through a SOAP RecordSet.
 
 The complex-value producer stays in honua-esri-compat on branch
-`probe/gp-soap-complex-4614`. Evidence id `desktop-arcgis`.
+`probe/gp-soap-complex-4614`. Evidence id `desktop-gis`.
 
 ## Replay on the pinned 2026.1 candidate (548b7a5)
 
@@ -71,17 +71,17 @@ honua-release trunk `52cc3f2c` (#349) pins the candidate to source
 That source contains #4760 and #4812. The owned `gpserver-4614-4616-server`
 fixture was recreated on that exact image. Through the fixture the image
 advertises all 119 GPServer tasks and answers the SOAP catalog. Runner and
-licence configuration stay with evidence id `desktop-arcgis`.
+licence configuration stay with evidence id `desktop-gis`.
 
 | Receipt | What it establishes |
 | --- | --- |
 | `candidate-548b7a5-arcpy-and-sdk-scalar-verified.json` | On the pinned candidate over verified TLS, installed SDK 2.4.3 imports all 119 advertised tasks. SDK and ArcPy 3.7.1 (documented SOAP `ImportToolbox` syntax, async job status 4 `Completed`) both remotely compute `geometry.area` = 12 for the literal 3 by 4 rectangle, with MeasureResult type, area measure, squared input-CRS units, SRID 3857 and Polygon input. Run [34915379462](https://github.com/honua-io/honua-esri-compat/actions/runs/34915379462). |
 | `candidate-548b7a5-arcpy-complex-values-verified.json` | On the pinned candidate, installed ArcPy 3.7.1 passes the same literal-derived oracles as `managed-complex-values-arcpy-verified.json`: Buffer bbox (-1,-1,4,5) with area 29.12 inside the octagon/circle bounds; multivalue Union area 20; Clip of two FeatureSet inputs with area 4 and attributes kept; attribute filter area 12 with `label=keep`; GenerateNearTable RecordSet row with distance 0; and cancel reaching Cancelled (status 8). Run [34913953581](https://github.com/honua-io/honua-esri-compat/actions/runs/34913953581). |
 
-| `candidate-548b7a5-soap-auth-controls-verified.json` | On the pinned candidate over verified TLS, SOAP `SubmitJob`, `Execute`, `GetJobStatus`, `GetJobMessages`, `GetJobToolName`, `GetJobResult` and `CancelJob` each return a 401 SOAP fault to an anonymous caller, an unknown `X-API-Key` and an unknown bearer token (21 denials). No denial leaks job status, task name, job id or result. As controls, the authorized caller's literal 3 by 4 area job still succeeds with area 12 and MeasureResult metadata, is still `esriJobSucceeded` after the refused cancels, and an authorized malformed submission returns 400. Evidence id `desktop-arcgis`. |
+| `candidate-548b7a5-soap-auth-controls-verified.json` | On the pinned candidate over verified TLS, SOAP `SubmitJob`, `Execute`, `GetJobStatus`, `GetJobMessages`, `GetJobToolName`, `GetJobResult` and `CancelJob` each return a 401 SOAP fault to an anonymous caller, an unknown `X-API-Key` and an unknown bearer token (21 denials). No denial leaks job status, task name, job id or result. As controls, the authorized caller's literal 3 by 4 area job still succeeds with area 12 and MeasureResult metadata, is still `esriJobSucceeded` after the refused cancels, and an authorized malformed submission returns 400. Evidence id `desktop-gis`. |
 
 `soap-auth-controls.json` recorded the first three of these controls on the managed
-diagnostic image only. Evidence id `desktop-arcgis`.
+diagnostic image only. Evidence id `desktop-gis`.
 `GPServerDurableRuntimeTests.SoapJobOperation_UnauthenticatedCaller_IsChallengedWithoutJobState`
 keeps the same controls as a regression. It runs the real API-key handler (the dev
 bypass is off), the real job service, the Redis job store and the production
@@ -98,13 +98,13 @@ The image advertises all 119 GPServer tasks, and
 `POST /services/desktop_ui_features/GPServer` answers 401 to an unauthenticated
 caller rather than the 404 this issue was filed on. Receipt identities are in
 [`docs/internal/evidence/gp-desktop-fixture-8862065/`](../../../../../../../docs/internal/evidence/gp-desktop-fixture-8862065/README.md).
-Runner and licence configuration stay with evidence id `desktop-arcgis`.
+Runner and licence configuration stay with evidence id `desktop-gis`.
 
 | Receipt | What it establishes |
 | --- | --- |
 | `candidate-8862065-arcpy-and-sdk-scalar-verified.json` | On the re-pinned candidate over verified TLS, installed SDK 2.4.3 and ArcPy 3.7.1 repeat the `548b7a5` scalar result: all 119 advertised tasks import, and both clients remotely compute `geometry.area` = 12 for the literal 3 by 4 rectangle with MeasureResult type, area measure, squared input-CRS units, SRID 3857 and Polygon input (ArcPy async job status 4 `Completed`). Run [35061750279](https://github.com/honua-io/honua-esri-compat/actions/runs/35061750279). |
 | `candidate-8862065-arcpy-complex-values-verified.json` | On the re-pinned candidate, installed ArcPy 3.7.1 passes the same six literal-derived complex-value oracles as `candidate-548b7a5-arcpy-complex-values-verified.json`: Buffer feature output, multivalue Union, Clip of two FeatureSet inputs, attribute filter, GenerateNearTable RecordSet output, and cancellation reaching `Cancelled`. Run [35061927963](https://github.com/honua-io/honua-esri-compat/actions/runs/35061927963). |
-| `candidate-8862065-soap-auth-controls-verified.json` | On the re-pinned candidate over verified TLS, the same 24 controls as `candidate-548b7a5-soap-auth-controls-verified.json` all hold: 21 denials across three unauthorized callers and seven SOAP operations, each a 401 SOAP fault leaking no job id, status, task name or result; the authorized literal job still succeeds with area 12 and is still `esriJobSucceeded` after the refused cancels; an authorized malformed submission returns 400. Evidence id `desktop-arcgis`. |
+| `candidate-8862065-soap-auth-controls-verified.json` | On the re-pinned candidate over verified TLS, the same 24 controls as `candidate-548b7a5-soap-auth-controls-verified.json` all hold: 21 denials across three unauthorized callers and seven SOAP operations, each a 401 SOAP fault leaking no job id, status, task name or result; the authorized literal job still succeeds with area 12 and is still `esriJobSucceeded` after the refused cancels; an authorized malformed submission returns 400. Evidence id `desktop-gis`. |
 
 Native Pro desktop UI receipts are still separate. Each receipt above records
 `desktop_ui_exercised: false`, and no desktop UI pass is claimed.

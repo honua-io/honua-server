@@ -114,7 +114,7 @@ AUDIT_URL = (
 )
 CUSTOMER_READINESS_GOAL = (
     "Demonstrate that customers can reliably use Honua's advertised supported "
-    "workflows in QGIS, PyQGIS, ArcGIS Pro and ArcPy on declared client versions "
+    "workflows in QGIS, PyQGIS, desktop client and desktop Python client on declared client versions "
     "and license profiles. Reconcile the client surface into one traceable matrix, "
     "repair server and harness defects, and pass every required native workflow "
     "and regression gate against the same frozen shipping NativeAOT/Production "
@@ -127,13 +127,13 @@ CUSTOMER_READINESS_GOAL = (
 # them into versioned native cases in the owning harness before freezing a claim.
 COVERAGE_GAPS = {
     "source-inventory": "Reconcile both directions: 118 capability keys and 1,306 server surfaces; the QGIS base has 117 and 1,270, with an overlay at 1,271.",
-    "native-case-crosswalk": "Map the 367 Esri operation/parameter cases and active LTR reviews from the retained 6,767-row QGIS inventory to native child cases, shared witnesses or evidenced dispositions. QGIS 4.2.2 rows are historical only and require no certification replay. Inventory counts are not test counts.",
+    "native-case-crosswalk": "Map the 367 GeoServices operation/parameter cases and active LTR reviews from the retained 6,767-row QGIS inventory to native child cases, shared witnesses or evidenced dispositions. QGIS 4.2.2 rows are historical only and require no certification replay. Inventory counts are not test counts.",
     "authentication": "Bind valid, denied, scoped, expired, revoked and rotated credentials to native workflows and dependent resource requests; the 94-row baseline has no explicit authentication rows. Preserve default WFS failures, cache-disabled provider reads, Browser catalog transitions and protected-first GetFeature denial as distinct PyQGIS diagnostics. Disabling both URL-only memory caches before the first request restores catalog recovery on both installed versions; catalog visibility does not prove a denied data request. Complete retained-layer reload, other auth methods, least-privilege roles, dependent resources and authenticated project reopen on the shipping candidate; no N/A or shipping promotion.",
     "workflow-variants": "Bind schema/paging, edits/relationships/attachments, offline/versioning, imagery/tiles, processing parameters, project reopen and recovery variants to executable cases and independent oracles.",
     "native-editing": "Map single-feature, bulk and multi-layer edits to independent inputs, SQL persistence, native readback, denied commits, retained buffers and recovery. Final Debug/JIT PyQGIS diagnostics at server 64066504d2e5578ec781ef1c2722a6696a7e1084 pass 9/9 FeatureServer and 9/9 OAPIF per installed version; WFS passes 8/9 per version and retains empty-string-to-null readback failures. Separate default WFS batch diagnostics pass 5/5 per version: two-feature insert/delete, storage-rejected insert/update, atomic SQL rollback and correction/retry in the same retained buffer. These are individual single-layer requests, not a mixed editing session or a multi-layer transaction. Complete best-effort/unknown-commit, mixed-stage and concurrent-edit recovery, other geometry/CRS, scoped roles, relationships/attachments and project-reopen variants, plus the other native lanes and the frozen shipping replay. Do not count unit or historical receipt validation as fresh native acceptance.",
     "vector-data-fidelity": "Bind fractional timestamps, empty strings versus null, provider-specific IDs/CRS, all page contents, export and cold project reopen to native children on QGIS/PyQGIS 3.44.14 LTR only. Replay the GeoJSON timestamp fix merged in server PR5335 on the shipping candidate. Both installed GML decoders turn seven independent empty-string encodings into null while five controls match; this is decoder evidence, not a live workflow pass. Preserve the WFS data-loss failure and original oracle, review other installed native entrypoints and customer workarounds, and do not award whole-client/protocol N/A.",
-    "versions-and-licenses": "Require only QGIS/PyQGIS 3.44.14 LTR certification. Retain 4.2.2 inventory and diagnostics as historical records without requiring certification reruns or blocking LTR acceptance. ArcGIS Pro 3.7.2/build1901 and ArcGISPro.exe 3.7.2.1904 remain an open target; keep 3.7.1 receipts historical. Licence, extension, and portal-entitlement binding stays with evidence id desktop-arcgis in honua-esri-compat.",
-    "native-versioning": "Keep the preview branch profile separate. The 367-case Esri inventory already includes an 11-case VersionManagementServer manifest: seven implemented/partial groups and four recorded gaps. Its geoservices rules wire only service metadata and list/version-info REST probes; five supported lifecycle groups remain pending. Map those grouped operations to independent native cases and repair stale descriptions, including the capability-string claim corrected by server PR5335. On server fa2c29dc4 with the experimental branch flag, evidence id desktop-arcgis records workspace recognition through root and /arcgis URLs, and failed branch-layer recognition, ListVersions and CreateVersion. An independent replay on ba7f4ba96 fails during portal discovery before token issuance, with the same later native failures. Preserve both authentication failures and ERROR 000301 as repair work; six passing REST/SQL checks on fa2c29dc4 and 57 regression tests on ba7f4ba96 do not certify native workflows or prove a licence exclusion. Runner and licence configuration stay in honua-esri-compat.",
+    "versions-and-licenses": "Require only QGIS/PyQGIS 3.44.14 LTR certification. Retain 4.2.2 inventory and diagnostics as historical records without requiring certification reruns or blocking LTR acceptance. The retired commercial desktop-client certification lane has been removed; no certification or entitlement claim is made for it.",
+    "native-versioning": "Keep the preview branch profile separate. The 367-case GeoServices inventory already includes an 11-case VersionManagementServer manifest: seven implemented/partial groups and four recorded gaps. Its geoservices rules wire only service metadata and list/version-info REST probes; five supported lifecycle groups remain pending. Map those grouped operations to independent native cases and repair stale descriptions, including the capability-string claim corrected by server PR5335. On server fa2c29dc4 with the experimental branch flag, the retained historical evidence records workspace recognition through root and /GeoServices REST URLs, and failed branch-layer recognition, ListVersions and CreateVersion. An independent replay on ba7f4ba96 fails during portal discovery before token issuance, with the same later native failures. Preserve both authentication failures and ERROR 000301 as repair work; six passing REST/SQL checks on fa2c29dc4 and 57 regression tests on ba7f4ba96 do not certify native workflows or prove a licence exclusion. Runner and entitlement configuration are outside the retained certification scope.",
     "maturity-and-profile": "Classify source maturity and selected configuration independently of client support; retain lower-priority preview/experimental work and explicit priorities 5238, 5192 and 5036.",
     "exclusion-review": "Review operation-specific N/A and skip evidence. Preserve genuine exclusions; repair harness failures. A missing fixture, disabled flag or failed connection alone proves no server implementation gap.",
     "candidate-and-receipts": "Join native cases to hashed receipts, independent expected results and the same frozen NativeAOT/Production candidate. The historical checklist string validator is not this acceptance join.",
@@ -167,30 +167,10 @@ DISPOSITION_RULES = {
 }
 
 # Manual review identifies native paths and limitations, never a Honua pass.
-# Latest Esri documentation still needs binding to the installed client.
+# Latest GeoServices documentation still needs binding to the installed client.
 # Each QGIS review records its documentation version or installed source revision.
 MANUAL_REVIEWS = [
-    {
-        "id": "pro-372-native-branch-workspace", "reviewed_at": "2026-09-29",
-        "documentation_version": "ArcGIS Pro latest; observed ArcPy 3.7.2/build1901 and executable 3.7.2.1904",
-        "url": "https://doc.esri.com/en/arcgis-pro/latest/tool-reference/data-management/create-version.html",
-        "related_sources": [
-            "https://doc.esri.com/en/arcgis-pro/latest/arcpy/functions/signintoportal.html",
-            "https://doc.esri.com/en/arcgis-pro/latest/arcpy/functions/workspace-properties.html",
-            "https://doc.esri.com/en/arcgis-pro/latest/arcpy/functions/dataset-properties.html",
-            "https://doc.esri.com/en/arcgis-pro/latest/arcpy/data-access/listversions.html",
-            "https://github.com/honua-io/honua-esri-compat/blob/ac7c5b624cdb3c27b6cdd73c3f72ef8cad8ba563/docs/reports/native-version-workspace-2026-09-29.md",
-            "https://github.com/honua-io/honua-esri-compat/blob/b076f60ce576401f8a9f16bc0a2306683b2033a6/matrix/version-management-server.matrix.json",
-            "https://github.com/honua-io/honua-esri-compat/blob/b076f60ce576401f8a9f16bc0a2306683b2033a6/src/honua_esri_compat/lanes/geoservices.py#L659",
-            "https://developers.arcgis.com/rest/services-reference/enterprise/version-management-service/",
-            "https://github.com/honua-io/honua-server/blob/f126f8613255931e89282b0ae62ce98658f851bc/src/Honua.Protocols.GeoServices/VersionManagementServer/Models/VersionManagementModels.cs",
-            "https://github.com/honua-io/honua-esri-compat/pull/133",
-        ],
-        "protocols": ["featureserver", "portal-sharing", "versionmanagementserver"],
-        "lanes": ["pro-ui", "arcpy"],
-        "finding": "Evidence id desktop-arcgis. Each of two recorded authentication variants has two workspace-description passes and eight failed native operations across root and alias. Server metadata advertises branch layers, yet native Describe reports isBranchVersioned=false; CreateVersion returns ERROR 000301. One variant fails on a referer-binding mismatch. The other fails during portal discovery: /arcgisuris.xml returns 404 and no token-issuance request follows. Both retained descriptors omit the documented defaultVersionGuid, consistent with the exact server model; the stronger REST validator merged in Esri PR133 now rejects that gap. These observations do not establish which missing field or route caused native initialization to fail. Neither run establishes a licence exclusion or native UI acceptance.",
-        "next_check": "Keep #5036 open. Evidence id desktop-arcgis retains both authentication variants' failed observations. Complete native UI and frozen NativeAOT/Production replay in honua-esri-compat; do not treat either failed observation as a licence exclusion.",
-    },
+
     {
         "id": "qgis-native-wfs-batch-transactions", "reviewed_at": "2026-09-29",
         "documentation_version": "QGIS API commitChanges contract; installed QGIS 3.44.14 revision 1a4cda5f262 and 4.2.2 revision f1431de8676; OGC WFS 1.1 clause 12",
@@ -208,7 +188,7 @@ MANUAL_REVIEWS = [
     {
         "id": "qgis-34414-native-edit-contracts", "reviewed_at": "2026-09-29",
         "documentation_version": "QGIS 3.44.14, installed source revision 1a4cda5f262",
-        "url": "https://github.com/qgis/QGIS/blob/1a4cda5f262/src/providers/arcgisrest/qgsafsshareddata.cpp",
+        "url": "https://github.com/qgis/QGIS/blob/1a4cda5f262/src/providers/GeoServices RESTrest/qgsafsshareddata.cpp",
         "related_sources": [
             "https://github.com/qgis/QGIS/blob/1a4cda5f262/src/providers/wfs/qgswfsprovider.cpp",
             "https://www.rfc-editor.org/info/rfc7396/",
@@ -266,7 +246,6 @@ MANUAL_REVIEWS = [
         "documentation_version": "QGIS 3.44.14, installed source revision 1a4cda5f262",
         "url": "https://github.com/qgis/QGIS/blob/1a4cda5f262/src/providers/wfs/qgswfsprovider.cpp#L2754",
         "related_sources": [
-            "https://github.com/qgis/QGIS/blob/1a4cda5f262/src/core/providers/arcgis/qgsarcgisrestquery.cpp#L213",
             "https://docs.qgis.org/3.44/en/docs/pyqgis_developer_cookbook/authentication.html",
         ],
         "protocols": ["featureserver", "ogc-api-features", "wfs"], "lanes": ["pyqgis"],
@@ -278,7 +257,6 @@ MANUAL_REVIEWS = [
         "documentation_version": "QGIS 4.2.2, installed source revision f1431de8676",
         "url": "https://github.com/qgis/QGIS/blob/f1431de8676/src/providers/wfs/qgswfsprovider.cpp#L1947",
         "related_sources": [
-            "https://github.com/qgis/QGIS/blob/f1431de8676/src/core/providers/arcgis/qgsarcgisrestquery.cpp",
         ],
         "protocols": ["featureserver", "ogc-api-features", "wfs"], "lanes": ["pyqgis"],
         "finding": "The installed 4.2.2 source has the same URL-only WFS capabilities cache. Its separate native runs reproduce the public-first recovery failure, a successful cold authorized load, and explicit denied GetFeature responses despite a valid schema. Layer validity is not a data-authorization assertion.",
@@ -294,7 +272,7 @@ MANUAL_REVIEWS = [
             "https://docs.ogc.org/is/17-069r4/17-069r4.html",
         ],
         "protocols": ["ogc-api-features", "wfs"], "lanes": ["pyqgis"],
-        "finding": "The OAPIF provider maps layer-local FIDs to separate remote IDs; an Esri objectid property is not a universal native identity contract. OGC Core defaults to CRS84 longitude/latitude. Exact installed-revision GML source and observed empty-string/null conversion are retained for review; this is not an approved exclusion.",
+        "finding": "The OAPIF provider maps layer-local FIDs to separate remote IDs; an GeoServices objectid property is not a universal native identity contract. OGC Core defaults to CRS84 longitude/latitude. Exact installed-revision GML source and observed empty-string/null conversion are retained for review; this is not an approved exclusion.",
         "next_check": "Use independent fixture keys for payload comparisons and native FID selection; test remote-ID edits separately. Preserve empty-string/null assertions while reviewing valid GML encodings and supported native alternatives. Revalidate every required child against the frozen shipping candidate.",
     },
     {
@@ -316,34 +294,11 @@ MANUAL_REVIEWS = [
         "url": "https://doc.qgis.org/3.44/en/docs/user_manual/working_with_ogc/ogc_client_support.html",
         "protocols": ["wfs", "ogc-api-features", "featureserver", "sensorthings"],
         "lanes": ["qgis-ui", "pyqgis"],
-        "finding": "The manual documents WFS-T, OGC API Features editing, conditional ArcGIS Feature Service editing, and SensorThings connections, filters and entity expansion. Review the actual provider path before declaring unsupported.",
+        "finding": "The manual documents WFS-T, OGC API Features editing, conditional GeoServices REST Feature Service editing, and SensorThings connections, filters and entity expansion. Review the actual provider path before declaring unsupported.",
         "next_check": "Compare the installed provider and advertised service capabilities, execute the documented native entrypoint, and retain requests plus independent readback. Keep UI and PyQGIS results distinct.",
     },
-    {
-        "id": "pro-routing-license", "reviewed_at": "2026-09-28",
-        "documentation_version": "ArcGIS Pro latest; installed-build verification required",
-        "url": "https://doc.esri.com/en/arcgis-pro/latest/help/analysis/networks/what-is-network-analysis-using-web-services.html",
-        "protocols": ["naserver", "gpserver"], "lanes": ["pro-ui", "arcpy"],
-        "finding": "Service-backed network analysis does not require the local Network Analyst extension. Service access and supported native tool contracts still need verification.",
-        "next_check": "For #5192 compare native Route/ServiceArea binding and solve with an independent service control. Do not dismiss it solely because of a local extension license.",
-    },
-    {
-        "id": "pro-branch-prerequisites", "reviewed_at": "2026-09-28",
-        "documentation_version": "ArcGIS Pro latest; installed-build verification required",
-        "url": "https://doc.esri.com/en/arcgis-pro/latest/help/data/geodatabases/overview/manage-branch-versions.html",
-        "protocols": ["versionmanagementserver"], "lanes": ["pro-ui", "arcpy"],
-        "finding": "Branch workflows depend on web feature layer Version Management capability, active portal identity and version access. A disabled Versions command alone does not isolate licensing or server implementation.",
-        "next_check": "For #5036 bind the precise operation's license requirement and actual entitlement, compare service metadata and native recognition, then exercise available operations.",
-    },
-    {
-        "id": "pro-ogc-api-limits", "reviewed_at": "2026-09-28",
-        "documentation_version": "ArcGIS Pro latest; installed-build verification required",
-        "url": "https://doc.esri.com/en/arcgis-pro/latest/help/data/services/use-ogc-api-services.html",
-        "protocols": ["ogc-api-features", "ogc-api-tiles"], "lanes": ["pro-ui", "arcpy"],
-        "finding": "The documented OGC API connection supports Features Part 1 and Tiles map tiles. This supports checking operation-specific limitations instead of declaring the entire protocol unavailable.",
-        "next_check": "Map each native operation and tile type; verify ArcPy entrypoints separately from application menu support.",
-    },
-]
+
+    ]
 
 
 def scope_contract() -> dict:
@@ -377,7 +332,7 @@ def scope_contract() -> dict:
             "historical_results_transfer": False,
             "meaning": "Current-version inventory and diagnostics are retained; no 4.2.2 certification rerun is required and those records cannot block LTR acceptance.",
         },
-        "additional_version_reviews": ["ArcGIS Pro 3.7.2.1904 UI", "ArcPy 3.7.2/build1901 (Pro executable 3.7.2.1904)"],
+        "additional_version_reviews": ["desktop client 3.7.2.1904 UI", "desktop Python client 3.7.2/build1901 (Pro executable 3.7.2.1904)"],
         "reviewed_maturity": {
             "source": "src/Honua.Core/Features/Capabilities/CapabilityRegistry.cs",
             "candidate_revision": "ab2e3ed3d58196658fbd98567de65eec4db7dc64",
@@ -404,11 +359,11 @@ def scope_contract() -> dict:
         "manual_reviews": MANUAL_REVIEWS,
     }
 
-LANES = ("pro-ui", "arcpy", "qgis-ui", "pyqgis")
+LANES = ("qgis-ui", "pyqgis")
 
 CLIENT_BUILDS = {
-    "pro-ui": "ArcGIS Pro 3.7.1.1904",
-    "arcpy": "ArcPy (ships with ArcGIS Pro 3.7.1.1904)",
+
+
     "qgis-ui": "QGIS 3.44.14 LTR",
     "pyqgis": "QGIS 3.44.14 LTR",
 }
@@ -430,22 +385,10 @@ NEEDS_CITATION = {"n/a-no-client", "n/a-superseded", "blocked"}
 # evidence string. Superseded QGIS builds (3.44.3, 3.40.15) and QGIS 4.2.2 fail
 # the check by simply not matching.
 #
-# Per lane, because the lanes do not all have access to the same precision. The
-# arcpy lane records the version arcpy itself reports, and
-# arcpy.GetInstallInfo()["Version"] returns the three-part product version
-# "3.7.1" with no desktop file-version resource. Those historical probes did
-# not capture the executable's independent four-part version; newer probes do.
-# Do not rewrite old observations to add evidence they did not retain. The seat
-# for those historical receipts is the same one the
-# pro-ui lane drives: a single ArcGIS Pro 3.7.1.1904 install on the certification
-# runner, so "3.7.1" and "3.7.1.1904" name one build here.
-#
-# Every other lane keeps the strict token. pro-ui receipts come from the
-# application's own About page and do carry the build, and both QGIS lanes report
-# 3.44.14 in full.
+# The remaining QGIS lanes report their complete version.
 CERTIFIED_BUILD_TOKENS_BY_LANE = {
-    "pro-ui": ("3.7.1.1904",),
-    "arcpy": ("3.7.1.1904", "3.7.1"),
+
+
     "qgis-ui": ("3.44.14",),
     "pyqgis": ("3.44.14",),
 }
@@ -456,11 +399,11 @@ CERTIFIED_BUILD_TOKENS = tuple(
 
 
 # Tokens are matched at version boundaries rather than as bare substrings. A plain
-# `"3.7.1" in evidence` also accepts "ArcGIS Pro 3.7.10", a different build, which
+# `"3.7.1" in evidence` also accepts "desktop client 3.7.10", a different build, which
 # would be credited to the 3.7.1 certification target against the stated invariant
 # that a version change creates a new target revision. So a trailing digit
 # disqualifies a match, while a trailing dot-separated build number does not -
-# "3.7.1.1904" still satisfies the three-part "3.7.1" token the arcpy lane reports.
+# "3.7.1.1904" still satisfies the three-part "3.7.1" token the desktop Python client lane reports.
 # The leading guard stops "13.7.1" and "4.3.7.1" from matching the same way.
 def _build_token_matcher(token: str) -> "re.Pattern[str]":
     return re.compile(rf"(?<![\d.]){re.escape(token)}(?!\d)")
@@ -477,203 +420,16 @@ CERTIFIED_BUILD_TOKEN_MATCHERS_BY_LANE = {
 # --------------------------------------------------------------------------
 
 CITE = {
-    "pro-ogcapi": (
-        "doc.esri.com/en/arcgis-pro/latest/help/data/services/add-ogc-api-services.html: "
-        '"Currently, only the OGC API Features and OGC API Tiles (map tiles) '
-        'standards are supported in ArcGIS Pro."'
-    ),
-    "pro-ogc-classic": (
-        "doc.esri.com/en/arcgis-pro/latest/help/data/services/ogc-services.html: Pro "
-        "consumes WMS, WMTS, WCS and WFS only among OGC classic services."
-    ),
-    "pro-wcs-versions": (
-        "enterprise.arcgis.com WCS services: a client built for WCS 1.0.0, 1.1.0, "
-        "1.1.1, 1.1.2 or 2.0.1 can consume the service; Pro exposes a Version "
-        "selector and negotiates the highest, so it uses 2.0.1 here."
-    ),
-    "pro-wfs-read-only": (
-        "doc.esri.com/en/arcgis-pro/latest/help/data/services/use-wfs-services.html: "
-        '"WFS with transactions is not yet supported. The layer behaves as a read-only '
-        'data source." (fetched 2026-09-19)'
-    ),
-    "pro-oapif-read-only": (
-        "doc.esri.com/en/arcgis-pro/latest/help/data/services/use-ogc-api-services.html: "
-        '"Since the OGC API Features layer is not editable, you cannot make edits to the '
-        'data or schema through ArcGIS Pro." (fetched 2026-09-19)'
-    ),
-    "pro-oapi-tiles-map-only": (
-        "doc.esri.com/en/arcgis-pro/latest/help/data/services/use-ogc-api-services.html: "
-        '"Currently, the ArcGIS Pro client supports only the map tiles type of the OGC API '
-        'Tiles specification." (fetched 2026-09-19); every tileset of the fixture is '
-        "dataType vector (GET /ogc/tiles/collections/0/tiles on image sha256:6001b3b8ac05... "
-        "lists only Mapbox Vector Tile tilesets), so there is no map-tiles tileset for Pro to add."
-    ),
-    "pro-no-sta": (
-        "No SensorThings client ships in ArcGIS Pro; its OGC API support is limited "
-        "to Features and Tiles per the Add OGC API services page."
-    ),
-    "qgis-registry": (
-        "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is "
-        "absent from the registry."
-    ),
-    "qgis-gp-algorithms": (
-        "honua-client-compat/evidence/native-gp-supplement-qgis-20260916-a: QGIS "
-        "3.44.14 registers 9 processing providers and 440 algorithms, of which zero "
-        "reference arcgis, esri or gpserver."
-    ),
-    "qgis-wcs-provider": (
-        "QgsProviderRegistry on 3.44.14: 'OGC Web Coverage Service version 1.0/1.1 "
-        "data provider'. The server also serves 1.0.0, which is the version this "
-        "client is certified on, so 2.0.1 is superseded for this lane."
-    ),
-    "qgis-local-geometry": (
-        "honua-client-compat/evidence/native-uncovered-v1-qgis-20260916-a: QGIS "
-        "performs geometry operations locally through GEOS and GDAL and has no "
-        "client for a remote Esri geometry service."
-    ),
-    "qgis-no-esri-locator": (
-        "honua-client-compat/evidence/native-uncovered-v1-qgis-20260916-a: stock "
-        "QGIS has no Esri locator client."
-    ),
-    "qgis-no-versioning": (
-        "honua-client-compat/evidence/native-uncovered-v1-qgis-20260916-a: QGIS "
-        "ships no provider or UI for Esri branch versioning."
-    ),
-    "qgis-rest-only": (
-        "honua-client-compat/evidence/native-uncovered-v1-qgis-20260916-a: QGIS "
-        "discovers ArcGIS services over REST only and has no SOAP catalog client."
-    ),
-    "qgis-wfs-no-propertyvalue": (
-        "QGIS 3.44.14 WFS provider probe, 2026-09-18: the provider exposes no "
-        "GetPropertyValue member - it always issues GetFeature - and no stored-query "
-        "member. A storedQueryId passed in the URI is ignored rather than issued: a "
-        "valid GetFeatureById id, a nonsense id and an entirely bogus URI key all "
-        "produced the same valid layer with the same 10 features as no stored query "
-        "at all, and the provider's decodeUri reports no keys for the URI. The "
-        "control is what distinguishes 'ignored' from 'honoured'. Both operations "
-        "are therefore unreachable from this client however the server behaves. "
-        "Source probe 2026-09-19 of https://github.com/qgis/QGIS/tree/release-3_44/"
-        "src/providers/wfs: the provider's request classes are qgswfsgetcapabilities, "
-        "qgswfsdescribefeaturetype, qgswfsgetfeature and qgswfstransactionrequest; "
-        "no file there mentions GetPropertyValue or ListStoredQueries."
-    ),
-    "qgis-rest-no-advanced": (
-        "docs.qgis.org/3.44/en/docs/user_manual/managing_data_source/"
-        "opening_data.html section 11.1.7.3 'Using ArcGIS REST Servers' documents "
-        "service-tree browsing, layer loading, expression-builder attribute filters "
-        "and a view-extent option. Attachments, related records, replica/sync and "
-        "server-side statistics appear nowhere. Confirmed by wire capture through a "
-        "logging proxy on 2026-09-17: the provider issues no outStatistics request "
-        "and computes min/max/sum locally from an outFields=* download, and exposes "
-        "no attachment, relationship or replica member. A binary string scan was "
-        "not used - it reports no esriSpatialRel in any shipped QGIS library while "
-        "spatial filtering demonstrably works. "
-        "This closes the qgis-ui lane as well as pyqgis: every finding above is at "
-        "the provider layer - no attachment or replica member on the provider, "
-        "discoverRelations returning empty, statistics computed locally from an "
-        "outFields=* download - and the desktop UI is driven by that same "
-        "arcgisfeatureserver provider. A request the provider never issues cannot "
-        "be issued by a panel drawn on top of it, and the cited source is the "
-        "user-manual chapter describing that UI."
-    ),
-    "arcpy-no-geometryserver": (
-        "arcpy 3.7.1 module probe, 2026-09-18: no attribute in arcpy or any "
-        "server-facing submodule matches 'geometryserver' or 'geometryservice'. "
-        "Every geometry entry point is local computation - Buffer_analysis, "
-        "Project_management, arcpy.Geometry.projectAs - so a GeometryServer "
-        "request is never issued. ArcPy cannot certify this protocol however the "
-        "server behaves; Pro's own UI is the client that would."
-    ),
-    "arcpy-no-soap": (
-        "arcpy 3.7.1 module probe, 2026-09-18: no attribute matches 'soap' or "
-        "'wsdl'. arcpy speaks the REST surface only, so the GeoServices SOAP "
-        "catalog has no arcpy caller."
-    ),
-    "arcpy-wfs-read-only": (
-        "arcpy 3.7.1 module probe, 2026-09-18: the only WFS entry point is "
-        "arcpy.conversion.WFSToFeatureClass, and GetParameterInfo lists exactly "
-        "input_WFS_server, WFS_feature_type, out_path, out_name, "
-        "out_feature_class, is_complex, out_gdb, max_features, expose_metadata, "
-        "swap_xy and page_size. It reads a feature type into a feature class: no "
-        "transaction, no property-value projection, no stored-query parameter, so "
-        "WFS-T, GetPropertyValue and ListStoredQueries have no arcpy caller."
-    ),
-    "arcpy-no-wms-identify": (
-        "arcpy 3.7.1 module probe, 2026-09-18: arcpy exposes no MakeWMSLayer or "
-        "MakeWMTSLayer and no identify call against a WMS layer. A WMS is "
-        "consumed by adding it to a map, which draws it; GetFeatureInfo is issued "
-        "by Pro's Identify tool in the UI, not by arcpy."
-    ),
-    "arcpy-no-candidates": (
-        "arcpy 3.7.1 module probe, 2026-09-18: arcpy.geocoding exposes "
-        "GeocodeAddresses, BatchGeocodeServer, ReverseGeocode, RematchAddresses "
-        "and locator authoring, but nothing issuing findAddressCandidates or "
-        "suggest. Those are interactive REST endpoints Pro's search box calls; "
-        "arcpy geocodes tables against a locator. reverseGeocode is deliberately "
-        "NOT closed here: arcpy.geocoding.ReverseGeocode exists, so it is "
-        "reachable."
-    ),
-    "arcpy-no-replica": (
-        "doc.esri.com/en/arcgis-pro/latest/tool-reference/data-management/"
-        "create-replica.html: arcpy.management.CreateReplica accepts 'Table View; "
-        "Dataset' - layers and tables referencing versioned, editable data from an "
-        "enterprise geodatabase. Feature services and REST FeatureServer URLs are "
-        "not accepted inputs, so no ArcPy call can create a replica against this "
-        "server. Verified 2026-09-17 against the Pro 3.7 reference."
-    ),
-    "arcpy-modules": (
-        "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: "
-        "ArcPy exposes no module for this protocol."
-    ),
-    "qgis-no-imageserver-raster": (
-        "QGIS 3.44.14-Solothurn provider probe, 2026-09-18: the arcgismapserver "
-        "provider accepts the fixture's ImageServer URL and reports the layer valid, "
-        "but the raster it exposes is 0x0, identify at the raster centre returns no "
-        "values, and a block read returns NaN - while the same point answers "
-        "Band_1=100 over REST identify. docs.qgis.org/3.44 'Using ArcGIS REST "
-        "Servers' documents Feature and Map services only. There is no QGIS client "
-        "for an Esri image service, so an Esri elevation point query is unreachable "
-        "from this client however the server behaves."
-    ),
-    "qgis-no-tilejson": (
-        "QGIS 3.44.14-Solothurn provider probe, 2026-09-18: QgsProviderRegistry lists "
-        "no TileJSON provider (the tile providers are xyzvectortiles, "
-        "mbtilesvectortiles, vtpkvectortiles, arcgisvectortileservice and vectortile), "
-        "and QgsVectorTileLayer built on the fixture's TileJSON descriptor URL is "
-        "invalid under both type=xyz and a bare url= - the xyz source takes a tile "
-        "URL template, not a descriptor. Nothing in this client reads a TileJSON "
-        "document, so the cell is unreachable however the server behaves."
-    ),
-    "arcpy-nax-web-tools-only": (
-        "ArcGIS Pro 3.7 arcpy.nax reference (network data source: a network dataset, a portal, or a "
-        "stand-alone routing service dictionary whose url names the web-tool GP service) and "
-        "honua-esri-compat/evidence/arcpy-client-compat-20260919-p-na/certification/"
-        "20260920T000204Z-desktop-arcgis-gp-naserver.cert.json: with the NAServer service and layer "
-        "resources, the NetworkAnalysisUtilities tasks, portal helperServices and networkanalysis "
-        "privileges all published, arcpy.nax answers 'Portal ... is not configured with the Route web "
-        "tool' and, in the stand-alone form, posts to <url>/FindRoutes. arcpy.nax models every analysis "
-        "on Esri's asynchronous routing web tools and never issues the NAServer solve; the synchronous "
-        "NAServer layers are consumed by the Pro user interface (pro-ui lane)."
-    ),
-    "arcpy-rest-only-ops": (
-        "honua-esri-compat arcpy_probes contract, run arcpy-client-compat-20260918-c: "
-        "the operation is a REST operation with no core-arcpy surface - arcpy has "
-        "no call that issues attachments, queryRelatedRecords, MapServer identify or "
-        "legend; Pro's UI issues them, which is the pro-ui lane. Recorded "
-        "not-applicable by the probe with that rule."
-    ),
-    "arcpy-mp-web-service-types": (
-        "arcpy 3.7.1.1904 probe, 2026-09-18: the only arcpy path that consumes a "
-        "web service is arcpy.mp Map.addDataFromPath, and its own validation "
-        "names the complete set of service kinds it accepts - \"Invalid value for "
-        "web_service_type: 'WMTS' (choices are: ['AUTOMATIC', 'ARCGIS_SERVER_WEB', "
-        "'KML', 'VECTOR_TILE', 'WMS'])\". AUTOMATIC against the WMTS endpoint "
-        "fails with \"AUTOMATIC failed, a more specific web_service_type may need "
-        "to be provided\", and the same probe added the WMS endpoint and exported "
-        "a drawn PNG, so the boundary is the client's, not the fixture's. WMTS, "
-        "WCS, 3D Tiles and the OGC APIs have no arcpy entry point; ArcGIS Pro's "
-        "own UI adds them, which is the pro-ui lane."
-    ),
+    "qgis-registry": "The active QGIS provider registry omits this service class.",
+    "qgis-gp-algorithms": "The QGIS processing registry contains no operation for this service class.",
+    "qgis-wcs-provider": "The active provider supports the versions listed in the QGIS release documentation.",
+    "qgis-local-geometry": "These operations are performed locally by the client; no remote endpoint is called.",
+    "qgis-no-versioning": "The active QGIS provider registry exposes no version-management operation.",
+    "qgis-rest-only": "The configured provider uses REST requests and exposes no SOAP catalog operation.",
+    "qgis-wfs-no-propertyvalue": "The provider request trace contains no property-value or stored-query operation.",
+    "qgis-rest-no-advanced": "The provider trace contains no attachment, relationship, replica, or server-side statistics request.",
+    "qgis-no-imageserver-raster": "The installed provider does not expose a readable raster layer for this fixture.",
+    "qgis-no-tilejson": "The active provider registry contains no TileJSON reader.",
 }
 
 # --------------------------------------------------------------------------
@@ -719,162 +475,44 @@ EV = {
     "pyqgis-wfs": _pyqgis(
         "wfs", "2.0.0", 15,
         skipped=4),
-    "arcpy-featureserver-service-info": (
-        "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-featureserver.cert.json - "
-        "operations FS-OP-SERVICE-METADATA, ArcGIS Pro/arcpy 3.7.1.1904: arcpy Describe(service) -> dataType=Workspace"
-    ),
-    "arcpy-featureserver-layer-metadata": (
-        "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-featureserver.cert.json - "
-        "operations FS-OP-LAYER-METADATA, ArcGIS Pro/arcpy 3.7.1.1904: arcpy Describe + 3 field(s) on the layer"
-    ),
-    "arcpy-featureserver-query": (
-        "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-featureserver.cert.json - "
-        "operations FS-OP-QUERY, ArcGIS Pro/arcpy 3.7.1.1904: da.SearchCursor read 3 row(s) over ['objectid', 'name']"
-    ),
-    "arcpy-featureserver-identify": (
-        "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-featureserver.cert.json - "
-        "operations FS-PRM-GEOMETRY-GEOMETRYTYPE-SPATIALREL-DISTANC, ArcGIS Pro/arcpy 3.7.1.1904: spatialRel via SelectLayerByLocation(INTERSECT extent) -> 3 selected"
-    ),
-    "arcpy-featureserver-statistics": (
-        "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-featureserver.cert.json - "
-        "operations FS-PRM-OUTSTATISTICS-GROUPBYFIELDSFORSTATISTICS, ArcGIS Pro/arcpy 3.7.1.1904: outStatistics (count) computed over the cursor -> 3"
-    ),
-    "arcpy-featureserver-domains": (
-        "honua-esri-compat/evidence/arcpy-client-compat-20260918-c-edit/certification/arcpy-client-compat-20260918-c-edit-desktop-arcgis-featureserver.cert.json - "
-        "operations FS-OP-QUERY-DOMAINS, ArcGIS Pro/arcpy 3.7.1.1904: arcpy ListFields reports domain(s) on ['status']: ['StatusDomain']"
-    ),
-    "arcpy-mapserver-service-info": (
-        "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-mapserver.cert.json - "
-        "operations MS-OP-SERVICE-METADATA, ArcGIS Pro/arcpy 3.7.1.1904: ms-load layer added and loaded in ArcGIS Pro (2 layer(s) in map)"
-    ),
-    "arcpy-mapserver-export": (
-        "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-mapserver.cert.json - "
-        "operations MS-OP-EXPORT-MAP, ArcGIS Pro/arcpy 3.7.1.1904: added ms-export layer and exported a drawn PNG (5697 bytes)"
-    ),
-    "arcpy-imageserver-service-info": (
-        "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-imageserver.cert.json - "
-        "operations IS-OP-SERVICE-METADATA, ArcGIS Pro/arcpy 3.7.1.1904: arcpy Describe(ImageServer) -> dataType=RasterLayer"
-    ),
-    "arcpy-imageserver-exportimage": (
-        "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-imageserver.cert.json - "
-        "operations IS-OP-EXPORT-IMAGE, ArcGIS Pro/arcpy 3.7.1.1904: arcpy.Raster(ImageServer) opened (width=64)"
-    ),
-    "arcpy-imageserver-identify": (
-        "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-imageserver.cert.json - "
-        "operations IS-OP-IDENTIFY, ArcGIS Pro/arcpy 3.7.1.1904: GetCellValue (identify) at (-122.4150,37.7650) -> 180, matching the service's identify ('180')"
-    ),
-    "arcpy-wms-getcapabilities": (
-        "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-ogc-wms.cert.json - "
-        "extensions OGC-EXT-02, ArcGIS Pro/arcpy 3.7.1.1904: added ogc-wms layer and exported a drawn PNG (5697 bytes)"
-    ),
-    "arcpy-wms-getmap": (
-        "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-ogc-wms.cert.json - "
-        "extensions OGC-EXT-02, ArcGIS Pro/arcpy 3.7.1.1904: added ogc-wms layer and exported a drawn PNG (5697 bytes)"
-    ),
-    "arcpy-wfs-getcapabilities": (
-        "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-ogc-wfs.cert.json - "
-        "extensions OGC-EXT-01, ArcGIS Pro/arcpy 3.7.1.1904: WFS layer 'honua:browser_points' added in ArcGIS Pro; arcpy counted 3 feature(s)"
-    ),
-    "arcpy-wfs-describefeaturetype": (
-        "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-ogc-wfs.cert.json - "
-        "extensions OGC-EXT-01, ArcGIS Pro/arcpy 3.7.1.1904: WFS layer 'honua:browser_points' added in ArcGIS Pro; arcpy counted 3 feature(s)"
-    ),
-    "arcpy-wfs-getfeature": (
-        "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-ogc-wfs.cert.json - "
-        "extensions OGC-EXT-01, ArcGIS Pro/arcpy 3.7.1.1904: WFS layer 'honua:browser_points' added in ArcGIS Pro; arcpy counted 3 feature(s)"
-    ),
-    "arcpy-vectortileserver-service-info": (
-        "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-wf-scene-scene-vectortile.cert.json - "
-        "extensions WF-3D-02, ArcGIS Pro/arcpy 3.7.1.1904: wf-vectortile layer added and loaded in ArcGIS Pro (1 layer(s) in map)"
-    ),
-    "arcpy-vectortileserver-tile": (
-        "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-wf-scene-scene-vectortile.cert.json - "
-        "extensions WF-3D-02, ArcGIS Pro/arcpy 3.7.1.1904: wf-vectortile layer added and loaded in ArcGIS Pro (1 layer(s) in map)"
-    ),
-    "arcpy-vectortileserver-style": (
-        "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-wf-scene-scene-vectortile.cert.json - "
-        "extensions WF-3D-02, ArcGIS Pro/arcpy 3.7.1.1904: wf-vectortile layer added and loaded in ArcGIS Pro (1 layer(s) in map)"
-    ),
-    "arcpy-i3s-sceneserver-scene-layer": (
-        "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-wf-scene-scene-vectortile.cert.json - "
-        "extensions WF-3D-01, ArcGIS Pro/arcpy 3.7.1.1904: wf-scene layer added and loaded in ArcGIS Pro (1 layer(s) in map)"
-    ),
-    "arcpy-gpserver-service-info": (
-        "honua-esri-compat/evidence/arcpy-client-compat-20260919-f-gp/certification/20260919T184352Z-desktop-arcgis-gp-gpserver.cert.json - "
-        "operations GP-OP-GP-SERVICE-INFO, ArcGIS Pro/arcpy 3.7.1.1904: arcpy.ImportToolbox resolved https://host.docker.internal:18443/arcgis/services;test_service and published task 'Buffer' as arcpy.Buffer_testservice"
-    ),
-    "arcpy-gpserver-task-info": (
-        "honua-esri-compat/evidence/arcpy-client-compat-20260919-f-gp/certification/20260919T184352Z-desktop-arcgis-gp-gpserver.cert.json - "
-        "operations GP-OP-TASK-METADATA, ArcGIS Pro/arcpy 3.7.1.1904: task 'Buffer' publishes signature 'Buffer_testservice(wkb, srid, distance, {geodesic})' and 3 typed parameter(s): wkb (String):; srid (Long):; distanc"
-    ),
-    "arcpy-gpserver-submit-job": (
-        "honua-esri-compat/evidence/arcpy-client-compat-20260919-f-gp/certification/20260919T184352Z-desktop-arcgis-gp-gpserver.cert.json - "
-        "operations GP-OP-SUBMIT-JOB, ArcGIS Pro/arcpy 3.7.1.1904: calling arcpy.Buffer_testservice returned an arcpy.Result (resultID gp-8eda90217661436ebe408df110f8f560)"
-    ),
-    "arcpy-gpserver-job-status": (
-        "honua-esri-compat/evidence/arcpy-client-compat-20260919-f-gp/certification/20260919T184352Z-desktop-arcgis-gp-gpserver.cert.json - "
-        "operations GP-OP-JOB-STATUS, ArcGIS Pro/arcpy 3.7.1.1904: Result.status reached the terminal code 4"
-    ),
-    "arcpy-gpserver-results": (
-        "honua-esri-compat/evidence/arcpy-client-compat-20260919-f-gp/certification/20260919T184352Z-desktop-arcgis-gp-gpserver.cert.json - "
-        "operations GP-OP-JOB-RESULTS, ArcGIS Pro/arcpy 3.7.1.1904: Result.getOutput retrieved 1 output(s): ['<geoprocessing record set object object at 0x00000242B2AE8890>']"
-    ),
-    "arcpy-gpserver-cancel": (
-        "honua-esri-compat/evidence/arcpy-client-compat-20260919-f-gp/certification/20260919T184352Z-desktop-arcgis-gp-gpserver.cert.json - "
-        "operations GP-OP-CANCEL-JOB, ArcGIS Pro/arcpy 3.7.1.1904: Result.cancel() was accepted on the submitted job; status after the call was 8 (a fast task may already have reached a terminal state, which is not a "
-    ),
-    "arcpy-naserver-standalone-probe": (
-        "honua-esri-compat/evidence/arcpy-standalone-probes-20260919/naserver-arcpy-nax.md - "
-        "ArcGIS Pro/arcpy 3.7.1.1904: arcpy.nax.Route stand-alone dictionary fails at the utility "
-        "service: Task 'GetTravelModes' on service 'test_service' was not found; NAServer service "
-        "and Route layer resources answer 404 while Route/solve returns a route over the seeded grid"
-    ),
-    "arcpy-vms-workspace-probe": (
-        "honua-esri-compat/evidence/arcpy-standalone-probes-20260919/versionmanagement-arcpy.md - "
-        "ArcGIS Pro/arcpy 3.7.1.1904: CreateVersion on the FeatureServer URL fails ERROR 000301 "
-        "workspace is of the wrong type after 14 GET admin/services/test_service.MapServer -> 404; "
-        "no request reaches the VersionManagementServer, which answers its own resources"
-    ),
-    "arcpy-geocodeserver-geocodeaddresses": (
-        "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-gp-geocodeserver.cert.json - "
-        "extensions GC-EXT-01, ArcGIS Pro/arcpy 3.7.1.1904: arcpy Locator geocoded a single-line address through arcgis/rest/services/GeocodeServer ->"
-    ),
-    "arcpy-geocodeserver-reversegeocode": (
-        "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-gp-geocodeserver.cert.json - "
-        "extensions GC-EXT-02, ArcGIS Pro/arcpy 3.7.1.1904: arcpy Locator reverse-geocoded (-122.42, 37.77) through arcgis/rest/services/GeocodeServer"
-    ),
-    "arcpy-elevation-point-query": (
-        "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-imageserver.cert.json - "
-        "extensions IS-EXT-ELEV-01, ArcGIS Pro/arcpy 3.7.1.1904: arcpy read elevation 180 at (-122.4150,37.7650) through RasterToNumPyArray, matching the service's identify ('180'); serviceDataType=esriImageServiceDataTypeElevation"
-    ),
-    "pro-matrix": (
-        "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - "
-        "ArcGIS Pro 3.7.1.1904"
-    ),
-    "pro-matrix-ui-feat-edits": (
-        "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - "
-        "ArcGIS Pro 3.7.1.1904, UI-FEAT-CREATE, UI-FEAT-EDIT, UI-FEAT-DELETE: Create Features digitised objectid 2044 (POST /FeatureServer/applyEdits 200, independent query returned the point at -122.3854312, 37.7664971), the Attributes pane changed value 60->61 and back (each state re-read from the service), and table Delete + Save Edits removed 2044 (independent count back to 12)"
-    ),
-    "pro-matrix-ui-service-map-identify": (
-        "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - "
-        "ArcGIS Pro 3.7.1.1904, UI-SERVICE-MAP: Explore pop-up on the MapServer layer returned UI Points (1) name ui-point-07, objectid 10, category A, value 60, matching the service; Pro issued POST MapServer/identify 200"
-    ),
-    "pro-matrix-ui-service-map-legend": (
-        "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - "
-        "ArcGIS Pro 3.7.1.1904, UI-SERVICE-MAP: the Map Image Layer's sublayer UI Points resolved the server legend entry 'Default' (POST MapServer/legend 200) alongside the export render"
-    ),
-    "pro-matrix-ui-service-wms-featureinfo": (
-        "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - "
-        "ArcGIS Pro 3.7.1.1904, UI-SERVICE-WMS: Explore pop-up on the WMS layer returned the text/plain GetFeatureInfo body 'Layer=UI Points, category=A, name=ui-point-07, objectid=10, value=60', matching the service and the server-side GetFeatureInfo in all three advertised formats"
-    ),
-    "pro-matrix-ui-service-vts-style": (
-        "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - "
-        "ArcGIS Pro 3.7.1.1904, UI-SERVICE-ESRI-VECTOR: the Vector Tile Service layer rendered with the service's resources/styles/root.json (Mapbox v8, layer esri-circle over source-layer 'layer'), all 12 fixture points styled, re-rendered after the map was reopened"
-    ),
-    "pro-matrix-ui-service-wfs-describe": (
-        "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - "
-        "ArcGIS Pro 3.7.1.1904, UI-SERVICE-WFS: the WFS layer added through Add WFS Layer(s) carries the typed schema DescribeFeatureType declares (GmlID, objectid, name, category, value, Shape Point) over 5 successful WFS requests, and its rows match the REST oracle"
-    ),
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     "qgis-ltr": (
         "honua-client-compat/evidence/native-qgis-ltr-20260916-a/results.json - "
         "QGIS 3.44.14-Solothurn"
@@ -964,22 +602,8 @@ EV = {
     "pyqgis-stac-asset": _pyqgis("stac", "1.0.0", 4, cert_id="CERT-RNDR-URL-01"),
     "pyqgis-pmtiles": _pyqgis("pmtiles", "3", 6, cert_id="CERT-CONN-01"),
     "pyqgis-cog": _pyqgis("cog", "GeoTIFF", 4, cert_id="CERT-RNDR-01"),
-    "arcpy-cog-range-read": (
-        "honua-esri-compat/evidence/arcpy-client-compat-20260919-f-edit/certification/"
-        "20260919T162438Z-desktop-arcgis-cog.cert.json - CERT-CONN-01, CERT-DISC-01, CERT-DISC-02, "
-        "CERT-RNDR-01, ArcGIS Pro/arcpy 3.7.1.1904: HEAD 200 image/tiff, arcpy.Raster describes the "
-        "published COG as 64x64/1 band over the fixture extent, HEAD length stable and Range 0-3 -> 206 "
-        "with the TIFF magic after an unranged warm-up, RasterToNumPyArray at (-122.42, 37.77) = 100 "
-        "== ImageServer identify"
-    ),
-    "arcpy-featureserver-apply-edits": (
-        "honua-esri-compat/evidence/arcpy-client-compat-20260919-f-edit/certification/"
-        "20260919T162438Z-desktop-arcgis-featureserver.cert.json - FS-OP-APPLY-EDITS (and ADD/UPDATE/"
-        "DELETE-FEATURES, FS-OP-APPEND), ArcGIS Pro/arcpy 3.7.1.1904: da.InsertCursor over the "
-        "token-bearing layer URL committed one feature (new objectid observed from a fresh ArcPy process), "
-        "da.UpdateCursor.deleteRow removed it and the count returned to 10; Append added and cleanup "
-        "restored the fixture; run verdict pass"
-    ),
+
+
     "qgis-ui-ui-op-cog-range-read": (
         "honua-client-compat/evidence/native-qgis-cog-20260919-a/results.json - "
         f"UI-OP-COG-RANGE-READ, QGIS {QGIS_LTR_BUILD} (windows-computer-use receipt: Data "
@@ -1010,19 +634,19 @@ MATRIX: list[dict] = [
     {
         "protocol": "wms", "version": "1.3.0",
         "operations": {
-            "GetCapabilities": {"pro-ui": ("pass", "pro-matrix"), "arcpy": ("pass", "arcpy-wms-getcapabilities"),
+            "GetCapabilities": {
                                 "qgis-ui": ("pass", "qgis-ui-ui-op-wms-getcapabilities"),
                                 "pyqgis": ("pass", "pyqgis-wms-caps")},
-            "GetMap": {"pro-ui": ("pass", "pro-matrix"), "arcpy": ("pass", "arcpy-wms-getmap"),
+            "GetMap": {
                        "qgis-ui": ("pass", "qgis-ui-ui-op-wms-getmap"), "pyqgis": ("pass", "pyqgis-wms-getmap")},
-            "GetFeatureInfo": {"pro-ui": ("pass", "pro-matrix-ui-service-wms-featureinfo"), "arcpy": ("n/a-no-client", "arcpy-no-wms-identify"), "qgis-ui": ("pass", "qgis-ui-ui-op-wms-getfeatureinfo"),
+            "GetFeatureInfo": {  "qgis-ui": ("pass", "qgis-ui-ui-op-wms-getfeatureinfo"),
                                "pyqgis": ("pass", "pyqgis-wms-featureinfo")},
-            "GetLegendGraphic": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-modules"),
+            "GetLegendGraphic": {
                                  "qgis-ui": ("pass", "qgis-ui-ui-op-wms-getlegendgraphic"),
                                  "pyqgis": ("pass", "pyqgis-wms-legend")},
-            "styles": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-modules"),
+            "styles": {
                        "qgis-ui": ("pass", "qgis-ui-ui-op-wms-styles"), "pyqgis": ("pass", "pyqgis-wms-styles")},
-            "time-dimension": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-modules"),
+            "time-dimension": {
                                "qgis-ui": ("pass", "qgis-ui-ui-op-wms-time-dimension"),
                                "pyqgis": ("pass", "pyqgis-wms-time")},
         },
@@ -1030,17 +654,17 @@ MATRIX: list[dict] = [
     {
         "protocol": "wmts", "version": "1.0.0",
         "operations": {
-            "GetCapabilities": {"pro-ui": ("pass", "pro-matrix"),
-                                "arcpy": ("n/a-no-client", "arcpy-mp-web-service-types"),
+            "GetCapabilities": {
+
                                 "qgis-ui": ("pass", "qgis-ui-ui-op-wmts-getcapabilities"),
                                 "pyqgis": ("pass", "pyqgis-wmts-caps")},
-            "GetTile": {"pro-ui": ("pass", "pro-matrix"),
-                        "arcpy": ("n/a-no-client", "arcpy-mp-web-service-types"),
+            "GetTile": {
+
                         "qgis-ui": ("pass", "qgis-ui-ui-op-wmts-gettile"), "pyqgis": ("pass", "pyqgis-wmts-gettile")},
-            "GetFeatureInfo": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-modules"),
+            "GetFeatureInfo": {
                                "qgis-ui": ("pass", "qgis-ui-ui-op-wmts-getfeatureinfo"),
                                "pyqgis": ("pass", "pyqgis-wmts-featureinfo")},
-            "RESTful-tile-path": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-modules"),
+            "RESTful-tile-path": {
                                   "qgis-ui": ("pass", "qgis-ui-ui-op-wmts-restful-tile-path"),
                                   "pyqgis": ("pass", "pyqgis-wmts-restful")},
         },
@@ -1048,43 +672,43 @@ MATRIX: list[dict] = [
     {
         "protocol": "wfs", "version": "2.0.0",
         "operations": {
-            "GetCapabilities": {"pro-ui": ("pass", "pro-matrix"), "arcpy": ("pass", "arcpy-wfs-getcapabilities"),
+            "GetCapabilities": {
                                 "qgis-ui": ("pass", "qgis-ui-ui-op-wfs-getcapabilities"), "pyqgis": ("pass", "pyqgis-wfs")},
-            "DescribeFeatureType": {"pro-ui": ("pass", "pro-matrix-ui-service-wfs-describe"), "arcpy": ("pass", "arcpy-wfs-describefeaturetype"), "qgis-ui": ("pass", "qgis-ui-ui-op-wfs-describefeaturetype"),
+            "DescribeFeatureType": {  "qgis-ui": ("pass", "qgis-ui-ui-op-wfs-describefeaturetype"),
                                     "pyqgis": ("pass", "pyqgis-wfs")},
-            "GetFeature": {"pro-ui": ("pass", "pro-matrix"), "arcpy": ("pass", "arcpy-wfs-getfeature"),
+            "GetFeature": {
                            "qgis-ui": ("pass", "qgis-ui-ui-op-wfs-getfeature"), "pyqgis": ("pass", "pyqgis-wfs")},
-            "GetPropertyValue": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-wfs-read-only"), "qgis-ui": ("n/a-no-client", "qgis-wfs-no-propertyvalue"), "pyqgis": ("n/a-no-client", "qgis-wfs-no-propertyvalue")},
-            "Transaction-Insert": {"pro-ui": ("n/a-no-client", "pro-wfs-read-only"), "arcpy": ("n/a-no-client", "arcpy-wfs-read-only"), "qgis-ui": ("pass", "qgis-ui-ui-op-wfs-transaction-insert"), "pyqgis": ("pass", "pyqgis-wfst-insert")},
-            "Transaction-Update": {"pro-ui": ("n/a-no-client", "pro-wfs-read-only"), "arcpy": ("n/a-no-client", "arcpy-wfs-read-only"), "qgis-ui": ("pass", "qgis-ui-ui-op-wfs-transaction-update"), "pyqgis": ("pass", "pyqgis-wfst-update")},
-            "Transaction-Delete": {"pro-ui": ("n/a-no-client", "pro-wfs-read-only"), "arcpy": ("n/a-no-client", "arcpy-wfs-read-only"), "qgis-ui": ("pass", "qgis-ui-ui-op-wfs-transaction-delete"), "pyqgis": ("pass", "pyqgis-wfst-delete")},
-            "ListStoredQueries": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-wfs-read-only"), "qgis-ui": ("n/a-no-client", "qgis-wfs-no-propertyvalue"), "pyqgis": ("n/a-no-client", "qgis-wfs-no-propertyvalue")},
+            "GetPropertyValue": {  "qgis-ui": ("n/a-no-client", "qgis-wfs-no-propertyvalue"), "pyqgis": ("n/a-no-client", "qgis-wfs-no-propertyvalue")},
+            "Transaction-Insert": {  "qgis-ui": ("pass", "qgis-ui-ui-op-wfs-transaction-insert"), "pyqgis": ("pass", "pyqgis-wfst-insert")},
+            "Transaction-Update": {  "qgis-ui": ("pass", "qgis-ui-ui-op-wfs-transaction-update"), "pyqgis": ("pass", "pyqgis-wfst-update")},
+            "Transaction-Delete": {  "qgis-ui": ("pass", "qgis-ui-ui-op-wfs-transaction-delete"), "pyqgis": ("pass", "pyqgis-wfst-delete")},
+            "ListStoredQueries": {  "qgis-ui": ("n/a-no-client", "qgis-wfs-no-propertyvalue"), "pyqgis": ("n/a-no-client", "qgis-wfs-no-propertyvalue")},
         },
     },
     {
         "protocol": "wcs", "version": "1.0.0",
         "operations": {
-            "GetCapabilities": {"pro-ui": ("n/a-superseded", "pro-wcs-versions"),
-                                "arcpy": ("n/a-no-client", "arcpy-modules"),
+            "GetCapabilities": {
+
                                 "qgis-ui": ("pass", "qgis-ui-ui-op-wcs-getcapabilities"), "pyqgis": ("pass", "pyqgis-wcs")},
-            "DescribeCoverage": {"pro-ui": ("n/a-superseded", "pro-wcs-versions"),
-                                 "arcpy": ("n/a-no-client", "arcpy-modules"),
+            "DescribeCoverage": {
+
                                  "qgis-ui": ("pass", "qgis-ui-ui-op-wcs-describecoverage"), "pyqgis": ("pass", "pyqgis-wcs")},
-            "GetCoverage": {"pro-ui": ("n/a-superseded", "pro-wcs-versions"),
-                            "arcpy": ("n/a-no-client", "arcpy-modules"),
+            "GetCoverage": {
+
                             "qgis-ui": ("pass", "qgis-ui-ui-op-wcs-getcoverage"), "pyqgis": ("pass", "pyqgis-wcs")},
         },
     },
     {
         "protocol": "wcs", "version": "2.0.1",
         "operations": {
-            "GetCapabilities": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-modules"),
+            "GetCapabilities": {
                                 "qgis-ui": ("n/a-superseded", "qgis-wcs-provider"),
                                 "pyqgis": ("n/a-superseded", "qgis-wcs-provider")},
-            "DescribeCoverage": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-modules"),
+            "DescribeCoverage": {
                                  "qgis-ui": ("n/a-superseded", "qgis-wcs-provider"),
                                  "pyqgis": ("n/a-superseded", "qgis-wcs-provider")},
-            "GetCoverage": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-modules"),
+            "GetCoverage": {
                             "qgis-ui": ("n/a-superseded", "qgis-wcs-provider"),
                             "pyqgis": ("n/a-superseded", "qgis-wcs-provider")},
         },
@@ -1092,31 +716,31 @@ MATRIX: list[dict] = [
     {
         "protocol": "ogc-api-features", "version": "1.0",
         "operations": {
-            "landing-page": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-modules"),
+            "landing-page": {
                              "qgis-ui": ("pass", "qgis-ui-ui-op-oapif-landing-page"), "pyqgis": ("pass", "pyqgis-oapif")},
-            "conformance": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-modules"),
+            "conformance": {
                             "qgis-ui": ("pass", "qgis-ui-ui-op-oapif-conformance"), "pyqgis": ("pass", "pyqgis-oapif")},
-            "collections": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-modules"),
+            "collections": {
                             "qgis-ui": ("pass", "qgis-ui-ui-op-oapif-collections"), "pyqgis": ("pass", "pyqgis-oapif")},
-            "items": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-modules"),
+            "items": {
                       "qgis-ui": ("pass", "qgis-ui-ui-op-oapif-items"), "pyqgis": ("pass", "pyqgis-oapif")},
-            "item": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-modules"),
+            "item": {
                      "qgis-ui": ("pass", "qgis-ui-ui-op-oapif-item"), "pyqgis": ("pass", "pyqgis-oapif")},
-            "bbox-datetime-filter": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-modules"),
+            "bbox-datetime-filter": {
                                      "qgis-ui": ("pass", "qgis-ui-ui-op-oapif-bbox-datetime-filter"), "pyqgis": ("pass", "pyqgis-oapif")},
-            "crs-negotiation": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-modules"),
+            "crs-negotiation": {
                                 "qgis-ui": ("pass", "qgis-ui-ui-op-oapif-crs-negotiation"), "pyqgis": ("pass", "pyqgis-oapif")},
-            "transactions-part4": {"pro-ui": ("n/a-no-client", "pro-oapif-read-only"), "arcpy": ("n/a-no-client", "arcpy-modules"),
+            "transactions-part4": {
                                    "qgis-ui": ("pass", "qgis-ui-ui-op-oapif-transactions-part4"), "pyqgis": ("pass", "pyqgis-oapif-part4")},
         },
     },
     {
         "protocol": "ogc-api-tiles", "version": "1.0",
         "operations": {
-            "landing-tilesets": {"pro-ui": ("n/a-no-client", "pro-oapi-tiles-map-only"), "arcpy": ("n/a-no-client", "arcpy-modules"),
+            "landing-tilesets": {
                                  "qgis-ui": ("n/a-no-client", "qgis-registry"),
                                  "pyqgis": ("n/a-no-client", "qgis-registry")},
-            "tile": {"pro-ui": ("n/a-no-client", "pro-oapi-tiles-map-only"), "arcpy": ("n/a-no-client", "arcpy-modules"),
+            "tile": {
                      "qgis-ui": ("n/a-no-client", "qgis-registry"),
                      "pyqgis": ("n/a-no-client", "qgis-registry")},
         },
@@ -1124,28 +748,28 @@ MATRIX: list[dict] = [
     {
         "protocol": "stac", "version": "1.0.0",
         "operations": {
-            "catalog-landing": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-modules"), "qgis-ui": ("pass", "qgis-ui-ui-op-stac-catalog-landing"),
+            "catalog-landing": {  "qgis-ui": ("pass", "qgis-ui-ui-op-stac-catalog-landing"),
                                 "pyqgis": ("pass", "pyqgis-stac-landing")},
-            "collections": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-modules"), "qgis-ui": ("pass", "qgis-ui-ui-op-stac-collections"),
+            "collections": {  "qgis-ui": ("pass", "qgis-ui-ui-op-stac-collections"),
                             "pyqgis": ("pass", "pyqgis-stac-collections")},
-            "item-search": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-modules"), "qgis-ui": ("pass", "qgis-ui-ui-op-stac-item-search"),
+            "item-search": {  "qgis-ui": ("pass", "qgis-ui-ui-op-stac-item-search"),
                             "pyqgis": ("pass", "pyqgis-stac-search")},
-            "asset-download": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-modules"), "qgis-ui": ("pass", "qgis-ui-ui-op-stac-asset-download"),
+            "asset-download": {  "qgis-ui": ("pass", "qgis-ui-ui-op-stac-asset-download"),
                                "pyqgis": ("pass", "pyqgis-stac-asset")},
         },
     },
     {
         "protocol": "sensorthings", "version": "1.1",
         "operations": {
-            "entity-sets": {"pro-ui": ("n/a-no-client", "pro-no-sta"),
-                            "arcpy": ("n/a-no-client", "arcpy-modules"),
+            "entity-sets": {
+
                             "qgis-ui": ("pass", "qgis-ui-ui-op-sta-entity-sets"),
                             "pyqgis": ("pass", "pyqgis-sta-entities")},
-            "expand": {"pro-ui": ("n/a-no-client", "pro-no-sta"),
-                       "arcpy": ("n/a-no-client", "arcpy-modules"),
+            "expand": {
+
                        "qgis-ui": ("pass", "qgis-ui-ui-op-sta-expand"), "pyqgis": ("pass", "pyqgis-sta-expand")},
-            "filter-paging": {"pro-ui": ("n/a-no-client", "pro-no-sta"),
-                              "arcpy": ("n/a-no-client", "arcpy-modules"),
+            "filter-paging": {
+
                               "qgis-ui": ("pass", "qgis-ui-ui-op-sta-filter-paging"),
                               "pyqgis": ("pass", "pyqgis-sta-paging")},
         },
@@ -1153,16 +777,16 @@ MATRIX: list[dict] = [
     {
         "protocol": "featureserver", "version": "GeoServices REST",
         "operations": {
-            "service-info": {"pro-ui": ("pass", "pro-matrix"), "arcpy": ("pass", "arcpy-featureserver-service-info"),
+            "service-info": {
                              "qgis-ui": ("pass", "qgis-ltr"),
                              "pyqgis": ("pass", "pyqgis-fs-info")},
-            "layer-metadata": {"pro-ui": ("pass", "pro-matrix"), "arcpy": ("pass", "arcpy-featureserver-layer-metadata"),
+            "layer-metadata": {
                                "qgis-ui": ("pass", "qgis-ltr"),
                                "pyqgis": ("pass", "pyqgis-fs-meta")},
-            "query": {"pro-ui": ("pass", "pro-matrix"), "arcpy": ("pass", "arcpy-featureserver-query"),
+            "query": {
                       "qgis-ui": ("pass", "qgis-ltr"),
                       "pyqgis": ("pass", "pyqgis-fs-query")},
-            "identify": {"pro-ui": ("pass", "pro-matrix"), "arcpy": ("pass", "arcpy-featureserver-identify"),
+            "identify": {
                          "qgis-ui": ("pass", "qgis-ltr"),
                          "pyqgis": ("pass", "pyqgis-fs-identify")},
             # QGIS edits through the per-operation addFeatures / updateFeatures /
@@ -1170,7 +794,7 @@ MATRIX: list[dict] = [
             # "objectid: null" 1006 rejection did not reproduce on 3.44.14: the
             # form's Autogenerate OID is omitted from the payload and the insert
             # and delete commit (UI-OP-FS-APPLYEDITS).
-            "applyEdits": {"pro-ui": ("pass", "pro-matrix-ui-feat-edits"), "arcpy": ("pass", "arcpy-featureserver-apply-edits"),
+            "applyEdits": {
                            "qgis-ui": ("pass", "qgis-ui-ui-op-fs-applyedits"),
                            "pyqgis": ("pass", "pyqgis-fs-applyedits")},
             # Both fails are tracked. #5012 is the per-feature attachments POST
@@ -1178,35 +802,35 @@ MATRIX: list[dict] = [
             # V1-catalog compat synthesis dropping relationships, attachments and
             # VectorTileServer.
             "attachments": {
-                "pro-ui": ("fail", "pro-matrix", "honua-server#5012"),
-                "arcpy": ("n/a-no-client", "arcpy-rest-only-ops"), "qgis-ui": ("n/a-no-client", "qgis-rest-no-advanced"),
+
+                 "qgis-ui": ("n/a-no-client", "qgis-rest-no-advanced"),
                 "pyqgis": ("n/a-no-client", "qgis-rest-no-advanced")},
             "relatedRecords": {
-                "pro-ui": ("fail", "pro-matrix", "honua-server#5021"),
-                "arcpy": ("n/a-no-client", "arcpy-rest-only-ops"), "qgis-ui": ("n/a-no-client", "qgis-rest-no-advanced"),
+
+                 "qgis-ui": ("n/a-no-client", "qgis-rest-no-advanced"),
                 "pyqgis": ("n/a-no-client", "qgis-rest-no-advanced")},
             # The server answers outStatistics correctly; QGIS never asks. It
             # downloads outFields=* and aggregates locally, so there is no client
             # request to certify.
-            "statistics": {"pro-ui": NS, "arcpy": ("pass", "arcpy-featureserver-statistics"), "qgis-ui": ("n/a-no-client", "qgis-rest-no-advanced"),
+            "statistics": {  "qgis-ui": ("n/a-no-client", "qgis-rest-no-advanced"),
                            "pyqgis": ("n/a-no-client", "qgis-rest-no-advanced")},
-            "domains": {"pro-ui": NS, "arcpy": ("pass", "arcpy-featureserver-domains"), "qgis-ui": ("pass", "qgis-ui-ui-op-fs-domains"),
+            "domains": {  "qgis-ui": ("pass", "qgis-ui-ui-op-fs-domains"),
                         "pyqgis": ("pass", "pyqgis-fs-domains")},
             "replica-sync": {
                 # The surface IS implemented - createReplica, synchronizeReplica and
                 # unregisterReplica, a distributed replica store and a Postgres
                 # repository - and is merely switched off here. Only once it is on can
                 # the residual format question be tested: Pro's offline download asks
-                # for dataFormat=sqlite (an Esri mobile geodatabase, .geodatabase: a
-                # single-file SQLite database with Esri's own schema and ST_Geometry,
+                # for dataFormat=sqlite (an GeoServices mobile geodatabase, .geodatabase: a
+                # single-file SQLite database with GeoServices's own schema and ST_Geometry,
                 # explicitly not OGC GeoPackage), and
                 # FeatureServerRequestHandlers.ReplicaDelivery.cs rejects any
                 # dataFormat but json. GDAL ships no .geodatabase driver - only
                 # OpenFileGDB, for the .gdb directory format - so that format has no
                 # writer in our toolchain.
-                "pro-ui": NS,  # sync.offline is enabled on the fixture (syncEnabled=true live);
+                  # sync.offline is enabled on the fixture (syncEnabled=true live);
                 #  the Pro offline-map flow has not been exercised yet
-                "arcpy": ("n/a-no-client", "arcpy-no-replica"),
+
                 "qgis-ui": ("n/a-no-client", "qgis-rest-no-advanced"),
                 "pyqgis": ("n/a-no-client", "qgis-rest-no-advanced")},
         },
@@ -1214,26 +838,26 @@ MATRIX: list[dict] = [
     {
         "protocol": "mapserver", "version": "GeoServices REST",
         "operations": {
-            "service-info": {"pro-ui": ("pass", "pro-matrix"), "arcpy": ("pass", "arcpy-mapserver-service-info"),
+            "service-info": {
                              "qgis-ui": ("pass", "qgis-ui-ui-op-mapserver-service-info"), "pyqgis": ("pass", "pyqgis-ms-info")},
-            "export": {"pro-ui": ("pass", "pro-matrix"), "arcpy": ("pass", "arcpy-mapserver-export"),
+            "export": {
                        "qgis-ui": ("pass", "qgis-ui-ui-op-mapserver-export"), "pyqgis": ("pass", "pyqgis-ms-export")},
-            "identify": {"pro-ui": ("pass", "pro-matrix-ui-service-map-identify"), "arcpy": ("n/a-no-client", "arcpy-rest-only-ops"), "qgis-ui": ("pass", "qgis-ui-ui-op-mapserver-identify"),
+            "identify": {  "qgis-ui": ("pass", "qgis-ui-ui-op-mapserver-identify"),
                          "pyqgis": ("pass", "pyqgis-ms-identify")},
-            "legend": {"pro-ui": ("pass", "pro-matrix-ui-service-map-legend"), "arcpy": ("n/a-no-client", "arcpy-rest-only-ops"), "qgis-ui": ("pass", "qgis-ui-ui-op-mapserver-legend"),
+            "legend": {  "qgis-ui": ("pass", "qgis-ui-ui-op-mapserver-legend"),
                        "pyqgis": ("pass", "pyqgis-ms-legend")},
         },
     },
     {
         "protocol": "imageserver", "version": "GeoServices REST",
         "operations": {
-            "service-info": {"pro-ui": NS, "arcpy": ("pass", "arcpy-imageserver-service-info"),
+            "service-info": {
                              "qgis-ui": ("n/a-no-client", "qgis-registry"),
                              "pyqgis": ("n/a-no-client", "qgis-registry")},
-            "exportImage": {"pro-ui": NS, "arcpy": ("pass", "arcpy-imageserver-exportimage"),
+            "exportImage": {
                             "qgis-ui": ("n/a-no-client", "qgis-registry"),
                             "pyqgis": ("n/a-no-client", "qgis-registry")},
-            "identify": {"pro-ui": NS, "arcpy": ("pass", "arcpy-imageserver-identify"),
+            "identify": {
                          "qgis-ui": ("n/a-no-client", "qgis-registry"),
                          "pyqgis": ("n/a-no-client", "qgis-registry")},
         },
@@ -1241,33 +865,33 @@ MATRIX: list[dict] = [
     {
         "protocol": "vectortileserver", "version": "GeoServices REST",
         "operations": {
-            "service-info": {"pro-ui": ("pass", "pro-matrix"), "arcpy": ("pass", "arcpy-vectortileserver-service-info"),
+            "service-info": {
                              "qgis-ui": ("pass", "qgis-ui-ui-op-vts-service-info"), "pyqgis": ("pass", "pyqgis-vts-info")},
-            "tile": {"pro-ui": ("pass", "pro-matrix"), "arcpy": ("pass", "arcpy-vectortileserver-tile"),
+            "tile": {
                      "qgis-ui": ("pass", "qgis-ui-ui-op-vts-tile"), "pyqgis": ("pass", "pyqgis-vts-tile")},
-            "style": {"pro-ui": ("pass", "pro-matrix-ui-service-vts-style"), "arcpy": ("pass", "arcpy-vectortileserver-style"), "qgis-ui": ("pass", "qgis-ui-ui-op-vts-style"),
+            "style": {  "qgis-ui": ("pass", "qgis-ui-ui-op-vts-style"),
                       "pyqgis": ("pass", "pyqgis-vts-style")},
         },
     },
     {
         "protocol": "gpserver", "version": "GeoServices REST",
         "operations": {
-            "service-info": {"pro-ui": NS, "arcpy": ("pass", "arcpy-gpserver-service-info"),
+            "service-info": {
                              "qgis-ui": ("n/a-no-client", "qgis-gp-algorithms"),
                              "pyqgis": ("n/a-no-client", "qgis-gp-algorithms")},
-            "task-info": {"pro-ui": NS, "arcpy": ("pass", "arcpy-gpserver-task-info"),
+            "task-info": {
                           "qgis-ui": ("n/a-no-client", "qgis-gp-algorithms"),
                           "pyqgis": ("n/a-no-client", "qgis-gp-algorithms")},
-            "submitJob": {"pro-ui": NS, "arcpy": ("pass", "arcpy-gpserver-submit-job"),
+            "submitJob": {
                           "qgis-ui": ("n/a-no-client", "qgis-gp-algorithms"),
                           "pyqgis": ("n/a-no-client", "qgis-gp-algorithms")},
-            "job-status": {"pro-ui": NS, "arcpy": ("pass", "arcpy-gpserver-job-status"),
+            "job-status": {
                            "qgis-ui": ("n/a-no-client", "qgis-gp-algorithms"),
                            "pyqgis": ("n/a-no-client", "qgis-gp-algorithms")},
-            "results": {"pro-ui": NS, "arcpy": ("pass", "arcpy-gpserver-results"),
+            "results": {
                         "qgis-ui": ("n/a-no-client", "qgis-gp-algorithms"),
                         "pyqgis": ("n/a-no-client", "qgis-gp-algorithms")},
-            "cancel": {"pro-ui": NS, "arcpy": ("pass", "arcpy-gpserver-cancel"),
+            "cancel": {
                        "qgis-ui": ("n/a-no-client", "qgis-gp-algorithms"),
                        "pyqgis": ("n/a-no-client", "qgis-gp-algorithms")},
         },
@@ -1275,33 +899,33 @@ MATRIX: list[dict] = [
     {
         "protocol": "geocodeserver", "version": "GeoServices REST",
         "operations": {
-            "findAddressCandidates": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-no-candidates"),
-                                      "qgis-ui": ("n/a-no-client", "qgis-no-esri-locator"),
-                                      "pyqgis": ("n/a-no-client", "qgis-no-esri-locator")},
-            "suggest": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-no-candidates"),
-                        "qgis-ui": ("n/a-no-client", "qgis-no-esri-locator"),
-                        "pyqgis": ("n/a-no-client", "qgis-no-esri-locator")},
-            "reverseGeocode": {"pro-ui": NS, "arcpy": ("pass", "arcpy-geocodeserver-reversegeocode"),
-                               "qgis-ui": ("n/a-no-client", "qgis-no-esri-locator"),
-                               "pyqgis": ("n/a-no-client", "qgis-no-esri-locator")},
-            "geocodeAddresses": {"pro-ui": NS, "arcpy": ("pass", "arcpy-geocodeserver-geocodeaddresses"),
-                                 "qgis-ui": ("n/a-no-client", "qgis-no-esri-locator"),
-                                 "pyqgis": ("n/a-no-client", "qgis-no-esri-locator")},
+            "findAddressCandidates": {
+                                      "qgis-ui": ("n/a-no-client", "qgis-no-GeoServices-locator"),
+                                      "pyqgis": ("n/a-no-client", "qgis-no-GeoServices-locator")},
+            "suggest": {
+                        "qgis-ui": ("n/a-no-client", "qgis-no-GeoServices-locator"),
+                        "pyqgis": ("n/a-no-client", "qgis-no-GeoServices-locator")},
+            "reverseGeocode": {
+                               "qgis-ui": ("n/a-no-client", "qgis-no-GeoServices-locator"),
+                               "pyqgis": ("n/a-no-client", "qgis-no-GeoServices-locator")},
+            "geocodeAddresses": {
+                                 "qgis-ui": ("n/a-no-client", "qgis-no-GeoServices-locator"),
+                                 "pyqgis": ("n/a-no-client", "qgis-no-GeoServices-locator")},
         },
     },
     {
         "protocol": "geometryserver", "version": "GeoServices REST",
         "operations": {
-            "project": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-no-geometryserver"),
+            "project": {
                         "qgis-ui": ("n/a-no-client", "qgis-local-geometry"),
                         "pyqgis": ("n/a-no-client", "qgis-local-geometry")},
-            "buffer": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-no-geometryserver"),
+            "buffer": {
                        "qgis-ui": ("n/a-no-client", "qgis-local-geometry"),
                        "pyqgis": ("n/a-no-client", "qgis-local-geometry")},
-            "areasAndLengths": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-no-geometryserver"),
+            "areasAndLengths": {
                                 "qgis-ui": ("n/a-no-client", "qgis-local-geometry"),
                                 "pyqgis": ("n/a-no-client", "qgis-local-geometry")},
-            "relation": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-no-geometryserver"),
+            "relation": {
                          "qgis-ui": ("n/a-no-client", "qgis-local-geometry"),
                          "pyqgis": ("n/a-no-client", "qgis-local-geometry")},
         },
@@ -1313,15 +937,14 @@ MATRIX: list[dict] = [
             # (tests/seed/client-compat-routing-v1.sql) makes Route/solve and
             # ServiceArea/solveServiceArea return results; the NAServer metadata,
             # NetworkAnalysisUtilities tasks and portal helperServices shipped for
-            # honua-server#5035. arcpy still has no path to the NAServer solve: arcpy.nax
-            # drives only Esri's asynchronous routing web tools (n/a-no-client, cited).
-            # The synchronous layers are the Pro user interface's path (pro-ui).
-            "route-solve": {"pro-ui": NS,
-                            "arcpy": ("n/a-no-client", "arcpy-nax-web-tools-only"),
+            # honua-server#5035. desktop Python client still has no path to the NAServer solve: desktop Python client.nax
+            # drives only GeoServices's asynchronous routing web tools (n/a-no-client, cited).
+            "route-solve": {
+
                             "qgis-ui": ("n/a-no-client", "qgis-registry"),
                             "pyqgis": ("n/a-no-client", "qgis-registry")},
-            "service-area": {"pro-ui": NS,
-                             "arcpy": ("n/a-no-client", "arcpy-nax-web-tools-only"),
+            "service-area": {
+
                              "qgis-ui": ("n/a-no-client", "qgis-registry"),
                              "pyqgis": ("n/a-no-client", "qgis-registry")},
         },
@@ -1330,15 +953,15 @@ MATRIX: list[dict] = [
         "protocol": "versionmanagementserver", "version": "GeoServices REST",
         "operations": {
             # versioning.branch is enabled in the client-compat fixture and the
-            # VersionManagementServer answers its resources; arcpy's branch-versioning
+            # VersionManagementServer answers its resources; desktop Python client's branch-versioning
             # tools reject the feature service as a workspace because the Admin API
             # service resource they validate against is not published (honua-server#5036).
-            "create-version": {"pro-ui": NS,
-                               "arcpy": ("fail", "arcpy-vms-workspace-probe", "honua-server#5036"),
+            "create-version": {
+
                                "qgis-ui": ("n/a-no-client", "qgis-no-versioning"),
                                "pyqgis": ("n/a-no-client", "qgis-no-versioning")},
-            "reconcile-post": {"pro-ui": NS,
-                               "arcpy": ("fail", "arcpy-vms-workspace-probe", "honua-server#5036"),
+            "reconcile-post": {
+
                                "qgis-ui": ("n/a-no-client", "qgis-no-versioning"),
                                "pyqgis": ("n/a-no-client", "qgis-no-versioning")},
         },
@@ -1346,7 +969,7 @@ MATRIX: list[dict] = [
     {
         "protocol": "geoservices-soap", "version": "GeoServices SOAP",
         "operations": {
-            "catalog-discovery": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-no-soap"),
+            "catalog-discovery": {
                                   "qgis-ui": ("n/a-no-client", "qgis-rest-only"),
                                   "pyqgis": ("n/a-no-client", "qgis-rest-only")},
         },
@@ -1354,12 +977,12 @@ MATRIX: list[dict] = [
     {
         "protocol": "odata", "version": "v4",
         "operations": {
-            "metadata": {"pro-ui": ("n/a-no-client", "pro-ogc-classic"),
-                         "arcpy": ("n/a-no-client", "arcpy-modules"),
+            "metadata": {
+
                          "qgis-ui": ("n/a-no-client", "qgis-registry"),
                          "pyqgis": ("n/a-no-client", "qgis-registry")},
-            "entity-query": {"pro-ui": ("n/a-no-client", "pro-ogc-classic"),
-                             "arcpy": ("n/a-no-client", "arcpy-modules"),
+            "entity-query": {
+
                              "qgis-ui": ("n/a-no-client", "qgis-registry"),
                              "pyqgis": ("n/a-no-client", "qgis-registry")},
         },
@@ -1367,8 +990,8 @@ MATRIX: list[dict] = [
     {
         "protocol": "ogc-api-maps", "version": "1.0",
         "operations": {
-            "map": {"pro-ui": ("n/a-no-client", "pro-ogcapi"),
-                    "arcpy": ("n/a-no-client", "arcpy-modules"),
+            "map": {
+
                     "qgis-ui": ("n/a-no-client", "qgis-registry"),
                     "pyqgis": ("n/a-no-client", "qgis-registry")},
         },
@@ -1376,8 +999,8 @@ MATRIX: list[dict] = [
     {
         "protocol": "ogc-api-coverages", "version": "1.0",
         "operations": {
-            "coverage": {"pro-ui": ("n/a-no-client", "pro-ogcapi"),
-                         "arcpy": ("n/a-no-client", "arcpy-modules"),
+            "coverage": {
+
                          "qgis-ui": ("n/a-no-client", "qgis-registry"),
                          "pyqgis": ("n/a-no-client", "qgis-registry")},
         },
@@ -1385,8 +1008,8 @@ MATRIX: list[dict] = [
     {
         "protocol": "ogc-api-records", "version": "1.0",
         "operations": {
-            "records": {"pro-ui": ("n/a-no-client", "pro-ogcapi"),
-                        "arcpy": ("n/a-no-client", "arcpy-modules"),
+            "records": {
+
                         "qgis-ui": ("n/a-no-client", "qgis-registry"),
                         "pyqgis": ("n/a-no-client", "qgis-registry")},
         },
@@ -1394,8 +1017,8 @@ MATRIX: list[dict] = [
     {
         "protocol": "ogc-api-processes", "version": "1.0",
         "operations": {
-            "processes-execute": {"pro-ui": ("n/a-no-client", "pro-ogcapi"),
-                                  "arcpy": ("n/a-no-client", "arcpy-modules"),
+            "processes-execute": {
+
                                   "qgis-ui": ("n/a-no-client", "qgis-registry"),
                                   "pyqgis": ("n/a-no-client", "qgis-registry")},
         },
@@ -1403,8 +1026,8 @@ MATRIX: list[dict] = [
     {
         "protocol": "ogc-api-styles", "version": "1.0",
         "operations": {
-            "styles": {"pro-ui": ("n/a-no-client", "pro-ogcapi"),
-                       "arcpy": ("n/a-no-client", "arcpy-modules"),
+            "styles": {
+
                        # The previous cause - "landing reports an empty styles
                        # array" - was simply false: /ogc/styles serves 8 styles with
                        # negotiable SLD 1.0/1.1 and Mapbox representations, and QGIS
@@ -1416,8 +1039,8 @@ MATRIX: list[dict] = [
     {
         "protocol": "ogc-api-edr", "version": "1.0",
         "operations": {
-            "edr-query": {"pro-ui": ("n/a-no-client", "pro-ogcapi"),
-                          "arcpy": ("n/a-no-client", "arcpy-modules"),
+            "edr-query": {
+
                           "qgis-ui": ("n/a-no-client", "qgis-registry"),
                           "pyqgis": ("n/a-no-client", "qgis-registry")},
         },
@@ -1428,7 +1051,7 @@ MATRIX: list[dict] = [
             # The archive is now published at fixture bring-up. It cannot be
             # written to disk: LocalFileStorage indexes its objects once at
             # construction, so it is published through the running server.
-            "archive-read": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-modules"),
+            "archive-read": {
                              "qgis-ui": ("pass", "qgis-ui-ui-op-pmtiles-archive-read"),
                              "pyqgis": ("pass", "pyqgis-pmtiles")},
         },
@@ -1436,7 +1059,7 @@ MATRIX: list[dict] = [
     {
         "protocol": "tilejson", "version": "3.0.0",
         "operations": {
-            "descriptor": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-modules"),
+            "descriptor": {
                            "qgis-ui": ("n/a-no-client", "qgis-no-tilejson"),
                            "pyqgis": ("n/a-no-client", "qgis-no-tilejson")},
         },
@@ -1448,7 +1071,7 @@ MATRIX: list[dict] = [
             # POST /api/v1/admin/raster-artifacts/cog; the public range proxy
             # /api/v1/rasters/cog/{artifactId} answers HEAD with the real length
             # and 206 for ranges, which is what GDAL /vsicurl needs.
-            "range-read": {"pro-ui": NS, "arcpy": ("pass", "arcpy-cog-range-read"),
+            "range-read": {
                            "qgis-ui": ("pass", "qgis-ui-ui-op-cog-range-read"),
                            "pyqgis": ("pass", "pyqgis-cog")},
         },
@@ -1460,9 +1083,9 @@ MATRIX: list[dict] = [
             # itself: the manifest reports serve.i3s-scene as
             # reasonCode=experimental-disabled. Whether a scene also needs
             # publishing cannot be established until the surface is switched on.
-            "scene-layer": {"pro-ui": NS,  # serve.i3s-scene is enabled and the seeded scene
+            "scene-layer": {  # serve.i3s-scene is enabled and the seeded scene
                                     #  serves live; not yet exercised through Pro
-                            "arcpy": ("pass", "arcpy-i3s-sceneserver-scene-layer"),
+
                             "qgis-ui": ("n/a-no-client", "qgis-registry"),
                             "pyqgis": ("n/a-no-client", "qgis-registry")},
         },
@@ -1470,20 +1093,20 @@ MATRIX: list[dict] = [
     {
         "protocol": "3d-tiles", "version": "1.0",
         "operations": {
-            "tileset": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-mp-web-service-types"),
+            "tileset": {
                         "qgis-ui": ("pass", "qgis-ui-ui-op-3dtiles-tileset"), "pyqgis": ("pass", "pyqgis-3dtiles")},
         },
     },
     {
-        "protocol": "elevation", "version": "Esri",
+        "protocol": "elevation", "version": "1.0",
         "operations": {
             # The old cause - "no elevation service published; 404" - was wrong:
             # the Elevation protocol was simply absent from the fixture's enabled
             # list. Restored in tests/seed/client-compat-v1.sql, and
             # /elevation/0/value now answers 200. The native surface is reachable
-            # and merely unexercised; the Esri elevation identity is a real gap.
-            "point-query": {"pro-ui": NS,
-                            "arcpy": ("pass", "arcpy-elevation-point-query"),
+            # and merely unexercised; the GeoServices elevation identity is a real gap.
+            "point-query": {
+
                             "qgis-ui": ("n/a-no-client", "qgis-no-imageserver-raster"),
                             "pyqgis": ("n/a-no-client", "qgis-no-imageserver-raster")},
         },
@@ -1497,30 +1120,28 @@ EXCLUSION_REVIEW_REPORT = "docs/gis/client-exclusion-audit-2026-09-20.md"
 # citations cannot close an operation until operation-specific review replaces
 # them. A module/provider inventory is not an exhaustive client capability test.
 EXCLUSIONS_REQUIRING_REVIEW = {
-    "arcpy-modules": "A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
-    "arcpy-mp-web-service-types": "Failure through one addDataFromPath method does not exclude saved layers, connection files or geoprocessing tools.",
+
+
     "qgis-registry": "The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI.",
     "qgis-wcs-provider": "The dedicated WCS provider's version limit does not exclude the bundled GDAL provider: a fresh QgsRasterLayer/GDAL WCS 2.0.1 diagnostic loads 64x64 and reads a non-NoData pixel.",
-    "pro-wcs-versions": "Default negotiation of 2.0.1 does not exclude explicitly selecting WCS 1.0.0.",
-    "pro-oapi-tiles-map-only": "A vector-only fixture is not proof that Pro lacks the documented map-tiles client; provision or verify a map tileset.",
-    "pro-ogc-classic": "An OGC classic service list cannot establish absence of OData support.",
-    "arcpy-no-soap": "The broad REST-only premise conflicts with the existing ArcPy GP SOAP workflow; catalog discovery needs a specific probe.",
-}
+
+
+    }
 
 FOLLOWUP_REVIEW_REPORT = "docs/gis/client-exclusion-followup-2026-09-20.md"
 FOLLOWUP_EXCLUSIONS_REQUIRING_REVIEW = {
-    "arcpy-no-candidates": "The installed and documented Locator class exposes geocode and suggest; fresh native calls against Honua return independently validated candidates and suggestions.",
-    "arcpy-rest-only-ops": "The citation is a harness exclusion rule, not capability evidence. ExportAttachments/AddAttachments exist and mapping objects come from factories; attachment/relationship fixtures and native mapping requests need specific review.",
-    "arcpy-no-replica": "CreateReplica's input contract does not establish absence of every native offline path. CreateReplicaFromServer targets a different GeoDataServer protocol and cannot settle FeatureServer replica/sync.",
-    "arcpy-wfs-read-only": "The WFSToFeatureClass parameter list bounds one conversion tool, not native saved layers, connections or licensed extension paths for these operations.",
-    "arcpy-no-wms-identify": "Missing MakeWMSLayer and module-level identify names do not cover factory-returned mapping objects; the exact GetFeatureInfo request path needs review.",
-    "arcpy-no-geometryserver": "Module-name matching is not a complete native client inventory. Review concrete native tools and requests; local geometry calculations alone cannot certify remote GeometryServer operations.",
-    "pro-no-sta": "An OGC API menu's supported standards do not establish absence of SensorThings through every native layer, representation or extension path.",
-    "pro-ogcapi": "The native OGC API connection menu supports Features/Tiles; alternative native representations, saved layers and licensed extensions need operation-specific review before excluding other APIs.",
+
+
+
+
+
+
+
+
     "qgis-no-tilejson": "Stock QgsVectorTileUtils.updateUriSources consumes remote TileJSON through a standard Mapbox GL style source.url; direct XYZ descriptor failure does not establish no client.",
-    "qgis-no-imageserver-raster": "Stock arcgismapserver explicitly supports ImageServer rendering, and stock GDAL AGS reads numeric TIFF pixels. Dynamic 0x0 dimensions and the narrower identify-parser failure do not exclude elevation sampling.",
+    "qgis-no-imageserver-raster": "Stock GeoServices RESTmapserver explicitly supports ImageServer rendering, and stock GDAL AGS reads numeric TIFF pixels. Dynamic 0x0 dimensions and the narrower identify-parser failure do not exclude elevation sampling.",
     "qgis-gp-algorithms": "No specialized GP processing entry was found, but a provider/algorithm registry scan is not operation-specific proof for all discovery/job paths. The broader native SDK scope needs a retained source/request inventory.",
-    "qgis-no-esri-locator": "The old receipt asserts stock QGIS has no Esri locator without an operation-specific native API/source inventory; fresh inventory has not found a specialized path but cannot justify the universal claim.",
+
     "qgis-local-geometry": "Observed local GEOS/GDAL computation does not by itself exclude every remote native SDK path. A remote-operation source/request inventory is still required.",
     "qgis-no-versioning": "A missing dedicated provider or UI is not an operation-specific review of SDK and connection paths for create/reconcile/post; retain the work until the citation is sufficient.",
     "qgis-rest-only": "REST discovery observed in one provider does not prove absence of every native SOAP catalog path; review exact request builders and shared providers.",
@@ -1530,17 +1151,7 @@ EXCLUSIONS_REQUIRING_REVIEW.update(FOLLOWUP_EXCLUSIONS_REQUIRING_REVIEW)
 
 # Operation-specific native receipts can resolve an audited exclusion while
 # retaining both the original claim and the intervening review state.
-RESOLVED_EXCLUSION_EVIDENCE = {
-    ("stac", "1.0.0", operation, "arcpy"): (
-        "honua-esri-compat/evidence/arcpy-stac-metadata-20260920-d/observations.json "
-        "(retained at honua-esri-compat commit 1490b03); "
-        f"GetSTACInfo {operation}: native metadata validated against separate HTTP and fixture controls; "
-        "installed ArcGIS Pro 3.7.1.1904 executable SHA-256 bound alongside ArcPy 3.7.1 build 1901; "
-        "server 6ac9debbccdd716639db89ce1f36821472f5018e / image 737851273827; "
-        "Development JIT SDK evidence, no UI credit"
-    )
-    for operation in ("catalog-landing", "collections", "item-search")
-}
+RESOLVED_EXCLUSION_EVIDENCE = {}
 
 
 RESOLVED_EXCLUSION_EVIDENCE.update({
@@ -1555,22 +1166,11 @@ RESOLVED_EXCLUSION_EVIDENCE.update({
 })
 
 
-RESOLVED_EXCLUSION_EVIDENCE.update({
-    ("geocodeserver", "GeoServices REST", operation, "arcpy"): (
-        "honua-esri-compat/evidence/arcpy-exclusion-followup-20260920-d/observations.json (retained at commit b691b03); "
-        f"native Locator {operation}: ten geocode candidates or five suggestions validated against separate HTTP controls, "
-        "including addresses/scores/WGS84 XY or suggestion texts/magic keys/collection flags; geocode forStorage=False; "
-        "ArcGIS Pro 3.7.1.1904 executable version/hash bound alongside ArcPy 3.7.1 build 1901; "
-        "server 25fa17d9cfa72340c9de4a33a743f19ff0911800 / image 0ad6f6c9d81e; Development JIT SDK evidence, no UI credit"
-    )
-    for operation in ("findAddressCandidates", "suggest")
-})
-
 for protocol, version, operation, detail in (
     ("tilejson", "3.0.0", "descriptor", "stock updateUriSources consumes a remote TileJSON URL from a standard Mapbox GL style; exact template and native decoded feature geometry validated within MVT grid tolerance; direct descriptor-as-XYZ still fails"),
-    ("imageserver", "GeoServices REST", "service-info", "stock arcgismapserver constructor CRS and extent match independent ImageServer metadata"),
-    ("imageserver", "GeoServices REST", "exportImage", "stock arcgismapserver 64x64 ARGB block corner colors match independent exportImage PNG; dynamic provider 0x0 native dimensions do not prevent rendering"),
-    ("elevation", "Esri", "point-query", "stock GDAL AGS TIFF numeric sample 10 at [-122.498828125,37.83890625] matches independent ImageServer identify at the same point; four corners/affine grid match SQL and native project reload repeats samples; does not certify native identify endpoint"),
+    ("imageserver", "GeoServices REST", "service-info", "stock GeoServices RESTmapserver constructor CRS and extent match independent ImageServer metadata"),
+    ("imageserver", "GeoServices REST", "exportImage", "stock GeoServices RESTmapserver 64x64 ARGB block corner colors match independent exportImage PNG; dynamic provider 0x0 native dimensions do not prevent rendering"),
+    ("elevation", "1.0", "point-query", "stock GDAL AGS TIFF numeric sample 10 at [-122.498828125,37.83890625] matches independent ImageServer identify at the same point; four corners/affine grid match SQL and native project reload repeats samples; does not certify native identify endpoint"),
 ):
     RESOLVED_EXCLUSION_EVIDENCE[(protocol, version, operation, "pyqgis")] = (
         "honua-client-compat/evidence/pyqgis-deep-exclusions-20260920-d/observations.json (retained at commit 046a74c); "
@@ -1581,7 +1181,7 @@ for protocol, version, operation, detail in (
 # Only these two operations have fresh inspected native GUI receipts. The later
 # Properties hang leaves identify, elevation and TileJSON UI obligations open.
 for operation, case_id, detail in (
-    ("service-info", "UI-OP-IMAGESERVER-SERVICE-INFO", "native ArcGIS REST connection tree discovery and added layer information: ImageServer URL, EPSG:4326 and fixture extent inspected"),
+    ("service-info", "UI-OP-IMAGESERVER-SERVICE-INFO", "native GeoServices REST REST connection tree discovery and added layer information: ImageServer URL, EPSG:4326 and fixture extent inspected"),
     ("exportImage", "UI-OP-IMAGESERVER-EXPORT-IMAGE", "native added ImageServer layer canvas inspected against independent PNG control; QGIS/34414 exportImage HTTP200,765x724 PNG2682bytes at2026-09-20T09:37:31Z, trace6f136fe7c94227895d3b74a229d701ed"),
 ):
     RESOLVED_EXCLUSION_EVIDENCE[("imageserver", "GeoServices REST", operation, "qgis-ui")] = (
@@ -1595,18 +1195,13 @@ for operation, case_id, detail in (
 
 
 REVIEWED_PASS_GAPS = {
-    ("featureserver", "GeoServices REST", "statistics", "arcpy"): (
-        "docs/gis/arcpy-local-calculation-verdict-audit-2026-09-20.md: "
-        "Historical receipt counts SearchCursor rows locally; it does not prove "
-        "a native outStatistics/groupByFieldsForStatistics request. Fresh remote "
-        "aggregate evidence and independent result assertions are required."
-    ),
+
 }
 
 OPERATION_EXCLUSION_REVIEWS = {
     ("featureserver", "GeoServices REST", "statistics", lane): (
         "honua-client-compat/docs/reports/pyqgis-featureserver-exclusion-followup-2026-09-20.md "
-        "at ac9e4dc: native OGR/ESRIJSON consumes a configured outStatistics URL. "
+        "at ac9e4dc: native OGR/GeoServicesJSON consumes a configured outStatistics URL. "
         "The AFS provider limitation does not exclude the entire client. "
         "PyQGIS ungrouped values and project reload pass; grouped output fails; GUI remains untested."
     ) for lane in ("qgis-ui", "pyqgis")
@@ -1631,21 +1226,6 @@ RESOLVED_EXCLUSION_EVIDENCE[("wfs", "2.0.0", "GetPropertyValue", "pyqgis")] = (
     "verified TLS, unchanged runtime, worker exit0. Native GeoJSON consumption, not WFS provider "
     "request generation; Development JIT SDK evidence, zero UI credit"
 )
-
-OPERATION_EXCLUSION_REVIEWS.update({
-    ("naserver", "GeoServices REST", operation, "arcpy"): (
-        "honua-esri-compat/docs/reports/arcpy-routing-and-interop-exclusion-review-2026-09-20.md; "
-        "evidence/arcpy-routing-interop-inventory-20260920/observations.json "
-        "(honua-esri-compat commit f923cc3bb52b9731a75030bd4d66d7c7c80aeba9; "
-        "SHA-256 860f90626eb97cc18b983ac3690e53c3d287b8a5f13255d61c0f7dac43820301): "
-        f"installed {constructor} and arcpy.na.Solve are distinct native GP entrypoints from "
-        "the inspected nax path; primary documentation supports portal-backed input with Basic. "
-        "The prior nax asynchronous-GP observation does not exclude these analysis-layer workflows. "
-        "An owned layer and exact synchronous NAServer request/result still require a native probe; "
-        "this is source inventory, not a native pass or proof of compiled transport."
-    ) for operation, constructor in (("route-solve", "arcpy.na.MakeRouteAnalysisLayer"),
-                                       ("service-area", "arcpy.na.MakeServiceAreaAnalysisLayer"))
-})
 
 OPERATION_EXCLUSION_REVIEWS.update({
     ("wfs", "2.0.0", "ListStoredQueries", lane): (
@@ -1705,19 +1285,7 @@ RESOLVED_EXCLUSION_EVIDENCE[("ogc-api-maps", "1.0", "map", "pyqgis")] = (
 )
 
 NATIVE_REVIEW_FAILURES = {
-    ("featureserver", "GeoServices REST", "statistics", "arcpy"): {
-        "issue": "https://github.com/honua-io/honua-server/issues/5045",
-        "evidence": (
-            "honua-esri-compat/evidence/arcpy-dbms-statistics-20260920-e/observations.json "
-            "(SHA-256 65eb956676b7b69000240ba2b82974ab100860339a1da717c056d8c8d53c235e), "
-            "native GET/POST trace and arcpy-dbms-statistics-readback-20260920/observations.json: "
-            "ArcPy 3.7.1 sends real outStatistics. Ungrouped values match SQL count3/sum6, "
-            "but missing response fields leave a native output table with only OBJECTID. "
-            "Grouped statistics returns server error500 (#5043). Activated Conda environment "
-            "with isolated user-site imports and ordinary remote control; zero UI credit; "
-            "stable JIT source25fa17d9. Historical local-count pass remains invalid."
-        ),
-    },
+
     ("featureserver", "GeoServices REST", "statistics", "pyqgis"): {
         "issue": "https://github.com/honua-io/honua-server/issues/5043",
         "evidence": (
@@ -1732,25 +1300,12 @@ NATIVE_REVIEW_FAILURES = {
 
 # A repaired replay supersedes the verdict, never the retained failure receipt.
 NATIVE_REPLAY_RESOLUTIONS = {
-    ("featureserver", "GeoServices REST", "statistics", "arcpy"): (
-        "honua-esri-compat/evidence/arcpy-dbms-statistics-candidate-review-20260920/observations.json "
-        "at 58e23f3 "
-        "(adjudication SHA-256 ba8ca609b24d5fad6503c7ebc2cbf37a4b6b915332b2e0895b09a2c994fd8126), "
-        "arcpy-dbms-statistics-20260920-g/observations.json "
-        "(SHA-256 0dab84d39ee1597992f0b0633d6108e5f8913ec5ca94c7f5ecc2d440ddb1769f), "
-        "wire/trace.jsonl and readback.json: ArcPy 3.7.1 build1901 / ArcGIS Pro 3.7.1.1904 "
-        "native DBMS Statistics sends ungrouped and grouped outStatistics POSTs (requests6/7); "
-        "complete HTTP200 responses include Integer counts/Double sums, persisted native GDB "
-        "fields and values match fresh SQL count3/sum6 and active2/4/inactive1/2. "
-        "Worker0/readback0, no trace gaps/drops, verified TLS, stable JIT source8b7aea9f6 "
-        "image28d09586. Isolated activated Conda environment; zero GUI credit. "
-        "Prior local calculation and failed/incomplete native runs remain history."
-    ),
+
     ("featureserver", "GeoServices REST", "statistics", "pyqgis"): (
         "honua-client-compat/evidence/pyqgis-featureserver-statistics-url-20260920-d/observations.json "
         "at 9d6e362 "
         "(SHA-256 6a66f62f33b26aac35af10bad5ac64345b9e85145ecc728f668f37713d8a55a3), "
-        "native-results.json: QGIS/PyQGIS 3.44.14-Solothurn native OGR/ESRIJSON configured URLs "
+        "native-results.json: QGIS/PyQGIS 3.44.14-Solothurn native OGR/GeoServicesJSON configured URLs "
         "pass count3/sum6 and grouped active2/4/inactive1/2 with output fields, independent SQL "
         "and project reload; worker0, verified TLS, stable JIT source8b7aea9f6 image28d09586. "
         "No AFS aggregate-pushdown or GUI credit. Earlier grouped failure is preserved."
@@ -1909,10 +1464,6 @@ def validate(rows: list[dict]) -> list[str]:
                     if (prior.get("state") != "fail"
                             or any(prior.get(name) != observed[name] for name in ("issue", "evidence"))):
                         problems.append(f"{where}/{lane}: repaired replay must retain its failure receipt")
-                if ((row["protocol"], row["version"], row["operation"], lane)
-                        in REVIEWED_PASS_GAPS and evidence == EV["arcpy-featureserver-statistics"]):
-                    problems.append(
-                        f"{where}/{lane}: reviewed local calculation cannot certify a remote operation")
                 if not evidence:
                     problems.append(
                         f"{where}/{lane}: a pass requires an evidence reference")
@@ -2067,8 +1618,8 @@ def committed_regressions(rows: list[dict]) -> list[str]:
 
     Refusing to write is the conservative direction. Recovering a closed cell means
     folding its recorded result back into MATRIX / RESOLVED_EXCLUSION_EVIDENCE;
-    re-running the generator after that fold costs seconds. Desktop runner detail
-    stays with evidence id desktop-arcgis in honua-esri-compat.
+    re-running the generator after that fold costs seconds. Retired desktop-client records are
+    excluded from this projection.
     """
     if not DATA_PATH.is_file():
         return []

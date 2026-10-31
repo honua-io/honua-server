@@ -130,5 +130,5 @@ public sealed class LayerPermanentFilterConfiguration
     /// <summary>
     /// Filter language token. Supported values are arcgis-sql, cql2-text, and cql2-json.
     /// </summary>
-    public string Language { get; init; } = PermanentFilterLanguages.ArcGisSql;
+    public string Language { get; init; } = PermanentFilterLanguages.GeoServicesSql;
 }

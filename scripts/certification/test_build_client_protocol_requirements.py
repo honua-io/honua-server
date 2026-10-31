@@ -84,7 +84,7 @@ class FrozenProfileShapeTests(unittest.TestCase):
 
     def test_delegated_clients_are_named_rather_than_silently_filtered_out(self):
         delegated = {entry["canonicalClient"] for entry in MIRROR["delegatedClients"]}
-        self.assertIn("ArcGIS Pro/arcpy", delegated)
+        self.assertIn("GeoServices REST client", delegated)
         self.assertIn("OGC CITE", delegated)
         for entry in MIRROR["delegatedClients"]:
             self.assertTrue(entry["delegation"].strip())
@@ -347,12 +347,12 @@ class ProjectionTests(unittest.TestCase):
 
     def test_rows_outside_the_bounded_roster_are_dropped(self):
         projection = module.project(
-            self.upstream(self.governed(), self.governed(canonical_client="ArcGIS Pro/arcpy")),
+            self.upstream(self.governed(), self.governed(canonical_client="Unlisted client")),
             "a" * 40, "test.1", ROOT)
         self.assertEqual(1, len(projection["requirements"]))
         self.assertEqual("OWSLib", projection["requirements"][0]["canonical_client"])
         self.assertEqual(
-            ["ArcGIS Pro/arcpy"],
+            [],
             [entry["canonicalClient"] for entry in projection["delegatedClients"]])
 
     def test_governed_fields_are_mirrored_verbatim(self):

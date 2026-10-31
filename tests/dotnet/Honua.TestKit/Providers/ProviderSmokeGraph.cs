@@ -191,7 +191,7 @@ public static class ProviderSmokeGraph
                 layerIndex: LayerId,
                 storageBindingId: BindingId,
                 serviceLocalId: layerIdText,
-                publicationType: MetadataV2PublicationType.EsriFeatureLayer)
+                publicationType: MetadataV2PublicationType.GeoServicesFeatureLayer)
             // OData. Query dispatch for /odata/Layers({layerId})/Features and
             // /odata/Features({layerId}) resolves the reader per layer through
             // FeatureProviderQueryRouter (honua-server#2962), so this publication also

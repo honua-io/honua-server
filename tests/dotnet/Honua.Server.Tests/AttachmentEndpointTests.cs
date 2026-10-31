@@ -1316,7 +1316,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
     {
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
         var publication = snapshot.Graph.Publications.First(candidate =>
-            candidate.PublicationType == MetadataV2PublicationType.EsriFeatureLayer &&
+            candidate.PublicationType == MetadataV2PublicationType.GeoServicesFeatureLayer &&
             candidate.LayerIndex == TestLayerId);
         var provider = _fixture.Services.GetRequiredService<TestMetadataV2GraphProvider>();
         provider.SetGraph(snapshot.Graph with

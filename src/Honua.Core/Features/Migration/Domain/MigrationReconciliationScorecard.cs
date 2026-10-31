@@ -43,7 +43,7 @@ public sealed record MigrationReconciliationScorecard
     /// <summary>Originating migration run identifier.</summary>
     public required string RunId { get; init; }
 
-    /// <summary>Source kind that produced the layers, for example <c>arcgis-geoservices-rest</c>.</summary>
+    /// <summary>Source kind that produced the layers, for example <c>geoservices-rest</c>.</summary>
     public required string SourceKind { get; init; }
 
     /// <summary>UTC instant the scorecard was generated.</summary>

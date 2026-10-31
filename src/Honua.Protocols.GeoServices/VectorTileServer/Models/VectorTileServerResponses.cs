@@ -19,7 +19,7 @@ internal sealed class VectorTileServerMetadataResponse
 {
     // No ArcGIS Server version (currentVersion/fullVersion) is advertised. Honua is an
     // independent, Esri-compatible server and must not impersonate a specific ArcGIS Server
-    // release. Do NOT add a currentVersion/fullVersion field (guarded by NoArcGisServerVersionTests).
+    // release. Do NOT add a currentVersion/fullVersion field (guarded by NoGeoServicesServerVersionTests).
 
     /// <summary>Service name (the GeoServices service identifier the route resolves).</summary>
     [JsonPropertyName("name")]

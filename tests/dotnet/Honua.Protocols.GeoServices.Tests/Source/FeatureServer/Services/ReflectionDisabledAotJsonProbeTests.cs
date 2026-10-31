@@ -28,7 +28,7 @@ public sealed class ReflectionDisabledAotJsonProbeTests
         run.StandardOutput.Should().Contain("type-status=200", "{0}", run.Transcript);
         run.StandardOutput.Should().Contain($"active-operation={ReflectionDisabledAotJsonProbe.OperationId}", "{0}", run.Transcript);
         run.StandardOutput.Should().Contain("wfs-id=urn:honua:probe", "{0}", run.Transcript);
-        run.StandardOutput.Should().Contain("manifest-source=arcgis-geoservices-rest", "{0}", run.Transcript);
+        run.StandardOutput.Should().Contain("manifest-source=geoservices-rest", "{0}", run.Transcript);
         run.StandardOutput.Should().Contain("parity-classification=pass", "{0}", run.Transcript);
         run.StandardOutput.Should().Contain("stac-filter=true", "{0}", run.Transcript);
         run.StandardOutput.Should().Contain("stac-objectid=42", "{0}", run.Transcript);

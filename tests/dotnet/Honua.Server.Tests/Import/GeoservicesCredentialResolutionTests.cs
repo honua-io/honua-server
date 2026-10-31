@@ -84,13 +84,13 @@ public sealed class GeoservicesCredentialResolutionTests
     [Fact]
     public void ValidateQueuedCredentialRequest_WithPermittedTokenSecretReference_ReturnsSuccess()
     {
-        using var services = CreateServices(allowedEnvironmentVariable: "HONUA_FIXTURE_ARCGIS_TOKEN");
+        using var services = CreateServices(allowedEnvironmentVariable: "HONUA_FIXTURE_GEOSERVICES_TOKEN");
 
         var error = GeoservicesCredentialResolution.ValidateQueuedCredentialRequest(
             new GeoservicesCredentialDescriptor
             {
                 Mode = GeoservicesAuthenticationModes.Token,
-                AccessTokenSecretReference = "env:HONUA_FIXTURE_ARCGIS_TOKEN"
+                AccessTokenSecretReference = "env:HONUA_FIXTURE_GEOSERVICES_TOKEN"
             },
             services);
 
@@ -108,12 +108,12 @@ public sealed class GeoservicesCredentialResolutionTests
             new GeoservicesCredentialDescriptor
             {
                 Mode = GeoservicesAuthenticationModes.Token,
-                AccessTokenSecretReference = "env:HONUA_FIXTURE_ARCGIS_TOKEN"
+                AccessTokenSecretReference = "env:HONUA_FIXTURE_GEOSERVICES_TOKEN"
             },
             services);
 
         error.Should().StartWith("AccessTokenSecretReference");
-        error.Should().NotContain("HONUA_FIXTURE_ARCGIS_TOKEN");
+        error.Should().NotContain("HONUA_FIXTURE_GEOSERVICES_TOKEN");
     }
 
     [Fact]
@@ -126,7 +126,7 @@ public sealed class GeoservicesCredentialResolutionTests
             {
                 Mode = GeoservicesAuthenticationModes.Basic,
                 Username = "fixture-user",
-                PasswordSecretReference = "env:HONUA_FIXTURE_ARCGIS_PASSWORD"
+                PasswordSecretReference = "env:HONUA_FIXTURE_GEOSERVICES_PASSWORD"
             },
             services);
 
@@ -141,7 +141,7 @@ public sealed class GeoservicesCredentialResolutionTests
         Environment.SetEnvironmentVariable(variable, "unlisted-value");
         try
         {
-            using var services = CreateServices(allowedEnvironmentVariable: "HONUA_FIXTURE_ARCGIS_TOKEN");
+            using var services = CreateServices(allowedEnvironmentVariable: "HONUA_FIXTURE_GEOSERVICES_TOKEN");
             var request = new GeoservicesDiscoveryRequest
             {
                 ServiceUrl = "https://services.example.com/arcgis/rest/services/Parcels/FeatureServer",

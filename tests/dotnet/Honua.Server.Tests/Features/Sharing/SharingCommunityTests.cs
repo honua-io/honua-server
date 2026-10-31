@@ -58,7 +58,7 @@ public sealed class SharingCommunityTests : IAsyncLifetime
             .AddResource("private-resource", "Private resource", accessPolicy: new AccessPolicy { AllowedRoles = ["parcel-admin"] })
             .AddStorageBinding("private-binding", "private-resource", "features", storageLayerId: 0)
             .AddPublication("private-publication", "content-private", "private-resource", layerIndex: 0,
-                storageBindingId: "private-binding", publicationType: MetadataV2PublicationType.EsriFeatureLayer)
+                storageBindingId: "private-binding", publicationType: MetadataV2PublicationType.GeoServicesFeatureLayer)
             .Build();
         graph = graph with
         {

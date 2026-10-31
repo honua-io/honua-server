@@ -114,7 +114,7 @@ public sealed class ReconciliationFilterIntegrationTests(PostgresFixture fixture
         var artifact = await service.ReconcileAsync(new LayerReconciliationRequest
         {
             RunId = "filter-proof",
-            SourceKind = "arcgis-geoservices-rest",
+            SourceKind = "geoservices-rest",
             Layers = [layer]
         });
 

@@ -1222,24 +1222,6 @@
   ],
   "plannedLanes": [
     {
-      "id": "desktop-arcgis",
-      "client": "ArcGIS Pro and arcpy",
-      "protocols": [
-        "featureserver",
-        "mapserver",
-        "imageserver",
-        "geometryserver",
-        "version-management-server",
-        "ogc-features",
-        "wfs",
-        "wms",
-        "wmts"
-      ],
-      "requiredTier": "release",
-      "licensed": true,
-      "issue": "https://github.com/honua-io/honua-esri-compat/issues/75"
-    },
-    {
       "id": "bi-excel",
       "client": "Microsoft Excel Power Query",
       "protocols": [
@@ -1275,10 +1257,6 @@
     {
       "id": "mapbox-gl-js-v2-plus",
       "reason": "Proprietary license and mandatory telemetry; MapLibre covers the applicable protocol surface"
-    },
-    {
-      "id": "arcgis-earth",
-      "reason": "No distinct server surface beyond governed MapServer and KML lanes"
     },
     {
       "id": "golden-surfer",
@@ -1375,7 +1353,7 @@
       ]
     },
     {
-      "id": "arcgis-stub",
+      "id": "geoservices-rest-stub",
       "requiredTier": "nightly",
       "automated": [
         "CERT-CONN-*",

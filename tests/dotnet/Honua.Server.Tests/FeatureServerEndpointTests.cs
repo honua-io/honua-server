@@ -709,7 +709,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         serviceResponse.Should().NotBeNull();
 
         // Required GeoServices REST service properties.
-        // Honua does not advertise an ArcGIS Server version (see NoArcGisServerVersionTests).
+        // Honua does not advertise an ArcGIS Server version (see NoGeoServicesServerVersionTests).
         serviceResponse!.ServiceName.Should().NotBeNullOrEmpty();
         serviceResponse.ServiceDescription.Should().NotBeNullOrEmpty();
         serviceResponse.Layers.Should().NotBeNull();
@@ -746,7 +746,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         layerResponse.Should().NotBeNull();
 
         // Required GeoServices REST layer properties.
-        // Honua does not advertise an ArcGIS Server version (see NoArcGisServerVersionTests).
+        // Honua does not advertise an ArcGIS Server version (see NoGeoServicesServerVersionTests).
         layerResponse!.Id.Should().BeGreaterThanOrEqualTo(0);
         layerResponse.Name.Should().NotBeNullOrEmpty();
         layerResponse.Type.Should().Be("Feature Layer");
@@ -1605,7 +1605,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query?returnAllRecords=true")]
-    public async Task QueryFeatures_WithArcGisClientParameters_ReturnsOk()
+    public async Task QueryFeatures_WithGeoServicesClientParameters_ReturnsOk()
     {
         // ArcGIS Pro and the ArcGIS API for Python send these by default; they must
         // be accepted (and ignored where unsupported) rather than rejected (#1276).

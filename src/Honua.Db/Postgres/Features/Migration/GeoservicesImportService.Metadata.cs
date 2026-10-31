@@ -19,11 +19,11 @@ namespace Honua.Db.Postgres.Features.Migration;
 internal sealed partial class GeoservicesImportService
 {
     // Single source of truth for the coded-value capture cap, shared with the
-    // publish-path capture (EsriFieldDomainParser) so persistence and the inventory
+    // publish-path capture (GeoServicesFieldDomainParser) so persistence and the inventory
     // artifact agree and a large domain does not later false-fail reconciliation.
-    private const int CodedValueDomainCap = EsriFieldDomainParser.CodedValueDomainCap;
+    private const int CodedValueDomainCap = GeoServicesFieldDomainParser.CodedValueDomainCap;
 
-    private async Task<MigrationSpatialReferenceInfo[]> BuildArcGisSpatialReferencesAsync(
+    private async Task<MigrationSpatialReferenceInfo[]> BuildGeoServicesSpatialReferencesAsync(
         JsonElement resourceElement,
         CancellationToken cancellationToken)
     {
@@ -31,18 +31,18 @@ internal sealed partial class GeoservicesImportService
 
         if (TryGetSpatialReference(resourceElement, out var spatialReference))
         {
-            tasks.Add(BuildArcGisSpatialReferenceAsync("resource", spatialReference, cancellationToken));
+            tasks.Add(BuildGeoServicesSpatialReferenceAsync("resource", spatialReference, cancellationToken));
         }
 
         if (resourceElement.TryGetProperty("sourceSpatialReference", out var sourceSpatialReference))
         {
-            tasks.Add(BuildArcGisSpatialReferenceAsync("source", sourceSpatialReference, cancellationToken));
+            tasks.Add(BuildGeoServicesSpatialReferenceAsync("source", sourceSpatialReference, cancellationToken));
         }
 
         if (resourceElement.TryGetProperty("extent", out var extentElement) &&
             TryGetSpatialReference(extentElement, out var extentSpatialReference))
         {
-            tasks.Add(BuildArcGisSpatialReferenceAsync("extent", extentSpatialReference, cancellationToken));
+            tasks.Add(BuildGeoServicesSpatialReferenceAsync("extent", extentSpatialReference, cancellationToken));
         }
 
         if (tasks.Count == 0)
@@ -58,7 +58,7 @@ internal sealed partial class GeoservicesImportService
             .ToArray();
     }
 
-    private Task<MigrationSpatialReferenceInfo?> BuildArcGisSpatialReferenceAsync(
+    private Task<MigrationSpatialReferenceInfo?> BuildGeoServicesSpatialReferenceAsync(
         string role,
         JsonElement spatialReference,
         CancellationToken cancellationToken)
@@ -67,9 +67,9 @@ internal sealed partial class GeoservicesImportService
         var latestWkid = GetOptionalIntProperty(spatialReference, "latestWkid");
         var wkt = GetOptionalStringProperty(spatialReference, "wkt")
             ?? GetOptionalStringProperty(spatialReference, "latestWkt");
-        var sourceValue = BuildArcGisSourceValue(wkid, latestWkid, wkt);
-        var normalizedSrid = latestWkid ?? NormalizeArcGisWkid(wkid);
-        var allowFallbackCrsUri = latestWkid.HasValue || IsKnownArcGisAlias(wkid);
+        var sourceValue = BuildGeoServicesSourceValue(wkid, latestWkid, wkt);
+        var normalizedSrid = latestWkid ?? NormalizeGeoServicesWkid(wkid);
+        var allowFallbackCrsUri = latestWkid.HasValue || IsKnownGeoServicesAlias(wkid);
 
         return MigrationInventoryHelpers.BuildSpatialReferenceAsync(
             _crsRegistry,
@@ -153,7 +153,7 @@ internal sealed partial class GeoservicesImportService
         if (truncatedDomains.Count > 0)
         {
             warnings = truncatedDomains
-                .Select(static label => $"{ImportCompatibilityCodes.ArcGisDomainTruncated}: coded-value domain {label} exceeds the {CodedValueDomainCap}-entry capture cap and was omitted from the artifact.")
+                .Select(static label => $"{ImportCompatibilityCodes.GeoServicesDomainTruncated}: coded-value domain {label} exceeds the {CodedValueDomainCap}-entry capture cap and was omitted from the artifact.")
                 .ToArray();
         }
 
@@ -290,7 +290,7 @@ internal sealed partial class GeoservicesImportService
                 "External symbol URLs require manual migration review.",
                 ["The renderer references one or more external URLs."],
                 ["Mirror or replace external symbol assets in the target deployment."],
-                code: ImportCompatibilityCodes.ArcGisExternalSymbol)
+                code: ImportCompatibilityCodes.GeoServicesExternalSymbol)
         }).ToArray();
 
         var metadata = new SortedDictionary<string, string>(StringComparer.Ordinal)
@@ -341,7 +341,7 @@ internal sealed partial class GeoservicesImportService
                     warnings,
                     manualSteps,
                     code: hasExternalUrls
-                        ? ImportCompatibilityCodes.ArcGisExternalSymbol
+                        ? ImportCompatibilityCodes.GeoServicesExternalSymbol
                         : ImportCompatibilityCodes.ManualReview);
             default:
                 manualSteps.Add("Review the renderer manually and rebuild an equivalent target style.");
@@ -349,7 +349,7 @@ internal sealed partial class GeoservicesImportService
                     $"Renderer type '{rendererType}' is not currently classified as portable to Honua.",
                     warnings,
                     manualSteps,
-                    code: ImportCompatibilityCodes.ArcGisUnsupportedRenderer);
+                    code: ImportCompatibilityCodes.GeoServicesUnsupportedRenderer);
         }
     }
 
@@ -369,7 +369,7 @@ internal sealed partial class GeoservicesImportService
                 "The resource does not advertise query capability.",
                 null,
                 ["Enable query access or export the source data through another path before migration."],
-                code: ImportCompatibilityCodes.ArcGisQueryCapabilityMissing);
+                code: ImportCompatibilityCodes.GeoServicesQueryCapabilityMissing);
         }
 
         if (!resourceKind.Equals("table", StringComparison.OrdinalIgnoreCase) &&
@@ -379,7 +379,7 @@ internal sealed partial class GeoservicesImportService
                 $"Geometry type '{geometryType ?? "unknown"}' is not supported by the current import path.",
                 null,
                 ["Normalize or export the resource to a supported vector geometry type before migration."],
-                code: ImportCompatibilityCodes.ArcGisUnsupportedGeometry);
+                code: ImportCompatibilityCodes.GeoServicesUnsupportedGeometry);
         }
 
         string? primaryCode = null;
@@ -387,14 +387,14 @@ internal sealed partial class GeoservicesImportService
         {
             warnings.Add("Spatial reference metadata was unavailable.");
             manualSteps.Add("Confirm CRS, datum, and units before migration.");
-            primaryCode = ImportCompatibilityCodes.ArcGisMissingSpatialRef;
+            primaryCode = ImportCompatibilityCodes.GeoServicesMissingSpatialRef;
         }
 
         if (hasAttachments == true)
         {
             warnings.Add("Attachments are advertised on this resource.");
             manualSteps.Add("Plan a separate attachment migration.");
-            primaryCode ??= ImportCompatibilityCodes.ArcGisAttachments;
+            primaryCode ??= ImportCompatibilityCodes.GeoServicesAttachments;
         }
 
         if (warnings.Count == 0)

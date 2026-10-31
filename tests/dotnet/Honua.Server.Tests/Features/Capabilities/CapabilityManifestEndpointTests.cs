@@ -531,7 +531,7 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
 
         // The rolled-up contract version is NOT an ArcGIS Server/Portal version: the
         // GeoServices wire models still carry no currentVersion/fullVersion
-        // (NoArcGisServerVersionTests), and this field lives on the capability manifest,
+        // (NoGeoServicesServerVersionTests), and this field lives on the capability manifest,
         // not on any GeoServices service-info response.
         GetTransport(root, "geoservices-rest").TryGetProperty("currentVersion", out _).Should().BeFalse();
         GetTransport(root, "geoservices-rest").TryGetProperty("fullVersion", out _).Should().BeFalse();

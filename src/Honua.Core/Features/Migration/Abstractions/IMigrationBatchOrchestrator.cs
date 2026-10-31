@@ -57,7 +57,7 @@ public interface IMigrationBatchOrchestrator
 public sealed record MigrationBatchStartRequest
 {
     /// <summary>
-    /// Source kind identifier such as <c>arcgis-geoservices-rest</c>.
+    /// Source kind identifier such as <c>geoservices-rest</c>.
     /// </summary>
     public required string SourceKind { get; init; }
 

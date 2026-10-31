@@ -104,7 +104,7 @@ public sealed class FeatureServerLayerListParsingTests
             ServiceId = service.Metadata.Id,
             ResourceId = activeResource.Metadata.Id,
             LayerIndex = 0,
-            PublicationType = MetadataV2PublicationType.EsriFeatureLayer,
+            PublicationType = MetadataV2PublicationType.GeoServicesFeatureLayer,
             Status = activeStatus,
         };
         var retiredPublication = new MetadataV2Publication
@@ -113,7 +113,7 @@ public sealed class FeatureServerLayerListParsingTests
             ServiceId = service.Metadata.Id,
             ResourceId = retiredResource.Metadata.Id,
             LayerIndex = 1,
-            PublicationType = MetadataV2PublicationType.EsriFeatureLayer,
+            PublicationType = MetadataV2PublicationType.GeoServicesFeatureLayer,
             Status = retiredStatus,
         };
         var snapshot = new MetadataV2GraphSnapshot(
@@ -172,7 +172,7 @@ public sealed class FeatureServerLayerListParsingTests
             ServiceId = service.Metadata.Id,
             ResourceId = resource.Metadata.Id,
             LayerIndex = 0,
-            PublicationType = MetadataV2PublicationType.EsriFeatureLayer,
+            PublicationType = MetadataV2PublicationType.GeoServicesFeatureLayer,
             Status = activeStatus,
         };
         var odataPublication = featurePublication with
@@ -202,7 +202,7 @@ public sealed class FeatureServerLayerListParsingTests
         selectorSpecified.Should().BeTrue();
         error.Should().BeNull();
         layers.Should().ContainSingle()
-            .Which.Publication.PublicationType.Should().Be(MetadataV2PublicationType.EsriFeatureLayer);
+            .Which.Publication.PublicationType.Should().Be(MetadataV2PublicationType.GeoServicesFeatureLayer);
     }
 
     [Fact]

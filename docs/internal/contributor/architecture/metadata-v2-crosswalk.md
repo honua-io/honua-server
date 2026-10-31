@@ -344,7 +344,7 @@ the V2 model can losslessly round-trip every concept these standards expose.
 | `Relationship.Cardinality` | ✅ |
 | `Relationship.OriginField` | ✅ |
 | `Relationship.DestinationField` | ✅ |
-| `Relationship.EsriRelationshipId` (int) | ✅ |
+| `Relationship.GeoServicesRelationshipId` (int) | ✅ |
 
 | Standard | Maps to |
 |---|---|

@@ -765,7 +765,7 @@ internal static partial class FeatureServerEndpoints
             // Esri clients expect a numeric relationship id; prefer the explicit Esri id on
             // the V2 relationship, else derive a stable integer from the relationship's
             // string id hash so it round-trips across requests.
-            var relationshipId = relationship.EsriRelationshipId
+            var relationshipId = relationship.GeoServicesRelationshipId
                 ?? StableStringHash(relationship.Id);
 
             var relatedResource = snapshot.Index.ResourcesById.TryGetValue(relationship.RelatedResourceId, out var found)

@@ -112,7 +112,7 @@ internal partial class ODataJsonContext : JsonSerializerContext
 ```csharp
 [JsonSerializable(typeof(FeatureSet))]
 [JsonSerializable(typeof(Feature))]
-[JsonSerializable(typeof(EsriGeometry))]
+[JsonSerializable(typeof(GeoServicesGeometry))]
 internal partial class FeatureServerJsonContext : JsonSerializerContext { }
 ```
 

@@ -187,7 +187,7 @@ public sealed class ImageServerExportTilesJobEndpointTests
                     "competing-resource",
                     layerIndex: 7,
                     storageBindingId: "competing-binding",
-                    publicationType: MetadataV2PublicationType.EsriImageLayer,
+                    publicationType: MetadataV2PublicationType.GeoServicesImageLayer,
                     isPrimary: true)
                 .AddResource(
                     "target-resource",
@@ -210,7 +210,7 @@ public sealed class ImageServerExportTilesJobEndpointTests
                     "target-resource",
                     layerIndex: 41,
                     storageBindingId: "target-binding",
-                    publicationType: MetadataV2PublicationType.EsriImageLayer)
+                    publicationType: MetadataV2PublicationType.GeoServicesImageLayer)
                 .AddResource(
                     "other-resource",
                     "Other image",
@@ -232,7 +232,7 @@ public sealed class ImageServerExportTilesJobEndpointTests
                     "other-resource",
                     layerIndex: 42,
                     storageBindingId: "other-binding",
-                    publicationType: MetadataV2PublicationType.EsriImageLayer)
+                    publicationType: MetadataV2PublicationType.GeoServicesImageLayer)
                 .Build();
         var graphProvider = new TestMetadataV2GraphProvider(graph);
         var resolver = Substitute.For<IImageServerLayerResolver>();

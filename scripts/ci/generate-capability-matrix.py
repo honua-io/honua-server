@@ -12,10 +12,10 @@ Joins the following committed, already-generated/drift-gated sources into
   * ``docs/cite-status.md``                     -- per-suite OGC CITE pass rates,
     joined onto the capability keys whose protocol the suite covers.
   * ``docs/gis/data/geoservices-rest-parity.json`` -- per-service Esri GeoServices
-    REST parity status, joined via capability-keys.v1.json's esriCompatMatrix
+    REST parity status, joined via capability-keys.v1.json's geoservicesCompatMatrix
     crosswalk.
   * ``docs/gis/data/capability-keys.v1.json``   -- the canonical capability list
-    plus all four crosswalk sections (esriAssess, interop, esriCompatMatrix,
+    plus all four crosswalk sections (geoservicesAssess, interop, geoservicesCompatMatrix,
     geobench).
   * ``docs/gis/data/capability-no-surface-allowlist.v1.json`` -- capabilities with
     no distinct route.
@@ -231,11 +231,11 @@ def build_matrix(
     crosswalks = capability_keys.get("crosswalks", {})
 
     esri_compat_by_capability: dict[str, list[str]] = {}
-    for row in crosswalks.get("esriCompatMatrix", []):
+    for row in crosswalks.get("geoservicesCompatMatrix", []):
         esri_compat_by_capability.setdefault(row["capability"], []).append(row["serviceId"])
 
     esri_assess_by_capability: dict[str, list[str]] = {}
-    for row in crosswalks.get("esriAssess", []):
+    for row in crosswalks.get("geoservicesAssess", []):
         esri_assess_by_capability.setdefault(row["capability"], []).append(row["assessKey"])
 
     envelopes, freshness_anchor = interop_evidence if interop_evidence is not None else ({}, None)
@@ -293,7 +293,7 @@ def build_matrix(
                 "noSurface": no_surface_by_capability.get(key),
                 "cite": cite_entries,
                 "parity": parity_entries,
-                "esriAssess": esri_assess_by_capability.get(key, []),
+                "geoservicesAssess": esri_assess_by_capability.get(key, []),
                 "interop": interop_by_capability.get(key, []),
                 "geobench": geobench_by_capability.get(key, []),
             }

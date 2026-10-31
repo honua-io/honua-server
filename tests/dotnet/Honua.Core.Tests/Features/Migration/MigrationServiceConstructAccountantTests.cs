@@ -102,7 +102,7 @@ public sealed class MigrationServiceConstructAccountantTests
                 {
                     SourceId = curves,
                     Kind = "layer",
-                    Code = ImportCompatibilityCodes.ArcGisUnsupportedGeometry,
+                    Code = ImportCompatibilityCodes.GeoServicesUnsupportedGeometry,
                     Severity = "unsupported",
                     Reason = "Geometry type 'esriGeometryMultiPatch' is not supported by the current import path."
                 }
@@ -116,7 +116,7 @@ public sealed class MigrationServiceConstructAccountantTests
         difference.Code.Should().Be(MigrationFidelityDifferenceCodes.ConstructUnsupported);
         difference.Severity.Should().Be(MigrationFidelityDifferenceSeverities.Blocking);
         difference.Subject.Should().Be(curves);
-        difference.Actual.Should().Be("unsupported (ARCGIS_UNSUPPORTED_GEOMETRY)");
+        difference.Actual.Should().Be("unsupported (GEOSERVICES_UNSUPPORTED_GEOMETRY)");
         report.Entries.Where(entry => entry.SourceId == curves)
             .Select(entry => (entry.Construct, entry.Disposition, entry.TargetTable))
             .Should().Equal(
@@ -136,7 +136,7 @@ public sealed class MigrationServiceConstructAccountantTests
         {
             TargetResources =
             [
-                Target(Layer, "layer", "target:layer0", "esriGeometryPoint", "partial", ImportCompatibilityCodes.ArcGisMissingSpatialRef),
+                Target(Layer, "layer", "target:layer0", "esriGeometryPoint", "partial", ImportCompatibilityCodes.GeoServicesMissingSpatialRef),
                 Target(Table, "table", "target:table1")
             ]
         };
@@ -149,7 +149,7 @@ public sealed class MigrationServiceConstructAccountantTests
         difference.Severity.Should().Be(MigrationFidelityDifferenceSeverities.Unverified);
         difference.Subject.Should().Be(Layer);
         difference.Expected.Should().Be("resource.geometry migrated automatically");
-        difference.Actual.Should().Be("manual-review (ARCGIS_MISSING_SPATIAL_REF)");
+        difference.Actual.Should().Be("manual-review (GEOSERVICES_MISSING_SPATIAL_REF)");
     }
 
     [Trait("Tier", "Fast")]
@@ -232,8 +232,8 @@ public sealed class MigrationServiceConstructAccountantTests
                 Cells =
                 [
                     .. AutomatedCells(),
-                    Cell("relationships", MigrationFidelityAutomationStatuses.ManualReview, [ImportCompatibilityCodes.ArcGisRelationshipsManualReview], Layer),
-                    Cell("subtypes", MigrationFidelityAutomationStatuses.ManualReview, [ImportCompatibilityCodes.ArcGisSubtypesManualReview], Layer),
+                    Cell("relationships", MigrationFidelityAutomationStatuses.ManualReview, [ImportCompatibilityCodes.GeoServicesRelationshipsManualReview], Layer),
+                    Cell("subtypes", MigrationFidelityAutomationStatuses.ManualReview, [ImportCompatibilityCodes.GeoServicesSubtypesManualReview], Layer),
                     Cell("renderers", MigrationFidelityAutomationStatuses.Assisted, [ImportCompatibilityCodes.Compatible], Renderer)
                 ]
             }
@@ -249,8 +249,8 @@ public sealed class MigrationServiceConstructAccountantTests
             .Should().BeEquivalentTo(new[]
             {
                 (Renderer, "resource.styles migrated automatically", "assisted (COMPATIBLE)"),
-                (Layer, "resource.relationships migrated automatically", "manual-review (ARCGIS_RELATIONSHIPS_MANUAL_REVIEW)"),
-                (Layer, "resource.subtypes migrated automatically", "manual-review (ARCGIS_SUBTYPES_MANUAL_REVIEW)")
+                (Layer, "resource.relationships migrated automatically", "manual-review (GEOSERVICES_RELATIONSHIPS_MANUAL_REVIEW)"),
+                (Layer, "resource.subtypes migrated automatically", "manual-review (GEOSERVICES_SUBTYPES_MANUAL_REVIEW)")
             });
 
         // The simple relationship stays migrated alongside the one that needs review.
@@ -354,10 +354,10 @@ public sealed class MigrationServiceConstructAccountantTests
 
     [Trait("Tier", "Fast")]
     [Theory]
-    [InlineData("arcgis-geoservices-rest", null, "no source manifest was supplied")]
-    [InlineData("arcgis-geoservices-rest", "{ not json", "the source manifest could not be parsed")]
+    [InlineData("geoservices-rest", null, "no source manifest was supplied")]
+    [InlineData("geoservices-rest", "{ not json", "the source manifest could not be parsed")]
     [InlineData("ogc-wms", "valid", "no construct matrix is defined for source kind 'ogc-wms'")]
-    public void Account_WithoutAReadableArcGisManifest_DoesNotExecuteAndCannotProveFullFidelity(
+    public void Account_WithoutAReadableGeoServicesManifest_DoesNotExecuteAndCannotProveFullFidelity(
         string sourceKind,
         string? manifestBody,
         string expectedReason)
@@ -384,7 +384,7 @@ public sealed class MigrationServiceConstructAccountantTests
         var manifest = AutomatedManifest();
         var selection = new[] { Select(Layer, "field_ops.inspections") };
 
-        var fromBody = MigrationServiceConstructAccountant.Account("arcgis-geoservices-rest", Serialize(manifest), selection);
+        var fromBody = MigrationServiceConstructAccountant.Account("geoservices-rest", Serialize(manifest), selection);
 
         fromBody.Should().BeEquivalentTo(MigrationServiceConstructAccountant.Account(manifest, selection));
         fromBody.Differences.Should().ContainSingle().Which.Subject.Should().Be(Table);
@@ -446,7 +446,7 @@ public sealed class MigrationServiceConstructAccountantTests
 
     private static MigrationManifestArtifact AutomatedManifest() => new()
     {
-        SourceKind = "arcgis-geoservices-rest",
+        SourceKind = "geoservices-rest",
         Source = new MigrationSourceIdentity { DisplayName = "Inspections", BaseUrl = ServiceUrl, ServiceType = "FeatureServer" },
         Summary = new MigrationManifestSummary(),
         TargetResources =

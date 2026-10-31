@@ -18,7 +18,7 @@ public sealed partial class GPServerSoapEndpointsTests(GPServerSoapMetadataFixtu
 {
     private const string Soap11 = "http://schemas.xmlsoap.org/soap/envelope/";
     private const string Soap12 = "http://www.w3.org/2003/05/soap-envelope";
-    private const string ArcGis = "http://www.esri.com/schemas/ArcGIS/10.8";
+    private const string GeoServices = "http://www.esri.com/schemas/ArcGIS/10.8";
 
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
@@ -55,14 +55,14 @@ public sealed partial class GPServerSoapEndpointsTests(GPServerSoapMetadataFixtu
         var publishedName = canonicalBuffer.Element("Name")!.Value;
         using var detail = await PostAsync(client, "GetToolInfo", $"<ToolName>{publishedName}</ToolName>");
         detail.StatusCode.Should().Be(HttpStatusCode.OK);
-        var result = XDocument.Parse(await detail.Content.ReadAsStringAsync()).Descendants(XName.Get("GetToolInfoResponse", ArcGis)).Single().Element("Result")!;
+        var result = XDocument.Parse(await detail.Content.ReadAsStringAsync()).Descendants(XName.Get("GetToolInfoResponse", GeoServices)).Single().Element("Result")!;
         result.Element("Name")!.Value.Should().Be(publishedName);
         result.Element("ParameterInfo")!.ToString().Should().Be(canonicalBuffer.Element("ParameterInfo")!.ToString());
     }
 
     [IntegrationTheory]
-    [InlineData(Soap11, "text/xml", ArcGis)]
-    [InlineData(Soap12, "application/soap+xml", ArcGis)]
+    [InlineData(Soap11, "text/xml", GeoServices)]
+    [InlineData(Soap12, "application/soap+xml", GeoServices)]
     [InlineData(Soap11, "text/xml", "http://www.esri.com/schemas/ArcGIS/9.0")]
     [Operation(Operations.GetMetadata)]
     [Endpoint("POST /services/{serviceId}/GPServer")]
@@ -129,7 +129,7 @@ public sealed partial class GPServerSoapEndpointsTests(GPServerSoapMetadataFixtu
         using var response = await PostAsync(client, operation, arguments);
         var body = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, body);
-        var result = XDocument.Parse(body).Descendants(XName.Get(operation + "Response", ArcGis)).Single().Element("Result")!;
+        var result = XDocument.Parse(body).Descendants(XName.Get(operation + "Response", GeoServices)).Single().Element("Result")!;
         if (child is not null)
         {
             result.Elements(child).Should().NotBeEmpty();
@@ -159,7 +159,7 @@ public sealed partial class GPServerSoapEndpointsTests(GPServerSoapMetadataFixtu
         if (expectedFault is null)
         {
             response.StatusCode.Should().Be(HttpStatusCode.OK, text);
-            document.Descendants(XName.Get("GetToolInfoResponse", ArcGis)).Single()
+            document.Descendants(XName.Get("GetToolInfoResponse", GeoServices)).Single()
                 .Element("Result")!.Element("Name")!.Value.Should().Be("Buffer");
         }
         else
@@ -235,14 +235,14 @@ public sealed partial class GPServerSoapEndpointsTests(GPServerSoapMetadataFixtu
     {
         "unqualified" => $"<tns:{operation}>{arguments}</tns:{operation}>",
         "qualified" => $"<tns:{operation}>{System.Text.RegularExpressions.Regex.Replace(arguments, "<(/?)([A-Za-z])", "<$1tns:$2")}</tns:{operation}>",
-        "default-namespace" => $"<{operation} xmlns=\"{ArcGis}\">{arguments}</{operation}>",
+        "default-namespace" => $"<{operation} xmlns=\"{GeoServices}\">{arguments}</{operation}>",
         _ => throw new ArgumentOutOfRangeException(nameof(form), form, null)
     };
 
     private static async Task<HttpResponseMessage> PostOperationAsync(HttpClient client, string operationXml)
     {
         var xml = $"""
-            <?xml version="1.0" encoding="utf-8" ?><soap:Envelope xmlns:soap="{Soap11}" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:tns="{ArcGis}"><soap:Body>{operationXml}</soap:Body></soap:Envelope>
+            <?xml version="1.0" encoding="utf-8" ?><soap:Envelope xmlns:soap="{Soap11}" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:tns="{GeoServices}"><soap:Body>{operationXml}</soap:Body></soap:Envelope>
             """;
         using var request = new HttpRequestMessage(HttpMethod.Post, "/services/alpha/GPServer");
         request.Headers.Add("SOAPAction", "\"\"");
@@ -251,7 +251,7 @@ public sealed partial class GPServerSoapEndpointsTests(GPServerSoapMetadataFixtu
     }
 
     private static async Task<HttpResponseMessage> PostAsync(HttpClient client, string operation, string arguments = "",
-        string soap = Soap11, string contentType = "text/xml", string arcGis = ArcGis)
+        string soap = Soap11, string contentType = "text/xml", string arcGis = GeoServices)
     {
         // Same qualified operation / unqualified argument shape captured from ArcPy 3.7.
         var xml = $"""

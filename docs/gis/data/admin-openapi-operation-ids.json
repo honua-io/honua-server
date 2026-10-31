@@ -633,16 +633,16 @@
       "path": "/alerts/zones/{zoneId}"
     },
     {
-      "operationId": "getArcGisMigrationManifest",
+      "operationId": "getGeoServicesMigrationManifest",
       "catalogOperationId": null,
       "method": "GET",
-      "path": "/import/arcgis/migrations/{runId}/manifest"
+      "path": "/import/geoservices-rest/migrations/{runId}/manifest"
     },
     {
-      "operationId": "getArcGisMigrationParity",
+      "operationId": "getGeoServicesMigrationParity",
       "catalogOperationId": null,
       "method": "GET",
-      "path": "/import/arcgis/migrations/{runId}/parity"
+      "path": "/import/geoservices-rest/migrations/{runId}/parity"
     },
     {
       "operationId": "getClientCertificateTrustProfile",
@@ -1437,10 +1437,10 @@
       "path": "/alerts/zones"
     },
     {
-      "operationId": "listArcGisMigrationRuns",
+      "operationId": "listGeoServicesMigrationRuns",
       "catalogOperationId": null,
       "method": "GET",
-      "path": "/import/arcgis/migrations"
+      "path": "/import/geoservices-rest/migrations"
     },
     {
       "operationId": "listClientCertificatePrincipalMappings",
@@ -1851,16 +1851,16 @@
       "path": "/metadata/environment-bindings/query"
     },
     {
-      "operationId": "recordArcGisMigrationManifest",
+      "operationId": "recordGeoServicesMigrationManifest",
       "catalogOperationId": null,
       "method": "POST",
-      "path": "/import/arcgis/migrations/{runId}/manifest"
+      "path": "/import/geoservices-rest/migrations/{runId}/manifest"
     },
     {
-      "operationId": "recordArcGisMigrationParity",
+      "operationId": "recordGeoServicesMigrationParity",
       "catalogOperationId": null,
       "method": "POST",
-      "path": "/import/arcgis/migrations/{runId}/parity"
+      "path": "/import/geoservices-rest/migrations/{runId}/parity"
     },
     {
       "operationId": "recordMigrationRunScorecard",

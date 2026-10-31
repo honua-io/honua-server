@@ -1527,7 +1527,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
         // GeoETL remote source connectors (5)
         // First-class DAG sources that stream features from a remote source straight
         // into the workflow, REUSING the one-shot Honua.Import readers' pagination /
-        // streaming (ArcGisRestClient, the OGC/WFS GeoJSON paging path, the catalog
+        // streaming (GeoServicesRestClient, the OGC/WFS GeoJSON paging path, the catalog
         // query pipeline, and the external-PostGIS secure-connection handling) so a
         // pipeline no longer has to bounce through a one-shot import to read from a
         // Honua layer, Esri FeatureServer, OGC API Features, WFS, or external PostGIS.

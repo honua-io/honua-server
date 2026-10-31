@@ -83,7 +83,7 @@ Imports, workflow source steps and registered connections can name a server-side
 | `Security__RequestSecretReferences__AllowedEnvironmentVariablePrefixes__0..n` | Name prefixes a request may name as `env:NAME`, for example `HONUA_IMPORT_`. A prefix never matches a name containing `__`, so variables that bind server configuration can only be permitted by an exact entry. |
 | `Security__RequestSecretReferences__AllowedSecretReferencePrefixes__0..n` | Whole-reference prefixes for the other providers, including the provider segment, for example `aws:secretsmanager:honua/imports/` or `azure:keyvault:honua-imports:`. |
 
-A request-supplied reference must be the whole value, in the form `provider:identifier` (`env:HONUA_IMPORT_ARCGIS_TOKEN`). Placeholders such as `{env:NAME}` inside a longer string, surrounding whitespace, and literal connection strings are not references and are rejected. A refused or unresolvable reference is reported with one generic message; the server log records the provider and the reason.
+A request-supplied reference must be the whole value, in the form `provider:identifier` (`env:HONUA_IMPORT_GEOSERVICES_TOKEN`). Placeholders such as `{env:NAME}` inside a longer string, surrounding whitespace, and literal connection strings are not references and are rejected. A refused or unresolvable reference is reported with one generic message; the server log records the provider and the reason.
 
 Give imports and connections their own variables or secret path rather than allowlisting the server's credentials (`HONUA_ADMIN_PASSWORD`, `ConnectionStrings__DefaultConnection`, `Security__ConnectionEncryption__MasterKey`, cloud access keys).
 

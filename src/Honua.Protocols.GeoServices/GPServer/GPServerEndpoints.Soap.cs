@@ -6,7 +6,7 @@ using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Geoprocessing;
 using Honua.Infrastructure.Models;
 using Honua.Protocols.GeoServices.GPServer.Models;
-using static Honua.Protocols.GeoServices.Soap.ArcGisSoapProtocol;
+using static Honua.Protocols.GeoServices.Soap.GeoServicesSoapProtocol;
 
 namespace Honua.Protocols.GeoServices.GPServer;
 

@@ -77,7 +77,7 @@ internal static partial class MigrationScannerEndpoints
         {
             await AdminResponseWriter.WriteErrorAsync(
                 context,
-                "SourceKind must be one of: geoserver, geoserver-rest, geoservices, arcgis-geoservices-rest, ogc-api-features, ogc-wfs, ogc-wms, ogc-wmts, ogc-wcs, ogc-api-coverages.",
+                "SourceKind must be one of: geoserver, geoserver-rest, geoservices, geoservices-rest, ogc-api-features, ogc-wfs, ogc-wms, ogc-wmts, ogc-wcs, ogc-api-coverages.",
                 StatusCodes.Status400BadRequest);
             return;
         }
@@ -307,7 +307,7 @@ internal static partial class MigrationScannerEndpoints
         normalized = sourceKind.Trim().ToLowerInvariant() switch
         {
             "geoserver" or "geoserver-rest" => "geoserver-rest",
-            "geoservices" or "arcgis-geoservices-rest" => "arcgis-geoservices-rest",
+            "geoservices" or "geoservices-rest" => "geoservices-rest",
             "ogc-api" or "ogc-api-features" or "oapif" => "ogc-api-features",
             "wfs" or "ogc-wfs" => "ogc-wfs",
             "wms" or "ogc-wms" => "ogc-wms",

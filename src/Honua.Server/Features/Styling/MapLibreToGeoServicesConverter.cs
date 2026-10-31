@@ -129,7 +129,7 @@ internal static class MapLibreToGeoServicesConverter
         }
 
         var fillStyle = layer.GeometryType is GeometryType.Polygon or GeometryType.MultiPolygon or GeometryType.GeometryCollection && color.A == 0
-            ? EsriStyleMappings.FillStyleNull
+            ? GeoServicesStyleMappings.FillStyleNull
             : null;
 
         var symbol = GeoServicesStyleBuilder.BuildSymbol(layer.GeometryType, color, outline?.Color, outline?.Width, size);
@@ -1180,7 +1180,7 @@ internal static class MapLibreToGeoServicesConverter
             return null;
         }
 
-        return EsriStyleMappings.TryGetLineStyleFromDashArray(dashArray, out var style) ? style : null;
+        return GeoServicesStyleMappings.TryGetLineStyleFromDashArray(dashArray, out var style) ? style : null;
     }
 
     private static bool TryGetLineDashArray(JsonElement paint, out double[] dashArray)

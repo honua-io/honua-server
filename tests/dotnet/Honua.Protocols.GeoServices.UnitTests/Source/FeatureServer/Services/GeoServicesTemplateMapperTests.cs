@@ -29,7 +29,7 @@ public sealed class GeoServicesTemplateMapperTests
               "templates": [{ "prototype": { "attributes": { "priority": null, "status": "Active" } } }]
             }] }
             """);
-        var imported = EsriSubtypeParser.Parse(document.RootElement).Subtypes!;
+        var imported = GeoServicesSubtypeParser.Parse(document.RootElement).Subtypes!;
         var json = JsonSerializer.Serialize(imported, MetadataV2JsonContext.Default.MetadataV2Subtypes);
         var restored = JsonSerializer.Deserialize(json, MetadataV2JsonContext.Default.MetadataV2Subtypes)!;
         var type = GeoServicesTemplateMapper.MapTypes(restored, "esriGeometryPoint")!.Single();

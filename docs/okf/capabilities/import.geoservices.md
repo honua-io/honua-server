@@ -1,7 +1,7 @@
 ---
 type: capability
 title: "GeoServices Import"
-description: "Import layers from ArcGIS REST services."
+description: "Import layers from GeoServices REST services."
 resource: "honua://capability/import.geoservices"
 tags: [capability, import, enterprise]
 ---
@@ -9,7 +9,7 @@ tags: [capability, import, enterprise]
 
 # GeoServices Import
 
-Import layers from ArcGIS REST services.
+Import layers from GeoServices REST services.
 
 | | |
 | --- | --- |
@@ -24,5 +24,5 @@ The facts above come from the server's capability registry and capability matrix
 
 ## Documented in
 
-- [Migrate from ArcGIS Server](../../guides/migrate/from-arcgis-server.md)
-- [Import from ArcGIS services](../../guides/publish/import-from-arcgis-services.md)
+- [Migrate from GeoServices REST service](../../guides/migrate/from-arcgis-server.md)
+- [Import from GeoServices REST](../../guides/publish/import-from-arcgis-services.md)

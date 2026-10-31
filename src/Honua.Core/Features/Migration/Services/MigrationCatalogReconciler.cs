@@ -38,7 +38,7 @@ public static class MigrationCatalogReconciler
     /// Reconcile a batch of inventory resources against their published catalog entries.
     /// </summary>
     /// <param name="runId">Stable identifier for this reconciliation run.</param>
-    /// <param name="sourceKind">Source kind such as <c>arcgis-geoservices-rest</c>.</param>
+    /// <param name="sourceKind">Source kind such as <c>geoservices-rest</c>.</param>
     /// <param name="inputs">Per-resource reconciliation inputs.</param>
     /// <returns>Aggregate report with deterministic per-resource outcomes.</returns>
     public static MigrationCatalogReconciliationReport BuildReport(
@@ -228,7 +228,7 @@ public static class MigrationCatalogReconciler
             return;
         }
 
-        // Respect the capture-time coded-value cap (EsriFieldDomainParser.CodedValueDomainCap). A
+        // Respect the capture-time coded-value cap (GeoServicesFieldDomainParser.CodedValueDomainCap). A
         // coded-value domain that exceeded the cap at scan time is captured with its type/name but
         // NO coded values (DomainValues is null/empty) and is deliberately omitted from the publish
         // path (it would otherwise materialize as a misleading partial lookup). Reconciling such a

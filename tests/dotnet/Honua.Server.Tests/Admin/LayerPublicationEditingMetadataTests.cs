@@ -52,7 +52,7 @@ public sealed partial class LayerPublishingIntegrationTests
 
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
         var publication = snapshot.Graph.Publications.Single(candidate =>
-            candidate.LayerIndex == _layerId && candidate.PublicationType == MetadataV2PublicationType.EsriFeatureLayer);
+            candidate.LayerIndex == _layerId && candidate.PublicationType == MetadataV2PublicationType.GeoServicesFeatureLayer);
         var resource = snapshot.Graph.Resources.Single(candidate => candidate.Metadata.Id == publication.ResourceId);
         resource.Editing!.GlobalIdField.Should().Be("stable_id");
         resource.Editing.SupportsAttachments.Should().Be(supportsAttachments);

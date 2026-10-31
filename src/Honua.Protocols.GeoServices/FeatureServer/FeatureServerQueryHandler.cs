@@ -1610,7 +1610,7 @@ internal sealed partial class FeatureServerQueryHandler(
         FilterExpression? filterExpression = null;
         if (!string.IsNullOrWhiteSpace(validatedParams.Where))
         {
-            var parseResult = _filterExpressionService.Parse(FilterLanguage.ArcGisSql, validatedParams.Where);
+            var parseResult = _filterExpressionService.Parse(FilterLanguage.GeoServicesSql, validatedParams.Where);
             if (!parseResult.IsSuccess)
             {
                 return (null, null, StandardErrorHelpers.CreateBadRequest(context,

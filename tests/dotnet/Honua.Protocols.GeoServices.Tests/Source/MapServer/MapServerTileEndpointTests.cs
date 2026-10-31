@@ -130,7 +130,7 @@ public sealed class MapServerTileEndpointTests : IClassFixture<WebAppFixture>
                 "resource-binding-lifecycle",
                 layerIndex: 0,
                 storageBindingId: "binding-lifecycle",
-                publicationType: MetadataV2PublicationType.EsriMapLayer)
+                publicationType: MetadataV2PublicationType.GeoServicesMapLayer)
             .Build();
         graph = graph with
         {
@@ -164,7 +164,7 @@ public sealed class MapServerTileEndpointTests : IClassFixture<WebAppFixture>
                 "resource-tile-scale",
                 layerIndex: 0,
                 storageBindingId: "binding-tile-scale",
-                publicationType: MetadataV2PublicationType.EsriMapLayer)
+                publicationType: MetadataV2PublicationType.GeoServicesMapLayer)
             .Build();
         graph = graph with
         {

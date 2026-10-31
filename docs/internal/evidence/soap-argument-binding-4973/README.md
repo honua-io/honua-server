@@ -7,7 +7,7 @@ The GPServer adapter had the opposite defect: it accepted only unqualified
 arguments and rejected qualified or default-namespace ones.
 
 The fix binds SOAP arguments by local name in the shared SOAP read path,
-`ArcGisSoapProtocol.BindArgumentsByLocalName`. The catalog, GPServer and
+`GeoServicesSoapProtocol.BindArgumentsByLocalName`. The catalog, GPServer and
 ImageServer adapters all go through it. The same change makes the fault for an
 unrecognised argument name that element instead of reporting a count.
 
@@ -29,5 +29,5 @@ Recorded outcomes:
 
 The pinned candidate cannot contain this fix. A post-fix run on a release image
 happens when the candidate is re-pinned past the merge. Native Pro confirmation
-is evidence identifier `desktop-arcgis` in honua-esri-compat and is not linked
+is evidence identifier `desktop-gis` in honua-esri-compat and is not linked
 here.

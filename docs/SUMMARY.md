@@ -93,7 +93,7 @@
 - Publish data
   - [Import files](guides/publish/import-files.md)
   - [Import from object storage](guides/publish/import-from-object-storage.md)
-  - [Import from ArcGIS services](guides/publish/import-from-arcgis-services.md)
+  - [Import from GeoServices services](guides/publish/import-from-arcgis-services.md)
   - [Serve existing databases](guides/publish/serve-existing-databases.md)
   - [Publish layers](guides/publish/publish-layers.md)
   - [Publish rasters](guides/publish/publish-rasters.md)
@@ -117,7 +117,6 @@
   - [Work with time](guides/query-analyze/work-with-time.md)
 - Connect clients
   - [QGIS](guides/connect/qgis.md)
-  - [ArcGIS Pro & Esri SDKs](guides/connect/arcgis-pro.md)
   - [Excel & Power BI](guides/connect/excel-power-bi.md)
   - [MapLibre web maps](guides/connect/maplibre-web-maps.md)
   - [AI agents (MCP)](guides/connect/ai-agents-mcp.md)
@@ -163,9 +162,9 @@
   - [Route geoprocessing to AWS Batch](operator/geoprocessing-aws-batch.md)
   - [GP process release bindings](operator/geoprocessing-process-releases.md)
 - Migrate
-  - [From ArcGIS Server](guides/migrate/from-arcgis-server.md)
+  - [From GeoServices REST service](guides/migrate/from-arcgis-server.md)
   - [From GeoServer](guides/migrate/from-geoserver.md)
-  - [ArcGIS apps & SDKs](guides/migrate/arcgis-apps-and-sdks.md)
+  - [GeoServices apps & SDKs](guides/migrate/arcgis-apps-and-sdks.md)
 
 ## Catalog
 

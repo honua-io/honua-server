@@ -84,11 +84,11 @@ public static partial class EndpointRegistry
         new("POST", "/api/v1/admin/import/scan"),
 
         // v1 admin ArcGIS migration evidence endpoints (#1025 slice 6)
-        new("GET", "/api/v1/admin/import/arcgis/migrations"),
-        new("POST", "/api/v1/admin/import/arcgis/migrations/{runId}/manifest"),
-        new("GET", "/api/v1/admin/import/arcgis/migrations/{runId}/manifest"),
-        new("POST", "/api/v1/admin/import/arcgis/migrations/{runId}/parity"),
-        new("GET", "/api/v1/admin/import/arcgis/migrations/{runId}/parity"),
+        new("GET", "/api/v1/admin/import/geoservices-rest/migrations"),
+        new("POST", "/api/v1/admin/import/geoservices-rest/migrations/{runId}/manifest"),
+        new("GET", "/api/v1/admin/import/geoservices-rest/migrations/{runId}/manifest"),
+        new("POST", "/api/v1/admin/import/geoservices-rest/migrations/{runId}/parity"),
+        new("GET", "/api/v1/admin/import/geoservices-rest/migrations/{runId}/parity"),
 
         // v1 admin arcpy/toolbox translation lane (#2145)
         new("POST", "/api/v1/admin/import/toolbox/translation/validate"),

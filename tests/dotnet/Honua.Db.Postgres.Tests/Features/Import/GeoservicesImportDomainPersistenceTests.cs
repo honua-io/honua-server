@@ -87,7 +87,7 @@ public sealed class GeoservicesImportDomainPersistenceTests(PostgresFixture fixt
             var statusField = resource!.SchemaFields
                 .Single(f => f.Name.Equals("status", StringComparison.OrdinalIgnoreCase));
             statusField.Domain.Should().NotBeNull("the coded-value domain must survive import → publish → compat-compile");
-            statusField.Domain!.Type.Should().Be(EsriFieldDomainParser.CodedValueDomainType);
+            statusField.Domain!.Type.Should().Be(GeoServicesFieldDomainParser.CodedValueDomainType);
             statusField.Domain.Name.Should().Be("StatusDomain");
             statusField.Domain.CodedValues.Select(v => v.Name)
                 .Should().BeEquivalentTo(["Active", "Closed", "Pending"]);
@@ -95,7 +95,7 @@ public sealed class GeoservicesImportDomainPersistenceTests(PostgresFixture fixt
             var scoreField = resource.SchemaFields
                 .Single(f => f.Name.Equals("score", StringComparison.OrdinalIgnoreCase));
             scoreField.Domain.Should().NotBeNull("the range domain must survive import → publish → compat-compile");
-            scoreField.Domain!.Type.Should().Be(EsriFieldDomainParser.RangeDomainType);
+            scoreField.Domain!.Type.Should().Be(GeoServicesFieldDomainParser.RangeDomainType);
             scoreField.Domain.Name.Should().Be("ScoreRange");
             scoreField.Domain.Range.Should().NotBeNull();
             scoreField.Domain.Range!.Should().HaveCount(2);
@@ -122,9 +122,9 @@ public sealed class GeoservicesImportDomainPersistenceTests(PostgresFixture fixt
 
     private GeoservicesImportService CreateService(PostgresMetadataV2GraphStore graphStore, string dataSchema)
     {
-        var restClient = new ArcGisRestClient(
+        var restClient = new GeoServicesRestClient(
             new HttpClient(new DomainFeatureServerHandler()),
-            NullLogger<ArcGisRestClient>.Instance,
+            NullLogger<GeoServicesRestClient>.Instance,
             (_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
 
         var crsRegistry = new Mock<ICrsRegistry>(MockBehavior.Loose);
@@ -151,7 +151,7 @@ public sealed class GeoservicesImportDomainPersistenceTests(PostgresFixture fixt
             restClient,
             connectionProvider,
             crsRegistry.Object,
-            new EsriConstructCapabilityRegistry(EsriConstructCapabilityRegistry.BuiltInDescriptors),
+            new GeoServicesConstructCapabilityRegistry(GeoServicesConstructCapabilityRegistry.BuiltInDescriptors),
             NullLogger<GeoservicesImportService>.Instance,
             new GeoservicesLayerPublicationService(
                 NullLogger<GeoservicesLayerPublicationService>.Instance,

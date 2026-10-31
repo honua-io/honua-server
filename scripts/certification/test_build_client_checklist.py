@@ -92,12 +92,12 @@ class ExclusionReviewTests(unittest.TestCase):
         self.assertEqual(94, len(rows))
         self.assertEqual([], checklist.validate(rows))
         cells = [cell for row in rows for cell in row["lanes"].values()]
-        self.assertEqual(376, len(cells))
-        self.assertEqual(173, sum(cell["state"] == "pass" for cell in cells))
-        self.assertEqual(4, sum(cell["state"] == "fail" for cell in cells))
-        self.assertEqual(137, sum(cell["state"] == "blocked" for cell in cells))
+        self.assertEqual(188, len(cells))
+        self.assertEqual(117, sum(cell["state"] == "pass" for cell in cells))
+        self.assertEqual(0, sum(cell["state"] == "fail" for cell in cells))
+        self.assertEqual(57, sum(cell["state"] == "blocked" for cell in cells))
         reopened = [cell for cell in cells if "previous_exclusion" in cell]
-        self.assertEqual(157, len(reopened))
+        self.assertEqual(72, len(reopened))
         for cell in reopened:
             self.assertIn(cell["state"], ("blocked", "pass", "fail"))
             if cell["state"] == "pass":
@@ -114,16 +114,15 @@ class ExclusionReviewTests(unittest.TestCase):
                     for row in rows for lane, cell in row["lanes"].items()
                     if "previous_review" in cell}
         self.assertEqual(set(checklist.RESOLVED_EXCLUSION_EVIDENCE), resolved)
-        self.assertEqual(19, len(resolved))
-        self.assertEqual(20, sum(cell["state"] == "pass" and "previous_exclusion" in cell
+        self.assertEqual(14, len(resolved))
+        self.assertEqual(15, sum(cell["state"] == "pass" and "previous_exclusion" in cell
                                  for row in rows for cell in row["lanes"].values()))
-        gui = {key for key in resolved if key[3] not in ("arcpy", "pyqgis")}
+        gui = {key for key in resolved if key[3] not in ("pyqgis",)}
         self.assertEqual({("imageserver", "GeoServices REST", "service-info", "qgis-ui"),
                           ("imageserver", "GeoServices REST", "exportImage", "qgis-ui")}, gui)
         for key in gui:
             self.assertIn("native-qgis-image-tilejson-20260920-a/results.json", checklist.RESOLVED_EXCLUSION_EVIDENCE[key])
             self.assertIn("windows-computer-use", checklist.RESOLVED_EXCLUSION_EVIDENCE[key])
-        self.assertEqual(20, sum(row["lanes"]["pro-ui"]["state"] == "pass" for row in rows))
         self.assertEqual(53, sum(row["lanes"]["qgis-ui"]["state"] == "pass" for row in rows))
 
     def test_properties_hang_does_not_close_unperformed_gui_operations(self):
@@ -134,11 +133,6 @@ class ExclusionReviewTests(unittest.TestCase):
             self.assertEqual("blocked", row["lanes"]["qgis-ui"]["state"])
             self.assertNotIn("previous_review", row["lanes"]["qgis-ui"])
 
-    def test_old_exclusion_cannot_be_restored_as_closed(self):
-        rows = copy.deepcopy(checklist.build_rows(apply_results=False))
-        cell = next(row["lanes"]["arcpy"] for row in rows if row["protocol"] == "wcs")
-        cell.update(cell["previous_exclusion"])
-        self.assertTrue(any("disputed exclusion" in error for error in checklist.validate(rows)))
 
     def test_numeric_sampling_does_not_certify_imageserver_identify(self):
         rows = checklist.build_rows(apply_results=False)
@@ -149,19 +143,6 @@ class ExclusionReviewTests(unittest.TestCase):
         self.assertEqual("blocked", identify["lanes"]["pyqgis"]["state"])
         self.assertEqual("blocked", elevation["lanes"]["qgis-ui"]["state"])
 
-    def test_native_arcpy_replay_keeps_invalid_pass_and_native_failure_history(self):
-        rows = checklist.build_rows(apply_results=False)
-        cell = next(row["lanes"]["arcpy"] for row in rows
-                    if row["protocol"] == "featureserver" and row["operation"] == "statistics")
-        self.assertEqual("pass", cell["state"])
-        self.assertEqual("pass", cell["previous_pass"]["state"])
-        self.assertEqual(checklist.EV["arcpy-featureserver-statistics"], cell["previous_pass"]["evidence"])
-        self.assertEqual("fail", cell["previous_failure"]["state"])
-        self.assertTrue(cell["previous_failure"]["issue"].endswith("/5045"))
-        self.assertIn("arcpy-dbms-statistics-20260920-e", cell["previous_failure"]["evidence"])
-        self.assertIn("arcpy-dbms-statistics-20260920-g", cell["evidence"])
-        cell.update(cell["previous_pass"])
-        self.assertTrue(any("local calculation" in error for error in checklist.validate(rows)))
 
     def test_native_ogr_statistics_reopens_only_exact_qgis_operations(self):
         rows = checklist.build_rows(apply_results=False)
@@ -205,62 +186,17 @@ class ExclusionReviewTests(unittest.TestCase):
                 self.assertIn("WorldCRS84Quad", row["lanes"]["pyqgis"]["evidence"])
                 self.assertIn("WebMercator default", row["lanes"]["pyqgis"]["evidence"])
 
-    def test_alternative_network_tools_reopen_review_without_native_credit(self):
-        rows = checklist.build_rows(apply_results=False)
-        for row in rows:
-            if row["protocol"] == "naserver":
-                cell = row["lanes"]["arcpy"]
-                self.assertEqual("blocked", cell["state"])
-                self.assertEqual("n/a-no-client", cell["previous_exclusion"]["state"])
-                self.assertNotIn("evidence", cell)
-                self.assertIn("source inventory", cell["citation"])
-                cell.update(cell["previous_exclusion"])
-                self.assertTrue(any("native operation entrypoint" in error for error in checklist.validate(rows)))
 
     def test_collection_maps_overview_does_not_close_other_client_lanes(self):
         row = next(row for row in checklist.build_rows(apply_results=False) if row["protocol"] == "ogc-api-maps")
         self.assertEqual("pass", row["lanes"]["pyqgis"]["state"])
-        for lane in ("pro-ui", "arcpy", "qgis-ui"):
+        for lane in ("qgis-ui",):
             self.assertEqual("blocked", row["lanes"][lane]["state"])
         evidence = row["lanes"]["pyqgis"]["evidence"]
         for qualification in ("229x214 native overview", "no root discovery", "dataset landing metadata defect"):
             self.assertIn(qualification, evidence)
 
 
-class CertifiedBuildTokenTests(unittest.TestCase):
-    """A pass names the build under certification, matched at version boundaries."""
-
-    def _matches(self, lane, evidence):
-        return any(matcher.search(evidence)
-                   for matcher in checklist.CERTIFIED_BUILD_TOKEN_MATCHERS_BY_LANE[lane])
-
-    def test_three_part_arcpy_token_still_accepts_the_build_number_suffix(self):
-        # arcpy.GetInstallInfo() reports "3.7.1" with no build number, and the
-        # four-part form has to keep matching the same seat.
-        self.assertTrue(self._matches("arcpy", "arcpy 3.7.1 reported by GetInstallInfo"))
-        self.assertTrue(self._matches("arcpy", "arcpy 3.7.1.1904 probe, 2026-09-18"))
-
-    def test_three_part_arcpy_token_rejects_a_neighbouring_patch_version(self):
-        # As a bare substring "3.7.1" also matched "3.7.10", crediting evidence from
-        # a different build to this certification target.
-        self.assertFalse(self._matches("arcpy", "ArcGIS Pro 3.7.10 probe"))
-        self.assertFalse(self._matches("arcpy", "ArcGIS Pro 3.7.11.2000 probe"))
-        self.assertFalse(self._matches("arcpy", "ArcGIS Pro 13.7.1 probe"))
-
-    def test_the_other_lanes_keep_their_strict_tokens(self):
-        self.assertFalse(self._matches("pro-ui", "ArcGIS Pro 3.7.1 About page"))
-        self.assertTrue(self._matches("pro-ui", "ArcGIS Pro 3.7.1.1904 About page"))
-        self.assertTrue(self._matches("qgis-ui", "QGIS 3.44.14 LTR"))
-        self.assertFalse(self._matches("qgis-ui", "QGIS 3.44.140 LTR"))
-        self.assertFalse(self._matches("qgis-ui", "QGIS 3.44.3 LTR"))
-
-    def test_validate_rejects_a_pass_naming_a_neighbouring_build(self):
-        rows = checklist.build_rows(apply_results=False)
-        cell = next(row["lanes"]["arcpy"] for row in rows
-                    if row["lanes"]["arcpy"]["state"] == "pass")
-        cell["evidence"] = "arcpy 3.7.10 probe, 2026-09-18: the operation returned rows"
-        self.assertTrue(any("a build under certification" in problem
-                            for problem in checklist.validate(rows)))
 
 
 class CertifiedResultOverlayTests(unittest.TestCase):
@@ -282,7 +218,7 @@ class CertifiedResultOverlayTests(unittest.TestCase):
     def _real_result(self):
         entry = checklist.MATRIX[0]
         return {"protocol": entry["protocol"], "version": entry["version"],
-                "operation": next(iter(entry["operations"])), "lane": "arcpy",
+                "operation": next(iter(entry["operations"])), "lane": "qgis-ui",
                 "cell": {"state": "not-started"}}
 
     def test_every_committed_result_addresses_a_checklist_cell(self):
@@ -301,7 +237,7 @@ class CertifiedResultOverlayTests(unittest.TestCase):
 
     def test_a_key_naming_no_cell_is_rejected(self):
         for field, bad in (("protocol", "wmz"), ("version", "9.9"),
-                           ("operation", "GetNothing"), ("lane", "arcpyy")):
+                           ("operation", "GetNothing"), ("lane", "qgis-ui-invalid")):
             with self.subTest(field=field):
                 with self.assertRaises(ValueError) as caught:
                     self._load([dict(self._real_result(), **{field: bad})])

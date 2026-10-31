@@ -22,7 +22,7 @@ namespace Honua.Core.Features.Migration.Services;
 public static class MigrationServiceConstructAccountant
 {
     /// <summary>The source kind the construct matrix is defined for.</summary>
-    public const string GeoservicesSourceKind = "arcgis-geoservices-rest";
+    public const string GeoservicesSourceKind = "geoservices-rest";
 
     private static readonly string[] SupportedServiceTypes = ["FeatureServer", "MapServer"];
 
@@ -34,7 +34,7 @@ public static class MigrationServiceConstructAccountant
     /// <summary>
     /// Accounts a selection against a persisted manifest body.
     /// </summary>
-    /// <param name="sourceKind">Source kind of the migration, such as <c>arcgis-geoservices-rest</c>.</param>
+    /// <param name="sourceKind">Source kind of the migration, such as <c>geoservices-rest</c>.</param>
     /// <param name="manifestBody">Manifest JSON, or <c>null</c> when none was supplied.</param>
     /// <param name="selection">Layers and tables selected for migration.</param>
     /// <returns>The accounting; not executed when the manifest is missing, unreadable or for another source kind.</returns>
@@ -247,8 +247,8 @@ public static class MigrationServiceConstructAccountant
             // for any other reason (no query capability) transfers no geometry either.
             var geometryStatus = resource.CompatibilityCode switch
             {
-                ImportCompatibilityCodes.ArcGisUnsupportedGeometry => MigrationFidelityAutomationStatuses.Unsupported,
-                ImportCompatibilityCodes.ArcGisMissingSpatialRef => MigrationFidelityAutomationStatuses.ManualReview,
+                ImportCompatibilityCodes.GeoServicesUnsupportedGeometry => MigrationFidelityAutomationStatuses.Unsupported,
+                ImportCompatibilityCodes.GeoServicesMissingSpatialRef => MigrationFidelityAutomationStatuses.ManualReview,
                 _ when incompatible => MigrationFidelityAutomationStatuses.Unsupported,
                 _ => MigrationFidelityAutomationStatuses.Automated
             };

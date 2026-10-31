@@ -55,7 +55,7 @@ internal static class ProcessMigrationEvidenceClassifier
     // Single shared registry instance built from the same descriptor set the DI
     // container seeds, so the static GP classifier resolves identical verdicts.
     private static readonly IEsriConstructCapabilityRegistry Registry =
-        new EsriConstructCapabilityRegistry(EsriConstructCapabilityRegistry.BuiltInDescriptors);
+        new GeoServicesConstructCapabilityRegistry(GeoServicesConstructCapabilityRegistry.BuiltInDescriptors);
 
     public static ProcessMigrationEvidenceClassification Classify(ProcessDefinition definition)
         => Classify(definition, Registry);
@@ -78,7 +78,7 @@ internal static class ProcessMigrationEvidenceClassifier
         var tier = ToAutomationTier(descriptor.AutomationStatus);
         var requiresApproval = string.Equals(
             constructKey,
-            EsriConstructCapabilityRegistry.Keys.GpDestructiveDataManagement,
+            GeoServicesConstructCapabilityRegistry.Keys.GpDestructiveDataManagement,
             StringComparison.Ordinal);
 
         return new ProcessMigrationEvidenceClassification(
@@ -99,22 +99,22 @@ internal static class ProcessMigrationEvidenceClassifier
         var processId = definition.ProcessId;
         if (FirstSliceAutomatedVectorProcessIds.Contains(processId))
         {
-            return EsriConstructCapabilityRegistry.Keys.GpVectorDeterministic;
+            return GeoServicesConstructCapabilityRegistry.Keys.GpVectorDeterministic;
         }
 
         if (ProcessDestructiveClassifier.IsDestructive(processId))
         {
-            return EsriConstructCapabilityRegistry.Keys.GpDestructiveDataManagement;
+            return GeoServicesConstructCapabilityRegistry.Keys.GpDestructiveDataManagement;
         }
 
         return definition.Category switch
         {
-            "surface" or "raster" => EsriConstructCapabilityRegistry.Keys.GpRasterSurface,
-            "imagery" => EsriConstructCapabilityRegistry.Keys.GpImageryInference,
+            "surface" or "raster" => GeoServicesConstructCapabilityRegistry.Keys.GpRasterSurface,
+            "imagery" => GeoServicesConstructCapabilityRegistry.Keys.GpImageryInference,
             "conversion" when definition.OutputArtifactKinds.Contains(ArtifactKind.Raster) =>
-                EsriConstructCapabilityRegistry.Keys.GpRasterConversion,
-            "data-management" => EsriConstructCapabilityRegistry.Keys.GpDataManagement,
-            _ => EsriConstructCapabilityRegistry.Keys.GpUnsupported
+                GeoServicesConstructCapabilityRegistry.Keys.GpRasterConversion,
+            "data-management" => GeoServicesConstructCapabilityRegistry.Keys.GpDataManagement,
+            _ => GeoServicesConstructCapabilityRegistry.Keys.GpUnsupported
         };
     }
 

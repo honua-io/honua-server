@@ -62,7 +62,7 @@ internal static partial class FeatureServerEndpoints
             var destinationSide = IsDestinationRelationshipRole(role);
             var origin = destinationSide ? related : local;
             var destination = destinationSide ? local : related;
-            var id = relationship.EsriRelationshipId ?? StableStringHash(relationship.Id);
+            var id = relationship.GeoServicesRelationshipId ?? StableStringHash(relationship.Id);
             var originPrimaryKey = destinationSide ? relationship.DestinationField : relationship.OriginField;
             var originForeignKey = destinationSide ? relationship.OriginField : relationship.DestinationField;
             var cardinality = MapEsriCardinality(relationship.Cardinality);

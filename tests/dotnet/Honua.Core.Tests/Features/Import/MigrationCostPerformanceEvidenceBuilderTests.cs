@@ -123,7 +123,7 @@ public sealed class MigrationCostPerformanceEvidenceBuilderTests
             MeasurementScope = "large fixture",
             FixtureProfile = new MigrationCostPerformanceFixtureProfile
             {
-                SourceFamily = MigrationCostPerformanceSourceFamilies.ArcGisGeoServicesRest,
+                SourceFamily = MigrationCostPerformanceSourceFamilies.GeoServicesGeoServicesRest,
                 Size = MigrationCostPerformanceFixtureSizes.Large,
                 ExpectedResourceCount = 1,
                 ExpectedFeatureCount = 1

@@ -46,10 +46,10 @@ public sealed class FederatedSourceConnectorTests
         """;
 
     [UnitTest]
-    public async Task EsriRest_PushesDownWhereEnvelopeAndPaging_AndMapsFeatures()
+    public async Task GeoServicesRest_PushesDownWhereEnvelopeAndPaging_AndMapsFeatures()
     {
         var (handler, factory) = CreateClient();
-        var connector = new EsriRestFederatedSourceConnector(factory, NullLogger<EsriRestFederatedSourceConnector>.Instance);
+        var connector = new GeoServicesRestFederatedSourceConnector(factory, NullLogger<GeoServicesRestFederatedSourceConnector>.Instance);
 
         var query = new FeatureQuery
         {
@@ -59,7 +59,7 @@ public sealed class FederatedSourceConnectorTests
             Offset = 50,
         };
 
-        var features = await Fetch(connector, EsriSource(), query);
+        var features = await Fetch(connector, GeoServicesSource(), query);
 
         var uri = handler.LastRequestUri!;
         uri.AbsolutePath.Should().EndWith("/0/query");
@@ -76,12 +76,12 @@ public sealed class FederatedSourceConnectorTests
     }
 
     [UnitTest]
-    public async Task EsriRest_NoAttributeFilter_SendsSelectAllWhere()
+    public async Task GeoServicesRest_NoAttributeFilter_SendsSelectAllWhere()
     {
         var (handler, factory) = CreateClient();
-        var connector = new EsriRestFederatedSourceConnector(factory, NullLogger<EsriRestFederatedSourceConnector>.Instance);
+        var connector = new GeoServicesRestFederatedSourceConnector(factory, NullLogger<GeoServicesRestFederatedSourceConnector>.Instance);
 
-        await Fetch(connector, EsriSource(), new FeatureQuery());
+        await Fetch(connector, GeoServicesSource(), new FeatureQuery());
 
         var q = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(handler.LastRequestUri!.Query);
         q["where"].ToString().Should().Be("1=1");
@@ -142,9 +142,9 @@ public sealed class FederatedSourceConnectorTests
     {
         var handler = new CapturingHandler(_ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
         var factory = new StubHttpClientFactory(handler);
-        var connector = new EsriRestFederatedSourceConnector(factory, NullLogger<EsriRestFederatedSourceConnector>.Instance);
+        var connector = new GeoServicesRestFederatedSourceConnector(factory, NullLogger<GeoServicesRestFederatedSourceConnector>.Instance);
 
-        var act = async () => await Fetch(connector, EsriSource(), new FeatureQuery());
+        var act = async () => await Fetch(connector, GeoServicesSource(), new FeatureQuery());
 
         await act.Should().ThrowAsync<HttpRequestException>();
     }
@@ -188,11 +188,11 @@ public sealed class FederatedSourceConnectorTests
         return (handler, new StubHttpClientFactory(handler));
     }
 
-    private static FederatedSourceDescriptor EsriSource() => new()
+    private static FederatedSourceDescriptor GeoServicesSource() => new()
     {
         Id = "esri",
         DisplayName = "Esri",
-        Kind = FederatedSourceKind.EsriRest,
+        Kind = FederatedSourceKind.GeoServicesRest,
         Endpoint = new Uri("https://gis.example.gov/arcgis/rest/services/Parcels/FeatureServer"),
         RemoteLayer = "0",
         RequestTimeout = TimeSpan.FromSeconds(15),

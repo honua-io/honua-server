@@ -140,7 +140,7 @@ internal sealed class JudgmentOperation
     /// The derived Esri-relative operation paths this judgement covers — the join keys —
     /// as authored. Each must be served, and no other entry may claim the same path.
     /// </summary>
-    public string[]? EsriPaths { get; init; }
+    public string[]? GeoServicesPaths { get; init; }
 
     /// <summary>Set when the operation has no Esri equivalent (a Honua extension).</summary>
     public HonuaExtension? HonuaExtension { get; init; }
@@ -153,7 +153,7 @@ internal sealed class JudgmentOperation
     /// than letting a judgement float free of any operation.
     /// </summary>
     [JsonIgnore]
-    public string[] PathList => EsriPaths ?? [];
+    public string[] PathList => GeoServicesPaths ?? [];
 }
 
 /// <summary>An Esri operation Honua does not serve.</summary>
@@ -163,7 +163,7 @@ internal sealed class AbsentOperation
     public string Name { get; init; } = string.Empty;
 
     /// <summary>Esri-relative path of the operation Honua does not serve.</summary>
-    public string EsriPath { get; init; } = string.Empty;
+    public string GeoServicesPath { get; init; } = string.Empty;
 
     /// <summary>Why it is not served.</summary>
     public string Notes { get; init; } = string.Empty;
@@ -335,7 +335,7 @@ internal sealed class ParityOperation
     public string Status { get; init; } = string.Empty;
 
     /// <summary>Esri-relative operation paths. DERIVED — do not hand-edit.</summary>
-    public string[] EsriPaths { get; init; } = [];
+    public string[] GeoServicesPaths { get; init; } = [];
 
     /// <summary>Every served <c>METHOD /path</c> behind those operations. DERIVED — do not hand-edit.</summary>
     public string[] HonuaEndpoints { get; init; } = [];

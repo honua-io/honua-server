@@ -276,7 +276,7 @@ internal static partial class FeatureServerEndpoints
         }
 
         var filterService = context.RequestServices.GetRequiredService<IFilterExpressionService>();
-        var parseResult = filterService.Parse(FilterLanguage.ArcGisSql, whereClause);
+        var parseResult = filterService.Parse(FilterLanguage.GeoServicesSql, whereClause);
         if (!parseResult.IsSuccess)
         {
             errorResult = StandardErrorHelpers.CreateBadRequest(context,

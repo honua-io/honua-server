@@ -63,7 +63,7 @@ internal static class GeoServicesParityGenerator
         var judgment = LoadJudgment();
 
         var rosterByPath = roster.Operations.ToDictionary(
-            operation => operation.EsriPath, StringComparer.Ordinal);
+            operation => operation.GeoServicesPath, StringComparer.Ordinal);
 
         var claims = judgment.ServiceList
             .SelectMany(service => service.OperationList.Select(operation => (Service: service, Operation: operation)))
@@ -94,10 +94,10 @@ internal static class GeoServicesParityGenerator
 
         var servedAbsent = judgment.ServiceList
             .SelectMany(service => service.AbsentList.Select(operation => (Service: service, Operation: operation)))
-            .Where(pair => !pair.Operation.EsriPath.Contains('*', StringComparison.Ordinal))
-            .Where(pair => rosterByPath.ContainsKey(pair.Operation.EsriPath))
-            .OrderBy(pair => pair.Operation.EsriPath, StringComparer.Ordinal)
-            .Select(pair => $"{pair.Service.Id}/{pair.Operation.Name}: {pair.Operation.EsriPath}")
+            .Where(pair => !pair.Operation.GeoServicesPath.Contains('*', StringComparison.Ordinal))
+            .Where(pair => rosterByPath.ContainsKey(pair.Operation.GeoServicesPath))
+            .OrderBy(pair => pair.Operation.GeoServicesPath, StringComparer.Ordinal)
+            .Select(pair => $"{pair.Service.Id}/{pair.Operation.Name}: {pair.Operation.GeoServicesPath}")
             .ToArray();
 
         var misfiled = claims
@@ -143,7 +143,7 @@ internal static class GeoServicesParityGenerator
     {
         var join = Join();
         var rosterByPath = join.Roster.Operations.ToDictionary(
-            operation => operation.EsriPath, StringComparer.Ordinal);
+            operation => operation.GeoServicesPath, StringComparer.Ordinal);
 
         var services = join.Judgment.ServiceList
             .Select(service =>
@@ -164,7 +164,7 @@ internal static class GeoServicesParityGenerator
                     Partial = Bucket(operations, "partial"),
                     Stub = Bucket(operations, "stub"),
                     NotImplemented = service.AbsentList
-                        .OrderBy(operation => operation.EsriPath, StringComparer.Ordinal)
+                        .OrderBy(operation => operation.GeoServicesPath, StringComparer.Ordinal)
                         .ToArray(),
                 };
 
@@ -254,7 +254,7 @@ internal static class GeoServicesParityGenerator
     private static ParityOperation[] Bucket(IEnumerable<ParityOperation> operations, string status)
         => operations
             .Where(operation => string.Equals(operation.Status, status, StringComparison.Ordinal))
-            .OrderBy(operation => operation.EsriPaths.Length == 0 ? string.Empty : operation.EsriPaths[0], StringComparer.Ordinal)
+            .OrderBy(operation => operation.GeoServicesPaths.Length == 0 ? string.Empty : operation.GeoServicesPaths[0], StringComparer.Ordinal)
             .ThenBy(operation => operation.Name, StringComparer.Ordinal)
             .ToArray();
 
@@ -268,7 +268,7 @@ internal static class GeoServicesParityGenerator
         {
             Name = operation.Name,
             Status = operation.Status,
-            EsriPaths = paths,
+            GeoServicesPaths = paths,
             HonuaEndpoints = paths
                 .SelectMany(path => rosterByPath[path].HonuaEndpoints)
                 .Distinct(StringComparer.Ordinal)

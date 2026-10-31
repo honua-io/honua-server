@@ -30,7 +30,7 @@ public static class PortalServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
         services.TryAddSingleton<IEsriConstructCapabilityRegistry>(
-            _ => new EsriConstructCapabilityRegistry(EsriConstructCapabilityRegistry.BuiltInDescriptors));
+            _ => new GeoServicesConstructCapabilityRegistry(GeoServicesConstructCapabilityRegistry.BuiltInDescriptors));
         services.TryAddSingleton<IPortalItemProjector, PortalItemProjector>();
         return services;
     }

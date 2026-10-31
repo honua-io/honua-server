@@ -166,7 +166,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             layerIdText,
             graphLayerKey,
             request.LayerName.Trim(),
-            MetadataV2PublicationType.EsriFeatureLayer,
+            MetadataV2PublicationType.GeoServicesFeatureLayer,
             isPrimary: true,
             idPrefix: "pub",
             request.Enabled,
@@ -2834,7 +2834,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             string.Equals(publication.ServiceId, service.Metadata.Id, StringComparison.Ordinal) &&
             string.Equals(publication.ResourceId, resource.Metadata.Id, StringComparison.Ordinal) &&
             string.Equals(publication.StorageBindingId, binding.Metadata.Id, StringComparison.Ordinal) &&
-            publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer);
+            publication.PublicationType == MetadataV2PublicationType.GeoServicesFeatureLayer);
         MetadataV2Publication featurePublication;
         if (existingFeaturePublication is not null)
         {
@@ -2844,7 +2844,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         {
             var collidingFeaturePublication = graph.Publications.FirstOrDefault(publication =>
                 string.Equals(publication.ServiceId, service.Metadata.Id, StringComparison.Ordinal) &&
-                publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer &&
+                publication.PublicationType == MetadataV2PublicationType.GeoServicesFeatureLayer &&
                 publication.LayerIndex == layerId &&
                 (!string.Equals(publication.ResourceId, resource.Metadata.Id, StringComparison.Ordinal) ||
                  !string.Equals(publication.StorageBindingId, binding.Metadata.Id, StringComparison.Ordinal)));
@@ -2864,7 +2864,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 layerIdText,
                 BuildLayerGraphId("layer", layerId, storageScope?.ManagedLayerIds?.Contains(layerId) == true ? null : storageScope?.ConnectionId),
                 layerName,
-                MetadataV2PublicationType.EsriFeatureLayer,
+                MetadataV2PublicationType.GeoServicesFeatureLayer,
                 isPrimary: true,
                 idPrefix: "pub",
                 enabled,
@@ -3068,11 +3068,11 @@ internal sealed partial class PostgreSqlLayerPublishingService
     }
 
     private static bool IsFeatureServerService(MetadataV2Graph graph, MetadataV2Service service)
-        => service.ServiceType == MetadataV2ServiceType.EsriFeatureService ||
+        => service.ServiceType == MetadataV2ServiceType.GeoServicesFeatureService ||
            service.Protocols.Contains(MetadataV2ServiceProtocols.FeatureServer, StringComparer.OrdinalIgnoreCase) ||
            graph.Publications.Any(publication =>
                string.Equals(publication.ServiceId, service.Metadata.Id, StringComparison.Ordinal) &&
-               publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer);
+               publication.PublicationType == MetadataV2PublicationType.GeoServicesFeatureLayer);
 
     // Loads the active Metadata v2 graph for mutation, tolerating a fresh-DB
     // container where no snapshot has been activated yet (e.g. migration 031 ran
@@ -3250,7 +3250,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         return new MetadataV2Service
         {
             Metadata = metadata,
-            ServiceType = MetadataV2ServiceType.EsriFeatureService,
+            ServiceType = MetadataV2ServiceType.GeoServicesFeatureService,
             Route = $"/rest/services/{serviceName}/FeatureServer",
             Protocols = MetadataV2ServiceProtocols.All,
             SpatialReference = CreateSpatialReference(srid),

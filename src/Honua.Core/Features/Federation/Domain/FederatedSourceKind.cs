@@ -28,7 +28,7 @@ public enum FederatedSourceKind
     /// API accepts a SQL-like <c>where</c> clause and a spatial envelope, so attribute and
     /// spatial predicates push down but temporal interval filters are evaluated locally.
     /// </summary>
-    EsriRest,
+    GeoServicesRest,
 
     /// <summary>
     /// A remote OGC API - Features or WFS endpoint reached over HTTP. CQL2 attribute and

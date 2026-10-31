@@ -43,7 +43,7 @@ public static class CogPublicationBinding
 
             anyCount++;
             anyMatch = publication;
-            if (publication.PublicationType == MetadataV2PublicationType.EsriImageLayer)
+            if (publication.PublicationType == MetadataV2PublicationType.GeoServicesImageLayer)
             {
                 imageCount++;
                 imageMatch = publication;

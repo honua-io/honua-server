@@ -422,7 +422,7 @@ public class ImageServerExportHandlerTests
 
     [UnitTest]
     [Operation(Operations.Export)]
-    public async Task ExportImageAsync_WithoutSize_UsesArcGisDefaultDimensions()
+    public async Task ExportImageAsync_WithoutSize_UsesGeoServicesDefaultDimensions()
     {
         SetupLayerAndRasters();
         RasterQuery? capturedQuery = null;
@@ -1780,7 +1780,7 @@ public class ImageServerExportHandlerTests
                 $"resource-{layerIndex}",
                 layerIndex: layerIndex,
                 serviceLocalId: "test-layer",
-                publicationType: MetadataV2PublicationType.EsriImageLayer)
+                publicationType: MetadataV2PublicationType.GeoServicesImageLayer)
             .BuildProvider();
 
     private static RasterInfo CreateTestRasterInfo() => new()

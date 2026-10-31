@@ -259,7 +259,7 @@ public sealed class MapServerDynamicWorkspaceTests
                 layerIndex: WorkspaceLayerId,
                 storageBindingId: "binding-workspace-layer",
                 serviceLocalId: WorkspaceLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                publicationType: MetadataV2PublicationType.EsriMapLayer)
+                publicationType: MetadataV2PublicationType.GeoServicesMapLayer)
             .BuildProvider();
     }
 }

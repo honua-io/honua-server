@@ -82,7 +82,7 @@ public sealed record MigrationReadinessAttestationArtifact
     public required string FixtureId { get; init; }
 
     /// <summary>
-    /// Source kind such as <c>arcgis-geoservices-rest</c>, <c>geoserver-rest</c>, or
+    /// Source kind such as <c>geoservices-rest</c>, <c>geoserver-rest</c>, or
     /// <c>ogc-api-features</c>.
     /// </summary>
     public required string SourceKind { get; init; }

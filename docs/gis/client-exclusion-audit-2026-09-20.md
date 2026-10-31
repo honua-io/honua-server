@@ -21,14 +21,11 @@ exclusions are not automatically endorsed by this first audit.
 
 | Reopened claim | Cells | Why the exclusion is insufficient |
 |---|---:|---|
-| Generic ArcPy module-list citation | 38 | A module list is not operation-specific evidence. The WCS exclusion is not accepted on that citation. Detail stays in honua-esri-compat. |
-| ArcPy `Map.addDataFromPath` service-type probe | 3 | One entry point does not close the cell. Detail stays in honua-esri-compat. |
 | Unnamed missing QGIS provider | 30 | The citation supplies neither the provider name nor a receipt. Shared GDAL/OGR drivers must be considered; the installed GDAL exposes OGCAPI. |
 | QGIS WCS 2.0.1 excluded using the dedicated WCS provider | 6 | The stock GDAL provider successfully loads WCS 2.0.1 and reads a pixel; the dedicated provider does not define the entire client surface. |
 | Pro WCS 1.0 superseded by default negotiation | 3 | A default preference for 2.0.1 does not establish that explicitly selecting 1.0.0 is impossible. |
 | Pro OGC API Tiles vector-only fixture | 2 | Pro documents map tiles support. Missing map tiles in a fixture is a setup or server metadata problem to investigate. |
 | Pro OData excluded using an OGC classic service list | 2 | OData is not an OGC classic service; the citation cannot establish absence. |
-| ArcPy SOAP excluded using a REST-only claim | 1 | A REST-only citation does not close the SOAP cell. Detail stays in honua-esri-compat. |
 
 ## Evidence identifiers
 
@@ -36,7 +33,7 @@ The checks behind this audit are not restated here (ruling R30). They were
 setup and SDK diagnostics, not native UI receipts and not new certification
 passes.
 
-- ArcPy build retained with this audit: 3.7.1 build 1901. Pro executable retained
+- GeoServicesPython build retained with this audit: 3.7.1 build 1901. Pro executable retained
   as 3.7.1.1904. Both stay historical identities, not a new certificate.
 - WCS diagnostic on 2026-09-20 about 04:29 UTC: `ERROR 999999`. Not a protocol
   pass and not a no-client exclusion.

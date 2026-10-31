@@ -1240,56 +1240,6 @@
     {
       "spec": "admin-api",
       "method": "GET",
-      "path": "/api/v1/admin/import/arcgis/migrations",
-      "operationId": "listArcGisMigrationRuns",
-      "capability": "import.geoservices",
-      "family": "Admin API",
-      "maturity": "implemented",
-      "catalogEntryId": "get-api-v1-admin-import-arcgis-migrations"
-    },
-    {
-      "spec": "admin-api",
-      "method": "GET",
-      "path": "/api/v1/admin/import/arcgis/migrations/{runId}/manifest",
-      "operationId": "getArcGisMigrationManifest",
-      "capability": "import.geoservices",
-      "family": "Admin API",
-      "maturity": "implemented",
-      "catalogEntryId": "get-api-v1-admin-import-arcgis-migrations-runid-manifest"
-    },
-    {
-      "spec": "admin-api",
-      "method": "POST",
-      "path": "/api/v1/admin/import/arcgis/migrations/{runId}/manifest",
-      "operationId": "recordArcGisMigrationManifest",
-      "capability": "import.geoservices",
-      "family": "Admin API",
-      "maturity": "implemented",
-      "catalogEntryId": "post-api-v1-admin-import-arcgis-migrations-runid-manifest"
-    },
-    {
-      "spec": "admin-api",
-      "method": "GET",
-      "path": "/api/v1/admin/import/arcgis/migrations/{runId}/parity",
-      "operationId": "getArcGisMigrationParity",
-      "capability": "import.geoservices",
-      "family": "Admin API",
-      "maturity": "implemented",
-      "catalogEntryId": "get-api-v1-admin-import-arcgis-migrations-runid-parity"
-    },
-    {
-      "spec": "admin-api",
-      "method": "POST",
-      "path": "/api/v1/admin/import/arcgis/migrations/{runId}/parity",
-      "operationId": "recordArcGisMigrationParity",
-      "capability": "import.geoservices",
-      "family": "Admin API",
-      "maturity": "implemented",
-      "catalogEntryId": "post-api-v1-admin-import-arcgis-migrations-runid-parity"
-    },
-    {
-      "spec": "admin-api",
-      "method": "GET",
       "path": "/api/v1/admin/import/formats",
       "operationId": "getImportFormats",
       "capability": "import.file",
@@ -1346,6 +1296,56 @@
       "family": "Admin API",
       "maturity": "implemented",
       "catalogEntryId": "post-api-v1-admin-import-geoserver-start"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/import/geoservices-rest/migrations",
+      "operationId": "listGeoServicesMigrationRuns",
+      "capability": "import.geoservices",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-import-arcgis-migrations"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/import/geoservices-rest/migrations/{runId}/manifest",
+      "operationId": "getGeoServicesMigrationManifest",
+      "capability": "import.geoservices",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-import-arcgis-migrations-runid-manifest"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/import/geoservices-rest/migrations/{runId}/manifest",
+      "operationId": "recordGeoServicesMigrationManifest",
+      "capability": "import.geoservices",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-import-arcgis-migrations-runid-manifest"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/import/geoservices-rest/migrations/{runId}/parity",
+      "operationId": "getGeoServicesMigrationParity",
+      "capability": "import.geoservices",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-import-arcgis-migrations-runid-parity"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/import/geoservices-rest/migrations/{runId}/parity",
+      "operationId": "recordGeoServicesMigrationParity",
+      "capability": "import.geoservices",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-import-arcgis-migrations-runid-parity"
     },
     {
       "spec": "admin-api",

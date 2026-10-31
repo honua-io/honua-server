@@ -375,19 +375,19 @@ public sealed class ProviderRoutedTileAndH3EndpointTests :
                 .AddPublication(
                     "publication-secondary", "service-routed", "resource-secondary",
                     layerIndex: 0, storageBindingId: "binding-secondary",
-                    publicationType: MetadataV2PublicationType.EsriVectorTileLayer)
+                    publicationType: MetadataV2PublicationType.GeoServicesVectorTileLayer)
                 .AddPublication(
                     "publication-primary", "service-routed", "resource-primary",
                     layerIndex: 1, storageBindingId: "binding-primary",
-                    publicationType: MetadataV2PublicationType.EsriVectorTileLayer, isPrimary: true)
+                    publicationType: MetadataV2PublicationType.GeoServicesVectorTileLayer, isPrimary: true)
                 .AddPublication(
                     "publication-secondary-feature", "service-routed", "resource-secondary",
                     layerIndex: 0, storageBindingId: "binding-secondary",
-                    publicationType: MetadataV2PublicationType.EsriFeatureLayer)
+                    publicationType: MetadataV2PublicationType.GeoServicesFeatureLayer)
                 .AddPublication(
                     "publication-primary-feature", "service-routed", "resource-primary",
                     layerIndex: 1, storageBindingId: "binding-primary",
-                    publicationType: MetadataV2PublicationType.EsriFeatureLayer, isPrimary: true)
+                    publicationType: MetadataV2PublicationType.GeoServicesFeatureLayer, isPrimary: true)
                 .BuildProvider();
         }
 

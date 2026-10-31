@@ -32,14 +32,13 @@ What we run, what passes, what the formal certification posture is.
   - OGC API Maps coverage doesn't ship as a spec doc; see the Maps section in [`contributor/cite-runbook.md`](../contributor/cite-runbook.md#ogc-api-maps) (integration-test-driven, not TeamEngine-driven).
 - **Visual style certification** — [`gis/visual-style-certification-slice.md`](visual-style-certification-slice.md). Render-regression evidence for style fidelity across protocols.
 
-## Esri / ArcGIS protocol parity
+## GeoServices / GeoServices protocol parity
 
-How Honua's GeoServices REST surface compares to Esri's.
+How Honua's GeoServices REST surface compares to GeoServices's.
 
 - **GeoServices REST parity overview** — [`gis/geoservices-rest-parity.md`](../../reference/compatibility/geoservices-parity.md). Canonical landing page.
 - **Per-service matrices** — [FeatureServer](../../reference/compatibility/geoservices-parity.md), [MapServer / WMS / WMTS](../../reference/compatibility/geoservices-parity.md), [ImageServer](../../reference/compatibility/geoservices-parity.md), [Geometry Service](../../reference/compatibility/geoservices-parity.md).
 - **I3S scene compatibility** — [`gis/i3s-compatibility-matrix.md`](../spikes/i3s-compatibility-matrix.md).
-- **ArcGIS Pro licensed evidence** — [`ARCGIS_PRO_LICENSED_EVIDENCE.md`](ARCGIS_PRO_LICENSED_EVIDENCE.md). Evidence identifier `desktop-arcgis`. Procedure stays in honua-esri-compat.
 
 ## Client interop (real-world clients against Honua)
 
@@ -64,7 +63,7 @@ How well Honua-as-client consumes other geospatial servers (the inverse directio
 What we can import, scan, or migrate from existing systems, and the website-safe wording for those claims.
 
 - **Compatibility and migration evidence (overarching)** — [`contributor/compatibility-and-migration-evidence.md`](../contributor/compatibility-and-migration-evidence.md). The claim-governance index that gates "compatible with X" and "automated migration from X" copy.
-- **Import & scan capability evidence** — [`contributor/import-capability-evidence.md`](../contributor/import-capability-evidence.md). ArcGIS GeoServices REST, GeoServer, and OGC import/scan capability matrix.
+- **Import & scan capability evidence** — [`contributor/import-capability-evidence.md`](../contributor/import-capability-evidence.md). GeoServices GeoServices REST, GeoServer, and OGC import/scan capability matrix.
 - **Process migration evidence** — [`contributor/process-migration-evidence.md`](../contributor/process-migration-evidence.md). Server-side evidence slice for geoprocessing workload migration. Classification contract (Automated / Assisted / Manual review / Unsupported).
 - **Migration performance evidence** — [`evidence/migration-performance-evidence.md`](migration-performance-evidence.md). Release-gated `honua.migration.performance-evidence` artifact (fingerprinted) and the workflow that emits it. Required reading before using "minimal-cost migration" wording.
 - **MVP compatibility contract** — [`gis/MVP_COMPATIBILITY_CONTRACT.md`](../../reference/compatibility/clients.md). The launch-facing what-works / what-is-partial / what-is-pending contract for protocols and formats.

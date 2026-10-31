@@ -420,7 +420,7 @@ public sealed class McpMapToolTests
     private static async Task<MetadataV2Graph> MultiProtocolLayerGraphAsync(AccessPolicy? accessPolicy = null)
     {
         var graph = (await BuildGraphProvider(accessPolicy).GetCurrentAsync()).Graph;
-        var feature = graph.Publications[0] with { PublicationType = MetadataV2PublicationType.EsriFeatureLayer };
+        var feature = graph.Publications[0] with { PublicationType = MetadataV2PublicationType.GeoServicesFeatureLayer };
         return graph with
         {
             Publications = [feature, feature with

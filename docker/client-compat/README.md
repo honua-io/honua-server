@@ -1,7 +1,7 @@
 # Client compatibility Docker harnesses
 
 Real-client interop test matrix for Honua Server. Each lane runs a client
-harness (the GeoServices lane is the REST-only `arcgis-stub`), so regressions
+harness (the GeoServices lane is the REST-only `geoservices-rest-stub`), so regressions
 caused by client-specific quirks — header tolerance, content-type handling,
 capability-document parsing, axis order, GML flavor — surface before customers
 see them.
@@ -17,10 +17,10 @@ prove that real clients can consume the server.
 | `pyqgis` | `qgis/qgis:ltr` | OGC API Features, WFS 2.0 |
 | `openlayers` | `mcr.microsoft.com/playwright:v1.59.1-noble` | OGC API Features, OGC API Maps, OGC API Tiles, WFS, WMS, WMTS |
 | `cesium` | `mcr.microsoft.com/playwright:v1.59.1-noble` | WMS, WMTS, OGC API Tiles, OGC API Maps |
-| `arcgis-stub` | `python:3.12-slim` | GeoServices REST FeatureServer / MapServer (REST stub) |
+| `geoservices-rest-stub` | `python:3.12-slim` | GeoServices REST FeatureServer / MapServer (REST stub) |
 
-`arcgis-stub` is a REST stub, not a desktop client. Render cases stay `skip`.
-Desktop evidence is identifier `desktop-arcgis` in honua-esri-compat.
+`geoservices-rest-stub` is a REST stub, not a desktop client. Render cases stay `skip`.
+Desktop evidence is identifier `desktop-gis` in honua-esri-compat.
 
 ## Runtime contract
 
@@ -86,9 +86,9 @@ docker/client-compat/output/
   pyqgis/
     <run-id>-desktop-qgis-ogc-features.cert.json
     ...
-  arcgis-stub/
-    <run-id>-arcgis-stub-featureserver.cert.json
-    <run-id>-arcgis-stub-mapserver.cert.json
+  geoservices-rest-stub/
+    <run-id>-geoservices-rest-stub-featureserver.cert.json
+    <run-id>-geoservices-rest-stub-mapserver.cert.json
 ```
 
 The baseline-diff step in `.github/workflows/client-interop-nightly.yml` reads

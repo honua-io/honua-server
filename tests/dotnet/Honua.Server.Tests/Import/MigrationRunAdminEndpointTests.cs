@@ -56,7 +56,7 @@ public sealed class MigrationRunAdminEndpointTests : IAsyncLifetime
             new
             {
                 runId = "run-start-write",
-                sourceKind = "arcgis-geoservices-rest",
+                sourceKind = "geoservices-rest",
                 sourceUrl = "https://example.com/arcgis/rest/services/Parcels/FeatureServer",
                 sourceDisplayName = "Parcels"
             });
@@ -68,7 +68,7 @@ public sealed class MigrationRunAdminEndpointTests : IAsyncLifetime
             recordPayload.RootElement.GetProperty("status").GetString().Should().Be("running");
         }
 
-        var listResponse = await _client.GetAsync("/api/v1/admin/migration/runs?sourceKind=arcgis-geoservices-rest");
+        var listResponse = await _client.GetAsync("/api/v1/admin/migration/runs?sourceKind=geoservices-rest");
         listResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         using (var listPayload = JsonDocument.Parse(await listResponse.Content.ReadAsStringAsync()))
         {
@@ -89,7 +89,7 @@ public sealed class MigrationRunAdminEndpointTests : IAsyncLifetime
             new
             {
                 runId = "run-complete-write",
-                sourceKind = "arcgis-geoservices-rest",
+                sourceKind = "geoservices-rest",
                 sourceUrl = "https://example.com/arcgis/rest/services/Roads/FeatureServer"
             });
 
@@ -124,7 +124,7 @@ public sealed class MigrationRunAdminEndpointTests : IAsyncLifetime
         _catalog.Seed(new MigrationRunRecord
         {
             RunId = "run-scorecard-write",
-            SourceKind = "arcgis-geoservices-rest",
+            SourceKind = "geoservices-rest",
             Status = MigrationRunStatus.Succeeded,
             StartedAt = DateTimeOffset.UtcNow.AddMinutes(-2),
             CompletedAt = DateTimeOffset.UtcNow.AddMinutes(-1)
@@ -481,7 +481,7 @@ public sealed class MigrationRunAdminEndpointTests : IAsyncLifetime
     private static MigrationReconciliationScorecard BuildScorecard(string runId) => new()
     {
         RunId = runId,
-        SourceKind = "arcgis-geoservices-rest",
+        SourceKind = "geoservices-rest",
         GeneratedAt = DateTimeOffset.UtcNow,
         Verdict = "pass",
         DataReconciliation = new MigrationScorecardDataReconciliation

@@ -38,7 +38,7 @@ public sealed class MigrationFidelityMatrixBuilderTests
                 "relationship",
                 "relationships",
                 MigrationFidelityAutomationStatuses.ManualReview,
-                ImportCompatibilityCodes.ArcGisRelationshipsManualReview,
+                ImportCompatibilityCodes.GeoServicesRelationshipsManualReview,
                 manualSteps: ["Map related layers to target relationships."]),
             CreateFidelity(
                 "classification:renderer:0",
@@ -46,7 +46,7 @@ public sealed class MigrationFidelityMatrixBuilderTests
                 "renderer",
                 "renderers",
                 MigrationFidelityAutomationStatuses.Unsupported,
-                ImportCompatibilityCodes.ArcGisUnsupportedRenderer,
+                ImportCompatibilityCodes.GeoServicesUnsupportedRenderer,
                 relatedIds: ["dependency:symbol"])
         };
         var remaps = new[]
@@ -94,7 +94,7 @@ public sealed class MigrationFidelityMatrixBuilderTests
                 cell.Category == "renderers" &&
                 cell.AutomationStatus == MigrationFidelityAutomationStatuses.Unsupported)
             .Which.Should().Match<MigrationFidelityMatrixCell>(cell =>
-                cell.Codes.SequenceEqual(new[] { ImportCompatibilityCodes.ArcGisUnsupportedRenderer }) &&
+                cell.Codes.SequenceEqual(new[] { ImportCompatibilityCodes.GeoServicesUnsupportedRenderer }) &&
                 cell.RelatedIds.SequenceEqual(new[] { "dependency:symbol" }) &&
                 cell.TargetIds.SequenceEqual(new[] { "target:style:arcgis-fidelity:inspections" }));
     }

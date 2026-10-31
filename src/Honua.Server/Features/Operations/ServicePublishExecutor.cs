@@ -504,7 +504,7 @@ internal sealed class ServicePublishExecutor
         // Reconstruct only from the committed graph, including after a restart.
         var publications = snapshot.Graph.Publications
             .Where(publication =>
-                publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer &&
+                publication.PublicationType == MetadataV2PublicationType.GeoServicesFeatureLayer &&
                 publication.LayerIndex is >= 0 &&
                 snapshot.ResolveResource(publication) is not null &&
                 snapshot.ResolveStorageBinding(publication) is { } binding &&

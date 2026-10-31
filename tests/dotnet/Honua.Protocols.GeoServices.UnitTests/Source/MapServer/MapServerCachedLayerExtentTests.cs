@@ -84,7 +84,7 @@ public sealed class MapServerCachedLayerExtentTests
         layer.Extent.Ymax.Should().BeApproximately(4579425.8129, 0.01);
     }
 
-    private static void AssertInsideSquare(EsriExtent extent, double limit)
+    private static void AssertInsideSquare(GeoServicesExtent extent, double limit)
     {
         double.IsFinite(extent.Xmin).Should().BeTrue();
         double.IsFinite(extent.Ymin).Should().BeTrue();
@@ -124,7 +124,7 @@ public sealed class MapServerCachedLayerExtentTests
             ServiceId = service.Metadata.Id,
             ResourceId = resource.Metadata.Id,
             LayerIndex = 0,
-            PublicationType = MetadataV2PublicationType.EsriFeatureLayer,
+            PublicationType = MetadataV2PublicationType.GeoServicesFeatureLayer,
         };
         var snapshot = new MetadataV2GraphSnapshot(
             new MetadataV2Graph

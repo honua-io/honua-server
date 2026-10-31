@@ -211,7 +211,7 @@ public class OidcAuthenticationTests
                 layerIndex: 0,
                 storageBindingId: "binding-layer-0",
                 serviceLocalId: "0",
-                publicationType: MetadataV2PublicationType.EsriFeatureLayer)
+                publicationType: MetadataV2PublicationType.GeoServicesFeatureLayer)
             .Build();
 
         services.RemoveAll<IMetadataV2GraphProvider>();

@@ -38,7 +38,7 @@ public sealed record MigrationManifestArtifact
     public string SourceArtifactVersion { get; init; } = "1.0";
 
     /// <summary>
-    /// Source kind identifier such as <c>geoserver-rest</c> or <c>arcgis-geoservices-rest</c>.
+    /// Source kind identifier such as <c>geoserver-rest</c> or <c>geoservices-rest</c>.
     /// </summary>
     public required string SourceKind { get; init; }
 
@@ -547,7 +547,7 @@ public sealed record MigrationManifestRelationshipRecord
     /// service. Used to construct stable Esri-style relationship identifiers in
     /// the target catalog.
     /// </summary>
-    public int? EsriRelationshipId { get; init; }
+    public int? GeoServicesRelationshipId { get; init; }
 
     /// <summary>
     /// Automation classification. One of

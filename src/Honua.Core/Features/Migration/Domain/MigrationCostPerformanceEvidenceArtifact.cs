@@ -50,7 +50,7 @@ public static class MigrationCostPerformancePhases
 public static class MigrationCostPerformanceSourceFamilies
 {
     /// <summary>ArcGIS GeoServices REST source family.</summary>
-    public const string ArcGisGeoServicesRest = "arcgis-geoservices-rest";
+    public const string GeoServicesGeoServicesRest = "geoservices-rest";
 
     /// <summary>GeoServer REST source family.</summary>
     public const string GeoServerRest = "geoserver-rest";
@@ -114,7 +114,7 @@ public sealed record MigrationCostPerformanceEvidenceArtifact
     public string ArtifactVersion { get; init; } = "1.0";
 
     /// <summary>
-    /// Source kind identifier such as <c>geoserver-rest</c>, <c>ogc-wfs</c>, or <c>arcgis-geoservices-rest</c>.
+    /// Source kind identifier such as <c>geoserver-rest</c>, <c>ogc-wfs</c>, or <c>geoservices-rest</c>.
     /// </summary>
     public required string SourceKind { get; init; }
 

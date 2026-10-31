@@ -61,7 +61,7 @@ public sealed partial class GeoservicesImportSubtypePersistenceTests
             resource.Editing.CanModify.Should().BeFalse("source capabilities are not target edit grants");
             resource.SchemaFields.Single(f => f.Name == "stable_id").Type.Should().Be(MetadataV2FieldType.Uuid);
             var publication = snapshot.Graph.Publications.Single(p =>
-                p.ResourceId == resource.Metadata.Id && p.PublicationType == MetadataV2PublicationType.EsriFeatureLayer);
+                p.ResourceId == resource.Metadata.Id && p.PublicationType == MetadataV2PublicationType.GeoServicesFeatureLayer);
             publication.Capabilities.Should().NotContain(new[] { "Create", "Update", "Delete", "Editing" });
             handler.AttachmentQueries.Should().Be(importAttachments && attachmentStoreAvailable ? 1 : 0);
 

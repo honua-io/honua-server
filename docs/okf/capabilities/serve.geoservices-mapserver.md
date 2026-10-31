@@ -1,7 +1,7 @@
 ---
 type: capability
 title: "MapServer"
-description: "Serve map images, identify, and export through the Esri GeoServices MapServer surface."
+description: "Serve map images, identify, and export through the GeoServices GeoServices MapServer surface."
 resource: "honua://capability/serve.geoservices-mapserver"
 tags: [capability, serve, community]
 ---
@@ -9,7 +9,7 @@ tags: [capability, serve, community]
 
 # MapServer
 
-Serve map images, identify, and export through the Esri GeoServices MapServer surface.
+Serve map images, identify, and export through the GeoServices GeoServices MapServer surface.
 
 | | |
 | --- | --- |
@@ -24,4 +24,4 @@ The facts above come from the server's capability registry and capability matrix
 
 ## Documented in
 
-- [GeoServices REST (ArcGIS-compatible)](../../reference/protocols/geoservices-rest.md)
+- [GeoServices REST (GeoServices-compatible)](../../reference/protocols/geoservices-rest.md)

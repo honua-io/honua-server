@@ -9,7 +9,7 @@ internal sealed record ServicesDirectoryResponse
 {
     // No ArcGIS Server version is advertised. Honua is an independent, Esri-compatible
     // server and must not impersonate a specific ArcGIS Server release. Do NOT add a
-    // currentVersion/fullVersion field (guarded by NoArcGisServerVersionTests).
+    // currentVersion/fullVersion field (guarded by NoGeoServicesServerVersionTests).
 
     [JsonPropertyName("folders")]
     public string[] Folders { get; init; } = [];

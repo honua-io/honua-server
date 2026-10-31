@@ -1439,19 +1439,19 @@
       "evidence": [
         {
           "path": "tests/dotnet/Honua.Db.Postgres.UnitTests/Features/Geoprocessing/DagSourceReaderTests.cs",
-          "test": "EsriFeatureServer_PaginatesUntilTransferLimitClears_AndConvertsGeometry",
+          "test": "GeoServicesFeatureServer_PaginatesUntilTransferLimitClears_AndConvertsGeometry",
           "assertion": "Connector pagination/content only; no process executor artifact path.",
           "bodyDigest": "sha256:5f1148b702347f91945f11b1c8fde6c0dc46d8c68f2bff4431a9a956f6d10a49"
         },
         {
-          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/EsriSourceExecutionProofTests.cs",
-          "test": "EsriSource_PagedFilteredFixture_PublishesEverySelectedFeatureExactlyOnce",
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/GeoServicesSourceExecutionProofTests.cs",
+          "test": "GeoServicesSource_PagedFilteredFixture_PublishesEverySelectedFeatureExactlyOnce",
           "assertion": "Workflow-only entry point: real HTTP client, connector and executor over a deterministic paged fixture; literal IDs/attributes/null/coordinates, output SRID, offsets once and where/watermark/fields/SRID parameters.",
           "bodyDigest": "sha256:84a69f783af6092f6859451ed9deafb02103d909023925eb9e1f95a366ee9083"
         },
         {
-          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/EsriSourceExecutionProofTests.cs",
-          "test": "EsriSource_WellFormedWrongFixtureOutput_FailsSemanticOracle",
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/GeoServicesSourceExecutionProofTests.cs",
+          "test": "GeoServicesSource_WellFormedWrongFixtureOutput_FailsSemanticOracle",
           "assertion": "Production executor publishes valid artifacts from duplicate-page, swapped-axis and changed-attribute fixtures; the unchanged literal semantic oracle rejects each.",
           "bodyDigest": "sha256:11f6f523d24fc248b826a89e0729e700f0098ca30cf8eef0a34525e340446bf7"
         }

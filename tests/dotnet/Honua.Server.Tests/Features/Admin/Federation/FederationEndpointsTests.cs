@@ -52,7 +52,7 @@ public sealed class FederationEndpointsTests : IAsyncLifetime
                         {
                             Id = "esri-parcels",
                             DisplayName = "County Parcels (Esri)",
-                            Kind = FederatedSourceKind.EsriRest,
+                            Kind = FederatedSourceKind.GeoServicesRest,
                             Endpoint = "https://gis.example.gov/arcgis/rest/services/Parcels/FeatureServer",
                             RemoteLayer = "0",
                             RequestTimeoutSeconds = 15,
@@ -88,7 +88,7 @@ public sealed class FederationEndpointsTests : IAsyncLifetime
 
         sources.Should().NotBeNull();
         sources!.Should().HaveCount(2);
-        sources.Should().Contain(s => s.Id == "esri-parcels" && s.Kind == "EsriRest" && s.RequestTimeoutSeconds == 15);
+        sources.Should().Contain(s => s.Id == "esri-parcels" && s.Kind == "GeoServicesRest" && s.RequestTimeoutSeconds == 15);
         sources.Should().Contain(s => s.Id == "peer-honua" && s.Kind == "HonuaGrpc");
 
         var raw = await response.Content.ReadAsStringAsync();

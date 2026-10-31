@@ -26,13 +26,13 @@ export const config = {
 // =============================================================================
 
 /** Esri feature with attributes and geometry */
-export interface EsriFeature {
+export interface GeoServicesFeature {
   attributes: Record<string, unknown>;
   geometry?: Record<string, unknown> | null;
 }
 
 /** Esri FeatureSet response */
-export interface EsriFeatureSet {
+export interface GeoServicesFeatureSet {
   objectIdFieldName?: string;
   globalIdFieldName?: string;
   geometryType?: string;
@@ -45,7 +45,7 @@ export interface EsriFeatureSet {
     editable?: boolean;
     nullable?: boolean;
   }>;
-  features: EsriFeature[];
+  features: GeoServicesFeature[];
   exceededTransferLimit?: boolean;
 }
 
@@ -272,7 +272,7 @@ export class FeatureServerClient {
   /**
    * Query features with GET.
    */
-  async query(params: QueryParams = {}, layerId?: number): Promise<{ status: number; data: EsriFeatureSet }> {
+  async query(params: QueryParams = {}, layerId?: number): Promise<{ status: number; data: GeoServicesFeatureSet }> {
     const url = `${this.layerUrl(layerId)}/query`;
     const queryParams: Record<string, unknown> = {
       f: params.f ?? 'json',
@@ -291,19 +291,19 @@ export class FeatureServerClient {
     if (typeof queryParams.returnExtentOnly === 'boolean') {
       queryParams.returnExtentOnly = queryParams.returnExtentOnly.toString();
     }
-    return this.get<EsriFeatureSet>(url, queryParams);
+    return this.get<GeoServicesFeatureSet>(url, queryParams);
   }
 
   /**
    * Query features with POST.
    */
-  async queryPost(params: QueryParams = {}, layerId?: number): Promise<{ status: number; data: EsriFeatureSet }> {
+  async queryPost(params: QueryParams = {}, layerId?: number): Promise<{ status: number; data: GeoServicesFeatureSet }> {
     const url = `${this.layerUrl(layerId)}/query`;
     const postParams: Record<string, unknown> = {
       f: params.f ?? 'json',
       ...params,
     };
-    return this.post<EsriFeatureSet>(url, postParams);
+    return this.post<GeoServicesFeatureSet>(url, postParams);
   }
 
   /**
@@ -393,9 +393,9 @@ export const client = new FeatureServerClient();
 /**
  * Assert that a response is a valid Esri FeatureSet.
  */
-export function assertEsriFeatureSet(response: { status: number; data: unknown }): EsriFeatureSet {
+export function assertEsriFeatureSet(response: { status: number; data: unknown }): GeoServicesFeatureSet {
   expect(response.status).toBe(200);
-  const data = response.data as EsriFeatureSet;
+  const data = response.data as GeoServicesFeatureSet;
   expect(data).toHaveProperty('features');
   expect(Array.isArray(data.features)).toBe(true);
   return data;

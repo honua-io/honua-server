@@ -1297,7 +1297,7 @@
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerEndpointsTests.cs",
         "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wcs20/Wcs10EndpointsTests.cs",
         "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wcs20/Wcs20ParameterValidationTests.cs",
-        "tests/dotnet/Honua.Server.Tests/Infrastructure/Middleware/ArcGisPathBaseTests.cs"
+        "tests/dotnet/Honua.Server.Tests/Infrastructure/Middleware/GeoServicesPathBaseTests.cs"
       ]
     },
     {
@@ -1447,7 +1447,7 @@
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerEndpointsTests.cs",
         "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wcs20/Wcs10EndpointsTests.cs",
         "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wcs20/Wcs20ParameterValidationTests.cs",
-        "tests/dotnet/Honua.Server.Tests/Infrastructure/Middleware/ArcGisPathBaseTests.cs"
+        "tests/dotnet/Honua.Server.Tests/Infrastructure/Middleware/GeoServicesPathBaseTests.cs"
       ]
     },
     {

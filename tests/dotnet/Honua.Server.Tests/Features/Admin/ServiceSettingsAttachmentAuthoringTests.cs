@@ -289,9 +289,9 @@ public sealed class ServiceSettingsAttachmentAuthoringTests(ITestOutputHelper ou
             .AddService("attachment-primary-service", ServiceName, protocols: [ServiceProtocols.FeatureServer], accessPolicy: access)
             .AddService("attachment-alias-service", "attachment-alias-owned", protocols: [ServiceProtocols.FeatureServer], accessPolicy: access)
             .AddPublication("attachment-primary-publication", "attachment-primary-service", ResourceId,
-                layerIndex: 900, storageBindingId: "attachment-primary-binding", publicationType: MetadataV2PublicationType.EsriFeatureLayer)
+                layerIndex: 900, storageBindingId: "attachment-primary-binding", publicationType: MetadataV2PublicationType.GeoServicesFeatureLayer)
             .AddPublication("attachment-alias-publication", "attachment-alias-service", ResourceId,
-                layerIndex: 910, storageBindingId: "attachment-primary-binding", publicationType: MetadataV2PublicationType.EsriFeatureLayer)
+                layerIndex: 910, storageBindingId: "attachment-primary-binding", publicationType: MetadataV2PublicationType.GeoServicesFeatureLayer)
             .Build();
         return graph with
         {

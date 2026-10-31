@@ -162,7 +162,7 @@ public sealed class OgcRecordsEndpointTests : IClassFixture<OgcRecordsEndpointTe
                 Name = serviceName,
                 Title = "Active Records Service"
             },
-            ServiceType = MetadataV2ServiceType.EsriFeatureService,
+            ServiceType = MetadataV2ServiceType.GeoServicesFeatureService,
             PublicationIds = [activePublicationId],
             Protocols = [ServiceProtocols.FeatureServer],
             Status = sourceService.Status with { Lifecycle = MetadataV2LifecycleStatus.Active }
@@ -174,7 +174,7 @@ public sealed class OgcRecordsEndpointTests : IClassFixture<OgcRecordsEndpointTe
                 Id = retiredServiceId,
                 Title = "Retired Records Service"
             },
-            ServiceType = MetadataV2ServiceType.EsriMapService,
+            ServiceType = MetadataV2ServiceType.GeoServicesMapService,
             PublicationIds = [retiredPublicationId],
             Protocols = [ServiceProtocols.MapServer],
             Status = activeService.Status with { Lifecycle = MetadataV2LifecycleStatus.Retired }
@@ -183,13 +183,13 @@ public sealed class OgcRecordsEndpointTests : IClassFixture<OgcRecordsEndpointTe
         {
             Metadata = sourcePublication.Metadata with { Id = activePublicationId },
             ServiceId = activeServiceId,
-            PublicationType = MetadataV2PublicationType.EsriFeatureLayer
+            PublicationType = MetadataV2PublicationType.GeoServicesFeatureLayer
         };
         var retiredPublication = activePublication with
         {
             Metadata = activePublication.Metadata with { Id = retiredPublicationId },
             ServiceId = retiredServiceId,
-            PublicationType = MetadataV2PublicationType.EsriMapLayer
+            PublicationType = MetadataV2PublicationType.GeoServicesMapLayer
         };
         var mutatedGraph = snapshot.Graph with
         {

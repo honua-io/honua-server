@@ -609,7 +609,7 @@ public sealed partial class LayerPublishingIntegrationTests : IAsyncLifetime
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
         var resourceId = snapshot.Graph.Publications.Single(publication =>
             publication.LayerIndex == published.LayerId &&
-            publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer).ResourceId;
+            publication.PublicationType == MetadataV2PublicationType.GeoServicesFeatureLayer).ResourceId;
         var publishingServiceIds = snapshot.Graph.Publications
             .Where(publication => string.Equals(publication.ResourceId, resourceId, StringComparison.Ordinal))
             .Select(publication => publication.ServiceId)

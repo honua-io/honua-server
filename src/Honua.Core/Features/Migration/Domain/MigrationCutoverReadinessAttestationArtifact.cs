@@ -51,7 +51,7 @@ public sealed record MigrationCutoverReadinessAttestationArtifact
 
     /// <summary>
     /// Source kind identifier such as <c>geoserver-rest</c> or
-    /// <c>arcgis-geoservices-rest</c>.
+    /// <c>geoservices-rest</c>.
     /// </summary>
     public required string SourceKind { get; init; }
 

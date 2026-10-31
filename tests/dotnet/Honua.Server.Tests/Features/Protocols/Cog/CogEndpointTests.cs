@@ -44,7 +44,7 @@ public class CogEndpointTests : IAsyncLifetime
                 .AddService(serviceId, serviceId, protocols: [ServiceProtocols.ImageServer])
                 .AddPublication($"cog-publication-{storageLayerId}", serviceId, resourceId,
                     layerIndex: Math.Min(storageLayerId, 3), storageBindingId: bindingId,
-                    publicationType: MetadataV2PublicationType.EsriImageLayer);
+                    publicationType: MetadataV2PublicationType.GeoServicesImageLayer);
         }
         var graph = builder.BuildProvider();
         _fixture = new WebAppFixture().ConfigureServices(services =>

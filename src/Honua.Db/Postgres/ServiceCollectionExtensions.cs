@@ -759,7 +759,7 @@ internal static class ServiceCollectionExtensions
         // the GeoServices query slice; TryAdd keeps this idempotent so the import path can
         // resolve it even when GeoServices is not composed (#1501).
         services.TryAddSingleton<Honua.Core.Features.Infrastructure.Crs.IDatumTransformationCatalog>(
-            static _ => Honua.Core.Features.Infrastructure.Crs.EsriDatumTransformationCatalog.Create());
+            static _ => Honua.Core.Features.Infrastructure.Crs.GeoServicesDatumTransformationCatalog.Create());
 
         // Register streaming file import service with memory-efficient batch processing
         services.AddScoped<IFileImportService>(serviceProvider =>
@@ -805,7 +805,7 @@ internal static class ServiceCollectionExtensions
         });
 
         // Register ArcGIS REST client for Geoservices service imports with resilience
-        services.AddResilientHttpClient<ArcGisRestClient>(
+        services.AddResilientHttpClient<GeoServicesRestClient>(
             "arcgis-rest",
             HttpResiliencePolicies.SlowServiceDefaults,
             configureClient: client =>
@@ -813,7 +813,7 @@ internal static class ServiceCollectionExtensions
                 client.DefaultRequestHeaders.Add("User-Agent", "HonuaServer/1.0");
                 client.Timeout = TimeSpan.FromMinutes(5);
             },
-            configureHandler: static () => ArcGisRestClient.CreatePinnedDnsHttpMessageHandler())
+            configureHandler: static () => GeoServicesRestClient.CreatePinnedDnsHttpMessageHandler())
             .AddHttpMessageHandler<MigrationRequestCountingHandler>();
 
         // Register the published-layer lifecycle service the importer delegates to (AutoPublish ->
@@ -875,9 +875,9 @@ internal static class ServiceCollectionExtensions
         // Register ArcGIS migration evidence store (#1025 slice 6). Replaces the Core
         // in-memory default so admin endpoints can serve persisted manifest + parity
         // artifacts across server restarts and across instances.
-        services.RemoveAll<IArcGisMigrationEvidenceStore>();
-        services.AddScoped<IArcGisMigrationEvidenceStore>(serviceProvider =>
-            new PostgresArcGisMigrationEvidenceStore(
+        services.RemoveAll<IGeoServicesMigrationEvidenceStore>();
+        services.AddScoped<IGeoServicesMigrationEvidenceStore>(serviceProvider =>
+            new PostgresGeoServicesMigrationEvidenceStore(
                 serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 configuration["Database:Schema"]));
 
@@ -958,14 +958,14 @@ internal static class ServiceCollectionExtensions
         // an existing one-shot import reader's pagination/streaming rather than bouncing
         // through a one-shot import. The geoprocessing RemoteSourceExecutor resolves these
         // at execution time through an IServiceScopeFactory scope.
-        //   - source.esri-featureserver wraps the migration ArcGisRestClient (registered above);
+        //   - source.esri-featureserver wraps the migration GeoServicesRestClient (registered above);
         //   - source.honua-layer wraps the canonical IStreamingFeatureStore query pipeline;
         //   - source.postgis mirrors the sink.external-postgis secure-connection handling;
         //   - source.ogc-features / source.wfs reuse the migration bounded-buffer GeoJSON path.
-        services.AddScoped<IDagFeatureSource, EsriFeatureServerDagSource>(serviceProvider =>
-            new EsriFeatureServerDagSource(
-                serviceProvider.GetRequiredService<ArcGisRestClient>(),
-                serviceProvider.GetRequiredService<ILogger<EsriFeatureServerDagSource>>()));
+        services.AddScoped<IDagFeatureSource, GeoServicesFeatureServerDagSource>(serviceProvider =>
+            new GeoServicesFeatureServerDagSource(
+                serviceProvider.GetRequiredService<GeoServicesRestClient>(),
+                serviceProvider.GetRequiredService<ILogger<GeoServicesFeatureServerDagSource>>()));
         services.AddScoped<IDagFeatureSource, HonuaLayerDagSource>(serviceProvider =>
             new HonuaLayerDagSource(
                 serviceProvider.GetRequiredService<IStreamingFeatureStore>(),
@@ -1017,7 +1017,7 @@ internal static class ServiceCollectionExtensions
         // The reader and import orchestrator are provider-agnostic; the serving read
         // path is Postgres-backed (reads the tile catalog populated by the importer).
         services.AddSingleton<Honua.Core.Features.TileCachePackage.Abstractions.ITileCachePackageReader,
-            Honua.Core.Features.TileCachePackage.Services.EsriTileCachePackageReader>();
+            Honua.Core.Features.TileCachePackage.Services.GeoServicesTileCachePackageReader>();
         services.AddScoped<Honua.Core.Features.TileCachePackage.Abstractions.ITileCachePackageImportService,
             Honua.Core.Features.TileCachePackage.Services.TileCachePackageImportService>();
         services.AddScoped<Honua.Core.Features.TileCachePackage.Abstractions.IImportedTileCacheReader,

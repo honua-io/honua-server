@@ -54,7 +54,7 @@ public sealed class RequestSecretReferenceResolverTests
             AllowedEnvironmentVariables = ["Imports__SharedToken"]
         });
 
-        resolver.Evaluate("env:IMPORT_ARCGIS_TOKEN").IsPermitted.Should().BeTrue();
+        resolver.Evaluate("env:IMPORT_GEOSERVICES_TOKEN").IsPermitted.Should().BeTrue();
         resolver.Evaluate("env:OTHER_TOKEN").IsPermitted.Should().BeFalse();
         resolver.Evaluate("env:Security__ConnectionEncryption__MasterKey").IsPermitted.Should().BeFalse();
         resolver.Evaluate("env:Imports__SharedToken").IsPermitted.Should().BeTrue();

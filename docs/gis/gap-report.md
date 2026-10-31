@@ -14,8 +14,8 @@ against the committed baselines under `tests/baselines/client-compat/`.
 
 | Lane | Protocol | Total | Pass | Fail | Skip | N/A |
 |------|----------|-------|------|------|------|-----|
-| arcgis-stub ⚠ no current run | featureserver | 24 | 14 | 0 | 9 | 1 |
-| arcgis-stub ⚠ no current run | mapserver | 24 | 14 | 0 | 9 | 1 |
+| geoservices-rest-stub ⚠ no current run | featureserver | 24 | 14 | 0 | 9 | 1 |
+| geoservices-rest-stub ⚠ no current run | mapserver | 24 | 14 | 0 | 9 | 1 |
 | cli ⚠ no current run | ogc-features | 24 | 4 | 0 | 0 | 20 |
 | cli ⚠ no current run | wfs | 24 | 4 | 0 | 0 | 20 |
 | desktop-qgis ⚠ no current run | ogc-features | 21 | 18 | 0 | 3 | 0 |
@@ -35,54 +35,54 @@ against the committed baselines under `tests/baselines/client-compat/`.
 
 | Lane | Protocol | Test case | Baseline | Current | Notes |
 |------|----------|-----------|----------|---------|-------|
-| arcgis-stub | featureserver | CERT-AUTH-01 | pass | — | HTTP 200 |
-| arcgis-stub | featureserver | CERT-AUTH-02 | skip | — | Credential exchange covered by other lanes; stub does not authenticate. |
-| arcgis-stub | featureserver | CERT-CONN-01 | pass | — |  |
-| arcgis-stub | featureserver | CERT-CONN-02 | skip | — | TLS termination occurs in front of the test docker network; not exercised by stub. |
-| arcgis-stub | featureserver | CERT-DISC-01 | pass | — |  |
-| arcgis-stub | featureserver | CERT-DISC-02 | pass | — | HTTP 200 |
-| arcgis-stub | featureserver | CERT-ERRH-01 | pass | — |  |
-| arcgis-stub | featureserver | CERT-ERRH-02 | pass | — | Server may accept the where clause and return zero results; both outcomes acceptable. |
-| arcgis-stub | featureserver | CERT-GEOM-01 | pass | — |  |
-| arcgis-stub | featureserver | CERT-GEOM-02 | pass | — |  |
-| arcgis-stub | featureserver | CERT-PAGE-01 | pass | — |  |
-| arcgis-stub | featureserver | CERT-PAGE-02 | pass | — |  |
-| arcgis-stub | featureserver | CERT-QFLT-01 | pass | — |  |
-| arcgis-stub | featureserver | CERT-QFLT-02 | pass | — | HTTP 200 |
-| arcgis-stub | featureserver | CERT-RNDR-01 | skip | — | evidence id desktop-arcgis |
-| arcgis-stub | featureserver | CERT-RNDR-02 | skip | — | evidence id desktop-arcgis |
-| arcgis-stub | featureserver | CERT-RNDR-FIL-01 | skip | — | evidence id desktop-arcgis |
-| arcgis-stub | featureserver | CERT-RNDR-LBL-01 | skip | — | evidence id desktop-arcgis |
-| arcgis-stub | featureserver | CERT-RNDR-LIN-01 | skip | — | evidence id desktop-arcgis |
-| arcgis-stub | featureserver | CERT-RNDR-SPR-01 | not-applicable | — |  |
-| arcgis-stub | featureserver | CERT-RNDR-SYM-01 | skip | — | evidence id desktop-arcgis |
-| arcgis-stub | featureserver | CERT-RNDR-URL-01 | skip | — | evidence id desktop-arcgis |
-| arcgis-stub | featureserver | CERT-SCHM-01 | pass | — |  |
-| arcgis-stub | featureserver | CERT-SCHM-02 | pass | — |  |
-| arcgis-stub | mapserver | CERT-AUTH-01 | pass | — | HTTP 200 |
-| arcgis-stub | mapserver | CERT-AUTH-02 | skip | — | Credential exchange covered by other lanes; stub does not authenticate. |
-| arcgis-stub | mapserver | CERT-CONN-01 | pass | — |  |
-| arcgis-stub | mapserver | CERT-CONN-02 | skip | — | TLS termination occurs in front of the test docker network; not exercised by stub. |
-| arcgis-stub | mapserver | CERT-DISC-01 | pass | — |  |
-| arcgis-stub | mapserver | CERT-DISC-02 | pass | — | HTTP 200 |
-| arcgis-stub | mapserver | CERT-ERRH-01 | pass | — |  |
-| arcgis-stub | mapserver | CERT-ERRH-02 | pass | — | Server may accept the where clause and return zero results; both outcomes acceptable. |
-| arcgis-stub | mapserver | CERT-GEOM-01 | pass | — |  |
-| arcgis-stub | mapserver | CERT-GEOM-02 | pass | — |  |
-| arcgis-stub | mapserver | CERT-PAGE-01 | pass | — |  |
-| arcgis-stub | mapserver | CERT-PAGE-02 | pass | — |  |
-| arcgis-stub | mapserver | CERT-QFLT-01 | pass | — |  |
-| arcgis-stub | mapserver | CERT-QFLT-02 | pass | — | HTTP 200 |
-| arcgis-stub | mapserver | CERT-RNDR-01 | skip | — | evidence id desktop-arcgis |
-| arcgis-stub | mapserver | CERT-RNDR-02 | skip | — | evidence id desktop-arcgis |
-| arcgis-stub | mapserver | CERT-RNDR-FIL-01 | skip | — | evidence id desktop-arcgis |
-| arcgis-stub | mapserver | CERT-RNDR-LBL-01 | skip | — | evidence id desktop-arcgis |
-| arcgis-stub | mapserver | CERT-RNDR-LIN-01 | skip | — | evidence id desktop-arcgis |
-| arcgis-stub | mapserver | CERT-RNDR-SPR-01 | not-applicable | — |  |
-| arcgis-stub | mapserver | CERT-RNDR-SYM-01 | skip | — | evidence id desktop-arcgis |
-| arcgis-stub | mapserver | CERT-RNDR-URL-01 | skip | — | evidence id desktop-arcgis |
-| arcgis-stub | mapserver | CERT-SCHM-01 | pass | — |  |
-| arcgis-stub | mapserver | CERT-SCHM-02 | pass | — |  |
+| geoservices-rest-stub | featureserver | CERT-AUTH-01 | pass | — | HTTP 200 |
+| geoservices-rest-stub | featureserver | CERT-AUTH-02 | skip | — | Credential exchange covered by other lanes; stub does not authenticate. |
+| geoservices-rest-stub | featureserver | CERT-CONN-01 | pass | — |  |
+| geoservices-rest-stub | featureserver | CERT-CONN-02 | skip | — | TLS termination occurs in front of the test docker network; not exercised by stub. |
+| geoservices-rest-stub | featureserver | CERT-DISC-01 | pass | — |  |
+| geoservices-rest-stub | featureserver | CERT-DISC-02 | pass | — | HTTP 200 |
+| geoservices-rest-stub | featureserver | CERT-ERRH-01 | pass | — |  |
+| geoservices-rest-stub | featureserver | CERT-ERRH-02 | pass | — | Server may accept the where clause and return zero results; both outcomes acceptable. |
+| geoservices-rest-stub | featureserver | CERT-GEOM-01 | pass | — |  |
+| geoservices-rest-stub | featureserver | CERT-GEOM-02 | pass | — |  |
+| geoservices-rest-stub | featureserver | CERT-PAGE-01 | pass | — |  |
+| geoservices-rest-stub | featureserver | CERT-PAGE-02 | pass | — |  |
+| geoservices-rest-stub | featureserver | CERT-QFLT-01 | pass | — |  |
+| geoservices-rest-stub | featureserver | CERT-QFLT-02 | pass | — | HTTP 200 |
+| geoservices-rest-stub | featureserver | CERT-RNDR-01 | skip | — | visual-style rendering is not exercised by this REST stub |
+| geoservices-rest-stub | featureserver | CERT-RNDR-02 | skip | — | visual-style rendering is not exercised by this REST stub |
+| geoservices-rest-stub | featureserver | CERT-RNDR-FIL-01 | skip | — | visual-style rendering is not exercised by this REST stub |
+| geoservices-rest-stub | featureserver | CERT-RNDR-LBL-01 | skip | — | visual-style rendering is not exercised by this REST stub |
+| geoservices-rest-stub | featureserver | CERT-RNDR-LIN-01 | skip | — | visual-style rendering is not exercised by this REST stub |
+| geoservices-rest-stub | featureserver | CERT-RNDR-SPR-01 | not-applicable | — |  |
+| geoservices-rest-stub | featureserver | CERT-RNDR-SYM-01 | skip | — | visual-style rendering is not exercised by this REST stub |
+| geoservices-rest-stub | featureserver | CERT-RNDR-URL-01 | skip | — | visual-style rendering is not exercised by this REST stub |
+| geoservices-rest-stub | featureserver | CERT-SCHM-01 | pass | — |  |
+| geoservices-rest-stub | featureserver | CERT-SCHM-02 | pass | — |  |
+| geoservices-rest-stub | mapserver | CERT-AUTH-01 | pass | — | HTTP 200 |
+| geoservices-rest-stub | mapserver | CERT-AUTH-02 | skip | — | Credential exchange covered by other lanes; stub does not authenticate. |
+| geoservices-rest-stub | mapserver | CERT-CONN-01 | pass | — |  |
+| geoservices-rest-stub | mapserver | CERT-CONN-02 | skip | — | TLS termination occurs in front of the test docker network; not exercised by stub. |
+| geoservices-rest-stub | mapserver | CERT-DISC-01 | pass | — |  |
+| geoservices-rest-stub | mapserver | CERT-DISC-02 | pass | — | HTTP 200 |
+| geoservices-rest-stub | mapserver | CERT-ERRH-01 | pass | — |  |
+| geoservices-rest-stub | mapserver | CERT-ERRH-02 | pass | — | Server may accept the where clause and return zero results; both outcomes acceptable. |
+| geoservices-rest-stub | mapserver | CERT-GEOM-01 | pass | — |  |
+| geoservices-rest-stub | mapserver | CERT-GEOM-02 | pass | — |  |
+| geoservices-rest-stub | mapserver | CERT-PAGE-01 | pass | — |  |
+| geoservices-rest-stub | mapserver | CERT-PAGE-02 | pass | — |  |
+| geoservices-rest-stub | mapserver | CERT-QFLT-01 | pass | — |  |
+| geoservices-rest-stub | mapserver | CERT-QFLT-02 | pass | — | HTTP 200 |
+| geoservices-rest-stub | mapserver | CERT-RNDR-01 | skip | — | visual-style rendering is not exercised by this REST stub |
+| geoservices-rest-stub | mapserver | CERT-RNDR-02 | skip | — | visual-style rendering is not exercised by this REST stub |
+| geoservices-rest-stub | mapserver | CERT-RNDR-FIL-01 | skip | — | visual-style rendering is not exercised by this REST stub |
+| geoservices-rest-stub | mapserver | CERT-RNDR-LBL-01 | skip | — | visual-style rendering is not exercised by this REST stub |
+| geoservices-rest-stub | mapserver | CERT-RNDR-LIN-01 | skip | — | visual-style rendering is not exercised by this REST stub |
+| geoservices-rest-stub | mapserver | CERT-RNDR-SPR-01 | not-applicable | — |  |
+| geoservices-rest-stub | mapserver | CERT-RNDR-SYM-01 | skip | — | visual-style rendering is not exercised by this REST stub |
+| geoservices-rest-stub | mapserver | CERT-RNDR-URL-01 | skip | — | visual-style rendering is not exercised by this REST stub |
+| geoservices-rest-stub | mapserver | CERT-SCHM-01 | pass | — |  |
+| geoservices-rest-stub | mapserver | CERT-SCHM-02 | pass | — |  |
 | cli | ogc-features | CERT-AUTH-01 | not-applicable | — |  |
 | cli | ogc-features | CERT-AUTH-02 | not-applicable | — |  |
 | cli | ogc-features | CERT-CONN-01 | pass | — |  |

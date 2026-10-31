@@ -823,7 +823,7 @@ public sealed class MigrationFidelityEvaluatorTests
         string[] reasons) => new()
         {
             RunId = "run-4600",
-            SourceKind = "arcgis-geoservices-rest",
+            SourceKind = "geoservices-rest",
             Classification = classification,
             StartedAt = DateTimeOffset.UnixEpoch,
             CompletedAt = DateTimeOffset.UnixEpoch,
@@ -848,7 +848,7 @@ public sealed class MigrationFidelityEvaluatorTests
         return new MigrationReconciliationArtifact
         {
             RunId = "run-4826",
-            SourceKind = "arcgis-geoservices-rest",
+            SourceKind = "geoservices-rest",
             Classification = classification,
             StartedAt = DateTimeOffset.UnixEpoch,
             CompletedAt = DateTimeOffset.UnixEpoch,
@@ -897,7 +897,7 @@ public sealed class MigrationFidelityEvaluatorTests
         params MigrationCatalogReconciliationFinding[] findings) => new()
         {
             RunId = "run-4600",
-            SourceKind = "arcgis-geoservices-rest",
+            SourceKind = "geoservices-rest",
             Summary = new MigrationCatalogReconciliationSummary
             {
                 ResourceCount = 1,

@@ -191,7 +191,7 @@ public sealed class OgcClassicWmtsTests : IAsyncLifetime
             ResourceId = "res-projected",
             StorageBindingId = "binding-projected",
             Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
-            PublicationType = MetadataV2PublicationType.EsriMapLayer,
+            PublicationType = MetadataV2PublicationType.GeoServicesMapLayer,
             Identifier = new MetadataV2PublicationIdentifier
             {
                 Value = storageLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture),

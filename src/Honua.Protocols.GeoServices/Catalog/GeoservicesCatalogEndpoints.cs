@@ -130,7 +130,7 @@ internal static class GeoservicesCatalogEndpoints
 
         endpoints.MapPost("/services", HandlePostSoapCatalog)
             .WithDisplayName("ArcGIS SOAP Services Catalog")
-            .WithName("ArcGisSoapServicesCatalog")
+            .WithName("GeoServicesSoapServicesCatalog")
             .WithSummary("Discover supported ArcGIS services through SOAP")
             .WithDescription("Implements the protocol-wide ArcGIS Server SOAP catalog using the same principal-filtered projection as the REST services directory.")
             .WithTags("GeoServices Catalog")
@@ -157,7 +157,7 @@ internal static class GeoservicesCatalogEndpoints
 
         endpoints.MapGet("/services", HandleGetSoapCatalogWsdl)
             .WithDisplayName("ArcGIS SOAP Services Catalog WSDL")
-            .WithName("ArcGisSoapServicesCatalogWsdl")
+            .WithName("GeoServicesSoapServicesCatalogWsdl")
             .WithSummary("Get the ArcGIS SOAP services catalog WSDL")
             .WithDescription("Returns the SOAP 1.1 and SOAP 1.2 service-catalog contract for both the bare site-root form and the wsdl query flag.")
             .WithTags("GeoServices Catalog")
@@ -189,7 +189,7 @@ internal static class GeoservicesCatalogEndpoints
         XNamespace xs = "http://www.w3.org/2001/XMLSchema";
         XNamespace soap11 = "http://schemas.xmlsoap.org/wsdl/soap/";
         XNamespace soap12 = "http://schemas.xmlsoap.org/wsdl/soap12/";
-        XNamespace esri = ArcGisSoapNamespaces.Current;
+        XNamespace esri = GeoServicesSoapNamespaces.Current;
         var operations = new[]
         {
             "GetServiceDescriptions",
@@ -338,7 +338,7 @@ internal static class GeoservicesCatalogEndpoints
             operations.Select(operation => new XElement(
                 wsdl + "operation",
                 new XAttribute("name", operation),
-                new XElement(soap + "operation", new XAttribute("soapAction", $"{ArcGisSoapNamespaces.Current}/{operation}")),
+                new XElement(soap + "operation", new XAttribute("soapAction", $"{GeoServicesSoapNamespaces.Current}/{operation}")),
                 new XElement(wsdl + "input", new XElement(soap + "body", new XAttribute("use", "literal"))),
                 new XElement(wsdl + "output", new XElement(soap + "body", new XAttribute("use", "literal"))))));
 
@@ -426,10 +426,10 @@ internal static class GeoservicesCatalogEndpoints
                 soap);
         }
 
-        var operation = ArcGisSoapProtocol.BindArgumentsByLocalName(operations[0]);
+        var operation = GeoServicesSoapProtocol.BindArgumentsByLocalName(operations[0]);
 
         var operationNamespace = operation.Name.Namespace;
-        if (!ArcGisSoapNamespaces.IsSupported(operationNamespace))
+        if (!GeoServicesSoapNamespaces.IsSupported(operationNamespace))
         {
             return CreateSoapFault(
                 "Unsupported ArcGIS SOAP operation namespace.",
@@ -549,7 +549,7 @@ internal static class GeoservicesCatalogEndpoints
                             payload))));
 
             return CompleteSoapCatalogOperation(scope, Results.Content(
-                ArcGisSoapNamespaces.SerializeResponse(response),
+                GeoServicesSoapNamespaces.SerializeResponse(response),
                 contentType: SoapContentTypeFor(soap),
                 contentEncoding: Encoding.UTF8));
         }
@@ -722,7 +722,7 @@ internal static class GeoservicesCatalogEndpoints
                     fault)));
 
         return Results.Content(
-            ArcGisSoapNamespaces.SerializeResponse(response),
+            GeoServicesSoapNamespaces.SerializeResponse(response),
             contentType: SoapContentTypeFor(soap),
             contentEncoding: Encoding.UTF8,
             statusCode: statusCode);

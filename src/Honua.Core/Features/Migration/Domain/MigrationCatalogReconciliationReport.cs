@@ -31,7 +31,7 @@ public sealed record MigrationCatalogReconciliationReport
     /// <summary>Stable identifier for this reconciliation run.</summary>
     public required string RunId { get; init; }
 
-    /// <summary>Source kind such as <c>arcgis-geoservices-rest</c> or <c>geoserver-rest</c>.</summary>
+    /// <summary>Source kind such as <c>geoservices-rest</c> or <c>geoserver-rest</c>.</summary>
     public required string SourceKind { get; init; }
 
     /// <summary>Aggregate counts across all per-resource reconciliation outcomes.</summary>
