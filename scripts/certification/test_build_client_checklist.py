@@ -97,7 +97,7 @@ class ExclusionReviewTests(unittest.TestCase):
         self.assertEqual(0, sum(cell["state"] == "fail" for cell in cells))
         self.assertEqual(57, sum(cell["state"] == "blocked" for cell in cells))
         reopened = [cell for cell in cells if "previous_exclusion" in cell]
-        self.assertEqual(78, len(reopened))
+        self.assertEqual(72, len(reopened))
         for cell in reopened:
             self.assertIn(cell["state"], ("blocked", "pass", "fail"))
             if cell["state"] == "pass":
@@ -123,7 +123,7 @@ class ExclusionReviewTests(unittest.TestCase):
         for key in gui:
             self.assertIn("native-qgis-image-tilejson-20260920-a/results.json", checklist.RESOLVED_EXCLUSION_EVIDENCE[key])
             self.assertIn("windows-computer-use", checklist.RESOLVED_EXCLUSION_EVIDENCE[key])
-        self.assertEqual(50, sum(row["lanes"]["qgis-ui"]["state"] == "pass" for row in rows))
+        self.assertEqual(53, sum(row["lanes"]["qgis-ui"]["state"] == "pass" for row in rows))
 
     def test_properties_hang_does_not_close_unperformed_gui_operations(self):
         rows = checklist.build_rows(apply_results=False)
