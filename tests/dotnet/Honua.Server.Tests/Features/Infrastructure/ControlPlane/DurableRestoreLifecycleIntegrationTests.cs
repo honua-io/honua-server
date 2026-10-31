@@ -207,7 +207,7 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
                 Status = WorkflowOperationStatus.Failed, CreatedAt = now, UpdatedAt = now,
                 PreMigrationRestore = new PreMigrationRestoreContext
                 {
-                    Phase = "awaiting-local-deploy", DeployOperationId = workflowId,
+                    Phase = "awaiting-local-deploy", DeployOperationId = workflowId, ApprovedBy = "approver",
                     Payload = new DeployExecutionPayload { TargetId = "local", DesiredRevision = "prior" }.Serialize()
                 }
             }));
