@@ -109,6 +109,7 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
             Assert.Equal("awaiting-deploy", checkpoint?.PreMigrationRestore?.Phase);
             await snapshots.Received(1).RestoreNewAsync(Arg.Any<RdsRestoreRequest>(), Arg.Any<CancellationToken>());
             var replacement = NewWorker();
+            Assert.False(await replacement.ClaimCellAsync("other-restore", CancellationToken.None));
             await replacement.ReconcileAsync(approved.ExecutionOperationId, CancellationToken.None);
             Assert.Equal(WorkflowOperationStatus.Reconciling, (await workflows.GetAsync(approved.ExecutionOperationId))?.Status);
             await customer.DidNotReceive().SucceededAsync(Arg.Any<CancellationToken>());
@@ -118,6 +119,7 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
             await replacement.ReconcileAsync(approved.ExecutionOperationId, CancellationToken.None);
             Assert.Equal(WorkflowOperationStatus.Succeeded, (await workflows.GetAsync(approved.ExecutionOperationId))?.Status);
             await customer.Received(1).SucceededAsync(Arg.Any<CancellationToken>());
+            Assert.True(await replacement.ClaimCellAsync("other-restore", CancellationToken.None));
         }
         finally
         {
