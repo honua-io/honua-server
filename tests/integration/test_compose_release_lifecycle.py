@@ -55,16 +55,29 @@ def rpc(base, key, session, method, params, ident):
     return result["result"], new_session
 
 
-def wait_for_proposal(base, key, proposal, expected, timeout=1500):
+def wait_for_proposal(base, key, proposal, expected, proposer_key, session, timeout=1500):
+    # Proposal status records approval/submission. The canonical operation handle
+    # is reconciled separately and reflects the actual protected workflow outcome.
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         detail, _ = request(base, f"/api/v1/admin/proposals/{proposal}", key)
         status = detail["status"].lower()
-        if status in ("failed", "succeeded", "rejected", "rolledback"):
-            assert status == expected, f"unexpected proposal terminal state: {status}"
+        if status in ("failed", "rejected", "cancelled"):
+            assert expected == "failed", f"unexpected proposal terminal state: {status}"
             return
+        resource, _ = rpc(base, proposer_key, session, "resources/read",
+                          {"uri": f"honua://proposals/{proposal}"}, 99)
+        proposal_resource = json.loads(resource["contents"][0]["text"])
+        instance_id = proposal_resource.get("operationInstanceId")
+        if instance_id:
+            operation, _ = request(base, f"/api/v1/operations/handles/{instance_id}", key)
+            state = operation["data"]["status"].lower()
+            if state in ("completed", "failed", "cancelled", "indeterminate", "denied", "rejected"):
+                actual = "succeeded" if state == "completed" else "failed"
+                assert actual == expected, f"unexpected operation terminal state: {state}"
+                return
         time.sleep(5)
-    raise AssertionError("proposal did not reach its terminal state")
+    raise AssertionError("operation did not reach its terminal state")
 
 
 def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
@@ -167,7 +180,7 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
         except urllib.error.HTTPError as error:
             assert error.code in (400, 403, 409)
         request(base, f"/api/v1/admin/proposals/{proposal}/approve", approver_key, {})
-        wait_for_proposal(base, approver_key, proposal, "succeeded")
+        wait_for_proposal(base, approver_key, proposal, "succeeded", proposer_key, session)
         assert image_id() == candidate and schema() == candidate_schema
         assert sql("SELECT count(*) FROM public.schema_versions WHERE scriptname LIKE '%142_CreateAiFinancialAccounting.sql'") == "1"
         assert sql("SELECT value FROM public.rc2_lifecycle_marker WHERE id=1") == "retained"
@@ -185,7 +198,7 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
             "backupId": "backup-" + "0" * 32, "idempotencyKey": "wrong-backup"}, 3)
         if wrong.get("proposalId"):
             request(base, f"/api/v1/admin/proposals/{wrong['proposalId']}/approve", approver_key, {})
-            wait_for_proposal(base, approver_key, wrong["proposalId"], "failed")
+            wait_for_proposal(base, approver_key, wrong["proposalId"], "failed", proposer_key, session)
         else:
             assert wrong.get("outcome", "").lower() in ("blocked", "rejected", "failed")
         assert image_id() == candidate and schema() == candidate_schema
@@ -194,7 +207,7 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
             "backupId": backup["backupId"], "idempotencyKey": "verified-backup"}, 4)
         assert rollback["proposalId"]
         request(base, f"/api/v1/admin/proposals/{rollback['proposalId']}/approve", approver_key, {})
-        wait_for_proposal(base, approver_key, rollback["proposalId"], "succeeded")
+        wait_for_proposal(base, approver_key, rollback["proposalId"], "succeeded", proposer_key, session)
         assert image_id() == prior_id and schema() == 140
         assert sql("SELECT value FROM public.rc2_lifecycle_marker WHERE id=1") == "retained"
         assert sql("SELECT to_regclass('honua.ai_financial_invocations')") == ""
