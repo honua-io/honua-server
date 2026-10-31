@@ -167,6 +167,25 @@ public sealed class DeployWorkflowReconcilerLeaseContentionTests
     }
 
     [Fact]
+    public async Task Checkpoint_FailedCanaryRampRequestsRollback()
+    {
+        var store = new InMemoryWorkflowOperationStore();
+        var backend = new CheckpointBackend(store) { FailRamp = true };
+        var original = CreateOperation();
+        var operation = original with
+        {
+            Deploy = original.Deploy! with
+            {
+                CanaryRamp = new CanaryRampSpec { StepWeights = [10, 50, 100], StepBakeDuration = TimeSpan.FromSeconds(1) }
+            }
+        };
+        var result = await DeployWorkflowReconciler.AdvanceOrPromoteAsync(operation, backend, CancellationToken.None);
+        backend.RollbackCount.Should().Be(1);
+        result.Status.Should().Be(WorkflowOperationStatus.RollbackRequested);
+        result.Deploy!.CanaryRamp!.CurrentStepIndex.Should().Be(0);
+    }
+
+    [Fact]
     public async Task ProviderRollbackRecommendation_DoesNotWaitForTelemetry()
     {
         var store = new InMemoryWorkflowOperationStore();
@@ -292,6 +311,7 @@ public sealed class DeployWorkflowReconcilerLeaseContentionTests
     {
         public bool InterruptPreparation { get; init; }
         public bool RecommendRollback { get; init; }
+        public bool FailRamp { get; init; }
         public bool StageOneObservation { get; init; }
         public int ObserveCount { get; private set; }
         public int RollbackCount { get; private set; }
@@ -320,7 +340,8 @@ public sealed class DeployWorkflowReconcilerLeaseContentionTests
         }
         public Task<DeployBackendCapabilities> GetCapabilitiesAsync(CancellationToken cancellationToken = default) => Task.FromResult(new DeployBackendCapabilities());
         public Task<DeployPlan> PlanAsync(DeployOperationSpec spec, CancellationToken cancellationToken = default) => Task.FromResult(new DeployPlan { IsReadyToSubmit = true });
-        public Task<DeploySubmissionResult> StartAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<DeploySubmissionResult> StartAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken = default)
+            => FailRamp ? Task.FromResult(new DeploySubmissionResult { Status = WorkflowOperationStatus.Failed }) : throw new NotSupportedException();
         public Task<DeployObservation> ObserveAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken = default)
         {
             ObserveCount++;

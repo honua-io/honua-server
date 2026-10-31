@@ -973,6 +973,22 @@ internal sealed partial class AwsEcsAlbDeployBackend(
                 };
             }
 
+            if (ReleaseImageDigest.IsImmutable(spec.DesiredRevision) && operation.Deploy?.TrafficExposedAt is not null &&
+                convergence.IsConverged && !albWeights.MatchesExpectedShare(0))
+            {
+                var health = await albClient.DescribeTargetHealthAsync(target.CanaryTargetGroupArn!, target.Region, cancellationToken).ConfigureAwait(false);
+                if (serviceState.DesiredCount <= 0 || health.HealthyCount < serviceState.DesiredCount)
+                {
+                    return new DeployObservation
+                    {
+                        Status = WorkflowOperationStatus.Reconciling,
+                        ProviderOperationId = operation.ProviderOperationId,
+                        RollbackRecommended = true,
+                        Message = "ECS candidate load balancer targets are unhealthy; rollback is required."
+                    };
+                }
+            }
+
             if (albWeights.MatchesExpectedShare(100) && convergence.IsConverged)
             {
                 return new DeployObservation

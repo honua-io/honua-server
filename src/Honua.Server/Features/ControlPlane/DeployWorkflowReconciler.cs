@@ -1107,7 +1107,7 @@ internal sealed partial class DeployWorkflowReconciler(
     /// terminal step. Without a configured ramp this preserves the single-step default by calling
     /// <see cref="IDeployBackend.PromoteAsync"/> once.
     /// </summary>
-    private static async Task<WorkflowOperationRecord> AdvanceOrPromoteAsync(
+    internal static async Task<WorkflowOperationRecord> AdvanceOrPromoteAsync(
         WorkflowOperationRecord current,
         IDeployBackend backend,
         CancellationToken cancellationToken)
@@ -1133,6 +1133,23 @@ internal sealed partial class DeployWorkflowReconciler(
             // Re-apply the deploy at the next step weight. StartAsync resolves the canary share
             // from the synchronized parameter, so backends shift traffic without a new contract.
             var stepObservation = await backend.StartAsync(rampedOperation, cancellationToken).ConfigureAwait(false);
+            if (stepObservation.Status == WorkflowOperationStatus.Failed &&
+                backend is ICheckpointedDeployBackend checkpointed && checkpointed.RequiresCheckpoint(current))
+            {
+                var rollback = await backend.RollbackAsync(current, cancellationToken).ConfigureAwait(false);
+                var rollbackStatus = rollback.Status is WorkflowOperationStatus.RollbackRequested or WorkflowOperationStatus.RolledBack
+                    ? rollback.Status : WorkflowOperationStatus.ManualInterventionRequired;
+                return current with
+                {
+                    Status = rollbackStatus,
+                    UpdatedAt = DateTimeOffset.UtcNow,
+                    CompletedAt = rollbackStatus == WorkflowOperationStatus.ManualInterventionRequired ? DateTimeOffset.UtcNow : null,
+                    CurrentPhase = rollback.Message ?? "Canary ramp failed; rollback requested.",
+                    ErrorMessage = rollbackStatus == WorkflowOperationStatus.ManualInterventionRequired
+                        ? "Canary ramp failed and rollback requires intervention." : null
+                };
+            }
+
             var stepStatus = stepObservation.Status == WorkflowOperationStatus.Failed
                 ? WorkflowOperationStatus.Failed
                 : WorkflowOperationStatus.Reconciling;

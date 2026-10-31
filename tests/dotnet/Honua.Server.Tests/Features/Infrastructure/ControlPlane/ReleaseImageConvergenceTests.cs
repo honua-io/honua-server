@@ -240,6 +240,24 @@ public sealed class ReleaseImageConvergenceTests
     }
 
     [Fact]
+    public async Task EcsObservation_UnhealthyExposedCandidateRecommendsRollback()
+    {
+        var ecs = new DigestEcsClient();
+        var alb = new DigestAlbClient();
+        var backend = Backend(alb, ecs);
+        var operation = EcsOperation(Digest);
+        var checkpoint = await backend.PrepareCheckpointAsync(operation, CancellationToken.None);
+        var persisted = Checkpointed(operation, checkpoint);
+        await backend.ActivateCheckpointAsync(persisted, CancellationToken.None);
+        await backend.ObserveAsync(persisted);
+        alb.HealthyTargets = 0;
+        var exposed = persisted with { Deploy = persisted.Deploy! with { TrafficExposedAt = DateTimeOffset.UtcNow } };
+        var observation = await backend.ObserveAsync(exposed);
+        observation.RollbackRecommended.Should().BeTrue();
+        observation.Status.Should().Be(WorkflowOperationStatus.Reconciling);
+    }
+
+    [Fact]
     public async Task EcsActivation_WaitsForHealthyTargetsBeforeTrafficShift()
     {
         var ecs = new DigestEcsClient();
@@ -776,7 +794,7 @@ public sealed class ReleaseImageConvergenceTests
             return Task.FromResult(_rule);
         }
 
-        public int HealthyTargets { get; init; } = 2;
+        public int HealthyTargets { get; set; } = 2;
 
         public Task<AwsAlbTargetHealthState> DescribeTargetHealthAsync(string targetGroupArn, string? region, CancellationToken cancellationToken = default)
             => Task.FromResult(new AwsAlbTargetHealthState
