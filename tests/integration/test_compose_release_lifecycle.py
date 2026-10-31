@@ -152,7 +152,7 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
         sql("CREATE TABLE public.rc2_lifecycle_marker (id integer PRIMARY KEY, value text NOT NULL); INSERT INTO public.rc2_lifecycle_marker VALUES (1, 'retained')")
         proposer, _ = request(base, "/api/v1/admin/api-keys/", key, {"name": "proposer", "permissions": ["admin:*"]})
         approver, _ = request(base, "/api/v1/admin/api-keys/", key, {"name": "approver", "permissions": ["admin:*"]})
-        proposer_key, approver_key = proposer["key"], approver["key"]
+        proposer_key, approver_key = proposer["data"]["key"], approver["data"]["key"]
         _, session = rpc(base, proposer_key, None, "initialize", {"protocolVersion": "2025-03-26", "capabilities": {}, "clientInfo": {"name": "lifecycle", "version": "1"}}, 1)
         def call(name, arguments, ident):
             result, _ = rpc(base, proposer_key, session, "tools/call", {"name": name, "arguments": arguments}, ident)
