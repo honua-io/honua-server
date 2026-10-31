@@ -335,6 +335,8 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
             await backend.Received(1).StartAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>());
             await worker.ReconcileAsync(id, CancellationToken.None);
             await backend.Received(1).StartAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>());
+            var completed = await workflows.GetAsync(workflowId);
+            Assert.True(await workflows.TrySetAsync(completed! with { Status = WorkflowOperationStatus.Succeeded }));
         }
         finally
         {
