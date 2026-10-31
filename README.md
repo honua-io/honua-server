@@ -3,7 +3,7 @@
 [![CI](https://github.com/honua-io/honua-server/actions/workflows/ci.yml/badge.svg?branch=trunk)](https://github.com/honua-io/honua-server/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/honua-io/honua-server/actions/workflows/codeql.yml/badge.svg)](https://github.com/honua-io/honua-server/actions/workflows/codeql.yml)
 [![Security Nightly](https://github.com/honua-io/honua-server/actions/workflows/security-nightly.yml/badge.svg)](https://github.com/honua-io/honua-server/actions/workflows/security-nightly.yml)
-[![License](https://img.shields.io/badge/License-Elastic_License_2.0-blue.svg)](https://github.com/honua-io/honua-server/blob/trunk/LICENSE)
+[![License](https://img.shields.io/badge/License-FCL--1.0--ALv2-blue.svg)](https://github.com/honua-io/honua-server/blob/trunk/LICENSE)
 [![.NET](https://img.shields.io/badge/.NET-10.0-blue.svg)](https://dotnet.microsoft.com/download/dotnet/10.0)
 [![PostGIS](https://img.shields.io/badge/PostGIS-3.4--3.6-brightgreen.svg)](https://postgis.net/)
 [![Docker](https://img.shields.io/badge/Docker-honuaio%2Fhonua--server-blue.svg)](https://hub.docker.com/r/honuaio/honua-server)
