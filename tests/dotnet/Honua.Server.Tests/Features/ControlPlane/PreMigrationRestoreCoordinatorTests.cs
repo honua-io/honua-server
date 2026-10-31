@@ -279,6 +279,19 @@ public sealed class PreMigrationRestoreCoordinatorTests
         ConnectionStringHostSwap.TrySwapHost("Host=old.example;Password=secret", "a;Password=x", out _).Should().BeFalse();
     }
 
+    [UnitTheory]
+    [InlineData("{\"connectionString\":\"Host=old.example;Username=user;Password=test;Database=db\",\"extra\":\"retained\"}")]
+    [InlineData("{\"ConnectionString\":\"Host=old.example;Username=user;Password=test;Database=db\",\"extra\":\"retained\"}")]
+    [InlineData("{\"host\":\"old.example\",\"username\":\"user\",\"password\":\"a;b=c\",\"dbname\":\"db\",\"extra\":\"retained\"}")]
+    [Operation(Operations.TestInfrastructure)]
+    public void HostSwap_JsonSecret_PreservesEnvelopeAndOtherFields(string secret)
+    {
+        ConnectionStringHostSwap.TrySwapHost(secret, "db.internal", out var swapped).Should().BeTrue();
+        ConnectionStringHostSwap.ReadHost(swapped).Should().Be("db.internal");
+        using var document = JsonDocument.Parse(swapped);
+        document.RootElement.GetProperty("extra").GetString().Should().Be("retained");
+    }
+
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
     public async Task CompatibleAzureRollback_StartsWithoutRestoring()

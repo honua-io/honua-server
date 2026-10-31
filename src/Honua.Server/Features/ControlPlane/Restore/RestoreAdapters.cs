@@ -9,6 +9,7 @@ using System.Text.Json;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Restore;
 using Honua.Core.Features.Infrastructure.Migrations;
+using Honua.Db.Postgres.Features.Security.ConnectionSecretResolvers;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Npgsql;
@@ -26,40 +27,59 @@ internal interface IRestoredConnectionOpener
 internal static class ConnectionStringHostSwap
 {
     /// <summary>Replaces the host. False when the string cannot be parsed or the host is not a single hostname.</summary>
-    public static bool TrySwapHost(string connectionString, string host, out string swapped)
+    public static bool TrySwapHost(string secret, string host, out string swapped)
     {
         swapped = string.Empty;
-        if (string.IsNullOrWhiteSpace(connectionString) || !IsHost(host))
-        {
-            return false;
-        }
-
+        if (string.IsNullOrWhiteSpace(secret) || !IsHost(host)) return false;
         try
         {
-            var builder = new NpgsqlConnectionStringBuilder(connectionString) { Host = host };
-            swapped = builder.ConnectionString;
-            return string.Equals(builder.Host, host, StringComparison.Ordinal);
+            var extracted = SecretValueExtractor.ExtractValue(secret);
+            var builder = new NpgsqlConnectionStringBuilder(extracted) { Host = host };
+            if (!secret.TrimStart().StartsWith('{'))
+            {
+                swapped = builder.ConnectionString;
+                return string.Equals(builder.Host, host, StringComparison.Ordinal);
+            }
+
+            using var document = JsonDocument.Parse(secret);
+            if (document.RootElement.ValueKind != JsonValueKind.Object) return false;
+            var root = document.RootElement;
+            var envelope = root.TryGetProperty("connectionString", out _) ? "connectionString"
+                : root.TryGetProperty("ConnectionString", out _) ? "ConnectionString" : null;
+            var propertyName = envelope ?? "host";
+            if (!root.TryGetProperty(propertyName, out var property) || property.ValueKind != JsonValueKind.String) return false;
+            using var output = new MemoryStream();
+            using (var writer = new Utf8JsonWriter(output))
+            {
+                writer.WriteStartObject();
+                foreach (var item in root.EnumerateObject())
+                {
+                    if (string.Equals(item.Name, propertyName, StringComparison.Ordinal))
+                        writer.WriteString(item.Name, envelope is null ? host : builder.ConnectionString);
+                    else
+                        item.WriteTo(writer);
+                }
+                writer.WriteEndObject();
+            }
+            swapped = Encoding.UTF8.GetString(output.ToArray());
+            return string.Equals(ReadHost(swapped), host, StringComparison.Ordinal);
         }
-        catch (Exception ex) when (ex is ArgumentException or FormatException)
+        catch (Exception ex) when (ex is ArgumentException or FormatException or InvalidOperationException or JsonException)
         {
             swapped = string.Empty;
             return false;
         }
     }
 
-    /// <summary>Reads the host, or null when the string cannot be parsed.</summary>
-    public static string? ReadHost(string connectionString)
+    /// <summary>Reads the host from any supported secret representation.</summary>
+    public static string? ReadHost(string secret)
     {
-        if (string.IsNullOrWhiteSpace(connectionString))
-        {
-            return null;
-        }
-
+        if (string.IsNullOrWhiteSpace(secret)) return null;
         try
         {
-            return new NpgsqlConnectionStringBuilder(connectionString).Host;
+            return new NpgsqlConnectionStringBuilder(SecretValueExtractor.ExtractValue(secret)).Host;
         }
-        catch (Exception ex) when (ex is ArgumentException or FormatException)
+        catch (Exception ex) when (ex is ArgumentException or FormatException or InvalidOperationException)
         {
             return null;
         }
