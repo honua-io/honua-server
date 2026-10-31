@@ -116,6 +116,30 @@ public sealed class ReleaseImageConvergenceTests
     }
 
     [Fact]
+    public async Task EcsCanaryRamp_AdvancesExistingCandidateWithoutPreparingAgain()
+    {
+        var ecs = new DigestEcsClient();
+        var alb = new DigestAlbClient();
+        var backend = Backend(alb, ecs);
+        var operation = EcsOperation(Digest);
+        var ramp = new CanaryRampSpec { StepWeights = [10, 50, 100], StepBakeDuration = TimeSpan.FromSeconds(1) };
+        operation = operation with { Deploy = operation.Deploy! with { CanaryRamp = ramp } };
+        var checkpoint = await backend.PrepareCheckpointAsync(operation, CancellationToken.None);
+        var persisted = Checkpointed(operation, checkpoint);
+        await backend.ActivateCheckpointAsync(persisted, CancellationToken.None);
+        await backend.ObserveAsync(persisted);
+        var next = persisted with { Deploy = persisted.Deploy! with { TrafficExposedAt = DateTimeOffset.UtcNow, CanaryRamp = ramp with { CurrentStepIndex = 1 } } };
+        var result = await backend.StartAsync(next);
+        result.Status.Should().Be(WorkflowOperationStatus.Submitted);
+        result.ProviderOperationId.Should().Be(RegisteredTaskDef);
+        ecs.Calls.Count(call => call == "register").Should().Be(1);
+        ecs.Calls.Count(call => call == "update-service").Should().Be(1);
+        var weights = await alb.GetListenerRuleWeightsAsync(ListenerRuleArn, null);
+        weights.TargetGroupWeights.Single(weight => weight.TargetGroupArn == CanaryTargetGroupArn).Weight.Should().Be(50);
+        (await backend.ObserveAsync(next)).PromotionRecommended.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task EcsProtection_HandoffRestoresStableSlotAfterCandidateIsHealthy()
     {
         var ecs = new DigestEcsClient();

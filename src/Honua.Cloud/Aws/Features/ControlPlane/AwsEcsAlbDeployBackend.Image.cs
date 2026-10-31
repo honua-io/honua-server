@@ -66,6 +66,51 @@ internal sealed partial class AwsEcsAlbDeployBackend
         }
     }
 
+    private async Task<DeploySubmissionResult> AdvanceCheckpointedCanaryAsync(
+        WorkflowOperationRecord operation, DeployOperationSpec spec, AwsEcsAlbDeployTarget target, CancellationToken cancellationToken)
+    {
+        var ramp = spec.CanaryRamp!;
+        var weight = ramp.CurrentStepWeight;
+        if (weight is null || ramp.CurrentStepIndex <= 0 || ramp.CurrentStepIndex >= ramp.StepWeights.Count)
+        {
+            return ImageFailure("ECS canary ramp step is invalid.");
+        }
+
+        try
+        {
+            var service = await ecsClient.DescribeServiceAsync(target.Cluster!, target.CanaryService!, target.Region, cancellationToken).ConfigureAwait(false);
+            var convergence = EvaluateDeploymentConvergence(service, operation.ProviderOperationId!);
+            var health = await albClient.DescribeTargetHealthAsync(target.CanaryTargetGroupArn!, target.Region, cancellationToken).ConfigureAwait(false);
+            var rule = await albClient.GetListenerRuleWeightsAsync(target.ListenerRuleArn!, target.Region, cancellationToken).ConfigureAwait(false);
+            var weights = SummarizeAlbWeights(rule, target);
+            var previousWeight = ramp.StepWeights[ramp.CurrentStepIndex - 1];
+            if (!convergence.IsConverged || service.DesiredCount <= 0 || health.HealthyCount < service.DesiredCount ||
+                (!weights.MatchesExpectedShare(previousWeight) && !weights.MatchesExpectedShare(weight.Value)))
+            {
+                return ImageFailure("ECS canary ramp cannot advance because the candidate or routing state changed.");
+            }
+
+            if (!weights.MatchesExpectedShare(weight.Value))
+            {
+                await albClient.UpdateListenerRuleWeightsAsync(target.ListenerRuleArn!,
+                    BuildWeights(target.CanaryTargetGroupArn!, weight.Value, target.StableTargetGroupArn!, 100 - weight.Value),
+                    target.Region, cancellationToken).ConfigureAwait(false);
+            }
+
+            return new DeploySubmissionResult
+            {
+                Status = WorkflowOperationStatus.Submitted,
+                ProviderOperationId = operation.ProviderOperationId,
+                ObservedRevision = spec.CurrentRevision,
+                Message = $"ECS canary traffic advanced to {weight.Value}%."
+            };
+        }
+        catch (Exception ex) when (IsAwsRuntimeException(ex))
+        {
+            return SanitizedSubmissionFailure(ex);
+        }
+    }
+
     public bool RequiresCheckpoint(WorkflowOperationRecord operation)
         => operation.Deploy is { } spec && ReleaseImageDigest.IsImmutable(spec.DesiredRevision);
 

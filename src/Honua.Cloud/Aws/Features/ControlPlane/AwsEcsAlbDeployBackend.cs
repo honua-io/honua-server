@@ -672,6 +672,13 @@ internal sealed partial class AwsEcsAlbDeployBackend(
         EnsureValidTarget(target);
         if (RequiresCheckpoint(operation))
         {
+            if (spec.CanaryRamp is { IsValid: true, CurrentStepIndex: > 0 } &&
+                spec.TrafficExposedAt is not null &&
+                ReleaseImageDigest.IsEcsTaskDefinitionArn(operation.ProviderOperationId))
+            {
+                return await AdvanceCheckpointedCanaryAsync(operation, spec, target, cancellationToken).ConfigureAwait(false);
+            }
+
             return new DeploySubmissionResult
             {
                 Status = WorkflowOperationStatus.Submitted,
@@ -834,6 +841,10 @@ internal sealed partial class AwsEcsAlbDeployBackend(
         {
             EnsureValidTarget(target);
             _ = TryResolveCanaryWeightPercentage(spec.Parameters, out var desiredCanaryWeight, out _);
+            if (ReleaseImageDigest.IsImmutable(spec.DesiredRevision) && spec.CanaryRamp is { IsValid: true } ramp)
+            {
+                desiredCanaryWeight = ramp.CurrentStepWeight;
+            }
 
             var ruleState = await albClient.GetListenerRuleWeightsAsync(
                     target.ListenerRuleArn!,
