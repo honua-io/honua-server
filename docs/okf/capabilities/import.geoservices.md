@@ -25,4 +25,4 @@ The facts above come from the server's capability registry and capability matrix
 ## Documented in
 
 - [Migrate from GeoServices REST service](../../guides/migrate/from-arcgis-server.md)
-- [Import from GeoServices services](../../guides/publish/import-from-arcgis-services.md)
+- [Import from GeoServices REST](../../guides/publish/import-from-arcgis-services.md)

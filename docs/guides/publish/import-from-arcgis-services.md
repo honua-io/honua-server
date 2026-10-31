@@ -1,10 +1,10 @@
 ---
 type: guide
-title: "Import from ArcGIS services"
+title: "Import from GeoServices REST"
 description: "You'll have a layer from a public ArcGIS REST service copied into PostGIS and published in about 10 minutes."
 resource: "honua://capability/import.geoservices"
 ---
-# Import from ArcGIS services
+# Import from GeoServices REST
 
 You'll have a layer from a public ArcGIS REST service copied into PostGIS and published in about 10 minutes.
 
