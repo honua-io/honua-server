@@ -171,7 +171,7 @@ internal sealed partial class DurableRestoreWorker(
                 string.Equals(target.TargetId, payload.TargetId, StringComparison.Ordinal)) == true;
             if (local)
             {
-                if (!await ClaimCellAsync(id, lostLease.Token).ConfigureAwait(false)) return;
+                if (!await ClaimCellAsync(id, lostLease.Token, allowLocalRecovery: payload.Rollback).ConfigureAwait(false)) return;
                 await StartLocalAsync(record, payload, lostLease.Token).ConfigureAwait(false);
                 return;
             }
@@ -243,13 +243,21 @@ internal sealed partial class DurableRestoreWorker(
 
     private async Task StartLocalAsync(WorkflowOperationRecord record, DeployExecutionPayload payload, CancellationToken cancellationToken)
     {
+        if (!payload.Rollback)
+        {
+            if (compose is null) throw new InvalidOperationException("Compose executor is unavailable.");
+            var prior = await compose.ExecuteAsync(new ComposeExecutorRequest { Op = "status", RequestId = record.OperationId }, cancellationToken).ConfigureAwait(false);
+            if (!prior.Ok || !prior.ReadbackComplete || !ComposeExecutorRules.IsImmutableImage(prior.RunningImage))
+                throw new InvalidOperationException("The prior image could not be verified.");
+            payload = payload with { CurrentRevision = prior.RunningImage };
+        }
         var workflowId = DeployWorkflowService.CreateOperationId(record.OperationId);
         var checkpoint = record with
         {
             Status = WorkflowOperationStatus.Reconciling,
             UpdatedAt = DateTimeOffset.UtcNow,
             CurrentPhase = "Waiting for the local deployment and its protection window.",
-            PreMigrationRestore = record.PreMigrationRestore! with { Phase = "awaiting-local-deploy", DeployOperationId = workflowId }
+            PreMigrationRestore = record.PreMigrationRestore! with { Phase = "awaiting-local-deploy", DeployOperationId = workflowId, Payload = payload.Serialize() }
         };
         if (!await store.TrySetAsync(checkpoint, cancellationToken: cancellationToken).ConfigureAwait(false)) return;
         var request = new OperationGatewayRequest
@@ -263,7 +271,7 @@ internal sealed partial class DurableRestoreWorker(
             Reason = record.Audit.Reason,
             TenantId = record.Audit.TenantId
         };
-        var actual = await deploy.ExecuteAsync(request, record.PreMigrationRestore.Payload, cancellationToken).ConfigureAwait(false);
+        var actual = await deploy.ExecuteAsync(request, checkpoint.PreMigrationRestore!.Payload, cancellationToken).ConfigureAwait(false);
         if (!string.Equals(actual, workflowId, StringComparison.Ordinal))
             throw new InvalidOperationException("Deploy operation did not match the saved checkpoint.");
     }
@@ -299,7 +307,7 @@ internal sealed partial class DurableRestoreWorker(
     // A short Redis lease serializes updates to the durable owner record. The owner survives
     // process replacement and remains held until the full deploy and readback have succeeded.
     // Failed or missing owners require operator intervention rather than another restore.
-    internal async Task<bool> ClaimCellAsync(string id, CancellationToken cancellationToken)
+    internal async Task<bool> ClaimCellAsync(string id, CancellationToken cancellationToken, bool allowLocalRecovery = false)
     {
         if (!await store.TryAcquireLeaseAsync(CellOwnerId, _owner, Lease, cancellationToken).ConfigureAwait(false)) return false;
         try
@@ -322,7 +330,20 @@ internal sealed partial class DurableRestoreWorker(
             if (!string.IsNullOrEmpty(owner.CurrentPhase))
             {
                 var previous = await store.GetAsync(owner.CurrentPhase, cancellationToken).ConfigureAwait(false);
-                if (previous?.Status != WorkflowOperationStatus.Succeeded) return false;
+                if (previous?.Status != WorkflowOperationStatus.Succeeded)
+                {
+                    // An approved rollback may take over a terminal local workflow. The sidecar
+                    // serializes mutations and independently verifies the backup before restoring.
+                    var checkpoint = previous?.PreMigrationRestore;
+                    if (!allowLocalRecovery || previous?.Status != WorkflowOperationStatus.Failed ||
+                        checkpoint?.Phase != "awaiting-local-deploy" || string.IsNullOrWhiteSpace(checkpoint.DeployOperationId)) return false;
+                    var previousPayload = DeployExecutionPayload.Parse(checkpoint.Payload);
+                    var isLocal = controlPlane?.CurrentValue.DeployTargets.Any(target =>
+                        target.TargetKind == DeployTargetKind.LocalCompose &&
+                        string.Equals(target.TargetId, previousPayload?.TargetId, StringComparison.Ordinal)) == true;
+                    var workflow = await deploy.GetWorkflowAsync(checkpoint.DeployOperationId, cancellationToken).ConfigureAwait(false);
+                    if (!isLocal || workflow?.Status is not (WorkflowOperationStatus.Failed or WorkflowOperationStatus.RolledBack or WorkflowOperationStatus.Succeeded)) return false;
+                }
             }
             return await store.TrySetAsync(owner with { CurrentPhase = id, UpdatedAt = DateTimeOffset.UtcNow },
                 OwnerRetention, cancellationToken).ConfigureAwait(false);

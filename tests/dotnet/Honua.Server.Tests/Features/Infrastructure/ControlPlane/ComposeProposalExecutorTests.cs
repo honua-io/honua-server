@@ -213,6 +213,21 @@ public sealed class ComposeProposalExecutorTests
     }
 
     [UnitTest]
+    public async Task FailedCutoverWithBackup_EntersRecoveryWithPriorRevision()
+    {
+        var release = Digest('a');
+        var prior = Digest('b');
+        var client = Substitute.For<IComposeExecutorClient>();
+        client.ExecuteAsync(Arg.Is<ComposeExecutorRequest>(request => request.Op == "status"), Arg.Any<CancellationToken>())
+            .Returns(Ready(prior));
+        client.ExecuteAsync(Arg.Is<ComposeExecutorRequest>(request => request.Op == "converge"), Arg.Any<CancellationToken>())
+            .Returns(new ComposeExecutorResponse { Ok = false, BackupId = "backup-" + new string('c', 32), Code = ComposeExecutorCodes.ReadbackIncomplete });
+        var result = await Backend(client, release, "/tmp/honua-compose-unit.sock").StartAsync(Operation(release, "approver"));
+        Assert.Equal(WorkflowOperationStatus.Reconciling, result.Status);
+        Assert.Equal(prior, result.ObservedRevision);
+    }
+
+    [UnitTest]
     public async Task SamePrincipalSubmit_ThrowsBeforeConverge_AndADifferentPrincipalConverges()
     {
         var release = Digest('a');
@@ -447,7 +462,7 @@ public sealed class ComposeProposalExecutorTests
         };
     }
 
-    private static ComposeDeployBackend Backend(RecordingClient client, string releaseImage, string socketPath)
+    private static ComposeDeployBackend Backend(IComposeExecutorClient client, string releaseImage, string socketPath)
         => new(
             client,
             Options.Create(new ComposeExecutorOptions

@@ -161,4 +161,57 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
             await database.KeyDeleteAsync("controlplane:workflow:restore-cell-exclusive-owner");
         }
     }
+    [IntegrationTest]
+    public async Task ApprovedLocalRollback_CanTakeOverOnlyTerminalLocalFailure()
+    {
+        await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        var database = connection.GetDatabase();
+        await database.KeyDeleteAsync("controlplane:workflow:restore-cell-exclusive-owner");
+        try
+        {
+            var workflows = new RedisWorkflowOperationStore(connection, NullLogger<RedisWorkflowOperationStore>.Instance);
+            var now = DateTimeOffset.UtcNow;
+            var failedId = "restore-local-" + Guid.NewGuid().ToString("N");
+            var workflowId = "deploy-local-" + Guid.NewGuid().ToString("N");
+            Assert.True(await workflows.TryCreateAsync(new WorkflowOperationRecord
+            {
+                OperationId = workflowId, Kind = WorkflowOperationKind.Deploy,
+                Status = WorkflowOperationStatus.Reconciling, CreatedAt = now, UpdatedAt = now
+            }));
+            Assert.True(await workflows.TryCreateAsync(new WorkflowOperationRecord
+            {
+                OperationId = failedId, Kind = WorkflowOperationKind.PreMigrationRestore,
+                Status = WorkflowOperationStatus.Failed, CreatedAt = now, UpdatedAt = now,
+                PreMigrationRestore = new PreMigrationRestoreContext
+                {
+                    Phase = "awaiting-local-deploy", DeployOperationId = workflowId,
+                    Payload = new DeployExecutionPayload { TargetId = "local", DesiredRevision = "prior" }.Serialize()
+                }
+            }));
+            Assert.True(await workflows.TryCreateAsync(new WorkflowOperationRecord
+            {
+                OperationId = "restore-cell-exclusive-owner", Kind = WorkflowOperationKind.PreMigrationRestore,
+                Status = WorkflowOperationStatus.Succeeded, CreatedAt = now, UpdatedAt = now, CurrentPhase = failedId
+            }));
+            var service = new DeployWorkflowService(Substitute.For<IDeployTargetRegistry>(), [workflows], [],
+                Substitute.For<IOperatorApprovalEvaluator>(), NullLogger<DeployWorkflowService>.Instance);
+            var monitor = Substitute.For<IOptionsMonitor<ControlPlaneOptions>>();
+            monitor.CurrentValue.Returns(new ControlPlaneOptions
+            {
+                DeployTargets = [new DeployTargetOptions { TargetId = "local", TargetKind = DeployTargetKind.LocalCompose }]
+            });
+            var worker = new DurableRestoreWorker(workflows, null!, null!, new DeployOperationExecutor(service), null!, null!,
+                NullLogger<DurableRestoreWorker>.Instance, monitor);
+            Assert.False(await worker.ClaimCellAsync("recovery", CancellationToken.None, allowLocalRecovery: true));
+            var workflow = await workflows.GetAsync(workflowId);
+            Assert.True(await workflows.TrySetAsync(workflow! with { Status = WorkflowOperationStatus.Failed }));
+            Assert.False(await worker.ClaimCellAsync("ordinary-deploy", CancellationToken.None));
+            Assert.True(await worker.ClaimCellAsync("recovery", CancellationToken.None, allowLocalRecovery: true));
+        }
+        finally
+        {
+            await database.KeyDeleteAsync("controlplane:workflow:restore-cell-exclusive-owner");
+        }
+    }
+
 }

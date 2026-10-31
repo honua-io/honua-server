@@ -111,9 +111,12 @@ internal sealed partial class ComposeDeployBackend(
                 var prior = await client.ExecuteAsync(new ComposeExecutorRequest
                 {
                     Op = "status",
+                    Image = priorRevision,
                     RequestId = operation.OperationId
                 }, cancellationToken).ConfigureAwait(false);
                 if (!prior.Ok || !prior.ReadbackComplete || !ComposeExecutorRules.IsImmutableImage(prior.RunningImage))
+                    return Submission(operation, WorkflowOperationStatus.Failed, ComposeExecutorCodes.ReadbackIncomplete);
+                if (!string.IsNullOrWhiteSpace(priorRevision) && !string.Equals(priorRevision, prior.RunningImage, StringComparison.Ordinal))
                     return Submission(operation, WorkflowOperationStatus.Failed, ComposeExecutorCodes.ReadbackIncomplete);
                 priorRevision = prior.RunningImage;
             }
@@ -132,7 +135,10 @@ internal sealed partial class ComposeDeployBackend(
                 && string.Equals(response.RunningImage, desired, StringComparison.Ordinal);
             return new DeploySubmissionResult
             {
-                Status = ready ? WorkflowOperationStatus.Reconciling : WorkflowOperationStatus.Failed,
+                // Once a backup was taken, cutover may have exposed a failing candidate.
+                // Let the reconciler observe the failure and invoke verified recovery.
+                Status = ready || (op == "converge" && !string.IsNullOrWhiteSpace(response.BackupId))
+                    ? WorkflowOperationStatus.Reconciling : WorkflowOperationStatus.Failed,
                 ProviderOperationId = operation.OperationId,
                 // Keep the prior revision. The workflow copies ObservedRevision onto CurrentRevision.
                 ObservedRevision = priorRevision,
