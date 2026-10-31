@@ -445,6 +445,10 @@ internal sealed partial class DeployWorkflowService
             Deploy = planningResult.Spec with { PreMigrationBackupId = preMigrationBackupId }
         };
 
+        await using var submissionLease = planningResult.Target.TargetKind == DeployTargetKind.LocalCompose && submitImmediately && planningResult.Plan.IsReadyToSubmit
+            ? await RestoreDeployAdmission.AcquireWorkflowAsync(_workflowStore!, operation.OperationId, cancellationToken).ConfigureAwait(false)
+            : null;
+        if (submissionLease is not null) cancellationToken = submissionLease.Token;
         var created = await _workflowStore!.TryCreateAsync(operation, cancellationToken: cancellationToken).ConfigureAwait(false);
         if (!created)
         {
@@ -536,6 +540,17 @@ internal sealed partial class DeployWorkflowService
         if (operation.Kind != WorkflowOperationKind.Deploy || operation.Deploy == null)
         {
             throw new ResourceConflictException("Only deploy workflow operations can be submitted.");
+        }
+
+        await using var submissionLease = operation.Deploy.TargetKind == DeployTargetKind.LocalCompose
+            ? await RestoreDeployAdmission.AcquireWorkflowAsync(_workflowStore!, operationId, cancellationToken).ConfigureAwait(false)
+            : null;
+        if (submissionLease is not null)
+        {
+            cancellationToken = submissionLease.Token;
+            operation = await _workflowStore!.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
+            if (operation?.Kind != WorkflowOperationKind.Deploy || operation.Deploy is null)
+                throw new ResourceConflictException("Deploy operation changed while acquiring its submission lease.");
         }
 
         if (operation.Status is WorkflowOperationStatus.Submitted

@@ -199,6 +199,13 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
         try
         {
             var workflows = new RedisWorkflowOperationStore(connection, NullLogger<RedisWorkflowOperationStore>.Instance);
+            var submissionId = "deploy-submission-" + Guid.NewGuid().ToString("N");
+            await using (var submission = await RestoreDeployAdmission.AcquireWorkflowAsync(workflows, submissionId, CancellationToken.None))
+            {
+                Assert.False(await workflows.TryAcquireLeaseAsync(submissionId, "reconciler", TimeSpan.FromMinutes(1)));
+            }
+            Assert.True(await workflows.TryAcquireLeaseAsync(submissionId, "reconciler", TimeSpan.FromMinutes(1)));
+            await workflows.ReleaseLeaseAsync(submissionId, "reconciler");
             var now = DateTimeOffset.UtcNow;
             var failedId = "restore-local-" + Guid.NewGuid().ToString("N");
             var workflowId = "deploy-local-" + Guid.NewGuid().ToString("N");
