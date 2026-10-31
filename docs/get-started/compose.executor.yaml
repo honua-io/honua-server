@@ -1,9 +1,7 @@
 # Optional overlay for the quickstart Compose file. Copy it beside compose.yaml.
 # The server service stays read-only and does not receive the Docker socket.
 # The executor sidecar is the same server image and is the only service that mounts the socket.
-# Compose merges sequences, so this file adds the socket volume to honua. An older Compose
-# that replaces volumes instead of appending them must copy the honua volumes from compose.yaml
-# into this file as well.
+# The separate manager and executor share the executor socket; the serving service does not.
 services:
   honua:
     environment:
@@ -43,18 +41,7 @@ services:
     depends_on:
       keyring-init:
         condition: service_completed_successfully
-      compose-manager-redis:
-    image: redis:7.4-alpine
-    command: redis-server --appendonly yes --maxmemory 64mb --maxmemory-policy noeviction
-    volumes:
-      - compose-manager-redis:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 30
-    restart: unless-stopped
-  compose-manager-postgres:
+      compose-manager-postgres:
         condition: service_healthy
       compose-manager-redis:
         condition: service_healthy
@@ -70,6 +57,18 @@ services:
       - compose-manager-storage:/var/lib/honua/storage
       - ./secrets/keyring.pfx:/var/lib/honua/keyring.pfx:ro
       - compose-executor-socket:/run/honua-compose
+  compose-manager-redis:
+    image: redis:7.4-alpine
+    command: redis-server --appendonly yes --maxmemory 64mb --maxmemory-policy noeviction
+    volumes:
+      - compose-manager-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
   compose-manager-postgres:
     image: pgrouting/pgrouting:17-3.5-3.7.3
     environment:
