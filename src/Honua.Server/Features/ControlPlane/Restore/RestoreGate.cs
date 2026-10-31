@@ -714,8 +714,8 @@ internal static class ComposeBackupDirectory
 
         createdAt = manifest.CreatedAt;
 
-        var bytes = File.ReadAllBytes(dumpPath);
-        var hash = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+        using var dump = File.OpenRead(dumpPath);
+        var hash = Convert.ToHexString(SHA256.HashData(dump)).ToLowerInvariant();
         return new ComposeBackupManifestEvidence
         {
             BackupId = backupId,
