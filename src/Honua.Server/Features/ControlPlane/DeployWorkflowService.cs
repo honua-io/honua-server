@@ -412,7 +412,10 @@ internal sealed partial class DeployWorkflowService
         {
             OperationId = operationId,
             Kind = WorkflowOperationKind.Deploy,
-            Status = DeterminePersistedStatus(planningResult.Plan),
+            // A crash during provider submission must leave an active durable record so
+            // restore admission cannot mistake an in-flight deployment for a safe cell.
+            Status = submitImmediately && planningResult.Plan.IsReadyToSubmit
+                ? WorkflowOperationStatus.Submitted : DeterminePersistedStatus(planningResult.Plan),
             Priority = priority,
             CreatedAt = now,
             UpdatedAt = now,
