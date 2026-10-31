@@ -300,7 +300,8 @@ internal sealed partial class ComposeProjectController : IDisposable
                     request,
                     ComposeExecutorCodes.RestoreIncomplete,
                     "Restore did not return the database to the backup schema. The service was left stopped.")
-                    with { BackupId = manifest.BackupId, SchemaVersion = after.SchemaVersion };
+                    with
+                { BackupId = manifest.BackupId, SchemaVersion = after.SchemaVersion };
             }
         }
 
