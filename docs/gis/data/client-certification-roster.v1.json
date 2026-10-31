@@ -57,9 +57,9 @@
       "id": "registry-lane-absent-from-artifact",
       "delta": 1,
       "affectedEntryIds": [
-        "geoservices-stub"
+        "geoservices-rest-stub"
       ],
-      "note": "client-certification-matrix.v1.json registers an active `geoservices-stub` lane. Historical baseline evidence was recorded under its retired lane identifier; new-identity receipts remain pending. The artifact has no row for it because it folded the stub into the ArcGIS Pro harness column. It is a distinct identity here because it is a stub harness, not a shipped client, and must never be read as certifying ArcGIS Pro."
+      "note": "client-certification-matrix.v1.json registers an active `geoservices-rest-stub` lane. Historical baseline evidence was recorded under its retired lane identifier; new-identity receipts remain pending. The artifact has no row for it because it folded the stub into the ArcGIS Pro harness column. It is a distinct identity here because it is a stub harness, not a shipped client, and must never be read as certifying ArcGIS Pro."
     },
     {
       "id": "registry-sublane-absent-from-artifact",
@@ -310,7 +310,7 @@
         "notApplicable": [
           {
             "family": "CERT-PRTL",
-            "reason": "Portal/Sharing discovery is substantiated by the arcgis-stub portal envelope, not by this lane."
+            "reason": "Portal/Sharing discovery is substantiated by the geoservices-rest-stub portal envelope, not by this lane."
           }
         ]
       },
@@ -902,7 +902,7 @@
         "notApplicable": [
           {
             "family": "CERT-PRTL",
-            "reason": "Portal/Sharing discovery is substantiated by the arcgis-stub portal envelope, not by this lane."
+            "reason": "Portal/Sharing discovery is substantiated by the geoservices-rest-stub portal envelope, not by this lane."
           }
         ]
       },
@@ -1103,7 +1103,7 @@
       "notes": "The compliance receipt is currently 1137/1138; WFS 2.0 basic is 166/167 because multi-layer rollbackOnFailure=true transactions are rejected. Keeps its specification-mandated fixtures under the governed fixturePolicy exception and is never relabelled as having used the canonical client fixture."
     },
     {
-      "id": "geoservices-stub",
+      "id": "geoservices-rest-stub",
       "displayName": "GeoServices REST + Portal facade stub",
       "family": "esri-harness",
       "tier": 0,
@@ -1159,9 +1159,9 @@
         ],
         "note": "Converges on the single logical fixture + server-config revision tracked by #3393."
       },
-      "evidenceProducer": "docker/client-compat/geoservices-stub",
+      "evidenceProducer": "docker/client-compat/geoservices-rest-stub",
       "laneBinding": {
-        "matrixLaneId": "geoservices-stub",
+        "matrixLaneId": "geoservices-rest-stub",
         "role": "lane"
       },
       "owningIssue": "https://github.com/honua-io/honua-server/issues/3434",
@@ -1765,7 +1765,7 @@
         "notApplicable": [
           {
             "family": "CERT-PRTL",
-            "reason": "Portal/Sharing discovery is substantiated by the arcgis-stub portal envelope, not by this lane."
+            "reason": "Portal/Sharing discovery is substantiated by the geoservices-rest-stub portal envelope, not by this lane."
           }
         ]
       },
@@ -1983,7 +1983,7 @@
           },
           {
             "family": "CERT-PRTL",
-            "reason": "Portal/Sharing discovery is substantiated by the arcgis-stub portal envelope, not by this lane."
+            "reason": "Portal/Sharing discovery is substantiated by the geoservices-rest-stub portal envelope, not by this lane."
           }
         ]
       },
@@ -2339,7 +2339,7 @@
         "notApplicable": [
           {
             "family": "CERT-PRTL",
-            "reason": "Portal/Sharing discovery is substantiated by the arcgis-stub portal envelope, not by this lane."
+            "reason": "Portal/Sharing discovery is substantiated by the geoservices-rest-stub portal envelope, not by this lane."
           }
         ]
       },
@@ -2440,7 +2440,7 @@
       "needsOwningIssue": true,
       "exclusionRationale": null,
       "coveredAlternative": null,
-      "notes": "Offline sync is the hard part. Field Maps binds through the Portal facade (epic #1240), so the arcgis-stub CERT-PRTL-* slice partially de-risks it; the sync protocol itself is unproven. No implementation issue exists yet."
+      "notes": "Offline sync is the hard part. Field Maps binds through the Portal facade (epic #1240), so the geoservices-rest-stub CERT-PRTL-* slice partially de-risks it; the sync protocol itself is unproven. No implementation issue exists yet."
     },
     {
       "id": "qfield-mergin",
@@ -3230,7 +3230,7 @@
       "owningIssue": "https://github.com/honua-io/honua-server/issues/3395",
       "needsOwningIssue": false,
       "exclusionRationale": "No distinct server surface beyond the governed MapServer and KML lanes.",
-      "coveredAlternative": "arcgis-stub (mapserver) and ogc-cite (KML 2.2) already prove everything it consumes.",
+      "coveredAlternative": "geoservices-rest-stub (mapserver) and ogc-cite (KML 2.2) already prove everything it consumes.",
       "notes": null
     },
     {

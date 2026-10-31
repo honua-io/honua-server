@@ -1,4 +1,4 @@
-# geoservices-stub REST lane.
+# geoservices-rest-stub REST lane.
 #
 # REST-only client-compat lane. It is not a desktop client. Render cases stay
 # skip. Desktop evidence is identifier desktop-arcgis in honua-esri-compat.
@@ -18,8 +18,8 @@ WORKDIR /workspace
 
 RUN pip install httpx==0.27.0
 
-COPY docker/client-compat/geoservices-stub/stub_runner.py /usr/local/bin/stub_runner.py
-COPY docker/client-compat/geoservices-stub/run.sh /usr/local/bin/run-geoservices-stub-lane
-RUN chmod +x /usr/local/bin/run-geoservices-stub-lane /usr/local/bin/stub_runner.py
+COPY docker/client-compat/geoservices-rest-stub/stub_runner.py /usr/local/bin/stub_runner.py
+COPY docker/client-compat/geoservices-rest-stub/run.sh /usr/local/bin/run-geoservices-rest-stub-lane
+RUN chmod +x /usr/local/bin/run-geoservices-rest-stub-lane /usr/local/bin/stub_runner.py
 
-ENTRYPOINT ["/usr/local/bin/run-geoservices-stub-lane"]
+ENTRYPOINT ["/usr/local/bin/run-geoservices-rest-stub-lane"]

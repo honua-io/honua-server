@@ -10,7 +10,7 @@ from pathlib import Path
 
 LANES = {
     "gdal": "cli", "pyqgis": "desktop-qgis", "openlayers": "js",
-    "cesium": "js-cesium", "geoservices-stub": "geoservices-stub",
+    "cesium": "js-cesium", "geoservices-rest-stub": "geoservices-rest-stub",
     "geopandas": "py-geopandas", "owslib": "py-owslib", "duckdb": "duckdb",
     "r-sf": "r-sf", "pystac": "py-pystac",
 }

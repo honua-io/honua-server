@@ -1375,7 +1375,7 @@
       ]
     },
     {
-      "id": "geoservices-stub",
+      "id": "geoservices-rest-stub",
       "requiredTier": "nightly",
       "automated": [
         "CERT-CONN-*",

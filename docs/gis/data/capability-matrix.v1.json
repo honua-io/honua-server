@@ -29,8 +29,6 @@
       "category": "ControlPlane",
       "edition": "Community",
       "provingTestCount": 1483,
-      "provingTestCount": 1479,
->>>>>>> 9fc2328be9 (fix: align active stub contracts and evidence boundaries)
       "maturity": {
         "implemented": 387,
         "preview": 2,
@@ -1732,7 +1730,7 @@
           }
         },
         {
-          "clientLane": "geoservices-stub",
+          "clientLane": "geoservices-rest-stub",
           "protocol": "featureserver",
           "freshness": {
             "state": "unknown",
@@ -1883,7 +1881,7 @@
           }
         },
         {
-          "clientLane": "geoservices-stub",
+          "clientLane": "geoservices-rest-stub",
           "protocol": "mapserver",
           "freshness": {
             "state": "unknown",

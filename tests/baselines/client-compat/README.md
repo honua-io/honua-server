@@ -27,10 +27,10 @@ tests/baselines/client-compat/
     cli-gdal-wfs.cert.json
   pyqgis/
     ...
-  arcgis-stub/
-    arcgis-stub-featureserver.cert.json
-    arcgis-stub-mapserver.cert.json
-    arcgis-stub-portal.cert.json
+  geoservices-rest-stub/
+    geoservices-rest-stub-featureserver.cert.json
+    geoservices-rest-stub-mapserver.cert.json
+    geoservices-rest-stub-portal.cert.json
   geopandas/            # py-geopandas   (#3392)
     py-geopandas-ogc-features.cert.json
     py-geopandas-wfs.cert.json
@@ -76,7 +76,7 @@ manifest in lockstep with `docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md`
 when a lane × protocol is added or retired.
 
 The full-matrix contract is the complete set enumerated by `expected-pairs.json`: 4 `js-cesium`, 6 `js`, 2
-`desktop-qgis`, 2 `cli`, 3 `arcgis-stub`, 2 `py-geopandas`, 4 `py-owslib`, 1 `duckdb`, 2 `r-sf`, and 1
+`desktop-qgis`, 2 `cli`, 3 `geoservices-rest-stub`, 2 `py-geopandas`, 4 `py-owslib`, 1 `duckdb`, 2 `r-sf`, and 1
 `py-pystac` envelopes — 27 pairs in total. A
 `workflow_dispatch` subset run passes `--client-lanes` so strict mode evaluates
 only the requested `client_lane` values; the scheduled nightly run evaluates the

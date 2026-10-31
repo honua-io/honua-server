@@ -75,7 +75,7 @@ The CITE regression gates for implemented map/tile standards run on:
 | `cite-gml32-conformance.yml` | GML 3.2 (`ets-gml32`) | `results_available`, `total_tests > 0`, and failed/skipped/CantTell counts all `0` |
 | `cite-gpkg12-conformance.yml` | GeoPackage 1.2 (`ets-gpkg12`) | `results_available`, `total_tests > 0`, and failed/skipped/CantTell counts all `0` |
 | `client-compat-smoke-nightly.yml` | Full CERT-\* matrix (automated) | Zero `fail` results in `.cert.json` envelopes; `skip`/`not-applicable` allowed with documented reason |
-| `client-interop-nightly.yml` | Real-client interop matrix (Docker: gdal, pyqgis, openlayers, cesium, geoservices-stub) | Zero baseline `pass`→non-`pass` regressions vs `tests/baselines/client-compat/`; missing current envelopes, missing `expected-pairs.json` evidence, expected pairs without committed baselines, and new `fail` in unbaselined cases also fail the gate. Baseline-diff failure surfaces in `docs/gis/gap-report.md` |
+| `client-interop-nightly.yml` | Real-client interop matrix (Docker: gdal, pyqgis, openlayers, cesium, geoservices-rest-stub) | Zero baseline `pass`→non-`pass` regressions vs `tests/baselines/client-compat/`; missing current envelopes, missing `expected-pairs.json` evidence, expected pairs without committed baselines, and new `fail` in unbaselined cases also fail the gate. Baseline-diff failure surfaces in `docs/gis/gap-report.md` |
 
 Strict CITE evidence requires every reported assertion to pass. Failed,
 skipped, and CantTell results all fail the workflow.

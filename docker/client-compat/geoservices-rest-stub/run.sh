@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Runs the geoservices-stub REST lane against a running honua service.
+# Runs the geoservices-rest-stub REST lane against a running honua service.
 set -euo pipefail
 
 : "${HONUA_BASE_URL:=http://honua:5000}"

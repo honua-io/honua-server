@@ -111,7 +111,7 @@ def index_envelopes(root: Path, *, historical_baselines: bool = False) -> dict[t
         # Only historical baselines use the retired lane identifier; keep the
         # envelope bytes intact and compare it against the current REST stub.
         if historical_baselines and lane == "arc" + "gis-stub":
-            lane = "geoservices-stub"
+            lane = "geoservices-rest-stub"
         # If multiple files report the same (lane, protocol), keep the most
         # recent one (highest run_date).
         key = (lane, protocol)

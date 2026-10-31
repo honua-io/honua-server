@@ -1006,12 +1006,12 @@
         "capability": "serve.geoservices-mapserver"
       },
       {
-        "clientLane": "geoservices-stub",
+        "clientLane": "geoservices-rest-stub",
         "protocol": "featureserver",
         "capability": "serve.geoservices-featureserver"
       },
       {
-        "clientLane": "geoservices-stub",
+        "clientLane": "geoservices-rest-stub",
         "protocol": "mapserver",
         "capability": "serve.geoservices-mapserver"
       },

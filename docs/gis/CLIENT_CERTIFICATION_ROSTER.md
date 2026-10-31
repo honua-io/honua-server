@@ -126,7 +126,7 @@ The note deltas below sum to 3, which closes the gap between 41 and 44. No row w
 | `excluded-bullet-names-two-clients` | +1 | `golden-surfer`, `avenza-maps` | The artifact's Excluded section has four bullets, but the third bullet, 'Golden Surfer, Avenza Maps', names two distinct clients. Splitting it raises the artifact's 41 headline entries to 42 distinct client identities. |
 | `headline-status-split-differs-from-tier-tables` | 0 | `desktop-arcgis`, `esri-dotnet` | The headline tally claims 4 'Built, unrun' and 22 'Proposed'. The tier tables mark only 2 rows 'Built, unrun' (desktop-arcgis, esri-dotnet) and enumerate 24 unbuilt rows (16 Tier 1 'Proposed' plus 8 Tier 2 'On demand'). The two differences offset exactly, so the 41 total is unchanged. The per-row tier tables are authoritative; the artifact gives no basis for identifying which two additional rows the headline counted as built. |
 | `certified-live-headline-counts-partial-rows` | 0 | `esri-js-maps-sdk`, `py-pystac` | The headline '11 certified live' equals the 9 rows the tier tables label Live, Live nightly, or 1117/1117, plus the 2 rows labelled 'Partial'. This roster does not treat 'Partial' as activated at the source artifact's revision: esri-js-maps-sdk was active but awaiting-federation, and py-pystac was planned and awaiting-evidence. esri-js-maps-sdk still declares requiredTier `none`; py-pystac was promoted to `active` with requiredTier `nightly` in #3392, which committed its envelope. The 41 total is unchanged. |
-| `registry-lane-absent-from-artifact` | +1 | `geoservices-stub` | client-certification-matrix.v1.json registers an active `geoservices-stub` lane. Historical baseline evidence retains its retired lane identifier; new-identity receipts remain pending. The artifact has no row for it because it folded the stub into the ArcGIS Pro harness column. It is a distinct identity here because it is a stub harness, not a shipped client, and must never be read as certifying ArcGIS Pro. |
+| `registry-lane-absent-from-artifact` | +1 | `geoservices-rest-stub` | client-certification-matrix.v1.json registers an active `geoservices-rest-stub` lane. Historical baseline evidence retains its retired lane identifier; new-identity receipts remain pending. The artifact has no row for it because it folded the stub into the ArcGIS Pro harness column. It is a distinct identity here because it is a stub harness, not a shipped client, and must never be read as certifying ArcGIS Pro. |
 | `registry-sublane-absent-from-artifact` | +1 | `js-esri-leaflet` | CROSS_CLIENT_CERTIFICATION_MATRIX.md registers an Esri Leaflet browser sub-lane with its own EL-EXT-01..04 extension IDs, and tests/js-browser/leaflet-client implements it, but the artifact has no row for it. Including it makes the gap visible: no lanes-array row declares EL-EXT-* applicability and no envelope is committed under tests/baselines/client-compat. |
 
 ## Roster
@@ -148,7 +148,7 @@ A customer cannot leave Esri without these. Regression in an activated Tier 0 la
 | `esri-dotnet` ArcGIS Maps SDK for .NET | planned | awaiting-runtime | 2026.2 | none | windows-license | `featureserver`, `mapserver` | [honua-esri-compat#75](https://github.com/honua-io/honua-esri-compat/issues/75) |
 | `honua-sdks` Honua SDKs (JavaScript, Python, .NET) | active | activated | 2026.1 | nightly | linux-container | `featureserver`, `mapserver`, `ogc-features`, `ogc-maps`, `ogc-tiles`, `odata`, `mvt`, `wfs`, `wms`, `wmts`, `admin-api`, `stac` | [honua-server#3434](https://github.com/honua-io/honua-server/issues/3434) |
 | `ogc-cite` OGC CITE / TEAM Engine (14 suites) | active | activated | 2026.1 | release | linux-container | `wfs`, `wms`, `wmts`, `wcs`, `gml`, `kml`, `gpkg`, `ogc-tiles` | [honua-server#3434](https://github.com/honua-io/honua-server/issues/3434) |
-| `geoservices-stub` GeoServices REST + Portal facade stub | active | activated | 2026.1 | nightly | linux-container | `featureserver`, `mapserver`, `portal` | [honua-server#3434](https://github.com/honua-io/honua-server/issues/3434) |
+| `geoservices-rest-stub` GeoServices REST + Portal facade stub | active | activated | 2026.1 | nightly | linux-container | `featureserver`, `mapserver`, `portal` | [honua-server#3434](https://github.com/honua-io/honua-server/issues/3434) |
 
 ### Tier 1 - high value
 
@@ -432,13 +432,13 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
 - **Owning issue**: https://github.com/honua-io/honua-server/issues/3434
 - **Notes**: The compliance receipt is currently 1137/1138; WFS 2.0 `basic` is 166/167 because multi-layer `rollbackOnFailure=true` transactions are rejected. Keeps its specification-mandated fixtures under the governed fixturePolicy exception and is never relabelled as having used the canonical client fixture.
 
-### `geoservices-stub` - GeoServices REST + Portal facade stub
+### `geoservices-rest-stub` - GeoServices REST + Portal facade stub
 
 - **Family / tier**: esri-harness / 0
 - **Status**: active (activated), target release 2026.1
 - **Required tier**: nightly (intended on activation: nightly)
 - **Roster origin**: repository-registry; artifact status not-in-artifact
-- **Lane binding**: geoservices-stub (lane)
+- **Lane binding**: geoservices-rest-stub (lane)
 - **Client version policy**: Stub contract version `stub-1.0`, versioned with the honua-server repository; it is a harness, not a shipped client.
 - **Protocol surfaces**: `featureserver`, `mapserver`, `portal`
 - **Applicable operation families**: `CERT-CONN`, `CERT-AUTH`, `CERT-DISC`, `CERT-SCHM`, `CERT-QFLT`, `CERT-PAGE`, `CERT-GEOM`, `CERT-ERRH`, `CERT-RNDR`, `CERT-PRTL`
@@ -447,7 +447,7 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
 - **Licensing**: open-source - Installs unattended in a container or npm lockfile; no entitlement required.
 - **Runtime**: linux-container
 - **Fixture projection**: canonical-client-fixture - Converges on the single logical fixture + server-config revision tracked by #3393.
-- **Evidence producer**: docker/client-compat/geoservices-stub
+- **Evidence producer**: docker/client-compat/geoservices-rest-stub
 - **Owning issue**: https://github.com/honua-io/honua-server/issues/3434
 - **Notes**: A registered `lanes` entry in client-certification-matrix.v1.json with no row in the source artifact, which folded it into the ArcGIS Pro harness column. It substantiates the license-free Esri REST common core and the CERT-PRTL-* Portal facade slice. Being a stub, it never certifies a real Esri client.
 
