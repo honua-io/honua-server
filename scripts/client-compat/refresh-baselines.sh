@@ -62,7 +62,7 @@ for lane in "${LANES[@]}"; do
         build seed honua "$lane"
     if docker compose -f "$COMPOSE_FILE" \
             --profile "$lane" \
-            run --no-build --rm \
+            run --rm \
             "$lane"; then
         echo "lane $lane: ok"
     else

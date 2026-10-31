@@ -87,3 +87,10 @@ def test_retired_stub_environment_fails_closed(monkeypatch):
     assert spec and spec.loader
     with pytest.raises(SystemExit, match="Retired stub environment settings"):
         spec.loader.exec_module(importlib.util.module_from_spec(spec))
+
+
+def test_baseline_refresh_uses_supported_compose_run_flags():
+    script = (ROOT / "scripts/client-compat/refresh-baselines.sh").read_text()
+    assert "build seed honua" in script
+    assert "run --rm" in script
+    assert "run --no-build" not in script
