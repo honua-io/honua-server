@@ -103,7 +103,7 @@ internal static class SchemaJournalReader
                 var number = name is null ? null : MigrationReaderCompatibility.ReadSchemaNumber(name);
                 if (number is null)
                 {
-                    continue;
+                    return SchemaJournalSnapshot.Unknown;
                 }
 
                 var classification = reader.IsDBNull(1) ? null : reader.GetString(1);
