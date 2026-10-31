@@ -73,6 +73,7 @@ internal sealed partial class StreamingFileImportService
             var directGuard = loadMode == ImportLoadMode.Replace || appendUsesStaging
                 ? null
                 : new DirectImportGuard(target.LiveIdentity!.Value, coordinateEpoch);
+            var directBatchAttempted = false;
 
             // A Replace load streams into a <table>__staging sibling (loadTableName) rather than
             // the live table. Before this try, the only path that ever reclaimed that sibling on
@@ -152,6 +153,7 @@ internal sealed partial class StreamingFileImportService
                     // Process batch when full
                     if (batch.Count >= _limits.BatchSize)
                     {
+                        directBatchAttempted |= directGuard is not null;
                         var (imported, failed) = await InsertBatchAsync(
                             connection,
                             targetSchema,
@@ -203,6 +205,7 @@ internal sealed partial class StreamingFileImportService
                 // Process remaining features
                 if (batch.Count > 0)
                 {
+                    directBatchAttempted |= directGuard is not null;
                     var (imported, failed) = await InsertBatchAsync(
                         connection,
                         targetSchema,
@@ -418,6 +421,22 @@ internal sealed partial class StreamingFileImportService
                 });
 
                 return (totalImported, totalFailed, repairTally.Repaired, completionWarnings, rowIssues, allowedTableName, replacementBlocked, typedColumns);
+            }
+            catch when (directBatchAttempted)
+            {
+                // A direct batch may have committed before cancellation or a reader/progress
+                // failure. Reconcile existing projections even when the import cannot finish.
+                try
+                {
+                    await PromoteTypedColumnsAsync(
+                        connection, targetSchema, allowedTableName, [], CancellationToken.None);
+                }
+                catch (Exception refreshEx) when (refreshEx is not OutOfMemoryException)
+                {
+                    ImportLog.TypedColumnsRecoveryFailed(_logger, refreshEx, targetSchema, allowedTableName);
+                }
+
+                throw;
             }
             catch when ((loadMode == ImportLoadMode.Replace || appendUsesStaging) && !dataCommitted)
             {

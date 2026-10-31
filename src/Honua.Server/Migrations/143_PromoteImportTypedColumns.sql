@@ -48,7 +48,11 @@ BEGIN
         RETURN NULL;
     END IF;
     raw := props ->> key;
-    IF raw IS NULL OR length(raw) = 0 OR length(raw) > 64 THEN
+    -- JSONB expands exponent notation to decimal text. Allow the full range of
+    -- finite doubles while keeping string coercion bounded.
+    IF raw IS NULL OR length(raw) = 0
+       OR (jsonb_typeof(props -> key) = 'number' AND length(raw) > 1024)
+       OR (jsonb_typeof(props -> key) = 'string' AND length(raw) > 64) THEN
         RETURN NULL;
     END IF;
     IF raw !~ '^-?([0-9]+(\.[0-9]+)?|\.[0-9]+)([eE][+-]?[0-9]+)?$' THEN

@@ -53,6 +53,24 @@ public sealed class ImportTypedColumnTests(PostgresFixture fixture)
     [IntegrationTest]
     [Operation(Operations.Import)]
     [Endpoint("IFileImportService.ImportFileAsync")]
+    public async Task ImportTypedDouble_ExpandedJsonNumbers_PreservesFiniteValues()
+    {
+        await InstallImportFunctionsAsync();
+        await using var connection = await fixture.DataSource.OpenConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT honua.import_typed_double('{"value":1e100}'::jsonb, 'value'),
+                   honua.import_typed_double('{"value":1e-100}'::jsonb, 'value')
+            """;
+        await using var reader = await command.ExecuteReaderAsync();
+        (await reader.ReadAsync()).Should().BeTrue();
+        reader.GetDouble(0).Should().Be(1e100);
+        reader.GetDouble(1).Should().Be(1e-100);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Import)]
+    [Endpoint("IFileImportService.ImportFileAsync")]
     public async Task ImportFileAsync_GeoJsonAttributes_AreTypedFilterableAndSortable()
     {
         const string json = """
@@ -383,6 +401,62 @@ public sealed class ImportTypedColumnTests(PostgresFixture fixture)
         {
             await fixture.DropSchemaAsync(schema);
         }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Import)]
+    [Endpoint("IFileImportService.ImportFileAsync")]
+    public async Task ImportFileAsync_InterruptedUpsert_RefreshesCommittedTypedValues()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(ImportTypedColumnTests));
+        try
+        {
+            await InstallImportFunctionsAsync();
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var service = new StreamingFileImportService(
+                provider,
+                new CrsDetectionService(provider, NullLogger<CrsDetectionService>.Instance),
+                new FileFormatDetectionService(NullLogger<FileFormatDetectionService>.Instance),
+                new NoopPerformanceMonitor(), NullLogger<StreamingFileImportService>.Instance,
+                ImportLimits.Default with { BatchSize = 1 },
+                schemaConfiguration: ImportTestSchemaConfiguration.WithOperational(schema));
+            var created = await ImportIntoAsync(service, schema, "places", """
+                {"type":"FeatureCollection","features":[
+                  {"type":"Feature","geometry":{"type":"Point","coordinates":[1,2]},"properties":{"name":"Alpha","population":2}}]}
+                """, ImportLoadMode.Replace, []);
+            const string replacement = """
+                {"type":"FeatureCollection","features":[
+                  {"type":"Feature","geometry":{"type":"Point","coordinates":[1,2]},"properties":{"name":"Alpha","population":10}},
+                  {"type":"Feature","geometry":{"type":"Point","coordinates":[3,4]},"properties":{"name":"Bravo","population":20}}]}
+                """;
+            await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(replacement));
+            var progress = new InlineImportProgress(value =>
+            {
+                if (value.BatchesCommitted > 0)
+                {
+                    throw new IOException("interrupted after committed batch");
+                }
+            });
+            var result = await service.ImportFileAsync(new ImportRequest
+            {
+                FileStream = stream, FileName = "places.geojson", TableName = "places", TargetSchema = schema,
+                SourceSrid = 4326, TargetSrid = 4326, LoadMode = ImportLoadMode.Upsert, KeyColumns = ["name"]
+            }, progress);
+            result.Success.Should().BeFalse();
+            await using var connection = await fixture.DataSource.OpenConnectionAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"SELECT population FROM \"{schema}\".\"{created.PhysicalTableName}\" WHERE name = 'Alpha'";
+            (await command.ExecuteScalarAsync()).Should().Be(10L);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    private sealed class InlineImportProgress(Action<ImportProgress> report) : IProgress<ImportProgress>
+    {
+        public void Report(ImportProgress value) => report(value);
     }
 
     [IntegrationTest]
