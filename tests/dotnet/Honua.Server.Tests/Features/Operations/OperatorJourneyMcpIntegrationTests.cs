@@ -158,7 +158,7 @@ public sealed class OperatorJourneyMcpIntegrationTests(RedisFixture redis)
                 ? physical.GetString()
                 : tableName;
 
-            var published = await CallOkAsync(admin, "honua_admin_layer_publish", new
+            var published = await CallOkAsync(admin, "honua_publish_service", new
             {
                 connectionId,
                 schema,
@@ -166,9 +166,7 @@ public sealed class OperatorJourneyMcpIntegrationTests(RedisFixture redis)
                 layerName = "Parcels",
                 serviceName,
             });
-            using var publishBody = ResponseJson(published);
-            publishBody.RootElement.GetProperty("data").GetProperty("layerId").GetInt32()
-                .Should().BeGreaterThan(0);
+            published.GetProperty("layerId").GetString().Should().NotBeNullOrWhiteSpace();
 
             // A successful publication must be independently attributable in the
             // quickstart, including when it runs in Development.
@@ -180,8 +178,7 @@ public sealed class OperatorJourneyMcpIntegrationTests(RedisFixture redis)
             using var audit = JsonDocument.Parse(await auditResponse.Content.ReadAsStringAsync());
             var events = audit.RootElement.GetProperty("items").EnumerateArray().ToArray();
             events.Should().ContainSingle();
-            events[0].GetProperty("actor").GetString().Should().NotBeNullOrWhiteSpace();
-            events[0].GetProperty("actor").GetString().Should().NotBe("anonymous");
+            events[0].GetProperty("actor").GetString().Should().StartWith("apikey:api-key:");
             events[0].GetProperty("timestamp").GetDateTimeOffset().Should().BeCloseTo(DateTimeOffset.UtcNow, TimeSpan.FromMinutes(2));
 
             var policy = await CallOkAsync(admin, "honua_admin_services_access_policy_set", new
