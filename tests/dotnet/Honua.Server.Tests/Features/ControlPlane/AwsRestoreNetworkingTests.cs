@@ -47,4 +47,37 @@ public sealed class AwsRestoreNetworkingTests
         Assert.False(result.Available);
         await rds.DidNotReceive().DescribeDBInstancesAsync(Arg.Any<DescribeDBInstancesRequest>(), Arg.Any<CancellationToken>());
     }
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task BeginRestore_ReturnsProviderIdentityAndAuthorizedNetworking()
+    {
+        var rds = Substitute.For<IAmazonRDS>();
+        rds.RestoreDBInstanceFromDBSnapshotAsync(Arg.Any<RestoreDBInstanceFromDBSnapshotRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new RestoreDBInstanceFromDBSnapshotResponse { DBInstance = new DBInstance { DbiResourceId = "db-resource-1" } });
+        using var client = new AwsRdsCellRestoreClient(rds);
+        var id = await client.BeginAsync(new AwsRdsRestoreCommand(
+            "honua-cert-snapshot", "honua-cert-restore-0123456789abcdef", "honua-cert-", "honua-cert-subnet", "cert", 10,
+            ["sg-01234567"]), CancellationToken.None);
+        Assert.Equal("db-resource-1", id);
+        await rds.Received(1).RestoreDBInstanceFromDBSnapshotAsync(
+            Arg.Is<RestoreDBInstanceFromDBSnapshotRequest>(request => request.VpcSecurityGroupIds.SequenceEqual(new[] { "sg-01234567" })),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ObserveRestore_RejectsDifferentProviderResourceIdentity()
+    {
+        var rds = Substitute.For<IAmazonRDS>();
+        rds.DescribeDBInstancesAsync(Arg.Any<DescribeDBInstancesRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new DescribeDBInstancesResponse
+            {
+                DBInstances = [new DBInstance { DbiResourceId = "different-resource", DBInstanceStatus = "available", Endpoint = new Endpoint { Address = "other.internal" } }]
+            });
+        using var client = new AwsRdsCellRestoreClient(rds);
+        var result = await client.ObserveAsync("honua-cert-restore-0123456789abcdef", "original-resource", CancellationToken.None);
+        Assert.True(result.Failed);
+        Assert.False(result.Available);
+    }
+
 }

@@ -127,9 +127,14 @@ internal sealed partial class DurableRestoreWorker(
             if (record?.Kind != WorkflowOperationKind.PreMigrationRestore || record.PreMigrationRestore is null
                 || record.Status is WorkflowOperationStatus.Succeeded or WorkflowOperationStatus.Failed or WorkflowOperationStatus.ManualInterventionRequired) return;
             var context = record.PreMigrationRestore;
-            if (context.Phase == "acting")
+            if (context.Phase is "acting" or "submitting-rds")
             {
                 await FailAsync(record, PreMigrationRestoreCodes.RestoreIncomplete, lostLease.Token).ConfigureAwait(false);
+                return;
+            }
+            if (context.Phase == "awaiting-rds")
+            {
+                await ResumeRdsAsync(record, lostLease.Token).ConfigureAwait(false);
                 return;
             }
             if (context.Phase == "awaiting-compatible-deploy")
@@ -230,7 +235,7 @@ internal sealed partial class DurableRestoreWorker(
             var starter = new CheckpointStarter(store, deploy, verifier, acting);
             var completion = await coordinator.ExecuteAsync(payload, request, starter, lostLease.Token).ConfigureAwait(false);
             var latest = await store.GetAsync(id, lostLease.Token).ConfigureAwait(false);
-            if (latest?.PreMigrationRestore?.Phase is "awaiting-deploy" or "awaiting-compatible-deploy") return;
+            if (latest?.PreMigrationRestore?.Phase is "awaiting-rds" or "awaiting-deploy" or "awaiting-compatible-deploy") return;
             if (latest is null) return;
             if (ReaderIncompatibleRestorePolicy.IsReportedSuccess(completion))
                 await FinishAsync(latest, WorkflowOperationStatus.Succeeded, null, lostLease.Token).ConfigureAwait(false);
@@ -250,6 +255,37 @@ internal sealed partial class DurableRestoreWorker(
             try { await renewal.ConfigureAwait(false); } catch (OperationCanceledException) { }
             await store.ReleaseLeaseAsync(id, _owner, CancellationToken.None).ConfigureAwait(false);
         }
+    }
+
+    private async Task ResumeRdsAsync(WorkflowOperationRecord record, CancellationToken cancellationToken)
+    {
+        var checkpoint = record.PreMigrationRestore!;
+        var payload = DeployExecutionPayload.Parse(checkpoint.Payload);
+        if (payload is null || checkpoint.ExpectedSchema is null || string.IsNullOrWhiteSpace(checkpoint.RestoredInstanceId) ||
+            string.IsNullOrWhiteSpace(checkpoint.RestoredResourceId))
+        {
+            await FailAsync(record, PreMigrationRestoreCodes.RestoreIncomplete, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+        if (!await ClaimCellAsync(record.OperationId, cancellationToken).ConfigureAwait(false)) return;
+        var request = new OperationGatewayRequest
+        {
+            Kind = OperationClass.Deploy,
+            RequestedBy = record.Audit.RequestedBy,
+            ApprovedBy = checkpoint.ApprovedBy,
+            IdempotencyKey = record.OperationId,
+            CorrelationId = record.Audit.CorrelationId,
+            Reason = record.Audit.Reason,
+            TenantId = record.Audit.TenantId
+        };
+        var starter = new CheckpointStarter(store, deploy, verifier, record);
+        var completion = await coordinator.ResumeCloudAsync(payload, request, starter, checkpoint.RestoredInstanceId,
+            checkpoint.RestoredResourceId, checkpoint.ExpectedSchema.Value, record.UpdatedAt, cancellationToken).ConfigureAwait(false);
+        if (completion.Code == "restore-pending") return;
+        var latest = await store.GetAsync(record.OperationId, cancellationToken).ConfigureAwait(false);
+        if (latest?.PreMigrationRestore?.Phase is "awaiting-deploy" or "awaiting-compatible-deploy") return;
+        if (latest is not null)
+            await FailAsync(latest, completion.Code ?? PreMigrationRestoreCodes.RestoreIncomplete, cancellationToken).ConfigureAwait(false);
     }
 
     // A short Redis lease serializes updates to the durable owner record. The owner survives
@@ -428,6 +464,25 @@ internal sealed partial class DurableRestoreWorker(
 
     private sealed class CheckpointStarter(IWorkflowOperationStore store, DeployOperationExecutor deploy, DurableRestoreCompletionVerifier verifier, WorkflowOperationRecord record) : IDurablePriorImageStarter
     {
+        public async Task<bool> CheckpointRdsAsync(string phase, string instanceId, string? resourceId, int expectedSchema, CancellationToken cancellationToken)
+        {
+            var latest = await store.GetAsync(record.OperationId, cancellationToken).ConfigureAwait(false);
+            if (latest?.PreMigrationRestore is null) return false;
+            var checkpoint = latest with
+            {
+                UpdatedAt = DateTimeOffset.UtcNow,
+                CurrentPhase = phase == "awaiting-rds" ? "Waiting for the restored database." : "Submitting the database restore.",
+                PreMigrationRestore = latest.PreMigrationRestore with
+                {
+                    Phase = phase,
+                    ExpectedSchema = expectedSchema,
+                    RestoredInstanceId = instanceId,
+                    RestoredResourceId = resourceId
+                }
+            };
+            return await store.TrySetAsync(checkpoint, cancellationToken: cancellationToken).ConfigureAwait(false);
+        }
+
         public async Task<string?> StartAsync(OperationGatewayRequest request, string? executionPayload, CancellationToken cancellationToken)
         {
             if (string.IsNullOrWhiteSpace(executionPayload)) return null;

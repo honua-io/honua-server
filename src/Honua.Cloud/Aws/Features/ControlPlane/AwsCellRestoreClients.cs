@@ -165,6 +165,57 @@ internal sealed class AwsRdsCellRestoreClient : IDisposable
         }
     }
 
+    /// <summary>Starts a new restore and returns the provider's immutable resource identity.</summary>
+    public async Task<string?> BeginAsync(AwsRdsRestoreCommand command, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await _client.Value.RestoreDBInstanceFromDBSnapshotAsync(
+                new RestoreDBInstanceFromDBSnapshotRequest
+                {
+                    DBInstanceIdentifier = command.NewInstanceId,
+                    DBSnapshotIdentifier = command.SnapshotId,
+                    DBSubnetGroupName = command.SubnetGroupName,
+                    VpcSecurityGroupIds = command.SecurityGroupIds.ToList(),
+                    PubliclyAccessible = false,
+                    CopyTagsToSnapshot = true,
+                    Tags =
+                    [
+                        new Amazon.RDS.Model.Tag { Key = "Environment", Value = command.EnvironmentTag },
+                        new Amazon.RDS.Model.Tag { Key = "Cell", Value = command.CellPrefix },
+                    ]
+                }, cancellationToken).ConfigureAwait(false);
+            return string.IsNullOrWhiteSpace(result.DBInstance?.DbiResourceId) ? null : result.DBInstance.DbiResourceId;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // A pre-existing or unconfirmed instance cannot prove approved provenance.
+            return null;
+        }
+    }
+
+    /// <summary>Observes only the resource identity returned by the original submission.</summary>
+    public async Task<(bool Known, bool Available, bool Failed, string? Endpoint)> ObserveAsync(
+        string instanceId, string resourceId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await _client.Value.DescribeDBInstancesAsync(
+                new DescribeDBInstancesRequest { DBInstanceIdentifier = instanceId }, cancellationToken).ConfigureAwait(false);
+            var instance = result.DBInstances?.FirstOrDefault();
+            if (instance is null) return (false, false, false, null);
+            if (!string.Equals(instance.DbiResourceId, resourceId, StringComparison.Ordinal)) return (true, false, true, null);
+            var status = instance.DBInstanceStatus;
+            if (status is "failed" or "incompatible-restore" or "incompatible-parameters" or "storage-full")
+                return (true, false, true, null);
+            return (true, string.Equals(status, "available", StringComparison.Ordinal) && !string.IsNullOrWhiteSpace(instance.Endpoint?.Address), false, instance.Endpoint?.Address);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return (false, false, false, null);
+        }
+    }
+
     public void Dispose()
     {
         if (_disposed)

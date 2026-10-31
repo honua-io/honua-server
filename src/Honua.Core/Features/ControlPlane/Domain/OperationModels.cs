@@ -1151,6 +1151,12 @@ public sealed record PreMigrationRestoreContext
 
     /// <summary>SHA-256 of the restored database host, without credentials.</summary>
     public string? RestoredHostHash { get; init; }
+
+    /// <summary>Cell-bounded replacement database identifier.</summary>
+    public string? RestoredInstanceId { get; init; }
+
+    /// <summary>Immutable provider resource identity returned by the restore submission.</summary>
+    public string? RestoredResourceId { get; init; }
 }
 
 /// <summary>

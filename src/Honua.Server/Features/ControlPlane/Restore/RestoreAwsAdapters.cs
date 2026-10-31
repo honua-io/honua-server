@@ -61,6 +61,26 @@ internal sealed class AwsRdsSnapshotRestoreAdapter : IRdsSnapshotRestore, IDispo
     }
 
     /// <inheritdoc />
+    public async Task<RdsRestoreSubmission> BeginAsync(RdsRestoreRequest request, CancellationToken cancellationToken)
+    {
+        if (!BackupEvidenceVerifier.InstanceInCell(request.NewInstanceId, request.CellPrefix))
+            return new RdsRestoreSubmission(false, null, PreMigrationRestoreCodes.ScopeViolation);
+        var resourceId = await _client.BeginAsync(new AwsRdsRestoreCommand(request.SnapshotId, request.NewInstanceId,
+            request.CellPrefix, request.SubnetGroupName, request.EnvironmentTag, request.WaitSeconds, request.SecurityGroupIds), cancellationToken).ConfigureAwait(false);
+        return new RdsRestoreSubmission(!string.IsNullOrWhiteSpace(resourceId), resourceId,
+            string.IsNullOrWhiteSpace(resourceId) ? PreMigrationRestoreCodes.ProviderFailed : null);
+    }
+
+    /// <inheritdoc />
+    public async Task<RdsNewInstance> ObserveAsync(string instanceId, string resourceId, CancellationToken cancellationToken)
+    {
+        var result = await _client.ObserveAsync(instanceId, resourceId, cancellationToken).ConfigureAwait(false);
+        return result.Failed ? new RdsNewInstance(false, null, PreMigrationRestoreCodes.ProviderFailed)
+            : result.Available ? new RdsNewInstance(true, result.Endpoint, null)
+            : new RdsNewInstance(false, null, "restore-pending");
+    }
+
+    /// <inheritdoc />
     public void Dispose() => _client.Dispose();
 }
 
