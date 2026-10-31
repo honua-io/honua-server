@@ -139,7 +139,7 @@ public sealed class ComposeProposalExecutorTests
     {
         var release = Digest('a');
         var prior = Digest('b');
-        var client = new RecordingClient { Response = Ready(release) };
+        var client = new RecordingClient { Response = Ready(prior) };
         var backend = Backend(client, release, "/tmp/honua-compose-unit.sock");
         var targets = new MemoryTargets(new DeployTargetDefinition
         {
@@ -184,7 +184,7 @@ public sealed class ComposeProposalExecutorTests
         Assert.NotNull(submitted);
         Assert.Equal(WorkflowOperationStatus.Reconciling, submitted.Status);
         Assert.Equal(prior, submitted.Deploy!.CurrentRevision);
-        Assert.Equal(["status", "converge"], client.Ops);
+        Assert.Equal(["status", "status", "converge"], client.Ops);
     }
 
     [UnitTest]

@@ -124,10 +124,7 @@ internal sealed partial class ComposeProjectController : IDisposable
         var running = live.ImageId;
         if (ComposeExecutorRules.IsImmutableImage(request.Image))
         {
-            var nonce = request.ContractMigrationApprovalNonce;
-        if (nonce is not null && (nonce.Length != 16 || nonce.Any(character => !(char.IsAsciiHexDigitLower(character) || char.IsAsciiDigit(character)))))
-            return Refuse(request, ComposeExecutorCodes.ConfigUnsupported, "The migration approval token is malformed.");
-        var inspected = await InspectImageAsync(request.Image!, cancellationToken).ConfigureAwait(false);
+            var inspected = await InspectImageAsync(request.Image!, cancellationToken).ConfigureAwait(false);
             if (inspected != null && string.Equals(live.ImageId, inspected.Id, StringComparison.Ordinal))
             {
                 running = request.Image;
@@ -162,6 +159,9 @@ internal sealed partial class ComposeProjectController : IDisposable
             return Refuse(request, ComposeExecutorCodes.ScopeViolation, "Converge only accepts the configured release image.");
         }
 
+        var nonce = request.ContractMigrationApprovalNonce;
+        if (nonce is not null && (nonce.Length != 16 || nonce.Any(character => !(char.IsAsciiHexDigitLower(character) || char.IsAsciiDigit(character)))))
+            return Refuse(request, ComposeExecutorCodes.ConfigUnsupported, "The migration approval token is malformed.");
         var inspected = await InspectImageAsync(request.Image!, cancellationToken).ConfigureAwait(false);
         if (inspected == null)
         {
@@ -225,15 +225,26 @@ internal sealed partial class ComposeProjectController : IDisposable
             return Refuse(request, ComposeExecutorCodes.ConfigUnsupported, "Rollback of the configured release image is not supported.");
         }
 
-        // Checksum, project, and image are verified from the manifest before any docker call.
-        var located = LocateBackup(request.Image!, request.BackupId);
+        // Registry manifest digests differ from local image configuration IDs stored in backups.
+        // Resolve a registry reference before comparing, while retaining the no-Docker fast path
+        // for a directly specified local image ID.
+        InspectedImage? inspected = null;
+        var backupImage = request.Image!;
+        if (!backupImage.StartsWith("sha256:", StringComparison.Ordinal))
+        {
+            inspected = await InspectImageAsync(backupImage, cancellationToken).ConfigureAwait(false);
+            if (inspected is null)
+                return Refuse(request, ComposeExecutorCodes.ReadbackIncomplete, "The prior image is not present on this host.");
+            backupImage = inspected.Id;
+        }
+        var located = LocateBackup(backupImage, request.BackupId);
         if (located.Failure != null)
         {
             return located.Failure with { RequestId = request.RequestId };
         }
 
         var manifest = located.Manifest!;
-        var inspected = await InspectImageAsync(request.Image!, cancellationToken).ConfigureAwait(false);
+        inspected ??= await InspectImageAsync(request.Image!, cancellationToken).ConfigureAwait(false);
         if (inspected == null)
         {
             return Refuse(request, ComposeExecutorCodes.ReadbackIncomplete, "The prior image is not present on this host.");
@@ -288,6 +299,8 @@ internal sealed partial class ComposeProjectController : IDisposable
                 });
             }
         }
+        if (decision.Kind == RestoreDecisionKind.Refuse)
+            return Refuse(request, decision.Code!, decision.Message!);
         var restoreRequired = decision.Kind == RestoreDecisionKind.RestoreBeforeStart;
         if (live.IsComplete && string.Equals(live.ImageId, inspected.Id, StringComparison.Ordinal) && !restoreRequired)
         {

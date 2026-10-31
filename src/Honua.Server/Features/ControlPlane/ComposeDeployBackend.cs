@@ -104,6 +104,12 @@ internal sealed partial class ComposeDeployBackend(
         var op = string.Equals(desired, _options.ReleaseImage, StringComparison.Ordinal) ? "converge" : "rollback";
         try
         {
+            var prior = await client.ExecuteAsync(new ComposeExecutorRequest
+            {
+                Op = "status", RequestId = operation.OperationId
+            }, cancellationToken).ConfigureAwait(false);
+            if (!prior.Ok || !prior.ReadbackComplete || !ComposeExecutorRules.IsImmutableImage(prior.RunningImage))
+                return Submission(operation, WorkflowOperationStatus.Failed, ComposeExecutorCodes.ReadbackIncomplete);
             var response = await client.ExecuteAsync(
                     new ComposeExecutorRequest
                     {
@@ -123,7 +129,7 @@ internal sealed partial class ComposeDeployBackend(
                 Status = ready ? WorkflowOperationStatus.Reconciling : WorkflowOperationStatus.Failed,
                 ProviderOperationId = operation.OperationId,
                 // Keep the prior revision. The workflow copies ObservedRevision onto CurrentRevision.
-                ObservedRevision = deploy.CurrentRevision,
+                ObservedRevision = prior.RunningImage,
                 Message = ready ? response.Message : response.Code ?? response.Message
             };
         }
