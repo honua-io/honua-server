@@ -1006,7 +1006,10 @@ internal sealed partial class ComposeProjectController : IDisposable
                     string.Equals(entry.Project, _options.ProjectName, StringComparison.Ordinal)) return true;
             }
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException) { }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+        {
+            return false;
+        }
         return false;
     }
 
