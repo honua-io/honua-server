@@ -278,8 +278,10 @@ internal sealed partial class FeatureServerQueryExecutor
 
             writer.WritePropertyName(property.Name);
 
-            // Canonical Boolean storage must match the advertised SmallInteger wire type.
-            if (property.Value.ValueKind is JsonValueKind.True or JsonValueKind.False)
+            // Match the materialized path: booleans are small integers, while JSON
+            // arrays and objects are strings as required by the advertised field type.
+            if (property.Value.ValueKind is JsonValueKind.True or JsonValueKind.False
+                or JsonValueKind.Array or JsonValueKind.Object)
             {
                 JsonSerializer.Serialize(writer, GeoServicesAttributeProjection.ToEsriValue(property.Value),
                     FeatureServerJsonContext.Default.Object);
