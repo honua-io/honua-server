@@ -16,6 +16,7 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 /// <c>OperationGateway</c>: the requester cannot approve the proposal. These tests
 /// cover the product executor that runs after that approval. They do not call AWS.
 /// </summary>
+[Trait("Tier", "Fast")]
 public sealed class GovernedWorkloadExecutorTests
 {
     private const string TaskDefinitionArn = "arn:aws:ecs:us-east-1:123456789012:task-definition/honua:41";
