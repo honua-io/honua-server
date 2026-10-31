@@ -204,23 +204,35 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
             var workflowId = "deploy-local-" + Guid.NewGuid().ToString("N");
             Assert.True(await workflows.TryCreateAsync(new WorkflowOperationRecord
             {
-                OperationId = workflowId, Kind = WorkflowOperationKind.Deploy,
-                Status = WorkflowOperationStatus.Reconciling, CreatedAt = now, UpdatedAt = now
+                OperationId = workflowId,
+                Kind = WorkflowOperationKind.Deploy,
+                Status = WorkflowOperationStatus.Reconciling,
+                CreatedAt = now,
+                UpdatedAt = now
             }));
             Assert.True(await workflows.TryCreateAsync(new WorkflowOperationRecord
             {
-                OperationId = failedId, Kind = WorkflowOperationKind.PreMigrationRestore,
-                Status = WorkflowOperationStatus.Failed, CreatedAt = now, UpdatedAt = now,
+                OperationId = failedId,
+                Kind = WorkflowOperationKind.PreMigrationRestore,
+                Status = WorkflowOperationStatus.Failed,
+                CreatedAt = now,
+                UpdatedAt = now,
                 PreMigrationRestore = new PreMigrationRestoreContext
                 {
-                    Phase = "awaiting-local-deploy", DeployOperationId = workflowId, ApprovedBy = "approver",
+                    Phase = "awaiting-local-deploy",
+                    DeployOperationId = workflowId,
+                    ApprovedBy = "approver",
                     Payload = new DeployExecutionPayload { TargetId = "local", DesiredRevision = "prior" }.Serialize()
                 }
             }));
             Assert.True(await workflows.TryCreateAsync(new WorkflowOperationRecord
             {
-                OperationId = "restore-cell-exclusive-owner", Kind = WorkflowOperationKind.PreMigrationRestore,
-                Status = WorkflowOperationStatus.Succeeded, CreatedAt = now, UpdatedAt = now, CurrentPhase = failedId
+                OperationId = "restore-cell-exclusive-owner",
+                Kind = WorkflowOperationKind.PreMigrationRestore,
+                Status = WorkflowOperationStatus.Succeeded,
+                CreatedAt = now,
+                UpdatedAt = now,
+                CurrentPhase = failedId
             }));
             var service = new DeployWorkflowService(Substitute.For<IDeployTargetRegistry>(), [workflows], [],
                 Substitute.For<IOperatorApprovalEvaluator>(), NullLogger<DeployWorkflowService>.Instance);
