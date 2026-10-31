@@ -196,6 +196,31 @@ public sealed class DeployWorkflowReconcilerLeaseContentionTests
     }
 
     [Fact]
+    public async Task Checkpoint_CanaryRampPersistsStepBeforeTrafficAndStartsBakeAfterward()
+    {
+        var store = new InMemoryWorkflowOperationStore();
+        var backend = new CheckpointBackend(store);
+        var original = CreateOperation();
+        var operation = original with
+        {
+            Deploy = original.Deploy! with
+            {
+                TrafficExposedAt = DateTimeOffset.UtcNow,
+                CanaryRamp = new CanaryRampSpec { StepWeights = [10, 50, 100], StepBakeDuration = TimeSpan.FromSeconds(1) }
+            }
+        };
+        var pending = await DeployWorkflowReconciler.AdvanceOrPromoteAsync(operation, backend, CancellationToken.None);
+        pending.CurrentPhase.Should().Be(ICheckpointedDeployBackend.RampPhase);
+        pending.Deploy!.CanaryRamp!.CurrentStepIndex.Should().Be(1);
+        pending.Deploy.CanaryRamp.CurrentStepStartedAt.Should().BeNull();
+        backend.StartCount.Should().Be(0);
+        await store.TryCreateAsync(pending);
+        await CreateReconciler(store, backend, new NullTelemetryEvaluator()).ReconcileWorkflowOperationAsync(operation.OperationId);
+        backend.StartCount.Should().Be(1);
+        (await store.GetAsync(operation.OperationId))!.Deploy!.CanaryRamp!.CurrentStepStartedAt.Should().NotBeNull();
+    }
+
+    [Fact]
     public async Task Checkpoint_FailedCanaryRampRequestsRollback()
     {
         var store = new InMemoryWorkflowOperationStore();
@@ -209,10 +234,15 @@ public sealed class DeployWorkflowReconcilerLeaseContentionTests
                 CanaryRamp = new CanaryRampSpec { StepWeights = [10, 50, 100], StepBakeDuration = TimeSpan.FromSeconds(1) }
             }
         };
-        var result = await DeployWorkflowReconciler.AdvanceOrPromoteAsync(operation, backend, CancellationToken.None);
+        var pending = await DeployWorkflowReconciler.AdvanceOrPromoteAsync(operation, backend, CancellationToken.None);
+        pending.CurrentPhase.Should().Be(ICheckpointedDeployBackend.RampPhase);
+        pending.Deploy!.CanaryRamp!.CurrentStepStartedAt.Should().BeNull();
+        backend.RollbackCount.Should().Be(0);
+        await store.TryCreateAsync(pending);
+        var reconciler = CreateReconciler(store, backend, new NullTelemetryEvaluator());
+        await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
         backend.RollbackCount.Should().Be(1);
-        result.Status.Should().Be(WorkflowOperationStatus.RollbackRequested);
-        result.Deploy!.CanaryRamp!.CurrentStepIndex.Should().Be(0);
+        (await store.GetAsync(operation.OperationId))!.Status.Should().Be(WorkflowOperationStatus.RollbackRequested);
     }
 
     [Fact]
@@ -371,6 +401,7 @@ public sealed class DeployWorkflowReconcilerLeaseContentionTests
         public bool StageOneObservation { get; init; }
         public int ObserveCount { get; private set; }
         public int RollbackCount { get; private set; }
+        public int StartCount { get; private set; }
         public int PreparationCount { get; private set; }
         public int ActivationCount { get; private set; }
         public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -397,7 +428,10 @@ public sealed class DeployWorkflowReconcilerLeaseContentionTests
         public Task<DeployBackendCapabilities> GetCapabilitiesAsync(CancellationToken cancellationToken = default) => Task.FromResult(new DeployBackendCapabilities());
         public Task<DeployPlan> PlanAsync(DeployOperationSpec spec, CancellationToken cancellationToken = default) => Task.FromResult(new DeployPlan { IsReadyToSubmit = true });
         public Task<DeploySubmissionResult> StartAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken = default)
-            => FailRamp ? Task.FromResult(new DeploySubmissionResult { Status = WorkflowOperationStatus.Failed }) : throw new NotSupportedException();
+        {
+            StartCount++;
+            return Task.FromResult(new DeploySubmissionResult { Status = FailRamp ? WorkflowOperationStatus.Failed : WorkflowOperationStatus.Submitted });
+        }
         public Task<DeployObservation> ObserveAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken = default)
         {
             ObserveCount++;

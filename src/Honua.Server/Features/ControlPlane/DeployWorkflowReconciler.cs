@@ -42,6 +42,37 @@ internal sealed partial class DeployWorkflowReconciler(
             return;
         }
 
+        if (operation.CurrentPhase == ICheckpointedDeployBackend.RampPhase)
+        {
+            var step = await ((IDeployBackend)backend).StartAsync(operation, cancellationToken).ConfigureAwait(false);
+            if (step.Status == WorkflowOperationStatus.Failed)
+            {
+                var rollback = await ((IDeployBackend)backend).RollbackAsync(operation, cancellationToken).ConfigureAwait(false);
+                var status = rollback.Status is WorkflowOperationStatus.RollbackRequested or WorkflowOperationStatus.RolledBack
+                    ? rollback.Status : WorkflowOperationStatus.ManualInterventionRequired;
+                var recovering = operation with
+                {
+                    Status = status,
+                    CurrentPhase = rollback.Message ?? "Canary ramp failed; rollback requested.",
+                    UpdatedAt = DateTimeOffset.UtcNow,
+                    CompletedAt = status == WorkflowOperationStatus.ManualInterventionRequired ? DateTimeOffset.UtcNow : null
+                };
+                await workflowStore.TrySetAsync(recovering, cancellationToken: cancellationToken).ConfigureAwait(false);
+                return;
+            }
+
+            var ramp = operation.Deploy?.CanaryRamp ?? throw new InvalidOperationException("Canary ramp is missing.");
+            var advanced = operation with
+            {
+                Status = WorkflowOperationStatus.Reconciling,
+                CurrentPhase = step.Message ?? "Canary step submitted.",
+                UpdatedAt = DateTimeOffset.UtcNow,
+                Deploy = operation.Deploy! with { CanaryRamp = ramp with { CurrentStepStartedAt = DateTimeOffset.UtcNow } }
+            };
+            await workflowStore.TrySetAsync(advanced, cancellationToken: cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
         if (operation.CurrentPhase == ICheckpointedDeployBackend.CutoverPhase)
         {
             var cutover = await ((IDeployBackend)backend).PromoteAsync(operation, cancellationToken).ConfigureAwait(false);
@@ -178,7 +209,7 @@ internal sealed partial class DeployWorkflowReconciler(
                     operation.Status != WorkflowOperationStatus.RollbackRequested &&
                     operation.CurrentPhase is ICheckpointedDeployBackend.PendingPhase or
                         ICheckpointedDeployBackend.PreparingPhase or ICheckpointedDeployBackend.PreparedPhase or
-                        ICheckpointedDeployBackend.CutoverPhase)
+                        ICheckpointedDeployBackend.CutoverPhase or ICheckpointedDeployBackend.RampPhase)
                 {
                     await ReconcileCheckpointAsync(operation, checkpointed, reconciliationCancellation.Token).ConfigureAwait(false);
                     return;
@@ -1181,27 +1212,20 @@ internal sealed partial class DeployWorkflowReconciler(
                 }
             };
             var rampedOperation = current with { Deploy = rampedSpec };
+            if (backend is ICheckpointedDeployBackend rampCheckpoint && rampCheckpoint.RequiresCheckpoint(current))
+            {
+                return rampedOperation with
+                {
+                    Status = WorkflowOperationStatus.Reconciling,
+                    CurrentPhase = ICheckpointedDeployBackend.RampPhase,
+                    UpdatedAt = DateTimeOffset.UtcNow,
+                    Deploy = rampedSpec with { CanaryRamp = rampedSpec.CanaryRamp! with { CurrentStepStartedAt = null } }
+                };
+            }
 
             // Re-apply the deploy at the next step weight. StartAsync resolves the canary share
             // from the synchronized parameter, so backends shift traffic without a new contract.
             var stepObservation = await backend.StartAsync(rampedOperation, cancellationToken).ConfigureAwait(false);
-            if (stepObservation.Status == WorkflowOperationStatus.Failed &&
-                backend is ICheckpointedDeployBackend rampCheckpoint && rampCheckpoint.RequiresCheckpoint(current))
-            {
-                var rollback = await backend.RollbackAsync(current, cancellationToken).ConfigureAwait(false);
-                var rollbackStatus = rollback.Status is WorkflowOperationStatus.RollbackRequested or WorkflowOperationStatus.RolledBack
-                    ? rollback.Status : WorkflowOperationStatus.ManualInterventionRequired;
-                return current with
-                {
-                    Status = rollbackStatus,
-                    UpdatedAt = DateTimeOffset.UtcNow,
-                    CompletedAt = rollbackStatus == WorkflowOperationStatus.ManualInterventionRequired ? DateTimeOffset.UtcNow : null,
-                    CurrentPhase = rollback.Message ?? "Canary ramp failed; rollback requested.",
-                    ErrorMessage = rollbackStatus == WorkflowOperationStatus.ManualInterventionRequired
-                        ? "Canary ramp failed and rollback requires intervention." : null
-                };
-            }
-
             var stepStatus = stepObservation.Status == WorkflowOperationStatus.Failed
                 ? WorkflowOperationStatus.Failed
                 : WorkflowOperationStatus.Reconciling;

@@ -379,6 +379,8 @@ public interface ICheckpointedDeployBackend
     public const string PreparedPhase = "Deploy preparation completed and migration outcome recorded.";
     /// <summary>The durable phase after pre-cutover checks authorize the traffic shift.</summary>
     public const string CutoverPhase = "Deploy cutover authorized; submitting traffic shift.";
+    /// <summary>The durable phase after a canary ramp step is authorized.</summary>
+    public const string RampPhase = "Deploy canary step authorized; submitting traffic shift.";
     /// <summary>The durable phase after activation has been submitted.</summary>
     public const string ActivatedPhase = "Deploy activation submitted; awaiting convergence.";
 
