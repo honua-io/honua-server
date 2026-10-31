@@ -822,7 +822,18 @@ internal sealed partial class DeployWorkflowReconciler(
         }
 
         var finalize = await backend.CompleteProtectionAsync(current, cancellationToken).ConfigureAwait(false);
-        if (finalize.Status == WorkflowOperationStatus.Failed)
+        if (finalize.Status is WorkflowOperationStatus.Submitted or WorkflowOperationStatus.Reconciling)
+        {
+            return current with
+            {
+                Status = WorkflowOperationStatus.Reconciling,
+                UpdatedAt = now,
+                CompletedAt = null,
+                CurrentPhase = finalize.Message ?? "Post-activation handoff is still in progress."
+            };
+        }
+
+        if (finalize.Status is WorkflowOperationStatus.Failed or WorkflowOperationStatus.ManualInterventionRequired)
         {
             return current with
             {

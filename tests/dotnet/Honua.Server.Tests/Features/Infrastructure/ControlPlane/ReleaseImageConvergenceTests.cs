@@ -116,6 +116,48 @@ public sealed class ReleaseImageConvergenceTests
     }
 
     [Fact]
+    public async Task EcsProtection_HandoffRestoresStableSlotAfterCandidateIsHealthy()
+    {
+        var ecs = new DigestEcsClient();
+        var alb = new DigestAlbClient();
+        var backend = Backend(alb, ecs);
+        var operation = EcsOperation(Digest);
+        var checkpoint = await backend.PrepareCheckpointAsync(operation, CancellationToken.None);
+        var persisted = Checkpointed(operation, checkpoint);
+        await backend.ActivateCheckpointAsync(persisted, CancellationToken.None);
+        await backend.ObserveAsync(persisted);
+        var pending = await backend.CompleteProtectionAsync(persisted);
+        pending.Status.Should().Be(WorkflowOperationStatus.Reconciling);
+        ecs.StableTaskDefinition.Should().Be(RegisteredTaskDef);
+        var complete = await backend.CompleteProtectionAsync(persisted);
+        complete.Status.Should().Be(WorkflowOperationStatus.Succeeded);
+        var weights = await alb.GetListenerRuleWeightsAsync(ListenerRuleArn, null);
+        weights.TargetGroupWeights.Single(weight => weight.TargetGroupArn == StableTargetGroupArn).Weight.Should().Be(100);
+    }
+
+    [Fact]
+    public async Task EcsRollback_DuringHandoffRestoresPriorStableBeforeRouting()
+    {
+        var ecs = new DigestEcsClient();
+        var alb = new DigestAlbClient();
+        var backend = Backend(alb, ecs);
+        var operation = EcsOperation(Digest);
+        var checkpoint = await backend.PrepareCheckpointAsync(operation, CancellationToken.None);
+        var persisted = Checkpointed(operation, checkpoint);
+        await backend.ActivateCheckpointAsync(persisted, CancellationToken.None);
+        await backend.ObserveAsync(persisted);
+        await backend.CompleteProtectionAsync(persisted);
+        var rollback = await backend.RollbackAsync(persisted);
+        rollback.Status.Should().Be(WorkflowOperationStatus.RollbackRequested);
+        ecs.StableTaskDefinition.Should().Be(CurrentTaskDef);
+        var weightsBefore = await alb.GetListenerRuleWeightsAsync(ListenerRuleArn, null);
+        weightsBefore.TargetGroupWeights.Single(weight => weight.TargetGroupArn == CanaryTargetGroupArn).Weight.Should().Be(100);
+        await backend.ObserveAsync(persisted with { Status = WorkflowOperationStatus.RollbackRequested });
+        var weightsAfter = await alb.GetListenerRuleWeightsAsync(ListenerRuleArn, null);
+        weightsAfter.TargetGroupWeights.Single(weight => weight.TargetGroupArn == StableTargetGroupArn).Weight.Should().Be(100);
+    }
+
+    [Fact]
     public async Task EcsActivation_WaitsForSteadyStateBeforeExposingTraffic()
     {
         var ecs = new DigestEcsClient { RolloutState = "IN_PROGRESS" };
@@ -684,6 +726,8 @@ public sealed class ReleaseImageConvergenceTests
 
         public string? UpdatedTaskDefinition { get; private set; }
 
+        public string StableTaskDefinition { get; private set; } = CurrentTaskDef;
+
         public string? RanTaskDefinition { get; private set; }
 
         public Exception? DescribeServiceException { get; init; }
@@ -706,7 +750,7 @@ public sealed class ReleaseImageConvergenceTests
                 throw DescribeServiceException;
             }
 
-            var arn = serviceName == "honua-prod-stable" ? CurrentTaskDef : UpdatedTaskDefinition ?? CurrentTaskDef;
+            var arn = serviceName == "honua-prod-stable" ? StableTaskDefinition : UpdatedTaskDefinition ?? CurrentTaskDef;
             return Task.FromResult(new AwsEcsServiceState
             {
                 ServiceName = serviceName,
@@ -734,7 +778,8 @@ public sealed class ReleaseImageConvergenceTests
         {
             Calls.Add("update-service");
             if (UpdateServiceException is not null) throw UpdateServiceException;
-            UpdatedTaskDefinition = taskDefinitionArn;
+            if (serviceName == "honua-prod-stable") StableTaskDefinition = taskDefinitionArn;
+            else UpdatedTaskDefinition = taskDefinitionArn;
             return Task.CompletedTask;
         }
 

@@ -862,6 +862,11 @@ internal sealed partial class AwsEcsAlbDeployBackend(
                         .ConfigureAwait(false);
                 }
 
+                if (ReleaseImageDigest.IsImmutable(spec.DesiredRevision) && !albWeights.MatchesExpectedShare(0))
+                {
+                    await RestoreStableServiceWhenReadyAsync(operation, spec, target, cancellationToken).ConfigureAwait(false);
+                }
+
                 return new DeployObservation
                 {
                     Status = WorkflowOperationStatus.RollbackRequested,
@@ -1092,12 +1097,19 @@ internal sealed partial class AwsEcsAlbDeployBackend(
 
         try
         {
-            await albClient.UpdateListenerRuleWeightsAsync(
-                    target.ListenerRuleArn!,
-                    BuildWeights(target.CanaryTargetGroupArn!, 0, target.StableTargetGroupArn!, 100),
-                    target.Region,
-                    cancellationToken)
-                .ConfigureAwait(false);
+            if (ReleaseImageDigest.IsImmutable(spec.DesiredRevision))
+            {
+                await RestoreStableServiceWhenReadyAsync(operation, spec, target, cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                await albClient.UpdateListenerRuleWeightsAsync(
+                        target.ListenerRuleArn!,
+                        BuildWeights(target.CanaryTargetGroupArn!, 0, target.StableTargetGroupArn!, 100),
+                        target.Region,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
 
             Log.RollbackRequested(logger, operation.OperationId, spec.TargetId, target.Cluster!, target.CanaryService!);
             return new DeployObservation

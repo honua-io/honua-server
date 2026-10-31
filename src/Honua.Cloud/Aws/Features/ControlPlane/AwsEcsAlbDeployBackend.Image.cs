@@ -163,6 +163,76 @@ internal sealed partial class AwsEcsAlbDeployBackend
         };
     }
 
+    public async Task<DeployObservation> CompleteProtectionAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken = default)
+    {
+        var spec = operation.Deploy ?? throw new InvalidOperationException("Deploy metadata is missing.");
+        if (!RequiresCheckpoint(operation))
+        {
+            return new DeployObservation { Status = WorkflowOperationStatus.Succeeded, ProviderOperationId = operation.ProviderOperationId };
+        }
+
+        var target = ResolveTarget(spec);
+        var stableName = GetParameter(spec.Parameters, "aws.ecs.stable_service")
+            ?? throw new InvalidOperationException("Stable ECS service is required.");
+        if (!ReleaseImageDigest.IsEcsTaskDefinitionArn(operation.ProviderOperationId) ||
+            !ReleaseImageDigest.IsEcsTaskDefinitionArn(spec.CurrentRevision))
+        {
+            throw new InvalidOperationException("ECS checkpoint is incomplete.");
+        }
+
+        var stable = await ecsClient.DescribeServiceAsync(target.Cluster!, stableName, target.Region, cancellationToken).ConfigureAwait(false);
+        if (!string.Equals(stable.TaskDefinitionArn, operation.ProviderOperationId, StringComparison.Ordinal))
+        {
+            if (!string.Equals(stable.TaskDefinitionArn, spec.CurrentRevision, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException("Stable ECS service revision changed during handoff.");
+            }
+
+            await ecsClient.UpdateServiceTaskDefinitionAsync(target.Cluster!, stableName, operation.ProviderOperationId!, target.Region, cancellationToken).ConfigureAwait(false);
+            return new DeployObservation { Status = WorkflowOperationStatus.Reconciling, Message = "Updating the stable service after protection." };
+        }
+
+        var convergence = EvaluateDeploymentConvergence(stable, operation.ProviderOperationId!);
+        var health = await albClient.DescribeTargetHealthAsync(target.StableTargetGroupArn!, target.Region, cancellationToken).ConfigureAwait(false);
+        if (!convergence.IsConverged || stable.DesiredCount <= 0 || health.HealthyCount < stable.DesiredCount)
+        {
+            return new DeployObservation { Status = WorkflowOperationStatus.Reconciling, Message = "Waiting for the stable service to become healthy." };
+        }
+
+        await albClient.UpdateListenerRuleWeightsAsync(target.ListenerRuleArn!,
+            BuildWeights(target.CanaryTargetGroupArn!, 0, target.StableTargetGroupArn!, 100), target.Region, cancellationToken).ConfigureAwait(false);
+        return new DeployObservation { Status = WorkflowOperationStatus.Succeeded, ProviderOperationId = operation.ProviderOperationId, Message = "Stable service is healthy on the candidate revision." };
+    }
+
+    private async Task RestoreStableServiceWhenReadyAsync(
+        WorkflowOperationRecord operation, DeployOperationSpec spec, AwsEcsAlbDeployTarget target, CancellationToken cancellationToken)
+    {
+        var stableName = GetParameter(spec.Parameters, "aws.ecs.stable_service")
+            ?? throw new InvalidOperationException("Stable ECS service is required.");
+        if (!ReleaseImageDigest.IsEcsTaskDefinitionArn(spec.CurrentRevision))
+        {
+            throw new InvalidOperationException("Stable rollback revision is missing.");
+        }
+
+        var stable = await ecsClient.DescribeServiceAsync(target.Cluster!, stableName, target.Region, cancellationToken).ConfigureAwait(false);
+        if (!string.Equals(stable.TaskDefinitionArn, spec.CurrentRevision, StringComparison.Ordinal))
+        {
+            if (!string.Equals(stable.TaskDefinitionArn, operation.ProviderOperationId, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException("Stable ECS service revision changed during rollback.");
+            }
+
+            await ecsClient.UpdateServiceTaskDefinitionAsync(target.Cluster!, stableName, spec.CurrentRevision!, target.Region, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        var convergence = EvaluateDeploymentConvergence(stable, spec.CurrentRevision!);
+        var health = await albClient.DescribeTargetHealthAsync(target.StableTargetGroupArn!, target.Region, cancellationToken).ConfigureAwait(false);
+        if (!convergence.IsConverged || stable.DesiredCount <= 0 || health.HealthyCount < stable.DesiredCount) return;
+        await albClient.UpdateListenerRuleWeightsAsync(target.ListenerRuleArn!,
+            BuildWeights(target.CanaryTargetGroupArn!, 0, target.StableTargetGroupArn!, 100), target.Region, cancellationToken).ConfigureAwait(false);
+    }
+
     /// <summary>
     /// Clones the serving task definition onto the digest, and runs the product migrate-only
     /// task first when the deployment names one. Returns before any listener-rule write.
