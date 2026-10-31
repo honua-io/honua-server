@@ -899,10 +899,11 @@ internal sealed partial class AwsEcsAlbDeployBackend(
                 {
                     return new DeployObservation
                     {
-                        Status = WorkflowOperationStatus.Failed,
+                        Status = WorkflowOperationStatus.Reconciling,
                         ProviderOperationId = operation.ProviderOperationId,
                         ObservedRevision = primary?.TaskDefinitionArn ?? serviceState.TaskDefinitionArn,
-                        Message = "ECS rollout failed before the service reached steady state."
+                        RollbackRecommended = true,
+                        Message = "ECS rollout failed before the service reached steady state; rollback is required."
                     };
                 }
             }

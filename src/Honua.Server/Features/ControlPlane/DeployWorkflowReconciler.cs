@@ -51,6 +51,12 @@ internal sealed partial class DeployWorkflowReconciler(
                 CurrentPhase = result.Status == WorkflowOperationStatus.Reconciling
                     ? ICheckpointedDeployBackend.ActivatedPhase : result.Message ?? operation.CurrentPhase,
                 ErrorMessage = result.Status == WorkflowOperationStatus.Failed ? result.Message : null,
+                Deploy = operation.Deploy! with
+                {
+                    TrafficExposedAt = result.Status == WorkflowOperationStatus.Reconciling
+                        ? operation.Deploy.TrafficExposedAt ?? DateTimeOffset.UtcNow
+                        : operation.Deploy.TrafficExposedAt
+                },
                 UpdatedAt = DateTimeOffset.UtcNow,
                 CompletedAt = result.Status is WorkflowOperationStatus.Failed or WorkflowOperationStatus.ManualInterventionRequired
                     ? DateTimeOffset.UtcNow : null

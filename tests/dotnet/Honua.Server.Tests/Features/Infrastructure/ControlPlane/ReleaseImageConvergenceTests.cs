@@ -212,7 +212,8 @@ public sealed class ReleaseImageConvergenceTests
         var persisted = Checkpointed(operation, checkpoint);
         await backend.ActivateCheckpointAsync(persisted, CancellationToken.None);
         var observation = await backend.ObserveAsync(persisted);
-        observation.Status.Should().Be(WorkflowOperationStatus.Failed);
+        observation.Status.Should().Be(WorkflowOperationStatus.Reconciling);
+        observation.RollbackRecommended.Should().BeTrue();
     }
 
     [Fact]

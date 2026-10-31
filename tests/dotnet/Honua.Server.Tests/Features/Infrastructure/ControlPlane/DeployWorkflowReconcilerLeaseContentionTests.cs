@@ -118,7 +118,10 @@ public sealed class DeployWorkflowReconcilerLeaseContentionTests
         backend.ActivationCount.Should().Be(0);
         await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
         backend.ActivationCount.Should().Be(1);
-        (await store.GetAsync(operation.OperationId))!.CurrentPhase.Should().Be(ICheckpointedDeployBackend.ActivatedPhase);
+        var activated = (await store.GetAsync(operation.OperationId))!;
+        activated.CurrentPhase.Should().Be(ICheckpointedDeployBackend.ActivatedPhase);
+        activated.Deploy!.TrafficExposedAt.Should().NotBeNull();
+        activated.Deploy.TrafficExposedAt.Should().BeAfter(operation.CreatedAt);
     }
 
     [Fact]
