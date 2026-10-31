@@ -23,14 +23,18 @@ concurrency:
 jobs:
   published-rc1-lifecycle:
     runs-on: ubuntu-latest
-    timeout-minutes: 70
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
-      - name: Build candidate image
-        run: docker build --tag honua-lifecycle:candidate .
+      - name: Build production candidate image
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          docker build --file docker/Dockerfile.aot --tag honua-lifecycle:candidate \
+            --secret id=github_actor,env=GITHUB_ACTOR --secret id=github_token,env=GITHUB_TOKEN .
       - name: Run published-image MCP and restore journey
         run: |
           python3 -m venv /tmp/honua-lifecycle-venv
