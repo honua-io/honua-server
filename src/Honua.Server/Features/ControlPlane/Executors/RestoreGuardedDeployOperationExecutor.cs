@@ -6,6 +6,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.ControlPlane.Restore;
 using Honua.Core.Features.Guardrails.Domain;
+using Microsoft.Extensions.Options;
 
 namespace Honua.ControlPlane.Executors;
 
@@ -16,7 +17,9 @@ namespace Honua.ControlPlane.Executors;
 /// </summary>
 internal sealed class RestoreGuardedDeployOperationExecutor(
     DeployOperationExecutor inner,
-    PreMigrationRestoreCoordinator coordinator) : IOperationExecutor
+    PreMigrationRestoreCoordinator coordinator,
+    IPreMigrationRestoreAudit? audit = null,
+    IOptions<RestoreCellOptions>? restoreOptions = null) : IOperationExecutor
 {
     public OperationClass OperationClass => OperationClass.Deploy;
 
@@ -70,10 +73,11 @@ internal sealed class RestoreGuardedDeployOperationExecutor(
             return await inner.ExecuteAsync(request, executionPayload, cancellationToken).ConfigureAwait(false);
         }
 
+        var seconds = restoreOptions?.Value.ImageWaitSeconds ?? RestoreCellOptions.DefaultImageWaitSeconds;
         var completion = await coordinator.ExecuteAsync(
                 payload,
                 request,
-                new DeployPriorImageStarter(inner),
+                new DeployPriorImageStarter(inner, TimeSpan.FromSeconds(Math.Clamp(seconds, 0, 3600))),
                 cancellationToken)
             .ConfigureAwait(false);
         if (!ReaderIncompatibleRestorePolicy.IsReportedSuccess(completion))
@@ -85,19 +89,89 @@ internal sealed class RestoreGuardedDeployOperationExecutor(
     }
 
     /// <inheritdoc />
-    public Task<OperationBackendStatus?> GetBackendStatusAsync(
+    public async Task<OperationBackendStatus?> GetBackendStatusAsync(
         string executionOperationId,
         CancellationToken cancellationToken = default)
-        => inner.GetBackendStatusAsync(executionOperationId, cancellationToken);
+    {
+        var live = await inner.GetBackendStatusAsync(executionOperationId, cancellationToken).ConfigureAwait(false);
+        if (live is not null || audit is null)
+        {
+            return live;
+        }
+
+        return await audit.FindAsync(executionOperationId, cancellationToken).ConfigureAwait(false);
+    }
 }
 
 /// <summary>Starts the prior image through the existing deploy workflow, and only when the gate calls it.</summary>
-internal sealed class DeployPriorImageStarter(DeployOperationExecutor inner) : IPriorImageStarter
+internal sealed class DeployPriorImageStarter(DeployOperationExecutor inner, TimeSpan budget) : IPriorImageStarter
 {
     /// <inheritdoc />
-    public Task<string?> StartAsync(
+    public async Task<string?> StartAsync(
         OperationGatewayRequest request,
         string? executionPayload,
         CancellationToken cancellationToken)
-        => inner.ExecuteAsync(request, executionPayload, cancellationToken);
+    {
+        var operationId = await inner.ExecuteAsync(request, executionPayload, cancellationToken).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(operationId))
+        {
+            return null;
+        }
+
+        var serving = await PriorImageReadiness.WaitAsync(
+                cancellationToken => inner.GetBackendStatusAsync(operationId, cancellationToken),
+                budget,
+                TimeSpan.FromSeconds(2),
+                cancellationToken)
+            .ConfigureAwait(false);
+        return serving ? operationId : null;
+    }
+}
+
+/// <summary>Polls a deploy workflow until it succeeds, fails, or the budget ends.</summary>
+internal static class PriorImageReadiness
+{
+    /// <summary>
+    /// Returns true only when a read reports <see cref="OperationBackendState.Succeeded"/>.
+    /// A terminal failure returns false without waiting out the budget.
+    /// </summary>
+    public static async Task<bool> WaitAsync(
+        Func<CancellationToken, Task<OperationBackendStatus?>> read,
+        TimeSpan budget,
+        TimeSpan poll,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(read);
+        var deadline = DateTime.UtcNow + (budget < TimeSpan.Zero ? TimeSpan.Zero : budget);
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var status = await read(cancellationToken).ConfigureAwait(false);
+            if (status?.State == OperationBackendState.Succeeded)
+            {
+                return true;
+            }
+
+            if (status?.State is OperationBackendState.Failed
+                or OperationBackendState.Cancelled
+                or OperationBackendState.Indeterminate)
+            {
+                return false;
+            }
+
+            if (DateTime.UtcNow >= deadline)
+            {
+                return false;
+            }
+
+            var remaining = deadline - DateTime.UtcNow;
+            var delay = poll < remaining ? poll : remaining;
+            if (delay <= TimeSpan.Zero)
+            {
+                return false;
+            }
+
+            await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
+        }
+    }
 }

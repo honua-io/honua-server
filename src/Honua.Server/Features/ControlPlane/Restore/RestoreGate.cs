@@ -49,6 +49,12 @@ internal sealed class RestoreCellOptions
     /// <summary>How long to wait for a new RDS instance, in seconds.</summary>
     public int RdsWaitSeconds { get; set; } = 1200;
 
+    /// <summary>How long to wait for the prior image's workflow to succeed, in seconds.</summary>
+    public int ImageWaitSeconds { get; set; } = DefaultImageWaitSeconds;
+
+    /// <summary>Default wait for a cloud rollout to reach a successful terminal state.</summary>
+    public const int DefaultImageWaitSeconds = 600;
+
     /// <summary>Prior image schema numbers, keyed by the exact revision string the proposal names.</summary>
     public List<RevisionSchemaOption> Revisions { get; set; } = [];
 }
@@ -153,6 +159,9 @@ internal interface IPreMigrationRestoreAudit
 {
     /// <summary>Appends one JSON line and flushes it.</summary>
     Task<bool> AppendAsync(PreMigrationRestoreAuditLine line, CancellationToken cancellationToken);
+
+    /// <summary>Reads the latest audit line for an operation id. Null when the file has none.</summary>
+    Task<OperationBackendStatus?> FindAsync(string operationId, CancellationToken cancellationToken);
 }
 
 /// <summary>One audit line. No secrets, probe URLs, or customer bodies.</summary>
@@ -195,7 +204,10 @@ internal sealed record PreMigrationRestoreAuditLine
 /// <summary>Starts the prior image only after the restore gate allows it.</summary>
 internal interface IPriorImageStarter
 {
-    /// <summary>Submits the existing deploy workflow.</summary>
+    /// <summary>
+    /// Submits the existing deploy workflow and returns its id only after that workflow
+    /// reports success. A failed or unfinished rollout returns null so customer readback does not run.
+    /// </summary>
     Task<string?> StartAsync(OperationGatewayRequest request, string? executionPayload, CancellationToken cancellationToken);
 }
 
@@ -394,11 +406,6 @@ internal sealed class PreMigrationRestoreCoordinator(
             return (Refuse(PreMigrationRestoreCodes.TargetUnknown, "The deploy target is not in the server catalog."), null, null);
         }
 
-        if (target.TargetKind is DeployTargetKind.AzureContainerApps or DeployTargetKind.AzureFunctions)
-        {
-            return (Refuse(PreMigrationRestoreCodes.RetargetUnsupported, "This target has no product restore executor."), target, null);
-        }
-
         var options = restoreOptions.Value;
         var inPlace = target.TargetKind == DeployTargetKind.SelfHostedRolling;
         var journalSnapshot = await journal.ReadAsync(cancellationToken).ConfigureAwait(false);
@@ -414,6 +421,12 @@ internal sealed class PreMigrationRestoreCoordinator(
             RetargetConfigured = secrets.IsConfigured && !string.IsNullOrWhiteSpace(options.ConnectionSecretId),
             InPlaceDatabase = inPlace,
         });
+        if (decision.Kind == RestoreDecisionKind.RestoreBeforeStart
+            && target.TargetKind is DeployTargetKind.AzureContainerApps or DeployTargetKind.AzureFunctions)
+        {
+            return (Refuse(PreMigrationRestoreCodes.RetargetUnsupported, "This target has no product restore executor."), target, null);
+        }
+
         return (decision, target, backup);
     }
 
@@ -593,7 +606,7 @@ internal static class ComposeBackupDirectory
         {
             var id = Path.GetFileName(directory);
             var loaded = Load(root, project, image, id, out var createdAt);
-            if (loaded is null)
+            if (loaded is null || BackupEvidenceVerifier.VerifyCompose(loaded).Backup is null)
             {
                 continue;
             }
@@ -611,11 +624,42 @@ internal static class ComposeBackupDirectory
         return newest;
     }
 
+    /// <summary>A later absolute segment must not discard <paramref name="root"/>.</summary>
+    private static bool TryChild(string root, string name, string file, out string path)
+    {
+        path = string.Empty;
+        if (string.IsNullOrWhiteSpace(name)
+            || name is "." or ".."
+            || name.IndexOfAny(['/', '\\']) >= 0
+            || Path.IsPathRooted(name)
+            || file.IndexOfAny(['/', '\\']) >= 0
+            || Path.IsPathRooted(file))
+        {
+            return false;
+        }
+
+        var rootFull = Path.GetFullPath(root);
+        var prefix = rootFull.EndsWith(Path.DirectorySeparatorChar)
+            ? rootFull
+            : rootFull + Path.DirectorySeparatorChar;
+        var combined = Path.GetFullPath(Path.Combine(rootFull, name, file));
+        if (!combined.StartsWith(prefix, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        path = combined;
+        return true;
+    }
+
     private static ComposeBackupManifestEvidence? Load(string root, string project, string image, string backupId, out DateTimeOffset createdAt)
     {
         createdAt = DateTimeOffset.MinValue;
-        var manifestPath = Path.Combine(root, backupId, "manifest.json");
-        var dumpPath = Path.Combine(root, backupId, BackupEvidenceVerifier.DumpFileName);
+        if (!TryChild(root, backupId, "manifest.json", out var manifestPath)
+            || !TryChild(root, backupId, BackupEvidenceVerifier.DumpFileName, out var dumpPath))
+        {
+            return null;
+        }
         if (!File.Exists(manifestPath) || !File.Exists(dumpPath))
         {
             return null;

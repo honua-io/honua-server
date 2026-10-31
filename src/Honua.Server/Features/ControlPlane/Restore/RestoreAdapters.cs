@@ -6,6 +6,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
+using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Restore;
 using Honua.Core.Features.Infrastructure.Migrations;
 using Microsoft.Extensions.DependencyInjection;
@@ -203,6 +204,59 @@ internal sealed class FilePreMigrationRestoreAudit(IOptions<RestoreCellOptions> 
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             return false;
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<OperationBackendStatus?> FindAsync(string operationId, CancellationToken cancellationToken)
+    {
+        var path = options.Value.AuditPath;
+        if (string.IsNullOrWhiteSpace(operationId) || string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+        {
+            return null;
+        }
+
+        try
+        {
+            OperationBackendStatus? found = null;
+            await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 4096, FileOptions.Asynchronous);
+            using var reader = new StreamReader(stream);
+            while (true)
+            {
+                var line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
+                if (line is null)
+                {
+                    return found;
+                }
+
+                if (string.IsNullOrWhiteSpace(line))
+                {
+                    continue;
+                }
+
+                PreMigrationRestoreAuditLine? parsed;
+                try
+                {
+                    parsed = JsonSerializer.Deserialize(line, PreMigrationRestoreJsonContext.Default.PreMigrationRestoreAuditLine);
+                }
+                catch (JsonException)
+                {
+                    continue;
+                }
+
+                if (parsed is null || !string.Equals(parsed.OperationId, operationId, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                found = parsed.Ok && parsed.ReadbackComplete && string.IsNullOrEmpty(parsed.Code)
+                    ? new OperationBackendStatus { State = OperationBackendState.Succeeded }
+                    : new OperationBackendStatus { State = OperationBackendState.Failed, Reason = parsed.Code };
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return null;
         }
     }
 }

@@ -220,6 +220,134 @@ public sealed class PreMigrationRestoreCoordinatorTests
         ConnectionStringHostSwap.TrySwapHost("Host=old.example;Password=secret", "a;Password=x", out _).Should().BeFalse();
     }
 
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task CompatibleAzureRollback_StartsWithoutRestoring()
+    {
+        var harness = NewHarness();
+        harness.TargetKind = DeployTargetKind.AzureContainerApps;
+        harness.JournalSnapshot = Journal(141, "expand");
+        harness.Cell.Revisions = [new RevisionSchemaOption { Revision = "rev-141", MaxSchema = 141 }];
+        var completion = await harness.Coordinator.ExecuteAsync(Payload(backupId: null), Request(), harness.Starter, CancellationToken.None);
+
+        ReaderIncompatibleRestorePolicy.IsReportedSuccess(completion).Should().BeTrue();
+        harness.Events.Should().Contain("start");
+        harness.Events.Should().NotContain("restore");
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task AzureRestoreRequired_DoesNotStartThePriorImage()
+    {
+        var harness = NewHarness();
+        harness.TargetKind = DeployTargetKind.AzureFunctions;
+        var completion = await harness.Coordinator.ExecuteAsync(Payload(SnapshotId), Request(), harness.Starter, CancellationToken.None);
+
+        completion.Code.Should().Be(PreMigrationRestoreCodes.RetargetUnsupported);
+        harness.Events.Should().NotContain("restore");
+        harness.Events.Should().NotContain("start");
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task CloudStartDidNotFinish_DoesNotProbeTheCustomer()
+    {
+        var harness = NewHarness();
+        harness.StartId = null;
+        var completion = await harness.Coordinator.ExecuteAsync(Payload(SnapshotId), Request(), harness.Starter, CancellationToken.None);
+
+        completion.Code.Should().Be(PreMigrationRestoreCodes.ProviderFailed);
+        harness.Events.Should().Contain("start");
+        harness.Events.Should().NotContain("customer");
+        ReaderIncompatibleRestorePolicy.IsReportedSuccess(completion).Should().BeFalse();
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ComposeOmitsBackupId_SelectsNewestVerifyingManifest()
+    {
+        using var root = new TempBackup();
+        root.Write("backup-" + new string('a', 32), "rev-999", "2026-10-31T00:00:00Z", "dump");
+        var harness = NewHarness();
+        harness.TargetKind = DeployTargetKind.SelfHostedRolling;
+        harness.Cell.ComposeBackupDirectory = root.Path;
+        harness.Cell.ComposeProject = "honua";
+        harness.Cell.ComposeSocketPath = "/tmp/honua-compose.sock";
+        harness.ComposeConfigured = true;
+        harness.ComposeResult = new ComposeRollbackResult(true, null, true, 141, true);
+        var completion = await harness.Coordinator.ExecuteAsync(Payload(backupId: null), Request(), harness.Starter, CancellationToken.None);
+
+        ReaderIncompatibleRestorePolicy.IsReportedSuccess(completion).Should().BeTrue();
+        harness.ComposeBackupId.Should().Be(root.BackupId);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task PriorImage_WaitsUntilTheWorkflowSucceeds()
+    {
+        var reads = 0;
+        var ready = await PriorImageReadiness.WaitAsync(
+            _ =>
+            {
+                reads++;
+                var state = reads == 1 ? OperationBackendState.Queued : OperationBackendState.Succeeded;
+                return Task.FromResult<OperationBackendStatus?>(new OperationBackendStatus { State = state });
+            },
+            TimeSpan.FromSeconds(5),
+            TimeSpan.FromMilliseconds(1),
+            CancellationToken.None);
+
+        ready.Should().BeTrue();
+        reads.Should().Be(2);
+
+        var failed = await PriorImageReadiness.WaitAsync(
+            _ => Task.FromResult<OperationBackendStatus?>(new OperationBackendStatus { State = OperationBackendState.Failed }),
+            TimeSpan.FromSeconds(30),
+            TimeSpan.FromSeconds(10),
+            CancellationToken.None);
+        failed.Should().BeFalse();
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ComposeAudit_ReportsSucceededWhenTheDeployStoreHasNoRecord()
+    {
+        var directory = Directory.CreateTempSubdirectory("honua-audit-").FullName;
+        try
+        {
+            var path = Path.Combine(directory, "audit.jsonl");
+            var audit = new FilePreMigrationRestoreAudit(Options.Create(new RestoreCellOptions { AuditPath = path }));
+            var line = new PreMigrationRestoreAuditLine
+            {
+                Time = DateTimeOffset.Parse("2026-10-30T00:00:00Z", CultureInfo.InvariantCulture),
+                Op = "rollback",
+                OperationId = "restore-0123456789abcdef0123456789abcdef",
+                Ok = true,
+                ReadbackComplete = true,
+                Image = "rev-141",
+            };
+            (await audit.AppendAsync(line, CancellationToken.None)).Should().BeTrue();
+
+            var status = await audit.FindAsync(line.OperationId!, CancellationToken.None);
+            status!.State.Should().Be(OperationBackendState.Succeeded);
+
+            var registry = Substitute.For<IDeployTargetRegistry>();
+            var store = Substitute.For<IWorkflowOperationStore>();
+            var approval = Substitute.For<IOperatorApprovalEvaluator>();
+            var workflow = new DeployWorkflowService(registry, [store], [], approval, NullLogger<DeployWorkflowService>.Instance);
+            var guard = new RestoreGuardedDeployOperationExecutor(
+                new DeployOperationExecutor(workflow),
+                NewHarness().Coordinator,
+                audit);
+            var observed = await guard.GetBackendStatusAsync(line.OperationId!, CancellationToken.None);
+            observed!.State.Should().Be(OperationBackendState.Succeeded);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
     private const string SnapshotId = "honua-cert-snap";
 
     private static DeployExecutionPayload Payload(string? backupId)
@@ -296,7 +424,13 @@ public sealed class PreMigrationRestoreCoordinatorTests
 
         public ComposeRollbackResult ComposeResult { get; set; } = new(false, null, false, null, false);
 
-        public RecordingStarter Starter => new(Events);
+        public string? ComposeBackupId { get; set; }
+
+        public string? StartId { get; set; } = "op-1";
+
+        public OperationBackendStatus? AuditStatus { get; set; }
+
+        public RecordingStarter Starter => new(this);
 
         public PreMigrationRestoreCoordinator Coordinator => new(
             new RecordingJournal(this),
@@ -311,12 +445,12 @@ public sealed class PreMigrationRestoreCoordinatorTests
             Options.Create(Cell));
     }
 
-    private sealed class RecordingStarter(List<string> events) : IPriorImageStarter
+    private sealed class RecordingStarter(Harness harness) : IPriorImageStarter
     {
         public Task<string?> StartAsync(OperationGatewayRequest request, string? executionPayload, CancellationToken cancellationToken)
         {
-            events.Add("start");
-            return Task.FromResult<string?>("op-1");
+            harness.Events.Add("start");
+            return Task.FromResult(harness.StartId);
         }
     }
 
@@ -368,6 +502,7 @@ public sealed class PreMigrationRestoreCoordinatorTests
         public Task<ComposeRollbackResult> RollbackAsync(string image, string? backupId, string? requestId, CancellationToken cancellationToken)
         {
             harness.Events.Add("compose");
+            harness.ComposeBackupId = backupId;
             return Task.FromResult(harness.ComposeResult);
         }
     }
@@ -397,6 +532,9 @@ public sealed class PreMigrationRestoreCoordinatorTests
             harness.Events.Add("audit");
             return Task.FromResult(harness.AuditOk);
         }
+
+        public Task<OperationBackendStatus?> FindAsync(string operationId, CancellationToken cancellationToken)
+            => Task.FromResult(harness.AuditStatus);
     }
 
     private sealed class StaticMonitor(Harness harness) : IOptionsMonitor<ControlPlaneOptions>
@@ -447,6 +585,28 @@ public sealed class PreMigrationRestoreCoordinatorTests
         public string Path { get; }
 
         public string BackupId { get; }
+
+        public void Write(string backupId, string image, string createdAt, string body)
+        {
+            var bytes = Encoding.UTF8.GetBytes(body);
+            var hash = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+            var directory = System.IO.Path.Combine(Path, backupId);
+            Directory.CreateDirectory(directory);
+            File.WriteAllBytes(System.IO.Path.Combine(directory, "database.dump"), bytes);
+            var manifest = new ComposeManifestFile
+            {
+                BackupId = backupId,
+                Project = "honua",
+                Image = image,
+                SchemaVersion = 141,
+                Sha256 = hash,
+                DumpFile = "database.dump",
+                CreatedAt = DateTimeOffset.Parse(createdAt, CultureInfo.InvariantCulture),
+            };
+            File.WriteAllText(
+                System.IO.Path.Combine(directory, "manifest.json"),
+                JsonSerializer.Serialize(manifest, PreMigrationRestoreJsonContext.Default.ComposeManifestFile));
+        }
 
         public void Dispose() => Directory.Delete(Path, recursive: true);
     }
