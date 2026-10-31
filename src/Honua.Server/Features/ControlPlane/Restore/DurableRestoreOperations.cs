@@ -249,10 +249,14 @@ internal sealed partial class DurableRestoreWorker(
         if (!await store.TrySetAsync(checkpoint, cancellationToken: cancellationToken).ConfigureAwait(false)) return;
         var request = new OperationGatewayRequest
         {
-            Kind = OperationClass.Deploy, RequestedBy = record.Audit.RequestedBy,
-            ApprovedBy = record.PreMigrationRestore!.ApprovedBy, ApprovedProposalId = record.Audit.ProposalId,
-            IdempotencyKey = record.OperationId, CorrelationId = record.Audit.CorrelationId,
-            Reason = record.Audit.Reason, TenantId = record.Audit.TenantId
+            Kind = OperationClass.Deploy,
+            RequestedBy = record.Audit.RequestedBy,
+            ApprovedBy = record.PreMigrationRestore!.ApprovedBy,
+            ApprovedProposalId = record.Audit.ProposalId,
+            IdempotencyKey = record.OperationId,
+            CorrelationId = record.Audit.CorrelationId,
+            Reason = record.Audit.Reason,
+            TenantId = record.Audit.TenantId
         };
         var actual = await deploy.ExecuteAsync(request, record.PreMigrationRestore.Payload, cancellationToken).ConfigureAwait(false);
         if (!string.Equals(actual, workflowId, StringComparison.Ordinal))
@@ -277,7 +281,9 @@ internal sealed partial class DurableRestoreWorker(
         if (workflow.Status != WorkflowOperationStatus.Succeeded) return;
         var observed = await compose.ExecuteAsync(new ComposeExecutorRequest
         {
-            Op = "status", Image = payload.DesiredRevision, RequestId = record.OperationId
+            Op = "status",
+            Image = payload.DesiredRevision,
+            RequestId = record.OperationId
         }, cancellationToken).ConfigureAwait(false);
         var valid = observed.Ok && observed.ReadbackComplete &&
             string.Equals(observed.RunningImage, payload.DesiredRevision, StringComparison.Ordinal);

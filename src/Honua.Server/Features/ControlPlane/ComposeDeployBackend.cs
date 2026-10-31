@@ -110,7 +110,8 @@ internal sealed partial class ComposeDeployBackend(
             {
                 var prior = await client.ExecuteAsync(new ComposeExecutorRequest
                 {
-                    Op = "status", RequestId = operation.OperationId
+                    Op = "status",
+                    RequestId = operation.OperationId
                 }, cancellationToken).ConfigureAwait(false);
                 if (!prior.Ok || !prior.ReadbackComplete || !ComposeExecutorRules.IsImmutableImage(prior.RunningImage))
                     return Submission(operation, WorkflowOperationStatus.Failed, ComposeExecutorCodes.ReadbackIncomplete);
