@@ -1,0 +1,39 @@
+name: Compose Release Lifecycle
+
+on:
+  pull_request:
+    branches: [trunk]
+    paths:
+      - 'src/Honua.Server/Features/ControlPlane/**'
+      - 'src/Honua.Server/Features/Infrastructure/Monitoring/McpPlatformOpsReader.cs'
+      - 'src/Honua.Core/Features/ControlPlane/**'
+      - 'docs/get-started/compose.executor.yaml'
+      - 'docs/get-started/quickstart.md'
+      - 'tests/integration/test_compose_release_lifecycle.py'
+      - '.github/workflows/compose-release-lifecycle.yml'
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: compose-release-lifecycle-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  published-rc1-lifecycle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Build candidate image
+        run: docker build --tag honua-lifecycle:candidate .
+      - name: Run published-image MCP and restore journey
+        run: |
+          python3 -m venv /tmp/honua-lifecycle-venv
+          /tmp/honua-lifecycle-venv/bin/pip install pytest
+          export HONUA_LIFECYCLE_IMAGE="$(docker image inspect --format '{{.Id}}' honua-lifecycle:candidate)"
+          /tmp/honua-lifecycle-venv/bin/pytest -q tests/integration/test_compose_release_lifecycle.py
