@@ -164,9 +164,17 @@ internal sealed partial class DurableRestoreWorker(
                     string.Equals(proposal.ResolvedBy, context.ApprovedBy, StringComparison.Ordinal) &&
                     !string.Equals(proposal.RequestedBy, proposal.ResolvedBy, StringComparison.OrdinalIgnoreCase) &&
                     string.Equals(proposal.TenantId, record.Audit.TenantId, StringComparison.Ordinal);
-                if (!validClaim || !await proposals.TrySetAsync(proposal with
-                    { Status = OperationProposalStatus.Submitted, ResolvedAt = DateTimeOffset.UtcNow },
-                    cancellationToken: lostLease.Token).ConfigureAwait(false)) return;
+                if (!validClaim)
+                {
+                    await FailAsync(record, PreMigrationRestoreCodes.RestoreIncomplete, lostLease.Token).ConfigureAwait(false);
+                    return;
+                }
+                var recovered = proposal with
+                {
+                    Status = OperationProposalStatus.Submitted,
+                    ResolvedAt = DateTimeOffset.UtcNow
+                };
+                if (!await proposals.TrySetAsync(recovered, cancellationToken: lostLease.Token).ConfigureAwait(false)) return;
                 proposal = await proposals.GetAsync(proposal.ProposalId, lostLease.Token).ConfigureAwait(false);
             }
             if (proposal is null || proposal.Status is not (OperationProposalStatus.Submitted or OperationProposalStatus.Reconciling)
