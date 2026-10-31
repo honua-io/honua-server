@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Buffers;
 using Amazon;
 using Amazon.ECS;
 using Amazon.ECS.Model;
@@ -69,6 +70,8 @@ internal static class EcsWorkloadUpdate
 /// <summary>Process-credential ECS client for governed restart and desired-count changes.</summary>
 internal sealed class AwsSdkEcsWorkloadControl : IEcsWorkloadControl
 {
+    private static readonly SearchValues<char> HexDigits = SearchValues.Create("0123456789abcdef");
+
     public async Task<EcsWorkloadSnapshot> DescribeAsync(
         string cluster,
         string serviceName,
@@ -111,7 +114,7 @@ internal sealed class AwsSdkEcsWorkloadControl : IEcsWorkloadControl
         if (string.IsNullOrWhiteSpace(image)) return false;
         var index = image.LastIndexOf("@sha256:", StringComparison.Ordinal);
         if (index <= 0 || image.Length != index + 8 + 64) return false;
-        return image.AsSpan(index + 8).IndexOfAnyExcept("0123456789abcdef") < 0;
+        return image.AsSpan(index + 8).IndexOfAnyExcept(HexDigits) < 0;
     }
 
     public async System.Threading.Tasks.Task ForceNewDeploymentAsync(
