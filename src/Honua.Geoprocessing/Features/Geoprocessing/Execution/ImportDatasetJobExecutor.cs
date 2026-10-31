@@ -35,8 +35,8 @@ namespace Honua.Geoprocessing.Execution;
 ///   <item><description><b>import</b> — <see cref="IFileImportService.ImportFileAsync(ImportRequest, IProgress{ImportProgress}?, CancellationToken)"/>
 ///     streams the source into the generic <c>imported_&lt;table&gt;</c>.</description></item>
 ///   <item><description><b>publish</b> — <see cref="ILayerPublishingService.PublishLayerAsync"/> introspects the imported
-///     table and publishes it as a layer; source attributes stay in the table's single JSON <c>properties</c>
-///     column (typed-layer flattening: honua-server#6640). The same call rebuilds the MVT materialization (#1628).</description></item>
+///     table and publishes it as a layer. Promoted source attributes are top-level fields beside
+///     the JSON <c>properties</c> column (honua-server#6640). The same call rebuilds the MVT materialization (#1628).</description></item>
 ///   <item><description><b>tile</b> — when a raster layer is supplied,
 ///     <see cref="IRasterImportService.ImportAsync"/> loads the raster, computes statistics, and pre-generates tiles/overviews (#1625).</description></item>
 ///   <item><description><b>extent + MVT refresh</b> — <see cref="ILayerPublishingService.RefreshLayerExtentsAsync(string,string,CancellationToken)"/>
@@ -70,11 +70,12 @@ internal sealed partial class ImportDatasetJobExecutor : IProcessExecutor
 
     private const string ProvenanceDataUriPrefix = "data:application/json;base64,";
 
-    // The fixed shape honua.create_import_table materializes for the generic
-    // imported_<table> (id SERIAL PRIMARY KEY, geometry GEOMETRY, properties JSONB).
+    // honua.create_import_table materializes id, geometry, properties, and created_at.
+    // A later promotion adds nullable typed columns for source attributes. Publish
+    // lists those columns explicitly so created_at stays unpublished.
     private const string ImportTableGeometryColumn = "geometry";
     private const string ImportTablePrimaryKey = "id";
-    private static readonly string[] ImportTableFields = ["id", "properties"];
+    private const string ImportTablePropertiesColumn = "properties";
 
     private readonly IServiceScopeFactory _serviceScopeFactory;
     private readonly ILogger<ImportDatasetJobExecutor> _logger;
@@ -96,6 +97,26 @@ internal sealed partial class ImportDatasetJobExecutor : IProcessExecutor
     /// </summary>
     public IReadOnlySet<string> ProcessIds { get; } =
         new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
+
+    private static string[] BuildPublishedImportFields(IReadOnlyList<ImportTypedColumn> typedColumns)
+    {
+        var fields = new List<string>(typedColumns.Count + 2) { ImportTablePrimaryKey };
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ImportTablePrimaryKey,
+            ImportTablePropertiesColumn
+        };
+        foreach (var column in typedColumns)
+        {
+            if (column.Name.Length > 0 && seen.Add(column.Name))
+            {
+                fields.Add(column.Name);
+            }
+        }
+
+        fields.Add(ImportTablePropertiesColumn);
+        return fields.ToArray();
+    }
 
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 
@@ -229,8 +250,8 @@ internal sealed partial class ImportDatasetJobExecutor : IProcessExecutor
         await context.ReportProgressAsync(45, "Imported source rows", cancellationToken).ConfigureAwait(false);
 
         // Step 4 — publish. PublishLayerAsync introspects the imported table and publishes
-        // it as a layer; source attributes stay in the JSON properties column (typed-layer
-        // flattening is honua-server#6640). The same call rebuilds the MVT materialization (#1628).
+        // it as a layer. Typed columns promoted from source attributes are included with
+        // id and properties (honua-server#6640). The same call rebuilds the MVT materialization (#1628).
         cancellationToken.ThrowIfCancellationRequested();
         await context.ReportProgressAsync(55, "Publishing imported layer", cancellationToken).ConfigureAwait(false);
         // Fence again immediately before publish; a lost claim must not overwrite the layer (#6154).
@@ -255,11 +276,8 @@ internal sealed partial class ImportDatasetJobExecutor : IProcessExecutor
         PublishedLayerSummary publishedLayer;
         try
         {
-            // The streaming importer materializes the generic imported_<table> with a
-            // fixed shape (id SERIAL PRIMARY KEY, geometry GEOMETRY(Geometry, srid),
-            // properties JSONB) via honua.create_import_table. Pass those known
-            // conventions through to publish so the flatten step does not depend on
-            // best-effort column auto-discovery; an explicit caller override still wins.
+            // Pass the physical primary key, each promoted attribute, and the properties
+            // jsonb column. An empty field list would also publish created_at.
             var publishRequest = new LayerPublishRequest
             {
                 Schema = resolvedSchema,
@@ -270,7 +288,7 @@ internal sealed partial class ImportDatasetJobExecutor : IProcessExecutor
                     ? ImportTableGeometryColumn
                     : request.GeometryColumn,
                 PrimaryKey = ImportTablePrimaryKey,
-                Fields = ImportTableFields,
+                Fields = BuildPublishedImportFields(importResult.TypedColumns),
                 Srid = detectedSrid,
                 StorageCrsCoordinateEpoch = importResult.StorageCrsCoordinateEpoch,
                 ServiceName = request.ServiceName,
