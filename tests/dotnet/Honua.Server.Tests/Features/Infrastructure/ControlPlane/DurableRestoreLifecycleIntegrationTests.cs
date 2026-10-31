@@ -59,7 +59,11 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
             audit.AppendAsync(Arg.Any<PreMigrationRestoreAuditLine>(), Arg.Any<CancellationToken>()).Returns(true);
             var cell = Options.Create(new RestoreCellOptions
             {
-                CellPrefix = "honua-cert-", ConnectionSecretId = "honua-cert-db", DbSubnetGroupName = "honua-cert-subnet", RdsSecurityGroupIds = ["sg-01234567"], EnvironmentTag = "cert"
+                CellPrefix = "honua-cert-",
+                ConnectionSecretId = "honua-cert-db",
+                DbSubnetGroupName = "honua-cert-subnet",
+                RdsSecurityGroupIds = ["sg-01234567"],
+                EnvironmentTag = "cert"
             });
             var monitor = Substitute.For<IOptionsMonitor<ControlPlaneOptions>>();
             monitor.CurrentValue.Returns(new ControlPlaneOptions
@@ -72,7 +76,11 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
             var targets = Substitute.For<IDeployTargetRegistry>();
             targets.GetAsync("cell", Arg.Any<CancellationToken>()).Returns(new DeployTargetDefinition
             {
-                TargetId = "cell", TargetKind = DeployTargetKind.AwsEcs, Backend = "test", Environment = "cert", TargetName = "test"
+                TargetId = "cell",
+                TargetKind = DeployTargetKind.AwsEcs,
+                Backend = "test",
+                Environment = "cert",
+                TargetName = "test"
             });
             var backend = Substitute.For<IDeployBackend>();
             backend.BackendName.Returns("test");
@@ -91,7 +99,10 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
             var payload = new DeployExecutionPayload { TargetId = "cell", DesiredRevision = "prior", CurrentRevision = "candidate", Rollback = true, BackupId = "honua-cert-snapshot" }.Serialize();
             var routed = await gateway.CreateApprovalProposalAsync("opinst-restore-" + Guid.NewGuid().ToString("N"), new OperationGatewayRequest
             {
-                Kind = OperationClass.Deploy, RequestedBy = "proposer", IdempotencyKey = Guid.NewGuid().ToString("N"), ExecutionPayload = payload,
+                Kind = OperationClass.Deploy,
+                RequestedBy = "proposer",
+                IdempotencyKey = Guid.NewGuid().ToString("N"),
+                ExecutionPayload = payload,
                 Plan = new OperationProposalPlan { Summary = "Restore prior image", ExecutionPayload = payload }
             });
             Assert.Equal(OperationGatewayOutcome.ProposalCreated, routed.Outcome);
