@@ -178,6 +178,34 @@ public sealed class GovernedWorkloadExecutorTests
     }
 
     [Fact]
+    public void LambdaSnapshot_RejectsEnvironmentReadError()
+    {
+        var configuration = new Amazon.Lambda.Model.GetFunctionConfigurationResponse
+        {
+            Environment = new Amazon.Lambda.Model.EnvironmentResponse
+            {
+                Error = new Amazon.Lambda.Model.EnvironmentError { ErrorCode = "KMSAccessDeniedException" }
+            }
+        };
+        var capture = () => LambdaWorkloadSnapshot.Capture(Image, configuration);
+        capture.Should().Throw<InvalidOperationException>().WithMessage("*environment could not be read*");
+    }
+
+    [Theory]
+    [InlineData("41")]
+    [InlineData("$LATEST")]
+    [InlineData("42")]
+    public async Task LambdaRecycle_RefusesUnreadableEnvironment(string unreadableVersion)
+    {
+        var control = new FakeLambdaControl { UnreadableVersion = unreadableVersion };
+        var act = () => LambdaAliasRecycleExecution.ExecuteAsync(control, "honua", "live", "restart", CancellationToken.None);
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        control.MovedVersion.Should().BeNull();
+        if (unreadableVersion == "42") control.Writes.Should().Equal("description", "publish", "restore");
+        else control.Writes.Should().BeEmpty();
+    }
+
+    [Fact]
     public void LambdaWorkload_IgnoresDescription_AndRefusesEnvironmentDrift()
     {
         var serving = SampleWorkload();
@@ -486,11 +514,13 @@ public sealed class GovernedWorkloadExecutorTests
 
         public bool ChangeAliasBeforeMove { get; set; }
 
+        public string? UnreadableVersion { get; init; }
+
         public Task<LambdaAliasView> ReadAliasAsync(string functionName, string aliasName, CancellationToken cancellationToken)
             => Task.FromResult(new LambdaAliasView(MovedVersion ?? "41", Serving.Image, AliasRevision));
 
         public Task<LambdaWorkloadSnapshot> ReadAsync(string functionName, string qualifier, CancellationToken cancellationToken)
-            => Task.FromResult(qualifier == "$LATEST"
+            => qualifier == UnreadableVersion ? throw new InvalidOperationException("Environment could not be read.") : Task.FromResult(qualifier == "$LATEST"
                 ? Latest
                 : qualifier == PublishedVersion
                     ? Serving

@@ -152,6 +152,11 @@ internal sealed record LambdaWorkloadSnapshot
     public static LambdaWorkloadSnapshot Capture(string? image, GetFunctionConfigurationResponse configuration)
     {
         ArgumentNullException.ThrowIfNull(configuration);
+        if (configuration.Environment?.Error is not null)
+        {
+            throw new InvalidOperationException("Lambda environment could not be read. The alias was not moved.");
+        }
+
         var vpc = configuration.VpcConfig;
         var imageConfig = configuration.ImageConfigResponse?.ImageConfig;
         var capacity = configuration.CapacityProviderConfig?.LambdaManagedInstancesCapacityProviderConfig;
@@ -382,7 +387,16 @@ internal static class LambdaAliasRecycleExecution
                 throw new InvalidOperationException(LambdaWorkloadIdentity.SameVersionMessage);
             }
 
-            var publishedSnapshot = await control.ReadAsync(functionName, published, cancellationToken).ConfigureAwait(false);
+            LambdaWorkloadSnapshot publishedSnapshot;
+            try
+            {
+                publishedSnapshot = await control.ReadAsync(functionName, published, cancellationToken).ConfigureAwait(false);
+            }
+            catch (InvalidOperationException)
+            {
+                await RestoreAsync(control, functionName, latest.Description, cancellationToken).ConfigureAwait(false);
+                throw;
+            }
             if (!string.Equals(image, publishedSnapshot.Image, StringComparison.Ordinal))
             {
                 await RestoreAsync(control, functionName, latest.Description, cancellationToken).ConfigureAwait(false);
