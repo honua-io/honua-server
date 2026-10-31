@@ -357,12 +357,14 @@ internal sealed partial class DeployWorkflowReconciler(
 
         if (current.Status is WorkflowOperationStatus.Submitted or WorkflowOperationStatus.Reconciling or WorkflowOperationStatus.Succeeded)
         {
+            var checkpointStaged = backend is ICheckpointedDeployBackend checkpointed &&
+                checkpointed.RequiresCheckpoint(current) && current.Deploy?.TrafficExposedAt is null;
             // When a progressive canary ramp is configured the current step must finish its
             // bake window before the telemetry gate is evaluated. Holding here keeps each step
             // independent of the operation-wide warmup window and preserves single-step behavior
             // (the default) when no ramp is configured. A backend-recommended rollback bypasses
             // the hold so provider-detected failures still settle promptly.
-            if (string.IsNullOrWhiteSpace(rollbackReason) && current.Deploy?.Protection == null)
+            if (!checkpointStaged && string.IsNullOrWhiteSpace(rollbackReason) && current.Deploy?.Protection == null)
             {
                 var rampBakeHold = GetCanaryRampBakeHold(current);
                 if (rampBakeHold != null)
@@ -379,7 +381,7 @@ internal sealed partial class DeployWorkflowReconciler(
             // A backend that stages the candidate without traffic gives the metrics gate nothing to measure
             // before cutover (#4617): until exposure only the pre-cutover checks run, and the full gate runs
             // from cutover inside the post-activation observation window.
-            var stagedBeforeExposure = stagesCandidateWithoutTraffic &&
+            var stagedBeforeExposure = (stagesCandidateWithoutTraffic || checkpointStaged) &&
                 current.Deploy is { TrafficExposedAt: null, Protection: null } &&
                 current.Status is WorkflowOperationStatus.Submitted or WorkflowOperationStatus.Reconciling;
             // Provider-detected failure must not wait on telemetry before restoring traffic.

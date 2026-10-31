@@ -149,11 +149,19 @@ public sealed class DeployWorkflowReconcilerLeaseContentionTests
     {
         var store = new InMemoryWorkflowOperationStore();
         var backend = new CheckpointBackend(store) { StageOneObservation = true };
-        var operation = CreateOperation() with { Status = WorkflowOperationStatus.Submitted, CurrentPhase = ICheckpointedDeployBackend.ActivatedPhase };
+        var original = CreateOperation();
+        var operation = original with
+        {
+            Status = WorkflowOperationStatus.Submitted,
+            CurrentPhase = ICheckpointedDeployBackend.ActivatedPhase,
+            Deploy = original.Deploy! with { CanaryRamp = new CanaryRampSpec { StepWeights = [10, 100], StepBakeDuration = TimeSpan.FromSeconds(1) } }
+        };
         await store.TryCreateAsync(operation);
         var reconciler = CreateReconciler(store, backend, new NullTelemetryEvaluator());
         await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
-        (await store.GetAsync(operation.OperationId))!.Deploy!.TrafficExposedAt.Should().BeNull();
+        var staged = (await store.GetAsync(operation.OperationId))!;
+        staged.Deploy!.TrafficExposedAt.Should().BeNull();
+        staged.Deploy.CanaryRamp!.CurrentStepStartedAt.Should().BeNull();
         await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
         (await store.GetAsync(operation.OperationId))!.Deploy!.TrafficExposedAt.Should().NotBeNull();
     }
