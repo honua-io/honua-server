@@ -1186,7 +1186,7 @@ internal sealed partial class DeployWorkflowReconciler(
             // from the synchronized parameter, so backends shift traffic without a new contract.
             var stepObservation = await backend.StartAsync(rampedOperation, cancellationToken).ConfigureAwait(false);
             if (stepObservation.Status == WorkflowOperationStatus.Failed &&
-                backend is ICheckpointedDeployBackend checkpointed && checkpointed.RequiresCheckpoint(current))
+                backend is ICheckpointedDeployBackend rampCheckpoint && rampCheckpoint.RequiresCheckpoint(current))
             {
                 var rollback = await backend.RollbackAsync(current, cancellationToken).ConfigureAwait(false);
                 var rollbackStatus = rollback.Status is WorkflowOperationStatus.RollbackRequested or WorkflowOperationStatus.RolledBack
