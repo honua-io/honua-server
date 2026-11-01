@@ -15,6 +15,16 @@ public sealed class LambdaImageCheckpointTests
     private const string Image = "123456789012.dkr.ecr.us-east-1.amazonaws.com/honua@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
     [Fact]
+    public void PublishedImage_AcceptsNormalizedDigestAndRejectsDifferentIdentity()
+    {
+        var tagged = Image.Replace("@sha256:", ":v1@sha256:", StringComparison.Ordinal);
+        AwsSdkLambdaImageClient.MatchesApprovedImage(tagged, Image, null).Should().BeTrue();
+        AwsSdkLambdaImageClient.MatchesApprovedImage(tagged, null, Image).Should().BeTrue();
+        AwsSdkLambdaImageClient.MatchesApprovedImage(tagged, Image.Replace("/honua@", "/other@", StringComparison.Ordinal), null).Should().BeFalse();
+        AwsSdkLambdaImageClient.MatchesApprovedImage(tagged, null, "honua:latest").Should().BeFalse();
+    }
+
+    [Fact]
     public void PublishRequest_RequiresAndBindsUpdatePreconditions()
     {
         var request = AwsSdkLambdaImageClient.BuildPublishRequest("honua", "hash", "revision");

@@ -106,12 +106,21 @@ internal sealed class AwsSdkLambdaImageClient : IAwsLambdaImageClient
                 new GetFunctionRequest { FunctionName = functionName, Qualifier = published.Version },
                 cancellationToken)
             .ConfigureAwait(false);
-        if (!string.Equals(publishedFunction.Code?.ResolvedImageUri, imageUri, StringComparison.Ordinal))
+        if (!MatchesApprovedImage(imageUri, publishedFunction.Code?.ResolvedImageUri, publishedFunction.Code?.ImageUri))
         {
             throw new InvalidOperationException("Published Lambda image does not match the approved image. The alias was not moved.");
         }
 
         return published.Version;
+    }
+
+    internal static bool MatchesApprovedImage(string approved, string? resolved, string? imageUri)
+    {
+        var actual = string.IsNullOrWhiteSpace(resolved) ? imageUri : resolved;
+        return ReleaseImageDigest.TryParse(approved, out var approvedRepository, out var approvedDigest)
+            && ReleaseImageDigest.TryParse(actual, out var actualRepository, out var actualDigest)
+            && string.Equals(approvedRepository, actualRepository, StringComparison.Ordinal)
+            && string.Equals(approvedDigest, actualDigest, StringComparison.Ordinal);
     }
 
     internal static PublishVersionRequest BuildPublishRequest(string functionName, string? codeSha256, string? revisionId)
