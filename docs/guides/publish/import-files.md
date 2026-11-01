@@ -107,7 +107,8 @@ collection `geometryType` and `storageCrs`, and MCP layer catalog/description me
 Null geometries do not change the inferred family. Mixed imports remain generic
 `GEOMETRY`; the publication validator rejects mixed geometry rather than advertising
 a single type. Existing typed attribute columns and the complete properties document
-remain available.
+remain available. Older imports gain these constraints when reimported; republish
+existing layers to refresh their catalog geometry metadata.
 
 ### GeoParquet input contract
 

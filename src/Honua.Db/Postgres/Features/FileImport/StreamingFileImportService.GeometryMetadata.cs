@@ -24,6 +24,7 @@ internal sealed partial class StreamingFileImportService
         await using var command = new NpgsqlCommand(
             $"ALTER TABLE {qualified} DROP CONSTRAINT IF EXISTS {ImportedGeometryTypeConstraint}",
             connection, transaction);
+        command.CommandTimeout = 0;
         await command.ExecuteNonQueryAsync(cancellationToken);
         return true;
     }
@@ -48,6 +49,8 @@ internal sealed partial class StreamingFileImportService
         var qualified = $"{QuoteIdentifier(schema)}.{QuoteIdentifier(table)}";
         // DROP CONSTRAINT holds the table lock until commit, so concurrent writes
         // cannot change the inferred set between this scan and constraint validation.
+        // Both passes can read the whole import. Match typed-column promotion's
+        // bulk timeout policy; cancellation still follows the import commit path.
         string? geometryType = null;
         await using (var command = new NpgsqlCommand($"""
             SELECT DISTINCT ST_GeometryType(geometry)
@@ -55,8 +58,9 @@ internal sealed partial class StreamingFileImportService
             WHERE geometry IS NOT NULL
             LIMIT 2
             """, connection, transaction))
-        await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
         {
+            command.CommandTimeout = 0;
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
             if (await reader.ReadAsync(cancellationToken))
             {
                 geometryType = reader.GetString(0);
@@ -86,6 +90,7 @@ internal sealed partial class StreamingFileImportService
                 ALTER TABLE {qualified} ADD CONSTRAINT {ImportedGeometryTypeConstraint}
                 CHECK (GeometryType(geometry) = '{type}' OR GeometryType(geometry) = '{type}M')
                 """, connection, transaction);
+            command.CommandTimeout = 0;
             await command.ExecuteNonQueryAsync(cancellationToken);
         }
 

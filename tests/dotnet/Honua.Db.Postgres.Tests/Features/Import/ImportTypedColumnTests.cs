@@ -610,6 +610,50 @@ public sealed class ImportTypedColumnTests(PostgresFixture fixture)
         }
     }
 
+    [IntegrationTheory]
+    [InlineData("st_geometrytype")]
+    [InlineData("geometrytype")]
+    [Operation(Operations.Import)]
+    public async Task ImportFileAsync_BulkGeometryProjection_UsesBulkTimeout(string functionName)
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(ImportTypedColumnTests));
+        try
+        {
+            await InstallImportFunctionsAsync();
+            // Make either inference or constraint validation exceed the connection's
+            // one-second default without requiring a large or slow input fixture.
+            await fixture.ExecuteDdlUnderLockAsync($$"""
+                CREATE FUNCTION "{{schema}}".{{functionName}}(value public.geometry) RETURNS text
+                LANGUAGE plpgsql AS $body$
+                BEGIN
+                    PERFORM pg_sleep(1.1);
+                    RETURN public.{{functionName}}(value);
+                END;
+                $body$;
+                """);
+            var settings = new NpgsqlConnectionStringBuilder(fixture.ConnectionString) { CommandTimeout = 1 };
+            await using var dataSource = NpgsqlDataSource.Create(settings.ConnectionString);
+            var provider = new TestConnectionProvider(dataSource, schema);
+            var service = new StreamingFileImportService(
+                provider,
+                new CrsDetectionService(provider, NullLogger<CrsDetectionService>.Instance),
+                new FileFormatDetectionService(NullLogger<FileFormatDetectionService>.Instance),
+                new NoopPerformanceMonitor(), NullLogger<StreamingFileImportService>.Instance,
+                schemaConfiguration: ImportTestSchemaConfiguration.WithOperational(schema));
+            var imported = await ImportIntoAsync(service, schema, "slow_geometry", """
+                {"type":"FeatureCollection","features":[
+                  {"type":"Feature","geometry":{"type":"Point","coordinates":[1,2]},"properties":{"name":"Alpha"}},
+                  {"type":"Feature","geometry":{"type":"Point","coordinates":[3,4]},"properties":{"name":"Bravo"}}]}
+                """, ImportLoadMode.Replace, []);
+            imported.FeatureCount.Should().Be(2);
+            (await ImportedGeometryTypeAsync(schema, imported.PhysicalTableName!)).Should().Be("POINT");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
     private async Task<string?> ImportedGeometryTypeAsync(string schema, string table)
     {
         await using var connection = await fixture.DataSource.OpenConnectionAsync();
