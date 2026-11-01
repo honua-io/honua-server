@@ -28,8 +28,6 @@
       "displayName": "Admin Control Plane",
       "category": "ControlPlane",
       "edition": "Community",
-      "status": null,
-      "entryCount": 390,
       "provingTestCount": 1483,
       "maturity": {
         "implemented": 387,
@@ -1732,12 +1730,12 @@
           }
         },
         {
-          "clientLane": "arcgis-stub",
+          "clientLane": "geoservices-rest-stub",
           "protocol": "featureserver",
           "freshness": {
-            "state": "stale",
-            "ageDays": 114,
-            "runDate": "2026-05-07T14:05:19.209522Z"
+            "state": "unknown",
+            "ageDays": null,
+            "runDate": null
           }
         },
         {
@@ -1883,12 +1881,12 @@
           }
         },
         {
-          "clientLane": "arcgis-stub",
+          "clientLane": "geoservices-rest-stub",
           "protocol": "mapserver",
           "freshness": {
-            "state": "stale",
-            "ageDays": 114,
-            "runDate": "2026-05-07T14:05:19.321037Z"
+            "state": "unknown",
+            "ageDays": null,
+            "runDate": null
           }
         },
         {

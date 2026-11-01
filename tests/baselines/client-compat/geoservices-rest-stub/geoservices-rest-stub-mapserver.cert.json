@@ -3,7 +3,7 @@
   "run_id": "20260507T140519Z",
   "run_date": "2026-05-07T14:05:19.321037+00:00",
   "server_version": "local",
-  "client_lane": "arcgis-stub",
+  "client_lane": "geoservices-rest-stub",
   "client_version": "stub-1.0",
   "protocol": "mapserver",
   "environment": "local",

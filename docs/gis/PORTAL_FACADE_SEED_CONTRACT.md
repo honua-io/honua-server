@@ -4,7 +4,7 @@ _Epic #1240 (ArcGIS Portal/Sharing facade) · child #1372 (conformance) · child
 
 This document is the **server-owned contract** that downstream consumers — the
 `honua-sdk-js` `@honua/sdk-esri-compat` repoint path, the `honua-sdk-dotnet` /
-`honua-sdk-python` clients, the `arcgis-stub` `portal` conformance lane, and the
+`honua-sdk-python` clients, the `geoservices-rest-stub` `portal` conformance lane, and the
 licensed ArcGIS Pro / Field Maps evidence runs — target when validating that a
 packaged Esri client can discover and open Honua content as Portal items.
 
@@ -78,17 +78,16 @@ Errors follow the Esri envelope `{ "error": { "code", "message", "details" } }`.
 
 ## Conformance & evidence
 
-- **Automated (unlicensed):** evidence identifier `arcgis-stub`, envelope
-  `tests/baselines/client-compat/arcgis-stub/arcgis-stub-portal.cert.json`,
+- **Automated (unlicensed):** evidence identifier `geoservices-rest-stub`, envelope
+  `tests/baselines/client-compat/geoservices-rest-stub/geoservices-rest-stub-portal.cert.json`,
   exercises the sequence above as CERT-PRTL-\* — see the
-  [certification matrix](CROSS_CLIENT_CERTIFICATION_MATRIX.md#arcgis-portal-facade-lane-arcgis-stub-portal-protocol).
+  [certification matrix](CROSS_CLIENT_CERTIFICATION_MATRIX.md#arcgis-portal-facade-lane-geoservices-rest-stub-portal-protocol).
 - **Contract/integration (server):**
   `tests/dotnet/Honua.Server.Tests/Features/Sharing/PortalFacadeDiscoveryContractTests.cs`
   asserts the tiered projection and Esri wire shapes in-process.
 - **Desktop client:** ArcGIS Pro / Field Maps compatibility is nominative. The
   evidence identifier is `client_lane: "desktop-arcgis"`. Receipts stay in
   private `honua-esri-compat`; see
-  [`ARCGIS_PRO_LICENSED_EVIDENCE.md`](../internal/evidence/ARCGIS_PRO_LICENSED_EVIDENCE.md).
   No desktop receipt is linked yet (#1372/#1096).
 
 ## Consuming repos

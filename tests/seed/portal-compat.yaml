@@ -3,7 +3,7 @@ version: 1
 #
 # Seeds three FeatureServer services whose RBAC access policy spans the full
 # public/org/private ladder the ArcGIS Portal facade projects onto the Esri
-# `access` string (public / org / private). The client-compat arcgis-stub lane
+# `access` string (public / org / private). The client-compat geoservices-rest-stub lane
 # and the licensed ArcGIS Pro / Field Maps evidence runs discover these through
 # /sharing/rest/search + /sharing/rest/content/items/{id}, and the projected
 # `access` must reflect the exported RBAC decision — an anonymous caller sees

@@ -37,7 +37,7 @@ echo "Applying auth breadth YAML seed: tests/seed/client-compat-auth-wave1.yaml"
 bash tests/seed/apply-yaml-seed.sh tests/seed/client-compat-auth-wave1.yaml
 
 # Portal/Sharing facade fixture (epic #1240 / #1372): public/org/private-tier
-# services the arcgis-stub Portal lane. Desktop evidence id is desktop-arcgis.
+# services the geoservices-rest-stub Portal lane. Desktop evidence id is desktop-arcgis.
 # Applied after the base SQL seed
 # (which owns honua.seed_metadata_v2_compat_snapshot) so the Metadata v2 graph
 # the Portal item projector reads includes the tiered services.
