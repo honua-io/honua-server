@@ -61,6 +61,7 @@ def rpc(base, key, session, method, params, ident):
 
 def wait_for_proposal(base, key, proposal, expected, proposer_key, session, timeout=1500):
     deadline = time.monotonic() + timeout
+    status = resource_status = "not observed"
     while time.monotonic() < deadline:
         detail, _ = request(base, f"/api/v1/admin/proposals/{proposal}", key)
         status = detail["status"].lower()
@@ -68,15 +69,15 @@ def wait_for_proposal(base, key, proposal, expected, proposer_key, session, time
                           {"uri": f"honua://proposals/{proposal}"}, 99)
         proposal_resource = json.loads(resource["contents"][0]["text"])
         resource_status = proposal_resource["status"].lower()
-        if status in ("completed", "failed", "rejected", "cancelled") and status == resource_status:
-            actual = "succeeded" if status == "completed" else "failed"
+        if status in ("completed", "succeeded", "failed", "rejected", "cancelled") and status == resource_status:
+            actual = "succeeded" if status in ("completed", "succeeded") else "failed"
             assert actual == expected, f"unexpected proposal terminal state: {status}"
             assert detail.get("resolutionReason") == proposal_resource.get("resolutionReason")
             if status == "failed":
                 assert detail.get("resolutionReason"), "failed execution must report its reason"
             return detail
         time.sleep(5)
-    raise AssertionError("operation did not reach its terminal state")
+    raise AssertionError(f"operation did not reach its terminal state (REST={status}, MCP={resource_status})")
 
 
 def wait_for_approval(base, key, proposal, timeout=30):
@@ -286,7 +287,7 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
                 assert error.code in (400, 403, 409)
             assert dc("ps", "--status", "running", "-q", service_name) == ""
             request(base, f"/api/v1/admin/proposals/{remediation}/approve", approver_key, {})
-            wait_for_proposal(base, approver_key, remediation, "succeeded", proposer_key, session)
+            wait_for_proposal(base, approver_key, remediation, "succeeded", proposer_key, session, timeout=180)
             deadline = time.monotonic() + 90
             while True:
                 health = call("honua_ops_health", {}, 44)
