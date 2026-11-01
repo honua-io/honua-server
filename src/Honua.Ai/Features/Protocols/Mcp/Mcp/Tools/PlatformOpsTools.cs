@@ -31,9 +31,8 @@ internal sealed class PlatformReleaseStatusTool(ILogger<PlatformReleaseStatusToo
         Name = ToolName,
         Title = "Platform release status",
         Description =
-            "Read-only deterministic platform_release / server_upgrade status. Reports desired artifacts "
-            + "and live serving image digests and server versions for managed Compose targets, with skew "
-            + "and unavailable observations explicit. Distinct from hosted-content deployments.",
+            "platform_release / server_upgrade status: desired artifacts, live Compose image digests/server "
+            + "versions, skew or unavailable readback. Distinct from hosted-content deployments.",
         InputSchema = McpPlatformOpsSchemas.PlatformReleaseStatusInputSchema,
         OutputSchema = McpPlatformOpsSchemas.PlatformReleaseStatusOutputSchema,
         Annotations = McpToolAnnotationSets.ReadOnly("Platform release status")
