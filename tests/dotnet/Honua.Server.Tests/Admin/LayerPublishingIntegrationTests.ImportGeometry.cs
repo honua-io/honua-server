@@ -128,10 +128,10 @@ public sealed partial class LayerPublishingIntegrationTests
         using var items = JsonDocument.Parse(await ReadOgcItemsAsync("sortby=population"));
         var ogcFeatures = items.RootElement.GetProperty("features");
         ogcFeatures.GetArrayLength().Should().Be(2);
-        ogcFeatures[0].GetProperty("geometry").GetProperty("type").GetString().Should().Be(
-            scenario == "Mixed" ? "Polygon" : scenario == "PointCsv" ? "Point" : scenario);
-        ogcFeatures[1].GetProperty("geometry").GetProperty("type").GetString().Should().Be(
-            scenario is "Mixed" or "PointCsv" ? "Point" : scenario);
+        foreach (var feature in ogcFeatures.EnumerateArray())
+        {
+            feature.GetProperty("geometry").GetProperty("type").GetString().Should().Be(canonicalType);
+        }
         ogcFeatures[0].GetProperty("properties").GetProperty("population").GetInt64().Should().Be(2);
         using var features = JsonDocument.Parse(await ReadFeatureServerAsync("1=1", "population ASC"));
         var serverFeatures = features.RootElement.GetProperty("features");
