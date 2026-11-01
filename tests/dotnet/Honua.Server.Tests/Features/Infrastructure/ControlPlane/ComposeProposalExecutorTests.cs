@@ -558,6 +558,8 @@ public sealed class ComposeProposalExecutorTests
         var plan = await executor.PlanAsync(request);
         Assert.NotNull(plan);
         Assert.Empty(plan.BlockingReasons);
+        Assert.Contains(plan.Diff, line => line.Contains(backup, StringComparison.Ordinal));
+        Assert.Contains(plan.DryRun, line => line.Contains(backup, StringComparison.Ordinal));
         var id = await executor.ExecuteAsync(request, payload.Serialize());
         Assert.NotNull(id);
         var operation = await service.GetAsync(id);

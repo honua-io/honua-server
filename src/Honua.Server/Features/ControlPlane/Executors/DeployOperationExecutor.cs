@@ -66,13 +66,16 @@ internal sealed class DeployOperationExecutor(DeployWorkflowService deployWorkfl
             diff.Add($"backup: {payload.BackupId}");
         }
 
+        var dryRun = new List<string>();
+        if (planResult.Plan.RequiresOutOfBandMigrations) dryRun.Add("requires out-of-band migrations");
+        if (payload.Rollback && !string.IsNullOrWhiteSpace(payload.BackupId))
+            dryRun.Add($"Verify backup {payload.BackupId}; restore it before starting the prior revision when required by reader compatibility.");
+
         return new OperationProposalPlan
         {
             Summary = $"Deploy {payload.DesiredRevision} to {planResult.Target.TargetId}",
             Diff = diff,
-            DryRun = planResult.Plan.RequiresOutOfBandMigrations
-                ? ["requires out-of-band migrations"]
-                : Array.Empty<string>(),
+            DryRun = dryRun,
             RiskLevel = planResult.Plan.RequiresOutOfBandMigrations ? ProposalRiskLevel.High : ProposalRiskLevel.Medium,
             BlockingReasons = planResult.Plan.BlockingReasons,
             Warnings = planResult.Plan.Warnings,
@@ -154,6 +157,9 @@ internal sealed class DeployOperationExecutor(DeployWorkflowService deployWorkfl
     /// <summary>Reads the saved deploy workflow without collapsing approval and execution phases.</summary>
     internal Task<WorkflowOperationRecord?> GetWorkflowAsync(string operationId, CancellationToken cancellationToken)
         => deployWorkflowService.GetAsync(operationId, cancellationToken);
+
+    internal Task RecordInstalledRevisionAsync(string targetId, string revision, WorkflowOperationRecord convergence, CancellationToken cancellationToken)
+        => deployWorkflowService.RecordInstalledRevisionAsync(targetId, revision, convergence, cancellationToken);
 
     private static OperationBackendStatus BackendStatus(WorkflowOperationStatus status) => new()
     {

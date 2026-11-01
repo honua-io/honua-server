@@ -79,6 +79,7 @@ internal sealed partial class ComposeProjectController : IDisposable
                 "status" => await StatusAsync(request, cancellationToken).ConfigureAwait(false),
                 "converge" => await ConvergeAsync(request, cancellationToken).ConfigureAwait(false),
                 "rollback" => await RollbackCoreAsync(request, cancellationToken).ConfigureAwait(false),
+                "plan-rollback" => await RollbackCoreAsync(request, cancellationToken, preview: true).ConfigureAwait(false),
                 "restart" => await RestartAsync(request, cancellationToken).ConfigureAwait(false),
                 _ => ComposeExecutorProtocol.Refuse(
                     request.RequestId,
@@ -86,7 +87,7 @@ internal sealed partial class ComposeProjectController : IDisposable
                     "The executor op is not allowlisted.")
             };
 
-            if (!string.Equals(request.Op, "status", StringComparison.Ordinal))
+            if (request.Op is not ("status" or "plan-rollback"))
             {
                 response = Finish(request, response);
             }
@@ -235,7 +236,8 @@ internal sealed partial class ComposeProjectController : IDisposable
 
     private async Task<ComposeExecutorResponse> RollbackCoreAsync(
         ComposeExecutorRequest request,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool preview = false)
     {
         if (!ComposeExecutorRules.IsImmutableImage(request.Image))
         {
@@ -324,6 +326,21 @@ internal sealed partial class ComposeProjectController : IDisposable
         if (decision.Kind == RestoreDecisionKind.Refuse)
             return Refuse(request, decision.Code!, decision.Message!);
         var restoreRequired = decision.Kind == RestoreDecisionKind.RestoreBeforeStart;
+        if (preview)
+        {
+            return new ComposeExecutorResponse
+            {
+                RequestId = request.RequestId,
+                Ok = true,
+                ReadbackComplete = true,
+                BackupId = manifest.BackupId,
+                RunningImage = live.ImageId,
+                SchemaVersion = database.SchemaVersion,
+                Message = restoreRequired
+                    ? "Restore the selected verified backup before starting the prior revision."
+                    : "The selected verified backup is available; database restore is not required."
+            };
+        }
         if (live.IsComplete && string.Equals(live.ImageId, inspected.Id, StringComparison.Ordinal) && !restoreRequired)
         {
             return Success(request, request.Image!, live, manifest.BackupId);

@@ -199,11 +199,31 @@ public sealed class ComposeProposalExecutorIntegrationTests
             Assert.NotNull(manifest);
             Assert.Equal(rc1Id, manifest.Image);
             Assert.Equal(140, manifest.SchemaVersion);
+            var auditBeforePreview = await File.ReadAllTextAsync(Path.Combine(backupDir, "audit.jsonl")).ConfigureAwait(false);
+            var preview = await client.ExecuteAsync(new ComposeExecutorRequest
+            {
+                Op = "plan-rollback",
+                Image = rc1Id,
+                RequestId = "preview"
+            }).ConfigureAwait(false);
+            Assert.True(preview.Ok && preview.ReadbackComplete, "Rollback preview must verify the selected backup.");
+            Assert.Equal(manifest.BackupId, preview.BackupId);
+            Assert.Equal(restartedId, await ServiceContainerIdAsync(projectDir, projectName, "honua").ConfigureAwait(false));
+            Assert.Equal("142", (await PsqlAsync(projectDir, projectName, SchemaSql).ConfigureAwait(false)).Trim());
+            Assert.Equal(auditBeforePreview, await File.ReadAllTextAsync(Path.Combine(backupDir, "audit.jsonl")).ConfigureAwait(false));
             var marker = "\"sha256\":\"" + manifest.Sha256 + "\"";
             var tampered = manifestText.Replace(marker, "\"sha256\":\"" + new string('0', 64) + "\"", StringComparison.Ordinal);
             Assert.NotEqual(manifestText, tampered);
             await File.WriteAllTextAsync(manifestPath, tampered).ConfigureAwait(false);
 
+            var badPreview = await client.ExecuteAsync(new ComposeExecutorRequest
+            {
+                Op = "plan-rollback",
+                Image = rc1Id,
+                RequestId = "preview-tampered"
+            }).ConfigureAwait(false);
+            Assert.False(badPreview.Ok);
+            Assert.Equal(PreMigrationRestoreCodes.BackupChecksumMismatch, badPreview.Code);
             var bad = await SubmitRollbackAsync(service, rc1Id, candidateId, "compose-it-bad-backup").ConfigureAwait(false);
             Assert.Equal(WorkflowOperationStatus.Failed, bad.Status);
             Assert.Contains(PreMigrationRestoreCodes.BackupChecksumMismatch, bad.CurrentPhase, StringComparison.Ordinal);

@@ -208,7 +208,7 @@ internal sealed partial class DurableRestoreWorker(
                 string.Equals(target.TargetId, payload.TargetId, StringComparison.Ordinal)) == true;
             if (local)
             {
-                if (!await ClaimCellAsync(id, lostLease.Token, allowLocalRecovery: payload.Rollback).ConfigureAwait(false)) return;
+                if (!await ClaimCellAsync(id, lostLease.Token).ConfigureAwait(false)) return;
                 await StartLocalAsync(record, payload, lostLease.Token).ConfigureAwait(false);
                 return;
             }
@@ -287,6 +287,8 @@ internal sealed partial class DurableRestoreWorker(
             if (!prior.Ok || !prior.ReadbackComplete || !ComposeExecutorRules.IsImmutableImage(prior.RunningImage))
                 throw new InvalidOperationException("The prior image could not be verified.");
             payload = payload with { CurrentRevision = prior.RunningImage };
+            await deploy.RecordInstalledRevisionAsync(payload.TargetId, prior.RunningImage!, record,
+                cancellationToken).ConfigureAwait(false);
         }
         var workflowId = DeployWorkflowService.CreateOperationId(record.OperationId);
         var checkpoint = record with
@@ -390,8 +392,8 @@ internal sealed partial class DurableRestoreWorker(
 
     // A short Redis lease serializes updates to the durable owner record. The owner survives
     // process replacement and remains held until the full deploy and readback have succeeded.
-    // Failed or missing owners require operator intervention rather than another restore.
-    internal async Task<bool> ClaimCellAsync(string id, CancellationToken cancellationToken, bool allowLocalRecovery = false)
+    // Terminal owners are reclaimable only after any child deployment is also terminal.
+    internal async Task<bool> ClaimCellAsync(string id, CancellationToken cancellationToken)
     {
         if (!await store.TryAcquireLeaseAsync(CellOwnerId, _owner, Lease, cancellationToken).ConfigureAwait(false)) return false;
         try
@@ -416,26 +418,17 @@ internal sealed partial class DurableRestoreWorker(
                 }, OwnerRetention, cancellationToken).ConfigureAwait(false);
             }
             if (string.Equals(owner.CurrentPhase, id, StringComparison.Ordinal)) return true;
+            WorkflowOperationRecord? previous = null;
             if (!string.IsNullOrEmpty(owner.CurrentPhase))
             {
-                var previous = await store.GetAsync(owner.CurrentPhase, cancellationToken).ConfigureAwait(false);
-                if (previous?.Status != WorkflowOperationStatus.Succeeded)
-                {
-                    // An approved rollback may take over a terminal local workflow. The sidecar
-                    // serializes mutations and independently verifies the backup before restoring.
-                    var checkpoint = previous?.PreMigrationRestore;
-                    if (!allowLocalRecovery || previous?.Status != WorkflowOperationStatus.Failed ||
-                        checkpoint?.Phase != "awaiting-local-deploy" || string.IsNullOrWhiteSpace(checkpoint.DeployOperationId)) return false;
-                    var previousPayload = DeployExecutionPayload.Parse(checkpoint.Payload);
-                    var isLocal = controlPlane?.CurrentValue.DeployTargets.Any(target =>
-                        target.TargetKind == DeployTargetKind.LocalCompose &&
-                        string.Equals(target.TargetId, previousPayload?.TargetId, StringComparison.Ordinal)) == true;
-                    var workflow = await deploy.GetWorkflowAsync(checkpoint.DeployOperationId, cancellationToken).ConfigureAwait(false);
-                    if (!isLocal || workflow?.Status is not (WorkflowOperationStatus.Failed or WorkflowOperationStatus.RolledBack or WorkflowOperationStatus.Succeeded)) return false;
-                }
+                previous = await store.GetAsync(owner.CurrentPhase, cancellationToken).ConfigureAwait(false);
+                if (!await RestoreDeployAdmission.CanReleaseOwnerAsync(store, previous, cancellationToken).ConfigureAwait(false)) return false;
             }
-            return await store.TrySetAsync(owner with { CurrentPhase = id, UpdatedAt = DateTimeOffset.UtcNow },
+            var claimed = await store.TrySetAsync(owner with { CurrentPhase = id, UpdatedAt = DateTimeOffset.UtcNow },
                 OwnerRetention, cancellationToken).ConfigureAwait(false);
+            if (claimed && previous?.Status == WorkflowOperationStatus.Failed)
+                RestoreDeployAdmission.LogFailedOwnerReleased(logger, previous.OperationId);
+            return claimed;
         }
         finally
         {
@@ -502,8 +495,8 @@ internal sealed partial class DurableRestoreWorker(
             CompletedAt = DateTimeOffset.UtcNow,
             CurrentPhase = status == WorkflowOperationStatus.Succeeded ? "Restore and protection window completed." : "Restore requires operator attention.",
             ErrorMessage = code
-        }, status == WorkflowOperationStatus.Succeeded ? OwnerRetention : null, cancellationToken).ConfigureAwait(false);
-        if (written && status == WorkflowOperationStatus.Succeeded)
+        }, OwnerRetention, cancellationToken).ConfigureAwait(false);
+        if (written)
             await ReleaseCellAsync(record.OperationId, cancellationToken).ConfigureAwait(false);
     }
 
@@ -513,8 +506,12 @@ internal sealed partial class DurableRestoreWorker(
         try
         {
             var owner = await store.GetAsync(CellOwnerId, cancellationToken).ConfigureAwait(false);
-            if (owner is not null && string.Equals(owner.CurrentPhase, id, StringComparison.Ordinal))
-                await store.TrySetAsync(owner with { CurrentPhase = null, UpdatedAt = DateTimeOffset.UtcNow }, OwnerRetention, cancellationToken).ConfigureAwait(false);
+            var operation = await store.GetAsync(id, cancellationToken).ConfigureAwait(false);
+            if (owner is not null && string.Equals(owner.CurrentPhase, id, StringComparison.Ordinal) &&
+                await RestoreDeployAdmission.CanReleaseOwnerAsync(store, operation, cancellationToken).ConfigureAwait(false) &&
+                await store.TrySetAsync(owner with { CurrentPhase = null, UpdatedAt = DateTimeOffset.UtcNow }, OwnerRetention, cancellationToken).ConfigureAwait(false) &&
+                operation?.Status == WorkflowOperationStatus.Failed)
+                RestoreDeployAdmission.LogFailedOwnerReleased(logger, id);
         }
         finally
         {

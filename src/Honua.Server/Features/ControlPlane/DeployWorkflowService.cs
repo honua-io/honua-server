@@ -72,6 +72,40 @@ internal sealed partial class DeployWorkflowService
 
     public bool HasDurableStore => _workflowStore != null;
 
+    /// <summary>Retains the verified installed Compose revision before the first managed convergence.</summary>
+    internal async Task RecordInstalledRevisionAsync(string targetId, string revision, WorkflowOperationRecord convergence, CancellationToken cancellationToken)
+    {
+        EnsureDurableStoreConfigured();
+        var id = "compose-baseline-" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(targetId)));
+        var existing = await _workflowStore!.GetAsync(id, cancellationToken).ConfigureAwait(false);
+        if (existing is not null)
+        {
+            if (existing.Kind != WorkflowOperationKind.Deploy || existing.Status != WorkflowOperationStatus.Succeeded ||
+                !string.Equals(existing.Deploy?.TargetId, targetId, StringComparison.Ordinal))
+                throw new InvalidOperationException("The installed Compose baseline is inconsistent.");
+            return;
+        }
+        var target = await _targetRegistry.GetAsync(targetId, cancellationToken).ConfigureAwait(false);
+        if (target?.TargetKind != DeployTargetKind.LocalCompose || !ComposeExecutorRules.IsImmutableImage(revision))
+            throw new InvalidOperationException("The installed Compose revision could not be recorded.");
+        var observedAt = DateTimeOffset.UtcNow;
+        var baseline = new WorkflowOperationRecord
+        {
+            OperationId = id,
+            Kind = WorkflowOperationKind.Deploy,
+            Status = WorkflowOperationStatus.Succeeded,
+            CreatedAt = convergence.CreatedAt.AddMilliseconds(-1),
+            UpdatedAt = observedAt,
+            CompletedAt = observedAt,
+            CurrentPhase = "Verified installed revision before the first managed convergence.",
+            Deploy = BuildSpec(target, revision, revision, null) with { ArtifactReference = revision, RequiresApproval = false },
+            Audit = convergence.Audit with { Reason = "Installed serving revision baseline." }
+        };
+        if (!await _workflowStore.TryCreateAsync(baseline, TimeSpan.FromDays(365), cancellationToken).ConfigureAwait(false) &&
+            await _workflowStore.GetAsync(id, cancellationToken).ConfigureAwait(false) is null)
+            throw new InvalidOperationException("The installed Compose revision could not be retained.");
+    }
+
     private bool RestoreAdmissionEnabled =>
         (_restoreOptions?.Value is { } options && (!string.IsNullOrWhiteSpace(options.CellPrefix) || options.Revisions.Count != 0)) ||
         _controlPlaneOptions?.CurrentValue.DeployTargets.Any(target => target.TargetKind == DeployTargetKind.LocalCompose) == true;
@@ -378,7 +412,7 @@ internal sealed partial class DeployWorkflowService
     {
         EnsureDurableStoreConfigured();
         await using var admission = RestoreAdmissionEnabled
-            ? await RestoreDeployAdmission.AcquireAsync(_workflowStore!, CreateOperationId(idempotencyKey), restoreOwnerId, false, cancellationToken).ConfigureAwait(false)
+            ? await RestoreDeployAdmission.AcquireAsync(_workflowStore!, CreateOperationId(idempotencyKey), restoreOwnerId, false, cancellationToken, _logger).ConfigureAwait(false)
             : null;
         if (admission is not null) cancellationToken = admission.Token;
 
@@ -550,7 +584,7 @@ internal sealed partial class DeployWorkflowService
     {
         EnsureDurableStoreConfigured();
         await using var admission = RestoreAdmissionEnabled
-            ? await RestoreDeployAdmission.AcquireAsync(_workflowStore!, operationId, restoreOwnerId, false, cancellationToken).ConfigureAwait(false)
+            ? await RestoreDeployAdmission.AcquireAsync(_workflowStore!, operationId, restoreOwnerId, false, cancellationToken, _logger).ConfigureAwait(false)
             : null;
         if (admission is not null) cancellationToken = admission.Token;
 
@@ -742,7 +776,7 @@ internal sealed partial class DeployWorkflowService
     {
         EnsureDurableStoreConfigured();
         await using var admission = RestoreAdmissionEnabled
-            ? await RestoreDeployAdmission.AcquireAsync(_workflowStore!, operationId, null, true, cancellationToken).ConfigureAwait(false)
+            ? await RestoreDeployAdmission.AcquireAsync(_workflowStore!, operationId, null, true, cancellationToken, _logger).ConfigureAwait(false)
             : null;
         if (admission is not null) cancellationToken = admission.Token;
 
@@ -944,7 +978,7 @@ internal sealed partial class DeployWorkflowService
     {
         EnsureDurableStoreConfigured();
         await using var admission = RestoreAdmissionEnabled
-            ? await RestoreDeployAdmission.AcquireAsync(_workflowStore!, operationId, null, false, cancellationToken).ConfigureAwait(false)
+            ? await RestoreDeployAdmission.AcquireAsync(_workflowStore!, operationId, null, false, cancellationToken, _logger).ConfigureAwait(false)
             : null;
         if (admission is not null) cancellationToken = admission.Token;
 
