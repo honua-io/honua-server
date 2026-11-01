@@ -126,15 +126,22 @@ internal sealed partial class OpsActionAdminConfigChangeApplier(
         OpsActionRequest request,
         CancellationToken cancellationToken)
     {
-        if (!string.IsNullOrWhiteSpace(request.Target))
+        var options = services.GetService<Microsoft.Extensions.Options.IOptions<ComposeExecutorOptions>>()?.Value;
+        if (request.Target is not null)
         {
+            if (options is null || request.Target != options.TargetId)
+                throw new OpsActionException(ComposeExecutorCodes.ScopeViolation);
+            var target = await RequireTargetAsync(services, request, cancellationToken).ConfigureAwait(false);
+            if (target.TargetId != options.TargetId || target.TargetKind != Honua.Core.Features.ControlPlane.Domain.DeployTargetKind.LocalCompose
+                || target.Backend != ComposeDeployBackend.AdapterBackendName)
+                throw new OpsActionException(ComposeExecutorCodes.ScopeViolation);
+        }
+        if (request.Service is not null && (request.Target is null || options is null
+            || !new[] { options.ServiceName, options.PostgresService, options.RedisService }.Contains(request.Service, StringComparer.Ordinal)))
             throw new OpsActionException(ComposeExecutorCodes.ScopeViolation);
-        }
-
-        if (request.HasParameters)
-        {
+        if (request.HasParameters && (request.ParameterNames.Count != 1 || request.ParameterNames[0] != "service"
+            || string.IsNullOrWhiteSpace(request.Service)))
             throw new OpsActionException(ComposeExecutorCodes.ConfigUnsupported);
-        }
 
         var client = services.GetService<IComposeExecutorClient>()
             ?? throw new OpsActionException(ComposeExecutorCodes.ExecutorUnconfigured);
@@ -142,7 +149,7 @@ internal sealed partial class OpsActionAdminConfigChangeApplier(
         try
         {
             response = await client.ExecuteAsync(
-                    new ComposeExecutorRequest { Op = "restart", RequestId = Guid.NewGuid().ToString("N") },
+                    new ComposeExecutorRequest { Op = "restart", Service = request.Service, RequestId = Guid.NewGuid().ToString("N") },
                     cancellationToken)
                 .ConfigureAwait(false);
         }

@@ -83,6 +83,9 @@ internal sealed class AdmissionGateDatabasePressureSignal(IRuntimeTunableAdmissi
 /// </summary>
 internal sealed class OpsFindingsExtendedSignals
 {
+    /// <summary>Live managed Compose stack readback.</summary>
+    public IManagedComposeObserver? ManagedComposeObserver { get; init; }
+
     /// <summary>Database connection-pool pressure signal (Postgres only), or null when unavailable.</summary>
     public IOpsDatabasePressureSignal? DatabasePressureSignal { get; init; }
 

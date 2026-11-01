@@ -109,6 +109,9 @@ internal static class DeployControlEndpoints
     {
         var snapshot = await deployPreflightProbe.ProbeAsync(context.RequestAborted).ConfigureAwait(false);
         var includeDiagnostics = ShouldIncludeDiagnostics(context);
+        var observer = includeDiagnostics ? context.RequestServices.GetService<IManagedComposeObserver>() : null;
+        var managedTargets = observer is null ? [] : await observer.ReadAsync(context.RequestAborted).ConfigureAwait(false);
+        var generatedAt = (context.RequestServices.GetService<TimeProvider>() ?? TimeProvider.System).GetUtcNow();
 
         var response = new DeployPreflightResponse
         {
@@ -121,7 +124,7 @@ internal static class DeployControlEndpoints
             Environment = includeDiagnostics ? hostEnvironment.EnvironmentName : null,
             DeploymentMode = includeDiagnostics ? deploymentOptions.Value.Mode.ToString() : null,
             InstanceName = includeDiagnostics ? Environment.MachineName : null,
-            GeneratedAt = DateTimeOffset.UtcNow,
+            GeneratedAt = generatedAt,
             Readiness = includeDiagnostics
                 ? new DeployPreflightReadiness
                 {
@@ -169,7 +172,7 @@ internal static class DeployControlEndpoints
                 ? BuildSessionSettingsView(snapshot.DatabaseSessionSettings)
                 : null,
             PlatformRelease = includeDiagnostics
-                ? BuildPlatformReleaseView(controlPlaneOptions.CurrentValue)
+                ? ManagedComposeObserver.ProjectRelease(controlPlaneOptions.CurrentValue, managedTargets, evaluatedAt: generatedAt)
                 : null
         };
 
@@ -191,57 +194,6 @@ internal static class DeployControlEndpoints
             Role = snapshot.Role,
             Remediation = snapshot.Drift.Select(drift => drift.Remediation).ToArray(),
             Message = snapshot.Message,
-        };
-
-    private static DeployPreflightPlatformRelease BuildPlatformReleaseView(ControlPlaneOptions options)
-    {
-        var release = options.PlatformRelease.ToDefinition();
-
-        var servingEntries = options.DeployTargets
-            .Where(target => !string.IsNullOrWhiteSpace(target.TargetId))
-            .Select(target => new PlatformReleasePlaneEntry
-            {
-                Id = target.TargetId,
-                RuntimeProfile = target.RuntimeProfile,
-                ExplicitArtifactReference = target.ArtifactReference
-            })
-            .ToArray();
-
-        var executionEntries = options.ExecutionWorkloads
-            .Where(workload => !string.IsNullOrWhiteSpace(workload.WorkloadId))
-            .Select(workload => new PlatformReleasePlaneEntry
-            {
-                Id = workload.WorkloadId,
-                RuntimeProfile = workload.RuntimeProfile,
-                ExplicitArtifactReference = workload.ArtifactReference
-            })
-            .ToArray();
-
-        var skew = PlatformReleaseProjection.BuildSkewSnapshot(release, servingEntries, executionEntries);
-
-        var observedAt = DateTimeOffset.UtcNow;
-        return new DeployPreflightPlatformRelease
-        {
-            EvidencePosture = EvidencePostureFactory.Build(observedAt,
-                EvidencePostureFactory.Complete(EvidencePostureVocabulary.SourceIds.PlatformReleaseStatus,
-                    EvidencePostureVocabulary.BackendKinds.ConfigProjection, "control-plane-options", observedAt, TimeSpan.FromMinutes(5))),
-            ReleaseVersion = skew.ReleaseVersion,
-            ReleaseDeclared = skew.ReleaseDeclared,
-            IsCoVersioned = skew.IsCoVersioned,
-            Serving = skew.Serving.Select(MapPlaneProjection).ToArray(),
-            Execution = skew.Execution.Select(MapPlaneProjection).ToArray(),
-            SkewedIds = skew.SkewedIds
-        };
-    }
-
-    private static DeployPreflightPlaneProjection MapPlaneProjection(PlatformReleasePlaneProjection projection)
-        => new()
-        {
-            Id = projection.Id,
-            RuntimeProfile = projection.RuntimeProfile,
-            EffectiveArtifactReference = projection.EffectiveArtifactReference,
-            ProjectedFromRelease = projection.ProjectedFromRelease,
-            Skewed = projection.Skewed
         };
 
     private static bool ShouldIncludeDiagnostics(HttpContext context)

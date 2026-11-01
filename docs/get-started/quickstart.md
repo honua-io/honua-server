@@ -118,6 +118,7 @@ services:
       ConnectionStrings__DefaultConnection: "Host=postgres;Database=honua;Username=honua;Password=${POSTGRES_PASSWORD:?Required}"
       ConnectionStrings__Redis: redis:6379
       HONUA_ADMIN_PASSWORD: ${HONUA_ADMIN_PASSWORD:?Required}
+      AuditLog__ChainVerification__Key: ${HONUA_AUDIT_CHAIN_KEY:?Required}
       Security__ConnectionEncryption__MasterKey: ${HONUA_MASTER_KEY:?Required}
       Operations__SecretChannel__KeyRingCertificatePath: /var/lib/honua/keyring.pfx
       Operations__SecretChannel__KeyRingCertificatePassword: ${HONUA_KEYRING_PASSWORD:?Required}
@@ -184,7 +185,7 @@ configs:
 
 ## 2. Set the secrets
 
-Four secrets go in a `.env` file beside `compose.yaml`. Generate them rather
+Six secrets go in a `.env` file beside `compose.yaml`. Generate them rather
 than inventing them.
 
 <!-- docs-validation:install.secrets mode=run -->
@@ -198,6 +199,8 @@ POSTGRES_PASSWORD=$(openssl rand -hex 32)
 HONUA_ADMIN_PASSWORD=Aa1!$(openssl rand -hex 32)
 HONUA_MASTER_KEY=$(openssl rand -hex 32)
 HONUA_KEYRING_PASSWORD=$(openssl rand -hex 16)
+HONUA_AUDIT_CHAIN_KEY=$(openssl rand -base64 32)
+HONUA_MANAGER_AUDIT_CHAIN_KEY=$(openssl rand -base64 32)
 EOF
 ```
 
@@ -207,6 +210,11 @@ EOF
 <!-- docs-validation:install.windows-secrets mode=skip reason="Native Windows alternative" -->
 ```powershell
 function New-Secret { -join ((1..64) | ForEach-Object { '{0:x}' -f (Get-Random -Max 16) }) }
+function New-AuditKey {
+    $bytes = New-Object byte[] 32
+    $random = [Security.Cryptography.RandomNumberGenerator]::Create()
+    try { $random.GetBytes($bytes); [Convert]::ToBase64String($bytes) } finally { $random.Dispose() }
+}
 @"
 COMPOSE_PROJECT_NAME=honua-quickstart
 HONUA_IMAGE=ghcr.io/honua-io/honua-server:2026.1-rc
@@ -215,6 +223,8 @@ POSTGRES_PASSWORD=$(New-Secret)
 HONUA_ADMIN_PASSWORD=Aa1!$(New-Secret)
 HONUA_MASTER_KEY=$(New-Secret)
 HONUA_KEYRING_PASSWORD=$(New-Secret)
+HONUA_AUDIT_CHAIN_KEY=$(New-AuditKey)
+HONUA_MANAGER_AUDIT_CHAIN_KEY=$(New-AuditKey)
 "@ | Set-Content .env -Encoding Ascii
 ```
 
@@ -224,7 +234,7 @@ Both ports bind to loopback only; PostgreSQL and Redis are reachable only on the
 project's own network. Change `HONUA_HTTP_PORT` if `18080` is taken, and set
 `HONUA_GRPC_PORT` if `18081` is.
 
-Keep `.env`. Losing it means losing the database.
+Keep `.env`. Losing it means losing the database and audit-chain verification keys. The serving server and optional manager use distinct audit keys; preserve both across restarts and upgrades.
 
 Production stores operation secrets in Redis. The server will not start until a certificate
 encrypts that key ring, so a copy of Redis does not hold both the secrets and the keys. This

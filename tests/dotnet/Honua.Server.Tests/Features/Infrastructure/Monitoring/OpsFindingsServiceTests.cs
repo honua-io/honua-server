@@ -34,6 +34,111 @@ namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 [Protocol(TestProtocols.TestQuality)]
 public sealed class OpsFindingsServiceTests
 {
+    [UnitTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Evaluate_HealthyComposePriorRevision_RetainsLiveConvergenceFinding(bool pinsRelease)
+    {
+        var desired = "sha256:" + new string('a', 64);
+        var prior = "sha256:" + new string('b', 64);
+        var controlPlane = new ControlPlaneOptions
+        {
+            PlatformRelease = new() { Version = "2026.1-rc.2", ServingArtifactReference = desired },
+            DeployTargets = [new()
+            {
+                TargetId = "compose-local",
+                TargetKind = DeployTargetKind.LocalCompose,
+                Backend = ComposeDeployBackend.AdapterBackendName,
+                ArtifactReference = pinsRelease ? desired : null
+            }]
+        };
+        var observer = Substitute.For<IManagedComposeObserver>();
+        observer.ReadAsync(Arg.Any<CancellationToken>()).Returns(new OpsManagedTargetHealthView[]
+        {
+            new()
+            {
+                TargetId = "compose-local",
+                Available = true,
+                Status = "Healthy",
+                ObservedAt = DateTimeOffset.UtcNow,
+                RunningImage = prior,
+                ServerVersion = "2026.1-rc.1"
+            }
+        });
+        var evaluation = await CreateService(controlPlaneOptions: controlPlane, managedComposeObserver: observer).EvaluateWithEvidenceAsync();
+        var finding = Assert.Single(evaluation.Findings, item => item.Rule == OpsFindingsService.RulePlatformReleaseRuntimeDivergence);
+        var payload = DeployExecutionPayload.Parse(finding.RecommendedAction!.ExecutionPayload);
+        Assert.Equal(prior, payload!.CurrentRevision);
+        Assert.Equal(desired, payload.DesiredRevision);
+        Assert.True(OpsFindingEvidenceMap.TryGetActionableRequiredSources(evaluation, finding, out var sources));
+        Assert.Contains(sources, source => source.SourceId == ManagedComposeObserver.SourceId);
+        Assert.DoesNotContain(sources, source => source.SourceId == EvidencePostureVocabulary.SourceIds.FindingsWorkflowOperations);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Evaluate_ServiceFailsAgainAfterRestart_UsesNewFindingIdentity()
+    {
+        var observer = Substitute.For<IManagedComposeObserver>();
+        var ids = new List<string>();
+        foreach (var incarnation in new[] { new string('a', 64), new string('b', 64) })
+        {
+            observer.ReadAsync(Arg.Any<CancellationToken>()).Returns(new OpsManagedTargetHealthView[]
+            {
+                new() { TargetId = "compose-local", Available = true, Status = "Unhealthy", ObservedAt = DateTimeOffset.UtcNow,
+                    ServiceIncarnations = new Dictionary<string, string> { ["honua"] = incarnation },
+                    Services = [new() { Name = "honua", Status = "Unhealthy", DurationMs = 0 }] }
+            });
+            var finding = Assert.Single(await CreateService(managedComposeObserver: observer).EvaluateAsync());
+            Assert.NotNull(finding.RecommendedAction);
+            ids.Add(finding.Id);
+        }
+        Assert.NotEqual(ids[0], ids[1]);
+    }
+
+    [UnitTheory]
+    [InlineData("honua")]
+    [InlineData("postgres")]
+    [InlineData("redis")]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Evaluate_ManagedServiceDown_ProposesTargetBoundApprovalRequiredRestart(string serviceName)
+    {
+        var observer = Substitute.For<IManagedComposeObserver>();
+        observer.ReadAsync(Arg.Any<CancellationToken>()).Returns(new OpsManagedTargetHealthView[]
+        {
+            new() { TargetId = "compose-local", Available = true, Status = "Unhealthy", ObservedAt = DateTimeOffset.UtcNow,
+                Services = [new() { Name = serviceName, Status = "Unhealthy", Description = "stopped", DurationMs = 0 }] }
+        });
+        var evaluation = await CreateService(managedComposeObserver: observer).EvaluateWithEvidenceAsync();
+        var finding = Assert.Single(evaluation.Findings, finding => finding.Rule == OpsFindingsService.RuleManagedComposeService);
+        Assert.Equal("compose-local", finding.Subject.TargetId);
+        Assert.Equal(serviceName, finding.Subject.WorkloadId);
+        var action = Assert.IsType<OpsFindingRecommendedAction>(finding.RecommendedAction);
+        Assert.False(action.AutoSafe);
+        Assert.Equal(OpsActionNames.ComposeRestartService, action.ActionDiscriminator);
+        var payload = OpsActionRequest.Parse(action.ExecutionPayload);
+        Assert.Equal("compose-local", payload.Target);
+        Assert.Equal(serviceName, payload.Service);
+        Assert.True(OpsFindingEvidenceMap.TryGetActionableRequiredSources(evaluation, finding, out _));
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Evaluate_ManagedObservationUnavailable_EmitsWarningWithoutRestart()
+    {
+        var observer = Substitute.For<IManagedComposeObserver>();
+        observer.ReadAsync(Arg.Any<CancellationToken>()).Returns(new OpsManagedTargetHealthView[]
+        {
+            new() { TargetId = "compose-local", Available = false, Status = "Unknown", ObservedAt = DateTimeOffset.UtcNow }
+        });
+        var evaluation = await CreateService(managedComposeObserver: observer).EvaluateWithEvidenceAsync();
+        var finding = Assert.Single(evaluation.Findings, finding => finding.Rule == OpsFindingsService.RuleManagedComposeService);
+        Assert.Null(finding.RecommendedAction);
+        Assert.Equal(OpsFindingSeverity.Warning, finding.Severity);
+        Assert.False(OpsFindingEvidenceMap.TryGetActionableRequiredSources(evaluation, finding, out _));
+    }
+
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
     public async Task Evaluate_AlertDispatchDeadLetters_ProducesCriticalFindingWithRedriveAction()
@@ -1557,7 +1662,8 @@ public sealed class OpsFindingsServiceTests
         IExecutionJobStore? jobStore = null,
         IOpsDatabasePressureSignal? databasePressureSignal = null,
         IRuntimeTunableAdmissionGate? admissionGate = null,
-        IOpsHealthRollupStore? rollupStore = null)
+        IOpsHealthRollupStore? rollupStore = null,
+        IManagedComposeObserver? managedComposeObserver = null)
         => new(
             new StaticOptionsMonitor<OpsFindingsOptions>(options ?? new OpsFindingsOptions()),
             new StaticOptionsMonitor<ControlPlaneOptions>(controlPlaneOptions ?? new ControlPlaneOptions()),
@@ -1568,6 +1674,7 @@ public sealed class OpsFindingsServiceTests
             jobStore: jobStore,
             extendedSignals: new OpsFindingsExtendedSignals
             {
+                ManagedComposeObserver = managedComposeObserver,
                 DatabasePressureSignal = databasePressureSignal,
                 AdmissionGate = admissionGate,
                 RollupStore = rollupStore,

@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Initialize and start the packaged, approval-governed local Compose installation."""
 import argparse
+import base64
+import binascii
 import json
 import os
 from pathlib import Path
@@ -12,6 +14,7 @@ import sys
 SECRET_KEYS = ('POSTGRES_PASSWORD', 'HONUA_ADMIN_PASSWORD', 'HONUA_MANAGER_ADMIN_PASSWORD',
                'HONUA_MANAGER_POSTGRES_PASSWORD', 'HONUA_MASTER_KEY', 'HONUA_MANAGER_MASTER_KEY',
                'HONUA_KEYRING_PASSWORD')
+AUDIT_KEYS = ('HONUA_AUDIT_CHAIN_KEY', 'HONUA_MANAGER_AUDIT_CHAIN_KEY')
 IMMUTABLE = re.compile(r'(?:[a-z0-9./:_-]+@)?sha256:[a-f0-9]{64}')
 
 
@@ -38,6 +41,16 @@ def initialize(directory):
     }
     defaults.update({key: ('Aa1!' if key.endswith('ADMIN_PASSWORD') else '') + secrets.token_hex(32)
                      for key in SECRET_KEYS})
+    defaults.update({key: base64.b64encode(secrets.token_bytes(32)).decode('ascii') for key in AUDIT_KEYS})
+    for key in AUDIT_KEYS:
+        if key not in values:
+            continue
+        try:
+            decoded = base64.b64decode(values[key], validate=True)
+        except (binascii.Error, ValueError) as error:
+            raise ValueError(f'{key} must be base64 with at least 32 decoded bytes') from error
+        if len(decoded) < 32:
+            raise ValueError(f'{key} must be base64 with at least 32 decoded bytes')
     for key in SECRET_KEYS:
         if key in values and not re.fullmatch(r'[A-Za-z0-9_!.-]{32,}', values[key]):
             raise ValueError(f'{key} must be a locally generated secret of at least 32 characters')

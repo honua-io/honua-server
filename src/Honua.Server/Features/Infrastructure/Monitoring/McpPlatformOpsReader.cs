@@ -60,20 +60,10 @@ internal sealed class McpPlatformOpsReader(
     {
         await EnsureOpsReadAsync(principal, cancellationToken).ConfigureAwait(false);
 
-        var skew = PlatformReleaseSkewProjector.Build(_controlPlaneOptions.CurrentValue);
-        var observedAt = DateTimeOffset.UtcNow;
-        var response = new DeployPreflightPlatformRelease
-        {
-            EvidencePosture = EvidencePostureFactory.Build(observedAt,
-                EvidencePostureFactory.Complete(EvidencePostureVocabulary.SourceIds.PlatformReleaseStatus,
-                    EvidencePostureVocabulary.BackendKinds.ConfigProjection, "control-plane-options", observedAt, TimeSpan.FromMinutes(5))),
-            ReleaseVersion = skew.ReleaseVersion,
-            ReleaseDeclared = skew.ReleaseDeclared,
-            IsCoVersioned = skew.IsCoVersioned,
-            Serving = skew.Serving.Select(MapPlaneProjection).ToArray(),
-            Execution = skew.Execution.Select(MapPlaneProjection).ToArray(),
-            SkewedIds = skew.SkewedIds
-        };
+        var observer = _services.GetService<IManagedComposeObserver>();
+        var targets = observer is null ? [] : await observer.ReadAsync(cancellationToken).ConfigureAwait(false);
+        var response = ManagedComposeObserver.ProjectRelease(_controlPlaneOptions.CurrentValue, targets,
+            evaluatedAt: (_services.GetService<TimeProvider>() ?? TimeProvider.System).GetUtcNow());
 
         return Serialize(response, DeployControlJsonContext.Default.DeployPreflightPlatformRelease);
     }
@@ -240,6 +230,13 @@ internal sealed class McpPlatformOpsReader(
         string executionPayload,
         string candidateId)
     {
+        if (kind == OperationClass.AdminConfigChange)
+        {
+            var action = OpsActionRequest.Parse(executionPayload);
+            if (action.Name == OpsActionNames.ComposeRestartService && action.Target != candidateId)
+                throw new GeoprocessingValidationException("Finding action target does not match the certified candidate.");
+            return;
+        }
         if (kind != OperationClass.Deploy)
         {
             return;
@@ -318,6 +315,8 @@ internal sealed class McpPlatformOpsReader(
 
         var targets = options.DeployTargets.Where(candidate => !string.IsNullOrWhiteSpace(candidate.TargetId)).ToArray();
         if (targets.Length == 0) throw new GeoprocessingPreconditionFailedException("No serving deploy target is configured.");
+        var observer = _services.GetService<IManagedComposeObserver>();
+        var liveTargets = observer is null ? [] : await observer.ReadAsync(cancellationToken).ConfigureAwait(false);
         var outcomes = new List<McpConvergenceTargetOutput>();
         foreach (var target in targets)
         {
@@ -326,7 +325,10 @@ internal sealed class McpPlatformOpsReader(
                 outcomes.Add(new() { TargetId = target.TargetId, Outcome = "skipped-pinned", Message = "Target pins an explicit artifact that diverges from the release." });
                 continue;
             }
-            var lastApplied = (await _deployWorkflowService.GetMostRecentSucceededDeployAsync(target.TargetId, cancellationToken).ConfigureAwait(false))?.Deploy?.DesiredRevision;
+            var liveTarget = liveTargets.SingleOrDefault(live => live.TargetId == target.TargetId);
+            var lastApplied = target.TargetKind == DeployTargetKind.LocalCompose
+                ? liveTarget?.RunningImage
+                : (await _deployWorkflowService.GetMostRecentSucceededDeployAsync(target.TargetId, cancellationToken).ConfigureAwait(false))?.Deploy?.DesiredRevision;
             if (string.Equals(lastApplied, desiredRevision, StringComparison.Ordinal))
             {
                 outcomes.Add(new() { TargetId = target.TargetId, Outcome = "already-converged" });
@@ -334,9 +336,10 @@ internal sealed class McpPlatformOpsReader(
             }
             var payload = new DeployExecutionPayload { TargetId = target.TargetId, DesiredRevision = desiredRevision }.Serialize();
             var requestedKey = Clean(argument.IdempotencyKey);
+            var incarnationSuffix = liveTarget?.ServingIncarnation is { } incarnation ? ":" + incarnation : string.Empty;
             var proposal = await SealProposalAsync(principal, OperationClass.Deploy, payload,
                 Clean(argument.Reason) ?? $"Converge serving targets to platform release {release.Version}.",
-                requestedKey is null ? $"converge:{release.Version}:{target.TargetId}" : $"{requestedKey}:{target.TargetId}", cancellationToken).ConfigureAwait(false);
+                requestedKey is null ? $"converge:{release.Version}:{target.TargetId}{incarnationSuffix}" : $"{requestedKey}:{target.TargetId}", cancellationToken).ConfigureAwait(false);
             outcomes.Add(new() { TargetId = target.TargetId, Outcome = proposal.Outcome, ProposalId = proposal.ProposalId, Message = proposal.Message });
         }
         return new McpProposeOperationOutput { Outcome = "completed", RequiresApproval = outcomes.Any(item => item.ProposalId is not null), Targets = outcomes.ToArray(), SupportedKinds = ResolveSupportedKinds() };
@@ -461,6 +464,7 @@ internal sealed class McpPlatformOpsReader(
         var target = kind switch
         {
             OperationClass.Deploy => DeployExecutionPayload.Parse(payload)?.TargetId,
+            OperationClass.AdminConfigChange => OpsActionRequest.Parse(payload).Target,
             OperationClass.MetadataRelease => MetadataReleaseExecutionPayload.ParseAndValidate(payload).Payload?.TargetEnvironment,
             _ => null,
         };
@@ -609,16 +613,6 @@ internal sealed class McpPlatformOpsReader(
             .OrderBy(name => name, StringComparer.Ordinal)
             .ToArray();
     }
-
-    private static DeployPreflightPlaneProjection MapPlaneProjection(PlatformReleasePlaneProjection projection)
-        => new()
-        {
-            Id = projection.Id,
-            RuntimeProfile = projection.RuntimeProfile,
-            EffectiveArtifactReference = projection.EffectiveArtifactReference,
-            ProjectedFromRelease = projection.ProjectedFromRelease,
-            Skewed = projection.Skewed
-        };
 
     private static TEnum? ParseOptionalEnum<TEnum>(string? value, string fieldName)
         where TEnum : struct, Enum
