@@ -132,7 +132,7 @@ internal sealed partial class OpsActionAdminConfigChangeApplier(
             if (options is null || request.Target != options.TargetId)
                 throw new OpsActionException(ComposeExecutorCodes.ScopeViolation);
             var target = await RequireTargetAsync(services, request, cancellationToken).ConfigureAwait(false);
-            if (options is null || target.TargetId != options.TargetId || target.TargetKind != Honua.Core.Features.ControlPlane.Domain.DeployTargetKind.LocalCompose
+            if (target.TargetId != options.TargetId || target.TargetKind != Honua.Core.Features.ControlPlane.Domain.DeployTargetKind.LocalCompose
                 || target.Backend != ComposeDeployBackend.AdapterBackendName)
                 throw new OpsActionException(ComposeExecutorCodes.ScopeViolation);
         }

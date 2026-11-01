@@ -426,7 +426,6 @@ public sealed class CommunityRedisOpsHealthEndpointsTests : IAsyncLifetime
     private const string AdminPassword = "community-redis-ops-health-key";
     private readonly WebAppFixture _fixture;
     private HttpClient _client = null!;
-    private IReadOnlyList<OpsManagedTargetHealthView> _managedTargets = [];
 
     public CommunityRedisOpsHealthEndpointsTests()
     {
