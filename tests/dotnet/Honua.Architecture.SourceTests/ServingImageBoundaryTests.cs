@@ -66,13 +66,13 @@ public sealed class ServingImageBoundaryTests
         nightly.Should().NotContain("load: true", "local image stores can discard attestation manifests");
         nightly.Should().Contain("nightly-aot-${tag_name#nightly-}",
             "dated and SHA AOT compatibility tags must retain their established infix naming");
-        nightly.Should().Contain("actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2", Exactly.Times(4),
-            "canonical, Lambda and Functions indexes, and the Lambda serving child, must receive GitHub provenance");
-        nightly.Should().Contain("attestations: write", Exactly.Times(4));
-        nightly.Should().Contain("id-token: write", Exactly.Times(4));
+        nightly.Should().Contain("actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2", Exactly.Times(5),
+            "canonical, Lambda, Functions and Compose executor indexes, and the Lambda serving child, must receive GitHub provenance");
+        nightly.Should().Contain("attestations: write", Exactly.Times(5));
+        nightly.Should().Contain("id-token: write", Exactly.Times(5));
         nightly.Should().Contain("subject-digest: ${{ steps.manifest.outputs.subject_digest }}", Exactly.Twice(),
             "attestations must bind the final pushed manifest digest rather than a mutable tag");
-        nightly.Should().Contain("push-to-registry: true", Exactly.Times(5),
+        nightly.Should().Contain("push-to-registry: true", Exactly.Times(6),
             "gh attestation verify oci://... requires the provenance and SBOM to be available with the image");
     }
 

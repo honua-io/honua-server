@@ -96,6 +96,7 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
     project_dir = Path(tempfile.mkdtemp(prefix="honua-lifecycle-"))
     project_dir.chmod(0o755)
     executor = os.environ["HONUA_LIFECYCLE_EXECUTOR_IMAGE"]
+    assert run(["docker", "image", "inspect", "--format", '{{index .Config.Labels "honua.runtime.profile"}}', executor]) == "compose-executor"
     # Install the customer package, not a test-owned executor or Compose substitute.
     package(project_dir, candidate, executor, candidate, "2026.1-rc.2")
     env = os.environ.copy()
