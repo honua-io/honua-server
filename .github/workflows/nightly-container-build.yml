@@ -1049,6 +1049,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     needs: [select-candidate, build-aot, mirror-base-images]
+    outputs:
+      image: ${{ steps.manifest.outputs.subject_name }}@${{ steps.manifest.outputs.subject_digest }}
     if: ${{ needs.select-candidate.outputs.publish == 'true' && needs.build-aot.result == 'success' }}
     permissions:
       attestations: write
@@ -1133,6 +1135,74 @@ jobs:
           subject-name: ${{ steps.manifest.outputs.subject_name }}
           subject-digest: ${{ steps.manifest.outputs.subject_digest }}
           push-to-registry: true
+
+  compose-executor:
+    name: Publish Compose executor and customer quickstart
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    needs: [select-candidate, manifest-aot]
+    if: needs.select-candidate.outputs.publish == 'true'
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.select-candidate.outputs.sha }}
+          persist-credentials: false
+      - name: Verify source and serving image binding
+        env:
+          CANDIDATE_SHA: ${{ needs.select-candidate.outputs.sha }}
+          SERVER_IMAGE: ${{ needs.manifest-aot.outputs.image }}
+        run: |
+          test "$CANDIDATE_SHA" = "$GITHUB_SHA"
+          [[ "$SERVER_IMAGE" =~ @sha256:[a-f0-9]{64}$ ]]
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and publish executor from the serving candidate digest
+        id: executor
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        with:
+          context: .
+          file: docker/Dockerfile.compose-executor
+          build-args: HONUA_SERVER_IMAGE=${{ needs.manifest-aot.outputs.image }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ghcr.io/honua-io/honua-compose-executor:nightly-${{ needs.select-candidate.outputs.sha7 }}
+            ghcr.io/honua-io/honua-compose-executor:nightly
+          labels: org.opencontainers.image.revision=${{ needs.select-candidate.outputs.sha }}
+          annotations: index:org.opencontainers.image.revision=${{ needs.select-candidate.outputs.sha }}
+          provenance: true
+          sbom: true
+      - name: Attest executor index
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ghcr.io/honua-io/honua-compose-executor
+          subject-digest: ${{ steps.executor.outputs.digest }}
+          push-to-registry: true
+      - name: Package immutable customer quickstart
+        env:
+          SERVER_IMAGE: ${{ needs.manifest-aot.outputs.image }}
+          EXECUTOR_IMAGE: ghcr.io/honua-io/honua-compose-executor@${{ steps.executor.outputs.digest }}
+          CANDIDATE_SHA7: ${{ needs.select-candidate.outputs.sha7 }}
+        run: |
+          python3 scripts/docker/package_quickstart.py --server-image "$SERVER_IMAGE" \
+            --executor-image "$EXECUTOR_IMAGE" --worker-image "$SERVER_IMAGE" \
+            --version "nightly-${CANDIDATE_SHA7}" --output artifacts/honua-compose-quickstart
+          sha256sum artifacts/honua-compose-quickstart.tar.gz > artifacts/honua-compose-quickstart.tar.gz.sha256
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: honua-compose-quickstart-${{ needs.select-candidate.outputs.sha7 }}
+          path: artifacts/honua-compose-quickstart.tar.gz*
+          if-no-files-found: error
 
   manifest-jit:
     name: Publish JIT Manifests

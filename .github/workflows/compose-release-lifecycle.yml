@@ -11,6 +11,8 @@ on:
       - 'docs/get-started/quickstart.md'
       - 'tests/integration/test_compose_release_lifecycle.py'
       - '.github/workflows/compose-release-lifecycle.yml'
+      - 'docker/Dockerfile.compose-executor'
+      - 'scripts/docker/*quickstart*.py'
 
 permissions:
   contents: read
@@ -39,9 +41,16 @@ jobs:
         run: |
           docker build --file docker/Dockerfile.aot --tag honua-lifecycle:candidate \
             --secret id=github_actor,env=GITHUB_ACTOR --secret id=github_token,env=GITHUB_TOKEN .
+      - name: Build the dedicated customer executor image
+        run: |
+          docker build --file docker/Dockerfile.compose-executor --tag honua-lifecycle:executor \
+            --build-arg HONUA_SERVER_IMAGE=honua-lifecycle:candidate .
+      - name: Verify customer package and isolation contract
+        run: python3 -m unittest discover -s scripts/docker -p 'test_compose_quickstart.py' -v
       - name: Run published-image MCP and restore journey
         run: |
           python3 -m venv /tmp/honua-lifecycle-venv
           /tmp/honua-lifecycle-venv/bin/pip install pytest
+          export HONUA_LIFECYCLE_EXECUTOR_IMAGE="$(docker image inspect --format '{{.Id}}' honua-lifecycle:executor)"
           export HONUA_LIFECYCLE_IMAGE="$(docker image inspect --format '{{.Id}}' honua-lifecycle:candidate)"
           /tmp/honua-lifecycle-venv/bin/pytest -q tests/integration/test_compose_release_lifecycle.py
