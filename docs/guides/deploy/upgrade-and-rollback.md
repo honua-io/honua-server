@@ -13,7 +13,7 @@ You'll roll a new Honua version forward safely — preflight first, backward-com
 
 1. Zero-downtime upgrades are supported only for backward-compatible (expand-contract) migrations: add columns/tables first, deploy, drop old columns in a later release. Potentially breaking migrations carry an explicit `-- honua:compatibility-review` marker in the SQL — treat those as gated rollouts with a documented rollback path. On an existing database you can require explicit approval before those apply: set `Database__MigrationSafety__ContractApplyPolicy=Gate` (fresh installs are unaffected), set `HONUA_APPROVE_CONTRACT_MIGRATIONS` to the nonce printed by the migration safety error, and optionally run a pre-migration backup hook via `Database__MigrationSafety__BackupCommand` — see [Deploy with Docker Compose — Upgrade & Rollback](docker-compose.md#upgrade--rollback).
 2. Application rollback is allowed only when the previous reader qualifies every applied migration. A reader qualifies a migration it ships. It can also qualify one it does not ship, but only when the migration is expand-only and the reader verifies the forward-compatibility declaration the newer server recorded for it (see [Rollback across additive migrations](#rollback-across-additive-migrations)). On startup any other unrecognized journal entry raises `DatabaseSchemaCompatibilityException` with code `schema_reader_incompatible`, before serving. The check runs the same way with `HONUA_SKIP_MIGRATIONS=true`, and degraded-start mode cannot bypass it. A migration's presence alone never proves that an older image can serve it.
-3. Database restore is the last resort when the previous version cannot safely serve the live schema or the data is corrupt.
+3. Database restore is the last resort when the previous version cannot safely serve the live schema or the data is corrupt. On an installed Compose project with the [Compose executor](../../get-started/quickstart.md#optional-let-an-approved-proposal-update-this-stack) enabled, that restore is part of an approved rollback: the executor checks the backup, restores it, and only then starts the prior image.
 
 ### In-flight geoprocessing jobs
 
@@ -458,6 +458,20 @@ kubectl rollout status deployment/honua-server --namespace honua --timeout=600s
 ```
 
 For deploy-API-managed rollouts, `POST .../operations/{operationId}/rollback` drives the platform backend (re-point alias, shift ALB weights back, reverse slot swap). Single-instance Docker: restart the previous image tag.
+
+For an RDS-backed cell using the product restore executor, configure the cell's authorized
+database security group IDs in `ControlPlane:Restore:RdsSecurityGroupIds`, alongside its
+cell prefix, subnet group, connection secret, audit destination, and revision schema catalog.
+The executor refuses a restore when the security groups are absent or the cell prefix cannot
+fit a unique replacement instance ID. A failed restore retains the cell ownership record for
+operator investigation before another restore is attempted.
+
+Restore progress is recorded durably. After a restart, the executor resumes a known
+RDS restore or deployment from its checkpoint. If interruption leaves the provider
+submission outcome uncertain, the operation fails and requires operator attention;
+it does not submit another restore blindly. Inspect the operation and the database
+before attempting recovery. Success is recorded only after the restored deployment
+and its protection window complete and the restore is verified.
 
 ### Rollback target eligibility
 

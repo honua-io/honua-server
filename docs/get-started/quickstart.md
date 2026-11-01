@@ -300,6 +300,58 @@ one publish — OGC API Features at `/ogc/features/collections`, GeoServices RES
 rest. `admin.list_services()` and `admin.get_capabilities()` report what this
 deployment actually exposes, rather than what the list above assumes.
 
+## Optional: let an approved proposal update this stack
+
+The Compose file above does not mount the Docker socket into the server. To let
+`honua_propose_platform_release_convergence` and `honua_propose_rollback` change this
+project, copy [`compose.executor.yaml`](compose.executor.yaml) beside `compose.yaml`,
+create a `backups` directory, and make both that directory and this Compose
+directory writable by uid 1001 (the sidecar writes backups and
+`compose.executor.image.yaml` as that user). The overlay's init service changes the socket
+volume to that user before the executor binds it, and lists both compose files so a later
+image change keeps the management services. Load the immutable release image on the host before
+anyone approves it (`docker compose up` for the executor uses `--pull never`). Set
+`HONUA_RELEASE_IMAGE` to that digest, `HONUA_RELEASE_WORKER_IMAGE` to the co-versioned
+worker digest from the same release lock, `HONUA_RELEASE_VERSION` to its release version,
+`COMPOSE_PROJECT_NAME` to the project name
+(`docker compose ls` prints it; for this quickstart it is the directory name),
+`DOCKER_GID` to the host docker group (`getent group docker`). The executor needs to
+read the quickstart `.env` file when it invokes Compose. Keep its owner unchanged, set
+its group to that Docker group (`sudo chgrp "$DOCKER_GID" .env`), and grant only owner
+and group access (`chmod 0640 .env`). Membership in that group also grants Docker
+socket access. Set `HONUA_COMPOSE_CUSTOMER_PROBE` to an `http://honua:8080/...` route that returns a
+non-empty body. The published image does not include the Docker client, so the
+sidecar mounts the host `docker` binary and the Docker socket. The `honua` service
+mounts neither. Then start both files with
+`docker compose -f compose.yaml -f compose.executor.yaml up -d`.
+
+Set `HONUA_PRIOR_IMAGE` to the retained immutable prior image and
+`HONUA_PRIOR_MAX_SCHEMA` to the highest migration shipped in that exact image.
+This operator catalog is required for prior images without a schema label. An
+unknown prior schema refuses rollback.
+
+Set `HONUA_COMPOSE_PROJECT_DIRECTORY` to the absolute path of this directory on the
+Docker host. It is mounted at the same path in the executor so relative bind mounts
+continue to resolve on that host. Set `DOCKER_COMPOSE_PLUGIN` to the absolute host
+path of the Docker Compose plugin executable (for example,
+`/usr/libexec/docker/cli-plugins/docker-compose`). The overlay mounts that plugin
+alongside the Docker client. Both must run on the image's glibc.
+
+The overlay runs the candidate image as a separate management process on loopback port
+`HONUA_MANAGER_PORT` (default 18082). Create distinct proposer and approver credentials
+there and use its MCP and approval endpoints. Its separate database prevents starting the
+manager from migrating the serving database before approval; retain its database and the
+management Redis volume across restarts. The executor uses the candidate image with
+`HONUA_COMPOSE_EXECUTOR=true`. It is the
+only service that receives the Docker socket. It accepts an immutable digest for this
+project only, and a different principal has to approve the proposal before anything
+changes. A rollback to an image that cannot read the live journal, including a
+reader-incompatible or contract migration, restores a verified database backup from
+`backups` before that image starts. Rollback
+uses the image id recorded in that backup. File storage is not part of this restore;
+the backup recipe in the Compose deploy guide still covers it. Contract-migration
+nonces stay on `HONUA_MIGRATE_ONLY` and are not bypassed here.
+
 ## What to do next
 
 | | |

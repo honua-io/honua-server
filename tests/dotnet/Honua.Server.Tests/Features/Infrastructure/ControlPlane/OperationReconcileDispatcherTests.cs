@@ -5,6 +5,7 @@ using FluentAssertions;
 using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using NSubstitute;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
@@ -74,6 +75,21 @@ public sealed class OperationReconcileDispatcherTests
         await sut.ReconcileOnceAsync(new OperationRef(OperationKind.CoordinatedRelease, "cr-1"));
 
         await coordinated.Received(1).ReconcileCoordinatedReleaseAsync("cr-1", Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task ReconcileOnceAsync_PreMigrationRestore_RoutesToDurableWorker()
+    {
+        var restore = Substitute.For<IPreMigrationRestoreReconciler>();
+        var sut = new OperationReconcileDispatcher(
+            Substitute.For<IWorkflowOperationReconciler>(),
+            Substitute.For<IExecutionJobReconciler>(),
+            Substitute.For<IMetadataReleaseOperationReconciler>(),
+            Substitute.For<ICoordinatedReleaseReconciler>(), restore);
+
+        await sut.ReconcileOnceAsync(new OperationRef(OperationKind.PreMigrationRestore, "restore-1"));
+
+        await restore.Received(1).ReconcileAsync("restore-1", Arg.Any<CancellationToken>());
     }
 
     [Fact]

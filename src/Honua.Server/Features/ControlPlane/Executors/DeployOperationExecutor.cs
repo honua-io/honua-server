@@ -61,6 +61,11 @@ internal sealed class DeployOperationExecutor(DeployWorkflowService deployWorkfl
             $"revision: {planResult.Spec.CurrentRevision ?? "(unknown)"} -> {planResult.Spec.DesiredRevision}",
         };
 
+        if (payload.Rollback && !string.IsNullOrWhiteSpace(payload.BackupId))
+        {
+            diff.Add($"backup: {payload.BackupId}");
+        }
+
         return new OperationProposalPlan
         {
             Summary = $"Deploy {payload.DesiredRevision} to {planResult.Target.TargetId}",
@@ -75,10 +80,24 @@ internal sealed class DeployOperationExecutor(DeployWorkflowService deployWorkfl
         };
     }
 
-    public async Task<string?> ExecuteAsync(
+    public Task<string?> ExecuteAsync(
         OperationGatewayRequest request,
         string? executionPayload,
         CancellationToken cancellationToken = default)
+        => ExecuteCoreAsync(request, executionPayload, null, cancellationToken);
+
+    internal Task<string?> ExecuteRestoreAsync(
+        OperationGatewayRequest request,
+        string? executionPayload,
+        string restoreOwnerId,
+        CancellationToken cancellationToken)
+        => ExecuteCoreAsync(request, executionPayload, restoreOwnerId, cancellationToken);
+
+    private async Task<string?> ExecuteCoreAsync(
+        OperationGatewayRequest request,
+        string? executionPayload,
+        string? restoreOwnerId,
+        CancellationToken cancellationToken)
     {
         var payload = DeployExecutionPayload.Parse(executionPayload);
         if (payload == null)
@@ -86,7 +105,7 @@ internal sealed class DeployOperationExecutor(DeployWorkflowService deployWorkfl
             throw new InvalidOperationException("Deploy execution payload is missing or malformed.");
         }
 
-        var record = await deployWorkflowService.CreateAsync(
+        var record = await deployWorkflowService.CreateWithBackupAsync(
                 payload.TargetId,
                 payload.DesiredRevision,
                 payload.CurrentRevision,
@@ -98,6 +117,9 @@ internal sealed class DeployOperationExecutor(DeployWorkflowService deployWorkfl
                 submitImmediately: true,
                 payload.ParameterOverrides,
                 principal: null,
+                preMigrationBackupId: payload.Rollback ? payload.BackupId : null,
+                restoreOwnerId,
+                request.ApprovedBy,
                 cancellationToken)
             .ConfigureAwait(false);
 
@@ -109,10 +131,11 @@ internal sealed class DeployOperationExecutor(DeployWorkflowService deployWorkfl
             record.BlockingReasons.Count == 0 &&
             record.Status is WorkflowOperationStatus.AwaitingApproval or WorkflowOperationStatus.Planned)
         {
-            record = await deployWorkflowService.SubmitAsync(
+            record = await deployWorkflowService.SubmitWithRestoreAsync(
                     record.OperationId,
                     request.ApprovedBy,
                     request.Reason,
+                    restoreOwnerId,
                     cancellationToken)
                 .ConfigureAwait(false);
         }
@@ -127,6 +150,10 @@ internal sealed class DeployOperationExecutor(DeployWorkflowService deployWorkfl
         var operation = await deployWorkflowService.GetAsync(executionOperationId, cancellationToken).ConfigureAwait(false);
         return operation is null ? null : BackendStatus(operation.Status);
     }
+
+    /// <summary>Reads the saved deploy workflow without collapsing approval and execution phases.</summary>
+    internal Task<WorkflowOperationRecord?> GetWorkflowAsync(string operationId, CancellationToken cancellationToken)
+        => deployWorkflowService.GetAsync(operationId, cancellationToken);
 
     private static OperationBackendStatus BackendStatus(WorkflowOperationStatus status) => new()
     {
@@ -165,6 +192,13 @@ internal sealed record DeployExecutionPayload
 
     /// <summary>Backend parameter overrides.</summary>
     public Dictionary<string, string>? ParameterOverrides { get; init; }
+
+    /// <summary>True when the approved operation explicitly targets a rollback.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Rollback { get; init; }
+
+    /// <summary>Pre-migration backup id. Ignored unless <see cref="Rollback"/> is true. Never read from parameter overrides.</summary>
+    public string? BackupId { get; init; }
 
     /// <summary>Parses a serialized payload, returning null when missing/malformed.</summary>
     public static DeployExecutionPayload? Parse(string? json)

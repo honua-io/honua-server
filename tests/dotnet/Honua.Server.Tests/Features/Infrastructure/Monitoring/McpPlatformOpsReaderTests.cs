@@ -442,7 +442,8 @@ public sealed class McpPlatformOpsReaderTests
                 ToRevision = " rev-9 ",
                 Reason = "rollback bad release",
                 IdempotencyKey = "rollback-key",
-                ParameterOverrides = new Dictionary<string, string> { ["activePort"] = "5102" },
+                ParameterOverrides = new Dictionary<string, string> { ["activePort"] = "5102", ["backupId"] = "not-the-backup" },
+                BackupId = " honua-cert-snap ",
             },
             CancellationToken.None);
 
@@ -474,6 +475,9 @@ public sealed class McpPlatformOpsReaderTests
         payload.ParameterOverrides.Should().Contain("activePort", "5102");
         payload.DesiredRevision.Should().Be("rev-9");
         payload.CurrentRevision.Should().Be("rev-10");
+        payload.Rollback.Should().BeTrue();
+        payload.BackupId.Should().Be("honua-cert-snap");
+        payload.ParameterOverrides.Should().ContainKey("backupId");
     }
 
     [UnitTest]
@@ -526,6 +530,8 @@ public sealed class McpPlatformOpsReaderTests
         payload.Should().NotBeNull();
         payload!.DesiredRevision.Should().Be("rev-9");
         payload.CurrentRevision.Should().Be("rev-10");
+        payload.Rollback.Should().BeTrue();
+        payload.BackupId.Should().BeNull();
     }
 
     [UnitTest]

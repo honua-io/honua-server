@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Globalization;
+using Honua.ControlPlane;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.AuditLog.Abstractions;
@@ -46,6 +47,8 @@ internal sealed partial class OpsActionAdminConfigChangeApplier(
             OpsActionNames.PauseChannel => await SetChannelPausedAsync(services, request, paused: true, now, cancellationToken).ConfigureAwait(false),
             OpsActionNames.ResumeChannel => await SetChannelPausedAsync(services, request, paused: false, now, cancellationToken).ConfigureAwait(false),
             OpsActionNames.TuneBoundedAdmission => TuneBoundedAdmission(services, request),
+            OpsActionNames.ComposeApplyConfig => throw new OpsActionException(ComposeExecutorCodes.ConfigUnsupported),
+            OpsActionNames.ComposeRestartService => await RestartComposeServiceAsync(services, request, cancellationToken).ConfigureAwait(false),
             OpsActionNames.RestartEcs => await RestartRegisteredEcsAsync(services, request, cancellationToken).ConfigureAwait(false),
             OpsActionNames.RestartLambda => await RestartRegisteredLambdaAsync(services, request, cancellationToken).ConfigureAwait(false),
             OpsActionNames.SetConfig => await SetRegisteredConfigAsync(services, request, cancellationToken).ConfigureAwait(false),
@@ -116,6 +119,44 @@ internal sealed partial class OpsActionAdminConfigChangeApplier(
             "bounded",
             $"Tuned bounded database admission target to {limit.ToString(CultureInfo.InvariantCulture)} "
             + $"(range [{gate.MinLimit.ToString(CultureInfo.InvariantCulture)}, {gate.MaxLimit.ToString(CultureInfo.InvariantCulture)}]).");
+    }
+
+    private static async Task<OpsActionOutcome> RestartComposeServiceAsync(
+        IServiceProvider services,
+        OpsActionRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(request.Target))
+        {
+            throw new OpsActionException(ComposeExecutorCodes.ScopeViolation);
+        }
+
+        if (request.HasParameters)
+        {
+            throw new OpsActionException(ComposeExecutorCodes.ConfigUnsupported);
+        }
+
+        var client = services.GetService<IComposeExecutorClient>()
+            ?? throw new OpsActionException(ComposeExecutorCodes.ExecutorUnconfigured);
+        ComposeExecutorResponse response;
+        try
+        {
+            response = await client.ExecuteAsync(
+                    new ComposeExecutorRequest { Op = "restart", RequestId = Guid.NewGuid().ToString("N") },
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            throw new OpsActionException(ComposeExecutorCodes.ExecutorUnconfigured);
+        }
+
+        if (!response.Ok || !response.ReadbackComplete)
+        {
+            throw new OpsActionException(response.Code ?? ComposeExecutorCodes.ReadbackIncomplete);
+        }
+
+        return new OpsActionOutcome("compose", "service", "Restarted the registered Compose service.");
     }
 
     private static IAlertDispatchStore ResolveDispatchStore(IServiceProvider services)

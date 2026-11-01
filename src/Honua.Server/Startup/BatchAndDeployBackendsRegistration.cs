@@ -105,6 +105,14 @@ internal static class BatchAndDeployBackendsRegistration
         services.AddSingleton<YarpRollingDeployBackend>();
         services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<YarpRollingDeployBackend>());
 
+        // Installed Compose project (honua-server#6811). Registered unconditionally and gated at
+        // runtime by the executor socket. The server process does not receive the Docker socket.
+        services.AddOptions<ComposeExecutorOptions>()
+            .BindConfiguration(ComposeExecutorOptions.SectionName);
+        services.AddSingleton<IComposeExecutorClient, ComposeSocketClient>();
+        services.AddSingleton<ComposeDeployBackend>();
+        services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<ComposeDeployBackend>());
+
         // Batch backends. Local fallback is registered first so it sits earlier in the enumerable.
         services.AddSingleton<LocalBatchComputeBackend>();
         services.AddSingleton<IBatchComputeBackend>(sp =>

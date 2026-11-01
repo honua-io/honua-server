@@ -188,6 +188,10 @@ internal sealed class McpProposeRollbackArgument
 
     [JsonPropertyName("parameterOverrides")]
     public Dictionary<string, string>? ParameterOverrides { get; set; }
+
+    /// <summary>Optional pre-migration backup id. The server rejects an id outside the configured cell.</summary>
+    [JsonPropertyName("backupId")]
+    public string? BackupId { get; set; }
 }
 
 internal sealed class McpProposeFindingArgument

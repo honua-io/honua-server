@@ -99,6 +99,10 @@ internal static class McpPlatformOpsSchemas
               "type": "object",
               "additionalProperties": { "type": "string" },
               "description": "Backend-specific parameters required to perform the forward deploy."
+            },
+            "backupId": {
+              "type": "string",
+              "description": "RDS: name a cell snapshot. Compose: omit to use the newest verified backup."
             }
           },
           "additionalProperties": false

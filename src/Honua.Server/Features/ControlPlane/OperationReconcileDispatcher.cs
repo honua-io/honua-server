@@ -20,7 +20,8 @@ internal sealed class OperationReconcileDispatcher(
     IWorkflowOperationReconciler deployReconciler,
     IExecutionJobReconciler executionJobReconciler,
     IMetadataReleaseOperationReconciler metadataReleaseReconciler,
-    ICoordinatedReleaseReconciler coordinatedReleaseReconciler) : IOperationReconcileDispatcher
+    ICoordinatedReleaseReconciler coordinatedReleaseReconciler,
+    IPreMigrationRestoreReconciler? restoreReconciler = null) : IOperationReconcileDispatcher
 {
     public Task ReconcileOnceAsync(OperationRef op, CancellationToken cancellationToken = default)
     {
@@ -39,6 +40,8 @@ internal sealed class OperationReconcileDispatcher(
                 => metadataReleaseReconciler.ReconcileMetadataReleaseAsync(op.OperationId, cancellationToken),
             OperationKind.CoordinatedRelease
                 => coordinatedReleaseReconciler.ReconcileCoordinatedReleaseAsync(op.OperationId, cancellationToken),
+            OperationKind.PreMigrationRestore when restoreReconciler is not null
+                => restoreReconciler.ReconcileAsync(op.OperationId, cancellationToken),
             _ => throw new ArgumentOutOfRangeException(
                 nameof(op),
                 op.Kind,

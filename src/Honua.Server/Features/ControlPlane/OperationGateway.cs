@@ -326,9 +326,9 @@ internal sealed partial class OperationGateway : IOperationGateway
         // Transitions AwaitingApproval → Executing via a CAS write: only one concurrent
         // caller wins this write; all others re-read a non-AwaitingApproval status and
         // throw, preventing double-execution of non-idempotent operations (BH4-031).
-        proposal = await ClaimForExecutionAsync(proposal, cancellationToken).ConfigureAwait(false);
+        proposal = await ClaimForExecutionAsync(proposal, approvedBy, cancellationToken).ConfigureAwait(false);
 
-        var request = RebuildRequest(proposal) with { ApprovedBy = approvedBy };
+        var request = RebuildRequest(proposal) with { ApprovedBy = approvedBy, ApprovedProposalId = proposal.ProposalId };
         string? executionOperationId = null;
         var status = OperationProposalStatus.Failed;
         string? failureMessage = null;
@@ -931,11 +931,24 @@ internal sealed partial class OperationGateway : IOperationGateway
     /// </summary>
     private async Task<OperationProposal> ClaimForExecutionAsync(
         OperationProposal proposal,
+        string approvedBy,
         CancellationToken cancellationToken)
     {
         for (var attempt = 0; attempt < 3; attempt++)
         {
-            var claiming = proposal with { Status = OperationProposalStatus.Executing };
+            var payload = proposal.Kind == OperationClass.Deploy
+                ? Honua.ControlPlane.Executors.DeployExecutionPayload.Parse(proposal.Plan.ExecutionPayload)
+                : null;
+            var restoreId = proposal.Kind == OperationClass.Deploy && payload is not null
+                ? DurableRestoreQueue.CreateId(string.IsNullOrWhiteSpace(proposal.Audit.IdempotencyKey)
+                    ? proposal.ProposalId : proposal.Audit.IdempotencyKey)
+                : proposal.ExecutionOperationId;
+            var claiming = proposal with
+            {
+                Status = OperationProposalStatus.Executing,
+                ResolvedBy = approvedBy,
+                ExecutionOperationId = restoreId
+            };
             if (await _proposalStore.TrySetAsync(claiming, cancellationToken: cancellationToken)
                     .ConfigureAwait(false))
             {
