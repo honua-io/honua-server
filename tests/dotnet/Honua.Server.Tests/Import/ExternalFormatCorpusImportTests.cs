@@ -208,10 +208,13 @@ public sealed class ExternalFormatCorpusImportTests : IAsyncLifetime
         var schema = _fixture.CurrentSchema ?? throw new InvalidOperationException("Schema was not initialized.");
         await using var connection = await _fixture.Postgres.GetConnectionAsync(schema);
         await using var command = connection.CreateCommand();
+        // Imports normalize polygon families to MultiPolygon. Count holes across every
+        // component so promotion cannot mask preserved (or dropped) interior rings.
         command.CommandText = $"""
             SELECT ST_X(ST_PointOnSurface(geometry)), ST_Y(ST_PointOnSurface(geometry)), ST_SRID(geometry),
                    ST_Area(geometry),
-                   CASE WHEN GeometryType(geometry) = 'POLYGON' THEN ST_NumInteriorRings(geometry) ELSE 0 END,
+                   (SELECT COALESCE(SUM(ST_NumInteriorRings(part.geom)), 0)::integer
+                    FROM ST_Dump(geometry) AS part),
                    COALESCE(properties->>'site_name', properties->>'zone_name')
             FROM {Quote("honua_data")}.{Quote("imported_" + tableName)} t
             """;
