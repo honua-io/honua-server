@@ -1172,6 +1172,13 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      # Authenticated Docker Hub pulls (docker:*-cli base and the dockerfile frontend), like the
+      # server image jobs, so a cut-time anonymous rate limit can't fail the executor publish.
+      - name: Log in to Docker Hub
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: Verify serving index revision matches the candidate source
         env:
           CANDIDATE_SHA: ${{ needs.select-candidate.outputs.sha }}
