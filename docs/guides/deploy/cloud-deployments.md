@@ -201,6 +201,8 @@ settings out of the environment:
 }
 ```
 
+For the complete Studio assistant configuration, including Console editor enablement, customer authorization, disclosure approval and invocation admission activation, follow [Studio assistant on Bedrock](studio-assistant-bedrock.md).
+
 How the document behaves:
 
 - **Precedence:** `appsettings*.json` < settings document < environment variables < command line.
