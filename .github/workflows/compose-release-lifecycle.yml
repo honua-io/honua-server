@@ -49,8 +49,9 @@ jobs:
         run: python3 -m unittest discover -s scripts/docker -p 'test_compose_quickstart.py' -v
       - name: Run published-image MCP and restore journey
         run: |
-          python3 -m venv /tmp/honua-lifecycle-venv
-          /tmp/honua-lifecycle-venv/bin/pip install pytest
+          export TMPDIR="${RUNNER_TEMP}"
+          python3 -m venv "${RUNNER_TEMP}/honua-lifecycle-venv"
+          "${RUNNER_TEMP}/honua-lifecycle-venv/bin/pip" install pytest
           export HONUA_LIFECYCLE_EXECUTOR_IMAGE="$(docker image inspect --format '{{.Id}}' honua-lifecycle:executor)"
           export HONUA_LIFECYCLE_IMAGE="$(docker image inspect --format '{{.Id}}' honua-lifecycle:candidate)"
-          /tmp/honua-lifecycle-venv/bin/pytest -q tests/integration/test_compose_release_lifecycle.py
+          "${RUNNER_TEMP}/honua-lifecycle-venv/bin/pytest" -q tests/integration/test_compose_release_lifecycle.py
