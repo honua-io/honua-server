@@ -38,6 +38,7 @@ public sealed partial class NightlyImageCertificationTests
         "build-lambda-aot",
         "verify-functions-aot",
         "build-jit",
+        "compose-executor",
     ];
 
     [ArchitectureTest]
@@ -77,18 +78,18 @@ public sealed partial class NightlyImageCertificationTests
         nightly.Should().NotContain("HONUA_GIT_SHA=${{ github.sha }}");
         nightly.Should().Contain($"HONUA_GIT_SHA={CandidateSha}", Exactly.Times(4),
             "AOT, Lambda AOT, Functions AOT and JIT are all stamped with the candidate sha");
-        nightly.Should().Contain($"labels: |\n            org.opencontainers.image.revision={CandidateSha}\n", Exactly.Times(4),
-            "the resolver binds a candidate by its config revision label, which metadata-action would otherwise set to github.sha");
+        nightly.Should().Contain($"labels: |\n            org.opencontainers.image.revision={CandidateSha}\n", Exactly.Times(5),
+            "the serving variants and Compose executor must bind their config revision to the candidate sha");
         nightly.Should().Contain($"annotations: |\n            org.opencontainers.image.revision={CandidateSha}\n", Exactly.Times(4),
             "metadata-action's default revision annotation names github.sha too; it must name the candidate");
         nightly.Should().Contain("annotations: ${{ steps.meta.outputs.annotations }}", Exactly.Times(4));
         nightly.Should().Contain("--annotation \"index:org.opencontainers.image.revision=${CANDIDATE_SHA}\"", Exactly.Times(3),
             "every published multi-arch index is annotated with the candidate sha");
-        nightly.Should().Contain("uses: actions/checkout@", Exactly.Times(6),
-            "only the selector itself checks out the workflow revision; every build checks out the candidate");
-        nightly.Should().Contain($"ref: {CandidateSha}", Exactly.Times(5));
+        nightly.Should().Contain("uses: actions/checkout@", Exactly.Times(7),
+            "only the selector itself checks out the workflow revision; every build, including the Compose executor, checks out the candidate");
+        nightly.Should().Contain($"ref: {CandidateSha}", Exactly.Times(6));
 
-        foreach (var trunkOnly in new[] { "build-aot", "build-jit", "manifest-aot", "manifest-lambda-aot", "manifest-jit" })
+        foreach (var trunkOnly in new[] { "build-aot", "build-jit", "manifest-aot", "manifest-lambda-aot", "manifest-jit", "compose-executor" })
         {
             IfOf(Job(nightly, trunkOnly)).Should().Contain("needs.select-candidate.outputs.publish == 'true'",
                 $"{trunkOnly} publishes channel tags, which only a trunk or candidate-tag run at the certified sha may move");

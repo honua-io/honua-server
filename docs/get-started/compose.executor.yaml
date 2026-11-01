@@ -1,8 +1,16 @@
-# Optional overlay for the quickstart Compose file. Copy it beside compose.yaml.
+# Included by the customer quickstart package; not an opt-in profile.
 # The server service stays read-only and does not receive the Docker socket.
-# The executor sidecar is the same server image and is the only service that mounts the socket.
+# Only the dedicated executor image mounts the Docker socket.
 # The separate manager and executor share the executor socket; the serving service does not.
 services:
+  keyring-init:
+    # CAP_CHOWN cannot traverse a private host directory on its own.
+    group_add:
+      - "${HONUA_PROJECT_GID:?Set the project directory group id}"
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [CHOWN]
+    security_opt: ["no-new-privileges:true"]
   honua:
     environment:
       AllowedHosts: "localhost;127.0.0.1;honua"
@@ -16,12 +24,12 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       Licensing__Mode: Disabled
-      AllowedHosts: "localhost;127.0.0.1"
+      AllowedHosts: "localhost;127.0.0.1;compose-manager"
       PUBLIC_BASE_URL: "http://localhost:${HONUA_MANAGER_PORT:-18082}"
-      ConnectionStrings__DefaultConnection: "Host=compose-manager-postgres;Database=honua_manager;Username=honua;Password=${POSTGRES_PASSWORD:?Required}"
+      ConnectionStrings__DefaultConnection: "Host=compose-manager-postgres;Database=honua_manager;Username=honua;Password=${HONUA_MANAGER_POSTGRES_PASSWORD:?Required}"
       ConnectionStrings__Redis: compose-manager-redis:6379
-      HONUA_ADMIN_PASSWORD: ${HONUA_ADMIN_PASSWORD:?Required}
-      Security__ConnectionEncryption__MasterKey: ${HONUA_MASTER_KEY:?Required}
+      HONUA_ADMIN_PASSWORD: ${HONUA_MANAGER_ADMIN_PASSWORD:?Required}
+      Security__ConnectionEncryption__MasterKey: ${HONUA_MANAGER_MASTER_KEY:?Required}
       Operations__SecretChannel__KeyRingCertificatePath: /var/lib/honua/keyring.pfx
       Operations__SecretChannel__KeyRingCertificatePassword: ${HONUA_KEYRING_PASSWORD:?Required}
       Database__MigrationSafety__ContractApplyPolicy: Gate
@@ -76,7 +84,7 @@ services:
     environment:
       POSTGRES_DB: honua_manager
       POSTGRES_USER: honua
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Required}
+      POSTGRES_PASSWORD: ${HONUA_MANAGER_POSTGRES_PASSWORD:?Required}
     volumes:
       - compose-manager-postgres:/var/lib/postgresql/data
     configs:
@@ -88,12 +96,12 @@ services:
       timeout: 3s
       retries: 30
     restart: unless-stopped
-  # A fresh named volume is root-owned. This one-shot command makes it writable by uid 1001
+  # A fresh named volume is root-owned. This one-shot command makes it writable by uid 1002
   # before the executor binds the socket. The Debian runtime image provides chown.
   compose-executor-init:
-    image: ${HONUA_RELEASE_IMAGE:?Set the immutable release digest}
+    image: ${HONUA_EXECUTOR_IMAGE:?Set the immutable executor digest}
     user: "0:0"
-    entrypoint: ["chown", "1001:1001", "/run/honua-compose"]
+    entrypoint: ["chown", "1002:1001", "/run/honua-compose"]
     restart: "no"
     read_only: true
     cap_drop: [ALL]
@@ -102,11 +110,12 @@ services:
     volumes:
       - compose-executor-socket:/run/honua-compose
   compose-executor:
-    image: ${HONUA_RELEASE_IMAGE:?Set the immutable release digest}
-    user: "1001:1001"
-    # Host docker group, so uid 1001 can use the mounted socket. `getent group docker` prints it.
+    image: ${HONUA_EXECUTOR_IMAGE:?Set the immutable executor digest}
+    user: "1002:1001"
+    # Supplementary groups grant the Docker socket and only this install directory.
     group_add:
       - "${DOCKER_GID:?Set the host docker group id}"
+      - "${HONUA_PROJECT_GID:?Set the project directory group id}"
     read_only: true
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
@@ -124,6 +133,7 @@ services:
       - /tmp:nosuid,size=100m
     environment:
       HONUA_COMPOSE_EXECUTOR: "true"
+      HOME: /tmp
       ControlPlane__ComposeExecutor__SocketPath: /run/honua-compose/executor.sock
       ControlPlane__ComposeExecutor__ProjectDirectory: ${HONUA_COMPOSE_PROJECT_DIRECTORY:?Set the absolute host project directory}
       # docker compose ls names the project. The quickstart project name is the directory name.
@@ -146,10 +156,6 @@ services:
       ControlPlane__ComposeExecutor__ReleaseImage: ${HONUA_RELEASE_IMAGE:?Set the immutable release digest}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      # The published server image does not ship the Docker client. Mount the host binary.
-      # It must run on the image's glibc. The honua service does not receive this mount.
-      - /usr/bin/docker:/usr/local/bin/docker:ro
-      - ${DOCKER_COMPOSE_PLUGIN:?Set the host Compose plugin executable}:/usr/local/lib/docker/cli-plugins/docker-compose:ro
       # Identical host/container paths keep relative Compose bind mounts on the host project.
       - ${HONUA_COMPOSE_PROJECT_DIRECTORY:?Set the absolute host project directory}:${HONUA_COMPOSE_PROJECT_DIRECTORY:?Set the absolute host project directory}
       - compose-executor-socket:/run/honua-compose
