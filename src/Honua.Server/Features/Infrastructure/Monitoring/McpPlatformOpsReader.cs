@@ -177,12 +177,15 @@ internal sealed class McpPlatformOpsReader(
             var compose = _services.GetService<IComposeExecutorClient>();
             var preview = compose is null ? null : await compose.ExecuteAsync(new ComposeExecutorRequest
             {
-                Op = "plan-rollback", Image = selection.DesiredRevision, RequestId = "rollback-proposal"
+                Op = "plan-rollback",
+                Image = selection.DesiredRevision,
+                RequestId = "rollback-proposal"
             }, cancellationToken).ConfigureAwait(false);
             if (preview is not { Ok: true, ReadbackComplete: true } || string.IsNullOrWhiteSpace(preview.BackupId))
                 return new McpProposeOperationOutput
                 {
-                    Outcome = "Blocked", SupportedKinds = ResolveSupportedKinds(),
+                    Outcome = "Blocked",
+                    SupportedKinds = ResolveSupportedKinds(),
                     Message = preview?.Code ?? PreMigrationRestoreCodes.TransportUnavailable
                 };
             backupId = preview.BackupId;

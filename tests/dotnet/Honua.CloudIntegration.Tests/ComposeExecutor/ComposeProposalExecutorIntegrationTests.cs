@@ -202,7 +202,9 @@ public sealed class ComposeProposalExecutorIntegrationTests
             var auditBeforePreview = await File.ReadAllTextAsync(Path.Combine(backupDir, "audit.jsonl")).ConfigureAwait(false);
             var preview = await client.ExecuteAsync(new ComposeExecutorRequest
             {
-                Op = "plan-rollback", Image = rc1Id, RequestId = "preview"
+                Op = "plan-rollback",
+                Image = rc1Id,
+                RequestId = "preview"
             }).ConfigureAwait(false);
             Assert.True(preview.Ok && preview.ReadbackComplete, "Rollback preview must verify the selected backup.");
             Assert.Equal(manifest.BackupId, preview.BackupId);
@@ -216,7 +218,9 @@ public sealed class ComposeProposalExecutorIntegrationTests
 
             var badPreview = await client.ExecuteAsync(new ComposeExecutorRequest
             {
-                Op = "plan-rollback", Image = rc1Id, RequestId = "preview-tampered"
+                Op = "plan-rollback",
+                Image = rc1Id,
+                RequestId = "preview-tampered"
             }).ConfigureAwait(false);
             Assert.False(badPreview.Ok);
             Assert.Equal(PreMigrationRestoreCodes.BackupChecksumMismatch, badPreview.Code);

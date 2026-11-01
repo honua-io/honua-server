@@ -499,7 +499,9 @@ public sealed class McpPlatformOpsReaderTests
         compose.ExecuteAsync(Arg.Is<ComposeExecutorRequest>(request => request.Op == "plan-rollback" && request.Image == "installed"),
             Arg.Any<CancellationToken>()).Returns(new ComposeExecutorResponse
             {
-                Ok = verified, ReadbackComplete = verified, BackupId = verified ? "backup-selected" : null,
+                Ok = verified,
+                ReadbackComplete = verified,
+                BackupId = verified ? "backup-selected" : null,
                 Code = verified ? null : "restore-backup-unverified"
             });
         using var services = CreateServices(gateway, compose: compose);

@@ -46,8 +46,11 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
             var targets = Substitute.For<IDeployTargetRegistry>();
             targets.GetAsync("local", Arg.Any<CancellationToken>()).Returns(new DeployTargetDefinition
             {
-                TargetId = "local", TargetKind = DeployTargetKind.LocalCompose, Backend = "test",
-                Environment = "local", TargetName = "honua"
+                TargetId = "local",
+                TargetKind = DeployTargetKind.LocalCompose,
+                Backend = "test",
+                Environment = "local",
+                TargetName = "honua"
             });
             var backend = Substitute.For<IDeployBackend>();
             backend.BackendName.Returns("test");
@@ -68,17 +71,26 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
                 var proposalId = "proposal-" + Guid.NewGuid().ToString("N");
                 var request = new OperationGatewayRequest
                 {
-                    Kind = OperationClass.Deploy, RequestedBy = "proposer", ApprovedBy = "approver", ApprovedProposalId = proposalId
+                    Kind = OperationClass.Deploy,
+                    RequestedBy = "proposer",
+                    ApprovedBy = "approver",
+                    ApprovedProposalId = proposalId
                 };
                 var id = await queue.EnqueueAsync(request, new DeployExecutionPayload
                 {
-                    TargetId = "local", DesiredRevision = "sha256:" + new string('a', 64)
+                    TargetId = "local",
+                    DesiredRevision = "sha256:" + new string('a', 64)
                 }.Serialize(), CancellationToken.None);
                 Assert.True(await proposals.TryCreateAsync(new OperationProposal
                 {
-                    ProposalId = proposalId, Kind = OperationClass.Deploy, Status = OperationProposalStatus.Submitted,
-                    ResolvedBy = "approver", ExecutionOperationId = id, Plan = new OperationProposalPlan { Summary = "Converge" },
-                    CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow
+                    ProposalId = proposalId,
+                    Kind = OperationClass.Deploy,
+                    Status = OperationProposalStatus.Submitted,
+                    ResolvedBy = "approver",
+                    ExecutionOperationId = id,
+                    Plan = new OperationProposalPlan { Summary = "Converge" },
+                    CreatedAt = DateTimeOffset.UtcNow,
+                    UpdatedAt = DateTimeOffset.UtcNow
                 }));
                 return id;
             }
@@ -92,7 +104,9 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
             Assert.True(await workflows.TrySetAsync(owner! with { CurrentPhase = failedId }));
             compose.ExecuteAsync(Arg.Any<ComposeExecutorRequest>(), Arg.Any<CancellationToken>()).Returns(new ComposeExecutorResponse
             {
-                Ok = true, ReadbackComplete = true, RunningImage = "sha256:" + new string('b', 64)
+                Ok = true,
+                ReadbackComplete = true,
+                RunningImage = "sha256:" + new string('b', 64)
             });
             var nextId = await ApproveAsync();
             await Worker().ReconcileAsync(nextId, CancellationToken.None);

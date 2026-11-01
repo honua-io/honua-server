@@ -27,17 +27,28 @@ public sealed class ProposalTenantOwnershipTests
         var now = DateTimeOffset.UtcNow;
         var proposal = new OperationProposal
         {
-            ProposalId = "proposal", OperationId = "control-plane.deploy", TenantId = "tenant-a",
-            Kind = OperationClass.Deploy, Status = OperationProposalStatus.Submitted,
-            Audit = new OperationAuditInfo { OperationInstanceId = "instance" }, ExecutionOperationId = "restore",
-            CreatedAt = now, UpdatedAt = now
+            ProposalId = "proposal",
+            OperationId = "control-plane.deploy",
+            TenantId = "tenant-a",
+            Kind = OperationClass.Deploy,
+            Status = OperationProposalStatus.Submitted,
+            Audit = new OperationAuditInfo { OperationInstanceId = "instance" },
+            ExecutionOperationId = "restore",
+            CreatedAt = now,
+            UpdatedAt = now
         };
         var execution = new OperationHandle
         {
-            OperationInstanceId = "instance", OperationId = "control-plane.deploy", TenantId = "tenant-a",
-            ProposalId = "proposal", JobId = "restore", CorrelationId = "correlation",
-            Status = OperationHandleStatus.Failed, Reason = "restore-provider-failed",
-            CreatedAt = now, UpdatedAt = now.AddMinutes(1)
+            OperationInstanceId = "instance",
+            OperationId = "control-plane.deploy",
+            TenantId = "tenant-a",
+            ProposalId = "proposal",
+            JobId = "restore",
+            CorrelationId = "correlation",
+            Status = OperationHandleStatus.Failed,
+            Reason = "restore-provider-failed",
+            CreatedAt = now,
+            UpdatedAt = now.AddMinutes(1)
         };
         var terminal = OperationProposalExecutionView.From(proposal, execution);
         Assert.Equal("Failed", terminal.Status);

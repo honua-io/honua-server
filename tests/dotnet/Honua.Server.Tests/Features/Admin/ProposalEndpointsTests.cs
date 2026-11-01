@@ -169,13 +169,17 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
         var proposal = await SeedProposalAsync(requestedBy: actor);
         Assert.True(await _proposalStore.TrySetAsync(proposal with
         {
-            Status = OperationProposalStatus.Submitted, ExecutionOperationId = "restore-terminal"
+            Status = OperationProposalStatus.Submitted,
+            ExecutionOperationId = "restore-terminal"
         }));
         var instances = _fixture.Services.GetRequiredService<IOperationInstanceStore>();
         var instance = (await instances.GetAsync(proposal.Audit.OperationInstanceId!))!;
         Assert.True(await instances.TrySetAsync(instance with
         {
-            Status = executionStatus, Reason = reason, JobId = "restore-terminal", UpdatedAt = DateTimeOffset.UtcNow
+            Status = executionStatus,
+            Reason = reason,
+            JobId = "restore-terminal",
+            UpdatedAt = DateTimeOffset.UtcNow
         }, instance.Version));
 
         var response = await _client.GetAsync($"/api/v1/admin/proposals/{proposal.ProposalId}");
