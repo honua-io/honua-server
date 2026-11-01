@@ -60,9 +60,13 @@ class PrManagedBuildTests(unittest.TestCase):
             TEXT.replace('    needs: pr-gate\n', '    needs: format\n', 1),
             TEXT.replace('name: PR Gate / Build and tests', 'name: Renamed admission', 1),
         ]
-        setup = consumer.split('- name: Setup .NET', 1)[1].split('- name:', 1)[0]
-        gate = next(line for line in setup.splitlines() if line.strip().startswith('if:'))
-        mutations.append(TEXT.replace(consumer, consumer.replace(gate, "        if: needs.pr-gate.outputs.skip != 'true'", 1)))
+        for name in ('Start freeing runtime proof disk space', 'Wait for runtime proof disk cleanup', 'Setup .NET'):
+            prefix, rest = consumer.split('- name: ' + name, 1)
+            step, suffix = rest.split('- name:', 1)
+            gate = next(line for line in step.splitlines() if line.strip().startswith('if:'))
+            altered_step = step.replace(gate, "        if: needs.pr-gate.outputs.skip != 'true'", 1)
+            altered_consumer = prefix + '- name: ' + name + altered_step + '- name:' + suffix
+            mutations.append(TEXT.replace(consumer, altered_consumer, 1))
         mutations.append(TEXT.replace(consumer, consumer.replace('- name: Revalidate exact-head review before verification', '- name: Missing pre-execution review', 1)))
         with tempfile.TemporaryDirectory() as directory:
             candidate = Path(directory) / 'pr-gate.yml'

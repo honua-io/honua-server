@@ -164,7 +164,7 @@ def main() -> None:
     # failure on enforced attempt 1 also blocks its dependent consumer job.
     for source, names in [
         (build_test_job, ["Setup .NET", "Plan managed test producer", "Lean gate (managed build producer)", "Publish pristine managed test outputs"]),
-        (consumer_job, ["Setup .NET", "Plan managed test consumer", "Restore verified managed test outputs", "Build missing managed test outputs"]),
+        (consumer_job, ["Start freeing runtime proof disk space", "Setup .NET", "Wait for runtime proof disk cleanup", "Plan managed test consumer", "Restore verified managed test outputs", "Build missing managed test outputs"]),
     ]:
         for name in names:
             step = source.split(f"- name: {name}", 1)[1].split("- name:", 1)[0]
@@ -189,7 +189,7 @@ def main() -> None:
     require(pr_gate, "  statuses: read", "attempt 2 needs bounded read access to Review Gate status")
     for source, label, expensive_name in [
         (build_test_job, "producer", "Free disk space"),
-        (consumer_job, "consumer", "Setup .NET"),
+        (consumer_job, "consumer", "Start freeing runtime proof disk space"),
     ]:
         before_name = "Revalidate exact-head review before verification"
         after_name = "Revalidate exact-head review before success"
