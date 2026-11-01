@@ -21,7 +21,7 @@ public sealed class OpsHealthSnapshotResponse
     [JsonPropertyName("generatedAt")]
     public required DateTimeOffset GeneratedAt { get; init; }
 
-    /// <summary>Gets the overall status roll-up (<c>Healthy</c>/<c>Degraded</c>/<c>Unhealthy</c>) from the health report.</summary>
+    /// <summary>Gets the overall status roll-up (<c>Healthy</c>/<c>Degraded</c>/<c>Unhealthy</c>) from manager and managed-target health.</summary>
     [JsonPropertyName("overallStatus")]
     public required string OverallStatus { get; init; }
 
@@ -44,6 +44,10 @@ public sealed class OpsHealthSnapshotResponse
     /// <summary>Gets the coordinated-deploy readiness summary and platform-release skew.</summary>
     [JsonPropertyName("deploy")]
     public required OpsDeployReadinessView Deploy { get; init; }
+
+    /// <summary>Gets live health of each registered managed Compose target, independently of this manager.</summary>
+    [JsonPropertyName("managedTargets")]
+    public IReadOnlyList<OpsManagedTargetHealthView> ManagedTargets { get; init; } = [];
 
     /// <summary>Gets the database connection-pool utilization and cache/error metrics.</summary>
     [JsonPropertyName("database")]
@@ -789,4 +793,32 @@ public sealed class OpsAutonomySettingsUpdateRequest
     /// <summary>Gets an optional operator reason persisted with the audit event.</summary>
     [JsonPropertyName("reason")]
     public string? Reason { get; init; }
+}
+
+/// <summary>Live executor readback for a registered managed target.</summary>
+public sealed class OpsManagedTargetHealthView
+{
+    // Internal correlation only; the public health view does not expose container identities.
+    [JsonIgnore]
+    internal string? ServingIncarnation { get; init; }
+
+    [JsonIgnore]
+    internal IReadOnlyDictionary<string, string> ServiceIncarnations { get; init; } = new Dictionary<string, string>();
+
+    /// <summary>Registered deploy target identifier.</summary>
+    public required string TargetId { get; init; }
+    /// <summary>Whether the executor successfully observed the stack.</summary>
+    public bool Available { get; init; }
+    /// <summary>Time the executor readback completed.</summary>
+    public DateTimeOffset ObservedAt { get; init; }
+    /// <summary>Aggregate Healthy, Unhealthy, or Unknown status.</summary>
+    public required string Status { get; init; }
+    /// <summary>Live immutable serving image reference; absent while serving is stopped.</summary>
+    public string? RunningImage { get; init; }
+    /// <summary>Inspected container image id, including when stopped.</summary>
+    public string? ImageId { get; init; }
+    /// <summary>Serving server's authenticated version readback.</summary>
+    public string? ServerVersion { get; init; }
+    /// <summary>Readiness of each configured managed service.</summary>
+    public IReadOnlyList<OpsHealthCheckEntryView> Services { get; init; } = [];
 }

@@ -13,6 +13,7 @@ on:
       - '.github/workflows/compose-release-lifecycle.yml'
       - 'docker/Dockerfile.compose-executor'
       - 'scripts/docker/*quickstart*.py'
+      - 'scripts/docker/test_compose_release_lifecycle_polling.py'
 
 permissions:
   contents: read
@@ -35,6 +36,8 @@ jobs:
         run: |
           scripts/ci/server-test-shard-free-disk.sh
           scripts/ci/server-test-shard-free-disk.sh --await
+      - name: Verify proposal lifecycle polling
+        run: python3 -m unittest discover -s scripts/docker -p 'test_compose_release_lifecycle_polling.py' -v
       - name: Build production candidate image
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -56,4 +59,4 @@ jobs:
           "${RUNNER_TEMP}/honua-lifecycle-venv/bin/pip" install pytest
           export HONUA_LIFECYCLE_EXECUTOR_IMAGE="$(docker image inspect --format '{{.Id}}' honua-lifecycle:executor)"
           export HONUA_LIFECYCLE_IMAGE="$(docker image inspect --format '{{.Id}}' honua-lifecycle:candidate)"
-          "${RUNNER_TEMP}/honua-lifecycle-venv/bin/pytest" -q tests/integration/test_compose_release_lifecycle.py
+          "${RUNNER_TEMP}/honua-lifecycle-venv/bin/pytest" -q --tb=short --no-showlocals tests/integration/test_compose_release_lifecycle.py

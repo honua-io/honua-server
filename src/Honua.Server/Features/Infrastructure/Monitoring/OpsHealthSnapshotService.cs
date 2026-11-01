@@ -8,6 +8,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Observability.Abstractions;
 using Honua.Core.Features.Observability.Domain;
 using Honua.ServiceDefaults;
+using Honua.Server.Features.Admin.Models;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
 
@@ -40,6 +41,7 @@ internal sealed class OpsHealthSnapshotService : IOpsHealthSnapshotService
     private readonly IExecutionJobStore? _jobStore;
     private readonly IOpsHealthRollupStore? _rollupStore;
     private readonly TimeProvider _timeProvider;
+    private readonly IManagedComposeObserver? _managedComposeObserver;
 
     public OpsHealthSnapshotService(
         HealthCheckService healthCheckService,
@@ -50,8 +52,10 @@ internal sealed class OpsHealthSnapshotService : IOpsHealthSnapshotService
         IOptions<OpsHealthRollupOptions> rollupOptions,
         TimeProvider timeProvider,
         IExecutionJobStore? jobStore = null,
-        IOpsHealthRollupStore? rollupStore = null)
+        IOpsHealthRollupStore? rollupStore = null,
+        IManagedComposeObserver? managedComposeObserver = null)
     {
+        _managedComposeObserver = managedComposeObserver;
         _healthCheckService = healthCheckService;
         _deployProbe = deployProbe;
         _controlPlaneOptions = controlPlaneOptions;
@@ -72,7 +76,11 @@ internal sealed class OpsHealthSnapshotService : IOpsHealthSnapshotService
         var servingLatencyResult = await BuildServingLatencyViewAsync(cancellationToken).ConfigureAwait(false);
         var servingLatency = servingLatencyResult.View;
 
+        var managedTargets = _managedComposeObserver is null ? []
+            : await _managedComposeObserver.ReadAsync(cancellationToken).ConfigureAwait(false);
         var generatedAt = _timeProvider.GetUtcNow();
+        var release = ManagedComposeObserver.ProjectRelease(_controlPlaneOptions.CurrentValue, managedTargets,
+            EvidencePostureVocabulary.SourceIds.DeployRelease, generatedAt);
         var alertDispatch = BuildAlertDispatchView();
         var database = new OpsDatabaseView
         {
@@ -87,7 +95,7 @@ internal sealed class OpsHealthSnapshotService : IOpsHealthSnapshotService
             ErrorRate = healthMetrics.ErrorRate,
         };
 
-        var sectionSources = new[]
+        var sectionSources = new List<EvidenceSourceEnvelope>
         {
             EvidencePostureFactory.Complete(
                 EvidencePostureVocabulary.SourceIds.OpsHealthChecks,
@@ -108,12 +116,7 @@ internal sealed class OpsHealthSnapshotService : IOpsHealthSnapshotService
                     EvidencePostureVocabulary.BackendKinds.DurableStore,
                     "execution-job-store"),
             BuildAlertDispatchSource(alertDispatch),
-            EvidencePostureFactory.Complete(
-                EvidencePostureVocabulary.SourceIds.DeployRelease,
-                EvidencePostureVocabulary.BackendKinds.ConfigProjection,
-                "control-plane-options",
-                generatedAt,
-                ProjectionValidity),
+            release.EvidencePosture!.Sources.Single(source => source.SourceId == EvidencePostureVocabulary.SourceIds.DeployRelease),
             database.HasConnectionPoolData
                 ? EvidencePostureFactory.Complete(
                     EvidencePostureVocabulary.SourceIds.DatabaseCache,
@@ -128,6 +131,8 @@ internal sealed class OpsHealthSnapshotService : IOpsHealthSnapshotService
                     EvidencePostureVocabulary.ReasonCodes.SourceUnavailable,
                     maximumAge: SectionValidity),
         };
+
+        if (managedTargets.Count > 0) sectionSources.Add(ManagedComposeObserver.Source(managedTargets));
 
         // Validate the sections first so the documented top-level `honua_ops_health` source can
         // summarize them truthfully: it is complete only when every section is individually
@@ -145,12 +150,15 @@ internal sealed class OpsHealthSnapshotService : IOpsHealthSnapshotService
         {
             EvidencePosture = EvidencePostureFactory.Build(generatedAt, [aggregate, .. validatedSections]),
             GeneratedAt = generatedAt,
-            OverallStatus = healthReport.Status.ToString(),
+            OverallStatus = managedTargets.Any(target => target.Status == "Unhealthy") ? "Unhealthy"
+                : managedTargets.Any(target => target.Status == "Unknown") && healthReport.Status == HealthStatus.Healthy
+                    ? "Degraded" : healthReport.Status.ToString(),
+            ManagedTargets = managedTargets,
             Health = BuildHealthView(healthReport),
             ServingLatency = servingLatency,
             Geoprocessing = gpQueue,
             AlertDispatch = alertDispatch,
-            Deploy = BuildDeployView(deploySnapshot),
+            Deploy = BuildDeployView(deploySnapshot, release),
             Database = database,
         };
     }
@@ -160,9 +168,6 @@ internal sealed class OpsHealthSnapshotService : IOpsHealthSnapshotService
     /// this instead of inferring freshness from the response timestamp.
     /// </summary>
     private static readonly TimeSpan SectionValidity = TimeSpan.FromMinutes(2);
-
-    /// <summary>Server-owned maximum observation age for configuration-projected sections.</summary>
-    private static readonly TimeSpan ProjectionValidity = TimeSpan.FromMinutes(5);
 
     /// <summary>
     /// Projects the serving-latency section. A cluster rollup that failed to read leaves this
@@ -425,9 +430,8 @@ internal sealed class OpsHealthSnapshotService : IOpsHealthSnapshotService
         };
     }
 
-    private OpsDeployReadinessView BuildDeployView(DeployPreflightSnapshot snapshot)
+    private static OpsDeployReadinessView BuildDeployView(DeployPreflightSnapshot snapshot, DeployPreflightPlatformRelease skew)
     {
-        var skew = PlatformReleaseSkewProjector.Build(_controlPlaneOptions.CurrentValue);
         return new OpsDeployReadinessView
         {
             Status = snapshot.Status,

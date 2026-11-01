@@ -61,6 +61,7 @@ def rpc(base, key, session, method, params, ident):
 
 def wait_for_proposal(base, key, proposal, expected, proposer_key, session, timeout=1500):
     deadline = time.monotonic() + timeout
+    status = resource_status = "not observed"
     while time.monotonic() < deadline:
         detail, _ = request(base, f"/api/v1/admin/proposals/{proposal}", key)
         status = detail["status"].lower()
@@ -68,15 +69,15 @@ def wait_for_proposal(base, key, proposal, expected, proposer_key, session, time
                           {"uri": f"honua://proposals/{proposal}"}, 99)
         proposal_resource = json.loads(resource["contents"][0]["text"])
         resource_status = proposal_resource["status"].lower()
-        if status in ("completed", "failed", "rejected", "cancelled") and status == resource_status:
-            actual = "succeeded" if status == "completed" else "failed"
+        if status in ("completed", "succeeded", "failed", "rejected", "cancelled") and status == resource_status:
+            actual = "succeeded" if status in ("completed", "succeeded") else "failed"
             assert actual == expected, f"unexpected proposal terminal state: {status}"
             assert detail.get("resolutionReason") == proposal_resource.get("resolutionReason")
             if status == "failed":
                 assert detail.get("resolutionReason"), "failed execution must report its reason"
             return detail
         time.sleep(5)
-    raise AssertionError("operation did not reach its terminal state")
+    raise AssertionError(f"operation did not reach its terminal state (REST={status}, MCP={resource_status})")
 
 
 def wait_for_approval(base, key, proposal, timeout=30):
@@ -160,6 +161,22 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
             result, _ = rpc(base, proposer_key, session, "tools/call", {"name": name, "arguments": arguments}, ident)
             assert not result.get("isError"), "MCP tool refused the request"
             return result["structuredContent"]
+        def assert_live_revision(expected_id, expected_skew):
+            status = call("honua_platform_release_status", {}, 40)
+            serving = next(target for target in status["serving"] if target["id"] == "compose-local")
+            assert serving["observedImageId"] == expected_id
+            assert serving["serverVersion"]
+            assert serving["skewed"] == expected_skew
+            assert status["isCoVersioned"] != expected_skew
+            preflight, _ = request(base, "/api/v1/admin/deploy/preflight?includeDiagnostics=true", proposer_key)
+            http_release = preflight["platformRelease"]
+            http_serving = next(target for target in http_release["serving"] if target["id"] == "compose-local")
+            assert http_release["isCoVersioned"] == status["isCoVersioned"]
+            assert http_serving["observedImageId"] == serving["observedImageId"]
+            assert http_serving["serverVersion"] == serving["serverVersion"]
+            assert http_serving["skewed"] == serving["skewed"]
+
+        assert_live_revision(prior_id, True)
         failed = call("honua_propose_platform_release_convergence", {
             "reason": "convergence failure regression", "idempotencyKey": "failed-convergence"}, 20)
         failed_proposal = failed["targets"][0]["proposalId"]
@@ -198,6 +215,7 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
         request(base, f"/api/v1/admin/proposals/{proposal}/approve", approver_key, {})
         first_convergence = wait_for_proposal(base, approver_key, proposal, "succeeded", proposer_key, session)
         assert image_id() == candidate and schema() == candidate_schema
+        assert_live_revision(candidate, False)
         assert sql("SELECT count(*) FROM public.schema_versions WHERE scriptname LIKE '%142_CreateAiFinancialAccounting.sql'") == "1"
         assert sql("SELECT value FROM public.rc2_lifecycle_marker WHERE id=1") == "retained"
         assert sql("SELECT to_regclass('honua.ai_financial_invocations') IS NOT NULL") == "t"
@@ -234,6 +252,56 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
         assert sql("SELECT value FROM public.rc2_lifecycle_marker WHERE id=1") == "retained"
         assert sql("SELECT to_regclass('honua.ai_financial_invocations') IS NULL") == "t"
         assert sql("SELECT PostGIS_Version()")
+        assert_live_revision(prior_id, True)
+        # Fault injection stops only services in this disposable install. The product
+        # must find and restart each one through MCP and a distinct approver.
+        for service_name in ("honua", "redis", "postgres", "honua"):
+            dc("stop", service_name)
+            health = call("honua_ops_health", {}, 41)
+            managed = next(target for target in health["managedTargets"] if target["targetId"] == "compose-local")
+            assert next(service for service in managed["services"] if service["name"] == service_name)["status"] == "Unhealthy"
+            assert health["overallStatus"] == "Unhealthy"
+            findings = call("honua_ops_findings", {"rule": "managed-compose-service-unhealthy"}, 42)
+            finding = next((item for item in findings["findings"] if item["subject"].get("workloadId") == service_name), None)
+            assert finding is not None, json.dumps({
+                "stoppedService": service_name,
+                "services": [{"name": entry["name"], "status": entry["status"]} for entry in managed["services"]],
+                "findings": [{"rule": entry["rule"], "subject": entry["subject"]} for entry in findings["findings"]],
+                "sources": [{name: source.get(name) for name in ("sourceId", "completeness", "reasonCodes")}
+                            for source in findings.get("evidencePosture", {}).get("sources", [])],
+            })
+            assert finding["recommendedAction"]["kind"] == "AdminConfigChange"
+            assert not finding["recommendedAction"]["autoSafe"]
+            proposed = call("honua_propose_finding", {"findingId": finding["id"], "candidateId": "compose-local"}, 43)
+            remediation = proposed["proposalId"]
+            assert remediation
+            detail = wait_for_approval(base, approver_key, remediation)
+            assert detail["status"].lower() == "awaitingapproval"
+            assert detail["actionDiscriminator"] == "compose.restart_service"
+            # Proposing and self-approval must not repair the stopped service.
+            assert dc("ps", "--status", "running", "-q", service_name) == ""
+            try:
+                request(base, f"/api/v1/admin/proposals/{remediation}/approve", proposer_key, {})
+                raise AssertionError("self approval succeeded")
+            except urllib.error.HTTPError as error:
+                assert error.code in (400, 403, 409)
+            assert dc("ps", "--status", "running", "-q", service_name) == ""
+            request(base, f"/api/v1/admin/proposals/{remediation}/approve", approver_key, {})
+            wait_for_proposal(base, approver_key, remediation, "succeeded", proposer_key, session, timeout=180)
+            deadline = time.monotonic() + 90
+            while True:
+                health = call("honua_ops_health", {}, 44)
+                managed = next(target for target in health["managedTargets"] if target["targetId"] == "compose-local")
+                if managed["status"] == "Healthy":
+                    break
+                assert time.monotonic() < deadline, "managed stack did not recover"
+                time.sleep(2)
+            assert all(service["status"] == "Healthy" for service in managed["services"])
+            audit = next(entry for entry in health["health"]["entries"] if entry["name"] == "audit-chain-integrity")
+            assert audit["status"] == "Healthy", "locally configured audit verification must remain healthy"
+            findings = call("honua_ops_findings", {"rule": "managed-compose-service-unhealthy"}, 45)
+            assert not findings["findings"]
+        assert_live_revision(prior_id, True)
         # Closing a client early must not terminate the listener or block later requests.
         disconnect = "import socket; s=socket.socket(socket.AF_UNIX); s.connect('/sock/executor.sock'); s.sendall(b'{\"op\":\"status\"}\\n'); s.close()"
         run(["docker", "run", "--rm", "-v", project + "_compose-executor-socket:/sock", "python:3.12-alpine", "python", "-c", disconnect])
@@ -256,6 +324,7 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
         restore_ids = {detail["executionOperationId"] for detail in (first_convergence, restored, converged_again)}
         assert len(restore_ids) == 3 and all(ident.startswith("restore-") for ident in restore_ids)
         assert image_id() == candidate and schema() == candidate_schema
+        assert_live_revision(candidate, False)
         assert sql("SELECT value FROM public.rc2_lifecycle_marker WHERE id=1") == "after-first-rollback"
         assert sql("SELECT to_regclass('honua.ai_financial_invocations') IS NOT NULL") == "t"
         new_manifests = list((project_dir / "backups").glob("backup-*/manifest.json"))
@@ -275,6 +344,7 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
         restored_again = wait_for_proposal(base, approver_key, second_rollback["proposalId"], "succeeded", proposer_key, session)
         assert restored_again["executionOperationId"] not in restore_ids
         assert image_id() == prior_id and schema() == 140
+        assert_live_revision(prior_id, True)
         assert sql("SELECT value FROM public.rc2_lifecycle_marker WHERE id=1") == "after-first-rollback"
         assert sql("SELECT to_regclass('honua.ai_financial_invocations') IS NULL") == "t"
     finally:

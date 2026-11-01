@@ -109,6 +109,9 @@ internal static class DeployControlEndpoints
     {
         var snapshot = await deployPreflightProbe.ProbeAsync(context.RequestAborted).ConfigureAwait(false);
         var includeDiagnostics = ShouldIncludeDiagnostics(context);
+        var observer = includeDiagnostics ? context.RequestServices.GetService<IManagedComposeObserver>() : null;
+        var managedTargets = observer is null ? [] : await observer.ReadAsync(context.RequestAborted).ConfigureAwait(false);
+        var generatedAt = (context.RequestServices.GetService<TimeProvider>() ?? TimeProvider.System).GetUtcNow();
 
         var response = new DeployPreflightResponse
         {
@@ -121,7 +124,7 @@ internal static class DeployControlEndpoints
             Environment = includeDiagnostics ? hostEnvironment.EnvironmentName : null,
             DeploymentMode = includeDiagnostics ? deploymentOptions.Value.Mode.ToString() : null,
             InstanceName = includeDiagnostics ? Environment.MachineName : null,
-            GeneratedAt = DateTimeOffset.UtcNow,
+            GeneratedAt = generatedAt,
             Readiness = includeDiagnostics
                 ? new DeployPreflightReadiness
                 {
@@ -169,7 +172,7 @@ internal static class DeployControlEndpoints
                 ? BuildSessionSettingsView(snapshot.DatabaseSessionSettings)
                 : null,
             PlatformRelease = includeDiagnostics
-                ? BuildPlatformReleaseView(controlPlaneOptions.CurrentValue)
+                ? ManagedComposeObserver.ProjectRelease(controlPlaneOptions.CurrentValue, managedTargets, evaluatedAt: generatedAt)
                 : null
         };
 
@@ -191,57 +194,6 @@ internal static class DeployControlEndpoints
             Role = snapshot.Role,
             Remediation = snapshot.Drift.Select(drift => drift.Remediation).ToArray(),
             Message = snapshot.Message,
-        };
-
-    private static DeployPreflightPlatformRelease BuildPlatformReleaseView(ControlPlaneOptions options)
-    {
-        var release = options.PlatformRelease.ToDefinition();
-
-        var servingEntries = options.DeployTargets
-            .Where(target => !string.IsNullOrWhiteSpace(target.TargetId))
-            .Select(target => new PlatformReleasePlaneEntry
-            {
-                Id = target.TargetId,
-                RuntimeProfile = target.RuntimeProfile,
-                ExplicitArtifactReference = target.ArtifactReference
-            })
-            .ToArray();
-
-        var executionEntries = options.ExecutionWorkloads
-            .Where(workload => !string.IsNullOrWhiteSpace(workload.WorkloadId))
-            .Select(workload => new PlatformReleasePlaneEntry
-            {
-                Id = workload.WorkloadId,
-                RuntimeProfile = workload.RuntimeProfile,
-                ExplicitArtifactReference = workload.ArtifactReference
-            })
-            .ToArray();
-
-        var skew = PlatformReleaseProjection.BuildSkewSnapshot(release, servingEntries, executionEntries);
-
-        var observedAt = DateTimeOffset.UtcNow;
-        return new DeployPreflightPlatformRelease
-        {
-            EvidencePosture = EvidencePostureFactory.Build(observedAt,
-                EvidencePostureFactory.Complete(EvidencePostureVocabulary.SourceIds.PlatformReleaseStatus,
-                    EvidencePostureVocabulary.BackendKinds.ConfigProjection, "control-plane-options", observedAt, TimeSpan.FromMinutes(5))),
-            ReleaseVersion = skew.ReleaseVersion,
-            ReleaseDeclared = skew.ReleaseDeclared,
-            IsCoVersioned = skew.IsCoVersioned,
-            Serving = skew.Serving.Select(MapPlaneProjection).ToArray(),
-            Execution = skew.Execution.Select(MapPlaneProjection).ToArray(),
-            SkewedIds = skew.SkewedIds
-        };
-    }
-
-    private static DeployPreflightPlaneProjection MapPlaneProjection(PlatformReleasePlaneProjection projection)
-        => new()
-        {
-            Id = projection.Id,
-            RuntimeProfile = projection.RuntimeProfile,
-            EffectiveArtifactReference = projection.EffectiveArtifactReference,
-            ProjectedFromRelease = projection.ProjectedFromRelease,
-            Skewed = projection.Skewed
         };
 
     private static bool ShouldIncludeDiagnostics(HttpContext context)
@@ -765,8 +717,8 @@ internal static class DeployControlEndpoints
     /// contract — a target's last-applied revision is the <c>DesiredRevision</c> of its most recent
     /// terminal-Succeeded deploy operation; a target with no such operation is unknown and treated as
     /// divergent. Config-pinned targets (an explicit artifact diverging from the release) are skipped.
-    /// Each divergent target's deploy routes through the guardrail gateway like any other Deploy, keyed
-    /// by <c>converge:{version}:{targetId}</c> so a repeated converge folds onto the in-flight operation.
+    /// Each divergent target's deploy routes through the guardrail gateway like any other Deploy.
+    /// Its automatic key stays stable for retries and changes after a completed restore.
     /// Worker images are not deployed here.
     /// </summary>
     private static async Task<IResult> HandleConvergePlatformRelease(
@@ -855,6 +807,8 @@ internal static class DeployControlEndpoints
 
         var outcomes = new List<PlatformReleaseConvergeTargetOutcome>();
         var actuated = false;
+        var observer = context.RequestServices.GetService<IManagedComposeObserver>();
+        var liveTargets = observer is null ? [] : await observer.ReadAsync(context.RequestAborted).ConfigureAwait(false);
 
         foreach (var target in options.DeployTargets.Where(candidate => !string.IsNullOrWhiteSpace(candidate.TargetId)))
         {
@@ -896,12 +850,24 @@ internal static class DeployControlEndpoints
                 continue;
             }
 
+            var liveTarget = liveTargets.SingleOrDefault(live => live.TargetId == target.TargetId);
+            var idempotencyKey = await PlatformConvergenceKey.ResolveAsync(deployWorkflowService, declaredVersion,
+                target.TargetId, target.TargetKind, liveTarget?.ServingIncarnation, lastOp, context.RequestAborted).ConfigureAwait(false);
+            if (idempotencyKey is null)
+            {
+                outcomes.Add(new PlatformReleaseConvergeTargetOutcome
+                {
+                    TargetId = target.TargetId, Outcome = ConvergeOutcomes.Blocked, LastAppliedRevision = lastApplied,
+                    Message = "The restore has not completed successfully."
+                });
+                continue;
+            }
             var isUnknown = string.IsNullOrWhiteSpace(lastApplied);
             var outcome = await RouteConvergeDeployAsync(
                     gateway,
                     target.TargetId,
                     declaredServing,
-                    declaredVersion,
+                    idempotencyKey,
                     requestedBy,
                     reason,
                     request?.CorrelationId,
@@ -934,7 +900,7 @@ internal static class DeployControlEndpoints
         IOperationGateway gateway,
         string targetId,
         string declaredServing,
-        string declaredVersion,
+        string idempotencyKey,
         string? requestedBy,
         string reason,
         string? correlationId,
@@ -954,8 +920,8 @@ internal static class DeployControlEndpoints
             RequestedBy = requestedBy,
             Reason = reason,
             CorrelationId = correlationId,
-            // Stable idempotency key so a double-converge folds onto one operation/proposal per target.
-            IdempotencyKey = $"converge:{declaredVersion}:{targetId}",
+            // Stable for retries, but changes after a completed restore.
+            IdempotencyKey = idempotencyKey,
             ExecutionPayload = payload,
         };
 

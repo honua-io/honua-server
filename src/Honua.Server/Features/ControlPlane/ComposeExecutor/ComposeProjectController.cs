@@ -76,6 +76,7 @@ internal sealed partial class ComposeProjectController : IDisposable
 
             var response = request.Op switch
             {
+                "observe" => await ObserveServicesAsync(request, cancellationToken).ConfigureAwait(false),
                 "status" => await StatusAsync(request, cancellationToken).ConfigureAwait(false),
                 "converge" => await ConvergeAsync(request, cancellationToken).ConfigureAwait(false),
                 "rollback" => await RollbackCoreAsync(request, cancellationToken).ConfigureAwait(false),
@@ -87,7 +88,7 @@ internal sealed partial class ComposeProjectController : IDisposable
                     "The executor op is not allowlisted.")
             };
 
-            if (request.Op is not ("status" or "plan-rollback"))
+            if (request.Op is not ("status" or "observe" or "plan-rollback"))
             {
                 response = Finish(request, response);
             }
@@ -398,7 +399,13 @@ internal sealed partial class ComposeProjectController : IDisposable
             return Refuse(request, ComposeExecutorCodes.ConfigUnsupported, "Restart does not accept an image or a backup.");
         }
 
-        var restarted = await ComposeAsync(CommandTimeout, ["restart", "--", _options.ServiceName], cancellationToken)
+        var service = request.Service ?? _options.ServiceName;
+        if (!ManagedServices().Contains(service, StringComparer.Ordinal))
+        {
+            return Refuse(request, ComposeExecutorCodes.ScopeViolation, "The service is outside the configured managed stack.");
+        }
+
+        var restarted = await ComposeAsync(CommandTimeout, ["restart", "--", service], cancellationToken)
             .ConfigureAwait(false);
         if (restarted.ExitCode != 0)
         {
@@ -410,6 +417,17 @@ internal sealed partial class ComposeProjectController : IDisposable
         var deadline = DateTimeOffset.UtcNow.AddSeconds(_options.ComposeWaitTimeoutSeconds);
         while (true)
         {
+            if (request.Service is not null)
+            {
+                var observation = await ObserveServicesAsync(request, cancellationToken).ConfigureAwait(false);
+                if (observation.Ok && observation.Services.SingleOrDefault(row => row.Service == service)?.Status == "Healthy")
+                    return observation with { ReadbackComplete = true, Message = "The restarted service is healthy." };
+                if (DateTimeOffset.UtcNow >= deadline)
+                    return Refuse(request, ComposeExecutorCodes.ReadbackIncomplete, "Readback after restart is incomplete.");
+                await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken).ConfigureAwait(false);
+                continue;
+            }
+
             var live = await ReadLiveAsync(cancellationToken).ConfigureAwait(false);
             if (live.ScopeViolation)
             {
@@ -909,10 +927,12 @@ internal sealed partial class ComposeProjectController : IDisposable
     private async Task<(bool Ok, string? Body)> ProbeOkAsync(
         string url,
         bool captureBody,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int? maximumTimeoutSeconds = null)
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(TimeSpan.FromSeconds(_options.ProbeTimeoutSeconds));
+        var timeoutSeconds = Math.Min(_options.ProbeTimeoutSeconds, maximumTimeoutSeconds ?? _options.ProbeTimeoutSeconds);
+        timeout.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
         try
         {
             using var response = await _http.GetAsync(url, timeout.Token).ConfigureAwait(false);

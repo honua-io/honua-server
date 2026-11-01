@@ -96,6 +96,7 @@ public sealed class ComposeProposalExecutorIntegrationTests
                 ComposeFile = "compose.yaml",
                 ServiceName = "honua",
                 PostgresService = "postgres",
+                RedisService = string.Empty,
                 DatabaseName = "honua",
                 DatabaseUser = "honua",
                 BackupDirectory = backupDir,
@@ -127,6 +128,21 @@ public sealed class ComposeProposalExecutorIntegrationTests
                 await DumpAsync(projectDir, projectName).ConfigureAwait(false);
                 Assert.Fail("Compose readback was incomplete before approval: " + ready.Code + " " + ready.Message);
             }
+
+            var observedReady = await client.ExecuteAsync(new ComposeExecutorRequest { Op = "observe" }).ConfigureAwait(false);
+            Assert.True(observedReady.Ok && observedReady.ReadbackComplete);
+            Assert.DoesNotContain(observedReady.Services, row => row.Service == "redis");
+            await ComposeAsync(projectDir, projectName, ["stop", "honua"]).ConfigureAwait(false);
+            var stopped = await client.ExecuteAsync(new ComposeExecutorRequest { Op = "observe" }).ConfigureAwait(false);
+            Assert.True(stopped.Ok, "Managed service observations must remain available while serving is stopped.");
+            using (var observation = JsonDocument.Parse(ComposeExecutorProtocol.Serialize(stopped)))
+            {
+                var honua = observation.RootElement.GetProperty("services").EnumerateArray()
+                    .Single(row => row.GetProperty("service").GetString() == "honua");
+                Assert.Equal("Unhealthy", honua.GetProperty("status").GetString());
+            }
+            var recovered = await client.ExecuteAsync(new ComposeExecutorRequest { Op = "restart" }).ConfigureAwait(false);
+            Assert.True(recovered.Ok && recovered.ReadbackComplete);
 
             var backend = new ComposeDeployBackend(client, Options.Create(options), NullLogger<ComposeDeployBackend>.Instance);
             var store = new MemoryWorkflows();

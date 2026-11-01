@@ -1,4 +1,5 @@
 """Customer package contract: immutable images, local secrets and executor isolation."""
+import base64
 import hmac
 import json
 import os
@@ -27,6 +28,41 @@ class ComposeQuickstartTests(unittest.TestCase):
         values = dict(line.split('=', 1) for line in (path / '.env').read_text().splitlines())
         # The disposable project must win over ambient Compose flags, including cleanup.
         return dict(os.environ, **values)
+
+    def test_audit_keys_are_local_persistent_and_bound_to_the_correct_process(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.prepare(directory)
+            values = dict(line.split('=', 1) for line in (path / '.env').read_text().splitlines())
+            names = ('HONUA_AUDIT_CHAIN_KEY', 'HONUA_MANAGER_AUDIT_CHAIN_KEY')
+            for name in names:
+                self.assertTrue(name in values, 'Each process needs a locally initialized audit key')
+                self.assertGreaterEqual(len(base64.b64decode(values[name], validate=True)), 32)
+            self.assertFalse(hmac.compare_digest(values[names[0]], values[names[1]]))
+            before = (path / '.env').read_bytes()
+            initialize(path)
+            self.assertTrue(hmac.compare_digest(before, (path / '.env').read_bytes()),
+                            'Restart must preserve audit keys and existing credentials')
+            result = subprocess.run(['docker', 'compose', 'config', '--format', 'json'],
+                                    cwd=path, env=self.compose_env(path), capture_output=True, text=True)
+            self.assertEqual(0, result.returncode, 'Audit keys must be wired into the packaged Compose install')
+            services = json.loads(result.stdout)['services']
+            for service, name in (('honua', names[0]), ('compose-manager', names[1])):
+                self.assertTrue(hmac.compare_digest(values[name], services[service]['environment']['AuditLog__ChainVerification__Key']))
+            self.assertTrue(hmac.compare_digest(values['HONUA_ADMIN_PASSWORD'],
+                services['compose-executor']['environment']['ControlPlane__ComposeExecutor__VersionProbeApiKey']))
+
+    def test_existing_invalid_audit_key_is_refused_without_replacing_credentials(self):
+        for invalid in ('', 'invalid-value', base64.b64encode(bytes(16)).decode('ascii')):
+            with self.subTest(case='invalid audit key'), tempfile.TemporaryDirectory() as directory:
+                path = self.prepare(directory)
+                env_file = path / '.env'
+                lines = env_file.read_text().splitlines()
+                env_file.write_text('\n'.join('HONUA_AUDIT_CHAIN_KEY=' + invalid if line.startswith('HONUA_AUDIT_CHAIN_KEY=') else line
+                                              for line in lines) + '\n')
+                before = env_file.read_bytes()
+                with self.assertRaises(ValueError):
+                    initialize(path)
+                self.assertTrue(hmac.compare_digest(before, env_file.read_bytes()), 'Invalid saved keys must not be overwritten')
 
     def test_private_keyring_can_be_initialized_with_only_required_capabilities(self):
         with tempfile.TemporaryDirectory() as directory:

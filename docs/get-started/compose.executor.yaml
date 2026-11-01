@@ -29,6 +29,7 @@ services:
       ConnectionStrings__DefaultConnection: "Host=compose-manager-postgres;Database=honua_manager;Username=honua;Password=${HONUA_MANAGER_POSTGRES_PASSWORD:?Required}"
       ConnectionStrings__Redis: compose-manager-redis:6379
       HONUA_ADMIN_PASSWORD: ${HONUA_MANAGER_ADMIN_PASSWORD:?Required}
+      AuditLog__ChainVerification__Key: ${HONUA_MANAGER_AUDIT_CHAIN_KEY:?Required}
       Security__ConnectionEncryption__MasterKey: ${HONUA_MANAGER_MASTER_KEY:?Required}
       Operations__SecretChannel__KeyRingCertificatePath: /var/lib/honua/keyring.pfx
       Operations__SecretChannel__KeyRingCertificatePassword: ${HONUA_KEYRING_PASSWORD:?Required}
@@ -151,6 +152,7 @@ services:
       ControlPlane__ComposeExecutor__DatabaseUser: honua
       ControlPlane__ComposeExecutor__BackupDirectory: ${HONUA_COMPOSE_PROJECT_DIRECTORY:?Set the absolute host project directory}/backups
       ControlPlane__ComposeExecutor__HealthProbeUrl: http://honua:8080/healthz/ready
+      ControlPlane__ComposeExecutor__VersionProbeApiKey: ${HONUA_ADMIN_PASSWORD:?Required}
       # A route that returns a non-empty body proving the database is readable.
       ControlPlane__ComposeExecutor__CustomerProbeUrl: ${HONUA_COMPOSE_CUSTOMER_PROBE:?Set a customer readback URL}
       ControlPlane__ComposeExecutor__ReleaseImage: ${HONUA_RELEASE_IMAGE:?Set the immutable release digest}

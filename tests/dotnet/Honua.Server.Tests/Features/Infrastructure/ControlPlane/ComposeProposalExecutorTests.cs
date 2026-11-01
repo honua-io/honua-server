@@ -29,6 +29,43 @@ public sealed class ComposeProposalExecutorTests
     private static string Digest(char hex) => "sha256:" + new string(hex, 64);
 
     [UnitTest]
+    public async Task Observe_MissingProjectIdentity_ReportsUnknownWithoutScopeMismatch()
+    {
+        var root = Path.Join(Path.GetTempPath(), "honua-compose-unit", Guid.NewGuid().ToString("N"));
+        var options = ValidOptions(root, Digest('a'));
+        var docker = Substitute.For<IDockerComposeProcess>();
+        docker.RunAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .Returns(new DockerProcessResult(0, "{\"Service\":\"honua\",\"Project\":\"\",\"ID\":\"container\",\"State\":\"running\"}", string.Empty));
+        using var controller = new ComposeProjectController(options, docker);
+        var response = await controller.ExecuteAsync(new ComposeExecutorRequest { Op = "observe" });
+        Assert.True(response.Ok);
+        Assert.Equal("Unknown", Assert.Single(response.Services, row => row.Service == "honua").Status);
+        Assert.NotEqual(ComposeExecutorCodes.ScopeViolation, response.Code);
+    }
+
+    [UnitTest]
+    public void ValidateForProcess_RedisExplicitlyDisabled_PreservesSupportedTopology()
+    {
+        var root = Path.Join(Path.GetTempPath(), "honua-compose-unit", Guid.NewGuid().ToString("N"));
+        var options = ValidOptions(root, Digest('a'));
+        options.RedisService = string.Empty;
+        Assert.Null(options.ValidateForProcess());
+    }
+
+    [UnitTest]
+    public async Task Restart_UnregisteredService_RefusesBeforeDocker()
+    {
+        var root = Path.Join(Path.GetTempPath(), "honua-compose-unit", Guid.NewGuid().ToString("N"));
+        var options = ValidOptions(root, Digest('a'));
+        var docker = new RecordingDocker();
+        using var controller = new ComposeProjectController(options, docker);
+        var result = await controller.ExecuteAsync(new ComposeExecutorRequest { Op = "restart", Service = "compose-manager" });
+        Assert.False(result.Ok);
+        Assert.Equal(ComposeExecutorCodes.ScopeViolation, result.Code);
+        Assert.Empty(docker.Argv);
+    }
+
+    [UnitTest]
     public void ExtraProjectOrCommand_IsScopeViolation_AndDoesNotParse()
     {
         Assert.False(ComposeExecutorProtocol.TryReadRequest(

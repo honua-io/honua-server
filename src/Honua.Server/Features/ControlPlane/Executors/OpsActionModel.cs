@@ -152,6 +152,9 @@ internal sealed record OpsActionRequest
     /// <summary>Optional free-form action target.</summary>
     public string? Target { get; init; }
 
+    /// <summary>Configured Compose service to restart.</summary>
+    public string? Service { get; init; }
+
     /// <summary>Optional <c>maxCount</c> parameter (redrive batch bound).</summary>
     public int? MaxCount { get; init; }
 
@@ -216,6 +219,7 @@ internal sealed record OpsActionRequest
             int? maxCount = null;
             int? limit = null;
             string? channel = null;
+            string? service = null;
             var hasParameters = false;
             string? configField = null;
             int? configValue = null;
@@ -232,6 +236,7 @@ internal sealed record OpsActionRequest
                     maxCount = ReadInt(paramsElement, "maxCount");
                     limit = ReadInt(paramsElement, "limit");
                     channel = ReadString(paramsElement, "channel");
+                    service = ReadString(paramsElement, "service");
                     configField = ReadString(paramsElement, "field");
                     configValue = ReadInt(paramsElement, "value");
                 }
@@ -244,6 +249,7 @@ internal sealed record OpsActionRequest
             return new OpsActionRequest
             {
                 Name = name,
+                Service = service,
                 Target = string.IsNullOrWhiteSpace(target) ? null : target,
                 MaxCount = maxCount,
                 Limit = limit,
@@ -308,11 +314,15 @@ internal static class OpsActionExecutionPayloads
     public static string TuneBoundedAdmission(int limit)
         => Build(OpsActionNames.TuneBoundedAdmission, target: null, maxCount: null, limit: limit, channel: null);
 
-    private static string Build(string action, string? target, int? maxCount, int? limit, string? channel)
+    /// <summary>Builds a target-bound, approval-required managed Compose restart.</summary>
+    public static string RestartComposeService(string targetId, string service)
+        => Build(OpsActionNames.ComposeRestartService, target: targetId, maxCount: null, limit: null, channel: null, service: service);
+
+    private static string Build(string action, string? target, int? maxCount, int? limit, string? channel, string? service = null)
     {
-        var parameters = maxCount is null && limit is null && channel is null
+        var parameters = maxCount is null && limit is null && channel is null && service is null
             ? null
-            : new OpsActionExecutionParams { MaxCount = maxCount, Limit = limit, Channel = channel };
+            : new OpsActionExecutionParams { MaxCount = maxCount, Limit = limit, Channel = channel, Service = service };
 
         var payload = new OpsActionExecutionPayload
         {
@@ -341,6 +351,9 @@ internal sealed record OpsActionExecutionPayload
 /// <summary>Optional parameters carried by an ops-action execution payload.</summary>
 internal sealed record OpsActionExecutionParams
 {
+    /// <summary>Configured managed Compose service.</summary>
+    public string? Service { get; init; }
+
     /// <summary>Redrive batch bound.</summary>
     public int? MaxCount { get; init; }
 
