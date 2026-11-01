@@ -39,7 +39,8 @@ internal sealed partial class WorkflowOperationBackstopSweepService(
     [
         (WorkflowOperationKind.Deploy, OperationKind.DeployWorkflow),
         (WorkflowOperationKind.MetadataRelease, OperationKind.MetadataRelease),
-        (WorkflowOperationKind.CoordinatedRelease, OperationKind.CoordinatedRelease)
+        (WorkflowOperationKind.CoordinatedRelease, OperationKind.CoordinatedRelease),
+        (WorkflowOperationKind.PreMigrationRestore, OperationKind.PreMigrationRestore)
     ];
 
     private readonly ControlPlaneTriggerOptions _options = options.Value;

@@ -38,7 +38,7 @@ public sealed class DeployBackendRollbackTruthfulnessTests
     [
         "honua-kubernetes-argo-rollouts", "honua-aws-ecs-alb",
         "honua-azure-container-apps-revision", "honua-gitops-aws-lambda",
-        "honua-gitops-azure-functions", "honua-yarp-rolling"
+        "honua-gitops-azure-functions", "honua-yarp-rolling", "honua-compose"
     ];
 
     [Fact]
@@ -170,6 +170,13 @@ public sealed class DeployBackendRollbackTruthfulnessTests
         services.AddSingleton<IProxyStateSwapper>(world);
         services.AddSingleton<ILocalReplicaHealthProbe>(world);
         services.AddSingleton<IRollbackDataPlaneProbe>(world);
+        services.RemoveAll<IComposeExecutorClient>();
+        services.AddSingleton<IComposeExecutorClient>(world);
+        services.AddSingleton<IOptions<ComposeExecutorOptions>>(Options.Create(new ComposeExecutorOptions
+        {
+            SocketPath = "/tmp/honua-compose-architecture.sock",
+            ReleaseImage = "sha256:" + new string('a', 64)
+        }));
         services.AddSingleton<IOptions<SelfHostedDeployOptions>>(Options.Create(new SelfHostedDeployOptions
         {
             Enabled = true,
@@ -196,6 +203,7 @@ public sealed class DeployBackendRollbackTruthfulnessTests
             "honua-gitops-aws-lambda" => DeployTargetKind.AwsLambda,
             "honua-gitops-azure-functions" => DeployTargetKind.AzureFunctions,
             "honua-yarp-rolling" => DeployTargetKind.SelfHostedRolling,
+            "honua-compose" => DeployTargetKind.LocalCompose,
             _ => DeployTargetKind.Kubernetes
         };
         var currentRevision = scenario == "missing-prior" ? null : Prior;
@@ -234,6 +242,7 @@ public sealed class DeployBackendRollbackTruthfulnessTests
                 ["functions.desired_image"] = Candidate,
                 ["functions.app_name"] = "honua"
             },
+            DeployTargetKind.LocalCompose => new Dictionary<string, string>(StringComparer.Ordinal),
             _ => new Dictionary<string, string>(StringComparer.Ordinal)
             {
                 [SelfHostedDeployParameterKeys.Image] = Candidate,
@@ -291,7 +300,7 @@ public sealed class DeployBackendRollbackTruthfulnessTests
 
     private sealed class ProviderWorld : IArgoRolloutsClient, IAwsAlbClient, IAwsEcsClient, IAwsLambdaAliasClient,
         IAzureContainerAppsRevisionClient, IAzureFunctionsSlotClient, IContainerRuntimeClient,
-        IProxyStateSwapper, ILocalReplicaHealthProbe, IRollbackDataPlaneProbe
+        IProxyStateSwapper, ILocalReplicaHealthProbe, IRollbackDataPlaneProbe, IComposeExecutorClient
     {
         private string _scenario = "exact-prior";
         private int _rollbackCalls;
@@ -305,6 +314,9 @@ public sealed class DeployBackendRollbackTruthfulnessTests
         private AzureFunctionsSiteConfigState _slot = Functions(Prior);
         private List<ContainerSummary> _containers = [];
         private string? _activeDestination = "http://127.0.0.1:18081/";
+        private string _composeImage = Candidate;
+        private bool _composeReadback = true;
+        private bool _composeOk = true;
 
         public bool IsConfigured => true;
         public string? ActiveDestinationAddress => _activeDestination;
@@ -318,6 +330,7 @@ public sealed class DeployBackendRollbackTruthfulnessTests
                 "honua-gitops-aws-lambda" => $"alias={_lambda.AliasName ?? "<missing>"};version={_lambda.FunctionVersion ?? "<missing>"}",
                 "honua-gitops-azure-functions" => $"productionImage={_production.LinuxFxVersion ?? "<missing>"};slotImage={_slot.LinuxFxVersion ?? "<missing>"}",
                 "honua-yarp-rolling" => string.Join(',', _containers.Select(container => $"{container.Labels.GetValueOrDefault(YarpRollingDeployBackend.LabelRole, "<missing>")}:{container.Labels.GetValueOrDefault(YarpRollingDeployBackend.LabelRevision, "<missing>")}:{container.Running}")),
+                "honua-compose" => $"image={_composeImage};readback={_composeReadback};ok={_composeOk}",
                 _ => "<unknown>"
             };
 
@@ -328,6 +341,9 @@ public sealed class DeployBackendRollbackTruthfulnessTests
             _lambda = Lambda(Candidate); _containerApp = ContainerApp(Candidate); _production = Functions(Candidate);
             _slot = Functions(Prior); _activeDestination = "http://127.0.0.1:18081/";
             _containers = [Container("rollback-contract-18081", YarpRollingDeployBackend.RoleStandby, Candidate, true)];
+            _composeImage = Candidate;
+            _composeReadback = scenario != "ambiguous-evidence";
+            _composeOk = scenario is not ("ambiguous-evidence" or "hard-no-op");
             if (backend == "honua-kubernetes-argo-rollouts" && scenario is ("candidate-healthy" or "ambiguous-evidence"))
             {
                 _argo = ReadArgoFixture(scenario == "ambiguous-evidence" ? 1 : 0);
@@ -361,7 +377,39 @@ public sealed class DeployBackendRollbackTruthfulnessTests
                 case "honua-yarp-rolling":
                     _containers = [Container("rollback-contract-18080", YarpRollingDeployBackend.RoleActive, revision, true)];
                     _activeDestination = "http://127.0.0.1:18080/"; break;
+                case "honua-compose":
+                    _composeImage = revision;
+                    _composeReadback = true;
+                    _composeOk = true;
+                    break;
             }
+        }
+
+        public Task<ComposeExecutorResponse> ExecuteAsync(ComposeExecutorRequest request, CancellationToken cancellationToken = default)
+        {
+            if (string.Equals(request.Op, "rollback", StringComparison.Ordinal))
+            {
+                if (ShouldFailTransiently())
+                {
+                    throw new IOException("transient compose executor failure");
+                }
+
+                if (_scenario is "exact-prior" or "transient-recovery")
+                {
+                    _composeImage = Prior;
+                    _composeReadback = true;
+                    _composeOk = true;
+                }
+            }
+
+            return Task.FromResult(new ComposeExecutorResponse
+            {
+                Ok = _composeOk,
+                ReadbackComplete = _composeReadback,
+                RunningImage = _composeImage,
+                SchemaVersion = _composeReadback ? 1 : null,
+                Code = _composeOk && _composeReadback ? null : "compose-readback-incomplete"
+            });
         }
 
         private bool ShouldFailTransiently() => _scenario == "transient-recovery" && _rollbackCalls++ == 0;

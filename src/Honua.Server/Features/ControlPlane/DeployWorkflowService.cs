@@ -45,6 +45,7 @@ internal sealed partial class DeployWorkflowService
     private readonly ILogger<DeployWorkflowService> _logger;
     private readonly IOptionsMonitor<ControlPlaneOptions>? _controlPlaneOptions;
     private readonly IOptions<Honua.Infrastructure.MultiTenancy.TenantContextOptions>? _tenantOptions;
+    private readonly IOptions<RestoreCellOptions>? _restoreOptions;
 
     public DeployWorkflowService(
         IDeployTargetRegistry targetRegistry,
@@ -53,10 +54,12 @@ internal sealed partial class DeployWorkflowService
         IOperatorApprovalEvaluator approvalEvaluator,
         ILogger<DeployWorkflowService> logger,
         IOptionsMonitor<ControlPlaneOptions>? controlPlaneOptions = null,
-        IOptions<Honua.Infrastructure.MultiTenancy.TenantContextOptions>? tenantOptions = null)
+        IOptions<Honua.Infrastructure.MultiTenancy.TenantContextOptions>? tenantOptions = null,
+        IOptions<RestoreCellOptions>? restoreOptions = null)
     {
         _controlPlaneOptions = controlPlaneOptions;
         _tenantOptions = tenantOptions;
+        _restoreOptions = restoreOptions;
         _targetRegistry = targetRegistry;
         _workflowStore = workflowStores.FirstOrDefault();
         _backends = backends.ToDictionary(
@@ -68,6 +71,10 @@ internal sealed partial class DeployWorkflowService
     }
 
     public bool HasDurableStore => _workflowStore != null;
+
+    private bool RestoreAdmissionEnabled =>
+        (_restoreOptions?.Value is { } options && (!string.IsNullOrWhiteSpace(options.CellPrefix) || options.Revisions.Count != 0)) ||
+        _controlPlaneOptions?.CurrentValue.DeployTargets.Any(target => target.TargetKind == DeployTargetKind.LocalCompose) == true;
 
     public async Task<DeployWorkflowPlanResult?> PlanAsync(
         string targetId,
@@ -335,7 +342,7 @@ internal sealed partial class DeployWorkflowService
         return await _workflowStore!.GetMostRecentSucceededDeployByTargetAsync(targetId, cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task<WorkflowOperationRecord?> CreateAsync(
+    public Task<WorkflowOperationRecord?> CreateAsync(
         string targetId,
         string desiredRevision,
         string? currentRevision,
@@ -348,8 +355,32 @@ internal sealed partial class DeployWorkflowService
         IReadOnlyDictionary<string, string>? parameterOverrides,
         ClaimsPrincipal? principal = null,
         CancellationToken cancellationToken = default)
+        => CreateWithBackupAsync(targetId, desiredRevision, currentRevision, requestedBy, reason,
+            idempotencyKey, correlationId, priority, submitImmediately, parameterOverrides, principal,
+            preMigrationBackupId: null, restoreOwnerId: null, approvedBy: null, cancellationToken);
+
+    internal async Task<WorkflowOperationRecord?> CreateWithBackupAsync(
+        string targetId,
+        string desiredRevision,
+        string? currentRevision,
+        string? requestedBy,
+        string? reason,
+        string? idempotencyKey,
+        string? correlationId,
+        OperationPriority priority,
+        bool submitImmediately,
+        IReadOnlyDictionary<string, string>? parameterOverrides,
+        ClaimsPrincipal? principal,
+        string? preMigrationBackupId,
+        string? restoreOwnerId,
+        string? approvedBy,
+        CancellationToken cancellationToken)
     {
         EnsureDurableStoreConfigured();
+        await using var admission = RestoreAdmissionEnabled
+            ? await RestoreDeployAdmission.AcquireAsync(_workflowStore!, CreateOperationId(idempotencyKey), restoreOwnerId, false, cancellationToken).ConfigureAwait(false)
+            : null;
+        if (admission is not null) cancellationToken = admission.Token;
 
         var planningResult = await PlanAsync(
                 targetId,
@@ -375,13 +406,17 @@ internal sealed partial class DeployWorkflowService
             currentRevision,
             priority,
             submitImmediately,
-            parameterOverrides);
+            parameterOverrides,
+            preMigrationBackupId);
 
         var operation = new WorkflowOperationRecord
         {
             OperationId = operationId,
             Kind = WorkflowOperationKind.Deploy,
-            Status = DeterminePersistedStatus(planningResult.Plan),
+            // A crash during provider submission must leave an active durable record so
+            // restore admission cannot mistake an in-flight deployment for a safe cell.
+            Status = submitImmediately && planningResult.Plan.IsReadyToSubmit
+                ? WorkflowOperationStatus.Submitted : DeterminePersistedStatus(planningResult.Plan),
             Priority = priority,
             CreatedAt = now,
             UpdatedAt = now,
@@ -394,6 +429,7 @@ internal sealed partial class DeployWorkflowService
             Audit = new OperationAuditInfo
             {
                 RequestedBy = requestedBy,
+                ApprovedBy = planningResult.Target.TargetKind == DeployTargetKind.LocalCompose ? approvedBy : null,
                 // honua-server#4958: the tenant binding is captured from the validated identity here,
                 // so the protection window sealed at activation can bind recovery to the same pair.
                 TenantId = Honua.Server.Features.Admin.PlatformDeployAuthority.ResolveTenantId(principal, _tenantOptions?.Value),
@@ -409,9 +445,28 @@ internal sealed partial class DeployWorkflowService
                 PartitionKey = $"{planningResult.Target.Environment}:{planningResult.Target.TargetId}",
                 RequiresExclusiveLease = true
             },
-            Deploy = planningResult.Spec
+            Deploy = planningResult.Spec with { PreMigrationBackupId = preMigrationBackupId }
         };
 
+        var immediateBackend = submitImmediately && planningResult.Plan.IsReadyToSubmit
+            ? ResolveBackend(planningResult.Target) : null;
+        if (immediateBackend is ICheckpointedDeployBackend checkpointedBackend && checkpointedBackend.RequiresCheckpoint(operation))
+        {
+            // Persist the checkpoint before releasing admission; the reconciler owns the next step.
+            operation = operation with { CurrentPhase = ICheckpointedDeployBackend.PendingPhase };
+        }
+
+        var priorOperation = await _workflowStore!.GetAsync(operation.OperationId, cancellationToken).ConfigureAwait(false);
+        if (priorOperation != null)
+        {
+            EnsureMatchingIdempotentRequest(priorOperation, requestFingerprint);
+            return priorOperation;
+        }
+
+        await using var submissionLease = submitImmediately && planningResult.Plan.IsReadyToSubmit
+            ? await RestoreDeployAdmission.AcquireWorkflowAsync(_workflowStore!, operation.OperationId, cancellationToken).ConfigureAwait(false)
+            : null;
+        if (submissionLease is not null) cancellationToken = submissionLease.Token;
         var created = await _workflowStore!.TryCreateAsync(operation, cancellationToken: cancellationToken).ConfigureAwait(false);
         if (!created)
         {
@@ -427,10 +482,10 @@ internal sealed partial class DeployWorkflowService
 
         if (submitImmediately && planningResult.Plan.IsReadyToSubmit)
         {
-            var backend = ResolveBackend(planningResult.Target);
-            if (backend is ICheckpointedDeployBackend checkpointed && checkpointed.RequiresCheckpoint(operation))
+            var backend = immediateBackend;
+            if (operation.CurrentPhase == ICheckpointedDeployBackend.PendingPhase)
             {
-                return await SubmitAsync(operation.OperationId, requestedBy, reason, cancellationToken).ConfigureAwait(false);
+                return operation;
             }
 
             if (backend != null)
@@ -479,13 +534,25 @@ internal sealed partial class DeployWorkflowService
         return operation;
     }
 
-    public async Task<WorkflowOperationRecord?> SubmitAsync(
+    public Task<WorkflowOperationRecord?> SubmitAsync(
         string operationId,
         string? requestedBy,
         string? reason,
         CancellationToken cancellationToken = default)
+        => SubmitWithRestoreAsync(operationId, requestedBy, reason, restoreOwnerId: null, cancellationToken);
+
+    internal async Task<WorkflowOperationRecord?> SubmitWithRestoreAsync(
+        string operationId,
+        string? requestedBy,
+        string? reason,
+        string? restoreOwnerId,
+        CancellationToken cancellationToken)
     {
         EnsureDurableStoreConfigured();
+        await using var admission = RestoreAdmissionEnabled
+            ? await RestoreDeployAdmission.AcquireAsync(_workflowStore!, operationId, restoreOwnerId, false, cancellationToken).ConfigureAwait(false)
+            : null;
+        if (admission is not null) cancellationToken = admission.Token;
 
         var operation = await _workflowStore!.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
         if (operation == null)
@@ -496,6 +563,17 @@ internal sealed partial class DeployWorkflowService
         if (operation.Kind != WorkflowOperationKind.Deploy || operation.Deploy == null)
         {
             throw new ResourceConflictException("Only deploy workflow operations can be submitted.");
+        }
+
+        await using var submissionLease = operation.Deploy.TargetKind == DeployTargetKind.LocalCompose
+            ? await RestoreDeployAdmission.AcquireWorkflowAsync(_workflowStore!, operationId, cancellationToken).ConfigureAwait(false)
+            : null;
+        if (submissionLease is not null)
+        {
+            cancellationToken = submissionLease.Token;
+            operation = await _workflowStore!.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
+            if (operation?.Kind != WorkflowOperationKind.Deploy || operation.Deploy is null)
+                throw new ResourceConflictException("Deploy operation changed while acquiring its submission lease.");
         }
 
         if (operation.Status is WorkflowOperationStatus.Submitted
@@ -541,6 +619,20 @@ internal sealed partial class DeployWorkflowService
                 $"No deploy backend is registered for target '{operation.Deploy.TargetId}' ({operation.Deploy.Backend}).");
         }
 
+        var audit = MergeSubmissionAudit(operation.Audit, requestedBy, reason);
+        if (operation.Deploy.TargetKind == DeployTargetKind.LocalCompose)
+        {
+            // Checked before the claim so a same-principal submit cannot change the Compose project.
+            if (string.IsNullOrWhiteSpace(requestedBy) ||
+                string.Equals(requestedBy, operation.Audit.RequestedBy, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ResourceConflictException(
+                    "Separation of duties: a different principal must submit this Compose operation.");
+            }
+
+            audit = audit with { ApprovedBy = requestedBy };
+        }
+
         // Atomically claim the operation before calling the backend. Transitions Planned -> Submitted
         // via CAS (version check): only one concurrent SubmitAsync wins; the loser re-reads the
         // current state, which is already Submitted/Reconciling/etc., and returns it directly without
@@ -552,7 +644,7 @@ internal sealed partial class DeployWorkflowService
             CurrentPhase = backend is ICheckpointedDeployBackend checkpointed && checkpointed.RequiresCheckpoint(operation)
                 ? ICheckpointedDeployBackend.PendingPhase
                 : "Submitting to deploy backend.",
-            Audit = MergeSubmissionAudit(operation.Audit, requestedBy, reason)
+            Audit = audit
         };
 
         var claimed = await _workflowStore!.TrySetAsync(preliminary, cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -649,6 +741,10 @@ internal sealed partial class DeployWorkflowService
         CancellationToken cancellationToken = default)
     {
         EnsureDurableStoreConfigured();
+        await using var admission = RestoreAdmissionEnabled
+            ? await RestoreDeployAdmission.AcquireAsync(_workflowStore!, operationId, null, true, cancellationToken).ConfigureAwait(false)
+            : null;
+        if (admission is not null) cancellationToken = admission.Token;
 
         var operation = await _workflowStore!.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
         if (operation == null)
@@ -847,6 +943,10 @@ internal sealed partial class DeployWorkflowService
         CancellationToken cancellationToken = default)
     {
         EnsureDurableStoreConfigured();
+        await using var admission = RestoreAdmissionEnabled
+            ? await RestoreDeployAdmission.AcquireAsync(_workflowStore!, operationId, null, false, cancellationToken).ConfigureAwait(false)
+            : null;
+        if (admission is not null) cancellationToken = admission.Token;
 
         var operation = await _workflowStore!.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
         if (operation == null)
@@ -1144,7 +1244,7 @@ internal sealed partial class DeployWorkflowService
         return "Planned and ready for submission.";
     }
 
-    private static string CreateOperationId(string? idempotencyKey)
+    internal static string CreateOperationId(string? idempotencyKey)
     {
         if (string.IsNullOrWhiteSpace(idempotencyKey))
         {
@@ -1179,7 +1279,8 @@ internal sealed partial class DeployWorkflowService
         string? currentRevision,
         OperationPriority priority,
         bool submitImmediately,
-        IReadOnlyDictionary<string, string>? parameterOverrides)
+        IReadOnlyDictionary<string, string>? parameterOverrides,
+        string? preMigrationBackupId)
     {
         var normalizedParameters = parameterOverrides == null
             ? Array.Empty<DeployRequestFingerprintParameter>()
@@ -1206,6 +1307,7 @@ internal sealed partial class DeployWorkflowService
                 CurrentRevision = currentRevision?.Trim(),
                 Priority = priority.ToString(),
                 SubmitImmediately = submitImmediately,
+                PreMigrationBackupId = preMigrationBackupId,
                 Parameters = normalizedParameters
             },
             DeployControlJsonContext.Default.DeployRequestFingerprintPayload);
@@ -1409,6 +1511,10 @@ internal sealed partial class DeployWorkflowService
 
 internal sealed record DeployRequestFingerprintPayload
 {
+    /// <summary>Sealed backup selection. Omission preserves fingerprints of existing forward deploys.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? PreMigrationBackupId { get; init; }
+
     public required string TargetId { get; init; }
     public string? Backend { get; init; }
     public string? TargetKind { get; init; }

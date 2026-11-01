@@ -34,7 +34,10 @@ public enum WorkflowOperationKind
     /// Conduct a coordinated platform-upgrade release that composes a container rollout, an additive DB
     /// script migration, and a metadata-v2 activation as one ordered, gated, rollback-able operation.
     /// </summary>
-    CoordinatedRelease
+    CoordinatedRelease,
+
+    /// <summary>Restore a verified pre-migration backup before a rollback.</summary>
+    PreMigrationRestore
 }
 
 /// <summary>
@@ -324,7 +327,15 @@ public enum DeployTargetKind
     /// and keeps the old replica until the new one is healthy. Delivers the on-prem/air-gapped,
     /// zero-cloud-dependency zero-downtime upgrade and rollback story.
     /// </summary>
-    SelfHostedRolling
+    SelfHostedRolling,
+
+    /// <summary>
+    /// Installed Docker Compose project. The server does not receive the Docker socket. A separately
+    /// configured executor, reached over a local socket, applies an allowlisted compose change for the
+    /// one project the operator registered. Reader-incompatible rollbacks restore a verified backup
+    /// before the prior image is started.
+    /// </summary>
+    LocalCompose
 }
 
 /// <summary>
@@ -440,6 +451,13 @@ public sealed record OperationAuditInfo
     public string? ProposalId { get; init; }
 
     /// <summary>
+    /// Principal that approved this operation when approval is a separate duty from
+    /// <see cref="RequestedBy"/>. Empty until a different principal submits an approved Compose
+    /// operation. Ignored by backends that do not enforce separation of duties.
+    /// </summary>
+    public string? ApprovedBy { get; init; }
+
+    /// <summary>
     /// Stable fingerprint of the deploy request payload used to validate idempotent replays.
     /// </summary>
     public string? RequestFingerprint { get; init; }
@@ -552,6 +570,10 @@ public sealed record DeployOperationSpec
     /// Whether the operation should stop for explicit approval before submission.
     /// </summary>
     public bool RequiresApproval { get; init; }
+
+    /// <summary>Verified recovery selection carried from a sealed rollback proposal, never from backend parameters.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? PreMigrationBackupId { get; init; }
 
     /// <summary>
     /// Opaque backend-specific parameters.
@@ -1123,6 +1145,37 @@ public sealed record WorkflowOperationRecord
     /// that conduct a container rollout, a DB script migration, and a metadata-v2 activation as one op.
     /// </summary>
     public CoordinatedReleaseContext? CoordinatedRelease { get; init; }
+
+    /// <summary>Durable, non-secret checkpoint for a pre-migration restore.</summary>
+    public PreMigrationRestoreContext? PreMigrationRestore { get; init; }
+}
+
+/// <summary>Saved inputs and phase for a governed pre-migration restore.</summary>
+public sealed record PreMigrationRestoreContext
+{
+    /// <summary>Sealed deploy payload; it contains no connection credentials.</summary>
+    public required string Payload { get; init; }
+
+    /// <summary>Restore phase: queued, acting, or awaiting-deploy.</summary>
+    public required string Phase { get; init; }
+
+    /// <summary>Separate principal who approved the operation.</summary>
+    public required string ApprovedBy { get; init; }
+
+    /// <summary>Prior deploy workflow id, persisted before its submission.</summary>
+    public string? DeployOperationId { get; init; }
+
+    /// <summary>Verified backup schema expected after restoration.</summary>
+    public int? ExpectedSchema { get; init; }
+
+    /// <summary>SHA-256 of the restored database host, without credentials.</summary>
+    public string? RestoredHostHash { get; init; }
+
+    /// <summary>Cell-bounded replacement database identifier.</summary>
+    public string? RestoredInstanceId { get; init; }
+
+    /// <summary>Immutable provider resource identity returned by the restore submission.</summary>
+    public string? RestoredResourceId { get; init; }
 }
 
 /// <summary>
