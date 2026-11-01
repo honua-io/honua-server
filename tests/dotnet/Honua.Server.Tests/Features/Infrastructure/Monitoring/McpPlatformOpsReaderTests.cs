@@ -480,9 +480,56 @@ public sealed class McpPlatformOpsReaderTests
         payload.ParameterOverrides.Should().ContainKey("backupId");
     }
 
-    [UnitTest]
+    [UnitTheory]
     [Operation(Operations.TestInfrastructure)]
-    public async Task ProposeRollback_WithoutRevision_UsesSecondNewestSucceededDeploy()
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ProposeRollback_LocalDefaultBackup_SealsVerifiedSelectionBeforeApproval(bool verified)
+    {
+        var store = new RecordingWorkflowOperationStore(
+            BuildDeployOperation("new", "local", "candidate", "installed", WorkflowOperationStatus.Succeeded),
+            BuildDeployOperation("baseline", "local", "installed", "installed", WorkflowOperationStatus.Succeeded, DateTimeOffset.UtcNow.AddMinutes(-10)));
+        var gateway = new RecordingGateway(new OperationGatewayResult
+        {
+            Outcome = OperationGatewayOutcome.ProposalCreated,
+            Decision = new GuardrailDecision(GuardrailTier.RequiresApproval, OperationClass.Deploy, HonuaEdition.Pro, "approval"),
+            ProposalId = "rollback-proposal"
+        });
+        var compose = Substitute.For<IComposeExecutorClient>();
+        compose.ExecuteAsync(Arg.Is<ComposeExecutorRequest>(request => request.Op == "plan-rollback" && request.Image == "installed"),
+            Arg.Any<CancellationToken>()).Returns(new ComposeExecutorResponse
+            {
+                Ok = verified, ReadbackComplete = verified, BackupId = verified ? "backup-selected" : null,
+                Code = verified ? null : "restore-backup-unverified"
+            });
+        using var services = CreateServices(gateway, compose: compose);
+        var options = new ControlPlaneOptions
+        {
+            DeployTargets = [new DeployTargetOptions { TargetId = "local", TargetKind = DeployTargetKind.LocalCompose }]
+        };
+        var result = await CreateReader(options: options, store: store, services: services).ProposeRollbackAsync(
+            CreatePrincipal(), new McpProposeRollbackArgument { TargetId = "local" }, CancellationToken.None);
+        if (verified)
+        {
+            result.ProposalId.Should().Be("rollback-proposal");
+            var payload = DeployExecutionPayload.Parse(gateway.LastRequest!.ExecutionPayload)!;
+            payload.DesiredRevision.Should().Be("installed");
+            payload.CurrentRevision.Should().Be("candidate");
+            payload.BackupId.Should().Be("backup-selected");
+        }
+        else
+        {
+            result.Outcome.Should().Be("Blocked");
+            gateway.ProposalCalls.Should().Be(0);
+        }
+        await compose.DidNotReceive().ExecuteAsync(Arg.Is<ComposeExecutorRequest>(request => request.Op == "rollback"), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTheory]
+    [Operation(Operations.TestInfrastructure)]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ProposeRollback_WithoutRevision_UsesPriorDistinctSucceededRevision(bool repeatedConvergence)
     {
         var store = new RecordingWorkflowOperationStore(
             BuildDeployOperation(
@@ -510,6 +557,12 @@ public sealed class McpPlatformOpsReaderTests
             ProposalId = "proposal-rollback",
             Message = "queued for approval",
         });
+
+        if (repeatedConvergence)
+        {
+            await store.TryCreateAsync(BuildDeployOperation("op-repeat", "serving-us-west", "rev-10", "rev-10",
+                WorkflowOperationStatus.Succeeded, DateTimeOffset.UtcNow.AddMinutes(1)));
+        }
 
         using var services = CreateServices(gateway);
         var reader = CreateReader(store: store, services: services);
@@ -1039,9 +1092,11 @@ public sealed class McpPlatformOpsReaderTests
         IOpsFindingsEvidenceSource? findings = null,
         IHttpContextAccessor? accessor = null,
         IAdminApiKeyStore? apiKeys = null,
-        Honua.Infrastructure.MultiTenancy.TenantContextOptions? tenantOptions = null)
+        Honua.Infrastructure.MultiTenancy.TenantContextOptions? tenantOptions = null,
+        IComposeExecutorClient? compose = null)
     {
         var services = new ServiceCollection();
+        if (compose is not null) services.AddSingleton(compose);
         if (tenantOptions is not null)
         {
             services.AddSingleton(Options.Create(tenantOptions));

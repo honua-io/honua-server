@@ -352,6 +352,19 @@ uses the image id recorded in that backup. File storage is not part of this rest
 the backup recipe in the Compose deploy guide still covers it. Contract-migration
 nonces stay on `HONUA_MIGRATE_ONLY` and are not bypassed here.
 
+The first approved convergence records the verified installed revision as the rollback
+baseline. After convergence completes, `honua_propose_rollback` can omit `toRevision`
+and `backupId`: it selects the prior serving revision and previews a verified matching
+backup. Review the selected revision and backup in the proposal's `diff` and `dryRun`
+before a separate principal approves it. Execution verifies the same backup again.
+
+Poll the proposal through the management API or `honua://proposals/{id}`. Both expose
+`Completed` or `Failed` after the canonical execution reaches that state; failures
+include `resolutionReason`. A failed operation releases exclusive ownership once its
+child deployment, if any, is also verified terminal. Restore the failed dependency and
+create a new convergence proposal with a new `idempotencyKey`. Active, missing, or
+uncertain execution records keep ownership until their state can be established.
+
 ## What to do next
 
 | | |

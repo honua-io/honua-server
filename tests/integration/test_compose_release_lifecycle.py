@@ -56,26 +56,21 @@ def rpc(base, key, session, method, params, ident):
 
 
 def wait_for_proposal(base, key, proposal, expected, proposer_key, session, timeout=1500):
-    # Proposal status records approval/submission. The canonical operation handle
-    # is reconciled separately and reflects the actual protected workflow outcome.
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         detail, _ = request(base, f"/api/v1/admin/proposals/{proposal}", key)
         status = detail["status"].lower()
-        if status in ("failed", "rejected", "cancelled"):
-            assert expected == "failed", f"unexpected proposal terminal state: {status}"
-            return
         resource, _ = rpc(base, proposer_key, session, "resources/read",
                           {"uri": f"honua://proposals/{proposal}"}, 99)
         proposal_resource = json.loads(resource["contents"][0]["text"])
-        instance_id = proposal_resource.get("operationInstanceId")
-        if instance_id:
-            operation, _ = request(base, f"/api/v1/operations/handles/{instance_id}", key)
-            state = operation["data"]["status"].lower()
-            if state in ("completed", "failed", "cancelled", "indeterminate", "denied", "rejected"):
-                actual = "succeeded" if state == "completed" else "failed"
-                assert actual == expected, f"unexpected operation terminal state: {state}"
-                return
+        resource_status = proposal_resource["status"].lower()
+        if status in ("completed", "failed", "rejected", "cancelled") and status == resource_status:
+            actual = "succeeded" if status == "completed" else "failed"
+            assert actual == expected, f"unexpected proposal terminal state: {status}"
+            assert detail.get("resolutionReason") == proposal_resource.get("resolutionReason")
+            if status == "failed":
+                assert detail.get("resolutionReason"), "failed execution must report its reason"
+            return detail
         time.sleep(5)
     raise AssertionError("operation did not reach its terminal state")
 
@@ -171,7 +166,27 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
             result, _ = rpc(base, proposer_key, session, "tools/call", {"name": name, "arguments": arguments}, ident)
             assert not result.get("isError"), "MCP tool refused the request"
             return result["structuredContent"]
-        convergence = call("honua_propose_platform_release_convergence", {"reason": "candidate convergence"}, 2)
+        failed = call("honua_propose_platform_release_convergence", {
+            "reason": "convergence failure regression", "idempotencyKey": "failed-convergence"}, 20)
+        failed_proposal = failed["targets"][0]["proposalId"]
+        # The stable manager keeps its own Redis; only the serving stack loses Redis.
+        dc("stop", "redis")
+        request(base, f"/api/v1/admin/proposals/{failed_proposal}/approve", approver_key, {})
+        wait_for_proposal(base, approver_key, failed_proposal, "failed", proposer_key, session)
+        dc("start", "redis")
+        deadline = time.monotonic() + 120
+        while time.monotonic() < deadline:
+            try:
+                with urllib.request.urlopen(f"http://127.0.0.1:{port}/healthz/ready", timeout=5) as ready:
+                    if ready.status == 200:
+                        break
+            except (urllib.error.URLError, TimeoutError):
+                pass
+            time.sleep(2)
+        else:
+            raise AssertionError("serving stack did not recover after Redis restarted")
+        convergence = call("honua_propose_platform_release_convergence", {
+            "reason": "candidate convergence after failed operation", "idempotencyKey": "recovered-convergence"}, 2)
         proposal = convergence["targets"][0]["proposalId"]
         assert proposal and image_id() == prior_id and schema() == 140
         try:
@@ -203,9 +218,14 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
             assert wrong.get("outcome", "").lower() in ("blocked", "rejected", "failed")
         assert image_id() == candidate and schema() == candidate_schema
         assert sql("SELECT value FROM public.rc2_lifecycle_marker WHERE id=1") == "changed-after-upgrade"
-        rollback = call("honua_propose_rollback", {"targetId": "compose-local", "toRevision": prior_id,
-            "backupId": backup["backupId"], "idempotencyKey": "verified-backup"}, 4)
+        rollback = call("honua_propose_rollback", {"targetId": "compose-local",
+            "idempotencyKey": "verified-backup"}, 4)
         assert rollback["proposalId"]
+        preview, _ = request(base, f"/api/v1/admin/proposals/{rollback['proposalId']}", approver_key)
+        assert any(prior_id in line for line in preview["diff"])
+        assert any(backup["backupId"] in line for line in preview["diff"])
+        assert any(backup["backupId"] in line for line in preview["dryRun"])
+        assert image_id() == candidate and schema() == candidate_schema
         request(base, f"/api/v1/admin/proposals/{rollback['proposalId']}/approve", approver_key, {})
         wait_for_proposal(base, approver_key, rollback["proposalId"], "succeeded", proposer_key, session)
         assert image_id() == prior_id and schema() == 140

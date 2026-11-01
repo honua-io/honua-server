@@ -179,7 +179,8 @@ internal static class ProposalEndpoints
         string id,
         HttpContext context,
         [FromServices] IOperationProposalStore? proposalStore = null,
-        [FromServices] ITenantContext? tenantContext = null)
+        [FromServices] ITenantContext? tenantContext = null,
+        [FromServices] Honua.Core.Features.Operations.Abstractions.IOperationInstanceStore? instanceStore = null)
     {
         if (!UnavailableOperationProposalStore.IsDurable(proposalStore))
         {
@@ -187,11 +188,15 @@ internal static class ProposalEndpoints
         }
 
         var proposal = await proposalStore.GetAsync(id, context.RequestAborted).ConfigureAwait(false);
-        return proposal == null || !OperationTenantAuthorization.CanAccess(context, proposal.TenantId)
+        if (proposal == null || !OperationTenantAuthorization.CanAccess(context, proposal.TenantId)
             || (proposal.Evidence is not null
-                && !string.Equals(proposal.Evidence.TenantId, tenantContext?.TenantId, StringComparison.Ordinal))
-            ? Results.NotFound()
-            : Results.Json(ToDetail(proposal), ProposalJsonContext.Default.ProposalDetailResponse);
+                && !string.Equals(proposal.Evidence.TenantId, tenantContext?.TenantId, StringComparison.Ordinal)))
+            return Results.NotFound();
+        var execution = instanceStore is not null && proposal.Audit.OperationInstanceId is { Length: > 0 } instanceId
+            ? await instanceStore.GetAsync(instanceId, context.RequestAborted).ConfigureAwait(false)
+            : null;
+        return Results.Json(ToDetail(proposal, OperationProposalExecutionView.From(proposal, execution)),
+            ProposalJsonContext.Default.ProposalDetailResponse);
     }
 
     private static async Task<IResult> HandleApproveProposal(
@@ -488,11 +493,11 @@ internal static class ProposalEndpoints
         UpdatedAt = proposal.UpdatedAt,
     };
 
-    private static ProposalDetailResponse ToDetail(OperationProposal proposal) => new()
+    private static ProposalDetailResponse ToDetail(OperationProposal proposal, OperationProposalExecutionView? execution = null) => new()
     {
         ProposalId = proposal.ProposalId,
         Kind = proposal.Kind.ToString(),
-        Status = proposal.Status.ToString(),
+        Status = execution?.Status ?? proposal.Status.ToString(),
         RequestedBy = proposal.RequestedBy,
         RequestedByAgent = proposal.RequestedByAgent,
         FindingId = proposal.AutonomyMetadata?.FindingId,
@@ -506,10 +511,10 @@ internal static class ProposalEndpoints
         Warnings = proposal.Plan.Warnings,
         GuardrailTier = proposal.GuardrailDecision?.Tier.ToString(),
         ResolvedBy = proposal.ResolvedBy,
-        ResolutionReason = proposal.ResolutionReason,
+        ResolutionReason = execution?.ResolutionReason ?? proposal.ResolutionReason,
         ExecutionOperationId = proposal.ExecutionOperationId,
         CreatedAt = proposal.CreatedAt,
-        UpdatedAt = proposal.UpdatedAt,
+        UpdatedAt = execution?.UpdatedAt ?? proposal.UpdatedAt,
         ResolvedAt = proposal.ResolvedAt,
     };
 }

@@ -29,6 +29,88 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
 {
     [IntegrationTest]
+    public async Task ApprovedConvergence_AfterFailedStatusRead_StartsTheNextDeployment()
+    {
+        await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        var database = connection.GetDatabase();
+        await database.KeyDeleteAsync("controlplane:workflow:restore-cell-exclusive-owner");
+        try
+        {
+            var workflows = new RedisWorkflowOperationStore(connection, NullLogger<RedisWorkflowOperationStore>.Instance);
+            var proposals = new RedisOperationProposalStore(connection, NullLogger<RedisOperationProposalStore>.Instance);
+            var monitor = Substitute.For<IOptionsMonitor<ControlPlaneOptions>>();
+            monitor.CurrentValue.Returns(new ControlPlaneOptions
+            {
+                DeployTargets = [new DeployTargetOptions { TargetId = "local", TargetKind = DeployTargetKind.LocalCompose }]
+            });
+            var targets = Substitute.For<IDeployTargetRegistry>();
+            targets.GetAsync("local", Arg.Any<CancellationToken>()).Returns(new DeployTargetDefinition
+            {
+                TargetId = "local", TargetKind = DeployTargetKind.LocalCompose, Backend = "test",
+                Environment = "local", TargetName = "honua"
+            });
+            var backend = Substitute.For<IDeployBackend>();
+            backend.BackendName.Returns("test");
+            backend.TargetKind.Returns(DeployTargetKind.LocalCompose);
+            backend.GetCapabilitiesAsync(Arg.Any<CancellationToken>()).Returns(new DeployBackendCapabilities());
+            backend.PlanAsync(Arg.Any<DeployOperationSpec>(), Arg.Any<CancellationToken>()).Returns(new DeployPlan { IsReadyToSubmit = true });
+            backend.StartAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>()).Returns(new DeploySubmissionResult { Status = WorkflowOperationStatus.Reconciling });
+            var service = new DeployWorkflowService(targets, [workflows], [backend], Substitute.For<IOperatorApprovalEvaluator>(),
+                NullLogger<DeployWorkflowService>.Instance, monitor);
+            var compose = Substitute.For<IComposeExecutorClient>();
+            compose.ExecuteAsync(Arg.Any<ComposeExecutorRequest>(), Arg.Any<CancellationToken>())
+                .Returns<Task<ComposeExecutorResponse>>(_ => throw new IOException("Status unavailable"));
+            DurableRestoreWorker Worker() => new(workflows, proposals, null!, new DeployOperationExecutor(service), null!, null!,
+                NullLogger<DurableRestoreWorker>.Instance, monitor, compose);
+            var queue = new DurableRestoreQueue(workflows);
+            async Task<string> ApproveAsync()
+            {
+                var proposalId = "proposal-" + Guid.NewGuid().ToString("N");
+                var request = new OperationGatewayRequest
+                {
+                    Kind = OperationClass.Deploy, RequestedBy = "proposer", ApprovedBy = "approver", ApprovedProposalId = proposalId
+                };
+                var id = await queue.EnqueueAsync(request, new DeployExecutionPayload
+                {
+                    TargetId = "local", DesiredRevision = "sha256:" + new string('a', 64)
+                }.Serialize(), CancellationToken.None);
+                Assert.True(await proposals.TryCreateAsync(new OperationProposal
+                {
+                    ProposalId = proposalId, Kind = OperationClass.Deploy, Status = OperationProposalStatus.Submitted,
+                    ResolvedBy = "approver", ExecutionOperationId = id, Plan = new OperationProposalPlan { Summary = "Converge" },
+                    CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow
+                }));
+                return id;
+            }
+            var failedId = await ApproveAsync();
+            await Worker().ReconcileAsync(failedId, CancellationToken.None);
+            Assert.Equal(WorkflowOperationStatus.Failed, (await workflows.GetAsync(failedId))?.Status);
+            Assert.Equal(PreMigrationRestoreCodes.ProviderFailed, (await workflows.GetAsync(failedId))?.ErrorMessage);
+            Assert.True((await database.KeyTimeToLiveAsync("controlplane:workflow:" + failedId)).GetValueOrDefault() > TimeSpan.FromDays(300));
+            // Also exercise cleanup after a host exits before it can release the saved owner.
+            var owner = await workflows.GetAsync(RestoreDeployAdmission.CellOwnerId);
+            Assert.True(await workflows.TrySetAsync(owner! with { CurrentPhase = failedId }));
+            compose.ExecuteAsync(Arg.Any<ComposeExecutorRequest>(), Arg.Any<CancellationToken>()).Returns(new ComposeExecutorResponse
+            {
+                Ok = true, ReadbackComplete = true, RunningImage = "sha256:" + new string('b', 64)
+            });
+            var nextId = await ApproveAsync();
+            await Worker().ReconcileAsync(nextId, CancellationToken.None);
+            Assert.Equal(WorkflowOperationStatus.Reconciling, (await workflows.GetAsync(nextId))?.Status);
+            Assert.Equal(WorkflowOperationStatus.Reconciling, (await workflows.GetAsync(DeployWorkflowService.CreateOperationId(nextId)))?.Status);
+            await backend.Received(1).StartAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>());
+            var history = await service.ListDeployOperationsAsync(WorkflowOperationStatus.Succeeded, WorkflowOperationKind.Deploy, 1, 20);
+            Assert.Contains(history.Items, operation => operation.Deploy?.DesiredRevision == "sha256:" + new string('b', 64));
+            var deployment = await workflows.GetAsync(DeployWorkflowService.CreateOperationId(nextId));
+            Assert.True(await workflows.TrySetAsync(deployment! with { Status = WorkflowOperationStatus.Succeeded }));
+        }
+        finally
+        {
+            await database.KeyDeleteAsync("controlplane:workflow:restore-cell-exclusive-owner");
+        }
+    }
+
+    [IntegrationTest]
     public async Task ApprovedRestore_ReplacementWorker_WaitsForProtectionAndVerifiesReadback()
     {
         await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
@@ -217,7 +299,7 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
         }
     }
     [IntegrationTest]
-    public async Task ApprovedLocalRollback_CanTakeOverOnlyTerminalLocalFailure()
+    public async Task ApprovedConvergence_CanTakeOverOnlyTerminalFailure()
     {
         await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
         var database = connection.GetDatabase();
@@ -276,11 +358,38 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
             });
             var worker = new DurableRestoreWorker(workflows, null!, null!, new DeployOperationExecutor(service), null!, null!,
                 NullLogger<DurableRestoreWorker>.Instance, monitor);
-            Assert.False(await worker.ClaimCellAsync("recovery", CancellationToken.None, allowLocalRecovery: true));
+            foreach (var childStatus in new[]
+            {
+                WorkflowOperationStatus.Submitted, WorkflowOperationStatus.Reconciling,
+                WorkflowOperationStatus.RollbackRequested, WorkflowOperationStatus.ManualInterventionRequired
+            })
+            {
+                var activeChild = await workflows.GetAsync(workflowId);
+                Assert.True(await workflows.TrySetAsync(activeChild! with { Status = childStatus }));
+                Assert.False(await worker.ClaimCellAsync("recovery", CancellationToken.None));
+                await Assert.ThrowsAsync<ResourceConflictException>(async () =>
+                {
+                    await using var admission = await RestoreDeployAdmission.AcquireAsync(workflows, "next-deploy", null, false, CancellationToken.None);
+                });
+            }
+            var previous = await workflows.GetAsync(failedId);
+            Assert.True(await workflows.TrySetAsync(previous! with
+            {
+                PreMigrationRestore = previous.PreMigrationRestore! with { DeployOperationId = "missing-child" }
+            }));
+            Assert.False(await worker.ClaimCellAsync("recovery", CancellationToken.None));
+            previous = await workflows.GetAsync(failedId);
+            Assert.True(await workflows.TrySetAsync(previous! with
+            {
+                PreMigrationRestore = previous.PreMigrationRestore! with { DeployOperationId = workflowId }
+            }));
             var workflow = await workflows.GetAsync(workflowId);
             Assert.True(await workflows.TrySetAsync(workflow! with { Status = WorkflowOperationStatus.Failed }));
-            Assert.False(await worker.ClaimCellAsync("ordinary-deploy", CancellationToken.None));
-            Assert.True(await worker.ClaimCellAsync("recovery", CancellationToken.None, allowLocalRecovery: true));
+            await using (var admission = await RestoreDeployAdmission.AcquireAsync(workflows, "ordinary-deploy", null, false, CancellationToken.None))
+            {
+                Assert.Null((await workflows.GetAsync(RestoreDeployAdmission.CellOwnerId))?.CurrentPhase);
+            }
+            Assert.True(await worker.ClaimCellAsync("ordinary-deploy", CancellationToken.None));
         }
         finally
         {
