@@ -76,6 +76,14 @@ public sealed record CollectionInfo
     public string ItemType { get; init; } = "feature";
 
     /// <summary>
+    /// Canonical geometry type (for example Point or Polygon). GeometryCollection
+    /// denotes a generic or heterogeneous spatial resource; absent for non-spatial resources.
+    /// </summary>
+    [JsonPropertyName("geometryType")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? GeometryType { get; init; }
+
+    /// <summary>
     /// Coordinate reference systems supported by this collection.
     /// </summary>
     [JsonPropertyName("crs")]
