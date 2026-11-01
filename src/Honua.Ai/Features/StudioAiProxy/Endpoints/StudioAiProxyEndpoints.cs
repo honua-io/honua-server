@@ -85,6 +85,15 @@ internal static class StudioAiProxyEndpoints
     {
         SetNoStore(context);
 
+        if (!options.Value.Enabled)
+        {
+            return Results.Problem(
+                statusCode: StatusCodes.Status503ServiceUnavailable,
+                title: "Studio assistant is not configured.",
+                detail: "Set StudioAiProxy:Enabled to true and configure a tool-capable provider. See the Studio assistant on Bedrock deployment guide for disclosure and invocation admission setup.",
+                extensions: new Dictionary<string, object?> { ["code"] = "studio_ai_not_configured" });
+        }
+
         if (!context.Request.HasJsonContentType())
         {
             return Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);

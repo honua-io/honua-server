@@ -149,6 +149,7 @@
   - [Operate metrics and recovery evidence](guides/operate/metrics.md)
   - [Ops evidence posture](guides/operate/evidence-posture.md)
   - [Docker Compose](guides/deploy/docker-compose.md)
+  - [Studio assistant on Bedrock](guides/deploy/studio-assistant-bedrock.md)
   - [Pilot onboarding runbook](guides/deploy/pilot-onboarding-runbook.md)
   - [Kubernetes](guides/deploy/kubernetes.md)
   - [Cloud deployments](guides/deploy/cloud-deployments.md)

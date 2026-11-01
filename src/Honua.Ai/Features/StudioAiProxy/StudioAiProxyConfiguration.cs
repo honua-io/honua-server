@@ -31,7 +31,7 @@ public sealed class StudioAiProxyConfiguration
     public const string BedrockKind = "bedrock";
 
     /// <summary>Default AWS region for a <see cref="BedrockKind"/> provider when none is configured.</summary>
-    public const string DefaultBedrockRegion = "us-west-2";
+    public const string DefaultBedrockRegion = "us-east-1";
 
     /// <summary>Whether the feature is enabled. Default: false.</summary>
     public bool Enabled { get; set; }
@@ -121,7 +121,7 @@ public sealed class StudioAiProxyProviderOptions
     public string Model { get; set; } = string.Empty;
 
     /// <summary>
-    /// AWS region for a <c>bedrock</c> provider (for example <c>us-west-2</c>). Ignored by the other
+    /// AWS region for a <c>bedrock</c> provider (for example <c>us-east-1</c>). Ignored by the other
     /// kinds. When empty, the Bedrock adapter falls back to <see cref="StudioAiProxyConfiguration.DefaultBedrockRegion"/>.
     /// </summary>
     public string Region { get; set; } = string.Empty;

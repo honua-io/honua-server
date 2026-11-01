@@ -22,7 +22,7 @@ public sealed class BedrockChatClientAdapterTests
         config.AllowAutoRedirect.Should().BeFalse();
         config.MaxErrorRetry.Should().Be(0);
         config.MaxStaleConnectionRetries.Should().Be(0);
-        config.RegionEndpoint.SystemName.Should().Be(Honua.Ai.StudioAiProxy.StudioAiProxyConfiguration.DefaultBedrockRegion);
+        config.RegionEndpoint.SystemName.Should().Be("us-east-1");
         BedrockChatClientAdapter.CreateConfiguration("eu-west-1", null).RegionEndpoint.SystemName.Should().Be("eu-west-1");
     }
 
