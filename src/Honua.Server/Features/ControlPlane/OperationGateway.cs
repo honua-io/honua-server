@@ -939,7 +939,7 @@ internal sealed partial class OperationGateway : IOperationGateway
             var payload = proposal.Kind == OperationClass.Deploy
                 ? Honua.ControlPlane.Executors.DeployExecutionPayload.Parse(proposal.Plan.ExecutionPayload)
                 : null;
-            var restoreId = proposal.Kind == OperationClass.Deploy && payload is { Rollback: true }
+            var restoreId = proposal.Kind == OperationClass.Deploy && payload is not null
                 ? DurableRestoreQueue.CreateId(string.IsNullOrWhiteSpace(proposal.Audit.IdempotencyKey)
                     ? proposal.ProposalId : proposal.Audit.IdempotencyKey)
                 : proposal.ExecutionOperationId;

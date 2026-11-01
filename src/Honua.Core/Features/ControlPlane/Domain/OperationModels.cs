@@ -327,7 +327,15 @@ public enum DeployTargetKind
     /// and keeps the old replica until the new one is healthy. Delivers the on-prem/air-gapped,
     /// zero-cloud-dependency zero-downtime upgrade and rollback story.
     /// </summary>
-    SelfHostedRolling
+    SelfHostedRolling,
+
+    /// <summary>
+    /// Installed Docker Compose project. The server does not receive the Docker socket. A separately
+    /// configured executor, reached over a local socket, applies an allowlisted compose change for the
+    /// one project the operator registered. Reader-incompatible rollbacks restore a verified backup
+    /// before the prior image is started.
+    /// </summary>
+    LocalCompose
 }
 
 /// <summary>
@@ -443,6 +451,13 @@ public sealed record OperationAuditInfo
     public string? ProposalId { get; init; }
 
     /// <summary>
+    /// Principal that approved this operation when approval is a separate duty from
+    /// <see cref="RequestedBy"/>. Empty until a different principal submits an approved Compose
+    /// operation. Ignored by backends that do not enforce separation of duties.
+    /// </summary>
+    public string? ApprovedBy { get; init; }
+
+    /// <summary>
     /// Stable fingerprint of the deploy request payload used to validate idempotent replays.
     /// </summary>
     public string? RequestFingerprint { get; init; }
@@ -555,6 +570,10 @@ public sealed record DeployOperationSpec
     /// Whether the operation should stop for explicit approval before submission.
     /// </summary>
     public bool RequiresApproval { get; init; }
+
+    /// <summary>Verified recovery selection carried from a sealed rollback proposal, never from backend parameters.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? PreMigrationBackupId { get; init; }
 
     /// <summary>
     /// Opaque backend-specific parameters.

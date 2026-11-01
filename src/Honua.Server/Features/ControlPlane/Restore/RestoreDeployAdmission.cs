@@ -53,10 +53,11 @@ internal sealed class RestoreDeployAdmission : IAsyncDisposable
                 {
                     var checkpoint = restore?.PreMigrationRestore;
                     if ((!allowRestorePromotion && !string.Equals(owner.CurrentPhase, restoreOwnerId, StringComparison.Ordinal)) ||
-                        checkpoint?.Phase is not ("awaiting-deploy" or "awaiting-compatible-deploy") ||
+                        checkpoint?.Phase is not ("awaiting-deploy" or "awaiting-compatible-deploy" or "awaiting-local-deploy") ||
                         !string.Equals(checkpoint.DeployOperationId, workflowId, StringComparison.Ordinal))
                         throw new ResourceConflictException("Deploy admission is blocked by a durable restore.");
                 }
+
             }
             return admission;
         }

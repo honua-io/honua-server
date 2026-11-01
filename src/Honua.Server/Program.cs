@@ -135,6 +135,15 @@ if (Honua.Server.Hosting.MigrateOnly.MigrateOnlyMode.Resolve(builder.Configurati
     return;
 }
 
+// Compose executor mode (honua-server#6811): HONUA_COMPOSE_EXECUTOR=true serves the allowlisted
+// Compose socket and never builds this web host. The serving process does not take this path.
+if (Honua.Server.Hosting.ComposeExecutor.ComposeExecutorMode.Resolve(builder.Configuration) !=
+    Honua.Server.Hosting.ComposeExecutor.ComposeExecutorSwitch.NotRequested)
+{
+    Environment.ExitCode = await Honua.Server.Hosting.ComposeExecutor.ComposeExecutorCommand.RunFromEntryPointAsync(builder.Configuration);
+    return;
+}
+
 Honua.Infrastructure.Hosting.ProtocolProfile.ValidateRuntime(builder.Configuration);
 
 // Typed composition switch (resolved once, never consulted by services): a process a batch compute

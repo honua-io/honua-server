@@ -61,6 +61,11 @@ internal sealed class DeployOperationExecutor(DeployWorkflowService deployWorkfl
             $"revision: {planResult.Spec.CurrentRevision ?? "(unknown)"} -> {planResult.Spec.DesiredRevision}",
         };
 
+        if (payload.Rollback && !string.IsNullOrWhiteSpace(payload.BackupId))
+        {
+            diff.Add($"backup: {payload.BackupId}");
+        }
+
         return new OperationProposalPlan
         {
             Summary = $"Deploy {payload.DesiredRevision} to {planResult.Target.TargetId}",
@@ -100,7 +105,7 @@ internal sealed class DeployOperationExecutor(DeployWorkflowService deployWorkfl
             throw new InvalidOperationException("Deploy execution payload is missing or malformed.");
         }
 
-        var record = await deployWorkflowService.CreateWithRestoreAsync(
+        var record = await deployWorkflowService.CreateWithBackupAsync(
                 payload.TargetId,
                 payload.DesiredRevision,
                 payload.CurrentRevision,
@@ -112,7 +117,9 @@ internal sealed class DeployOperationExecutor(DeployWorkflowService deployWorkfl
                 submitImmediately: true,
                 payload.ParameterOverrides,
                 principal: null,
+                preMigrationBackupId: payload.Rollback ? payload.BackupId : null,
                 restoreOwnerId,
+                request.ApprovedBy,
                 cancellationToken)
             .ConfigureAwait(false);
 
