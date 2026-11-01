@@ -12,6 +12,9 @@ internal sealed class RestoreDeployAdmission : IAsyncDisposable
 {
     internal const string CellOwnerId = "restore-cell-exclusive-owner";
     private static readonly TimeSpan Lease = TimeSpan.FromMinutes(2);
+    private static readonly Action<ILogger, string, Exception?> FailedOwnerReleased = LoggerMessage.Define<string>(
+        LogLevel.Information, new EventId(9583, "FailedRestoreOwnerReleased"),
+        "Released failed restore owner {RestoreOperationId}.");
     private readonly IWorkflowOperationStore _store;
     private readonly string _leaseOwner;
     private readonly string _leaseKey;
@@ -29,7 +32,7 @@ internal sealed class RestoreDeployAdmission : IAsyncDisposable
 
     internal CancellationToken Token => _cancellation.Token;
 
-    internal static async Task<RestoreDeployAdmission> AcquireAsync(IWorkflowOperationStore store, string workflowId, string? restoreOwnerId, bool allowRestorePromotion, CancellationToken cancellationToken)
+    internal static async Task<RestoreDeployAdmission> AcquireAsync(IWorkflowOperationStore store, string workflowId, string? restoreOwnerId, bool allowRestorePromotion, CancellationToken cancellationToken, ILogger? logger = null)
     {
         var leaseOwner = $"deploy-admission:{Guid.NewGuid():N}";
         if (!await store.TryAcquireLeaseAsync(CellOwnerId, leaseOwner, Lease, cancellationToken).ConfigureAwait(false))
@@ -48,6 +51,8 @@ internal sealed class RestoreDeployAdmission : IAsyncDisposable
                     if (!await store.TrySetAsync(owner with { CurrentPhase = null, UpdatedAt = DateTimeOffset.UtcNow },
                             TimeSpan.FromDays(365), admission.Token).ConfigureAwait(false))
                         throw new ResourceConflictException("Restore owner cleanup must be retried.");
+                    if (restore?.Status == WorkflowOperationStatus.Failed)
+                        LogFailedOwnerReleased(logger, restore.OperationId);
                 }
                 else
                 {
@@ -66,6 +71,11 @@ internal sealed class RestoreDeployAdmission : IAsyncDisposable
             await admission.DisposeAsync().ConfigureAwait(false);
             throw;
         }
+    }
+
+    internal static void LogFailedOwnerReleased(ILogger? logger, string operationId)
+    {
+        if (logger is not null) FailedOwnerReleased(logger, operationId, null);
     }
 
     // A failed wrapper is insufficient when its child may still be changing the substrate.

@@ -418,13 +418,17 @@ internal sealed partial class DurableRestoreWorker(
                 }, OwnerRetention, cancellationToken).ConfigureAwait(false);
             }
             if (string.Equals(owner.CurrentPhase, id, StringComparison.Ordinal)) return true;
+            WorkflowOperationRecord? previous = null;
             if (!string.IsNullOrEmpty(owner.CurrentPhase))
             {
-                var previous = await store.GetAsync(owner.CurrentPhase, cancellationToken).ConfigureAwait(false);
+                previous = await store.GetAsync(owner.CurrentPhase, cancellationToken).ConfigureAwait(false);
                 if (!await RestoreDeployAdmission.CanReleaseOwnerAsync(store, previous, cancellationToken).ConfigureAwait(false)) return false;
             }
-            return await store.TrySetAsync(owner with { CurrentPhase = id, UpdatedAt = DateTimeOffset.UtcNow },
+            var claimed = await store.TrySetAsync(owner with { CurrentPhase = id, UpdatedAt = DateTimeOffset.UtcNow },
                 OwnerRetention, cancellationToken).ConfigureAwait(false);
+            if (claimed && previous?.Status == WorkflowOperationStatus.Failed)
+                RestoreDeployAdmission.LogFailedOwnerReleased(logger, previous.OperationId);
+            return claimed;
         }
         finally
         {
@@ -504,8 +508,10 @@ internal sealed partial class DurableRestoreWorker(
             var owner = await store.GetAsync(CellOwnerId, cancellationToken).ConfigureAwait(false);
             var operation = await store.GetAsync(id, cancellationToken).ConfigureAwait(false);
             if (owner is not null && string.Equals(owner.CurrentPhase, id, StringComparison.Ordinal) &&
-                await RestoreDeployAdmission.CanReleaseOwnerAsync(store, operation, cancellationToken).ConfigureAwait(false))
-                await store.TrySetAsync(owner with { CurrentPhase = null, UpdatedAt = DateTimeOffset.UtcNow }, OwnerRetention, cancellationToken).ConfigureAwait(false);
+                await RestoreDeployAdmission.CanReleaseOwnerAsync(store, operation, cancellationToken).ConfigureAwait(false) &&
+                await store.TrySetAsync(owner with { CurrentPhase = null, UpdatedAt = DateTimeOffset.UtcNow }, OwnerRetention, cancellationToken).ConfigureAwait(false) &&
+                operation?.Status == WorkflowOperationStatus.Failed)
+                RestoreDeployAdmission.LogFailedOwnerReleased(logger, id);
         }
         finally
         {
