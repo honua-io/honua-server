@@ -48,12 +48,19 @@ public sealed class DevelopmentPublicationAuditTests
             using var admin = fixture.CreateAdminClient();
             using var publish = await admin.PostAsJsonAsync("/mcp", new
             {
-                jsonrpc = "2.0", id = 1, method = "tools/call", @params = new
+                jsonrpc = "2.0",
+                id = 1,
+                method = "tools/call",
+                @params = new
                 {
-                    name = "honua_publish_service", arguments = new
+                    name = "honua_publish_service",
+                    arguments = new
                     {
-                        connectionId = "11111111-1111-1111-1111-111111111111", schema = "public",
-                        table = "parcels", layerName = "parcels", serviceName = "default",
+                        connectionId = "11111111-1111-1111-1111-111111111111",
+                        schema = "public",
+                        table = "parcels",
+                        layerName = "parcels",
+                        serviceName = "default",
                     },
                 },
             });
