@@ -717,8 +717,8 @@ internal static class DeployControlEndpoints
     /// contract — a target's last-applied revision is the <c>DesiredRevision</c> of its most recent
     /// terminal-Succeeded deploy operation; a target with no such operation is unknown and treated as
     /// divergent. Config-pinned targets (an explicit artifact diverging from the release) are skipped.
-    /// Each divergent target's deploy routes through the guardrail gateway like any other Deploy, keyed
-    /// by <c>converge:{version}:{targetId}</c> so a repeated converge folds onto the in-flight operation.
+    /// Each divergent target's deploy routes through the guardrail gateway like any other Deploy.
+    /// Its automatic key stays stable for retries and changes after a completed restore.
     /// Worker images are not deployed here.
     /// </summary>
     private static async Task<IResult> HandleConvergePlatformRelease(
@@ -807,6 +807,8 @@ internal static class DeployControlEndpoints
 
         var outcomes = new List<PlatformReleaseConvergeTargetOutcome>();
         var actuated = false;
+        var observer = context.RequestServices.GetService<IManagedComposeObserver>();
+        var liveTargets = observer is null ? [] : await observer.ReadAsync(context.RequestAborted).ConfigureAwait(false);
 
         foreach (var target in options.DeployTargets.Where(candidate => !string.IsNullOrWhiteSpace(candidate.TargetId)))
         {
@@ -848,12 +850,26 @@ internal static class DeployControlEndpoints
                 continue;
             }
 
+            var liveTarget = liveTargets.SingleOrDefault(live => live.TargetId == target.TargetId);
+            var idempotencyKey = await PlatformConvergenceKey.ResolveAsync(deployWorkflowService, declaredVersion,
+                target.TargetId, target.TargetKind, liveTarget?.ServingIncarnation, lastOp, context.RequestAborted).ConfigureAwait(false);
+            if (idempotencyKey is null)
+            {
+                outcomes.Add(new PlatformReleaseConvergeTargetOutcome
+                {
+                    TargetId = target.TargetId,
+                    Outcome = ConvergeOutcomes.Blocked,
+                    LastAppliedRevision = lastApplied,
+                    Message = "The restore has not completed successfully."
+                });
+                continue;
+            }
             var isUnknown = string.IsNullOrWhiteSpace(lastApplied);
             var outcome = await RouteConvergeDeployAsync(
                     gateway,
                     target.TargetId,
                     declaredServing,
-                    declaredVersion,
+                    idempotencyKey,
                     requestedBy,
                     reason,
                     request?.CorrelationId,
@@ -886,7 +902,7 @@ internal static class DeployControlEndpoints
         IOperationGateway gateway,
         string targetId,
         string declaredServing,
-        string declaredVersion,
+        string idempotencyKey,
         string? requestedBy,
         string reason,
         string? correlationId,
@@ -906,8 +922,8 @@ internal static class DeployControlEndpoints
             RequestedBy = requestedBy,
             Reason = reason,
             CorrelationId = correlationId,
-            // Stable idempotency key so a double-converge folds onto one operation/proposal per target.
-            IdempotencyKey = $"converge:{declaredVersion}:{targetId}",
+            // Stable for retries, but changes after a completed restore.
+            IdempotencyKey = idempotencyKey,
             ExecutionPayload = payload,
         };
 

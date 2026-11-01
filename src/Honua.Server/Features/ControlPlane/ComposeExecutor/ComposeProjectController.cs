@@ -468,7 +468,7 @@ internal sealed partial class ComposeProjectController : IDisposable
         return Success(request, requestedImage, live, backupId: null);
     }
 
-    private async Task<(string? BackupId, ComposeExecutorResponse? Failure)> TakeBackupAsync(
+    internal async Task<(string? BackupId, ComposeExecutorResponse? Failure)> TakeBackupAsync(
         string priorImageId,
         int schemaVersion,
         CancellationToken cancellationToken)
@@ -476,69 +476,98 @@ internal sealed partial class ComposeProjectController : IDisposable
         var backupId = "backup-" + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
         var directory = Path.Combine(Path.GetFullPath(_options.BackupDirectory), backupId);
         Directory.CreateDirectory(directory);
-        const string remote = "/tmp/honua-backup.dump";
-        var dumped = await ComposeAsync(DumpTimeout, ["exec", "-T", "--", _options.PostgresService, "pg_dump", "-U", _options.DatabaseUser, "-d", _options.DatabaseName, "-Fc", "-f", remote], cancellationToken)
-            .ConfigureAwait(false);
-        if (dumped.ExitCode != 0)
+        var remote = $"/tmp/honua-{backupId}.dump";
+        try
         {
-            return (null, Refuse(null, ComposeExecutorCodes.BackupFailed, "pg_dump did not complete."));
-        }
+            var dumped = await ComposeAsync(DumpTimeout, ["exec", "-T", "--", _options.PostgresService, "pg_dump", "-U", _options.DatabaseUser, "-d", _options.DatabaseName, "-Fc", "-f", remote], cancellationToken)
+                .ConfigureAwait(false);
+            if (dumped.ExitCode != 0)
+            {
+                return (null, Refuse(null, ComposeExecutorCodes.BackupFailed, "pg_dump did not complete."));
+            }
 
-        var hostDump = Path.Combine(directory, ComposeExecutorProtocol.DumpFileName);
-        var copied = await ComposeAsync(DumpTimeout, ["cp", _options.PostgresService + ":" + remote, hostDump], cancellationToken)
-            .ConfigureAwait(false);
-        if (copied.ExitCode != 0 || !File.Exists(hostDump))
-        {
-            return (null, Refuse(null, ComposeExecutorCodes.BackupFailed, "The backup could not be copied out of Postgres."));
-        }
+            var hostDump = Path.Combine(directory, ComposeExecutorProtocol.DumpFileName);
+            var copied = await ComposeAsync(DumpTimeout, ["cp", _options.PostgresService + ":" + remote, hostDump], cancellationToken)
+                .ConfigureAwait(false);
+            if (copied.ExitCode != 0 || !File.Exists(hostDump))
+            {
+                return (null, Refuse(null, ComposeExecutorCodes.BackupFailed, "The backup could not be copied out of Postgres."));
+            }
 
-        var hash = await HashFileAsync(hostDump, cancellationToken).ConfigureAwait(false);
-        var manifest = new ComposeBackupManifest
+            var hash = await HashFileAsync(hostDump, cancellationToken).ConfigureAwait(false);
+            var manifest = new ComposeBackupManifest
+            {
+                BackupId = backupId,
+                Project = _options.ProjectName,
+                Service = _options.ServiceName,
+                Image = priorImageId,
+                SchemaVersion = schemaVersion,
+                Sha256 = hash,
+                CreatedAt = DateTimeOffset.UtcNow,
+                DumpFile = ComposeExecutorProtocol.DumpFileName
+            };
+            var json = JsonSerializer.Serialize(manifest, ComposeExecutorJsonContext.Default.ComposeBackupManifest);
+            var manifestPath = Path.Combine(directory, "manifest.json");
+            var temporary = manifestPath + ".tmp";
+            await File.WriteAllTextAsync(temporary, json, cancellationToken).ConfigureAwait(false);
+            File.Move(temporary, manifestPath, overwrite: true);
+            return (backupId, null);
+        }
+        finally
         {
-            BackupId = backupId,
-            Project = _options.ProjectName,
-            Service = _options.ServiceName,
-            Image = priorImageId,
-            SchemaVersion = schemaVersion,
-            Sha256 = hash,
-            CreatedAt = DateTimeOffset.UtcNow,
-            DumpFile = ComposeExecutorProtocol.DumpFileName
-        };
-        var json = JsonSerializer.Serialize(manifest, ComposeExecutorJsonContext.Default.ComposeBackupManifest);
-        var manifestPath = Path.Combine(directory, "manifest.json");
-        var temporary = manifestPath + ".tmp";
-        await File.WriteAllTextAsync(temporary, json, cancellationToken).ConfigureAwait(false);
-        File.Move(temporary, manifestPath, overwrite: true);
-        return (backupId, null);
+            await RemoveStagedDumpAsync(remote).ConfigureAwait(false);
+        }
     }
 
-    private async Task<ComposeExecutorResponse?> ApplyDumpAsync(
+    internal async Task<ComposeExecutorResponse?> ApplyDumpAsync(
         ComposeBackupManifest manifest,
         CancellationToken cancellationToken)
     {
         var dump = DumpPath(Path.GetFullPath(_options.BackupDirectory), manifest.BackupId!);
-        var copied = await ComposeAsync(DumpTimeout, ["cp", dump, _options.PostgresService + ":/tmp/honua-backup.dump"], cancellationToken)
-            .ConfigureAwait(false);
-        if (copied.ExitCode != 0)
+        var remote = $"/tmp/honua-restore-{Guid.NewGuid():N}.dump";
+        try
         {
-            return Refuse(null, PreMigrationRestoreCodes.RestoreIncomplete, "The backup could not be copied into Postgres.");
-        }
+            var copied = await ComposeAsync(DumpTimeout, ["cp", dump, _options.PostgresService + ":" + remote], cancellationToken)
+                .ConfigureAwait(false);
+            if (copied.ExitCode != 0)
+            {
+                return Refuse(null, PreMigrationRestoreCodes.RestoreIncomplete, "The backup could not be copied into Postgres.");
+            }
 
-        var dropped = await ComposeAsync(CommandTimeout, ["exec", "-T", "--", _options.PostgresService, "dropdb", "-U", _options.DatabaseUser, "--force", "--if-exists", _options.DatabaseName], cancellationToken)
-            .ConfigureAwait(false);
-        if (dropped.ExitCode != 0)
+            var dropped = await ComposeAsync(CommandTimeout, ["exec", "-T", "--", _options.PostgresService, "dropdb", "-U", _options.DatabaseUser, "--force", "--if-exists", _options.DatabaseName], cancellationToken)
+                .ConfigureAwait(false);
+            if (dropped.ExitCode != 0)
+            {
+                return Refuse(null, PreMigrationRestoreCodes.RestoreIncomplete, "The database could not be dropped before restore.");
+            }
+
+            var restored = await ComposeAsync(DumpTimeout, ["exec", "-T", "--", _options.PostgresService, "pg_restore", "-U", _options.DatabaseUser, "-d", MaintenanceDatabase, "--create", "--exit-on-error", remote], cancellationToken)
+                .ConfigureAwait(false);
+            if (restored.ExitCode != 0)
+            {
+                return Refuse(null, PreMigrationRestoreCodes.RestoreIncomplete, "pg_restore did not complete.");
+            }
+
+            return null;
+        }
+        finally
         {
-            return Refuse(null, PreMigrationRestoreCodes.RestoreIncomplete, "The database could not be dropped before restore.");
+            await RemoveStagedDumpAsync(remote).ConfigureAwait(false);
         }
+    }
 
-        var restored = await ComposeAsync(DumpTimeout, ["exec", "-T", "--", _options.PostgresService, "pg_restore", "-U", _options.DatabaseUser, "-d", MaintenanceDatabase, "--create", "--exit-on-error", "/tmp/honua-backup.dump"], cancellationToken)
-            .ConfigureAwait(false);
-        if (restored.ExitCode != 0)
+    private async Task RemoveStagedDumpAsync(string remote)
+    {
+        try
         {
-            return Refuse(null, PreMigrationRestoreCodes.RestoreIncomplete, "pg_restore did not complete.");
+            // A missing container or a lost connection must not mask the operation result.
+            await ComposeAsync(CommandTimeout, ["exec", "-T", "--", _options.PostgresService, "rm", "-f", "--", remote], CancellationToken.None)
+                .ConfigureAwait(false);
         }
-
-        return null;
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            // A unique path prevents a leftover file from blocking a future operation.
+        }
     }
 
     internal async Task<ComposeExecutorResponse?> StartImageAsync(string image, CancellationToken cancellationToken)

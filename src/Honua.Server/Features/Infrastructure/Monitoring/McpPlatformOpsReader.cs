@@ -326,9 +326,12 @@ internal sealed class McpPlatformOpsReader(
                 continue;
             }
             var liveTarget = liveTargets.SingleOrDefault(live => live.TargetId == target.TargetId);
+            WorkflowOperationRecord? lastDeployment = null;
+            if (target.TargetKind != DeployTargetKind.LocalCompose)
+                lastDeployment = await _deployWorkflowService.GetMostRecentSucceededDeployAsync(target.TargetId, cancellationToken).ConfigureAwait(false);
             var lastApplied = target.TargetKind == DeployTargetKind.LocalCompose
                 ? liveTarget?.RunningImage
-                : (await _deployWorkflowService.GetMostRecentSucceededDeployAsync(target.TargetId, cancellationToken).ConfigureAwait(false))?.Deploy?.DesiredRevision;
+                : lastDeployment?.Deploy?.DesiredRevision;
             if (string.Equals(lastApplied, desiredRevision, StringComparison.Ordinal))
             {
                 outcomes.Add(new() { TargetId = target.TargetId, Outcome = "already-converged" });
@@ -336,10 +339,22 @@ internal sealed class McpPlatformOpsReader(
             }
             var payload = new DeployExecutionPayload { TargetId = target.TargetId, DesiredRevision = desiredRevision }.Serialize();
             var requestedKey = Clean(argument.IdempotencyKey);
-            var incarnationSuffix = liveTarget?.ServingIncarnation is { } incarnation ? ":" + incarnation : string.Empty;
+            string? defaultKey = null;
+            if (requestedKey is null)
+            {
+                if (target.TargetKind == DeployTargetKind.LocalCompose)
+                    lastDeployment = await _deployWorkflowService.GetMostRecentSucceededDeployAsync(target.TargetId, cancellationToken).ConfigureAwait(false);
+                defaultKey = await PlatformConvergenceKey.ResolveAsync(_deployWorkflowService, release.Version, target.TargetId,
+                    target.TargetKind, liveTarget?.ServingIncarnation, lastDeployment, cancellationToken).ConfigureAwait(false);
+                if (defaultKey is null)
+                {
+                    outcomes.Add(new() { TargetId = target.TargetId, Outcome = "blocked", Message = "The restore has not completed successfully." });
+                    continue;
+                }
+            }
             var proposal = await SealProposalAsync(principal, OperationClass.Deploy, payload,
                 Clean(argument.Reason) ?? $"Converge serving targets to platform release {release.Version}.",
-                requestedKey is null ? $"converge:{release.Version}:{target.TargetId}{incarnationSuffix}" : $"{requestedKey}:{target.TargetId}", cancellationToken).ConfigureAwait(false);
+                requestedKey is null ? defaultKey! : $"{requestedKey}:{target.TargetId}", cancellationToken).ConfigureAwait(false);
             outcomes.Add(new() { TargetId = target.TargetId, Outcome = proposal.Outcome, ProposalId = proposal.ProposalId, Message = proposal.Message });
         }
         return new McpProposeOperationOutput { Outcome = "completed", RequiresApproval = outcomes.Any(item => item.ProposalId is not null), Targets = outcomes.ToArray(), SupportedKinds = ResolveSupportedKinds() };

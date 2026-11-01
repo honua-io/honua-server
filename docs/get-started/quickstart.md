@@ -389,6 +389,10 @@ baseline. After convergence completes, `honua_propose_rollback` can omit `toRevi
 and `backupId`: it selects the prior serving revision and previews a verified matching
 backup. Review the selected revision and backup in the proposal's `diff` and `dryRun`
 before a separate principal approves it. Execution verifies the same backup again.
+After a completed rollback, omit `idempotencyKey` to propose a fresh convergence to
+the declared release. Convergence scopes a supplied key to each target; rollback uses
+the supplied key directly. Use a new key for each new operation: reusing one returns
+the existing proposal instead of starting another.
 
 Poll the proposal through the management API or `honua://proposals/{id}`. Both expose
 `Completed` or `Failed` after the canonical execution reaches that state; failures

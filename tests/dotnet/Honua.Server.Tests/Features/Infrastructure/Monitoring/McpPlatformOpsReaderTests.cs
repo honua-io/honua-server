@@ -721,6 +721,179 @@ public sealed class McpPlatformOpsReaderTests
 
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
+    public async Task ProposePlatformReleaseConvergence_CompatibleRemoteRollbackWithoutRestore_IsNotBlocked()
+    {
+        var gateway = ConvergenceGateway();
+        using var services = CreateServices(gateway);
+        var rollback = BuildDeployOperation("compatible-rollback", "serving-us-west", "rc1", "candidate",
+            WorkflowOperationStatus.Succeeded);
+        rollback = rollback with
+        {
+            Audit = new OperationAuditInfo { IdempotencyKey = "compatible-rollback-key" },
+            Deploy = rollback.Deploy! with { PreMigrationBackupId = "backup-verified" }
+        };
+        var store = new RecordingWorkflowOperationStore(rollback);
+        var reader = CreateReader(store: store, services: services);
+
+        var result = await reader.ProposePlatformReleaseConvergenceAsync(
+            CreatePrincipal(), new McpPlatformReleaseConvergenceArgument(), CancellationToken.None);
+
+        result.Targets.Should().ContainSingle(target => target.TargetId == "serving-us-west" && target.ProposalId == "proposal-converge");
+        gateway.LastRequest!.IdempotencyKey.Should().Be("converge:2026.07.01:serving-us-west:after:compatible-rollback");
+        await reader.ProposePlatformReleaseConvergenceAsync(
+            CreatePrincipal(), new McpPlatformReleaseConvergenceArgument(), CancellationToken.None);
+        gateway.LastRequest!.IdempotencyKey.Should().Be("converge:2026.07.01:serving-us-west:after:compatible-rollback");
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ProposePlatformReleaseConvergence_AfterRollback_DefaultKeyChangesAndRetriesRemainStable()
+    {
+        var gateway = ConvergenceGateway();
+        var observer = Substitute.For<IManagedComposeObserver>();
+        var observedImage = "rc1";
+        var incarnation = new string('c', 64);
+        observer.ReadAsync(Arg.Any<CancellationToken>()).Returns(_ => new OpsManagedTargetHealthView[]
+        {
+            new() { TargetId = "serving-us-west", Available = true, Status = "Healthy", RunningImage = observedImage, ServingIncarnation = incarnation }
+        });
+        using var services = CreateServices(gateway, managedComposeObserver: observer);
+        var store = new RecordingWorkflowOperationStore();
+        var options = CreateOptions();
+        options.DeployTargets[0].TargetKind = DeployTargetKind.LocalCompose;
+        var reader = CreateReader(options: options, store: store, services: services);
+        var argument = new McpPlatformReleaseConvergenceArgument();
+        await reader.ProposePlatformReleaseConvergenceAsync(CreatePrincipal(), argument, CancellationToken.None);
+        var initialKey = gateway.LastRequest!.IdempotencyKey;
+        await store.TryCreateAsync(BuildDeployOperation("compose-baseline-fixture", "serving-us-west", "rc1", "rc1",
+            WorkflowOperationStatus.Succeeded, DateTimeOffset.UtcNow.AddMinutes(-1)));
+        await reader.ProposePlatformReleaseConvergenceAsync(CreatePrincipal(), argument, CancellationToken.None);
+        gateway.LastRequest!.IdempotencyKey.Should().Be(initialKey);
+
+        await store.TryCreateAsync(BuildDeployOperation("other-deploy", "serving-us-west", "other", "rc1",
+            WorkflowOperationStatus.Succeeded, DateTimeOffset.UtcNow.AddSeconds(-30)));
+        await reader.ProposePlatformReleaseConvergenceAsync(CreatePrincipal(), argument, CancellationToken.None);
+        gateway.LastRequest!.IdempotencyKey.Should().Be(initialKey, "a forward deploy is not a completed rollback");
+
+        var failedRollback = BuildDeployOperation("failed-rollback", "serving-us-west", "rc1", "other",
+            WorkflowOperationStatus.Failed, DateTimeOffset.UtcNow.AddSeconds(-10));
+        await store.TryCreateAsync(failedRollback with { Deploy = failedRollback.Deploy! with { PreMigrationBackupId = "backup-verified" } });
+        await reader.ProposePlatformReleaseConvergenceAsync(CreatePrincipal(), argument, CancellationToken.None);
+        gateway.LastRequest!.IdempotencyKey.Should().Be(initialKey, "a failed rollback must not advance the key");
+
+        await store.TryCreateAsync(BuildDeployOperation("candidate-deploy", "serving-us-west", "ghcr.io/honua/server:2026.07.01", "rc1",
+            WorkflowOperationStatus.Succeeded, DateTimeOffset.UtcNow));
+        observedImage = "ghcr.io/honua/server:2026.07.01";
+        var converged = await reader.ProposePlatformReleaseConvergenceAsync(CreatePrincipal(), argument, CancellationToken.None);
+        converged.Targets.Should().Contain(target => target.TargetId == "serving-us-west" && target.Outcome == "already-converged");
+        observedImage = "rc1";
+        incarnation = new string('d', 64);
+        // The new container may be visible before the rollback child reaches success.
+        var activeRestore = new WorkflowOperationRecord
+        {
+            OperationId = "active-rollback",
+            Kind = WorkflowOperationKind.PreMigrationRestore,
+            Status = WorkflowOperationStatus.Reconciling,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow
+        };
+        var owner = activeRestore with { OperationId = RestoreDeployAdmission.CellOwnerId, CurrentPhase = activeRestore.OperationId };
+        await store.TryCreateAsync(activeRestore);
+        await store.TryCreateAsync(owner);
+        var callsBeforeActive = gateway.ProposalCalls;
+        var active = await reader.ProposePlatformReleaseConvergenceAsync(CreatePrincipal(), argument, CancellationToken.None);
+        active.Targets.Should().ContainSingle(target => target.TargetId == "serving-us-west" && target.Outcome == "blocked");
+        gateway.ProposalCalls.Should().Be(callsBeforeActive);
+        await store.TrySetAsync(owner with { CurrentPhase = null });
+
+        var rollback = BuildDeployOperation("rollback-deploy", "serving-us-west", "rc1", "ghcr.io/honua/server:2026.07.01",
+            WorkflowOperationStatus.Succeeded, DateTimeOffset.UtcNow.AddMinutes(1));
+        rollback = rollback with
+        {
+            Audit = new OperationAuditInfo { IdempotencyKey = "restore-rollback" },
+            Deploy = rollback.Deploy! with { PreMigrationBackupId = "backup-verified" }
+        };
+        var restore = new WorkflowOperationRecord
+        {
+            OperationId = "restore-rollback",
+            Kind = WorkflowOperationKind.PreMigrationRestore,
+            Status = WorkflowOperationStatus.Reconciling,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+            PreMigrationRestore = new PreMigrationRestoreContext
+            {
+                Payload = "{}",
+                Phase = "awaiting-local-deploy",
+                ApprovedBy = "approver",
+                DeployOperationId = rollback.OperationId
+            }
+        };
+        await store.TryCreateAsync(rollback);
+        await store.TryCreateAsync(restore);
+        var callsBeforePending = gateway.ProposalCalls;
+        var pending = await reader.ProposePlatformReleaseConvergenceAsync(CreatePrincipal(), argument, CancellationToken.None);
+        pending.Targets.Should().ContainSingle(target => target.TargetId == "serving-us-west" && target.Outcome == "blocked");
+        gateway.ProposalCalls.Should().Be(callsBeforePending);
+        await reader.ProposePlatformReleaseConvergenceAsync(CreatePrincipal(),
+            new McpPlatformReleaseConvergenceArgument { IdempotencyKey = "manual-key" }, CancellationToken.None);
+        gateway.LastRequest!.IdempotencyKey.Should().Be("manual-key:serving-us-west");
+        await store.TrySetAsync(restore with { Status = WorkflowOperationStatus.Failed });
+        var failed = await reader.ProposePlatformReleaseConvergenceAsync(CreatePrincipal(), argument, CancellationToken.None);
+        failed.Targets.Should().ContainSingle(target => target.TargetId == "serving-us-west" && target.Outcome == "blocked");
+        gateway.ProposalCalls.Should().Be(callsBeforePending + 1);
+        await store.TrySetAsync(restore with
+        {
+            Status = WorkflowOperationStatus.Succeeded,
+            PreMigrationRestore = restore.PreMigrationRestore with { DeployOperationId = "another-deploy" }
+        });
+        var mismatched = await reader.ProposePlatformReleaseConvergenceAsync(CreatePrincipal(), argument, CancellationToken.None);
+        mismatched.Targets.Should().ContainSingle(target => target.TargetId == "serving-us-west" && target.Outcome == "blocked");
+        gateway.ProposalCalls.Should().Be(callsBeforePending + 1);
+        await store.TrySetAsync(restore with { Status = WorkflowOperationStatus.Succeeded });
+        await reader.ProposePlatformReleaseConvergenceAsync(CreatePrincipal(), argument, CancellationToken.None);
+        var nextKey = gateway.LastRequest!.IdempotencyKey;
+        nextKey.Should().NotBe(initialKey);
+        nextKey.Should().EndWith(":after:rollback-deploy");
+        await reader.ProposePlatformReleaseConvergenceAsync(CreatePrincipal(), argument, CancellationToken.None);
+        gateway.LastRequest!.IdempotencyKey.Should().Be(nextKey);
+        await reader.ProposePlatformReleaseConvergenceAsync(CreatePrincipal(),
+            new McpPlatformReleaseConvergenceArgument { IdempotencyKey = "caller-key" }, CancellationToken.None);
+        gateway.LastRequest!.IdempotencyKey.Should().Be("caller-key:serving-us-west");
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ProposePlatformReleaseConvergence_LocalLiveOrExplicitKey_DoesNotReadDeployHistory()
+    {
+        var desired = "sha256:" + new string('a', 64);
+        var observed = desired;
+        var options = new ControlPlaneOptions
+        {
+            PlatformRelease = new() { Version = "2026.1-rc.2", ServingArtifactReference = desired },
+            DeployTargets = [new() { TargetId = "compose-local", TargetKind = DeployTargetKind.LocalCompose }]
+        };
+        var observer = Substitute.For<IManagedComposeObserver>();
+        observer.ReadAsync(Arg.Any<CancellationToken>()).Returns(_ => new OpsManagedTargetHealthView[]
+        {
+            new() { TargetId = "compose-local", Available = true, Status = "Healthy", RunningImage = observed }
+        });
+        var store = Substitute.For<IWorkflowOperationStore>();
+        var gateway = ConvergenceGateway();
+        using var services = CreateServices(gateway, managedComposeObserver: observer);
+        var reader = CreateReader(options: options, store: store, services: services);
+
+        var converged = await reader.ProposePlatformReleaseConvergenceAsync(CreatePrincipal(),
+            new McpPlatformReleaseConvergenceArgument(), CancellationToken.None);
+        converged.Targets.Should().ContainSingle(target => target.Outcome == "already-converged");
+        observed = "sha256:" + new string('b', 64);
+        await reader.ProposePlatformReleaseConvergenceAsync(CreatePrincipal(),
+            new McpPlatformReleaseConvergenceArgument { IdempotencyKey = "caller-key" }, CancellationToken.None);
+        gateway.LastRequest!.IdempotencyKey.Should().Be("caller-key:compose-local");
+        await store.DidNotReceive().GetMostRecentSucceededDeployByTargetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
     public async Task ProposePlatformReleaseConvergence_NoDeclaredRelease_KeepsTheExistingPreconditionOutcome()
     {
         var gateway = ConvergenceGateway();

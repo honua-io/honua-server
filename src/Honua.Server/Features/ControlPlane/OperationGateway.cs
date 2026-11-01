@@ -940,8 +940,7 @@ internal sealed partial class OperationGateway : IOperationGateway
                 ? Honua.ControlPlane.Executors.DeployExecutionPayload.Parse(proposal.Plan.ExecutionPayload)
                 : null;
             var restoreId = proposal.Kind == OperationClass.Deploy && payload is not null
-                ? DurableRestoreQueue.CreateId(string.IsNullOrWhiteSpace(proposal.Audit.IdempotencyKey)
-                    ? proposal.ProposalId : proposal.Audit.IdempotencyKey)
+                ? DurableRestoreQueue.CreateId()
                 : proposal.ExecutionOperationId;
             var claiming = proposal with
             {

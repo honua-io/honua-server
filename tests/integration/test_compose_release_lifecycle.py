@@ -1,6 +1,6 @@
 # Copyright (c) Honua Geo Inc. All rights reserved.
 # Licensed under the Fair Core License, Version 1.0, ALv2 Future License.
-"""Published rc.1 -> approved candidate -> verified restore, using the product MCP path."""
+"""Published rc.1 -> candidate -> verified restore -> candidate, using the product MCP path."""
 import hashlib
 import json
 import os
@@ -71,7 +71,9 @@ def wait_for_proposal(base, key, proposal, expected, proposer_key, session, time
         resource_status = proposal_resource["status"].lower()
         if status in ("completed", "succeeded", "failed", "rejected", "cancelled") and status == resource_status:
             actual = "succeeded" if status in ("completed", "succeeded") else "failed"
-            assert actual == expected, f"unexpected proposal terminal state: {status}"
+            reason = detail.get("resolutionReason")
+            safe_reason = reason if isinstance(reason, str) and re.fullmatch(r"[a-z0-9-]{1,80}", reason) else "unavailable"
+            assert actual == expected, f"unexpected proposal terminal state: {status}; reason: {safe_reason}"
             assert detail.get("resolutionReason") == proposal_resource.get("resolutionReason")
             if status == "failed":
                 assert detail.get("resolutionReason"), "failed execution must report its reason"
@@ -200,7 +202,7 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
         else:
             raise AssertionError("serving stack did not recover after Redis restarted")
         convergence = call("honua_propose_platform_release_convergence", {
-            "reason": "candidate convergence after failed operation", "idempotencyKey": "recovered-convergence"}, 2)
+            "reason": "candidate convergence after failed operation"}, 2)
         proposal = convergence["targets"][0]["proposalId"]
         assert proposal
         wait_for_approval(base, approver_key, proposal)
@@ -213,7 +215,7 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
         detail, _ = request(base, f"/api/v1/admin/proposals/{proposal}", key)
         assert detail["status"].lower() == "awaitingapproval"
         request(base, f"/api/v1/admin/proposals/{proposal}/approve", approver_key, {})
-        wait_for_proposal(base, approver_key, proposal, "succeeded", proposer_key, session)
+        first_convergence = wait_for_proposal(base, approver_key, proposal, "succeeded", proposer_key, session)
         assert image_id() == candidate and schema() == candidate_schema
         assert_live_revision(candidate, False)
         assert sql("SELECT count(*) FROM public.schema_versions WHERE scriptname LIKE '%142_CreateAiFinancialAccounting.sql'") == "1"
@@ -247,7 +249,7 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
         assert any(backup["backupId"] in line for line in preview["dryRun"])
         assert image_id() == candidate and schema() == candidate_schema
         request(base, f"/api/v1/admin/proposals/{rollback['proposalId']}/approve", approver_key, {})
-        wait_for_proposal(base, approver_key, rollback["proposalId"], "succeeded", proposer_key, session)
+        restored = wait_for_proposal(base, approver_key, rollback["proposalId"], "succeeded", proposer_key, session)
         assert image_id() == prior_id and schema() == 140
         assert sql("SELECT value FROM public.rc2_lifecycle_marker WHERE id=1") == "retained"
         assert sql("SELECT to_regclass('honua.ai_financial_invocations') IS NULL") == "t"
@@ -311,6 +313,79 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
         scope = json.loads(rejected)
         assert not scope["ok"] and scope["code"] == "compose-scope-violation"
         assert image_id() == prior_id and schema() == 140
+        sql("UPDATE public.rc2_lifecycle_marker SET value='after-first-rollback' WHERE id=1")
+        reconvergence = call("honua_propose_platform_release_convergence", {
+            "reason": "candidate convergence after verified rollback"}, 5)
+        next_target = reconvergence["targets"][0]
+        next_proposal = next_target.get("proposalId")
+        assert next_proposal, f"re-convergence did not produce a proposal: {next_target.get('outcome')}"
+        assert next_proposal != proposal
+        wait_for_approval(base, approver_key, next_proposal)
+        request(base, f"/api/v1/admin/proposals/{next_proposal}/approve", approver_key, {})
+        try:
+            converged_again = wait_for_proposal(base, approver_key, next_proposal, "succeeded", proposer_key, session)
+        except AssertionError as error:
+            detail, _ = request(base, f"/api/v1/admin/proposals/{next_proposal}", approver_key)
+            restore_id = detail.get("executionOperationId", "")
+            diagnostics = []
+            if re.fullmatch(r"restore-[a-f0-9]{32}", restore_id):
+                child_id = f"deploy-{restore_id}-{hashlib.sha256(restore_id.encode()).hexdigest()[:12]}"
+                for operation_id in (restore_id, child_id):
+                    try:
+                        operation, _ = request(base, f"/api/v1/admin/deploy/operations/{operation_id}", approver_key)
+                        diagnostics.append({name: operation.get(name) for name in
+                                            ("operationId", "kind", "status", "currentPhase", "errorMessage")})
+                    except (urllib.error.URLError, ValueError):
+                        diagnostics.append({"operationId": operation_id, "status": "unavailable"})
+            checkpoint = {}
+            if re.fullmatch(r"restore-[a-f0-9]{32}", restore_id):
+                raw_checkpoint = dc("exec", "-T", "compose-manager-redis", "redis-cli", "--raw", "GET",
+                                    f"controlplane:workflow:{restore_id}", check=False)
+                try:
+                    saved = json.loads(raw_checkpoint)
+                    saved_context = saved.get("preMigrationRestore") or {}
+                    checkpoint = {name: saved_context.get(name) for name in ("phase", "deployOperationId", "expectedSchema")}
+                except (ValueError, TypeError):
+                    checkpoint = {"status": "unavailable"}
+            audit_path = project_dir / "backups" / "audit.jsonl"
+            audit = []
+            if audit_path.exists():
+                for line in audit_path.read_text().splitlines()[-12:]:
+                    try:
+                        entry = json.loads(line)
+                        audit.append({name: entry.get(name) for name in ("op", "requestId", "backupId", "ok", "code", "schemaVersion")})
+                    except ValueError:
+                        continue
+            executor_log = dc("logs", "--no-color", "--tail", "100", "compose-executor", check=False)
+            executor_codes = re.findall(r"\b[a-z][a-z0-9-]*(?:-failed|-incomplete|-unrecorded)\b", executor_log)
+            raise AssertionError(f"{error}; workflow: {diagnostics}; restore checkpoint: {checkpoint}; "
+                                 f"executor audit: {audit}; executor log codes: {executor_codes[-12:]}") from error
+        restore_ids = {detail["executionOperationId"] for detail in (first_convergence, restored, converged_again)}
+        assert len(restore_ids) == 3 and all(ident.startswith("restore-") for ident in restore_ids)
+        assert image_id() == candidate and schema() == candidate_schema
+        assert_live_revision(candidate, False)
+        assert sql("SELECT value FROM public.rc2_lifecycle_marker WHERE id=1") == "after-first-rollback"
+        assert sql("SELECT to_regclass('honua.ai_financial_invocations') IS NOT NULL") == "t"
+        new_manifests = list((project_dir / "backups").glob("backup-*/manifest.json"))
+        assert len(new_manifests) == 2
+        new_backup = next(json.loads(path.read_text()) for path in new_manifests if path != manifests[0])
+        assert new_backup["backupId"] != backup["backupId"]
+        assert new_backup["image"] == prior_id and new_backup["schemaVersion"] == 140
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/healthz/ready", timeout=10) as ready:
+            assert ready.status == 200
+        sql("UPDATE public.rc2_lifecycle_marker SET value='changed-after-second-upgrade' WHERE id=1")
+        second_rollback = call("honua_propose_rollback", {"targetId": "compose-local",
+            "backupId": new_backup["backupId"], "idempotencyKey": "second-verified-backup"}, 6)
+        assert second_rollback["proposalId"] != rollback["proposalId"]
+        preview = wait_for_approval(base, approver_key, second_rollback["proposalId"])
+        assert any(new_backup["backupId"] in line for line in preview["diff"])
+        request(base, f"/api/v1/admin/proposals/{second_rollback['proposalId']}/approve", approver_key, {})
+        restored_again = wait_for_proposal(base, approver_key, second_rollback["proposalId"], "succeeded", proposer_key, session)
+        assert restored_again["executionOperationId"] not in restore_ids
+        assert image_id() == prior_id and schema() == 140
+        assert_live_revision(prior_id, True)
+        assert sql("SELECT value FROM public.rc2_lifecycle_marker WHERE id=1") == "after-first-rollback"
+        assert sql("SELECT to_regclass('honua.ai_financial_invocations') IS NULL") == "t"
     finally:
         dc("down", "-v", "--remove-orphans", check=False)
         run(["docker", "run", "--rm", "-v", f"{project_dir}:{project_dir}", "redis:7.4-alpine", "chown", "-R", f"{os.getuid()}:{os.getgid()}", str(project_dir)], check=False)
