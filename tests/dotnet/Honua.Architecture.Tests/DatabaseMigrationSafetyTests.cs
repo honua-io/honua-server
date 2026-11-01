@@ -26,8 +26,13 @@ public sealed class DatabaseMigrationSafetyTests
             path => Path.GetRelativePath(root, path).Replace('\\', '/'), File.ReadAllText);
         var hashes = JsonSerializer.Deserialize<Dictionary<string, string>>(
             File.ReadAllText(Path.Join(root, "certification", "schema-migration-hashes.json")))!;
-        RollingUpgradeViolations(scripts, baseline, hashes).Should().BeEmpty(
-            "the supported rolling update retains the previous reader's schema; a review annotation does not permit a contraction");
+        var contractAllowlist = JsonSerializer.Deserialize<Dictionary<string, string>>(
+            File.ReadAllText(Path.Join(root, "certification", "schema-contract-migration-allowlist.json")))!;
+        contractAllowlist.Keys.Should().BeEquivalentTo(
+            "src/Honua.Server/Migrations/144_NeutralizeLayerIdBindingKey.sql",
+            "only the separately gated layer option migration may contract persisted contracts");
+        RollingUpgradeViolations(scripts, baseline, hashes, contractAllowlist).Should().BeEmpty(
+            "all other migrations retain the previous reader's schema; the allowlisted cutover remains runtime-gated");
     }
 
     [Theory]
@@ -58,6 +63,25 @@ public sealed class DatabaseMigrationSafetyTests
         const string sql = "ALTER TABLE honua.layers ADD COLUMN note text;";
         RollingUpgradeViolations(new Dictionary<string, string> { ["new.sql"] = sql },
             new Dictionary<string, string>(), new Dictionary<string, string> { ["new.sql"] = MigrationHash(sql) })
+            .Should().BeEmpty();
+    }
+
+    [Fact]
+    public void LayerIdCutover_RequiresExactRuntimeGatedAllowlistEntry()
+    {
+        const string name = "src/Honua.Server/Migrations/144_NeutralizeLayerIdBindingKey.sql";
+        var root = FindProjectRoot(Directory.GetCurrentDirectory());
+        var sql = File.ReadAllText(Path.Join(root, name));
+        var hash = MigrationHash(sql);
+        var scripts = new Dictionary<string, string> { [name] = sql };
+        var hashes = new Dictionary<string, string> { [name] = hash };
+
+        MigrationSafetyClassifier.Classify(name, sql).Classification.Should()
+            .Be(MigrationSafetyClassification.ContractAnnotated);
+        RollingUpgradeViolations(scripts, new Dictionary<string, string>(), hashes)
+            .Should().ContainSingle().Which.Should().Contain(name);
+        RollingUpgradeViolations(scripts, new Dictionary<string, string>(), hashes,
+                new Dictionary<string, string> { [name] = hash })
             .Should().BeEmpty();
     }
 
@@ -154,9 +178,11 @@ public sealed class DatabaseMigrationSafetyTests
 
     private static IEnumerable<string> RollingUpgradeViolations(
         Dictionary<string, string> scripts, Dictionary<string, string> baseline,
-        Dictionary<string, string>? hashes = null)
+        Dictionary<string, string>? hashes = null,
+        Dictionary<string, string>? contractAllowlist = null)
     {
         hashes ??= baseline;
+        contractAllowlist ??= new Dictionary<string, string>();
         foreach (var (name, hash) in baseline)
         {
             if (!scripts.TryGetValue(name, out var sql) || MigrationHash(sql) != hash)
@@ -186,9 +212,22 @@ public sealed class DatabaseMigrationSafetyTests
             {
                 yield return $"{name}: every migration must be hash-pinned in schema-migration-hashes.json";
             }
-            if (!baseline.ContainsKey(name) && MigrationSafetyClassifier.Classify(name, sql).IsBreaking)
+            if (!baseline.ContainsKey(name) && MigrationSafetyClassifier.Classify(name, sql).IsBreaking
+                && (!contractAllowlist.TryGetValue(name, out var approvedHash)
+                    || approvedHash != hash
+                    || MigrationSafetyClassifier.Classify(name, sql).Classification != MigrationSafetyClassification.ContractAnnotated))
             {
                 yield return $"{name}: contracting migrations cannot ship in a rolling update";
+            }
+        }
+
+        foreach (var (name, hash) in contractAllowlist)
+        {
+            if (!hashes.TryGetValue(name, out var pinnedHash) || pinnedHash != hash
+                || !scripts.TryGetValue(name, out var sql) || MigrationHash(sql) != hash
+                || MigrationSafetyClassifier.Classify(name, sql).Classification != MigrationSafetyClassification.ContractAnnotated)
+            {
+                yield return $"{name}: contract-phase allowlist entry is missing, unpinned, or not explicitly classified";
             }
         }
     }

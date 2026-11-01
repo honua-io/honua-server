@@ -71,6 +71,104 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task MetadataBindingKeyCutover_RenamesPersistedKeyAndPreservesSnapshots()
+    {
+        await using var connection = await OpenSchemaConnectionAsync();
+        await using (var setup = connection.CreateCommand())
+        {
+            setup.CommandText = """
+                CREATE SCHEMA honua;
+                CREATE TABLE honua.metadata_v2_snapshots (
+                    environment text NOT NULL, revision bigint NOT NULL, schema_version text NOT NULL,
+                    api_version text NOT NULL, document jsonb NOT NULL, etag text NOT NULL,
+                    generated_at timestamptz NOT NULL, PRIMARY KEY(environment, revision));
+                CREATE TABLE honua.metadata_v2_current (
+                    environment text PRIMARY KEY, revision bigint NOT NULL, etag text NOT NULL,
+                    FOREIGN KEY(environment, revision)
+                        REFERENCES honua.metadata_v2_snapshots(environment, revision));
+                INSERT INTO honua.metadata_v2_snapshots
+                    (environment, revision, schema_version, api_version, document, etag, generated_at)
+                VALUES
+                    ('test', 1, '2', '2',
+                     '{"storageBindings":[{"bindingId":"b-1","options":{"arcgisLayerId":"7","other":true}}]}'::jsonb,
+                     'old-etag', NOW()),
+                    ('test', 2, '2', '2',
+                     '{"storageBindings":[{"bindingId":"b-2","options":{"layerId":"8"}}]}'::jsonb,
+                     'unchanged-etag', NOW());
+                INSERT INTO honua.metadata_v2_current VALUES ('test', 1, 'old-etag');
+                """;
+            await setup.ExecuteNonQueryAsync();
+        }
+
+        var migrationSql = (await ReadEmbeddedMigrationAsync("144_NeutralizeLayerIdBindingKey.sql"))
+            .Replace("$HonuaSchema$", "\"honua\"", StringComparison.Ordinal);
+        await using (var migration = new Npgsql.NpgsqlCommand(migrationSql, connection))
+        {
+            await migration.ExecuteNonQueryAsync();
+        }
+
+        await using var verify = new Npgsql.NpgsqlCommand("""
+            SELECT count(*),
+                   count(*) FILTER (WHERE document->'storageBindings'->0->'options'->>'layerId' IN ('7', '8')),
+                   count(*) FILTER (WHERE document::text LIKE '%arcgisLayerId%'),
+                   (SELECT count(*) FROM honua.metadata_v2_current),
+                   (SELECT active_row.etag = snapshot.etag
+                    FROM honua.metadata_v2_current active_row
+                    JOIN honua.metadata_v2_snapshots snapshot
+                      ON snapshot.environment = active_row.environment AND snapshot.revision = active_row.revision),
+                   (SELECT etag = '"' || lower(encode(sha256(convert_to(document::text, 'UTF8')), 'hex')) || '"'
+                    FROM honua.metadata_v2_snapshots WHERE revision = 1)
+            FROM honua.metadata_v2_snapshots
+            """, connection);
+        await using var row = await verify.ExecuteReaderAsync();
+        (await row.ReadAsync()).Should().BeTrue();
+        row.GetInt64(0).Should().Be(2);
+        row.GetInt64(1).Should().Be(2);
+        row.GetInt64(2).Should().Be(0);
+        row.GetInt64(3).Should().Be(1);
+        row.GetBoolean(4).Should().BeTrue();
+        row.GetBoolean(5).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task MetadataBindingKeyCutover_ConflictingKeys_FailsClosedAndRollsBack()
+    {
+        await using var connection = await OpenSchemaConnectionAsync();
+        await using (var setup = connection.CreateCommand())
+        {
+            setup.CommandText = """
+                CREATE SCHEMA honua;
+                CREATE TABLE honua.metadata_v2_snapshots (
+                    environment text NOT NULL, revision bigint NOT NULL, schema_version text NOT NULL,
+                    api_version text NOT NULL, document jsonb NOT NULL, etag text NOT NULL,
+                    generated_at timestamptz NOT NULL, PRIMARY KEY(environment, revision));
+                CREATE TABLE honua.metadata_v2_current (
+                    environment text PRIMARY KEY, revision bigint NOT NULL, etag text NOT NULL);
+                INSERT INTO honua.metadata_v2_snapshots
+                    (environment, revision, schema_version, api_version, document, etag, generated_at)
+                VALUES ('test', 1, '2', '2',
+                    '{"storageBindings":[{"options":{"arcgisLayerId":"7","layerId":"8"}}]}'::jsonb,
+                    'stable-etag', NOW());
+                """;
+            await setup.ExecuteNonQueryAsync();
+        }
+
+        var migrationSql = (await ReadEmbeddedMigrationAsync("144_NeutralizeLayerIdBindingKey.sql"))
+            .Replace("$HonuaSchema$", "\"honua\"", StringComparison.Ordinal);
+        await using var migration = new Npgsql.NpgsqlCommand(migrationSql, connection);
+        var exception = await Assert.ThrowsAsync<Npgsql.PostgresException>(() => migration.ExecuteNonQueryAsync());
+        exception.MessageText.Should().Contain("found conflicting old and new keys");
+
+        await using var verify = new Npgsql.NpgsqlCommand(
+            "SELECT document->'storageBindings'->0->'options'->>'arcgisLayerId', document->'storageBindings'->0->'options'->>'layerId' FROM honua.metadata_v2_snapshots",
+            connection);
+        await using var row = await verify.ExecuteReaderAsync();
+        (await row.ReadAsync()).Should().BeTrue();
+        row.GetString(0).Should().Be("7");
+        row.GetString(1).Should().Be("8");
+    }
+
+    [Fact]
     public async Task ReplicaOriginMigration_PreservesHistory_AndStampsOnlyUploadTransactions()
     {
         await using var connection = await OpenSchemaConnectionAsync();

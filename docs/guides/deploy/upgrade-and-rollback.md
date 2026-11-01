@@ -49,9 +49,13 @@ expand migration. Keep existing hashes and script names immutable. A new ledger
 entry does not extend the frozen reader baseline or exempt a script from contract
 checks. Hashes are uppercase SHA-256 over UTF-8 SQL with LF line endings.
 New scripts classified as contracting fail the gate even with a compatibility
-review annotation. A contract-phase release requires an explicit new rollback
-boundary and backup/restore plan; an annotation alone does not permit it in a
-rolling update.
+review annotation unless the exact path and hash appear in the narrowly scoped
+`certification/schema-contract-migration-allowlist.json`. This file is a static
+review allowlist; it does not change runtime policy. The runtime continues to
+block pending contract migrations by default and requires the existing explicit
+approval gate. Allowlisting does not make a contracting migration safe for a
+rolling update. A contract-phase release requires an explicit rollback boundary
+and backup/restore plan.
 
 The shared runtime classifier detects removals of views, types, routines, triggers,
 policies and indexes, as well as table contractions, renames, schema moves and
