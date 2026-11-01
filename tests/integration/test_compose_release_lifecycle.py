@@ -1,6 +1,6 @@
 # Copyright (c) Honua Geo Inc. All rights reserved.
 # Licensed under the Fair Core License, Version 1.0, ALv2 Future License.
-"""Published rc.1 -> approved candidate -> verified restore, using the product MCP path."""
+"""Published rc.1 -> candidate -> verified restore -> candidate, using the product MCP path."""
 import hashlib
 import json
 import os
@@ -183,7 +183,7 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
         else:
             raise AssertionError("serving stack did not recover after Redis restarted")
         convergence = call("honua_propose_platform_release_convergence", {
-            "reason": "candidate convergence after failed operation", "idempotencyKey": "recovered-convergence"}, 2)
+            "reason": "candidate convergence after failed operation"}, 2)
         proposal = convergence["targets"][0]["proposalId"]
         assert proposal
         wait_for_approval(base, approver_key, proposal)
@@ -196,7 +196,7 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
         detail, _ = request(base, f"/api/v1/admin/proposals/{proposal}", key)
         assert detail["status"].lower() == "awaitingapproval"
         request(base, f"/api/v1/admin/proposals/{proposal}/approve", approver_key, {})
-        wait_for_proposal(base, approver_key, proposal, "succeeded", proposer_key, session)
+        first_convergence = wait_for_proposal(base, approver_key, proposal, "succeeded", proposer_key, session)
         assert image_id() == candidate and schema() == candidate_schema
         assert sql("SELECT count(*) FROM public.schema_versions WHERE scriptname LIKE '%142_CreateAiFinancialAccounting.sql'") == "1"
         assert sql("SELECT value FROM public.rc2_lifecycle_marker WHERE id=1") == "retained"
@@ -229,7 +229,7 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
         assert any(backup["backupId"] in line for line in preview["dryRun"])
         assert image_id() == candidate and schema() == candidate_schema
         request(base, f"/api/v1/admin/proposals/{rollback['proposalId']}/approve", approver_key, {})
-        wait_for_proposal(base, approver_key, rollback["proposalId"], "succeeded", proposer_key, session)
+        restored = wait_for_proposal(base, approver_key, rollback["proposalId"], "succeeded", proposer_key, session)
         assert image_id() == prior_id and schema() == 140
         assert sql("SELECT value FROM public.rc2_lifecycle_marker WHERE id=1") == "retained"
         assert sql("SELECT to_regclass('honua.ai_financial_invocations') IS NULL") == "t"
@@ -243,6 +243,25 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
         scope = json.loads(rejected)
         assert not scope["ok"] and scope["code"] == "compose-scope-violation"
         assert image_id() == prior_id and schema() == 140
+        reconvergence = call("honua_propose_platform_release_convergence", {
+            "reason": "candidate convergence after verified rollback"}, 5)
+        next_proposal = reconvergence["targets"][0]["proposalId"]
+        assert next_proposal and next_proposal != proposal
+        wait_for_approval(base, approver_key, next_proposal)
+        request(base, f"/api/v1/admin/proposals/{next_proposal}/approve", approver_key, {})
+        converged_again = wait_for_proposal(base, approver_key, next_proposal, "succeeded", proposer_key, session)
+        restore_ids = {detail["executionOperationId"] for detail in (first_convergence, restored, converged_again)}
+        assert len(restore_ids) == 3 and all(ident.startswith("restore-") for ident in restore_ids)
+        assert image_id() == candidate and schema() == candidate_schema
+        assert sql("SELECT value FROM public.rc2_lifecycle_marker WHERE id=1") == "retained"
+        assert sql("SELECT to_regclass('honua.ai_financial_invocations') IS NOT NULL") == "t"
+        new_manifests = list((project_dir / "backups").glob("backup-*/manifest.json"))
+        assert len(new_manifests) == 2
+        new_backup = next(json.loads(path.read_text()) for path in new_manifests if path != manifests[0])
+        assert new_backup["backupId"] != backup["backupId"]
+        assert new_backup["image"] == prior_id and new_backup["schemaVersion"] == 140
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/healthz/ready", timeout=10) as ready:
+            assert ready.status == 200
     finally:
         dc("down", "-v", "--remove-orphans", check=False)
         run(["docker", "run", "--rm", "-v", f"{project_dir}:{project_dir}", "redis:7.4-alpine", "chown", "-R", f"{os.getuid()}:{os.getgid()}", str(project_dir)], check=False)

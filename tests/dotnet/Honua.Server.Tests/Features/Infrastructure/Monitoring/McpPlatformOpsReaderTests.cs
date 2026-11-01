@@ -670,6 +670,36 @@ public sealed class McpPlatformOpsReaderTests
 
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
+    public async Task ProposePlatformReleaseConvergence_AfterRollback_DefaultKeyChangesAndRetriesRemainStable()
+    {
+        var gateway = ConvergenceGateway();
+        using var services = CreateServices(gateway);
+        var store = new RecordingWorkflowOperationStore();
+        var reader = CreateReader(store: store, services: services);
+        var argument = new McpPlatformReleaseConvergenceArgument();
+        await reader.ProposePlatformReleaseConvergenceAsync(CreatePrincipal(), argument, CancellationToken.None);
+        var initialKey = gateway.LastRequest!.IdempotencyKey;
+        await reader.ProposePlatformReleaseConvergenceAsync(CreatePrincipal(), argument, CancellationToken.None);
+        gateway.LastRequest!.IdempotencyKey.Should().Be(initialKey);
+
+        await store.TryCreateAsync(BuildDeployOperation("candidate-deploy", "serving-us-west", "ghcr.io/honua/server:2026.07.01", "rc1",
+            WorkflowOperationStatus.Succeeded, DateTimeOffset.UtcNow));
+        var converged = await reader.ProposePlatformReleaseConvergenceAsync(CreatePrincipal(), argument, CancellationToken.None);
+        converged.Targets.Should().Contain(target => target.TargetId == "serving-us-west" && target.Outcome == "already-converged");
+        await store.TryCreateAsync(BuildDeployOperation("rollback-deploy", "serving-us-west", "rc1", "ghcr.io/honua/server:2026.07.01",
+            WorkflowOperationStatus.Succeeded, DateTimeOffset.UtcNow.AddMinutes(1)));
+        await reader.ProposePlatformReleaseConvergenceAsync(CreatePrincipal(), argument, CancellationToken.None);
+        var nextKey = gateway.LastRequest!.IdempotencyKey;
+        nextKey.Should().NotBe(initialKey);
+        await reader.ProposePlatformReleaseConvergenceAsync(CreatePrincipal(), argument, CancellationToken.None);
+        gateway.LastRequest!.IdempotencyKey.Should().Be(nextKey);
+        await reader.ProposePlatformReleaseConvergenceAsync(CreatePrincipal(),
+            new McpPlatformReleaseConvergenceArgument { IdempotencyKey = "caller-key" }, CancellationToken.None);
+        gateway.LastRequest!.IdempotencyKey.Should().Be("caller-key:serving-us-west");
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
     public async Task ProposePlatformReleaseConvergence_NoDeclaredRelease_KeepsTheExistingPreconditionOutcome()
     {
         var gateway = ConvergenceGateway();

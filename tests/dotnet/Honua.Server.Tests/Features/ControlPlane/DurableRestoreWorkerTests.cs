@@ -21,6 +21,43 @@ public sealed class DurableRestoreWorkerTests
 {
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
+    public async Task Enqueue_TwoSlotsAndTwoOperationsWithSameKey_UseDistinctReplayableRecords()
+    {
+        var records = new Dictionary<string, WorkflowOperationRecord>(StringComparer.Ordinal);
+        var store = Substitute.For<IWorkflowOperationStore>();
+        store.TryCreateAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(call => records.TryAdd(call.Arg<WorkflowOperationRecord>().OperationId, call.Arg<WorkflowOperationRecord>()));
+        store.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(call => records.GetValueOrDefault(call.Arg<string>()));
+        var queue = new DurableRestoreQueue(store);
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var slot in new[] { "slot-a", "slot-b" })
+        {
+            foreach (var operation in new[] { "first-convergence", "after-rollback" })
+            {
+                var request = new OperationGatewayRequest
+                {
+                    Kind = OperationClass.Deploy,
+                    RequestedBy = "proposer",
+                    ApprovedBy = "approver",
+                    ApprovedProposalId = $"proposal-{slot}-{operation}",
+                    OperationInstanceId = $"operation-{slot}-{operation}",
+                    IdempotencyKey = "converge:rc2:compose-local"
+                };
+                var payload = new DeployExecutionPayload { TargetId = "compose-local", DesiredRevision = "candidate" }.Serialize();
+                var id = await queue.EnqueueAsync(request, payload, CancellationToken.None);
+                Assert.True(ids.Add(id), "A new approved operation must not reuse another restore record.");
+                records[id] = records[id] with { Status = WorkflowOperationStatus.Succeeded };
+                Assert.Equal(id, await queue.EnqueueAsync(request, payload, CancellationToken.None));
+                await Assert.ThrowsAsync<InvalidOperationException>(() => queue.EnqueueAsync(request,
+                    new DeployExecutionPayload { TargetId = "compose-local", DesiredRevision = "other" }.Serialize(), CancellationToken.None));
+            }
+        }
+        Assert.Equal(4, records.Count);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
     public async Task Reconcile_InterruptedMutation_RecordsFailureWithoutRepeatingIt()
     {
         var harness = new Harness("acting");
