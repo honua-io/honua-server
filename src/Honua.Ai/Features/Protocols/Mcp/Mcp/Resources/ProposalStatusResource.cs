@@ -122,6 +122,7 @@ internal sealed class ProposalStatusResource : IMcpResource
             : null;
         var isStudioPublication = proposal.OperationId == "studio.content.create-publication-request";
         var isActive = isStudioPublication && proposal.Status == OperationProposalStatus.Succeeded;
+        var execution = OperationProposalExecutionView.From(proposal, operation);
         var resource = new McpProposalResource
         {
             ProposalId = proposal.ProposalId,
@@ -129,7 +130,7 @@ internal sealed class ProposalStatusResource : IMcpResource
             AuditId = proposal.Audit.AuditId,
             CorrelationId = proposal.Audit.CorrelationId,
             Kind = proposal.Kind.ToString(),
-            Status = isActive ? "Active" : proposal.Status.ToString(),
+            Status = isActive ? "Active" : execution.Status,
             Summary = proposal.Plan.Summary,
             RiskLevel = proposal.Plan.RiskLevel.ToString(),
             Diff = proposal.Plan.Diff,
@@ -137,7 +138,7 @@ internal sealed class ProposalStatusResource : IMcpResource
             BlockingReasons = proposal.Plan.BlockingReasons,
             Warnings = proposal.Plan.Warnings,
             ResolvedBy = proposal.ResolvedBy,
-            ResolutionReason = proposal.ResolutionReason,
+            ResolutionReason = execution.ResolutionReason,
             ExecutionOperationId = proposal.ExecutionOperationId,
             ResourceIds = isProposer && proposal.Status == OperationProposalStatus.Succeeded
                 && proposal.OperationId is "studio.draft.save-version" or "studio.content.reopen-version"
@@ -152,7 +153,7 @@ internal sealed class ProposalStatusResource : IMcpResource
                 ? activeUrl
                 : null,
             CreatedAt = proposal.CreatedAt,
-            UpdatedAt = proposal.UpdatedAt,
+            UpdatedAt = execution.UpdatedAt,
         };
 
         return McpResourceHelpers.SingleJsonContent(uri, resource, McpJsonContext.Default.McpProposalResource);

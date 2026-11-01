@@ -12,7 +12,7 @@ namespace Honua.ControlPlane;
 /// </summary>
 internal sealed record ComposeExecutorRequest
 {
-    /// <summary><c>status</c>, <c>converge</c>, <c>rollback</c>, or <c>restart</c>.</summary>
+    /// <summary><c>status</c>, <c>converge</c>, <c>plan-rollback</c>, <c>rollback</c>, or <c>restart</c>.</summary>
     public string? Op { get; init; }
 
     /// <summary>Immutable image reference for converge or rollback.</summary>

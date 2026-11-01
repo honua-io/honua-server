@@ -37414,7 +37414,7 @@
           },
           "status": {
             "type": "string",
-            "description": "Current lifecycle status.",
+            "description": "Approval lifecycle status, or the canonical terminal execution status for an asynchronously submitted proposal. Completed, Failed, Cancelled, and Indeterminate reflect execution outcomes; resolutionReason carries the outcome reason.",
             "enum": [
               "Planned",
               "AwaitingApproval",
@@ -37424,7 +37424,10 @@
               "Succeeded",
               "Failed",
               "Rejected",
-              "RolledBack"
+              "RolledBack",
+              "Completed",
+              "Cancelled",
+              "Indeterminate"
             ]
           },
           "requestedBy": {

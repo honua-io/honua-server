@@ -505,12 +505,22 @@ jobs:
               core.setFailed(`Exact-head Review Gate is ${reviewGate?.state || 'missing'}.`);
             }
 
+      # The consumer runs on a separate runner from the build producer. Free the same
+      # unused hosted tools before restoring binaries and pulling the production GDAL image.
+      - name: Start freeing runtime proof disk space
+        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && needs.pr-gate.outputs.skip != 'true'
+        run: scripts/ci/server-test-shard-free-disk.sh
+
       - name: Setup .NET
         if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && needs.pr-gate.outputs.skip != 'true'
         uses: ./.github/actions/setup-dotnet-ci
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
           artifact-sdk-version: ${{ needs.pr-gate.outputs.managed-sdk-version }}
+
+      - name: Wait for runtime proof disk cleanup
+        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && needs.pr-gate.outputs.skip != 'true'
+        run: scripts/ci/server-test-shard-free-disk.sh --await
 
       - name: Plan managed test consumer
         if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && needs.pr-gate.outputs.skip != 'true'
