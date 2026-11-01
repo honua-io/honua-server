@@ -476,7 +476,7 @@ The private installation folder remains for deliberate retention or deletion.
 ### Local approved operations
 
 The [customer quickstart package](../../get-started/quickstart.md#install-the-customer-package)
-includes the stable manager and dedicated `honua-compose-executor` image by default.
+includes the stable manager and dedicated executor image by default.
 Only the executor has Docker access. It targets the configured local project and
 executes only proposals approved by a different principal. Preserve the image lock,
 private locally generated credentials, management volumes, and verified backups.

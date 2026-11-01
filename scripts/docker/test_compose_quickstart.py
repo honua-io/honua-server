@@ -9,7 +9,7 @@ from package_quickstart import package
 from compose_quickstart import initialize
 
 SERVER = 'ghcr.io/honua-io/honua-server@sha256:' + '1' * 64
-EXECUTOR = 'ghcr.io/honua-io/honua-compose-executor@sha256:' + '2' * 64
+EXECUTOR = 'ghcr.io/honua-io/honua-server@sha256:' + '2' * 64
 WORKER = 'ghcr.io/honua-io/honua-worker@sha256:' + '3' * 64
 
 

@@ -23,8 +23,11 @@ No compiler or host Docker CLI bind mounts are needed.
 
 The archive contains `compose.yaml`, `compose.executor.yaml`, `quickstart.py`,
 `images.json`, and a README. `images.json` pins the serving and executor images as
-`ghcr.io/honua-io/honua-server@sha256:...` and
-`ghcr.io/honua-io/honua-compose-executor@sha256:...`. The executor is built from
+distinct `ghcr.io/honua-io/honua-server@sha256:...` references in `server` and
+`executor`. Executor discovery tags are `nightly-compose-executor-<candidate-sha7>`;
+the install uses its digest, not that tag. Both images use the existing public
+GHCR package, so installing does not depend on changing a new package's visibility.
+The executor is built from
 that exact serving candidate. Initialization validates those pins, creates private
 per-install secrets and a local key-ring certificate, and saves them in `.env` and
 `secrets/`. Restart with `python3 quickstart.py`; it preserves the credentials and
