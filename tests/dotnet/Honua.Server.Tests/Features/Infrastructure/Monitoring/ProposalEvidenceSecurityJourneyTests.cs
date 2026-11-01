@@ -172,21 +172,40 @@ public sealed class ProposalEvidenceSecurityJourneyTests(
     [Endpoint("POST /mcp")]
     public async Task EvidenceBoundProposal_BootstrapAdminIsRejectedBeforePersistence()
     {
-        var client = CreateClient(WebAppFixture.SharedAdminPassword, TenantA);
-        var session = await InitializeMcpAsync(client);
-        var descriptor = await GetDescriptorAsync(ProposeDeployOperationTool.ToolName, client, session);
-        var selection = await SelectThroughProxyAsync(
-            client, descriptor, ValidDeployArguments(), Candidate);
+        var unrelated = new OperationProposal
+        {
+            ProposalId = "unrelated-" + Guid.NewGuid().ToString("N"),
+            Kind = OperationClass.Deploy,
+            Status = OperationProposalStatus.Submitted,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow
+        };
+        (await _proposals.TryCreateAsync(unrelated)).Should().BeTrue();
+        try
+        {
+            var activeBefore = (await _proposals.ListActiveAsync()).Select(proposal => proposal.ProposalId).ToArray();
+            var client = CreateClient(WebAppFixture.SharedAdminPassword, TenantA);
+            var session = await InitializeMcpAsync(client);
+            var descriptor = await GetDescriptorAsync(ProposeDeployOperationTool.ToolName, client, session);
+            var selection = await SelectThroughProxyAsync(
+                client, descriptor, ValidDeployArguments(), Candidate);
 
-        var response = await CallToolAsync(client, session, selection);
+            var response = await CallToolAsync(client, session, selection);
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        response.Document.Should().NotBeNull();
-        IsMcpError(response.Document!.RootElement).Should().BeTrue();
-        HasApprovalHandle(response.Document.RootElement).Should().BeFalse();
-        (await _proposals.ListActiveAsync()).Should().BeEmpty(
-            "a bootstrap principal cannot create a durable evidence-bound approval");
-        MutationCount.Should().Be(0);
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            response.Document.Should().NotBeNull();
+            IsMcpError(response.Document!.RootElement).Should().BeTrue();
+            HasApprovalHandle(response.Document.RootElement).Should().BeFalse();
+            (await _proposals.ListActiveAsync()).Select(proposal => proposal.ProposalId).Should().BeEquivalentTo(activeBefore,
+                "a bootstrap principal cannot create a durable evidence-bound approval");
+            MutationCount.Should().Be(0);
+        }
+        finally
+        {
+            var persisted = await _proposals.GetAsync(unrelated.ProposalId);
+            if (persisted is not null)
+                await _proposals.TrySetAsync(persisted with { Status = OperationProposalStatus.Cancelled });
+        }
     }
 
     [IntegrationTest]
