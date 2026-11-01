@@ -34,7 +34,7 @@ namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 [Protocol(TestProtocols.TestQuality)]
 public sealed class OpsFindingsServiceTests
 {
-    [Theory]
+    [UnitTheory]
     [InlineData(false)]
     [InlineData(true)]
     [Operation(Operations.TestInfrastructure)]
@@ -97,7 +97,7 @@ public sealed class OpsFindingsServiceTests
         Assert.NotEqual(ids[0], ids[1]);
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData("honua")]
     [InlineData("postgres")]
     [InlineData("redis")]

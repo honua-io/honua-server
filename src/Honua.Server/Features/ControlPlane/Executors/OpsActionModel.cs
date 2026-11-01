@@ -316,18 +316,13 @@ internal static class OpsActionExecutionPayloads
 
     /// <summary>Builds a target-bound, approval-required managed Compose restart.</summary>
     public static string RestartComposeService(string targetId, string service)
-        => JsonSerializer.Serialize(new OpsActionExecutionPayload
-        {
-            Action = OpsActionNames.ComposeRestartService,
-            Target = targetId,
-            Params = new OpsActionExecutionParams { Service = service }
-        }, OpsActionExecutionPayloadJsonContext.Default.OpsActionExecutionPayload);
+        => Build(OpsActionNames.ComposeRestartService, target: targetId, maxCount: null, limit: null, channel: null, service: service);
 
-    private static string Build(string action, string? target, int? maxCount, int? limit, string? channel)
+    private static string Build(string action, string? target, int? maxCount, int? limit, string? channel, string? service = null)
     {
-        var parameters = maxCount is null && limit is null && channel is null
+        var parameters = maxCount is null && limit is null && channel is null && service is null
             ? null
-            : new OpsActionExecutionParams { MaxCount = maxCount, Limit = limit, Channel = channel };
+            : new OpsActionExecutionParams { MaxCount = maxCount, Limit = limit, Channel = channel, Service = service };
 
         var payload = new OpsActionExecutionPayload
         {
