@@ -29,6 +29,19 @@ public sealed class ComposeProposalExecutorTests
     private static string Digest(char hex) => "sha256:" + new string(hex, 64);
 
     [UnitTest]
+    public async Task Restart_UnregisteredService_RefusesBeforeDocker()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "honua-compose-unit", Guid.NewGuid().ToString("N"));
+        var options = ValidOptions(root, Digest('a'));
+        var docker = new RecordingDocker();
+        using var controller = new ComposeProjectController(options, docker);
+        var result = await controller.ExecuteAsync(new ComposeExecutorRequest { Op = "restart", Service = "compose-manager" });
+        Assert.False(result.Ok);
+        Assert.Equal(ComposeExecutorCodes.ScopeViolation, result.Code);
+        Assert.Empty(docker.Argv);
+    }
+
+    [UnitTest]
     public void ExtraProjectOrCommand_IsScopeViolation_AndDoesNotParse()
     {
         Assert.False(ComposeExecutorProtocol.TryReadRequest(

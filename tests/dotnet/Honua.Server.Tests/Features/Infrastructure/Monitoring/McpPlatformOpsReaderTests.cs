@@ -213,6 +213,15 @@ public sealed class McpPlatformOpsReaderTests
 {
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
+    public void ValidateFindingCandidateBinding_ComposeRestartTargetMismatch_IsRejected()
+    {
+        var payload = Honua.ControlPlane.Executors.OpsActionExecutionPayloads.RestartComposeService("compose-local", "redis");
+        var act = () => McpPlatformOpsReader.ValidateFindingCandidateBinding(OperationClass.AdminConfigChange, payload, "other-target");
+        act.Should().Throw<Honua.Geoprocessing.GeoprocessingValidationException>();
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
     public void ValidateFindingCandidateBinding_DeployTargetMismatch_IsRejected()
     {
         var payload = new DeployExecutionPayload

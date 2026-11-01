@@ -12,8 +12,11 @@ namespace Honua.ControlPlane;
 /// </summary>
 internal sealed record ComposeExecutorRequest
 {
-    /// <summary><c>status</c>, <c>converge</c>, <c>rollback</c>, or <c>restart</c>.</summary>
+    /// <summary><c>observe</c>, <c>status</c>, <c>converge</c>, <c>rollback</c>, or <c>restart</c>.</summary>
     public string? Op { get; init; }
+
+    /// <summary>Configured service to restart; omitted means the serving service.</summary>
+    public string? Service { get; init; }
 
     /// <summary>Immutable image reference for converge or rollback.</summary>
     public string? Image { get; init; }
@@ -58,8 +61,33 @@ internal sealed record ComposeExecutorResponse
     /// <summary>Customer probe body, capped, and only when that probe succeeded.</summary>
     public string? CustomerBody { get; init; }
 
+    /// <summary>Live immutable container image id, independent of any release projection.</summary>
+    public string? ImageId { get; init; }
+
+    /// <summary>Version reported by the serving server's version endpoint.</summary>
+    public string? ServerVersion { get; init; }
+
+    /// <summary>Service observations; a stopped service is a successful observation.</summary>
+    public IReadOnlyList<ComposeServiceObservation> Services { get; init; } = [];
+
     /// <summary>Backup id written by converge or consumed by rollback.</summary>
     public string? BackupId { get; init; }
+}
+
+/// <summary>One configured managed service observed by the executor.</summary>
+internal sealed record ComposeServiceObservation
+{
+    /// <summary>Opaque identity of the container start, used to distinguish later outages.</summary>
+    public string? Incarnation { get; init; }
+
+    /// <summary>Configured Compose service name.</summary>
+    public required string Service { get; init; }
+
+    /// <summary>Healthy, Unhealthy, or Unknown.</summary>
+    public required string Status { get; init; }
+
+    /// <summary>Credential-free condition description.</summary>
+    public required string Description { get; init; }
 }
 
 /// <summary>Manifest stored beside <c>database.dump</c>. The image is the inspected image id.</summary>

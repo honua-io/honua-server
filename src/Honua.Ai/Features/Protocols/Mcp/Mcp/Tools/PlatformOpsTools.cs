@@ -16,7 +16,7 @@ internal interface IEvidenceBoundProposalTool
 }
 
 /// <summary>
-/// MCP tool that returns the declared platform-release co-versioning snapshot.
+/// MCP tool that returns desired platform-release state and live managed serving revisions.
 /// </summary>
 internal sealed class PlatformReleaseStatusTool(ILogger<PlatformReleaseStatusTool> logger) : IMcpTool
 {
@@ -31,8 +31,9 @@ internal sealed class PlatformReleaseStatusTool(ILogger<PlatformReleaseStatusToo
         Name = ToolName,
         Title = "Platform release status",
         Description =
-            "Read-only deterministic platform_release / server_upgrade status. Mirrors the admin "
-            + "platformRelease preflight projection and is distinct from hosted-content deployments.",
+            "Read-only deterministic platform_release / server_upgrade status. Reports desired artifacts "
+            + "and live serving image digests and server versions for managed Compose targets, with skew "
+            + "and unavailable observations explicit. Distinct from hosted-content deployments.",
         InputSchema = McpPlatformOpsSchemas.PlatformReleaseStatusInputSchema,
         OutputSchema = McpPlatformOpsSchemas.PlatformReleaseStatusOutputSchema,
         Annotations = McpToolAnnotationSets.ReadOnly("Platform release status")

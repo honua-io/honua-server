@@ -1,6 +1,7 @@
 # Copyright (c) Honua Geo Inc. All rights reserved.
 # Licensed under the Fair Core License, Version 1.0, ALv2 Future License.
 """Published rc.1 -> approved candidate -> verified restore, using the product MCP path."""
+import base64
 import glob
 import hashlib
 import json
@@ -108,6 +109,8 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
     env.update({"COMPOSE_PROJECT_NAME": project, "HONUA_IMAGE": RC1, "HONUA_HTTP_PORT": str(port),
         "HONUA_GRPC_PORT": str(free_port()), "HONUA_MANAGER_PORT": str(manager_port), "POSTGRES_PASSWORD": postgres,
         "HONUA_ADMIN_PASSWORD": key, "HONUA_MASTER_KEY": secrets.token_hex(32), "HONUA_KEYRING_PASSWORD": keyring,
+        "HONUA_AUDIT_CHAIN_KEY": base64.b64encode(secrets.token_bytes(32)).decode(),
+        "HONUA_MANAGER_AUDIT_CHAIN_KEY": base64.b64encode(secrets.token_bytes(32)).decode(),
         "HONUA_RELEASE_IMAGE": candidate, "HONUA_RELEASE_WORKER_IMAGE": candidate, "HONUA_RELEASE_VERSION": "2026.1-rc.2", "HONUA_PRIOR_IMAGE": RC1,
         "HONUA_PRIOR_MAX_SCHEMA": "140", "DOCKER_GID": str(os.stat("/var/run/docker.sock").st_gid),
         "DOCKER_COMPOSE_PLUGIN": plugins[0], "HONUA_COMPOSE_PROJECT_DIRECTORY": str(project_dir),
@@ -116,6 +119,7 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
     # interpolation values beside compose.yaml, as a real quickstart install does.
     fixture_keys = ["COMPOSE_PROJECT_NAME", "HONUA_IMAGE", "HONUA_HTTP_PORT", "HONUA_GRPC_PORT", "HONUA_MANAGER_PORT",
         "POSTGRES_PASSWORD", "HONUA_ADMIN_PASSWORD", "HONUA_MASTER_KEY", "HONUA_KEYRING_PASSWORD", "HONUA_RELEASE_IMAGE",
+        "HONUA_AUDIT_CHAIN_KEY", "HONUA_MANAGER_AUDIT_CHAIN_KEY",
         "HONUA_RELEASE_VERSION", "HONUA_RELEASE_WORKER_IMAGE", "HONUA_PRIOR_IMAGE", "HONUA_PRIOR_MAX_SCHEMA", "DOCKER_GID", "DOCKER_COMPOSE_PLUGIN",
         "HONUA_COMPOSE_PROJECT_DIRECTORY", "HONUA_COMPOSE_CUSTOMER_PROBE"]
     (project_dir / ".env").write_text("".join(f"{name}={env[name]}\n" for name in fixture_keys))
@@ -171,6 +175,15 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
             result, _ = rpc(base, proposer_key, session, "tools/call", {"name": name, "arguments": arguments}, ident)
             assert not result.get("isError"), "MCP tool refused the request"
             return result["structuredContent"]
+        def assert_live_revision(expected_id, expected_skew):
+            status = call("honua_platform_release_status", {}, 40)
+            serving = next(target for target in status["serving"] if target["id"] == "compose-local")
+            assert serving["observedImageId"] == expected_id
+            assert serving["serverVersion"]
+            assert serving["skewed"] == expected_skew
+            assert status["isCoVersioned"] != expected_skew
+
+        assert_live_revision(prior_id, True)
         convergence = call("honua_propose_platform_release_convergence", {"reason": "candidate convergence"}, 2)
         proposal = convergence["targets"][0]["proposalId"]
         assert proposal and image_id() == prior_id and schema() == 140
@@ -182,6 +195,7 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
         request(base, f"/api/v1/admin/proposals/{proposal}/approve", approver_key, {})
         wait_for_proposal(base, approver_key, proposal, "succeeded", proposer_key, session)
         assert image_id() == candidate and schema() == candidate_schema
+        assert_live_revision(candidate, False)
         assert sql("SELECT count(*) FROM public.schema_versions WHERE scriptname LIKE '%142_CreateAiFinancialAccounting.sql'") == "1"
         assert sql("SELECT value FROM public.rc2_lifecycle_marker WHERE id=1") == "retained"
         assert sql("SELECT to_regclass('honua.ai_financial_invocations') IS NOT NULL") == "t"
@@ -212,6 +226,49 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
         assert sql("SELECT value FROM public.rc2_lifecycle_marker WHERE id=1") == "retained"
         assert sql("SELECT to_regclass('honua.ai_financial_invocations') IS NULL") == "t"
         assert sql("SELECT PostGIS_Version()")
+        assert_live_revision(prior_id, True)
+        # Fault injection stops only services in this disposable install. The product
+        # must find and restart each one through MCP and a distinct approver.
+        for service_name in ("honua", "redis", "postgres", "honua"):
+            dc("stop", service_name)
+            health = call("honua_ops_health", {}, 41)
+            managed = next(target for target in health["managedTargets"] if target["targetId"] == "compose-local")
+            assert next(service for service in managed["services"] if service["name"] == service_name)["status"] == "Unhealthy"
+            assert health["overallStatus"] == "Unhealthy"
+            findings = call("honua_ops_findings", {"rule": "managed-compose-service-unhealthy"}, 42)
+            finding = next(item for item in findings["items"] if item["subject"].get("workloadId") == service_name)
+            assert finding["recommendedAction"]["kind"] == "AdminConfigChange"
+            assert not finding["recommendedAction"]["autoSafe"]
+            proposed = call("honua_propose_finding", {"findingId": finding["id"], "candidateId": "compose-local"}, 43)
+            remediation = proposed["proposalId"]
+            assert remediation
+            detail, _ = request(base, f"/api/v1/admin/proposals/{remediation}", approver_key)
+            assert detail["status"].lower() == "awaitingapproval"
+            assert detail["actionDiscriminator"] == "compose.restart_service"
+            # Proposing and self-approval must not repair the stopped service.
+            assert dc("ps", "--status", "running", "-q", service_name) == ""
+            try:
+                request(base, f"/api/v1/admin/proposals/{remediation}/approve", proposer_key, {})
+                raise AssertionError("self approval succeeded")
+            except urllib.error.HTTPError as error:
+                assert error.code in (400, 403, 409)
+            assert dc("ps", "--status", "running", "-q", service_name) == ""
+            request(base, f"/api/v1/admin/proposals/{remediation}/approve", approver_key, {})
+            wait_for_proposal(base, approver_key, remediation, "succeeded", proposer_key, session)
+            deadline = time.monotonic() + 90
+            while True:
+                health = call("honua_ops_health", {}, 44)
+                managed = next(target for target in health["managedTargets"] if target["targetId"] == "compose-local")
+                if managed["status"] == "Healthy":
+                    break
+                assert time.monotonic() < deadline, "managed stack did not recover"
+                time.sleep(2)
+            assert all(service["status"] == "Healthy" for service in managed["services"])
+            audit = next(entry for entry in health["health"]["entries"] if entry["name"] == "audit-chain-integrity")
+            assert audit["status"] == "Healthy", "locally configured audit verification must remain healthy"
+            findings = call("honua_ops_findings", {"rule": "managed-compose-service-unhealthy"}, 45)
+            assert not findings["items"]
+        assert_live_revision(prior_id, True)
         # Closing a client early must not terminate the listener or block later requests.
         disconnect = "import socket; s=socket.socket(socket.AF_UNIX); s.connect('/sock/executor.sock'); s.sendall(b'{\"op\":\"status\"}\\n'); s.close()"
         run(["docker", "run", "--rm", "-v", project + "_compose-executor-socket:/sock", "python:3.12-alpine", "python", "-c", disconnect])

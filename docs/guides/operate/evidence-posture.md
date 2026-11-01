@@ -56,3 +56,32 @@ Durable proposal evidence stores bounded `evidence:<sourceId>:<observedAt>:<comp
 ## Alert backlog evidence
 
 Alert evidence uses `backlogObservedAt`, the successful collection time of the represented backlog. The legacy `lastPollAt` field is the dispatcher attempt heartbeat and may advance during a storage outage; neither `observedAt` nor `lastSuccessfulAt` uses it. Failed reads retain the last successfully collected observation, and both findings and ops-health mark the source unavailable. Recovery requires a successful backlog collection.
+
+## Managed Compose stack
+
+On an installed Compose target, `honua_ops_health.managedTargets` reports the serving
+Honua readiness probe, a PostGIS query against the managed database, and Redis `PING`.
+The existing `health` section continues to describe the manager process. A stopped
+or unready managed service makes `overallStatus` unhealthy even while the manager is
+healthy. An unreachable executor reports unknown health and unavailable evidence.
+
+Both health and findings publish the `honua_ops.managed_compose` section source.
+A successfully observed outage is complete evidence. The deterministic
+`managed-compose-service-unhealthy` finding recommends `compose.restart_service`
+for the registered target and configured service only. Use `honua_propose_finding`
+with that finding and target; a different principal approves it in the normal
+approval inbox. Restart is never auto-safe. The executor checks readiness after
+restarting the selected service, and a fresh health/findings read confirms recovery.
+
+`honua_platform_release_status.serving` keeps `effectiveArtifactReference` as the
+desired configuration. `observedArtifactReference` and `observedImageId` come from
+Docker inspection of the managed serving container; `serverVersion` comes from
+that server's authenticated `/version` endpoint. `observationStatus` and `observedAt`
+identify readback availability and time. A differing running image sets `skewed`
+and adds the target to `skewedIds`, including after rollback. Missing observations
+never claim convergence. Targets without live readback report `notObserved`.
+
+The executor reads the version endpoint at the origin configured by `HealthProbeUrl`.
+Set `ControlPlane:ComposeExecutor:VersionProbeApiKey` to the serving bootstrap
+credential; the packaged quickstart supplies it locally. This credential is used
+only for readback and is never included in the observation response.

@@ -147,6 +147,26 @@ public sealed class DeployPreflightPlatformRelease
 /// </summary>
 public sealed class DeployPreflightPlaneProjection
 {
+    /// <summary>Live serving artifact from executor inspection, distinct from the desired artifact.</summary>
+    [JsonPropertyName("observedArtifactReference")]
+    public string? ObservedArtifactReference { get; init; }
+
+    /// <summary>Live container image id.</summary>
+    [JsonPropertyName("observedImageId")]
+    public string? ObservedImageId { get; init; }
+
+    /// <summary>Serving server's version readback.</summary>
+    [JsonPropertyName("serverVersion")]
+    public string? ServerVersion { get; init; }
+
+    /// <summary>Observed, unavailable, or notObserved; configuration is never a live observation.</summary>
+    [JsonPropertyName("observationStatus")]
+    public string? ObservationStatus { get; init; }
+
+    /// <summary>Time of the live target readback.</summary>
+    [JsonPropertyName("observedAt")]
+    public DateTimeOffset? ObservedAt { get; init; }
+
     /// <summary>
     /// Stable identifier of the plane element (deploy target id or execution workload id).
     /// </summary>

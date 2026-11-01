@@ -82,6 +82,7 @@ internal static class OpsFindingEvidenceMap
     /// <returns>The stable source ids required to act on the rule's finding.</returns>
     public static IReadOnlyList<string> RequiredSourceIds(string rule) => rule switch
     {
+        OpsFindingsService.RuleManagedComposeService => [ManagedComposeObserver.SourceId],
         OpsFindingsService.RuleAlertDispatchBacklog => AlertDispatchSources,
         OpsFindingsService.RuleAlertDispatchChannelFailure => AlertDispatchSources,
         OpsFindingsService.RulePlatformReleaseSkew => ControlPlaneSources,

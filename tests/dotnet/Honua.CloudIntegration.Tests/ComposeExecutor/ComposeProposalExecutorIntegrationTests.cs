@@ -128,6 +128,18 @@ public sealed class ComposeProposalExecutorIntegrationTests
                 Assert.Fail("Compose readback was incomplete before approval: " + ready.Code + " " + ready.Message);
             }
 
+            await ComposeAsync(projectDir, projectName, ["stop", "honua"]).ConfigureAwait(false);
+            var stopped = await client.ExecuteAsync(new ComposeExecutorRequest { Op = "observe" }).ConfigureAwait(false);
+            Assert.True(stopped.Ok, "Managed service observations must remain available while serving is stopped.");
+            using (var observation = JsonDocument.Parse(ComposeExecutorProtocol.Serialize(stopped)))
+            {
+                var honua = observation.RootElement.GetProperty("services").EnumerateArray()
+                    .Single(row => row.GetProperty("service").GetString() == "honua");
+                Assert.Equal("Unhealthy", honua.GetProperty("status").GetString());
+            }
+            var recovered = await client.ExecuteAsync(new ComposeExecutorRequest { Op = "restart" }).ConfigureAwait(false);
+            Assert.True(recovered.Ok && recovered.ReadbackComplete);
+
             var backend = new ComposeDeployBackend(client, Options.Create(options), NullLogger<ComposeDeployBackend>.Instance);
             var store = new MemoryWorkflows();
             var service = new DeployWorkflowService(

@@ -24,6 +24,8 @@ namespace Honua.Infrastructure.Monitoring;
 /// </summary>
 internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
 {
+    internal const string RuleManagedComposeService = "managed-compose-service-unhealthy";
+
     internal const string RequestedByAgent = "ops-findings";
 
     internal const string RuleAlertDispatchBacklog = "alert-dispatch-backlog";
@@ -59,6 +61,7 @@ internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
     private readonly IOpsHealthRollupStore? _rollupStore;
     private readonly OpsFindingsCollectionLedger _collectionLedger;
     private readonly TimeProvider _clock;
+    private readonly IManagedComposeObserver? _managedComposeObserver;
 
     /// <summary>
     /// Server-owned validity window for the live operational signals the rules read. A signal older
@@ -78,6 +81,7 @@ internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
         IExecutionJobStore? jobStore = null,
         OpsFindingsExtendedSignals? extendedSignals = null)
     {
+        _managedComposeObserver = extendedSignals?.ManagedComposeObserver;
         _options = options;
         _controlPlaneOptions = controlPlaneOptions;
         _alertHealth = alertHealth;
@@ -103,6 +107,9 @@ internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
         var options = _options.CurrentValue;
         var findings = new List<OpsFinding>();
 
+        var managedTargets = _managedComposeObserver is null ? []
+            : await _managedComposeObserver.ReadAsync(cancellationToken).ConfigureAwait(false);
+        EvaluateManagedComposeServices(now, managedTargets, findings);
         var alertObservation = _alertHealth.LastObservation;
         var alertSource = BuildAlertDispatchSource(alertObservation);
         // The workflow store's posture is derived from the reads the deployment rules perform below,
@@ -139,7 +146,7 @@ internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
                 .ThenBy(f => f.Rule, StringComparer.Ordinal)
                 .ThenBy(f => f.Id, StringComparer.Ordinal)
                 .ToList(),
-            Posture = BuildEvidencePosture(now, options, rollupDegraded, alertSource, workflowSource),
+            Posture = BuildEvidencePosture(now, options, rollupDegraded, alertSource, workflowSource, managedTargets),
         };
     }
 
@@ -154,9 +161,10 @@ internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
         OpsFindingsOptions options,
         bool rollupDegraded,
         EvidenceSourceEnvelope alertSource,
-        EvidenceSourceEnvelope workflowSource)
+        EvidenceSourceEnvelope workflowSource,
+        IReadOnlyList<OpsManagedTargetHealthView> managedTargets)
     {
-        var sections = new[]
+        var sections = new List<EvidenceSourceEnvelope>
         {
             alertSource,
             EvidencePostureFactory.Complete(
@@ -191,6 +199,7 @@ internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
                 EvidencePostureVocabulary.BackendKinds.InProcess),
         };
 
+        if (managedTargets.Count > 0) sections.Add(ManagedComposeObserver.Source(managedTargets));
         var validated = sections.Select(source => EvidencePostureFactory.Validate(source, now)).ToArray();
         var aggregate = EvidencePostureFactory.Aggregate(
             EvidencePostureVocabulary.SourceIds.Findings,
@@ -199,6 +208,43 @@ internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
             validated);
 
         return EvidencePostureFactory.Build(now, [aggregate, .. validated]);
+    }
+
+    private static void EvaluateManagedComposeServices(DateTimeOffset now,
+        IReadOnlyList<OpsManagedTargetHealthView> targets, List<OpsFinding> findings)
+    {
+        foreach (var target in targets)
+        {
+            var services = target.Available ? target.Services : [new OpsHealthCheckEntryView
+            {
+                Name = "executor", Status = "Unknown", Description = "Managed stack observation is unavailable.", DurationMs = 0
+            }];
+            foreach (var service in services.Where(service => service.Status != "Healthy"))
+            {
+                var subject = new OpsFindingSubject { TargetId = target.TargetId, WorkloadId = service.Name };
+                findings.Add(new OpsFinding
+                {
+                    Id = OpsFindingId.Create(RuleManagedComposeService, subject)
+                        + (target.ServiceIncarnations.TryGetValue(service.Name, out var incarnation) ? ":" + incarnation : string.Empty),
+                    Rule = RuleManagedComposeService,
+                    Severity = service.Status == "Unhealthy" ? OpsFindingSeverity.Critical : OpsFindingSeverity.Warning,
+                    Title = $"Managed Compose service '{service.Name}' is {service.Status.ToLowerInvariant()}",
+                    Explanation = service.Description ?? "Managed service readback is incomplete.",
+                    DetectedAt = now,
+                    Subject = subject,
+                    EvidenceRefs = [$"compose-target:{target.TargetId}", $"compose-service:{service.Name}"],
+                    RecommendedAction = service.Status == "Unhealthy" ? new OpsFindingRecommendedAction
+                    {
+                        Kind = OperationClass.AdminConfigChange,
+                        ActionDiscriminator = OpsActionNames.ComposeRestartService,
+                        AutoSafe = false,
+                        Summary = $"Restart managed service '{service.Name}' after separate-principal approval.",
+                        Reason = $"Managed service '{service.Name}' is down or unready.",
+                        ExecutionPayload = OpsActionExecutionPayloads.RestartComposeService(target.TargetId, service.Name)
+                    } : null
+                });
+            }
+        }
     }
 
     private EvidenceSourceEnvelope BuildAlertDispatchSource(AlertDispatchObservation? observation)
@@ -1049,7 +1095,7 @@ internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
 
         foreach (var target in controlPlane.DeployTargets)
         {
-            if (string.IsNullOrWhiteSpace(target.TargetId) || !string.IsNullOrWhiteSpace(target.ArtifactReference))
+            if (target.TargetKind == DeployTargetKind.LocalCompose || string.IsNullOrWhiteSpace(target.TargetId) || !string.IsNullOrWhiteSpace(target.ArtifactReference))
             {
                 // No target id to key on, or an explicit pin: pinned targets are the
                 // platform-release-skew rule's concern, not this one's.

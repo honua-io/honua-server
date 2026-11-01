@@ -5,6 +5,7 @@ using System.Net;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Alerts;
+using Honua.Infrastructure.Monitoring;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.Observability.Abstractions;
 using Honua.Core.Features.Observability.Domain;
@@ -31,6 +32,7 @@ public sealed class OpsObservabilityEndpointsTests : IAsyncLifetime
 
     private readonly WebAppFixture _fixture;
     private HttpClient _client = null!;
+    private IReadOnlyList<OpsManagedTargetHealthView> _managedTargets = [];
 
     public OpsObservabilityEndpointsTests()
     {
@@ -50,6 +52,8 @@ public sealed class OpsObservabilityEndpointsTests : IAsyncLifetime
             // flushing mid-test; the history assertions seed the store directly instead.
             .ConfigureServices(services =>
             {
+                services.RemoveAll<IManagedComposeObserver>();
+                services.AddSingleton<IManagedComposeObserver>(new TestManagedObserver(() => _managedTargets));
                 services.PostConfigure<Honua.Infrastructure.Monitoring.OpsHealthRollupOptions>(
                     options => options.Enabled = true);
                 services.RemoveAll<TimeProvider>();
@@ -94,6 +98,33 @@ public sealed class OpsObservabilityEndpointsTests : IAsyncLifetime
     }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/observability/ops-health")]
+    public async Task GetOpsHealth_ManagedServingServiceDown_ReportsTargetOutageAndRecovery()
+    {
+        foreach (var state in new[] { "Unhealthy", "Healthy" })
+        {
+            _managedTargets = [new()
+            {
+                TargetId = "compose-local", Available = true, Status = state, ObservedAt = TestNow,
+                Services = [new() { Name = "honua", Status = state, DurationMs = 0 }]
+            }];
+            var response = await _client.GetAsync("/api/v1/admin/observability/ops-health");
+            response.EnsureSuccessStatusCode();
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var target = Assert.Single(document.RootElement.GetProperty("managedTargets").EnumerateArray());
+            Assert.Equal("compose-local", target.GetProperty("targetId").GetString());
+            Assert.Equal(state, target.GetProperty("status").GetString());
+            if (state == "Unhealthy") Assert.Equal("Unhealthy", document.RootElement.GetProperty("overallStatus").GetString());
+        }
+    }
+
+    private sealed class TestManagedObserver(Func<IReadOnlyList<OpsManagedTargetHealthView>> read) : IManagedComposeObserver
+    {
+        public Task<IReadOnlyList<OpsManagedTargetHealthView>> ReadAsync(CancellationToken cancellationToken)
+            => Task.FromResult(read());
+    }
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/observability/ops-health")]
@@ -395,6 +426,7 @@ public sealed class CommunityRedisOpsHealthEndpointsTests : IAsyncLifetime
     private const string AdminPassword = "community-redis-ops-health-key";
     private readonly WebAppFixture _fixture;
     private HttpClient _client = null!;
+    private IReadOnlyList<OpsManagedTargetHealthView> _managedTargets = [];
 
     public CommunityRedisOpsHealthEndpointsTests()
     {
