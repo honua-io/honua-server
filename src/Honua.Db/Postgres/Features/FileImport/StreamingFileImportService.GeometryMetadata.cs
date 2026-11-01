@@ -53,7 +53,11 @@ internal sealed partial class StreamingFileImportService
         // bulk timeout policy; cancellation still follows the import commit path.
         string? geometryType = null;
         await using (var command = new NpgsqlCommand($"""
-            SELECT DISTINCT ST_GeometryType(geometry)
+            SELECT DISTINCT CASE ST_GeometryType(geometry)
+                WHEN 'ST_Point' THEN 'POINT' WHEN 'ST_MultiPoint' THEN 'POINT'
+                WHEN 'ST_LineString' THEN 'LINESTRING' WHEN 'ST_MultiLineString' THEN 'LINESTRING'
+                WHEN 'ST_Polygon' THEN 'POLYGON' WHEN 'ST_MultiPolygon' THEN 'POLYGON'
+                ELSE 'OTHER' END
             FROM {qualified}
             WHERE geometry IS NOT NULL
             LIMIT 2
@@ -71,19 +75,27 @@ internal sealed partial class StreamingFileImportService
             }
         }
 
-        // Explicit allowlist: never interpolate a database value as executable SQL.
-        var type = geometryType switch
+        // All parts in a supported family share its multi type. This permits later
+        // single- or multi-part edits while keeping the discovered type accurate.
+        // These SQL literals come from the allowlist, never directly from input.
+        var (type, singleType) = geometryType switch
         {
-            "ST_Point" => "POINT",
-            "ST_MultiPoint" => "MULTIPOINT",
-            "ST_LineString" => "LINESTRING",
-            "ST_MultiLineString" => "MULTILINESTRING",
-            "ST_Polygon" => "POLYGON",
-            "ST_MultiPolygon" => "MULTIPOLYGON",
-            _ => null
+            "POINT" => ("MULTIPOINT", "ST_Point"),
+            "LINESTRING" => ("MULTILINESTRING", "ST_LineString"),
+            "POLYGON" => ("MULTIPOLYGON", "ST_Polygon"),
+            _ => ((string?)null, (string?)null)
         };
         if (type is not null)
         {
+            await using (var promote = new NpgsqlCommand($"""
+                UPDATE {qualified} SET geometry = ST_Multi(geometry)
+                WHERE ST_GeometryType(geometry) = '{singleType}'
+                """, connection, transaction))
+            {
+                promote.CommandTimeout = 0;
+                await promote.ExecuteNonQueryAsync(cancellationToken);
+            }
+
             // GeometryType appends M for XYM. Both spellings describe the same
             // geometry family; PostGIS reads the first literal for geometry_columns.
             await using var command = new NpgsqlCommand($"""

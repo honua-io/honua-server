@@ -14,13 +14,13 @@ namespace Honua.Server.Tests.Admin;
 public sealed partial class LayerPublishingIntegrationTests
 {
     [IntegrationTheory]
-    [InlineData("Polygon", "POLYGON", "Polygon", "esriGeometryPolygon", 4326)]
-    [InlineData("PointCsv", "POINT", "Point", "esriGeometryPoint", 4326)]
-    [InlineData("PointCsv", "POINT", "Point", "esriGeometryPoint", 3857)]
+    [InlineData("Polygon", "MULTIPOLYGON", "MultiPolygon", "esriGeometryPolygon", 4326)]
+    [InlineData("PointCsv", "MULTIPOINT", "MultiPoint", "esriGeometryMultipoint", 4326)]
+    [InlineData("PointCsv", "MULTIPOINT", "MultiPoint", "esriGeometryMultipoint", 3857)]
     [InlineData("Mixed", "GEOMETRY", "GeometryCollection", null, 4326)]
-    [InlineData("Point", "POINT", "Point", "esriGeometryPoint", 4326)]
+    [InlineData("Point", "MULTIPOINT", "MultiPoint", "esriGeometryMultipoint", 4326)]
     [InlineData("MultiPoint", "MULTIPOINT", "MultiPoint", "esriGeometryMultipoint", 4326)]
-    [InlineData("LineString", "LINESTRING", "LineString", "esriGeometryPolyline", 4326)]
+    [InlineData("LineString", "MULTILINESTRING", "MultiLineString", "esriGeometryPolyline", 4326)]
     [InlineData("MultiLineString", "MULTILINESTRING", "MultiLineString", "esriGeometryPolyline", 4326)]
     [InlineData("MultiPolygon", "MULTIPOLYGON", "MultiPolygon", "esriGeometryPolygon", 4326)]
     [Protocol(TestProtocols.OgcApiFeatures, TestProtocols.FeatureServer, TestProtocols.Mcp)]
@@ -103,6 +103,14 @@ public sealed partial class LayerPublishingIntegrationTests
         };
         if (scenario == "Mixed")
         {
+            // Different families must not acquire an inferred type constraint.
+            await using (var connection = await _fixture.Postgres.GetConnectionAsync())
+            {
+                var relation = $"\"{imported.Schema}\".\"{imported.PhysicalTableName}\"";
+                await using var insert = new Npgsql.NpgsqlCommand(
+                    $"INSERT INTO {relation} (geometry) VALUES (ST_GeomFromText('LINESTRING (0 0, 1 1)', {targetSrid}))", connection);
+                (await insert.ExecuteNonQueryAsync()).Should().Be(1);
+            }
             var rejected = await PostPublishLayerAsync(publishRequest);
             rejected.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             rejected.Payload.Should().Contain("mixed-geometry");

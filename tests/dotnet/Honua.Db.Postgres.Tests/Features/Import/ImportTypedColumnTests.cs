@@ -269,7 +269,7 @@ public sealed class ImportTypedColumnTests(PostgresFixture fixture)
         await using var connection = await fixture.DataSource.OpenConnectionAsync();
         await using var command = connection.CreateCommand();
         command.CommandText = $"""
-            SELECT name, population, active, founded, ST_X(geometry), ST_Y(geometry), properties->>'population'
+            SELECT name, population, active, founded, ST_X(ST_GeometryN(geometry, 1)), ST_Y(ST_GeometryN(geometry, 1)), properties->>'population'
             FROM "{imported.Schema}"."{imported.Table}"
             ORDER BY population
             """;
@@ -442,7 +442,7 @@ public sealed class ImportTypedColumnTests(PostgresFixture fixture)
             await using var command = connection.CreateCommand();
             command.CommandText = $"SELECT population FROM \"{schema}\".\"{created.PhysicalTableName}\" WHERE name = 'Alpha'";
             (await command.ExecuteScalarAsync()).Should().Be(10L);
-            (await ImportedGeometryTypeAsync(schema, created.PhysicalTableName!)).Should().Be("POLYGON");
+            (await ImportedGeometryTypeAsync(schema, created.PhysicalTableName!)).Should().Be("MULTIPOLYGON");
         }
         finally
         {
@@ -552,7 +552,7 @@ public sealed class ImportTypedColumnTests(PostgresFixture fixture)
                   {"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[0,0],[1,0],[1,1],[0,0]]]},"properties":{"name":"Charlie","population":20}}]}
                 """;
             var created = await ImportIntoAsync(service, schema, "places", points, ImportLoadMode.Replace, []);
-            (await ImportedGeometryTypeAsync(schema, created.PhysicalTableName!)).Should().Be("POINT");
+            (await ImportedGeometryTypeAsync(schema, created.PhysicalTableName!)).Should().Be("MULTIPOINT");
             await ImportIntoAsync(service, schema, "places", polygon, mode, mode == ImportLoadMode.Upsert ? ["name"] : []);
             (await ImportedGeometryTypeAsync(schema, created.PhysicalTableName!)).Should().Be("GEOMETRY");
             await using var connection = await fixture.DataSource.OpenConnectionAsync();
@@ -560,11 +560,11 @@ public sealed class ImportTypedColumnTests(PostgresFixture fixture)
             command.CommandText = $"SELECT SUM(population) FROM \"{schema}\".\"{created.PhysicalTableName}\"";
             Convert.ToInt64(await command.ExecuteScalarAsync(), System.Globalization.CultureInfo.InvariantCulture).Should().Be(32);
             await ImportIntoAsync(service, schema, "places", polygon, ImportLoadMode.Replace, []);
-            (await ImportedGeometryTypeAsync(schema, created.PhysicalTableName!)).Should().Be("POLYGON");
+            (await ImportedGeometryTypeAsync(schema, created.PhysicalTableName!)).Should().Be("MULTIPOLYGON");
             var invalidPolygon = polygon.Replace("[1,0],[1,1]", "[1,1],[1,0],[0,1]", StringComparison.Ordinal);
             var skipped = await ImportIntoAsync(service, schema, "places", invalidPolygon, ImportLoadMode.Upsert, ["name"], expectedSuccess: false);
             skipped.FeatureCount.Should().Be(0);
-            (await ImportedGeometryTypeAsync(schema, created.PhysicalTableName!)).Should().Be("POLYGON");
+            (await ImportedGeometryTypeAsync(schema, created.PhysicalTableName!)).Should().Be("MULTIPOLYGON");
         }
         finally
         {
@@ -574,17 +574,17 @@ public sealed class ImportTypedColumnTests(PostgresFixture fixture)
 
     [IntegrationTest]
     [Operation(Operations.Import)]
-    public async Task ImportFileAsync_MixedOrdinatesAndNull_KeepsPointTypeAndEveryOrdinate()
+    public async Task ImportFileAsync_MixedOrdinatesAndNull_PromotesPointAndKeepsEveryOrdinate()
     {
         const string csv = "name,wkt\nxy,POINT (1 2)\nxyz,POINT Z (1 2 3)\nxym,POINT M (1 2 4)\nxyzm,POINT ZM (1 2 3 4)\nnone,\n";
         var imported = await ImportAsync("ordinates", "ordinates.csv", Encoding.UTF8.GetBytes(csv));
         try
         {
             imported.Result.FeatureCount.Should().Be(5);
-            (await ImportedGeometryTypeAsync(imported.Schema, imported.Table)).Should().Be("POINT");
+            (await ImportedGeometryTypeAsync(imported.Schema, imported.Table)).Should().Be("MULTIPOINT");
             await using var connection = await fixture.DataSource.OpenConnectionAsync();
             await using var command = connection.CreateCommand();
-            command.CommandText = $"SELECT ST_Zmflag(geometry), ST_Z(geometry), ST_M(geometry), ST_SRID(geometry) FROM \"{imported.Schema}\".\"{imported.Table}\" ORDER BY id";
+            command.CommandText = $"SELECT ST_Zmflag(geometry), ST_Z(ST_GeometryN(geometry, 1)), ST_M(ST_GeometryN(geometry, 1)), ST_SRID(geometry) FROM \"{imported.Schema}\".\"{imported.Table}\" ORDER BY id";
             await using var reader = await command.ExecuteReaderAsync();
             foreach (var flags in new[] { 0, 2, 1, 3 })
             {
@@ -603,6 +603,30 @@ public sealed class ImportTypedColumnTests(PostgresFixture fixture)
             (await reader.ReadAsync()).Should().BeTrue();
             reader.IsDBNull(0).Should().BeTrue();
             (await reader.ReadAsync()).Should().BeFalse();
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(imported.Schema);
+        }
+    }
+
+    [IntegrationTheory]
+    [InlineData("POINT (1 2)", "MULTIPOINT ((3 4))", "MULTIPOINT", "ST_MultiPoint")]
+    [InlineData("LINESTRING (0 0, 1 1)", "MULTILINESTRING ((2 2, 3 3))", "MULTILINESTRING", "ST_MultiLineString")]
+    [Operation(Operations.Import)]
+    public async Task ImportFileAsync_SingleAndMultiParts_InferFamily(
+        string partWkt, string multiWkt, string expectedType, string expectedStoredType)
+    {
+        var csv = $"name,wkt\nfirst,\"{partWkt}\"\nsecond,\"{multiWkt}\"\n";
+        var imported = await ImportAsync("family", "family.csv", Encoding.UTF8.GetBytes(csv));
+        try
+        {
+            (await ImportedGeometryTypeAsync(imported.Schema, imported.Table)).Should().Be(expectedType);
+            await using var connection = await fixture.DataSource.OpenConnectionAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"SELECT count(*) FROM \"{imported.Schema}\".\"{imported.Table}\" WHERE ST_GeometryType(geometry) = @type";
+            command.Parameters.AddWithValue("type", expectedStoredType);
+            (await command.ExecuteScalarAsync()).Should().Be(2L);
         }
         finally
         {
@@ -646,7 +670,7 @@ public sealed class ImportTypedColumnTests(PostgresFixture fixture)
                   {"type":"Feature","geometry":{"type":"Point","coordinates":[3,4]},"properties":{"name":"Bravo"}}]}
                 """, ImportLoadMode.Replace, []);
             imported.FeatureCount.Should().Be(2);
-            (await ImportedGeometryTypeAsync(schema, imported.PhysicalTableName!)).Should().Be("POINT");
+            (await ImportedGeometryTypeAsync(schema, imported.PhysicalTableName!)).Should().Be("MULTIPOINT");
         }
         finally
         {

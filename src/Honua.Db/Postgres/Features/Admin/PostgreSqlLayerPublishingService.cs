@@ -328,6 +328,17 @@ internal sealed partial class PostgreSqlLayerPublishingService(
 
         var geometryType = string.IsNullOrWhiteSpace(geometryColumn) ? "None" : NormalizeGeometryType(geometryTypeRaw!);
 
+        // A legacy client may request the single-part spelling for a source that
+        // is physically constrained to its multi family. Publish the stored type.
+        var sourceType = tableInfo.GeometryType?.ToUpperInvariant();
+        geometryType = (geometryType, sourceType) switch
+        {
+            ("Point", "MULTIPOINT") => "MultiPoint",
+            ("LineString", "MULTILINESTRING") => "MultiLineString",
+            ("Polygon", "MULTIPOLYGON") => "MultiPolygon",
+            _ => geometryType
+        };
+
         var serviceSrid = await ResolveExistingServiceSridAsync(connection, serviceName, cancellationToken)
             .ConfigureAwait(false);
         var srid = serviceSrid ?? request.Srid ?? tableInfo.Srid ?? 4326;
