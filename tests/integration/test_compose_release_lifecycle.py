@@ -84,6 +84,16 @@ def wait_for_proposal(base, key, proposal, expected, proposer_key, session, time
     raise AssertionError("operation did not reach its terminal state")
 
 
+def wait_for_approval(base, key, proposal):
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        detail, _ = request(base, f"/api/v1/admin/proposals/{proposal}", key)
+        if detail["status"].lower() == "awaitingapproval":
+            return detail
+        time.sleep(0.5)
+    raise AssertionError("proposal did not enter awaiting approval")
+
+
 def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
     candidate = os.environ["HONUA_LIFECYCLE_IMAGE"]
     candidate_schema = max(int(path.name.split("_", 1)[0]) for path in (ROOT / "src/Honua.Server/Migrations").glob("[0-9]*_*.sql"))
@@ -174,14 +184,7 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
         convergence = call("honua_propose_platform_release_convergence", {"reason": "candidate convergence"}, 2)
         proposal = convergence["targets"][0]["proposalId"]
         assert proposal
-        deadline = time.monotonic() + 30
-        while time.monotonic() < deadline:
-            detail, _ = request(base, f"/api/v1/admin/proposals/{proposal}", key)
-            if detail["status"].lower() == "awaitingapproval":
-                break
-            time.sleep(0.5)
-        else:
-            raise AssertionError("proposal did not enter awaiting approval")
+        wait_for_approval(base, key, proposal)
         assert image_id() == prior_id and schema() == 140
         try:
             request(base, f"/api/v1/admin/proposals/{proposal}/approve", proposer_key, {})
@@ -234,13 +237,20 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
             assert next(service for service in managed["services"] if service["name"] == service_name)["status"] == "Unhealthy"
             assert health["overallStatus"] == "Unhealthy"
             findings = call("honua_ops_findings", {"rule": "managed-compose-service-unhealthy"}, 42)
-            finding = next(item for item in findings["findings"] if item["subject"].get("workloadId") == service_name)
+            finding = next((item for item in findings["findings"] if item["subject"].get("workloadId") == service_name), None)
+            assert finding is not None, json.dumps({
+                "stoppedService": service_name,
+                "services": [{"name": entry["name"], "status": entry["status"]} for entry in managed["services"]],
+                "findings": [{"rule": entry["rule"], "subject": entry["subject"]} for entry in findings["findings"]],
+                "sources": [{name: source.get(name) for name in ("sourceId", "completeness", "reasonCodes")}
+                            for source in findings.get("evidencePosture", {}).get("sources", [])],
+            })
             assert finding["recommendedAction"]["kind"] == "AdminConfigChange"
             assert not finding["recommendedAction"]["autoSafe"]
             proposed = call("honua_propose_finding", {"findingId": finding["id"], "candidateId": "compose-local"}, 43)
             remediation = proposed["proposalId"]
             assert remediation
-            detail, _ = request(base, f"/api/v1/admin/proposals/{remediation}", approver_key)
+            detail = wait_for_approval(base, approver_key, remediation)
             assert detail["status"].lower() == "awaitingapproval"
             assert detail["actionDiscriminator"] == "compose.restart_service"
             # Proposing and self-approval must not repair the stopped service.

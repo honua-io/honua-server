@@ -910,10 +910,12 @@ internal sealed partial class ComposeProjectController : IDisposable
     private async Task<(bool Ok, string? Body)> ProbeOkAsync(
         string url,
         bool captureBody,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int? maximumTimeoutSeconds = null)
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(TimeSpan.FromSeconds(_options.ProbeTimeoutSeconds));
+        var timeoutSeconds = Math.Min(_options.ProbeTimeoutSeconds, maximumTimeoutSeconds ?? _options.ProbeTimeoutSeconds);
+        timeout.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
         try
         {
             using var response = await _http.GetAsync(url, timeout.Token).ConfigureAwait(false);

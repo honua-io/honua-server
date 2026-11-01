@@ -92,6 +92,12 @@ keep the manager's matching executor options consistent). Only configured manage
 services are observed and eligible for restart. The standard quickstart includes
 Redis and keeps its observation enabled.
 
+Health, findings, and release-status requests share an in-flight Compose observation.
+A request after that collection completes obtains fresh readback. Serving readiness
+and authenticated version checks run concurrently; each read-only HTTP probe uses
+the smaller of its configured timeout and 10 seconds. Converge and rollback retain
+their configured verification timeouts.
+
 Deploy preflight with diagnostics, MCP release status, and ops-health share the same
 live Compose release projection. Their observation timestamps use the responding
 host's injected clock. During a converge or rollback the executor serializes

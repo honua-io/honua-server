@@ -78,7 +78,7 @@ internal static class ObservabilityServiceCollectionExtensions
             .Bind(configuration.GetSection(OpsAutonomyOptions.SectionName))
             .ValidateDataAnnotations()
             .ValidateOnStart();
-        services.AddScoped<IManagedComposeObserver, ManagedComposeObserver>();
+        services.AddSingleton<IManagedComposeObserver, ManagedComposeObserver>();
         services.AddScoped<IOpsHealthSnapshotService, OpsHealthSnapshotService>();
         // Singleton: the scoped engine must still report a store source's last successful collection
         // after a failed read in a later scope (#4840).

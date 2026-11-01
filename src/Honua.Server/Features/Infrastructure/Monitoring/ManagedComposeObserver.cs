@@ -22,7 +22,25 @@ internal sealed class ManagedComposeObserver(
 {
     internal const string SourceId = "honua_ops.managed_compose";
 
+    private readonly object _collectionGate = new();
+    private Task<IReadOnlyList<OpsManagedTargetHealthView>>? _inFlight;
+
     public async Task<IReadOnlyList<OpsManagedTargetHealthView>> ReadAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        Task<IReadOnlyList<OpsManagedTargetHealthView>> collection;
+        lock (_collectionGate)
+        {
+            // Concurrent callers share an active collection. Completed collections
+            // are refreshed on the next request.
+            if (_inFlight is null || _inFlight.IsCompleted)
+                _inFlight = ReadCoreAsync();
+            collection = _inFlight;
+        }
+        return await collection.WaitAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<IReadOnlyList<OpsManagedTargetHealthView>> ReadCoreAsync()
     {
         var targets = controlPlaneOptions.CurrentValue.DeployTargets
             .Where(target => target.TargetKind == DeployTargetKind.LocalCompose).ToArray();
@@ -32,15 +50,14 @@ internal sealed class ManagedComposeObserver(
             ComposeExecutorResponse? response = null;
             if (target.TargetId == executorOptions.Value.TargetId && target.Backend == ComposeDeployBackend.AdapterBackendName)
             {
-                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                timeout.CancelAfter(TimeSpan.FromSeconds(25));
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(25));
                 try
                 {
                     response = await client.ExecuteAsync(new() { Op = "observe" }, timeout.Token).ConfigureAwait(false);
                 }
                 catch (Exception ex) when (ex is IOException or OperationCanceledException)
                 {
-                    cancellationToken.ThrowIfCancellationRequested();
+                    // Unavailable readback is projected below for this bounded collection.
                 }
             }
             var available = response is { Ok: true, Services.Count: > 0 };

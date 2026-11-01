@@ -10,6 +10,8 @@ namespace Honua.ControlPlane;
 
 internal sealed partial class ComposeProjectController
 {
+    private const int ObservationProbeTimeoutSeconds = 10;
+
     private string[] ManagedServices() => new[] { _options.ServiceName, _options.PostgresService, _options.RedisService }
         .Where(service => !string.IsNullOrWhiteSpace(service)).ToArray();
 
@@ -93,8 +95,13 @@ internal sealed partial class ComposeProjectController
                 }
                 if (running)
                 {
-                    ready = (await ProbeOkAsync(_options.HealthProbeUrl, false, cancellationToken).ConfigureAwait(false)).Ok;
-                    version = await ReadServingVersionAsync(cancellationToken).ConfigureAwait(false);
+                    // Both probes can wait on the same failed dependency. Collect them
+                    // concurrently within the manager's readback budget.
+                    var readiness = ProbeOkAsync(_options.HealthProbeUrl, false, cancellationToken, ObservationProbeTimeoutSeconds);
+                    var servingVersion = ReadServingVersionAsync(cancellationToken);
+                    await Task.WhenAll(readiness, servingVersion).ConfigureAwait(false);
+                    ready = (await readiness.ConfigureAwait(false)).Ok;
+                    version = await servingVersion.ConfigureAwait(false);
                 }
             }
             else if (running && service == _options.PostgresService)
@@ -135,16 +142,18 @@ internal sealed partial class ComposeProjectController
 
     private async Task<string?> ReadServingVersionAsync(CancellationToken cancellationToken)
     {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(Math.Min(_options.ProbeTimeoutSeconds, ObservationProbeTimeoutSeconds)));
         var uri = new Uri(new Uri(_options.HealthProbeUrl), "/api/v1/admin/version");
         using var request = new HttpRequestMessage(HttpMethod.Get, uri);
         if (!string.IsNullOrWhiteSpace(_options.VersionProbeApiKey))
             request.Headers.Add("X-API-Key", _options.VersionProbeApiKey);
         try
         {
-            using var response = await _http.SendAsync(request, cancellationToken).ConfigureAwait(false);
+            using var response = await _http.SendAsync(request, timeout.Token).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode) return null;
-            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-            using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken).ConfigureAwait(false);
+            await using var stream = await response.Content.ReadAsStreamAsync(timeout.Token).ConfigureAwait(false);
+            using var document = await JsonDocument.ParseAsync(stream, cancellationToken: timeout.Token).ConfigureAwait(false);
             var root = document.RootElement;
             if (root.ValueKind != JsonValueKind.Object) return null;
             if (root.TryGetProperty("data", out var data)) root = data;

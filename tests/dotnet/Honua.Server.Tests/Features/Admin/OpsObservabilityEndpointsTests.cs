@@ -101,6 +101,7 @@ public sealed class OpsObservabilityEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/observability/ops-health")]
+    [Endpoint("GET /api/v1/admin/observability/findings")]
     public async Task GetOpsHealth_ManagedServingServiceDown_ReportsTargetOutageAndRecovery()
     {
         foreach (var state in new[] { "Unhealthy", "Healthy" })
@@ -117,6 +118,24 @@ public sealed class OpsObservabilityEndpointsTests : IAsyncLifetime
             Assert.Equal("compose-local", target.GetProperty("targetId").GetString());
             Assert.Equal(state, target.GetProperty("status").GetString());
             if (state == "Unhealthy") Assert.Equal("Unhealthy", document.RootElement.GetProperty("overallStatus").GetString());
+
+            var findingsResponse = await _client.GetAsync(
+                "/api/v1/admin/observability/findings?rule=managed-compose-service-unhealthy");
+            findingsResponse.EnsureSuccessStatusCode();
+            using var findingsDocument = JsonDocument.Parse(await findingsResponse.Content.ReadAsStringAsync());
+            var matches = findingsDocument.RootElement.GetProperty("findings").EnumerateArray()
+                .Where(finding => finding.GetProperty("subject").TryGetProperty("workloadId", out var workloadId)
+                    && workloadId.GetString() == "honua")
+                .ToArray();
+            if (state == "Unhealthy")
+            {
+                var finding = Assert.Single(matches);
+                Assert.Equal("AdminConfigChange", finding.GetProperty("recommendedAction").GetProperty("kind").GetString());
+            }
+            else
+            {
+                Assert.Empty(matches);
+            }
         }
     }
 

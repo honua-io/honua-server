@@ -6,8 +6,17 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Infrastructure.Monitoring;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Hosting.Server;
+using Microsoft.AspNetCore.Hosting.Server.Features;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NSubstitute;
+using Xunit;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 
@@ -15,6 +24,134 @@ namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 [Protocol(TestProtocols.TestQuality)]
 public sealed class ManagedComposeObserverTests
 {
+    [UnitTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ReadAsync_ConcurrentScopes_ShareCollectionAndRefreshAfterCompletion(bool cancelFirstCaller)
+    {
+        var pending = new TaskCompletionSource<ComposeExecutorResponse>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var calls = 0;
+        var client = Substitute.For<IComposeExecutorClient>();
+        client.ExecuteAsync(Arg.Any<ComposeExecutorRequest>(), Arg.Any<CancellationToken>()).Returns(call =>
+        {
+            if (Interlocked.Increment(ref calls) == 1)
+                return pending.Task.WaitAsync(call.ArgAt<CancellationToken>(1));
+            if (!pending.Task.IsCompleted)
+                return Task.FromException<ComposeExecutorResponse>(new IOException("The executor is collecting the current observation."));
+            return Task.FromResult(new ComposeExecutorResponse
+            {
+                Ok = true,
+                Services = [new() { Service = "redis", Status = "Healthy", Description = "Ready" }]
+            });
+        });
+        var monitor = Substitute.For<IOptionsMonitor<ControlPlaneOptions>>();
+        monitor.CurrentValue.Returns(Configuration());
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton(client);
+        services.AddSingleton(monitor);
+        services.AddSingleton(Options.Create(new ComposeExecutorOptions()));
+        services.AddObservability(new ConfigurationBuilder().Build());
+        using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+        using var firstScope = provider.CreateScope();
+        using var secondScope = provider.CreateScope();
+        using var caller = new CancellationTokenSource();
+        var first = firstScope.ServiceProvider.GetRequiredService<IManagedComposeObserver>().ReadAsync(caller.Token);
+        var second = secondScope.ServiceProvider.GetRequiredService<IManagedComposeObserver>().ReadAsync(CancellationToken.None);
+        if (cancelFirstCaller)
+        {
+            caller.Cancel();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => first);
+        }
+        pending.SetResult(new ComposeExecutorResponse
+        {
+            Ok = true,
+            Services = [new() { Service = "redis", Status = "Unhealthy", Description = "Stopped" }]
+        });
+        if (!cancelFirstCaller)
+            Assert.True(Assert.Single(await first).Available);
+        var observed = Assert.Single(await second);
+        Assert.True(observed.Available, "concurrent callers must share the current collection instead of timing out behind it");
+        Assert.Equal("Unhealthy", observed.Status);
+
+        var refreshed = Assert.Single(await secondScope.ServiceProvider.GetRequiredService<IManagedComposeObserver>()
+            .ReadAsync(CancellationToken.None));
+        Assert.Equal("Healthy", refreshed.Status);
+        Assert.Equal(2, Volatile.Read(ref calls));
+    }
+
+    [IntegrationTheory]
+    [InlineData(15, 14)]
+    [InlineData(60, 40)]
+    [Trait("Tier", "Fast")]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ReadAsync_SlowServingProbes_DoNotHideStoppedRedis(int probeTimeoutSeconds, int responseDelaySeconds)
+    {
+        var builder = WebApplication.CreateSlimBuilder([]);
+        builder.Logging.ClearProviders();
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
+        await using var probes = builder.Build();
+        probes.MapGet("/{**path}", async (CancellationToken cancellationToken) =>
+        {
+            await Task.Delay(TimeSpan.FromSeconds(responseDelaySeconds), cancellationToken);
+            return Results.StatusCode(503);
+        });
+        await probes.StartAsync();
+        var address = probes.Services.GetRequiredService<IServer>().Features
+            .Get<IServerAddressesFeature>()!.Addresses.Single();
+        var configuration = Configuration();
+        var image = configuration.PlatformRelease.ServingArtifactReference!;
+        var root = Path.Join(Path.GetTempPath(), "honua-observe-budget", Guid.NewGuid().ToString("N"));
+        var options = new ComposeExecutorOptions
+        {
+            SocketPath = Path.Join(root, "executor.sock"),
+            ProjectDirectory = root,
+            ProjectName = "slow-probe-unit",
+            BackupDirectory = Path.Join(root, "backups"),
+            ReleaseImage = image,
+            HealthProbeUrl = address + "/healthz/ready",
+            CustomerProbeUrl = address + "/healthz/ready",
+            ProbeTimeoutSeconds = probeTimeoutSeconds
+        };
+        Directory.CreateDirectory(options.BackupDirectory);
+        await File.WriteAllTextAsync(Path.Join(root, "compose.yaml"), "services: {}\n");
+        Assert.Null(options.ValidateForProcess());
+        var docker = Substitute.For<IDockerComposeProcess>();
+        docker.RunAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var args = call.ArgAt<IReadOnlyList<string>>(0);
+                var output = args.Contains("ps") ? """
+                    {"ID":"serving","Service":"honua","Project":"slow-probe-unit","State":"running"}
+                    {"ID":"database","Service":"postgres","Project":"slow-probe-unit","State":"running"}
+                    {"ID":"cache","Service":"redis","Project":"slow-probe-unit","State":"exited"}
+                    """
+                    : args.Contains("{{.State.StartedAt}}") ? "2026-11-01T00:00:00Z"
+                    : args.Contains("{{json .RepoDigests}}") ? "[]"
+                    : args.Contains("{{.Image}}") || args.Contains("{{.Id}}") ? image
+                    : args.Contains("SELECT PostGIS_Version()") ? "3.5"
+                    : throw new InvalidOperationException("Unexpected Docker readback command.");
+                return Task.FromResult(new DockerProcessResult(0, output, string.Empty));
+            });
+        using var controller = new ComposeProjectController(options, docker);
+        var client = Substitute.For<IComposeExecutorClient>();
+        client.ExecuteAsync(Arg.Any<ComposeExecutorRequest>(), Arg.Any<CancellationToken>())
+            .Returns(call => controller.ExecuteAsync(call.ArgAt<ComposeExecutorRequest>(0), call.ArgAt<CancellationToken>(1)));
+
+        try
+        {
+            var target = Assert.Single(await CreateObserver(client, configuration).ReadAsync(CancellationToken.None));
+            Assert.True(target.Available, "slow serving probes must not discard the stopped dependency's readback");
+            Assert.Equal("Unhealthy", Assert.Single(target.Services, service => service.Name == "redis").Status);
+            Assert.True(EvidencePostureFactory.IsActionable(ManagedComposeObserver.Source([target])));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
     public void ProjectRelease_InjectedEvaluationTime_PreservesDeterministicEvidence()
