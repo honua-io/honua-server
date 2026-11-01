@@ -440,3 +440,13 @@ a backup.
   unpublished tag. The optional .NET client uses a different registry; see
   [registry clients](registry-clients.md) only if you need it.
 - **Anything else** — [troubleshooting](../guides/deploy/troubleshooting.md).
+
+## Enable the built-in Studio assistant (optional)
+
+The default quickstart keeps model calls disabled. To use the built-in browser
+assistant on Bedrock, follow [Studio assistant on Bedrock](../guides/deploy/studio-assistant-bedrock.md).
+The opt-in `docker-compose.studio-ai.yml` overlay sets Studio customer authorization,
+the tool-capable provider, exact disclosure approval and stable PostgreSQL admission
+identity. Initialize and resume the invocation ledger before submitting a prompt.
+Use an updated Console image; older images calling `/api/v1/agent/workspaces/`
+require a Console rebuild, since that separate API is absent from Server trunk.

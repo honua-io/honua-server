@@ -182,8 +182,8 @@ settings out of the environment:
     "Providers": {
       "bedrock": {
         "Kind": "bedrock",
-        "Region": "us-west-2",
-        "Model": "<bedrock-model-or-inference-profile-id>"
+        "Region": "us-east-1",
+        "Model": "us.anthropic.claude-sonnet-4-6"
       }
     }
   },
@@ -200,6 +200,8 @@ settings out of the environment:
   "AuditLog__ChainVerification__Key": "aws:secretsmanager:honua/prod/audit-chain-key"
 }
 ```
+
+For the complete Studio assistant configuration, including Console editor enablement, customer authorization, disclosure approval and invocation admission activation, follow [Studio assistant on Bedrock](studio-assistant-bedrock.md).
 
 How the document behaves:
 
