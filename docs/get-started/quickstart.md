@@ -382,8 +382,9 @@ before a separate principal approves it. Execution verifies the same backup agai
 
 Poll the proposal through the management API or `honua://proposals/{id}`. Both expose
 `Completed` or `Failed` after the canonical execution reaches that state; failures
-include `resolutionReason`. A failed operation releases exclusive ownership once its
-child deployment, if any, is also verified terminal. Restore the failed dependency and
+include `resolutionReason`. The proposal list retains the approval lifecycle; use detail
+or the MCP resource for execution status. A failed local Compose operation releases
+exclusive ownership once its child deployment, if any, is also verified terminal. Restore the failed dependency and
 create a new convergence proposal with a new `idempotencyKey`. Active, missing, or
 uncertain execution records keep ownership until their state can be established.
 

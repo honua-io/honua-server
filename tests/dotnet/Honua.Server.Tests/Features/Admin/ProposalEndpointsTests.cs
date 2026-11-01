@@ -160,6 +160,8 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/admin/proposals/{id}")]
     [InlineData(OperationHandleStatus.Completed, "Completed", null)]
     [InlineData(OperationHandleStatus.Failed, "Failed", "restore-provider-failed")]
+    [InlineData(OperationHandleStatus.Cancelled, "Cancelled", "cancelled")]
+    [InlineData(OperationHandleStatus.Indeterminate, "Indeterminate", "restore-incomplete")]
     public async Task GetProposal_TerminalExecution_AgreesWithMcpResource(
         OperationHandleStatus executionStatus, string expected, string? reason)
     {
@@ -186,6 +188,13 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
         response.EnsureSuccessStatusCode();
         using var rest = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         rest.RootElement.GetProperty("status").GetString().Should().Be(expected);
+        var contractResponse = await _client.GetAsync("/api/v1/admin/openapi.json");
+        contractResponse.EnsureSuccessStatusCode();
+        using var contract = JsonDocument.Parse(await contractResponse.Content.ReadAsStringAsync());
+        contract.RootElement.GetProperty("components").GetProperty("schemas")
+            .GetProperty("ProposalDetailResponse").GetProperty("properties").GetProperty("status")
+            .GetProperty("enum").EnumerateArray().Select(value => value.GetString()).Should().Contain(expected);
+
         (rest.RootElement.TryGetProperty("resolutionReason", out var restReason) ? restReason.GetString() : null).Should().Be(reason);
 
         var tenant = new RequestTenantContext();

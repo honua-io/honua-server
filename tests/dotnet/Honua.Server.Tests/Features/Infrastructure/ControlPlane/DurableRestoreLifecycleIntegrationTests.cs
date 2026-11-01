@@ -312,8 +312,11 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
             await database.KeyDeleteAsync("controlplane:workflow:restore-cell-exclusive-owner");
         }
     }
-    [IntegrationTest]
-    public async Task ApprovedConvergence_CanTakeOverOnlyTerminalFailure()
+    [IntegrationTheory]
+    [InlineData(DeployTargetKind.LocalCompose)]
+    [InlineData(DeployTargetKind.Kubernetes)]
+    [InlineData(DeployTargetKind.AwsEcs)]
+    public async Task ApprovedConvergence_CanTakeOverOnlyTerminalFailure(DeployTargetKind targetKind)
     {
         await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
         var database = connection.GetDatabase();
@@ -336,6 +339,15 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
                 OperationId = workflowId,
                 Kind = WorkflowOperationKind.Deploy,
                 Status = WorkflowOperationStatus.Reconciling,
+                Deploy = new DeployOperationSpec
+                {
+                    TargetId = "local",
+                    TargetKind = targetKind,
+                    Backend = "test",
+                    Environment = "test",
+                    TargetName = "test",
+                    DesiredRevision = "prior"
+                },
                 CreatedAt = now,
                 UpdatedAt = now
             }));
@@ -399,6 +411,15 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
             }));
             var workflow = await workflows.GetAsync(workflowId);
             Assert.True(await workflows.TrySetAsync(workflow! with { Status = WorkflowOperationStatus.Failed }));
+            if (targetKind != DeployTargetKind.LocalCompose)
+            {
+                Assert.False(await worker.ClaimCellAsync("recovery", CancellationToken.None));
+                await Assert.ThrowsAsync<ResourceConflictException>(async () =>
+                {
+                    await using var admission = await RestoreDeployAdmission.AcquireAsync(workflows, "ordinary-deploy", null, false, CancellationToken.None);
+                });
+                return;
+            }
             await using (var admission = await RestoreDeployAdmission.AcquireAsync(workflows, "ordinary-deploy", null, false, CancellationToken.None))
             {
                 Assert.Null((await workflows.GetAsync(RestoreDeployAdmission.CellOwnerId))?.CurrentPhase);

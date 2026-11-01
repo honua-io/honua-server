@@ -477,6 +477,7 @@ internal static class ProposalEndpoints
                 statusCode: StatusCodes.Status403Forbidden);
     }
 
+    // The filtered list indexes approval records; detail reads include the bound execution outcome.
     private static ProposalSummaryResponse ToSummary(OperationProposal proposal) => new()
     {
         ProposalId = proposal.ProposalId,

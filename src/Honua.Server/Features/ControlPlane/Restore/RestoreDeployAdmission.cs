@@ -78,7 +78,9 @@ internal sealed class RestoreDeployAdmission : IAsyncDisposable
         if (operation.Status != WorkflowOperationStatus.Failed || operation.PreMigrationRestore is not { } checkpoint) return false;
         if (string.IsNullOrWhiteSpace(checkpoint.DeployOperationId)) return checkpoint.Phase == "queued";
         var child = await store.GetAsync(checkpoint.DeployOperationId, cancellationToken).ConfigureAwait(false);
-        return child?.Kind == WorkflowOperationKind.Deploy &&
+        // Remote providers can keep executing after a failed response; their terminal records
+        // alone do not establish quiescence. Automatic failure recovery is local Compose only.
+        return child?.Kind == WorkflowOperationKind.Deploy && child.Deploy?.TargetKind == DeployTargetKind.LocalCompose &&
             child.Status is WorkflowOperationStatus.Succeeded or WorkflowOperationStatus.Failed or WorkflowOperationStatus.RolledBack;
     }
 

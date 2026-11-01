@@ -177,6 +177,7 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
                     if ready.status == 200:
                         break
             except (urllib.error.URLError, TimeoutError):
+                # Redis recovery can temporarily refuse readiness; the deadline bounds retries.
                 pass
             time.sleep(2)
         else:
