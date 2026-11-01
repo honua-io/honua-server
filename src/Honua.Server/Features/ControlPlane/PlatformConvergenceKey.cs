@@ -41,8 +41,13 @@ internal static class PlatformConvergenceKey
             else if (targetKind == DeployTargetKind.LocalCompose)
             {
                 // Compose backup-bearing deploys always run through a durable restore wrapper.
-                // Other backends can perform a compatible rollback directly, without one.
                 return null;
+            }
+            else
+            {
+                // A compatible remote rollback can complete directly without a restore wrapper.
+                // Its successful deploy still starts a fresh convergence epoch.
+                restoredDeployId = lastDeployment.OperationId;
             }
         }
 

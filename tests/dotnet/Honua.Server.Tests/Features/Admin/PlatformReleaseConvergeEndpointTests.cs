@@ -139,8 +139,13 @@ public sealed class PlatformReleaseConvergeEndpointTests : IAsyncLifetime
     public async Task Converge_AfterCompatibleRemoteRollbackWithoutRestore_IsNotBlocked()
     {
         _ladder.Tier = GuardrailTier.DirectExecute;
+        SeedSucceededDeploy("srv-divergent", "rc1");
+        var first = await ConvergeAndReadTargetOperationId("srv-divergent");
+        first.Should().NotBeNullOrWhiteSpace();
         SeedSucceededDeploy("srv-divergent", "rc1", "backup-verified");
-        (await ConvergeAndReadTargetOperationId("srv-divergent")).Should().NotBeNullOrWhiteSpace();
+        var second = await ConvergeAndReadTargetOperationId("srv-divergent");
+        second.Should().NotBeNullOrWhiteSpace().And.NotBe(first);
+        (await ConvergeAndReadTargetOperationId("srv-divergent")).Should().Be(second);
     }
 
     [IntegrationTest]

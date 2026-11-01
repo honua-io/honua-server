@@ -739,7 +739,10 @@ public sealed class McpPlatformOpsReaderTests
             CreatePrincipal(), new McpPlatformReleaseConvergenceArgument(), CancellationToken.None);
 
         result.Targets.Should().ContainSingle(target => target.TargetId == "serving-us-west" && target.ProposalId == "proposal-converge");
-        gateway.LastRequest!.IdempotencyKey.Should().Be("converge:2026.07.01:serving-us-west");
+        gateway.LastRequest!.IdempotencyKey.Should().Be("converge:2026.07.01:serving-us-west:after:compatible-rollback");
+        await reader.ProposePlatformReleaseConvergenceAsync(
+            CreatePrincipal(), new McpPlatformReleaseConvergenceArgument(), CancellationToken.None);
+        gateway.LastRequest!.IdempotencyKey.Should().Be("converge:2026.07.01:serving-us-west:after:compatible-rollback");
     }
 
     [UnitTest]
