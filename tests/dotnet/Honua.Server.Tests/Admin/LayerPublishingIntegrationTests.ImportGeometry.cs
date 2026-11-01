@@ -15,11 +15,12 @@ public sealed partial class LayerPublishingIntegrationTests
 {
     [IntegrationTheory]
     [InlineData("Polygon", "MULTIPOLYGON", "MultiPolygon", "esriGeometryPolygon", 4326)]
-    [InlineData("PointCsv", "MULTIPOINT", "MultiPoint", "esriGeometryMultipoint", 4326)]
-    [InlineData("PointCsv", "MULTIPOINT", "MultiPoint", "esriGeometryMultipoint", 3857)]
+    [InlineData("PointCsv", "POINT", "Point", "esriGeometryPoint", 4326)]
+    [InlineData("PointCsv", "POINT", "Point", "esriGeometryPoint", 3857)]
     [InlineData("Mixed", "GEOMETRY", "GeometryCollection", null, 4326)]
-    [InlineData("Point", "MULTIPOINT", "MultiPoint", "esriGeometryMultipoint", 4326)]
+    [InlineData("Point", "POINT", "Point", "esriGeometryPoint", 4326)]
     [InlineData("MultiPoint", "MULTIPOINT", "MultiPoint", "esriGeometryMultipoint", 4326)]
+    [InlineData("MixedPointParts", "MULTIPOINT", "MultiPoint", "esriGeometryMultipoint", 4326)]
     [InlineData("LineString", "MULTILINESTRING", "MultiLineString", "esriGeometryPolyline", 4326)]
     [InlineData("MultiLineString", "MULTILINESTRING", "MultiLineString", "esriGeometryPolyline", 4326)]
     [InlineData("MultiPolygon", "MULTIPOLYGON", "MultiPolygon", "esriGeometryPolygon", 4326)]
@@ -60,7 +61,12 @@ public sealed partial class LayerPublishingIntegrationTests
             "MultiLineString" => """{"type":"MultiLineString","coordinates":[[[0,0],[1,1]]]}""",
             _ => point
         };
-        var secondGeometry = scenario == "Mixed" ? point : geometry;
+        var secondGeometry = scenario switch
+        {
+            "Mixed" => point,
+            "MixedPointParts" => """{"type":"MultiPoint","coordinates":[[0,0],[1,1]]}""",
+            _ => geometry
+        };
         var source = scenario == "PointCsv"
             ? "name,population,longitude,latitude\nAlpha,2,0.5,0.5\nBravo,10,1,1\n"
             : $$"""
@@ -147,11 +153,35 @@ public sealed partial class LayerPublishingIntegrationTests
         serverFeatures[0].GetProperty("attributes").GetProperty("population").GetInt64().Should().Be(2);
         serverFeatures[0].GetProperty("geometry").ValueKind.Should().Be(JsonValueKind.Object);
         serverFeatures[1].GetProperty("geometry").ValueKind.Should().Be(JsonValueKind.Object);
+        if (scenario == "PointCsv")
+        {
+            var pointGeometry = serverFeatures[0].GetProperty("geometry");
+            pointGeometry.GetProperty("x").ValueKind.Should().Be(JsonValueKind.Number);
+            pointGeometry.GetProperty("y").ValueKind.Should().Be(JsonValueKind.Number);
+            if (targetSrid == 4326)
+            {
+                pointGeometry.GetProperty("x").GetDouble().Should().BeApproximately(0.5, 0.00001);
+                pointGeometry.GetProperty("y").GetDouble().Should().BeApproximately(0.5, 0.00001);
+            }
+            pointGeometry.TryGetProperty("points", out _).Should().BeFalse();
+        }
+        if (scenario is "MultiPoint" or "MixedPointParts")
+        {
+            serverFeatures[0].GetProperty("geometry").GetProperty("points").GetArrayLength()
+                .Should().Be(scenario == "MultiPoint" ? 2 : 1);
+        }
 
         // Metadata must be backed by enforced storage facts, not just a label.
         await using (var connection = await _fixture.Postgres.GetConnectionAsync())
         {
             var relation = $"\"{imported.Schema}\".\"{imported.PhysicalTableName}\"";
+            if (scenario == "PointCsv")
+            {
+                // Point-layer edits have historically accepted multipart points too.
+                await using var multipart = new Npgsql.NpgsqlCommand(
+                    $"INSERT INTO {relation} (geometry) VALUES (ST_GeomFromText('MULTIPOINT ((1 1), (2 2))', {targetSrid}))", connection);
+                (await multipart.ExecuteNonQueryAsync()).Should().Be(1);
+            }
             await using var incompatible = new Npgsql.NpgsqlCommand(
                 $"INSERT INTO {relation} (geometry) VALUES (ST_GeomFromText('GEOMETRYCOLLECTION EMPTY', {targetSrid}))", connection);
             await FluentActions.Awaiting(() => incompatible.ExecuteNonQueryAsync()).Should()

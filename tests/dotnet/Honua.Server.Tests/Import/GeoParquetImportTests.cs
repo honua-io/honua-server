@@ -366,7 +366,7 @@ public sealed class GeoParquetImportTests : IAsyncLifetime
         (await reader.ReadAsync()).Should().BeTrue(json);
         reader.GetInt32(0).Should().Be(hasZ ? 3 : 2);
         reader.GetBoolean(1).Should().BeTrue();
-        var storedType = type switch { 1 => 4u, 3 => 6u, _ => (uint)type };
+        var storedType = type switch { 3 => 6u, _ => (uint)type };
         BinaryPrimitives.ReadUInt32LittleEndian(reader.GetFieldValue<byte[]>(2).AsSpan(1)).Should()
             .BeOneOf(storedType + (hasZ ? 1000u : 0u), storedType | (hasZ ? 0x80000000u : 0u));
         (await reader.ReadAsync()).Should().BeFalse();
@@ -815,9 +815,7 @@ public sealed class GeoParquetImportTests : IAsyncLifetime
             Point? point = null;
             if (feature.TryGetProperty("geometry", out var geometry) && geometry.ValueKind != JsonValueKind.Null)
             {
-                var points = geometry.GetProperty("points");
-                points.GetArrayLength().Should().Be(1);
-                point = new Point(points[0][0].GetDouble(), points[0][1].GetDouble()) { SRID = 4326 };
+                point = new Point(geometry.GetProperty("x").GetDouble(), geometry.GetProperty("y").GetDouble()) { SRID = 4326 };
             }
 
             rows.Add(new ImportedRow(properties.GetProperty("objectid").GetInt64(), properties.GetProperty("name").GetString(), point, properties.Clone()));

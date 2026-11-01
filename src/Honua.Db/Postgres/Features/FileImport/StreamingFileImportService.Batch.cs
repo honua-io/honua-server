@@ -70,12 +70,18 @@ internal sealed partial class StreamingFileImportService
         var useSavepoints = transaction is not null && _limits.ContinueOnError;
         try
         {
+            string? previousType = null;
             if (directGuard is not null)
             {
                 await ValidateDirectImportAsync(connection, transaction!, schemaName, tableName,
                     targetSrid, directGuard, cancellationToken);
-                await ClearImportedGeometryTypeAsync(
+                previousType = await ReadImportedGeometryTypeAsync(
                     connection, transaction!, schemaName, tableName, cancellationToken);
+                if (previousType is not null)
+                {
+                    await ClearImportedGeometryTypeAsync(
+                        connection, transaction!, schemaName, tableName, cancellationToken);
+                }
             }
             if (useSavepoints)
             {
@@ -121,6 +127,11 @@ internal sealed partial class StreamingFileImportService
                     cancellationToken);
             }
 
+            if (previousType is not null)
+            {
+                await RefreshImportedGeometryTypeAsync(
+                    connection, schemaName, tableName, cancellationToken, transaction, previousType);
+            }
             if (transaction != null)
             {
                 await transaction.CommitSafelyAsync(cancellationToken);

@@ -297,6 +297,7 @@ internal sealed partial class StreamingFileImportService
                             request.TargetSrid,
                             coordinateEpoch,
                             target.LiveIdentity,
+                            !hadExistingTarget,
                             CancellationToken.None);
                         dataCommitted = true;
                     }
@@ -360,9 +361,9 @@ internal sealed partial class StreamingFileImportService
                     completionWarningsBuilder.Add(string.Format(null, _skippedInvalidGeometryWarningFormat, repairTally.SkippedInvalid));
                 }
 
-                // Even a batch that imports no rows may have cleared our previous
-                // type constraint. Restore it after an all-skipped direct load too.
-                if (directBatchAttempted)
+                // A newly created direct target receives inference after its batches.
+                // Existing contracts are preserved inside each batch transaction.
+                if (directBatchAttempted && !hadExistingTarget)
                 {
                     await RefreshImportedGeometryTypeAsync(
                         connection, targetSchema, allowedTableName, CancellationToken.None);
@@ -436,8 +437,11 @@ internal sealed partial class StreamingFileImportService
                 // failure. Reconcile existing projections even when the import cannot finish.
                 try
                 {
-                    await RefreshImportedGeometryTypeAsync(
-                        connection, targetSchema, allowedTableName, CancellationToken.None);
+                    if (!hadExistingTarget)
+                    {
+                        await RefreshImportedGeometryTypeAsync(
+                            connection, targetSchema, allowedTableName, CancellationToken.None);
+                    }
                     await PromoteTypedColumnsAsync(
                         connection, targetSchema, allowedTableName, [], CancellationToken.None);
                 }
