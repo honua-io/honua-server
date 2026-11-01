@@ -857,7 +857,9 @@ internal static class DeployControlEndpoints
             {
                 outcomes.Add(new PlatformReleaseConvergeTargetOutcome
                 {
-                    TargetId = target.TargetId, Outcome = ConvergeOutcomes.Blocked, LastAppliedRevision = lastApplied,
+                    TargetId = target.TargetId,
+                    Outcome = ConvergeOutcomes.Blocked,
+                    LastAppliedRevision = lastApplied,
                     Message = "The restore has not completed successfully."
                 });
                 continue;

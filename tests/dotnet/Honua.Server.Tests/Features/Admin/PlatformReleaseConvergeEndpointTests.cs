@@ -149,29 +149,46 @@ public sealed class PlatformReleaseConvergeEndpointTests : IAsyncLifetime
         candidate.Should().NotBeNull();
         _workflowStore.Seed(candidate! with
         {
-            Status = WorkflowOperationStatus.Succeeded, UpdatedAt = now.AddSeconds(-1), CompletedAt = now.AddSeconds(-1)
+            Status = WorkflowOperationStatus.Succeeded,
+            UpdatedAt = now.AddSeconds(-1),
+            CompletedAt = now.AddSeconds(-1)
         });
         (await ConvergeAndReadTargetOperationId("srv-divergent")).Should().BeNull("the candidate is already serving");
         _workflowStore.Seed(new WorkflowOperationRecord
         {
-            OperationId = "rollback-child", Kind = WorkflowOperationKind.Deploy,
-            Status = WorkflowOperationStatus.Succeeded, CreatedAt = now, UpdatedAt = now, CompletedAt = now,
+            OperationId = "rollback-child",
+            Kind = WorkflowOperationKind.Deploy,
+            Status = WorkflowOperationStatus.Succeeded,
+            CreatedAt = now,
+            UpdatedAt = now,
+            CompletedAt = now,
             Audit = new OperationAuditInfo { IdempotencyKey = "restore-rollback" },
             Deploy = new DeployOperationSpec
             {
-                TargetId = "srv-divergent", TargetKind = DeployTargetKind.Kubernetes,
-                Backend = "honua-gitops-kubernetes", Environment = "production", TargetName = "honua-server",
-                DesiredRevision = "rc1", PreMigrationBackupId = "candidate-backup",
+                TargetId = "srv-divergent",
+                TargetKind = DeployTargetKind.Kubernetes,
+                Backend = "honua-gitops-kubernetes",
+                Environment = "production",
+                TargetName = "honua-server",
+                DesiredRevision = "rc1",
+                PreMigrationBackupId = "candidate-backup",
                 Parameters = new Dictionary<string, string>(StringComparer.Ordinal)
             }
         });
         _workflowStore.Seed(new WorkflowOperationRecord
         {
-            OperationId = "restore-rollback", Kind = WorkflowOperationKind.PreMigrationRestore,
-            Status = WorkflowOperationStatus.Succeeded, CreatedAt = now, UpdatedAt = now, CompletedAt = now,
+            OperationId = "restore-rollback",
+            Kind = WorkflowOperationKind.PreMigrationRestore,
+            Status = WorkflowOperationStatus.Succeeded,
+            CreatedAt = now,
+            UpdatedAt = now,
+            CompletedAt = now,
             PreMigrationRestore = new PreMigrationRestoreContext
             {
-                Payload = "{}", Phase = "completed", ApprovedBy = "approver", DeployOperationId = "rollback-child"
+                Payload = "{}",
+                Phase = "completed",
+                ApprovedBy = "approver",
+                DeployOperationId = "rollback-child"
             }
         });
         var second = await ConvergeAndReadTargetOperationId("srv-divergent");
