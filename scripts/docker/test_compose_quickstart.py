@@ -1,5 +1,7 @@
 """Customer package contract: immutable images, local secrets and executor isolation."""
+import hmac
 import json
+import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -20,24 +22,29 @@ class ComposeQuickstartTests(unittest.TestCase):
         initialize(path)
         return path
 
+    def compose_env(self, path):
+        values = dict(line.split('=', 1) for line in (path / '.env').read_text().splitlines())
+        # The disposable project must win over ambient Compose flags, including cleanup.
+        return dict(os.environ, **values)
+
     def test_private_keyring_can_be_initialized_with_only_required_capabilities(self):
         with tempfile.TemporaryDirectory() as directory:
             path = self.prepare(directory)
             command = ['docker', 'compose']
             try:
                 result = subprocess.run(command + ['run', '--rm', '--no-deps', 'keyring-init'],
-                                        cwd=path, capture_output=True, text=True)
+                                        cwd=path, env=self.compose_env(path), capture_output=True, text=True)
                 self.assertEqual(0, result.returncode, 'Key-ring init must traverse the private install group')
                 self.assertEqual(0o640, (path / 'secrets/keyring.pfx').stat().st_mode & 0o777)
                 self.assertEqual(1001, (path / 'secrets/keyring.pfx').stat().st_gid)
             finally:
-                subprocess.run(command + ['down'], cwd=path, capture_output=True)
+                subprocess.run(command + ['down'], cwd=path, env=self.compose_env(path), capture_output=True)
 
     def test_package_starts_executor_by_default_with_separate_identity_and_scoped_mounts(self):
         with tempfile.TemporaryDirectory() as directory:
             path = self.prepare(directory)
             result = subprocess.run(['docker', 'compose', '--project-directory', str(path),
-                                     'config', '--format', 'json'], cwd=path, capture_output=True, text=True)
+                                     'config', '--format', 'json'], cwd=path, env=self.compose_env(path), capture_output=True, text=True)
             self.assertEqual(0, result.returncode, 'Package must render without exposing credentials')
             services = json.loads(result.stdout)['services']
             executor = services['compose-executor']
@@ -55,8 +62,9 @@ class ComposeQuickstartTests(unittest.TestCase):
             self.assertFalse(any(v['target'] == '/run/honua-compose' for v in services['honua']['volumes']))
             self.assertEqual(SERVER, services['compose-manager']['image'])
             self.assertEqual('true', services['compose-manager']['environment']['ControlPlane__DeployTargets__0__RequiresApproval'])
-            self.assertNotEqual(services['honua']['environment']['HONUA_ADMIN_PASSWORD'],
-                                services['compose-manager']['environment']['HONUA_ADMIN_PASSWORD'])
+            self.assertFalse(hmac.compare_digest(services['honua']['environment']['HONUA_ADMIN_PASSWORD'],
+                                                 services['compose-manager']['environment']['HONUA_ADMIN_PASSWORD']),
+                             'Serving and management credentials must differ')
             self.assertEqual({'compose.yaml', 'compose.executor.yaml'},
                              {executor['environment'][f'ControlPlane__ComposeExecutor__ComposeFiles__{i}'] for i in (0, 1)})
 
@@ -65,8 +73,10 @@ class ComposeQuickstartTests(unittest.TestCase):
             a, b = self.prepare(first), self.prepare(second)
             before = (a / '.env').read_bytes()
             initialize(a)
-            self.assertEqual(before, (a / '.env').read_bytes())
-            self.assertNotEqual(before, (b / '.env').read_bytes())
+            self.assertTrue(hmac.compare_digest(before, (a / '.env').read_bytes()),
+                            'Restart must preserve saved credentials')
+            self.assertFalse(hmac.compare_digest(before, (b / '.env').read_bytes()),
+                             'Installations must not share saved credentials')
             self.assertEqual(0, (a / '.env').stat().st_mode & 0o007)
             self.assertEqual(0, (a / 'secrets/keyring.pfx').stat().st_mode & 0o007)
             values = dict(line.split('=', 1) for line in before.decode().splitlines())

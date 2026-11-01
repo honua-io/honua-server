@@ -1216,7 +1216,8 @@ jobs:
           python3 scripts/docker/package_quickstart.py --server-image "$SERVER_IMAGE" \
             --executor-image "$EXECUTOR_IMAGE" --worker-image "$SERVER_IMAGE" \
             --version "nightly-${CANDIDATE_SHA7}" --output artifacts/honua-compose-quickstart
-          sha256sum artifacts/honua-compose-quickstart.tar.gz > artifacts/honua-compose-quickstart.tar.gz.sha256
+          sha256sum artifacts/honua-compose-quickstart.tar.gz \
+            | sed 's|artifacts/||' > artifacts/honua-compose-quickstart.tar.gz.sha256
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: honua-compose-quickstart-${{ needs.select-candidate.outputs.sha7 }}
