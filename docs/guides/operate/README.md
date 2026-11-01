@@ -140,7 +140,8 @@ Current rung by concern:
 | Alert channel pause/resume | L2 | Privacy-safe per-channel backlog health identifies a failing channel and offers a scoped `alerts.pause_channel` proposal. Pause remains approval-gated and non-auto-safe because it suppresses delivery; healthy channels continue dispatching. |
 | Database bounded-admission pressure | L2 where supported | The Postgres runtime-tunable admission gate can be lowered through a proposed `db.tune_bounded_admission` action when headroom exists. |
 | Deploy stuck in manual intervention | L2 when a prior revision is known | The finding can propose a rollback Deploy operation only when the previous revision is recorded. |
-| Platform release runtime divergence | L2 | For unpinned divergent serving targets, the finding proposes a Deploy operation to the declared platform release artifact. |
+| Platform release runtime divergence | L2 | The finding proposes a Deploy operation to the declared artifact. Compose uses live readback, including targets pinned to that declared artifact; other backends use the recorded revision for unpinned targets. |
+| Managed Compose service down or unready | L2 | `managed-compose-service-unhealthy` proposes a bounded `compose.restart_service` for the configured service after separate-principal approval and verifies readiness. |
 | Platform release config skew | L1 | Explicit config pins cannot be cleared by runtime action; change configuration and redeploy. |
 | Pending contract migrations | L1 | Contracting is operator-sequenced. It must not be auto-applied. |
 | GP queue depth | L1 | The finding points at the scale concern; no safe automatic scale action ships in this slice. |

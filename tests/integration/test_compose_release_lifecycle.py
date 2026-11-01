@@ -162,6 +162,13 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
             assert serving["serverVersion"]
             assert serving["skewed"] == expected_skew
             assert status["isCoVersioned"] != expected_skew
+            preflight, _ = request(base, "/api/v1/admin/deploy/preflight?includeDiagnostics=true", proposer_key)
+            http_release = preflight["platformRelease"]
+            http_serving = next(target for target in http_release["serving"] if target["id"] == "compose-local")
+            assert http_release["isCoVersioned"] == status["isCoVersioned"]
+            assert http_serving["observedImageId"] == serving["observedImageId"]
+            assert http_serving["serverVersion"] == serving["serverVersion"]
+            assert http_serving["skewed"] == serving["skewed"]
 
         assert_live_revision(prior_id, True)
         convergence = call("honua_propose_platform_release_convergence", {"reason": "candidate convergence"}, 2)

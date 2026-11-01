@@ -17,6 +17,19 @@ public sealed class ManagedComposeObserverTests
 {
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
+    public void ProjectRelease_InjectedEvaluationTime_PreservesDeterministicEvidence()
+    {
+        var options = Configuration();
+        options.DeployTargets[0].TargetKind = DeployTargetKind.Kubernetes;
+        var now = new DateTimeOffset(2024, 1, 2, 3, 4, 5, TimeSpan.Zero);
+        var result = ManagedComposeObserver.ProjectRelease(options, [], evaluatedAt: now);
+        var source = Assert.Single(result.EvidencePosture!.Sources);
+        Assert.Equal(now, source.ObservedAt);
+        Assert.Equal(EvidencePostureVocabulary.Completeness.Complete, source.Completeness);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
     public void Source_MixedUnknownAndUnhealthyServices_DoesNotAuthorizeAnAction()
     {
         var target = new OpsManagedTargetHealthView

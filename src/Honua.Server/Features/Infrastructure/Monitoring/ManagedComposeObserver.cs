@@ -81,8 +81,10 @@ internal sealed class ManagedComposeObserver(
 
     internal static DeployPreflightPlatformRelease ProjectRelease(
         ControlPlaneOptions options, IReadOnlyList<OpsManagedTargetHealthView> targets,
-        string sourceId = EvidencePostureVocabulary.SourceIds.PlatformReleaseStatus)
+        string sourceId = EvidencePostureVocabulary.SourceIds.PlatformReleaseStatus,
+        DateTimeOffset? evaluatedAt = null)
     {
+        var now = evaluatedAt ?? TimeProvider.System.GetUtcNow();
         var skew = PlatformReleaseSkewProjector.Build(options);
         var serving = skew.Serving.Select(projection =>
         {
@@ -113,7 +115,7 @@ internal sealed class ManagedComposeObserver(
         };
         var source = applicable.Length == 0
             ? EvidencePostureFactory.Complete(sourceId, EvidencePostureVocabulary.BackendKinds.ConfigProjection,
-                "control-plane-options", DateTimeOffset.UtcNow, TimeSpan.FromMinutes(5), coverage)
+                "control-plane-options", now, TimeSpan.FromMinutes(5), coverage)
             : observed.Length == applicable.Length
                 ? EvidencePostureFactory.Complete(sourceId, EvidencePostureVocabulary.BackendKinds.Composite,
                     "compose-executor", observed.Min(target => target.ObservedAt!.Value), TimeSpan.FromMinutes(2), coverage)
@@ -126,7 +128,7 @@ internal sealed class ManagedComposeObserver(
                         maximumAge: TimeSpan.FromMinutes(2), coverage: coverage);
         return new()
         {
-            EvidencePosture = EvidencePostureFactory.Build(DateTimeOffset.UtcNow, source),
+            EvidencePosture = EvidencePostureFactory.Build(now, source),
             ReleaseVersion = skew.ReleaseVersion,
             ReleaseDeclared = skew.ReleaseDeclared,
             IsCoVersioned = skew.IsCoVersioned && applicable.All(target => target.ObservationStatus == "observed" && !target.Skewed),

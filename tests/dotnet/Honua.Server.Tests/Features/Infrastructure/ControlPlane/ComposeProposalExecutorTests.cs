@@ -31,7 +31,7 @@ public sealed class ComposeProposalExecutorTests
     [UnitTest]
     public async Task Observe_MissingProjectIdentity_ReportsUnknownWithoutScopeMismatch()
     {
-        var root = Path.Combine(Path.GetTempPath(), "honua-compose-unit", Guid.NewGuid().ToString("N"));
+        var root = Path.Join(Path.GetTempPath(), "honua-compose-unit", Guid.NewGuid().ToString("N"));
         var options = ValidOptions(root, Digest('a'));
         var docker = Substitute.For<IDockerComposeProcess>();
         docker.RunAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
@@ -46,7 +46,7 @@ public sealed class ComposeProposalExecutorTests
     [UnitTest]
     public void ValidateForProcess_RedisExplicitlyDisabled_PreservesSupportedTopology()
     {
-        var root = Path.Combine(Path.GetTempPath(), "honua-compose-unit", Guid.NewGuid().ToString("N"));
+        var root = Path.Join(Path.GetTempPath(), "honua-compose-unit", Guid.NewGuid().ToString("N"));
         var options = ValidOptions(root, Digest('a'));
         options.RedisService = string.Empty;
         Assert.Null(options.ValidateForProcess());
@@ -55,7 +55,7 @@ public sealed class ComposeProposalExecutorTests
     [UnitTest]
     public async Task Restart_UnregisteredService_RefusesBeforeDocker()
     {
-        var root = Path.Combine(Path.GetTempPath(), "honua-compose-unit", Guid.NewGuid().ToString("N"));
+        var root = Path.Join(Path.GetTempPath(), "honua-compose-unit", Guid.NewGuid().ToString("N"));
         var options = ValidOptions(root, Digest('a'));
         var docker = new RecordingDocker();
         using var controller = new ComposeProjectController(options, docker);

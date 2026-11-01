@@ -8,6 +8,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Observability.Abstractions;
 using Honua.Core.Features.Observability.Domain;
 using Honua.ServiceDefaults;
+using Honua.Server.Features.Admin.Models;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
 
@@ -78,6 +79,8 @@ internal sealed class OpsHealthSnapshotService : IOpsHealthSnapshotService
         var managedTargets = _managedComposeObserver is null ? []
             : await _managedComposeObserver.ReadAsync(cancellationToken).ConfigureAwait(false);
         var generatedAt = _timeProvider.GetUtcNow();
+        var release = ManagedComposeObserver.ProjectRelease(_controlPlaneOptions.CurrentValue, managedTargets,
+            EvidencePostureVocabulary.SourceIds.DeployRelease, generatedAt);
         var alertDispatch = BuildAlertDispatchView();
         var database = new OpsDatabaseView
         {
@@ -113,8 +116,7 @@ internal sealed class OpsHealthSnapshotService : IOpsHealthSnapshotService
                     EvidencePostureVocabulary.BackendKinds.DurableStore,
                     "execution-job-store"),
             BuildAlertDispatchSource(alertDispatch),
-            ManagedComposeObserver.ProjectRelease(_controlPlaneOptions.CurrentValue, managedTargets,
-                EvidencePostureVocabulary.SourceIds.DeployRelease).EvidencePosture!.Sources[0],
+            release.EvidencePosture!.Sources.Single(source => source.SourceId == EvidencePostureVocabulary.SourceIds.DeployRelease),
             database.HasConnectionPoolData
                 ? EvidencePostureFactory.Complete(
                     EvidencePostureVocabulary.SourceIds.DatabaseCache,
@@ -156,7 +158,7 @@ internal sealed class OpsHealthSnapshotService : IOpsHealthSnapshotService
             ServingLatency = servingLatency,
             Geoprocessing = gpQueue,
             AlertDispatch = alertDispatch,
-            Deploy = BuildDeployView(deploySnapshot, managedTargets),
+            Deploy = BuildDeployView(deploySnapshot, release),
             Database = database,
         };
     }
@@ -428,9 +430,8 @@ internal sealed class OpsHealthSnapshotService : IOpsHealthSnapshotService
         };
     }
 
-    private OpsDeployReadinessView BuildDeployView(DeployPreflightSnapshot snapshot, IReadOnlyList<OpsManagedTargetHealthView> managedTargets)
+    private static OpsDeployReadinessView BuildDeployView(DeployPreflightSnapshot snapshot, DeployPreflightPlatformRelease skew)
     {
-        var skew = ManagedComposeObserver.ProjectRelease(_controlPlaneOptions.CurrentValue, managedTargets);
         return new OpsDeployReadinessView
         {
             Status = snapshot.Status,

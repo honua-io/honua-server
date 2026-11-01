@@ -91,3 +91,11 @@ For a supported installation without Redis, set
 keep the manager's matching executor options consistent). Only configured managed
 services are observed and eligible for restart. The standard quickstart includes
 Redis and keeps its observation enabled.
+
+Deploy preflight with diagnostics, MCP release status, and ops-health share the same
+live Compose release projection. Their observation timestamps use the responding
+host's injected clock. During a converge or rollback the executor serializes
+observations behind that mutation: a health read may wait up to 25 seconds and then
+report unknown target health and unavailable evidence. Poll the operation handle
+and read health again after it completes; unavailable readback never authorizes a
+restart.

@@ -61,7 +61,8 @@ internal sealed class McpPlatformOpsReader(
 
         var observer = _services.GetService<IManagedComposeObserver>();
         var targets = observer is null ? [] : await observer.ReadAsync(cancellationToken).ConfigureAwait(false);
-        var response = ManagedComposeObserver.ProjectRelease(_controlPlaneOptions.CurrentValue, targets);
+        var response = ManagedComposeObserver.ProjectRelease(_controlPlaneOptions.CurrentValue, targets,
+            evaluatedAt: (_services.GetService<TimeProvider>() ?? TimeProvider.System).GetUtcNow());
 
         return Serialize(response, DeployControlJsonContext.Default.DeployPreflightPlatformRelease);
     }
