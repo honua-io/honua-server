@@ -236,7 +236,7 @@
     },
     {
       "name": "External Services",
-      "description": "Discovery of externally hosted ArcGIS and OGC API services for import planning."
+      "description": "Discovery of externally hosted GeoServices REST and OGC API services for import planning."
     },
     {
       "name": "Platform Release",
@@ -3196,7 +3196,7 @@
           "Import"
         ],
         "summary": "Scan Migration Source",
-        "description": "Scan a supported GeoServer REST or ArcGIS GeoServices REST source and return a deterministic migration inventory artifact. The response body is the artifact itself and is not wrapped in a success/data admin envelope. A 200 response can still carry scanCompleteness.status = failed when the scanner produced an artifact but could not complete discovery cleanly. GeoServer uses that failed-artifact path for transport, timeout, auth-related, and other discovery failures; GeoServices also uses it for auth-related and source-reported ArcGIS discovery errors, while transport and timeout failures still surface as 502/504. Pass the export=json query parameter to receive the artifact as an indented JSON attachment suitable for committing to a migration project repository.",
+        "description": "Scan a supported GeoServer REST or GeoServices REST source and return a deterministic migration inventory artifact. The response body is the artifact itself and is not wrapped in a success/data admin envelope. A 200 response can still carry scanCompleteness.status = failed when the scanner produced an artifact but could not complete discovery cleanly. Both source types use that failed-artifact path for transport, timeout, authentication, and source-reported discovery errors; transport and timeout failures still surface as 502/504. Pass the export=json query parameter to receive the artifact as an indented JSON attachment suitable for committing to a migration project repository.",
         "operationId": "scanMigrationSource",
         "parameters": [
           {
@@ -6195,8 +6195,8 @@
         "tags": [
           "Import"
         ],
-        "summary": "List ArcGIS Migration Runs",
-        "description": "Returns a page of ArcGIS migration run summaries that have persisted manifest (and optionally parity) evidence. Results are newest-first. `pageSize` is clamped to a maximum of 100.",
+        "summary": "List GeoServices Migration Runs",
+        "description": "Returns a page of migration run summaries that have persisted manifest (and optionally parity) evidence. Results are newest-first. `pageSize` is clamped to a maximum of 100.",
         "operationId": "listArcGisMigrationRuns",
         "parameters": [
           {
@@ -6251,7 +6251,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Page of ArcGIS migration run summaries.",
+            "description": "Page of migration run summaries.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6277,8 +6277,8 @@
         "tags": [
           "Import"
         ],
-        "summary": "Get ArcGIS Migration Manifest",
-        "description": "Returns the persisted migration manifest artifact for an ArcGIS migration run. The response body is the artifact itself and is not wrapped in a success/data admin envelope.",
+        "summary": "Get GeoServices Migration Manifest",
+        "description": "Returns the persisted migration manifest artifact for a migration run. The response body is the artifact itself and is not wrapped in a success/data admin envelope.",
         "operationId": "getArcGisMigrationManifest",
         "parameters": [
           {
@@ -6320,8 +6320,8 @@
         "tags": [
           "Import"
         ],
-        "summary": "Record ArcGIS Migration Manifest",
-        "description": "Persists the manifest evidence artifact produced by the ArcGIS migration planning pipeline against the supplied run id, creating or replacing the run record. Returns the stored run record.",
+        "summary": "Record GeoServices Migration Manifest",
+        "description": "Persists the manifest evidence artifact produced by the migration planning pipeline against the supplied run id, creating or replacing the run record. Returns the stored run record.",
         "operationId": "recordArcGisMigrationManifest",
         "parameters": [
           {
@@ -6372,8 +6372,8 @@
         "tags": [
           "Import"
         ],
-        "summary": "Get ArcGIS Migration Parity",
-        "description": "Returns the persisted post-apply parity artifact for an ArcGIS migration run. Responds 404 when the run is unknown and, separately, when the run has a manifest but no parity artifact yet.",
+        "summary": "Get GeoServices Migration Parity",
+        "description": "Returns the persisted post-apply parity artifact for a migration run. Responds 404 when the run is unknown and, separately, when the run has a manifest but no parity artifact yet.",
         "operationId": "getArcGisMigrationParity",
         "parameters": [
           {
@@ -6388,7 +6388,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Persisted ArcGIS migration parity artifact.",
+            "description": "Persisted migration parity artifact.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6415,8 +6415,8 @@
         "tags": [
           "Import"
         ],
-        "summary": "Record ArcGIS Migration Parity",
-        "description": "Persists the post-apply parity artifact for an ArcGIS migration run. The manifest for the run must already be recorded; otherwise the request is rejected with 409. `parity.classification` must be one of pass, warn, or fail (case-insensitive). Returns the stored parity artifact.",
+        "summary": "Record GeoServices Migration Parity",
+        "description": "Persists the post-apply parity artifact for a migration run. The manifest for the run must already be recorded; otherwise the request is rejected with 409. `parity.classification` must be one of pass, warn, or fail (case-insensitive). Returns the stored parity artifact.",
         "operationId": "recordArcGisMigrationParity",
         "parameters": [
           {
@@ -6744,7 +6744,7 @@
           "Import"
         ],
         "summary": "Discover GeoServices Service",
-        "description": "Connects to an ArcGIS GeoServices REST service URL and returns the service summary plus the layers available for import. Requires the `import.geoservices` license entitlement. The source URL is validated against the configured migration host allow-list. Inline credentials are accepted for discovery only.",
+        "description": "Connects to a GeoServices REST service URL and returns the service summary plus the layers available for import. Requires the `import.geoservices` license entitlement. The source URL is validated against the configured migration host allow-list. Inline credentials are accepted for discovery only.",
         "operationId": "discoverGeoservicesService",
         "requestBody": {
           "required": true,
@@ -6758,7 +6758,7 @@
         },
         "responses": {
           "200": {
-            "description": "Discovered ArcGIS service summary and layers.",
+            "description": "Discovered service summary and layers.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6787,7 +6787,7 @@
             "$ref": "#/components/responses/Forbidden"
           },
           "500": {
-            "description": "Unexpected failure while discovering the ArcGIS service.",
+            "description": "Unexpected service discovery failure.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6797,7 +6797,7 @@
             }
           },
           "502": {
-            "description": "Failed to connect to the ArcGIS service (transport failure or upstream timeout).",
+            "description": "Failed to connect to the service (transport failure or upstream timeout).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6815,7 +6815,7 @@
           "Import"
         ],
         "summary": "Start GeoServices Import",
-        "description": "Queues a background import of one ArcGIS GeoServices layer into PostGIS. `tableName` and `targetSchema` must use only letters, numbers, and underscores. Queued jobs must supply credentials as secret references. Requires the `import.geoservices` license entitlement.",
+        "description": "Queues a background import of one GeoServices REST layer into PostGIS. `tableName` and `targetSchema` must use only letters, numbers, and underscores. Queued jobs must supply credentials as secret references. Requires the `import.geoservices` license entitlement.",
         "operationId": "startGeoservicesImport",
         "requestBody": {
           "required": true,
@@ -7653,7 +7653,7 @@
           "Import"
         ],
         "summary": "Import Tile Cache Package",
-        "description": "Imports an Esri tile or vector-tile cache package (.tpk/.tpkx/.vtpk) into Honua's tile catalog and binds it to a served tileset. The package bytes are uploaded as the raw request body (streamed to a bounded temp file capped at 2 GiB); the tileset id, package file name, and optional zoom range are query parameters. When `fileName` is omitted the format is inferred from the request Content-Type, and the request is rejected if it cannot be determined.",
+        "description": "Imports a tile or vector-tile cache package into Honua's tile catalog and binds it to a served tileset. The package bytes are uploaded as the raw request body (streamed to a bounded temp file capped at 2 GiB); the tileset id, package file name, and optional zoom range are query parameters. When `fileName` is omitted the format is inferred from the request Content-Type, and the request is rejected if it cannot be determined.",
         "operationId": "importTileCachePackage",
         "parameters": [
           {
@@ -9857,7 +9857,7 @@
           "Metadata"
         ],
         "summary": "Get Layer Drawing Info",
-        "description": "Returns the author-supplied Esri `drawingInfo` renderer stored on the layer's Metadata v2 resource (extension key `geoservices:drawingInfo`). `document` is null when no renderer is stored.",
+        "description": "Returns the author-supplied `drawingInfo` renderer stored on the layer's Metadata v2 resource (extension key `geoservices:drawingInfo`). `document` is null when no renderer is stored.",
         "operationId": "getAdminLayerDrawingInfo",
         "parameters": [
           {
@@ -9903,7 +9903,7 @@
         ],
         "requestBody": {
           "required": true,
-          "description": "Arbitrary Esri drawingInfo JSON object, or null to clear the stored renderer.",
+          "description": "Arbitrary `drawingInfo` JSON object, or null to clear the stored renderer.",
           "content": {
             "application/json": {
               "schema": {
@@ -20545,7 +20545,7 @@
           "Federation"
         ],
         "summary": "List Federated Sources",
-        "description": "Lists the configured federated query sources (cross-instance Honua gRPC, Esri REST, and OGC WFS proxies). Transport credentials are never included. Returned as a bare array.",
+        "description": "Lists the configured federated query sources (cross-instance Honua gRPC, GeoServices REST, and OGC WFS proxies). Transport credentials are never included. Returned as a bare array.",
         "operationId": "listFederationSources",
         "responses": {
           "200": {
@@ -20817,7 +20817,7 @@
           "External Services"
         ],
         "summary": "Discover External Service",
-        "description": "Probes an external ArcGIS (FeatureServer/MapServer, catalog root, or folder) or OGC API service and returns the discovered service metadata and selectable layer/table candidates for import planning. Supplied credentials are used transiently for the discovery request only and are never persisted. A missing/invalid body or an unusable URL returns 400; an unreachable service, an unsupported remote response, a remote error, or a discovery timeout returns 502.",
+        "description": "Probes an external GeoServices REST service (FeatureServer/MapServer, catalog root, or folder) or OGC API service and returns the discovered service metadata and selectable layer/table candidates for import planning. Supplied credentials are used transiently for the discovery request only and are never persisted. A missing/invalid body or an unusable URL returns 400; an unreachable service, an unsupported remote response, a remote error, or a discovery timeout returns 502.",
         "operationId": "discoverExternalService",
         "requestBody": {
           "required": true,
@@ -20997,7 +20997,7 @@
           "Cloud Rasters"
         ],
         "summary": "Publish Layer Raster As COG",
-        "description": "Exports the publication layer's primary raster as a Cloud Optimized GeoTIFF and stores it under the deterministic object key `cog/{layerId}/{rasterId}.tif`, tagged with the publish operation and the COG media type. Desktop clients (GDAL `/vsicurl`, ArcGIS Pro) read it through `GET|HEAD /api/v1/rasters/cog/{artifactId}`. The proxy checks the current source publication, binding and access policy before serving each request; authorized HEAD responses carry the real length and ranged GETs return 206. Publishing again for the same layer overwrites the same key. A layer with no raster is 400, an unknown or unroutable layer is 404, and an export or upload failure is 500.",
+        "description": "Exports the publication layer's primary raster as a Cloud Optimized GeoTIFF and stores it under the deterministic object key `cog/{layerId}/{rasterId}.tif`, tagged with the publish operation and the COG media type. Desktop clients (GDAL `/vsicurl` and other GIS applications) read it through `GET|HEAD /api/v1/rasters/cog/{artifactId}`. The proxy checks the current source publication, binding and access policy before serving each request; authorized HEAD responses carry the real length and ranged GETs return 206. Publishing again for the same layer overwrites the same key. A layer with no raster is 400, an unknown or unroutable layer is 404, and an export or upload failure is 500.",
         "operationId": "publishCogArtifact",
         "requestBody": {
           "required": true,
@@ -24070,7 +24070,7 @@
         "required": [
           "type"
         ],
-        "description": "Captured source value domain. Held to the Esri import capture rules: coded-value domains carry at most 100 entries, each with a string, number or boolean code and a name; range domains carry exactly [min, max].",
+        "description": "Captured source value domain. Held to the import capture rules: coded-value domains carry at most 100 entries, each with a string, number or boolean code and a name; range domains carry exactly [min, max].",
         "properties": {
           "name": {
             "type": "string",
@@ -24100,12 +24100,12 @@
           "mergePolicy": {
             "type": "string",
             "nullable": true,
-            "description": "Optional merge policy metadata for Esri-style clients."
+            "description": "Optional merge policy metadata for compatible clients."
           },
           "splitPolicy": {
             "type": "string",
             "nullable": true,
-            "description": "Optional split policy metadata for Esri-style clients."
+            "description": "Optional split policy metadata for compatible clients."
           }
         }
       },
@@ -24207,7 +24207,7 @@
           },
           "scriptExpression": {
             "type": "string",
-            "description": "Arcade expression text."
+            "description": "Expression source text."
           },
           "triggeringEvents": {
             "type": "array",
@@ -24556,7 +24556,7 @@
           "sourceUrl": {
             "type": "string",
             "format": "uri",
-            "description": "Source URL to scan. GeoServices requires an HTTPS ArcGIS service root ending in FeatureServer or MapServer and rejects layer/table URLs, embedded credentials, plus private, loopback, or unresolvable targets. GeoServer follows the same HTTPS and address-safety rules outside the test-only unsafe local URL mode and also rejects embedded credentials."
+            "description": "Source URL to scan. GeoServices REST requires an HTTPS service root ending in FeatureServer or MapServer and rejects layer/table URLs, embedded credentials, plus private, loopback, or unresolvable targets. GeoServer follows the same HTTPS and address-safety rules outside the test-only unsafe local URL mode and also rejects embedded credentials."
           },
           "username": {
             "type": "string",
@@ -24961,7 +24961,7 @@
           },
           "nullable": {
             "type": "boolean",
-            "description": "Whether the field is reported nullable. Omitted when the source does not advertise this property (older ArcGIS versions)."
+            "description": "Whether the field is reported nullable. Omitted when the source does not advertise this property (older service versions)."
           },
           "domainType": {
             "type": "string",
@@ -25114,7 +25114,7 @@
           },
           "sourceValue": {
             "type": "string",
-            "description": "Source-provided CRS identifier or text. ArcGIS WKID values remain in source form when the scanner cannot confirm EPSG authority."
+            "description": "Source-provided CRS identifier or text. WKID values remain in source form when the scanner cannot confirm EPSG authority."
           },
           "srid": {
             "type": "integer",
@@ -30986,7 +30986,7 @@
       },
       "ImportArcGisMigrationRunSummary": {
         "type": "object",
-        "description": "Lightweight ArcGIS migration run summary returned by the admin list endpoint.",
+        "description": "Lightweight migration run summary returned by the admin list endpoint.",
         "required": [
           "runId",
           "sourceUrl",
@@ -31043,7 +31043,7 @@
       },
       "ImportArcGisMigrationRunListResult": {
         "type": "object",
-        "description": "Page of ArcGIS migration run summaries.",
+        "description": "Page of migration run summaries.",
         "properties": {
           "items": {
             "type": "array",
@@ -31105,7 +31105,7 @@
       },
       "ImportArcGisMigrationManifestIngestionRequest": {
         "type": "object",
-        "description": "Request body for recording an ArcGIS migration manifest artifact. `sourceUrl` and `manifest` are validated as required by the handler.",
+        "description": "Request body for recording a migration manifest artifact. `sourceUrl` and `manifest` are validated as required by the handler.",
         "properties": {
           "sourceUrl": {
             "type": "string",
@@ -31136,7 +31136,7 @@
       },
       "ImportArcGisMigrationParityIngestionRequest": {
         "type": "object",
-        "description": "Request body for recording an ArcGIS migration parity artifact. `parity` is validated as required by the handler.",
+        "description": "Request body for recording a migration parity artifact. `parity` is validated as required by the handler.",
         "properties": {
           "parity": {
             "$ref": "#/components/schemas/ImportArcGisMigrationParityArtifact"
@@ -31145,7 +31145,7 @@
       },
       "ImportArcGisMigrationParityArtifact": {
         "type": "object",
-        "description": "Deterministic post-apply parity outcome for an ArcGIS migration source.",
+        "description": "Deterministic post-apply parity outcome for a migration source.",
         "required": [
           "sourceKind",
           "source",
@@ -31803,7 +31803,7 @@
       },
       "ImportGeoservicesCredentialRequest": {
         "type": "object",
-        "description": "Inbound ArcGIS credential descriptor. Queued imports must use the secret-reference fields; inline token/password values are accepted for discovery only.",
+        "description": "Inbound credential descriptor. Queued imports must use the secret-reference fields; inline token/password values are accepted for discovery only.",
         "properties": {
           "mode": {
             "type": "string",
@@ -31842,11 +31842,11 @@
       },
       "ImportGeoservicesDiscoverRequest": {
         "type": "object",
-        "description": "Request body for ArcGIS GeoServices discovery. `serviceUrl` is validated as required by the handler.",
+        "description": "Request body for GeoServices REST discovery. `serviceUrl` is validated as required by the handler.",
         "properties": {
           "serviceUrl": {
             "type": "string",
-            "description": "URL of the ArcGIS service to discover. Required."
+            "description": "URL of the service to discover. Required."
           },
           "timeoutSeconds": {
             "type": "integer",
@@ -31861,7 +31861,7 @@
       },
       "ImportGeoservicesLayerSummary": {
         "type": "object",
-        "description": "Summary of one layer returned by ArcGIS discovery.",
+        "description": "Summary of one layer returned by service discovery.",
         "required": [
           "name"
         ],
@@ -31893,7 +31893,7 @@
       },
       "ImportGeoservicesDiscoverResponse": {
         "type": "object",
-        "description": "ArcGIS service summary plus the layers available for import.",
+        "description": "Service summary plus the layers available for import.",
         "required": [
           "serviceUrl",
           "serviceName"
@@ -31929,11 +31929,11 @@
       },
       "ImportGeoservicesStartRequest": {
         "type": "object",
-        "description": "Request body for queueing an ArcGIS GeoServices layer import. `serviceUrl` and `tableName` are validated as required by the handler.",
+        "description": "Request body for queueing a GeoServices REST layer import. `serviceUrl` and `tableName` are validated as required by the handler.",
         "properties": {
           "serviceUrl": {
             "type": "string",
-            "description": "URL of the ArcGIS service. Required."
+            "description": "URL of the service. Required."
           },
           "layerId": {
             "type": "integer",
@@ -32239,7 +32239,7 @@
           },
           "serviceUrl": {
             "type": "string",
-            "description": "Source ArcGIS service URL. Required."
+            "description": "Source GeoServices REST URL. Required."
           },
           "layerId": {
             "type": "integer",
@@ -32505,7 +32505,7 @@
           },
           "executed": {
             "type": "boolean",
-            "description": "False when there was no readable ArcGIS scan manifest to account from."
+            "description": "False when there was no readable source scan manifest to account from."
           },
           "notExecutedReason": {
             "type": "string",
@@ -33769,7 +33769,7 @@
       },
       "ImportTilePackageResult": {
         "type": "object",
-        "description": "Result of importing an Esri tile/vector-tile cache package.",
+        "description": "Result of importing a tile/vector-tile cache package.",
         "required": [
           "success",
           "storageFormat",
@@ -36792,7 +36792,7 @@
             "type": "integer",
             "format": "int32",
             "nullable": true,
-            "description": "Esri relationship id carried for GeoServices clients."
+            "description": "Relationship id carried for GeoServices REST clients."
           },
           "composite": {
             "type": "boolean",
@@ -36895,7 +36895,7 @@
             "type": "integer",
             "format": "int32",
             "nullable": true,
-            "description": "Optional Esri relationship id."
+            "description": "Optional relationship id."
           },
           "composite": {
             "type": "boolean",
@@ -36960,12 +36960,12 @@
           "mergePolicy": {
             "type": "string",
             "nullable": true,
-            "description": "Optional merge policy metadata for Esri-style clients."
+            "description": "Optional merge policy metadata for compatible clients."
           },
           "splitPolicy": {
             "type": "string",
             "nullable": true,
-            "description": "Optional split policy metadata for Esri-style clients."
+            "description": "Optional split policy metadata for compatible clients."
           }
         }
       },
@@ -48046,7 +48046,7 @@
           },
           "kind": {
             "type": "string",
-            "description": "Transport family: `HonuaGrpc`, `EsriRest`, or `OgcWfs`."
+            "description": "Transport family: `HonuaGrpc`, GeoServices REST, or `OgcWfs`."
           },
           "endpoint": {
             "type": "string",
@@ -48563,7 +48563,7 @@
           "tokenUrl": {
             "type": "string",
             "nullable": true,
-            "description": "ArcGIS generateToken URL, or the OAuth token endpoint. Derived from the service host when omitted for `arcgis-token`."
+            "description": "GeoServices REST token URL, or the OAuth token endpoint. Derived from the service host when omitted for token-based authentication."
           },
           "clientId": {
             "type": "string",
