@@ -234,7 +234,7 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
             assert next(service for service in managed["services"] if service["name"] == service_name)["status"] == "Unhealthy"
             assert health["overallStatus"] == "Unhealthy"
             findings = call("honua_ops_findings", {"rule": "managed-compose-service-unhealthy"}, 42)
-            finding = next(item for item in findings["items"] if item["subject"].get("workloadId") == service_name)
+            finding = next(item for item in findings["findings"] if item["subject"].get("workloadId") == service_name)
             assert finding["recommendedAction"]["kind"] == "AdminConfigChange"
             assert not finding["recommendedAction"]["autoSafe"]
             proposed = call("honua_propose_finding", {"findingId": finding["id"], "candidateId": "compose-local"}, 43)
@@ -265,7 +265,7 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
             audit = next(entry for entry in health["health"]["entries"] if entry["name"] == "audit-chain-integrity")
             assert audit["status"] == "Healthy", "locally configured audit verification must remain healthy"
             findings = call("honua_ops_findings", {"rule": "managed-compose-service-unhealthy"}, 45)
-            assert not findings["items"]
+            assert not findings["findings"]
         assert_live_revision(prior_id, True)
         # Closing a client early must not terminate the listener or block later requests.
         disconnect = "import socket; s=socket.socket(socket.AF_UNIX); s.connect('/sock/executor.sock'); s.sendall(b'{\"op\":\"status\"}\\n'); s.close()"
