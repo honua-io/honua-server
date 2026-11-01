@@ -1,14 +1,13 @@
 # Copyright (c) Honua Geo Inc. All rights reserved.
 # Licensed under the Fair Core License, Version 1.0, ALv2 Future License.
 """Published rc.1 -> approved candidate -> verified restore, using the product MCP path."""
-import base64
-import glob
 import hashlib
 import json
 import os
 import re
 import secrets
 import socket
+import sys
 import subprocess
 import tempfile
 import shutil
@@ -18,6 +17,10 @@ import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / 'scripts/docker'))
+from package_quickstart import package
+from compose_quickstart import initialize
+
 RC1 = "ghcr.io/honua-io/honua-server@sha256:2c3ce36be9b6a4c8b3911d150de329be002131609933bc3ca4a3932ea95dc574"
 
 
@@ -92,44 +95,21 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
     port, manager_port = free_port(), free_port()
     project_dir = Path(tempfile.mkdtemp(prefix="honua-lifecycle-"))
     project_dir.chmod(0o755)
-    (project_dir / "secrets").mkdir()
-    (project_dir / "backups").mkdir()
-    quickstart = (ROOT / "docs/get-started/quickstart.md").read_text()
-    compose_text = re.search(r"<!-- docs-validation:install.compose mode=run -->\s*```yaml\n(.*?)\n```", quickstart, re.S).group(1)
-    (project_dir / "compose.yaml").write_text(compose_text)
-    (project_dir / "compose.executor.yaml").write_text((ROOT / "docs/get-started/compose.executor.yaml").read_text())
-    key = "Aa1!" + secrets.token_hex(24)
-    postgres = secrets.token_hex(24)
-    keyring = secrets.token_hex(16)
-    run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-subj", "/CN=honua-test", "-keyout", str(project_dir / "secrets/key.pem"), "-out", str(project_dir / "secrets/cert.pem"), "-days", "1"])
-    run(["openssl", "pkcs12", "-export", "-inkey", str(project_dir / "secrets/key.pem"), "-in", str(project_dir / "secrets/cert.pem"), "-out", str(project_dir / "secrets/keyring.pfx"), "-passout", "pass:" + keyring])
-    plugins = glob.glob("/usr/libexec/docker/cli-plugins/docker-compose") + glob.glob("/usr/lib/docker/cli-plugins/docker-compose") + glob.glob("/usr/local/lib/docker/cli-plugins/docker-compose")
-    assert plugins, "Docker Compose plugin executable is required"
+    executor = os.environ["HONUA_LIFECYCLE_EXECUTOR_IMAGE"]
+    assert run(["docker", "image", "inspect", "--format", '{{index .Config.Labels "honua.runtime.profile"}}', executor]) == "compose-executor"
+    # Install the customer package, not a test-owned executor or Compose substitute.
+    package(project_dir, candidate, executor, candidate, "2026.1-rc.2")
     env = os.environ.copy()
-    env.update({"COMPOSE_PROJECT_NAME": project, "HONUA_IMAGE": RC1, "HONUA_HTTP_PORT": str(port),
-        "HONUA_GRPC_PORT": str(free_port()), "HONUA_MANAGER_PORT": str(manager_port), "POSTGRES_PASSWORD": postgres,
-        "HONUA_ADMIN_PASSWORD": key, "HONUA_MASTER_KEY": secrets.token_hex(32), "HONUA_KEYRING_PASSWORD": keyring,
-        "HONUA_AUDIT_CHAIN_KEY": base64.b64encode(secrets.token_bytes(32)).decode(),
-        "HONUA_MANAGER_AUDIT_CHAIN_KEY": base64.b64encode(secrets.token_bytes(32)).decode(),
-        "HONUA_RELEASE_IMAGE": candidate, "HONUA_RELEASE_WORKER_IMAGE": candidate, "HONUA_RELEASE_VERSION": "2026.1-rc.2", "HONUA_PRIOR_IMAGE": RC1,
-        "HONUA_PRIOR_MAX_SCHEMA": "140", "DOCKER_GID": str(os.stat("/var/run/docker.sock").st_gid),
-        "DOCKER_COMPOSE_PLUGIN": plugins[0], "HONUA_COMPOSE_PROJECT_DIRECTORY": str(project_dir),
-        "HONUA_COMPOSE_CUSTOMER_PROBE": "http://honua:8080/healthz/ready"})
-    # The executor invokes Compose in its own container. Preserve the fixture's
-    # interpolation values beside compose.yaml, as a real quickstart install does.
-    fixture_keys = ["COMPOSE_PROJECT_NAME", "HONUA_IMAGE", "HONUA_HTTP_PORT", "HONUA_GRPC_PORT", "HONUA_MANAGER_PORT",
-        "POSTGRES_PASSWORD", "HONUA_ADMIN_PASSWORD", "HONUA_MASTER_KEY", "HONUA_KEYRING_PASSWORD", "HONUA_RELEASE_IMAGE",
-        "HONUA_AUDIT_CHAIN_KEY", "HONUA_MANAGER_AUDIT_CHAIN_KEY",
-        "HONUA_RELEASE_VERSION", "HONUA_RELEASE_WORKER_IMAGE", "HONUA_PRIOR_IMAGE", "HONUA_PRIOR_MAX_SCHEMA", "DOCKER_GID", "DOCKER_COMPOSE_PLUGIN",
-        "HONUA_COMPOSE_PROJECT_DIRECTORY", "HONUA_COMPOSE_CUSTOMER_PROBE"]
-    (project_dir / ".env").write_text("".join(f"{name}={env[name]}\n" for name in fixture_keys))
-    (project_dir / ".env").chmod(0o600)
+    settings = {"COMPOSE_PROJECT_NAME": project, "HONUA_IMAGE": RC1, "HONUA_HTTP_PORT": str(port),
+        "HONUA_GRPC_PORT": str(free_port()), "HONUA_MANAGER_PORT": str(manager_port),
+        "HONUA_PRIOR_IMAGE": RC1, "HONUA_PRIOR_MAX_SCHEMA": "140"}
+    (project_dir / ".env").write_text("".join(f"{name}={value}\n" for name, value in settings.items()))
+    env.update(initialize(project_dir))
+    key = env["HONUA_MANAGER_ADMIN_PASSWORD"]
+    postgres = env["HONUA_MANAGER_POSTGRES_PASSWORD"]
+    keyring = env["HONUA_KEYRING_PASSWORD"]
     compose = ["docker", "compose", "--project-directory", str(project_dir), "-p", project,
         "-f", str(project_dir / "compose.yaml"), "-f", str(project_dir / "compose.executor.yaml")]
-    # The executor runs as uid 1001 and owns only this disposable fixture directory.
-    run(["docker", "run", "--rm", "-v", f"{project_dir}:{project_dir}", "redis:7.4-alpine", "chown", "-R", "1001:1001", str(project_dir)])
-    run(["docker", "run", "--rm", "-v", f"{project_dir}:{project_dir}", "redis:7.4-alpine", "chown", f"{os.getuid()}:{env['DOCKER_GID']}", str(project_dir / ".env")])
-    run(["docker", "run", "--rm", "-v", f"{project_dir}:{project_dir}", "redis:7.4-alpine", "chmod", "640", str(project_dir / ".env")])
     def dc(*args, check=True):
         return run(compose + list(args), env=env, cwd=project_dir, check=check)
     def sql(statement):
@@ -155,7 +135,7 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
             # Emit bounded diagnostic lines with every generated secret removed.
             logs = run(compose + ["logs", "--no-color", "--tail", "80", "compose-manager"],
                        env=env, cwd=project_dir, check=False)
-            for secret in (key, postgres, keyring, env["HONUA_MASTER_KEY"]):
+            for secret in (key, postgres, keyring, env["HONUA_MANAGER_MASTER_KEY"]):
                 logs = logs.replace(secret, "[redacted]")
             diagnostic = []
             for line in logs.splitlines():
@@ -186,12 +166,23 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
         assert_live_revision(prior_id, True)
         convergence = call("honua_propose_platform_release_convergence", {"reason": "candidate convergence"}, 2)
         proposal = convergence["targets"][0]["proposalId"]
-        assert proposal and image_id() == prior_id and schema() == 140
+        assert proposal
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            detail, _ = request(base, f"/api/v1/admin/proposals/{proposal}", key)
+            if detail["status"].lower() == "awaitingapproval":
+                break
+            time.sleep(0.5)
+        else:
+            raise AssertionError("proposal did not enter awaiting approval")
+        assert image_id() == prior_id and schema() == 140
         try:
             request(base, f"/api/v1/admin/proposals/{proposal}/approve", proposer_key, {})
             raise AssertionError("self approval succeeded")
         except urllib.error.HTTPError as error:
             assert error.code in (400, 403, 409)
+        detail, _ = request(base, f"/api/v1/admin/proposals/{proposal}", key)
+        assert detail["status"].lower() == "awaitingapproval"
         request(base, f"/api/v1/admin/proposals/{proposal}/approve", approver_key, {})
         wait_for_proposal(base, approver_key, proposal, "succeeded", proposer_key, session)
         assert image_id() == candidate and schema() == candidate_schema
