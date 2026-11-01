@@ -33,11 +33,12 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
     {
         await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
         var database = connection.GetDatabase();
+        var proposalIds = new List<string>();
+        var proposals = new RedisOperationProposalStore(connection, NullLogger<RedisOperationProposalStore>.Instance);
         await database.KeyDeleteAsync("controlplane:workflow:restore-cell-exclusive-owner");
         try
         {
             var workflows = new RedisWorkflowOperationStore(connection, NullLogger<RedisWorkflowOperationStore>.Instance);
-            var proposals = new RedisOperationProposalStore(connection, NullLogger<RedisOperationProposalStore>.Instance);
             var monitor = Substitute.For<IOptionsMonitor<ControlPlaneOptions>>();
             monitor.CurrentValue.Returns(new ControlPlaneOptions
             {
@@ -69,6 +70,7 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
             async Task<string> ApproveAsync()
             {
                 var proposalId = "proposal-" + Guid.NewGuid().ToString("N");
+                proposalIds.Add(proposalId);
                 var request = new OperationGatewayRequest
                 {
                     Kind = OperationClass.Deploy,
@@ -120,6 +122,12 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
         }
         finally
         {
+            foreach (var proposalId in proposalIds)
+            {
+                var proposal = await proposals.GetAsync(proposalId);
+                if (proposal is not null)
+                    await proposals.TrySetAsync(proposal with { Status = OperationProposalStatus.Cancelled });
+            }
             await database.KeyDeleteAsync("controlplane:workflow:restore-cell-exclusive-owner");
         }
     }
