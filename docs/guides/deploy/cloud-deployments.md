@@ -182,8 +182,8 @@ settings out of the environment:
     "Providers": {
       "bedrock": {
         "Kind": "bedrock",
-        "Region": "us-west-2",
-        "Model": "<bedrock-model-or-inference-profile-id>"
+        "Region": "us-east-1",
+        "Model": "us.anthropic.claude-sonnet-4-6"
       }
     }
   },
