@@ -14,6 +14,7 @@ using Honua.ControlPlane;
 using Honua.ControlPlane.Executors;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.ControlPlane.Restore;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Observability.Abstractions;
@@ -158,6 +159,28 @@ internal sealed class McpPlatformOpsReader(
                 cancellationToken)
             .ConfigureAwait(false);
 
+        var backupId = Clean(argument.BackupId);
+        var isLocal = _controlPlaneOptions.CurrentValue.DeployTargets.Any(target =>
+            target.TargetKind == DeployTargetKind.LocalCompose && string.Equals(target.TargetId, targetId, StringComparison.Ordinal));
+        if (isLocal && backupId is null)
+        {
+            var compose = _services.GetService<IComposeExecutorClient>();
+            var preview = compose is null ? null : await compose.ExecuteAsync(new ComposeExecutorRequest
+            {
+                Op = "plan-rollback",
+                Image = selection.DesiredRevision,
+                RequestId = "rollback-proposal"
+            }, cancellationToken).ConfigureAwait(false);
+            if (preview is not { Ok: true, ReadbackComplete: true } || string.IsNullOrWhiteSpace(preview.BackupId))
+                return new McpProposeOperationOutput
+                {
+                    Outcome = "Blocked",
+                    SupportedKinds = ResolveSupportedKinds(),
+                    Message = preview?.Code ?? PreMigrationRestoreCodes.TransportUnavailable
+                };
+            backupId = preview.BackupId;
+        }
+
         var payload = new DeployExecutionPayload
         {
             TargetId = targetId,
@@ -165,7 +188,7 @@ internal sealed class McpPlatformOpsReader(
             CurrentRevision = selection.CurrentRevision,
             ParameterOverrides = argument.ParameterOverrides,
             Rollback = true,
-            BackupId = Clean(argument.BackupId),
+            BackupId = backupId,
         }.Serialize();
 
         return await SealProposalAsync(principal, OperationClass.Deploy, payload,
@@ -518,10 +541,14 @@ internal sealed class McpPlatformOpsReader(
                     cancellationToken)
                 .ConfigureAwait(false);
 
-            matches.AddRange(result.Items.Where(operation =>
-                operation.Deploy is not null &&
-                string.Equals(operation.Deploy.TargetId, targetId, StringComparison.Ordinal) &&
-                !string.IsNullOrWhiteSpace(operation.Deploy.DesiredRevision)));
+            foreach (var operation in result.Items)
+            {
+                if (operation.Deploy is not null &&
+                    string.Equals(operation.Deploy.TargetId, targetId, StringComparison.Ordinal) &&
+                    !string.IsNullOrWhiteSpace(operation.Deploy.DesiredRevision) &&
+                    !matches.Any(match => string.Equals(match.Deploy!.DesiredRevision, operation.Deploy.DesiredRevision, StringComparison.Ordinal)))
+                    matches.Add(operation);
+            }
 
             if (!result.HasMore || result.Items.Count == 0)
             {

@@ -12,7 +12,7 @@ namespace Honua.ControlPlane;
 /// </summary>
 internal sealed record ComposeExecutorRequest
 {
-    /// <summary><c>observe</c>, <c>status</c>, <c>converge</c>, <c>rollback</c>, or <c>restart</c>.</summary>
+    /// <summary><c>observe</c>, <c>status</c>, <c>converge</c>, <c>plan-rollback</c>, <c>rollback</c>, or <c>restart</c>.</summary>
     public string? Op { get; init; }
 
     /// <summary>Configured service to restart; omitted means the serving service.</summary>

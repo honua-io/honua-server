@@ -2,6 +2,13 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Net;
+using System.Security.Claims;
+using Honua.Ai.Protocols.Mcp.Resources;
+using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Infrastructure.MultiTenancy;
+using Honua.Infrastructure.Security;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging.Abstractions;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Honua.Infrastructure.Models;
@@ -147,6 +154,62 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         document.RootElement.GetProperty("proposals").GetArrayLength().Should().BeGreaterThan(0);
+    }
+
+    [IntegrationTheory]
+    [Endpoint("GET /api/v1/admin/proposals/{id}")]
+    [InlineData(OperationHandleStatus.Completed, "Completed", null)]
+    [InlineData(OperationHandleStatus.Failed, "Failed", "restore-provider-failed")]
+    [InlineData(OperationHandleStatus.Cancelled, "Cancelled", "cancelled")]
+    [InlineData(OperationHandleStatus.Indeterminate, "Indeterminate", "restore-incomplete")]
+    public async Task GetProposal_TerminalExecution_AgreesWithMcpResource(
+        OperationHandleStatus executionStatus, string expected, string? reason)
+    {
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim("api_key_id", Guid.NewGuid().ToString())], "ApiKey"));
+        var actor = CanonicalSecurityActor.Resolve(principal)!.ActorId;
+        var proposal = await SeedProposalAsync(requestedBy: actor);
+        Assert.True(await _proposalStore.TrySetAsync(proposal with
+        {
+            Status = OperationProposalStatus.Submitted,
+            ExecutionOperationId = "restore-terminal"
+        }));
+        var instances = _fixture.Services.GetRequiredService<IOperationInstanceStore>();
+        var instance = (await instances.GetAsync(proposal.Audit.OperationInstanceId!))!;
+        Assert.True(await instances.TrySetAsync(instance with
+        {
+            Status = executionStatus,
+            Reason = reason,
+            JobId = "restore-terminal",
+            UpdatedAt = DateTimeOffset.UtcNow
+        }, instance.Version));
+
+        var response = await _client.GetAsync($"/api/v1/admin/proposals/{proposal.ProposalId}");
+        response.EnsureSuccessStatusCode();
+        using var rest = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        rest.RootElement.GetProperty("status").GetString().Should().Be(expected);
+        var contractResponse = await _client.GetAsync("/api/v1/admin/openapi.json");
+        contractResponse.EnsureSuccessStatusCode();
+        using var contract = JsonDocument.Parse(await contractResponse.Content.ReadAsStringAsync());
+        contract.RootElement.GetProperty("components").GetProperty("schemas")
+            .GetProperty("ProposalDetailResponse").GetProperty("properties").GetProperty("status")
+            .GetProperty("enum").EnumerateArray().Select(value => value.GetString()).Should().Contain(expected);
+
+        (rest.RootElement.TryGetProperty("resolutionReason", out var restReason) ? restReason.GetString() : null).Should().Be(reason);
+
+        var tenant = new RequestTenantContext();
+        tenant.Set("public", TenantContextSource.Default);
+        using var services = new ServiceCollection().AddSingleton<IOperationProposalStore>(_proposalStore)
+            .AddSingleton(instances).AddSingleton<ITenantContext>(tenant)
+            .AddSingleton(Microsoft.Extensions.Options.Options.Create(new TenantContextOptions()))
+            .BuildServiceProvider();
+        var context = new DefaultHttpContext { User = principal, RequestServices = services };
+        var resource = new ProposalStatusResource(
+            NullLogger<ProposalStatusResource>.Instance);
+        var read = await resource.ReadAsync(context, $"honua://proposals/{proposal.ProposalId}", CancellationToken.None);
+        using var mcp = JsonDocument.Parse(read.Contents[0].Text!);
+        mcp.RootElement.GetProperty("status").GetString().Should().Be(expected);
+        (mcp.RootElement.TryGetProperty("resolutionReason", out var mcpReason) ? mcpReason.GetString() : null).Should().Be(reason);
     }
 
     [IntegrationTest]
