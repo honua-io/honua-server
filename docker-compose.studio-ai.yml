@@ -1,0 +1,26 @@
+# Opt-in Studio assistant for the standard single-tenant quickstart.
+# Use with docker-compose.yml; provider calls stay disabled without this overlay.
+services:
+  honua:
+    environment:
+      Studio__EndUserAuthorization__Enabled: "true"
+      StudioAiProxy__Enabled: "true"
+      StudioAiProxy__DefaultProvider: "bedrock"
+      StudioAiProxy__Providers__bedrock__Kind: "bedrock"
+      StudioAiProxy__Providers__bedrock__Region: "${HONUA_STUDIO_AI_REGION:-us-east-1}"
+      StudioAiProxy__Providers__bedrock__Model: "${HONUA_STUDIO_AI_MODEL:-us.anthropic.claude-sonnet-4-6}"
+      StudioAiProxy__Providers__bedrock__SupportsTools: "true"
+      StudioAiProxy__Disclosure__WorkloadDataClassification: "${HONUA_STUDIO_AI_CLASSIFICATION:-unclassified}"
+      StudioAiProxy__Disclosure__Approvals__0__Provider: "bedrock"
+      StudioAiProxy__Disclosure__Approvals__0__Kind: "bedrock"
+      StudioAiProxy__Disclosure__Approvals__0__Destination: "aws-bedrock:${HONUA_STUDIO_AI_REGION:-us-east-1}"
+      StudioAiProxy__Disclosure__Approvals__0__Model: "${HONUA_STUDIO_AI_MODEL:-us.anthropic.claude-sonnet-4-6}"
+      StudioAiProxy__Disclosure__Approvals__0__UseCase: "studio-chat"
+      StudioAiProxy__Disclosure__Approvals__0__DataClassification: "${HONUA_STUDIO_AI_CLASSIFICATION:-unclassified}"
+      AiExecutionAdmission__DeploymentId: "${HONUA_AI_DEPLOYMENT_ID:?Set a stable HONUA_AI_DEPLOYMENT_ID and retain it across upgrades}"
+      AiExecutionAdmission__Backend: "postgres"
+      AWS_REGION: "${HONUA_STUDIO_AI_REGION:-us-east-1}"
+  console:
+    environment:
+      Studio__EmbedJsStudio: "true"
+      Honua__Agent__WorkspaceApiEnabled: "false"

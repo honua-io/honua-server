@@ -69,7 +69,12 @@ public sealed class StudioAiCertificationEndpointTests
     public Task Bedrock_Certification_SignsTheActualEndpointResponse()
         => AssertCertificationAsync("bedrock");
 
-    private static async Task AssertCertificationAsync(string kind)
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/studio/ai/chat")]
+    public Task Chat_DisabledProxy_ReturnsActionable503BeforeProviderContact()
+        => AssertCertificationAsync("bedrock", enabled: false);
+
+    private static async Task AssertCertificationAsync(string kind, bool enabled = true)
     {
         var secrets = Substitute.For<ISecretProvider>();
         secrets.IsSecretReference("secret://fixture-signing-key").Returns(true);
@@ -90,7 +95,7 @@ public sealed class StudioAiCertificationEndpointTests
             {
                 ["HONUA_ADMIN_PASSWORD"] = adminKey,
                 ["AiExecutionAdmission:DeploymentId"] = "test-deployment",
-                ["StudioAiProxy:Enabled"] = "true",
+                ["StudioAiProxy:Enabled"] = enabled ? "true" : "false",
                 ["StudioAiProxy:Disclosure:Approvals:0:Provider"] = "fixture",
                 ["StudioAiProxy:Disclosure:Approvals:0:Kind"] = kind,
                 ["StudioAiProxy:Disclosure:Approvals:0:Destination"] = kind == "bedrock" ? "aws-bedrock:" + StudioAiProxyConfiguration.DefaultBedrockRegion : "https://fixture.invalid/v1",
@@ -146,6 +151,15 @@ public sealed class StudioAiCertificationEndpointTests
         using var response = await client.PostAsync("/api/v1/studio/ai/chat", request);
         var after = DateTimeOffset.UtcNow;
         var body = await response.Content.ReadAsStringAsync();
+        if (!enabled)
+        {
+            response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+            body.Should().Contain("studio_ai_not_configured").And.Contain("StudioAiProxy:Enabled");
+            response.Headers.CacheControl!.NoStore.Should().BeTrue();
+            bedrock.Calls.Should().Be(0);
+            upstream.Calls.Should().Be(0);
+            return;
+        }
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType!.MediaType.Should().Be("text/event-stream");
         response.Headers.CacheControl!.NoStore.Should().BeTrue();
