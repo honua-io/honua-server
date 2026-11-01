@@ -14,7 +14,7 @@ using Microsoft.Extensions.Options;
 namespace Honua.ControlPlane;
 
 /// <summary>Persists approved restore work in the shared workflow store before any mutation.</summary>
-internal sealed class DurableRestoreQueue(IWorkflowOperationStore store)
+internal sealed class DurableRestoreQueue(IWorkflowOperationStore store, IOperationProposalStore proposals)
 {
     /// <summary>Creates or returns the same durable work item for an identical approved replay.</summary>
     public async Task<string> EnqueueAsync(OperationGatewayRequest request, string payload, CancellationToken cancellationToken)
@@ -26,8 +26,22 @@ internal sealed class DurableRestoreQueue(IWorkflowOperationStore store)
             throw new InvalidOperationException("A separate principal must approve the restore.");
         }
 
-        var material = !string.IsNullOrWhiteSpace(request.IdempotencyKey) ? request.IdempotencyKey! : request.ApprovedProposalId!;
-        var id = CreateId(material);
+        // The gateway persists a fresh nonce when it claims approval. Read it back rather
+        // than deriving identity from a caller key shared by later operations or other cells.
+        var proposal = await proposals.GetAsync(request.ApprovedProposalId!, cancellationToken).ConfigureAwait(false);
+        if (proposal?.Kind != OperationClass.Deploy || string.IsNullOrWhiteSpace(proposal.ExecutionOperationId)
+            || proposal.RequestedBy != request.RequestedBy || proposal.ResolvedBy != request.ApprovedBy
+            || proposal.TenantId != request.TenantId || proposal.Audit.OperationInstanceId != request.OperationInstanceId
+            || proposal.Plan.ExecutionPayload != payload)
+        {
+            throw new InvalidOperationException("The restore must match its durable approval claim.");
+        }
+        var id = proposal.ExecutionOperationId;
+        if (proposal.Status != OperationProposalStatus.Executing
+            && await store.GetAsync(id, cancellationToken).ConfigureAwait(false) is null)
+        {
+            throw new InvalidOperationException("The restore approval has not been claimed for execution.");
+        }
         var now = DateTimeOffset.UtcNow;
         var record = new WorkflowOperationRecord
         {
@@ -39,6 +53,7 @@ internal sealed class DurableRestoreQueue(IWorkflowOperationStore store)
             CurrentPhase = "Approved restore queued.",
             Audit = new OperationAuditInfo
             {
+                OperationInstanceId = request.OperationInstanceId,
                 RequestedBy = request.RequestedBy,
                 ProposalId = request.ApprovedProposalId,
                 IdempotencyKey = id,
@@ -59,21 +74,23 @@ internal sealed class DurableRestoreQueue(IWorkflowOperationStore store)
         }
 
         var existing = await store.GetAsync(id, cancellationToken).ConfigureAwait(false);
+        // Checkpoints may enrich their payload after enqueue; the sealed proposal above
+        // remains the authority for validating an identical approved replay.
         var existingContext = existing?.PreMigrationRestore;
         if (existing?.Kind != WorkflowOperationKind.PreMigrationRestore
-            || existingContext is null || existingContext.Payload != payload
+            || existingContext is null
             || existingContext.ApprovedBy != request.ApprovedBy
             || existing.Audit.RequestedBy != request.RequestedBy
-            || existing.Audit.ProposalId != request.ApprovedProposalId)
+            || existing.Audit.ProposalId != request.ApprovedProposalId
+            || existing.Audit.OperationInstanceId != request.OperationInstanceId)
         {
-            throw new InvalidOperationException("The restore idempotency key belongs to a different request.");
+            throw new InvalidOperationException("The restore checkpoint belongs to a different approval.");
         }
         return id;
     }
 
-    /// <summary>Returns the stable checkpoint identity for a proposal or its idempotency key.</summary>
-    internal static string CreateId(string material)
-        => "restore-" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(material)))[..32].ToLowerInvariant();
+    /// <summary>Allocates a fresh checkpoint identity to persist in an approval claim before enqueue.</summary>
+    internal static string CreateId() => $"restore-{Guid.NewGuid():N}";
 
     /// <summary>Returns the durable restore state, or null for another kind of operation.</summary>
     public async Task<OperationBackendStatus?> GetStatusAsync(string id, CancellationToken cancellationToken)

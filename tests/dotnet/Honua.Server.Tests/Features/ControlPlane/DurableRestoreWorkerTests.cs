@@ -23,16 +23,22 @@ public sealed class DurableRestoreWorkerTests
     [Operation(Operations.TestInfrastructure)]
     public async Task Enqueue_TwoSlotsAndTwoOperationsWithSameKey_UseDistinctReplayableRecords()
     {
-        var records = new Dictionary<string, WorkflowOperationRecord>(StringComparer.Ordinal);
-        var store = Substitute.For<IWorkflowOperationStore>();
-        store.TryCreateAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
-            .Returns(call => records.TryAdd(call.Arg<WorkflowOperationRecord>().OperationId, call.Arg<WorkflowOperationRecord>()));
-        store.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(call => records.GetValueOrDefault(call.Arg<string>()));
-        var queue = new DurableRestoreQueue(store);
         var ids = new HashSet<string>(StringComparer.Ordinal);
         foreach (var slot in new[] { "slot-a", "slot-b" })
         {
+            // Separate installations can have identical target, proposal, instance and caller
+            // keys. The durable approval nonce must still identify different restore work.
+            var records = new Dictionary<string, WorkflowOperationRecord>(StringComparer.Ordinal);
+            var claims = new Dictionary<string, OperationProposal>(StringComparer.Ordinal);
+            var store = Substitute.For<IWorkflowOperationStore>();
+            store.TryCreateAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+                .Returns(call => records.TryAdd(call.Arg<WorkflowOperationRecord>().OperationId, call.Arg<WorkflowOperationRecord>()));
+            store.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+                .Returns(call => records.GetValueOrDefault(call.Arg<string>()));
+            var proposals = Substitute.For<IOperationProposalStore>();
+            proposals.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+                .Returns(call => claims.GetValueOrDefault(call.Arg<string>()));
+            var queue = new DurableRestoreQueue(store, proposals);
             foreach (var operation in new[] { "first-convergence", "after-rollback" })
             {
                 var request = new OperationGatewayRequest
@@ -40,20 +46,42 @@ public sealed class DurableRestoreWorkerTests
                     Kind = OperationClass.Deploy,
                     RequestedBy = "proposer",
                     ApprovedBy = "approver",
-                    ApprovedProposalId = $"proposal-{slot}-{operation}",
-                    OperationInstanceId = $"operation-{slot}-{operation}",
+                    ApprovedProposalId = $"proposal-{operation}",
+                    OperationInstanceId = $"operation-{operation}",
                     IdempotencyKey = "converge:rc2:compose-local"
                 };
                 var payload = new DeployExecutionPayload { TargetId = "compose-local", DesiredRevision = "candidate" }.Serialize();
+                claims[request.ApprovedProposalId] = new OperationProposal
+                {
+                    ProposalId = request.ApprovedProposalId,
+                    Kind = OperationClass.Deploy,
+                    RequestedBy = request.RequestedBy,
+                    ResolvedBy = request.ApprovedBy,
+                    Status = OperationProposalStatus.Executing,
+                    ExecutionOperationId = DurableRestoreQueue.CreateId(),
+                    Audit = new OperationAuditInfo { OperationInstanceId = request.OperationInstanceId },
+                    Plan = new OperationProposalPlan { Summary = $"Converge {slot}", ExecutionPayload = payload },
+                    CreatedAt = DateTimeOffset.UtcNow,
+                    UpdatedAt = DateTimeOffset.UtcNow
+                };
                 var id = await queue.EnqueueAsync(request, payload, CancellationToken.None);
                 Assert.True(ids.Add(id), "A new approved operation must not reuse another restore record.");
-                records[id] = records[id] with { Status = WorkflowOperationStatus.Succeeded };
+                records[id] = records[id] with
+                {
+                    Status = WorkflowOperationStatus.Succeeded,
+                    PreMigrationRestore = records[id].PreMigrationRestore! with
+                    {
+                        Payload = new DeployExecutionPayload { TargetId = "compose-local", DesiredRevision = "candidate", CurrentRevision = "rc1" }.Serialize()
+                    }
+                };
+                claims[request.ApprovedProposalId] = claims[request.ApprovedProposalId] with { Status = OperationProposalStatus.Succeeded };
                 Assert.Equal(id, await queue.EnqueueAsync(request, payload, CancellationToken.None));
                 await Assert.ThrowsAsync<InvalidOperationException>(() => queue.EnqueueAsync(request,
                     new DeployExecutionPayload { TargetId = "compose-local", DesiredRevision = "other" }.Serialize(), CancellationToken.None));
             }
+            Assert.Equal(2, records.Count);
         }
-        Assert.Equal(4, records.Count);
+        Assert.Equal(4, ids.Count);
     }
 
     [UnitTest]
@@ -133,7 +161,7 @@ public sealed class DurableRestoreWorkerTests
     public async Task Enqueue_SelfApproval_IsRejectedBeforeWriting()
     {
         var store = Substitute.For<IWorkflowOperationStore>();
-        var queue = new DurableRestoreQueue(store);
+        var queue = new DurableRestoreQueue(store, Substitute.For<IOperationProposalStore>());
         var request = new OperationGatewayRequest
         {
             Kind = OperationClass.Deploy,

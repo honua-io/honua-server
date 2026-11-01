@@ -326,7 +326,8 @@ internal sealed class McpPlatformOpsReader(
                 outcomes.Add(new() { TargetId = target.TargetId, Outcome = "skipped-pinned", Message = "Target pins an explicit artifact that diverges from the release." });
                 continue;
             }
-            var lastApplied = (await _deployWorkflowService.GetMostRecentSucceededDeployAsync(target.TargetId, cancellationToken).ConfigureAwait(false))?.Deploy?.DesiredRevision;
+            var lastDeployment = await _deployWorkflowService.GetMostRecentSucceededDeployAsync(target.TargetId, cancellationToken).ConfigureAwait(false);
+            var lastApplied = lastDeployment?.Deploy?.DesiredRevision;
             if (string.Equals(lastApplied, desiredRevision, StringComparison.Ordinal))
             {
                 outcomes.Add(new() { TargetId = target.TargetId, Outcome = "already-converged" });
@@ -334,9 +335,17 @@ internal sealed class McpPlatformOpsReader(
             }
             var payload = new DeployExecutionPayload { TargetId = target.TargetId, DesiredRevision = desiredRevision }.Serialize();
             var requestedKey = Clean(argument.IdempotencyKey);
+            // Default retries share a proposal until serving state advances. A completed rollback
+            // starts a new convergence even when the declared release and target are unchanged.
+            // The installed baseline can appear while the first convergence is running; it is
+            // an observation, not a new deployment epoch.
+            var baselineId = lastDeployment is not null && !lastDeployment.OperationId.StartsWith("compose-baseline-", StringComparison.Ordinal)
+                ? lastDeployment.OperationId : null;
+            var defaultKey = $"converge:{release.Version}:{target.TargetId}";
+            if (baselineId is not null) defaultKey += $":after:{baselineId}";
             var proposal = await SealProposalAsync(principal, OperationClass.Deploy, payload,
                 Clean(argument.Reason) ?? $"Converge serving targets to platform release {release.Version}.",
-                requestedKey is null ? $"converge:{release.Version}:{target.TargetId}" : $"{requestedKey}:{target.TargetId}", cancellationToken).ConfigureAwait(false);
+                requestedKey is null ? defaultKey : $"{requestedKey}:{target.TargetId}", cancellationToken).ConfigureAwait(false);
             outcomes.Add(new() { TargetId = target.TargetId, Outcome = proposal.Outcome, ProposalId = proposal.ProposalId, Message = proposal.Message });
         }
         return new McpProposeOperationOutput { Outcome = "completed", RequiresApproval = outcomes.Any(item => item.ProposalId is not null), Targets = outcomes.ToArray(), SupportedKinds = ResolveSupportedKinds() };

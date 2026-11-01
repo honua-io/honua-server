@@ -679,6 +679,8 @@ public sealed class McpPlatformOpsReaderTests
         var argument = new McpPlatformReleaseConvergenceArgument();
         await reader.ProposePlatformReleaseConvergenceAsync(CreatePrincipal(), argument, CancellationToken.None);
         var initialKey = gateway.LastRequest!.IdempotencyKey;
+        await store.TryCreateAsync(BuildDeployOperation("compose-baseline-fixture", "serving-us-west", "rc1", "rc1",
+            WorkflowOperationStatus.Succeeded, DateTimeOffset.UtcNow.AddMinutes(-1)));
         await reader.ProposePlatformReleaseConvergenceAsync(CreatePrincipal(), argument, CancellationToken.None);
         gateway.LastRequest!.IdempotencyKey.Should().Be(initialKey);
 

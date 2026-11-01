@@ -66,7 +66,7 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
                 .Returns<Task<ComposeExecutorResponse>>(_ => throw new IOException("Status unavailable"));
             DurableRestoreWorker Worker() => new(workflows, proposals, null!, new DeployOperationExecutor(service), null!, null!,
                 NullLogger<DurableRestoreWorker>.Instance, monitor, compose);
-            var queue = new DurableRestoreQueue(workflows);
+            var queue = new DurableRestoreQueue(workflows, proposals);
             async Task<string> ApproveAsync()
             {
                 var proposalId = "proposal-" + Guid.NewGuid().ToString("N");
@@ -78,22 +78,27 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
                     ApprovedBy = "approver",
                     ApprovedProposalId = proposalId
                 };
-                var id = await queue.EnqueueAsync(request, new DeployExecutionPayload
+                var payload = new DeployExecutionPayload
                 {
                     TargetId = "local",
                     DesiredRevision = "sha256:" + new string('a', 64)
-                }.Serialize(), CancellationToken.None);
+                }.Serialize();
+                var id = DurableRestoreQueue.CreateId();
                 Assert.True(await proposals.TryCreateAsync(new OperationProposal
                 {
                     ProposalId = proposalId,
                     Kind = OperationClass.Deploy,
-                    Status = OperationProposalStatus.Submitted,
+                    RequestedBy = request.RequestedBy,
+                    Status = OperationProposalStatus.Executing,
                     ResolvedBy = "approver",
                     ExecutionOperationId = id,
-                    Plan = new OperationProposalPlan { Summary = "Converge" },
+                    Plan = new OperationProposalPlan { Summary = "Converge", ExecutionPayload = payload },
                     CreatedAt = DateTimeOffset.UtcNow,
                     UpdatedAt = DateTimeOffset.UtcNow
                 }));
+                Assert.Equal(id, await queue.EnqueueAsync(request, payload, CancellationToken.None));
+                var claimed = await proposals.GetAsync(proposalId);
+                Assert.True(await proposals.TrySetAsync(claimed! with { Status = OperationProposalStatus.Submitted }));
                 return id;
             }
             var failedId = await ApproveAsync();
@@ -198,7 +203,7 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
             var approvals = Substitute.For<IOperatorApprovalEvaluator>();
             approvals.Evaluate(Arg.Any<System.Security.Claims.ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>()).Returns(ApprovalRequirement.NotRequired());
             var deploy = new DeployOperationExecutor(new DeployWorkflowService(targets, [workflows], [backend], approvals, NullLogger<DeployWorkflowService>.Instance, restoreOptions: cell));
-            var queue = new DurableRestoreQueue(workflows);
+            var queue = new DurableRestoreQueue(workflows, proposals);
             var guarded = new RestoreGuardedDeployOperationExecutor(deploy, coordinator, audit, cell, queue);
             var ladder = Substitute.For<IGuardrailLadder>();
             ladder.Resolve(OperationClass.Deploy).Returns(new GuardrailDecision(GuardrailTier.RequiresApproval, OperationClass.Deploy, HonuaEdition.Pro, "test"));
