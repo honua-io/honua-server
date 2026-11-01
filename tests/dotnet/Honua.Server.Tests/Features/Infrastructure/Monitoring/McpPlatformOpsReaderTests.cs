@@ -703,7 +703,41 @@ public sealed class McpPlatformOpsReaderTests
         converged.Targets.Should().Contain(target => target.TargetId == "serving-us-west" && target.Outcome == "already-converged");
         var rollback = BuildDeployOperation("rollback-deploy", "serving-us-west", "rc1", "ghcr.io/honua/server:2026.07.01",
             WorkflowOperationStatus.Succeeded, DateTimeOffset.UtcNow.AddMinutes(1));
-        await store.TryCreateAsync(rollback with { Deploy = rollback.Deploy! with { PreMigrationBackupId = "backup-verified" } });
+        rollback = rollback with
+        {
+            Audit = new OperationAuditInfo { IdempotencyKey = "restore-rollback" },
+            Deploy = rollback.Deploy! with { PreMigrationBackupId = "backup-verified" }
+        };
+        var restore = new WorkflowOperationRecord
+        {
+            OperationId = "restore-rollback",
+            Kind = WorkflowOperationKind.PreMigrationRestore,
+            Status = WorkflowOperationStatus.Reconciling,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+            PreMigrationRestore = new PreMigrationRestoreContext
+            {
+                Payload = "{}",
+                Phase = "awaiting-local-deploy",
+                ApprovedBy = "approver",
+                DeployOperationId = rollback.OperationId
+            }
+        };
+        await store.TryCreateAsync(rollback);
+        await store.TryCreateAsync(restore);
+        await reader.ProposePlatformReleaseConvergenceAsync(CreatePrincipal(), argument, CancellationToken.None);
+        gateway.LastRequest!.IdempotencyKey.Should().Be(initialKey, "the restore readback has not finished");
+        await store.TrySetAsync(restore with { Status = WorkflowOperationStatus.Failed });
+        await reader.ProposePlatformReleaseConvergenceAsync(CreatePrincipal(), argument, CancellationToken.None);
+        gateway.LastRequest!.IdempotencyKey.Should().Be(initialKey, "the restore failed its final readback");
+        await store.TrySetAsync(restore with
+        {
+            Status = WorkflowOperationStatus.Succeeded,
+            PreMigrationRestore = restore.PreMigrationRestore with { DeployOperationId = "another-deploy" }
+        });
+        await reader.ProposePlatformReleaseConvergenceAsync(CreatePrincipal(), argument, CancellationToken.None);
+        gateway.LastRequest!.IdempotencyKey.Should().Be(initialKey, "the successful restore belongs to another deploy");
+        await store.TrySetAsync(restore with { Status = WorkflowOperationStatus.Succeeded });
         await reader.ProposePlatformReleaseConvergenceAsync(CreatePrincipal(), argument, CancellationToken.None);
         var nextKey = gateway.LastRequest!.IdempotencyKey;
         nextKey.Should().NotBe(initialKey);

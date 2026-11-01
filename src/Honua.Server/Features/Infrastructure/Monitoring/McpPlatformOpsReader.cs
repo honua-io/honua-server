@@ -335,11 +335,21 @@ internal sealed class McpPlatformOpsReader(
             }
             var payload = new DeployExecutionPayload { TargetId = target.TargetId, DesiredRevision = desiredRevision }.Serialize();
             var requestedKey = Clean(argument.IdempotencyKey);
-            // A succeeded Compose deploy carrying a verified backup is the completed restore
-            // performed by rollback. Other deployments leave the default retry key unchanged.
-            var rollbackId = target.TargetKind == DeployTargetKind.LocalCompose && lastDeployment is not null
+            // The child deploy can succeed before the restore's final readback. Advance the
+            // default key only when its matching durable restore has also succeeded.
+            string? rollbackId = null;
+            if (target.TargetKind == DeployTargetKind.LocalCompose && lastDeployment is not null
                 && !string.IsNullOrWhiteSpace(lastDeployment.Deploy?.PreMigrationBackupId)
-                    ? lastDeployment.OperationId : null;
+                && !string.IsNullOrWhiteSpace(lastDeployment.Audit.IdempotencyKey))
+            {
+                var restore = await _deployWorkflowService.GetAsync(lastDeployment.Audit.IdempotencyKey, cancellationToken)
+                    .ConfigureAwait(false);
+                if (restore is { Kind: WorkflowOperationKind.PreMigrationRestore, Status: WorkflowOperationStatus.Succeeded }
+                    && string.Equals(restore.PreMigrationRestore?.DeployOperationId, lastDeployment.OperationId, StringComparison.Ordinal))
+                {
+                    rollbackId = lastDeployment.OperationId;
+                }
+            }
             var defaultKey = $"converge:{release.Version}:{target.TargetId}";
             if (rollbackId is not null) defaultKey += $":after:{rollbackId}";
             var proposal = await SealProposalAsync(principal, OperationClass.Deploy, payload,

@@ -123,6 +123,8 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
             var history = await service.ListDeployOperationsAsync(WorkflowOperationStatus.Succeeded, WorkflowOperationKind.Deploy, 1, 20);
             Assert.Contains(history.Items, operation => operation.Deploy?.DesiredRevision == "sha256:" + new string('b', 64));
             var deployment = await workflows.GetAsync(DeployWorkflowService.CreateOperationId(nextId));
+            Assert.Equal(nextId, deployment!.Audit.IdempotencyKey);
+            Assert.Equal(deployment.OperationId, (await workflows.GetAsync(nextId))?.PreMigrationRestore?.DeployOperationId);
             Assert.True(await workflows.TrySetAsync(deployment! with { Status = WorkflowOperationStatus.Succeeded }));
         }
         finally
