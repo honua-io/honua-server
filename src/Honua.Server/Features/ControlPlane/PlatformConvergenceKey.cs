@@ -31,10 +31,19 @@ internal static class PlatformConvergenceKey
             var restore = string.IsNullOrWhiteSpace(lastDeployment.Audit.IdempotencyKey)
                 ? null
                 : await workflows.GetAsync(lastDeployment.Audit.IdempotencyKey, cancellationToken).ConfigureAwait(false);
-            if (restore is not { Kind: WorkflowOperationKind.PreMigrationRestore, Status: WorkflowOperationStatus.Succeeded }
-                || !string.Equals(restore.PreMigrationRestore?.DeployOperationId, lastDeployment.OperationId, StringComparison.Ordinal))
+            var matches = restore?.Kind == WorkflowOperationKind.PreMigrationRestore
+                && string.Equals(restore.PreMigrationRestore?.DeployOperationId, lastDeployment.OperationId, StringComparison.Ordinal);
+            if (matches)
+            {
+                if (restore!.Status != WorkflowOperationStatus.Succeeded) return null;
+                restoredDeployId = lastDeployment.OperationId;
+            }
+            else if (targetKind == DeployTargetKind.LocalCompose)
+            {
+                // Compose backup-bearing deploys always run through a durable restore wrapper.
+                // Other backends can perform a compatible rollback directly, without one.
                 return null;
-            restoredDeployId = lastDeployment.OperationId;
+            }
         }
 
         var incarnationSuffix = servingIncarnation is null ? string.Empty : ":" + servingIncarnation;

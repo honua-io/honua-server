@@ -721,6 +721,29 @@ public sealed class McpPlatformOpsReaderTests
 
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
+    public async Task ProposePlatformReleaseConvergence_CompatibleRemoteRollbackWithoutRestore_IsNotBlocked()
+    {
+        var gateway = ConvergenceGateway();
+        using var services = CreateServices(gateway);
+        var rollback = BuildDeployOperation("compatible-rollback", "serving-us-west", "rc1", "candidate",
+            WorkflowOperationStatus.Succeeded);
+        rollback = rollback with
+        {
+            Audit = new OperationAuditInfo { IdempotencyKey = "compatible-rollback-key" },
+            Deploy = rollback.Deploy! with { PreMigrationBackupId = "backup-verified" }
+        };
+        var store = new RecordingWorkflowOperationStore(rollback);
+        var reader = CreateReader(store: store, services: services);
+
+        var result = await reader.ProposePlatformReleaseConvergenceAsync(
+            CreatePrincipal(), new McpPlatformReleaseConvergenceArgument(), CancellationToken.None);
+
+        result.Targets.Should().ContainSingle(target => target.TargetId == "serving-us-west" && target.ProposalId == "proposal-converge");
+        gateway.LastRequest!.IdempotencyKey.Should().Be("converge:2026.07.01:serving-us-west");
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
     public async Task ProposePlatformReleaseConvergence_AfterRollback_DefaultKeyChangesAndRetriesRemainStable()
     {
         var gateway = ConvergenceGateway();

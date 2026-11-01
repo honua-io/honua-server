@@ -136,6 +136,15 @@ public sealed class PlatformReleaseConvergeEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/platform-release/converge")]
+    public async Task Converge_AfterCompatibleRemoteRollbackWithoutRestore_IsNotBlocked()
+    {
+        _ladder.Tier = GuardrailTier.DirectExecute;
+        SeedSucceededDeploy("srv-divergent", "rc1", "backup-verified");
+        (await ConvergeAndReadTargetOperationId("srv-divergent")).Should().NotBeNullOrWhiteSpace();
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/platform-release/converge")]
     public async Task Converge_AfterRestore_CreatesFreshOperationAndRetriesAreStable()
     {
         _ladder.Tier = GuardrailTier.DirectExecute;
@@ -375,7 +384,7 @@ public sealed class PlatformReleaseConvergeEndpointTests : IAsyncLifetime
         return target.TryGetProperty("operationId", out var opId) ? opId.GetString() : null;
     }
 
-    private void SeedSucceededDeploy(string targetId, string desiredRevision)
+    private void SeedSucceededDeploy(string targetId, string desiredRevision, string? preMigrationBackupId = null)
     {
         var now = DateTimeOffset.UtcNow;
         _workflowStore.Seed(new WorkflowOperationRecord
@@ -394,6 +403,7 @@ public sealed class PlatformReleaseConvergeEndpointTests : IAsyncLifetime
                 Environment = "production",
                 TargetName = "honua-server",
                 DesiredRevision = desiredRevision,
+                PreMigrationBackupId = preMigrationBackupId,
                 Parameters = new Dictionary<string, string>(StringComparer.Ordinal)
             }
         });
