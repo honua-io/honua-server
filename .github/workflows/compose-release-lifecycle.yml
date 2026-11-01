@@ -46,6 +46,8 @@ jobs:
           docker build --file docker/Dockerfile.compose-executor --tag honua-lifecycle:executor \
             --build-arg HONUA_SERVER_IMAGE=honua-lifecycle:candidate .
       - name: Verify customer package and isolation contract
+        env:
+          TMPDIR: ${{ runner.temp }}
         run: python3 -m unittest discover -s scripts/docker -p 'test_compose_quickstart.py' -v
       - name: Run published-image MCP and restore journey
         run: |
