@@ -1204,7 +1204,7 @@ earliest start to latest end on that retry, are serial:
 
 | Class | Cases | Method sum | Span |
 |---|---:|---:|---:|
-| FeatureServerReplicaEsriParityTests | 28 | 1.26m | 6.08m |
+| FeatureServer replica parity | 28 | 1.26m | 6.08m |
 | FeatureServerReplicaSyncTests | 32 | 1.34m | 5.69m |
 | ReplicaConflictReviewEndpointTests | 25 | 0.88m | 2.55m |
 | MvtTileTemporalEndpointTests | 10 | 0.34m | 1.21m |

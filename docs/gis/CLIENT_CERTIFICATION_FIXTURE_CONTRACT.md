@@ -253,7 +253,7 @@ Two of the five active lanes do not bind the canonical vector identity today, an
 so rather than pretending otherwise. The `js` lane is configured onto `browser_compat` layer 2000
 and still falls back to the first advertised collection, and its WFS binding picks the first feature
 type that returns features (`js-lane-identity-not-pinned`); the `geoservices-rest-stub` lane is pointed at
-`browser_compat` 2000 by `ARCGIS_STUB_SERVICE_NAME` and `ARCGIS_STUB_LAYER_ID`. That layer carries
+`browser_compat` 2000 by the service and layer settings. That layer carries
 three point features and only `objectid`, `name`, and `shape`, so those lanes exercise neither the
 canonical attribute-type spread nor the null geometry nor the ten-feature pagination shape
 (`active-lanes-bind-render-fixture-not-canonical-vector`). Only `desktop-qgis` and `cli` bind

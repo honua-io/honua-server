@@ -99,7 +99,6 @@ Calls to external services (GeoServices REST/GeoServer imports, geocoders, key v
 
 ```bash
 HttpResilience__SlowService__TimeoutSeconds=300
-HttpResilience__ServiceOverrides__arcgis-rest__MaxRetryAttempts=5
 HttpResilience__ServiceOverrides__geoserver-rest__TimeoutSeconds=240
 ```
 

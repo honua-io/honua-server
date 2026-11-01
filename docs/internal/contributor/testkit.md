@@ -152,17 +152,9 @@ export HONUA_TEST_REDIS_URL="localhost:6379"
 
 #### External Service Tests (opt-in)
 
-Enable Geoportal-backed GeoServices REST import integration tests:
-
-```bash
-export HONUA_TEST_ESRI_GEOPORTAL="1"
-```
-
-Enable GeoServices REST parity import checks (source snapshot vs imported table parity):
-
-```bash
-export HONUA_TEST_ESRI_PARITY="1"
-```
+Geoportal-backed GeoServices REST import and source-parity checks are opt-in
+external-service tests. They require the configured test service endpoint and
+credentials; standard local and CI runs skip them.
 
 Enable the cross-server consume suite — `Honua.TestKit.GeoServerFixture`
 plus `Honua.TestKit.MapServerFixture` (`camptocamp/mapserver:8.0`) drive

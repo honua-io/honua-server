@@ -97,7 +97,6 @@ Use these rules when deciding whether a claim is ready for website copy:
 | [#1029 Add OGC API Features source migration importer](https://github.com/honua-io/honua-server/issues/1029) | Needed before claiming automated migration from modern OGC API Features services. |
 | [#1030 Add OGC coverage service migration importers](https://github.com/honua-io/honua-server/issues/1030) | Needed before claiming automated migration from WCS or OGC API Coverages sources. |
 | [honua-console](https://github.com/honua-io/honua-console) migration review and cutover workbench | Needed before claiming a low-risk operator workflow with review, approvals, parity evidence, redaction, and cutover readiness. |
-| [honua-sdk-python#59 Add a Python GP migration scanner and process runner](https://github.com/honua-io/honua-sdk-python/issues/59) | Needed before claiming existing Python geoprocessing jobs can be ported with automation and parity evidence. |
 
 ### Recently delivered (kept for traceability)
 
