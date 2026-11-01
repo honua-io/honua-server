@@ -30,6 +30,8 @@ public sealed partial class RuntimeDdlGovernanceTests
                 new(RuntimeDdlCategory.ExtensionBootstrap, 1, "PostgresDatabaseCompatibilityChecker runs one idempotent CREATE EXTENSION IF NOT EXISTS postgis in the startup preflight, which precedes the migrations, so a fresh database that ships the PostGIS packages can boot (#6488). It creates no Honua table or schema; migration 043 issues the same statement."),
             ["src/Honua.Db/Postgres/Features/GeometryService/PostgresGeometryOperationService.cs"] =
                 new(RuntimeDdlCategory.SessionTemporaryFunction, 3, "PostgresGeometryOperationService owns three fixed-name pg_temp geodesic helpers on its leased connection; pool reset or session termination discards them. No persistent schema is modified."),
+            ["src/Honua.Db/Postgres/Features/FileImport/StreamingFileImportService.GeometryMetadata.cs"] =
+                new(RuntimeDdlCategory.GeneratedImportTarget, 2, "StreamingFileImportService changes only its fixed-name inferred geometry-type constraint on import-owned tables. Replace and staged append finalize it in their commit transaction; direct upsert reconciles it on completion or interruption. It never changes core schema or customer constraints (#6847)."),
             ["src/Honua.Db/Postgres/Features/Migration/OgcWfsImportService.cs"] =
                 new(RuntimeDdlCategory.GeneratedImportTarget, 7, "OgcWfsImportService owns atomic staging promotion and rollback/drop cleanup for its generated target table."),
             ["src/Honua.Db/Postgres/Features/Migration/GeoservicesImportService.cs"] =

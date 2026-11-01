@@ -74,6 +74,8 @@ internal sealed partial class StreamingFileImportService
             {
                 await ValidateDirectImportAsync(connection, transaction!, schemaName, tableName,
                     targetSrid, directGuard, cancellationToken);
+                await ClearImportedGeometryTypeAsync(
+                    connection, transaction!, schemaName, tableName, cancellationToken);
             }
             if (useSavepoints)
             {

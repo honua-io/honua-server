@@ -360,6 +360,14 @@ internal sealed partial class StreamingFileImportService
                     completionWarningsBuilder.Add(string.Format(null, _skippedInvalidGeometryWarningFormat, repairTally.SkippedInvalid));
                 }
 
+                // Even a batch that imports no rows may have cleared our previous
+                // type constraint. Restore it after an all-skipped direct load too.
+                if (directBatchAttempted)
+                {
+                    await RefreshImportedGeometryTypeAsync(
+                        connection, targetSchema, allowedTableName, CancellationToken.None);
+                }
+
                 if (dataCommitted)
                 {
                     if (loadMode != ImportLoadMode.Replace)
@@ -428,6 +436,8 @@ internal sealed partial class StreamingFileImportService
                 // failure. Reconcile existing projections even when the import cannot finish.
                 try
                 {
+                    await RefreshImportedGeometryTypeAsync(
+                        connection, targetSchema, allowedTableName, CancellationToken.None);
                     await PromoteTypedColumnsAsync(
                         connection, targetSchema, allowedTableName, [], CancellationToken.None);
                 }

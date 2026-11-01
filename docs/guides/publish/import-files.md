@@ -100,6 +100,15 @@ A synchronous import returns the result inline; a completed background job retur
 | FileGDB | `.gdb.zip` | Zip exactly one `.gdb` directory with its internal files intact (do not flatten). SRID detected from geodatabase metadata when present. One target table per request — per-layer selection is not exposed. Domains, relationship classes, subtypes, topology rules, and network datasets are detected but not imported; they surface in `warnings`. |
 | GeoParquet | `.parquet`, `.geoparquet` | GeoParquet 1.0.0/1.1.0 with one WKB geometry column and planar edges. Null-geometry rows retain their attributes. See the [input contract](#geoparquet-input-contract). |
 
+Homogeneous imports retain their stored geometry family (Point, LineString, Polygon,
+and their Multi forms) and target SRID in PostGIS constraints. Table discovery and
+publication use those facts for FeatureServer geometry metadata, OGC Features
+collection `geometryType` and `storageCrs`, and MCP layer catalog/description metadata.
+Null geometries do not change the inferred family. Mixed imports remain generic
+`GEOMETRY`; the publication validator rejects mixed geometry rather than advertising
+a single type. Existing typed attribute columns and the complete properties document
+remain available.
+
 ### GeoParquet input contract
 
 Preview and import validate the required `version`, `primary_column`, per-column `encoding`, and `geometry_types` metadata. The primary geometry name must match the Parquet column exactly, including case. Unknown extension metadata does not substitute for required fields. UTF-8 `geo` metadata is limited to 1 MiB, each explicit CRS definition to 256 KiB, and JSON nesting to 32 levels.

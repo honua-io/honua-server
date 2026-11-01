@@ -415,7 +415,7 @@ public sealed class ImportTypedColumnTests(PostgresFixture fixture)
                 """, ImportLoadMode.Replace, []);
             const string replacement = """
                 {"type":"FeatureCollection","features":[
-                  {"type":"Feature","geometry":{"type":"Point","coordinates":[1,2]},"properties":{"name":"Alpha","population":10}},
+                  {"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[0,0],[1,0],[1,1],[0,0]]]},"properties":{"name":"Alpha","population":10}},
                   {"type":"Feature","geometry":{"type":"Point","coordinates":[3,4]},"properties":{"name":"Bravo","population":20}}]}
                 """;
             await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(replacement));
@@ -442,6 +442,7 @@ public sealed class ImportTypedColumnTests(PostgresFixture fixture)
             await using var command = connection.CreateCommand();
             command.CommandText = $"SELECT population FROM \"{schema}\".\"{created.PhysicalTableName}\" WHERE name = 'Alpha'";
             (await command.ExecuteScalarAsync()).Should().Be(10L);
+            (await ImportedGeometryTypeAsync(schema, created.PhysicalTableName!)).Should().Be("POLYGON");
         }
         finally
         {
@@ -523,6 +524,102 @@ public sealed class ImportTypedColumnTests(PostgresFixture fixture)
         }
     }
 
+    [IntegrationTheory]
+    [InlineData(ImportLoadMode.Append)]
+    [InlineData(ImportLoadMode.Upsert)]
+    [Operation(Operations.Import)]
+    public async Task ImportFileAsync_AdditionalGeometry_RecomputesCombinedTypeAndReplaceResetsIt(ImportLoadMode mode)
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(ImportTypedColumnTests));
+        try
+        {
+            await InstallImportFunctionsAsync();
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var service = new StreamingFileImportService(
+                provider,
+                new CrsDetectionService(provider, NullLogger<CrsDetectionService>.Instance),
+                new FileFormatDetectionService(NullLogger<FileFormatDetectionService>.Instance),
+                new NoopPerformanceMonitor(), NullLogger<StreamingFileImportService>.Instance,
+                ImportLimits.Default with { GeometryValidityMode = Honua.Core.Configuration.ValidationMode.Strict },
+                schemaConfiguration: ImportTestSchemaConfiguration.WithOperational(schema));
+            const string points = """
+                {"type":"FeatureCollection","features":[
+                  {"type":"Feature","geometry":{"type":"Point","coordinates":[1,2]},"properties":{"name":"Alpha","population":2}},
+                  {"type":"Feature","geometry":{"type":"Point","coordinates":[3,4]},"properties":{"name":"Bravo","population":10}}]}
+                """;
+            const string polygon = """
+                {"type":"FeatureCollection","features":[
+                  {"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[0,0],[1,0],[1,1],[0,0]]]},"properties":{"name":"Charlie","population":20}}]}
+                """;
+            var created = await ImportIntoAsync(service, schema, "places", points, ImportLoadMode.Replace, []);
+            (await ImportedGeometryTypeAsync(schema, created.PhysicalTableName!)).Should().Be("POINT");
+            await ImportIntoAsync(service, schema, "places", polygon, mode, mode == ImportLoadMode.Upsert ? ["name"] : []);
+            (await ImportedGeometryTypeAsync(schema, created.PhysicalTableName!)).Should().Be("GEOMETRY");
+            await using var connection = await fixture.DataSource.OpenConnectionAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"SELECT SUM(population) FROM \"{schema}\".\"{created.PhysicalTableName}\"";
+            Convert.ToInt64(await command.ExecuteScalarAsync(), System.Globalization.CultureInfo.InvariantCulture).Should().Be(32);
+            await ImportIntoAsync(service, schema, "places", polygon, ImportLoadMode.Replace, []);
+            (await ImportedGeometryTypeAsync(schema, created.PhysicalTableName!)).Should().Be("POLYGON");
+            var invalidPolygon = polygon.Replace("[1,0],[1,1]", "[1,1],[1,0],[0,1]", StringComparison.Ordinal);
+            var skipped = await ImportIntoAsync(service, schema, "places", invalidPolygon, ImportLoadMode.Upsert, ["name"], expectedSuccess: false);
+            skipped.FeatureCount.Should().Be(0);
+            (await ImportedGeometryTypeAsync(schema, created.PhysicalTableName!)).Should().Be("POLYGON");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Import)]
+    public async Task ImportFileAsync_MixedOrdinatesAndNull_KeepsPointTypeAndEveryOrdinate()
+    {
+        const string csv = "name,wkt\nxy,POINT (1 2)\nxyz,POINT Z (1 2 3)\nxym,POINT M (1 2 4)\nxyzm,POINT ZM (1 2 3 4)\nnone,\n";
+        var imported = await ImportAsync("ordinates", "ordinates.csv", Encoding.UTF8.GetBytes(csv));
+        try
+        {
+            imported.Result.FeatureCount.Should().Be(5);
+            (await ImportedGeometryTypeAsync(imported.Schema, imported.Table)).Should().Be("POINT");
+            await using var connection = await fixture.DataSource.OpenConnectionAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"SELECT ST_Zmflag(geometry), ST_Z(geometry), ST_M(geometry), ST_SRID(geometry) FROM \"{imported.Schema}\".\"{imported.Table}\" ORDER BY id";
+            await using var reader = await command.ExecuteReaderAsync();
+            foreach (var flags in new[] { 0, 2, 1, 3 })
+            {
+                (await reader.ReadAsync()).Should().BeTrue();
+                reader.GetInt16(0).Should().Be((short)flags);
+                if ((flags & 2) != 0)
+                {
+                    reader.GetDouble(1).Should().Be(3);
+                }
+                if ((flags & 1) != 0)
+                {
+                    reader.GetDouble(2).Should().Be(4);
+                }
+                reader.GetInt32(3).Should().Be(4326);
+            }
+            (await reader.ReadAsync()).Should().BeTrue();
+            reader.IsDBNull(0).Should().BeTrue();
+            (await reader.ReadAsync()).Should().BeFalse();
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(imported.Schema);
+        }
+    }
+
+    private async Task<string?> ImportedGeometryTypeAsync(string schema, string table)
+    {
+        await using var connection = await fixture.DataSource.OpenConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT type FROM public.geometry_columns WHERE f_table_schema = @schema AND f_table_name = @table";
+        command.Parameters.AddWithValue("schema", schema);
+        command.Parameters.AddWithValue("table", table);
+        return await command.ExecuteScalarAsync() as string;
+    }
+
     private async Task<ImportedTable> ImportAsync(string logicalName, string fileName, byte[] bytes)
     {
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(ImportTypedColumnTests));
@@ -556,7 +653,8 @@ public sealed class ImportTypedColumnTests(PostgresFixture fixture)
         string logicalName,
         string geoJson,
         ImportLoadMode mode,
-        IReadOnlyList<string> keyColumns)
+        IReadOnlyList<string> keyColumns,
+        bool expectedSuccess = true)
     {
         await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(geoJson));
         var result = await service.ImportFileAsync(new ImportRequest
@@ -571,7 +669,7 @@ public sealed class ImportTypedColumnTests(PostgresFixture fixture)
             OverwriteExisting = mode != ImportLoadMode.Append,
             KeyColumns = keyColumns
         });
-        result.Success.Should().BeTrue(result.ErrorMessage);
+        result.Success.Should().Be(expectedSuccess, result.ErrorMessage);
         return result;
     }
 

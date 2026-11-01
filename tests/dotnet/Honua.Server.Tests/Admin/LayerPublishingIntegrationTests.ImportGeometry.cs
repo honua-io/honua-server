@@ -93,17 +93,21 @@ public sealed partial class LayerPublishingIntegrationTests
         // Quick publication must discover the authoritative type without a client override.
         var publishRequest = new PublishLayerRequest
         {
-            Schema = imported.Schema!, Table = imported.PhysicalTableName!,
-            LayerName = $"Geometry {scenario}", PrimaryKey = "id",
-            Fields = ["id", "name", "population", "properties"], ServiceName = _serviceName, Enabled = true
+            Schema = imported.Schema!,
+            Table = imported.PhysicalTableName!,
+            LayerName = $"Geometry {scenario}",
+            PrimaryKey = "id",
+            Fields = ["id", "name", "population", "properties"],
+            ServiceName = _serviceName,
+            Enabled = true
         };
         if (scenario == "Mixed")
         {
             var rejected = await PostPublishLayerAsync(publishRequest);
             rejected.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             rejected.Payload.Should().Contain("mixed-geometry");
-            using var service = await _client.GetAsync($"/rest/services/{_serviceName}/FeatureServer?f=json");
-            service.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            using var service = await GetGeometryJsonAsync($"/rest/services/{_serviceName}/FeatureServer?f=json");
+            service.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(404);
             using var collections = await GetGeometryJsonAsync("/ogc/features/collections?f=json");
             collections.RootElement.GetProperty("collections").EnumerateArray().Should().NotContain(
                 collection => collection.GetProperty("title").GetString() == publishRequest.LayerName);
@@ -114,15 +118,9 @@ public sealed partial class LayerPublishingIntegrationTests
         published.GeometryType.Should().Be(canonicalType);
 
         using var featureMetadata = await GetGeometryJsonAsync($"/rest/services/{_serviceName}/FeatureServer/{_layerId}?f=json");
-        if (esriType is null)
-        {
-            featureMetadata.RootElement.TryGetProperty("geometryType", out _).Should().BeFalse(
-                "mixed geometry has no single FeatureServer geometry type");
-        }
-        else
-        {
-            featureMetadata.RootElement.GetProperty("geometryType").GetString().Should().Be(esriType);
-        }
+        featureMetadata.RootElement.GetProperty("geometryType").GetString().Should().Be(esriType);
+        featureMetadata.RootElement.GetProperty("extent").GetProperty("spatialReference")
+            .GetProperty("wkid").GetInt32().Should().Be(targetSrid);
         using var ogcMetadata = await GetGeometryJsonAsync($"/ogc/features/collections/{_layerId}?f=json");
         ogcMetadata.RootElement.GetProperty("geometryType").GetString().Should().Be(canonicalType);
         ogcMetadata.RootElement.GetProperty("storageCrs").GetString().Should().Contain(targetSrid == 4326 ? "CRS84" : "3857");
@@ -141,6 +139,20 @@ public sealed partial class LayerPublishingIntegrationTests
         serverFeatures[0].GetProperty("attributes").GetProperty("population").GetInt64().Should().Be(2);
         serverFeatures[0].GetProperty("geometry").ValueKind.Should().Be(JsonValueKind.Object);
         serverFeatures[1].GetProperty("geometry").ValueKind.Should().Be(JsonValueKind.Object);
+
+        // Metadata must be backed by enforced storage facts, not just a label.
+        await using (var connection = await _fixture.Postgres.GetConnectionAsync())
+        {
+            var relation = $"\"{imported.Schema}\".\"{imported.PhysicalTableName}\"";
+            await using var incompatible = new Npgsql.NpgsqlCommand(
+                $"INSERT INTO {relation} (geometry) VALUES (ST_GeomFromText('GEOMETRYCOLLECTION EMPTY', {targetSrid}))", connection);
+            await FluentActions.Awaiting(() => incompatible.ExecuteNonQueryAsync()).Should()
+                .ThrowAsync<Npgsql.PostgresException>().Where(error => error.SqlState == Npgsql.PostgresErrorCodes.CheckViolation);
+            await using var wrongSrid = new Npgsql.NpgsqlCommand(
+                $"INSERT INTO {relation} (geometry) SELECT ST_SetSRID(geometry, 9999) FROM {relation} LIMIT 1", connection);
+            await FluentActions.Awaiting(() => wrongSrid.ExecuteNonQueryAsync()).Should()
+                .ThrowAsync<Npgsql.PostgresException>().Where(error => error.SqlState == Npgsql.PostgresErrorCodes.CheckViolation);
+        }
 
         var catalog = await CallGeometryCatalogAsync("honua_list_layers", new { filter = _serviceName });
         var layer = catalog.GetProperty("layers").EnumerateArray().Single(layer => layer.GetProperty("layerId").GetInt32() == _layerId);
@@ -163,7 +175,10 @@ public sealed partial class LayerPublishingIntegrationTests
     {
         using var response = await _client.PostAsJsonAsync("/mcp", new
         {
-            jsonrpc = "2.0", id = "import-geometry", method = "tools/call", @params = new { name, arguments }
+            jsonrpc = "2.0",
+            id = "import-geometry",
+            method = "tools/call",
+            @params = new { name, arguments }
         });
         var payload = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, payload);

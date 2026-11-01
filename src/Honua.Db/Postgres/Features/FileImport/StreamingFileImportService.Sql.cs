@@ -313,6 +313,9 @@ internal sealed partial class StreamingFileImportService
                 await command.ExecuteNonQueryAsync(cancellationToken);
             }
 
+            await RefreshImportedGeometryTypeAsync(
+                connection, schemaName, tableName, cancellationToken, transaction);
+
             var identity = await ImportedDatasetSpatialMetadata.LockAndResolveAsync(
                 connection, transaction, schemaName, tableName, "geometry", cancellationToken);
             await ImportedDatasetSpatialMetadata.WriteAsync(
@@ -356,6 +359,10 @@ internal sealed partial class StreamingFileImportService
             }
             await ValidateDirectImportAsync(connection, transaction, schemaName, liveTableName,
                 storageSrid, new DirectImportGuard(identity, coordinateEpoch), cancellationToken);
+            // Append can turn a formerly homogeneous dataset into a mixed one.
+            // Clear and recompute our type constraint in the same transaction as the rows.
+            await ClearImportedGeometryTypeAsync(
+                connection, transaction, schemaName, liveTableName, cancellationToken);
             var insertSql =
                 $"INSERT INTO {QuoteIdentifier(schemaName)}.{QuoteIdentifier(liveTableName)} (geometry, properties) " +
                 $"SELECT geometry, properties FROM {QuoteIdentifier(schemaName)}.{QuoteIdentifier(stagingTableName)}";
@@ -363,6 +370,9 @@ internal sealed partial class StreamingFileImportService
             {
                 await insert.ExecuteNonQueryAsync(cancellationToken);
             }
+
+            await RefreshImportedGeometryTypeAsync(
+                connection, schemaName, liveTableName, cancellationToken, transaction);
 
             await using (var drop = new NpgsqlCommand(DropImportStagingTableSql, connection, transaction))
             {
