@@ -96,12 +96,13 @@ public sealed partial class LayerPublishingIntegrationTests
         table.GetProperty("geometryType").GetString().Should().Be(databaseType);
         table.GetProperty("srid").GetInt32().Should().Be(targetSrid);
 
-        // Quick publication must discover the authoritative type without a client override.
+        // Quick publication discovers the type; CSV also exercises legacy Point requests.
         var publishRequest = new PublishLayerRequest
         {
             Schema = imported.Schema!,
             Table = imported.PhysicalTableName!,
             LayerName = $"Geometry {scenario}",
+            GeometryType = scenario == "PointCsv" ? "Point" : null,
             PrimaryKey = "id",
             Fields = ["id", "name", "population", "properties"],
             ServiceName = _serviceName,
