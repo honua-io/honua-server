@@ -4,6 +4,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Honua.Ai.Protocols.Mcp.Models;
+using Honua.Ai.Protocols.Mcp.MapTools;
 using Honua.Ai.Protocols.Mcp.Studio;
 using Honua.Ai.Protocols.Mcp.Tools;
 
@@ -26,7 +27,10 @@ internal static class McpWorkflowViewDescriptorClassifier
         ArgumentNullException.ThrowIfNull(tool);
 
         var descriptor = tool.Describe();
-        if (tool is not StudioDraftToolBase)
+        // Composition needs authorized source identities as well as draft mutations.
+        // Classify these existing read-only adapters by type, preserving their canonical
+        // descriptors and per-call authorization. Other query/admin tools stay separate.
+        if (tool is not (StudioDraftToolBase or ListLayersTool or DescribeLayerTool))
         {
             return descriptor;
         }

@@ -339,6 +339,11 @@ tile is returned.
 
 ## Studio AI proxy request budget
 
+For the built-in browser assistant, see [Studio assistant on Bedrock](../../guides/deploy/studio-assistant-bedrock.md).
+That guide covers `Studio__EndUserAuthorization__Enabled`, provider and disclosure settings,
+stable invocation admission configuration and explicit ledger activation. Provider configuration
+alone does not initialize or resume the ledger.
+
 `StudioAiProxy__MaxPromptCharacters` defaults to `128000` and accepts values
 from `1` to `500000`. It caps the UTF-16 characters in one
 `POST /api/v1/studio/ai/chat` request before any provider is called. The count
