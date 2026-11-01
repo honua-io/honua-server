@@ -99,6 +99,68 @@ public sealed class ComposeProposalExecutorTests
     }
 
     [UnitTest]
+    public async Task BackupAfterRestore_UsesFreshPostgresStagingFile()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "honua-compose-unit", Guid.NewGuid().ToString("N"));
+        var options = ValidOptions(root, Digest('a'));
+        var docker = new StagingDocker();
+        using var controller = new ComposeProjectController(options, docker);
+
+        var first = await controller.TakeBackupAsync(Digest('b'), 140, CancellationToken.None);
+        Assert.Null(first.Failure);
+        var manifestPath = Path.Combine(options.BackupDirectory, first.BackupId!, "manifest.json");
+        var manifest = System.Text.Json.JsonSerializer.Deserialize(
+            await File.ReadAllTextAsync(manifestPath), ComposeExecutorJsonContext.Default.ComposeBackupManifest);
+        Assert.NotNull(manifest);
+        Assert.Null(await controller.ApplyDumpAsync(manifest, CancellationToken.None));
+
+        var second = await controller.TakeBackupAsync(Digest('b'), 140, CancellationToken.None);
+        Assert.Null(second.Failure);
+        Assert.NotEqual(first.BackupId, second.BackupId);
+        Assert.Equal(2, docker.DumpPaths.Distinct(StringComparer.Ordinal).Count());
+        Assert.DoesNotContain(docker.RestorePaths, path => docker.DumpPaths.Contains(path));
+        Assert.Empty(docker.StagedFiles);
+    }
+
+    // Models a sticky Postgres temporary directory: a dump copied by the executor has a
+    // different owner, so a later pg_dump cannot overwrite it even when run as root.
+    private sealed class StagingDocker : IDockerComposeProcess
+    {
+        public Dictionary<string, string> StagedFiles { get; } = new(StringComparer.Ordinal);
+        public List<string> DumpPaths { get; } = [];
+        public List<string> RestorePaths { get; } = [];
+
+        public async Task<DockerProcessResult> RunAsync(IReadOnlyList<string> arguments, TimeSpan timeout, CancellationToken cancellationToken)
+        {
+            var args = arguments.ToArray();
+            if (Array.IndexOf(args, "pg_dump") >= 0)
+            {
+                var remote = args[Array.LastIndexOf(args, "-f") + 1];
+                DumpPaths.Add(remote);
+                if (StagedFiles.TryGetValue(remote, out var owner) && owner != "postgres-container")
+                    return new DockerProcessResult(1, string.Empty, "permission denied");
+                StagedFiles[remote] = "postgres-container";
+            }
+            else if (Array.IndexOf(args, "cp") is var cp && cp >= 0)
+            {
+                var source = args[cp + 1];
+                var destination = args[cp + 2];
+                if (source.StartsWith("postgres:", StringComparison.Ordinal))
+                    await File.WriteAllTextAsync(destination, "backup", cancellationToken);
+                else
+                {
+                    var remote = destination["postgres:".Length..];
+                    RestorePaths.Add(remote);
+                    StagedFiles[remote] = "executor";
+                }
+            }
+            else if (Array.IndexOf(args, "rm") is var rm && rm >= 0)
+                StagedFiles.Remove(args[^1]);
+            return new DockerProcessResult(0, string.Empty, string.Empty);
+        }
+    }
+
+    [UnitTest]
     public async Task ChecksumMismatch_DoesNotCallDocker()
     {
         var root = Path.Combine(Path.GetTempPath(), "honua-compose-unit", Guid.NewGuid().ToString("N"));

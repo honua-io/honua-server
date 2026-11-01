@@ -71,7 +71,9 @@ def wait_for_proposal(base, key, proposal, expected, proposer_key, session, time
         resource_status = proposal_resource["status"].lower()
         if status in ("completed", "succeeded", "failed", "rejected", "cancelled") and status == resource_status:
             actual = "succeeded" if status in ("completed", "succeeded") else "failed"
-            assert actual == expected, f"unexpected proposal terminal state: {status}"
+            reason = detail.get("resolutionReason")
+            safe_reason = reason if isinstance(reason, str) and re.fullmatch(r"[a-z0-9-]{1,80}", reason) else "unavailable"
+            assert actual == expected, f"unexpected proposal terminal state: {status}; reason: {safe_reason}"
             assert detail.get("resolutionReason") == proposal_resource.get("resolutionReason")
             if status == "failed":
                 assert detail.get("resolutionReason"), "failed execution must report its reason"
@@ -320,7 +322,44 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
         assert next_proposal != proposal
         wait_for_approval(base, approver_key, next_proposal)
         request(base, f"/api/v1/admin/proposals/{next_proposal}/approve", approver_key, {})
-        converged_again = wait_for_proposal(base, approver_key, next_proposal, "succeeded", proposer_key, session)
+        try:
+            converged_again = wait_for_proposal(base, approver_key, next_proposal, "succeeded", proposer_key, session)
+        except AssertionError as error:
+            detail, _ = request(base, f"/api/v1/admin/proposals/{next_proposal}", approver_key)
+            restore_id = detail.get("executionOperationId", "")
+            diagnostics = []
+            if re.fullmatch(r"restore-[a-f0-9]{32}", restore_id):
+                child_id = f"deploy-{restore_id}-{hashlib.sha256(restore_id.encode()).hexdigest()[:12]}"
+                for operation_id in (restore_id, child_id):
+                    try:
+                        operation, _ = request(base, f"/api/v1/admin/deploy/operations/{operation_id}", approver_key)
+                        diagnostics.append({name: operation.get(name) for name in
+                                            ("operationId", "kind", "status", "currentPhase", "errorMessage")})
+                    except (urllib.error.URLError, ValueError):
+                        diagnostics.append({"operationId": operation_id, "status": "unavailable"})
+            checkpoint = {}
+            if re.fullmatch(r"restore-[a-f0-9]{32}", restore_id):
+                raw_checkpoint = dc("exec", "-T", "compose-manager-redis", "redis-cli", "--raw", "GET",
+                                    f"controlplane:workflow:{restore_id}", check=False)
+                try:
+                    saved = json.loads(raw_checkpoint)
+                    saved_context = saved.get("preMigrationRestore") or {}
+                    checkpoint = {name: saved_context.get(name) for name in ("phase", "deployOperationId", "expectedSchema")}
+                except (ValueError, TypeError):
+                    checkpoint = {"status": "unavailable"}
+            audit_path = project_dir / "backups" / "audit.jsonl"
+            audit = []
+            if audit_path.exists():
+                for line in audit_path.read_text().splitlines()[-12:]:
+                    try:
+                        entry = json.loads(line)
+                        audit.append({name: entry.get(name) for name in ("op", "requestId", "backupId", "ok", "code", "schemaVersion")})
+                    except ValueError:
+                        continue
+            executor_log = dc("logs", "--no-color", "--tail", "100", "compose-executor", check=False)
+            executor_codes = re.findall(r"\b[a-z][a-z0-9-]*(?:-failed|-incomplete|-unrecorded)\b", executor_log)
+            raise AssertionError(f"{error}; workflow: {diagnostics}; restore checkpoint: {checkpoint}; "
+                                 f"executor audit: {audit}; executor log codes: {executor_codes[-12:]}") from error
         restore_ids = {detail["executionOperationId"] for detail in (first_convergence, restored, converged_again)}
         assert len(restore_ids) == 3 and all(ident.startswith("restore-") for ident in restore_ids)
         assert image_id() == candidate and schema() == candidate_schema
