@@ -20,6 +20,19 @@ class ComposeQuickstartTests(unittest.TestCase):
         initialize(path)
         return path
 
+    def test_private_keyring_can_be_initialized_with_only_required_capabilities(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.prepare(directory)
+            command = ['docker', 'compose']
+            try:
+                result = subprocess.run(command + ['run', '--rm', '--no-deps', 'keyring-init'],
+                                        cwd=path, capture_output=True, text=True)
+                self.assertEqual(0, result.returncode, 'Key-ring init must traverse the private install group')
+                self.assertEqual(0o640, (path / 'secrets/keyring.pfx').stat().st_mode & 0o777)
+                self.assertEqual(1001, (path / 'secrets/keyring.pfx').stat().st_gid)
+            finally:
+                subprocess.run(command + ['down'], cwd=path, capture_output=True)
+
     def test_package_starts_executor_by_default_with_separate_identity_and_scoped_mounts(self):
         with tempfile.TemporaryDirectory() as directory:
             path = self.prepare(directory)

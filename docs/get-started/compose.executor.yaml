@@ -3,6 +3,14 @@
 # Only the dedicated executor image mounts the Docker socket.
 # The separate manager and executor share the executor socket; the serving service does not.
 services:
+  keyring-init:
+    # CAP_CHOWN cannot traverse a private host directory on its own.
+    group_add:
+      - "${HONUA_PROJECT_GID:?Set the project directory group id}"
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [CHOWN]
+    security_opt: ["no-new-privileges:true"]
   honua:
     environment:
       AllowedHosts: "localhost;127.0.0.1;honua"

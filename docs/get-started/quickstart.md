@@ -96,10 +96,6 @@ services:
   keyring-init:
     image: redis:7.4-alpine
     user: "0:0"
-    read_only: true
-    cap_drop: [ALL]
-    cap_add: [CHOWN]
-    security_opt: ["no-new-privileges:true"]
     entrypoint: ["sh", "-c"]
     command: ["chown 0:1001 /keyring/keyring.pfx && chmod 0640 /keyring/keyring.pfx"]
     volumes:
