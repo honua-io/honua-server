@@ -13,13 +13,13 @@ First initialize the ordinary quickstart credentials. Set these non-secret setti
 
 ```dotenv
 HONUA_CONSOLE_IMAGE=ghcr.io/honua-io/honua-console@sha256:<updated-Console-image-digest>
-HONUA_STUDIO_AI_REGION=us-west-2
-HONUA_STUDIO_AI_MODEL=<approved-Bedrock-model-or-inference-profile-id>
+HONUA_STUDIO_AI_REGION=us-east-1
+HONUA_STUDIO_AI_MODEL=us.anthropic.claude-sonnet-4-6
 HONUA_STUDIO_AI_CLASSIFICATION=unclassified
 HONUA_AI_DEPLOYMENT_ID=<stable-installation-identity>
 ```
 
-Select a rebuilt Console image containing the supported browser assistant transport; the existing quickstart image pin may predate this correction. Select a tool-capable model or inference profile that your AWS account and region can invoke. Keep the deployment ID stable across restarts and upgrades: replacing it creates a different invocation authority rather than resetting an existing ledger.
+Select a rebuilt Console image containing the supported browser assistant transport; the existing quickstart image pin may predate this correction. The 2026.1 default is the tool-capable `us.anthropic.claude-sonnet-4-6` inference profile in `us-east-1`; override the model and region together if your approved configuration differs, and ensure your AWS account can invoke it. Keep the deployment ID stable across restarts and upgrades: replacing it creates a different invocation authority rather than resetting an existing ledger.
 
 Start the optional assistant overlay and Console:
 
@@ -29,7 +29,7 @@ python3 scripts/docker/quickstart.py --profile console -f docker-compose.yml -f 
 
 The overlay enables the Console realtime editor, selects the supported browser conversation contract, enables Server Studio end-user authorization and the Bedrock provider, selects PostgreSQL invocation admission, and records an exact operator disclosure approval for that model, region, use case and workload classification. Using this overlay asserts that you approve sending this workload to that configured Bedrock boundary. Change the classification to your actual approved workload label; it is not automatic content classification. The default quickstart keeps paid inference disabled.
 
-Use the Server workload's AWS role with `bedrock:InvokeModel` and `bedrock:InvokeModelWithResponseStream` permissions for the selected model/inference profile and its routed model resources. Ensure account/model access is available. Bedrock uses the AWS credential chain and needs no `StudioAiProxy` API key. For a local container without a workload role, supply temporary `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` and `AWS_SESSION_TOKEN` through your environment; the overlay passes them to Server. Never put them in browser configuration, docs, logs or committed files. Console needs its normal Server binding and customer sign-in, plus `Studio__EmbedJsStudio=true` to display the realtime editor.
+Use the Server workload's AWS role with `bedrock:InvokeModel` and `bedrock:InvokeModelWithResponseStream` permissions for the selected model/inference profile and its routed model resources. Ensure account/model access is available. Bedrock uses the AWS credential chain and needs no `StudioAiProxy` API key. The overlay does not forward host-shell AWS keys; use the Server workload IAM role or instance profile through the SDK credential chain. Console needs its normal Server binding and customer sign-in, plus `Studio__EmbedJsStudio=true` to display the realtime editor.
 
 ## Equivalent settings for a cloud installation
 
@@ -40,7 +40,7 @@ Studio__EmbedJsStudio=true
 Honua__Agent__WorkspaceApiEnabled=false
 ```
 
-The second setting selects the supported browser contract; the separate shared workspace API requires a matching server implementation.
+Studio mode is Console's default, so the second setting can be omitted for the built-in assistant. Deployments using the separate external workspace API set `Honua__Agent__WorkspaceApiEnabled=true` and require a matching server implementation.
 
 Put this object in your Server settings document or map the keys to double-underscore environment variables:
 
@@ -53,8 +53,8 @@ Put this object in your Server settings document or map the keys to double-under
     "Providers": {
       "bedrock": {
         "Kind": "bedrock",
-        "Region": "us-west-2",
-        "Model": "<approved-model-or-inference-profile-id>",
+        "Region": "us-east-1",
+        "Model": "us.anthropic.claude-sonnet-4-6",
         "SupportsTools": true
       }
     },
@@ -63,8 +63,8 @@ Put this object in your Server settings document or map the keys to double-under
       "Approvals": [{
         "Provider": "bedrock",
         "Kind": "bedrock",
-        "Destination": "aws-bedrock:us-west-2",
-        "Model": "<same-approved-model-or-inference-profile-id>",
+        "Destination": "aws-bedrock:us-east-1",
+        "Model": "us.anthropic.claude-sonnet-4-6",
         "UseCase": "studio-chat",
         "DataClassification": "unclassified"
       }]
