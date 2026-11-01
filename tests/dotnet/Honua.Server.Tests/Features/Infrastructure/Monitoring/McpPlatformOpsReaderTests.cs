@@ -675,7 +675,9 @@ public sealed class McpPlatformOpsReaderTests
         var gateway = ConvergenceGateway();
         using var services = CreateServices(gateway);
         var store = new RecordingWorkflowOperationStore();
-        var reader = CreateReader(store: store, services: services);
+        var options = CreateOptions();
+        options.DeployTargets[0].TargetKind = DeployTargetKind.LocalCompose;
+        var reader = CreateReader(options: options, store: store, services: services);
         var argument = new McpPlatformReleaseConvergenceArgument();
         await reader.ProposePlatformReleaseConvergenceAsync(CreatePrincipal(), argument, CancellationToken.None);
         var initialKey = gateway.LastRequest!.IdempotencyKey;
@@ -684,12 +686,24 @@ public sealed class McpPlatformOpsReaderTests
         await reader.ProposePlatformReleaseConvergenceAsync(CreatePrincipal(), argument, CancellationToken.None);
         gateway.LastRequest!.IdempotencyKey.Should().Be(initialKey);
 
+        await store.TryCreateAsync(BuildDeployOperation("other-deploy", "serving-us-west", "other", "rc1",
+            WorkflowOperationStatus.Succeeded, DateTimeOffset.UtcNow.AddSeconds(-30)));
+        await reader.ProposePlatformReleaseConvergenceAsync(CreatePrincipal(), argument, CancellationToken.None);
+        gateway.LastRequest!.IdempotencyKey.Should().Be(initialKey, "a forward deploy is not a completed rollback");
+
+        var failedRollback = BuildDeployOperation("failed-rollback", "serving-us-west", "rc1", "other",
+            WorkflowOperationStatus.Failed, DateTimeOffset.UtcNow.AddSeconds(-10));
+        await store.TryCreateAsync(failedRollback with { Deploy = failedRollback.Deploy! with { PreMigrationBackupId = "backup-verified" } });
+        await reader.ProposePlatformReleaseConvergenceAsync(CreatePrincipal(), argument, CancellationToken.None);
+        gateway.LastRequest!.IdempotencyKey.Should().Be(initialKey, "a failed rollback must not advance the key");
+
         await store.TryCreateAsync(BuildDeployOperation("candidate-deploy", "serving-us-west", "ghcr.io/honua/server:2026.07.01", "rc1",
             WorkflowOperationStatus.Succeeded, DateTimeOffset.UtcNow));
         var converged = await reader.ProposePlatformReleaseConvergenceAsync(CreatePrincipal(), argument, CancellationToken.None);
         converged.Targets.Should().Contain(target => target.TargetId == "serving-us-west" && target.Outcome == "already-converged");
-        await store.TryCreateAsync(BuildDeployOperation("rollback-deploy", "serving-us-west", "rc1", "ghcr.io/honua/server:2026.07.01",
-            WorkflowOperationStatus.Succeeded, DateTimeOffset.UtcNow.AddMinutes(1)));
+        var rollback = BuildDeployOperation("rollback-deploy", "serving-us-west", "rc1", "ghcr.io/honua/server:2026.07.01",
+            WorkflowOperationStatus.Succeeded, DateTimeOffset.UtcNow.AddMinutes(1));
+        await store.TryCreateAsync(rollback with { Deploy = rollback.Deploy! with { PreMigrationBackupId = "backup-verified" } });
         await reader.ProposePlatformReleaseConvergenceAsync(CreatePrincipal(), argument, CancellationToken.None);
         var nextKey = gateway.LastRequest!.IdempotencyKey;
         nextKey.Should().NotBe(initialKey);

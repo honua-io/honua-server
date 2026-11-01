@@ -335,14 +335,13 @@ internal sealed class McpPlatformOpsReader(
             }
             var payload = new DeployExecutionPayload { TargetId = target.TargetId, DesiredRevision = desiredRevision }.Serialize();
             var requestedKey = Clean(argument.IdempotencyKey);
-            // Default retries share a proposal until serving state advances. A completed rollback
-            // starts a new convergence even when the declared release and target are unchanged.
-            // The installed baseline can appear while the first convergence is running; it is
-            // an observation, not a new deployment epoch.
-            var baselineId = lastDeployment is not null && !lastDeployment.OperationId.StartsWith("compose-baseline-", StringComparison.Ordinal)
-                ? lastDeployment.OperationId : null;
+            // A succeeded Compose deploy carrying a verified backup is the completed restore
+            // performed by rollback. Other deployments leave the default retry key unchanged.
+            var rollbackId = target.TargetKind == DeployTargetKind.LocalCompose && lastDeployment is not null
+                && !string.IsNullOrWhiteSpace(lastDeployment.Deploy?.PreMigrationBackupId)
+                    ? lastDeployment.OperationId : null;
             var defaultKey = $"converge:{release.Version}:{target.TargetId}";
-            if (baselineId is not null) defaultKey += $":after:{baselineId}";
+            if (rollbackId is not null) defaultKey += $":after:{rollbackId}";
             var proposal = await SealProposalAsync(principal, OperationClass.Deploy, payload,
                 Clean(argument.Reason) ?? $"Converge serving targets to platform release {release.Version}.",
                 requestedKey is null ? defaultKey : $"{requestedKey}:{target.TargetId}", cancellationToken).ConfigureAwait(false);
