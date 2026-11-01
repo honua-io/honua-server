@@ -466,6 +466,13 @@ The executor refuses a restore when the security groups are absent or the cell p
 fit a unique replacement instance ID. A failed restore retains the cell ownership record for
 operator investigation before another restore is attempted.
 
+Restore progress is recorded durably. After a restart, the executor resumes a known
+RDS restore or deployment from its checkpoint. If interruption leaves the provider
+submission outcome uncertain, the operation fails and requires operator attention;
+it does not submit another restore blindly. Inspect the operation and the database
+before attempting recovery. Success is recorded only after the restored deployment
+and its protection window complete and the restore is verified.
+
 ### Rollback target eligibility
 
 Before you roll back the image, check that the target image can protect itself
