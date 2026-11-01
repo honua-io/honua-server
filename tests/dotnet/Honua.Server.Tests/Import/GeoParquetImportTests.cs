@@ -366,8 +366,9 @@ public sealed class GeoParquetImportTests : IAsyncLifetime
         (await reader.ReadAsync()).Should().BeTrue(json);
         reader.GetInt32(0).Should().Be(hasZ ? 3 : 2);
         reader.GetBoolean(1).Should().BeTrue();
+        var storedType = type switch { 1 => 4u, 3 => 6u, _ => (uint)type };
         BinaryPrimitives.ReadUInt32LittleEndian(reader.GetFieldValue<byte[]>(2).AsSpan(1)).Should()
-            .BeOneOf(rawType, (uint)type | (hasZ ? 0x80000000u : 0u));
+            .BeOneOf(storedType + (hasZ ? 1000u : 0u), storedType | (hasZ ? 0x80000000u : 0u));
         (await reader.ReadAsync()).Should().BeFalse();
     }
 
@@ -399,8 +400,10 @@ public sealed class GeoParquetImportTests : IAsyncLifetime
         (await reader.ReadAsync()).Should().BeTrue(json);
         reader.GetDouble(0).Should().BeApproximately(358d, 1e-9, "planar edges retain the long-side Cartesian polygon");
         var actualWkb = reader.GetFieldValue<byte[]>(1);
-        BinaryPrimitives.ReadUInt32LittleEndian(actualWkb.AsSpan(1)).Should().Be(3u);
-        new WKBReader().Read(actualWkb).EqualsExact(expected).Should().BeTrue();
+        BinaryPrimitives.ReadUInt32LittleEndian(actualWkb.AsSpan(1)).Should().Be(6u);
+        var stored = new WKBReader().Read(actualWkb).Should().BeOfType<MultiPolygon>().Subject;
+        stored.NumGeometries.Should().Be(1);
+        stored.GetGeometryN(0).EqualsExact(expected).Should().BeTrue();
         reader.GetInt32(2).Should().Be(4326);
         (await reader.ReadAsync()).Should().BeFalse();
     }
@@ -812,7 +815,9 @@ public sealed class GeoParquetImportTests : IAsyncLifetime
             Point? point = null;
             if (feature.TryGetProperty("geometry", out var geometry) && geometry.ValueKind != JsonValueKind.Null)
             {
-                point = new Point(geometry.GetProperty("x").GetDouble(), geometry.GetProperty("y").GetDouble()) { SRID = 4326 };
+                var points = geometry.GetProperty("points");
+                points.GetArrayLength().Should().Be(1);
+                point = new Point(points[0][0].GetDouble(), points[0][1].GetDouble()) { SRID = 4326 };
             }
 
             rows.Add(new ImportedRow(properties.GetProperty("objectid").GetInt64(), properties.GetProperty("name").GetString(), point, properties.Clone()));
