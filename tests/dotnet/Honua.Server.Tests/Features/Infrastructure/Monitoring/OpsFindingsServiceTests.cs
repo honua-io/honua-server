@@ -34,6 +34,48 @@ namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 [Protocol(TestProtocols.TestQuality)]
 public sealed class OpsFindingsServiceTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Evaluate_HealthyComposePriorRevision_RetainsLiveConvergenceFinding(bool pinsRelease)
+    {
+        var desired = "sha256:" + new string('a', 64);
+        var prior = "sha256:" + new string('b', 64);
+        var controlPlane = new ControlPlaneOptions
+        {
+            PlatformRelease = new() { Version = "2026.1-rc.2", ServingArtifactReference = desired },
+            DeployTargets = [new()
+            {
+                TargetId = "compose-local",
+                TargetKind = DeployTargetKind.LocalCompose,
+                Backend = ComposeDeployBackend.AdapterBackendName,
+                ArtifactReference = pinsRelease ? desired : null
+            }]
+        };
+        var observer = Substitute.For<IManagedComposeObserver>();
+        observer.ReadAsync(Arg.Any<CancellationToken>()).Returns(new OpsManagedTargetHealthView[]
+        {
+            new()
+            {
+                TargetId = "compose-local",
+                Available = true,
+                Status = "Healthy",
+                ObservedAt = DateTimeOffset.UtcNow,
+                RunningImage = prior,
+                ServerVersion = "2026.1-rc.1"
+            }
+        });
+        var evaluation = await CreateService(controlPlaneOptions: controlPlane, managedComposeObserver: observer).EvaluateWithEvidenceAsync();
+        var finding = Assert.Single(evaluation.Findings, item => item.Rule == OpsFindingsService.RulePlatformReleaseRuntimeDivergence);
+        var payload = DeployExecutionPayload.Parse(finding.RecommendedAction!.ExecutionPayload);
+        Assert.Equal(prior, payload!.CurrentRevision);
+        Assert.Equal(desired, payload.DesiredRevision);
+        Assert.True(OpsFindingEvidenceMap.TryGetActionableRequiredSources(evaluation, finding, out var sources));
+        Assert.Contains(sources, source => source.SourceId == ManagedComposeObserver.SourceId);
+        Assert.DoesNotContain(sources, source => source.SourceId == EvidencePostureVocabulary.SourceIds.FindingsWorkflowOperations);
+    }
+
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
     public async Task Evaluate_ServiceFailsAgainAfterRestart_UsesNewFindingIdentity()

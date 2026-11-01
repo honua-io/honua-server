@@ -60,7 +60,7 @@ Alert evidence uses `backlogObservedAt`, the successful collection time of the r
 ## Managed Compose stack
 
 On an installed Compose target, `honua_ops_health.managedTargets` reports the serving
-Honua readiness probe, a PostGIS query against the managed database, and Redis `PING`.
+Honua readiness probe, a PostGIS query against the managed database, and configured Redis `PING`.
 The existing `health` section continues to describe the manager process. A stopped
 or unready managed service makes `overallStatus` unhealthy even while the manager is
 healthy. An unreachable executor reports unknown health and unavailable evidence.
@@ -79,9 +79,15 @@ Docker inspection of the managed serving container; `serverVersion` comes from
 that server's authenticated `/version` endpoint. `observationStatus` and `observedAt`
 identify readback availability and time. A differing running image sets `skewed`
 and adds the target to `skewedIds`, including after rollback. Missing observations
-never claim convergence. Targets without live readback report `notObserved`.
+never claim convergence. Targets without live readback report `notObserved`. Other deployment backends retain their existing configuration-based co-versioning and evidence; their configuration is not presented as an observed runtime revision.
 
 The executor reads the version endpoint at the origin configured by `HealthProbeUrl`.
 Set `ControlPlane:ComposeExecutor:VersionProbeApiKey` to the serving bootstrap
 credential; the packaged quickstart supplies it locally. This credential is used
 only for readback and is never included in the observation response.
+
+For a supported installation without Redis, set
+`ControlPlane:ComposeExecutor:RedisService` to an empty value on the executor (and
+keep the manager's matching executor options consistent). Only configured managed
+services are observed and eligible for restart. The standard quickstart includes
+Redis and keeps its observation enabled.

@@ -301,8 +301,9 @@ internal sealed class McpPlatformOpsReader(
                 outcomes.Add(new() { TargetId = target.TargetId, Outcome = "skipped-pinned", Message = "Target pins an explicit artifact that diverges from the release." });
                 continue;
             }
+            var liveTarget = liveTargets.SingleOrDefault(live => live.TargetId == target.TargetId);
             var lastApplied = target.TargetKind == DeployTargetKind.LocalCompose
-                ? liveTargets.SingleOrDefault(live => live.TargetId == target.TargetId)?.RunningImage
+                ? liveTarget?.RunningImage
                 : (await _deployWorkflowService.GetMostRecentSucceededDeployAsync(target.TargetId, cancellationToken).ConfigureAwait(false))?.Deploy?.DesiredRevision;
             if (string.Equals(lastApplied, desiredRevision, StringComparison.Ordinal))
             {
@@ -311,9 +312,10 @@ internal sealed class McpPlatformOpsReader(
             }
             var payload = new DeployExecutionPayload { TargetId = target.TargetId, DesiredRevision = desiredRevision }.Serialize();
             var requestedKey = Clean(argument.IdempotencyKey);
+            var incarnationSuffix = liveTarget?.ServingIncarnation is { } incarnation ? ":" + incarnation : string.Empty;
             var proposal = await SealProposalAsync(principal, OperationClass.Deploy, payload,
                 Clean(argument.Reason) ?? $"Converge serving targets to platform release {release.Version}.",
-                requestedKey is null ? $"converge:{release.Version}:{target.TargetId}" : $"{requestedKey}:{target.TargetId}", cancellationToken).ConfigureAwait(false);
+                requestedKey is null ? $"converge:{release.Version}:{target.TargetId}{incarnationSuffix}" : $"{requestedKey}:{target.TargetId}", cancellationToken).ConfigureAwait(false);
             outcomes.Add(new() { TargetId = target.TargetId, Outcome = proposal.Outcome, ProposalId = proposal.ProposalId, Message = proposal.Message });
         }
         return new McpProposeOperationOutput { Outcome = "completed", RequiresApproval = outcomes.Any(item => item.ProposalId is not null), Targets = outcomes.ToArray(), SupportedKinds = ResolveSupportedKinds() };

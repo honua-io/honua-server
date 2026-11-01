@@ -54,6 +54,7 @@ internal sealed class ManagedComposeObserver(
                 RunningImage = available ? response!.RunningImage : null,
                 ImageId = available ? response!.ImageId : null,
                 ServerVersion = available ? response!.ServerVersion : null,
+                ServingIncarnation = available ? response!.Services.FirstOrDefault(row => row.Service == executorOptions.Value.ServiceName)?.Incarnation : null,
                 ServiceIncarnations = available ? response!.Services.Where(row => row.Incarnation is not null)
                     .ToDictionary(row => row.Service, row => row.Incarnation!, StringComparer.Ordinal) : new Dictionary<string, string>(),
                 Services = available ? response!.Services.Select(row => new OpsHealthCheckEntryView
@@ -71,7 +72,8 @@ internal sealed class ManagedComposeObserver(
     internal static EvidenceSourceEnvelope Source(IReadOnlyList<OpsManagedTargetHealthView> targets)
         => targets.Count == 0
             ? EvidencePostureFactory.NotConfigured(SourceId, EvidencePostureVocabulary.BackendKinds.Composite, "compose-executor")
-            : targets.All(target => target.Available && target.Status != "Unknown")
+            : targets.All(target => target.Available && target.Status != "Unknown"
+                && target.Services.All(service => service.Status is "Healthy" or "Unhealthy"))
                 ? EvidencePostureFactory.Complete(SourceId, EvidencePostureVocabulary.BackendKinds.Composite, "compose-executor",
                     targets.Min(target => target.ObservedAt), TimeSpan.FromMinutes(2))
                 : EvidencePostureFactory.Unavailable(SourceId, EvidencePostureVocabulary.BackendKinds.Composite, "compose-executor",
@@ -100,16 +102,19 @@ internal sealed class ManagedComposeObserver(
                 Skewed = projection.Skewed || (live?.RunningImage is not null && live.RunningImage != options.PlatformRelease.ServingArtifactReference)
             };
         }).ToArray();
-        var observed = serving.Where(target => target.ObservationStatus == "observed").ToArray();
+        var applicableIds = options.DeployTargets.Where(target => target.TargetKind == DeployTargetKind.LocalCompose)
+            .Select(target => target.TargetId).ToHashSet(StringComparer.Ordinal);
+        var applicable = serving.Where(target => applicableIds.Contains(target.Id)).ToArray();
+        var observed = applicable.Where(target => target.ObservationStatus == "observed").ToArray();
         var coverage = new EvidenceSourceCoverage
         {
-            ExpectedComponentIds = serving.Select(target => target.Id).ToArray(),
+            ExpectedComponentIds = applicable.Select(target => target.Id).ToArray(),
             IncludedComponentIds = observed.Select(target => target.Id).ToArray()
         };
-        var source = serving.Length == 0
+        var source = applicable.Length == 0
             ? EvidencePostureFactory.Complete(sourceId, EvidencePostureVocabulary.BackendKinds.ConfigProjection,
                 "control-plane-options", DateTimeOffset.UtcNow, TimeSpan.FromMinutes(5), coverage)
-            : observed.Length == serving.Length
+            : observed.Length == applicable.Length
                 ? EvidencePostureFactory.Complete(sourceId, EvidencePostureVocabulary.BackendKinds.Composite,
                     "compose-executor", observed.Min(target => target.ObservedAt!.Value), TimeSpan.FromMinutes(2), coverage)
                 : observed.Length > 0
@@ -124,7 +129,7 @@ internal sealed class ManagedComposeObserver(
             EvidencePosture = EvidencePostureFactory.Build(DateTimeOffset.UtcNow, source),
             ReleaseVersion = skew.ReleaseVersion,
             ReleaseDeclared = skew.ReleaseDeclared,
-            IsCoVersioned = skew.IsCoVersioned && serving.All(target => target.ObservationStatus == "observed" && !target.Skewed),
+            IsCoVersioned = skew.IsCoVersioned && applicable.All(target => target.ObservationStatus == "observed" && !target.Skewed),
             Serving = serving,
             Execution = skew.Execution.Select(projection => new DeployPreflightPlaneProjection
             {

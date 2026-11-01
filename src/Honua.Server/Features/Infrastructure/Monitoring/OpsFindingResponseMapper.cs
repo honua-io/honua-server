@@ -23,7 +23,7 @@ internal static class OpsFindingResponseMapper
     {
         ArgumentNullException.ThrowIfNull(finding);
 
-        var requiredSourceIds = OpsFindingEvidenceMap.RequiredSourceIds(finding.Rule);
+        var requiredSourceIds = OpsFindingEvidenceMap.RequiredSourceIds(finding);
         return new OpsFindingView
         {
             RequiredSourceIds = requiredSourceIds,

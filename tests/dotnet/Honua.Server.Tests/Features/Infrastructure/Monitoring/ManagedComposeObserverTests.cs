@@ -17,6 +17,41 @@ public sealed class ManagedComposeObserverTests
 {
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
+    public void Source_MixedUnknownAndUnhealthyServices_DoesNotAuthorizeAnAction()
+    {
+        var target = new OpsManagedTargetHealthView
+        {
+            TargetId = "compose-local",
+            Available = true,
+            Status = "Unhealthy",
+            ObservedAt = DateTimeOffset.UtcNow,
+            Services =
+            [
+                new() { Name = "honua", Status = "Unknown", DurationMs = 0 },
+                new() { Name = "redis", Status = "Unhealthy", DurationMs = 0 }
+            ]
+        };
+        Assert.False(EvidencePostureFactory.IsActionable(ManagedComposeObserver.Source([target])));
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public void ProjectRelease_NonComposeTarget_PreservesConfiguredEvidenceWithoutClaimingLiveReadback()
+    {
+        var options = Configuration();
+        options.DeployTargets[0].TargetKind = DeployTargetKind.Kubernetes;
+        options.DeployTargets[0].Backend = "kubernetes";
+        var result = ManagedComposeObserver.ProjectRelease(options, []);
+        Assert.True(result.IsCoVersioned);
+        Assert.Equal("notObserved", Assert.Single(result.Serving).ObservationStatus);
+        var source = Assert.Single(result.EvidencePosture!.Sources);
+        Assert.Equal(EvidencePostureVocabulary.Completeness.Complete, source.Completeness);
+        Assert.Equal(EvidencePostureVocabulary.BackendKinds.ConfigProjection, source.BackendKind);
+        Assert.Equal("control-plane-options", source.BackendId);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
     public void ProjectRelease_BeforeUpgradeAndAfterRollback_ReportsLivePriorRevisionAndSkew()
     {
         var options = Configuration();
@@ -87,7 +122,8 @@ public sealed class ManagedComposeObserverTests
         var client = Substitute.For<IComposeExecutorClient>();
         client.ExecuteAsync(Arg.Any<ComposeExecutorRequest>(), Arg.Any<CancellationToken>()).Returns(new ComposeExecutorResponse
         {
-            Ok = true, ReadbackComplete = false,
+            Ok = true,
+            ReadbackComplete = false,
             Services = [new() { Service = "redis", Status = "Unhealthy", Description = "The managed service is stopped." }]
         });
         var targets = await CreateObserver(client, Configuration()).ReadAsync(CancellationToken.None);
@@ -111,7 +147,12 @@ public sealed class ManagedComposeObserverTests
 
     private static OpsManagedTargetHealthView Target(string image) => new()
     {
-        TargetId = "compose-local", Available = true, Status = "Healthy", ObservedAt = DateTimeOffset.UtcNow,
-        RunningImage = image, ImageId = image, ServerVersion = "2026.1-rc.1"
+        TargetId = "compose-local",
+        Available = true,
+        Status = "Healthy",
+        ObservedAt = DateTimeOffset.UtcNow,
+        RunningImage = image,
+        ImageId = image,
+        ServerVersion = "2026.1-rc.1"
     };
 }

@@ -96,6 +96,7 @@ public sealed class ComposeProposalExecutorIntegrationTests
                 ComposeFile = "compose.yaml",
                 ServiceName = "honua",
                 PostgresService = "postgres",
+                RedisService = string.Empty,
                 DatabaseName = "honua",
                 DatabaseUser = "honua",
                 BackupDirectory = backupDir,
@@ -128,6 +129,9 @@ public sealed class ComposeProposalExecutorIntegrationTests
                 Assert.Fail("Compose readback was incomplete before approval: " + ready.Code + " " + ready.Message);
             }
 
+            var observedReady = await client.ExecuteAsync(new ComposeExecutorRequest { Op = "observe" }).ConfigureAwait(false);
+            Assert.True(observedReady.Ok && observedReady.ReadbackComplete);
+            Assert.DoesNotContain(observedReady.Services, row => row.Service == "redis");
             await ComposeAsync(projectDir, projectName, ["stop", "honua"]).ConfigureAwait(false);
             var stopped = await client.ExecuteAsync(new ComposeExecutorRequest { Op = "observe" }).ConfigureAwait(false);
             Assert.True(stopped.Ok, "Managed service observations must remain available while serving is stopped.");

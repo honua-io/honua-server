@@ -800,6 +800,9 @@ public sealed class OpsManagedTargetHealthView
 {
     // Internal correlation only; the public health view does not expose container identities.
     [JsonIgnore]
+    internal string? ServingIncarnation { get; init; }
+
+    [JsonIgnore]
     internal IReadOnlyDictionary<string, string> ServiceIncarnations { get; init; } = new Dictionary<string, string>();
 
     /// <summary>Registered deploy target identifier.</summary>

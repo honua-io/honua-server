@@ -45,7 +45,7 @@ internal sealed class ComposeExecutorOptions
     /// <summary>Registered target bound to this single-project executor.</summary>
     public string TargetId { get; set; } = "compose-local";
 
-    /// <summary>Redis service observed and eligible for approved restart.</summary>
+    /// <summary>Redis service observed and eligible for approved restart; empty disables Redis observation.</summary>
     public string RedisService { get; set; } = "redis";
 
     /// <summary>Serving bootstrap credential used only for the authenticated version readback.</summary>
@@ -109,7 +109,7 @@ internal sealed class ComposeExecutorOptions
         if (!ComposeExecutorRules.ComposeName().IsMatch(ProjectName)
             || !ComposeExecutorRules.ComposeName().IsMatch(ServiceName)
             || !ComposeExecutorRules.ComposeName().IsMatch(PostgresService)
-            || !ComposeExecutorRules.ComposeName().IsMatch(RedisService))
+            || (!string.IsNullOrWhiteSpace(RedisService) && !ComposeExecutorRules.ComposeName().IsMatch(RedisService)))
         {
             return Scope("Compose project and service names are limited to the configured allowlist.");
         }

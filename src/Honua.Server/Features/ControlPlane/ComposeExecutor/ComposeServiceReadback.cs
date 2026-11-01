@@ -10,7 +10,8 @@ namespace Honua.ControlPlane;
 
 internal sealed partial class ComposeProjectController
 {
-    private string[] ManagedServices() => [_options.ServiceName, _options.PostgresService, _options.RedisService];
+    private string[] ManagedServices() => new[] { _options.ServiceName, _options.PostgresService, _options.RedisService }
+        .Where(service => !string.IsNullOrWhiteSpace(service)).ToArray();
 
     // Observation success describes collection, independently of the service's health. In
     // particular a stopped serving process must not prevent observation of its dependencies.
@@ -34,9 +35,15 @@ internal sealed partial class ComposeProjectController
         string? version = null;
         foreach (var service in ManagedServices().Distinct(StringComparer.Ordinal))
         {
-            var matches = rows.Where(row => row.Service == service).ToArray();
-            if (matches.Any(row => row.Project != _options.ProjectName))
+            var candidates = rows.Where(row => row.Service == service).ToArray();
+            if (candidates.Any(row => !string.IsNullOrWhiteSpace(row.Project) && row.Project != _options.ProjectName))
                 return Refuse(request, ComposeExecutorCodes.ScopeViolation, "A service row belongs to a different Compose project.");
+            var matches = candidates.Where(row => row.Project == _options.ProjectName).ToArray();
+            if (matches.Length == 0 && candidates.Length > 0)
+            {
+                services.Add(new() { Service = service, Status = "Unknown", Description = "The service project identity is unavailable." });
+                continue;
+            }
             if (matches.Length == 0)
             {
                 services.Add(new() { Service = service, Status = "Unhealthy", Description = "The managed service is absent." });

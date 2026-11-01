@@ -24,6 +24,8 @@ namespace Honua.Infrastructure.Monitoring;
 /// </summary>
 internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
 {
+    internal const string ManagedComposeReleaseEvidence = "compose-executor:live-revision";
+
     internal const string RuleManagedComposeService = "managed-compose-service-unhealthy";
 
     internal const string RequestedByAgent = "ops-findings";
@@ -130,7 +132,7 @@ internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
         await EvaluateGpQueueDepthAsync(now, options, findings, cancellationToken).ConfigureAwait(false);
         await EvaluateDeployManualInterventionAsync(now, findings, workflowCollection, cancellationToken).ConfigureAwait(false);
         var rollupDegraded = await EvaluateServingLatencySloAsync(now, options, findings, cancellationToken).ConfigureAwait(false);
-        await EvaluatePlatformReleaseRuntimeDivergenceAsync(now, findings, workflowCollection, cancellationToken).ConfigureAwait(false);
+        await EvaluatePlatformReleaseRuntimeDivergenceAsync(now, findings, workflowCollection, managedTargets, cancellationToken).ConfigureAwait(false);
         var workflowSource = workflowCollection?.Publish(_collectionLedger, SignalValidity)
             ?? EvidencePostureFactory.NotConfigured(
                 EvidencePostureVocabulary.SourceIds.FindingsWorkflowOperations,
@@ -1064,94 +1066,76 @@ internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
         return false;
     }
 
-    // Rule (h): platform-release runtime divergence (#2556 EXCLUSIVELY owns this rule; pinned divergence
-    // contract from #2564). Evidence: per unpinned serving deploy target, the last-applied revision is
-    // the DesiredRevision of the most recent terminal-Succeeded Deploy operation (#2562's per-target
-    // terminal index); a target with NO terminal-succeeded operation is unknown and treated as divergent.
-    // Config-pinned targets are SKIPPED here — that is RulePlatformReleaseSkew's concern, since
-    // config-derived skew cannot be cleared at runtime. When divergent, the recommended action creates a
-    // gateway-routed Deploy operation to the declared release artifact: the same per-target actuation the
-    // platform-release converge API (#2564) performs, reusing the existing Deploy operation-gateway path
-    // so this rule does not depend on that API's endpoint landing first.
+    // Compose revisions come from live executor readback. Other backends retain the
+    // terminal-deploy index until their own live revision readback is available.
     private async Task EvaluatePlatformReleaseRuntimeDivergenceAsync(
         DateTimeOffset now,
         List<OpsFinding> findings,
         OpsFindingsStoreCollection? workflowCollection,
+        IReadOnlyList<OpsManagedTargetHealthView> managedTargets,
         CancellationToken cancellationToken)
     {
-        if (_workflowStore is null || workflowCollection is null)
-        {
-            return;
-        }
-
         var controlPlane = _controlPlaneOptions.CurrentValue;
         var release = controlPlane.PlatformRelease.ToDefinition();
-        if (release is null || !release.DeclaresServing)
-        {
-            return;
-        }
-
+        if (release is null || !release.DeclaresServing) return;
         var declaredArtifact = release.ServingArtifactReference!;
 
         foreach (var target in controlPlane.DeployTargets)
         {
-            if (target.TargetKind == DeployTargetKind.LocalCompose || string.IsNullOrWhiteSpace(target.TargetId) || !string.IsNullOrWhiteSpace(target.ArtifactReference))
-            {
-                // No target id to key on, or an explicit pin: pinned targets are the
-                // platform-release-skew rule's concern, not this one's.
+            var compose = target.TargetKind == DeployTargetKind.LocalCompose;
+            if (string.IsNullOrWhiteSpace(target.TargetId)) continue;
+            if (!string.IsNullOrWhiteSpace(target.ArtifactReference)
+                && (!compose || !string.Equals(target.ArtifactReference, declaredArtifact, StringComparison.Ordinal)))
                 continue;
+
+            string? lastAppliedRevision;
+            OpsManagedTargetHealthView? live = null;
+            if (compose)
+            {
+                live = managedTargets.SingleOrDefault(item => item.TargetId == target.TargetId);
+                if (live is not { Available: true, Status: "Healthy", RunningImage: not null, ServerVersion: not null })
+                    continue;
+                lastAppliedRevision = live.RunningImage;
+            }
+            else
+            {
+                if (_workflowStore is null || workflowCollection is null) continue;
+                var lookup = await workflowCollection.ReadAsync(
+                    $"deploy-target:{target.TargetId}",
+                    token => _workflowStore.GetMostRecentSucceededDeployByTargetAsync(target.TargetId, token),
+                    cancellationToken).ConfigureAwait(false);
+                if (!lookup.Succeeded) continue;
+                lastAppliedRevision = lookup.Value?.Deploy?.DesiredRevision;
             }
 
-            // An unread target is unknown because the store did not answer, not because no deploy
-            // succeeded: it must not become the "no terminal deploy = divergent" case below.
-            var targetId = target.TargetId;
-            var lookup = await workflowCollection.ReadAsync(
-                    $"deploy-target:{targetId}",
-                    token => _workflowStore.GetMostRecentSucceededDeployByTargetAsync(targetId, token),
-                    cancellationToken)
-                .ConfigureAwait(false);
-            if (!lookup.Succeeded)
-            {
-                continue;
-            }
-
-            var lastAppliedRevision = lookup.Value?.Deploy?.DesiredRevision;
-
-            // Pinned contract (#2564): no terminal-Succeeded deploy for the target = unknown = divergent.
-            var isDivergent = lastAppliedRevision is null
-                || !string.Equals(lastAppliedRevision, declaredArtifact, StringComparison.Ordinal);
-            if (!isDivergent)
-            {
-                continue;
-            }
-
+            if (string.Equals(lastAppliedRevision, declaredArtifact, StringComparison.Ordinal)) continue;
             var subject = new OpsFindingSubject { TargetId = target.TargetId, ReleaseVersion = release.Version };
-            var evidence = new List<string>
-            {
-                "GET /api/v1/admin/deploy/preflight?includeDiagnostics=true",
-                lastAppliedRevision is null
-                    ? $"terminal-index:{target.TargetId}:none"
-                    : $"terminal-index:{target.TargetId}:{lastAppliedRevision}",
-            };
-
+            var evidence = compose
+                ? new List<string> { ManagedComposeReleaseEvidence, $"compose-target:{target.TargetId}", $"running-image:{lastAppliedRevision}" }
+                : new List<string>
+                {
+                    "GET /api/v1/admin/deploy/preflight?includeDiagnostics=true",
+                    lastAppliedRevision is null ? $"terminal-index:{target.TargetId}:none" : $"terminal-index:{target.TargetId}:{lastAppliedRevision}"
+                };
             var payload = new DeployExecutionPayload
             {
                 TargetId = target.TargetId,
                 DesiredRevision = declaredArtifact,
-                CurrentRevision = lastAppliedRevision,
+                CurrentRevision = lastAppliedRevision
             }.Serialize();
-
-            var lastAppliedDescription = lastAppliedRevision is null
-                ? "no terminal-succeeded deploy operation is recorded for this target, so it is treated as divergent"
-                : $"its last-applied revision is '{lastAppliedRevision}'";
-
+            var description = compose
+                ? $"its live serving revision is '{lastAppliedRevision}'"
+                : lastAppliedRevision is null
+                    ? "no terminal-succeeded deploy operation is recorded for this target, so it is treated as divergent"
+                    : $"its last-applied revision is '{lastAppliedRevision}'";
             findings.Add(new OpsFinding
             {
-                Id = OpsFindingId.Create(RulePlatformReleaseRuntimeDivergence, subject),
+                Id = OpsFindingId.Create(RulePlatformReleaseRuntimeDivergence, subject)
+                    + (live?.ServingIncarnation is { } incarnation ? ":" + incarnation : string.Empty),
                 Rule = RulePlatformReleaseRuntimeDivergence,
                 Severity = OpsFindingSeverity.Warning,
                 Title = "Deploy target has not converged to the declared platform release",
-                Explanation = $"Serving target '{target.TargetId}' does not pin an explicit artifact, but {lastAppliedDescription}, which diverges from the declared platform release '{release.Version}' ('{declaredArtifact}'). Converging this target creates a gateway-routed Deploy operation to the declared artifact — the same per-target actuation the platform-release converge API performs (#2564); workers are unaffected by this action (they converge at the next GP dispatch via the release's worker-image projection).",
+                Explanation = $"Serving target '{target.TargetId}' has not converged: {description}, which diverges from declared platform release '{release.Version}' ('{declaredArtifact}'). Convergence uses the existing approved Deploy operation and does not change workers.",
                 DetectedAt = now,
                 Subject = subject,
                 EvidenceRefs = evidence,
@@ -1160,8 +1144,8 @@ internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
                     Kind = OperationClass.Deploy,
                     Summary = $"Deploy target '{target.TargetId}' to the declared platform release artifact '{declaredArtifact}'.",
                     ExecutionPayload = payload,
-                    Reason = $"Target '{target.TargetId}' is divergent from declared platform release '{release.Version}'; converge to '{declaredArtifact}'.",
-                },
+                    Reason = $"Target '{target.TargetId}' is divergent from declared platform release '{release.Version}'; converge to '{declaredArtifact}'."
+                }
             });
         }
     }

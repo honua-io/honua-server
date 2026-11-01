@@ -213,6 +213,48 @@ public sealed class McpPlatformOpsReaderTests
 {
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
+    public async Task ProposePlatformReleaseConvergence_AfterRollback_UsesFreshLiveProposalIdentity()
+    {
+        var desired = "sha256:" + new string('a', 64);
+        var options = new ControlPlaneOptions
+        {
+            PlatformRelease = new() { Version = "2026.1-rc.2", ServingArtifactReference = desired },
+            DeployTargets = [new()
+            {
+                TargetId = "compose-local",
+                TargetKind = DeployTargetKind.LocalCompose,
+                Backend = ComposeDeployBackend.AdapterBackendName
+            }]
+        };
+        var observer = Substitute.For<IManagedComposeObserver>();
+        var gateway = ConvergenceGateway();
+        using var services = CreateServices(gateway, managedComposeObserver: observer);
+        var reader = CreateReader(options: options, services: services);
+        var keys = new List<string>();
+        foreach (var incarnation in new[] { new string('c', 64), new string('d', 64) })
+        {
+            observer.ReadAsync(Arg.Any<CancellationToken>()).Returns(new OpsManagedTargetHealthView[]
+            {
+                new()
+                {
+                    TargetId = "compose-local",
+                    Available = true,
+                    Status = "Healthy",
+                    ObservedAt = DateTimeOffset.UtcNow,
+                    RunningImage = "sha256:" + new string('b', 64),
+                    ServerVersion = "2026.1-rc.1",
+                    ServingIncarnation = incarnation
+                }
+            });
+            var output = await reader.ProposePlatformReleaseConvergenceAsync(CreatePrincipal(), new McpPlatformReleaseConvergenceArgument(), CancellationToken.None);
+            Assert.True(output.RequiresApproval);
+            keys.Add(gateway.LastRequest!.IdempotencyKey!);
+        }
+        Assert.NotEqual(keys[0], keys[1]);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
     public void ValidateFindingCandidateBinding_ComposeRestartTargetMismatch_IsRejected()
     {
         var payload = Honua.ControlPlane.Executors.OpsActionExecutionPayloads.RestartComposeService("compose-local", "redis");
@@ -1048,9 +1090,11 @@ public sealed class McpPlatformOpsReaderTests
         IOpsFindingsEvidenceSource? findings = null,
         IHttpContextAccessor? accessor = null,
         IAdminApiKeyStore? apiKeys = null,
-        Honua.Infrastructure.MultiTenancy.TenantContextOptions? tenantOptions = null)
+        Honua.Infrastructure.MultiTenancy.TenantContextOptions? tenantOptions = null,
+        IManagedComposeObserver? managedComposeObserver = null)
     {
         var services = new ServiceCollection();
+        if (managedComposeObserver is not null) services.AddSingleton(managedComposeObserver);
         if (tenantOptions is not null)
         {
             services.AddSingleton(Options.Create(tenantOptions));

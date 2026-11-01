@@ -96,12 +96,19 @@ internal static class OpsFindingEvidenceMap
         _ => [EvidencePostureVocabulary.SourceIds.Findings],
     };
 
+    /// <summary>Uses the sources actually read for this finding's backend.</summary>
+    public static IReadOnlyList<string> RequiredSourceIds(OpsFinding finding)
+        => finding.Rule == OpsFindingsService.RulePlatformReleaseRuntimeDivergence
+            && finding.EvidenceRefs.Contains(OpsFindingsService.ManagedComposeReleaseEvidence, StringComparer.Ordinal)
+            ? [EvidencePostureVocabulary.SourceIds.FindingsControlPlane, ManagedComposeObserver.SourceId]
+            : RequiredSourceIds(finding.Rule);
+
     public static bool TryGetActionableRequiredSources(
         OpsFindingsEvaluation evaluation,
         OpsFinding finding,
         out EvidenceSourceEnvelope[] requiredSources)
     {
-        var requiredSourceIds = RequiredSourceIds(finding.Rule);
+        var requiredSourceIds = RequiredSourceIds(finding);
         requiredSources = evaluation.Posture.Sources
             .Where(source => requiredSourceIds.Contains(source.SourceId, StringComparer.Ordinal))
             .ToArray();
