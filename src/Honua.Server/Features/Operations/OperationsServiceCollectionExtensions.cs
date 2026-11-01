@@ -121,7 +121,7 @@ internal static class OperationsServiceCollectionExtensions
         services.TryAddSingleton<IOperationEnvelopeFactory>(sp =>
             new ScopedOperationEnvelopeFactory(
                 sp.GetRequiredService<IServiceScopeFactory>(),
-                environment.IsDevelopment() || environment.IsEnvironment("Test")));
+                environment.IsEnvironment("Test")));
 
         // Grounding catalog: descriptor providers aggregated by the catalog.
         services.TryAddEnumerable(
@@ -294,7 +294,7 @@ internal static class OperationsServiceCollectionExtensions
                 sp.GetRequiredService<TimeProvider>(),
                 sp.GetService<IOperationApprovalBridge>(),
                 ComposeDispatcherInstanceStore(sp.GetRequiredService<IOperationInstanceStore>()),
-                environment.IsDevelopment() || environment.IsEnvironment("Test")
+                environment.IsEnvironment("Test")
                     ? new VolatileOperationAuditLog()
                     : sp.GetRequiredService<Honua.Core.Features.AuditLog.Abstractions.IAuditLog>(),
                 !Honua.Core.Features.ControlPlane.UnavailableOperationProposalStore.IsDurable(
