@@ -3,6 +3,7 @@
 
 using System.Net;
 using System.Net.Http.Headers;
+using System.Text.Json;
 using FluentAssertions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -54,6 +55,13 @@ public sealed class OpenApiSpecNegotiationTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType?.MediaType.Should().StartWith("application/vnd.oai.openapi+json");
+        using var definition = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var collection = definition.RootElement.GetProperty("components").GetProperty("schemas").GetProperty("CollectionInfo");
+        collection.GetProperty("properties").GetProperty("geometryType").GetProperty("type").GetString().Should().Be("string");
+        if (collection.TryGetProperty("required", out var required))
+        {
+            required.EnumerateArray().Select(value => value.GetString()).Should().NotContain("geometryType");
+        }
     }
 
     [IntegrationTest]

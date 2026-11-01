@@ -297,6 +297,7 @@ internal sealed partial class StreamingFileImportService
                             request.TargetSrid,
                             coordinateEpoch,
                             target.LiveIdentity,
+                            !hadExistingTarget,
                             CancellationToken.None);
                         dataCommitted = true;
                     }
@@ -358,6 +359,14 @@ internal sealed partial class StreamingFileImportService
                 if (repairTally.SkippedInvalid > 0)
                 {
                     completionWarningsBuilder.Add(string.Format(null, _skippedInvalidGeometryWarningFormat, repairTally.SkippedInvalid));
+                }
+
+                // A newly created direct target receives inference after its batches.
+                // Existing contracts are preserved inside each batch transaction.
+                if (directBatchAttempted && !hadExistingTarget)
+                {
+                    await RefreshImportedGeometryTypeAsync(
+                        connection, targetSchema, allowedTableName, CancellationToken.None);
                 }
 
                 if (dataCommitted)
@@ -428,6 +437,11 @@ internal sealed partial class StreamingFileImportService
                 // failure. Reconcile existing projections even when the import cannot finish.
                 try
                 {
+                    if (!hadExistingTarget)
+                    {
+                        await RefreshImportedGeometryTypeAsync(
+                            connection, targetSchema, allowedTableName, CancellationToken.None);
+                    }
                     await PromoteTypedColumnsAsync(
                         connection, targetSchema, allowedTableName, [], CancellationToken.None);
                 }

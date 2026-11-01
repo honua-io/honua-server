@@ -105,6 +105,7 @@ public sealed partial class LayerPublishingIntegrationTests
             Enabled = true
         });
         _layerId = published.LayerId;
+        published.GeometryType.Should().Be("Point");
 
         var sortedPayload = await ReadOgcItemsAsync("sortby=-population");
         using var sorted = JsonDocument.Parse(sortedPayload);

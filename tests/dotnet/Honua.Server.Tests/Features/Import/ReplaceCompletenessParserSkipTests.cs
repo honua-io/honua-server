@@ -165,7 +165,7 @@ public sealed class ReplaceCompletenessParserSkipTests : IAsyncLifetime
     {
         await using var connection = await _fixture.Postgres.GetConnectionAsync();
         await using var command = connection.CreateCommand();
-        command.CommandText = $"SELECT ST_AsText(geometry) FROM honua_data.\"imported_{_tableName}\" ORDER BY id";
+        command.CommandText = $"SELECT ST_AsText(ST_GeometryN(geometry, 1)) FROM honua_data.\"imported_{_tableName}\" ORDER BY id";
         await using var reader = await command.ExecuteReaderAsync();
         var rows = new List<string>();
         while (await reader.ReadAsync())

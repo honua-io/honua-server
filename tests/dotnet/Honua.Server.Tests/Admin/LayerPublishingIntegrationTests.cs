@@ -85,6 +85,8 @@ public sealed partial class LayerPublishingIntegrationTests : IAsyncLifetime
             // The Test host composes MCP before the fixture graph provider exists, so
             // honua_query_features is absent unless this production tool is registered here.
             services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, QueryFeaturesTool>());
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ListLayersTool>());
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, DescribeLayerTool>());
             // Publication metadata is stored in the canonical honua schema. Use its
             // production attachment authority as well; the fixture's isolated feature
             // schema is not a second attachment authority for these publications.
