@@ -1,8 +1,6 @@
 # Client Template Sources
 
 These sources feed the QGIS and BI templates used by the manual smoke runbook.
-ArcGIS Pro project construction stays in private `honua-esri-compat`. The file
-under `arcgis-pro/` is a name-only evidence pointer, not a build recipe.
 
 Most source files live in this directory. The QGIS project template currently lives in [`docs/user/client-templates/qgis`](../../user/client-templates/qgis). The `client-compat-smoke-nightly.yml` workflow assembles both locations into one canonical pack under:
 
@@ -13,7 +11,6 @@ artifacts/client-compat/<service>-<timestamp>/pack/templates/
 ## Files
 
 - `./.env.example`: placeholder values for endpoint and credential substitution.
-- `./arcgis-pro/Honua-Desktop-Smoke.aprx.template.md`: name-only pointer for evidence identifier `desktop-arcgis`. No project-build steps.
 - `../../user/client-templates/qgis/Honua-Desktop-Smoke.qgs.template`: QGIS project template file with placeholders.
 - `./power-bi/Honua-OData-Smoke.pq.template`: Power Query script template for Power BI.
 - `./power-bi/Honua-OData-Smoke.pbix.template.md`: Power BI save/package instructions.

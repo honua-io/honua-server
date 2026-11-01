@@ -1,7 +1,7 @@
 ---
 type: capability
 title: "VectorTileServer"
-description: "Serve Esri vector tile services through the GeoServices VectorTileServer surface."
+description: "Serve GeoServices REST vector tile services through the GeoServices VectorTileServer surface."
 resource: "honua://capability/serve.geoservices-vectortileserver"
 tags: [capability, serve, community]
 ---
@@ -9,7 +9,7 @@ tags: [capability, serve, community]
 
 # VectorTileServer
 
-Serve Esri vector tile services through the GeoServices VectorTileServer surface.
+Serve GeoServices REST vector tile services through the GeoServices VectorTileServer surface.
 
 | | |
 | --- | --- |

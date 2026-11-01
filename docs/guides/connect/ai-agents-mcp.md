@@ -98,7 +98,6 @@ import asyncio
 from mcp import ClientSessionGroup
 from mcp.client.session_group import StreamableHttpParameters
 
-
 async def discover():
     server = StreamableHttpParameters(url="http://localhost:18080/mcp")
     async with ClientSessionGroup() as group:
@@ -108,7 +107,6 @@ async def discover():
     if not any(name.startswith("honua_") for name in names):
         raise SystemExit(names)
     print("\n".join(names))
-
 
 asyncio.run(discover())
 PY
@@ -244,7 +242,7 @@ There are two MCP surfaces in the Honua platform, and it is easy to conflate the
 
 The eight ops-evidence tools on this page (`honua_ops_health`, `honua_ops_findings`, `honua_alert_events`, `honua_operate_events`, `honua_platform_release_status`, `honua_deploy_operations`, `honua_supported_operation_kinds`, `honua_propose_rollback`) are deliberately public: they expose bounded read-only facts and human-gated proposals, not operator reasoning.
 
-A third, unrelated server exists in the same npm package as the Claude Desktop bridge: the standalone `honua-mcp` binary serves any public ArcGIS or OGC endpoint and needs no Honua deployment. See [the standalone MCP server](https://github.com/honua-io/honua-sdk-js/blob/trunk/docs/mcp-server.md).
+A third, unrelated server exists in the same npm package as the Claude Desktop bridge: the standalone `honua-mcp` binary serves any public GeoServices REST or OGC endpoint and needs no Honua deployment. See [the standalone MCP server](https://github.com/honua-io/honua-sdk-js/blob/trunk/docs/mcp-server.md).
 
 ## Workflow views (bounded discovery)
 

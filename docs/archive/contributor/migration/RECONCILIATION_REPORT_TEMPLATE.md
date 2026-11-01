@@ -1,8 +1,7 @@
 # Reconciliation Report Template
 
 Structured reporting format for the reconciliation harness output (Epic F, Phase 3).
-Aligns with the four harness checks from the
-[migration plan](../ESRI_MIGRATION_PLATFORM_PLAN.md#reconciliation-harness).
+Aligns with the four harness checks defined for the migration workflow.
 
 This is a reporting template, not a harness implementation. The template defines the
 expected output structure that the harness should produce.

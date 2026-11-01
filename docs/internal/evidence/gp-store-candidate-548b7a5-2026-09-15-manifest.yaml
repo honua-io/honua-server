@@ -175,7 +175,7 @@ components:
     #   ahead   (ahead_by=251, behind_by=0)
     #
     # WHY THE OLD PIN COULD NOT SIMPLY BE KEPT. e3ab87ce is NOT a trunk commit at all — it was built
-    # by release-bundle.yml from the branch fix/2026.1-esri-defects and has 30 commits absent from
+    # by release-bundle.yml from a non-trunk branch and has 30 commits absent from
     # trunk (`compare/e3ab87ce...6aad1067` -> status=diverged, ahead=295, behind=30).
     #
     # IMAGE PROVENANCE — WHAT WAS AND WAS NOT PROVEN. Read this before treating the pin as attested.
@@ -206,7 +206,7 @@ components:
     #       The ONLY honua-server image carrying a GitHub-API attestation is the outgoing rc-cert one:
     #       $ gh attestation verify oci://...@sha256:d7a45c87... --repo honua-io/honua-server  -> exit 0
     #         predicateType https://slsa.dev/provenance/v1
-    #         buildSignerURI .../release-bundle.yml@refs/heads/fix/2026.1-esri-defects
+    #         buildSignerURI .../release-bundle.yml from the source branch
     #         sourceRepositoryDigest e3ab87cebb7bf2d32c4e8cdb145f8d626b864d8e
     #       So NO trunk commit currently has a GitHub-attested image. Registry-level SLSA provenance is
     #       the strongest available binding for a nightly, and it is what (b) establishes. The release
@@ -607,20 +607,6 @@ clientArtifacts:
 # Non-shipping workflows whose observations can affect promotion. A full producer commit is the
 # trust root; workflow/event/branch identity prevents evidence from an unreviewed execution path.
 evidenceSources:
-  esri-compat:
-    repository: honua-io/honua-esri-compat
-    workflowPath: .github/workflows/esri-sdk-certification.yml
-    # REFRESHED 2026-08-27, 167b510a -> ece4c3a2 (trunk HEAD, honua-esri-compat#76 "test: bind live
-    # fixture evidence to a candidate"). NOT GREEN: 2 failures, both `License-free Esri SDK lanes` —
-    # named here because that lane is exactly the licensing-gated surface this producer covers, and
-    # calling it green would be the "reads as a pass" failure this file warns about above.
-    # certification/conformance-evidence.yaml esri.evidenceRef is updated to the SAME value in this
-    # commit; validate_platform.check_legacy_evidence_pin_coherence hard-fails if they disagree.
-    producerSha: "ece4c3a2f68557fe8329e9932de36193d0732894"
-    trustedEvents: [workflow_dispatch]
-    trustedBranch: trunk
-    artifactIdentity: esri-certification-bundle
-    evidencePolicyRevision: conformance-evidence-v1
   cite:
     repository: honua-io/honua-server
     workflowPath: .github/workflows/cite-evidence-report.yml

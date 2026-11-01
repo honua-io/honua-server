@@ -72,11 +72,11 @@ public interface IUnifiedResponseService
 
 ## Supported Protocols
 
-### GeoServices (ArcGIS REST API)
+### GeoServices (GeoServices REST API)
 - **Serializer**: `GeoServicesSerializer`
 - **Options**: `GeoServicesSerializationOptions`
 - **Formats**: JSON, JSONP
-- **Features**: Field metadata, geometry normalization, ESRI spatial reference
+- **Features**: Field metadata, geometry normalization, GeoServices REST spatial reference
 
 ### OGC API Features
 - **Serializer**: `OgcApiFeaturesSerializer`
@@ -288,17 +288,8 @@ public async Task UnifiedService_CreatesGeoServicesResponse()
 ```
 
 ### Protocol Compliance Tests
-Verify each protocol generates compliant output:
-```csharp
-[Test]
-public async Task GeoServicesSerializer_GeneratesValidEsriJson()
-{
-    var serialized = await serializer.SerializeAsync(responseData, options);
-    var json = JsonDocument.Parse((string)serialized.Data);
-    
-    Assert.That(json.RootElement.GetProperty("features").GetArrayLength(), Is.GreaterThan(0));
-}
-```
+Verify each protocol generates compliant output by parsing its serialized
+response and checking the required fields and feature collection.
 
 ## Benefits
 

@@ -10,7 +10,7 @@ Two of the most common reads with the Honua .NET SDK: querying a FeatureServer l
 
 ## Query a FeatureServer layer
 
-`IHonuaFeatureServerClient` wraps the ArcGIS-compatible [GeoServices REST](../../reference/protocols/geoservices-rest.md) FeatureServer. Register it (`AddHonua(o => o.UseGeoServices = true)` or `AddHonuaFeatureServer()`), then query by service id and numeric layer id:
+`IHonuaFeatureServerClient` wraps the GeoServices REST FeatureServer. Register it (`AddHonua(o => o.UseGeoServices = true)` or `AddHonuaFeatureServer()`), then query by service id and numeric layer id:
 
 ```csharp
 using Honua.Sdk.GeoServices.FeatureServer;

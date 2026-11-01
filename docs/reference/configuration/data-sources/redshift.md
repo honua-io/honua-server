@@ -166,7 +166,7 @@ Simple WHERE expressions are parsed and parameterized in-process. Supported toke
 - `field IS [NOT] NULL`
 - Any number of the above joined with `AND`
 
-Anything outside this grammar is rejected with `ArgumentException`; full-CQL2 / OData / ArcGIS
+Anything outside this grammar is rejected with `ArgumentException`; full-CQL2 / OData / GeoServices REST
 expression translation is not part of this slice.
 
 When a request supplies a translated `SqlFilter`, the provider rejects it with

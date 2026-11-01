@@ -13,7 +13,7 @@ This ADR sets the coherent, strategically-correct target model and the phased pa
 
 ### What exists today (verified 2026-06-01)
 
-- **MapLibre is canonical** (ADR-0002). SLD 1.0/1.1 and Esri `drawingInfo` are derived encodings.
+- **MapLibre is canonical** (ADR-0002). SLD 1.0/1.1 and GeoServices REST `drawingInfo` are derived encodings.
   The bidirectional converters and validator already exist and are tested under
   `src/Honua.Server/Features/Styling/` (`MapLibreToSldConverter`, `SldToMapLibreConverter`,
   `MapLibreToGeoServicesConverter`, `GeoServicesToMapLibreConverter`, `MapLibreStyleNormalizer`).
@@ -63,8 +63,8 @@ OGC API – Styles' **`styleId`** is the natural unifying primitive, and the
 A style is a first-class `MetadataV2ResourceType.Style` resource with a stable **`styleId`**,
 decoupled from any single layer. Data resources reference styles via `StyleResourceIds`
 (`[0]` = primary), so one style can render many layers. Each style resource carries N encodings
-(`mapbox-style` canonical; `sld-1.0.0`, `sld-1.1.0`, `esri-drawing-info`, `esri-image-renderer`,
-`3d-tiles-styling`, `x-*` derived), each either inline (`Body`) or external (`StorageBindingId`).
+(`mapbox-style` canonical; OGC SLD, GeoServices REST renderer/image encodings,
+`3d-tiles-styling`, and other derived encodings), each either inline (`Body`) or external (`StorageBindingId`).
 
 This is the strategically-correct end state and is what the metadata-v2 type system already
 anticipates. It **supersedes ADR-0002's "one style per layer" storage framing** as the target
@@ -140,8 +140,8 @@ API before the storage is fully first-class:
   these are complementary responsibilities, not a re-home into Console. (ADR-0007's original
   `honua-server-admin#80` routing is stale either way — `honua-server-admin` is archived/dead.)
   The Studio editor is **dual-mode**: MapLibre/Maputnik visual authoring **and**
-  Esri-renderer (`drawingInfo`) authoring for Esri-familiar users, both writing the one canonical
-  style over `/ogc/styles` (the server round-trips MapLibre ↔ Esri per ADR-0002). Mobile annotation
+  GeoServices REST-renderer (`drawingInfo`) authoring for GeoServices REST-familiar users, both writing the one canonical
+  style over `/ogc/styles` (the server round-trips MapLibre ↔ GeoServices REST per ADR-0002). Mobile annotation
   styling stays intentionally orthogonal (documented, not unified).
 - **Parallel: OGC API Maps styled-map for vector layers** — separate from the Styles API; tracked
   as its own issue against the renderer-dispatch architecture.
@@ -175,7 +175,7 @@ API before the storage is fully first-class:
   one-style-per-layer *storage* framing is superseded by the first-class model as the target.
 - **ADR-0007** (Embedded Maputnik Style Editor) — the editor is implemented in **honua-studio**
   and embedded by **honua-console** (not owned by Console, and not the archived
-  `honua-server-admin`); it is **dual-mode**: MapLibre/Maputnik + Esri-renderer (`drawingInfo`)
+  `honua-server-admin`); it is **dual-mode**: MapLibre/Maputnik + GeoServices REST-renderer (`drawingInfo`)
   authoring. The Console styleId picker and the embedded Studio editor consume `/ogc/styles`.
 - **ADR-0040** (Metadata v2 Canonical Graph) — this ADR resolves its open design question #8;
   the producer + storage for `Type=Style` / `StyleResourceIds` is the Phase 2 epic.

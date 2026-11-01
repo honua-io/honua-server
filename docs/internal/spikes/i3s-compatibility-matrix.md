@@ -1,6 +1,6 @@
-# I3S / ArcGIS Scene Layer Compatibility Matrix and Conformance Plan
+# I3S / GeoServices REST Scene Layer Compatibility Matrix and Conformance Plan
 
-This page is a research-spike output for `honua-server-843`. It maps Esri
+This page is a research-spike output for `honua-server-843`. It maps GeoServices REST
 Indexed 3D Scene Layer (I3S) / Scene Service concepts to Honua's planned
 3D Tiles scene model, identifies the minimum viable compatibility surface,
 and proposes bounded child tickets for implementation.
@@ -26,7 +26,7 @@ must remain Enterprise-edition only.
 
 ## Spec target
 
-The conformance plan targets the **Esri I3S community specification 1.7**
+The conformance plan targets the **GeoServices REST I3S community specification 1.7**
 for the MeshPyramids, Points, and Building profiles, which corresponds to
 **OGC I3S Community Standard 1.3** (document `17-014r9`). The Point Cloud
 Scene Layer profile is on its own version cadence (community spec `2.0`
@@ -34,15 +34,15 @@ maps to the same OGC 1.3 standard) and is folded into the same target.
 Rationale:
 
 - The 1.7 / OGC 1.3 cohort is the version most broadly supported across
-  ArcGIS Pro 2.x/3.x, ArcGIS Enterprise 10.9+, and the ArcGIS Online Scene
+  desktop GIS client 2.x/3.x, GeoServices REST Enterprise 10.9+, and the hosted GIS platform Scene
   Viewer.
 - Newer per-profile versions (1.8/1.9/1.10 for MeshPyramids and Points,
-  2.1 for Point Cloud) are documented in the upstream Esri repository and
+  2.1 for Point Cloud) are documented in the upstream GeoServices REST repository and
   introduce incremental features — `timeInfo`, `rangeInfo`, point cloud
   `Extract` — that are tracked here as follow-on work, not initial scope.
   These newer versions are not yet rolled into the OGC standard.
 
-Each I3S profile evolves on its own release cycle in the Esri community
+Each I3S profile evolves on its own release cycle in the GeoServices REST community
 specification, so any shared `ISceneLayerService` abstraction (see
 "Prerequisite abstractions" below) MUST avoid baking 1.7-specific framing
 into its public surface.
@@ -77,8 +77,8 @@ into its public surface.
 
 | Feature area | I3S concept | Honua equivalent | Translation feasibility | Recommendation |
 | --- | --- | --- | --- | --- |
-| Geometry encoding | Esri-defined binary `geometries/0` (interleaved buffer with positions, normals, UVs, colors, feature ids, region ids) | glTF binary buffers in B3DM (from `honua-server-842`) | Hard — binary layout transcoding required | Native pipeline OR online transcoder; sequencing TBD per child issue |
-| Geometry compression | Optional Draco (per `compressedAttributes` in 1.7+); newer per-profile compact bundle work tracked separately by Esri | glTF buffers (Draco optional in `honua-server-842`) | Hard — compression format and bundling differ | Native pipeline OR online transcoder |
+| Geometry encoding | GeoServices REST-defined binary `geometries/0` (interleaved buffer with positions, normals, UVs, colors, feature ids, region ids) | glTF binary buffers in B3DM (from `honua-server-842`) | Hard — binary layout transcoding required | Native pipeline OR online transcoder; sequencing TBD per child issue |
+| Geometry compression | Optional Draco (per `compressedAttributes` in 1.7+); newer per-profile compact bundle work tracked separately by GeoServices REST | glTF buffers (Draco optional in `honua-server-842`) | Hard — compression format and bundling differ | Native pipeline OR online transcoder |
 | Materials | `materialDefinitions` entries with PBR-aligned properties (baseColor, metallic, roughness, alpha mode, double-sided) plus texture references | glTF 2.0 PBR materials | Easy — close 1:1 mapping with PBR-MetallicRoughness | Translation adapter |
 | Texture sets | `textureSetDefinitions` referencing JPEG/PNG/KTX2/Basis bundles per node | glTF embedded textures (JPEG/PNG/KTX2) | Moderate — format conversion may be needed; KTX2/Basis preferred for parity with both ecosystems | Translation adapter |
 | Per-feature ids | Required `feature-id` attribute, used to link geometry to attribute files and for `identify` | Per-feature `_BATCHID` in B3DM batch table | Moderate — id mapping required during transcoding | Translation adapter (sequenced with attribute pipeline) |
@@ -109,7 +109,7 @@ I3S 1.7 separates two coordinate concerns:
 
 - **`indexCRS` and `vertexCRS`** describe how positions are stored. In
   **global mode** (the default for `SceneServer` services consumed by
-  ArcGIS Scene Viewer) `indexCRS` is geographic — typically WGS 84
+  GeoServices REST Scene Viewer) `indexCRS` is geographic — typically WGS 84
   (EPSG:4326) or CGCS2000 longitude/latitude/elevation. Per-vertex
   positions are encoded in `vertexCRS` as small offsets from the node's
   `mbs` center (also in `indexCRS`); local mode allows a projected
@@ -135,7 +135,7 @@ CRS handling rules for any future translation adapter:
   - **Global mode** (`vertexCRS = WGS84`, longitude/latitude/elevation)
     for layers whose source covers geographic extents.
   - **Local mode** (`vertexCRS` = a registered projected CRS) for layers
-    whose source is intrinsically projected and whose ArcGIS consumers
+    whose source is intrinsically projected and whose GeoServices REST consumers
     can resolve the declared CRS.
 - Reject layers whose source CRS cannot be transformed to the chosen
   `vertexCRS` (return `422 Unprocessable Entity` with a structured
@@ -151,7 +151,7 @@ CRS handling rules for any future translation adapter:
   meters). The I3S `obb` is reported with `center`, `halfSize`, and
   `quaternion` interpreted in the layer's `normalReferenceFrame`, so the
   adapter MUST declare `normalReferenceFrame` explicitly per layer to
-  keep ArcGIS Scene Viewer shading correct.
+  keep GeoServices REST Scene Viewer shading correct.
 
 ## LOD and screen-space-error normalization
 
@@ -160,12 +160,12 @@ selection in screen pixels at a fixed device pixel ratio. 3D Tiles
 `geometricError` is metric, applied via the client's screen-space-error
 formula. The translation adapter must derive an `lodSelection` value from a
 tile's `geometricError`, MBS radius, and the camera/canvas assumptions baked
-into ArcGIS Scene Viewer.
+into GeoServices REST Scene Viewer.
 
 Recommended approach: pre-compute the I3S-equivalent threshold at translation
 time using the standard formula `screenThresholdPx ≈ geometricError *
 referenceCanvasHeightPx / (2 * tan(referenceFovRad / 2) * mbsRadiusMeters)`,
-with reference canvas height and FOV taken from ArcGIS Scene Viewer defaults
+with reference canvas height and FOV taken from GeoServices REST Scene Viewer defaults
 (committed as named constants in the adapter, with a documented override
 path).
 
@@ -177,8 +177,8 @@ that use different canvas/FOV assumptions; it is the same tradeoff the
 
 ### Schema and specification reference
 
-The upstream **`Esri/i3s-spec` GitHub repository**
-(<https://github.com/Esri/i3s-spec>) is the authoritative source for I3S
+The upstream I3S specification repository
+(the public community specification) is the authoritative source for I3S
 schema text, profile READMEs, JSON definition files, and worked examples
 embedded in the spec documents. The repository's specification text is
 licensed **Creative Commons Attribution-NoDerivs (CC BY-ND)**. CC BY-ND
@@ -208,25 +208,25 @@ external I3S corpus is vendored.
 
 ### Real-world manual smoke target
 
-Esri's publicly hosted **Philadelphia Buildings** I3S Scene Layer (ArcGIS
+GeoServices REST publicly hosted **Philadelphia Buildings** I3S Scene Layer (GeoServices REST
 Online) is the canonical real-world interop target for manual smoke testing
-in ArcGIS Scene Viewer. It exercises the `3DObject` layer type, multi-LOD
+in GeoServices REST Scene Viewer. It exercises the `3DObject` layer type, multi-LOD
 nodes, and attribute identify. The dataset is referenced **by URL only,
-not vendored**; ArcGIS Online layer terms govern interactive use, and
+not vendored**; hosted GIS platform layer terms govern interactive use, and
 those terms vary per layer, so the conformance harness child issue MUST
 re-confirm the layer's terms before any automated probing. Manual smoke
-is appropriate because automated ArcGIS Scene Viewer harnessing is out of
-scope for the initial Enterprise offering and requires a non-public Esri
+is appropriate because automated GeoServices REST Scene Viewer harnessing is out of
+scope for the initial Enterprise offering and requires a non-public GeoServices REST
 toolchain.
 
 ### Recommended starter fixture
 
 Lead with the **synthetic minimal fixture** for CI gating: it has no
 external dependency, is fully deterministic, and avoids the CC BY-ND /
-ArcGIS Online terms entanglements above. Treat the upstream `Esri/i3s-spec`
+hosted platform licensing concerns above. Treat the upstream I3S specification
 repository as a schema and worked-example reference (linked, attributed,
 not vendored), and keep the Philadelphia Buildings layer as the manual
-ArcGIS Scene Viewer smoke target only.
+GeoServices REST scene-viewer smoke target only.
 
 ## Enterprise entitlement gating, licensing, and support boundary
 
@@ -248,16 +248,16 @@ present. Specifically:
   appear in the open-core MVP support list except as "Not implemented —
   Enterprise roadmap".
 - **Support policy**: the initial Enterprise offering targets I3S 1.7 against
-  ArcGIS Pro 2.x/3.x and ArcGIS Online Scene Viewer. ArcGIS Scene Viewer
+  desktop GIS clients 2.x/3.x and a hosted scene viewer. GeoServices REST scene-viewer
   certification is **out of scope** for the initial offering and is called
   out as a separate roadmap item.
-- **Third-party licensing**: the `Esri/i3s-spec` repository is referenced
+- **Third-party licensing**: the upstream I3S specification repository is referenced
   as a schema/spec source only; its specification text is **CC BY-ND** and
   MUST NOT be modified, paraphrased, or repackaged as derivative
   documentation. Quoted excerpts must carry upstream attribution. No
   fixtures from that repository are vendored. The Philadelphia Buildings
   smoke target is referenced by URL only, not vendored, and the relevant
-  ArcGIS Online layer terms must be re-confirmed before any automated
+  hosted GIS platform layer terms must be re-confirmed before any automated
   probing.
 
 ## Prerequisite abstractions
@@ -271,7 +271,7 @@ inline in their respective protocol features.
 The interface SHOULD be defined as part of `honua-server-837` (or as a
 prerequisite child issue scoped from `honua-server-837`) and SHOULD be
 shaped to support multiple downstream protocols (3D Tiles and the
-multiple Esri I3S profiles, including future per-profile version
+multiple GeoServices REST I3S profiles, including future per-profile version
 upgrades). It should expose at minimum: source resolution,
 tileset/node-tree traversal, per-node geometry and attribute reads, and a
 CRS contract. The I3S adapter described here will be implemented against
@@ -285,7 +285,7 @@ blocker on this spike's deliverables.
 | Ticket | Title | Relationship |
 | --- | --- | --- |
 | `honua-server-837` | Hosted 3D Tiles serving | I3S serving must sit above the same scene-layer abstraction that 3D Tiles consumes. The `ISceneLayerService` boundary should be defined at `honua-server-837` and shaped to accommodate I3S adaptation. Not a hard sequencing prerequisite for the I3S service-info child issue, but a hard architectural prerequisite to avoid duplicated scene plumbing. |
-| `honua-server-838` | Cesium smoke suite | Not a prerequisite for I3S. Cesium does not consume I3S, and ArcGIS Scene Viewer is the only canonical I3S consumer. I3S smoke testing requires a separate ArcGIS Scene Viewer or I3S validation harness, scoped in the dedicated conformance child issue (#6 below). The pattern of `honua-server-838` (committed fixture + automated visual smoke) is the template the I3S harness ticket should follow. |
+| `honua-server-838` | Cesium smoke suite | Not a prerequisite for I3S. Cesium does not consume I3S, and GeoServices REST Scene Viewer is the only canonical I3S consumer. I3S smoke testing requires a separate GeoServices REST Scene Viewer or I3S validation harness, scoped in the dedicated conformance child issue (#6 below). The pattern of `honua-server-838` (committed fixture + automated visual smoke) is the template the I3S harness ticket should follow. |
 | `honua-server-842` | 3D Tiles generation pipeline | **Hard prerequisite** for any translation-adapter I3S path. Until B3DM/PNTS generation exists, the only I3S work that can ship is a service-info / layer-descriptor JSON adapter without geometry, which has limited standalone value. Geometry-bearing child issues are sequenced strictly behind `honua-server-842`. |
 | `honua-server-849` | Protected scene access envelope | **Hard prerequisite** for production I3S serving. All I3S endpoints must be gated by the same scene access envelope (auth, signed URLs, layer-level access) defined by `honua-server-849`. The spec-shape child issues can be designed in parallel, but no I3S route may be enabled in production until `honua-server-849` ships. |
 
@@ -303,9 +303,9 @@ spike; they are the proposed shape for follow-on grooming.
 | 1 | `feat(scene/i3s): SceneServer service info and layer descriptor endpoints` | S | Enterprise | `honua-server-842` (scene-layer abstraction must exist), `honua-server-849` (auth gate) | Thin JSON projection adapter at `/rest/services/{id}/SceneServer` and `/layers/0`. No geometry, no attributes. Lives at `src/Honua.Server/Features/Protocols/SceneServer/`; core abstraction in `src/Honua.Core/Features/Scene/`. Source-generated JSON context. |
 | 2 | `feat(scene/i3s): 3DObject node tree and basic geometry serving via translation adapter` | XL | Enterprise | Child #1, `honua-server-842` (B3DM pipeline) | Adds `nodepages`, `nodes/{id}`, `shared`, `geometries/0`, `textures/0`. Includes glTF → I3S geometry transcoder. **Open question**: per-request transcoding vs. bake-time generation; recommend bake-time as the default to keep tile-serving latency budgets intact, with per-request as a fallback only for low-traffic Enterprise scenarios. |
 | 3 | `feat(scene/i3s): PointCloud layer type via translation adapter` | M | Enterprise | Child #1, `honua-server-842` (PNTS pipeline) | Adds PNTS → I3S point bundle conversion and the `Point`/`PointCloud` layer-type variants. |
-| 4 | `feat(scene/i3s): attribute index file generation` | L | Enterprise | Child #2 | Native pipeline; no 3D Tiles analog. Adds `attributes/f_N/0` per-field binary attribute files and the per-field `statistics/f_N/0` resource. Required for ArcGIS Scene Viewer `identify` parity. Deferred until the attribute storage and indexing model is defined. |
+| 4 | `feat(scene/i3s): attribute index file generation` | L | Enterprise | Child #2 | Native pipeline; no 3D Tiles analog. Adds `attributes/f_N/0` per-field binary attribute files and the per-field `statistics/f_N/0` resource. Required for scene-viewer `identify` parity. Deferred until the attribute storage and indexing model is defined. |
 | 5 | `feat(scene/i3s): IntegratedMesh native pipeline` | XL | Enterprise | None of the above (separate native indexing path) | Photogrammetry-mesh-only native indexing and node generation pipeline. Deferred; depends on a separate photogrammetry ingestion strategy not yet scoped in `honua-server-842`. |
-| 6 | `feat(scene/i3s): I3S conformance fixture and ArcGIS Scene Viewer smoke harness` | M | Enterprise | Child #1 (must have something to test) | Commits the Honua-authored synthetic minimal fixture as the sole committed CI corpus and adds an automated I3S protocol-shape validator. The upstream `Esri/i3s-spec` repository is referenced for schema/spec text only (CC BY-ND; not vendored). ArcGIS Scene Viewer smoke remains manual until a viable headless harness is available; the manual smoke runbook is part of this child. Follows the `honua-server-838` Cesium-smoke pattern for fixture management. |
+| 6 | `feat(scene/i3s): I3S conformance fixture and scene-viewer smoke harness` | M | Enterprise | Child #1 (must have something to test) | Commits the Honua-authored synthetic minimal fixture as the sole committed CI corpus and adds an automated I3S protocol-shape validator. The upstream I3S specification repository is referenced for schema text only (CC BY-ND; not vendored). Scene-viewer smoke remains manual until a viable headless harness is available; the manual smoke runbook is part of this child. Follows the `honua-server-838` Cesium-smoke pattern for fixture management. |
 
 ## Risks and tradeoffs
 
@@ -315,8 +315,8 @@ spike; they are the proposed shape for follow-on grooming.
   storage and adds pipeline complexity. Child issue #2 must pick a default
   before implementation; this matrix recommends bake-time as the default.
 - **I3S per-profile version spread.** Each I3S profile (MeshPyramids,
-  Points, Building, Point Cloud) ships its own version cadence. ArcGIS
-  Pro 2.x targets the 1.6/1.7 cohort; recent ArcGIS Pro and ArcGIS Online
+  Points, Building, Point Cloud) ships its own version cadence. GeoServices REST
+  Pro 2.x targets the 1.6/1.7 cohort; recent desktop GIS client and hosted GIS platform
   Scene Viewer releases also accept the newer profile versions
   (1.8–1.10 / 2.1) and may take advantage of features such as `timeInfo`,
   `rangeInfo`, and per-profile bundle improvements when present.
@@ -328,9 +328,9 @@ spike; they are the proposed shape for follow-on grooming.
   the layer level. 3D Tiles flexible implicit/explicit trees do not map
   exactly. The translation adapter normalizes to a maximum HLOD depth at
   bake time; this can produce valid but potentially suboptimal LOD
-  transitions in ArcGIS Scene Viewer.
+  transitions in GeoServices REST Scene Viewer.
 - **Attribute indexing gap.** I3S attribute files are first-class in the
-  spec and many ArcGIS workflows depend on them for identify and query.
+  spec and many GeoServices REST workflows depend on them for identify and query.
   There is no 3D Tiles analog, so attributes require a native pipeline
   (child issue #4) regardless of the geometry strategy. Without #4, I3S
   serving has no attribute-identify parity.
@@ -338,7 +338,7 @@ spike; they are the proposed shape for follow-on grooming.
   Without defining it before `honua-server-837` and the I3S adapter ship,
   scene plumbing will be duplicated. Surfaced as a prerequisite, not a
   blocker on this spike.
-- **Enterprise scope risk.** Committing to I3S signals Esri-replacement
+- **Enterprise scope risk.** Committing to I3S signals GeoServices REST-replacement
   ambition. If the Enterprise roadmap shifts, in-flight I3S work could
   strand. Bounded child issues with explicit gating and clear sequencing
   mitigate this.
@@ -349,7 +349,7 @@ These questions are deliberately left open by this spike. The recommendations
 above assume the answers documented here; reviewers should push back on any
 that are wrong before child issues are opened.
 
-1. **I3S spec version target.** Recommendation: target the Esri community
+1. **I3S spec version target.** Recommendation: target the GeoServices REST community
    1.7 / OGC I3S 1.3 cohort first, with newer per-profile versions
    (1.8–1.10 for MeshPyramids/Points/Building, 2.1 for Point Cloud)
    tracked as follow-on. Does the Enterprise customer roadmap require any
@@ -363,7 +363,7 @@ that are wrong before child issues are opened.
    prerequisite child issue?
 4. **Reference fixture source.** Recommendation: the Honua synthetic
    minimal fixture is the only committed CI fixture. The upstream
-   `Esri/i3s-spec` repository is a CC BY-ND specification reference, not
+   I3S specification repository is a CC BY-ND reference, not
    a vendorable fixture corpus, so no third-party I3S fixtures are
    committed. Acceptable, or should we invest in sourcing a separately
    licensed real-world fixture before the conformance harness ships?
@@ -380,13 +380,13 @@ that are wrong before child issues are opened.
 | Compatibility matrix covers I3S layer types, metadata, geometry, materials, attributes, LOD, and service endpoints | "Layer-type compatibility", "Metadata, attributes, and structural compatibility", "Geometry and material compatibility", "Service endpoint compatibility", "LOD and screen-space-error normalization" |
 | Each feature area has a recommendation: translation adapter, native pipeline, or deferred scope | Recommendation column in every matrix table; vocabulary defined in "Status vocabulary" |
 | The spike proposes child issues for implementation if moving forward is recommended | "Proposed implementation sequence and child issues" (six bounded child issues) |
-| At least one public/simple I3S reference dataset is identified for future tests | "Reference fixtures and compatibility targets" — the Honua synthetic minimal fixture is the committed CI dataset; the public `Esri/i3s-spec` repository is the schema/spec reference; the publicly hosted Philadelphia Buildings layer is the manual ArcGIS Scene Viewer smoke target |
+| At least one public/simple I3S reference dataset is identified for future tests | "Reference fixtures and compatibility targets" — the Honua synthetic minimal fixture is the committed CI dataset; the upstream I3S specification repository is the schema reference; the publicly hosted Philadelphia Buildings layer is the manual scene-viewer smoke target |
 | Enterprise gating notes are explicit | "Enterprise gating, licensing, and support boundary" |
 | The plan states how I3S work relates to `honua-server-837`, `honua-server-838`, `honua-server-842`, `honua-server-849` | "Relationship to sibling tickets" |
 | No production I3S serving was added by this historical spike | This page was the spike's only artifact; later work added the Enterprise descriptor/node-metadata preview documented by ADR-0078, while production geometry remains deferred. |
 
 ## Cross-references
 
-- Launch contract entry: [MVP Compatibility Contract](../../reference/compatibility/clients.md) — see the I3S / ArcGIS Scene Layer row.
+- Launch contract entry: [MVP Compatibility Contract](../../reference/compatibility/clients.md) — see the I3S / GeoServices REST Scene Layer row.
 - Sibling 3D scene tickets: `honua-server-837` (hosted 3D Tiles), `honua-server-838` (Cesium smoke), `honua-server-842` (3D Tiles generation), `honua-server-849` (protected scene envelope).
-- The Esri I3S community specification (`Esri/i3s-spec`, <https://github.com/Esri/i3s-spec>, CC BY-ND) and the corresponding **OGC I3S Community Standard 1.3** (document `17-014r9`) are the conformance references for any future implementation child. Esri community spec 1.7 (MeshPyramids/Points/Building) and 2.0 (PointClouds) both map to OGC I3S 1.3 in the upstream synchronization table.
+- The I3S community specification (CC BY-ND) and the corresponding **OGC I3S Community Standard 1.3** (document `17-014r9`) are the conformance references for any future implementation child. Community specification versions 1.7 (MeshPyramids/Points/Building) and 2.0 (PointClouds) both map to OGC I3S 1.3 in the upstream synchronization table.

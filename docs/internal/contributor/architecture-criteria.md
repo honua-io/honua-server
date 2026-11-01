@@ -179,7 +179,7 @@ Canonical pipelines:
   ProcessService adapt to the canonical process/job runtime. They do not create protocol-local
   job lifecycle semantics.
 - **Format I/O**: readers and writers live in shared import/export/format services unless the
-  behaviour is truly protocol-specific. This covers GeoJSON, Esri JSON, GML, KML, GeoPackage,
+  behaviour is truly protocol-specific. This covers GeoJSON, GeoServices REST JSON, GML, KML, GeoPackage,
   GeoParquet, FlatGeobuf, shapefile, file geodatabase, WKT/WKB and CSV.
 
 Adapter rules:

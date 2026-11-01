@@ -95,11 +95,10 @@ For high latency, compare server latency with network round-trip time, CPU, memo
 
 ## Outbound HTTP resilience
 
-Calls to external services (ArcGIS/GeoServer imports, geocoders, key vaults, webhooks) get automatic retries with exponential backoff and per-service circuit breakers. Three profiles exist — `FastApi`, `Standard`, `SlowService` — plus per-service overrides, all tunable under `HttpResilience__`:
+Calls to external services (GeoServices REST/GeoServer imports, geocoders, key vaults, webhooks) get automatic retries with exponential backoff and per-service circuit breakers. Three profiles exist — `FastApi`, `Standard`, `SlowService` — plus per-service overrides, all tunable under `HttpResilience__`:
 
 ```bash
 HttpResilience__SlowService__TimeoutSeconds=300
-HttpResilience__ServiceOverrides__arcgis-rest__MaxRetryAttempts=5
 HttpResilience__ServiceOverrides__geoserver-rest__TimeoutSeconds=240
 ```
 

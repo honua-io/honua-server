@@ -68,7 +68,7 @@ Known unsupported WCS `GetCoverage` extensions return `501` OWS `ExceptionReport
 
 ## Relationship To Other Raster APIs
 
-WCS is for raw coverage export. ImageServer remains the Esri-compatible raster surface for service metadata, rendering, identify, catalog query, tiles, statistics, histograms, and legend. OGC API Maps remains the modern OGC rendered-map surface. All three surfaces reuse the same raster store and raster query/export infrastructure.
+WCS is for raw coverage export. ImageServer remains the GeoServices REST-compatible raster surface for service metadata, rendering, identify, catalog query, tiles, statistics, histograms, and legend. OGC API Maps remains the modern OGC rendered-map surface. All three surfaces reuse the same raster store and raster query/export infrastructure.
 
 `GetCoverage` returns the buffered `RasterResult.Data` byte array from the existing raster store. The WCS routes opt out of response output caching because ad hoc coverage trims are high-cardinality; callers should rely on tile/cache-hinted surfaces for seeded raster delivery. Large-raster streaming, range subset/band selection, scaling extensions, temporal/multidimensional coverage, strict schema-safe coverage aliases, and multi-raster WCS mosaic selection are follow-up scope.
 

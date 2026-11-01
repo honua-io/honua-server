@@ -1,15 +1,15 @@
 ---
 type: capability
-title: "ArcGIS Portal Sharing Read Surface"
-description: "Expose the read-only /sharing/rest Portal facade (info, portals/self, search, content/items) so Esri clients can discover Honua content as portal items."
+title: "GeoServices REST Portal Sharing Read Surface"
+description: "Expose the read-only /sharing/rest Portal facade (info, portals/self, search, content/items) so GeoServices REST clients can discover Honua content as portal items."
 resource: "honua://capability/identity.portal-sharing"
 tags: [capability, identity, community]
 ---
 <!-- GENERATED FILE - DO NOT EDIT. Regenerate with scripts/ci/generate-capability-concepts.py -->
 
-# ArcGIS Portal Sharing Read Surface
+# GeoServices REST Portal Sharing Read Surface
 
-Expose the read-only /sharing/rest Portal facade (info, portals/self, search, content/items) so Esri clients can discover Honua content as portal items.
+Expose the read-only /sharing/rest Portal facade (info, portals/self, search, content/items) so GeoServices REST clients can discover Honua content as portal items.
 
 | | |
 | --- | --- |
@@ -24,4 +24,4 @@ The facts above come from the server's capability registry and capability matrix
 
 ## Documented in
 
-- [GeoServices REST (ArcGIS-compatible)](../../reference/protocols/geoservices-rest.md)
+- [GeoServices REST reference](../../reference/protocols/geoservices-rest.md)

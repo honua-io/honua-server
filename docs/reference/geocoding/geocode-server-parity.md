@@ -9,11 +9,11 @@ resources:
 ---
 # GeocodeServer provider parity matrix
 
-This page records GeocodeServer parity across Honua's geocoding providers and against Esri
+This page records GeocodeServer parity across Honua's geocoding providers and against GeoServices REST
 GeocodeServer behavior. The per-provider capability matrix below is checked against each
 provider's advertised capabilities on every build, so a regression fails the build.
 
-For the operation-by-operation comparison against Esri GeocodeServer, see
+For the operation-by-operation comparison against GeoServices REST GeocodeServer, see
 [GeoServices REST parity](../compatibility/geoservices-parity.md).
 
 ## Service discovery
@@ -54,7 +54,7 @@ or suppress authentication and authorization errors on their named service folde
 
 ¹ Nominatim suggest is derived from its search endpoint; can be disabled via configuration.
 ² No native batch endpoint — fanned out to sequential single-address calls by the shared base
-  provider, preserving Esri `ResultID` alignment.
+  provider, preserving GeoServices REST `ResultID` alignment.
 ³ No native batch; the coordinator fails over to a batch-capable provider for `geocodeAddresses`.
 ⁴ AWS Location v1 has no structured-address request; structured components are composed into the
   `Text` query (graceful mapping), and the same structured fields are advertised in capability
@@ -77,5 +77,5 @@ or suppress authentication and authorization errors on their named service folde
   structured-input fidelity is checked against recorded responses; live-key verification is not
   part of the default path.
 - **Unsupported locator constructs.** Honua exposes a single anonymous, read-only locator.
-  Esri-specific locator constructs (suggest categories beyond provider-supplied address types,
+  GeoServices REST-specific locator constructs (suggest categories beyond provider-supplied address types,
   multi-locator composite services, and locator-side custom output fields) are not modeled.

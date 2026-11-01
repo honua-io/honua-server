@@ -23,7 +23,7 @@ database-budget decision.
 
 ## Context
 
-Honua needs to support both Esri GeoServices GPServer and OGC API Processes as
+Honua needs to support both GeoServices REST GPServer and OGC API Processes as
 compatibility adapters projected from a single canonical process model (see
 [ADR-0026](0026-ai-first-operator-contract.md)).
 
@@ -96,7 +96,7 @@ The canonical `AnalysisResultPackage` is the single source of truth for results.
 Adapters reshape it:
 
 - **GPServer**: decompose `Artifacts` into per-parameter result endpoints
-  (`/results/{paramName}`), matching Esri's per-output model. The route key
+  (`/results/{paramName}`), matching GeoServices REST per-output model. The route key
   must be a stable output identifier, not `ArtifactRef.Label` (which is
   human-readable). Adapters should bind artifacts to process definition
   output parameter names via `ArtifactRef.Metadata` or a follow-on field
@@ -118,7 +118,7 @@ The canonical model uses `AnalysisPlanStep.Inputs` as opaque
 `IReadOnlyDictionary<string, string>`. Protocol adapters own the translation
 between:
 
-- Esri GP types (GPString, GPFeatureRecordSetLayer, etc.) and step inputs
+- GeoServices REST GP types (GPString, GPFeatureRecordSetLayer, etc.) and step inputs
 - JSON Schema inputs/outputs and step inputs
 
 The canonical model does not store, validate, or depend on protocol-specific
@@ -129,12 +129,12 @@ parameter types.
 The following behaviors from external frameworks are deliberately not adopted
 into the canonical model:
 
-1. **Esri job deletion states** (`esriJobDeleting`, `esriJobDeleted`): Honua
+1. **GeoServices REST job deletion states** (`esriJobDeleting`, `esriJobDeleted`): Honua
    uses workspace lifecycle and retention policies for resource cleanup. Job
    records are durable audit artifacts.
 
 2. **Per-task fixed execution type**: Honua determines execution mode
-   per-request. The GPServer adapter synthesizes the Esri convention.
+   per-request. The GPServer adapter synthesizes the GeoServices REST convention.
 
 3. **WPS XML encoding**: not supported. OGC API Processes (JSON) is the target
    OGC surface.
@@ -163,7 +163,7 @@ states. Must not introduce protocol-specific concepts. Must implement
 the execution engine.
 
 **honua-server#723** (GPServer adapter): protocol adapter only. Must translate
-between Esri GPServer REST conventions and the canonical model. Must not add
+between GeoServices REST GPServer REST conventions and the canonical model. Must not add
 domain types to `Honua.Core`.
 
 **honua-server#529** (OGC API Processes adapter): protocol adapter only. Must

@@ -16,7 +16,8 @@ Attachments are keyed by integer object IDs (`globalIds` filters are rejected) a
 
 ### 1. Add an attachment
 
-Use `FeatureLayer.addAttachment` from `@honua/sdk-js/esri-compat` with the target `objectId`, the `photo.jpg` blob, its file name, and content type. Pass `keywords: "site-photo"` through `extraParams`.
+Use a client that supports the FeatureServer `addAttachment` operation. Supply the target
+`objectId`, file content, file name, content type, and optional `keywords` value.
 
 The body must be `multipart/form-data` (or form-urlencoded); the response returns the new `attachmentId`.
 

@@ -8,27 +8,16 @@ resource: "honua://capability/editing.featureserver-edits"
 
 Insert, update, and delete features over HTTP using whichever protocol your client already speaks: GeoServices FeatureServer, OGC API Features, or OData v4.
 
-**Prerequisites:** A running Honua server with a writable PostgreSQL-backed layer (DuckDB, SQL Server, and Oracle providers are read-only) and a JavaScript project with `@arcgis/core` installed. If the layer's access policy restricts writes, configure the ArcGIS Maps SDK with a credential carrying a write grant — see [Control access](../secure/access-control.md).
+**Prerequisites:** A running Honua server with a writable PostgreSQL-backed layer (DuckDB, SQL Server, and Oracle providers are read-only) and a client that supports the GeoServices FeatureServer edit operations. If the layer's access policy restricts writes, configure the client with a credential carrying a write grant — see [Control access](../secure/access-control.md).
 
-All three protocols write to the same store and emit the same change events, so pick one per client and mix freely. The worked example uses the ArcGIS Maps SDK for JavaScript against FeatureServer; the [equivalence table](#do-the-same-with-ogc-api-features-or-odata) maps each operation to the other two protocols.
+All three protocols write to the same store and emit the same change events, so pick one per client and mix freely. The examples below use the FeatureServer edit operations; the [equivalence table](#do-the-same-with-ogc-api-features-or-odata) maps each operation to the other two protocols.
 
 ## Steps
 
 ### 1. Connect to the layer
 
-Create a `FeatureLayer` for the published layer and load its metadata:
-
-```javascript
-import Graphic from "@arcgis/core/Graphic.js";
-import Point from "@arcgis/core/geometry/Point.js";
-import FeatureLayer from "@arcgis/core/layers/FeatureLayer.js";
-
-const layer = new FeatureLayer({
-  url: "http://localhost:8080/rest/services/parks/FeatureServer/0",
-});
-await layer.load();
-const objectIdField = layer.objectIdField;
-```
+Configure the published FeatureServer layer URL in your client and load its metadata. For
+example, the layer URL is `http://localhost:8080/rest/services/parks/FeatureServer/0`.
 
 ### 2. Insert and update a feature
 
@@ -89,7 +78,7 @@ await layer.applyEdits({
 
 OGC API Features takes `Content-Type: application/geo+json` bodies; a successful insert returns `201 Created` with a `Location` header pointing at the new item. OData follows standard v4 semantics, including atomicity groups inside `$batch`. WFS 2.0 `Transaction` (`POST /wfs`) is also supported for XML-based clients.
 
-> SDK: the Honua and ArcGIS Maps SDKs call `applyEdits` for you; point them at `/rest/services/{service}/FeatureServer` on the deployment origin.
+> SDK: the Honua and GIS client SDKs call `applyEdits` for you; point them at `/rest/services/{service}/FeatureServer` on the deployment origin.
 
 ## Verify
 

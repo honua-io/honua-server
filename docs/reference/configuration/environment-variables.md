@@ -38,7 +38,7 @@ Honua is configured entirely through environment variables (or the equivalent `a
 | `Oracle__CommandTimeoutSeconds` | `60` | Oracle read command timeout. |
 | `MySql__ConnectionString` | — | MySQL/MariaDB connection string (when `DataSource__Provider=mysql`). |
 | `MySql__EngineFlavor` | `Mysql` | `Mysql` or `MariaDb` — controls WKB axis-order handling. |
-| `ArcGisRest__Enabled` | `true` | Register the federated ArcGIS REST read-through provider. |
+| `GeoServicesRest__Enabled` | `true` | Register the federated GeoServices REST read-through provider. |
 
 Provider capabilities and versions: [data sources](data-sources/README.md).
 
@@ -59,7 +59,7 @@ Provider capabilities and versions: [data sources](data-sources/README.md).
 | `Authentication__ClientCertificates__TrustProfiles__N__*` | — | Trust-profile definitions (issuer subjects, SAN types, principal mappings, roles). |
 | `Authentication__ClientCertificates__ForwardedCertificate__Enabled` | `false` | Accept proxy-forwarded client certificates. |
 | `Authentication__ClientCertificates__ForwardedCertificate__TrustedProxyNetworks__N` | — | CIDR ranges allowed to forward certificates. |
-| `Authentication__PortalToken__OAuth2__AllowedRedirectUris__N` | — (empty rejects all) | Redirect-URI allow-list for the ArcGIS Portal OAuth2 bridge. |
+| `Authentication__PortalToken__OAuth2__AllowedRedirectUris__N` | — (empty rejects all) | Redirect-URI allow-list for the GeoServices REST Portal OAuth2 bridge. |
 | `Authentication__PortalToken__OAuth2__RequirePkce` | `true` | Require PKCE on every authorization-code flow. |
 | `Authentication__PortalToken__OAuth2__RotateRefreshTokens` | `true` | Rotate refresh tokens on each use. |
 | `SecurityHeaders__EnableHsts` | — | Emit HSTS headers (recommended `true` in production). |
@@ -371,7 +371,6 @@ size, and oversized bodies get HTTP 413.
 - [PostGIS configuration](data-sources/postgis.md) — connection strings, extensions, managed-Postgres notes.
 - [OpenAPI and the API explorer](../openapi-and-explorer.md) — `/docs` and the runtime spec endpoints.
 
-
 ### GeoParquet query memory budgets
 
 GeoServices `f=parquet` and OData `$format=parquet` share the configured
@@ -412,7 +411,6 @@ and accepted multi-row-group imports are unchanged.
 ## AI disclosure approvals
 
 Enabled remote AI transfers require exact operator approval rules. See [AI model disclosure approvals](ai-disclosure-policy.md) for configuration, secure defaults, migration and classification limits.
-
 
 ## AI invocation admission
 

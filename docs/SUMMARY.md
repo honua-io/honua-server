@@ -1,7 +1,5 @@
 # Table of Contents
-
 ## Get started
-
 - [Get started with AI](get-started/with-ai.md)
 - [Quickstart: install, publish, and query](get-started/quickstart.md)
   - [Local preview artifact and verification](reference/local-preview-artifact.md)
@@ -11,9 +9,7 @@
   - [Linux](get-started/linux-packages.md)
   - [Windows](get-started/windows-packages.md)
   - [Client packages and registries](get-started/registry-clients.md)
-
 ## Concepts
-
 - [Architecture](concepts/architecture.md)
 - [Architecture diagrams](concepts/architecture-diagrams.md)
 - [Protocols & standards](concepts/protocols.md)
@@ -58,9 +54,7 @@
   - [Task and operation](concepts/domain/task.md)
 - [Ecosystem & SDKs](concepts/ecosystem.md)
 - [Editions & licensing](concepts/editions-and-licensing.md)
-
 ## SDKs
-
 - [SDK overview](sdks/README.md)
 - .NET
   - [Get started](sdks/dotnet/dotnet-getting-started.md)
@@ -71,9 +65,7 @@
 - JavaScript / TypeScript
   - [Get started](sdks/javascript/javascript-getting-started.md)
   - [Common tasks](sdks/javascript/javascript-common-tasks.md)
-
 ## Guides
-
 - [All guides: I want to…](guides/README.md)
 - [GIS workflow contracts](guides/workflows/README.md)
   - [Use the Honua GIS workflow language](guides/workflows/use-workflow-language.md)
@@ -93,7 +85,7 @@
 - Publish data
   - [Import files](guides/publish/import-files.md)
   - [Import from object storage](guides/publish/import-from-object-storage.md)
-  - [Import from ArcGIS services](guides/publish/import-from-arcgis-services.md)
+  - [Import from GeoServices REST services](guides/publish/import-from-geoservices-rest.md)
   - [Serve existing databases](guides/publish/serve-existing-databases.md)
   - [Publish layers](guides/publish/publish-layers.md)
   - [Publish rasters](guides/publish/publish-rasters.md)
@@ -117,7 +109,6 @@
   - [Work with time](guides/query-analyze/work-with-time.md)
 - Connect clients
   - [QGIS](guides/connect/qgis.md)
-  - [ArcGIS Pro & Esri SDKs](guides/connect/arcgis-pro.md)
   - [Excel & Power BI](guides/connect/excel-power-bi.md)
   - [MapLibre web maps](guides/connect/maplibre-web-maps.md)
   - [AI agents (MCP)](guides/connect/ai-agents-mcp.md)
@@ -163,16 +154,11 @@
   - [Route geoprocessing to AWS Batch](operator/geoprocessing-aws-batch.md)
   - [GP process release bindings](operator/geoprocessing-process-releases.md)
 - Migrate
-  - [From ArcGIS Server](guides/migrate/from-arcgis-server.md)
+  - [From GeoServices REST](guides/migrate/from-geoservices-rest.md)
   - [From GeoServer](guides/migrate/from-geoserver.md)
-  - [ArcGIS apps & SDKs](guides/migrate/arcgis-apps-and-sdks.md)
-
 ## Catalog
-
 - [How published data becomes findable](guides/catalog/catalog-and-discovery.md)
-
 ## Reference
-
 - [Reference index](reference/README.md)
 - [Open Knowledge Format](okf/README.md)
 - [Capability concepts](okf/capabilities/README.md)
@@ -231,16 +217,10 @@
   - [GeoServices REST parity](reference/compatibility/geoservices-parity.md)
   - [SCIM / SAML IdP conformance](reference/compatibility/idp-conformance-matrix.md)
   - [ImageServer admin mapping](reference/compatibility/imageserver-admin-mapping.md)
-
 ## Security
-
 - [Security policy](../SECURITY.md)
-
 ## Internal
-
 - [Internal engineering docs](internal/README.md)
 - [Demo runbooks (moved to honua-demo)](internal/demo/README.md)
-
 ## Archive
-
 - [Historical archive](archive/README.md)

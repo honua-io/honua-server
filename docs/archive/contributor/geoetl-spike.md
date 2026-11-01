@@ -9,11 +9,11 @@
 
 ## 1. Demand Validation
 
-GeoETL is a strategic category bet, not a pull from one named deal. The primary demand signal is displacement economics: FME enterprise licenses price at ~$10K+/seat/year, and spatial ETL sits in the evaluation when customers move off Esri or off FME. The demand shape is "repeatable, scheduled, multi-source pipeline," not "graphical workbench parity."
+GeoETL is a strategic category bet, not a pull from one named deal. The primary demand signal is displacement economics: FME enterprise licenses price at ~$10K+/seat/year, and spatial ETL sits in the evaluation when customers move off GeoServices REST or off FME. The demand shape is "repeatable, scheduled, multi-source pipeline," not "graphical workbench parity."
 
 Opportunity conversations consistently ask three questions:
 
-1. Can it read from *my* sources (usually Esri REST, PostGIS, an OGC API, and files on S3/Azure Blob)?
+1. Can it read from *my* sources (usually GeoServices REST, PostGIS, an OGC API, and files on S3/Azure Blob)?
 2. Can it run on a schedule or on upload, without me owning a pipeline server?
 3. Can I version the pipeline in Git?
 
@@ -26,7 +26,7 @@ They do not ask for a desktop canvas. They do not ask for every GDAL driver. Tha
 | Category | Strengths to respect | Failure modes to avoid | Lesson for Honua |
 |---|---|---|---|
 | **FME / Safe Software** | Driver breadth; projection handling; mature workbench; enterprise ETL depth; vendor-signed format support. | Desktop-first authoring; per-seat pricing; heavy runtime; "transformer sprawl"; migration from FME is a project in its own right. | Do not clone the workbench. Compete on API-first authoring, Git-versioned pipelines, and runtime economics. |
-| **ArcGIS Data Interoperability** | Tight Esri integration; understands Esri semantics end-to-end. | Locks the pipeline into the Esri stack; the pipeline itself is not portable. | Treat Esri REST as a first-class source *and* sink — we inherit migration customers, pipelines stay portable. |
+| **GeoServices REST Data Interoperability** | Tight GeoServices REST integration; understands GeoServices REST semantics end-to-end. | Locks the pipeline into the GeoServices REST stack; the pipeline itself is not portable. | Treat GeoServices REST as a first-class source *and* sink — we inherit migration customers, pipelines stay portable. |
 | **QGIS Processing / Graphical Modeler** | Free; GDAL/GRASS/SAGA under the hood; familiar to analysts. | Desktop-bound; not a server product; weak for scheduled multi-tenant use. | Lean GDAL/OGR for unglamorous format work. Do not try to be a QGIS replacement — that fight is on the desktop. |
 | **GeoKettle / Pentaho-style** | Workflow-first model; open-source orchestration heritage. | Largely unmaintained; JVM operational footprint; scant modern cloud story. | Validates that "ETL as pipeline" is a real mental model. Does not validate a JVM stack or a visual-first IDE. |
 | **Wherobots / Apache Sedona** | Distributed geospatial compute; lakehouse-scale joins and analytics. | Heavy infrastructure; requires Spark/K8s maturity; overkill for the 80% case. | Stay out of Spark-scale lakehouse until a customer explicitly needs it. Keep the pipeline contract portable so a Sedona executor could slot in later. |
@@ -41,7 +41,7 @@ Honua GeoETL is the **API-first, Git-versioned, protocol-aware spatial ETL runti
 
 Positioning statement:
 
-> Honua GeoETL turns spatial data movement into pipeline-as-code. Declarative pipelines pull from the sources teams actually use — Esri REST, PostGIS, OGC API Features, cloud object stores — apply curated transforms and enrichment, and load into Honua layers or external PostGIS. Pipelines run on a schedule or on upload, are versioned in Git, and produce deterministic logs and replay artifacts. No desktop application, no per-seat license, no Spark cluster required.
+> Honua GeoETL turns spatial data movement into pipeline-as-code. Declarative pipelines pull from the sources teams actually use — GeoServices REST, PostGIS, OGC API Features, cloud object stores — apply curated transforms and enrichment, and load into Honua layers or external PostGIS. Pipelines run on a schedule or on upload, are versioned in Git, and produce deterministic logs and replay artifacts. No desktop application, no per-seat license, no Spark cluster required.
 
 Three deliberate "nots":
 
@@ -57,7 +57,7 @@ Three deliberate "nots":
 Native: pipeline definition, scheduling, execution state, lineage, replay, protocol-aware loading into Honua layers, attribute transforms, filtering, dedup, enrichment via spatial join. Delegate: format I/O (GDAL/OGR for less-common formats), heavy spatial transforms where PostGIS is the right engine (reproject at scale, ST_Buffer over large tables, spatial joins), distributed analytics (deferred to an optional external executor, not in baseline).
 
 **Baseline source/target set (80% target).**
-Sources: GeoJSON, Shapefile, GeoPackage, CSV-with-coords, KML, PostGIS (remote), Esri REST feature services, OGC WFS, OGC API Features, S3 / Azure Blob / GCS file watchers, generic REST/JSON with a simple mapping DSL. Sinks: Honua layers (create / append / upsert), external PostGIS, GeoJSON, GeoPackage, Shapefile. Everything else is Phase 2+ or custom code.
+Sources: GeoJSON, Shapefile, GeoPackage, CSV-with-coords, KML, PostGIS (remote), GeoServices REST feature services, OGC WFS, OGC API Features, S3 / Azure Blob / GCS file watchers, generic REST/JSON with a simple mapping DSL. Sinks: Honua layers (create / append / upsert), external PostGIS, GeoJSON, GeoPackage, Shapefile. Everything else is Phase 2+ or custom code.
 
 **What belongs in the first-class transform / enrichment surface?**
 First-class stages: reproject, simplify, validate/repair, clip-to-AOI, rename/cast/concat/split/regex, attribute filter, spatial filter, spatial join, lookup/join, dedup, null-fill, outlier detection, coordinate precision clamp, reverse geocode, spatial join enrichment per #374. Deferred to PostGIS or custom: network analysis, raster algebra, topology rules, routing, clustering, complex geometry constructions.
@@ -98,7 +98,7 @@ Portability guarantees: pipeline definitions, scheduling semantics, logs, and re
 ## 6. MVP Scope
 
 **Connectors (Pro, first wave):**
-GeoJSON, Shapefile, GeoPackage, CSV-with-coords, KML, PostGIS (remote), Esri REST feature services, OGC WFS, OGC API Features, S3 / Azure Blob / GCS file watchers, generic REST/JSON with mapping DSL. Sinks: Honua layers, external PostGIS, GeoJSON, GeoPackage, Shapefile.
+GeoJSON, Shapefile, GeoPackage, CSV-with-coords, KML, PostGIS (remote), GeoServices REST feature services, OGC WFS, OGC API Features, S3 / Azure Blob / GCS file watchers, generic REST/JSON with mapping DSL. Sinks: Honua layers, external PostGIS, GeoJSON, GeoPackage, Shapefile.
 
 **Transforms (Pro, first wave):**
 Geometry: reproject, simplify, clip-to-AOI, validate/repair. Attributes: rename, cast, concat, split, regex extract, lookup/join. Filtering: attribute filter, spatial filter, dedup (spatial + attribute).
@@ -116,7 +116,7 @@ MQTT / webhook streaming sources, custom transform plugins, cross-tenant pipelin
 
 ## 7. Phased Plan
 
-**Phase 1 — Pipeline contract and lean connector set.** Pipeline YAML schema, pipeline CRUD + versioning API, ETL worker profile image, `ExtractTransformLoad` executor wiring on top of #681, connectors for GeoJSON / Shapefile / GeoPackage / PostGIS / Esri REST / OGC API Features / object-store file watcher, core geometry and attribute transforms, row-level error capture, execution history, dry-run. **Non-goal:** admin UI, enrichment catalog, streaming sources.
+**Phase 1 — Pipeline contract and lean connector set.** Pipeline YAML schema, pipeline CRUD + versioning API, ETL worker profile image, `ExtractTransformLoad` executor wiring on top of #681, connectors for GeoJSON / Shapefile / GeoPackage / PostGIS / GeoServices REST / OGC API Features / object-store file watcher, core geometry and attribute transforms, row-level error capture, execution history, dry-run. **Non-goal:** admin UI, enrichment catalog, streaming sources.
 
 **Phase 2 — Enrichment, UX, operational polish.** Enrichment library coordinated with #374, remaining MVP connectors (KML / CSV / WFS / generic REST), admin UI for execution monitoring and error inspection, cron scheduler, CDC trigger integration (#316), GitOps-applied pipelines (#351). **Non-goal:** streaming, plugins, distributed executors.
 
@@ -128,7 +128,7 @@ MQTT / webhook streaming sources, custom transform plugins, cross-tenant pipelin
 
 Before large implementation investment, these workloads validate the approach:
 
-1. **Esri REST → Honua layer, nightly.** Pull a public Esri FeatureServer layer on cron, reproject, clip to AOI, upsert into a Honua layer. Validates the Esri displacement narrative.
+1. **GeoServices REST → Honua layer, nightly.** Pull a public GeoServices REST FeatureServer layer on cron, reproject, clip to AOI, upsert into a Honua layer. Validates the GeoServices REST displacement narrative.
 2. **S3 drop → Honua layer, on-upload.** Watch an S3 prefix for GeoPackage uploads, validate/repair geometry, append to a Honua layer, quarantine rejected rows to a sidecar prefix. Validates the event-driven / object-store operational story.
 3. **PostGIS → GeoPackage, scheduled export.** Query a remote PostGIS table, enrich with Natural Earth boundary attributes, write a GeoPackage to object storage. Validates the "PostGIS-first spatial transforms + curated enrichment" positioning.
 4. **Inline GeoJSON → Honua layer with enrichment (#374 integration).** POST features to the enrichment API, spatial-join against a premium dataset, return enriched features. Validates the API-first authoring surface and the enrichment integration.

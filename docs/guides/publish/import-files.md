@@ -129,9 +129,8 @@ More help: [troubleshooting](../deploy/troubleshooting.md).
 ## Next steps
 
 - [Publish layers](publish-layers.md) — turn the imported table into a live layer.
-- [Import from ArcGIS services](import-from-arcgis-services.md) — import from a live service instead of a file.
+- [Import from GeoServices REST services](import-from-geoservices-rest.md) — import from a live service instead of a file.
 - [Publish rasters](publish-rasters.md) — GeoTIFF and other raster imports use a separate endpoint.
-
 
 ## Replacing tables and legacy imports
 

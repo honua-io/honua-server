@@ -24,7 +24,7 @@ All endpoints require admin authentication — see [Authentication](../../guides
 
 In the authorized [API explorer](../openapi-and-explorer.md), run `POST /api/v1/admin/import/upload` and attach `parcels.geojson` to the `file` form field.
 
-Esri File Geodatabases must be uploaded as a `.gdb.zip` archive that preserves the `.gdb` directory structure. FlatGeobuf and GeoParquet files upload directly. FlatGeobuf without a header CRS requires `sourceSrid`. GeoParquet with omitted `crs` defaults to OGC:CRS84; explicit `crs: null` instead requires `sourceSrid`. GeoParquet validates complete PROJJSON definitions and refuses spherical edges and multiple geometry columns before writes. See [Import files](../../guides/publish/import-files.md) for format-specific behavior.
+File Geodatabases must be uploaded as a `.gdb.zip` archive that preserves the `.gdb` directory structure. FlatGeobuf and GeoParquet files upload directly. FlatGeobuf without a header CRS requires `sourceSrid`. GeoParquet with omitted `crs` defaults to OGC:CRS84; explicit `crs: null` instead requires `sourceSrid`. GeoParquet validates complete PROJJSON definitions and refuses spherical edges and multiple geometry columns before writes. See [Import files](../../guides/publish/import-files.md) for format-specific behavior.
 
 For URL imports, send one `Idempotency-Key` header (1–200 characters). The key is scoped to the authenticated principal and tenant. Repeating the same effective request returns its accepted response and original job without another download or import; the `/api/v1/admin/imports` compatibility route uses the same identity. Reusing the key with a changed request returns HTTP 409. A retry while the first request is still being accepted or executed also returns HTTP 409 with a retry-later message; retry the same key and request after the first response completes. Omitted fields and their explicit defaults are equivalent. Changing a signed source URL changes the request.
 
@@ -56,11 +56,11 @@ With a durable runner the job document is stored in Redis, so it survives a rest
 
 | Method | Path | Purpose |
 |---|---|---|
-| POST | `/api/v1/admin/import/scan` | Scan a GeoServer or ArcGIS GeoServices source and return a deterministic migration inventory artifact (`?export=json` returns it as a JSON attachment) |
+| POST | `/api/v1/admin/import/scan` | Scan a GeoServer or GeoServices REST source and return a deterministic migration inventory artifact (`?export=json` returns it as a JSON attachment) |
 
-`sourceKind` accepts `geoserver`, `geoserver-rest`, `geoservices`, and `arcgis-geoservices-rest`. Run a scan before any migration import job; use `scanCompleteness.status` and `overallCompatibility.level` as the planning gate.
+`sourceKind` accepts `geoserver`, `geoserver-rest`, `geoservices`, . Run a scan before any migration import job; use `scanCompleteness.status` and `overallCompatibility.level` as the planning gate.
 
-Run `POST /api/v1/admin/import/scan` with `{"sourceKind":"geoservices","sourceUrl":"https://example.com/arcgis/rest/services/Parcels/FeatureServer"}`.
+Run `POST /api/v1/admin/import/scan` with `{"sourceKind":"geoservices","sourceUrl":"https://example.com/rest/services/Parcels/FeatureServer"}`.
 
 ## GeoServer migration import
 
@@ -74,19 +74,19 @@ Run `POST /api/v1/admin/import/scan` with `{"sourceKind":"geoservices","sourceUr
 
 Queued jobs persist request state before a worker runs, so credentials must use secret references (for example `"passwordSecretReference": "env:GEOSERVER_PASSWORD"`); plaintext passwords are rejected. Secret references are refused unless the operator has permitted them under `Security__RequestSecretReferences__*` ([References supplied in a request](../../guides/deploy/configuration.md#references-supplied-in-a-request)); nothing is permitted by default.
 
-## GeoServices (ArcGIS) migration import
+## GeoServices REST migration import
 
 | Method | Path | Purpose |
 |---|---|---|
-| POST | `/api/v1/admin/import/geoservices/discover` | Discover layers from an ArcGIS service URL |
-| POST | `/api/v1/admin/import/geoservices/start` | Start an ArcGIS layer import job |
+| POST | `/api/v1/admin/import/geoservices/discover` | Discover layers from a GeoServices REST service URL |
+| POST | `/api/v1/admin/import/geoservices/start` | Start a layer import job |
 | GET | `/api/v1/admin/import/geoservices/jobs` | List GeoServices import jobs |
 | GET | `/api/v1/admin/import/geoservices/jobs/{jobId}` | Get GeoServices import job status |
 | POST | `/api/v1/admin/import/geoservices/jobs/{jobId}/cancel` | Cancel a GeoServices import job |
 
 Authenticated sources send credentials in the request `credentials` object, never in the URL. Queued jobs must use `accessTokenSecretReference` or `passwordSecretReference`; plaintext token/password values are accepted only by the synchronous discover and scan endpoints. The same operator allowlist applies to these references.
 
-Run `POST /api/v1/admin/import/geoservices/discover` with `{"serviceUrl":"https://example.com/arcgis/rest/services/Parcels/FeatureServer"}`.
+Run `POST /api/v1/admin/import/geoservices/discover` with `{"serviceUrl":"https://example.com/rest/services/Parcels/FeatureServer"}`.
 
 ## Raster import and cloud raster registration
 
@@ -152,8 +152,8 @@ Run `GET /api/v1/admin/operations/{operationId}` with the operation id returned 
 
 - [Import files](../../guides/publish/import-files.md)
 - [Import from object storage](../../guides/publish/import-from-object-storage.md)
-- [Import from ArcGIS services](../../guides/publish/import-from-arcgis-services.md)
-- [Migrate from GeoServer](../../guides/migrate/from-geoserver.md) and [from ArcGIS Server](../../guides/migrate/from-arcgis-server.md)
+- [Import from GeoServices REST services](../../guides/publish/import-from-geoservices-rest.md)
+- [Migrate from GeoServer](../../guides/migrate/from-geoserver.md)
 - [Publish rasters](../../guides/publish/publish-rasters.md)
 - [Publish tiles](../../guides/publish/publish-tiles.md)
 - [Monitor Honua Server](../../guides/deploy/monitoring.md)

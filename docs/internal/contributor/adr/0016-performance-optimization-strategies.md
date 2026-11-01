@@ -328,80 +328,10 @@ internal class CachedFeatureStore : IFeatureStore
 
 ### 5. Serialization Performance
 
-**Protocol-Specific Optimization:**
-```csharp
-// Format-specific serialization optimizations
-internal class OptimizedQueryFormatter : IQueryFormatter
-{
-    private readonly JsonSerializerOptions _esriOptions;
-    private readonly JsonSerializerOptions _geoJsonOptions;
-
-    public (object response, string contentType) FormatQueryResult(
-        QueryResult<Feature> result,
-        LayerDefinition layer,
-        string format,
-        bool returnGeometry,
-        string[]? outFields)
-    {
-        return format.ToLowerInvariant() switch
-        {
-            "json" => FormatEsriJson(result, layer, returnGeometry, outFields),
-            "geojson" => FormatGeoJson(result, returnGeometry, outFields),
-            "pbf" => FormatProtobuf(result, layer, returnGeometry, outFields),
-            _ => throw new ArgumentException($"Unsupported format: {format}")
-        };
-    }
-
-    private (object, string) FormatEsriJson(
-        QueryResult<Feature> result,
-        LayerDefinition layer,
-        bool returnGeometry,
-        string[]? outFields)
-    {
-        // Use source-generated JSON context for optimal performance
-        var response = new EsriFeatureSet
-        {
-            ObjectIdFieldName = layer.ObjectIdField,
-            GlobalIdFieldName = layer.GlobalIdField,
-            GeometryType = layer.GeometryType,
-            SpatialReference = new { Wkid = layer.SpatialReference },
-            Features = result.Features.Select(f => new EsriFeature
-            {
-                Geometry = returnGeometry ? ConvertToEsriGeometry(f.Geometry) : null,
-                Attributes = FilterAttributes(f.Attributes, outFields)
-            }).ToArray(),
-            ExceededTransferLimit = result.HasMore
-        };
-
-        var json = JsonSerializer.Serialize(response, FeatureServerJsonContext.Default.EsriFeatureSet);
-        return (json, "application/json");
-    }
-
-    private (object, string) FormatGeoJson(
-        QueryResult<Feature> result,
-        bool returnGeometry,
-        string[]? outFields)
-    {
-        // Optimized GeoJSON generation
-        var features = result.Features.Select(f => new GeoJsonFeature
-        {
-            Type = "Feature",
-            Id = f.Id,
-            Geometry = returnGeometry ? ConvertToGeoJsonGeometry(f.Geometry) : null,
-            Properties = FilterAttributes(f.Attributes, outFields)
-        }).ToArray();
-
-        var featureCollection = new GeoJsonFeatureCollection
-        {
-            Type = "FeatureCollection",
-            Features = features
-        };
-
-        var json = JsonSerializer.Serialize(featureCollection, OgcJsonContext.Default.GeoJsonFeatureCollection);
-        return (json, "application/geo+json");
-    }
-}
-```
+Protocol-specific optimization uses source-generated serializer contexts. The
+query formatter dispatches by requested output format (`json`, `geojson`, or
+`pbf`) and preserves each format's required geometry and attribute structure.
+This keeps protocol formatting separate from shared query execution.
 
 ### 6. Connection Pool Optimization
 

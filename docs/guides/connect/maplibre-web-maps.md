@@ -74,7 +74,7 @@ Honua serves per-layer vector tiles and metadata:
 
 - **Leaflet** — no native vector-tile support: use raster WMS (`L.tileLayer.wms("http://localhost:8080/ogc/services/{serviceId}/wms", { layers: "..." })`) or a vector-tile plugin such as `Leaflet.VectorGrid` pointed at the `.mvt` URL template.
 - **OpenLayers** — use `ol/layer/VectorTile` with an `ol/source/VectorTile` whose `url` is `http://localhost:8080/tiles/{layerId}/{z}/{x}/{y}.mvt` (MVT format).
-- **SDK** — `honua-sdk-js` ships a MapLibre runtime plus an ArcGIS compatibility layer if you'd rather not wire sources by hand.
+- **SDK** — `honua-sdk-js` ships a MapLibre runtime plus a GeoServices REST compatibility layer if you'd rather not wire sources by hand.
 
 ## Verify
 

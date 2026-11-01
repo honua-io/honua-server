@@ -10,7 +10,7 @@ Two of the most common reads with the Honua JavaScript SDK: querying a FeatureSe
 
 ## Query a FeatureServer layer
 
-Honua serves layers over the ArcGIS-compatible [GeoServices REST](../../reference/protocols/geoservices-rest.md) FeatureServer. Two ways to query it:
+Honua serves layers over the GeoServices REST FeatureServer. Two ways to query it:
 
 **Directly on the client** — the GeoServices shape:
 
@@ -85,9 +85,9 @@ for (const item of results.features) {
 
 `searchAll` follows the catalog's paging links so you get every matching item. `collections`, `bbox`, and `datetime` correspond to the [STAC search parameters](../../reference/protocols/stac.md#search-parameters). You can also wire a STAC collection into the protocol-neutral contract with the `stacSearchSource()` factory from `@honua/sdk-js/contract`.
 
-## Migrate ArcGIS JS code
+## Migrate GeoServices REST JS code
 
-The JavaScript engine from [`honua-migrate`](https://github.com/honua-io/honua-migrate) scans and rewrites ArcGIS JS API imports toward the Honua SDK:
+The JavaScript engine from [`honua-migrate`](https://github.com/honua-io/honua-migrate) scans and rewrites GeoServices REST JavaScript client imports toward the Honua SDK:
 
 ```bash
 npm install --global @honua/honua-migrate
@@ -95,7 +95,7 @@ honua-js-migrate scan ./src
 honua-js-migrate codemod ./src --write --report migration-report.json
 ```
 
-See [ArcGIS apps & SDKs](../../guides/migrate/arcgis-apps-and-sdks.md) for the migration path and the `esri-compat` layer.
+See [GeoServices REST clients](../../guides/migrate/from-geoservices-rest.md) for the migration path and compatibility guidance.
 
 ## Next steps
 

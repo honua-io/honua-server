@@ -58,7 +58,7 @@ with one common sample type across bands. Compression must be omitted or `None`;
 (for example `U8` on a byte service) is accepted and changes nothing. Any other
 `pixelType` conversion, NoData overrides, and raw exports of multidimensional
 slices are explicitly unsupported.
-See Esri's [export image format specification](https://developers.arcgis.com/rest/services-reference/enterprise/export-image/).
+See the GeoServices REST export image format specification.
 
 Admin import/registration calls require the configured admin authentication;
 use the authorized [API explorer](../reference/openapi-and-explorer.md) for

@@ -46,7 +46,7 @@ check the logs: a missing `HONUA_MCP_REMOTE_URL` fails immediately with a named
 error rather than starting an empty server.
 
 > Do not confuse this with the standalone server in the same package. The
-> `honua-mcp` binary serves any public ArcGIS or OGC endpoint and needs no Honua
+> `honua-mcp` binary serves any public GeoServices REST or OGC endpoint and needs no Honua
 > deployment; `honua-mcp-proxy` is the one that reaches *your* server. See
 > [the standalone MCP server](https://github.com/honua-io/honua-sdk-js/blob/trunk/docs/mcp-server.md).
 

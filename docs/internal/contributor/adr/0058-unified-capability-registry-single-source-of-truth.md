@@ -44,7 +44,7 @@ and shipped work still recorded as deferred) and corrected the content.
 
 **Roster 6 is resolved (honua-server#2863).** It is no longer a hand-maintained
 roster: its route inventory is now *derived* from the generated capability data
-(`EndpointRegistry.All` via `FeatureCatalogGenerator`, normalized to Esri-relative
+(`EndpointRegistry.All` via `FeatureCatalogGenerator`, normalized to GeoServices REST-relative
 operation paths by `GeoServicesRouteRoster`), the published artifact is *generated*
 from the join of that roster with a hand-authored judgment source
 (`docs/gis/data/geoservices-parity-judgment.json`), and
@@ -53,7 +53,7 @@ served-but-unclassified fails, classified-but-not-served fails. Only the
 human-judgment layer (`Implemented`/`Partial`/`Stub`/`Not implemented` + gap prose)
 stays hand-authored, which is the outcome this ADR prescribes: derive the mechanical
 half, hand-maintain only the judgment, gate the join. Deriving it immediately
-surfaced what a hand roster had hidden — two whole served Esri service types
+surfaced what a hand roster had hidden — two whole served GeoServices REST service types
 (`VectorTileServer`, `VersionManagementServer`) the matrix had never mentioned, and
 two further published routes (`/rest/services/geometry/{area,length}`) that were
 never served.

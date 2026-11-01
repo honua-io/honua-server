@@ -2,7 +2,7 @@
 
 GeoServices migration preserves the source GlobalID binding independently of
 the target's object IDs. It uses the advertised `globalIdField`, or a field with
-the Esri GlobalID type when that property is absent, and applies the same column
+the GeoServices REST GlobalID type when that property is absent, and applies the same column
 name normalization as feature import. Publication requires the binding to name
 a published UUID column. The admin retained-table publication request accepts
 `globalIdField` too; an absent or non-UUID column produces a validation failure.

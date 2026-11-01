@@ -1,21 +1,22 @@
 # GeoServices REST — VectorTileServer
 
-Honua exposes an Esri-compatible **VectorTileServer** adapter under
+Honua exposes a GeoServices REST-compatible **VectorTileServer** adapter under
 `/rest/services/{serviceId}/VectorTileServer`. It is a thin protocol adapter over the shared
-vector-tile, style, and metadata pipelines — it parses Esri-shaped requests, resolves the service
-by **name** against the Metadata v2 graph, and formats Esri/Mapbox-compatible responses. It does
+vector-tile, style, and metadata pipelines — it parses GeoServices REST requests, resolves the
+service by **name** against the Metadata v2 graph, and formats GeoServices REST and Mapbox-compatible
+responses. It does
 not reimplement tile rendering, style storage, or catalog logic.
 
 The service is read-only and anonymous by design (it inherits the service access policy; the
 canonical seed service is open). Clients hydrate service metadata with `GET` or with a
-`POST {"f":"json"}` (Esri clients use the latter).
+`POST {"f":"json"}`.
 
 ## Per-operation route matrix
 
 | Operation | Method | Route | Response | Notes |
 |---|---|---|---|---|
-| Service metadata | GET / POST | `/rest/services/{serviceId}/VectorTileServer` | `application/json` | Esri VectorTileServer descriptor: `tiles` template, `tileInfo` (512px WebMercatorQuad), `defaultStyles`, `tileMap`, `capabilities: TilesOnly`, `type: indexedVector`, min/max LOD, full/initial extent. |
-| Tile | GET | `/rest/services/{serviceId}/VectorTileServer/tile/{z}/{y}/{x}.pbf` | `application/vnd.mapbox-vector-tile` (200), empty (204) | Mapbox Vector Tile for the service's primary tiled layer. Esri `{z}/{y}/{x}` maps directly onto the canonical `(tileCol=x, tileRow=y, zoom=z)` tuple (shared top-left WebMercatorQuad origin). Out-of-range zoom / bad coordinates → 400. |
+| Service metadata | GET / POST | `/rest/services/{serviceId}/VectorTileServer` | `application/json` | GeoServices REST VectorTileServer descriptor: `tiles` template, `tileInfo` (512px WebMercatorQuad), `defaultStyles`, `tileMap`, `capabilities: TilesOnly`, `type: indexedVector`, min/max LOD, full/initial extent. |
+| Tile | GET | `/rest/services/{serviceId}/VectorTileServer/tile/{z}/{y}/{x}.pbf` | `application/vnd.mapbox-vector-tile` (200), empty (204) | Mapbox Vector Tile for the service's primary tiled layer. Route coordinates map directly onto the canonical `(tileCol=x, tileRow=y, zoom=z)` tuple (shared top-left WebMercatorQuad origin). Out-of-range zoom / bad coordinates → 400. |
 | Default styles | GET | `/rest/services/{serviceId}/VectorTileServer/resources/styles` | `application/json` | Mapbox GL v8 style (`root.json`) composed from the layer's stored style (or a deterministic geometry-aware default). The vector source is rewritten onto this service: `url` is the service descriptor (from which clients read the full extent and tile map) and `tiles` is the service's tile route. |
 | Style resource | GET | `/rest/services/{serviceId}/VectorTileServer/resources/styles/{**resourcePath}` | `application/json` | Serves `root.json` (and the bare path). Any other style sub-resource → 404. |
 | Sprite resource | GET | `/rest/services/{serviceId}/VectorTileServer/resources/sprites/{spriteResource}` | `application/json` / `image/png` | Scoped-minimal: `sprite.json` / `sprite@2x.json` → empty sprite index (`{}`); `sprite.png` / `sprite@2x.png` → 1×1 transparent PNG. Unknown sprite resource → 404. |
@@ -31,20 +32,17 @@ These decisions were ratified under epic **#1776** (VectorTileServer) and its ch
 
 - **512px WebMercatorQuad gridset.** `tileInfo` advertises a 512×512 pixel tiling scheme on the
   WebMercatorQuad tile matrix set (`wkid 102100` / `latestWkid 3857`), top-left origin, `pbf`
-  format, with Esri's 96 DPI scale ladder for 512px tiles (`295828763.7958` at level 0, halved per level).
+  format, with the 96 DPI scale ladder for 512px tiles (`295828763.7958` at level 0, halved per level).
 - **Single primary source per service.** The composed style emits exactly one vector source
-  (id `esri`) whose `url` is this service's absolute descriptor URL and whose `tiles[]` is its
+  whose `url` is this service's absolute descriptor URL and whose `tiles[]` is its
   absolute tile template. Clients that resolve the source through the service read the dataset
   full extent and tile map from the descriptor; clients that use the template fetch tiles
   directly. A stored source `url` is always replaced. The tile and style handlers share one
   resolver for the service's **primary** tiled publication, so `root.json` is always composed for
   the layer the tile route renders. Among the routable publications the caller may read (resource
-  and service access policy, tenant scope), it prefers the `EsriVectorTileLayer` publication, then
+  and service access policy, tenant scope), it prefers the compatible publication type, then
   the publication flagged primary, then the lowest layer index. A caller who cannot read the
   preferred publication gets the style and the tiles of the next accessible publication.
-- **`EsriVectorTileLayer` publication type.** VectorTileServer services publish their tiled layer
-  under the `EsriVectorTileLayer` Metadata v2 publication type (wire value `esri-vector-tile-layer`),
-  which is the preferred publication type the adapter resolves.
 - **Sprites scoped-minimal, glyphs from one bundled face.** Honua does not author per-service
   sprite sheets or glyph stacks. The `resources/sprites/*` routes serve deterministic in-process
   stubs (empty sprite index, 1×1 transparent PNG). The `resources/fonts/*` route serves real glyphs

@@ -1,33 +1,33 @@
 ---
 type: guide
-title: "Migrate from ArcGIS Server"
-description: "Use honua-migrate to discover an ArcGIS FeatureServer or MapServer, create a reviewable plan, apply it with explicit acknowledgement, and monitor the resulting Honua job."
+title: "Migrate from GeoServices REST"
+description: "Use honua-migrate to discover an GeoServices REST FeatureServer or MapServer, create a reviewable plan, apply it with explicit acknowledgement, and monitor the resulting Honua job."
 resource: "honua://capability/import.geoservices"
 ---
-# Migrate from ArcGIS Server
+# Migrate from GeoServices REST
 
-Use `honua-migrate` to discover an ArcGIS FeatureServer or MapServer, create a reviewable plan, apply it with explicit acknowledgement, and monitor the resulting Honua job. The service workflow is deliberately staged so discovery and planning cannot mutate either system.
+Use `honua-migrate` to discover an GeoServices REST FeatureServer or MapServer, create a reviewable plan, apply it with explicit acknowledgement, and monitor the resulting Honua job. The service workflow is deliberately staged so discovery and planning cannot mutate either system.
 
 **Prerequisites:** a running Honua server ([quickstart](../../get-started/quickstart.md)), admin credentials ([authentication](../secure/authentication.md)), the `honua-migrate` CLI (`pipx install honua-migrate` - pipx keeps it isolated,
 which avoids the [console-script collision](https://github.com/honua-io/honua-migrate/blob/trunk/docs/console-script-collision.md)
-with `honua-sdk`'s legacy launcher), and an ArcGIS service root ending in `FeatureServer` or `MapServer`.
+with `honua-sdk`'s legacy launcher), and a GeoServices REST service root ending in `FeatureServer` or `MapServer`.
 
 Set the Honua connection once. The CLI reads these values without writing them to artifacts:
 
 ```bash
 export HONUA_URL=https://honua.example.com
 export HONUA_API_KEY=your-admin-api-key
-export ARCGIS_SERVICE=https://gis.example.com/arcgis/rest/services/Public/Parcels/FeatureServer
+export GEOSERVICES_REST_SERVICE=https://gis.example.com/rest/services/Public/Parcels/FeatureServer
 ```
 
 ## 1. Assess with read-only discovery
 
 ```bash
-honua-migrate services arcgis discover "$ARCGIS_SERVICE" \
-  --output arcgis-discovery.json
+honua-migrate services geoservices-rest discover "$GEOSERVICES_REST_SERVICE" \
+  --output geoservices-rest-discovery.json
 ```
 
-`discover` reads the source and emits a versioned, credential-free artifact. For a secured source, pass a server-side secret reference such as `--token-secret-ref env:ARCGIS_TOKEN`; the secret value must be available to Honua, and the reference is not retained in the artifact.
+`discover` reads the source and emits a versioned, credential-free artifact. For a secured source, pass a server-side secret reference such as `--token-secret-ref env:GEOSERVICES_REST_TOKEN`; the secret value must be available to Honua, and the reference is not retained in the artifact.
 
 Review the discovered layers, fields, spatial references, relationships, styles, attachments, and unsupported capabilities before planning. The current command works on one service root at a time; organization-wide Portal content assessment remains a separate inventory workflow.
 
@@ -36,7 +36,7 @@ Review the discovered layers, fields, spatial references, relationships, styles,
 Create one plan per source layer:
 
 ```bash
-honua-migrate services arcgis plan "$ARCGIS_SERVICE" \
+honua-migrate services geoservices-rest plan "$GEOSERVICES_REST_SERVICE" \
   --layer-id 0 \
   --table-name parcels \
   --service-name parcels \
@@ -48,34 +48,34 @@ honua-migrate plan verify parcels-plan.json
 
 Planning is local and does not contact either server. The plan is a shared v1 migration contract with a canonical digest. Review table and service names, the target SRID, overwrite behavior, query filters, output fields, and auto-publish behavior before applying it. Existing output files are rejected unless you intentionally pass `--force`.
 
-The current ArcGIS service command creates a single-layer plan. A multi-layer batch command is not exposed yet; keep multiple plans under the same change record and apply them in dependency order.
+The current GeoServices REST service command creates a single-layer plan. A multi-layer batch command is not exposed yet; keep multiple plans under the same change record and apply them in dependency order.
 
 ## 3. Apply the reviewed plan
 
 ```bash
-honua-migrate services arcgis apply parcels-plan.json \
+honua-migrate services geoservices-rest apply parcels-plan.json \
   --yes \
   --output parcels-apply.json
 ```
 
-`--yes` is required before the CLI resolves credentials, reads the plan, or contacts Honua. For a secured source, repeat the server-side token reference with `--token-secret-ref env:ARCGIS_TOKEN`. The command never retries the mutation automatically. Record the returned job ID from `parcels-apply.json`.
+`--yes` is required before the CLI resolves credentials, reads the plan, or contacts Honua. For a secured source, repeat the server-side token reference with `--token-secret-ref env:GEOSERVICES_REST_TOKEN`. The command never retries the mutation automatically. Record the returned job ID from `parcels-apply.json`.
 
 ## 4. Monitor the job
 
 ```bash
 export JOB_ID=the-job-id-from-apply
 
-honua-migrate services arcgis status "$JOB_ID" --output parcels-status.json
-honua-migrate services arcgis resume "$JOB_ID" \
+honua-migrate services geoservices-rest status "$JOB_ID" --output parcels-status.json
+honua-migrate services geoservices-rest resume "$JOB_ID" \
   --max-wait 600 \
   --output parcels-terminal.json
-honua-migrate services arcgis list --output arcgis-jobs.json
+honua-migrate services geoservices-rest list --output geoservices-rest-jobs.json
 ```
 
 `status`, `list`, and `resume` are read-only. `resume` only polls the existing job and never requeues it. Cancellation is a separate mutation and requires acknowledgement:
 
 ```bash
-honua-migrate services arcgis cancel "$JOB_ID" --yes
+honua-migrate services geoservices-rest cancel "$JOB_ID" --yes
 ```
 
 ## 5. Reconcile the result
@@ -96,7 +96,7 @@ honua query parcels/0 --count
 honua query parcels/0 --limit 5 --format geojson
 ```
 
-Compare those results with the source inventory and ArcGIS Pro or another source-native client. Check feature counts, schemas, extents, representative records, relationships, and metadata before cutover.
+Compare those results with the source inventory and another source-native client. Check feature counts, schemas, extents, representative records, relationships, and metadata before cutover.
 
 ### Read the fidelity verdict
 
@@ -211,11 +211,11 @@ run. It refuses when any blocking difference is found, or when there is no reada
 from. Constructs that only need review do not block the start, but the run can finish no better than
 `unverified` until an operator confirms them.
 
-The runtime-neutral `honua-migrate reconcile compare` command exists for a durable `MigrationRun` plus portable source and target snapshots. The ArcGIS service adapter does not yet emit that run/snapshot bundle, so this guide does not present a command that would fail. Automated ArcGIS reconciliation remains deferred until that adapter is wired.
+The runtime-neutral `honua-migrate reconcile compare` command exists for a durable `MigrationRun` plus portable source and target snapshots. The GeoServices REST service adapter does not yet emit that run/snapshot bundle, so this guide does not present a command that would fail. Automated reconciliation remains deferred until that adapter is wired.
 
 ## 6. Repoint clients
 
-Existing Esri clients keep their workflow and replace only the service URL. Desktop setup is covered in [connect ArcGIS Pro](../connect/arcgis-pro.md); web and SDK migrations are covered in [ArcGIS apps and SDKs](arcgis-apps-and-sdks.md). ArcGIS Pro and ArcGIS Maps SDK licensing remains an Esri client concern; Honua replaces the server, not client licensing.
+Existing clients that support GeoServices REST can retain their workflow and replace only the service URL. Confirm client-specific configuration and authentication behavior before cutover.
 
 ## Cutover checklist
 

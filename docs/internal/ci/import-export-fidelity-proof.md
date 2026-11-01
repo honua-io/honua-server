@@ -3,7 +3,7 @@
 Issue [#4420](https://github.com/honua-io/honua-server/issues/4420) protects the
 2026.1 section 14 gate-integrity promise: missing, skipped or stale evidence must
 not pass. The required PR Gate runs `scripts/ci/run-import-export-fidelity-proof.py`.
-The optional external ArcGIS scorecard workflow validates policy; its committed
+The optional external GeoServices REST scorecard workflow validates policy; its committed
 scorecard is not current execution evidence.
 
 The runner executes three real `StreamingFileImportService` PostGIS fixtures:

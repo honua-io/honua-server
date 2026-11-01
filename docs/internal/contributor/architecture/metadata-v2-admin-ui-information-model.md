@@ -29,7 +29,7 @@ The ownership rule is explicit: Data Resources own canonical source binding,
 fields, metadata, lineage, rights, and access. Services and catalogs own
 publication shape. A service can have many layer slots or publication entries,
 and each slot is a service-local representation linked to a Data Resource. This
-lets Esri administrators see layers under a MapServer or FeatureServer without
+lets GeoServices REST administrators see layers under a MapServer or FeatureServer without
 turning the service into the owner of source, field, metadata, or access truth.
 
 ## UI Vocabulary
@@ -106,7 +106,7 @@ Recommended columns:
 | Column | Purpose |
 |---|---|
 | Name | Service or catalog display name and stable route |
-| Type | GeoServices, OGC API, WMS, WMTS, WFS, OData, STAC, DCAT, OGC Records, or Esri catalog |
+| Type | GeoServices, OGC API, WMS, WMTS, WFS, OData, STAC, DCAT, OGC Records, or GeoServices REST catalog |
 | Entries | Count of layer slots, collections, entity sets, records, or items |
 | Status | Draft, running, degraded, stopped, warning, or blocked |
 | Access | Service-level access and anonymous availability summary |
@@ -198,7 +198,7 @@ Show publication targets and compatibility:
 | STAC collection | Warning | Missing license |
 | DCAT dataset/distribution | Warning | Missing publisher identifier |
 | OGC Records record | Ready | None |
-| Esri catalog/portal item | Warning | Missing thumbnail or owner details |
+| GeoServices REST catalog/portal item | Warning | Missing thumbnail or owner details |
 
 The Publish tab is the inverse of service detail: it shows every publication
 entry for this one Data Resource across services and catalogs.
@@ -223,9 +223,9 @@ readiness state.
 
 ## Service Detail
 
-Service detail pages should show entries underneath the service. For Esri
+Service detail pages should show entries underneath the service. For GeoServices REST
 MapServer and FeatureServer targets, label these entries as layers and preserve
-service-local layer ordering/indexes for admin ergonomics. For non-Esri targets,
+service-local layer ordering/indexes for admin ergonomics. For non-GeoServices REST targets,
 the same pattern can be labeled as collections, entity sets, records, items, or
 layers according to the target.
 
@@ -323,7 +323,7 @@ Readiness targets:
 - DCAT
 - STAC
 - ISO 19115
-- Esri catalog/item
+- GeoServices REST catalog/item
 - GeoServices REST
 - OGC API
 - OData

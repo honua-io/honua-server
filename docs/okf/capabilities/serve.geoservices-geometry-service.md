@@ -1,7 +1,7 @@
 ---
 type: capability
 title: "Geometry Service"
-description: "Server-side geometry operations (project, buffer, simplify, union, and related utilities) through the Esri GeometryServer surface."
+description: "Server-side geometry operations (project, buffer, simplify, union, and related utilities) through the GeoServices REST GeometryServer surface."
 resource: "honua://capability/serve.geoservices-geometry-service"
 tags: [capability, serve, community]
 ---
@@ -9,7 +9,7 @@ tags: [capability, serve, community]
 
 # Geometry Service
 
-Server-side geometry operations (project, buffer, simplify, union, and related utilities) through the Esri GeometryServer surface.
+Server-side geometry operations (project, buffer, simplify, union, and related utilities) through the GeoServices REST GeometryServer surface.
 
 | | |
 | --- | --- |
@@ -24,4 +24,4 @@ The facts above come from the server's capability registry and capability matrix
 
 ## Documented in
 
-- [GeoServices REST (ArcGIS-compatible)](../../reference/protocols/geoservices-rest.md)
+- [GeoServices REST reference](../../reference/protocols/geoservices-rest.md)

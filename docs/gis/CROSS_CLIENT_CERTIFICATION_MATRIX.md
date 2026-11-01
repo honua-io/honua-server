@@ -2,11 +2,7 @@
 
 This matrix defines the shared certification vocabulary for cross-client interoperability testing. It establishes a common core of test cases that all client lanes must address, plus lane-specific extensions.
 
-For QGIS UI, PyQGIS, ArcGIS Pro UI and ArcPy scope and completion, use the
-[four-client certification checklist](CLIENT_CERTIFICATION_CHECKLIST.md).
-This document supplies shared evidence IDs across clients; it is not a second
-desktop completion denominator. Server parity inventories and platform release
-requirements retain their separate roles.
+This document supplies shared evidence IDs across clients. Server parity inventories and platform release requirements retain their separate roles.
 
 **Scope boundary**: this matrix tracks _client interoperability_ — whether a given client can successfully consume Honua Server APIs. It does not replace the [FeatureServer Coverage Matrix](../reference/compatibility/geoservices-parity.md), [MapServer Coverage Matrix](../reference/compatibility/geoservices-parity.md), or OGC coverage docs, which track _server API parity_.
 
@@ -61,8 +57,6 @@ These test cases form the shared certification baseline. Every client lane must 
 
 The six `CERT-RNDR-{SYM,LIN,FIL,LBL,SPR,URL}-01` IDs above are the visual / style certification slice that ticket [`#478`](https://github.com/honua-io/honua-server/issues/478) introduces. They are append-only additions to the matrix — `CERT-RNDR-01` and `CERT-RNDR-02` are unchanged. The slice spec at [`visual-style-certification-slice.md`](../internal/evidence/visual-style-certification-slice.md) defines per-scenario fixtures, expected colors, pass criteria, and lane substantiation.
 
-§ **MapServer rendering lane:** The "FS" abbreviation covers both `featureserver` and `mapserver` evidence files. When MapServer is a rendering-only connection, for example a `desktop-arcgis` mapserver envelope, CERT-QFLT, CERT-PAGE, CERT-GEOM, and CERT-ERRH-02 are `not-applicable` unless that evidence identifier says the layer query was exercised. See [ArcGIS Pro](CLIENT_TEMPLATE_RUNBOOK.md#arcgis-pro).
-
 ### Geometry Tolerance (CERT-GEOM-01)
 
 The `measured_delta` is the maximum absolute coordinate deviation between a known reference point and the value returned by the server, measured in the CRS's native unit.
@@ -89,7 +83,6 @@ The evidence envelope's `measured_delta` field records the observed deviation in
 | WMTS | WMTS 1.0 | `wmts` |
 | STAC | STAC API 1.0 (core, collections, item-search) | `stac` |
 | Admin API | Control-plane admin endpoints | `admin-api` |
-| Portal | ArcGIS Portal/Sharing facade (`/sharing/rest`) | `portal` |
 | All | All supported protocols | (all of the above) |
 
 ## Client Lane Coverage
@@ -114,7 +107,7 @@ The contract is **frozen-2026.1**. The machine-readable manifest is [`client-cer
 
 Frozen does not mean complete: the manifest records **20 governed gaps** with tracking issues rather than claiming coverage the seed does not have — notably absent multipart and hole geometry, no non-ASCII attribute values, an uncertified edit path, and four unrealized auth profiles (expired credential, insufficient role, cross-tenant denial, separate proposer/approver). Depth remains [#3435](https://github.com/honua-io/honua-server/issues/3435).
 
-Two active lanes do **not** yet bind the canonical vector fixture: `js` and `arcgis-stub` run against `browser_compat` layer 2000 (3 point features, `objectid`/`name`/`shape` only), so they exercise none of the canonical attribute spread, null geometry, or ten-feature pagination. That is recorded as a gap against [#3392](https://github.com/honua-io/honua-server/issues/3392), not as equivalence.
+Two active lanes do **not** yet bind the canonical vector fixture: `js` and `geoservices-rest-stub` run against `browser_compat` layer 2000 (3 point features, `objectid`/`name`/`shape` only), so they exercise none of the canonical attribute spread, null geometry, or ten-feature pagination. That is recorded as a gap against [#3392](https://github.com/honua-io/honua-server/issues/3392), not as equivalence.
 
 OGC CITE is the explicit exception. Each CITE suite retains its specification-mandated custom seed and setup procedure. CITE shares exact candidate identity, image digest, authentication policy, and capability mapping with release certification, but it is never relabeled as having used the canonical client fixture.
 
@@ -124,7 +117,6 @@ Planned lanes do not enter the active `lanes` array or `expected-pairs.json` unt
 
 | Lane | Canonical client | Protocols | Required tier | Owner |
 |---|---|---|---|---|
-| `desktop-arcgis` | ArcGIS Pro and arcpy | Esri REST plus applicable OGC services | Release, licensed | [honua-esri-compat#75](https://github.com/honua-io/honua-esri-compat/issues/75) |
 | `bi-excel` | Microsoft Excel Power Query | OData | Release, licensed | [#3390](https://github.com/honua-io/honua-server/issues/3390) |
 | `bi-powerbi` | Power BI Desktop | OData | Release, licensed | [#3390](https://github.com/honua-io/honua-server/issues/3390) |
 | `bi-tableau` | Tableau Desktop | OData, OGC API Features | Release, licensed | [#3390](https://github.com/honua-io/honua-server/issues/3390) |
@@ -134,7 +126,6 @@ Planned lanes do not enter the active `lanes` array or `expected-pairs.json` unt
 | Client | Exclusion rationale |
 |---|---|
 | Mapbox GL JS v2+ | Proprietary license and mandatory telemetry; MapLibre covers the applicable protocol surface |
-| ArcGIS Earth | No distinct server surface beyond the governed MapServer and KML lanes |
 | Golden Surfer | File-import workflow rather than a server protocol client |
 | Avenza Maps | File-import workflow rather than a server protocol client |
 | Looker Studio | No direct geospatial connector; warehouse access is certified separately |
@@ -143,9 +134,7 @@ Planned lanes do not enter the active `lanes` array or `expected-pairs.json` unt
 |---|---|---|---|
 | **JS** (Vitest + Playwright) | Automated ‡‡ | All CERT-\* | JS-EXT-01, JS-EXT-02, JS-EXT-OL-\*, JS-EXT-TILES-\* |
 | **JS — MapLibre** (Playwright) | Automated | CERT-CONN-01, CERT-RNDR-01 (browser render) | JS-EXT-01, JS-EXT-02 |
-| **JS — Esri Leaflet** (Playwright) | Automated §§ | FeatureServer + MapServer browser subset | EL-EXT-01 … EL-EXT-04 |
 | **JS — Cesium** (Playwright) | Automated ¶¶ | WMS, WMTS, OGC API Tiles, OGC API Maps imagery subset | JS-CES-IMG-01, JS-CES-TILE-01 |
-| **Desktop — ArcGIS Pro** | `arcgis-stub` is REST-only. Desktop certification is evidence identifier `desktop-arcgis` in honua-esri-compat | REST common-core via `arcgis-stub`; Portal/Sharing facade discovery via the `arcgis-stub` `portal` protocol (CERT-PRTL-\*). FeatureServer and MapServer envelopes are `*-desktop-arcgis-featureserver.cert.json` and `*-desktop-arcgis-mapserver.cert.json`. No successful desktop run is linked | DSK-EXT-01, DSK-EXT-02, CERT-PRTL-\* |
 | **Desktop — QGIS** | Automated (PyQGIS) + manual per runbook | Core CERT-\* through RNDR-01/02/SYM/LIN/FIL; RNDR-LBL/SPR/URL remain manual | DSK-EXT-01, DSK-EXT-02 (manual) |
 | **CLI / SDK** (admin SDK, pytest, Microsoft.OData.Client) | Automated | All CERT-\* except CERT-RNDR (OData via Microsoft.OData.Client xUnit suite) | CLI-EXT-01, CLI-EXT-02 |
 | **BI — Power BI** | Manual per runbook | CERT-CONN, AUTH, DISC, SCHM, QFLT, PAGE, ERRH, RNDR † | BI-EXT-01, BI-EXT-02 |
@@ -160,8 +149,6 @@ Planned lanes do not enter the active `lanes` array or `expected-pairs.json` unt
 † **BI lanes (OData-only):** CERT-GEOM-01, CERT-GEOM-02, CERT-SCHM-02, and CERT-QFLT-02 do not apply — these require geometry-capable protocols (FS, OGC). Record as `not-applicable` in the evidence envelope.
 
 ‡‡ **JS lane current automated scope:** Vitest (Node.js) covers FeatureServer direct JS tests plus OpenLayers protocol-client tests for OGC API Features, OGC API Maps, OGC Tiles/MVT, WFS 2.0, WMS 1.3, and WMTS 1.0 (`*.test.ts`). The OpenLayers lane emits `.cert.json` envelopes for `ogc-features`, `ogc-maps`, `mvt`, `wfs`, `wms`, and `wmts`. Playwright (headless Chromium) covers MapLibre rendering tests for MVT and an OGC API Maps image-source smoke that is skipped when no raster fixture exists. The Python pytest suite (FeatureServer + OGC API Features + GPServer + ImageServer) provides independent server-side protocol validation; its results may inform certification confidence but are not JS-lane client evidence. JS-lane OData automation is planned but not yet implemented; CLI-lane OData automation is now closed via the Microsoft.OData.Client xUnit certification suite (`tests/dotnet/Honua.Server.Tests/Features/Protocols/OData/ODataClientCertificationTests.cs`). Until automated JS suites are added for those protocols, their CERT-\* results require manual evidence or are recorded as `skip` with a note referencing this gap.
-
-§§ **Esri Leaflet sub-lane scope:** The Playwright suite currently exercises the browser-visible FeatureServer and MapServer subset: connection, metadata, schema, query/filter, paging, geometry fidelity, error handling, rendering, MapServer identify, and refresh. After the visual / style slice lands (ticket #478), the suite also substantiates `CERT-RNDR-SYM-01` and `CERT-RNDR-URL-01` on the FeatureServer surface via drawingInfo metadata and per-category style assertions, and the reporter emits a 24-case common-core envelope (18 base + 6 slice) by recording unexercised CERT-\* IDs as `skip` and the MapServer query-focused IDs as `not-applicable`. On the `mapserver` envelope the six `CERT-RNDR-{SYM,LIN,FIL,LBL,SPR,URL}-01` IDs are also recorded as `not-applicable` because drawingInfo per-category style assertions live on FeatureServer, not the MapServer export endpoint.
 
 ¶¶ **Cesium sub-lane scope:** The Playwright suite (`tests/js-browser/cesium/`, run via `docker/client-compat/cesium/`) exercises CesiumJS imagery providers — `WebMapServiceImageryProvider` (WMS), `WebMapTileServiceImageryProvider` (WMTS), `UrlTemplateImageryProvider` (OGC API Tiles), and `SingleTileImageryProvider` (OGC API Maps). Cesium does not consume vector-feature endpoints (FeatureServer, OGC API Features, WFS, OData) so the query/filter, schema, pagination, and geometry-fidelity categories are recorded as `not-applicable` in the `wms`, `wmts`, `ogc-tiles`, and `ogc-maps` envelopes. Per the contract for ticket #806, only CERT-CONN-01, CERT-CONN-02, CERT-AUTH-01, CERT-AUTH-02, CERT-DISC-01, CERT-DISC-02, CERT-ERRH-01, and CERT-RNDR-01 are applicable; the visual / style slice IDs (`CERT-RNDR-{SYM,LIN,FIL,LBL,SPR,URL}-01`) are `not-applicable` because Cesium imagery providers consume server-rendered raster output rather than per-feature drawing info.
 
@@ -185,15 +172,6 @@ Planned lanes do not enter the active `lanes` array or `expected-pairs.json` unt
 | JS-EXT-TILES-DISC-02 | Collection tilesets listing | MVT | pass/fail |
 | JS-EXT-TILES-SCHM-01 | Tileset metadata introspection | MVT | pass/fail |
 | JS-EXT-OGC-MAPS-01 | OpenLayers ImageStatic targets OGC API Maps collection image endpoint | OGC Maps | pass/fail/skip |
-
-#### Esri Leaflet Browser Sub-Lane
-
-| Extension ID | Description | Protocol(s) | Evidence |
-|---|---|---|---|
-| EL-EXT-01 | FeatureLayer symbology renders with drawingInfo | FS | pass/fail |
-| EL-EXT-02 | DynamicMapLayer export image renders | FS (mapserver) | pass/fail |
-| EL-EXT-03 | Feature attributes accessible via eachFeature | FS | pass/fail |
-| EL-EXT-04 | MapServer identify returns attributes at point | FS (mapserver) | pass/fail |
 
 #### Cesium Browser Sub-Lane
 
@@ -223,28 +201,22 @@ Planned lanes do not enter the active `lanes` array or `expected-pairs.json` unt
 | BI-EXT-01 | Power Query M expression executes | OData | pass/fail |
 | BI-EXT-02 | OData `$apply` aggregation returns results | OData | pass/fail+count |
 
-#### ArcGIS Portal Facade Lane (`arcgis-stub` `portal` protocol)
-
-The Portal/Sharing facade (epic #1240) lets packaged Esri clients (ArcGIS Pro "Add Portal", Field Maps) bind through Portal items and ArcGIS tokens. The `arcgis-stub` lane emits a `portal`-protocol envelope for the append-only IDs below. Real-client substantiation is evidence identifier `desktop-arcgis` in honua-esri-compat. No desktop receipt is linked (#1372, #1096). The seeded fixture is `tests/seed/portal-compat.yaml` (public/org/private tiers).
+#### Portal Sharing Protocol Checks
 
 | Extension ID | Description | Protocol(s) | Evidence |
 |---|---|---|---|
 | CERT-PRTL-INFO-01 | `/sharing/rest/info` advertises token-based security + `tokenServicesUrl` | Portal | pass/fail |
 | CERT-PRTL-SELF-01 | `/sharing/rest/portals/self` returns portal identity (`isPortal`/`name`) | Portal | pass/fail |
-| CERT-PRTL-SRCH-01 | `/sharing/rest/search` returns the Esri paging shape (`total`/`start`/`num`/`nextStart`/`results`) | Portal | pass/fail+count |
 | CERT-PRTL-ITEM-01 | `/sharing/rest/content/items/{id}` resolves to a `/rest/services` URL with an access tier | Portal | pass/fail |
 | CERT-PRTL-RBAC-01 | Anonymous search projects only public-tier items (RBAC access projection) | Portal | pass/fail |
 | CERT-PRTL-TOKN-01 | `/sharing/rest/generateToken` issues a token whose `expires` is Unix milliseconds | Portal | pass/fail/skip † |
 | CERT-PRTL-AUTH-01 | A named-user token widens discovery to org-tier items (authenticated projection) | Portal | pass/fail/skip † |
 | CERT-PRTL-OAUTH-01 | `/sharing/rest/oauth2/token` returns an RFC 6749 error envelope for an invalid grant | Portal | pass/fail/skip † |
 | CERT-PRTL-SELF-02 | `portals/self` with a named-user token populates the `user` block | Portal | pass/fail/skip † |
-| CERT-PRTL-COMM-01 | Anonymous `/sharing/rest/community/self` returns the Esri error envelope (401/499), never a user document | Portal | pass/fail |
 | CERT-PRTL-COMM-02 | `community/self` with a named-user token returns the signed-in user document (`username`) | Portal | pass/fail/skip † |
-| CERT-PRTL-TOKN-02 | `generateToken` with invalid credentials returns the Esri error envelope (401/499) without leaking a token | Portal | pass/fail/skip † |
 | CERT-PRTL-OAUTH-02 | `oauth2/token` `refresh_token` grant returns `invalid_grant` for an unknown/expired refresh token | Portal | pass/fail/skip † |
 
-† **Token / OAuth2 slice substantiation.** The token-surface IDs (CERT-PRTL-TOKN-\*, -AUTH-01, -SELF-02, -COMM-02, -OAUTH-\*) require the token surface to be reachable (admin credentials configured on the lane and `Authentication:PortalToken:RequireHttps=false` for the HTTP-only docker network, both set in `docker/client-compat/compose.yml`). The stub emits `skip` **only** for the genuinely-unconfigured cases (no admin credentials / no token issued / the https-only guard rejecting the transport / the OAuth2 bridge returning 404-disabled); once the surface is reachable a broken projection, wrong token shape, or non-RFC-6749 error body emits `fail`, which the strict diff catches via the `new-fail` path even against a `skip` baseline. All 13 CERT-PRTL IDs are baselined `pass` from a containerized-lane capture (`scripts/client-compat/refresh-baselines.sh arcgis-stub`), which promoted the formerly-`skip` token/OAuth2 rows; the endpoint behaviors are independently verified by `PortalFacadeDiscoveryContractTests`. The anonymous read-surface IDs (INFO/SELF/SRCH/ITEM/RBAC, plus COMM-01 and TOKN-02) need no credentials at all.
-
+† **Token / OAuth2 slice substantiation.** The token-surface IDs (CERT-PRTL-TOKN-\*, -AUTH-01, -SELF-02, -COMM-02, -OAUTH-\*) require the token surface to be reachable (admin credentials configured on the lane and `Authentication:PortalToken:RequireHttps=false` for the HTTP-only docker network, both set in `docker/client-compat/compose.yml`). The stub emits `skip` **only** for the genuinely-unconfigured cases (no admin credentials / no token issued / the https-only guard rejecting the transport / the OAuth2 bridge returning 404-disabled); once the surface is reachable a broken projection, wrong token shape, or non-RFC-6749 error body emits `fail`, which the strict diff catches via the `new-fail` path even against a `skip` baseline. All 13 CERT-PRTL IDs are baselined `pass` from a containerized-lane capture (`scripts/client-compat/refresh-baselines.sh geoservices-rest-stub`), which promoted the formerly-`skip` token/OAuth2 rows; the endpoint behaviors are independently verified by `PortalFacadeDiscoveryContractTests`. The anonymous read-surface IDs (INFO/SELF/SRCH/ITEM/RBAC, plus COMM-01 and TOKN-02) need no credentials at all.
 
 <a id="canonical-analyst-lanes"></a>
 
@@ -531,14 +503,8 @@ All certification results must follow the standardized evidence specification in
 | 1.0.7 | 2026-03-17 | Add stable HTML anchor for JS Lane heading to decouple cross-document links |
 | 1.0.8 | 2026-04-03 | Add WFS protocol abbreviation; update Desktop — QGIS lane to reflect automated PyQGIS coverage |
 | 1.0.9 | 2026-04-05 | Update JS lane to reflect hybrid Vitest + Playwright execution model and expanded protocol scope |
-| 1.0.10 | 2026-04-03 | Register Esri Leaflet browser sub-lane (EL-EXT-01 … EL-EXT-04) |
-| 1.0.11 | 2026-04-03 | Clarify Esri Leaflet automated scope and evidence skip/not-applicable behavior |
 | 1.0.12 | 2026-04-06 | Note CLI/SDK OData automation via Microsoft.OData.Client xUnit suite; close OData automation gap for the CLI lane |
 | 1.1.0 | 2026-04-06 | Add visual / style certification slice IDs (`CERT-RNDR-{SYM,LIN,FIL,LBL,SPR,URL}-01`) per ticket #478; link slice spec |
-| 1.1.1 | 2026-04-07 | Update the `§§` Esri Leaflet sub-lane footnote to the post-#478 24-case common-core shape; document slice-ID `not-applicable` rationale on the mapserver envelope |
 | 1.1.2 | 2026-04-08 | Add JS — MapLibre (Playwright) lane for automated MapLibre GL JS browser render certification (#464) |
 | 1.1.3 | 2026-04-25 | Add OGC API Maps JS/OpenLayers evidence protocol and MapLibre image-source smoke coverage |
-| 1.2.0 | 2026-04-26 | Add JS — Cesium (Playwright) lane and JS-CES-IMG-01 / JS-CES-TILE-01 extensions; add `ogc-tiles` protocol abbreviation; name the REST-only `arcgis-stub` lane (#806) |
-| 1.2.1 | 2026-05-18 | Name `desktop-arcgis` as an evidence identifier distinct from `arcgis-stub`. Ordinary PR gates do not require ArcGIS Pro (#1019) |
-| 1.3.0 | 2026-07-09 | Register the ArcGIS Portal/Sharing facade lane: add the `portal` protocol abbreviation and the CERT-PRTL-\* extension slice exercised by the `arcgis-stub` `portal` envelope against the `portal-compat` fixture (epic #1240 / #1372) |
-| 1.4.0 | 2026-07-27 | Extend the Portal facade slice with the identity + auth-failure shapes packaged Esri clients depend on (CERT-PRTL-SELF-02, -COMM-01/-02, -TOKN-02, -OAUTH-02: `community/self`, authenticated `portals/self` user block, generateToken bad-credential envelope, `refresh_token` `invalid_grant`); promote the token/OAuth2 baselines to `pass` from the first containerized-lane capture (#1372) |
+| 1.2.0 | 2026-04-26 | Add JS — Cesium (Playwright) lane and JS-CES-IMG-01 / JS-CES-TILE-01 extensions; add `ogc-tiles` protocol abbreviation; name the REST-only `geoservices-rest-stub` lane (#806) |

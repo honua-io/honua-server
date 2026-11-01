@@ -15,7 +15,7 @@ Examples use `http://localhost:8080`, the repository Compose default. A quicksta
 |---|---|
 | Import GeoJSON, Shapefile, GeoPackage, FileGDB, and other files | [Import files](publish/import-files.md) |
 | Import a private `s3://` object with the host identity | [Import from object storage](publish/import-from-object-storage.md) |
-| Pull layers from a live ArcGIS service | [Import from ArcGIS services](publish/import-from-arcgis-services.md) |
+| Pull layers from a live GeoServices REST service | [Import from GeoServices REST services](publish/import-from-geoservices-rest.md) |
 | Serve tables already in my PostGIS / SQL Server / Oracle database | [Serve existing databases](publish/serve-existing-databases.md) |
 | Publish a table as a layer on every protocol | [Publish layers](publish/publish-layers.md) |
 | Publish GeoTIFF and other rasters | [Publish rasters](publish/publish-rasters.md) |
@@ -52,7 +52,6 @@ Examples use `http://localhost:8080`, the repository Compose default. A quicksta
 | I want to… | Guide |
 |---|---|
 | Connect QGIS | [QGIS](connect/qgis.md) |
-| Connect ArcGIS Pro | [ArcGIS Pro](connect/arcgis-pro.md) |
 | Analyze layers in Excel or Power BI | [Excel and Power BI](connect/excel-power-bi.md) |
 | Build MapLibre web maps | [MapLibre web maps](connect/maplibre-web-maps.md) |
 | Let AI agents use the server via MCP | [AI agents (MCP)](connect/ai-agents-mcp.md) |
@@ -93,11 +92,10 @@ Examples use `http://localhost:8080`, the repository Compose default. A quicksta
 | Tune outbound HTTP resilience | [HTTP client resilience](deploy/scaling-and-performance.md#outbound-http-resilience) |
 | Fix a broken deployment | [Troubleshooting](deploy/troubleshooting.md) |
 
-## Migrate from Esri or GeoServer
+## Migrate services
 
 | I want to… | Guide |
 |---|---|
-| Migrate services from ArcGIS Server | [From ArcGIS Server](migrate/from-arcgis-server.md) |
-| Point existing ArcGIS apps and SDKs at Honua | [ArcGIS apps and SDKs](migrate/arcgis-apps-and-sdks.md) |
+| Migrate a GeoServices REST service | [From GeoServices REST](migrate/from-geoservices-rest.md) |
 | Migrate from GeoServer | [From GeoServer](migrate/from-geoserver.md) |
-| Run a pilot and plan the cutover | [Cutover checklist](migrate/from-arcgis-server.md#cutover-checklist) |
+| Run a pilot and plan the cutover | [Cutover checklist](migrate/from-geoservices-rest.md#cutover-checklist) |

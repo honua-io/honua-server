@@ -23,12 +23,11 @@ Standardized scorecards, checklists, and readout templates for lighthouse migrat
 
 | Resource | Purpose |
 |----------|---------|
-| [Esri Migration Platform Plan](../ESRI_MIGRATION_PLATFORM_PLAN.md) | Migration architecture, phase gates, success metrics |
 | Historical GTM pilot playbooks | Removed from the live repo; not maintained in the archive tree |
 | [Client Template Runbook](../../../gis/CLIENT_TEMPLATE_RUNBOOK.md) | Current client verification procedures |
 | Historical procurement readiness materials | Removed from the live repo; not maintained in the archive tree |
 | [Operator Runbooks](../../role-indexes/operator-runbooks-README.md) | Current deployment and infrastructure procedures |
 | [Release Checklist](../../../internal/contributor/RELEASE_CHECKLIST.md) | Current release gate integration |
 | [`import-fidelity-scorecard-governance.yml`](../../../../.github/workflows/import-fidelity-scorecard-governance.yml) | Parity scorecard CI governance |
-| [`geoservices-import-fidelity-external.yml`](../../../../.github/workflows/geoservices-import-fidelity-external.yml) | On-demand geoservices parity runs against live Esri services |
+| [`geoservices-import-fidelity-external.yml`](../../../../.github/workflows/geoservices-import-fidelity-external.yml) | On-demand geoservices parity runs against live GeoServices REST services |
 | [`import-fidelity-scorecard-baseline.json`](../../../../tests/dotnet/Honua.Server.Tests/Import/import-fidelity-scorecard-baseline.json) | Existing parity baseline data |

@@ -1,7 +1,7 @@
 ---
 type: guide
 title: "Run geoprocessing"
-description: "Discover a server-side process, execute it synchronously or submit it as an asynchronous job, and fetch results — over OGC API Processes, with the same catalog reachable through the ArcGIS-compatible GPServer adapter."
+description: "Discover a server-side process, execute it synchronously or submit it as an asynchronous job, and fetch results — over OGC API Processes, with the same catalog reachable through the GeoServices REST-compatible GPServer adapter."
 resource: "honua://capability/process.geoprocessing"
 resources:
   - "honua://capability/analytics.buffer-aggregate"
@@ -11,7 +11,7 @@ resources:
 ---
 # Run geoprocessing
 
-Discover a server-side process, execute it synchronously or submit it as an asynchronous job, and fetch results — over OGC API Processes, with the same catalog reachable through the ArcGIS-compatible GPServer adapter.
+Discover a server-side process, execute it synchronously or submit it as an asynchronous job, and fetch results — over OGC API Processes, with the same catalog reachable through the GeoServices REST-compatible GPServer adapter.
 
 **Prerequisites:** a running server ([quickstart](../../get-started/quickstart.md)) and an API key — process execution requires an authenticated caller with the process-execute grant ([authentication](../secure/authentication.md)). Analytic built-ins require `Process.Execute`; imports, catalog mutations, and durable sinks additionally require `Process.ExecuteMutatingProcess`; operator-supplied code additionally requires `Process.ExecuteCustomCode`.
 
@@ -57,15 +57,15 @@ Process discovery is open. Omit `Prefer` for bounded synchronous execution when 
 
 Job status, results, cancellation, and listing use the effective submission tenant and the durable submitting actor. An authenticated administrator may access jobs in that same tenant. Actor identity includes the authentication scheme, issuer and stable subject, or the API-key identifier; display names do not establish ownership. Keyed submissions require a durable identity and are scoped to that actor and tenant, so separate submitters can use the same retry key independently. A refreshed token for the same actor and tenant retains the original job. Trusted deferred submissions retain the captured submitter as owner. Older jobs without tenant metadata or a durable owner need resubmission for owner access. Stored workflow and approval snapshots without durable actor metadata must be republished or resubmitted before keyed execution. Named GP workspaces retain their established owner key and tenant scope independently of job lifecycle ownership, so existing workspace outputs and overwrite behavior remain available.
 
-The same catalog is exposed Esri-style for ArcGIS clients: `GET /rest/services/{serviceId}/GPServer` publishes deterministic Python-safe task names (`Honua_` followed by the uppercase UTF-8 hex encoding of the canonical process id), together with unambiguous Esri-conventional aliases such as `Buffer`. Existing canonical REST paths remain compatible aliases: `/GPServer/geometry.buffer` and `/GPServer/Buffer` address the same process. OGC identifiers and the canonical catalog are unchanged. These aliases are a name-level convenience, not a task-specific wire adapter: task info for `Buffer` publishes the canonical `wkb`, `srid`, and numeric `distance` inputs, not Esri Buffer's feature-record-set, linear-unit, and dissolve-option contract. Clients must use the published task metadata.
+The same catalog is exposed GeoServices REST-style for GeoServices REST clients: `GET /rest/services/{serviceId}/GPServer` publishes deterministic Python-safe task names (`Honua_` followed by the uppercase UTF-8 hex encoding of the canonical process id), together with unambiguous GeoServices REST-conventional aliases such as `Buffer`. Existing canonical REST paths remain compatible aliases: `/GPServer/geometry.buffer` and `/GPServer/Buffer` address the same process. OGC identifiers and the canonical catalog are unchanged. These aliases are a name-level convenience, not a task-specific wire adapter: task info for `Buffer` publishes the canonical `wkb`, `srid`, and numeric `distance` inputs, not GeoServices REST Buffer's feature-record-set, linear-unit, and dissolve-option contract. Clients must use the published task metadata.
 
-The standard `submitJob` / `jobs/{jobId}` / `jobs/{jobId}/results/{paramName}` / `jobs/{jobId}/cancel` operations drive the same job runtime. Successful jobs advertise their named result parameters, and the per-parameter result route reads the stored result-package value and Esri data type. A fresh instance ships a default `geoprocessing` service so the facade works out of the box — e.g. `GET /rest/services/geoprocessing/GPServer` — and every published service also exposes GPServer (so `{serviceId}` can be any service you have published). To turn the default service off, set `Geoprocessing:SeedDefaultService=false` (env `HONUA_GEOPROCESSING_SEED_DEFAULT_SERVICE=false`). Deterministic single-geometry tasks (the `geometry.*` family and `conversion.geometry-format`) also accept the synchronous `execute` route (`POST`/`GET /rest/services/{serviceId}/GPServer/geometry.buffer/execute`), which runs the task inline through that same runtime and returns the Esri execute envelope (`results` + `messages`) on the same request. A synchronous run that fails or is cancelled returns the GeoServices error envelope (`{"error":{"code":500,...}}`, with the job id, terminal status, and failure message in `details`) instead of an empty `results` list, so Esri clients see the failure. Async-only tasks reject `execute` with a 400 capability message pointing back at `submitJob`.
+The standard `submitJob` / `jobs/{jobId}` / `jobs/{jobId}/results/{paramName}` / `jobs/{jobId}/cancel` operations drive the same job runtime. Successful jobs advertise their named result parameters, and the per-parameter result route reads the stored result-package value and GeoServices REST data type. A fresh instance ships a default `geoprocessing` service so the facade works out of the box — e.g. `GET /rest/services/geoprocessing/GPServer` — and every published service also exposes GPServer (so `{serviceId}` can be any service you have published). To turn the default service off, set `Geoprocessing:SeedDefaultService=false` (env `HONUA_GEOPROCESSING_SEED_DEFAULT_SERVICE=false`). Deterministic single-geometry tasks (the `geometry.*` family and `conversion.geometry-format`) also accept the synchronous `execute` route (`POST`/`GET /rest/services/{serviceId}/GPServer/geometry.buffer/execute`), which runs the task inline through that same runtime and returns the GeoServices REST execute envelope (`results` + `messages`) on the same request. A synchronous run that fails or is cancelled returns the GeoServices error envelope (`{"error":{"code":500,...}}`, with the job id, terminal status, and failure message in `details`) instead of an empty `results` list, so GeoServices REST clients see the failure. Async-only tasks reject `execute` with a 400 capability message pointing back at `submitJob`.
 
-Both `execute` and `submitJob` accept the Esri 10.6.1+ `context` parameter as the JSON form of the environment controls: `context.outSR` behaves like `env:outSR` (a WKID or a `{"wkid":...}` object) and changes the output projection. Processing-CRS overrides (`env:processSR`, `context.processSR`, and SOAP `cartographicCoordinateSystem`) are rejected before execution or job submission because the engine cannot apply them. REST returns the GeoServices error envelope with `error.code=400` over HTTP 200; SOAP returns an HTTP 400 fault. A null or blank processing reference requests no override. An empty `extent` is accepted; any other `context` property returns a 400 naming it rather than being ignored, and a `context` spatial reference that disagrees with the matching `env:*` value is rejected.
+Both `execute` and `submitJob` accept the GeoServices REST 10.6.1+ `context` parameter as the JSON form of the environment controls: `context.outSR` behaves like `env:outSR` (a WKID or a `{"wkid":...}` object) and changes the output projection. Processing-CRS overrides (`env:processSR`, `context.processSR`, and SOAP `cartographicCoordinateSystem`) are rejected before execution or job submission because the engine cannot apply them. REST returns the GeoServices error envelope with `error.code=400` over HTTP 200; SOAP returns an HTTP 400 fault. A null or blank processing reference requests no override. An empty `extent` is accepted; any other `context` property returns a 400 naming it rather than being ignored, and a `context` spatial reference that disagrees with the matching `env:*` value is rejected.
 
 Layer-scoped task parameters published as `GPFeatureRecordSetLayer`, including the
-`input` and `clip` parameters of `Clip`, accept an Esri FeatureSet JSON object in
-the form parameter. Supply `features` with `attributes` and Esri `geometry`
+`input` and `clip` parameters of `Clip`, accept a GeoServices REST FeatureSet JSON object in
+the form parameter. Supply `features` with `attributes` and GeoServices REST `geometry`
 objects, plus the collection's `spatialReference`. Every feature and attribute row
 is retained. Z ordinates are supported; measured FeatureSets are rejected explicitly
 because the canonical GeoJSON collection format cannot preserve M ordinates.
@@ -73,21 +73,20 @@ Single-geometry tasks still require one geometry and do not flatten multiple
 features into a single geometry.
 
 GP result `value` follows the
-[Esri data-type contract](https://developers.arcgis.com/rest/services-reference/enterprise/gp-data-types/).
+the GeoServices REST data-type contract.
 Inline vector outputs return a FeatureSet object with `fields`, `features`,
 `geometryType`, `spatialReference`, and dimensional flags. Table outputs return
 records with attributes. Stored feature, raster, and file outputs return an object
 such as `{"url":"https://example.test/result"}`. Both synchronous `execute` and
 asynchronous result retrieval use these shapes.
 Empty results retain the input-derived fields and geometry type. Canonical GeoJSON inputs use
-WGS 84 when no explicit working reference is supplied; equivalent Esri Web Mercator WKIDs are
+WGS 84 when no explicit working reference is supplied; equivalent GeoServices REST Web Mercator WKIDs are
 normalized before comparison. Merge rejects incompatible geometry types before creating a job.
 An unavailable artifact remains an explicit fallback label rather than a fictitious download URL.
 
-
 ### SOAP remote toolbox execution
 
-ArcPy discovers the same catalog through `POST /services/{serviceId}/GPServer`.
+Python geoprocessing clients discover the same catalog through `POST /services/{serviceId}/GPServer`.
 The SOAP adapter supports `SubmitJob`, `Execute`, `GetJobStatus`, `GetJobMessages`,
 `GetJobResult`, `GetJobToolName`, and `CancelJob` through the same authorized job
 handlers as REST. Job ownership, tenant and service/task binding checks apply.
@@ -98,8 +97,8 @@ asynchronous execution, while SOAP `Execute` accepts sync-eligible tasks.
 SOAP execution supports scalar `GPString`, `GPLong`, `GPDouble`, `GPBoolean`, and
 `GPDate` values, plus the complex values the catalog advertises:
 
-- `GPFeatureRecordSetLayer` and `GPRecordSet` inputs are Esri RecordSets. They are
-  read into the same Esri JSON FeatureSet a REST client submits, so the FeatureSet
+- `GPFeatureRecordSetLayer` and `GPRecordSet` inputs are GeoServices REST RecordSets. They are
+  read into the same GeoServices REST JSON FeatureSet a REST client submits, so the FeatureSet
   rules above apply unchanged. Feature and table outputs are returned as RecordSets
   holding the REST result's fields, attributes, geometry and spatial reference.
 - `GPMultiValue` inputs with scalar members become the REST JSON array.
@@ -112,9 +111,9 @@ without a WKID, truncated RecordSets, unsupported field types, and outputs with 
 retrievable URL. Result options accept URL transport, no densification, and boolean
 ReturnData/UpdateValues controls; unsupported options return faults. Supported SOAP
 spatial-reference environment controls map to the same REST environment validation.
-ArcPy sends its six application environment defaults with every submission (Z/M
+Python geoprocessing clients send six application environment defaults with every submission (Z/M
 "Same As Input", random seed 0/ACM599, autoCommit 1000, CONVERT_UNITS cell-size
-projection, and NONE nodata). These are Esri's documented defaults and select the
+projection, and NONE nodata). These are GeoServices REST documented defaults and select the
 same behaviour as a REST request without `env:` parameters, so they are accepted
 for every task. Changed controls remain subject to canonical validation.
 

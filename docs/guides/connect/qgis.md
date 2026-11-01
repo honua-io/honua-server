@@ -23,7 +23,7 @@ Add Honua layers to a QGIS project over OGC API Features, WMS/WMTS, or WFS, then
 
 ### Option B — WMS or WMTS (rendered maps and cached tiles)
 
-Honua serves WMS 1.1.1/1.3 and WMTS 1.0 per service at `/ogc/services/{serviceId}/wms` and `/ogc/services/{serviceId}/wmts` (the ArcGIS-style aliases `/rest/services/{serviceId}/MapServer/WMS` and `.../MapServer/WMTS` work too).
+Honua serves WMS 1.1.1/1.3 and WMTS 1.0 per service at `/ogc/services/{serviceId}/wms` and `/ogc/services/{serviceId}/wmts` (the GeoServices REST-style aliases `/rest/services/{serviceId}/MapServer/WMS` and `.../MapServer/WMTS` work too).
 
 1. In the Data Source Manager, select the **WMS/WMTS** tab and click **New**.
 2. Enter a name and the URL for your service, for example `http://localhost:8080/ogc/services/my-service/wms` (or the `/wmts` URL for tiles), then click **OK**.

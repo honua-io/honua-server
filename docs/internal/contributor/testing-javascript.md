@@ -5,7 +5,7 @@ Honua currently ships two JavaScript/TypeScript test suites:
 | Suite | Path | Runner | Purpose |
 |---|---|---|---|
 | Protocol integration | `tests/js/` | Vitest | Headless FeatureServer protocol coverage, query matrix expansion, edit flows, and metadata |
-| Browser compatibility | `tests/js-browser/` | Playwright | Real-client certification against Esri Leaflet 3.x plus MapLibre GL JS browser compatibility |
+| Browser compatibility | `tests/js-browser/` | Playwright | Real-client certification against REST-enabled Leaflet client 3.x plus MapLibre GL JS browser compatibility |
 
 ## Shared Server Bootstrap
 
@@ -76,14 +76,13 @@ Approximate suite size: `~330+` tests across query, geometry, edits, and metadat
 
 This workspace contains three Playwright lanes:
 
-- `leaflet-client/` proves that a real browser client can consume Honua through the `leaflet`, `esri-leaflet`, and `esri-leaflet-renderers` packages. It runs in full CI (`schedule`, `workflow_dispatch`, or PRs labeled `ci/full`) as the `esri-leaflet-browser-tests` job.
 - `maplibre/` proves that MapLibre GL JS can load styles, discover TileJSON, fetch MVT tiles, and render vector tiles from Honua. It runs in full CI as the `maplibre-compat` job.
 - `cesium/` proves that CesiumJS imagery providers (`WebMapServiceImageryProvider`, `WebMapTileServiceImageryProvider`, `UrlTemplateImageryProvider` for OGC API Tiles, `SingleTileImageryProvider` for OGC API Maps) can render against Honua. It runs nightly under the `cesium` lane of `client-interop-nightly.yml` via `docker/client-compat/cesium/`. Cesium does not consume vector-feature endpoints, so the lane records the query/schema/pagination/geometry-fidelity CERT-\* IDs as `not-applicable` and seeds the visual / style slice IDs as `not-applicable` (Cesium consumes server-rendered raster output rather than per-feature drawing info).
 
 Current browser coverage:
 
 - FeatureServer load, metadata discovery, schema inspection, query/filter, paging, malformed-filter handling
-- Geometry fidelity and `outSR=4326` request handling from an Esri Leaflet query object
+- Geometry fidelity and `outSR=4326` request handling from a REST-enabled Leaflet client query object
 - Feature attribute access through `eachFeature`
 - MapServer `DynamicMapLayer` export rendering, metadata discovery, identify, and redraw/state preservation
 - Visual regression checks with Playwright screenshots plus a non-blank render guard
@@ -113,5 +112,3 @@ Outputs:
 - `tests/js-browser/test-results/` — Playwright traces and failure artifacts
 - `tests/js-browser/evidence/` — generated `*-js-featureserver.cert.json` and `*-js-mapserver.cert.json` envelopes
 - `tests/js-browser/leaflet-client/rendering.spec.ts-snapshots/` — committed screenshot baselines
-
-The reporter resolves `client_version` from the installed `esri-leaflet` package version, not from the semver range alone. Unexercised CERT-\* IDs are emitted as `skip`, and MapServer query-only IDs are emitted as `not-applicable`, so every evidence file keeps a full 24-case common-core shape (18 base CERT-\* IDs plus the six `CERT-RNDR-{SYM,LIN,FIL,LBL,SPR,URL}-01` visual / style slice IDs introduced by ticket [`#478`](https://github.com/honua-io/honua-server/issues/478); see [`visual-style-certification-slice.md`](../evidence/visual-style-certification-slice.md)). The browser suite substantiates `CERT-RNDR-SYM-01` (drawingInfo point symbol) and `CERT-RNDR-URL-01` (FeatureServer drawingInfo metadata document consumed) on the FeatureServer surface; on `mapserver` evidence files all six slice IDs are recorded as `not-applicable` because drawingInfo per-category style assertions live on FeatureServer, not the MapServer export endpoint. Slice IDs that are applicable to a protocol but not yet substantiated by this lane (`CERT-RNDR-{LIN,FIL,LBL,SPR}-01` on FeatureServer for Esri Leaflet) emit `skip` with a `pending-fixture:` note prefix rather than the suite's generic "Not exercised" message, so the [release-checklist promise](RELEASE_CHECKLIST.md#cross-client-certification-required) (`pending-fixture` is a documented skip reason) is verifiable in the envelope text. The matching contract for the OpenLayers lane is implemented in [`tests/js/openlayers/shared/evidence.ts`](../../../tests/js/openlayers/shared/evidence.ts).

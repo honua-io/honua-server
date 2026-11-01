@@ -12,7 +12,7 @@ Cross-cutting patterns for building integrations against Honua: choosing a surfa
 | Pattern | Best protocol | Notes |
 | --- | --- | --- |
 | Interactive queries and CRUD | OGC API Features | Standards-compliant JSON/GeoJSON; CQL2 filtering. |
-| Esri clients and tooling | GeoServices REST (`/rest/services`) | FeatureServer for data, MapServer for maps. |
+| GeoServices REST clients and tooling | GeoServices REST (`/rest/services`) | FeatureServer for data, MapServer for maps. |
 | BI tools (Power BI, Excel) | OData v4 (`/odata`) | `$filter`, `$select`, `$count`. |
 | Bulk/columnar analytics export | FeatureServer `f=parquet` / `f=arrow` | GeoParquet and Arrow IPC, PostGIS-backed layers. |
 | High-throughput service-to-service | gRPC `geospatial.v1` | Streaming queries and edits ([reference](protocols/grpc.md)). |
@@ -26,7 +26,7 @@ Fetch `GET /api/v1/capabilities/manifest` before rendering feature-specific cont
 
 - **API keys** — send `X-API-Key` on admin and protected data requests; manage keys via `/api/v1/admin/api-keys` (create, rotate, revoke). Scope keys to least privilege and rotate on a schedule.
 - **OIDC** — configure an identity provider for interactive users; see [authentication guide](../guides/secure/authentication.md).
-- **ArcGIS clients** — the opt-in Portal OAuth2 bridge (`/sharing/rest/oauth2/*`) brokers ArcGIS named-user sign-in to your OIDC provider; register every redirect URI explicitly.
+- **GeoServices REST clients** — the opt-in Portal OAuth2 bridge (`/sharing/rest/oauth2/*`) brokers GeoServices REST named-user sign-in to your OIDC provider; register every redirect URI explicitly.
 - **mTLS** — client-certificate authentication for native/admin surfaces; see [TLS and mTLS](../guides/secure/tls-and-mtls.md).
 
 ## Pagination and result completeness

@@ -7,7 +7,7 @@ This document demonstrates the transformation from protocol-scattered endpoints 
 **Current scattered approach:**
 ```bash
 # Developers had to know multiple URL patterns
-/rest/services/my-layers/FeatureServer/0/query       # ArcGIS REST
+/rest/services/my-layers/FeatureServer/0/query       # GeoServices REST
 /ogc/features/collections/my-layers/items            # OGC API
 /odata/my-layers/Features                            # OData
 /tiles/0/12/1234/5678.mvt                           # Vector tiles
@@ -46,7 +46,7 @@ GET /my-layers/data               # Auto-picks best data format
 GET /my-layers/map                # Auto-picks best map format
 
 # Explicit protocol choice
-GET /my-layers/geoservices/query   # ArcGIS REST compatible
+GET /my-layers/geoservices/query   # GeoServices REST compatible
 GET /my-layers/ogcapi/features     # Modern OGC API Features (GeoJSON)
 GET /my-layers/ogc/wms             # Legacy OGC WMS (images)
 GET /my-layers/ogc/wfs             # Legacy OGC WFS (GML/XML)
@@ -67,7 +67,7 @@ GET /my-layers/tiles/z/x/y.mvt     # Vector tiles
   "serviceId": "my-layers",
   "protocols": {
     "geoservices": {
-      "name": "GeoServices (ArcGIS REST compatible)",
+      "name": "GeoServices REST compatible",
       "baseUrl": "/my-layers/geoservices/",
       "capabilities": ["query", "editing", "metadata"],
       "mimeTypes": ["application/json"]
@@ -181,11 +181,11 @@ odata = service.odata().features()
 # → Auto-detects QGIS and uses OGC API Features
 ```
 
-**ArcGIS Pro Integration:**
+**desktop GIS client Integration:**
 ```bash
-# ArcGIS Pro Add Data
+# Add a service in a desktop GIS client
 # URL: https://api.honua.io/my-layers/features  
-# → Auto-detects ArcGIS and uses GeoServices REST
+# → Detects the service protocol and uses GeoServices REST
 ```
 
 **Power BI Integration:**

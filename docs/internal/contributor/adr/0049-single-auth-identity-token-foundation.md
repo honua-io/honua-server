@@ -1,4 +1,4 @@
-# ADR-0049: Single Auth/Identity/Token Foundation Shared by OIDC SSO and ArcGIS OAuth2
+# ADR-0049: Single Auth/Identity/Token Foundation Shared by OIDC SSO and GeoServices REST OAuth2
 
 ## Status
 
@@ -7,15 +7,6 @@ Accepted
 ## Context
 
 Honua's enterprise-auth roadmap has three tracks landing in close succession:
-
-- **#348 — OIDC SSO.** The interactive single-sign-on track for
-  Entra ID / Okta / Auth0 / generic OIDC.
-- **#1242 — ArcGIS OAuth2 named-user.** `oauth2/authorize` + `oauth2/token`
-  so ArcGIS Pro "Add Portal" and Field Maps can log a *named user* in against
-  Honua's portal facade (#1240).
-- **#349 — RBAC.** Per-service/per-layer/per-operation access decisions, of
-  which the persistent store (#1374) and canonical resolver (#1375) are the
-  load-bearing half.
 
 The risk identified in the #348/#349 assessment is that #1242 and #348 each
 build their **own** auth/token system — a second user store, a second token
@@ -33,12 +24,12 @@ tracks rather than reinvented:
   admin-session cookie, client certificate, and API key. Provider quirks
   (Okta `groups`, Auth0 namespaced `roles`/`permissions`) are already handled,
   and claims→role mapping runs through `OidcClaimsTransformation`.
-- **ArcGIS-shaped tokens:** `IPortalTokenIssuer`
+- **GeoServices REST-shaped tokens:** `IPortalTokenIssuer`
   (`src/Honua.Core/Features/Authorization/Abstractions/IPortalTokenIssuer.cs`)
   + `PortalTokenIssuer`
   (`src/Honua.Hosting/Features/Authentication/PortalTokenIssuer.cs`) mint
   distributed-cache-backed opaque bearer tokens that are URL-safe for the
-  `?token=` query parameter ArcGIS clients send, with referer/IP/host binding.
+  `?token=` query parameter GeoServices REST clients send, with referer/IP/host binding.
   `PortalTokenAuthenticationHandler` validates them on the request path, and
   `generateToken` is live at
   `src/Honua.Protocols.GeoServices/Sharing/SharingRestEndpoints.cs`.
@@ -60,7 +51,7 @@ compose it; none of them introduces a parallel one.**
    the existing `OidcAuthenticationExtensions` middleware and its composite
    policy scheme. New providers are configuration, not new code paths.
 
-2. **ArcGIS tokens are minted by `IPortalTokenIssuer`.** Any Esri-shaped token
+2. **GeoServices REST tokens are minted by `IPortalTokenIssuer`.** Any GeoServices REST-shaped token
    (the `?token=` opaque bearer, the `generateToken` response, and the eventual
    `oauth2/token` response) is produced and validated through the existing
    issuer/handler pair. No second token store.
@@ -74,7 +65,7 @@ compose it; none of them introduces a parallel one.**
 4. **#1242 is a thin bridge, not a new system.**
    - `oauth2/authorize` delegates to the configured per-provider OIDC
      auth-code+PKCE flow already in `OidcAuthenticationExtensions`.
-   - On callback, `oauth2/token` returns the Esri-shaped
+   - On callback, `oauth2/token` returns the GeoServices REST-shaped
      `{ access_token, expires_in, refresh_token }` minted via
      `IPortalTokenIssuer`.
    - #1242 and #1240 MUST NOT introduce a separate user store, a separate
@@ -91,9 +82,9 @@ compose it; none of them introduces a parallel one.**
 
 **Easier:**
 
-- One place to reason about identity (OIDC), one place for Esri tokens
+- One place to reason about identity (OIDC), one place for GeoServices REST tokens
   (`IPortalTokenIssuer`), one place for access decisions (the resolver). The
-  ArcGIS facade and SSO share the same role/grant truth.
+  GeoServices REST facade and SSO share the same role/grant truth.
 - #1242 becomes a small, testable adapter rather than an auth subsystem.
 - SCIM (#510) / SAML (#508) provision into a single durable role store.
 
@@ -144,7 +135,7 @@ Deferred to **#1242**: the OAuth2 bridge itself — now landed (see below).
 The OAuth2 named-user bridge (#1242) has since shipped on top of this
 foundation, honoring the decision above with no parallel auth/token/user store:
 
-- Honua acts as the OAuth2 authorization server that ArcGIS clients
+- Honua acts as the OAuth2 authorization server that GeoServices REST clients
   (Pro "Add Portal", Field Maps) talk to, exposing
   `GET /sharing/rest/oauth2/authorize`, `GET /sharing/rest/oauth2/callback`,
   and `GET|POST /sharing/rest/oauth2/token`.
@@ -153,7 +144,7 @@ foundation, honoring the decision above with no parallel auth/token/user store:
   over `OidcProviderCatalog` + discovery + the shared
   `IPortalCredentialVerifier`); the verified principal is the same one a
   direct OIDC session yields.
-- `token` returns the Esri-shaped `{ access_token, expires_in, refresh_token }`
+- `token` returns the GeoServices REST-shaped `{ access_token, expires_in, refresh_token }`
   minted through `IPortalTokenIssuer`.
 - `PortalOAuthBroker` / `PortalOAuthStore` / `PortalOAuthTokenService` carry
   only the short-lived broker-session + authorization-code state required by
@@ -170,37 +161,7 @@ The OAuth2 bridge (`/sharing/rest/oauth2/{authorize,callback,token}`) landed in
 #1242 and stays opt-in/off-by-default. Before it can be enabled in production the
 following hardening (#1484) is required and now lands with this ADR:
 
-- **`redirect_uri` allow-list (open-redirect mitigation).** `oauth2/authorize`
-  validates the client `redirect_uri` against a per-deployment allow-list
-  (`Authentication:PortalToken:OAuth2:AllowedRedirectUris`) via the shared
-  `PortalOAuthRedirectUriValidator` (exact-URI or same-origin match; the ArcGIS
-  Pro `urn:ietf:wg:oauth:2.0:oob` native redirect is only honored when listed
-  verbatim). An empty list rejects everything, and a non-allow-listed URI gets a
-  direct 400 and is **never** redirected to (RFC 6749 §4.1.2.1), so the bridge
-  cannot be used to bounce an authorization code to a hostile host.
-- **Hard-required PKCE.** With `OAuth2.RequirePkce` (default on), `authorize`
-  rejects a code flow with no `code_challenge`, and the token endpoint rejects an
-  `authorization_code` grant whose stored code carries no challenge — so every
-  code flow has had PKCE. (Previously PKCE was only verified when a challenge had
-  been registered.)
-- **Refresh-token rotation.** With `OAuth2.RotateRefreshTokens` (default on), a
-  `refresh_token` grant revokes the presented token and returns a fresh one,
-  bounding a leaked token's replay window to a single use. Refresh tokens remain
-  90-day, cache-backed, and revocable by cache eviction; rotation can be disabled
-  for clients that cannot persist a refreshed token.
-
 ### CSRF posture: cookieless `idpState.brokerSessionId` binding
-
-ArcGIS Pro's embedded browser is hostile to cookies, so the bridge cannot use a
-cookie-bound CSRF/state for the IdP leg. Instead `PortalOAuthBroker` mints a
-high-entropy random `idpState` (32 chars) and a separate broker-session id (256
-bits of cache-key entropy) at `authorize` time, persists the ArcGIS client's
-pinned parameters (redirect_uri/state/PKCE challenge) plus the IdP PKCE verifier
-in the single-use, short-lived (15 min) broker session, and sends the IdP the
-**combined** `state = idpState.brokerSessionId`. At `callback` the broker
-splits the value, consumes the broker session by id (single-use; removed on
-read), and constant-time-compares the returned `idpState` against the stored one
-before proceeding.
 
 This was reviewed against the CSRF/authorization-fixation threat model and is
 judged adequate for the bridge:
@@ -210,7 +171,7 @@ judged adequate for the bridge:
   (b) the constant-time `idpState` equality check, which is the standard
   state-parameter binding — the cookieless transport does not weaken it because
   the secret lives server-side in the broker session, not in a cookie.
-- The authorization code returned to the ArcGIS client is independently bound to
+- The authorization code returned to the GeoServices REST client is independently bound to
   that client's own PKCE `code_challenge` (now hard-required) plus the
   allow-listed, exact-match `redirect_uri` and `client_id`, so a code obtained on
   a victim's behalf cannot be redeemed by an attacker.
@@ -227,6 +188,6 @@ provides. The conclusion is captured here and in
 
 - Complements ADR-0024 (Open-Core Edition Model) and the RBAC enforcement model.
 - This ADR is the decision deliverable tracked by #1377.
-- Linked from #348 (OIDC SSO), #349 (RBAC tracking), #1240 (ArcGIS portal
-  facade), #1242 (ArcGIS OAuth2 named-user — bridge as-built), #1374 (persistent
+- Linked from #348 (OIDC SSO), #349 (RBAC tracking), #1240 (GeoServices REST portal
+  facade), #1242 (GeoServices REST OAuth2 named-user — bridge as-built), #1374 (persistent
   store), #1375 (resolver), #1376 (cross-protocol per-operation enforcement).
