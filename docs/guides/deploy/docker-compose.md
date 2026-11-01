@@ -390,7 +390,7 @@ dc up -d --wait --wait-timeout 180
 
 ## Upgrade & Rollback
 
-When the Compose executor from the [quickstart](../../get-started/quickstart.md#optional-let-an-approved-proposal-update-this-stack) is enabled, convergence and rollback of the registered project are product-managed. The server asks a sidecar over a local socket. A rollback across a reader-incompatible or contract migration restores a verified database backup before the prior image starts. The file-storage archive in the backup recipe above stays an operator step. The executor does not run arbitrary Compose commands, and contract-migration nonces stay on the migrate-only path.
+When the Compose executor from the [quickstart](../../get-started/quickstart.md#approved-operations-and-recovery) is enabled, convergence and rollback of the registered project are product-managed. The server asks a sidecar over a local socket. A rollback across a reader-incompatible or contract migration restores a verified database backup before the prior image starts. The file-storage archive in the backup recipe above stays an operator step. The executor does not run arbitrary Compose commands, and contract-migration nonces stay on the migrate-only path.
 
 Use the signed release lock's next server digest and compatible clients together.
 Retain the previous `.env`, installed-package list and backup. A single-node
@@ -472,3 +472,11 @@ unset HONUA_ADMIN_PASSWORD POSTGRES_PASSWORD
 ```
 
 The private installation folder remains for deliberate retention or deletion.
+
+### Local approved operations
+
+The [customer quickstart package](../../get-started/quickstart.md#install-the-customer-package)
+includes the stable manager and dedicated executor image by default.
+Only the executor has Docker access. It targets the configured local project and
+executes only proposals approved by a different principal. Preserve the image lock,
+private locally generated credentials, management volumes, and verified backups.
