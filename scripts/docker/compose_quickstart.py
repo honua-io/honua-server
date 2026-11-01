@@ -77,15 +77,18 @@ def initialize(directory):
             if result.returncode:
                 raise RuntimeError('OpenSSL could not create the local key-ring certificate')
         pem, crt = directory / 'secrets/keyring.pem', directory / 'secrets/keyring.crt'
+        pending_pfx = directory / 'secrets/keyring.pfx.pending'
         try:
             openssl('req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-subj', '/CN=honua-quickstart',
                     '-keyout', str(pem), '-out', str(crt), '-days', '3650')
             openssl('pkcs12', '-export', '-inkey', str(pem), '-in', str(crt),
-                    '-out', str(pfx), '-passout', 'env:HONUA_KEYRING_PASSWORD')
-            pfx.chmod(0o600)
+                    '-out', str(pending_pfx), '-passout', 'env:HONUA_KEYRING_PASSWORD')
+            pending_pfx.chmod(0o600)
+            os.replace(pending_pfx, pfx)
         finally:
             pem.unlink(missing_ok=True)
             crt.unlink(missing_ok=True)
+            pending_pfx.unlink(missing_ok=True)
     return values
 
 

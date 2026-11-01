@@ -6,6 +6,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from package_quickstart import package
 from compose_quickstart import initialize
@@ -85,6 +86,26 @@ class ComposeQuickstartTests(unittest.TestCase):
                     'HONUA_KEYRING_PASSWORD')
             self.assertEqual(len(keys), len({values[key] for key in keys}))
             self.assertEqual(EXECUTOR, values['HONUA_EXECUTOR_IMAGE'])
+
+    def test_failed_certificate_export_can_be_retried(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)
+            package(path, SERVER, EXECUTOR, WORKER, '2026.1-rc.2')
+            run_openssl = subprocess.run
+
+            def fail_export(command, **kwargs):
+                if command[1] == 'pkcs12':
+                    Path(command[command.index('-out') + 1]).write_bytes(b'partial')
+                    return subprocess.CompletedProcess(command, 1)
+                return run_openssl(command, **kwargs)
+
+            with patch('compose_quickstart.subprocess.run', side_effect=fail_export):
+                with self.assertRaises(RuntimeError):
+                    initialize(path)
+            self.assertFalse((path / 'secrets/keyring.pfx').exists(),
+                             'Failed exports must not leave an apparently complete certificate')
+            initialize(path)
+            self.assertGreater((path / 'secrets/keyring.pfx').stat().st_size, 100)
 
     def test_mutable_image_references_are_rejected_before_writing_package(self):
         for images in (('ghcr.io/honua-io/honua-server:latest', EXECUTOR, WORKER),

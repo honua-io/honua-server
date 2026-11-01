@@ -157,13 +157,23 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
             return result["structuredContent"]
         convergence = call("honua_propose_platform_release_convergence", {"reason": "candidate convergence"}, 2)
         proposal = convergence["targets"][0]["proposalId"]
-        time.sleep(3)
-        assert proposal and image_id() == prior_id and schema() == 140
+        assert proposal
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            detail, _ = request(base, f"/api/v1/admin/proposals/{proposal}", key)
+            if detail["status"].lower() == "awaitingapproval":
+                break
+            time.sleep(0.5)
+        else:
+            raise AssertionError("proposal did not enter awaiting approval")
+        assert image_id() == prior_id and schema() == 140
         try:
             request(base, f"/api/v1/admin/proposals/{proposal}/approve", proposer_key, {})
             raise AssertionError("self approval succeeded")
         except urllib.error.HTTPError as error:
             assert error.code in (400, 403, 409)
+        detail, _ = request(base, f"/api/v1/admin/proposals/{proposal}", key)
+        assert detail["status"].lower() == "awaitingapproval"
         request(base, f"/api/v1/admin/proposals/{proposal}/approve", approver_key, {})
         wait_for_proposal(base, approver_key, proposal, "succeeded", proposer_key, session)
         assert image_id() == candidate and schema() == candidate_schema
