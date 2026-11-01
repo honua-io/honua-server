@@ -15,7 +15,8 @@ namespace Honua.ControlPlane;
 internal sealed partial class AwsLambdaGitOpsDeployBackend(
     IAwsLambdaAliasClient aliasClient,
     ILogger<AwsLambdaGitOpsDeployBackend> logger,
-    IRollbackDataPlaneProbe? dataPlaneProbe = null) : IDeployBackend
+    IRollbackDataPlaneProbe? dataPlaneProbe = null,
+    IAwsLambdaImageClient? imageClient = null) : IDeployBackend, ICheckpointedDeployBackend
 {
     public string BackendName => "honua-gitops-aws-lambda";
 
@@ -53,9 +54,17 @@ internal sealed partial class AwsLambdaGitOpsDeployBackend(
         {
             blockingReasons.Add("AWS Lambda deploy workflows require a published function version, not $LATEST.");
         }
-        else if (!long.TryParse(spec.DesiredRevision, out var desiredVersion) || desiredVersion <= 0)
+        else if (!ReleaseImageDigest.IsImmutable(spec.DesiredRevision) && (!long.TryParse(spec.DesiredRevision, out var desiredVersion) || desiredVersion <= 0))
         {
             blockingReasons.Add("AWS Lambda deploy workflows require desiredRevision to be a published numeric version.");
+        }
+
+        if (ReleaseImageDigest.IsImmutable(spec.DesiredRevision))
+        {
+            if (imageClient is null) blockingReasons.Add("Lambda image convergence is not configured.");
+            if (spec.CanaryRamp is not null || (TryResolveCanaryWeightFraction(spec.Parameters, out var imageWeight, out _) && imageWeight.HasValue))
+                blockingReasons.Add("Lambda image convergence requires a stable alias without canary traffic.");
+            warnings.Add("Schema migrations must be applied out of band before Lambda image convergence.");
         }
 
         if (string.IsNullOrWhiteSpace(ResolveFunctionName(spec)))
@@ -101,6 +110,9 @@ internal sealed partial class AwsLambdaGitOpsDeployBackend(
         ArgumentNullException.ThrowIfNull(operation);
         var spec = operation.Deploy ?? throw new InvalidOperationException("Deploy workflow operation is missing deploy metadata.");
         cancellationToken.ThrowIfCancellationRequested();
+
+        if (RequiresCheckpoint(operation))
+            return new DeploySubmissionResult { Status = WorkflowOperationStatus.Submitted, Message = ICheckpointedDeployBackend.PendingPhase };
 
         var functionName = ResolveFunctionName(spec);
         var aliasName = ResolveAliasName(spec.Parameters);
@@ -176,6 +188,7 @@ internal sealed partial class AwsLambdaGitOpsDeployBackend(
 
         try
         {
+            if (RequiresCheckpoint(operation)) return await ObserveImageAsync(operation, cancellationToken).ConfigureAwait(false);
             var functionName = ResolveFunctionName(spec);
             var aliasName = ResolveAliasName(spec.Parameters);
             var region = ResolveRegion(spec.Parameters);
@@ -319,6 +332,8 @@ internal sealed partial class AwsLambdaGitOpsDeployBackend(
 
         try
         {
+            if (RequiresCheckpoint(operation)) return await MoveImageAliasAsync(operation, false, cancellationToken).ConfigureAwait(false);
+
             var updatedAlias = await aliasClient.UpdateAliasAsync(
                     functionName,
                     aliasName,
@@ -347,10 +362,10 @@ internal sealed partial class AwsLambdaGitOpsDeployBackend(
             Log.AwsCallFailed(logger, operation.OperationId, spec.TargetId, ex.Message);
             return new DeployObservation
             {
-                Status = operation.Status,
+                Status = RequiresCheckpoint(operation) ? WorkflowOperationStatus.Submitted : operation.Status,
                 ProviderOperationId = operation.ProviderOperationId,
                 ObservedRevision = operation.ObservedState,
-                Message = "Lambda alias promotion failed due to a transient AWS error. The reconciler will retry."
+                Message = RequiresCheckpoint(operation) ? ICheckpointedDeployBackend.CutoverPhase : "Lambda alias promotion failed due to a transient AWS error. The reconciler will retry."
             };
         }
     }
@@ -382,6 +397,8 @@ internal sealed partial class AwsLambdaGitOpsDeployBackend(
 
         try
         {
+            if (RequiresCheckpoint(operation)) return await MoveImageAliasAsync(operation, true, cancellationToken).ConfigureAwait(false);
+
             var updatedAlias = await aliasClient.UpdateAliasAsync(
                     functionName,
                     aliasName,
