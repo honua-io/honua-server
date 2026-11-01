@@ -306,11 +306,19 @@ internal sealed partial class StreamingFileImportService
         {
             await ValidatePromotionIdentityAsync(
                 connection, transaction, schemaName, tableName, expectedIdentity, cancellationToken);
+            var previousType = expectedIdentity is null ? null : await ReadImportedGeometryTypeAsync(
+                connection, transaction, schemaName, tableName, cancellationToken);
             await using (var command = new NpgsqlCommand(SwapImportTableSql, connection, transaction))
             {
                 command.Parameters.AddWithValue("schema_name", schemaName);
                 command.Parameters.AddWithValue("table_name", tableName);
                 await command.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            if (expectedIdentity is null || previousType is not null)
+            {
+                await RefreshImportedGeometryTypeAsync(
+                    connection, schemaName, tableName, cancellationToken, transaction, previousType);
             }
 
             var identity = await ImportedDatasetSpatialMetadata.LockAndResolveAsync(
@@ -345,6 +353,7 @@ internal sealed partial class StreamingFileImportService
         int storageSrid,
         double? coordinateEpoch,
         ImportedDatasetSpatialMetadata.Identity? expectedIdentity,
+        bool isNewTarget,
         CancellationToken cancellationToken)
     {
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
@@ -356,12 +365,25 @@ internal sealed partial class StreamingFileImportService
             }
             await ValidateDirectImportAsync(connection, transaction, schemaName, liveTableName,
                 storageSrid, new DirectImportGuard(identity, coordinateEpoch), cancellationToken);
+            var previousType = await ReadImportedGeometryTypeAsync(
+                connection, transaction, schemaName, liveTableName, cancellationToken);
+            if (previousType is not null)
+            {
+                await ClearImportedGeometryTypeAsync(
+                    connection, transaction, schemaName, liveTableName, cancellationToken);
+            }
             var insertSql =
                 $"INSERT INTO {QuoteIdentifier(schemaName)}.{QuoteIdentifier(liveTableName)} (geometry, properties) " +
                 $"SELECT geometry, properties FROM {QuoteIdentifier(schemaName)}.{QuoteIdentifier(stagingTableName)}";
             await using (var insert = new NpgsqlCommand(insertSql, connection, transaction))
             {
                 await insert.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            if (isNewTarget || previousType is not null)
+            {
+                await RefreshImportedGeometryTypeAsync(
+                    connection, schemaName, liveTableName, cancellationToken, transaction, previousType);
             }
 
             await using (var drop = new NpgsqlCommand(DropImportStagingTableSql, connection, transaction))

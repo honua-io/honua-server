@@ -761,7 +761,8 @@ internal static class CollectionsEndpoints
             Links = collectionLinks.ToImmutable(),
             Extent = extent,
             Crs = supportedCrs,
-            StorageCrs = storageCrsDefinition?.Uri
+            StorageCrs = storageCrsDefinition?.Uri,
+            GeometryType = resource.Spatial?.GeometryType.ToString()
         };
     }
 

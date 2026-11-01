@@ -789,7 +789,7 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
             await using (var command = connection.CreateCommand())
             {
                 command.CommandText = $"""
-                    SELECT properties->>'name', (properties->>'code')::int, ST_AsText(geometry)
+                    SELECT properties->>'name', (properties->>'code')::int, ST_AsText(ST_GeometryN(geometry, 1))
                     FROM "{schema}"."{OverwriteGuardPhysicalTable}"
                     WHERE properties ? 'code'
                     ORDER BY id
@@ -917,7 +917,7 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
                     count(DISTINCT (properties->>'ordinal')::int),
                     min((properties->>'ordinal')::int), max((properties->>'ordinal')::int),
                     bool_and((properties->>'padding') IS NOT DISTINCT FROM repeat('x', 4096)),
-                    bool_and(geometry IS NOT NULL AND ST_X(geometry)=1 AND ST_Y(geometry)=2 AND ST_SRID(geometry)=4326)
+                    bool_and(geometry IS NOT NULL AND ST_X(ST_GeometryN(geometry, 1))=1 AND ST_Y(ST_GeometryN(geometry, 1))=2 AND ST_SRID(geometry)=4326)
                 FROM "{schema}".imported_memory_proof
                 """;
             await using var reader = await command.ExecuteReaderAsync();
@@ -1050,7 +1050,7 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
         await using var connection = await fixture.DataSource.OpenConnectionAsync();
         await using var command = connection.CreateCommand();
         command.CommandText = $"""
-            SELECT id, properties->>'name', (properties->>'code')::int, ST_AsText(geometry)
+            SELECT id, properties->>'name', (properties->>'code')::int, ST_AsText(ST_GeometryN(geometry, 1))
             FROM "{schema}"."{OverwriteGuardPhysicalTable}"
             ORDER BY id
             """;
@@ -1558,7 +1558,7 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
             await using var connection = await fixture.DataSource.OpenConnectionAsync();
             await using var command = connection.CreateCommand();
             command.CommandText =
-                $"SELECT ST_X(geometry), ST_Y(geometry) FROM \"{schema}\".imported_local_srs_demo;";
+                $"SELECT ST_X(ST_GeometryN(geometry, 1)), ST_Y(ST_GeometryN(geometry, 1)) FROM \"{schema}\".imported_local_srs_demo;";
             await using var reader = await command.ExecuteReaderAsync();
             (await reader.ReadAsync()).Should().BeTrue();
             reader.GetDouble(0).Should().BeApproximately(-0.129, 0.05, "easting 530000 must transform as BNG metres, not the local srs_id");

@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Buffers.Binary;
 using System.Collections.Immutable;
 using System.Globalization;
 using System.Text.Json;
@@ -183,7 +184,23 @@ internal static class GeometryTypeEnforcement
         var actualFamily = GetFamily(parsed.OgcGeometryType);
         if (actualFamily == expectedFamily)
         {
-            return GeometryMutationResult.Success(finalGeometry);
+            var promoted = (layerGeometryType, parsed) switch
+            {
+                (MetadataV2GeometryType.MultiPoint, NetTopologySuite.Geometries.Point point)
+                    => (NetTopologySuite.Geometries.Geometry)parsed.Factory.CreateMultiPoint([point]),
+                (MetadataV2GeometryType.MultiLineString, NetTopologySuite.Geometries.LineString line)
+                    => parsed.Factory.CreateMultiLineString([line]),
+                (MetadataV2GeometryType.MultiPolygon, NetTopologySuite.Geometries.Polygon polygon)
+                    => parsed.Factory.CreateMultiPolygon([polygon]),
+                _ => null
+            };
+            if (promoted is null)
+            {
+                return GeometryMutationResult.Success(finalGeometry);
+            }
+
+            promoted.SRID = parsed.SRID;
+            return GeometryMutationResult.Success(WriteWkb(promoted, finalGeometry));
         }
 
         var layerDescription = layerGeometryType.ToString();
@@ -309,10 +326,18 @@ internal static class GeometryTypeEnforcement
         return true;
     }
 
-    private static byte[] WriteWkb(NetTopologySuite.Geometries.Geometry geometry)
+    private static byte[] WriteWkb(NetTopologySuite.Geometries.Geometry geometry, byte[]? source = null)
     {
-        var emitZ = false;
-        var emitM = false;
+        // Empty geometries have no coordinates from which to infer dimensions.
+        // Preserve the source WKB's EWKB flags or ISO dimensional type offset.
+        var type = source is { Length: >= 5 }
+            ? source[0] == 1
+                ? BinaryPrimitives.ReadUInt32LittleEndian(source.AsSpan(1, 4))
+                : BinaryPrimitives.ReadUInt32BigEndian(source.AsSpan(1, 4))
+            : 0u;
+        var dimension = (type & 0x1fffffffu) / 1000;
+        var emitZ = (type & 0x80000000u) != 0 || dimension is 1 or 3;
+        var emitM = (type & 0x40000000u) != 0 || dimension is 2 or 3;
         foreach (var coordinate in geometry.Coordinates)
         {
             emitZ |= !double.IsNaN(coordinate.Z);
