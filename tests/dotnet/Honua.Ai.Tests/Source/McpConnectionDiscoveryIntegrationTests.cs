@@ -12,7 +12,7 @@ using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Hosting;
 using Npgsql;
 
-namespace Honua.Server.Tests.Features.OperationsToolset;
+namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
 [Collection("Database")]
 [Protocol(TestProtocols.Mcp)]
