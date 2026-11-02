@@ -1,6 +1,8 @@
 import copy
 import importlib.util
 import json
+import re
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -16,6 +18,35 @@ def module(name):
 binding = module("gp-candidate-binding")
 recovery = module("gp-store-recovery")
 proxy = module("gp-terminal-proxy")
+
+
+PRODUCER = Path(__file__).with_name("gp-terminal-recovery.sh")
+
+
+def terminal_recovery_evidence(job, sha, size):
+    """Run gp-terminal-recovery.sh's own evidence jq program, so the fixture is the producer's layout."""
+    program = re.search(r"\\\r?\n\s*'(\{submitted_job:.*?\})' > \"\$scenario_evidence_file\"",
+                        PRODUCER.read_text(), re.S)
+    if program is None:
+        raise AssertionError("gp-terminal-recovery.sh evidence program not found")
+    before = {"operationId": job, "status": 3, "claimedBy": "worker-1", "version": 4, "attemptCount": 1,
+              "artifactReferences": ["{}"]}
+    fence = {"operationId": job, "barrier": "terminal-committed-registration-pending", "redis_reply": ":1",
+             "reply_forwarded": False, "workerId": "worker-1", "terminal_record": before}
+    package = {"resultPackageId": f"{job}:v4", "status": 5, "artifacts": [{"artifactId": f"{job}:artifact:1",
+               "metadata": {"raster.output.checksum": "sha256:" + sha, "raster.output.sizeBytes": str(size)}}]}
+    with tempfile.TemporaryDirectory() as temp:
+        files = {}
+        for name, value in (("fence", fence), ("before", before), ("final", before), ("package", package)):
+            files[name] = Path(temp) / f"{name}.json"
+            files[name].write_text(json.dumps(value))
+        out = subprocess.run(
+            ["jq", "-n", "--arg", "job", job, "--arg", "before_file", "before.geojson",
+             "--arg", "after_file", "after.geojson", "--arg", "sha", sha, "--argjson", "bytes", str(size),
+             *[arg for name in ("fence", "before", "final", "package")
+               for arg in ("--slurpfile", name, str(files[name]))], program.group(1)],
+            check=True, capture_output=True, text=True)
+    return json.loads(out.stdout)
 
 
 class CandidateBindingTests(unittest.TestCase):
@@ -90,6 +121,9 @@ class CandidateBindingTests(unittest.TestCase):
         summary = {"lane": "crash-boundaries", "declared_scenarios": [s["scenario"] for s in scenarios],
                    "missing_scenarios": [], "duplicate_receipts": [], "failed": 0, "passed": 8,
                    "scenarios": scenarios}
+        # gp-store-crash.sh routes the terminal worker cell through gp-terminal-recovery.sh.
+        terminal = next(s for s in scenarios if s["scenario"] == binding.TERMINAL_WORKER_CASE)
+        terminal["evidence"] = terminal_recovery_evidence("fixture-job", "a" * 64, 2048)
         binding.verify_crashes(pin, summary)
         for mutation in ("missing-cell", "missing-injection", "duplicate-output", "inline", "uncommitted", "registered"):
             bad = copy.deepcopy(summary)
@@ -108,6 +142,39 @@ class CandidateBindingTests(unittest.TestCase):
                 case["evidence"]["result_package_before"] = 1
             with self.subTest(mutation=mutation), self.assertRaises(ValueError):
                 binding.verify_crashes(pin, bad)
+
+    def test_terminal_worker_cell_consumes_the_terminal_recovery_producer(self):
+        """The producer's real layout (no sha256_before/job_before) passes; each broken fact fails."""
+        scenario = {"scenario": binding.TERMINAL_WORKER_CASE, "job": {"id": "job-1", "terminal_state": "successful"},
+                    "output": {"sha256": "c" * 64, "bytes": 4096},
+                    "evidence": terminal_recovery_evidence("job-1", "c" * 64, 4096)}
+        self.assertNotIn("sha256_before", scenario["evidence"])
+        binding.verify_terminal_recovery(scenario, scenario["evidence"])
+        mutations = {
+            "acknowledged": lambda p, s: p["fence"].__setitem__("reply_forwarded", True),
+            "uncommitted": lambda p, s: p["fence"].__setitem__("redis_reply", ":0"),
+            "other-job": lambda p, s: p["fence"].__setitem__("operationId", "job-2"),
+            "fence-record": lambda p, s: p["fence"]["terminal_record"].__setitem__("version", 5),
+            "record-changed": lambda p, s: p["terminal_final"].__setitem__("version", 5),
+            "not-terminal": lambda p, s: (p["terminal_before"].__setitem__("status", 2),
+                                          p["terminal_final"].__setitem__("status", 2),
+                                          p["fence"]["terminal_record"].__setitem__("status", 2)),
+            "registered-early": lambda p, s: p.__setitem__("result_package_before", 1),
+            "registered-before-read": lambda p, s: p.__setitem__("result_package_before_read", 1),
+            "not-registered": lambda p, s: p.__setitem__("result_package_after", 0),
+            "not-killed": lambda p, s: p.__setitem__("worker_exit_code", 0),
+            "duplicate-artifact": lambda p, s: p["result_package"]["artifacts"].append({}),
+            "checksum": lambda p, s: p["result_package"]["artifacts"][0]["metadata"].__setitem__(
+                "raster.output.checksum", "sha256:" + "d" * 64),
+            "bytes-changed": lambda p, s: s["output"].__setitem__("sha256", "d" * 64),
+            "inline": lambda p, s: (p.__setitem__("bytes", 512), s["output"].__setitem__("bytes", 512)),
+            "failed-job": lambda p, s: s["job"].__setitem__("terminal_state", "failed"),
+        }
+        for name, mutate in mutations.items():
+            bad = copy.deepcopy(scenario)
+            mutate(bad["evidence"], bad)
+            with self.subTest(mutation=name), self.assertRaises((ValueError, KeyError, TypeError)):
+                binding.verify_terminal_recovery(bad, bad["evidence"])
 
     def test_repin_changes_both_image_identity_and_manifest_binding(self):
         with tempfile.TemporaryDirectory() as temp:
