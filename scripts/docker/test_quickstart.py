@@ -53,6 +53,14 @@ class QuickstartTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, "Compose must render without disclosing credentials")
         return json.loads(result.stdout)["services"]
 
+    def test_console_healthcheck_reads_the_file_the_image_ships(self):
+        with tempfile.NamedTemporaryFile() as env_file:
+            services = self.render(env_file.name, POSTGRES_PASSWORD=os.urandom(32).hex(),
+                                   MINIO_ROOT_PASSWORD=os.urandom(32).hex())
+        check = ' '.join(services['console']['healthcheck']['test'])
+        # Current Console images ship /app/version.json (served at GET /version.json).
+        self.assertIn('test -s /app/version.json', check)
+
     def test_workflow_view_default_is_forwarded_to_server(self):
         with tempfile.NamedTemporaryFile() as env_file:
             for selected, expected in (('', 'default'), ('configure', 'configure')):
