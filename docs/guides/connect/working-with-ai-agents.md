@@ -33,13 +33,14 @@ conflicts with a rule, stop and ask.
 
 - Serving API and MCP: `http://localhost:18080/mcp`. Use it to publish, query, and manage access, maps and apps.
 - Management API and MCP: `http://localhost:18082/mcp`. Use it for upgrades, rollback and their proposals.
-- `.env` and `secrets/` hold this install's credentials and keys. Copy them, but never display them.
+- Secrets live in `.env` on older installs and in files under `secrets/` on newer ones (mounted in
+  containers at `/run/secrets`). Read neither. You may copy them for a backup, but never display them.
 
 ## 1. Keep secrets out of your output
 
-- Never print or read secret values. Don't run `cat .env`, open files under `secrets/`, or
-  `grep` a secret file in a way that prints matching lines. Don't run `env` or `printenv` without a
-  variable name, or with the name of a secret.
+- Never print or read secret values. Never read files under `secrets/` or `/run/secrets`. Don't run
+  `cat .env`, or `grep` a secret file in a way that prints matching lines. Don't run `env` or
+  `printenv` without a variable name, or with the name of a secret.
 - `docker compose config` prints every interpolated secret. Use only `docker compose config --services`,
   `--images` or `--no-interpolate`. Never run `docker compose config --environment`. Don't use
   `docker inspect` or `docker compose exec <service> env` to read a container's environment either.
