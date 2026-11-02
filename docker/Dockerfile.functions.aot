@@ -107,6 +107,9 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
 COPY . .
 
 ARG CONFIGURATION=Release
+# Empty VERSION preserves Directory.Build.props for local container builds.
+ARG VERSION=
+ARG HONUA_GIT_SHA=
 # Oracle.ManagedDataAccess and Snowflake.Data are not NativeAOT-compatible: both
 # emit fatal IL3000 diagnostics while reading Assembly.Location from a
 # single-file app. Keep the Functions image aligned with the Lambda AOT image by
@@ -131,6 +134,9 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
           -p:HonuaSkipOracleForAotVerification=true \
           -p:HonuaSkipSnowflakeForAotVerification=true && \
         dotnet publish src/Honua.Server/Honua.Server.csproj \
+          ${VERSION:+-p:Version="$VERSION"} \
+          ${VERSION:+-p:InformationalVersion="$VERSION$(if [ -n "$HONUA_GIT_SHA" ]; then printf '+%.7s' "$HONUA_GIT_SHA"; fi)"} \
+          ${VERSION:+-p:IncludeSourceRevisionInInformationalVersion=false} \
           --configuration "$CONFIGURATION" \
           --runtime "$RUNTIME_ID" \
           --no-restore \
@@ -165,6 +171,8 @@ WORKDIR /home/site/wwwroot
 # Immutable deployment identity (#3038). Keep the SHA in the runtime stage so revision-only
 # changes do not invalidate publish layers; the pushed image digest is injected by deployment.
 ARG HONUA_GIT_SHA=
+ARG VERSION=
+LABEL org.opencontainers.image.version="${VERSION}"
 LABEL org.opencontainers.image.revision="${HONUA_GIT_SHA}"
 ENV HONUA_GIT_SHA=${HONUA_GIT_SHA}
 

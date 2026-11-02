@@ -90,6 +90,9 @@ COPY . .
 # SC2086 suppression rationale: EXTRA_MSBUILD_ARGS holds multiple MSBuild flags that must
 # word-split into separate `-p:` arguments. Quoting collapses them into a single (invalid) argument.
 ARG CONFIGURATION=Release
+# Empty VERSION preserves Directory.Build.props for local container builds.
+ARG VERSION=
+ARG HONUA_GIT_SHA=
 # hadolint ignore=SC2086
 RUN --mount=type=cache,target=/root/.nuget/packages \
     --mount=type=secret,id=github_actor \
@@ -109,6 +112,9 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
       --runtime "$RUNTIME_ID" \
       $EXTRA_MSBUILD_ARGS && \
     dotnet publish src/Honua.Server/Honua.Server.csproj \
+      ${VERSION:+-p:Version="$VERSION"} \
+      ${VERSION:+-p:InformationalVersion="$VERSION$(if [ -n "$HONUA_GIT_SHA" ]; then printf '+%.7s' "$HONUA_GIT_SHA"; fi)"} \
+      ${VERSION:+-p:IncludeSourceRevisionInInformationalVersion=false} \
       --configuration "$CONFIGURATION" \
       --runtime "$RUNTIME_ID" \
       --no-restore \
@@ -214,6 +220,8 @@ LABEL security.non-root="true" \
 # HONUA_IMAGE_DIGEST is intentionally not set here: an image cannot contain its own digest,
 # so deployments inject it (Helm/Terraform/task definition) once the image has been pushed.
 ARG HONUA_GIT_SHA=
+ARG VERSION=
+LABEL org.opencontainers.image.version="${VERSION}"
 LABEL org.opencontainers.image.revision="${HONUA_GIT_SHA}"
 ENV HONUA_GIT_SHA=${HONUA_GIT_SHA}
 

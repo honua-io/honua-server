@@ -11,6 +11,8 @@ on:
       - 'docs/get-started/quickstart.md'
       - 'tests/integration/test_compose_release_lifecycle.py'
       - '.github/workflows/compose-release-lifecycle.yml'
+      - '.github/workflows/nightly-container-build.yml'
+      - 'docker/Dockerfile.aot'
       - 'docker/Dockerfile.compose-executor'
       - 'scripts/docker/*quickstart*.py'
       - 'scripts/docker/test_compose_release_lifecycle_polling.py'

@@ -110,7 +110,7 @@ public sealed partial class NightlyImageCertificationTests
 
         // Hand-off: a trunk run whose head is not the candidate tags it and re-dispatches.
         select.Should().Contain("mode: ${{ steps.route.outputs.mode }}");
-        select.Should().Contain("publish: ${{ steps.route.outputs.publish }}");
+        select.Should().Contain("steps.route.outputs.publish == 'true' && steps.existing.outputs.imaged != '1'");
         var route = Step(select, "Route the build to a run at the selected sha");
         var handoff = Step(select, "Tag the selected sha and re-dispatch this workflow at it");
         handoff.Should().Contain("tag=\"nightly-candidate-${CANDIDATE_SHA:0:7}\"");
@@ -120,8 +120,7 @@ public sealed partial class NightlyImageCertificationTests
             "only a trunk run whose head is not the candidate hands off");
         route.Should().Contain("if [ \"${mode}\" != redirect ] && [ \"${CANDIDATE_SHA}\" != \"${GITHUB_SHA}\" ]; then");
         handoff.Should().Contain("select(.status != \"completed\")", "a queued or running candidate build is not duplicated");
-        handoff.Should().Contain("elif [ \"${imaged}\" != 0 ]; then",
-            "a candidate already imaged on its tag is not rebuilt, so a later failed attempt cannot file red checks on it");
+        select.Should().Contain("--already-imaged", "registry tags, including partial failed runs and trunk-head builds, are authoritative");
 
         // A candidate-tag run images exactly its own commit, re-proving certification.
         var selectStep = select[select.IndexOf("id: select", StringComparison.Ordinal)..select.IndexOf("id: route", StringComparison.Ordinal)];
@@ -140,7 +139,7 @@ public sealed partial class NightlyImageCertificationTests
         var mint = Step(select, "Mint the release GitHub App token for the candidate hand-off");
         foreach (var step in new[] { require, mint, handoff })
         {
-            step.Should().Contain("        if: steps.route.outputs.mode == 'redirect'\n",
+            step.Should().Contain("        if: steps.route.outputs.mode == 'redirect' && steps.existing.outputs.imaged != '1'\n",
                 "only a hand-off needs the app; trunk-head, candidate-tag and proof runs never touch it");
         }
 
@@ -193,7 +192,7 @@ public sealed partial class NightlyImageCertificationTests
 
         foreach (var job in new[] { "mirror-base-images", "verify-functions-aot" })
         {
-            IfOf(Job(nightly, job)).Should().Be("needs.select-candidate.outputs.mode != 'redirect'",
+            IfOf(Job(nightly, job)).Should().Be("needs.select-candidate.outputs.mode != 'redirect' && needs.select-candidate.outputs.imaged != '1'",
                 $"{job} must not build in a run that handed the candidate off");
         }
     }
@@ -234,9 +233,9 @@ public sealed partial class NightlyImageCertificationTests
 
         foreach (var staging in new[]
                  {
-                     "boundary-candidate-nightly-aot-${{ matrix.arch }}-" + CandidateSha,
-                     "boundary-candidate-nightly-lambda-aot-${{ matrix.arch }}-" + CandidateSha,
-                     "boundary-candidate-nightly-functions-aot-" + CandidateSha,
+                     "boundary-candidate-nightly-aot-${{ matrix.arch }}-${{ github.run_id }}-${{ github.run_attempt }}",
+                     "boundary-candidate-nightly-lambda-aot-${{ matrix.arch }}-${{ github.run_id }}-${{ github.run_attempt }}",
+                     "boundary-candidate-nightly-functions-aot-${{ github.run_id }}-${{ github.run_attempt }}",
                  })
         {
             nightly.Should().Contain(staging);
@@ -288,6 +287,8 @@ public sealed partial class NightlyImageCertificationTests
         }
 
         await RunPython("scripts/ci/select-certified-nightly-sha.test.py");
+        await RunPython("scripts/ci/test_container_version.py");
+        await RunPython("scripts/ci/test_immutable_container_tags.py");
     }
 
     [ArchitectureTest]
