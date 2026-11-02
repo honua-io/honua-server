@@ -191,11 +191,11 @@ public sealed class McpRegistryCompositionTests
         // Mcp:PublishOperations configuration at all. The committed projection manifest is
         // the contract: its 67 rows are the Admin API and access catalogs minus the
         // audited exclusions (digest below). #6701 adds admin.api-key.update-restrictions
-        // to that projection. The closed operator roster adds five tools
-        // (server status, connection create, connection test, import-from-URL, import-from-object-store)
+        // to that projection. The closed operator roster adds seven tools
+        // (server status, connection create/test/list, table discovery, and URL/object imports)
         // without enabling the full catalog. Other admin.* providers stay opt-in.
         const int ExpectedManifestTools = 67;
-        const int ExpectedRosterAdditions = 5;
+        const int ExpectedRosterAdditions = 7;
         const int ExpectedPublishedTools = ExpectedManifestTools + ExpectedRosterAdditions;
         const int ExpectedExclusions = 15;
         const string ExpectedExclusionDigest = "62eb9da003bacee33a5972b31527e5a7c964a8f60308414a33ce6087eb4efae2";
@@ -229,6 +229,8 @@ public sealed class McpRegistryCompositionTests
 
         var rosterAdditions = new[]
         {
+            "honua_admin_connections_list",
+            "honua_admin_connection_tables_list",
             "honua_admin_connections_create",
             "honua_admin_connections_test",
             "honua_admin_import_upload_object",

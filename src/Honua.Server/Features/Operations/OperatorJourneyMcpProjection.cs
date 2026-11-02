@@ -16,6 +16,8 @@ internal sealed class OperatorJourneyMcpProjection : IAuditedAdminMcpProjection
         new HashSet<string>(StringComparer.Ordinal)
         {
             "admin.server.status",
+            "admin.connections.list",
+            "admin.connections.tables.discover",
             "admin.connections.create",
             "admin.connections.test",
             "admin.import.upload-url",

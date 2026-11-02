@@ -1,8 +1,8 @@
 {
   "$schema": "./mcp-tool-roster.v1.schema.json",
   "schemaVersion": 1,
-  "serverSha": "a8b4541ddbe6f43c430ff47ea14259a3e5d47e60",
-  "generatedAt": "2026-10-30T19:51:03Z",
+  "serverSha": "daf56db25c208765f5440e484a7c24fbc5ba81ab",
+  "generatedAt": "2026-11-02T15:31:14Z",
   "regenerate": "bash scripts/generate-mcp-tool-roster.sh",
   "static": [
     "honua_alert_events",
@@ -74,7 +74,9 @@
     "honua_admin_api_key_list",
     "honua_admin_api_key_revoke",
     "honua_admin_api_key_update_restrictions",
+    "honua_admin_connection_tables_list",
     "honua_admin_connections_create",
+    "honua_admin_connections_list",
     "honua_admin_connections_test",
     "honua_admin_field_mask_policy_create",
     "honua_admin_field_mask_policy_delete",
@@ -144,7 +146,9 @@
     "honua_admin_user_roles_update"
   ],
   "requiresDurableControlPlane": [
+    "honua_admin_connection_tables_list",
     "honua_admin_connections_create",
+    "honua_admin_connections_list",
     "honua_admin_connections_test",
     "honua_admin_import_upload_object",
     "honua_admin_import_upload_url",
@@ -187,7 +191,9 @@
     "configure": [
       "honua_admin_api_key_effective_permissions",
       "honua_admin_api_key_list",
+      "honua_admin_connection_tables_list",
       "honua_admin_connections_create",
+      "honua_admin_connections_list",
       "honua_admin_connections_test",
       "honua_admin_import_upload_object",
       "honua_admin_import_upload_url",
