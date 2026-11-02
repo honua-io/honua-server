@@ -890,6 +890,9 @@ jobs:
     # Export a single-platform OCI candidate so BuildKit SBOM/provenance survive.
     # Verify its immutable digest before assigning nightly tags. Branch dispatch
     # produces candidate evidence only; channel tags remain trunk-owned.
+    concurrency:
+      group: nightly-publish-${{ needs.select-candidate.outputs.sha }}-functions
+      cancel-in-progress: false
     runs-on: ubuntu-24.04
     # 180, matching the other native-AOT ceilings: a cold build does not fit in
     # 90 minutes and a timeout is self-perpetuating (see build-lambda-aot).

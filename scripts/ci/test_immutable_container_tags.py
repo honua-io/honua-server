@@ -92,7 +92,7 @@ class ImmutableTagsTests(unittest.TestCase):
         self.assertIn('--commit "${CANDIDATE_SHA}" --limit 100 --json status', workflow)
         self.assertNotIn('select(.status == \"completed\" and .conclusion == \"success\"', workflow)
         for job in ('build-aot', 'build-lambda-aot', 'build-jit', 'manifest-aot',
-                    'manifest-lambda-aot', 'manifest-jit', 'compose-executor'):
+                    'manifest-lambda-aot', 'manifest-jit', 'compose-executor', 'verify-functions-aot'):
             with self.subTest(job=job):
                 block = re.split(r'\n  [a-z][a-z0-9-]*:', workflow.split('\n  ' + job + ':\n', 1)[1], maxsplit=1)[0]
                 self.assertIn('concurrency:', block)
