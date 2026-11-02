@@ -26,10 +26,12 @@ public sealed class McpConnectionDiscoveryProjectionTests
         var result = McpConnectionDiscoveryProjection.CreateResult(operationId, Handle(operationId, response));
 
         result.IsError.Should().BeFalse();
-        result.StructuredContent!.Value.GetRawText().Should().NotContain(Canary);
+        var structured = result.StructuredContent
+            ?? throw new Xunit.Sdk.XunitException("Expected structured content.");
+        structured.GetRawText().Should().NotContain(Canary);
         result.Content.Should().OnlyContain(block => block.Text != null && !block.Text.Contains(Canary));
         var arrayName = operationId == McpConnectionDiscoveryProjection.ConnectionsOperationId ? "data" : "tables";
-        var row = result.StructuredContent.Value.GetProperty(arrayName)[0];
+        var row = structured.GetProperty(arrayName)[0];
         row.EnumerateObject().Select(property => property.Name).Should().BeEquivalentTo(
             arrayName == "data" ? ConnectionFields : TableFields);
     }
@@ -46,7 +48,9 @@ public sealed class McpConnectionDiscoveryProjectionTests
             Handle(operationId, response) with { Status = status });
 
         result.IsError.Should().BeTrue();
-        result.StructuredContent!.Value.GetRawText().Should().NotContain(Canary);
+        var structured = result.StructuredContent
+            ?? throw new Xunit.Sdk.XunitException("Expected structured content.");
+        structured.GetRawText().Should().NotContain(Canary);
         result.Content.Should().OnlyContain(block => block.Text != null && !block.Text.Contains(Canary));
     }
 
