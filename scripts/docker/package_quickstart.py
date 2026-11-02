@@ -24,6 +24,10 @@ def package(destination, server, executor, worker, version):
     (destination / 'compose.yaml').write_text(compose + '\n')
     shutil.copyfile(ROOT / 'docs/get-started/compose.executor.yaml', destination / 'compose.executor.yaml')
     shutil.copyfile(Path(__file__).with_name('compose_quickstart.py'), destination / 'quickstart.py')
+    # The agent guide is published once, in the docs; the package carries that exact text.
+    guide = (ROOT / 'docs/guides/connect/working-with-ai-agents.md').read_text()
+    guide = re.search(r'<!-- agent-guide:begin -->\n(.*?)<!-- agent-guide:end -->', guide, re.S).group(1)
+    (destination / 'AGENTS.md').write_text(guide.strip() + '\n')
     max_schema = max(int(path.name.split('_', 1)[0]) for path in
                      (ROOT / 'src/Honua.Server/Migrations').glob('[0-9]*_*.sql'))
     (destination / 'images.json').write_text(json.dumps(dict(server=server, executor=executor, worker=worker,
@@ -43,7 +47,9 @@ def package(destination, server, executor, worker, version):
         'For an upgrade, set HONUA_RELEASE_IMAGE, HONUA_RELEASE_WORKER_IMAGE and HONUA_RELEASE_VERSION '
         'in .env from the new release lock. Pull the new serving image before approving. '
         'For older images without a schema label, configure HONUA_PRIOR_MAX_SCHEMA from that exact image. '
-        'Never guess its schema.\n')
+        'Never guess its schema.\n\n'
+        'AI coding agents working in this directory: read `AGENTS.md` first. It covers secrets, '
+        'approvals, upgrades and verifying work before reporting it done.\n')
 
 
 def main():
