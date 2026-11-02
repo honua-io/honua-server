@@ -33,12 +33,12 @@ conflicts with a rule, stop and ask.
 
 - Serving API and MCP: `http://localhost:18080/mcp`. Use it to publish, query, and manage access, maps and apps.
 - Management API and MCP: `http://localhost:18082/mcp`. Use it for upgrades, rollback and their proposals.
-- Secrets live in `.env` on older installs and in files under `secrets/` on newer ones (mounted in
-  containers at `/run/secrets`). Read neither. You may copy them for a backup, but never display them.
+- Secrets live in `.env`, in files under `secrets/`, and in the secret files mounted into the
+  containers. Read none of them. You may copy `.env` and `secrets/` for a backup, but never display them.
 
 ## 1. Keep secrets out of your output
 
-- Never print or read secret values. Never read files under `secrets/` or `/run/secrets`. Don't run
+- Never print or read secret values. Never read files under `secrets/` or a container's mounted secret files (such as `/run/secrets`). Don't run
   `cat .env`, or `grep` a secret file in a way that prints matching lines. Don't run `env` or
   `printenv` without a variable name, or with the name of a secret.
 - `docker compose config` prints every interpolated secret. Use only `docker compose config --services`,
@@ -116,7 +116,9 @@ conflicts with a rule, stop and ask.
 6. To roll back, use `honua_propose_rollback`. Review the selected revision and backup in the
    proposal's `diff` and `dryRun` before it goes to the approver.
 7. Confirm the running build, not the request. In `honua_platform_release_status`, the serving
-   target's `observedImageId` must be the target image, with `skewed: false` and `isCoVersioned: true`.
+   target's `observedArtifactReference` must be the release's pinned image, with `skewed: false`, and
+   the release must report `isCoVersioned: true`. Don't compare `observedImageId`: it is the local
+   image ID, which differs from the release's image reference.
    The server's `deploymentRevision` (in the capability manifest) names the build it runs.
    Compare builds by `deploymentRevision` or image digest, not by the version string: 2026.1 rc.1
    reported `2026.1.1` in error, so `2026.1.0-rc.2` is newer even though SemVer orders it lower.
