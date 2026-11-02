@@ -19,7 +19,15 @@ def test_canary_probes_work_without_http_clients(tmp_path, status):
 
     class Handler(socketserver.BaseRequestHandler):
         def handle(self):
-            requests.append(self.request.recv(4096))
+            # Read through the header terminator: TCP may deliver the request in chunks,
+            # and closing with unread bytes can reset the connection.
+            data = b""
+            while b"\r\n\r\n" not in data:
+                chunk = self.request.recv(4096)
+                if not chunk:
+                    break
+                data += chunk
+            requests.append(data)
             if status is not None:
                 self.request.sendall(f"HTTP/1.0 {status}\r\nContent-Length: 0\r\n\r\n".encode())
 
