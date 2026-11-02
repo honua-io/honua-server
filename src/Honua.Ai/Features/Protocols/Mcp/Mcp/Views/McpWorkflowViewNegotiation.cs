@@ -24,12 +24,12 @@ internal sealed class McpWorkflowViewOptions
 }
 
 /// <summary>
-/// The explicit server/session/request view-negotiation contract
+/// The explicit server/HTTP/session/request view-negotiation contract
 /// (honua-server#3428).
 /// </summary>
 /// <remarks>
 /// <para>
-/// Three legs, highest precedence first:
+/// Four legs, highest precedence first:
 /// </para>
 /// <list type="number">
 /// <item><description>
@@ -41,6 +41,10 @@ internal sealed class McpWorkflowViewOptions
 /// <c>_meta["honua.io/workflow-view"]</c>; the negotiated name is bound to the
 /// session the transport issues and applies to every later <c>tools/list</c> on
 /// that session.
+/// </description></item>
+/// <item><description>
+/// <b>HTTP</b> — the <c>view</c> query parameter, then the
+/// <c>X-Honua-Workflow-View</c> header, on the current HTTP request.
 /// </description></item>
 /// <item><description>
 /// <b>Server profile</b> — <see cref="McpWorkflowViewOptions.DefaultView"/>.
@@ -82,6 +86,16 @@ internal static class McpWorkflowViewNegotiation
     /// seam.
     /// </summary>
     public const string HttpContextItemKey = "honua.mcp.workflow-view";
+
+    /// <summary>The HTTP header selecting a workflow view for stock clients.</summary>
+    public const string ViewHeaderName = "X-Honua-Workflow-View";
+
+    /// <summary>
+    /// Reads the current HTTP request's discovery fallback. A nonblank query
+    /// selector wins over the header; neither is persisted as session metadata.
+    /// </summary>
+    public static string? ReadHttpView(HttpRequest request) =>
+        FirstSet(request.Query[ViewParameterName].ToString(), request.Headers[ViewHeaderName].ToString());
 
     /// <summary>Maximum accepted view-name length.</summary>
     private const int MaxViewNameLength = 64;
@@ -133,19 +147,21 @@ internal static class McpWorkflowViewNegotiation
     }
 
     /// <summary>
-    /// Resolves the effective view for a <c>tools/list</c> call from the three
+    /// Resolves the effective view for a <c>tools/list</c> call from the four
     /// negotiation legs. Returns <c>null</c> when no view applies, which is the
     /// full-catalog escape hatch.
     /// </summary>
     /// <param name="requestView">The per-request selection, if any.</param>
     /// <param name="sessionView">The view negotiated at <c>initialize</c>, if any.</param>
     /// <param name="profileDefaultView">The server-profile default, if any.</param>
+    /// <param name="httpView">The current query/header fallback, if any.</param>
     public static string? ResolveEffectiveView(
         string? requestView,
         string? sessionView,
-        string? profileDefaultView)
+        string? profileDefaultView,
+        string? httpView = null)
     {
-        var selected = FirstSet(requestView, sessionView, profileDefaultView);
+        var selected = FirstSet(requestView, sessionView, httpView, profileDefaultView);
         return IsFullCatalog(selected) ? null : selected;
     }
 

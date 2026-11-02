@@ -37,19 +37,26 @@ Clients may send one printable `Idempotency-Key` header of up to 128 characters 
 
 ## Connect a client
 
-**Claude Code.** Add the server to the project's `.mcp.json`:
+**Claude Code.** For an admin agent, add the `configure` workflow view to the server URL in the project's `.mcp.json`:
 
 ```json
 {
   "mcpServers": {
     "honua": {
       "type": "http",
-      "url": "http://localhost:8080/mcp",
+      "url": "http://localhost:8080/mcp?view=configure",
       "headers": { "X-API-Key": "${HONUA_API_KEY}" }
     }
   }
 }
 ```
+
+The `configure` view exposes the administrative publishing, access, sharing, and Studio
+workflow tools. A stock client needs no JSON-RPC `_meta`: keep `?view=configure`
+on the URL, or send `X-Honua-Workflow-View: configure` on each request. Use your
+deployment's port; the packaged quickstart exposes management MCP at
+`http://localhost:18082/mcp?view=configure`. View selection changes discovery only;
+every tool call still requires its usual authorization.
 
 **Agent API key.** In the authorized [API explorer](../../reference/openapi-and-explorer.md), run `POST /api/v1/admin/api-keys` with this body:
 
@@ -252,11 +259,12 @@ The complete catalog is intentionally broad — it exists for parity and as the 
 
 Discover the published views with `honua_list_capabilities`; each entry carries the view `name`, `title`, `description`, `revision`, its deterministic `revisionDigest` / `membershipDigest` / `descriptorDigest`, its `toolCount`, and the measured `descriptorBytes` / `estimatedTokens`. Clients must not keep their own list of view names or tool names.
 
-Select a view three ways, highest precedence first:
+Select a view four ways, highest precedence first:
 
 1. **Per request** — `{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{"view":"configure"}}` (or `params._meta["honua.io/workflow-view"]`).
 2. **Per session** — send `_meta: {"honua.io/workflow-view": "configure"}` in `initialize.params`; the negotiated name binds to the issued `Mcp-Session-Id` and applies to every later `tools/list` on that session.
-3. **Per server profile** — set `Mcp:WorkflowViews:DefaultView`. The default is the server-authored `default` view, capped at 12 meta/workflow tools.
+3. **Per HTTP request** — use `/mcp?view=configure` or `X-Honua-Workflow-View: configure`. A nonblank query selector takes precedence over the header. These selectors are fallbacks on each request and do not replace session `_meta`.
+4. **Per server profile** — set `Mcp:WorkflowViews:DefaultView`. The default is the server-authored `default` view, capped at 12 meta/workflow tools. The quickstart package and repository Compose forward `HONUA_MCP_DEFAULT_VIEW` to this setting; set `HONUA_MCP_DEFAULT_VIEW=configure` in `.env` and recreate the server containers to change their default.
 
 The curated prompts select `configure` or `analyze`, not `setup`. Each view is budget-bounded (at most 48 descriptors, 128 KiB of aggregate canonical descriptor JSON, 16 KiB per descriptor), so the whole view arrives in one page with no `nextCursor`.
 
