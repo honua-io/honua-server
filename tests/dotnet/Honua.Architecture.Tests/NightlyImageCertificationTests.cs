@@ -139,7 +139,7 @@ public sealed partial class NightlyImageCertificationTests
         var mint = Step(select, "Mint the release GitHub App token for the candidate hand-off");
         foreach (var step in new[] { require, mint, handoff })
         {
-            step.Should().Contain("        if: steps.route.outputs.mode == 'redirect'\n",
+            step.Should().Contain("        if: steps.route.outputs.mode == 'redirect' && steps.existing.outputs.imaged != '1'\n",
                 "only a hand-off needs the app; trunk-head, candidate-tag and proof runs never touch it");
         }
 
@@ -233,9 +233,9 @@ public sealed partial class NightlyImageCertificationTests
 
         foreach (var staging in new[]
                  {
-                     "boundary-candidate-nightly-aot-${{ matrix.arch }}-" + CandidateSha,
-                     "boundary-candidate-nightly-lambda-aot-${{ matrix.arch }}-" + CandidateSha,
-                     "boundary-candidate-nightly-functions-aot-" + CandidateSha,
+                     "boundary-candidate-nightly-aot-${{ matrix.arch }}-${{ github.run_id }}-${{ github.run_attempt }}",
+                     "boundary-candidate-nightly-lambda-aot-${{ matrix.arch }}-${{ github.run_id }}-${{ github.run_attempt }}",
+                     "boundary-candidate-nightly-functions-aot-${{ github.run_id }}-${{ github.run_attempt }}",
                  })
         {
             nightly.Should().Contain(staging);
