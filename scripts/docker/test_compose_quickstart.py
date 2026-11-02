@@ -95,42 +95,80 @@ class ComposeQuickstartTests(unittest.TestCase):
                     leaked = [key for key, value in values.items() if value in output]
                     self.assertEqual([], leaked, 'docker compose config printed a secret')
 
-    def test_entrypoint_loads_secret_files_and_refuses_missing_or_empty_ones(self):
+    def loader(self, directory):
+        """The rendered secret-loading entrypoint, a probe child, and planted secret files."""
+        path = self.prepare(directory)
+        result = subprocess.run(['docker', 'compose', 'config', '--format', 'json'],
+                                cwd=path, env=self.compose_env(path), capture_output=True, text=True)
+        services = json.loads(result.stdout)['services']
+        for name in ('honua', 'compose-manager', 'compose-executor'):
+            self.assertEqual(['bash', '+x', '-euc'], services[name]['entrypoint'][:3])
+            self.assertEqual(['/app/Honua.Server'], services[name]['command'])
+        self.assertEqual(services['honua']['entrypoint'], services['compose-manager']['entrypoint'])
+        # Rendered config re-escapes '$' as '$$'; the container receives single '$'.
+        entrypoint = [part.replace('$$', '$') for part in services['honua']['entrypoint']]
+        files = Path(directory) / 'run'
+        files.mkdir()
+        planted = {'admin': 'planted-admin-' + os.urandom(8).hex(), 'db': 'planted-db-' + os.urandom(8).hex()}
+        (files / 'admin').write_text(planted['admin'])
+        (files / 'db').write_text(planted['db'] + '\n')
+        (files / 'empty').write_text('')
+        env = {'PATH': os.environ['PATH'], 'ConnectionStrings__DefaultConnection': 'Host=postgres;Username=honua',
+               'HONUA_DATABASE_PASSWORD_FILE': str(files / 'db'),
+               'HONUA_SECRET_FILE__HONUA_ADMIN_PASSWORD': str(files / 'admin'),
+               'HONUA_SECRET_FILE__AuditLog__ChainVerification__Key': str(files / 'admin')}
+        probe = [sys.executable, '-c', 'import json, os; print(json.dumps(dict(os.environ)))']
+        return [*entrypoint, *probe], env, files, planted
+
+    def test_entrypoint_loads_secret_files_into_settings(self):
         with tempfile.TemporaryDirectory() as directory:
-            path = self.prepare(directory)
-            result = subprocess.run(['docker', 'compose', 'config', '--format', 'json'],
-                                    cwd=path, env=self.compose_env(path), capture_output=True, text=True)
-            services = json.loads(result.stdout)['services']
-            for name in ('honua', 'compose-manager', 'compose-executor'):
-                self.assertEqual(['bash', '-euc'], services[name]['entrypoint'][:2])
-                self.assertEqual(['/app/Honua.Server'], services[name]['command'])
-            entrypoint = services['honua']['entrypoint']
-            self.assertEqual(entrypoint, services['compose-manager']['entrypoint'])
-            # Rendered config re-escapes '$' as '$$'; the container receives single '$'.
-            entrypoint = [part.replace('$$', '$') for part in entrypoint]
-            files = Path(directory) / 'run'
-            files.mkdir()
-            (files / 'admin').write_text('admin-value')
-            (files / 'db').write_text('db-value\n')
-            env = {'PATH': os.environ['PATH'], 'ConnectionStrings__DefaultConnection': 'Host=postgres;Username=honua',
-                   'HONUA_DATABASE_PASSWORD_FILE': str(files / 'db'),
-                   'HONUA_SECRET_FILE__HONUA_ADMIN_PASSWORD': str(files / 'admin'),
-                   'HONUA_SECRET_FILE__AuditLog__ChainVerification__Key': str(files / 'admin')}
-            probe = [sys.executable, '-c', 'import json, os; print(json.dumps(dict(os.environ)))']
-            loaded = subprocess.run([*entrypoint, *probe], env=env, capture_output=True, text=True)
+            command, env, _, planted = self.loader(directory)
+            loaded = subprocess.run(command, env=env, capture_output=True, text=True)
             self.assertEqual(0, loaded.returncode)
             child = json.loads(loaded.stdout)
-            self.assertEqual('admin-value', child['HONUA_ADMIN_PASSWORD'])
-            self.assertEqual('admin-value', child['AuditLog__ChainVerification__Key'])
-            self.assertEqual('Host=postgres;Username=honua;Password=db-value', child['ConnectionStrings__DefaultConnection'])
+            self.assertTrue(child['HONUA_ADMIN_PASSWORD'] == planted['admin'])
+            self.assertTrue(child['AuditLog__ChainVerification__Key'] == planted['admin'])
+            self.assertTrue(child['ConnectionStrings__DefaultConnection']
+                            == 'Host=postgres;Username=honua;Password=' + planted['db'])
             self.assertFalse([name for name in child if 'SECRET_FILE' in name or 'PASSWORD_FILE' in name])
-            (files / 'empty').write_text('')
+
+    def test_entrypoint_never_traces_a_secret_even_when_tracing_is_requested(self):
+        with tempfile.TemporaryDirectory() as directory:
+            command, env, files, planted = self.loader(directory)
+            (files / 'trace.sh').write_text('set -x\n')
+            for case, extra in (('SHELLOPTS', {'SHELLOPTS': 'xtrace'}),
+                                ('set -x before the loader', {'BASH_ENV': str(files / 'trace.sh')}),
+                                ('both', {'SHELLOPTS': 'xtrace', 'BASH_ENV': str(files / 'trace.sh'),
+                                          'BASH_XTRACEFD': '1'})):
+                with self.subTest(case=case):
+                    traced = subprocess.run(command, env=dict(env, **extra), capture_output=True, text=True)
+                    self.assertEqual(0, traced.returncode)
+                    child = json.loads(traced.stdout.splitlines()[-1])
+                    self.assertTrue(child['HONUA_ADMIN_PASSWORD'] == planted['admin'], 'The loader must still work')
+                    # Only the child's own environment dump may carry the values.
+                    shell_output = '\n'.join(traced.stdout.splitlines()[:-1]) + traced.stderr
+                    self.assertFalse(any(value in shell_output for value in planted.values()),
+                                     'Shell tracing printed a loaded secret (value withheld)')
+
+    def test_entrypoint_refuses_a_missing_or_empty_secret_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            command, env, files, _ = self.loader(directory)
             for broken in (files / 'missing', files / 'empty'):
                 with self.subTest(case=broken.name):
-                    refused = subprocess.run([*entrypoint, *probe], capture_output=True, text=True,
+                    refused = subprocess.run(command, capture_output=True, text=True,
                                              env=dict(env, HONUA_SECRET_FILE__HONUA_MASTER_KEY=str(broken)))
                     self.assertNotEqual(0, refused.returncode, 'A missing or empty secret must stop startup')
-                    self.assertEqual('', refused.stdout)
+                    self.assertEqual('', refused.stdout, 'The server must not start')
+
+    def test_entrypoint_refuses_a_missing_or_empty_database_password_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            command, env, files, _ = self.loader(directory)
+            for broken in (files / 'missing', files / 'empty'):
+                with self.subTest(case=broken.name):
+                    refused = subprocess.run(command, capture_output=True, text=True,
+                                             env=dict(env, HONUA_DATABASE_PASSWORD_FILE=str(broken)))
+                    self.assertNotEqual(0, refused.returncode, 'A missing or empty database password must stop startup')
+                    self.assertEqual('', refused.stdout, 'The server must not start')
 
     def test_rc1_env_secrets_migrate_into_files_unchanged(self):
         with tempfile.TemporaryDirectory() as directory:

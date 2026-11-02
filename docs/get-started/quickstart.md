@@ -105,8 +105,12 @@ Make a directory and put this in it as `compose.yaml`:
 # HONUA_SECRET_FILE__<setting> variable into <setting>, then starts the server.
 x-load-secrets: &load-secrets
   - bash
+  - +x
   - -euc
   - |
+    { set +x; } 2>/dev/null
+    # Tracing stays off through exec: inherited xtrace (SHELLOPTS, BASH_ENV) would echo every loaded value.
+    # BASH_XTRACEFD is left alone; unsetting it would close the descriptor it names.
     for ref in $${!HONUA_SECRET_FILE__@}; do
       value=$$(< "$${!ref}")
       [ -n "$$value" ] || { echo "empty secret file for $${ref#HONUA_SECRET_FILE__}" >&2; exit 1; }
@@ -115,6 +119,7 @@ x-load-secrets: &load-secrets
     done
     if [ -n "$${HONUA_DATABASE_PASSWORD_FILE:-}" ]; then
       value=$$(< "$$HONUA_DATABASE_PASSWORD_FILE")
+      [ -n "$$value" ] || { echo "empty database password file" >&2; exit 1; }
       export ConnectionStrings__DefaultConnection="$$ConnectionStrings__DefaultConnection;Password=$$value"
       unset HONUA_DATABASE_PASSWORD_FILE
     fi
