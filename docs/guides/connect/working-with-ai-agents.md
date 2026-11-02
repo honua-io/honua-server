@@ -100,13 +100,18 @@ conflicts with a rule, stop and ask.
 3. Set only the new release's pins in `.env` (`HONUA_RELEASE_IMAGE`, `HONUA_RELEASE_WORKER_IMAGE`,
    `HONUA_RELEASE_VERSION`) from that release's lock, without displaying the file. Then pull the new
    serving image.
-4. Propose the upgrade with `honua_propose_platform_release_convergence` and the target version. A
+4. Re-provision the management services: run `python3 quickstart.py` again. It restarts the manager
+   and executor with the new release and keeps the serving container on its approved image. Check
+   with `honua_platform_release_status` that the declared `releaseVersion` is now the target. Until
+   it is, a convergence proposal is rejected with `platform_release_version_mismatch`.
+5. Propose the upgrade with `honua_propose_platform_release_convergence` and the target version. A
    separate approver approves it. Poll `honua://proposals/{id}` until it reads `Completed` or `Failed`.
-5. To roll back, use `honua_propose_rollback`. Review the selected revision and backup in the
+6. To roll back, use `honua_propose_rollback`. Review the selected revision and backup in the
    proposal's `diff` and `dryRun` before it goes to the approver.
-6. Confirm the running build, not the request. The reported release must match the target, and the
-   server's `deploymentRevision` (in the capability manifest) or the `honua` container's image digest
-   must match the release lock. A version string alone doesn't prove which build is running.
+7. Confirm the running build, not the request. In `honua_platform_release_status`, the serving
+   target's `observedImageId` must be the target image, with `skewed: false` and `isCoVersioned: true`.
+   The server's `deploymentRevision` (in the capability manifest) names the build it runs. A version
+   string alone doesn't prove which build is running.
 
 Don't replace the serving container by hand, run `docker compose down --volumes`, or delete `backups/`.
 
