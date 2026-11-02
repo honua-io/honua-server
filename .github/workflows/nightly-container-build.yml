@@ -255,11 +255,21 @@ jobs:
             --branch "${tag}" --limit 20 --json status,conclusion,headSha \
             --jq "[.[] | select(.status == \"completed\" and .conclusion == \"success\" and .headSha == \"${CANDIDATE_SHA}\")] | length")"
           if [ "${active}" != 0 ]; then
+            if [ -n "${RELEASE_VERSION}" ]; then
+              echo "::error::a candidate build on ${tag} is already active; wait for it to finish, then re-dispatch with release_version=${RELEASE_VERSION}."
+              exit 1
+            fi
             echo "::notice::a Nightly Container Build run on ${tag} is already queued or running; not dispatching another."
-          elif [ "${imaged}" != 0 ]; then
+          elif [ "${imaged}" != 0 ] && [ -z "${RELEASE_VERSION}" ]; then
             echo "::notice::a Nightly Container Build run on ${tag} already imaged ${CANDIDATE_SHA}; not rebuilding it."
           else
-            GH_TOKEN="${HANDOFF_TOKEN}" gh workflow run nightly-container-build.yml --repo "${GITHUB_REPOSITORY}" --ref "${tag}" -f release_version="${RELEASE_VERSION}"
+            # Older certified commits may not declare this optional input yet.
+            # An explicit release rebuilds even when this SHA already has a nightly image.
+            dispatch_args=()
+            if [ -n "${RELEASE_VERSION}" ]; then
+              dispatch_args+=(-f release_version="${RELEASE_VERSION}")
+            fi
+            GH_TOKEN="${HANDOFF_TOKEN}" gh workflow run nightly-container-build.yml --repo "${GITHUB_REPOSITORY}" --ref "${tag}" "${dispatch_args[@]}"
             echo "::notice::trunk head ${GITHUB_SHA} is not the newest certified sha ${CANDIDATE_SHA}; re-dispatched this workflow at ${tag} so the image, labels and provenance all name ${CANDIDATE_SHA}."
           fi
           {
@@ -813,12 +823,14 @@ jobs:
         id: manifest
         env:
           TAGS: ${{ steps.meta.outputs.tags }}
+          IMAGE_VERSION: ${{ needs.select-candidate.outputs.version }}
           CANDIDATE_SHA: ${{ needs.select-candidate.outputs.sha }}
         run: |
           set -euo pipefail
           for tag in $TAGS; do
             docker buildx imagetools create -t "$tag" \
               --annotation "index:org.opencontainers.image.revision=${CANDIDATE_SHA}" \
+              --annotation "index:org.opencontainers.image.version=${IMAGE_VERSION}" \
               "${tag}-amd64" \
               "${tag}-arm64"
           done
@@ -1128,6 +1140,7 @@ jobs:
         id: manifest
         env:
           TAGS: ${{ steps.meta.outputs.tags }}
+          IMAGE_VERSION: ${{ needs.select-candidate.outputs.version }}
           CANDIDATE_SHA: ${{ needs.select-candidate.outputs.sha }}
         run: |
           set -euo pipefail
@@ -1148,6 +1161,7 @@ jobs:
             esac
             docker buildx imagetools create -t "$tag" -t "$compatibility_tag" \
               --annotation "index:org.opencontainers.image.revision=${CANDIDATE_SHA}" \
+              --annotation "index:org.opencontainers.image.version=${IMAGE_VERSION}" \
               "${tag}-amd64" "${tag}-arm64"
           done
           subject_name="${REGISTRY_GHCR}/${IMAGE_NAME_GHCR}"
@@ -1317,12 +1331,14 @@ jobs:
       - name: Create and push multi-arch manifests
         env:
           TAGS: ${{ steps.meta.outputs.tags }}
+          IMAGE_VERSION: ${{ needs.select-candidate.outputs.version }}
           CANDIDATE_SHA: ${{ needs.select-candidate.outputs.sha }}
         run: |
           set -euo pipefail
           for tag in $TAGS; do
             docker buildx imagetools create -t "$tag" \
               --annotation "index:org.opencontainers.image.revision=${CANDIDATE_SHA}" \
+              --annotation "index:org.opencontainers.image.version=${IMAGE_VERSION}" \
               "${tag}-amd64" \
               "${tag}-arm64"
           done

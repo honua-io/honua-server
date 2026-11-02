@@ -48,6 +48,42 @@ class ContainerVersionTests(unittest.TestCase):
         self.assertIn('-f release_version="${RELEASE_VERSION}"', workflow)
         self.assertEqual(workflow.count('VERSION=${{ needs.select-candidate.outputs.version }}'), 4)
         self.assertEqual(workflow.count('org.opencontainers.image.version=${{ needs.select-candidate.outputs.version }}'), 8)
+        self.assertEqual(workflow.count('index:org.opencontainers.image.version=${IMAGE_VERSION}'), 3)
+
+    def test_handoff_handles_existing_images_and_older_workflow_inputs(self):
+        workflow = (ROOT / '.github/workflows/nightly-container-build.yml').read_text()
+        handoff = workflow.split('          # One build per candidate:', 1)[1].split('          {\n', 1)[0]
+        # Exercise the real handoff shell with only GitHub reads/writes replaced.
+        mock = r'''gh() {
+          if [ "$1" = run ]; then
+            case "$*" in *headSha*) echo "$IMAGED" ;; *) echo "$ACTIVE" ;; esac
+          else
+            printf 'DISPATCH:'
+            printf '<%s>' "$@"
+            printf '\n'
+          fi
+        }
+'''
+        for release, active, imaged, expected_dispatch, expected_error in (
+            ('', '0', '0', True, False),
+            ('', '0', '1', False, False),
+            ('', '1', '0', False, False),
+            ('2026.1.0-rc.2', '0', '1', True, False),
+            ('2026.1.0-rc.2', '1', '0', False, True),
+        ):
+            with self.subTest(release=release, active=active, imaged=imaged):
+                result = subprocess.run(['bash', '-c', 'set -euo pipefail\n' + mock +
+                    '# One build per candidate:' + handoff], text=True, capture_output=True,
+                    env={'RELEASE_VERSION': release, 'ACTIVE': active, 'IMAGED': imaged,
+                         'GITHUB_REPOSITORY': 'honua-io/honua-server', 'HANDOFF_TOKEN': 'test',
+                         'CANDIDATE_SHA': 'a' * 40, 'GITHUB_SHA': 'b' * 40,
+                         'tag': 'nightly-candidate-aaaaaaa'})
+                self.assertEqual(result.returncode != 0, expected_error, result.stderr)
+                self.assertEqual('DISPATCH:' in result.stdout, expected_dispatch, result.stdout)
+                if expected_dispatch:
+                    self.assertEqual('<release_version=' in result.stdout, bool(release))
+                    if release:
+                        self.assertIn(f'<release_version={release}>', result.stdout)
 
     def test_dockerfiles_stamp_publish_and_runtime_label(self):
         for name in ('Dockerfile', 'docker/Dockerfile.aot', 'docker/Dockerfile.lambda',
