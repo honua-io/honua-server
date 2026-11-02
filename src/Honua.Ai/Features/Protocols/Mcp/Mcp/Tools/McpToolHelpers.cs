@@ -169,32 +169,30 @@ internal static class McpToolHelpers
     }
 
     /// <summary>
-    /// Serialized-text size (characters) at or above which the <c>text</c>
-    /// content block stops duplicating the full structured payload and instead
-    /// carries a one-line, information-bearing summary. The MCP spec says a
-    /// result that carries <c>structuredContent</c> SHOULD also include
-    /// functionally-equivalent <c>text</c> for backwards compatibility; small
-    /// payloads honor that literally (the compact JSON is cheap), while larger
-    /// payloads honor it with an informative summary so the same data is not
-    /// billed twice per tool call (honua-server MCP A1 token efficiency).
-    /// ~1&#160;KB keeps validate/dry-run/execute/cancel/count-only results inline
-    /// verbatim and only summarizes the genuinely large ones (feature
-    /// collections, catalogs, generated packages).
+    /// Serialized-text size (characters) at or above which a caller-supplied
+    /// summarizer is invoked and its one-line summary is emitted as an extra,
+    /// leading <c>text</c> block. Below this size the compact JSON speaks for
+    /// itself and no summary is added. The threshold never removes data: the
+    /// full serialized JSON is always present as a <c>text</c> block (see
+    /// <see cref="SuccessResult{T}"/>).
     /// </summary>
     public const int InlineTextThresholdChars = 1024;
 
     /// <summary>
     /// Builds the <see cref="McpToolsCallResult"/> for a successful tool call.
-    /// The full payload always travels in <see cref="McpToolsCallResult.StructuredContent"/>
-    /// (validated against the tool's <c>outputSchema</c>); the <c>text</c> block
-    /// carries the compact JSON verbatim when it is small
-    /// (&lt; <see cref="InlineTextThresholdChars"/>) and otherwise a one-line
-    /// information-bearing summary from <paramref name="summarize"/> (counts,
-    /// ids, next-step hints — never a bare "Success"), avoiding the ~2x token
-    /// cost of double-encoding large results. Callers with large payloads SHOULD
-    /// pass <paramref name="summarize"/>; when omitted, a generic size-bearing
-    /// summary is emitted that still points the reader at
-    /// <c>structuredContent</c>.
+    /// The full payload travels in <see cref="McpToolsCallResult.StructuredContent"/>
+    /// (validated against the tool's <c>outputSchema</c>), and the same
+    /// serialized JSON is always returned as a <c>text</c> content block. The
+    /// MCP specification (2025-06-18, Tools, "Structured Content") says a tool
+    /// that returns structured content SHOULD also return the serialized JSON in
+    /// a TextContent block for backwards compatibility; some MCP clients surface
+    /// only <c>content</c> to the model, so eliding that block hides the result
+    /// from them. When the payload is at least
+    /// <see cref="InlineTextThresholdChars"/> and <paramref name="summarize"/> is
+    /// supplied, its information-bearing summary (counts, ids, next-step hints)
+    /// is emitted first as an additional <c>text</c> block; it never replaces
+    /// the serialized JSON. Size control belongs to each tool's own paging and
+    /// truncation arguments, not to this helper.
     /// </summary>
     public static McpToolsCallResult SuccessResult<T>(
         T value,
@@ -202,25 +200,17 @@ internal static class McpToolHelpers
         Func<T, string>? summarize = null)
     {
         var (element, text) = SerializeStructured(value, typeInfo);
-        var contentText = text.Length < InlineTextThresholdChars
-            ? text
-            : (summarize?.Invoke(value) ?? DefaultLargePayloadSummary(text));
-
-        return new McpToolsCallResult
-        {
-            IsError = false,
-            StructuredContent = element,
-            Content =
-            [
-                new McpContentBlock { Type = "text", Text = contentText }
-            ]
-        };
+        var summary = text.Length >= InlineTextThresholdChars ? summarize?.Invoke(value) : null;
+        return BuildStructuredSuccess(element, text, summary);
     }
 
     /// <summary>
     /// Builds a successful tool result from an already serialized JSON payload.
     /// Used by adapter tools that project an existing server wire response
-    /// without owning the response DTO type.
+    /// without owning the response DTO type. Follows the same content rule as
+    /// <see cref="SuccessResult{T}"/>: the serialized JSON is always returned
+    /// as a <c>text</c> block (MCP 2025-06-18, Tools, "Structured Content"),
+    /// optionally preceded by a summary for large payloads.
     /// </summary>
     public static McpToolsCallResult SuccessJsonElement(
         JsonElement value,
@@ -228,31 +218,29 @@ internal static class McpToolHelpers
     {
         var element = value.Clone();
         var text = element.GetRawText();
-        var contentText = text.Length < InlineTextThresholdChars
-            ? text
-            : (summarize?.Invoke(element) ?? DefaultLargePayloadSummary(text));
+        var summary = text.Length >= InlineTextThresholdChars ? summarize?.Invoke(element) : null;
+        return BuildStructuredSuccess(element, text, summary);
+    }
+
+    /// <summary>
+    /// Assembles a successful structured result: optional leading summary block,
+    /// then the full serialized JSON block, with <paramref name="element"/> as
+    /// <c>structuredContent</c>.
+    /// </summary>
+    private static McpToolsCallResult BuildStructuredSuccess(JsonElement element, string serializedJson, string? summary)
+    {
+        var jsonBlock = new McpContentBlock { Type = "text", Text = serializedJson };
+        IReadOnlyList<McpContentBlock> content = string.IsNullOrWhiteSpace(summary)
+            ? [jsonBlock]
+            : [new McpContentBlock { Type = "text", Text = summary }, jsonBlock];
 
         return new McpToolsCallResult
         {
             IsError = false,
             StructuredContent = element,
-            Content =
-            [
-                new McpContentBlock { Type = "text", Text = contentText }
-            ]
+            Content = content
         };
     }
-
-    /// <summary>
-    /// Fallback summary for a large structured payload whose caller supplied no
-    /// bespoke summarizer. Information-bearing (serialized size + where the data
-    /// lives) rather than an empty acknowledgement so a reader still learns the
-    /// shape/cost of the elided text.
-    /// </summary>
-    private static string DefaultLargePayloadSummary(string serializedJson) =>
-        string.Create(
-            System.Globalization.CultureInfo.InvariantCulture,
-            $"Structured result ({serializedJson.Length:N0} chars) returned in structuredContent; text summary elided to conserve context.");
 
     /// <summary>
     /// Builds the <see cref="McpToolsCallResult"/> for a tool execution failure

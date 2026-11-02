@@ -54,7 +54,7 @@ internal sealed class QueryFeaturesTool : IMcpTool
             + "Paging: results are capped at 'limit' (default 100, max 1000). When the response reports exceededTransferLimit=true there are more matching features; page through them mechanically by re-issuing the SAME query with cursor set to nextCursor (or resultOffset set to nextOffset), repeating until exceededTransferLimit=false. "
             + "Set returnCountOnly=true to get just the matching {count} (no features) for a cheap cardinality check, and returnGeometry=false to return attribute-only rows (geometry omitted) when scanning attributes. "
             + "Geometry coordinates are rounded to geometryPrecision decimal places (default 6, ~0.1 m) to keep responses compact; pass a higher value for finer precision or a negative value for full precision. "
-            + "The full FeatureCollection is always in structuredContent.geojson and the MCP-friendly feature projection is in structuredContent.features; for large pages the text block is a one-line summary (counts, ids, paging hint), not a duplicate of the data.",
+            + "The full FeatureCollection is always in structuredContent.geojson and the MCP-friendly feature projection is in structuredContent.features; text content repeats that JSON, after a one-line summary on large pages.",
         InputSchema = MapToolSchemas.QueryFeaturesArgumentSchema,
         OutputSchema = McpToolOutputSchemas.QueryFeaturesOutputSchema,
         Annotations = McpToolAnnotationSets.ReadOnly("Query features")

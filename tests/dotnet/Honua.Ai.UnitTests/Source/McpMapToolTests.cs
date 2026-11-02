@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using FluentAssertions;
 using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.Protocols.Mcp.Studio;
@@ -1088,9 +1089,14 @@ public sealed class McpMapToolTests
         content.Should().NotContain(block => block.GetProperty("type").GetString() == "image",
             "the default render must not inline a base64 image into the model context");
 
-        var textBlock = content.Single(block => block.GetProperty("type").GetString() == "text");
-        textBlock.GetProperty("text").GetString().Should().Contain(href,
-            "the text block must carry the fetchable artifact href");
+        var textBlocks = content.Where(block => block.GetProperty("type").GetString() == "text").ToArray();
+        textBlocks.Should().HaveCount(2, "a caption plus the serialized structured result");
+        textBlocks[0].GetProperty("text").GetString().Should().Contain(href,
+            "the caption must carry the fetchable artifact href");
+        JsonNode.DeepEquals(
+                JsonNode.Parse(textBlocks[1].GetProperty("text").GetString()!),
+                JsonNode.Parse(structured.GetRawText()))
+            .Should().BeTrue("the text content must carry the same serialized JSON as structuredContent");
 
         var linkBlock = content.Single(block => block.GetProperty("type").GetString() == "resource_link");
         linkBlock.GetProperty("uri").GetString().Should().Be(href);
@@ -1166,7 +1172,15 @@ public sealed class McpMapToolTests
         StructuredContentShouldMatchOutputSchema(result, McpToolOutputSchemas.RenderMapOutputSchema);
 
         var content = result.GetProperty("content").EnumerateArray().ToArray();
-        content.Should().Contain(block => block.GetProperty("type").GetString() == "text");
+        var textBlocks = content.Where(block => block.GetProperty("type").GetString() == "text").ToArray();
+        textBlocks.Should().HaveCount(2, "a caption plus the serialized structured result");
+        var textJson = JsonNode.Parse(textBlocks[1].GetProperty("text").GetString()!)!.AsObject();
+        textJson["image"]!["base64"].Should().BeNull(
+            "the encoded image already travels in the image block and is not repeated as text");
+        var expected = JsonNode.Parse(structured.GetRawText())!.AsObject();
+        expected["image"]!.AsObject().Remove("base64");
+        JsonNode.DeepEquals(textJson, expected).Should().BeTrue(
+            "apart from image.base64 the text content carries the same serialized JSON as structuredContent");
 
         var imageBlock = content.Single(block => block.GetProperty("type").GetString() == "image");
         imageBlock.GetProperty("mimeType").GetString().Should().Be("image/png");
