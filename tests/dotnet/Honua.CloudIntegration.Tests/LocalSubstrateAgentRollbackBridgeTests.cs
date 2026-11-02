@@ -13,6 +13,7 @@ using Honua.ControlPlane;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.ControlPlane.Restore;
 using Honua.Core.Features.Observability.Domain;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Monitoring;
@@ -141,6 +142,48 @@ public sealed class LocalSubstrateAgentRollbackBridgeTests : IClassFixture<Local
         proposalAudit.Should().OnlyContain(
             e => !string.IsNullOrWhiteSpace(e.AuditId),
             "every proposal audit record must carry the identity the durable sink assigned");
+    }
+
+    [SkippableFact]
+    public async Task AgentRollback_ServerHostBridge_UnknownCompatibilityFailsApprovalWithReadbackIncomplete()
+    {
+        Skip.IfNot(_docker.Available, "Docker is not available for the local-substrate serving lane.");
+
+        var redisConnectionString = await ResolveReachableRedisConnectionStringAsync();
+        Skip.If(
+            string.IsNullOrWhiteSpace(redisConnectionString),
+            $"Set {RedisConnectionStringEnvVar}=host:port to run the Redis-backed local-substrate server bridge cell.");
+
+        await using var env = await ServerHostBridgeEnvironment.StartAsync(
+            _docker, redisConnectionString!, compatibilityKnown: false);
+        using var adminClient = env.Factory.CreateClient();
+        adminClient.DefaultRequestHeaders.Add("X-API-Key", AdminPassword);
+
+        var initialOperationId = await env.CreateInitialDeployAsync(_docker);
+        await env.DriveDeployToSucceededAsync(initialOperationId, _docker.V2Image, TimeSpan.FromSeconds(90));
+
+        var agentApiKey = await CreateAgentApiKeyAsync(adminClient, env.AgentName);
+        using var mcpClient = env.Factory.CreateClient();
+        mcpClient.DefaultRequestHeaders.Add("X-API-Key", agentApiKey);
+        var proposalId = await ProposeRollbackDeployAsync(env, mcpClient);
+
+        using var response = await adminClient.PostAsync($"/api/v1/admin/proposals/{proposalId}/approve", content: null);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("status").GetString().Should().Be("Failed");
+        document.RootElement.TryGetProperty("executionOperationId", out _).Should().BeFalse();
+        document.RootElement.GetProperty("blockingReasons")
+            .EnumerateArray().Select(reason => reason.GetString())
+            .Should().Contain(PreMigrationRestoreCodes.ReadbackIncomplete);
+
+        env.ActiveProxyDestination().Should().Be(env.InitialStandbyDestination);
+        using var verificationClient = new HttpClient { BaseAddress = new Uri(env.ProxyBaseUrl) };
+        (await verificationClient.GetStringAsync("/")).Should().Contain(LocalSubstrateDockerFixture.V2Marker);
+        env.AuditLog.Events
+            .Where(e => e.AuditEvent.ResourceType == "operation_proposal" && e.AuditEvent.ResourceId == proposalId)
+            .Select(e => e.AuditEvent.Action)
+            .Should().Contain("operation.apply_failed").And.NotContain("operation.applied");
     }
 
     private static async Task<string?> ResolveReachableRedisConnectionStringAsync()
@@ -386,6 +429,22 @@ public sealed class LocalSubstrateAgentRollbackBridgeTests : IClassFixture<Local
         return false;
     }
 
+    private const int TestSchema = 1;
+
+    private sealed class TestSchemaJournal(bool compatibilityKnown) : ISchemaJournal
+    {
+        public Task<SchemaJournalSnapshot> ReadAsync(CancellationToken cancellationToken)
+            => Task.FromResult(compatibilityKnown
+                ? new SchemaJournalSnapshot(true, [new AppliedSchemaMigration(TestSchema, "expand", TestSchema)])
+                : SchemaJournalSnapshot.Unknown);
+    }
+
+    private sealed class TestRevisionSchemaCatalog(string previousRevision) : IRevisionSchemaCatalog
+    {
+        public int? MaxSchema(string revision)
+            => string.Equals(revision, previousRevision, StringComparison.Ordinal) ? TestSchema : null;
+    }
+
     private sealed class ServerHostBridgeEnvironment : IAsyncDisposable
     {
         // Exercise a real, positive protection window within this fixture's 90-second deadline.
@@ -471,7 +530,8 @@ public sealed class LocalSubstrateAgentRollbackBridgeTests : IClassFixture<Local
 
         public static async Task<ServerHostBridgeEnvironment> StartAsync(
             LocalSubstrateDockerFixture docker,
-            string redisConnectionString)
+            string redisConnectionString,
+            bool compatibilityKnown = true)
         {
             var suffix = Guid.NewGuid().ToString("N")[..8];
             var targetId = $"honua-ci-agent-rollback-{suffix}";
@@ -570,6 +630,14 @@ public sealed class LocalSubstrateAgentRollbackBridgeTests : IClassFixture<Local
                         {
                             services.RemoveAll<IProxyStateSwapper>();
                             services.AddSingleton<IProxyStateSwapper>(swapper);
+
+                            // These HTTP-marker images have no database. Supply explicit reader
+                            // compatibility for the rollback gate without configuring Restore:Revisions,
+                            // which would also enable restore admission for the initial forward deploy.
+                            services.RemoveAll<ISchemaJournal>();
+                            services.AddSingleton<ISchemaJournal>(new TestSchemaJournal(compatibilityKnown));
+                            services.RemoveAll<IRevisionSchemaCatalog>();
+                            services.AddSingleton<IRevisionSchemaCatalog>(new TestRevisionSchemaCatalog(docker.V1Image));
 
                             // TestWebApplicationFactory runs without a migrated database, so the host
                             // would fall back to NullAuditLog. Since #3411 a proposal fails closed
