@@ -70,7 +70,11 @@ internal sealed class PublishedOperationTool : IMcpTool
         _catalogVersion = catalogVersion ?? string.Empty;
         _logger = logger;
         Name = ProjectName(descriptor.OperationId);
-        _inputSchema = BuildInputSchema(descriptor.InputSchema, descriptor.Policy.SupportsDryRun);
+        _inputSchema = BuildInputSchema(
+            descriptor.InputSchema.Select(parameter => parameter with
+            {
+                Name = McpConnectionDiscoveryProjection.InputName(descriptor.OperationId, parameter.Name)
+            }).ToArray(), descriptor.Policy.SupportsDryRun);
     }
 
     public string Name { get; }
@@ -110,6 +114,9 @@ internal sealed class PublishedOperationTool : IMcpTool
     /// </summary>
     public static string ProjectName(string operationId)
     {
+        if (operationId == McpConnectionDiscoveryProjection.TablesOperationId)
+            return "honua_admin_connection_tables_list";
+
         var isAdminOperation = operationId.StartsWith("admin.", StringComparison.Ordinal);
         var operationName = isAdminOperation ? operationId["admin.".Length..] : operationId;
         var sanitized = new char[operationName.Length];
@@ -127,6 +134,9 @@ internal sealed class PublishedOperationTool : IMcpTool
 
     public McpToolDescriptor Describe()
     {
+        if (McpConnectionDiscoveryProjection.Contains(_descriptor.OperationId))
+            return McpConnectionDiscoveryProjection.Describe(_descriptor.OperationId, Name, _inputSchema);
+
         var readOnly = _descriptor.Policy.SideEffectClass == OperationSideEffectClass.ReadOnly;
         var destructive =
             _descriptor.ApprovalModel == OperationApprovalModel.OperatorGate
@@ -316,6 +326,9 @@ internal sealed class PublishedOperationTool : IMcpTool
         {
             handle = await invoker.SubmitAsync(request, context, cancellationToken).ConfigureAwait(false);
         }
+        if (McpConnectionDiscoveryProjection.Contains(_descriptor.OperationId))
+            return McpConnectionDiscoveryProjection.CreateResult(_descriptor.OperationId, handle);
+
         var output = Project(handle, cacheKey);
 
         // Cache only a completed, deterministic, read-only result — never a
@@ -489,9 +502,10 @@ internal sealed class PublishedOperationTool : IMcpTool
         // codeql[cs/linq/missed-where]: copies only arguments the caller actually supplied
         foreach (var parameter in _descriptor.InputSchema)
         {
-            if (arguments is { ValueKind: JsonValueKind.Object } args && args.TryGetProperty(parameter.Name, out _))
+            var inputName = McpConnectionDiscoveryProjection.InputName(_descriptor.OperationId, parameter.Name);
+            if (arguments is { ValueKind: JsonValueKind.Object } args && args.TryGetProperty(inputName, out _))
             {
-                parameters[parameter.Name] = ReadString(arguments, parameter.Name);
+                parameters[parameter.Name] = ReadString(arguments, inputName);
             }
         }
 

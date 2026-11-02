@@ -1008,6 +1008,8 @@ public sealed class McpWorkflowViewTests
         configure.Members.Select(member => member.ToolName).Should().Contain(
         [
             "honua_admin_connections_create",
+            "honua_admin_connections_list",
+            "honua_admin_connection_tables_list",
             "honua_admin_layer_publish",
             "honua_studio_add_layer",
             "honua_studio_get_version",

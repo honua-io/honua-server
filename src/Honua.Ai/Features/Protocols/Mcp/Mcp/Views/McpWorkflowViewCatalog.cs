@@ -266,6 +266,8 @@ internal static class McpWorkflowViewCatalog
                     McpWorkflowViewMemberRule.Exact("honua_admin_server_status"),
                     McpWorkflowViewMemberRule.Exact("honua_admin_api_key_list"),
                     McpWorkflowViewMemberRule.Exact("honua_admin_api_key_effective_permissions"),
+                    McpWorkflowViewMemberRule.Exact("honua_admin_connections_list"),
+                    McpWorkflowViewMemberRule.Exact("honua_admin_connection_tables_list"),
                     McpWorkflowViewMemberRule.Exact("honua_admin_connections_create"),
                     McpWorkflowViewMemberRule.Exact("honua_admin_connections_test"),
                     McpWorkflowViewMemberRule.Exact("honua_admin_import_upload_object"),
