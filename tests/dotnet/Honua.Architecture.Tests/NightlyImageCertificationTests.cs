@@ -288,6 +288,7 @@ public sealed partial class NightlyImageCertificationTests
         }
 
         await RunPython("scripts/ci/select-certified-nightly-sha.test.py");
+        await RunPython("scripts/ci/test_container_version.py");
     }
 
     [ArchitectureTest]

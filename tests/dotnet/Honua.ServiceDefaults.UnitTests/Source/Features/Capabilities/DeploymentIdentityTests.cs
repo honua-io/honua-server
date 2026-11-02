@@ -1,6 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Reflection;
+using System.Reflection.Emit;
 using FluentAssertions;
 using Honua.ServiceDefaults;
 using Honua.TestKit.Attributes;
@@ -51,6 +53,22 @@ public sealed class DeploymentIdentityTests
 
         version.Should().NotBeNullOrWhiteSpace();
         version.Should().NotContain("+");
+    }
+
+    [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [InlineData("2026.1.0-rc.2+abcdef0", "2026.1.0-rc.2")]
+    [InlineData("2026.1.0-nightly.abcdef0+abcdef0", "2026.1.0-nightly.abcdef0")]
+    [InlineData("2026.1.0+abcdef0", "2026.1.0")]
+    [InlineData("2026.1.0", "2026.1.0")]
+    public void GetReleaseVersion_PlatformBuildVersion_PreservesReleaseAndStripsMetadata(string informational, string expected)
+    {
+        var assembly = AssemblyBuilder.DefineDynamicAssembly(new AssemblyName(Guid.NewGuid().ToString()), AssemblyBuilderAccess.Run);
+        var constructor = typeof(AssemblyInformationalVersionAttribute).GetConstructor([typeof(string)])!;
+        assembly.SetCustomAttribute(new CustomAttributeBuilder(constructor, [informational]));
+
+        HonuaDeploymentIdentity.GetReleaseVersion(assembly).Should().Be(expected);
     }
 
     [UnitTest]

@@ -116,6 +116,9 @@ COPY . .
 # kill does not fail the nightly outright. Retries are cheap: a successful
 # restore is an "up-to-date" no-op and successful publish output is reused.
 ARG CONFIGURATION=Release
+# Empty VERSION preserves Directory.Build.props for local container builds.
+ARG VERSION=
+ARG HONUA_GIT_SHA=
 ARG AOT_PUBLISH_MAX_ATTEMPTS=3
 RUN --mount=type=cache,target=/root/.nuget/packages \
     --mount=type=secret,id=github_actor \
@@ -138,6 +141,9 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
           -p:RuntimeIdentifier="$RUNTIME_ID" \
           "$@" && \
         dotnet publish src/Honua.Server/Honua.Server.csproj \
+          ${VERSION:+-p:Version="$VERSION"} \
+          ${VERSION:+-p:InformationalVersion="$VERSION$(if [ -n "$HONUA_GIT_SHA" ]; then printf '+%.7s' "$HONUA_GIT_SHA"; fi)"} \
+          ${VERSION:+-p:IncludeSourceRevisionInInformationalVersion=false} \
           --configuration "$CONFIGURATION" \
           --runtime "$RUNTIME_ID" \
           --no-restore \
@@ -265,11 +271,13 @@ LABEL security.non-root="true" \
 
 # Immutable deployment identity (#3038). `.dockerignore` excludes `.git/`, so SourceLink
 # cannot stamp a commit into the published binary from inside the build context; the commit
-# SHA is therefore injected here as a runtime environment variable. Placing the ARG in the
-# runtime stage keeps a SHA change from invalidating the expensive AOT publish layers.
+# SHA is therefore injected here as a runtime environment variable. The build stage also uses the SHA
+# to stamp the informational version when VERSION is provided.
 # HONUA_IMAGE_DIGEST is intentionally not set here: an image cannot contain its own digest,
 # so deployments inject it (Helm/Terraform/task definition) once the image has been pushed.
 ARG HONUA_GIT_SHA=
+ARG VERSION=
+LABEL org.opencontainers.image.version="${VERSION}"
 LABEL org.opencontainers.image.revision="${HONUA_GIT_SHA}"
 ENV HONUA_GIT_SHA=${HONUA_GIT_SHA}
 

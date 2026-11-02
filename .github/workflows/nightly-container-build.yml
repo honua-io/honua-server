@@ -5,6 +5,10 @@ on:
     - cron: '0 6 * * *' # 06:00 UTC nightly
   workflow_dispatch:
     inputs:
+      release_version:
+        description: 'Platform SemVer (e.g. 2026.1.0-rc.2). Empty = 2026.1.0-nightly.<sha7>.'
+        required: false
+        default: ''
       candidate_sha:
         description: 'Full 40-hex trunk sha to image instead of the newest certified one. It must itself be certified (completed full-matrix ci.yml run, every certification lane successful). Empty = newest certified trunk sha. When it is not trunk head, the build re-dispatches itself at tag nightly-candidate-<sha7>. Ignored on branch proofs.'
         required: false
@@ -83,6 +87,7 @@ jobs:
     outputs:
       sha: ${{ steps.select.outputs.sha }}
       sha7: ${{ steps.select.outputs.sha7 }}
+      version: ${{ steps.version.outputs.version }}
       certifying_run_id: ${{ steps.select.outputs.run_id }}
       # build-trunk | build-candidate | redirect | proof
       mode: ${{ steps.route.outputs.mode }}
@@ -138,6 +143,15 @@ jobs:
             --limit 100 \
             --workflow .github/workflows/ci.yml \
             --sha "${REQUESTED_SHA:-}"
+
+      - name: Resolve the image release version
+        id: version
+        env:
+          RELEASE_VERSION: ${{ inputs.release_version }}
+          CANDIDATE_SHA: ${{ steps.select.outputs.sha }}
+        run: |
+          python3 scripts/ci/test_container_version.py
+          python3 scripts/ci/container-version.py --release-version "${RELEASE_VERSION}" --sha "${CANDIDATE_SHA}" >> "$GITHUB_OUTPUT"
 
       # Decide whether THIS run may build the selected sha. Only a trunk run whose own
       # commit is not the selected sha re-dispatches, and it re-dispatches onto a tag
@@ -208,6 +222,7 @@ jobs:
           # Reads use the Actions token; only the tag create and the dispatch use the App token.
           GH_TOKEN: ${{ github.token }}
           HANDOFF_TOKEN: ${{ steps.handoff-token.outputs.token }}
+          RELEASE_VERSION: ${{ inputs.release_version }}
           CANDIDATE_SHA: ${{ steps.select.outputs.sha }}
         run: |
           set -euo pipefail
@@ -244,7 +259,7 @@ jobs:
           elif [ "${imaged}" != 0 ]; then
             echo "::notice::a Nightly Container Build run on ${tag} already imaged ${CANDIDATE_SHA}; not rebuilding it."
           else
-            GH_TOKEN="${HANDOFF_TOKEN}" gh workflow run nightly-container-build.yml --repo "${GITHUB_REPOSITORY}" --ref "${tag}"
+            GH_TOKEN="${HANDOFF_TOKEN}" gh workflow run nightly-container-build.yml --repo "${GITHUB_REPOSITORY}" --ref "${tag}" -f release_version="${RELEASE_VERSION}"
             echo "::notice::trunk head ${GITHUB_SHA} is not the newest certified sha ${CANDIDATE_SHA}; re-dispatched this workflow at ${tag} so the image, labels and provenance all name ${CANDIDATE_SHA}."
           fi
           {
@@ -457,8 +472,10 @@ jobs:
             suffix=-${{ matrix.arch }}
           labels: |
             org.opencontainers.image.revision=${{ needs.select-candidate.outputs.sha }}
+            org.opencontainers.image.version=${{ needs.select-candidate.outputs.version }}
           annotations: |
             org.opencontainers.image.revision=${{ needs.select-candidate.outputs.sha }}
+            org.opencontainers.image.version=${{ needs.select-candidate.outputs.version }}
 
       - name: Build nightly AOT candidate by digest
         id: build
@@ -469,6 +486,7 @@ jobs:
           build-args: |
             DOTNET_SDK_IMAGE=${{ env.BASE_REPO }}:sdk-10.0-aot
             DOTNET_RUNTIME_DEPS_IMAGE=${{ env.BASE_REPO }}:runtime-deps-10.0-aot
+            VERSION=${{ needs.select-candidate.outputs.version }}
             HONUA_GIT_SHA=${{ needs.select-candidate.outputs.sha }}
           platforms: ${{ matrix.platform }}
           outputs: type=image,name=${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }},push-by-digest=true,name-canonical=true,push=true
@@ -620,8 +638,10 @@ jobs:
             suffix=-${{ matrix.arch }}
           labels: |
             org.opencontainers.image.revision=${{ needs.select-candidate.outputs.sha }}
+            org.opencontainers.image.version=${{ needs.select-candidate.outputs.version }}
           annotations: |
             org.opencontainers.image.revision=${{ needs.select-candidate.outputs.sha }}
+            org.opencontainers.image.version=${{ needs.select-candidate.outputs.version }}
 
       - name: Build nightly Lambda AOT candidate by digest
         id: build
@@ -633,6 +653,7 @@ jobs:
             DOTNET_SDK_IMAGE=${{ env.BASE_REPO }}:sdk-10.0-lambda
             DOTNET_RUNTIME_DEPS_IMAGE=${{ env.BASE_REPO }}:runtime-deps-10.0
             LAMBDA_ADAPTER_IMAGE=${{ env.BASE_REPO }}:lambda-adapter-0.9.1
+            VERSION=${{ needs.select-candidate.outputs.version }}
             HONUA_GIT_SHA=${{ needs.select-candidate.outputs.sha }}
           platforms: ${{ matrix.platform }}
           outputs: type=image,name=${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }},push-by-digest=true,name-canonical=true,push=true
@@ -879,8 +900,10 @@ jobs:
             type=raw,value=nightly-functions-aot-${{ needs.select-candidate.outputs.sha7 }}
           labels: |
             org.opencontainers.image.revision=${{ needs.select-candidate.outputs.sha }}
+            org.opencontainers.image.version=${{ needs.select-candidate.outputs.version }}
           annotations: |
             org.opencontainers.image.revision=${{ needs.select-candidate.outputs.sha }}
+            org.opencontainers.image.version=${{ needs.select-candidate.outputs.version }}
 
       - name: Build nightly Azure Functions AOT serving image
         id: functions_candidate
@@ -889,6 +912,7 @@ jobs:
           context: .
           file: docker/Dockerfile.functions.aot
           build-args: |
+            VERSION=${{ needs.select-candidate.outputs.version }}
             HONUA_GIT_SHA=${{ needs.select-candidate.outputs.sha }}
           platforms: linux/amd64
           outputs: type=image,name=${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }},push-by-digest=true,name-canonical=true,push=true
@@ -1013,8 +1037,10 @@ jobs:
             suffix=-${{ matrix.arch }}
           labels: |
             org.opencontainers.image.revision=${{ needs.select-candidate.outputs.sha }}
+            org.opencontainers.image.version=${{ needs.select-candidate.outputs.version }}
           annotations: |
             org.opencontainers.image.revision=${{ needs.select-candidate.outputs.sha }}
+            org.opencontainers.image.version=${{ needs.select-candidate.outputs.version }}
 
       - name: Build and push
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
@@ -1024,6 +1050,7 @@ jobs:
           build-args: |
             DOTNET_SDK_IMAGE=${{ env.BASE_REPO }}:sdk-10.0
             DOTNET_ASPNET_IMAGE=${{ env.BASE_REPO }}:aspnet-10.0
+            VERSION=${{ needs.select-candidate.outputs.version }}
             HONUA_GIT_SHA=${{ needs.select-candidate.outputs.sha }}
           platforms: ${{ matrix.platform }}
           push: true
