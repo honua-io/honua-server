@@ -16,7 +16,8 @@ def derive(release_version: str, sha: str) -> tuple[str, str]:
         raise ValueError('Expected a full lowercase commit SHA')
     if release_version and not VERSION.fullmatch(release_version):
         raise ValueError('release_version must be SemVer without a v prefix or build metadata')
-    version = release_version or f'{NIGHTLY_BASE}-nightly.{sha[:7]}'
+    # A letter keeps all-numeric SHA prefixes (including leading zeros) valid SemVer.
+    version = release_version or f'{NIGHTLY_BASE}-nightly.g{sha[:7]}'
     return version, f'{version}+{sha[:7]}'
 
 

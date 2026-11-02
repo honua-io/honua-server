@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       release_version:
-        description: 'Platform SemVer (e.g. 2026.1.0-rc.2). Empty = 2026.1.0-nightly.<sha7>.'
+        description: 'Platform SemVer (e.g. 2026.1.0-rc.2). Empty = 2026.1.0-nightly.g<sha7>.'
         required: false
         default: ''
       candidate_sha:

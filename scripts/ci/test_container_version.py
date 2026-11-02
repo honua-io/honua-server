@@ -23,7 +23,13 @@ class ContainerVersionTests(unittest.TestCase):
 
     def test_nightly_is_deterministic_and_uses_selected_commit(self):
         self.assertEqual(self.module.derive('', 'abcdef0123456789' + '0' * 24),
-                         ('2026.1.0-nightly.abcdef0', '2026.1.0-nightly.abcdef0+abcdef0'))
+                         ('2026.1.0-nightly.gabcdef0', '2026.1.0-nightly.gabcdef0+abcdef0'))
+
+    def test_numeric_sha_with_leading_zero_produces_valid_semver(self):
+        version, informational = self.module.derive('', '0123456' + 'a' * 33)
+        self.assertEqual(version, '2026.1.0-nightly.g0123456')
+        self.assertIsNotNone(self.module.VERSION.fullmatch(version))
+        self.assertEqual(informational, version + '+0123456')
 
     def test_rejects_malformed_or_unsafe_release_versions(self):
         for version in ('v2026.1.0', '2026.1', '2026.01.0', '2026.1.0-rc.02',

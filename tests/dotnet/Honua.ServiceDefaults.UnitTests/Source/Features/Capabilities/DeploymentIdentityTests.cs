@@ -59,7 +59,7 @@ public sealed class DeploymentIdentityTests
     [Trait("Category", "Unit")]
     [Trait("Tier", "Fast")]
     [InlineData("2026.1.0-rc.2+abcdef0", "2026.1.0-rc.2")]
-    [InlineData("2026.1.0-nightly.abcdef0+abcdef0", "2026.1.0-nightly.abcdef0")]
+    [InlineData("2026.1.0-nightly.gabcdef0+abcdef0", "2026.1.0-nightly.gabcdef0")]
     [InlineData("2026.1.0+abcdef0", "2026.1.0")]
     [InlineData("2026.1.0", "2026.1.0")]
     public void GetReleaseVersion_PlatformBuildVersion_PreservesReleaseAndStripsMetadata(string informational, string expected)

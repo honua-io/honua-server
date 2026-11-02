@@ -17,7 +17,7 @@ public sealed class AdminReleaseChannelTests
     [Trait("Tier", "Fast")]
     [InlineData("2026.1.0-rc.2", "rc")]
     [InlineData("2026.1.0-rc.2+abcdef0", "rc")]
-    [InlineData("2026.1.0-nightly.abcdef0+abcdef0", "nightly")]
+    [InlineData("2026.1.0-nightly.gabcdef0+abcdef0", "nightly")]
     [InlineData("2026.1.0-preview.1+abcdef0", "preview")]
     [InlineData("2026.1.0", "stable")]
     [InlineData("2026.1.0+nightly", "stable")]
