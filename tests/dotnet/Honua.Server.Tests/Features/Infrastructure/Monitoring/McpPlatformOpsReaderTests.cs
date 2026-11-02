@@ -259,7 +259,30 @@ public sealed class McpPlatformOpsReaderTests
     {
         var payload = Honua.ControlPlane.Executors.OpsActionExecutionPayloads.RestartComposeService("compose-local", "redis");
         var act = () => McpPlatformOpsReader.ValidateFindingCandidateBinding(OperationClass.AdminConfigChange, payload, "other-target");
-        act.Should().Throw<Honua.Geoprocessing.GeoprocessingValidationException>();
+        act.Should().Throw<Honua.Geoprocessing.GeoprocessingValidationException>()
+            .WithMessage("*candidateId must be the finding's subject.targetId*")
+            .Which.Message.Should().NotContain("compose-local", "the refusal names the field, not the expected value");
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public void ValidateFindingCandidateBinding_ComposeRestartSubjectTarget_IsAccepted()
+    {
+        var payload = Honua.ControlPlane.Executors.OpsActionExecutionPayloads.RestartComposeService("compose-local", "redis");
+        var act = () => McpPlatformOpsReader.ValidateFindingCandidateBinding(OperationClass.AdminConfigChange, payload, "compose-local");
+        act.Should().NotThrow();
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public void ProposeFindingInputSchema_CandidateId_DescribesSubjectTargetId()
+    {
+        var properties = McpPlatformOpsSchemas.ProposeFindingInputSchema.GetProperty("properties");
+
+        properties.GetProperty("candidateId").GetProperty("description").GetString()
+            .Should().Contain("subject.targetId").And.Contain("compose-local");
+        properties.GetProperty("findingId").GetProperty("description").GetString()
+            .Should().Contain("honua_ops_findings");
     }
 
     [UnitTest]
@@ -278,7 +301,7 @@ public sealed class McpPlatformOpsReaderTests
             "candidate-a");
 
         act.Should().Throw<Honua.Geoprocessing.GeoprocessingValidationException>()
-            .WithMessage("*does not match the certified candidate*");
+            .WithMessage("*does not match the certified candidate*candidateId must be the finding's subject.targetId*");
     }
 
     [UnitTest]
