@@ -3,7 +3,6 @@
 services:
   honua:
     environment:
-      Studio__EndUserAuthorization__Enabled: "true"
       StudioAiProxy__Enabled: "true"
       StudioAiProxy__DefaultProvider: "bedrock"
       StudioAiProxy__Providers__bedrock__Kind: "bedrock"
@@ -22,5 +21,4 @@ services:
       AWS_REGION: "${HONUA_STUDIO_AI_REGION:-us-east-1}"
   console:
     environment:
-      Studio__EmbedJsStudio: "true"
       Honua__Agent__WorkspaceApiEnabled: "false"

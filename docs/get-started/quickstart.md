@@ -445,12 +445,40 @@ a backup.
   [registry clients](registry-clients.md) only if you need it.
 - **Anything else** — [troubleshooting](../guides/deploy/troubleshooting.md).
 
+## Use Studio in Console without the assistant
+
+For the repository development stack, run this from the `honua-server` checkout:
+
+<!-- docs-validation:studio.console mode=skip reason="Repository development stack; the public install replay uses the customer package" -->
+```bash
+python3 scripts/docker/quickstart.py --profile console
+```
+
+Open Console at `http://localhost:5174` (or your configured `HONUA_CONSOLE_PORT`)
+and use Studio to author maps, save and reopen versions, and request publication.
+The repository's `docker-compose.yml` sets `Studio__EmbedJsStudio=true` on Console
+and `Studio__EndUserAuthorization__Enabled=true` on Server. Customer sign-in,
+resource authorization, draft ownership and separate publication approval still
+apply. These settings enable Studio without enabling model calls; no AI overlay,
+provider credentials or invocation ledger is needed.
+
+This command uses the repository development Compose file, not the customer
+package's `compose.yaml` described above. Configure customer authentication for
+Console and Server before using Studio as an end user.
+
 ## Enable the built-in Studio assistant (optional)
 
 The default quickstart keeps model calls disabled. To use the built-in browser
 assistant on Bedrock, follow [Studio assistant on Bedrock](../guides/deploy/studio-assistant-bedrock.md).
-The opt-in `docker-compose.studio-ai.yml` overlay sets Studio customer authorization,
-the tool-capable provider, exact disclosure approval and stable PostgreSQL admission
-identity. Initialize and resume the invocation ledger before submitting a prompt.
+From the repository checkout, add the assistant overlay to the same Console profile:
+
+<!-- docs-validation:studio.assistant mode=skip reason="Optional Bedrock assistant requires operator disclosure approval and invocation admission" -->
+```bash
+python3 scripts/docker/quickstart.py --profile console -f docker-compose.yml -f docker-compose.studio-ai.yml
+```
+
+The opt-in `docker-compose.studio-ai.yml` overlay adds the tool-capable provider,
+exact disclosure approval and stable PostgreSQL admission identity to Studio.
+Initialize and resume the invocation ledger before submitting a prompt.
 Use an updated Console image; older images calling `/api/v1/agent/workspaces/`
 require a Console rebuild, since that separate API is absent from Server trunk.
