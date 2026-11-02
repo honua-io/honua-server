@@ -1,6 +1,7 @@
 """Offline coverage for immutable candidate image publication."""
 import importlib.util
 import json
+import itertools
 import re
 from pathlib import Path
 import unittest
@@ -69,6 +70,12 @@ class ImmutableTagsTests(unittest.TestCase):
         with patch.object(self.module, 'inspect', side_effect=[None] + ['sha256:' + 'a' * 64] * 11):
             self.assertEqual(self.module.publication_state('ghcr.io/honua/server', 'abcdef0' + 'a' * 33, ''), (False, True))
 
+    def test_scheduled_partial_retry_cannot_mix_rc_and_nightly_images(self):
+        with patch.object(self.module, 'inspect', side_effect=itertools.cycle([None] + ['sha256:' + 'a' * 64] * 11)), \
+             patch.object(self.module, 'versions', return_value={'2026.1.0-rc.2'}):
+            with self.assertRaisesRegex(ValueError, 'new SHA'):
+                self.module.check_publication(['ghcr.io/honua/server'], 'abcdef0' + 'a' * 33, '', '2026.1.0-nightly.gabcdef0')
+
     def test_every_platform_must_report_requested_version(self):
         with patch.object(self.module.subprocess, 'run') as run:
             run.return_value.stdout = json.dumps({
@@ -95,6 +102,8 @@ class ImmutableTagsTests(unittest.TestCase):
         self.assertIn('tags: ${{ steps.immutable_tags.outputs.tags }}', workflow)
         self.assertIn("if: steps.existing_executor.outputs.digest == ''", workflow)
         self.assertIn('digest=${EXISTING_DIGEST:-$BUILT_DIGEST}', workflow)
+        self.assertIn('subject_ref="${subject_name}:nightly-${{ needs.select-candidate.outputs.sha7 }}"', workflow)
+        self.assertIn('subject_ref="${subject_name}:nightly-lambda-aot-${{ needs.select-candidate.outputs.sha7 }}"', workflow)
         # Existing Git candidate refs are accepted only when their full SHA matches.
         self.assertIn('if [ "${existing}" != "${CANDIDATE_SHA}" ]; then', workflow)
         self.assertIn('if [ "$PARTIAL_PUBLICATION" = 1 ]; then', workflow)

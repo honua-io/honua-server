@@ -80,10 +80,22 @@ def already_imaged(repository, sha, release_version):
     return publication_state(repository, sha, release_version)[0]
 
 
+def check_publication(repositories, sha, release_version, expected_version):
+    states = [publication_state(repository, sha, release_version) for repository in repositories]
+    complete = all(state[0] for state in states)
+    partial = any(state[1] for state in states) and not complete
+    if partial and not release_version and expected_version:
+        # A schedule must not complete half an RC with newly built nightly binaries.
+        for repository in repositories:
+            publication_state(repository, sha, expected_version)
+    return complete, partial
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--sha', required=True)
     parser.add_argument('--release-version', default='')
+    parser.add_argument('--expected-version', default='')
     parser.add_argument('--already-imaged', metavar='REPOSITORY', action='append')
     parser.add_argument('--tag', help='Return an existing immutable tag digest, or empty if absent')
     args = parser.parse_args()
@@ -91,10 +103,9 @@ def main():
         parser.error('Expected a full lowercase commit SHA')
     try:
         if args.already_imaged:
-            states = [publication_state(repository, args.sha, args.release_version) for repository in args.already_imaged]
-            complete = all(state[0] for state in states)
+            complete, partial = check_publication(args.already_imaged, args.sha, args.release_version, args.expected_version)
             print(f'imaged={int(complete)}')
-            print(f'partial={int(any(state[1] for state in states) and not complete)}')
+            print(f'partial={int(partial)}')
         elif args.tag:
             if not is_immutable(args.tag, args.sha):
                 raise ValueError('Expected a per-SHA tag')

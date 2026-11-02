@@ -195,9 +195,10 @@ jobs:
         env:
           CANDIDATE_SHA: ${{ steps.select.outputs.sha }}
           RELEASE_VERSION: ${{ inputs.release_version }}
+          EXPECTED_VERSION: ${{ steps.version.outputs.version }}
         run: |
           python3 scripts/ci/test_immutable_container_tags.py
-          python3 scripts/ci/immutable-container-tags.py --sha "$CANDIDATE_SHA" --release-version "$RELEASE_VERSION" \
+          python3 scripts/ci/immutable-container-tags.py --sha "$CANDIDATE_SHA" --release-version "$RELEASE_VERSION" --expected-version "$EXPECTED_VERSION" \
             --already-imaged "${REGISTRY_GHCR}/${IMAGE_NAME_GHCR}" \
             --already-imaged "docker.io/${IMAGE_NAME_DOCKERHUB}" >> "$GITHUB_OUTPUT"
 
@@ -567,7 +568,7 @@ jobs:
           CANDIDATE: ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }}@${{ steps.build.outputs.digest }}
           TAGS: ${{ steps.meta.outputs.tags }}
           CANDIDATE_SHA: ${{ needs.select-candidate.outputs.sha }}
-          RELEASE_VERSION: ${{ inputs.release_version }}
+          RELEASE_VERSION: ${{ needs.select-candidate.outputs.version }}
         run: |
           set -euo pipefail
           sudo apt-get update
@@ -739,7 +740,7 @@ jobs:
           CANDIDATE: ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }}@${{ steps.build.outputs.digest }}
           TAGS: ${{ steps.meta.outputs.tags }}
           CANDIDATE_SHA: ${{ needs.select-candidate.outputs.sha }}
-          RELEASE_VERSION: ${{ inputs.release_version }}
+          RELEASE_VERSION: ${{ needs.select-candidate.outputs.version }}
         run: |
           set -euo pipefail
           sudo apt-get update
@@ -858,7 +859,7 @@ jobs:
         env:
           TAGS: ${{ steps.meta.outputs.tags }}
           IMAGE_VERSION: ${{ needs.select-candidate.outputs.version }}
-          RELEASE_VERSION: ${{ inputs.release_version }}
+          RELEASE_VERSION: ${{ needs.select-candidate.outputs.version }}
           CANDIDATE_SHA: ${{ needs.select-candidate.outputs.sha }}
         run: |
           set -euo pipefail
@@ -872,7 +873,7 @@ jobs:
               "${tag}-arm64"
           done
           subject_name="${REGISTRY_GHCR}/${IMAGE_NAME_GHCR}"
-          subject_ref="${subject_name}:nightly-lambda-aot-${{ needs.mirror-base-images.outputs.build_date }}"
+          subject_ref="${subject_name}:nightly-lambda-aot-${{ needs.select-candidate.outputs.sha7 }}"
           subject_digest="$(docker buildx imagetools inspect "$subject_ref" --format '{{.Manifest.Digest}}')"
           echo "subject_name=$subject_name" >> "$GITHUB_OUTPUT"
           echo "subject_digest=$subject_digest" >> "$GITHUB_OUTPUT"
@@ -1006,7 +1007,7 @@ jobs:
           CANDIDATE: ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }}@${{ steps.functions_candidate.outputs.digest }}
           TAGS: ${{ steps.meta.outputs.tags }}
           CANDIDATE_SHA: ${{ needs.select-candidate.outputs.sha }}
-          RELEASE_VERSION: ${{ inputs.release_version }}
+          RELEASE_VERSION: ${{ needs.select-candidate.outputs.version }}
         run: |
           set -euo pipefail
           printf '%s\n' "$TAGS" | python3 scripts/ci/immutable-container-tags.py \
@@ -1103,7 +1104,7 @@ jobs:
         env:
           TAGS: ${{ steps.meta.outputs.tags }}
           CANDIDATE_SHA: ${{ needs.select-candidate.outputs.sha }}
-          RELEASE_VERSION: ${{ inputs.release_version }}
+          RELEASE_VERSION: ${{ needs.select-candidate.outputs.version }}
         run: |
           tags="$(printf '%s\n' "$TAGS" | python3 scripts/ci/immutable-container-tags.py --sha "$CANDIDATE_SHA" --release-version "$RELEASE_VERSION")"
           { echo 'tags<<IMMUTABLE_TAGS'; printf '%s\n' "$tags"; echo IMMUTABLE_TAGS; } >> "$GITHUB_OUTPUT"
@@ -1198,7 +1199,7 @@ jobs:
         env:
           TAGS: ${{ steps.meta.outputs.tags }}
           IMAGE_VERSION: ${{ needs.select-candidate.outputs.version }}
-          RELEASE_VERSION: ${{ inputs.release_version }}
+          RELEASE_VERSION: ${{ needs.select-candidate.outputs.version }}
           CANDIDATE_SHA: ${{ needs.select-candidate.outputs.sha }}
         run: |
           set -euo pipefail
@@ -1227,7 +1228,7 @@ jobs:
               "${tag}-amd64" "${tag}-arm64"
           done
           subject_name="${REGISTRY_GHCR}/${IMAGE_NAME_GHCR}"
-          subject_ref="${subject_name}:nightly-${{ needs.mirror-base-images.outputs.build_date }}"
+          subject_ref="${subject_name}:nightly-${{ needs.select-candidate.outputs.sha7 }}"
           subject_digest="$(docker buildx imagetools inspect "$subject_ref" --format '{{.Manifest.Digest}}')"
           echo "subject_name=$subject_name" >> "$GITHUB_OUTPUT"
           echo "subject_digest=$subject_digest" >> "$GITHUB_OUTPUT"
@@ -1297,7 +1298,7 @@ jobs:
         id: existing_executor
         env:
           CANDIDATE_SHA: ${{ needs.select-candidate.outputs.sha }}
-          RELEASE_VERSION: ${{ inputs.release_version }}
+          RELEASE_VERSION: ${{ needs.select-candidate.outputs.version }}
         run: |
           digest="$(python3 scripts/ci/immutable-container-tags.py --sha "$CANDIDATE_SHA" --release-version "$RELEASE_VERSION" \
             --tag "ghcr.io/honua-io/honua-server:nightly-compose-executor-${CANDIDATE_SHA:0:7}")"
@@ -1416,7 +1417,7 @@ jobs:
         env:
           TAGS: ${{ steps.meta.outputs.tags }}
           IMAGE_VERSION: ${{ needs.select-candidate.outputs.version }}
-          RELEASE_VERSION: ${{ inputs.release_version }}
+          RELEASE_VERSION: ${{ needs.select-candidate.outputs.version }}
           CANDIDATE_SHA: ${{ needs.select-candidate.outputs.sha }}
         run: |
           set -euo pipefail
