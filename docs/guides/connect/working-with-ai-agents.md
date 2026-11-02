@@ -110,8 +110,9 @@ conflicts with a rule, stop and ask.
    proposal's `diff` and `dryRun` before it goes to the approver.
 7. Confirm the running build, not the request. In `honua_platform_release_status`, the serving
    target's `observedImageId` must be the target image, with `skewed: false` and `isCoVersioned: true`.
-   The server's `deploymentRevision` (in the capability manifest) names the build it runs. A version
-   string alone doesn't prove which build is running.
+   The server's `deploymentRevision` (in the capability manifest) names the build it runs.
+   Compare builds by `deploymentRevision` or image digest, not by the version string: 2026.1 rc.1
+   reported `2026.1.1` in error, so `2026.1.0-rc.2` is newer even though SemVer orders it lower.
 
 Don't replace the serving container by hand, run `docker compose down --volumes`, or delete `backups/`.
 
