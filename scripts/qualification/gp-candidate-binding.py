@@ -104,6 +104,18 @@ def verify_terminal_recovery(scenario, proof):
             or artifacts[0]["metadata"]["raster.output.checksum"] != "sha256:" + sha
             or artifacts[0]["metadata"]["raster.output.sizeBytes"] != str(size)):
         raise ValueError("crash recovery did not prove one registered, byte-identical staged artifact")
+    # The recovered bytes are the bytes committed before the crash: the terminal record's own staged
+    # descriptor (immutable across recovery, checked above) names the same SHA-256 and size.
+    try:
+        committed = json.loads(before["artifactReferences"][0])
+    except (TypeError, ValueError) as exc:
+        raise ValueError("terminal record does not carry a staged output descriptor") from exc
+    content = committed.get("content") if isinstance(committed, dict) else None
+    checksum = content.get("checksum") if isinstance(content, dict) else None
+    if (committed.get("outputType") != "staged-object" or committed.get("jobId") != job
+            or not isinstance(checksum, dict) or checksum.get("algorithm") != "sha256"
+            or checksum.get("value") != sha or str(content.get("sizeBytes")) != str(size)):
+        raise ValueError("recovered artifact is not the checksum committed before the crash")
 
 
 def verify_crashes(pin, summary):
