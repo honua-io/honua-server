@@ -23,6 +23,7 @@ services:
       - "127.0.0.1:${HONUA_MANAGER_PORT:-18082}:8080"
     environment:
       ASPNETCORE_ENVIRONMENT: Production
+      Mcp__WorkflowViews__DefaultView: ${HONUA_MCP_DEFAULT_VIEW:-default}
       Licensing__Mode: Disabled
       AllowedHosts: "localhost;127.0.0.1;compose-manager"
       PUBLIC_BASE_URL: "http://localhost:${HONUA_MANAGER_PORT:-18082}"

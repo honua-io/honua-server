@@ -512,6 +512,120 @@ public sealed class McpWorkflowViewTests
     }
 
     [UnitTest]
+    public async Task ToolsList_HttpSelectors_RespectNegotiationPrecedence()
+    {
+        var surface = BuildFullSurface();
+        var context = McpTestFactory.AuthenticatedHttpContextWithServices(services =>
+            services.AddSingleton<IOptionsMonitor<McpWorkflowViewOptions>>(
+                new StubOptionsMonitor(new McpWorkflowViewOptions { DefaultView = "default" })));
+        context.Request.Headers["X-Honua-Workflow-View"] = "configure";
+
+        var header = await ListToolsAsync(surface, view: null, context: context);
+        header.Meta.GetProperty("view").GetString().Should().Be("configure");
+
+        context.Request.QueryString = new QueryString("?view=setup");
+        var query = await ListToolsAsync(surface, view: null, context: context);
+        query.Meta.GetProperty("view").GetString().Should().Be("setup");
+
+        context.Items[McpWorkflowViewNegotiation.HttpContextItemKey] = "review";
+        var session = await ListToolsAsync(surface, view: null, context: context);
+        session.Meta.GetProperty("view").GetString().Should().Be("review");
+
+        var request = await ListToolsAsync(surface, view: "operate", context: context);
+        request.Meta.GetProperty("view").GetString().Should().Be("operate");
+
+        var full = await ListToolsAsync(surface, view: "full", context: context);
+        full.Meta.ValueKind.Should().Be(JsonValueKind.Undefined);
+    }
+
+    [UnitTest]
+    public async Task ToolsList_BlankAndFullHttpSelectors_PreserveFallbackAndAuthentication()
+    {
+        var surface = BuildFullSurface();
+        var context = McpTestFactory.AuthenticatedHttpContext();
+        context.Request.QueryString = new QueryString("?view=%20");
+        context.Request.Headers["X-Honua-Workflow-View"] = "configure";
+        var fallback = await ListToolsAsync(surface, view: null, context: context);
+        fallback.Meta.GetProperty("view").GetString().Should().Be("configure");
+
+        context.Request.QueryString = new QueryString("?view=full");
+        var full = await ListToolsAsync(surface, view: null, context: context);
+        full.Meta.ValueKind.Should().Be(JsonValueKind.Undefined);
+
+        var anonymous = McpTestFactory.AnonymousHttpContext();
+        anonymous.Request.Headers["X-Honua-Workflow-View"] = "full";
+        var denied = await DispatchAsync(surface,
+            """{"jsonrpc":"2.0","id":"v","method":"tools/list"}""", anonymous);
+        denied!.Error!.Data!.Code.Should().Be(McpErrorMapper.Codes.PermissionDenied);
+    }
+
+    [UnitTest]
+    public async Task Initialize_HttpSelectors_ValidateWithoutReplacingSessionMetadata()
+    {
+        var surface = BuildFullSurface();
+        const string rpc = """
+            {"jsonrpc":"2.0","id":"i","method":"initialize","params":{
+              "protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"stock","version":"1"}}}
+            """;
+        foreach (var useQuery in new[] { true, false })
+        {
+            var context = McpTestFactory.AuthenticatedHttpContext();
+            void Select(string view)
+            {
+                if (useQuery)
+                {
+                    context.Request.QueryString = new QueryString($"?view={view}");
+                }
+                else
+                {
+                    context.Request.Headers["X-Honua-Workflow-View"] = view;
+                }
+            }
+
+            Select("configure");
+            var initialized = await DispatchAsync(surface, rpc, context);
+            initialized!.Error.Should().BeNull();
+            context.Items[McpWorkflowViewNegotiation.HttpContextItemKey].Should().BeNull(
+                "HTTP selectors stay below session metadata on each request");
+
+            Select("nope");
+            var unknown = await DispatchAsync(surface, rpc, context);
+            var expected = await DispatchAsync(surface, rpc.Replace(
+                "\"capabilities\":{}", "\"capabilities\":{},\"_meta\":{\"honua.io/workflow-view\":\"nope\"}", StringComparison.Ordinal));
+            unknown!.Error.Should().BeEquivalentTo(expected!.Error);
+
+            var negotiated = await DispatchAsync(surface, rpc.Replace(
+                "\"capabilities\":{}", "\"capabilities\":{},\"_meta\":{\"honua.io/workflow-view\":\"setup\"}", StringComparison.Ordinal), context);
+            negotiated!.Error.Should().BeNull();
+            context.Items[McpWorkflowViewNegotiation.HttpContextItemKey].Should().Be("setup");
+        }
+    }
+
+    [UnitTest]
+    public async Task ToolsList_UnknownHttpSelectors_ReturnSameErrorAsRequestSelector()
+    {
+        var surface = BuildFullSurface();
+        const string rpc = """{"jsonrpc":"2.0","id":"v","method":"tools/list"}""";
+        var expected = await DispatchAsync(surface,
+            """{"jsonrpc":"2.0","id":"v","method":"tools/list","params":{"view":"nope"}}""");
+        foreach (var useQuery in new[] { true, false })
+        {
+            var context = McpTestFactory.AuthenticatedHttpContext();
+            if (useQuery)
+            {
+                context.Request.QueryString = new QueryString("?view=nope");
+            }
+            else
+            {
+                context.Request.Headers["X-Honua-Workflow-View"] = "nope";
+            }
+
+            var response = await DispatchAsync(surface, rpc, context);
+            response!.Error.Should().BeEquivalentTo(expected!.Error);
+        }
+    }
+
+    [UnitTest]
     public async Task ToolsList_ServerProfileDefaultView_AppliesWhenNothingIsNegotiated()
     {
         var surface = BuildFullSurface();

@@ -29,6 +29,19 @@ class ComposeQuickstartTests(unittest.TestCase):
         # The disposable project must win over ambient Compose flags, including cleanup.
         return dict(os.environ, **values)
 
+    def test_workflow_view_default_is_forwarded_to_serving_and_management_servers(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.prepare(directory)
+            for selected, expected in (('', 'default'), ('configure', 'configure')):
+                with self.subTest(selected=selected):
+                    env = dict(self.compose_env(path), HONUA_MCP_DEFAULT_VIEW=selected)
+                    result = subprocess.run(['docker', 'compose', 'config', '--format', 'json'],
+                                            cwd=path, env=env, capture_output=True, text=True)
+                    self.assertEqual(0, result.returncode, 'Packaged Compose must render')
+                    services = json.loads(result.stdout)['services']
+                    for service in ('honua', 'compose-manager'):
+                        self.assertEqual(expected, services[service]['environment'].get('Mcp__WorkflowViews__DefaultView'))
+
     def test_audit_keys_are_local_persistent_and_bound_to_the_correct_process(self):
         with tempfile.TemporaryDirectory() as directory:
             path = self.prepare(directory)

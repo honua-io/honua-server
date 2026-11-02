@@ -53,6 +53,15 @@ class QuickstartTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, "Compose must render without disclosing credentials")
         return json.loads(result.stdout)["services"]
 
+    def test_workflow_view_default_is_forwarded_to_server(self):
+        with tempfile.NamedTemporaryFile() as env_file:
+            for selected, expected in (('', 'default'), ('configure', 'configure')):
+                with self.subTest(selected=selected):
+                    services = self.render(env_file.name, POSTGRES_PASSWORD=os.urandom(32).hex(),
+                                           MINIO_ROOT_PASSWORD=os.urandom(32).hex(),
+                                           HONUA_MCP_DEFAULT_VIEW=selected)
+                    self.assertEqual(expected, services['honua']['environment'].get('Mcp__WorkflowViews__DefaultView'))
+
     def test_console_default_image_and_binding(self):
         with tempfile.NamedTemporaryFile() as env_file:
             services = self.render(env_file.name, POSTGRES_PASSWORD=os.urandom(32).hex(),
