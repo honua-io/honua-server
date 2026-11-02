@@ -1174,13 +1174,10 @@ public sealed class McpMapToolTests
         var content = result.GetProperty("content").EnumerateArray().ToArray();
         var textBlocks = content.Where(block => block.GetProperty("type").GetString() == "text").ToArray();
         textBlocks.Should().HaveCount(2, "a caption plus the serialized structured result");
-        var textJson = JsonNode.Parse(textBlocks[1].GetProperty("text").GetString()!)!.AsObject();
-        textJson["image"]!["base64"].Should().BeNull(
-            "the encoded image already travels in the image block and is not repeated as text");
-        var expected = JsonNode.Parse(structured.GetRawText())!.AsObject();
-        expected["image"]!.AsObject().Remove("base64");
-        JsonNode.DeepEquals(textJson, expected).Should().BeTrue(
-            "apart from image.base64 the text content carries the same serialized JSON as structuredContent");
+        JsonNode.DeepEquals(
+                JsonNode.Parse(textBlocks[1].GetProperty("text").GetString()!),
+                JsonNode.Parse(structured.GetRawText()))
+            .Should().BeTrue("the text content must carry the same serialized JSON as structuredContent");
 
         var imageBlock = content.Single(block => block.GetProperty("type").GetString() == "image");
         imageBlock.GetProperty("mimeType").GetString().Should().Be("image/png");

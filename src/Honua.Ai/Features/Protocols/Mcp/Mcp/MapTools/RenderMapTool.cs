@@ -237,28 +237,8 @@ internal sealed class RenderMapTool : IMcpTool
                     Base64 = base64,
                     Inlined = true
                 });
-            var (structuredContent, _) = McpToolHelpers.SerializeStructured(
+            var (structuredContent, inlineJsonText) = McpToolHelpers.SerializeStructured(
                 output,
-                MapToolJsonContext.Default.McpRenderMapOutput);
-
-            // Intentional divergence from McpToolHelpers.SuccessResult (always the full JSON as text, per
-            // MCP 2025-06-18 Tools "Structured Content"): the opted-in image bytes already travel in the
-            // native image content block, so the text JSON carries every other field and omits only
-            // image.base64 rather than repeating the encoded image as text.
-            var (_, inlineJsonText) = McpToolHelpers.SerializeStructured(
-                BuildRenderOutput(
-                    result,
-                    bbox,
-                    bboxSrid,
-                    renderedLayers,
-                    new McpRenderedImage
-                    {
-                        Format = result.ContentType,
-                        Width = result.Width,
-                        Height = result.Height,
-                        ByteLength = result.Data.Length,
-                        Inlined = true
-                    }),
                 MapToolJsonContext.Default.McpRenderMapOutput);
             var inlineCaption = string.Format(
                 CultureInfo.InvariantCulture,
