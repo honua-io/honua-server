@@ -159,6 +159,16 @@ spec:
 EOF
 }
 
+# Probe inside the server image, which ships bash but no HTTP client.
+server_metrics_status() {
+    kubectl exec -n "$NAMESPACE" "deployment/$1" -- bash -c '
+        exec 3<>/dev/tcp/127.0.0.1/8080 &&
+        printf "GET /api/metrics/health HTTP/1.0\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n" >&3 &&
+        IFS=" " read -r protocol status reason <&3 &&
+        [[ "$protocol" == HTTP/* && "$status" == 200 ]] && printf 200
+    ' || printf 000
+}
+
 # Function to monitor canary metrics
 monitor_canary_metrics() {
     echo "📊 Monitoring canary metrics for $PROMOTION_DELAY seconds..."
@@ -170,11 +180,9 @@ monitor_canary_metrics() {
         echo "🔍 Checking canary health and metrics..."
 
         # Check metrics health endpoint (replace with actual metrics query)
-        local canary_metrics_status=$(kubectl exec -n $NAMESPACE deployment/$APP_NAME-canary -- \
-            curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/api/metrics/health || echo "000")
+        local canary_metrics_status=$(server_metrics_status "$APP_NAME-canary")
 
-        local stable_metrics_status=$(kubectl exec -n $NAMESPACE deployment/$APP_NAME-stable -- \
-            curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/api/metrics/health || echo "000")
+        local stable_metrics_status=$(server_metrics_status "$APP_NAME-stable")
 
         echo "📈 Canary metrics status: $canary_metrics_status"
         echo "📈 Stable metrics status: $stable_metrics_status"
