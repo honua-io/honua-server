@@ -98,6 +98,16 @@ def main() -> int:
             for key, value in env_file.items():
                 if ("PASSWORD" in key or "KEY" in key) and value:
                     text = text.replace(value, "[REDACTED]")
+            # The documented secrets live in their own files, never in .env.
+            secrets_dir = work / "secrets"
+            if secrets_dir.is_dir():
+                for path in secrets_dir.iterdir():
+                    try:
+                        value = path.read_text().strip() if path.is_file() and path.suffix != ".pfx" else ""
+                    except (OSError, UnicodeDecodeError):
+                        value = ""
+                    if len(value) >= 6:
+                        text = text.replace(value, "[REDACTED]")
             return text
 
         def run(command: list[str], timeout: int = 300) -> str:
@@ -166,7 +176,8 @@ def main() -> int:
 import json, sys
 from honua_sdk import HonuaClient
 env = dict(line.strip().split('=', 1) for line in open('.env') if '=' in line)
-with HonuaClient('http://localhost:' + env['HONUA_HTTP_PORT'], api_key=env['HONUA_ADMIN_PASSWORD']) as client:
+key = open('secrets/honua_admin_password').read().strip()
+with HonuaClient('http://localhost:' + env['HONUA_HTTP_PORT'], api_key=key) as client:
     print(json.dumps(client.query_features('quickstart', int(sys.argv[1]), out_fields=['id', 'name'], return_geometry=True)['features']))
 """, layer_id])
             verify_features(json.loads(readback))

@@ -19,7 +19,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'scripts/docker'))
 from package_quickstart import package
-from compose_quickstart import initialize
+from compose_quickstart import ALL_SECRET_KEYS, initialize, read_secret
 
 RC1 = "ghcr.io/honua-io/honua-server@sha256:2c3ce36be9b6a4c8b3911d150de329be002131609933bc3ca4a3932ea95dc574"
 
@@ -112,10 +112,15 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
         "HONUA_GRPC_PORT": str(free_port()), "HONUA_MANAGER_PORT": str(manager_port),
         "HONUA_PRIOR_IMAGE": RC1, "HONUA_PRIOR_MAX_SCHEMA": "140"}
     (project_dir / ".env").write_text("".join(f"{name}={value}\n" for name, value in settings.items()))
+    for name in ALL_SECRET_KEYS:
+        env.pop(name, None)
     env.update(initialize(project_dir))
-    key = env["HONUA_MANAGER_ADMIN_PASSWORD"]
-    postgres = env["HONUA_MANAGER_POSTGRES_PASSWORD"]
-    keyring = env["HONUA_KEYRING_PASSWORD"]
+    # Secrets live only in the install's secrets/ files, as an operator would read them.
+    key = read_secret(project_dir, "HONUA_MANAGER_ADMIN_PASSWORD")
+    postgres = read_secret(project_dir, "HONUA_MANAGER_POSTGRES_PASSWORD")
+    keyring = read_secret(project_dir, "HONUA_KEYRING_PASSWORD")
+    manager_master = read_secret(project_dir, "HONUA_MANAGER_MASTER_KEY")
+    assert not set(ALL_SECRET_KEYS) & set(env), "secrets must not reach Compose as environment"
     compose = ["docker", "compose", "--project-directory", str(project_dir), "-p", project,
         "-f", str(project_dir / "compose.yaml"), "-f", str(project_dir / "compose.executor.yaml")]
     def dc(*args, check=True):
@@ -143,7 +148,7 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
             # Emit bounded diagnostic lines with every generated secret removed.
             logs = run(compose + ["logs", "--no-color", "--tail", "80", "compose-manager"],
                        env=env, cwd=project_dir, check=False)
-            for secret in (key, postgres, keyring, env["HONUA_MANAGER_MASTER_KEY"]):
+            for secret in (key, postgres, keyring, manager_master):
                 logs = logs.replace(secret, "[redacted]")
             diagnostic = []
             for line in logs.splitlines():
@@ -154,6 +159,10 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
                     diagnostic.append(line[:300])
             raise AssertionError(f"Compose startup failed; service states: {summary}; manager diagnostics: {diagnostic[-8:]}") from error
         assert image_id() == prior_id and schema() == 140
+        # Inspecting the running install must never reveal a credential.
+        rendered = dc("config") + dc("config", "--environment")
+        assert not [name for name in ALL_SECRET_KEYS if read_secret(project_dir, name) in rendered], \
+            "docker compose config printed a secret"
         sql("CREATE TABLE public.rc2_lifecycle_marker (id integer PRIMARY KEY, value text NOT NULL); INSERT INTO public.rc2_lifecycle_marker VALUES (1, 'retained')")
         proposer, _ = request(base, "/api/v1/admin/api-keys/", key, {"name": "proposer", "permissions": ["admin:*"]})
         approver, _ = request(base, "/api/v1/admin/api-keys/", key, {"name": "approver", "permissions": ["admin:*"]})
