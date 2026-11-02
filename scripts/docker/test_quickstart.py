@@ -78,6 +78,21 @@ class QuickstartTests(unittest.TestCase):
             self.assertEqual(env["Oidc__Generic__ClientId"], "console")
             self.assertEqual(env["Oidc__Generic__ClientSecret"], "test-secret")
 
+    def test_console_profile_enables_studio_without_ai_overlay(self):
+        with tempfile.NamedTemporaryFile() as env_file:
+            services = self.render(env_file.name, POSTGRES_PASSWORD=os.urandom(32).hex(),
+                                   MINIO_ROOT_PASSWORD=os.urandom(32).hex())
+        self.assertEqual(services["console"]["environment"]["Studio__EmbedJsStudio"], "true")
+        self.assertEqual(services["honua"]["environment"]["Studio__EndUserAuthorization__Enabled"], "true")
+        self.assertNotIn("StudioAiProxy__Enabled", services["honua"]["environment"])
+        self.assertNotIn("AiExecutionAdmission__DeploymentId", services["honua"]["environment"])
+
+    def test_studio_ai_overlay_only_adds_assistant_settings(self):
+        overlay = (ROOT / "docker-compose.studio-ai.yml").read_text()
+        self.assertNotIn("Studio__EmbedJsStudio", overlay)
+        self.assertNotIn("Studio__EndUserAuthorization__Enabled", overlay)
+        self.assertIn('StudioAiProxy__Enabled: "true"', overlay)
+
     @unittest.skipUnless(os.environ.get("HONUA_VERIFY_CONSOLE_REGISTRY") == "1", "opt-in public registry check")
     def test_console_default_image_is_publicly_pullable(self):
         with tempfile.NamedTemporaryFile() as env_file:

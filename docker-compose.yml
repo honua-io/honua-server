@@ -108,6 +108,9 @@ services:
       # Development-only defaults for the repo quickstart. Override these before
       # reusing this compose file outside a local developer workstation.
       HONUA_ADMIN_PASSWORD: "${HONUA_ADMIN_PASSWORD:-quickstart-admin-password}"
+      # Studio customers retain resource authorization and publication approval.
+      # This does not enable the optional AI proxy or provider calls.
+      Studio__EndUserAuthorization__Enabled: "true"
       AuditLog__ChainVerification__Key: "${AuditLog__ChainVerification__Key:-}"
       FileStorage__Provider: "${HONUA_STORAGE_PROVIDER:-Local}"
       FileStorage__LocalStorage__BasePath: "/var/lib/honua/storage"
@@ -167,6 +170,7 @@ services:
       HONUA_ADMIN_API_KEY: "${HONUA_ADMIN_PASSWORD:-quickstart-admin-password}"
       Honua__Server__BaseUrl: "http://honua:8080"
       Honua__Server__AdminApiKey: "${HONUA_ADMIN_PASSWORD:-quickstart-admin-password}"
+      Studio__EmbedJsStudio: "true"
     depends_on:
       honua:
         condition: service_healthy
