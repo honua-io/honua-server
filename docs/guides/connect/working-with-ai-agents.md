@@ -74,10 +74,16 @@ conflicts with a rule, stop and ask.
   change the operation policy or the approval settings to get past a refusal.
 - Never make the same change by another route: no edits to `compose.yaml` or image references, no
   `docker compose up` with a different image, and no SQL against Honua's own `honua` schema.
-- Treat a refusal (`Denied`, `permission_denied`, `insufficient_scope`, `unavailable`) as the answer.
-  Report it with its code. Don't search for a way around it.
+- Treat a refusal (`Denied`, `permission_denied`, `insufficient_scope`, or `unavailable` with
+  `retryable: false`) as the answer. Report it with its code. Don't search for a way around it.
 
 ## 4. Use MCP as designed
+
+- Check that the server is ready with `curl -fsS http://localhost:18080/healthz/ready`. Check MCP
+  by connecting your MCP client and listing tools, not with a bare `POST /mcp`.
+- A transient failure is not an answer: HTTP 503, a timeout, or `unavailable` with
+  `retryable: true`. Wait a few seconds and retry, up to three times, before you report it. Before
+  you retry a change, read back first to see whether the first attempt applied.
 
 - For admin work, use the `configure` workflow view. Select it in the MCP URL
   (`http://localhost:18080/mcp?view=configure`) if the server accepts a view there. Otherwise ask the
