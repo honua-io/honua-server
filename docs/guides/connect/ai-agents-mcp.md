@@ -21,7 +21,10 @@ A [published layer](../publish/publish-layers.md) is needed when the requested t
 queries data. Before the server exists, an installation agent uses the authorized
 host's deployment tools; it connects to MCP after startup. Start with the
 [GIS workflow-language guide](../workflows/use-workflow-language.md) for the full
-setup, administration, operations, and realtime-map journeys.
+setup, administration, operations, and realtime-map journeys. A coding agent
+that also runs shell commands on the install host should follow
+[Work with AI coding agents](working-with-ai-agents.md), which the Compose
+package ships as `AGENTS.md`.
 
 The handshake methods (`initialize`, `tools/list`, `resources/list`, `resources/templates/list`) are open; `tools/call` and `resources/read` require an authenticated principal plus the matching operator grant. Authentication accepts `X-API-Key` and OAuth bearer tokens (`Authorization: Bearer`); when both are present, the bearer token is evaluated first.
 
@@ -456,6 +459,7 @@ Layer discovery, layer descriptions, feature pages, and counts use the shared RE
 
 ## Next steps
 
+- [Work with AI coding agents](working-with-ai-agents.md)
 - [What an agent can do in each edition](agent-capabilities-and-editions.md)
 - [Drive Studio from Claude Desktop](../../studio/drive-from-claude-desktop.md)
 - [Studio MCP tools](../../studio/mcp-tools.md)

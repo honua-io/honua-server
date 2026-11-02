@@ -9,6 +9,7 @@ on:
       - 'src/Honua.Core/Features/ControlPlane/**'
       - 'docs/get-started/compose.executor.yaml'
       - 'docs/get-started/quickstart.md'
+      - 'docs/guides/connect/working-with-ai-agents.md'
       - 'tests/integration/test_compose_release_lifecycle.py'
       - '.github/workflows/compose-release-lifecycle.yml'
       - '.github/workflows/nightly-container-build.yml'

@@ -23,3 +23,4 @@ The facts above come from the server's capability registry and capability matrix
 
 - [What an agent can do in each edition](../../guides/connect/agent-capabilities-and-editions.md)
 - [Connect AI agents to Honua over MCP](../../guides/connect/ai-agents-mcp.md)
+- [Work with AI coding agents](../../guides/connect/working-with-ai-agents.md)

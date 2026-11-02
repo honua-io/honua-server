@@ -121,6 +121,7 @@
   - [Excel & Power BI](guides/connect/excel-power-bi.md)
   - [MapLibre web maps](guides/connect/maplibre-web-maps.md)
   - [AI agents (MCP)](guides/connect/ai-agents-mcp.md)
+  - [Work with AI coding agents](guides/connect/working-with-ai-agents.md)
   - [What an agent can do in each edition](guides/connect/agent-capabilities-and-editions.md)
 - Honua Studio (preview)
   - [Honua Studio](studio/README.md)

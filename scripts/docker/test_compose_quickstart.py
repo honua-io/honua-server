@@ -348,6 +348,23 @@ class ComposeQuickstartTests(unittest.TestCase):
             initialize(path)
             self.assertGreater((path / 'secrets/keyring.pfx').stat().st_size, 100)
 
+    def test_package_ships_the_agent_guide_from_its_docs_page(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)
+            package(path, SERVER, EXECUTOR, WORKER, '2026.1-rc.2')
+            guide = (path / 'AGENTS.md').read_text()
+            page = (Path(__file__).resolve().parents[2]
+                    / 'docs/guides/connect/working-with-ai-agents.md').read_text()
+            begin, end = '<!-- agent-guide:begin -->\n', '<!-- agent-guide:end -->'
+            self.assertIn(begin, page)
+            self.assertEqual(page.split(begin, 1)[1].split(end, 1)[0].strip() + '\n', guide,
+                             'The packaged guide must be the published docs page text, not a fork')
+            for rule in ('docker compose config --environment', '--no-interpolate', 'configure',
+                         'Never approve your own proposal', 'honua_propose_rollback', 'deploymentRevision'):
+                self.assertIn(rule, guide)
+            self.assertNotIn('](', guide, 'Relative docs links do not resolve inside the package')
+            self.assertIn('AGENTS.md', (path / 'README.md').read_text())
+
     def test_mutable_image_references_are_rejected_before_writing_package(self):
         for images in (('ghcr.io/honua-io/honua-server:latest', EXECUTOR, WORKER),
                        (SERVER, 'ghcr.io/honua-io/honua-compose-executor:nightly', WORKER),

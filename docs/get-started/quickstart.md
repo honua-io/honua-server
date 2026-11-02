@@ -22,7 +22,9 @@ Docker Compose, Python 3.11+, and OpenSSL 3 are required; use WSL on Windows.
 No compiler or host Docker CLI bind mounts are needed.
 
 The archive contains `compose.yaml`, `compose.executor.yaml`, `quickstart.py`,
-`images.json`, and a README. `images.json` pins the serving and executor images as
+`images.json`, a README, and `AGENTS.md`, the operating rules for AI coding agents
+working in the install directory (also published as
+[Work with AI coding agents](../guides/connect/working-with-ai-agents.md)). `images.json` pins the serving and executor images as
 distinct `ghcr.io/honua-io/honua-server@sha256:...` references in `server` and
 `executor`. Executor discovery tags are `nightly-compose-executor-<candidate-sha7>`;
 the install uses its digest, not that tag. Both images use the existing public
@@ -69,6 +71,8 @@ above, which also starts the management and executor services by default.
 
 Prefer an agent-led walkthrough? Start with [Get started with AI](with-ai.md),
 including its [local prerequisite check](with-ai.md#agent-prerequisite-check).
+Any coding agent you run in the install directory should follow
+[Work with AI coding agents](../guides/connect/working-with-ai-agents.md).
 
 **You need** Docker with Compose 2.23.1 or later, Python 3.11+ with working venv and pip support for the last
 step, and OpenSSL 3 with a POSIX shell (`grep`, `cut`, `chmod`) for the key-ring

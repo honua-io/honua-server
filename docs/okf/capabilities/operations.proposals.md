@@ -22,3 +22,4 @@ The facts above come from the server's capability registry and capability matrix
 ## Documented in
 
 - [Connect AI agents to Honua over MCP](../../guides/connect/ai-agents-mcp.md)
+- [Work with AI coding agents](../../guides/connect/working-with-ai-agents.md)
