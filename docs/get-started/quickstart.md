@@ -147,6 +147,9 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       Licensing__Mode: Disabled
+      # Studio in Console keeps ownership-scoped end-user authorization and publication approval.
+      # It does not enable the optional Studio assistant or any model call.
+      Studio__EndUserAuthorization__Enabled: "true"
       AllowedHosts: "localhost;127.0.0.1"
       PUBLIC_BASE_URL: "http://localhost:${HONUA_HTTP_PORT}"
       ConnectionStrings__DefaultConnection: "Host=postgres;Database=honua;Username=honua"

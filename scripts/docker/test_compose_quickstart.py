@@ -263,6 +263,16 @@ class ComposeQuickstartTests(unittest.TestCase):
             finally:
                 subprocess.run(command + ['down'], cwd=path, env=self.compose_env(path), capture_output=True)
 
+    def test_package_server_enables_studio_end_user_authorization_without_ai(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.prepare(directory)
+            result = subprocess.run(['docker', 'compose', '--project-directory', str(path),
+                                     'config', '--format', 'json'], cwd=path, env=self.compose_env(path), capture_output=True, text=True)
+            self.assertEqual(0, result.returncode, 'Package must render without exposing credentials')
+            environment = json.loads(result.stdout)['services']['honua']['environment']
+            self.assertEqual('true', environment['Studio__EndUserAuthorization__Enabled'])
+            self.assertNotIn('StudioAiProxy__Enabled', environment)
+
     def test_package_starts_executor_by_default_with_separate_identity_and_scoped_mounts(self):
         with tempfile.TemporaryDirectory() as directory:
             path = self.prepare(directory)
