@@ -79,8 +79,8 @@ conflicts with a rule, stop and ask.
 
 ## 4. Use MCP as designed
 
-- Check that the server is ready with `curl -fsS http://localhost:18080/healthz/ready`. Check MCP
-  by connecting your MCP client and listing tools, not with a bare `POST /mcp`.
+- Check that the server is ready: `http://localhost:18080/healthz/ready` answers 200 when it is.
+  Check MCP by connecting your MCP client and listing tools, not with a bare `POST /mcp`.
 - A transient failure is not an answer: HTTP 503, a timeout, or `unavailable` with
   `retryable: true`. Wait a few seconds and retry, up to three times, before you report it. Before
   you retry a change, read back first to see whether the first attempt applied.
