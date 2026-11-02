@@ -88,11 +88,12 @@ jobs:
       sha: ${{ steps.select.outputs.sha }}
       sha7: ${{ steps.select.outputs.sha7 }}
       version: ${{ steps.version.outputs.version }}
+      imaged: ${{ steps.existing.outputs.imaged }}
       certifying_run_id: ${{ steps.select.outputs.run_id }}
       # build-trunk | build-candidate | redirect | proof
       mode: ${{ steps.route.outputs.mode }}
       # 'true' only when this run may move channel tags (build-trunk, build-candidate).
-      publish: ${{ steps.route.outputs.publish }}
+      publish: ${{ steps.route.outputs.publish == 'true' && steps.existing.outputs.imaged != '1' }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -181,11 +182,30 @@ jobs:
             echo "publish=${publish}"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Authenticate registry reads for immutable-tag detection
+        if: steps.route.outputs.mode != 'proof'
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Check immutable candidate images in the registry
+        id: existing
+        if: steps.route.outputs.mode != 'proof'
+        env:
+          CANDIDATE_SHA: ${{ steps.select.outputs.sha }}
+          RELEASE_VERSION: ${{ inputs.release_version }}
+        run: |
+          python3 scripts/ci/test_immutable_container_tags.py
+          python3 scripts/ci/immutable-container-tags.py --sha "$CANDIDATE_SHA" --release-version "$RELEASE_VERSION" \
+            --already-imaged "${REGISTRY_GHCR}/${IMAGE_NAME_GHCR}" \
+            --already-imaged "docker.io/${IMAGE_NAME_DOCKERHUB}" >> "$GITHUB_OUTPUT"
+
       # A hand-off needs the honua-release GitHub App. Its absence is a setup defect, so
       # the run fails here and names it; there is no fallback to the Actions token, which
       # is the 403 this replaces (honua-io/honua-server#6613).
       - name: Require the release GitHub App for the candidate hand-off
-        if: steps.route.outputs.mode == 'redirect'
+        if: steps.route.outputs.mode == 'redirect' && steps.existing.outputs.imaged != '1'
         env:
           HAS_APP_ID: ${{ secrets.HONUA_RELEASE_APP_ID != '' }}
           HAS_APP_PRIVATE_KEY: ${{ secrets.HONUA_RELEASE_APP_PRIVATE_KEY != '' }}
@@ -203,7 +223,7 @@ jobs:
       # The token is revoked when the job ends.
       - name: Mint the release GitHub App token for the candidate hand-off
         id: handoff-token
-        if: steps.route.outputs.mode == 'redirect'
+        if: steps.route.outputs.mode == 'redirect' && steps.existing.outputs.imaged != '1'
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
           app-id: ${{ secrets.HONUA_RELEASE_APP_ID }}
@@ -217,16 +237,23 @@ jobs:
           permission-actions: write
 
       - name: Tag the selected sha and re-dispatch this workflow at it
-        if: steps.route.outputs.mode == 'redirect'
+        if: steps.route.outputs.mode == 'redirect' && steps.existing.outputs.imaged != '1'
         env:
           # Reads use the Actions token; only the tag create and the dispatch use the App token.
           GH_TOKEN: ${{ github.token }}
           HANDOFF_TOKEN: ${{ steps.handoff-token.outputs.token }}
           RELEASE_VERSION: ${{ inputs.release_version }}
+          PARTIAL_PUBLICATION: ${{ steps.existing.outputs.partial }}
           CANDIDATE_SHA: ${{ steps.select.outputs.sha }}
         run: |
           set -euo pipefail
           tag="nightly-candidate-${CANDIDATE_SHA:0:7}"
+          if [ "$PARTIAL_PUBLICATION" = 1 ]; then
+            if ! gh api "repos/${GITHUB_REPOSITORY}/contents/scripts/ci/immutable-container-tags.py?ref=${CANDIDATE_SHA}" --silent; then
+              echo "::error::candidate ${CANDIDATE_SHA} has published images but predates immutable-tag guards; select a new certified SHA."
+              exit 1
+            fi
+          fi
           # Create the lightweight tag, or accept an existing one only when it already
           # names the selected sha (a sha7 collision or a moved tag refuses).
           if existing="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${tag}" --jq '.object.sha' 2>"${RUNNER_TEMP}/tag-lookup.err")"; then
@@ -243,28 +270,18 @@ jobs:
             echo "::error::could not read tag ${tag}."
             exit 1
           fi
-          # One build per candidate: a queued or running candidate run already covers it.
+          # One build per candidate: inspect every ref, including trunk-head builds.
           active="$(gh run list --repo "${GITHUB_REPOSITORY}" --workflow nightly-container-build.yml \
-            --branch "${tag}" --limit 20 --json status --jq '[.[] | select(.status != "completed")] | length')"
-          # A candidate that a run on its tag already imaged is not rebuilt. Each re-dispatch files
-          # its checks on the candidate sha again, and the release resolver judges a lane by its
-          # latest attempt: 8cb074f7 was imaged on 2026-10-23 (run 39876804619), then three nightly
-          # re-dispatches failed only in mirror-base-images (Public ECR 429) and kept the imaged,
-          # certified sha out of the release candidate (honua-io/honua-release#952).
-          imaged="$(gh run list --repo "${GITHUB_REPOSITORY}" --workflow nightly-container-build.yml \
-            --branch "${tag}" --limit 20 --json status,conclusion,headSha \
-            --jq "[.[] | select(.status == \"completed\" and .conclusion == \"success\" and .headSha == \"${CANDIDATE_SHA}\")] | length")"
+            --commit "${CANDIDATE_SHA}" --limit 100 --json status --jq '[.[] | select(.status != "completed")] | length')"
           if [ "${active}" != 0 ]; then
             if [ -n "${RELEASE_VERSION}" ]; then
               echo "::error::a candidate build on ${tag} is already active; wait for it to finish, then re-dispatch with release_version=${RELEASE_VERSION}."
               exit 1
             fi
             echo "::notice::a Nightly Container Build run on ${tag} is already queued or running; not dispatching another."
-          elif [ "${imaged}" != 0 ] && [ -z "${RELEASE_VERSION}" ]; then
-            echo "::notice::a Nightly Container Build run on ${tag} already imaged ${CANDIDATE_SHA}; not rebuilding it."
           else
             # Older certified commits may not declare this optional input yet.
-            # An explicit release rebuilds even when this SHA already has a nightly image.
+            # Existing tags are preserved; a version mismatch requires a new SHA.
             dispatch_args=()
             if [ -n "${RELEASE_VERSION}" ]; then
               dispatch_args+=(-f release_version="${RELEASE_VERSION}")
@@ -284,7 +301,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     needs: select-candidate
-    if: needs.select-candidate.outputs.mode != 'redirect'
+    if: needs.select-candidate.outputs.mode != 'redirect' && needs.select-candidate.outputs.imaged != '1'
     permissions:
       contents: read
       packages: write
@@ -395,6 +412,9 @@ jobs:
   build-aot:
     if: needs.select-candidate.outputs.publish == 'true'
     name: Build & Push AOT (${{ matrix.arch }})
+    concurrency:
+      group: nightly-publish-${{ needs.select-candidate.outputs.sha }}-aot-${{ matrix.arch }}
+      cancel-in-progress: false
     runs-on: ${{ matrix.runner }}
     # 180, not 90: a COLD native-AOT build of this image does not fit in 90 minutes, and a timeout
     # is self-perpetuating. buildx exports the registry layer cache in `cache-to`, which only runs
@@ -447,7 +467,7 @@ jobs:
           set -euo pipefail
           git fetch --no-tags --depth=1 origin "${GITHUB_SHA}"
           mkdir -p "${RUNNER_TEMP}/nightly-tooling"
-          git archive "${GITHUB_SHA}" scripts/ci/verify-serving-image-boundary.py scripts/ci/promote-verified-image.py \
+          git archive "${GITHUB_SHA}" scripts/ci/verify-serving-image-boundary.py scripts/ci/promote-verified-image.py scripts/ci/immutable-container-tags.py \
             | tar -x -C "${RUNNER_TEMP}/nightly-tooling"
 
       - name: Set up Docker Buildx
@@ -546,17 +566,24 @@ jobs:
         env:
           CANDIDATE: ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }}@${{ steps.build.outputs.digest }}
           TAGS: ${{ steps.meta.outputs.tags }}
+          CANDIDATE_SHA: ${{ needs.select-candidate.outputs.sha }}
+          RELEASE_VERSION: ${{ inputs.release_version }}
         run: |
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends skopeo
-          printf '%s\n' "$TAGS" | python3 scripts/ci/promote-verified-image.py \
+          printf '%s\n' "$TAGS" | python3 scripts/ci/immutable-container-tags.py \
+            --sha "$CANDIDATE_SHA" --release-version "$RELEASE_VERSION" \
+            | python3 scripts/ci/promote-verified-image.py \
             --candidate "$CANDIDATE" \
-            --staging-tag "boundary-candidate-nightly-aot-${{ matrix.arch }}-${{ needs.select-candidate.outputs.sha }}" \
+            --staging-tag "boundary-candidate-nightly-aot-${{ matrix.arch }}-${{ github.run_id }}-${{ github.run_attempt }}" \
             --authfile "$HOME/.docker/config.json"
 
   build-lambda-aot:
     name: Build & Push Lambda AOT (${{ matrix.arch }})
+    concurrency:
+      group: nightly-publish-${{ needs.select-candidate.outputs.sha }}-lambda-${{ matrix.arch }}
+      cancel-in-progress: false
     runs-on: ${{ matrix.runner }}
     # 180, not 90: a COLD native-AOT build of this image does not fit in 90 minutes, and a timeout
     # is self-perpetuating. buildx exports the registry layer cache in `cache-to`, which only runs
@@ -613,7 +640,7 @@ jobs:
           set -euo pipefail
           git fetch --no-tags --depth=1 origin "${GITHUB_SHA}"
           mkdir -p "${RUNNER_TEMP}/nightly-tooling"
-          git archive "${GITHUB_SHA}" scripts/ci/verify-serving-image-boundary.py scripts/ci/promote-verified-image.py \
+          git archive "${GITHUB_SHA}" scripts/ci/verify-serving-image-boundary.py scripts/ci/promote-verified-image.py scripts/ci/immutable-container-tags.py \
             | tar -x -C "${RUNNER_TEMP}/nightly-tooling"
 
       - name: Set up Docker Buildx
@@ -711,13 +738,17 @@ jobs:
         env:
           CANDIDATE: ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }}@${{ steps.build.outputs.digest }}
           TAGS: ${{ steps.meta.outputs.tags }}
+          CANDIDATE_SHA: ${{ needs.select-candidate.outputs.sha }}
+          RELEASE_VERSION: ${{ inputs.release_version }}
         run: |
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends skopeo
-          printf '%s\n' "$TAGS" | python3 scripts/ci/promote-verified-image.py \
+          printf '%s\n' "$TAGS" | python3 scripts/ci/immutable-container-tags.py \
+            --sha "$CANDIDATE_SHA" --release-version "$RELEASE_VERSION" \
+            | python3 scripts/ci/promote-verified-image.py \
             --candidate "$CANDIDATE" \
-            --staging-tag "boundary-candidate-nightly-lambda-aot-${{ matrix.arch }}-${{ needs.select-candidate.outputs.sha }}" \
+            --staging-tag "boundary-candidate-nightly-lambda-aot-${{ matrix.arch }}-${{ github.run_id }}-${{ github.run_attempt }}" \
             --authfile "$HOME/.docker/config.json"
 
       # Lambda runs the per-architecture child manifest, and release locks pin that
@@ -771,6 +802,9 @@ jobs:
 
   manifest-lambda-aot:
     name: Publish Lambda AOT Manifests
+    concurrency:
+      group: nightly-publish-${{ needs.select-candidate.outputs.sha }}-lambda-index
+      cancel-in-progress: false
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     needs: [select-candidate, build-lambda-aot, mirror-base-images]
@@ -824,10 +858,13 @@ jobs:
         env:
           TAGS: ${{ steps.meta.outputs.tags }}
           IMAGE_VERSION: ${{ needs.select-candidate.outputs.version }}
+          RELEASE_VERSION: ${{ inputs.release_version }}
           CANDIDATE_SHA: ${{ needs.select-candidate.outputs.sha }}
         run: |
           set -euo pipefail
           for tag in $TAGS; do
+            destination="$(printf '%s\n' "$tag" | python3 scripts/ci/immutable-container-tags.py --sha "$CANDIDATE_SHA" --release-version "$RELEASE_VERSION")"
+            [ -n "$destination" ] || continue
             docker buildx imagetools create -t "$tag" \
               --annotation "index:org.opencontainers.image.revision=${CANDIDATE_SHA}" \
               --annotation "index:org.opencontainers.image.version=${IMAGE_VERSION}" \
@@ -857,7 +894,7 @@ jobs:
     # 90 minutes and a timeout is self-perpetuating (see build-lambda-aot).
     timeout-minutes: 180
     needs: select-candidate
-    if: needs.select-candidate.outputs.mode != 'redirect'
+    if: needs.select-candidate.outputs.mode != 'redirect' && needs.select-candidate.outputs.imaged != '1'
     permissions:
       attestations: write
       contents: read
@@ -889,7 +926,7 @@ jobs:
           set -euo pipefail
           git fetch --no-tags --depth=1 origin "${GITHUB_SHA}"
           mkdir -p "${RUNNER_TEMP}/nightly-tooling"
-          git archive "${GITHUB_SHA}" scripts/ci/verify-serving-image-boundary.py scripts/ci/promote-verified-image.py \
+          git archive "${GITHUB_SHA}" scripts/ci/verify-serving-image-boundary.py scripts/ci/promote-verified-image.py scripts/ci/immutable-container-tags.py \
             | tar -x -C "${RUNNER_TEMP}/nightly-tooling"
 
       - name: Set up Docker Buildx
@@ -968,11 +1005,15 @@ jobs:
         env:
           CANDIDATE: ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }}@${{ steps.functions_candidate.outputs.digest }}
           TAGS: ${{ steps.meta.outputs.tags }}
+          CANDIDATE_SHA: ${{ needs.select-candidate.outputs.sha }}
+          RELEASE_VERSION: ${{ inputs.release_version }}
         run: |
           set -euo pipefail
-          printf '%s\n' "$TAGS" | python3 scripts/ci/promote-verified-image.py \
+          printf '%s\n' "$TAGS" | python3 scripts/ci/immutable-container-tags.py \
+            --sha "$CANDIDATE_SHA" --release-version "$RELEASE_VERSION" \
+            | python3 scripts/ci/promote-verified-image.py \
             --candidate "$CANDIDATE" \
-            --staging-tag "boundary-candidate-nightly-functions-aot-${{ needs.select-candidate.outputs.sha }}" \
+            --staging-tag "boundary-candidate-nightly-functions-aot-${{ github.run_id }}-${{ github.run_attempt }}" \
             --authfile "$HOME/.docker/config.json"
 
       - name: Upload Functions immutable attestation references
@@ -985,6 +1026,9 @@ jobs:
   build-jit:
     if: needs.select-candidate.outputs.publish == 'true'
     name: Build & Push JIT (${{ matrix.arch }})
+    concurrency:
+      group: nightly-publish-${{ needs.select-candidate.outputs.sha }}-jit-${{ matrix.arch }}
+      cancel-in-progress: false
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     needs: [select-candidate, mirror-base-images]
@@ -1054,6 +1098,16 @@ jobs:
             org.opencontainers.image.revision=${{ needs.select-candidate.outputs.sha }}
             org.opencontainers.image.version=${{ needs.select-candidate.outputs.version }}
 
+      - name: Preserve immutable JIT architecture tags
+        id: immutable_tags
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+          CANDIDATE_SHA: ${{ needs.select-candidate.outputs.sha }}
+          RELEASE_VERSION: ${{ inputs.release_version }}
+        run: |
+          tags="$(printf '%s\n' "$TAGS" | python3 scripts/ci/immutable-container-tags.py --sha "$CANDIDATE_SHA" --release-version "$RELEASE_VERSION")"
+          { echo 'tags<<IMMUTABLE_TAGS'; printf '%s\n' "$tags"; echo IMMUTABLE_TAGS; } >> "$GITHUB_OUTPUT"
+
       - name: Build and push
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
@@ -1066,7 +1120,7 @@ jobs:
             HONUA_GIT_SHA=${{ needs.select-candidate.outputs.sha }}
           platforms: ${{ matrix.platform }}
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
+          tags: ${{ steps.immutable_tags.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           annotations: ${{ steps.meta.outputs.annotations }}
           secrets: |
@@ -1085,6 +1139,9 @@ jobs:
 
   manifest-aot:
     name: Publish AOT Manifests
+    concurrency:
+      group: nightly-publish-${{ needs.select-candidate.outputs.sha }}-aot-index
+      cancel-in-progress: false
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     needs: [select-candidate, build-aot, mirror-base-images]
@@ -1141,6 +1198,7 @@ jobs:
         env:
           TAGS: ${{ steps.meta.outputs.tags }}
           IMAGE_VERSION: ${{ needs.select-candidate.outputs.version }}
+          RELEASE_VERSION: ${{ inputs.release_version }}
           CANDIDATE_SHA: ${{ needs.select-candidate.outputs.sha }}
         run: |
           set -euo pipefail
@@ -1159,7 +1217,11 @@ jobs:
                 exit 1
                 ;;
             esac
-            docker buildx imagetools create -t "$tag" -t "$compatibility_tag" \
+            destinations="$(printf '%s\n' "$tag" "$compatibility_tag" | python3 scripts/ci/immutable-container-tags.py --sha "$CANDIDATE_SHA" --release-version "$RELEASE_VERSION")"
+            [ -n "$destinations" ] || continue
+            tag_args=()
+            while IFS= read -r destination; do tag_args+=(-t "$destination"); done <<< "$destinations"
+            docker buildx imagetools create "${tag_args[@]}" \
               --annotation "index:org.opencontainers.image.revision=${CANDIDATE_SHA}" \
               --annotation "index:org.opencontainers.image.version=${IMAGE_VERSION}" \
               "${tag}-amd64" "${tag}-arm64"
@@ -1179,6 +1241,9 @@ jobs:
 
   compose-executor:
     name: Publish Compose executor and customer quickstart
+    concurrency:
+      group: nightly-publish-${{ needs.select-candidate.outputs.sha }}-executor
+      cancel-in-progress: false
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     needs: [select-candidate, manifest-aot]
@@ -1228,8 +1293,18 @@ jobs:
         run: |
           docker buildx imagetools inspect "$SERVER_IMAGE" --format '{{json .Manifest}}' \
             | jq -e --arg sha "$CANDIDATE_SHA" '.annotations["org.opencontainers.image.revision"] == $sha'
+      - name: Preserve the immutable executor candidate
+        id: existing_executor
+        env:
+          CANDIDATE_SHA: ${{ needs.select-candidate.outputs.sha }}
+          RELEASE_VERSION: ${{ inputs.release_version }}
+        run: |
+          digest="$(python3 scripts/ci/immutable-container-tags.py --sha "$CANDIDATE_SHA" --release-version "$RELEASE_VERSION" \
+            --tag "ghcr.io/honua-io/honua-server:nightly-compose-executor-${CANDIDATE_SHA:0:7}")"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
       - name: Build and publish executor from the serving candidate digest
-        id: executor
+        if: steps.existing_executor.outputs.digest == ''
+        id: executor_build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
           context: .
@@ -1246,6 +1321,12 @@ jobs:
           annotations: index:org.opencontainers.image.revision=${{ needs.select-candidate.outputs.sha }}
           provenance: true
           sbom: true
+      - name: Bind the published executor digest
+        id: executor
+        env:
+          EXISTING_DIGEST: ${{ steps.existing_executor.outputs.digest }}
+          BUILT_DIGEST: ${{ steps.executor_build.outputs.digest }}
+        run: echo "digest=${EXISTING_DIGEST:-$BUILT_DIGEST}" >> "$GITHUB_OUTPUT"
       - name: Attest executor index
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
@@ -1281,6 +1362,9 @@ jobs:
 
   manifest-jit:
     name: Publish JIT Manifests
+    concurrency:
+      group: nightly-publish-${{ needs.select-candidate.outputs.sha }}-jit-index
+      cancel-in-progress: false
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     needs: [select-candidate, build-jit, mirror-base-images]
@@ -1332,10 +1416,13 @@ jobs:
         env:
           TAGS: ${{ steps.meta.outputs.tags }}
           IMAGE_VERSION: ${{ needs.select-candidate.outputs.version }}
+          RELEASE_VERSION: ${{ inputs.release_version }}
           CANDIDATE_SHA: ${{ needs.select-candidate.outputs.sha }}
         run: |
           set -euo pipefail
           for tag in $TAGS; do
+            destination="$(printf '%s\n' "$tag" | python3 scripts/ci/immutable-container-tags.py --sha "$CANDIDATE_SHA" --release-version "$RELEASE_VERSION")"
+            [ -n "$destination" ] || continue
             docker buildx imagetools create -t "$tag" \
               --annotation "index:org.opencontainers.image.revision=${CANDIDATE_SHA}" \
               --annotation "index:org.opencontainers.image.version=${IMAGE_VERSION}" \

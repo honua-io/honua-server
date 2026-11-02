@@ -66,9 +66,7 @@ class ContainerVersionTests(unittest.TestCase):
 '''
         for release, active, imaged, expected_dispatch, expected_error in (
             ('', '0', '0', True, False),
-            ('', '0', '1', False, False),
             ('', '1', '0', False, False),
-            ('2026.1.0-rc.2', '0', '1', True, False),
             ('2026.1.0-rc.2', '1', '0', False, True),
         ):
             with self.subTest(release=release, active=active, imaged=imaged):
