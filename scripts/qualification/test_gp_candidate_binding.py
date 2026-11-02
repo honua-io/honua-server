@@ -1,6 +1,8 @@
 import copy
 import importlib.util
 import json
+import re
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -16,6 +18,74 @@ def module(name):
 binding = module("gp-candidate-binding")
 recovery = module("gp-store-recovery")
 proxy = module("gp-terminal-proxy")
+
+
+PRODUCER = Path(__file__).with_name("gp-terminal-recovery.sh")
+
+
+def committed_descriptor(job, sha, size):
+    """A staged-output descriptor as the worker commits it in the terminal record (serialized JSON)."""
+    return json.dumps({"outputType": "staged-object", "jobId": job, "attemptNumber": 1,
+                       "content": {"mediaType": "application/geo+json", "sizeBytes": size,
+                                   "checksum": {"algorithm": "sha256", "value": sha}}})
+
+
+def terminal_recovery_evidence(job, sha, size, committed_sha=None):
+    """Run gp-terminal-recovery.sh's own evidence jq program, so the fixture is the producer's layout."""
+    program = re.search(r"\\\r?\n\s*'(\{submitted_job:.*?\})' > \"\$scenario_evidence_file\"",
+                        PRODUCER.read_text(), re.S)
+    if program is None:
+        raise AssertionError("gp-terminal-recovery.sh evidence program not found")
+    before = {"operationId": job, "status": 3, "claimedBy": "worker-1", "version": 4, "attemptCount": 1,
+              "artifactReferences": [committed_descriptor(job, committed_sha or sha, size)]}
+    fence = {"operationId": job, "barrier": "terminal-committed-registration-pending", "redis_reply": ":1",
+             "reply_forwarded": False, "workerId": "worker-1", "terminal_record": before}
+    package = {"resultPackageId": f"{job}:v4", "status": 5, "artifacts": [{"artifactId": f"{job}:artifact:1",
+               "metadata": {"raster.output.checksum": "sha256:" + sha, "raster.output.sizeBytes": str(size)}}]}
+    with tempfile.TemporaryDirectory() as temp:
+        files = {}
+        for name, value in (("fence", fence), ("before", before), ("final", before), ("package", package)):
+            files[name] = Path(temp) / f"{name}.json"
+            files[name].write_text(json.dumps(value))
+        out = subprocess.run(
+            ["jq", "-n", "--arg", "job", job, "--arg", "before_file", "before.geojson",
+             "--arg", "after_file", "after.geojson", "--arg", "sha", sha, "--argjson", "bytes", str(size),
+             *[arg for name in ("fence", "before", "final", "package")
+               for arg in ("--slurpfile", name, str(files[name]))], program.group(1)],
+            check=True, capture_output=True, text=True)
+    return json.loads(out.stdout)
+
+
+def crash_summary():
+    pin = {"source_sha": "1" * 40, "server_image": "server@sha256:" + "2" * 64}
+    worker = "worker@sha256:" + "3" * 64
+    identity = {"requested": {**pin, "worker_image": worker}, "observed": {}}
+    for host in ("server", "server-peer", "worker"):
+        image = worker if host == "worker" else pin["server_image"]
+        identity["observed"][host] = {"revision": pin["source_sha"],
+                                     "image_ref": image, "repo_digests": [image]}
+    scenarios = [{"scenario": n, "outcome": "pass", "candidate": identity}
+                 for n in ("topology", "cleanup")]
+    for boundary in ("output-bytes-written-unpublished", "artifact-reference-published-terminal-cas-pending",
+                     "terminal-committed-registration-pending"):
+        for mode in ("worker", "store"):
+            scenarios.append({"scenario": f"crash-{boundary}-{mode}", "outcome": "pass",
+                "candidate": identity, "job": {"id": "fixture-job", "terminal_state": "successful"},
+                "output": {"sha256": "a" * 64, "bytes": 2048},
+                "disruptions": [{"component": mode, "boundary": boundary,
+                                 "action": "SIGKILL" if mode == "worker" else "hide-marker-and-bytes"}],
+                "evidence": {"fence": {"barrier": boundary, "operationId": "fixture-job",
+                                       "reply_forwarded": False, "redis_reply": ":1"},
+                             "sha256_before": "a" * 64, "sha256_after": "a" * 64,
+                             "job_before": {"status": 3}, "job_after": {"artifactReferences": [{}]},
+                             "result_package_before": 0, "result_package_after": 1}})
+    summary = {"lane": "crash-boundaries", "declared_scenarios": [s["scenario"] for s in scenarios],
+               "missing_scenarios": [], "duplicate_receipts": [], "failed": 0, "passed": 8,
+               "scenarios": scenarios}
+    # gp-store-crash.sh routes the terminal worker cell through gp-terminal-recovery.sh.
+    terminal = next(s for s in scenarios if s["scenario"] == binding.TERMINAL_WORKER_CASE)
+    terminal["evidence"] = terminal_recovery_evidence("fixture-job", "a" * 64, 2048)
+    return pin, summary
 
 
 class CandidateBindingTests(unittest.TestCase):
@@ -65,31 +135,7 @@ class CandidateBindingTests(unittest.TestCase):
                 "geoprocessingOutputs": {"candidate": {"server_digest": "old"}}})
 
     def test_crash_consumer_requires_all_six_injections_and_real_terminal_fence(self):
-        pin = {"source_sha": "1" * 40, "server_image": "server@sha256:" + "2" * 64}
-        worker = "worker@sha256:" + "3" * 64
-        identity = {"requested": {**pin, "worker_image": worker}, "observed": {}}
-        for host in ("server", "server-peer", "worker"):
-            image = worker if host == "worker" else pin["server_image"]
-            identity["observed"][host] = {"revision": pin["source_sha"],
-                                         "image_ref": image, "repo_digests": [image]}
-        scenarios = [{"scenario": n, "outcome": "pass", "candidate": identity}
-                     for n in ("topology", "cleanup")]
-        for boundary in ("output-bytes-written-unpublished", "artifact-reference-published-terminal-cas-pending",
-                         "terminal-committed-registration-pending"):
-            for mode in ("worker", "store"):
-                scenarios.append({"scenario": f"crash-{boundary}-{mode}", "outcome": "pass",
-                    "candidate": identity, "job": {"id": "fixture-job", "terminal_state": "successful"},
-                    "output": {"sha256": "a" * 64, "bytes": 2048},
-                    "disruptions": [{"component": mode, "boundary": boundary,
-                                     "action": "SIGKILL" if mode == "worker" else "hide-marker-and-bytes"}],
-                    "evidence": {"fence": {"barrier": boundary, "operationId": "fixture-job",
-                                           "reply_forwarded": False, "redis_reply": ":1"},
-                                 "sha256_before": "a" * 64, "sha256_after": "a" * 64,
-                                 "job_before": {"status": 3}, "job_after": {"artifactReferences": [{}]},
-                                 "result_package_before": 0, "result_package_after": 1}})
-        summary = {"lane": "crash-boundaries", "declared_scenarios": [s["scenario"] for s in scenarios],
-                   "missing_scenarios": [], "duplicate_receipts": [], "failed": 0, "passed": 8,
-                   "scenarios": scenarios}
+        pin, summary = crash_summary()
         binding.verify_crashes(pin, summary)
         for mutation in ("missing-cell", "missing-injection", "duplicate-output", "inline", "uncommitted", "registered"):
             bad = copy.deepcopy(summary)
@@ -108,6 +154,56 @@ class CandidateBindingTests(unittest.TestCase):
                 case["evidence"]["result_package_before"] = 1
             with self.subTest(mutation=mutation), self.assertRaises(ValueError):
                 binding.verify_crashes(pin, bad)
+
+    def test_terminal_worker_cell_consumes_the_terminal_recovery_producer(self):
+        """The producer's real layout (no sha256_before/job_before) passes; each broken fact fails."""
+        scenario = {"scenario": binding.TERMINAL_WORKER_CASE, "job": {"id": "job-1", "terminal_state": "successful"},
+                    "output": {"sha256": "c" * 64, "bytes": 4096},
+                    "evidence": terminal_recovery_evidence("job-1", "c" * 64, 4096)}
+        self.assertNotIn("sha256_before", scenario["evidence"])
+        binding.verify_terminal_recovery(scenario, scenario["evidence"])
+        mutations = {
+            "acknowledged": lambda p, s: p["fence"].__setitem__("reply_forwarded", True),
+            "uncommitted": lambda p, s: p["fence"].__setitem__("redis_reply", ":0"),
+            "other-job": lambda p, s: p["fence"].__setitem__("operationId", "job-2"),
+            "fence-record": lambda p, s: p["fence"]["terminal_record"].__setitem__("version", 5),
+            "record-changed": lambda p, s: p["terminal_final"].__setitem__("version", 5),
+            "not-terminal": lambda p, s: (p["terminal_before"].__setitem__("status", 2),
+                                          p["terminal_final"].__setitem__("status", 2),
+                                          p["fence"]["terminal_record"].__setitem__("status", 2)),
+            "registered-early": lambda p, s: p.__setitem__("result_package_before", 1),
+            "registered-before-read": lambda p, s: p.__setitem__("result_package_before_read", 1),
+            "not-registered": lambda p, s: p.__setitem__("result_package_after", 0),
+            "not-killed": lambda p, s: p.__setitem__("worker_exit_code", 0),
+            "duplicate-artifact": lambda p, s: p["result_package"]["artifacts"].append({}),
+            "checksum": lambda p, s: p["result_package"]["artifacts"][0]["metadata"].__setitem__(
+                "raster.output.checksum", "sha256:" + "d" * 64),
+            "bytes-changed": lambda p, s: s["output"].__setitem__("sha256", "d" * 64),
+            "inline": lambda p, s: (p.__setitem__("bytes", 512), s["output"].__setitem__("bytes", 512)),
+            "failed-job": lambda p, s: s["job"].__setitem__("terminal_state", "failed"),
+            "descriptor-size": lambda p, s: [r.__setitem__("artifactReferences", [committed_descriptor("job-1", "c" * 64, 4097)])
+                                             for r in (p["terminal_before"], p["terminal_final"], p["fence"]["terminal_record"])],
+            "descriptor-inline": lambda p, s: [r.__setitem__("artifactReferences", [json.dumps({**json.loads(
+                committed_descriptor("job-1", "c" * 64, 4096)), "outputType": "inline"})])
+                for r in (p["terminal_before"], p["terminal_final"], p["fence"]["terminal_record"])],
+            "descriptor-unparsable": lambda p, s: [r.__setitem__("artifactReferences", ["not json"])
+                for r in (p["terminal_before"], p["terminal_final"], p["fence"]["terminal_record"])],
+        }
+        for name, mutate in mutations.items():
+            bad = copy.deepcopy(scenario)
+            mutate(bad["evidence"], bad)
+            with self.subTest(mutation=name), self.assertRaises((ValueError, KeyError, TypeError)):
+                binding.verify_terminal_recovery(bad, bad["evidence"])
+
+    def test_recovered_bytes_must_be_the_bytes_committed_before_the_crash(self):
+        """Evidence, output and package agree on a checksum the terminal record never committed: refused
+        through the full verify_crashes entry point (Sol review of bb6d1088)."""
+        pin, summary = crash_summary()
+        terminal = next(s for s in summary["scenarios"] if s["scenario"] == binding.TERMINAL_WORKER_CASE)
+        binding.verify_crashes(pin, summary)
+        terminal["evidence"] = terminal_recovery_evidence("fixture-job", "a" * 64, 2048, committed_sha="b" * 64)
+        with self.assertRaisesRegex(ValueError, "committed before the crash"):
+            binding.verify_crashes(pin, summary)
 
     def test_repin_changes_both_image_identity_and_manifest_binding(self):
         with tempfile.TemporaryDirectory() as temp:
