@@ -14,10 +14,10 @@
     "not-executable": "The inventory item is not an independent runnable example; no green execution claim is made."
   },
   "summary": {
-    "total": 1222,
+    "total": 1229,
     "byStatus": {
-      "not-executable": 1207,
-      "unvalidated": 12,
+      "not-executable": 1213,
+      "unvalidated": 13,
       "passed": 3
     }
   },
@@ -3815,9 +3815,9 @@
         "check": "content-hash-evidence"
       },
       "fence": 4,
-      "line": 186,
+      "line": 304,
       "language": "bash",
-      "contentSha256": "142b489d21e352b98f65c71c0bee97c32a9105ffd071c8453d35c126319b377a"
+      "contentSha256": "d2436bef2404852d37923566117b1ed0a26d678db8bdc2609cf148808d732a37"
     },
     {
       "id": "057001304ec19ecc",
@@ -3829,7 +3829,7 @@
         "check": "content-hash-evidence"
       },
       "fence": 5,
-      "line": 207,
+      "line": 324,
       "language": "bash",
       "contentSha256": "37314c95ec829697032de866c421070bfe92182cd343ade5ac1cfa146586d850"
     },
@@ -3843,9 +3843,9 @@
         "check": "content-hash-evidence"
       },
       "fence": 3,
-      "line": 155,
+      "line": 266,
       "language": "powershell",
-      "contentSha256": "23cc713a6ff0a0fec864ea209ebf4890a2764a5a30497abb57ceccbd8e0fa90a"
+      "contentSha256": "a8da6d3a194fad80fcc74cf8b97b2878ddfa4bbe519de9a64d493c645b07de78"
     },
     {
       "id": "28da1cee54396e02",
@@ -3857,9 +3857,9 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 44,
+      "line": 106,
       "language": "yaml",
-      "contentSha256": "3ce610311dd4c05473c8df3be95ef6dd6dcdc53f66d4b519adae8d0725d347cc"
+      "contentSha256": "56d8008196671fac7b41f64b257954d53764974eb331e779f2a22106208b1587"
     },
     {
       "id": "30ac7bc0ce1dbb2b",
@@ -3871,7 +3871,7 @@
         "check": "content-hash-evidence"
       },
       "fence": 7,
-      "line": 246,
+      "line": 363,
       "language": "bash",
       "contentSha256": "3cd42db4b4befcde664344baf037f328b00b0b1fa9f68b9a49fc065439ec6794"
     },
@@ -3885,7 +3885,7 @@
         "check": "content-hash-evidence"
       },
       "fence": 10,
-      "line": 315,
+      "line": 472,
       "language": "bash",
       "contentSha256": "668c8bf3ed79497ec0e9ea2c5960cd3bb6f056f01d550717218bff11a7116cae"
     },
@@ -3899,9 +3899,9 @@
         "check": "content-hash-evidence"
       },
       "fence": 2,
-      "line": 138,
+      "line": 247,
       "language": "bash",
-      "contentSha256": "3baa59ee1244873d506f25f1f23976221bb69e9f882aff792c8dbf13df076bd7"
+      "contentSha256": "f0edc39fcd8460bccca73cc1536e76759fb064dcc7098aecd532be13111ec04e"
     },
     {
       "id": "77b9999559e6114b",
@@ -3913,7 +3913,7 @@
         "check": "content-hash-evidence"
       },
       "fence": 9,
-      "line": 286,
+      "line": 404,
       "language": "bash",
       "contentSha256": "1dbf290131afb98991c4335fd6204e47f3c7f44b7f47f479b1740c85b17721fd"
     },
@@ -3927,7 +3927,7 @@
         "check": "content-hash-evidence"
       },
       "fence": 6,
-      "line": 230,
+      "line": 347,
       "language": "bash",
       "contentSha256": "0081c527235bda649a7a3ceedcf66d1aef0b45bbd9dff73c6b069a1d0b89dee1"
     },
@@ -3941,9 +3941,37 @@
         "check": "content-hash-evidence"
       },
       "fence": 8,
-      "line": 255,
+      "line": 372,
       "language": "python",
-      "contentSha256": "a0ef49bd299165f48617571fefec6b7dc6a36a6519317ac847fe938599feba01"
+      "contentSha256": "74c5a54bcc4ea8ff591b6be281eca0dfa3846c07839f8fbef10bf926b80e92ad"
+    },
+    {
+      "id": "a647d9f5132b4698",
+      "kind": "docs-fence",
+      "path": "docs/get-started/quickstart.md",
+      "validation": {
+        "status": "unvalidated",
+        "reason": "This quickstart block has no execution evidence matching its content hash.",
+        "check": "content-hash-evidence"
+      },
+      "fence": 12,
+      "line": 531,
+      "language": "bash",
+      "contentSha256": "858799b5364cc8fec44d224ade2bb0663216d88565b5836bdf99b4455e5fa8d6"
+    },
+    {
+      "id": "b221f0b7144712dc",
+      "kind": "docs-fence",
+      "path": "docs/get-started/quickstart.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 11,
+      "line": 508,
+      "language": "bash",
+      "contentSha256": "afbd7c0ed9164f54a0d2bbe09cff1c38b9877b6e60becc7e6ebe75f65375afb3"
     },
     {
       "id": "9ebbb6bd8236a6aa",
@@ -4345,7 +4373,7 @@
         "check": "inventory-classification"
       },
       "fence": 5,
-      "line": 94,
+      "line": 104,
       "language": "bash"
     },
     {
@@ -4358,7 +4386,7 @@
         "check": "inventory-classification"
       },
       "fence": 6,
-      "line": 383,
+      "line": 396,
       "language": "jsonc"
     },
     {
@@ -4371,7 +4399,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 42,
+      "line": 45,
       "language": "json"
     },
     {
@@ -4384,7 +4412,7 @@
         "check": "inventory-classification"
       },
       "fence": 4,
-      "line": 90,
+      "line": 100,
       "language": "bash"
     },
     {
@@ -4397,7 +4425,7 @@
         "check": "inventory-classification"
       },
       "fence": 3,
-      "line": 70,
+      "line": 80,
       "language": "json"
     },
     {
@@ -4410,7 +4438,7 @@
         "check": "inventory-classification"
       },
       "fence": 2,
-      "line": 56,
+      "line": 66,
       "language": "json"
     },
     {
@@ -4644,7 +4672,7 @@
         "check": "inventory-classification"
       },
       "fence": 8,
-      "line": 314,
+      "line": 316,
       "language": "bash"
     },
     {
@@ -4657,7 +4685,7 @@
         "check": "inventory-classification"
       },
       "fence": 6,
-      "line": 225,
+      "line": 227,
       "language": "json"
     },
     {
@@ -4683,7 +4711,7 @@
         "check": "inventory-classification"
       },
       "fence": 9,
-      "line": 327,
+      "line": 329,
       "language": "bash"
     },
     {
@@ -4735,7 +4763,7 @@
         "check": "inventory-classification"
       },
       "fence": 7,
-      "line": 290,
+      "line": 292,
       "language": "sql"
     },
     {
@@ -4800,7 +4828,7 @@
         "check": "inventory-classification"
       },
       "fence": 13,
-      "line": 467,
+      "line": 469,
       "language": "bash"
     },
     {
@@ -4852,7 +4880,7 @@
         "check": "inventory-classification"
       },
       "fence": 10,
-      "line": 416,
+      "line": 418,
       "language": "bash"
     },
     {
@@ -4878,7 +4906,7 @@
         "check": "inventory-classification"
       },
       "fence": 12,
-      "line": 459,
+      "line": 461,
       "language": "bash"
     },
     {
@@ -4904,7 +4932,7 @@
         "check": "inventory-classification"
       },
       "fence": 11,
-      "line": 436,
+      "line": 438,
       "language": "bash"
     },
     {
@@ -5407,6 +5435,71 @@
       "language": "bash"
     },
     {
+      "id": "06848e17ae634cd7",
+      "kind": "docs-fence",
+      "path": "docs/guides/deploy/studio-assistant-bedrock.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 4,
+      "line": 47,
+      "language": "json"
+    },
+    {
+      "id": "440c5e023ef3b167",
+      "kind": "docs-fence",
+      "path": "docs/guides/deploy/studio-assistant-bedrock.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 5,
+      "line": 92,
+      "language": "json"
+    },
+    {
+      "id": "6c7df3a03a3c2b2b",
+      "kind": "docs-fence",
+      "path": "docs/guides/deploy/studio-assistant-bedrock.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 1,
+      "line": 14,
+      "language": "dotenv"
+    },
+    {
+      "id": "6e063cb3ca784944",
+      "kind": "docs-fence",
+      "path": "docs/guides/deploy/studio-assistant-bedrock.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 2,
+      "line": 26,
+      "language": "bash"
+    },
+    {
+      "id": "ff7c2b6e102d2626",
+      "kind": "docs-fence",
+      "path": "docs/guides/deploy/studio-assistant-bedrock.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 3,
+      "line": 38,
+      "language": "dotenv"
+    },
+    {
       "id": "2d577d3eef30bf3d",
       "kind": "docs-fence",
       "path": "docs/guides/deploy/troubleshooting.md",
@@ -5468,7 +5561,7 @@
         "check": "inventory-classification"
       },
       "fence": 3,
-      "line": 449,
+      "line": 455,
       "language": "bash"
     },
     {
@@ -5923,7 +6016,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 176,
+      "line": 177,
       "language": "json"
     },
     {
@@ -5936,7 +6029,7 @@
         "check": "inventory-classification"
       },
       "fence": 2,
-      "line": 264,
+      "line": 265,
       "language": "bash"
     },
     {
@@ -5949,7 +6042,7 @@
         "check": "inventory-classification"
       },
       "fence": 3,
-      "line": 304,
+      "line": 305,
       "language": "bash"
     },
     {
@@ -6105,7 +6198,7 @@
         "check": "inventory-classification"
       },
       "fence": 3,
-      "line": 154,
+      "line": 164,
       "language": "sql"
     },
     {
@@ -11292,7 +11385,7 @@
         "check": "inventory-classification"
       },
       "fence": 14,
-      "line": 156,
+      "line": 155,
       "language": "plain"
     },
     {
@@ -11305,7 +11398,7 @@
         "check": "inventory-classification"
       },
       "fence": 6,
-      "line": 82,
+      "line": 81,
       "language": "bash"
     },
     {
@@ -11318,7 +11411,7 @@
         "check": "inventory-classification"
       },
       "fence": 15,
-      "line": 188,
+      "line": 187,
       "language": "bash"
     },
     {
@@ -11344,7 +11437,7 @@
         "check": "inventory-classification"
       },
       "fence": 9,
-      "line": 104,
+      "line": 103,
       "language": "bash"
     },
     {
@@ -11357,7 +11450,7 @@
         "check": "inventory-classification"
       },
       "fence": 13,
-      "line": 147,
+      "line": 146,
       "language": "bash"
     },
     {
@@ -11370,7 +11463,7 @@
         "check": "inventory-classification"
       },
       "fence": 11,
-      "line": 126,
+      "line": 125,
       "language": "bash"
     },
     {
@@ -11383,7 +11476,7 @@
         "check": "inventory-classification"
       },
       "fence": 7,
-      "line": 90,
+      "line": 89,
       "language": "bash"
     },
     {
@@ -11396,7 +11489,7 @@
         "check": "inventory-classification"
       },
       "fence": 5,
-      "line": 75,
+      "line": 74,
       "language": "bash"
     },
     {
@@ -11409,7 +11502,7 @@
         "check": "inventory-classification"
       },
       "fence": 4,
-      "line": 68,
+      "line": 67,
       "language": "bash"
     },
     {
@@ -11422,7 +11515,7 @@
         "check": "inventory-classification"
       },
       "fence": 12,
-      "line": 133,
+      "line": 132,
       "language": "bash"
     },
     {
@@ -11435,7 +11528,7 @@
         "check": "inventory-classification"
       },
       "fence": 10,
-      "line": 115,
+      "line": 114,
       "language": "bash"
     },
     {
@@ -11448,7 +11541,7 @@
         "check": "inventory-classification"
       },
       "fence": 3,
-      "line": 63,
+      "line": 62,
       "language": "bash"
     },
     {
@@ -11474,7 +11567,7 @@
         "check": "inventory-classification"
       },
       "fence": 16,
-      "line": 208,
+      "line": 207,
       "language": "bash"
     },
     {
@@ -11487,7 +11580,7 @@
         "check": "inventory-classification"
       },
       "fence": 8,
-      "line": 95,
+      "line": 94,
       "language": "bash"
     },
     {
@@ -13320,7 +13413,7 @@
         "check": "inventory-classification"
       },
       "fence": 5,
-      "line": 57,
+      "line": 61,
       "language": "bash"
     },
     {
@@ -13346,7 +13439,7 @@
         "check": "inventory-classification"
       },
       "fence": 7,
-      "line": 83,
+      "line": 87,
       "language": "bash"
     },
     {
@@ -13359,7 +13452,7 @@
         "check": "inventory-classification"
       },
       "fence": 11,
-      "line": 178,
+      "line": 182,
       "language": "bash"
     },
     {
@@ -13372,7 +13465,7 @@
         "check": "inventory-classification"
       },
       "fence": 12,
-      "line": 185,
+      "line": 189,
       "language": "bash"
     },
     {
@@ -13385,7 +13478,7 @@
         "check": "inventory-classification"
       },
       "fence": 10,
-      "line": 152,
+      "line": 156,
       "language": "bash"
     },
     {
@@ -13411,7 +13504,7 @@
         "check": "inventory-classification"
       },
       "fence": 8,
-      "line": 94,
+      "line": 98,
       "language": "bash"
     },
     {
@@ -13424,7 +13517,7 @@
         "check": "inventory-classification"
       },
       "fence": 9,
-      "line": 124,
+      "line": 128,
       "language": "bash"
     },
     {
@@ -13450,7 +13543,7 @@
         "check": "inventory-classification"
       },
       "fence": 6,
-      "line": 64,
+      "line": 68,
       "language": "bash"
     },
     {
