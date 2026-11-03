@@ -502,12 +502,22 @@ a backup.
 
 ## Use Studio in Console without the assistant
 
-For the repository development stack, run this from the `honua-server` checkout:
+The customer package above does not include Console. Studio in Console runs from
+the repository development stack. From this install directory, clone the
+repository and start that stack on the serving image you installed, so nothing is
+built from source:
 
 <!-- docs-validation:studio.console mode=skip reason="Repository development stack; the public install replay uses the customer package" -->
 ```bash
-python3 scripts/docker/quickstart.py --profile console
+git clone --depth 1 https://github.com/honua-io/honua-server.git honua-server-dev
+(cd honua-server-dev && HONUA_SERVER_IMAGE="$(grep '^HONUA_IMAGE=' ../.env | cut -d= -f2)" \
+  python3 scripts/docker/quickstart.py --profile console)
 ```
+
+The development stack is a separate Compose project with its own database. It
+publishes `127.0.0.1` ports `8080`, `8081`, `5432`, `6379` and `5174`, so those must
+be free; the quickstart above keeps `18080` and `18081`. Its admin password is the
+public development default, which is why every port binds to loopback only.
 
 Open Console at `http://localhost:5174` (or your configured `HONUA_CONSOLE_PORT`)
 and use Studio to author maps, save and reopen versions, and request publication.
@@ -519,21 +529,31 @@ provider credentials or invocation ledger is needed.
 
 This command uses the repository development Compose file, not the customer
 package's `compose.yaml` described above. Configure customer authentication for
-Console and Server before using Studio as an end user.
+Console and Server before using Studio as an end user. Stop it with
+`docker compose --profile console down` in `honua-server-dev`.
 
 ## Enable the built-in Studio assistant (optional)
 
 The default quickstart keeps model calls disabled. To use the built-in browser
-assistant on Bedrock, follow [Studio assistant on Bedrock](../guides/deploy/studio-assistant-bedrock.md).
-From the repository checkout, add the assistant overlay to the same Console profile:
+assistant on Bedrock, follow [Studio assistant on Bedrock](../guides/deploy/studio-assistant-bedrock.md)
+for the model, region, classification and AWS access settings it reads from
+`honua-server-dev/.env`. The overlay also needs a stable `HONUA_AI_DEPLOYMENT_ID`;
+the first line below records a new one in that `.env` only when none is set. Then
+add the assistant overlay to the same Console profile:
 
 <!-- docs-validation:studio.assistant mode=skip reason="Optional Bedrock assistant requires operator disclosure approval and invocation admission" -->
 ```bash
-python3 scripts/docker/quickstart.py --profile console -f docker-compose.yml -f docker-compose.studio-ai.yml
+grep -q '^HONUA_AI_DEPLOYMENT_ID=' honua-server-dev/.env || \
+  echo "HONUA_AI_DEPLOYMENT_ID=honua-quickstart-$(openssl rand -hex 8)" >> honua-server-dev/.env
+(cd honua-server-dev && HONUA_SERVER_IMAGE="$(grep '^HONUA_IMAGE=' ../.env | cut -d= -f2)" \
+  python3 scripts/docker/quickstart.py --profile console -f docker-compose.yml -f docker-compose.studio-ai.yml)
 ```
 
 The opt-in `docker-compose.studio-ai.yml` overlay adds the tool-capable provider,
 exact disclosure approval and stable PostgreSQL admission identity to Studio.
-Initialize and resume the invocation ledger before submitting a prompt.
-Use an updated Console image; older images calling `/api/v1/agent/workspaces/`
-require a Console rebuild, since that separate API is absent from Server trunk.
+Starting it makes no model call; prompts need the server's AWS role with access
+to the configured Bedrock model. Keep `HONUA_AI_DEPLOYMENT_ID` stable across
+restarts and upgrades. Initialize and resume the invocation ledger before
+submitting a prompt. Use an updated Console image; older images calling
+`/api/v1/agent/workspaces/` require a Console rebuild, since that separate API is
+absent from Server trunk.

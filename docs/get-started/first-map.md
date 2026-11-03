@@ -59,8 +59,9 @@ PY
 ```
 
 MCP tool calls authenticate with the `X-API-Key` header; HTTP Basic auth is refused.
-`$HONUA_BASE_URL` and `$HONUA_API_KEY` come from your quickstart install's `.env` — see
-[Publish your first dataset](first-dataset.md) for the two lines that read them.
+`$HONUA_BASE_URL` and `$HONUA_API_KEY` come from your quickstart install's `.env` and
+`secrets/honua_admin_password` — see [Publish your first dataset](first-dataset.md) for the two
+lines that read them.
 
 The interactive API explorer at `/docs` is served only when `HONUA_SERVE_API_DOCS=true` — it defaults on in `Development` and off in `Production`, which is what the packaged Compose profiles run, so on a default install that URL is a 404. The [admin OpenAPI document](../developer/api-specs/admin-api.json) is the client-generation contract.
 
