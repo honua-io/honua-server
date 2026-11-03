@@ -826,6 +826,16 @@ jobs:
             exit 1
           fi
 
+      # The manifest jobs run the immutable-tag guard (#6865) but build nothing,
+      # so they check out only that script, from this workflow revision.
+      - name: Check out the immutable-tag guard
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          sparse-checkout: scripts/ci/immutable-container-tags.py
+          sparse-checkout-cone-mode: false
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
 
@@ -1168,6 +1178,16 @@ jobs:
             exit 1
           fi
 
+      # The manifest jobs run the immutable-tag guard (#6865) but build nothing,
+      # so they check out only that script, from this workflow revision.
+      - name: Check out the immutable-tag guard
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          sparse-checkout: scripts/ci/immutable-container-tags.py
+          sparse-checkout-cone-mode: false
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
 
@@ -1386,6 +1406,16 @@ jobs:
             echo "::error::candidate ${CANDIDATE_SHA} is not this run's commit ${GITHUB_SHA}: labels would name ${CANDIDATE_SHA} while the build provenance names ${GITHUB_SHA}. Dispatch this workflow on trunk (it re-dispatches itself at refs/tags/nightly-candidate-<sha7>) or directly at that tag."
             exit 1
           fi
+
+      # The manifest jobs run the immutable-tag guard (#6865) but build nothing,
+      # so they check out only that script, from this workflow revision.
+      - name: Check out the immutable-tag guard
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          sparse-checkout: scripts/ci/immutable-container-tags.py
+          sparse-checkout-cone-mode: false
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
