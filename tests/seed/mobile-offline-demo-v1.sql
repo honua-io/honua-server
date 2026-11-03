@@ -392,10 +392,12 @@ VALUES
         )
     );
 
--- Invalidate only the default metadata environment after the complete legacy fixture
+-- Invalidate only the demo stack's metadata environment after the complete legacy fixture
 -- exists so its supported V1 compatibility projector rebuilds the adopted Metadata v2
--- graph on restart. Other environments may share this database in staging/cloud setups.
+-- graph on restart. The server keys the graph by Metadata:Environment, else the host
+-- environment name (the demo Compose stack runs Development), else 'default'. Other
+-- environments may share this database in staging/cloud setups.
 DELETE FROM honua.metadata_v2_current
-WHERE environment = 'default';
+WHERE environment IN ('default', 'Development');
 
 COMMIT;
