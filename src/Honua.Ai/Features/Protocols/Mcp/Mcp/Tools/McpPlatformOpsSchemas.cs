@@ -89,7 +89,7 @@ internal static class McpPlatformOpsSchemas
             },
             "reason": {
               "type": "string",
-              "description": "Operator-facing reason recorded on the proposal."
+              "description": "Reason recorded on the proposal."
             },
             "idempotencyKey": {
               "type": "string",
@@ -111,7 +111,7 @@ internal static class McpPlatformOpsSchemas
 
     public static readonly JsonElement ProposeFindingInputSchema = Parse(
         """
-        {"type":"object","required":["findingId","candidateId"],"properties":{"findingId":{"type":"string","minLength":1,"maxLength":256,"description":"Finding id from honua_ops_findings."},"candidateId":{"type":"string","minLength":1,"maxLength":256,"description":"The finding's subject.targetId, the deploy target its action acts on (e.g. compose-local); not the finding id, digest or service name."}},"additionalProperties":false}
+        {"type":"object","required":["findingId","candidateId"],"properties":{"findingId":{"type":"string","minLength":1,"maxLength":256,"description":"Finding id from honua_ops_findings."},"candidateId":{"type":"string","minLength":1,"maxLength":256,"description":"The finding's subject.targetId (e.g. compose-local) if it has one. Targetless findings (alert redrive, channel pause, DB admission) ignore it: pass any non-empty value."}},"additionalProperties":false}
         """);
 
     public static readonly JsonElement DeployMutationInputSchema = Parse(

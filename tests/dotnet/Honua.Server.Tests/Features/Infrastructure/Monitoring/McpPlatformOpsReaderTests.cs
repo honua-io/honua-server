@@ -275,12 +275,33 @@ public sealed class McpPlatformOpsReaderTests
 
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
-    public void ProposeFindingInputSchema_CandidateId_DescribesSubjectTargetId()
+    public void ValidateFindingCandidateBinding_TargetlessFindingActions_AcceptAnyCandidateId()
+    {
+        // Alert redrive, channel pause and admission findings carry no subject.targetId; their
+        // actions do not bind candidateId, so any non-empty value is accepted.
+        string[] payloads =
+        [
+            Honua.ControlPlane.Executors.OpsActionExecutionPayloads.RedriveDeadLetters(),
+            Honua.ControlPlane.Executors.OpsActionExecutionPayloads.PauseChannel("alert-dispatch"),
+            Honua.ControlPlane.Executors.OpsActionExecutionPayloads.TuneBoundedAdmission(8),
+        ];
+
+        foreach (var payload in payloads)
+        {
+            var act = () => McpPlatformOpsReader.ValidateFindingCandidateBinding(OperationClass.AdminConfigChange, payload, "any-value");
+            act.Should().NotThrow();
+        }
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public void ProposeFindingInputSchema_CandidateId_DescribesSubjectTargetIdAndTargetlessCase()
     {
         var properties = McpPlatformOpsSchemas.ProposeFindingInputSchema.GetProperty("properties");
 
         properties.GetProperty("candidateId").GetProperty("description").GetString()
-            .Should().Contain("subject.targetId").And.Contain("compose-local");
+            .Should().Contain("subject.targetId").And.Contain("compose-local")
+            .And.Contain("Targetless findings").And.Contain("any non-empty value");
         properties.GetProperty("findingId").GetProperty("description").GetString()
             .Should().Contain("honua_ops_findings");
     }
