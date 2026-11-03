@@ -259,7 +259,53 @@ public sealed class McpPlatformOpsReaderTests
     {
         var payload = Honua.ControlPlane.Executors.OpsActionExecutionPayloads.RestartComposeService("compose-local", "redis");
         var act = () => McpPlatformOpsReader.ValidateFindingCandidateBinding(OperationClass.AdminConfigChange, payload, "other-target");
-        act.Should().Throw<Honua.Geoprocessing.GeoprocessingValidationException>();
+        act.Should().Throw<Honua.Geoprocessing.GeoprocessingValidationException>()
+            .WithMessage("*candidateId must be the finding's subject.targetId*")
+            .Which.Message.Should().NotContain("compose-local", "the refusal names the field, not the expected value");
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public void ValidateFindingCandidateBinding_ComposeRestartSubjectTarget_IsAccepted()
+    {
+        var payload = Honua.ControlPlane.Executors.OpsActionExecutionPayloads.RestartComposeService("compose-local", "redis");
+        var act = () => McpPlatformOpsReader.ValidateFindingCandidateBinding(OperationClass.AdminConfigChange, payload, "compose-local");
+        act.Should().NotThrow();
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public void ValidateFindingCandidateBinding_TargetlessFindingActions_DoNotBindCandidateIdToActionTarget()
+    {
+        // Alert redrive, channel pause and admission findings carry no subject.targetId; their
+        // actions do not bind candidateId to an action target. (A certified Studio transcript still
+        // binds it to the certified candidate; that check lives in StudioAiTranscriptSigner.)
+        string[] payloads =
+        [
+            Honua.ControlPlane.Executors.OpsActionExecutionPayloads.RedriveDeadLetters(),
+            Honua.ControlPlane.Executors.OpsActionExecutionPayloads.PauseChannel("alert-dispatch"),
+            Honua.ControlPlane.Executors.OpsActionExecutionPayloads.TuneBoundedAdmission(8),
+        ];
+
+        foreach (var payload in payloads)
+        {
+            var act = () => McpPlatformOpsReader.ValidateFindingCandidateBinding(OperationClass.AdminConfigChange, payload, "any-value");
+            act.Should().NotThrow();
+        }
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public void ProposeFindingInputSchema_CandidateId_DescribesSubjectTargetIdAndTargetlessCase()
+    {
+        var properties = McpPlatformOpsSchemas.ProposeFindingInputSchema.GetProperty("properties");
+
+        properties.GetProperty("candidateId").GetProperty("description").GetString()
+            .Should().Contain("subject.targetId").And.Contain("compose-local")
+            .And.Contain("Findings without a target").And.Contain("don't bind it to an action target")
+            .And.NotContain("any non-empty value", "certified Studio calls still bind candidateId to the certified candidate");
+        properties.GetProperty("findingId").GetProperty("description").GetString()
+            .Should().Contain("honua_ops_findings");
     }
 
     [UnitTest]
@@ -278,7 +324,7 @@ public sealed class McpPlatformOpsReaderTests
             "candidate-a");
 
         act.Should().Throw<Honua.Geoprocessing.GeoprocessingValidationException>()
-            .WithMessage("*does not match the certified candidate*");
+            .WithMessage("*does not match the certified candidate*candidateId must be the finding's subject.targetId*");
     }
 
     [UnitTest]

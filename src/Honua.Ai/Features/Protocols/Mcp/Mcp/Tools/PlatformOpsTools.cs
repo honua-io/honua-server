@@ -126,8 +126,7 @@ internal sealed class SupportedOperationKindsTool(ILogger<SupportedOperationKind
         Title = "Supported operation kinds",
         Description =
             "Read-only discovery of stable operation-kind identifiers backed by executors registered "
-            + "in the live operation gateway. Typed proposal tools remain fail-closed when their operation kind "
-            + "remain fail-closed and cannot be routed.",
+            + "in the live operation gateway. Proposal tools for unlisted kinds fail closed.",
         InputSchema = McpPlatformOpsSchemas.SupportedOperationKindsInputSchema,
         OutputSchema = McpPlatformOpsSchemas.SupportedOperationKindsOutputSchema,
         Annotations = McpToolAnnotationSets.ReadOnly("Supported operation kinds")

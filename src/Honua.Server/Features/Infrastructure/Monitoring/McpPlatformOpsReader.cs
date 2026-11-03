@@ -225,6 +225,17 @@ internal sealed class McpPlatformOpsReader(
             }).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Refusal text for a <c>candidateId</c> that is not the finding's action target. Only targeted
+    /// actions (Compose service restart, Deploy) are bound, and their target is the finding's
+    /// <c>subject.targetId</c>; targetless actions (dead-letter redrive, channel pause, admission
+    /// tuning) do not bind <c>candidateId</c> to an action target (a certified Studio transcript still
+    /// binds it to the certified candidate). It names the field to read instead of echoing the
+    /// value; the caller can already read the finding.
+    /// </summary>
+    internal const string FindingCandidateMismatchMessage =
+        "Finding action target does not match the certified candidate: for this finding, candidateId must be the finding's subject.targetId (the deploy target its recommended action acts on).";
+
     internal static void ValidateFindingCandidateBinding(
         OperationClass kind,
         string executionPayload,
@@ -234,7 +245,7 @@ internal sealed class McpPlatformOpsReader(
         {
             var action = OpsActionRequest.Parse(executionPayload);
             if (action.Name == OpsActionNames.ComposeRestartService && action.Target != candidateId)
-                throw new GeoprocessingValidationException("Finding action target does not match the certified candidate.");
+                throw new GeoprocessingValidationException(FindingCandidateMismatchMessage);
             return;
         }
         if (kind != OperationClass.Deploy)
@@ -245,7 +256,7 @@ internal sealed class McpPlatformOpsReader(
         var payload = DeployExecutionPayload.Parse(executionPayload);
         if (payload is null || !string.Equals(payload.TargetId, candidateId, StringComparison.Ordinal))
         {
-            throw new GeoprocessingValidationException("Finding action target does not match the certified candidate.");
+            throw new GeoprocessingValidationException(FindingCandidateMismatchMessage);
         }
     }
 
