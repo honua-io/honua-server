@@ -237,7 +237,7 @@ internal sealed class RenderMapTool : IMcpTool
                     Base64 = base64,
                     Inlined = true
                 });
-            var (structuredContent, _) = McpToolHelpers.SerializeStructured(
+            var (structuredContent, inlineJsonText) = McpToolHelpers.SerializeStructured(
                 output,
                 MapToolJsonContext.Default.McpRenderMapOutput);
             var inlineCaption = string.Format(
@@ -261,6 +261,7 @@ internal sealed class RenderMapTool : IMcpTool
                 Content =
                 [
                     new McpContentBlock { Type = "text", Text = inlineCaption },
+                    new McpContentBlock { Type = "text", Text = inlineJsonText },
                     new McpContentBlock
                     {
                         Type = "image",
@@ -295,7 +296,7 @@ internal sealed class RenderMapTool : IMcpTool
                 Uri = href,
                 Inlined = false
             });
-        var (linkedStructuredContent, _) = McpToolHelpers.SerializeStructured(
+        var (linkedStructuredContent, linkedJsonText) = McpToolHelpers.SerializeStructured(
             linkedOutput,
             MapToolJsonContext.Default.McpRenderMapOutput);
 
@@ -321,6 +322,7 @@ internal sealed class RenderMapTool : IMcpTool
             Content =
             [
                 new McpContentBlock { Type = "text", Text = caption },
+                new McpContentBlock { Type = "text", Text = linkedJsonText },
                 new McpContentBlock
                 {
                     Type = "resource_link",

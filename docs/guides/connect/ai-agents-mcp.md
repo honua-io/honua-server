@@ -128,6 +128,8 @@ The response lists the `honua_*` tools this deployment advertises, with JSON Sch
 
 Each tool descriptor also carries MCP behavior `annotations` (`title`, `readOnlyHint`, `destructiveHint`, `idempotentHint`) and a `structuredContentSchema` describing the tool's structured result, so schema-driven clients can reason about safety and validate responses.
 
+Every successful tool result returns its data twice: as `structuredContent` and as the same serialized JSON in a `text` content block, so clients that pass only `content` to the model still see the full result. For large results, tools that provide a summary send it as a one-line text block before the JSON.
+
 ## What the tools do
 
 ### Plan, validate, and run geoprocessing
