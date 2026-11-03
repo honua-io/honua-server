@@ -275,10 +275,11 @@ public sealed class McpPlatformOpsReaderTests
 
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
-    public void ValidateFindingCandidateBinding_TargetlessFindingActions_AcceptAnyCandidateId()
+    public void ValidateFindingCandidateBinding_TargetlessFindingActions_DoNotBindCandidateIdToActionTarget()
     {
         // Alert redrive, channel pause and admission findings carry no subject.targetId; their
-        // actions do not bind candidateId, so any non-empty value is accepted.
+        // actions do not bind candidateId to an action target. (A certified Studio transcript still
+        // binds it to the certified candidate; that check lives in StudioAiTranscriptSigner.)
         string[] payloads =
         [
             Honua.ControlPlane.Executors.OpsActionExecutionPayloads.RedriveDeadLetters(),
@@ -301,7 +302,8 @@ public sealed class McpPlatformOpsReaderTests
 
         properties.GetProperty("candidateId").GetProperty("description").GetString()
             .Should().Contain("subject.targetId").And.Contain("compose-local")
-            .And.Contain("Targetless findings").And.Contain("any non-empty value");
+            .And.Contain("Findings without a target").And.Contain("don't bind it to an action target")
+            .And.NotContain("any non-empty value", "certified Studio calls still bind candidateId to the certified candidate");
         properties.GetProperty("findingId").GetProperty("description").GetString()
             .Should().Contain("honua_ops_findings");
     }

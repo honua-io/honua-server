@@ -229,7 +229,8 @@ internal sealed class McpPlatformOpsReader(
     /// Refusal text for a <c>candidateId</c> that is not the finding's action target. Only targeted
     /// actions (Compose service restart, Deploy) are bound, and their target is the finding's
     /// <c>subject.targetId</c>; targetless actions (dead-letter redrive, channel pause, admission
-    /// tuning) do not bind <c>candidateId</c>. It names the field to read instead of echoing the
+    /// tuning) do not bind <c>candidateId</c> to an action target (a certified Studio transcript still
+    /// binds it to the certified candidate). It names the field to read instead of echoing the
     /// value; the caller can already read the finding.
     /// </summary>
     internal const string FindingCandidateMismatchMessage =
