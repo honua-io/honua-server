@@ -15,13 +15,14 @@ Upload a GeoJSON file, publish it as a layer, and query it through the supported
 > the PowerShell equivalents where they differ.
 
 > **Base URL and admin key.** Steps 1–4 of the [quickstart](quickstart.md) write a generated
-> password into `.env` and publish the server on `18080`. Take both from there rather than
-> retyping the literals below:
+> admin password into `secrets/honua_admin_password` and publish the server on the
+> `HONUA_HTTP_PORT` that `.env` sets (`18080`). Take both from there rather than retyping the
+> literals below:
 >
 > ```bash
 > cd <your quickstart install directory>
 > export HONUA_BASE_URL="http://localhost:$(grep '^HONUA_HTTP_PORT=' .env | cut -d= -f2)"
-> export HONUA_API_KEY="$(grep '^HONUA_ADMIN_PASSWORD=' .env | cut -d= -f2)"
+> export HONUA_API_KEY="$(cat secrets/honua_admin_password)"
 > ```
 >
 > Every command below uses `$HONUA_BASE_URL` and `$HONUA_API_KEY`.
@@ -111,7 +112,8 @@ either way.
 ## 3. Register the database
 
 The import writes into the server's own database. On the quickstart stack that database is
-`honua`, the user is `honua`, and SSL is off — the same values as `compose.yaml`. The host name
+`honua`, the user is `honua`, and SSL is off — the same values as `compose.yaml`. Its password
+is the one the quickstart generated into `secrets/postgres_password`. The host name
 `postgres` is the Compose service, which the server container can resolve. Later steps publish
 through that connection. The route accepts the connection id (`connection.connection_id`) or the
 connection name; the steps below pass the id.
@@ -120,14 +122,10 @@ connection name; the steps below pass the id.
 python3 -m pip install 'honua-admin==0.1.12' 'honua-sdk==0.1.19'
 python3 - <<'PY'
 import os
-import subprocess
 
 from honua_admin import CreateSecureConnectionRequest, HonuaAdminClient
 
-password = subprocess.check_output(
-    ["docker", "compose", "exec", "-T", "postgres", "printenv", "POSTGRES_PASSWORD"],
-    text=True,
-).strip()
+password = open("secrets/postgres_password").read().strip()
 
 with HonuaAdminClient(os.environ["HONUA_BASE_URL"], api_key=os.environ["HONUA_API_KEY"]) as admin:
     connection = admin.create_connection(CreateSecureConnectionRequest(
@@ -211,7 +209,7 @@ npx --yes -p @honua/sdk-js@0.2.10 honua query "$HONUA_SERVICE/$HONUA_LAYER_ID" -
 
 ## Troubleshoot
 
-- **401 from an admin operation** — `HONUA_API_KEY` must be the `HONUA_ADMIN_PASSWORD` from your install's `.env`; re-run the two `export` lines at the top of this page.
+- **401 from an admin operation** — `HONUA_API_KEY` must be the admin password in your install's `secrets/honua_admin_password`; re-run the two `export` lines at the top of this page from the install directory.
 - **`'datasetName' is required`** — pass a `datasetName` of letters, digits and underscores that does not start with a digit.
 - **`unauthenticated` from the import** — the MCP client must send the `X-API-Key` header. MCP tool calls are refused without it.
 - **`Table 'honua_data.hawaii_cities' was not found`** on publish — publish the physical `imported_hawaii_cities` name, not the logical one you imported under.
