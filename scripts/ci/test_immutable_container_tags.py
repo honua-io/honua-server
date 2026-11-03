@@ -83,6 +83,17 @@ class ImmutableTagsTests(unittest.TestCase):
                 'linux/arm64': {'config': {'Labels': {}}}})
             self.assertEqual(self.module.versions('image@digest'), {'2026.1.0-rc.2', None})
 
+    def test_every_job_that_runs_the_guard_has_the_guard_on_disk(self):
+        workflow = (Path(__file__).resolve().parents[2] / '.github/workflows/nightly-container-build.yml').read_text()
+        jobs = re.split(r'\n  (?=[a-z][a-z0-9-]*:\n)', workflow.split('\njobs:\n', 1)[1])
+        for block in jobs:
+            name = block.split(':', 1)[0]
+            if 'scripts/ci/immutable-container-tags.py' not in block:
+                continue
+            with self.subTest(job=name):
+                self.assertTrue('actions/checkout@' in block,
+                                f'{name} runs the immutable-tag guard without checking it out')
+
     def test_workflow_guards_every_publication_path_and_serializes_same_sha(self):
         root = Path(__file__).resolve().parents[2]
         workflow = (root / '.github/workflows/nightly-container-build.yml').read_text()
