@@ -85,9 +85,17 @@ public sealed partial class NightlyImageCertificationTests
         nightly.Should().Contain("annotations: ${{ steps.meta.outputs.annotations }}", Exactly.Times(4));
         nightly.Should().Contain("--annotation \"index:org.opencontainers.image.revision=${CANDIDATE_SHA}\"", Exactly.Times(3),
             "every published multi-arch index is annotated with the candidate sha");
-        nightly.Should().Contain("uses: actions/checkout@", Exactly.Times(7),
+        nightly.Should().Contain("uses: actions/checkout@", Exactly.Times(10),
             "only the selector itself checks out the workflow revision; every build, including the Compose executor, checks out the candidate");
-        nightly.Should().Contain($"ref: {CandidateSha}", Exactly.Times(6));
+        nightly.Should().Contain($"ref: {CandidateSha}", Exactly.Times(9),
+            "six builds plus the three manifest jobs' sparse checkout of the immutable-tag guard");
+        foreach (var manifest in new[] { "manifest-aot", "manifest-lambda-aot", "manifest-jit" })
+        {
+            var block = Job(nightly, manifest);
+            block.Should().Contain($"ref: {CandidateSha}", manifest);
+            block.Should().Contain("sparse-checkout: scripts/ci/immutable-container-tags.py", manifest);
+            block.Should().NotContain("${{ github.sha }}", manifest);
+        }
 
         foreach (var trunkOnly in new[] { "build-aot", "build-jit", "manifest-aot", "manifest-lambda-aot", "manifest-jit", "compose-executor" })
         {

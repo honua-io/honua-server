@@ -827,11 +827,11 @@ jobs:
           fi
 
       # The manifest jobs run the immutable-tag guard (#6865) but build nothing,
-      # so they check out only that script, from this workflow revision.
+      # so they check out only that script, at the candidate this run is at.
       - name: Check out the immutable-tag guard
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ needs.select-candidate.outputs.sha }}
           persist-credentials: false
           sparse-checkout: scripts/ci/immutable-container-tags.py
           sparse-checkout-cone-mode: false
@@ -1179,11 +1179,11 @@ jobs:
           fi
 
       # The manifest jobs run the immutable-tag guard (#6865) but build nothing,
-      # so they check out only that script, from this workflow revision.
+      # so they check out only that script, at the candidate this run is at.
       - name: Check out the immutable-tag guard
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ needs.select-candidate.outputs.sha }}
           persist-credentials: false
           sparse-checkout: scripts/ci/immutable-container-tags.py
           sparse-checkout-cone-mode: false
@@ -1408,11 +1408,11 @@ jobs:
           fi
 
       # The manifest jobs run the immutable-tag guard (#6865) but build nothing,
-      # so they check out only that script, from this workflow revision.
+      # so they check out only that script, at the candidate this run is at.
       - name: Check out the immutable-tag guard
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ needs.select-candidate.outputs.sha }}
           persist-credentials: false
           sparse-checkout: scripts/ci/immutable-container-tags.py
           sparse-checkout-cone-mode: false
