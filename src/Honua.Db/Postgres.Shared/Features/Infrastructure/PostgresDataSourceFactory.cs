@@ -118,6 +118,7 @@ internal static class PostgresDataSourceFactory
         return Track(builder.Build());
     }
 
+    // Bound sources use connection-level session settings. Their role is not the primary database role configured for role-defaults.
     public static NpgsqlDataSource CreateForBoundSource(
         string connectionString,
         ConnectionLimits limits,

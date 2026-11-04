@@ -1581,6 +1581,7 @@ internal static class WmtsRequestHandlers
         return [];
     }
 
+    // Continuous resolution is "0". "PT0S" is a zero-length duration, and ArcGIS Pro rejects a dimension declared that way.
     private const string ContinuousTemporalResolution = "0";
 
     private static async Task<WmtsDimensionDefinition[]> GetWmtsDimensionDefinitionsAsync(

@@ -831,6 +831,7 @@ internal sealed partial class Wfs20Handler
 
 }
 
+// Preserve PascalCase for Redis stored-query payloads written by existing replicas.
 [JsonSourceGenerationOptions]
 [JsonSerializable(typeof(Wfs20Handler.StoredQueryDefinition))]
 [JsonSerializable(typeof(Wfs20Handler.StoredQueryParameter))]

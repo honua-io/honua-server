@@ -1716,6 +1716,7 @@ internal sealed partial class JobExecutionContext(
             return true;
         }
 
+        // Legacy references keep duplicates. Two outputs may share a payload, and collapsing them would shift the positional slot and kind.
         updated.AddRange(existing);
         updated.Add(artifactReference);
         return true;

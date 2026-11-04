@@ -40,6 +40,7 @@ internal static class StorageBoundFeatureReader
                 operation,
                 cancellationToken)
             .ConfigureAwait(false);
+        // A managed-table binding keeps the injected reader. It serves GML, GeoJSON, and raster points, and the mapped reader does not.
         return new StorageBoundFeatureRead(reader, managed);
     }
 

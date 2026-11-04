@@ -439,6 +439,7 @@ internal sealed class AwsSdkLambdaAliasRecycle : ILambdaAliasRecycle
         CancellationToken cancellationToken = default)
     {
         using var client = AwsSdkLambdaAliasClient.CreateClient(region, serviceUrl);
+        // Lambda has no restart API, and publishing an unchanged function returns the current version, so only the description changes.
         var description = "honua-workload-restart:" + DateTimeOffset.UtcNow.ToString(
             "yyyyMMddHHmmssfffffff",
             CultureInfo.InvariantCulture);

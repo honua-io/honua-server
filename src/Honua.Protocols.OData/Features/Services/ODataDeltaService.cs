@@ -93,6 +93,7 @@ internal static class ODataDeltaService
         return $"{baseUrl}{request.Path}?$deltatoken={token}";
     }
 
+    // "updated" is the reserved alias that reaches the system column. The physical name updated_at can drop this predicate during translation.
     private const string SystemUpdatedField = "updated";
 
     public static string BuildDeltaFilter(string? filter, DateTimeOffset timestamp, DateTimeOffset? upperBoundTimestamp = null)

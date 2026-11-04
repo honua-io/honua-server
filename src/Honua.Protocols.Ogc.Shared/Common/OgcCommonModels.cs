@@ -187,7 +187,6 @@ public static class MediaTypes
 
     public const string SchemaJson = "application/schema+json";
 
-    // The GML media type keeps a space after the semicolon, because RFC 2045 and RFC 9110 require it in parameter lists.
     public const string Gml = "application/gml+xml; version=3.2";
 
     public const string Mvt = "application/vnd.mapbox-vector-tile";

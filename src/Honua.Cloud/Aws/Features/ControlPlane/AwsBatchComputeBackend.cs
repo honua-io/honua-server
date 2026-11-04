@@ -31,6 +31,7 @@ internal static class AwsBatchParameterKeys
     public const string EphemeralGib = "batch.ephemeral_gib";
 }
 
+// SubmitJob cannot override ephemeral storage, so each storage tier needs its own job definition.
 internal static class AwsBatchJobDefinitionTierSelector
 {
     internal const string DefaultTier = "s";

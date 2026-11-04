@@ -7,6 +7,7 @@ using System.Xml.Schema;
 namespace Honua.Protocols.Ogc.Classic.Wps20;
 
 // The WPS schema is compiled from a constant with no schemaLocation lookup, so a request cannot point the validator at an attacker-chosen schema.
+// An unknown XML root fails that schema before dispatch. An unknown KVP operation still reaches dispatch.
 internal static class Wps20RequestSchema
 {
     internal static XmlSchemaSet SchemaSet { get; } = CreateSchemaSet();
