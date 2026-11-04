@@ -64,6 +64,18 @@ public sealed class PublishedServiceOrganizationTests
         apply.Should().Throw<LayerPublishingException>();
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData(" ")]
+    [InlineData("FeatureServer")]
+    [InlineData("Utilities")]
+    [InlineData("a/b")]
+    public void Apply_InvalidRootPublicLeaf_RejectsRatherThanUsingLogicalFallback(string leaf)
+    {
+        var publish = () => PublishedServiceOrganization.Apply(Graph(), Service(), Request(null, leaf));
+        publish.Should().Throw<LayerPublishingException>().Which.ErrorKind.Should().Be(LayerPublishingErrorKind.Validation);
+    }
+
     private static MetadataV2Graph Graph() => new()
     {
         Folders = [new() { Metadata = new() { Id = "folder", Name = "Survey" } }]
