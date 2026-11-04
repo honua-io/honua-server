@@ -5,7 +5,7 @@ Evidence identifier for the owned fixture on the re-pinned 2026.1 candidate
 receipt exists. No desktop UI pass is claimed here. Every receipt records
 `desktop_ui_exercised: false`.
 
-Runner, licence, and session setup stay in private `honua-esri-compat`.
+Runner, licence, and session setup are not in this repository.
 
 | Identity | Value |
 |---|---|
@@ -22,8 +22,8 @@ Receipts are under
 
 | Receipt | Run | Result |
 |---|---|---|
-| `candidate-8862065-arcpy-and-sdk-scalar-verified.json` | [35061750279](https://github.com/honua-io/honua-esri-compat/actions/runs/35061750279) | Pass. ArcGIS SDK 2.4.3 and ArcPy 3.7.1 each import 119 advertised tasks and return area 12. Async job status 4 `Completed`. |
-| `candidate-8862065-arcpy-complex-values-verified.json` | [35061927963](https://github.com/honua-io/honua-esri-compat/actions/runs/35061927963) | Pass. Six ArcPy complex-value checks, including truthful `Cancelled`. |
+| `candidate-8862065-arcpy-and-sdk-scalar-verified.json` | 35061750279 | Pass. ArcGIS SDK 2.4.3 and ArcPy 3.7.1 each import 119 advertised tasks and return area 12. Async job status 4 `Completed`. |
+| `candidate-8862065-arcpy-complex-values-verified.json` | 35061927963 | Pass. Six ArcPy complex-value checks, including truthful `Cancelled`. |
 | `candidate-8862065-soap-auth-controls-verified.json` | local probe retained with the fixture | Pass. 24/24. Authorized job reaches `esriJobSucceeded` with area 12. Anonymous, unknown key, and unknown bearer callers receive a 401 SOAP fault from all seven SOAP operations (21 denials). Malformed authorized input returns 400. |
 
 `POST /services/desktop_ui_features/GPServer` answers 401 to an unauthenticated

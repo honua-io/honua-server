@@ -15,7 +15,6 @@
 #   5. runs the readiness check (ready-check.sh) and exits non-zero unless every assertion passes.
 #
 # Secret environment values are copied through a 0600 file outside the repository and never printed.
-# It never touches honua-esri-compat-* containers, networks or volumes and never removes a volume.
 set -euo pipefail
 
 digest="${1:-}"
@@ -39,10 +38,6 @@ tls_net=gpserver-4614-4616-tls
 pg_volume=gpserver-4614-4616-pgdata
 pg_image=postgis/postgis:16-3.4
 keyring="$evidence_root/diagnostic-keyring/keyring.pfx"
-
-for name in "$server" "$postgres" "$redis" "$tls" "$tracer" "$net" "$tls_net" "$pg_volume"; do
-  [[ "$name" == honua-esri-compat* ]] && { echo "refusing to touch $name" >&2; exit 2; }
-done
 
 umask 077
 mkdir -p "$state_dir"

@@ -360,7 +360,7 @@
       "activationState": "awaiting-runtime",
       "rosterOrigin": "artifact",
       "sourceStatus": "Built, unrun",
-      "clientVersionPolicy": "ArcGIS Pro build is the build named on the desktop-arcgis evidence identifier in honua-esri-compat. Evidence is content-addressed.",
+      "clientVersionPolicy": "This repository does not certify ArcGIS clients.",
       "protocolSurfaces": [
         "featureserver",
         "mapserver",
@@ -402,15 +402,13 @@
       "licensing": {
         "model": "entitlement-bound",
         "requiresSeat": true,
-        "notes": "Desktop entitlement detail stays in honua-esri-compat. This roster does not configure it."
+        "notes": "This repository does not certify ArcGIS clients."
       },
       "runtime": "windows-license",
       "fixtureProjection": {
         "kind": "canonical-client-fixture",
         "status": "migration-required",
-        "inputs": [
-          "honua-esri-compat licensed fixtures"
-        ],
+        "inputs": [],
         "note": "Esri-owned fixtures must project onto the #3393 canonical fixture before federation."
       },
       "evidenceProducer": null,
@@ -418,11 +416,11 @@
         "matrixLaneId": "desktop-arcgis",
         "role": "planned-lane"
       },
-      "owningIssue": "https://github.com/honua-io/honua-esri-compat/issues/75",
+      "owningIssue": "https://github.com/honua-io/honua-server/issues/3389",
       "needsOwningIssue": false,
       "exclusionRationale": null,
       "coveredAlternative": null,
-      "notes": "The 2026.1 gate (#3434) joins honua-esri-compat evidence by reference rather than activating this lane. Activation targets 2026.2 via workstream A of #3389. No desktop receipt is linked from this repo."
+      "notes": "This repository does not certify ArcGIS clients."
     },
     {
       "id": "js",
@@ -672,7 +670,7 @@
       "activationState": "awaiting-federation",
       "rosterOrigin": "artifact",
       "sourceStatus": "Partial",
-      "clientVersionPolicy": "CDN/npm-pinned ArcGIS Maps SDK for JavaScript version recorded by the honua-esri-compat sdk_matrix/jsapi run.",
+      "clientVersionPolicy": "This repository does not certify ArcGIS clients.",
       "protocolSurfaces": [
         "featureserver",
         "mapserver",
@@ -713,21 +711,19 @@
       "fixtureProjection": {
         "kind": "canonical-client-fixture",
         "status": "migration-required",
-        "inputs": [
-          "honua-esri-compat licensed fixtures"
-        ],
+        "inputs": [],
         "note": "Esri-owned fixtures must project onto the #3393 canonical fixture before federation."
       },
-      "evidenceProducer": "honua-esri-compat (sdk_matrix/jsapi)",
+      "evidenceProducer": "This repository does not certify ArcGIS clients.",
       "laneBinding": {
         "matrixLaneId": null,
         "role": "external-producer"
       },
-      "owningIssue": "https://github.com/honua-io/honua-esri-compat/issues/74",
+      "owningIssue": "https://github.com/honua-io/honua-server/issues/3389",
       "needsOwningIssue": false,
       "exclusionRationale": null,
       "coveredAlternative": null,
-      "notes": "This is the client customers port from, but its evidence is produced in honua-esri-compat and is not yet federated into this registry, so it declares requiredTier `none` and can neither pass nor block a honua-server gate."
+      "notes": "This repository does not certify ArcGIS clients."
     },
     {
       "id": "cli",
@@ -816,7 +812,7 @@
       "activationState": "awaiting-federation",
       "rosterOrigin": "artifact",
       "sourceStatus": "Live",
-      "clientVersionPolicy": "pip/conda pin of `arcgis` in the honua-esri-compat arcgis_python lane image.",
+      "clientVersionPolicy": "This repository does not certify ArcGIS clients.",
       "protocolSurfaces": [
         "featureserver",
         "portal"
@@ -856,17 +852,15 @@
       "fixtureProjection": {
         "kind": "canonical-client-fixture",
         "status": "migration-required",
-        "inputs": [
-          "honua-esri-compat licensed fixtures"
-        ],
+        "inputs": [],
         "note": "Esri-owned fixtures must project onto the #3393 canonical fixture before federation."
       },
-      "evidenceProducer": "honua-esri-compat (arcgis_python)",
+      "evidenceProducer": "This repository does not certify ArcGIS clients.",
       "laneBinding": {
         "matrixLaneId": null,
         "role": "external-producer"
       },
-      "owningIssue": "https://github.com/honua-io/honua-esri-compat/issues/74",
+      "owningIssue": "https://github.com/honua-io/honua-server/issues/3389",
       "needsOwningIssue": false,
       "exclusionRationale": null,
       "coveredAlternative": null,
@@ -926,9 +920,7 @@
       "fixtureProjection": {
         "kind": "canonical-client-fixture",
         "status": "migration-required",
-        "inputs": [
-          "honua-esri-compat licensed fixtures"
-        ],
+        "inputs": [],
         "note": "Esri-owned fixtures must project onto the #3393 canonical fixture before federation."
       },
       "evidenceProducer": null,
@@ -936,7 +928,7 @@
         "matrixLaneId": null,
         "role": "unregistered"
       },
-      "owningIssue": "https://github.com/honua-io/honua-esri-compat/issues/75",
+      "owningIssue": "https://github.com/honua-io/honua-server/issues/3389",
       "needsOwningIssue": false,
       "exclusionRationale": null,
       "coveredAlternative": null,

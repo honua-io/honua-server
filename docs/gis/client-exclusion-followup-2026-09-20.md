@@ -31,9 +31,7 @@ ArcPy identity retained: 3.7.1, Pro executable 3.7.1.1904. QGIS 3.44.14, GDAL
 | PyQGIS ImageServer exportImage | pass | Display colors are not elevations |
 | PyQGIS elevation point-query | pass | Native ImageServer identify remains open |
 
-Evidence: `honua-esri-compat` commit `b691b03`,
-`evidence/arcpy-exclusion-followup-20260920-d/observations.json`;
-`honua-client-compat` commit `046a74c`,
+Evidence: `honua-client-compat` commit `046a74c`,
 `evidence/pyqgis-deep-exclusions-20260920-d`.
 
 ## Review of all 82 remaining exclusions
@@ -103,7 +101,6 @@ native-client coverage and does not prove every optional protocol parameter.
 
 ## Durable evidence and vendor sources
 
-- Esri: `honua-esri-compat` commit **b691b03**, `docs/reports/arcpy-exclusion-followup-2026-09-20.md` and `evidence/arcpy-exclusion-followup-20260920-d/observations.json`; attempts a-c remain preserved. All 302 tests, fixture-contract validation, template freshness and source-manifest checks passed.
 - QGIS: `honua-client-compat` commit **046a74c**, `docs/reports/pyqgis-deep-exclusion-audit-2026-09-20.md`, final run `evidence/pyqgis-deep-exclusions-20260920-d` and pinned source audit. All 240 tests, shared-snapshot verification and evidence/hash/secret checks passed.
 Vendor procedure and source-inspection notes stay with those evidence commits.
 

@@ -293,8 +293,7 @@ a `Cache-Control: no-cache` override.
   `Honua.Db.Postgres.Features.Styling.PostgresLayerStyleCatalog`
   drawingInfo generation gap noted in the design brief is a separate
   ticket and not closed by this slice.
-- **Desktop and BI client lanes.** ArcGIS Pro certification detail stays in
-  private `honua-esri-compat` (evidence identifier `desktop-arcgis`). Power BI
+- **Desktop and BI client lanes.** ArcGIS Pro certification is not in this repository. Lane id `desktop-arcgis`. Power BI
   and Excel remain on the manual lanes in
   [`CLIENT_TEMPLATE_RUNBOOK.md`](../../gis/CLIENT_TEMPLATE_RUNBOOK.md). None of
   them are in scope for this slice.

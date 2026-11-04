@@ -13,7 +13,7 @@ records whether a honua-server producer can currently emit a receipt that joins.
 The bounded roster is the one the issue names -- QGIS, GDAL/OGR, MapLibre, PySTAC
 Client and OWSLib -- resolved to the exact ``canonical_client`` spellings the
 denominator uses. It is deliberately *not* every client in the denominator: ArcGIS
-stays with ``honua-esri-compat#74/#75``, the SDK/gRPC/MCP rows belong to their own
+stays outside this roster. This repository does not certify ArcGIS clients. The SDK/gRPC/MCP rows belong to their own
 producers, and OGC CITE is already mirrored in
 ``certification/cite-protocol-requirements.v1.json``.
 
@@ -78,7 +78,7 @@ BOUNDED_ROSTER_CLIENTS: tuple[str, ...] = (
 # state why the bounded roster is smaller than the denominator rather than looking
 # like an unexplained filter.
 ESRI_DELEGATION = (
-    "honua-esri-compat#74/#75 owns the licensed Esri lanes; joined by evidence reference."
+    "This repository does not certify ArcGIS clients."
 )
 DELEGATED_CLIENTS: dict[str, str] = {
     "ArcGIS Pro/arcpy": ESRI_DELEGATION,
@@ -371,10 +371,29 @@ def project(upstream: dict, upstream_revision: str, revision: str, root: Path) -
         "receiptContract": RECEIPT_CONTRACT,
         "generator": "scripts/certification/build-client-protocol-requirements.py",
         "producerAuthority": [EXPECTED_PAIRS_RELATIVE_PATH, BASELINE_ROOT_RELATIVE_PATH],
-        "source_revisions": upstream.get("source_revisions", {}),
+        "source_revisions": _source_revisions(upstream.get("source_revisions", {})),
         "excludedRequirements": excluded,
         "requirements": requirements,
     }
+
+
+
+def _source_revisions(upstream: dict) -> dict:
+    """Drop retired producer pins. A kept key must not be the retired product name."""
+    kept = {}
+    for key, value in upstream.items():
+        if key.startswith("esri") and "compat" in key and "ible" not in key:
+            continue
+        repository = value.get("repository", "") if isinstance(value, dict) else ""
+        if (
+            repository.startswith("honua-io/")
+            and "esri" in repository
+            and "compat" in repository
+            and "ible" not in repository
+        ):
+            continue
+        kept[key] = value
+    return kept
 
 
 def main(argv: list[str] | None = None) -> int:

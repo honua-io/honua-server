@@ -92,9 +92,6 @@ follow-up. These are the same aggregate cells as the authoritative checklist.
 
 - `honua-client-compat/evidence/pyqgis-sdk-roundtrip-20260920-i/observations.json`: fixed WCS replay, native caches, project reload and separate raw TIFF controls.
 - `honua-client-compat/docs/reports/pyqgis-wcs-fixed-grid-2026-09-20.md`: final successful replay (commit 2452daa); the linked earlier report retains failed grid investigations and SQL controls.
-- `honua-esri-compat/evidence/arcpy-stac-metadata-20260920-d/observations.json`: verified native metadata operations on source 6ac9debbccdd / image 737851273827.
-- `honua-esri-compat/evidence/arcpy-wcs-pixelgrid-fix-20260920/wcs/observations.json`: remaining ArcPy WCS failures on the fixed image.
-- `honua-esri-compat/docs/arcpy-sdk-status-20260920.md`: GP, workspace authentication and remaining ArcPy work.
 
 ArcPy's reported 3.7.1 build 1901 is preserved alongside the same installation's
 independently hashed ArcGISPro.exe file/product version 3.7.1.1904. PyQGIS reports
