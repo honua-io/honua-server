@@ -75,7 +75,7 @@ internal static class McpModernProtocol
         {
             Code = UnsupportedVersionErrorCode,
             Message = "Unsupported protocol version.",
-            Data = new McpErrorData { Supported = SupportedVersions, Requested = version }
+            Data = new McpErrorData { Code = "unsupported_protocol_version", Supported = SupportedVersions, Requested = version }
         };
     }
 

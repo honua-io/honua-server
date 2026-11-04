@@ -301,6 +301,57 @@ public sealed class McpModernProtocolTests
         Assert.False(result.TryGetProperty("ttlMs", out _));
     }
 
+    [UnitTheory]
+    [InlineData("{broken")]
+    [InlineData("{\"padding\":\"012345678901234567890123456789\"}")]
+    public async Task Post_InvalidOrigin_RejectsBeforeReadingMalformedOrOversizedBody(string payload)
+    {
+        using var services = CreateServices();
+        services.GetRequiredService<IOptions<McpOptions>>().Value.MaxRequestBodyBytes = 32;
+        var context = CreateContext(services, "server/discover");
+        context.User = new ClaimsPrincipal(new ClaimsIdentity([], "Bearer"));
+        context.Request.Headers.Origin = "https://unapproved.example";
+        context.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(payload));
+
+        await McpEndpointExtensions.HandlePostAsync(context, CancellationToken.None);
+
+        Assert.Equal(403, context.Response.StatusCode);
+        Assert.Equal(0, context.Request.Body.Position);
+        Assert.Equal(0, context.Response.Body.Length);
+    }
+
+    [UnitTest]
+    public async Task Post_ModernPrincipalWithoutDurableActor_Returns401WithPendingRequestId()
+    {
+        using var services = CreateServices();
+        var context = CreateContext(services, "server/discover");
+        context.User = new ClaimsPrincipal(new ClaimsIdentity([], "Bearer"));
+        context.Request.Headers.Origin = "https://approved.example";
+
+        await McpEndpointExtensions.HandlePostAsync(context, CancellationToken.None);
+
+        using var response = ReadResponse(context);
+        Assert.Equal(401, context.Response.StatusCode);
+        Assert.Equal(1, response.RootElement.GetProperty("id").GetInt32());
+        Assert.True(response.RootElement.GetProperty("error").GetProperty("data").GetProperty("requiresReauthentication").GetBoolean());
+    }
+
+    [UnitTest]
+    public async Task Post_LegacyPrincipalWithoutDurableActor_PreservesLegacyStatus()
+    {
+        using var services = CreateServices();
+        var context = CreateContext(services, "ping");
+        context.Request.Headers.Remove("MCP-Protocol-Version");
+        context.User = new ClaimsPrincipal(new ClaimsIdentity([], "Bearer"));
+        ChangeBody(context, body => body["params"] = new JsonObject());
+
+        await McpEndpointExtensions.HandlePostAsync(context, CancellationToken.None);
+
+        using var response = ReadResponse(context);
+        Assert.Equal(200, context.Response.StatusCode);
+        Assert.Equal(JsonValueKind.Null, response.RootElement.GetProperty("id").ValueKind);
+    }
+
     private static void ChangeBody(HttpContext context, Action<JsonObject> change)
     {
         context.Request.Body.Position = 0;

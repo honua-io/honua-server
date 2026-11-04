@@ -59,6 +59,7 @@ internal static class McpEndpointExtensions
         endpoints.MapPost(RoutePath,
                 static (HttpContext context, CancellationToken ct) => HandlePostAsync(context, ct))
             .AddEndpointFilter(ProtectedResourceChallengeFilter)
+            .AddEndpointFilter(McpModernHttp.ValidateModernOriginAsync)
             .AddEndpointFilter(McpBearerAuthenticationEndpointExtensions.AuthenticateBearerAsync)
             .WithDisplayName("MCP Operator Surface")
             .WithName("McpDataAccessSurface")
@@ -69,22 +70,24 @@ internal static class McpEndpointExtensions
         endpoints.MapGet(RoutePath,
                 static (HttpContext context, CancellationToken ct) => HandleGetAsync(context, ct))
             .AddEndpointFilter(ProtectedResourceChallengeFilter)
+            .AddEndpointFilter(McpModernHttp.ValidateModernOriginAsync)
             .AddEndpointFilter(McpBearerAuthenticationEndpointExtensions.AuthenticateBearerAsync)
             .WithDisplayName("MCP Operator Surface (SSE stream)")
             .WithName("McpDataAccessSurfaceStream")
             .WithMetadata(LongLivedStreamEndpointMetadata.Instance)
-            .WithSummary("Opens the MCP server-to-client Server-Sent-Events stream.")
-            .WithDescription("Streamable-HTTP transport GET endpoint. Opens a text/event-stream the server uses to push notifications (e.g. progress, listChanged). Requires a valid Mcp-Session-Id.")
+            .WithSummary("Opens the legacy MCP server-to-client Server-Sent-Events stream.")
+            .WithDescription("Legacy Streamable-HTTP GET endpoint. Opens a text/event-stream for notifications with a valid Mcp-Session-Id. The modern transport uses POST.")
             .WithTags("Mcp");
 
         endpoints.MapDelete(RoutePath,
                 static (HttpContext context, CancellationToken ct) => HandleDeleteAsync(context, ct))
             .AddEndpointFilter(ProtectedResourceChallengeFilter)
+            .AddEndpointFilter(McpModernHttp.ValidateModernOriginAsync)
             .AddEndpointFilter(McpBearerAuthenticationEndpointExtensions.AuthenticateBearerAsync)
             .WithDisplayName("MCP Operator Surface (session termination)")
             .WithName("McpDataAccessSurfaceTerminate")
-            .WithSummary("Terminates an MCP session.")
-            .WithDescription("Streamable-HTTP transport DELETE endpoint. Removes the session identified by the Mcp-Session-Id header.")
+            .WithSummary("Terminates a legacy MCP session.")
+            .WithDescription("Legacy Streamable-HTTP DELETE endpoint. Removes the session identified by the Mcp-Session-Id header. The modern transport uses POST.")
             .WithTags("Mcp");
 
         return endpoints;
@@ -127,6 +130,11 @@ internal static class McpEndpointExtensions
         cancellationToken = requestCancellation.Token;
         cancellationToken.ThrowIfCancellationRequested();
 
+        if (await McpModernHttp.TryRejectDeclaredOriginAsync(context).ConfigureAwait(false))
+        {
+            return;
+        }
+
         var surface = context.RequestServices.GetRequiredService<McpDataAccessSurface>();
         var sessions = context.RequestServices.GetRequiredService<McpSessionManager>();
         var logger = context.RequestServices.GetRequiredService<ILogger<McpDataAccessSurface>>();
@@ -165,6 +173,12 @@ internal static class McpEndpointExtensions
         using (document)
         {
             var root = document.RootElement;
+            if (McpModernProtocol.AppliesTo(context, root))
+            {
+                await McpModernHttp.HandlePostAsync(context, root, cancellationToken).ConfigureAwait(false);
+                return;
+            }
+
             var isInitialize = IsInitialize(root);
             var principalKey = McpAuthorizationHelper.ResolveSessionBindingKey(context);
             if (principalKey is null)
@@ -174,12 +188,6 @@ internal static class McpEndpointExtensions
                     context,
                     ErrorResponse(JsonNullId, McpErrorMapper.SessionActorRequired()),
                     cancellationToken).ConfigureAwait(false);
-                return;
-            }
-
-            if (McpModernProtocol.AppliesTo(context, root))
-            {
-                await McpModernHttp.HandlePostAsync(context, root, cancellationToken).ConfigureAwait(false);
                 return;
             }
 
@@ -797,8 +805,11 @@ internal static class McpEndpointExtensions
             status = StatusCodes.Status400BadRequest;
         }
 
+        var message = status == StatusCodes.Status400BadRequest
+            ? "Request body is not valid JSON."
+            : $"Request body is not valid JSON: {exception.Message}";
         return WriteSingleAsync(context,
-            ErrorResponse(JsonNullId, McpErrorMapper.ParseError($"Request body is not valid JSON: {exception.Message}")),
+            ErrorResponse(JsonNullId, McpErrorMapper.ParseError(message)),
             cancellationToken, status);
     }
 

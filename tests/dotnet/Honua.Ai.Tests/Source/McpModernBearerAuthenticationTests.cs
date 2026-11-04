@@ -2,8 +2,13 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Net;
+using System.Net.Http.Headers;
+using System.Text;
 using System.Security.Claims;
 using FluentAssertions;
+using Honua.Infrastructure.Security;
+using Microsoft.AspNetCore.Cors.Infrastructure;
+using Microsoft.Extensions.DependencyInjection;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using static Honua.Server.Tests.Features.Protocols.Mcp.McpBearerAuthenticationTests;
@@ -55,6 +60,32 @@ public sealed class McpModernBearerAuthenticationTests
         }
     }
 
+    [IntegrationTest]
+    [Endpoint("POST /mcp")]
+    public async Task Post_InvalidModernOriginWithInvalidBearer_Returns403BeforeAuthentication()
+    {
+        var fixture = CreateReplayProtectedFixture().ConfigureServices(services =>
+            services.PostConfigure<CorsOptions>(options => options.AddPolicy(HttpCorsPolicyNames.Production,
+                policy => policy.WithOrigins("https://approved.example"))));
+        await fixture.InitializeAsync();
+        try
+        {
+            using var client = fixture.CreateClient();
+            using var request = BuildModernDiscovery("invalid-token");
+            request.Headers.Add("Origin", "https://unapproved.example");
+            request.Content = new StringContent("{broken", Encoding.UTF8, "application/json");
+
+            using var response = await client.SendAsync(request);
+
+            response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+            (await response.Content.ReadAsStringAsync()).Should().BeEmpty();
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
     private static HttpRequestMessage BuildReplayProbe(string surface, string bearer) => surface switch
     {
         "http" => BuildPackageFamiliesRequest(bearer),
@@ -69,6 +100,7 @@ public sealed class McpModernBearerAuthenticationTests
             sessionId: null, bearer: bearer);
         request.Headers.Add("MCP-Protocol-Version", "2026-07-28");
         request.Headers.Add("Mcp-Method", "server/discover");
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
         return request;
     }
 

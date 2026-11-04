@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Text.Json;
+using Microsoft.AspNetCore.Builder;
 using Honua.Ai.Protocols.Mcp.Models;
 using Honua.Infrastructure.Security;
 using Microsoft.AspNetCore.Cors.Infrastructure;
@@ -17,9 +18,8 @@ internal static class McpModernHttp
         context.Request.Headers.Remove(McpSessionManager.SessionHeaderName);
         context.Request.Headers.Remove("Last-Event-ID");
         context.Items.Remove(Views.McpWorkflowViewNegotiation.HttpContextItemKey);
-        if (!await AllowsOriginAsync(context).ConfigureAwait(false))
+        if (await TryRejectOriginAsync(context).ConfigureAwait(false))
         {
-            context.Response.StatusCode = StatusCodes.Status403Forbidden;
             return;
         }
 
@@ -35,14 +35,20 @@ internal static class McpModernHttp
 
         ApplyResultContract(response, body);
 
+        await WriteResponseAsync(context, response, cancellationToken).ConfigureAwait(false);
+    }
+
+    internal static Task WriteResponseAsync(HttpContext context, McpJsonRpcResponse response, CancellationToken cancellationToken)
+    {
+        context.Items[McpModernProtocol.RequestItemKey] = true;
         var status = response.Error?.Data?.RequiresReauthentication == true
             ? StatusCodes.Status401Unauthorized : response.Error?.Code switch
-        {
-            null => StatusCodes.Status200OK,
-            McpErrorMapper.JsonRpcMethodNotFound => StatusCodes.Status404NotFound,
-            _ => StatusCodes.Status400BadRequest
-        };
-        await McpEndpointExtensions.WriteSingleAsync(context, response, cancellationToken, status).ConfigureAwait(false);
+            {
+                null => StatusCodes.Status200OK,
+                McpErrorMapper.JsonRpcMethodNotFound => StatusCodes.Status404NotFound,
+                _ => StatusCodes.Status400BadRequest
+            };
+        return McpEndpointExtensions.WriteSingleAsync(context, response, cancellationToken, status);
     }
 
     private static void ApplyResultContract(McpJsonRpcResponse response, JsonElement body)
@@ -66,12 +72,13 @@ internal static class McpModernHttp
             return false;
         }
 
-        context.Response.StatusCode = await AllowsOriginAsync(context).ConfigureAwait(false)
-            ? StatusCodes.Status405MethodNotAllowed : StatusCodes.Status403Forbidden;
-        if (context.Response.StatusCode == StatusCodes.Status405MethodNotAllowed)
+        if (await TryRejectOriginAsync(context).ConfigureAwait(false))
         {
-            context.Response.Headers.Allow = "POST";
+            return true;
         }
+
+        context.Response.StatusCode = StatusCodes.Status405MethodNotAllowed;
+        context.Response.Headers.Allow = "POST";
 
         return true;
     }
@@ -79,8 +86,61 @@ internal static class McpModernHttp
     private static Task<McpJsonRpcResponse?> DispatchAsync(HttpContext context, JsonElement body, CancellationToken cancellationToken)
     {
         var surface = context.RequestServices.GetRequiredService<McpDataAccessSurface>();
-        var principalKey = McpAuthorizationHelper.ResolveSessionBindingKey(context)!;
+        var principalKey = McpAuthorizationHelper.ResolveSessionBindingKey(context);
+        if (principalKey is null)
+        {
+            var logger = context.RequestServices.GetRequiredService<ILogger<McpDataAccessSurface>>();
+            McpLog.SessionRejected(logger, "durable-actor-required");
+            return Task.FromResult<McpJsonRpcResponse?>(new McpJsonRpcResponse
+            {
+                Id = McpEndpointExtensions.ResponseIdForEarlyError(body),
+                Error = McpErrorMapper.SessionActorRequired()
+            });
+        }
+
         return McpEndpointExtensions.ProcessMessageAsync(context, surface, body, principalKey, cancellationToken);
+    }
+
+    internal static IApplicationBuilder UseOriginValidation(this IApplicationBuilder app)
+    {
+        ArgumentNullException.ThrowIfNull(app);
+        return app.Use(async (context, next) =>
+        {
+            if (McpBearerAuthenticationEndpointExtensions.IsMcpTransportPath(context.Request.Path)
+                && await TryRejectDeclaredOriginAsync(context).ConfigureAwait(false))
+            {
+                return;
+            }
+
+            await next(context).ConfigureAwait(false);
+        });
+    }
+
+    internal static async ValueTask<object?> ValidateModernOriginAsync(
+        EndpointFilterInvocationContext invocation,
+        EndpointFilterDelegate next)
+    {
+        if (await TryRejectDeclaredOriginAsync(invocation.HttpContext).ConfigureAwait(false))
+        {
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
+        }
+
+        return await next(invocation).ConfigureAwait(false);
+    }
+
+    internal static Task<bool> TryRejectDeclaredOriginAsync(HttpContext context) =>
+        McpModernProtocol.HasModernHeader(context.Request)
+            ? TryRejectOriginAsync(context) : Task.FromResult(false);
+
+    private static async Task<bool> TryRejectOriginAsync(HttpContext context)
+    {
+        if (await AllowsOriginAsync(context).ConfigureAwait(false))
+        {
+            return false;
+        }
+
+        context.Response.StatusCode = StatusCodes.Status403Forbidden;
+        return true;
     }
 
     private static async Task<bool> AllowsOriginAsync(HttpContext context)
