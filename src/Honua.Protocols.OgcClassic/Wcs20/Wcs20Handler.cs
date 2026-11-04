@@ -1063,11 +1063,6 @@ internal sealed partial class Wcs20Handler
                     Wcs20Utilities.Parameters.Version);
         }
 
-        if (!Wcs20Utilities.ImplementedOperations.Contains(operation))
-        {
-            return null;
-        }
-
         return null;
     }
 
