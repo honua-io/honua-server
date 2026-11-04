@@ -39,19 +39,19 @@ public sealed class EditOwnerSubjectTests
         var otherAda = Principal(ClaimTypes.NameIdentifier, "subject-b", "Ada Lovelace");
 
         ada.Identity!.Name.Should().Be(otherAda.Identity!.Name);
-        EditOwnerSubject.Resolve(ada).Should().Be("subject-a");
-        EditOwnerSubject.Resolve(otherAda).Should().Be("subject-b");
+        ServiceDataEditorAuthorization.ResolveOwnerSubject(ada).Should().Be("subject-a");
+        ServiceDataEditorAuthorization.ResolveOwnerSubject(otherAda).Should().Be("subject-b");
 
         var subOnly = Principal("sub", "subject-from-sub", "Ada Lovelace");
-        EditOwnerSubject.Resolve(subOnly).Should().Be("subject-from-sub");
+        ServiceDataEditorAuthorization.ResolveOwnerSubject(subOnly).Should().Be("subject-from-sub");
 
         var keyOnly = Principal("api_key_id", "key-1", "Ada Lovelace");
-        EditOwnerSubject.Resolve(keyOnly).Should().Be("key-1");
+        ServiceDataEditorAuthorization.ResolveOwnerSubject(keyOnly).Should().Be("key-1");
 
         var nameOnly = new ClaimsPrincipal(new ClaimsIdentity(
             [new Claim(ClaimTypes.Name, "Ada Lovelace")],
             authenticationType: "Bearer"));
-        EditOwnerSubject.Resolve(nameOnly).Should().Be("Ada Lovelace");
+        ServiceDataEditorAuthorization.ResolveOwnerSubject(nameOnly).Should().Be("Ada Lovelace");
     }
 
     [UnitTest]

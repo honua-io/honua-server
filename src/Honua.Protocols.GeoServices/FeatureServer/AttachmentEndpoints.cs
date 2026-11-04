@@ -944,7 +944,7 @@ internal static partial class AttachmentEndpoints
 
         var principal = context.User?.Identity?.IsAuthenticated == true
             ? new EditPrincipal(
-                EditOwnerSubject.Resolve(context.User),
+                ServiceDataEditorAuthorization.ResolveOwnerSubject(context.User),
                 IsAuthenticated: true,
                 IsAdmin: ServiceDataEditorAuthorization.IsAdminPrincipal(context))
             : EditPrincipal.Anonymous;
