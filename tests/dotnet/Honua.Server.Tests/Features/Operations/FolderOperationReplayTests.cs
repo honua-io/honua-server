@@ -16,7 +16,7 @@ namespace Honua.Server.Tests.Features.OperationsToolset;
 public sealed class FolderOperationReplayTests
 {
     [UnitTest]
-    public async Task FolderMove_ExplicitRoot_ForwardsEtagAndReturnsUpdatedPrecondition()
+    public async Task FolderMove_ApprovedReplay_PreservesNamespaceAndEtag()
     {
         using var handler = new FolderHandler(HttpStatusCode.NoContent);
         using var client = new HttpClient(handler);
@@ -27,10 +27,11 @@ public sealed class FolderOperationReplayTests
             Parameters = new Dictionary<string, string?> { ["folderId"] = null, ["namespace"] = "workspace", ["If-Match"] = "\"current\"" }
         };
         (await executor.ValidateAsync(request)).IsValid.Should().BeTrue();
-        var result = await executor.SubmitAsync(request, new OperationPolicyContext());
+        var result = await executor.SubmitAsync(request, new OperationPolicyContext { ApprovedProposalId = "approved", TenantId = "public" });
         result.Status.Should().Be(OperationHandleStatus.Completed);
         handler.Precondition.Should().Be("\"current\"");
         handler.Query.Should().Be("?namespace=workspace");
+        handler.Tenant.Should().Be("public");
         handler.Body.Should().Be("{\"folderId\":null}");
         result.Result!.Details["etag"].Should().Be("\"updated\"");
     }
@@ -64,10 +65,12 @@ public sealed class FolderOperationReplayTests
         public string? Precondition { get; private set; }
         public string? Body { get; private set; }
         public string? Query { get; private set; }
+        public string? Tenant { get; private set; }
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             Query = request.RequestUri!.Query;
+            Tenant = request.Headers.TryGetValues("X-Honua-Tenant", out var tenants) ? tenants.Single() : null;
             Precondition = request.Headers.IfMatch.SingleOrDefault()?.ToString();
             Body = request.Content is null ? null : await request.Content.ReadAsStringAsync(cancellationToken);
             var response = new HttpResponseMessage(status)

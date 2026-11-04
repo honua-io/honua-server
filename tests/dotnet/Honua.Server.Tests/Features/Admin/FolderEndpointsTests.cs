@@ -76,6 +76,8 @@ public sealed class FolderEndpointsTests : IAsyncLifetime
         var moved = await _client.PutAsJsonAsync("/api/v1/admin/services/test/folder", new { folderId = id });
         moved.StatusCode.Should().Be(HttpStatusCode.NoContent);
         await AssertMembership(id);
+        var filtered = await _client.GetStringAsync($"/api/v1/admin/services?folderId={id}");
+        filtered.Should().Contain("test").And.Contain("Survey");
         SetEtag(moved);
         var nonempty = await _client.DeleteAsync($"/api/v1/admin/folders/{id}");
         nonempty.StatusCode.Should().Be(HttpStatusCode.Conflict);
