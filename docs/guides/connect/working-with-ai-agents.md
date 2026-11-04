@@ -112,12 +112,14 @@ conflicts with a rule, stop and ask.
    with `honua_platform_release_status` that the declared `releaseVersion` is now the target. Until
    it is, a convergence proposal is rejected with `platform_release_version_mismatch`.
 5. Propose the upgrade with `honua_propose_platform_release_convergence` and the target version. A
-   separate approver approves it. Poll `honua://proposals/{id}` until it reads `Completed` or `Failed`.
+   separate approver approves it. Poll `honua://proposals/{id}` until it reads
+   `Succeeded` or `Completed` (success), or `Failed`, `Rejected` or `Cancelled` (stop).
 6. To roll back, use `honua_propose_rollback`. Review the selected revision and backup in the
    proposal's `diff` and `dryRun` before it goes to the approver.
 7. Confirm the running build, not the request. In `honua_platform_release_status`, the serving
-   target's `observedArtifactReference` must be the release's pinned image, with `skewed: false`, and
-   the release must report `isCoVersioned: true`. Don't compare `observedImageId`: it is the local
+   target's entry in `serving` must have the release's pinned image as its
+   `observedArtifactReference`, with `skewed: false`. Top-level status must report
+   `isCoVersioned: true` and an empty `skewedIds` array. Don't compare `observedImageId`: it is the local
    image ID, which differs from the release's image reference.
    The server's `deploymentRevision` (in the capability manifest) names the build it runs.
    Compare builds by `deploymentRevision` or image digest, not by the version string: 2026.1 rc.1
@@ -128,17 +130,47 @@ Don't replace the serving container by hand, run `docker compose down --volumes`
 ## 6. Report status honestly
 
 - Call a task done only after a readback confirms it. The layer queries back, the proposal reads
-  `Completed`, the policy reads back as set, or the server reports the target build.
+  `Succeeded` or `Completed`, the policy reads back as set, or the server reports the target build.
 - Otherwise say what is true:
   - "Not done": it is awaiting approval. Give the proposal id and who must approve it.
   - "Failed": give the error code.
   - "Unsure": say what you could not check.
 - A request, a dry run, or a pending proposal is not the change itself.
 - Quote ids and values from tool results. Don't reconstruct them.
+
+## 7. Operating skills
+
+The package's `skills/` directory contains five optional Agent Skills:
+
+- `skills/honua-install/SKILL.md`: install, readiness and secret files.
+- `skills/honua-ops/SKILL.md`: findings, approved restarts, upgrade and rollback.
+- `skills/honua-services/SKILL.md`: import, publish, filtered queries and readback.
+- `skills/honua-studio-maps/SKILL.md`: Studio styles, saved versions and sharing.
+- `skills/honua-tuning/SKILL.md`: measured publication tuning and supported budgets.
+
+Install the relevant skills from this directory before starting your host:
+
+```bash
+mkdir -p .claude/skills
+cp -R skills/. .claude/skills/
+mkdir -p .agents/skills
+cp -R skills/. .agents/skills/
+```
+
+Claude Code uses `.claude/skills`; Codex uses `.agents/skills`. These copies
+preserve the canonical `skills/` bytes. Review existing `honua-*` directories
+before replacing matching files; repeat the copy after a package upgrade.
+
+Load the skill relevant to the task. Merely reading a skill is not permission to execute its commands or
+bypass an approval. These public instructions contain no install credentials
+or tenant content. Verify the trusted package's agent files from its directory
+with `sha256sum -c agent-files.sha256`. The lock includes this `AGENTS.md` and
+every skill file; editing site rules changes its digest.
 <!-- agent-guide:end -->
 
 ## Related
 
+- [Operating skills and packaging](operating-skills.md)
 - [Connect AI agents to Honua over MCP](ai-agents-mcp.md), including
   [workflow views](ai-agents-mcp.md#workflow-views-bounded-discovery)
 - [What an agent can do in each edition](agent-capabilities-and-editions.md)
