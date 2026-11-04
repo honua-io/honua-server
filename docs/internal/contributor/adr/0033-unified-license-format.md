@@ -174,7 +174,7 @@ Following the dependency rule `Honua.Core ← Honua.Db.Postgres / Honua.Db.DuckD
   - Follow-on mint, marketplace, file-watch, key-inspection, and rotation smoke
     tests land with their bounded child tickets.
 
-Implementation classes in `Honua.Server` are `internal sealed`; only abstractions in `Honua.Core` are `public` (with XML docs), per AGENTS.md. Endpoints stay ≤ 5 dependencies, handlers ≤ 4. No controllers — Minimal APIs only (ADR-0013).
+Implementation classes in `Honua.Server` are `internal sealed`; only abstractions in `Honua.Core` are `public`, per AGENTS.md. Endpoints stay ≤ 5 dependencies, handlers ≤ 4. No controllers — Minimal APIs only (ADR-0013).
 
 ### Migration
 

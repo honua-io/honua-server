@@ -11,7 +11,6 @@ namespace Honua.Architecture.Tests;
 /// <summary>
 /// Enforces vertical slice isolation by preventing cross-feature dependencies.
 /// Each feature should be independent and not directly reference other features.
-/// Reference: AGENTS.md Architecture Enforcement
 /// </summary>
 [Trait("Category", "Architecture")]
 public sealed class VerticalSliceIsolationTests

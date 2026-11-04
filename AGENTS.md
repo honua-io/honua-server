@@ -58,7 +58,7 @@ BLOCKING:
 - C1 history, ticket/PR refs or reviewer notes in code; C2-C4 obsolete, redundant or rambling comments;
   C5 commented-out code. Comment only what the code cannot say.
 - XML doc comments (`///`): names carry the meaning (SDK packages: one-line `<summary>` only).
-- N1 names that hide intent; F1 more than 3-4 parameters; F2 output arguments; F3 boolean flags.
+- N1 names that hide intent; F1 more than 3 parameters; F2 output arguments; F3 boolean flags.
 - Over budget, no reason in the PR: functions ~40 lines or 2 nesting levels; classes, files ~400 lines.
 
 WARNING:

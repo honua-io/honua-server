@@ -18,7 +18,6 @@ namespace Honua.Architecture.Tests;
 /// providers), not just <c>Honua.Server</c>, so SRP fan-out is enforced everywhere the rule
 /// claims to apply. A small, explicit allowlist documents pre-existing exceptions so the
 /// rule ratchets: it blocks new violations while tracking known debt.
-/// Reference: AGENTS.md Architecture Enforcement.
 /// </summary>
 [Trait("Category", "Architecture")]
 public sealed class DependencyInjectionLimitsTests
