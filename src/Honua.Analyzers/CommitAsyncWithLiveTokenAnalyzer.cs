@@ -9,28 +9,9 @@ using Microsoft.CodeAnalysis.Diagnostics;
 
 namespace Honua.Analyzers;
 
-/// <summary>
-/// HN0001 — Detects calls to <c>DbTransaction.CommitAsync(CancellationToken)</c>
-/// where the argument is not <c>CancellationToken.None</c>.
-/// </summary>
-/// <remarks>
-/// Passing a live <see cref="System.Threading.CancellationToken"/> to
-/// <c>DbTransaction.CommitAsync(CancellationToken)</c> creates a
-/// phantom-commit race condition: if the token fires after the database server
-/// accepts COMMIT but before the network ACK arrives, the driver throws
-/// <see cref="System.OperationCanceledException"/> yet the transaction is
-/// durably committed server-side. Callers that observe the exception as failure
-/// and retry will insert duplicates.
-///
-/// Use <c>DbTransactionExtensions.CommitSafelyAsync(cancellationToken)</c>
-/// instead: it pre-checks the token (failing cleanly if already cancelled) then
-/// commits with <see cref="System.Threading.CancellationToken.None"/> so the
-/// in-flight COMMIT round-trip is never interrupted.
-/// </remarks>
 [DiagnosticAnalyzer(LanguageNames.CSharp)]
 public sealed class CommitAsyncWithLiveTokenAnalyzer : DiagnosticAnalyzer
 {
-    /// <summary>Diagnostic identifier.</summary>
     public const string DiagnosticId = "HN0001";
 
     private static readonly DiagnosticDescriptor Rule = new(
@@ -45,11 +26,9 @@ public sealed class CommitAsyncWithLiveTokenAnalyzer : DiagnosticAnalyzer
             "if the token fires after the server accepts COMMIT but before the ACK arrives, the driver throws " +
             "OperationCanceledException yet the transaction is durably committed. Use CommitSafelyAsync(ct) instead.");
 
-    /// <inheritdoc />
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics =>
         ImmutableArray.Create(Rule);
 
-    /// <inheritdoc />
     public override void Initialize(AnalysisContext context)
     {
         context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None);
