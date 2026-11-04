@@ -42,16 +42,16 @@ public sealed class GeoServicesDocumentationTruthTests
     {
         var root = ArchitectureTestHelpers.ResolveRepositoryRoot();
         var protocol = File.ReadAllText(ArchitectureTestHelpers.CombinePath(root, "docs", "reference", "protocols", "geoservices-rest.md"));
-        var migration = File.ReadAllText(ArchitectureTestHelpers.CombinePath(root, "docs", "guides", "migrate", "arcgis-apps-and-sdks.md"));
+        var migration = File.ReadAllText(ArchitectureTestHelpers.CombinePath(root, "docs", "guides", "migrate", "geoservices-apps-and-sdks.md"));
 
         protocol.Should().Contain("`queryContingentValues` is implemented");
         protocol.Should().Contain("experimental capability `serve.i3s-scene`");
         protocol.Should().Contain("routes return 404 until `versioning.branch` is enabled");
         migration.Should().Contain("MapServer WMTS supports WebMercatorQuad, WorldCRS84Quad");
         migration.Should().Contain("Incremental Postgres change tracking");
-        var pro = File.ReadAllText(ArchitectureTestHelpers.CombinePath(root, "docs", "guides", "connect", "arcgis-pro.md"));
-        pro.Should().Contain("run the `PortalCompat.generateToken` example").And.NotContain("command above");
-        pro.Should().Contain("default is 404 until experimental capability `serve.i3s-scene` is enabled");
+        var desktopGuide = File.ReadAllText(ArchitectureTestHelpers.CombinePath(root, "docs", "guides", "connect", "geoservices-desktop-clients.md"));
+        desktopGuide.Should().Contain("run the `PortalCompat.generateToken` example").And.NotContain("command above");
+        desktopGuide.Should().Contain("default is 404 until experimental capability `serve.i3s-scene` is enabled");
     }
 
     [ArchitectureTest]

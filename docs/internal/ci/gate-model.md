@@ -157,7 +157,7 @@ model:
    matrix the run instantiated), the conclusion of every required
    compatibility lane — Postgres Compatibility, AOT Build Verification, Docker
    Build & Integration Test, Python Integration Tests, JavaScript Integration
-   Tests, Leaflet Browser Tests, MapLibre GL JS Browser Compatibility,
+   Tests, Esri Leaflet Browser Tests, MapLibre GL JS Browser Compatibility,
    MCP Certification, Honua.Core Package Compatibility, Quickstart Console
    Compose Smoke; a matrix lane aggregates every variant, so one red Postgres
    image makes the lane red — and the `CI Gate` conclusion.
@@ -212,7 +212,7 @@ These workflows run on schedule and can be dispatched manually:
 | `cite-kml22-conformance.yml` | Fri 3am UTC | OGC KML 2.2 CITE conformance |
 | `cite-gml32-conformance.yml` | Sat 6am UTC | OGC GML 3.2 CITE conformance |
 | `cite-gpkg12-conformance.yml` | Sat 3am UTC | OGC GeoPackage 1.2 CITE conformance |
-| `geoservices-import-fidelity-external.yml` | On-demand (`workflow_dispatch`) | External GeoServices parity + Geoportal import against live services: runs the correctness regression gate **and** the perf-parity latency gate (issue #1249) over the freshly measured scorecard (deterministic parity stays in Import Fidelity Scorecard Governance); also runs `GeoservicesGeoportalImportIntegrationTests` |
+| `geoservices-import-fidelity-external.yml` | On-demand (`workflow_dispatch`) | External GeoServices parity + Geoportal import vs live Esri services: runs the correctness regression gate **and** the perf-parity latency gate (issue #1249) over the freshly measured scorecard (deterministic parity stays in Import Fidelity Scorecard Governance); also runs `GeoservicesGeoportalImportIntegrationTests` |
 | `routing-nightly.yml` | Weekly Sun 5:00am UTC | pgRouting provider + NAServer routing integration (`Category=Routing`); `PgRoutingFixture` manages its own Testcontainers `pgrouting/pgrouting` image |
 | `warehouse-nightly.yml` | Weekly Sun 6:00am UTC | Snowflake/Redshift/Databricks/SqlServer creds-gated provider tests; self-skips cleanly without configured secrets, surfacing pass/fail/skip counts in the run summary |
 | `cross-server-consume-nightly.yml` | Daily 7:00am UTC | Honua-as-client WMS/WFS/WMTS reads against GeoServer and MapServer reference containers |

@@ -230,13 +230,13 @@ private static async Task<IResult> HandleFeatureServerOperation(/* params */)
     catch (ValidationException ex)
     {
         // FeatureServer error format
-        var error = new
+        var error = new EsriErrorResponse
         {
-            error = new
+            Error = new EsriError
             {
-                code = 400,
-                message = ex.Message,
-                details = ex.Errors
+                Code = 400,
+                Message = ex.Message,
+                Details = ex.Errors
             }
         };
         return Results.BadRequest(error);
