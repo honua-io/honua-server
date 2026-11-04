@@ -22,7 +22,7 @@ Uploaded via `POST /api/v1/admin/import/upload` (or `upload-url`, with `preview`
 | WKT | `.wkt` | Well-known text geometries. |
 | CSV | `.csv` | Needs lon/lat columns or a WKT geometry column. WKT geometry preserves XY, Z and M ordinates on import and bulk export. Bulk, OGC API Features and WFS CSV output share null/empty string escaping. |
 | FlatGeobuf | `.fgb` | Compact binary format. |
-| File Geodatabase | `.gdb.zip` | Zipped GeoServices REST `.gdb` directory. |
+| File Geodatabase | `.gdb.zip` | Zipped File Geodatabase (`.gdb`) directory. |
 | GeoParquet | `.parquet`, `.geoparquet` | GeoParquet 1.0.0/1.1.0, one WKB geometry column, planar edges; null-geometry rows retain attributes. CRS validation and outstanding nested/epoch/dimension fidelity work are described in the [input contract](../guides/publish/import-files.md#geoparquet-input-contract). |
 
 New import tables enforce the requested SRID; existing append/upsert tables keep their declared geometry constraints. Dimension preservation is format-specific (for example, GPX elevations above); GeoParquet declared empty-geometry dimensions remain under verification in the linked input contract.
