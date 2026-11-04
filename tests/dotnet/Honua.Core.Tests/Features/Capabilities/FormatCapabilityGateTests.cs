@@ -61,7 +61,7 @@ public sealed class FormatCapabilityGateTests
     public void Evaluate_IsCaseInsensitiveOnFormatName()
     {
         FormatCapabilityGate.Evaluate("GeoParquet").IsEnabled.Should().BeTrue();
-        FormatCapabilityGate.Evaluate("ESRIJSON").IsEnabled.Should().BeTrue();
+        FormatCapabilityGate.Evaluate("GEOSERVICESJSON").IsEnabled.Should().BeTrue();
     }
 
     [Trait("Tier", "Fast")]
@@ -156,8 +156,8 @@ public sealed class FormatCapabilityGateTests
     public void FilterAdvertised_DefaultRegistry_KeepsAllRealFormats()
     {
         // Every format is Implemented in T6, so nothing is filtered from the real roster.
-        var kept = FormatCapabilityGate.FilterAdvertised(["geojson", "geoparquet", "esrijson", "flatgeobuf"]);
+        var kept = FormatCapabilityGate.FilterAdvertised(["geojson", "geoparquet", "geoservicesjson", "flatgeobuf"]);
 
-        kept.Should().Equal("geojson", "geoparquet", "esrijson", "flatgeobuf");
+        kept.Should().Equal("geojson", "geoparquet", "geoservicesjson", "flatgeobuf");
     }
 }

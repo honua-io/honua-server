@@ -11,16 +11,16 @@ namespace Honua.GeoServicesRest.Features.FeatureStore.Models;
 
 #pragma warning disable CA1812 // Internal class is never instantiated (used for JSON deserialization)
 
-internal sealed record ArcGisRestQueryResponse
+internal sealed record GeoServicesRestQueryResponse
 {
     [JsonPropertyName("features")]
-    public ArcGisRestFeature[]? Features { get; init; }
+    public GeoServicesRestFeature[]? Features { get; init; }
 
     [JsonPropertyName("exceededTransferLimit")]
     public bool ExceededTransferLimit { get; init; }
 
     [JsonPropertyName("spatialReference")]
-    public ArcGisRestSpatialReference? SpatialReference { get; init; }
+    public GeoServicesRestSpatialReference? SpatialReference { get; init; }
 
     [JsonPropertyName("objectIdFieldName")]
     public string? ObjectIdFieldName { get; init; }
@@ -32,10 +32,10 @@ internal sealed record ArcGisRestQueryResponse
     public string? GeometryType { get; init; }
 
     [JsonPropertyName("error")]
-    public ArcGisRestError? Error { get; init; }
+    public GeoServicesRestError? Error { get; init; }
 }
 
-internal sealed record ArcGisRestFeature
+internal sealed record GeoServicesRestFeature
 {
     [JsonPropertyName("attributes")]
     public Dictionary<string, JsonElement>? Attributes { get; init; }
@@ -44,7 +44,7 @@ internal sealed record ArcGisRestFeature
     public JsonElement? Geometry { get; init; }
 }
 
-internal sealed record ArcGisRestSpatialReference
+internal sealed record GeoServicesRestSpatialReference
 {
     [JsonPropertyName("wkid")]
     public int? Wkid { get; init; }
@@ -53,25 +53,25 @@ internal sealed record ArcGisRestSpatialReference
     public int? LatestWkid { get; init; }
 }
 
-internal sealed record ArcGisRestCountResponse
+internal sealed record GeoServicesRestCountResponse
 {
     [JsonPropertyName("count")]
     public long Count { get; init; }
 
     [JsonPropertyName("error")]
-    public ArcGisRestError? Error { get; init; }
+    public GeoServicesRestError? Error { get; init; }
 }
 
-internal sealed record ArcGisRestExtentResponse
+internal sealed record GeoServicesRestExtentResponse
 {
     [JsonPropertyName("extent")]
-    public ArcGisRestExtent? Extent { get; init; }
+    public GeoServicesRestExtent? Extent { get; init; }
 
     [JsonPropertyName("error")]
-    public ArcGisRestError? Error { get; init; }
+    public GeoServicesRestError? Error { get; init; }
 }
 
-internal sealed record ArcGisRestExtent
+internal sealed record GeoServicesRestExtent
 {
     [JsonPropertyName("xmin")]
     public double Xmin { get; init; }
@@ -86,10 +86,10 @@ internal sealed record ArcGisRestExtent
     public double Ymax { get; init; }
 
     [JsonPropertyName("spatialReference")]
-    public ArcGisRestSpatialReference? SpatialReference { get; init; }
+    public GeoServicesRestSpatialReference? SpatialReference { get; init; }
 }
 
-internal sealed record ArcGisRestObjectIdsResponse
+internal sealed record GeoServicesRestObjectIdsResponse
 {
     [JsonPropertyName("objectIdFieldName")]
     public string? ObjectIdFieldName { get; init; }
@@ -98,10 +98,10 @@ internal sealed record ArcGisRestObjectIdsResponse
     public long[]? ObjectIds { get; init; }
 
     [JsonPropertyName("error")]
-    public ArcGisRestError? Error { get; init; }
+    public GeoServicesRestError? Error { get; init; }
 }
 
-internal sealed record ArcGisRestLayerResponse
+internal sealed record GeoServicesRestLayerResponse
 {
     [JsonPropertyName("id")]
     public int Id { get; init; }
@@ -119,13 +119,13 @@ internal sealed record ArcGisRestLayerResponse
     public int? MaxRecordCount { get; init; }
 
     [JsonPropertyName("extent")]
-    public ArcGisRestExtent? Extent { get; init; }
+    public GeoServicesRestExtent? Extent { get; init; }
 
     [JsonPropertyName("error")]
-    public ArcGisRestError? Error { get; init; }
+    public GeoServicesRestError? Error { get; init; }
 }
 
-internal sealed record ArcGisRestError
+internal sealed record GeoServicesRestError
 {
     [JsonPropertyName("code")]
     public int Code { get; init; }
@@ -140,12 +140,12 @@ internal sealed record ArcGisRestError
 /// Source-generated JSON serialization context for ArcGIS REST API responses.
 /// AOT/trim-safe so the federated provider can run under Native AOT.
 /// </summary>
-[JsonSerializable(typeof(ArcGisRestQueryResponse))]
-[JsonSerializable(typeof(ArcGisRestCountResponse))]
-[JsonSerializable(typeof(ArcGisRestExtentResponse))]
-[JsonSerializable(typeof(ArcGisRestObjectIdsResponse))]
-[JsonSerializable(typeof(ArcGisRestLayerResponse))]
+[JsonSerializable(typeof(GeoServicesRestQueryResponse))]
+[JsonSerializable(typeof(GeoServicesRestCountResponse))]
+[JsonSerializable(typeof(GeoServicesRestExtentResponse))]
+[JsonSerializable(typeof(GeoServicesRestObjectIdsResponse))]
+[JsonSerializable(typeof(GeoServicesRestLayerResponse))]
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
-internal sealed partial class ArcGisRestJsonContext : JsonSerializerContext
+internal sealed partial class GeoServicesRestJsonContext : JsonSerializerContext
 {
 }

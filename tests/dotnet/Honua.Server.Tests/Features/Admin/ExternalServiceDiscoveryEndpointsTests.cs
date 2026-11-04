@@ -66,7 +66,7 @@ public sealed class ExternalServiceDiscoveryEndpointsTests : IAsyncLifetime, IDi
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/external-services/discover")]
-    public async Task DiscoverExternalService_WithArcGisFeatureServerFixture_ReturnsCandidates()
+    public async Task DiscoverExternalService_WithGeoServicesFeatureServerFixture_ReturnsCandidates()
     {
         using var response = await _client.PostAsync(
             "/api/v1/admin/external-services/discover",

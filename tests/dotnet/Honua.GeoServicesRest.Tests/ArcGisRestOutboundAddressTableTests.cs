@@ -16,9 +16,9 @@ public sealed class ArcGisRestOutboundAddressTableTests
     public async Task ResolveAllowedAddressesAsync_HostResolvingToDisallowedRange_Throws(string address, string range)
     {
         var exception = await Assert.ThrowsAsync<ArgumentException>(
-            () => ArcGisRestOutboundGuard.ResolveAllowedAddressesAsync("arcgis.example.com", Resolve(address), CancellationToken.None));
+            () => GeoServicesRestOutboundGuard.ResolveAllowedAddressesAsync("arcgis.example.com", Resolve(address), CancellationToken.None));
 
-        Assert.True(exception.Message == ArcGisRestOutboundGuard.DisallowedNetworkAddressMessage, range);
+        Assert.True(exception.Message == GeoServicesRestOutboundGuard.DisallowedNetworkAddressMessage, range);
     }
 
     [Trait("Tier", "Fast")]
@@ -26,7 +26,7 @@ public sealed class ArcGisRestOutboundAddressTableTests
     [MemberData(nameof(OutboundAddressCases.Allowed), MemberType = typeof(OutboundAddressCases))]
     public async Task ResolveAllowedAddressesAsync_HostResolvingToPublicAddress_ReturnsIt(string address, string range)
     {
-        var resolved = await ArcGisRestOutboundGuard.ResolveAllowedAddressesAsync(
+        var resolved = await GeoServicesRestOutboundGuard.ResolveAllowedAddressesAsync(
             "arcgis.example.com", Resolve(address), CancellationToken.None);
 
         Assert.True(resolved.SequenceEqual([IPAddress.Parse(address)]), range);

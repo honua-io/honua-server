@@ -20,9 +20,9 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.Tiles;
 public sealed class CompactTilePackageWriterTests
 {
     private const int BundleDataOffset = 131_136;
-    private const string EsriRootSampleShape =
+    private const string GeoServicesRootSampleShape =
         """{"minScale":591657527.591555,"maxScale":9027.977411,"resampling":true,"tileImageInfo":{"format":"PNG"}}""";
-    private const string EsriItemInfoSampleShape =
+    private const string GeoServicesItemInfoSampleShape =
         """{"version":1.0,"extent":{"xmin":-178.19824218748033,"ymin":18.937464429663208,"xmax":-66.972656250009919,"ymax":71.413176833965693,"spatialReference":{"wkid":4326,"latestWkid":4326}}}""";
 
     [UnitTest]
@@ -53,7 +53,7 @@ public sealed class CompactTilePackageWriterTests
             ]);
 
         using (var root = await ReadJsonAsync(archive, "root.json"))
-        using (var esriRootSample = JsonDocument.Parse(EsriRootSampleShape))
+        using (var esriRootSample = JsonDocument.Parse(GeoServicesRootSampleShape))
         {
             root.RootElement.GetProperty("version").GetDouble().Should().Be(1d);
             root.RootElement.GetProperty("tileBundlesPath").GetString().Should().Be("./tile");
@@ -71,7 +71,7 @@ public sealed class CompactTilePackageWriterTests
         }
 
         using (var itemInfo = await ReadJsonAsync(archive, "iteminfo.json"))
-        using (var esriItemInfoSample = JsonDocument.Parse(EsriItemInfoSampleShape))
+        using (var esriItemInfoSample = JsonDocument.Parse(GeoServicesItemInfoSampleShape))
         {
             itemInfo.RootElement.GetProperty("version").ValueKind.Should()
                 .Be(esriItemInfoSample.RootElement.GetProperty("version").ValueKind);

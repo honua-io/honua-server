@@ -494,6 +494,22 @@ against the schema it will find. Image rollback never reverses migrations.
   upgraded. Pin rollback targets by digest. The tag named in the 2026.1 release
   notes has since moved to a rebuild (honua-io/honua-release#776).
 
+### Rollback boundaries
+
+These migrations are reader-incompatible. A server that does not ship one refuses to start
+against a database it was applied to, with `schema_reader_incompatible` naming the script.
+To roll back across one, restore the backup you took before the upgrade
+([Back up and restore](backup-and-restore.md)).
+
+| Migration | Servers that refuse | Why |
+| --- | --- | --- |
+| `142_CreateAiFinancialAccounting.sql` | 2026.1-rc.1 and earlier | Financial-mode writer fences need the matching financial admission contract. |
+| `144_RenameGeoServicesRestSourceKind.sql` | 2026.1-rc.1 and every earlier build | Stored migration source kinds become `geoservices-rest`, and older servers read only `arcgis-geoservices-rest`. |
+
+After migration 144, servers older than the release that ships it (2026.1-rc.1 and every
+earlier build) refuse to start against the database; restore from the pre-upgrade backup to
+roll back.
+
 ### Rollback completion proof
 
 Moving traffic back is not enough for a rollback to report `RolledBack`. The operation stays `RollbackRequested` (`reason=rollback.awaiting_data_plane` in its current phase) until three things hold on the restored target:

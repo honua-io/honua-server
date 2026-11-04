@@ -38,7 +38,7 @@ public sealed class FilterExpressionService : IFilterExpressionService
             FilterExpression expression = language switch
             {
                 FilterLanguage.OData => new ODataFilterParser().Parse(filter),
-                FilterLanguage.ArcGisSql => new GeoServicesSqlParser().Parse(filter),
+                FilterLanguage.GeoServicesSql => new GeoServicesSqlParser().Parse(filter),
                 FilterLanguage.Cql2Text => new Cql2Parser().Parse(filter),
                 FilterLanguage.Cql2Json => new Cql2JsonParser().Parse(filter),
                 _ => throw new NotSupportedException($"Unsupported filter language '{language}'.")

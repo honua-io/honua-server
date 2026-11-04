@@ -268,7 +268,7 @@ internal sealed class GeocodingHandler(
                             LatestWkid = outSrid
                         }
                     },
-                    Attributes = ProjectAttributes(EsriAddressAttributes(candidate), outFields)
+                    Attributes = ProjectAttributes(GeoServicesAddressAttributes(candidate), outFields)
                 });
             }
 
@@ -404,7 +404,7 @@ internal sealed class GeocodingHandler(
             }
 
             var address = new Dictionary<string, string?>(
-                EsriGeocodeAddressFields.Apply(match.Address, match.AddressType, match.StructuredAddress, match.Attributes),
+                GeoServicesGeocodeAddressFields.Apply(match.Address, match.AddressType, match.StructuredAddress, match.Attributes),
                 StringComparer.Ordinal);
 
             var response = new ReverseGeocodeResponse
@@ -719,7 +719,7 @@ internal sealed class GeocodingHandler(
                     Address = candidate.Address,
                     Score = candidate.Score,
                     Location = location,
-                    Attributes = ProjectAttributes(EsriAddressAttributes(candidate), outFields)
+                    Attributes = ProjectAttributes(GeoServicesAddressAttributes(candidate), outFields)
                 });
             }
 
@@ -1350,9 +1350,9 @@ internal sealed class GeocodingHandler(
         return positionalIndex;
     }
 
-    private static IReadOnlyDictionary<string, string?> EsriAddressAttributes(
+    private static IReadOnlyDictionary<string, string?> GeoServicesAddressAttributes(
         Honua.Geocoding.Features.Geocoding.Domain.GeocodeCandidate candidate)
-        => EsriGeocodeAddressFields.Apply(
+        => GeoServicesGeocodeAddressFields.Apply(
             candidate.Address,
             candidate.AddressType,
             candidate.StructuredAddress,

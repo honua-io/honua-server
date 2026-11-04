@@ -186,9 +186,9 @@ public sealed partial class GeoservicesImportServiceAttachmentImportTests(Postgr
         ILayerPublishingService publishingService,
         string? targetSchema = null)
     {
-        var restClient = new ArcGisRestClient(
+        var restClient = new GeoServicesRestClient(
             new HttpClient(handler),
-            NullLogger<ArcGisRestClient>.Instance,
+            NullLogger<GeoServicesRestClient>.Instance,
             (_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
 
         var crsRegistry = new Mock<ICrsRegistry>(MockBehavior.Strict);
@@ -203,7 +203,7 @@ public sealed partial class GeoservicesImportServiceAttachmentImportTests(Postgr
             restClient,
             new FixtureConnectionProvider(fixture),
             crsRegistry.Object,
-            new EsriConstructCapabilityRegistry(EsriConstructCapabilityRegistry.BuiltInDescriptors),
+            new GeoServicesConstructCapabilityRegistry(GeoServicesConstructCapabilityRegistry.BuiltInDescriptors),
             NullLogger<GeoservicesImportService>.Instance,
             new GeoservicesLayerPublicationService(
                 NullLogger<GeoservicesLayerPublicationService>.Instance,

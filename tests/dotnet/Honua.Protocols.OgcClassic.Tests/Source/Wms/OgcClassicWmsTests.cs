@@ -390,7 +390,7 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
     [Operation(Operations.Wms)]
     [InterfaceOperation(TestProtocols.Wms13, "GetMap")]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
-    public async Task Wms_GetMap_ArcGisProFullPrecisionBbox_ReturnsImage()
+    public async Task Wms_GetMap_GeoServicesProFullPrecisionBbox_ReturnsImage()
     {
         // Exact BBOX serialization observed from ArcGIS Pro 3.7.1 GetMap.
         const string bbox = "-122.43000000000000682121,37.7599999999999980104803,-122.400000000000005684342,37.7899999999999991473487";

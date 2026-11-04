@@ -46,7 +46,7 @@ public sealed class GeoservicesServiceConstructAccountingScanTests
         report.Differences.Select(difference => (difference.Code, difference.Severity, difference.Subject, difference.Actual))
             .Should().Equal(
                 (MigrationFidelityDifferenceCodes.ConstructReviewRequired, MigrationFidelityDifferenceSeverities.Unverified,
-                    Inspections, "manual-review (ARCGIS_RELATIONSHIPS_MANUAL_REVIEW)"),
+                    Inspections, "manual-review (GEOSERVICES_RELATIONSHIPS_MANUAL_REVIEW)"),
                 (MigrationFidelityDifferenceCodes.ServiceResourceUnselected, MigrationFidelityDifferenceSeverities.Blocking,
                     Surveys, "not selected"));
 
@@ -89,8 +89,8 @@ public sealed class GeoservicesServiceConstructAccountingScanTests
 
         report.Differences.Select(difference => (difference.Code, difference.Subject, difference.Actual))
             .Should().Equal(
-                (MigrationFidelityDifferenceCodes.ConstructReviewRequired, Inspections, "manual-review (ARCGIS_RELATIONSHIPS_MANUAL_REVIEW)"),
-                (MigrationFidelityDifferenceCodes.ConstructUnsupported, Surveys, "unsupported (ARCGIS_UNSUPPORTED_GEOMETRY)"));
+                (MigrationFidelityDifferenceCodes.ConstructReviewRequired, Inspections, "manual-review (GEOSERVICES_RELATIONSHIPS_MANUAL_REVIEW)"),
+                (MigrationFidelityDifferenceCodes.ConstructUnsupported, Surveys, "unsupported (GEOSERVICES_UNSUPPORTED_GEOMETRY)"));
         report.Entries.Single(entry => entry.SourceId == Surveys && entry.Construct == "resource.geometry")
             .Disposition.Should().Be(MigrationConstructDispositions.Blocker);
     }
@@ -137,9 +137,9 @@ public sealed class GeoservicesServiceConstructAccountingScanTests
     private static GeoservicesImportService CreateService(HttpMessageHandler handler)
     {
         var httpClient = new HttpClient(handler);
-        var restClient = new ArcGisRestClient(
+        var restClient = new GeoServicesRestClient(
             httpClient,
-            NullLogger<ArcGisRestClient>.Instance,
+            NullLogger<GeoServicesRestClient>.Instance,
             (_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
         var connectionProvider = new Mock<IAdoNetDatabaseConnectionProvider>(MockBehavior.Strict);
         var crsRegistry = new Mock<ICrsRegistry>(MockBehavior.Strict);
@@ -156,7 +156,7 @@ public sealed class GeoservicesServiceConstructAccountingScanTests
             restClient,
             connectionProvider.Object,
             crsRegistry.Object,
-            new EsriConstructCapabilityRegistry(EsriConstructCapabilityRegistry.BuiltInDescriptors),
+            new GeoServicesConstructCapabilityRegistry(GeoServicesConstructCapabilityRegistry.BuiltInDescriptors),
             NullLogger<GeoservicesImportService>.Instance,
             new GeoservicesLayerPublicationService(NullLogger<GeoservicesLayerPublicationService>.Instance));
     }

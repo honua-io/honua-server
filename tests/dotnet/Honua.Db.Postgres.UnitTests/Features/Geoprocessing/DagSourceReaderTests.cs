@@ -38,11 +38,11 @@ namespace Honua.Db.Postgres.Tests.Features.Geoprocessing;
 public sealed class DagSourceReaderTests
 {
     // -------------------------------------------------------------------------
-    // source.esri-featureserver — wraps ArcGisRestClient paging + Esri->GeoJSON
+    // source.esri-featureserver — wraps GeoServicesRestClient paging + Esri->GeoJSON
     // -------------------------------------------------------------------------
 
     [UnitTest]
-    public async Task EsriFeatureServer_PaginatesUntilTransferLimitClears_AndConvertsGeometry()
+    public async Task GeoServicesFeatureServer_PaginatesUntilTransferLimitClears_AndConvertsGeometry()
     {
         var page1 = """
         {"features":[
@@ -59,14 +59,14 @@ public sealed class DagSourceReaderTests
 
         var capturedUrls = new List<string>();
         var handler = new SequencedJsonHandler(capturedUrls, page1, page2, page3Empty);
-        var reader = new EsriFeatureServerDagSource(
-            BuildArcGisClient(handler),
-            NullLogger<EsriFeatureServerDagSource>.Instance);
+        var reader = new GeoServicesFeatureServerDagSource(
+            BuildGeoServicesClient(handler),
+            NullLogger<GeoServicesFeatureServerDagSource>.Instance);
 
         var request = new DagSourceRequest
         {
             ServiceUrl = "https://example.com/arcgis/rest/services/Sample/FeatureServer",
-            EsriLayerId = 0,
+            GeoServicesLayerId = 0,
             Where = "status = 'active'",
             PageSize = 2,
             OutputSrid = 4326
@@ -89,14 +89,14 @@ public sealed class DagSourceReaderTests
     }
 
     [UnitTest]
-    public async Task EsriFeatureServer_SinceWatermark_AddsTemporalPredicate()
+    public async Task GeoServicesFeatureServer_SinceWatermark_AddsTemporalPredicate()
     {
         var page = """{"features":[],"exceededTransferLimit":false}""";
         var capturedUrls = new List<string>();
         var handler = new SequencedJsonHandler(capturedUrls, page);
-        var reader = new EsriFeatureServerDagSource(
-            BuildArcGisClient(handler),
-            NullLogger<EsriFeatureServerDagSource>.Instance);
+        var reader = new GeoServicesFeatureServerDagSource(
+            BuildGeoServicesClient(handler),
+            NullLogger<GeoServicesFeatureServerDagSource>.Instance);
 
         var request = new DagSourceRequest
         {
@@ -503,10 +503,10 @@ public sealed class DagSourceReaderTests
     // Helpers
     // -------------------------------------------------------------------------
 
-    private static ArcGisRestClient BuildArcGisClient(HttpMessageHandler handler)
+    private static GeoServicesRestClient BuildGeoServicesClient(HttpMessageHandler handler)
         => new(
             new HttpClient(handler),
-            NullLogger<ArcGisRestClient>.Instance,
+            NullLogger<GeoServicesRestClient>.Instance,
             // Resolve any host to a public address so the SSRF guard admits the test host.
             (_, _) => Task.FromResult(new[] { IPAddress.Parse("8.8.8.8") }));
 

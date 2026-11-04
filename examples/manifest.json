@@ -14,9 +14,9 @@
     "not-executable": "The inventory item is not an independent runnable example; no green execution claim is made."
   },
   "summary": {
-    "total": 1223,
+    "total": 1228,
     "byStatus": {
-      "not-executable": 1207,
+      "not-executable": 1212,
       "unvalidated": 13,
       "passed": 3
     }
@@ -1216,6 +1216,19 @@
       },
       "fence": 1,
       "line": 20,
+      "language": "csharp"
+    },
+    {
+      "id": "29a1014a647ea85e",
+      "kind": "docs-fence",
+      "path": "docs/archive/contributor/unified-response-system.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 14,
+      "line": 292,
       "language": "csharp"
     },
     {
@@ -4321,7 +4334,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 7,
+      "line": 9,
       "language": "text"
     },
     {
@@ -5587,8 +5600,8 @@
         "check": "inventory-classification"
       },
       "fence": 3,
-      "line": 89,
-      "language": "json"
+      "line": 70,
+      "language": "javascript"
     },
     {
       "id": "20c47835e4126579",
@@ -5600,8 +5613,21 @@
         "check": "inventory-classification"
       },
       "fence": 2,
-      "line": 59,
+      "line": 37,
       "language": "javascript"
+    },
+    {
+      "id": "cf0d705fec0dda2f",
+      "kind": "docs-fence",
+      "path": "docs/guides/edit/edit-features.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 4,
+      "line": 100,
+      "language": "json"
     },
     {
       "id": "f43db6a7c32c9c23",
@@ -5613,7 +5639,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 26,
+      "line": 21,
       "language": "javascript"
     },
     {
@@ -9799,7 +9825,7 @@
         "check": "inventory-classification"
       },
       "fence": 5,
-      "line": 339,
+      "line": 332,
       "language": "csharp"
     },
     {
@@ -9838,7 +9864,7 @@
         "check": "inventory-classification"
       },
       "fence": 6,
-      "line": 389,
+      "line": 409,
       "language": "csharp"
     },
     {
@@ -9851,8 +9877,8 @@
         "check": "inventory-classification"
       },
       "fence": 7,
-      "line": 543,
-      "language": "yaml"
+      "line": 459,
+      "language": "csharp"
     },
     {
       "id": "807d03e48a3ee543",
@@ -9866,6 +9892,19 @@
       "fence": 1,
       "line": 35,
       "language": "csharp"
+    },
+    {
+      "id": "9bcca03ab5024666",
+      "kind": "docs-fence",
+      "path": "docs/internal/contributor/adr/0016-performance-optimization-strategies.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 8,
+      "line": 613,
+      "language": "yaml"
     },
     {
       "id": "ce7aa888813b99a8",
@@ -9916,7 +9955,7 @@
         "check": "inventory-classification"
       },
       "fence": 3,
-      "line": 119,
+      "line": 120,
       "language": "csharp"
     },
     {
@@ -9942,7 +9981,7 @@
         "check": "inventory-classification"
       },
       "fence": 4,
-      "line": 127,
+      "line": 128,
       "language": "csharp"
     },
     {
@@ -11658,7 +11697,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 193,
+      "line": 198,
       "language": "bash"
     },
     {
@@ -11853,7 +11892,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 61,
+      "line": 70,
       "language": "bash"
     },
     {
@@ -11996,7 +12035,7 @@
         "check": "inventory-classification"
       },
       "fence": 4,
-      "line": 102,
+      "line": 103,
       "language": "bash"
     },
     {
@@ -12035,7 +12074,7 @@
         "check": "inventory-classification"
       },
       "fence": 3,
-      "line": 93,
+      "line": 94,
       "language": "bash"
     },
     {
@@ -12165,7 +12204,7 @@
         "check": "inventory-classification"
       },
       "fence": 11,
-      "line": 285,
+      "line": 220,
       "language": "csharp"
     },
     {
@@ -12178,7 +12217,7 @@
         "check": "inventory-classification"
       },
       "fence": 20,
-      "line": 741,
+      "line": 425,
       "language": "bash"
     },
     {
@@ -12191,7 +12230,7 @@
         "check": "inventory-classification"
       },
       "fence": 6,
-      "line": 166,
+      "line": 157,
       "language": "bash"
     },
     {
@@ -12204,8 +12243,8 @@
         "check": "inventory-classification"
       },
       "fence": 17,
-      "line": 369,
-      "language": "plain"
+      "line": 335,
+      "language": "csharp"
     },
     {
       "id": "11b945398267de84",
@@ -12230,7 +12269,7 @@
         "check": "inventory-classification"
       },
       "fence": 15,
-      "line": 327,
+      "line": 316,
       "language": "csharp"
     },
     {
@@ -12243,7 +12282,20 @@
         "check": "inventory-classification"
       },
       "fence": 8,
-      "line": 203,
+      "line": 174,
+      "language": "bash"
+    },
+    {
+      "id": "31f4e6738d6e8d84",
+      "kind": "docs-fence",
+      "path": "docs/internal/contributor/testkit.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 21,
+      "line": 608,
       "language": "bash"
     },
     {
@@ -12257,6 +12309,19 @@
       },
       "fence": 5,
       "line": 149,
+      "language": "bash"
+    },
+    {
+      "id": "6c4c5000fcecec90",
+      "kind": "docs-fence",
+      "path": "docs/internal/contributor/testkit.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 22,
+      "line": 749,
       "language": "bash"
     },
     {
@@ -12295,8 +12360,8 @@
         "check": "inventory-classification"
       },
       "fence": 10,
-      "line": 240,
-      "language": "csharp"
+      "line": 211,
+      "language": "bash"
     },
     {
       "id": "a59aeff646be1caf",
@@ -12308,8 +12373,8 @@
         "check": "inventory-classification"
       },
       "fence": 7,
-      "line": 192,
-      "language": "csharp"
+      "line": 163,
+      "language": "bash"
     },
     {
       "id": "ad8c3e26b80a5104",
@@ -12321,7 +12386,7 @@
         "check": "inventory-classification"
       },
       "fence": 12,
-      "line": 299,
+      "line": 248,
       "language": "csharp"
     },
     {
@@ -12334,7 +12399,7 @@
         "check": "inventory-classification"
       },
       "fence": 13,
-      "line": 308,
+      "line": 293,
       "language": "csharp"
     },
     {
@@ -12347,7 +12412,7 @@
         "check": "inventory-classification"
       },
       "fence": 9,
-      "line": 212,
+      "line": 200,
       "language": "csharp"
     },
     {
@@ -12373,8 +12438,8 @@
         "check": "inventory-classification"
       },
       "fence": 18,
-      "line": 417,
-      "language": "bash"
+      "line": 353,
+      "language": "csharp"
     },
     {
       "id": "d4e9be72e296c362",
@@ -12386,7 +12451,7 @@
         "check": "inventory-classification"
       },
       "fence": 14,
-      "line": 316,
+      "line": 307,
       "language": "csharp"
     },
     {
@@ -12399,7 +12464,7 @@
         "check": "inventory-classification"
       },
       "fence": 16,
-      "line": 345,
+      "line": 324,
       "language": "csharp"
     },
     {
@@ -12412,8 +12477,8 @@
         "check": "inventory-classification"
       },
       "fence": 19,
-      "line": 600,
-      "language": "bash"
+      "line": 377,
+      "language": "plain"
     },
     {
       "id": "b28339b89f66c4ae",
@@ -13192,7 +13257,7 @@
         "check": "inventory-classification"
       },
       "fence": 3,
-      "line": 135,
+      "line": 152,
       "language": "json"
     },
     {
@@ -13205,7 +13270,7 @@
         "check": "inventory-classification"
       },
       "fence": 2,
-      "line": 117,
+      "line": 133,
       "language": "json"
     },
     {
@@ -13218,7 +13283,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 54,
+      "line": 55,
       "language": "json"
     },
     {
@@ -13673,7 +13738,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 60,
+      "line": 64,
       "language": "bash"
     },
     {
@@ -13803,7 +13868,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 266,
+      "line": 267,
       "language": "bash"
     },
     {
@@ -14193,7 +14258,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 463,
+      "line": 461,
       "language": "sql"
     },
     {

@@ -39,7 +39,7 @@ internal static partial class NonPostgresObjectIdConstraintNormalizer
             && filterExpressions is not null
             && resource is not null)
         {
-            var parsed = filterExpressions.Parse(FilterLanguage.ArcGisSql, query.Where);
+            var parsed = filterExpressions.Parse(FilterLanguage.GeoServicesSql, query.Where);
             if (parsed.IsSuccess)
             {
                 var translated = filterExpressions.Translate(parsed.Expression, resource);

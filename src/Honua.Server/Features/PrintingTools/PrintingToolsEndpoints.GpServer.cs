@@ -14,7 +14,7 @@ using Honua.Protocols.GeoServices.Catalog;
 using Honua.Protocols.GeoServices.GPServer;
 using Honua.Protocols.GeoServices.GPServer.Models;
 using Honua.Server.Features.PrintingTools.Models;
-using static Honua.Protocols.GeoServices.Soap.ArcGisSoapProtocol;
+using static Honua.Protocols.GeoServices.Soap.GeoServicesSoapProtocol;
 
 namespace Honua.Server.Features.PrintingTools;
 
@@ -211,7 +211,7 @@ internal static partial class PrintingToolsEndpoints
                         return FaultFromResult(layout, soap, "The GP operation failed.");
                     }
 
-                    var json = JsonSerializer.Serialize(templates, PrintingToolsJsonContext.Default.EsriLayoutTemplateInfoArray);
+                    var json = JsonSerializer.Serialize(templates, PrintingToolsJsonContext.Default.GeoServicesLayoutTemplateInfoArray);
                     var output = GPServerSoapExecution.BuildResult(
                         [new GPResultResponse { ParamName = "Output_JSON", DataType = "GPString", Value = json }],
                         ToGpMessages(info.Messages));

@@ -102,7 +102,7 @@ internal sealed partial class RemoteSourceExecutor : IProcessExecutor
 
         // SSRF guard (PA-194): validate serviceUrl for remote HTTP sources before any
         // DI scope or network activity. The Esri path (source.esri-featureserver) is
-        // guarded at configuration time via ArcGisRestUrlValidator; WFS and OGC-features
+        // guarded at configuration time via GeoServicesRestUrlValidator; WFS and OGC-features
         // receive a user-supplied URL per-submit and must be validated here.
         if (_processId is "source.ogc-features" or "source.wfs")
         {
@@ -238,14 +238,14 @@ internal sealed partial class RemoteSourceExecutor : IProcessExecutor
                 : inputs.TryGet("typeName", out var typeName) ? typeName : null,
             ServiceUrl = inputs.TryGet("serviceUrl", out var serviceUrl) ? serviceUrl : null,
             LayerId = TryGetInt(inputs, "layerId"),
-            EsriLayerId = TryGetInt(inputs, "esriLayerId"),
+            GeoServicesLayerId = TryGetInt(inputs, "esriLayerId"),
         };
 
         return _processId switch
         {
             "source.esri-featureserver" => request with
             {
-                EsriCredentials = await ResolveEsriCredentialsAsync(inputs, services, cancellationToken).ConfigureAwait(false)
+                GeoServicesCredentials = await ResolveEsriCredentialsAsync(inputs, services, cancellationToken).ConfigureAwait(false)
             },
             "source.ogc-features" or "source.wfs" => request with
             {

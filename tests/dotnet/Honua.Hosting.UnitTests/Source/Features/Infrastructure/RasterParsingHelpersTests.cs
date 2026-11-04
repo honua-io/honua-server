@@ -67,7 +67,7 @@ public class RasterParsingHelpersTests
 
     [UnitTest]
     [Operation(Operations.Query)]
-    public void TryParseBoundingBox_ArcGisProFullPrecisionCoordinates_ReturnsTrue()
+    public void TryParseBoundingBox_GeoServicesProFullPrecisionCoordinates_ReturnsTrue()
     {
         const string bbox = "-122.43000000000000682121,37.7599999999999980104803,-122.400000000000005684342,37.7899999999999991473487";
 

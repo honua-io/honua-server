@@ -476,7 +476,7 @@ public sealed class MigrationCatalogReconcilerTests
 
         var report = MigrationCatalogReconciler.BuildReport(
             runId: "reconcile-2026-05-30",
-            sourceKind: "arcgis-geoservices-rest",
+            sourceKind: "geoservices-rest",
             inputs:
             [
                 new MigrationCatalogReconciliationInput { Resource = passInventory, PublishedResource = passPublished },
@@ -794,7 +794,7 @@ public sealed class MigrationCatalogReconcilerTests
     [Fact]
     public void Reconcile_NonspatialTable_IgnoresDefaultImportTargetCrs()
     {
-        var report = MigrationCatalogReconciler.BuildReport("table", "arcgis-geoservices-rest",
+        var report = MigrationCatalogReconciler.BuildReport("table", "geoservices-rest",
         [
             new MigrationCatalogReconciliationInput
             {
@@ -832,7 +832,7 @@ public sealed class MigrationCatalogReconcilerTests
                 Bbox = new MetadataV2Bbox { West = -118.5, South = 33.75, East = -117.17, North = 34.19 }
             }
         };
-        var report = MigrationCatalogReconciler.BuildReport("reprojected", "arcgis-geoservices-rest",
+        var report = MigrationCatalogReconciler.BuildReport("reprojected", "geoservices-rest",
         [
             new MigrationCatalogReconciliationInput
             {

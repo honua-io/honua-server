@@ -139,7 +139,7 @@ public sealed class DatumAndAntimeridianIntegrationTests(PostgresFixture fixture
             await command.ExecuteNonQueryAsync();
         }
 
-        var selection = DatumOutputSelection.Resolve(EsriDatumTransformationCatalog.Create(), 4267, 3857);
+        var selection = DatumOutputSelection.Resolve(GeoServicesDatumTransformationCatalog.Create(), 4267, 3857);
         selection.Should().NotBeNull();
         var pipeline = ProjPipelineInverter.Orient(selection!.ProjPipeline!, selection.TransformForward);
         double oracleX;

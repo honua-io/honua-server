@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "lastReviewed": "2026-10-12",
   "trackingIssue": "#2863",
-  "readme": "HAND-AUTHORED JUDGEMENT SOURCE for the published GeoServices REST parity matrix. This file carries ONLY what is human judgement: how completely each Esri operation is implemented, and the gap prose. It deliberately does NOT carry a route roster \u2014 which routes exist is derived from the generated capability data (EndpointRegistry.All via FeatureCatalogGenerator) by GeoServicesRouteRoster, and the published matrix (docs/gis/data/geoservices-rest-parity.json) is GENERATED from the join of the two. Regenerate with scripts/generate-geoservices-parity.sh after editing this file. The esriPaths below are the join keys: they are the served routes normalized to their Esri-relative form by collapsing the service-instance address (see GeoServicesRouteRoster). GeoServicesParityMatrixDriftTests fails if any served operation is unclassified here, or if any esriPath here is not served. Status vocabulary: implemented | partial | stub. Lifecycle maturity (including Preview) is derived from the capability catalog, not this completeness verdict. \"stub\" means the route exists and returns the spec-shaped response but the backing model is deferred \u2014 read-stubs return empty/false and mutation-stubs return HTTP 400 rather than fabricating success. NEVER upgrade a status to make a gate pass; if a gate creates that pressure, the gate is wrong.",
+  "readme": "HAND-AUTHORED JUDGEMENT SOURCE for the published GeoServices REST parity matrix. This file carries ONLY what is human judgement: how completely each Esri operation is implemented, and the gap prose. It deliberately does NOT carry a route roster \u2014 which routes exist is derived from the generated capability data (EndpointRegistry.All via FeatureCatalogGenerator) by GeoServicesRouteRoster, and the published matrix (docs/gis/data/geoservices-rest-parity.json) is GENERATED from the join of the two. Regenerate with scripts/generate-geoservices-parity.sh after editing this file. The geoServicesPaths below are the join keys: they are the served routes normalized to their Esri-relative form by collapsing the service-instance address (see GeoServicesRouteRoster). GeoServicesParityMatrixDriftTests fails if any served operation is unclassified here, or if any geoServicesPath here is not served. Status vocabulary: implemented | partial | stub. Lifecycle maturity (including Preview) is derived from the capability catalog, not this completeness verdict. \"stub\" means the route exists and returns the spec-shaped response but the backing model is deferred \u2014 read-stubs return empty/false and mutation-stubs return HTTP 400 rather than fabricating success. NEVER upgrade a status to make a gate pass; if a gate creates that pressure, the gate is wrong.",
   "statusVocabulary": {
     "operation": [
       "implemented",
@@ -92,7 +92,7 @@
         {
           "name": "Service metadata",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/FeatureServer"
           ],
           "notes": "Returns service metadata and layer list. Capabilities string is dynamic."
@@ -100,7 +100,7 @@
         {
           "name": "Apply Edits (service)",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/FeatureServer/applyEdits"
           ],
           "notes": "Batch edits across layers using a JSON array of per-layer edit payloads."
@@ -108,7 +108,7 @@
         {
           "name": "Append (service)",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/FeatureServer/append"
           ],
           "notes": "Delegates to applyEdits semantics and returns append counts."
@@ -116,7 +116,7 @@
         {
           "name": "Query (service)",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/FeatureServer/query"
           ],
           "notes": "Delegates to a target layer selected by layerId or layers."
@@ -124,7 +124,7 @@
         {
           "name": "Query Domains",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/FeatureServer/queryDomains"
           ],
           "notes": "Returns coded-value domains discovered from the backing data."
@@ -132,7 +132,7 @@
         {
           "name": "Relationships",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/FeatureServer/relationships"
           ],
           "notes": "Aggregates relationship metadata across service layers."
@@ -140,7 +140,7 @@
         {
           "name": "Create Replica",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/FeatureServer/createReplica"
           ],
           "notes": "Preview/opt-in in 2026.1. Returns the replica data embedded in layers[].features, scoped by geometry/geometryType/inSR, layerQueries (queryOption, where, useGeometry) and projected to replicaSR; the scope is persisted with the replica and applied to every later extract and download. syncModel is perReplica, perLayer or none (none returns the data without registering). esriTransportTypeUrl is answered with the embedded transport, which the response declares. async=true, dataFormat other than json (no runtime geodatabase), returnAttachments=true, includeRelated=true and replicaOptions are rejected with 400. A scope above Limits:Replica:MaxChangesPerLayer per layer returns a bounded first window (exceededTransferLimit) that synchronizeReplica downloads continue. Broader parity is deferred to release/2026.2."
@@ -148,7 +148,7 @@
         {
           "name": "Extract Changes",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/FeatureServer/extractChanges"
           ],
           "notes": "Preview/opt-in in 2026.1. Honors layerServerGens, serverGen and serverGens [min,max], returnInserts/returnUpdates/returnDeletes, returnIdsOnly, geometry and layerQueries, and answers with the Esri layerServerGens/transportType/responseType/edits envelope beside the legacy Honua layerChanges projection. A backlog above Limits:Replica:MaxChangesPerLayer per layer returns a bounded generation window flagged exceededTransferLimit. async=true, dataFormat other than json, returnAttachments=true and returnExtentOnly=true are rejected with 400. Broader Esri offline-sync parity is deferred to release/2026.2."
@@ -156,7 +156,7 @@
         {
           "name": "Synchronize Replica",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/FeatureServer/synchronizeReplica"
           ],
           "notes": "Preview/opt-in in 2026.1. Supports download, upload, and bidirectional sync directions. Downloads apply the replica's stored scope, and a backlog above Limits:Replica:MaxChangesPerLayer per layer is delivered in consecutive generation windows (exceededTransferLimit; the cursor advances to the generation reached). Scoped and visibility-filtered downloads classify each row from its pre-change image and its current state: a row updated into the scope arrives as an add, and a row that left the scope, became hidden or was deleted is delivered as a delete only when the client could hold it. Esri id arrays carry the layer's protocol-facing object ids. Broader parity is deferred to release/2026.2."
@@ -164,7 +164,7 @@
         {
           "name": "Unregister Replica",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/FeatureServer/unRegisterReplica"
           ],
           "notes": "Preview/opt-in in 2026.1; full lifecycle parity is deferred to release/2026.2."
@@ -172,7 +172,7 @@
         {
           "name": "Get Estimates (service)",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/FeatureServer/getEstimates"
           ],
           "notes": ""
@@ -180,7 +180,7 @@
         {
           "name": "Layer metadata",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/FeatureServer/{layerId}"
           ],
           "notes": "Includes editing info, templates, statistics flags, and relationships where available."
@@ -188,7 +188,7 @@
         {
           "name": "Query (layer)",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/FeatureServer/{layerId}/query"
           ],
           "notes": "Supports filters, statistics, paging, multiple output formats, spatial predicates, and temporal filters."
@@ -196,7 +196,7 @@
         {
           "name": "Apply Edits (layer)",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/FeatureServer/{layerId}/applyEdits"
           ],
           "notes": ""
@@ -204,7 +204,7 @@
         {
           "name": "Add Features",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/FeatureServer/{layerId}/addFeatures"
           ],
           "notes": ""
@@ -212,7 +212,7 @@
         {
           "name": "Update Features",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/FeatureServer/{layerId}/updateFeatures"
           ],
           "notes": ""
@@ -220,7 +220,7 @@
         {
           "name": "Delete Features",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/FeatureServer/{layerId}/deleteFeatures"
           ],
           "notes": "Supports deletes by objectIds, where, or spatial filter."
@@ -228,7 +228,7 @@
         {
           "name": "Query Related Records",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/FeatureServer/{layerId}/queryRelatedRecords"
           ],
           "notes": ""
@@ -236,7 +236,7 @@
         {
           "name": "Append (layer)",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/FeatureServer/{layerId}/append"
           ],
           "notes": ""
@@ -244,7 +244,7 @@
         {
           "name": "Calculate",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/FeatureServer/{layerId}/calculate"
           ],
           "notes": "Supports calcExpression arrays of field/sqlExpression pairs."
@@ -252,7 +252,7 @@
         {
           "name": "Validate SQL",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/FeatureServer/{layerId}/validateSQL"
           ],
           "notes": ""
@@ -260,7 +260,7 @@
         {
           "name": "Get Estimates (layer)",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/FeatureServer/{layerId}/getEstimates"
           ],
           "notes": ""
@@ -268,7 +268,7 @@
         {
           "name": "Query Bins",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/FeatureServer/{layerId}/queryBins"
           ],
           "notes": ""
@@ -276,7 +276,7 @@
         {
           "name": "Query Date Bins",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/FeatureServer/{layerId}/queryDateBins"
           ],
           "notes": "Bins features into time intervals on a Date/DateTime field. bin accepts calendarBin (unit: year, quarter, month, week, day, hour, minute, second; mapped to Postgres date_trunc) or fixedBin (intervalCount + intervalUnit: seconds, minutes, hours, days, weeks; days default if unrecognized; optional origin in Unix ms). outStatistics is optional and defaults to count. Requires the active temporal.histogram entitlement per the temporal animation contract (ADR-0024); the gate fires after successful service/layer access and before bin parameter parsing on both GET and POST, so requests without the entitlement return HTTP 402 Payment Required with a remediation message regardless of how the bin payload is supplied. See docs/gis/temporal-animation-api.md."
@@ -284,7 +284,7 @@
         {
           "name": "Query Top Features",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/FeatureServer/{layerId}/queryTopFeatures"
           ],
           "notes": ""
@@ -292,7 +292,7 @@
         {
           "name": "Add Attachment",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/FeatureServer/{layerId}/{featureId}/addAttachment"
           ],
           "notes": "Multipart form-data upload against one feature. The operation is per-feature: the route carries {featureId}."
@@ -300,7 +300,7 @@
         {
           "name": "Update Attachment",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/FeatureServer/{layerId}/{featureId}/updateAttachment"
           ],
           "notes": ""
@@ -308,7 +308,7 @@
         {
           "name": "Delete Attachments",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/FeatureServer/{layerId}/{featureId}/deleteAttachments"
           ],
           "notes": ""
@@ -316,7 +316,7 @@
         {
           "name": "Query Attachment Infos",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/FeatureServer/{layerId}/{featureId}/attachments"
           ],
           "notes": "Returns one feature's attachmentInfos collection."
@@ -324,7 +324,7 @@
         {
           "name": "Download Attachment",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/FeatureServer/{layerId}/{featureId}/attachments/{attachmentId}"
           ],
           "notes": ""
@@ -332,7 +332,7 @@
         {
           "name": "Generate Renderer",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/FeatureServer/{layerId}/generateRenderer"
           ],
           "notes": "Supports simple renderer output plus classificationDef-driven class-break and unique-value renderers."
@@ -340,7 +340,7 @@
         {
           "name": "Query Attachments",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/FeatureServer/{layerId}/queryAttachments"
           ],
           "notes": "Supports objectIds plus attachmentTypes, keywords, size, definitionExpression, returnMetadata, and returnUrl facets; globalIds are rejected with a GeoServices 400 because Honua uses integer object IDs."
@@ -348,7 +348,7 @@
         {
           "name": "Query Contingent Values",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/FeatureServer/queryContingentValues"
           ],
           "notes": "Serves per-layer contingent value definitions from the canonical Metadata v2 graph (contingentValueGroups). Layers with none, and services with none, return an empty contingentValuesDefinitions collection. The same definition is surfaced on layer metadata as contingentValuesDefinition. Automated import of contingent values from Esri sources is deferred."
@@ -356,7 +356,7 @@
         {
           "name": "Shared Templates and child operations",
           "status": "stub",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/FeatureServer/sharedTemplates",
             "/FeatureServer/sharedTemplates/add",
             "/FeatureServer/sharedTemplates/delete",
@@ -368,7 +368,7 @@
         {
           "name": "HTML Popup",
           "status": "stub",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/FeatureServer/htmlPopup"
           ],
           "notes": "Route exists and returns the spec-shaped document; no author-defined pop-up store exists, so the content is empty."
@@ -376,7 +376,7 @@
         {
           "name": "Image",
           "status": "stub",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/FeatureServer/image"
           ],
           "notes": "Route exists and returns the spec-shaped document; no service-level feature-image store exists."
@@ -384,7 +384,7 @@
         {
           "name": "Has Assets",
           "status": "stub",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/FeatureServer/{layerId}/hasAssets"
           ],
           "notes": "Route exists; no layer asset store, so it reports false."
@@ -392,7 +392,7 @@
         {
           "name": "Query Assets",
           "status": "stub",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/FeatureServer/{layerId}/queryAssets"
           ],
           "notes": "Route exists; no layer asset store, so it returns an empty result."
@@ -400,7 +400,7 @@
         {
           "name": "Cleanup Assets",
           "status": "stub",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/FeatureServer/{layerId}/cleanupAssets"
           ],
           "notes": "Route exists; no layer asset store, so the mutation returns HTTP 400 rather than reporting a fabricated cleanup."
@@ -408,7 +408,7 @@
         {
           "name": "Upload Assets",
           "status": "stub",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/FeatureServer/{layerId}/uploadAssets"
           ],
           "notes": "Route exists; no layer asset store, so the mutation returns HTTP 400."
@@ -416,7 +416,7 @@
         {
           "name": "Convert 3D",
           "status": "stub",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/FeatureServer/{layerId}/convert3D"
           ],
           "notes": "Route exists; no 3D conversion pipeline, so the conversion returns HTTP 400."
@@ -424,7 +424,7 @@
         {
           "name": "Query 3D",
           "status": "stub",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/FeatureServer/{layerId}/query3D"
           ],
           "notes": "Route exists; no 3D pipeline, so it returns an empty result."
@@ -432,7 +432,7 @@
         {
           "name": "Update Metadata",
           "status": "stub",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/FeatureServer/{layerId}/metadata/update"
           ],
           "notes": "Route exists; the Esri metadata-document mutation surface is not backed by the canonical Metadata v2 graph, so it returns HTTP 400. Layer metadata is authored through the Honua admin API."
@@ -440,7 +440,7 @@
         {
           "name": "Temporal Extent (Honua extension)",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/FeatureServer/{layerId}/temporalExtent"
           ],
           "honuaExtension": {
@@ -453,7 +453,7 @@
         {
           "name": "Query Clusters (Honua extension)",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/FeatureServer/{layerId}/queryClusters"
           ],
           "honuaExtension": {
@@ -466,7 +466,7 @@
         {
           "name": "Spatial Join (Honua extension)",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/FeatureServer/{layerId}/spatialJoin"
           ],
           "honuaExtension": {
@@ -479,7 +479,7 @@
         {
           "name": "Query Buffer Aggregate (Honua extension)",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/FeatureServer/{layerId}/queryBufferAggregate"
           ],
           "honuaExtension": {
@@ -492,7 +492,7 @@
         {
           "name": "Query Density (Honua extension)",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/FeatureServer/{layerId}/queryDensity"
           ],
           "honuaExtension": {
@@ -505,7 +505,7 @@
         {
           "name": "List Replicas; replica info",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/FeatureServer/replicas",
             "/FeatureServer/replicas/{replicaId}"
           ],
@@ -514,7 +514,7 @@
         {
           "name": "validateSQL (service)",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/FeatureServer/validateSQL"
           ],
           "notes": "Esri's canonical service-root validateSQL: takes sql + sqlType (where|orderBy|expression) and validates against a representative service layer through the shared ArcGIS SQL parser. The layer-level route is classified separately."
@@ -522,7 +522,7 @@
         {
           "name": "Query H3 (Honua extension)",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/FeatureServer/{layerId}/queryH3"
           ],
           "honuaExtension": {
@@ -536,7 +536,7 @@
       "absentOperations": [
         {
           "name": "Cleanup Change Tracking",
-          "esriPath": "/FeatureServer/cleanupChangeTracking",
+          "geoServicesPath": "/FeatureServer/cleanupChangeTracking",
           "notes": ""
         }
       ],
@@ -772,7 +772,7 @@
         {
           "name": "Service metadata",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/MapServer"
           ],
           "notes": ""
@@ -780,7 +780,7 @@
         {
           "name": "Layer metadata",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/MapServer/{layerId}"
           ],
           "notes": ""
@@ -788,7 +788,7 @@
         {
           "name": "Export map",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/MapServer/export"
           ],
           "notes": "Supports image streaming via f=image and JSON envelope responses via f=json or f=pjson. dynamicLayers supports source.type=mapLayer and allowlisted source.type=dataLayer workspace data layers, request-scoped definitionExpression, and drawingInfo.renderer overrides for simple, unique-value, and class-breaks renderers."
@@ -796,7 +796,7 @@
         {
           "name": "Identify",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/MapServer/identify"
           ],
           "notes": ""
@@ -804,7 +804,7 @@
         {
           "name": "Find",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/MapServer/find"
           ],
           "notes": ""
@@ -812,7 +812,7 @@
         {
           "name": "Generate KML",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/MapServer/generateKml"
           ],
           "notes": ""
@@ -820,7 +820,7 @@
         {
           "name": "Legend",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/MapServer/legend"
           ],
           "notes": "Builds swatches from stored styles or request-scoped dynamicLayers drawingInfo.renderer overrides for simple, unique-value, and class-breaks renderers."
@@ -828,7 +828,7 @@
         {
           "name": "Query Legends",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/MapServer/queryLegends"
           ],
           "notes": "Alias over the legend handler; returns Esri-shaped layers[].legend[] swatches, including dynamicLayers drawingInfo.renderer overrides."
@@ -836,7 +836,7 @@
         {
           "name": "Layer query",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/MapServer/{layerId}/query"
           ],
           "notes": "Delegates to the FeatureServer query contract."
@@ -844,7 +844,7 @@
         {
           "name": "Service query",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/MapServer/query"
           ],
           "notes": "Delegates to the FeatureServer service-query contract."
@@ -852,7 +852,7 @@
         {
           "name": "Tile",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/MapServer/tile/{z}/{y}/{x}"
           ],
           "notes": "Returns dynamic WebMercatorQuad PNG tiles and uses configured cloud file storage (local, S3, Azure Blob) as a deterministic loose-object read-through/write-through cache."
@@ -860,7 +860,7 @@
         {
           "name": "WMS",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/MapServer/WMS"
           ],
           "notes": ""
@@ -868,7 +868,7 @@
         {
           "name": "All Layers and Tables",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/MapServer/allLayersAndTables"
           ],
           "notes": ""
@@ -876,7 +876,7 @@
         {
           "name": "Query Domains",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/MapServer/queryDomains"
           ],
           "notes": ""
@@ -884,7 +884,7 @@
         {
           "name": "Feature child resource",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/MapServer/{layerId}/{featureId}"
           ],
           "notes": ""
@@ -892,7 +892,7 @@
         {
           "name": "Generate Renderer (service level)",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/MapServer/generateRenderer"
           ],
           "notes": "Delegates to the FeatureServer generateRenderer contract after selecting the target layer from layer or layerId."
@@ -900,7 +900,7 @@
         {
           "name": "Generate Renderer (per layer)",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/MapServer/{layerId}/generateRenderer"
           ],
           "notes": "Layer-scoped adapter that delegates to the FeatureServer generateRenderer handler."
@@ -908,7 +908,7 @@
         {
           "name": "Query Attachments",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/MapServer/{layerId}/queryAttachments"
           ],
           "notes": "Layer-scoped adapter that delegates to the FeatureServer queryAttachments handler."
@@ -916,7 +916,7 @@
         {
           "name": "Query Related Records",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/MapServer/{layerId}/queryRelatedRecords"
           ],
           "notes": "Layer-scoped adapter that delegates to the FeatureServer queryRelatedRecords handler."
@@ -924,7 +924,7 @@
         {
           "name": "Export Tiles job child resources",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/MapServer/jobs/{jobId}",
             "/MapServer/jobs/{jobId}/cancel",
             "/MapServer/jobs/{jobId}/results/out_service_url"
@@ -934,7 +934,7 @@
         {
           "name": "Estimate Export Tile Size",
           "status": "partial",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/MapServer/estimateExportTilesSize"
           ],
           "notes": "Estimates bounded WebMercatorQuad tile archive size; reports tilePackage/storageFormat for both ZIP and Esri exploded-cache TPK (storageFormat=tpk)."
@@ -942,7 +942,7 @@
         {
           "name": "Export Tiles",
           "status": "partial",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/MapServer/exportTiles"
           ],
           "notes": "Exports bounded WebMercatorQuad PNG tiles to configured cloud file storage. storageFormat=zip (default) writes a flat {z}/{x}/{y}.png ZIP and storageFormat=tpk (or tilePackage=true) writes an Esri exploded-cache TPK (v101/<cache>/_alllayers + conf.xml/conf.cdi); both are synchronous. Compact Cache V2 / TPKX (storageFormatType=esriMapCacheStorageModeCompactV2, or storageFormat=tpkx/compact/compactv2) submits a durable asynchronous job and returns the ArcGIS { jobId, jobStatus } envelope; the package is a real Esri TPKX 1.0 archive of Compact Cache V2 .bundle files. It requires the durable tile-export job runtime (an execution job store); when that is unavailable the request is rejected rather than silently downgraded. Partial because the export stays bounded to WebMercatorQuad and gdbVersion-style parameters are ignored."
@@ -950,7 +950,7 @@
         {
           "name": "Dynamic Layer or Table resource",
           "status": "partial",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/MapServer/dynamicLayer"
           ],
           "notes": "Returns layer metadata for source.type=mapLayer and allowlisted source.type=dataLayer workspace definitions, including request-scoped id, definitionExpression, and drawingInfo. A dataLayer source resolves a registered workspace (dataSource.workspaceId) and table (dataSource.dataSourceName) to a published resource on that workspace, gated by GeoServices:MapServer:DynamicLayers (WorkspaceLayersEnabled + allowlist). Joins and dynamic query tables remain deferred."
@@ -958,7 +958,7 @@
         {
           "name": "WMTS",
           "status": "partial",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/MapServer/WMTS",
             "/MapServer/WMTS/{**restPath}"
           ],
@@ -967,7 +967,7 @@
         {
           "name": "layers (allLayersAndTables alias)",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/MapServer/layers"
           ],
           "notes": "Alias of allLayersAndTables returning the identical document; the ArcGIS Maps SDK for JavaScript and the .NET Runtime SDK hydrate sublayers from this spelling (#1454)."
@@ -976,22 +976,22 @@
       "absentOperations": [
         {
           "name": "Query Analytic",
-          "esriPath": "/MapServer/{layerId}/queryAnalytic",
+          "geoServicesPath": "/MapServer/{layerId}/queryAnalytic",
           "notes": ""
         },
         {
           "name": "Image child resource",
-          "esriPath": "/MapServer/image",
+          "geoServicesPath": "/MapServer/image",
           "notes": ""
         },
         {
           "name": "KML image child resource",
-          "esriPath": "/MapServer/kml/mapImage.kmz",
+          "geoServicesPath": "/MapServer/kml/mapImage.kmz",
           "notes": ""
         },
         {
           "name": "Map Service Extension",
-          "esriPath": "/MapServer/exts/*",
+          "geoServicesPath": "/MapServer/exts/*",
           "notes": ""
         }
       ],
@@ -1142,7 +1142,7 @@
         {
           "name": "Service metadata",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/ImageServer"
           ],
           "notes": "ImageServer is GA in 2026.1 under the 2026-10-24 operator ruling, which supersedes the 2026-09-03 Preview ruling for ImageServer only; its WMTS surface stays Preview. Layer-scoped route. Responses are cached with the ImageServerMetadata output-cache policy."
@@ -1150,7 +1150,7 @@
         {
           "name": "Raster Catalog Item",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/ImageServer/{rasterId}"
           ],
           "notes": "Returns one raster catalog item as an Esri feature with catalog attributes and footprint geometry. Uses the shared catalog reader and applies the same access policy and field masking as ImageServer query."
@@ -1158,7 +1158,7 @@
         {
           "name": "Raster Catalog Item Image and Info",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/ImageServer/{rasterId}/image",
             "/ImageServer/{rasterId}/info",
             "/ImageServer/{rasterId}/info/histograms",
@@ -1169,7 +1169,7 @@
         {
           "name": "Tile",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/ImageServer/tile/{level}/{row}/{col}"
           ],
           "notes": "Supports png, jpeg, and tiff tile output. When multiple rasters overlap the requested tile, Honua renders a mosaic using the resolved merge strategy. Tile GETs use configured cloud file storage (local, S3, Azure Blob) as a deterministic loose-object read-through/write-through cache."
@@ -1177,7 +1177,7 @@
         {
           "name": "Key Properties",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/ImageServer/keyProperties"
           ],
           "notes": "Returns the Esri key-properties document for the primary raster, including BandProperties and cell-size metadata, from the shared raster store; non-applicable cases return spec-shaped empty documents."
@@ -1185,7 +1185,7 @@
         {
           "name": "Statistics",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/ImageServer/statistics"
           ],
           "notes": "Returns per-band raster statistics documents when available."
@@ -1193,7 +1193,7 @@
         {
           "name": "Histograms",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/ImageServer/histograms"
           ],
           "notes": "Returns per-band raster histogram documents when available."
@@ -1201,7 +1201,7 @@
         {
           "name": "Raster Function Infos",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/ImageServer/rasterFunctionInfos"
           ],
           "notes": "Returns the raster function info document for the resolved layer, advertising the functions accepted by renderingRule planning."
@@ -1209,7 +1209,7 @@
         {
           "name": "Raster Attribute Table",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/ImageServer/rasterAttributeTable"
           ],
           "notes": "Returns a spec-shaped raster attribute table document; continuous and non-applicable rasters return an empty feature set with the field schema."
@@ -1217,7 +1217,7 @@
         {
           "name": "Export Tiles job child resources",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/ImageServer/jobs/{jobId}",
             "/ImageServer/jobs/{jobId}/cancel",
             "/ImageServer/jobs/{jobId}/results/out_service_url"
@@ -1227,7 +1227,7 @@
         {
           "name": "WMTS",
           "status": "partial",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/ImageServer/WMTS",
             "/ImageServer/WMTS/{**restPath}"
           ],
@@ -1236,7 +1236,7 @@
         {
           "name": "Export Image",
           "status": "partial",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/ImageServer/exportImage"
           ],
           "notes": "Preview in 2026.1. Default response is a JSON envelope with a temporary href; f=image streams the rendered bytes inline with the format-specific media type. An unavailable PostGIS output GDAL driver produces a sanitized GeoServices 501 envelope; transient database export outages produce 503."
@@ -1244,7 +1244,7 @@
         {
           "name": "Identify",
           "status": "partial",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/ImageServer/identify"
           ],
           "notes": "Point/envelope/polygon identify with JSON responses. A renderingRule renders the sampled pixel (post clip/stretch/colormap); raw source values are returned otherwise."
@@ -1252,7 +1252,7 @@
         {
           "name": "Query",
           "status": "partial",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/ImageServer/query"
           ],
           "notes": "Returns Esri-compatible raster catalog features (OBJECTID, footprint polygon, MinPS/MaxPS/LowPS/HighPS/CenterX/CenterY/ZOrder/Shape_Length/Shape_Area/BandCount/PixelType/AcquisitionDate/CreatedAt). Supports where (parsed via the GeoServices SQL filter parser, applied in-memory; max 2000 chars), objectIds, outFields projection, orderByFields, an envelope-intersects spatial filter, outSR (footprint rings and the aggregate extent are reprojected when a transform is available), single-instant time filtering to the newest layer-wide effective acquisition batch, resultOffset, resultRecordCount (default 100, capped at 1000), and the returnGeometry/returnIdsOnly/returnCountOnly/returnExtentOnly shaping flags. Spatial WHERE pushdown to the database, pixelSize, and non-envelope geometry/spatialRel predicates are not yet honoured."
@@ -1260,7 +1260,7 @@
         {
           "name": "Find",
           "status": "partial",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/ImageServer/find"
           ],
           "notes": "Finds raster catalog images whose footprints contain toGeometry. Supports objectIds, where, inSR, fromGeometry validation, and maxCount. Results return catalog id/name, acquisition date, center, pixel size, rows, and cols; Esri camera/orientation-ranked image selection is deferred until sensor metadata is modeled."
@@ -1268,7 +1268,7 @@
         {
           "name": "Measure",
           "status": "partial",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/ImageServer/measure"
           ],
           "notes": "Implements Basic map-space point, distance/azimuth, area/perimeter, and centroid mensuration over point, envelope, and polygon Esri JSON. Sensor/DEM-backed height and 3D operations return 501 until sensor/orientation metadata is modeled."
@@ -1276,7 +1276,7 @@
         {
           "name": "Compute Statistics and Histograms",
           "status": "partial",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/ImageServer/computeStatisticsHistograms"
           ],
           "notes": "Returns per-band statistics ({min,max,mean,standardDeviation,count}) and per-band histograms ({size,min,max,counts[]}). Supports rasterIds (CSV/JSON array of catalog object IDs; defaults to the selected layer mosaic), the Honua-extension bandIds selector (0-based, the same base as exportImage bandIds), mosaicRule, single-instant time filtering to the newest layer-wide effective acquisition batch, and histogramParameters.size (default 256, capped at 1024). The parallel statistics[] and histograms[] arrays are aligned positionally: index i on both sides describes the same band. Multiple rasterIds are appended in request order. A band is only dropped from both arrays when neither the statistics nor the histograms result contained an entry for it; when a band is present on only one side, the missing side is zero-filled (an all-zero BandStatistic, or a BandHistogram with empty counts[]) so the parallel arrays stay index-aligned. An AOI geometry/geometryType clips the analysis to that area (polygon rings are clipped as polygons, not only the bounding envelope) for both single rasters and mosaics; without a geometry the full selected raster or mosaic is analysed. Stretch, Colormap, and Clip renderingRule chains are applied; ExtractBand, BandArithmetic, and pixelSize remain deferred."
@@ -1284,7 +1284,7 @@
         {
           "name": "Compute Histograms",
           "status": "partial",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/ImageServer/computeHistograms"
           ],
           "notes": "Returns per-band histograms without the parallel statistics array. Supports the same rasterIds, bandIds, mosaicRule, time, and histogramParameters.size selection path as computeStatisticsHistograms; An AOI geometry clips the analysis to that area (polygon rings are clipped as polygons, not only the bounding envelope); renderingRule execution remains deferred."
@@ -1292,7 +1292,7 @@
         {
           "name": "Get Samples",
           "status": "partial",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/ImageServer/getSamples"
           ],
           "notes": "Samples pixel values at point, multipoint, distance-spaced polyline/polygon, or envelope-center locations using the shared raster identify pipeline. sampleDistance is honored in geometry SR units and sampleCount is capped at 1000. Nearest-neighbor interpolation is supported; other interpolation modes return 501."
@@ -1300,7 +1300,7 @@
         {
           "name": "Compute Cache Info",
           "status": "partial",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/ImageServer/computeCacheInfo"
           ],
           "notes": "Dynamic ImageServer layers return a spec-shaped cacheInfo object with the service extent and intentionally omit tileInfo/cacheType until a formal Esri-style raster tile cache is configured. The loose-object tile GET cache is operational storage, not advertised cache metadata."
@@ -1308,7 +1308,7 @@
         {
           "name": "Compute Pixel Location",
           "status": "partial",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/ImageServer/computePixelLocation"
           ],
           "notes": "Converts point geometries to raster pixel column/row coordinates using the raster geotransform, falling back to the raster extent when no affine transform is present. Supports rasterId and input spatial references when the shared CRS transform service is available."
@@ -1316,7 +1316,7 @@
         {
           "name": "Query Boundary",
           "status": "partial",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/ImageServer/queryBoundary"
           ],
           "notes": "Returns the aggregate raster footprint boundary as Esri shape plus approximate area. The boundary is extent/footprint based; NoData-trimmed single-raster boundaries are deferred."
@@ -1324,7 +1324,7 @@
         {
           "name": "Project",
           "status": "partial",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/ImageServer/project"
           ],
           "notes": "Reprojects Esri JSON geometry arrays between supported spatial references via the shared CRS projection pipeline and returns the Image Service geometries[] response shape. Envelope geometries remain envelope-shaped. datumTransformation is honored: a client-supplied geotransformation WKID (or composite geoTransforms) is resolved through the shared Esri WKID -> PROJ pipeline catalog and applied via 3-argument ST_Transform, matching the Geometry Service; an unknown/inapplicable WKID returns 400. The image-coordinate-system transformation parameter is still rejected with 400 until neutral support is added."
@@ -1332,7 +1332,7 @@
         {
           "name": "Estimate Export Tiles Size",
           "status": "partial",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/ImageServer/estimateExportTilesSize"
           ],
           "notes": "Estimates bounded WebMercatorQuad tile archive size; reports tilePackage/storageFormat for both ZIP and Esri exploded-cache TPK (storageFormat=tpk)."
@@ -1340,7 +1340,7 @@
         {
           "name": "Export Tiles",
           "status": "partial",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/ImageServer/exportTiles"
           ],
           "notes": "Exports bounded WebMercatorQuad image tiles to configured cloud file storage (local, S3, Azure Blob). storageFormat=zip (default) writes a flat {z}/{x}/{y}.ext ZIP and storageFormat=tpk (or tilePackage=true) writes an Esri exploded-cache TPK (v101/<cache>/_alllayers + conf.xml/conf.cdi); both are synchronous. Compact Cache V2 / TPKX (storageFormatType=esriMapCacheStorageModeCompactV2, or storageFormat=tpkx/compact/compactv2) submits a durable asynchronous job and returns the ArcGIS { jobId, jobStatus } envelope; the package is a real Esri TPKX 1.0 archive of Compact Cache V2 .bundle files. It requires the durable tile-export job runtime (an execution job store); when that is unavailable the request is rejected rather than silently downgraded."
@@ -1348,7 +1348,7 @@
         {
           "name": "Calculate Volume",
           "status": "partial",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/ImageServer/calculateVolume"
           ],
           "notes": "Computes cut/fill volumes and 2D surface area per area-of-interest polygon against the layer associated DEM (raster_sensor_metadata.dem_source), integrating (elevation - basePlane) * pixelArea over DEM pixels in the AOI through the shared clip primitive. Partial: only a constant base plane is supported, the AOI is bounded by a per-operation pixel budget (over-budget returns 400), and a raster with no modeled DEM returns 501 rather than a fabricated value (ADR-0065)."
@@ -1356,7 +1356,7 @@
         {
           "name": "Compute Tie Points",
           "status": "partial",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/ImageServer/computeTiePoints"
           ],
           "notes": "Returns the raster pre-registered control points / GCPs from its sensor metadata, passed through verbatim and bounded to 10000 points per response. Partial by design: automatic feature detection / descriptor matching (how ArcGIS derives tie points) needs a computer-vision dependency this repository bars, so a raster with no modeled control points returns 501 rather than a fabricated result (ADR-0065)."
@@ -1364,7 +1364,7 @@
         {
           "name": "Compute Class Statistics",
           "status": "partial",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/ImageServer/computeClassStatistics"
           ],
           "notes": "Computes per-class signatures over the classDescriptions training AOIs: pixel count, per-band mean vector, per-band min/max/stddev, and the band-by-band sample covariance matrix (n-1), over a single raster or a layer mosaic (rasterIds + mosaicRule) with an optional bandIds subset. Partial: bounded by a configurable per-class pixel budget (GeoServices:ImageServer:ClassStatistics:MaxPixelsPerClass) and renderingRule/multidimensionalDefinition are rejected with 501 because signatures are computed on source pixels."
@@ -1372,7 +1372,7 @@
         {
           "name": "Multidimensional Info and Slices",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/ImageServer/multidimensionalInfo",
             "/ImageServer/slices"
           ],
@@ -1381,7 +1381,7 @@
         {
           "name": "Colormap",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/ImageServer/colormap"
           ],
           "notes": "Renderer-driven. Honua rasters are continuous with no intrinsic source colormap, so this read-only resource reflects the active renderer: a renderingRule whose Colormap function resolves a colormap (explicit stops, named ColorrampName, or an inline algorithmic/multipart Colorramp) returns the Esri { \"colormap\": [[value, r, g, b], ...] } document, consistent with what exportImage/legend render. Any other request returns the not-available response."
@@ -1389,7 +1389,7 @@
         {
           "name": "Raster item thumbnail",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/ImageServer/{rasterId}/thumbnail"
           ],
           "notes": "Renders a small thumbnail of the raster item through the shared export pipeline; honours f=json for an href envelope. Note the served path is {rasterId}/thumbnail, not {rasterId}/info/thumbnail."
@@ -1397,7 +1397,7 @@
         {
           "name": "Legend",
           "status": "partial",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/ImageServer/legend"
           ],
           "notes": "Returns Esri-shaped layers[].legend[] swatches as base64 PNGs (image/png). Renders a 5-class equal-interval ramp keyed off the resolved layer mosaic's band-1 statistics by default; a renderingRule with an explicit Colormap is honoured (one swatch per colour stop). Per-layer renderer persistence and non-colormap renderer overrides are not yet honoured. Only f=json/f=pjson is accepted."
@@ -1405,7 +1405,7 @@
         {
           "name": "WCS",
           "status": "partial",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/ImageServer/WCS"
           ],
           "notes": "WCS 2.0.1 KVP adapter for WCS-enabled raster layers. Supports GetCapabilities, DescribeCoverage, and GetCoverage over the primary raster with image/tiff, image/png, image/jpeg, SUBSET/BBOX spatial trim, SUBSETTINGCRS/BBOXCRS, optional OUTPUTCRS, RANGESUBSET band selection (band1..bandN, comma list and band1:bandN intervals), the full Scaling extension (SCALESIZE explicit per-axis sizing x(w),y(h); SCALEFACTOR uniform factor; SCALEAXES per-axis factors x(f),y(f); SCALEEXTENT per-axis grid intervals x(low,high),y(low,high) - at most one scaling operator per request, resolved against the subset-trimmed base grid), and phenomenonTime temporal subsetting (SUBSET=phenomenonTime(\"instant\") or (\"start\",\"end\"); the request must intersect the coverage acquisition time, else InvalidSubsetting). Capabilities advertise native CRSs for visible coverages; one-axis SUBSET is native-CRS only. The range-subsetting and scaling extension conformance classes are not advertised pending CITE validation. Multidimensional slicing beyond phenomenonTime, NetCDF, XML POST, and WCS-specific mosaic selection are deferred."
@@ -1413,7 +1413,7 @@
         {
           "name": "Raster item image support data",
           "status": "partial",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/ImageServer/{rasterId}/imageSupportData"
           ],
           "notes": "Returns the Esri-shaped imageSupportData (sensor name, camera model, and interior/exterior/RPC orientation presence flags plus DEM source) projected from the raster sensor-metadata companion. Partial: only rasters with a modeled sensor-metadata row carry support data; a plain COG reports not-available rather than a fabricated empty support-data document."
@@ -1421,7 +1421,7 @@
         {
           "name": "Raster item source file",
           "status": "stub",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/ImageServer/{rasterId}/rasterFile"
           ],
           "notes": "Route exists and resolves the raster item, then returns a precise capability-honest not-available response: Honua stores raster pixels in the provider (PostGIS raster / analytic stores) rather than referencing a downloadable source file, so there is no file to stream. Never a fabricated payload."
@@ -1429,7 +1429,7 @@
         {
           "name": "KML",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/ImageServer/kml/image.kmz"
           ],
           "notes": "Returns an OGC KML 2.2 KMZ (doc.kml) carrying a single GroundOverlay whose Icon href references the service exportImage operation over the WGS84 service extent and whose LatLonBox is that extent, mirroring the ArcGIS ImageServer KML resource. The resource reads only the aggregate catalog extent (reprojected to WGS84 via the shared transform service when the native SR is not geographic) and renders no pixels itself; the overlay image is produced on demand by the shared export pipeline when a KML client resolves the icon href. The self-referential exportImage href preserves whichever service addressing form (numeric-layer id or service name) the request used."
@@ -1437,7 +1437,7 @@
         {
           "name": "conf.json (tile-cache configuration)",
           "status": "partial",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/ImageServer/conf.json"
           ],
           "notes": "Interop route, not Esri's tile-cache configuration document: it returns the ImageServer service descriptor. Honua's ImageServer is dynamic, so no fused cache is advertised by default (singleFusedMapCache/tileInfo are emitted only when the opt-in ImageServerTileMetadataOptions flag is set). It exists because the ArcGIS Maps SDK for .NET native runtime probes conf.json while loading an ImageServiceRaster and treats a 404 as fatal (#1456, #1648)."
@@ -1446,17 +1446,17 @@
       "absentOperations": [
         {
           "name": "Add Rasters",
-          "esriPath": "/ImageServer/addRasters",
+          "geoServicesPath": "/ImageServer/addRasters",
           "notes": ""
         },
         {
           "name": "Delete Rasters",
-          "esriPath": "/ImageServer/deleteRasters",
+          "geoServicesPath": "/ImageServer/deleteRasters",
           "notes": ""
         },
         {
           "name": "Download Rasters",
-          "esriPath": "/ImageServer/downloadRasters",
+          "geoServicesPath": "/ImageServer/downloadRasters",
           "notes": ""
         }
       ],
@@ -1732,7 +1732,7 @@
         {
           "name": "Service metadata",
           "status": "partial",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/VectorTileServer"
           ],
           "notes": "Emits a real LOD table and a unioned extent for the resolved service, but capabilities (\"TilesOnly\"), type, the tiles template, and exportTilesAllowed=false are hardcoded; minLOD is always 0 even though the tile route rejects zooms below the configured minimum; the extent unions per-resource bboxes without reprojecting them while labelling the result with the service SR; and only f=json/pjson are accepted."
@@ -1740,7 +1740,7 @@
         {
           "name": "Tile",
           "status": "partial",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/VectorTileServer/tile/{z}/{y}/{x}.pbf"
           ],
           "notes": "Renders genuine MVT through the canonical tile provider with zoom and coordinate validation, but serves only the service's single primary tiled publication \u2014 a multi-layer service returns one layer's data per tile, where an Esri vector-tile cache packs every layer into the tile."
@@ -1748,7 +1748,7 @@
         {
           "name": "Tilemap",
           "status": "partial",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/VectorTileServer/tilemap",
             "/VectorTileServer/tilemap/{z}/{y}/{x}/{dimension}/{dimension2}"
           ],
@@ -1757,7 +1757,7 @@
         {
           "name": "Style resource",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/VectorTileServer/resources/styles"
           ],
           "notes": "Composes a Mapbox GL v8 style document from the layer's stored MapLibre style through the shared style projection, rewriting source, sprite, and glyph URLs onto this service (each vector source carries the service URL and the tile template); falls back to a deterministic default style when the layer has none stored."
@@ -1765,7 +1765,7 @@
         {
           "name": "Style sub-resource",
           "status": "partial",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/VectorTileServer/resources/styles/{**resourcePath}"
           ],
           "notes": "Only the empty path and root.json resolve, both to the composed style document above; every other style sub-resource returns 404."
@@ -1773,7 +1773,7 @@
         {
           "name": "Sprite resources",
           "status": "stub",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/VectorTileServer/resources/sprites/{spriteResource}"
           ],
           "notes": "Routes exist and return spec-shaped assets with no content: sprite.json/sprite@2x.json return an empty object and sprite.png/sprite@2x.png a 1\u00d71 transparent PNG (@2x returns the identical 1x asset). No sprite store backs them. Any other resource name returns 404."
@@ -1781,7 +1781,7 @@
         {
           "name": "Font (glyph) resources",
           "status": "partial",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/VectorTileServer/resources/fonts/{fontstack}/{range}.pbf"
           ],
           "notes": "Returns signed-distance-field glyphs for the requested fontstack and range, labelled with the requested fontstack, from one bundled sans-serif face (DejaVu Sans). Any fontstack naming a common sans-serif family is served with that face, so weights and styles are not distinguished; other fontstacks return 404. Only the 0-255 range is bundled; all other ranges return 404."
@@ -1841,7 +1841,7 @@
         {
           "name": "Geometry Service metadata",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/GeometryServer"
           ],
           "notes": "Service descriptor with serviceDescription, maxBufferCount, and maxSimplifyCount; currentVersion is intentionally omitted."
@@ -1849,7 +1849,7 @@
         {
           "name": "Buffer",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/GeometryServer/buffer"
           ],
           "notes": ""
@@ -1857,7 +1857,7 @@
         {
           "name": "Simplify",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/GeometryServer/simplify"
           ],
           "notes": ""
@@ -1865,7 +1865,7 @@
         {
           "name": "Project",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/GeometryServer/project"
           ],
           "notes": ""
@@ -1873,7 +1873,7 @@
         {
           "name": "Intersect",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/GeometryServer/intersect"
           ],
           "notes": ""
@@ -1881,7 +1881,7 @@
         {
           "name": "Union",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/GeometryServer/union"
           ],
           "notes": ""
@@ -1889,7 +1889,7 @@
         {
           "name": "Clip",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/GeometryServer/clip"
           ],
           "notes": "Uses the envelope of the clip geometry."
@@ -1897,7 +1897,7 @@
         {
           "name": "Difference",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/GeometryServer/difference"
           ],
           "notes": ""
@@ -1905,7 +1905,7 @@
         {
           "name": "Areas and Lengths",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/GeometryServer/areasAndLengths"
           ],
           "notes": "Supports calculationType (planar/geodesic/preserveShape), areaUnit, lengthUnit."
@@ -1913,7 +1913,7 @@
         {
           "name": "Lengths",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/GeometryServer/lengths"
           ],
           "notes": "Supports calculationType and lengthUnit."
@@ -1921,7 +1921,7 @@
         {
           "name": "Distance",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/GeometryServer/distance"
           ],
           "notes": "Supports distanceUnit and geodesic."
@@ -1929,7 +1929,7 @@
         {
           "name": "Relation",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/GeometryServer/relation"
           ],
           "notes": "Esri relation set plus DE-9IM (relationParam)."
@@ -1937,7 +1937,7 @@
         {
           "name": "Densify",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/GeometryServer/densify"
           ],
           "notes": ""
@@ -1945,7 +1945,7 @@
         {
           "name": "Convex Hull",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/GeometryServer/convexHull"
           ],
           "notes": ""
@@ -1953,7 +1953,7 @@
         {
           "name": "Generalize",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/GeometryServer/generalize"
           ],
           "notes": ""
@@ -1961,7 +1961,7 @@
         {
           "name": "Label Points",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/GeometryServer/labelPoints"
           ],
           "notes": ""
@@ -1969,7 +1969,7 @@
         {
           "name": "Cut",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/GeometryServer/cut"
           ],
           "notes": ""
@@ -1977,7 +1977,7 @@
         {
           "name": "Trim/Extend",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/GeometryServer/trimExtend"
           ],
           "notes": ""
@@ -1985,7 +1985,7 @@
         {
           "name": "Offset",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/GeometryServer/offset"
           ],
           "notes": "Supports offsetUnit, offsetHow (rounded/bevelled/mitered), bevelRatio."
@@ -1993,7 +1993,7 @@
         {
           "name": "Auto Complete",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/GeometryServer/autoComplete"
           ],
           "notes": ""
@@ -2001,7 +2001,7 @@
         {
           "name": "Reshape",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/GeometryServer/reshape"
           ],
           "notes": ""
@@ -2009,7 +2009,7 @@
         {
           "name": "Find Transformations",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/GeometryServer/findTransformations"
           ],
           "notes": "Returns an empty list; Honua applies CRS transforms through its PROJ-backed projection pipeline."
@@ -2017,7 +2017,7 @@
         {
           "name": "To Geo Coordinate String",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/GeometryServer/toGeoCoordinateString"
           ],
           "notes": "Supports MGRS and USNG, independent addSpaces/rounding controls, and the Esri MGRS new/old-style plus longitude-180 zone-01 conversion modes."
@@ -2025,7 +2025,7 @@
         {
           "name": "From Geo Coordinate String",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/GeometryServer/fromGeoCoordinateString"
           ],
           "notes": "Parses MGRS and USNG coordinate strings using the requested conversion mode and returns point geometries in the requested spatial reference."
@@ -2134,7 +2134,7 @@
         {
           "name": "Task Metadata",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/GPServer/Export Web Map Task"
           ],
           "notes": "Returns task name, display name, parameters, and choice lists. Served via PrintingTools endpoints."
@@ -2142,7 +2142,7 @@
         {
           "name": "Layout template task metadata",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/GPServer/Get Layout Templates Info Task"
           ],
           "notes": "Returns the task name, display name, and the single Output_JSON output parameter. Served by the PrintingTools endpoints."
@@ -2150,7 +2150,7 @@
         {
           "name": "Execute Task (sync)",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/GPServer/Export Web Map Task/execute"
           ],
           "notes": "Synchronous map export returning image bytes. PrintingTools-specific implementation."
@@ -2158,7 +2158,7 @@
         {
           "name": "Submit Job (async)",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/GPServer/Export Web Map Task/submitJob"
           ],
           "notes": "Asynchronous map export job submission. PrintingTools-specific implementation."
@@ -2166,7 +2166,7 @@
         {
           "name": "Job Status",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/GPServer/Export Web Map Task/jobs/{jobId}"
           ],
           "notes": "Job status polling with result parameter URL. PrintingTools-specific implementation."
@@ -2174,7 +2174,7 @@
         {
           "name": "Job Results",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/GPServer/Export Web Map Task/jobs/{jobId}/results/Output_File"
           ],
           "notes": "Single-parameter result access (Output_File only). PrintingTools-specific implementation."
@@ -2182,7 +2182,7 @@
         {
           "name": "Template Listing (sync)",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/GPServer/Get Layout Templates Info Task/execute"
           ],
           "notes": "Returns available layout templates. PrintingTools-specific implementation."
@@ -2190,7 +2190,7 @@
         {
           "name": "GP Service Info (generic)",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/GPServer"
           ],
           "notes": "Returns service metadata and the published task list projected from the built-in IProcessCatalog. Implemented in #723. Utilities/PrintingTools publishes its own synchronous service resource on this path, listing Export Web Map Task and Get Layout Templates Info Task."
@@ -2198,7 +2198,7 @@
         {
           "name": "GP Task Info (generic)",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/GPServer/{taskName}"
           ],
           "notes": "Returns task metadata projected from the built-in IProcessCatalog, including parameter descriptions and Esri data types. Implemented in #723. Every GP service also resolves the NetworkAnalysisUtilities tasks GetTravelModes and GetToolInfo by name (synchronous, anonymous projections of the routing provider, deliberately absent from the task list because they have no SOAP or job form) so ArcGIS Pro and arcpy can bind the NAServer next to it (#5035)."
@@ -2206,7 +2206,7 @@
         {
           "name": "Job Status (generic)",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/GPServer/{taskName}/jobs/{jobId}"
           ],
           "notes": "Job status polling with route binding validation. Maps ExecutionJobRecord to Esri status. Implemented in #723."
@@ -2214,7 +2214,7 @@
         {
           "name": "Job Results (generic)",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/GPServer/{taskName}/jobs/{jobId}/results/{paramName}"
           ],
           "notes": "Per-output result access with route binding validation. Successful terminal jobs advertise named result URLs backed by the durable result-package store, and retrieval returns each parameter's Esri data type and stored value."
@@ -2222,7 +2222,7 @@
         {
           "name": "Cancel Job (generic)",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/GPServer/{taskName}/jobs/{jobId}/cancel"
           ],
           "notes": "Job cancellation with route binding validation. Implemented in #723."
@@ -2230,7 +2230,7 @@
         {
           "name": "Submit Job (generic)",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/GPServer/{taskName}/submitJob"
           ],
           "notes": "Resolves the published task name against the built-in IProcessCatalog, validates inputs, persists GPServer route metadata, and returns an Esri job envelope. Implemented in #723."
@@ -2238,7 +2238,7 @@
         {
           "name": "Execute Task (generic, sync)",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/GPServer/{taskName}/execute"
           ],
           "notes": "Runs sync-eligible (deterministic single-geometry geometry.* / conversion.geometry-format) tasks inline through the same canonical job runtime as submitJob and returns the Esri execute envelope (results + messages). Async-only tasks return a 400 capability message pointing at submitJob. Both execute and submitJob honor env:outSR, env:workspace, and env:overwriteOutput; nonempty env:processSR or context.processSR are rejected before execution or job submission (GeoServices error.code=400 over HTTP 200); unsupported env:* controls return an error with code 400. context.outSR maps to env:outSR; null or blank processing references request no override. A failed or cancelled run returns the GeoServices error envelope (code 500, job id and failure message in details) instead of an empty results list (#4034). Implemented in #1660."
@@ -2246,7 +2246,7 @@
         {
           "name": "Jobs List",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/GPServer/{taskName}/jobs"
           ],
           "notes": "Lists submitted/running/completed/failed jobs for a task, newest first, with opaque cursor paging. Job/Read authorization and per-job ownership are enforced in the shared job service before any job is surfaced."
@@ -2311,7 +2311,7 @@
         {
           "name": "GeocodeServer metadata",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/GeocodeServer"
           ],
           "notes": "candidateFields and categories are not advertised."
@@ -2319,7 +2319,7 @@
         {
           "name": "Find Address Candidates",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/GeocodeServer/findAddressCandidates"
           ],
           "notes": "Honors singleLine/structured fields, maxLocations, outSR (reprojected via the shared transform service), countryCode(s), and searchExtent."
@@ -2327,7 +2327,7 @@
         {
           "name": "Reverse Geocode",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/GeocodeServer/reverseGeocode"
           ],
           "notes": "Honors location, outSR (reprojected via the shared transform service), langCode, and the provider-dependent distance (search radius, meters) and featureTypes (type filter) parameters where a backing provider supports them (Azure Maps radius/entityType)."
@@ -2335,7 +2335,7 @@
         {
           "name": "Suggest",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/GeocodeServer/suggest"
           ],
           "notes": "Honors text, maxSuggestions, countryCode(s), searchExtent, and location bias where the provider supports them."
@@ -2343,7 +2343,7 @@
         {
           "name": "Geocode Addresses (batch)",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/GeocodeServer/geocodeAddresses"
           ],
           "notes": "Accepts the Esri addresses={\"records\":[...]} payload and a bare records array. Honors outSR (reprojected via the shared transform service) and countryCode(s); enforces the provider batch-size cap."
@@ -2497,7 +2497,7 @@
         {
           "name": "Service resource",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/NAServer"
           ],
           "notes": "GET and POST return the Esri network service resource: one analysis layer name per solver the configured IRoutingProvider advertises (routeLayers, serviceAreaLayers, closestFacilityLayers, odCostMatrixLayers, locationAllocationLayers) (#5035)."
@@ -2505,7 +2505,7 @@
         {
           "name": "Analysis layer resource",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/NAServer/{layerName}"
           ],
           "notes": "GET and POST return the Esri network analysis layer resource for Route, ServiceArea, ClosestFacility, ODCostMatrix and LocationAllocation: impedance and travel modes projected from the active network dataset's travel profiles, network attributes and sources, input network classes and the configured service limits. Unknown or unsupported layers answer 404. Together with the GetTravelModes/GetToolInfo utility tasks every GPServer resolves, this is the stand-alone binding surface ArcGIS Pro and arcpy read (#5035); a native Pro replay is still pending."
@@ -2513,7 +2513,7 @@
         {
           "name": "FindRoutes synchronous subset",
           "status": "partial",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/NAServer/FindRoutes/execute"
           ],
           "notes": "GET and POST execute the same bounded adapter as GPServer/FindRoutes/execute: input-order stops, Minutes-only travel time, provider-validated modes and barriers. Unsupported units, stop optimization, unknown options and conflicting aliases return errors before solving. There is no submitJob form; full arcpy.nax binding remains open in #5192."
@@ -2521,7 +2521,7 @@
         {
           "name": "GenerateServiceAreas synchronous subset",
           "status": "partial",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/NAServer/GenerateServiceAreas/execute"
           ],
           "notes": "GET and POST execute the same synchronous adapter as GPServer/GenerateServiceAreas/execute: point facilities, Minutes-only breaks, provider-validated travel modes and directions, canonical polygon output, FacilityOID and input names. GP env:outSR/context.outSR and the NAServer outSR alias forward output projection; malformed or conflicting controls are rejected. Unsupported units, nondefault per-facility solve settings, unknown options and other GP environments return errors before solving. There is no submitJob form; stock arcpy.nax binding and native Route/ServiceArea solve evidence remain open in #5192."
@@ -2529,7 +2529,7 @@
         {
           "name": "Ready-to-use routing job submission",
           "status": "partial",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/NAServer/{taskName}/submitJob"
           ],
           "notes": "GET and POST submit FindClosestFacilities, GenerateOriginDestinationCostMatrix and SolveLocationAllocation through the same canonical durable job runtime as their GPServer aliases. Provider capability, input identity, spatial reference, units and supported travel-mode settings are validated before solving. Queued jobs on the seeded pgRouting lattice are proved for closest facilities, OD cost matrix, and location-allocation (#5949, #5950, #5951). Stock arcpy.nax binding and native solves remain open in #5192."
@@ -2537,7 +2537,7 @@
         {
           "name": "Ready-to-use routing job status",
           "status": "partial",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/NAServer/{taskName}/jobs/{jobId}"
           ],
           "notes": "GET reads the shared durable GP job state and advertises named results after successful completion. Direct HTTP tests cover both submission methods and terminal status through the NAServer alias, including queued pgRouting solves on the seeded lattice (#5949, #5950, #5951). Stock arcpy.nax acceptance remains open in #5192."
@@ -2545,7 +2545,7 @@
         {
           "name": "Ready-to-use routing job results",
           "status": "partial",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/NAServer/{taskName}/jobs/{jobId}/results/{paramName}"
           ],
           "notes": "GET reads the same stored named result packages as the GPServer alias for successful routing jobs. HTTP tests verify the documented output parameter names, identities and canonical feature-set envelopes, including queued pgRouting results on the seeded lattice (#5949, #5950, #5951). Stock arcpy.nax acceptance remains open in #5192."
@@ -2553,7 +2553,7 @@
         {
           "name": "Route solve",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/NAServer/Route/solve"
           ],
           "notes": "GET query parameters and POST form parameters share one handler that parses stops, inSR/outSR, returnRoutes, returnDirections, barriers/polylineBarriers/polygonBarriers, and travelMode, delegates to the configured IRoutingProvider, and returns Esri route and directions feature sets."
@@ -2561,7 +2561,7 @@
         {
           "name": "ServiceArea solveServiceArea",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/NAServer/ServiceArea/solveServiceArea"
           ],
           "notes": "Parses facilities, defaultBreaks, inSR/outSR, travelDirection, barriers/polylineBarriers/polygonBarriers, and travelMode, validates provider-advertised travel-direction/barrier/mode support, and returns Esri saPolygons."
@@ -2569,7 +2569,7 @@
         {
           "name": "ClosestFacility solveClosestFacility",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/NAServer/ClosestFacility/solveClosestFacility"
           ],
           "notes": "Parses incidents and facilities into the canonical closest-facility request, ranks by network impedance, and materializes the closest routes through the configured IRoutingProvider."
@@ -2577,7 +2577,7 @@
         {
           "name": "ODCostMatrix solveODCostMatrix",
           "status": "partial",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/NAServer/ODCostMatrix/solveODCostMatrix"
           ],
           "notes": "Computes ranked origin/destination impedance cells through the canonical routing provider. esriNAODOutputNoLines preserves the cost-only fast path; esriNAODOutputStraightLines returns two-vertex polylines in outSR (the pgRouting provider batch-transforms all cells through PostGIS in one query). Providers without straight-line capability and true-shape modes return precise GeoServices 400 responses."
@@ -2585,7 +2585,7 @@
         {
           "name": "LocationAllocation solveLocationAllocation",
           "status": "partial",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/NAServer/LocationAllocation/solveLocationAllocation"
           ],
           "notes": "Implements minimize-impedance, maximize-coverage, and cutoff-required minimize-facilities over the canonical cost matrix. Minimize-facilities uses deterministic O(F\u00c2\u00b2D) greedy set cover with the standard H(D) approximation bound, cancellation, and configured input caps. Maximize-attendance, maximize-capacitated-coverage, maximize-market-share, and target-market-share are explicitly rejected because their required transformation, capacity, competitor, and attractiveness inputs are not modeled."
@@ -2653,7 +2653,7 @@
         {
           "name": "Service metadata",
           "status": "partial",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/VersionManagementServer"
           ],
           "notes": "GET and POST return the descriptor after service-read, branch-versioning entitlement, and accessible bound-publication capability checks. It names DEFAULT by the contract's fixed defaultVersionGuid, which native clients read, then start a read session on, to open the feature service as a versioned workspace; the sibling MapServer lists VersionManagementServer in supportedExtensions even when a map-only service shares the name."
@@ -2661,7 +2661,7 @@
         {
           "name": "List versions; version info",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/VersionManagementServer/versionInfos",
             "/VersionManagementServer/versions",
             "/VersionManagementServer/versions/{versionGuid}"
@@ -2671,7 +2671,7 @@
         {
           "name": "Create version",
           "status": "partial",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/VersionManagementServer/create"
           ],
           "notes": "Creates a real version and maps a duplicate name to 409, but parentVersion is accepted and ignored (always null), so a version can only be branched from DEFAULT."
@@ -2679,7 +2679,7 @@
         {
           "name": "Alter version; delete version",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/VersionManagementServer/versions/{versionGuid}/alter",
             "/VersionManagementServer/versions/{versionGuid}/delete",
             "/VersionManagementServer/delete"
@@ -2689,7 +2689,7 @@
         {
           "name": "Reconcile; post; resolveConflicts; inspectConflicts",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/VersionManagementServer/versions/{versionGuid}/inspectConflicts",
             "/VersionManagementServer/versions/{versionGuid}/post",
             "/VersionManagementServer/versions/{versionGuid}/reconcile",
@@ -2700,7 +2700,7 @@
         {
           "name": "Version job status",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/VersionManagementServer/versions/{versionGuid}/jobs/{jobId}"
           ],
           "notes": "Polls the durable job runner for an async reconcile/post; a job GUID belonging to another service or version returns 404."
@@ -2708,7 +2708,7 @@
         {
           "name": "startReading; stopReading; startEditing; stopEditing",
           "status": "partial",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/VersionManagementServer/versions/{versionGuid}/startEditing",
             "/VersionManagementServer/versions/{versionGuid}/startReading",
             "/VersionManagementServer/versions/{versionGuid}/stopEditing",
@@ -2751,7 +2751,7 @@
         {
           "name": "Service administration metadata",
           "status": "partial",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/rest/admin/{serviceName}.{serviceType}"
           ],
           "notes": "Read-only service metadata for connections without a site segment. GET and POST expose the same principal-filtered service and branch-versioning metadata. This does not implement the ArcGIS Server administration mutation API."
@@ -2759,7 +2759,7 @@
         {
           "name": "Catalog (service directory)",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/rest/services"
           ],
           "notes": "Graph-backed service directory, RBAC-filtered per principal, listing every service type a publication exposes. Returns 401/403 rather than a misleading empty list when every publication is denied. Emits the Utilities folder for the built-in PrintingTools GPServer; currentVersion is deliberately omitted (see knownLimitations)."
@@ -2767,7 +2767,7 @@
         {
           "name": "Service-name catalog node",
           "status": "partial",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/rest/services/{folderName}"
           ],
           "notes": "GET and POST expose the visible service-type entries for one service name using the same RBAC-filtered projection as the root directory. The built-in Utilities folder returns the PrintingTools GPServer entry. Supports client traversal through a service's parent node; nested folder hierarchies are not implemented."
@@ -2775,7 +2775,7 @@
         {
           "name": "PrintingTools service node",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/rest/services/Utilities/PrintingTools"
           ],
           "notes": "GET and POST return the catalog node for the built-in Utilities/PrintingTools GPServer, with an empty folders array and a single GPServer service entry. The node is public even when the graph directory is fully denied, and it does not list denied graph services."
@@ -2783,7 +2783,7 @@
         {
           "name": "REST Info",
           "status": "stub",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/rest/info"
           ],
           "notes": "Returns the spec-shaped {\"authInfo\":{\"isTokenBasedSecurity\":\u2026}} document, but the value is not wired to the portal-token configuration: it is always false, and tokenServicesUrl is absent from the response type entirely. An Esri client performing auth discovery at the canonical ArcGIS Server location is therefore told the server is not token-secured. /sharing/rest/info carries the real, configuration-driven authInfo. Tracked as a gap; the route is not removed because clients probe it."
@@ -2836,7 +2836,7 @@
         {
           "name": "Generate Token",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/sharing/rest/generateToken"
           ],
           "notes": "Accepts username, password, client (referer|ip), referer, expiration (minutes; clamped to MaxExpirationMinutes), and f=json. Returns { token, expires (Unix ms), ssl: true }. Issuance is HTTPS-only by default and edition-gated by identity.portal-token (402 Payment Required when inactive)."
@@ -2844,7 +2844,7 @@
         {
           "name": "Sharing REST Info",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/sharing/rest/info"
           ],
           "notes": "Emits isTokenBasedSecurity from the live portal-token configuration plus a real tokenServicesUrl. currentVersion/fullVersion are deliberately omitted (Honua does not advertise an ArcGIS Server version; guarded by NoArcGisServerVersionTests) \u2014 a known, intentional divergence from the Esri document."
@@ -2852,7 +2852,7 @@
         {
           "name": "Portal Self",
           "status": "partial",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/sharing/rest/portals/self"
           ],
           "notes": "username and fullName are projected from the caller's claims. helperServices advertises supported synchronous route, serviceArea, closestFacility and odCostMatrix layers using the public base URL. Unsupported helpers are omitted; provider failure is logged and leaves the helper block empty. The portal id (\"0123456789ABCDEF\"), name, portalName, isPortal, and role are hardcoded; org settings, urlKey, allSSL, basemaps, and privileges are absent. Sufficient for client bootstrap, not for portal administration."
@@ -2860,7 +2860,7 @@
         {
           "name": "Community User",
           "status": "partial",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/sharing/rest/community/users/{username}"
           ],
           "notes": "Returns id, username and fullName from the authenticated caller's claims only when the requested username matches the caller (case-insensitive). Anonymous callers get 401; other usernames get 404 without revealing whether they exist. The role remains the fixed org_user value and the groups array contains actual owned/member groups from the in-memory community store; this is a self-profile projection, not a general user directory or a complete organization profile."
@@ -2868,7 +2868,7 @@
         {
           "name": "User Content",
           "status": "partial",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/sharing/rest/content/users/{username}"
           ],
           "notes": "Lists RBAC-visible graph service items for the authenticated caller when the requested username matches case-insensitively. Items with a mapped owner are filtered to that caller; visible services without an owner mapping are also included. Anonymous callers get 401 and other usernames get 404. Folders is always empty, the graph-service projection is not a general portal content store, and pagination and folder traversal are not implemented."
@@ -2876,7 +2876,7 @@
         {
           "name": "Community Self",
           "status": "partial",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/sharing/rest/community/self"
           ],
           "notes": "Returns username and fullName from the caller's claims; role is hardcoded \"org_user\" rather than derived from RBAC, and Esri's groups array is absent (the group store is never consulted). id/email/orgId/privileges are not emitted. Anonymous callers get 401."
@@ -2884,7 +2884,7 @@
         {
           "name": "Search",
           "status": "partial",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/sharing/rest/search"
           ],
           "notes": "Honours q, start, num (capped at 100), sortField (title/created/modified/owner only) and sortOrder. The q grammar supports type:/owner:/tags:/id:/title: qualifiers plus free text; unknown qualifiers silently degrade to free text, and boolean operators, wildcards, and ranges are unsupported. bbox, filter, categories, countFields, and restrict are ignored. The item universe is FeatureServer/MapServer/ImageServer graph services only \u2014 web maps, apps, layers, and files are not items."
@@ -2892,7 +2892,7 @@
         {
           "name": "Item; item data",
           "status": "partial",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/sharing/rest/content/items/{id}",
             "/sharing/rest/content/items/{id}/data"
           ],
@@ -2901,7 +2901,7 @@
         {
           "name": "Group Content",
           "status": "partial",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/sharing/rest/content/groups/{groupId}"
           ],
           "notes": "Authenticated group owner/member only within the trusted request tenant; missing/inaccessible groups return404 and anonymous requests require authentication. Stable item-id ordering with bounded 1-based start/num pagination, total/start/num/nextStart/items, and empty groupCategories because the store has no categories. Canonical group audiences grant service read access while resource/layer policy, publication/resource/service tenant visibility, credential scopes, field masks and row filters still apply. Production group share/unshare changes this shared read authority; membership removal and unshare revoke it immediately. No group grant for writes, approval, execution, unknown operations, or principal-only/background calls without a trusted request context. Stores remain in-memory, single-node and lost on restart."
@@ -2909,7 +2909,7 @@
         {
           "name": "Share; unshare",
           "status": "partial",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/sharing/rest/content/items/{itemId}/share",
             "/sharing/rest/content/items/{itemId}/unshare"
           ],
@@ -2918,7 +2918,7 @@
         {
           "name": "Group; createGroup; addUsers; removeUsers; delete group",
           "status": "partial",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/sharing/rest/community/createGroup",
             "/sharing/rest/community/groups/{groupId}",
             "/sharing/rest/community/groups/{groupId}/addUsers",
@@ -2930,7 +2930,7 @@
         {
           "name": "OAuth2 authorize; callback",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/sharing/rest/oauth2/authorize",
             "/sharing/rest/oauth2/callback"
           ],
@@ -2939,7 +2939,7 @@
         {
           "name": "OAuth2 token",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/sharing/rest/oauth2/token"
           ],
           "notes": "authorization_code and refresh_token grants with rotating refresh tokens (rotation on by default); Basic-auth client credentials accepted. POST only \u2014 the GET form was deliberately removed. The client_credentials grant is opt-in (EnableClientCredentials, default false \u2192 unsupported_grant_type), as is its optional IdP/OIDC federation."
@@ -2947,7 +2947,7 @@
         {
           "name": "OAuth2 introspect",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/sharing/rest/oauth2/introspect"
           ],
           "notes": "RFC 7662 introspection over opaque, JWT, and refresh tokens, admin-authorized. Off by default (EnableIntrospection \u2192 404 when disabled). Emits active, sub, username, scope, token_type, and exp; client_id, iat, nbf, aud, iss, and jti are not emitted."
@@ -2955,7 +2955,7 @@
         {
           "name": "OAuth2 userinfo",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/sharing/rest/oauth2/userinfo"
           ],
           "notes": "Accepts GET and form-encoded POST with a valid portal token supplied as Bearer authorization, X-Esri-Authorization, access_token, or token. Returns the OAuth2 subject, username, and display name; invalid or missing credentials use the OAuth2 invalid_request/invalid_token envelopes."
@@ -2963,7 +2963,7 @@
         {
           "name": "OAuth2 revoke",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/sharing/rest/oauth2/revoke"
           ],
           "notes": "RFC 7009 revocation for opaque, JWT, and refresh tokens; always returns 200 per \u00a72.2."

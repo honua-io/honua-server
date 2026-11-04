@@ -272,7 +272,7 @@ internal sealed class PortalTokenAuthenticationMiddleware(
     RequestDelegate next,
     IOptionsMonitor<PortalTokenAuthenticationOptions> options)
 {
-    private const string EsriAuthorizationHeader = "X-Esri-Authorization";
+    private const string GeoServicesAuthorizationHeader = "X-Esri-Authorization";
 
     private readonly RequestDelegate _next = next;
     private readonly IOptionsMonitor<PortalTokenAuthenticationOptions> _options = options;
@@ -319,7 +319,7 @@ internal sealed class PortalTokenAuthenticationMiddleware(
             return true;
         }
 
-        if (context.Request.Headers.TryGetValue(EsriAuthorizationHeader, out var esri) &&
+        if (context.Request.Headers.TryGetValue(GeoServicesAuthorizationHeader, out var esri) &&
             HasBearerPrefix(esri))
         {
             return true;

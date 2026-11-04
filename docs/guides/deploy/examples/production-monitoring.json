@@ -11,7 +11,7 @@
   },
   "ExternalServices": {
     "CircuitBreaker": {
-      "ArcGisRest": {
+      "GeoServicesRest": {
         "FailureThreshold": 3,
         "DurationOfBreakSeconds": 60,
         "SuccessThreshold": 2,

@@ -62,7 +62,7 @@ internal sealed class SourceBackedRelationshipStore(
                 throw new ArgumentException("Related query filter translation is unavailable.");
             }
 
-            var parsed = filters.Parse(FilterLanguage.ArcGisSql, query.Where);
+            var parsed = filters.Parse(FilterLanguage.GeoServicesSql, query.Where);
             if (!parsed.IsSuccess || parsed.Expression is null)
             {
                 throw new ArgumentException("Invalid related query filter.");

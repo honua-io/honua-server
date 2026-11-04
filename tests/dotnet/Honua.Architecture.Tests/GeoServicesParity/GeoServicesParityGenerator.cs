@@ -5,39 +5,6 @@ using System.Text.Json;
 
 namespace Honua.Architecture.Tests.GeoServicesParity;
 
-/// <summary>
-/// Generates the published GeoServices REST parity matrix
-/// (<c>docs/gis/data/geoservices-rest-parity.json</c>) by joining the derived route
-/// roster (<see cref="GeoServicesRouteRoster"/>) with the hand-authored judgement
-/// source (<c>docs/gis/data/geoservices-parity-judgment.json</c>) — #2861 / #2863.
-/// </summary>
-/// <remarks>
-/// <para>
-/// The matrix has exactly two honestly-different halves, and this type is where they
-/// meet:
-/// </para>
-/// <list type="bullet">
-///   <item><description>
-///     <b>Which routes exist</b> is mechanical. It is derived — the published
-///     <c>esriPaths</c>, <c>honuaEndpoints</c>, and <c>capabilityMaturity</c> of every served
-///     operation come from the generated capability data and are never authored.
-///     Nothing can be published here that is not served.
-///   </description></item>
-///   <item><description>
-///     <b>How completely each is implemented</b> is human judgement. The
-///     implemented/partial/stub vocabulary and the gap prose come from the judgement
-///     source and are never inferred. Nothing mechanical may promote a status.
-///   </description></item>
-/// </list>
-/// <para>
-/// The join itself is the gate (<see cref="Join"/> reports both directions through
-/// <see cref="GeoServicesParityJoin"/>; <c>GeoServicesParityMatrixDriftTests</c>
-/// asserts them). Generation is total: a served operation with no judgement, or a
-/// judgement naming an unserved operation, is a failure, not a silent omission —
-/// which is how a fabricated <c>computeClass</c> route stayed published, and how the
-/// shipped async exportTiles lifecycle stayed published as deferred.
-/// </para>
-/// </remarks>
 internal static class GeoServicesParityGenerator
 {
     /// <summary>Published matrix schema version. Bumped by #2863 (roster is now derived).</summary>
@@ -63,7 +30,7 @@ internal static class GeoServicesParityGenerator
         var judgment = LoadJudgment();
 
         var rosterByPath = roster.Operations.ToDictionary(
-            operation => operation.EsriPath, StringComparer.Ordinal);
+            operation => operation.GeoServicesPath, StringComparer.Ordinal);
 
         var claims = judgment.ServiceList
             .SelectMany(service => service.OperationList.Select(operation => (Service: service, Operation: operation)))
@@ -94,10 +61,10 @@ internal static class GeoServicesParityGenerator
 
         var servedAbsent = judgment.ServiceList
             .SelectMany(service => service.AbsentList.Select(operation => (Service: service, Operation: operation)))
-            .Where(pair => !pair.Operation.EsriPath.Contains('*', StringComparison.Ordinal))
-            .Where(pair => rosterByPath.ContainsKey(pair.Operation.EsriPath))
-            .OrderBy(pair => pair.Operation.EsriPath, StringComparer.Ordinal)
-            .Select(pair => $"{pair.Service.Id}/{pair.Operation.Name}: {pair.Operation.EsriPath}")
+            .Where(pair => !pair.Operation.GeoServicesPath.Contains('*', StringComparison.Ordinal))
+            .Where(pair => rosterByPath.ContainsKey(pair.Operation.GeoServicesPath))
+            .OrderBy(pair => pair.Operation.GeoServicesPath, StringComparer.Ordinal)
+            .Select(pair => $"{pair.Service.Id}/{pair.Operation.Name}: {pair.Operation.GeoServicesPath}")
             .ToArray();
 
         var misfiled = claims
@@ -143,7 +110,7 @@ internal static class GeoServicesParityGenerator
     {
         var join = Join();
         var rosterByPath = join.Roster.Operations.ToDictionary(
-            operation => operation.EsriPath, StringComparer.Ordinal);
+            operation => operation.GeoServicesPath, StringComparer.Ordinal);
 
         var services = join.Judgment.ServiceList
             .Select(service =>
@@ -164,7 +131,7 @@ internal static class GeoServicesParityGenerator
                     Partial = Bucket(operations, "partial"),
                     Stub = Bucket(operations, "stub"),
                     NotImplemented = service.AbsentList
-                        .OrderBy(operation => operation.EsriPath, StringComparer.Ordinal)
+                        .OrderBy(operation => operation.GeoServicesPath, StringComparer.Ordinal)
                         .ToArray(),
                 };
 
@@ -206,7 +173,7 @@ internal static class GeoServicesParityGenerator
                     + "carry no service address and normalize to themselves. The HTTP method is not part of the key, "
                     + "so the GET and POST forms of one Esri operation are one operation carrying one judgement; "
                     + "honuaEndpoints lists every served METHOD /path behind it.",
-                Note = "esriPaths, honuaEndpoints, and capabilityMaturity on every served operation below are DERIVED "
+                Note = "geoServicesPaths, honuaEndpoints, and capabilityMaturity on every served operation below are DERIVED "
                     + "and must not be hand-edited. capabilityMaturity is the ADR-0058 capability tier (is this route "
                     + "in the release?), NOT the parity status (how much of Esri's behaviour does it support?) — a stub "
                     + "operation on an in-release route correctly reads status=stub, capabilityMaturity=[implemented]. "
@@ -254,7 +221,7 @@ internal static class GeoServicesParityGenerator
     private static ParityOperation[] Bucket(IEnumerable<ParityOperation> operations, string status)
         => operations
             .Where(operation => string.Equals(operation.Status, status, StringComparison.Ordinal))
-            .OrderBy(operation => operation.EsriPaths.Length == 0 ? string.Empty : operation.EsriPaths[0], StringComparer.Ordinal)
+            .OrderBy(operation => operation.GeoServicesPaths.Length == 0 ? string.Empty : operation.GeoServicesPaths[0], StringComparer.Ordinal)
             .ThenBy(operation => operation.Name, StringComparer.Ordinal)
             .ToArray();
 
@@ -268,7 +235,7 @@ internal static class GeoServicesParityGenerator
         {
             Name = operation.Name,
             Status = operation.Status,
-            EsriPaths = paths,
+            GeoServicesPaths = paths,
             HonuaEndpoints = paths
                 .SelectMany(path => rosterByPath[path].HonuaEndpoints)
                 .Distinct(StringComparer.Ordinal)

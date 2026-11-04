@@ -58,7 +58,7 @@ public sealed class ExportEndpointTests : IAsyncLifetime
     [InlineData("filegdb")]
     [InlineData("flatgeobuf")]
     [InlineData("geoparquet")]
-    [InlineData("esrijson")]
+    [InlineData("geoservicesjson")]
     [InlineData("wkb")]
     [Operation(Operations.Export)]
     [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{layerId}/export")]

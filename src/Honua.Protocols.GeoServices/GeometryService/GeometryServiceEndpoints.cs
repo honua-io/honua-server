@@ -310,7 +310,7 @@ internal static class GeometryServiceEndpoints
     // their discovery handshake before invoking buffer/simplify/etc.
     private const string GeometryServerInfoJson =
         // No ArcGIS Server version (currentVersion) is advertised — Honua does not impersonate
-        // a specific ArcGIS Server release (guarded by NoArcGisServerVersionTests).
+        // a specific ArcGIS Server release (guarded by NoGeoServicesServerVersionTests).
         "{\"serviceDescription\":\"Honua Geometry Service — buffer, simplify, project, intersect, union, clip, difference, areasAndLengths, lengths, distance, relation, densify, convexHull, generalize, labelPoints, cut, trimExtend, offset, autoComplete, reshape, findTransformations, toGeoCoordinateString, fromGeoCoordinateString.\","
         + "\"maxBufferCount\":1000,"
         + "\"maxSimplifyCount\":1000,"

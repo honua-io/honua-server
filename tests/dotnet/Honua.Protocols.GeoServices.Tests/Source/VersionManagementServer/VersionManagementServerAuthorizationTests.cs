@@ -53,7 +53,7 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
     private const string Referer = "https://vms-authorization-proof.example/";
 
     /// <summary>Esri's <c>TokenRequired</c> error code, returned to an unauthenticated caller.</summary>
-    private const int EsriTokenRequired = 499;
+    private const int GeoServicesTokenRequired = 499;
 
     private readonly WebAppFixture _fixture = new();
 
@@ -349,7 +349,7 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
             await create.AssertGeoServicesErrorAsync(
                 (int)HttpStatusCode.Unauthorized,
                 (int)HttpStatusCode.Forbidden,
-                EsriTokenRequired);
+                GeoServicesTokenRequired);
         }
 
         using (var delete = await PostFormAsync(
@@ -358,7 +358,7 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
             await delete.AssertGeoServicesErrorAsync(
                 (int)HttpStatusCode.Unauthorized,
                 (int)HttpStatusCode.Forbidden,
-                EsriTokenRequired);
+                GeoServicesTokenRequired);
         }
 
         // No anonymous version was created and the owner's version survived the delete attempt.
@@ -394,7 +394,7 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
         createError.GetProperty("code").GetInt32().Should().Be(deleteError.GetProperty("code").GetInt32());
         createError.GetProperty("message").GetString().Should().Be(deleteError.GetProperty("message").GetString());
         createError.GetProperty("details")[0].GetString().Should().Be(deleteError.GetProperty("details")[0].GetString());
-        await create.AssertGeoServicesErrorAsync(EsriTokenRequired);
+        await create.AssertGeoServicesErrorAsync(GeoServicesTokenRequired);
         create.Headers.WwwAuthenticate.Should().NotBeEmpty();
         create.Headers.WwwAuthenticate.Select(value => value.ToString()).Should()
             .Equal(delete.Headers.WwwAuthenticate.Select(value => value.ToString()));
@@ -422,7 +422,7 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
         var guid = owned.GetProperty("versionGuid").GetString()!;
         using var control = await PostFormAsync(
             token: null, $"{ServiceBase}/versions/{guid}/delete{query}", ("f", "json"));
-        await control.AssertGeoServicesErrorAsync(EsriTokenRequired);
+        await control.AssertGeoServicesErrorAsync(GeoServicesTokenRequired);
         control.Headers.WwwAuthenticate.Should().ContainSingle()
             .Which.Scheme.Should().Be(expectedScheme);
 
@@ -446,7 +446,7 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
         using var create = await PostFormAsync(
             token: null, $"{ServiceBase}/create{query}",
             ("versionName", refusedName), ("accessPermission", "private"), ("f", "json"));
-        await create.AssertGeoServicesErrorAsync(EsriTokenRequired);
+        await create.AssertGeoServicesErrorAsync(GeoServicesTokenRequired);
         create.Headers.WwwAuthenticate.Should().ContainSingle()
             .Which.Scheme.Should().Be(expectedScheme);
         create.Headers.WwwAuthenticate.Select(value => value.ToString()).Should()
@@ -528,7 +528,7 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
         using (var anonymous = await PostFormAsync(null, $"{ServiceBase}/delete",
             ("versionName", "alice.same_delete_name"), ("f", "json")))
         {
-            await anonymous.AssertGeoServicesErrorAsync(EsriTokenRequired);
+            await anonymous.AssertGeoServicesErrorAsync(GeoServicesTokenRequired);
         }
 
         var ownedGuid = owned.GetProperty("versionGuid").GetString()!;

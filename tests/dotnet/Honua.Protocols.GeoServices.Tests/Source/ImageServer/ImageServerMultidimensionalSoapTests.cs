@@ -137,7 +137,7 @@ public sealed class ImageServerMultidimensionalSoapTests
     [Operation(Operations.GetServiceInfo)]
     [InterfaceOperation(TestProtocols.ImageServer, "GetMultidimensionalInfo")]
     [Endpoint("POST /services/{serviceId}/ImageServer")]
-    public async Task CapturedArcGisProRequest_ReturnsReferenceShapedPropertySets()
+    public async Task CapturedGeoServicesProRequest_ReturnsReferenceShapedPropertySets()
     {
         // Pro's exact bytes must still be the ones the licensed lane captured.
         Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(CapturedProRequest)))

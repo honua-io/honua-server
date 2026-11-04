@@ -58,7 +58,7 @@ With a durable runner the job document is stored in Redis, so it survives a rest
 |---|---|---|
 | POST | `/api/v1/admin/import/scan` | Scan a GeoServer or ArcGIS GeoServices source and return a deterministic migration inventory artifact (`?export=json` returns it as a JSON attachment) |
 
-`sourceKind` accepts `geoserver`, `geoserver-rest`, `geoservices`, and `arcgis-geoservices-rest`. Run a scan before any migration import job; use `scanCompleteness.status` and `overallCompatibility.level` as the planning gate.
+`sourceKind` accepts `geoserver`, `geoserver-rest`, `geoservices`, and `geoservices-rest`; the legacy value `arcgis-geoservices-rest` is still accepted. Run a scan before any migration import job; use `scanCompleteness.status` and `overallCompatibility.level` as the planning gate.
 
 Run `POST /api/v1/admin/import/scan` with `{"sourceKind":"geoservices","sourceUrl":"https://example.com/arcgis/rest/services/Parcels/FeatureServer"}`.
 

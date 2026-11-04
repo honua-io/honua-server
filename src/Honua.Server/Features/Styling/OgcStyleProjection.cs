@@ -240,7 +240,7 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
             return new OgcStylesheet(mapLibreJson, OgcStyleMediaTypes.MapboxStyle, OgcStyleEncoding.MapboxStyle);
         }
 
-        if (encoding == OgcStyleEncoding.EsriDrawingInfo)
+        if (encoding == OgcStyleEncoding.GeoServicesDrawingInfo)
         {
             // Esri renderer is a server-side projection of the canonical MapLibre style (ADR-0002): the style
             // service back-generates drawingInfo from the stored MapLibre. The console never converts.
@@ -254,8 +254,8 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
 
             return new OgcStylesheet(
                 drawingInfo.Value.GetRawText(),
-                OgcStyleMediaTypes.EsriDrawingInfo,
-                OgcStyleEncoding.EsriDrawingInfo);
+                OgcStyleMediaTypes.GeoServicesDrawingInfo,
+                OgcStyleEncoding.GeoServicesDrawingInfo);
         }
 
         var sld = DeriveSld(mapLibreJson, resource, storageLayerId, encoding);
@@ -287,10 +287,10 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
                 mapLibreJson,
                 OgcStyleMediaTypes.MapboxStyle,
                 OgcStyleEncoding.MapboxStyle),
-            OgcStyleEncoding.EsriDrawingInfo => new OgcStylesheet(
+            OgcStyleEncoding.GeoServicesDrawingInfo => new OgcStylesheet(
                 MapLibreToGeoServicesConverter.Convert(mapLibreJson, layer),
-                OgcStyleMediaTypes.EsriDrawingInfo,
-                OgcStyleEncoding.EsriDrawingInfo),
+                OgcStyleMediaTypes.GeoServicesDrawingInfo,
+                OgcStyleEncoding.GeoServicesDrawingInfo),
             _ => DeriveSld(mapLibreJson, resource, storageLayerId, encoding),
         };
     }
@@ -316,7 +316,7 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
             return new OgcStylesheet(style.MapLibreStyleJson, OgcStyleMediaTypes.MapboxStyle, OgcStyleEncoding.MapboxStyle);
         }
 
-        if (encoding == OgcStyleEncoding.EsriDrawingInfo)
+        if (encoding == OgcStyleEncoding.GeoServicesDrawingInfo)
         {
             // ADR-0002: the canonical document is the stored MapLibre style, so the Esri
             // renderer is always back-generated from it here rather than served from the
@@ -326,8 +326,8 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
             var drawingInfoJson = MapLibreToGeoServicesConverter.Convert(style.MapLibreStyleJson!, descriptor);
             return new OgcStylesheet(
                 drawingInfoJson,
-                OgcStyleMediaTypes.EsriDrawingInfo,
-                OgcStyleEncoding.EsriDrawingInfo);
+                OgcStyleMediaTypes.GeoServicesDrawingInfo,
+                OgcStyleEncoding.GeoServicesDrawingInfo);
         }
 
         return DeriveSldFromMapLibre(style.MapLibreStyleJson, style.StyleId, encoding);
@@ -1152,5 +1152,5 @@ internal static class OgcStyleMediaTypes
     public const string MapboxStyle = "application/vnd.mapbox.style+json";
     public const string Sld10 = "application/vnd.ogc.sld+xml;version=1.0";
     public const string Sld11 = "application/vnd.ogc.sld+xml;version=1.1";
-    public const string EsriDrawingInfo = "application/vnd.esri.drawinginfo+json";
+    public const string GeoServicesDrawingInfo = "application/vnd.esri.drawinginfo+json";
 }

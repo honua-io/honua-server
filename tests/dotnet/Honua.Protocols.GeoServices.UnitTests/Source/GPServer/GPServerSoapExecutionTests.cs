@@ -18,7 +18,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.GPServer;
 [Protocol(TestProtocols.GPServer)]
 public sealed class GPServerSoapExecutionTests
 {
-    private const string ArcGis = "http://www.esri.com/schemas/ArcGIS/10.8";
+    private const string GeoServices = "http://www.esri.com/schemas/ArcGIS/10.8";
 
     [UnitTest]
     [Operation(Operations.Query)]
@@ -393,7 +393,7 @@ public sealed class GPServerSoapExecutionTests
     }
 
     private static XElement Submission(string arguments) => XElement.Parse($"""
-        <tns:SubmitJob xmlns:tns="{ArcGis}" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+        <tns:SubmitJob xmlns:tns="{GeoServices}" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
         <ToolName>Area</ToolName>{arguments}</tns:SubmitJob>
         """);
 

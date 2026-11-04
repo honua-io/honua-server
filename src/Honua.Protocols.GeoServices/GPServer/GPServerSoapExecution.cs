@@ -251,7 +251,7 @@ internal static partial class GPServerSoapExecution
         var qualified = value.Attribute(Xsi + "type")?.Value ?? throw Invalid("A GPValue requires xsi:type.");
         var parts = qualified.Split(':');
         var ns = parts.Length == 2 ? value.GetNamespaceOfPrefix(parts[0]) : value.GetDefaultNamespace();
-        if (parts.Length > 2 || ns is null || !ArcGisSoapNamespaces.IsSupported(ns))
+        if (parts.Length > 2 || ns is null || !GeoServicesSoapNamespaces.IsSupported(ns))
         {
             throw Invalid("Invalid GPValue type namespace.");
         }

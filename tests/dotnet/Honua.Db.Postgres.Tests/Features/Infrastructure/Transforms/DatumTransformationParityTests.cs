@@ -26,7 +26,7 @@ namespace Honua.Db.Postgres.Tests.Features.Infrastructure.Transforms;
 public sealed class DatumTransformationParityTests : IAsyncLifetime
 {
     private readonly PostgresFixture _fixture = new();
-    private readonly IDatumTransformationCatalog _catalog = EsriDatumTransformationCatalog.Create();
+    private readonly IDatumTransformationCatalog _catalog = GeoServicesDatumTransformationCatalog.Create();
     private PostGisCoordinateTransformService? _service;
 
     public async Task InitializeAsync()

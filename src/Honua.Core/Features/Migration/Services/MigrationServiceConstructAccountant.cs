@@ -21,9 +21,6 @@ namespace Honua.Core.Features.Migration.Services;
 /// </remarks>
 public static class MigrationServiceConstructAccountant
 {
-    /// <summary>The source kind the construct matrix is defined for.</summary>
-    public const string GeoservicesSourceKind = "arcgis-geoservices-rest";
-
     private static readonly string[] SupportedServiceTypes = ["FeatureServer", "MapServer"];
 
     private static readonly string[] EditCapabilities = ["Create", "Delete", "Editing", "Update", "Uploads"];
@@ -45,7 +42,7 @@ public static class MigrationServiceConstructAccountant
     {
         ArgumentNullException.ThrowIfNull(selection);
 
-        if (!string.Equals(sourceKind, GeoservicesSourceKind, StringComparison.Ordinal))
+        if (!MigrationSourceKinds.IsGeoServicesRest(sourceKind))
         {
             return NotExecuted(selection, $"no construct matrix is defined for source kind '{sourceKind}'.");
         }
@@ -83,7 +80,7 @@ public static class MigrationServiceConstructAccountant
         ArgumentNullException.ThrowIfNull(manifest);
         ArgumentNullException.ThrowIfNull(selection);
 
-        if (!string.Equals(manifest.SourceKind, GeoservicesSourceKind, StringComparison.Ordinal))
+        if (!MigrationSourceKinds.IsGeoServicesRest(manifest.SourceKind))
         {
             return NotExecuted(
                 selection,
@@ -247,8 +244,8 @@ public static class MigrationServiceConstructAccountant
             // for any other reason (no query capability) transfers no geometry either.
             var geometryStatus = resource.CompatibilityCode switch
             {
-                ImportCompatibilityCodes.ArcGisUnsupportedGeometry => MigrationFidelityAutomationStatuses.Unsupported,
-                ImportCompatibilityCodes.ArcGisMissingSpatialRef => MigrationFidelityAutomationStatuses.ManualReview,
+                ImportCompatibilityCodes.GeoServicesUnsupportedGeometry => MigrationFidelityAutomationStatuses.Unsupported,
+                ImportCompatibilityCodes.GeoServicesMissingSpatialRef => MigrationFidelityAutomationStatuses.ManualReview,
                 _ when incompatible => MigrationFidelityAutomationStatuses.Unsupported,
                 _ => MigrationFidelityAutomationStatuses.Automated
             };

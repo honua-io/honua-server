@@ -99,7 +99,7 @@ public sealed class SharingRestReadTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var root = doc.RootElement;
-        // Honua does not advertise an ArcGIS Portal/Server version (see NoArcGisServerVersionTests).
+        // Honua does not advertise an ArcGIS Portal/Server version (see NoGeoServicesServerVersionTests).
         root.TryGetProperty("currentVersion", out _).Should().BeFalse();
         root.TryGetProperty("fullVersion", out _).Should().BeFalse();
         var authInfo = root.GetProperty("authInfo");

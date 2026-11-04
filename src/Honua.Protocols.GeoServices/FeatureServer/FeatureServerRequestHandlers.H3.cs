@@ -216,7 +216,7 @@ internal static partial class FeatureServerEndpoints
         if (!string.IsNullOrWhiteSpace(where))
         {
             var filterService = context.RequestServices.GetRequiredService<IFilterExpressionService>();
-            var parseResult = filterService.Parse(FilterLanguage.ArcGisSql, where);
+            var parseResult = filterService.Parse(FilterLanguage.GeoServicesSql, where);
             if (!parseResult.IsSuccess)
             {
                 return StandardErrorHelpers.CreateBadRequest(context,
@@ -464,7 +464,7 @@ internal static partial class FeatureServerEndpoints
         if (!string.IsNullOrWhiteSpace(where))
         {
             var filterService = context.RequestServices.GetRequiredService<IFilterExpressionService>();
-            var parseResult = filterService.Parse(FilterLanguage.ArcGisSql, where);
+            var parseResult = filterService.Parse(FilterLanguage.GeoServicesSql, where);
             if (!parseResult.IsSuccess)
             {
                 return StandardErrorHelpers.CreateBadRequest(context,
