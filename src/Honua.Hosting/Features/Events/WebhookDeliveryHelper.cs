@@ -30,7 +30,7 @@ internal static partial class WebhookDeliveryHelper
     {
         var resolver = hostAddressResolver ?? ((host, ct) => Dns.GetHostAddressesAsync(host, ct));
 
-        return PinnedDnsConnector.CreateHandler(resolver, PinnedConnectionFailures, MaxConnectionsPerWebhookHost);
+        return new PinnedDnsConnector(resolver, PinnedConnectionFailures).CreateHandler(MaxConnectionsPerWebhookHost);
     }
 
     /// <summary>

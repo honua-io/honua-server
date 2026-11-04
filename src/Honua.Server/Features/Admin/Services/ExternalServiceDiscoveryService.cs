@@ -46,10 +46,10 @@ internal sealed partial class ExternalServiceDiscoveryService(
     /// only to addresses the shared outbound address check allows.
     /// </summary>
     internal static HttpMessageHandler CreatePinnedDnsHttpMessageHandler()
-        => PinnedDnsConnector.CreateHandler(
-            static (host, cancellationToken) => Dns.GetHostAddressesAsync(host, cancellationToken),
-            PinnedConnectionFailures,
-            maxConnectionsPerServer: int.MaxValue);
+        => new PinnedDnsConnector(
+                static (host, cancellationToken) => Dns.GetHostAddressesAsync(host, cancellationToken),
+                PinnedConnectionFailures)
+            .CreateHandler(maxConnectionsPerServer: int.MaxValue);
 
     public async Task<ExternalServiceDiscoveryResponse> DiscoverAsync(
         ExternalServiceDiscoveryRequest request,

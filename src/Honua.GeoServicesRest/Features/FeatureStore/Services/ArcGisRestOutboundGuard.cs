@@ -22,13 +22,12 @@ internal static class ArcGisRestOutboundGuard
         DisallowedNetworkAddressMessage,
         "Unable to establish a secure connection to the ArcGIS service host.");
 
-    /// <summary>The primary handler of the federated outbound client.</summary>
     public static HttpMessageHandler CreatePinnedDnsHttpMessageHandler(
         Func<string, CancellationToken, Task<IPAddress[]>>? hostAddressResolver = null)
     {
         var resolver = hostAddressResolver ?? ((host, ct) => Dns.GetHostAddressesAsync(host, ct));
 
-        return PinnedDnsConnector.CreateHandler(resolver, PinnedConnectionFailures, MaxConnectionsPerArcGisHost);
+        return new PinnedDnsConnector(resolver, PinnedConnectionFailures).CreateHandler(MaxConnectionsPerArcGisHost);
     }
 
     /// <summary>

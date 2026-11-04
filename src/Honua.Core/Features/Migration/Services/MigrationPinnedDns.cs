@@ -84,8 +84,10 @@ internal static class MigrationPinnedDns
                 cancellationToken)
             .ConfigureAwait(false);
 
-        return await PinnedDnsConnector.ConnectToFirstReachableAsync(
-                addresses, context.DnsEndPoint.Port, policy.ConnectionFailureMessage, cancellationToken)
+        var connector = new PinnedDnsConnector(
+            hostAddressResolver,
+            new PinnedDnsFailureMessages(policy.DisallowedAddressMessage, policy.ConnectionFailureMessage));
+        return await connector.ConnectToFirstReachableAsync(addresses, context.DnsEndPoint.Port, cancellationToken)
             .ConfigureAwait(false);
     }
 

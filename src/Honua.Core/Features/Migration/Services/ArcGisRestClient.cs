@@ -60,7 +60,7 @@ internal sealed partial class ArcGisRestClient
     {
         var resolver = hostAddressResolver ?? ((host, ct) => Dns.GetHostAddressesAsync(host, ct));
 
-        return PinnedDnsConnector.CreateHandler(resolver, PinnedConnectionFailures, MaxConnectionsPerArcGisHost);
+        return new PinnedDnsConnector(resolver, PinnedConnectionFailures).CreateHandler(MaxConnectionsPerArcGisHost);
     }
 
     /// <summary>
