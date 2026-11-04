@@ -87,7 +87,7 @@ internal static class ServiceSettingsEndpoints
             var snapshot = await graphProvider.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
             var folderId = context.Request.Query["folderId"].ToString();
             if (folderId.Length > 0 && folderId != "root" && !snapshot.Graph.Folders.Any(f => !f.Deleted && f.Metadata.Id == folderId &&
-                MetadataV2TenantVisibility.IsVisibleToTenant(f.Metadata.Tenant,
+                MetadataV2ServicePaths.SameTenant(f.Metadata.Tenant,
                     context.RequestServices.GetService<Honua.Core.Features.MultiTenancy.Abstractions.ITenantContext>()?.TenantId)))
                 return TypedResults.Problem(statusCode: 404, detail: "Folder not found.");
             context.Response.Headers.ETag = snapshot.Etag;
@@ -120,6 +120,7 @@ internal static class ServiceSettingsEndpoints
         return new ServiceSummary
         {
             ServiceName = representative.Metadata.Name,
+            FolderMutationIssues = MetadataV2FolderPreflight.Inspect(snapshot.Graph, representative),
             FolderId = representative.FolderId,
             FolderName = MetadataV2ServicePaths.FolderName(snapshot.Graph, representative),
             PublicName = representative.EffectivePublicName,

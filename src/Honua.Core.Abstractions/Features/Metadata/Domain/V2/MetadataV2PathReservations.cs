@@ -30,7 +30,15 @@ public static class MetadataV2PathReservations
     public static void EnsureActivationPreservesReservations(MetadataV2Graph current, MetadataV2Graph target)
     {
         if (!HasOrganization(current) && !HasOrganization(target)) return;
-        var reconciled = Reconcile(current, target);
+        MetadataV2Graph reconciled;
+        try
+        {
+            reconciled = Reconcile(current, target);
+        }
+        catch (InvalidOperationException)
+        {
+            throw new MetadataV2PathReservationException();
+        }
         var aliasesPreserved = reconciled.ServicePathAliases.All(expected => target.ServicePathAliases.Any(actual =>
             MetadataV2ServicePaths.SamePath(expected, actual) && expected.Tenant == actual.Tenant &&
             expected.Retired == actual.Retired && expected.TargetFacetIds.ToHashSet(StringComparer.Ordinal).SetEquals(actual.TargetFacetIds)));
@@ -39,7 +47,7 @@ public static class MetadataV2PathReservations
             expected.PreviousNames.Append(expected.Metadata.Name).All(name =>
                 actual.PreviousNames.Append(actual.Metadata.Name).Contains(name, StringComparer.OrdinalIgnoreCase))));
         if (!aliasesPreserved || !foldersPreserved)
-            throw new InvalidOperationException("Activation would erase or rebind permanent public path reservations. Use the metadata revert path to create a reconciled new revision.");
+            throw new MetadataV2PathReservationException();
     }
 
     private static bool HasOrganization(MetadataV2Graph graph)
@@ -52,7 +60,8 @@ public static class MetadataV2PathReservations
         {
             var replacement = candidate.Services.FirstOrDefault(s => s.Metadata.Id == service.Metadata.Id);
             if (replacement is not null && (replacement.EffectivePublicName != service.EffectivePublicName ||
-                replacement.Metadata.Name != service.Metadata.Name || replacement.Metadata.Tenant != service.Metadata.Tenant))
+                replacement.Metadata.Name != service.Metadata.Name ||
+                MetadataV2ServicePaths.NormalizeTenant(replacement.Metadata.Tenant) != MetadataV2ServicePaths.NormalizeTenant(service.Metadata.Tenant)))
                 throw new InvalidOperationException("Service public names, logical identities and tenants are immutable.");
         }
     }
@@ -69,7 +78,8 @@ public static class MetadataV2PathReservations
                 continue;
             }
             var folder = folders[index];
-            if (oldFolder.Metadata.Tenant != folder.Metadata.Tenant || (oldFolder.Deleted && !folder.Deleted))
+            if (MetadataV2ServicePaths.NormalizeTenant(oldFolder.Metadata.Tenant) != MetadataV2ServicePaths.NormalizeTenant(folder.Metadata.Tenant) ||
+                (oldFolder.Deleted && !folder.Deleted))
                 throw new InvalidOperationException("Folder tenants are immutable and deleted folder ids cannot be reused.");
             folders[index] = folder with
             {

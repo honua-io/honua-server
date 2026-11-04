@@ -23,20 +23,27 @@ internal static class PublishedServiceOrganization
         return service with { FolderId = existing.FolderId, PublicName = existing.PublicName };
     }
 
+    private static MetadataV2ObjectMetadata PublicDisplayDefaults(MetadataV2ObjectMetadata metadata, string leaf)
+        => metadata with
+        {
+            Title = metadata.Title is null || metadata.Title == metadata.Name ? leaf : metadata.Title,
+            Description = metadata.Description is null || metadata.Description == $"Honua service '{metadata.Name}'"
+                ? $"Honua service '{leaf}'" : metadata.Description
+        };
+
     private static MetadataV2Service Create(MetadataV2Graph graph, MetadataV2Service service, LayerPublishRequest request)
     {
         var leaf = request.PublicName ?? service.Metadata.Name;
-        if (!MetadataV2ServicePaths.IsIdentifier(leaf) || MetadataV2ServicePaths.IsReserved(leaf))
+        if (!MetadataV2ServicePaths.IsPublicName(leaf, request.FolderId.Value))
             throw new LayerPublishingException(LayerPublishingErrorKind.Validation, "Invalid or reserved public service name.");
         var folderId = request.FolderId.Value;
         if (folderId is not null && !graph.Folders.Any(f => !f.Deleted && f.Metadata.Id == folderId &&
-            MetadataV2ServicePaths.NormalizeTenant(f.Metadata.Tenant) == MetadataV2ServicePaths.NormalizeTenant(service.Metadata.Tenant)))
-            throw new LayerPublishingException(LayerPublishingErrorKind.Conflict, "The folder must exist in the service tenant scope.");
+            MetadataV2ServicePaths.SameTenant(f.Metadata.Tenant, service.Metadata.Tenant)))
+            throw new LayerPublishingException(LayerPublishingErrorKind.NotFound, "The folder must exist in the service tenant scope.");
         var published = service with
         {
             FolderId = folderId, PublicName = request.PublicName,
-            Metadata = service.Metadata with { Title = leaf, Description = $"Honua service '{leaf}'" },
-            Route = $"/rest/services/{Uri.EscapeDataString(leaf)}/FeatureServer"
+            Metadata = PublicDisplayDefaults(service.Metadata, leaf)
         };
         try
         {

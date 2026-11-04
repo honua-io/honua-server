@@ -295,6 +295,7 @@ internal sealed class UpdateMapServerSettingsRequest
 /// </summary>
 internal sealed class ServiceSummary
 {
+    public IReadOnlyList<string> FolderMutationIssues { get; init; } = [];
     public string? FolderId { get; init; }
     public string? FolderName { get; init; }
     public string? PublicName { get; init; }

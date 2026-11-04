@@ -156,10 +156,15 @@ internal static class AdminApiOperationCatalog
     {
         foreach (var response in operation.GetProperty("responses").EnumerateObject()
                      .OrderBy(static item => item.Name, StringComparer.Ordinal)
-                     .Where(static response => response.Name[0] == '2')
-                     .Select(static response => TryGetContentSchema(response.Value, "content", out var schema) ? schema : (JsonElement?)null)
-                     .Where(static schema => schema.HasValue))
-            return [new OperationParameterDescriptor { Name = "response", Title = "Admin API response", Required = true, Schema = ConvertSchema(root, response.GetValueOrDefault()) }];
+                     .Where(static response => response.Name[0] == '2'))
+        {
+            var outputs = new List<OperationParameterDescriptor>();
+            if (TryGetContentSchema(response.Value, "content", out var schema))
+                outputs.Add(new OperationParameterDescriptor { Name = "response", Title = "Admin API response", Required = true, Schema = ConvertSchema(root, schema) });
+            if (response.Value.TryGetProperty("headers", out var headers) && headers.TryGetProperty("ETag", out _))
+                outputs.Add(new OperationParameterDescriptor { Name = "etag", Title = "Current graph snapshot ETag", Schema = new WorkflowSchemaDefinition { Type = WorkflowSchemaValueType.Text } });
+            if (outputs.Count > 0) return outputs;
+        }
         return [];
     }
 

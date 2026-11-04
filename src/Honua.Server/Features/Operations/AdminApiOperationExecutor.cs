@@ -164,7 +164,7 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor, IOperation
             Status = OperationHandleStatus.Completed,
             CreatedAt = now,
             UpdatedAt = now,
-            Result = new OperationResultSummary { Summary = $"{_definition.Title} completed.", Details = new Dictionary<string, string>(StringComparer.Ordinal) { ["response"] = payload } }
+            Result = BuildSuccessResult(response, payload)
         };
     }
 
@@ -191,6 +191,14 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor, IOperation
             ResourceIds = handle.ResourceIds,
             EvidenceRefs = handle.EvidenceRefs,
         });
+    }
+
+    private OperationResultSummary BuildSuccessResult(HttpResponseMessage response, string payload)
+    {
+        var details = new Dictionary<string, string>(StringComparer.Ordinal) { ["response"] = payload };
+        if (response.Headers.ETag is { } etag) details["etag"] = etag.ToString();
+        if (response.Headers.Location is { } location) details["location"] = location.ToString();
+        return new OperationResultSummary { Summary = $"{_definition.Title} completed.", Details = details };
     }
 
     private string BindPath(OperationRequest request, string? pathOverride)

@@ -3326,6 +3326,14 @@
                   "$ref": "#/components/schemas/ApiResponseServiceSummaryArray"
                 }
               }
+            },
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Current graph snapshot ETag; pass unchanged as If-Match on the next mutation."
+              }
             }
           },
           "401": {
@@ -21562,6 +21570,12 @@
                   "type": "string"
                 },
                 "description": "Current graph snapshot ETag"
+              },
+              "Location": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Created folder Admin resource."
               }
             },
             "content": {
@@ -21721,22 +21735,7 @@
                 "schema": {
                   "type": "string"
                 },
-                "description": "Current graph snapshot ETag"
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": {
-                      "type": "boolean"
-                    },
-                    "data": {
-                      "$ref": "#/components/schemas/ServiceFolder"
-                    }
-                  }
-                }
+                "description": "Current graph snapshot ETag; pass unchanged as If-Match on the next mutation."
               }
             }
           },
@@ -21785,32 +21784,6 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Success",
-            "headers": {
-              "ETag": {
-                "schema": {
-                  "type": "string"
-                },
-                "description": "Current graph snapshot ETag"
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": {
-                      "type": "boolean"
-                    },
-                    "data": {
-                      "$ref": "#/components/schemas/ServiceFolder"
-                    }
-                  }
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid input"
           },
@@ -21825,6 +21798,17 @@
           },
           "428": {
             "description": "If-Match is required"
+          },
+          "204": {
+            "description": "Success",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Current graph snapshot ETag; pass unchanged as If-Match on the next mutation."
+              }
+            }
           }
         },
         "requestBody": {
@@ -26423,6 +26407,13 @@
           "title": {
             "type": "string",
             "nullable": true
+          },
+          "folderMutationIssues": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Preflight diagnostics for legacy identities before folder mutations."
           }
         }
       },

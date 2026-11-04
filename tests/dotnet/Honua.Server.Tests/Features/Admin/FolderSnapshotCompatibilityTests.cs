@@ -20,30 +20,37 @@ namespace Honua.Server.Tests.Features.Admin;
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]
-public sealed class FolderSnapshotCompatibilityTests : IAsyncLifetime
+public sealed partial class FolderSnapshotCompatibilityTests : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new WebAppFixture().UseSeed("tests/seed/server.yaml")
-        .ConfigureWebHost(b =>
+    private readonly WebAppFixture _fixture;
+
+    public FolderSnapshotCompatibilityTests()
+    {
+        _fixture = new WebAppFixture().ConfigureWebHost(b =>
         {
             b.UseEnvironment("Test");
             b.UseSetting("HONUA_DEV_AUTH", "false");
+            b.UseSetting("MultiTenancy:DefaultTenantId", "");
             b.UseSetting("HONUA_ADMIN_PASSWORD", "folder-compatibility-key");
-        });
+        }).ConfigureServices(services => FolderPostgresTestHost.Configure(services, () => _fixture.CurrentSchema));
+    }
+
     private HttpClient _client = null!;
-    private string? Directory => Environment.GetEnvironmentVariable("HONUA_FOLDER_COMPAT_DIRECTORY");
+    private string Directory => Environment.GetEnvironmentVariable("HONUA_FOLDER_COMPAT_DIRECTORY")
+        ?? throw new InvalidOperationException("The two-binary compatibility directory is required.");
 
     public async Task InitializeAsync()
     {
         await _fixture.InitializeAsync();
+        await FolderPostgresTestHost.InstallSchemaAsync(_fixture);
         _client = _fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", "folder-compatibility-key"));
     }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
-    [IntegrationTest]
+    [ExternalServiceTest("HONUA_FOLDER_COMPAT_DIRECTORY")]
     public async Task NewWriter_ProducesFolderSnapshotForBaselineReader()
     {
-        if (Directory is null) return;
         var listing = await _client.GetAsync("/api/v1/admin/folders");
         listing.EnsureSuccessStatusCode();
         _client.DefaultRequestHeaders.TryAddWithoutValidation("If-Match", listing.Headers.ETag!.ToString());
@@ -56,37 +63,23 @@ public sealed class FolderSnapshotCompatibilityTests : IAsyncLifetime
         (await _client.PutAsJsonAsync("/api/v1/admin/services/test/folder", new { folderId = id })).EnsureSuccessStatusCode();
         using var scope = _fixture.Services.CreateScope();
         var snapshot = await scope.ServiceProvider.GetRequiredService<IMetadataV2GraphStore>().GetCurrentAsync();
+        using var serialized = JsonDocument.Parse(JsonSerializer.Serialize(snapshot.Graph, MetadataV2JsonContext.Default.MetadataV2Graph));
+        serialized.RootElement.GetProperty("folders").GetArrayLength().Should().BeGreaterThan(0);
         await WriteSnapshot("new", snapshot);
+        await RestartHost();
         await AssertFlatReads();
     }
 
-    [IntegrationTest]
-    public async Task BaselineReader_ReadsNewSnapshotAndProvesSaveStageFieldLoss()
-    {
-        if (Directory is null) return;
-        var snapshot = await InstallSnapshot("new");
-        var serialized = JsonSerializer.Serialize(snapshot.Graph, MetadataV2JsonContext.Default.MetadataV2Graph);
-        serialized.Should().NotContain("\"folders\"");
-        await AssertFlatReads();
-        using var scope = _fixture.Services.CreateScope();
-        var store = scope.ServiceProvider.GetRequiredService<IMetadataV2GraphStore>();
-        var staged = await ((IMetadataV2GraphRevisionStager)store).StageAsync(snapshot.Graph);
-        await WriteSnapshot("old-stage", staged);
-        var saved = await store.SaveAsync(snapshot.Graph, snapshot.Etag);
-        await WriteSnapshot("old-save", saved);
-        (await store.GetCurrentAsync()).Etag.Should().Be(saved.Etag);
-    }
-
-    [IntegrationTest]
+    [ExternalServiceTest("HONUA_FOLDER_COMPAT_DIRECTORY")]
     public async Task NewReader_ReadsBaselineSaveAndStageAsRootServices()
     {
-        if (Directory is null) return;
         foreach (var name in new[] { "old-save", "old-stage" })
         {
             var snapshot = await InstallSnapshot(name);
             using var document = JsonDocument.Parse(JsonSerializer.Serialize(snapshot.Graph, MetadataV2JsonContext.Default.MetadataV2Graph));
             document.RootElement.GetProperty("folders").GetArrayLength().Should().Be(0);
             document.RootElement.GetProperty("servicePathAliases").GetArrayLength().Should().Be(0);
+            await RestartHost();
             await AssertFlatReads();
         }
     }
@@ -117,10 +110,24 @@ public sealed class FolderSnapshotCompatibilityTests : IAsyncLifetime
         return await store.GetCurrentAsync();
     }
 
+    private async Task RestartHost()
+    {
+        _client.Dispose();
+        await _fixture.RestartHostAsync();
+        _client = _fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", "folder-compatibility-key"));
+    }
+
     private async Task AssertFlatReads()
     {
         foreach (var path in new[] { "/rest/services", "/rest/services/test/FeatureServer", "/rest/services/test/FeatureServer/0/query?where=1%3D1&outFields=*&f=json" })
-            (await _client.GetAsync(path)).StatusCode.Should().Be(HttpStatusCode.OK);
+        {
+            var response = await _client.GetAsync(path);
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            document.RootElement.TryGetProperty("error", out _).Should().BeFalse();
+            if (path.Contains("/query?", StringComparison.Ordinal))
+                document.RootElement.GetProperty("features").GetArrayLength().Should().BeGreaterThan(0);
+        }
     }
 
     private async Task WriteSnapshot(string name, MetadataV2GraphSnapshot snapshot)

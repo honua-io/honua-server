@@ -24,7 +24,11 @@ public sealed class MetadataV2FolderSelectionConverter : JsonConverter<MetadataV
     public override bool HandleNull => true;
 
     public override MetadataV2FolderSelection Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
-        => new(reader.GetString());
+    {
+        if (reader.TokenType is not (JsonTokenType.String or JsonTokenType.Null))
+            throw new JsonException("Folder selection must be a folder id or null for root.");
+        return new(reader.GetString());
+    }
 
     public override void Write(Utf8JsonWriter writer, MetadataV2FolderSelection value, JsonSerializerOptions options)
         => writer.WriteStringValue(value.Value);

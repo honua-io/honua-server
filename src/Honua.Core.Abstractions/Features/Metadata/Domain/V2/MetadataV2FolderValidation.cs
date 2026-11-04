@@ -37,8 +37,7 @@ public static class MetadataV2FolderValidation
     {
         foreach (var service in graph.Services.Where(s => s.FolderId is not null || s.PublicName is not null))
         {
-            if (!MetadataV2ServicePaths.IsIdentifier(service.EffectivePublicName) ||
-                MetadataV2ServicePaths.IsReserved(service.EffectivePublicName))
+            if (!MetadataV2ServicePaths.IsPublicName(service.EffectivePublicName, service.FolderId))
                 errors.Add("Public service names must be unreserved ASCII identifiers of at most 64 characters.");
             if (service.FolderId is not null && !graph.Folders.Any(f => !f.Deleted &&
                 f.Metadata.Id == service.FolderId &&
@@ -63,9 +62,7 @@ public static class MetadataV2FolderValidation
                 (s.FolderId is not null || s.PublicName is not null));
             if (changed && paths.Any(p => !ReferenceEquals(p, path) && MetadataV2ServicePaths.SamePath(p, path)))
                 errors.Add("Public service paths must be unique across overlapping tenant scopes.");
-            if (path.FolderName is null && graph.Folders.Any(f =>
-                MetadataV2ServicePaths.ScopesOverlap(f.Metadata.Tenant, path.Tenant) &&
-                Names(f).Contains(path.PublicName, StringComparer.OrdinalIgnoreCase)))
+            if (RootLeafCollidesWithFolder(graph, path))
                 errors.Add("Root public service names cannot occupy reserved folder names.");
             if (graph.ServicePathAliases.Any(a => MetadataV2ServicePaths.SamePath(a, path) &&
                 (a.Retired || !a.TargetFacetIds.Intersect(path.TargetFacetIds, StringComparer.Ordinal).Any())))
@@ -73,6 +70,11 @@ public static class MetadataV2FolderValidation
         }
         ValidateAliases(graph, errors);
     }
+
+    private static bool RootLeafCollidesWithFolder(MetadataV2Graph graph, MetadataV2ServicePathAlias path)
+        => path.FolderName is null && graph.Folders.Any(folder =>
+            MetadataV2ServicePaths.ScopesOverlap(folder.Metadata.Tenant, path.Tenant) &&
+            Names(folder).Contains(path.PublicName, StringComparer.OrdinalIgnoreCase));
 
     private static void ValidateAliases(MetadataV2Graph graph, List<string> errors)
     {
@@ -86,9 +88,7 @@ public static class MetadataV2FolderValidation
                 errors.Add("Path reservations require distinct original facet ids.");
             if (graph.ServicePathAliases.Any(a => !ReferenceEquals(a, alias) && MetadataV2ServicePaths.SamePath(a, alias)))
                 errors.Add("Path reservations must be unique across overlapping tenant scopes.");
-            if (alias.FolderName is null && graph.Folders.Any(f =>
-                MetadataV2ServicePaths.ScopesOverlap(f.Metadata.Tenant, alias.Tenant) &&
-                Names(f).Contains(alias.PublicName, StringComparer.OrdinalIgnoreCase)))
+            if (RootLeafCollidesWithFolder(graph, alias))
                 errors.Add("Folder names cannot reuse historical root service paths.");
         }
     }

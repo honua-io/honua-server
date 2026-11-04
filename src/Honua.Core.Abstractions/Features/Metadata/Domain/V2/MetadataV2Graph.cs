@@ -79,15 +79,15 @@ public sealed record MetadataV2Graph
     [JsonPropertyName("storageBindings")]
     public IReadOnlyList<MetadataV2StorageBinding> StorageBindings { get; init; } = Array.Empty<MetadataV2StorageBinding>();
 
-    /// <summary>
-    /// Services that publish resources.
-    /// </summary>
     [JsonPropertyName("folders")]
     public IReadOnlyList<MetadataV2Folder> Folders { get; init; } = [];
 
     [JsonPropertyName("servicePathAliases")]
     public IReadOnlyList<MetadataV2ServicePathAlias> ServicePathAliases { get; init; } = [];
 
+    /// <summary>
+    /// Services that publish resources.
+    /// </summary>
     [JsonPropertyName("services")]
     public IReadOnlyList<MetadataV2Service> Services { get; init; } = Array.Empty<MetadataV2Service>();
 

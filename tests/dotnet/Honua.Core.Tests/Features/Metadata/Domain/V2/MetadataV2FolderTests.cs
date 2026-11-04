@@ -160,8 +160,8 @@ public sealed class MetadataV2FolderTests
     public void FolderSelection_ExplicitRoot_RoundTripsDistinctFromOmitted()
     {
         var selection = new MetadataV2FolderSelection(null);
-        var options = new JsonSerializerOptions();
-        JsonSerializer.Deserialize<MetadataV2FolderSelection>(JsonSerializer.Serialize(selection, options), options)
+        JsonSerializer.Deserialize(JsonSerializer.Serialize(selection, MetadataV2JsonContext.Default.MetadataV2FolderSelection),
+                MetadataV2JsonContext.Default.MetadataV2FolderSelection)
             .IsSpecified.Should().BeTrue();
         default(MetadataV2FolderSelection).IsSpecified.Should().BeFalse();
     }

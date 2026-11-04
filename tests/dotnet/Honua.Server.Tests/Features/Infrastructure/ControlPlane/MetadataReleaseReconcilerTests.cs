@@ -38,6 +38,20 @@ public sealed class MetadataReleaseReconcilerTests
     private const string NewField = "owner_email";
 
     [Fact]
+    public async Task Activation_WhenPathReservationRefused_ReportsRevertRecoveryPath()
+    {
+        var harness = new ReleaseHarness();
+        harness.Graph.BeforeActivate = () => throw new MetadataV2PathReservationException();
+        var id = await harness.SubmitAsync();
+        var run = () => harness.DriveToTerminalAsync(id);
+        await run.Should().ThrowAsync<MetadataV2PathReservationException>();
+        var failed = await harness.Workflow.GetAsync(id);
+        failed!.Status.Should().Be(WorkflowOperationStatus.ManualInterventionRequired);
+        failed.ErrorMessage.Should().Be(MetadataV2PathReservationException.RecoveryMessage);
+    }
+
+
+    [Fact]
     public async Task Forward_StagesCandidateInvisibleToReaders_ThenActivatesAtomicallyAndCompletes()
     {
         var harness = new ReleaseHarness();

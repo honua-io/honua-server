@@ -11,11 +11,17 @@ public static class MetadataV2ServicePaths
 
     public static string? NormalizeTenant(string? tenant) => string.IsNullOrWhiteSpace(tenant) ? null : tenant;
 
+    public static bool SameTenant(string? first, string? second)
+        => NormalizeTenant(first) == NormalizeTenant(second);
+
     public static bool ScopesOverlap(string? first, string? second)
         => NormalizeTenant(first) is null || NormalizeTenant(second) is null || first == second;
 
     public static bool IsIdentifier(string name)
         => name.Length is > 0 and <= 64 && name.All(c => char.IsAsciiLetterOrDigit(c) || c is '_' or '-');
+
+    public static bool IsPublicName(string name, string? folderId)
+        => IsIdentifier(name) && !ServiceTypes.Contains(name) && (folderId is not null || !IsReserved(name));
 
     public static bool IsFolderName(string name)
         => IsIdentifier(name) && char.IsAsciiLetter(name[0]) && !IsReserved(name);

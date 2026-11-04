@@ -280,7 +280,7 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
         // publisher may therefore have consumed the proposed revision, and an interrupted
         // writer may have left a higher orphan snapshot. Allocate above every retained
         // snapshot while holding the shared environment lock.
-        graph = await ReconcileReservationsAsync(connection, transaction, graph, cancellationToken).ConfigureAwait(false);
+        graph = await ReconcileReservationsAsync(transaction, graph, cancellationToken).ConfigureAwait(false);
         var revision = await ReadNextRevisionAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
         graph = graph with { Revision = revision };
         var json = JsonSerializer.Serialize(graph, MetadataV2JsonContext.Default.MetadataV2Graph);
@@ -383,14 +383,7 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
         var active = current is { } state
             ? await ReadSnapshotAsync(connection, transaction, state.Revision, cancellationToken).ConfigureAwait(false)
             : null;
-        try
-        {
-            MetadataV2PathReservations.EnsureActivationPreservesReservations(active?.Graph ?? new(), target.Graph);
-        }
-        catch (InvalidOperationException)
-        {
-            throw new InvalidOperationException("Activation would erase or rebind permanent public path reservations. Use the metadata revert path to create a reconciled new revision.");
-        }
+        MetadataV2PathReservations.EnsureActivationPreservesReservations(active?.Graph ?? new(), target.Graph);
 
         // A bootstrap write can clear sidecars for every retained revision before it
         // activates its new snapshot. Rebuild the target revision's derived indexes from
@@ -434,7 +427,7 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
         // sidecar indexes are touched: canonical readers stay on the active revision, and
         // ActivateRevisionAsync rebuilds the target's sidecars when it repoints current.
         await AcquireEnvironmentWriteLockAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
-        graph = await ReconcileReservationsAsync(connection, transaction, graph, cancellationToken).ConfigureAwait(false);
+        graph = await ReconcileReservationsAsync(transaction, graph, cancellationToken).ConfigureAwait(false);
         var revision = await ReadNextRevisionAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
         graph = graph with { Revision = revision };
         var json = JsonSerializer.Serialize(graph, MetadataV2JsonContext.Default.MetadataV2Graph);
@@ -1051,9 +1044,9 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
     }
 
     private async Task<MetadataV2Graph> ReconcileReservationsAsync(
-        NpgsqlConnection connection, NpgsqlTransaction transaction,
-        MetadataV2Graph candidate, CancellationToken cancellationToken)
+        NpgsqlTransaction transaction, MetadataV2Graph candidate, CancellationToken cancellationToken)
     {
+        var connection = transaction.Connection!;
         var state = await ReadCurrentStateAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
         var current = state is { } active
             ? await ReadSnapshotAsync(connection, transaction, active.Revision, cancellationToken).ConfigureAwait(false)

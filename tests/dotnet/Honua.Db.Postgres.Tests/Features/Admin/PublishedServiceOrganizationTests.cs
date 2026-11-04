@@ -14,13 +14,28 @@ public sealed class PublishedServiceOrganizationTests
     public void Apply_NewService_UsesPublicLeafForDisplayDefaults()
     {
         var graph = Graph();
-        var service = PublishedServiceOrganization.Apply(graph, Service(), Request("folder", "Parcels"));
+        var defaults = Service() with
+        {
+            Metadata = Service().Metadata with { Title = "internal-parcels", Description = "Honua service 'internal-parcels'" },
+            Route = "/rest/services/internal-parcels/FeatureServer"
+        };
+        var service = PublishedServiceOrganization.Apply(graph, defaults, Request("folder", "Parcels"));
         service.Metadata.Name.Should().Be("internal-parcels");
         service.Metadata.Title.Should().Be("Parcels");
         service.Metadata.Description.Should().NotContain("internal-parcels");
-        service.Route.Should().NotContain("internal-parcels");
+        service.Route.Should().Be(defaults.Route);
         service.FolderId.Should().Be("folder");
         service.EffectivePublicName.Should().Be("Parcels");
+    }
+
+    [Fact]
+    public void Apply_NewServiceWithAuthoredMetadata_PreservesDisplayTextAndProtocolRoute()
+    {
+        var authored = Service() with { Route = "/ogc/features" };
+        var published = PublishedServiceOrganization.Apply(Graph(), authored, Request("folder", "Parcels"));
+        published.Metadata.Title.Should().Be(authored.Metadata.Title);
+        published.Metadata.Description.Should().Be(authored.Metadata.Description);
+        published.Route.Should().Be(authored.Route);
     }
 
     [Fact]
