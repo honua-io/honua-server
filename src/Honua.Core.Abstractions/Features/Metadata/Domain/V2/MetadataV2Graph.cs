@@ -13,6 +13,9 @@ namespace Honua.Core.Features.Metadata.Domain.V2;
 /// </summary>
 public sealed record MetadataV2Graph
 {
+    private IReadOnlyList<MetadataV2Folder>? _folders;
+    private IReadOnlyList<MetadataV2ServicePathAlias>? _servicePathAliases;
+
     /// <summary>
     /// Canonical schema version for this graph document.
     /// </summary>
@@ -80,10 +83,18 @@ public sealed record MetadataV2Graph
     public IReadOnlyList<MetadataV2StorageBinding> StorageBindings { get; init; } = Array.Empty<MetadataV2StorageBinding>();
 
     [JsonPropertyName("folders")]
-    public IReadOnlyList<MetadataV2Folder> Folders { get; init; } = [];
+    public IReadOnlyList<MetadataV2Folder> Folders
+    {
+        get => _folders ?? [];
+        init => _folders = value;
+    }
 
     [JsonPropertyName("servicePathAliases")]
-    public IReadOnlyList<MetadataV2ServicePathAlias> ServicePathAliases { get; init; } = [];
+    public IReadOnlyList<MetadataV2ServicePathAlias> ServicePathAliases
+    {
+        get => _servicePathAliases ?? [];
+        init => _servicePathAliases = value;
+    }
 
     /// <summary>
     /// Services that publish resources.

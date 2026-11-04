@@ -157,6 +157,16 @@ public sealed class MetadataV2FolderTests
     }
 
     [Fact]
+    public void Json_NullOrganizationCollections_DefaultToEmpty()
+    {
+        var graph = JsonSerializer.Deserialize("{\"folders\":null,\"servicePathAliases\":null,\"services\":[]}",
+            MetadataV2JsonContext.Default.MetadataV2Graph)!;
+        graph.Folders.Should().BeEmpty();
+        graph.ServicePathAliases.Should().BeEmpty();
+        MetadataV2FolderValidation.Validate(graph).Should().BeEmpty();
+    }
+
+    [Fact]
     public void FolderSelection_ExplicitRoot_RoundTripsDistinctFromOmitted()
     {
         var selection = new MetadataV2FolderSelection(null);
