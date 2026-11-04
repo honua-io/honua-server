@@ -7,6 +7,7 @@ using System.Text;
 using System.Text.Json;
 using System.Xml.Linq;
 using FluentAssertions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Admin.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -37,16 +38,8 @@ public sealed class AdminDiscoveryMetadataEndpointsTests : IAsyncLifetime
     [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/popup-info")]
     public async Task UpdateLayer_RoundTripsThroughProtocolAndPreservesOtherMetadata()
     {
-        var snapshot = _fixture.GetCurrentV2GraphSnapshot();
+        var snapshot = SeedLayerGovernance();
         var resource = snapshot.Index.ResourcesByStorageLayerId[0];
-        var provider = _fixture.Services.GetRequiredService<TestMetadataV2GraphProvider>();
-        provider.SetGraph(snapshot.Graph with
-        {
-            Revision = snapshot.Revision + 1,
-            Resources = snapshot.Graph.Resources.Select(candidate => candidate.Metadata.Id == resource.Metadata.Id
-                ? candidate with { Metadata = candidate.Metadata with { License = "MIT", Themes = ["transport"] } }
-                : candidate).ToArray()
-        }, schema: _fixture.MetadataGraphSchema);
         var client = _fixture.CreateAdminClient();
         var path = "/api/v1/admin/metadata/layers/0/discovery";
         var before = await ReadAsync(client, path);
@@ -141,6 +134,79 @@ public sealed class AdminDiscoveryMetadataEndpointsTests : IAsyncLifetime
         var response = await _fixture.CreateAdminClient().PutAsync("/api/v1/admin/metadata/layers/0/discovery", content);
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         _fixture.GetCurrentV2GraphSnapshot().Revision.Should().Be(revision);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/discovery")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/discovery")]
+    public async Task Discovery_GlobalLayerId_DoesNotUsePublicationLocalId()
+    {
+        var snapshot = _fixture.GetCurrentV2GraphSnapshot();
+        var resourceId = snapshot.Index.ResourcesByStorageLayerId[0].Metadata.Id;
+        _fixture.Services.GetRequiredService<TestMetadataV2GraphProvider>().SetGraph(snapshot.Graph with
+        {
+            Revision = snapshot.Revision + 1,
+            Publications = snapshot.Graph.Publications.Select(publication => publication.ResourceId == resourceId
+                ? publication with { Identifier = publication.Identifier with { Value = "37" } }
+                : publication).ToArray()
+        }, schema: _fixture.MetadataGraphSchema);
+        var client = _fixture.CreateAdminClient();
+        var path = "/api/v1/admin/metadata/layers/0/discovery";
+        var before = await ReadAsync(client, path);
+        before.EntityId.Should().Be(resourceId);
+        before.AffectedPublications.Should().OnlyContain(publication => publication.Identifier == "37");
+        (await UpdateAsync(client, path, before.Etag)).StatusCode.Should().Be(HttpStatusCode.OK);
+        (await client.GetAsync("/api/v1/admin/metadata/layers/37/discovery")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTheory]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/discovery")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/discovery")]
+    [Endpoint("GET /api/v1/admin/services/{serviceName}/discovery")]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/discovery")]
+    [InlineData("/api/v1/admin/metadata/layers/2147483647/discovery")]
+    [InlineData("/api/v1/admin/services/absent-service/discovery")]
+    public async Task Discovery_UnknownTarget_ReturnsNotFound(string path)
+    {
+        var client = _fixture.CreateAdminClient();
+        (await client.GetAsync(path)).StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await UpdateAsync(client, path, "current")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTheory]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/discovery")]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/discovery")]
+    [InlineData("/api/v1/admin/metadata/layers/0/discovery")]
+    [InlineData("/api/v1/admin/services/test/discovery")]
+    public async Task UpdateDiscovery_NullTextAndEmptyKeywords_ClearsOnlyDiscovery(string path)
+    {
+        var client = _fixture.CreateAdminClient();
+        var before = await ReadAsync(client, path);
+        (await UpdateAsync(client, path, before.Etag)).StatusCode.Should().Be(HttpStatusCode.OK);
+        var saved = await ReadAsync(client, path);
+        var response = await client.PutAsJsonAsync(path, new DiscoveryMetadataUpdateRequest { Etag = saved.Etag },
+            DiscoveryMetadataJsonContext.Default.DiscoveryMetadataUpdateRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var cleared = await ReadAsync(client, path);
+        cleared.Title.Should().BeNull();
+        cleared.Description.Should().BeNull();
+        cleared.Keywords.Should().BeEmpty();
+        cleared.EntityId.Should().Be(before.EntityId);
+    }
+
+    private MetadataV2GraphSnapshot SeedLayerGovernance()
+    {
+        var snapshot = _fixture.GetCurrentV2GraphSnapshot();
+        var resource = snapshot.Index.ResourcesByStorageLayerId[0];
+        var provider = _fixture.Services.GetRequiredService<TestMetadataV2GraphProvider>();
+        provider.SetGraph(snapshot.Graph with
+        {
+            Revision = snapshot.Revision + 1,
+            Resources = snapshot.Graph.Resources.Select(candidate => candidate.Metadata.Id == resource.Metadata.Id
+                ? candidate with { Metadata = candidate.Metadata with { License = "MIT", Themes = ["transport"] } }
+                : candidate).ToArray()
+        }, schema: _fixture.MetadataGraphSchema);
+        return snapshot;
     }
 
     private static async Task<DiscoveryMetadataResponse> ReadAsync(HttpClient client, string path)

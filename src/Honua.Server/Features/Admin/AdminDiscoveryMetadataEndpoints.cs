@@ -13,6 +13,11 @@ namespace Honua.Server.Features.Admin;
 
 internal static class AdminDiscoveryMetadataEndpoints
 {
+    private const int MaxTitleLength = 512;
+    private const int MaxDescriptionLength = 16384;
+    private const int MaxKeywordLength = 256;
+    private const int MaxKeywords = 100;
+
     public static void MapAdminDiscoveryMetadataEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin")
@@ -82,10 +87,10 @@ internal static class AdminDiscoveryMetadataEndpoints
     {
         if (string.IsNullOrWhiteSpace(request.Etag))
             return "An ETag from the discovery read is required.";
-        if (!ValidText(request.Title, 512) || !ValidText(request.Description, 16384))
+        if (!ValidText(request.Title, MaxTitleLength) || !ValidText(request.Description, MaxDescriptionLength))
             return "Title and description must be within their length limits and contain no invalid control characters.";
-        if (request.Keywords is null || request.Keywords.Length > 100 ||
-            request.Keywords.Any(keyword => string.IsNullOrWhiteSpace(keyword) || !ValidText(keyword, 256)))
+        if (request.Keywords is null || request.Keywords.Length > MaxKeywords ||
+            request.Keywords.Any(keyword => string.IsNullOrWhiteSpace(keyword) || !ValidText(keyword, MaxKeywordLength)))
             return "Supply at most 100 nonempty keywords of at most 256 characters each.";
         return null;
     }
