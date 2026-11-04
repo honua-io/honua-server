@@ -10254,7 +10254,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 79,
+      "line": 80,
       "language": "python"
     },
     {
@@ -10267,7 +10267,7 @@
         "check": "inventory-classification"
       },
       "fence": 6,
-      "line": 390,
+      "line": 391,
       "language": "csharp"
     },
     {
@@ -10280,7 +10280,7 @@
         "check": "inventory-classification"
       },
       "fence": 2,
-      "line": 111,
+      "line": 112,
       "language": "yaml"
     },
     {
@@ -10293,7 +10293,7 @@
         "check": "inventory-classification"
       },
       "fence": 8,
-      "line": 415,
+      "line": 409,
       "language": "csharp"
     },
     {
@@ -10306,7 +10306,7 @@
         "check": "inventory-classification"
       },
       "fence": 4,
-      "line": 354,
+      "line": 355,
       "language": "csharp"
     },
     {
@@ -10319,7 +10319,7 @@
         "check": "inventory-classification"
       },
       "fence": 3,
-      "line": 345,
+      "line": 346,
       "language": "csharp"
     },
     {
@@ -10332,7 +10332,7 @@
         "check": "inventory-classification"
       },
       "fence": 7,
-      "line": 408,
+      "line": 402,
       "language": "text"
     },
     {
@@ -10345,7 +10345,7 @@
         "check": "inventory-classification"
       },
       "fence": 5,
-      "line": 375,
+      "line": 376,
       "language": "csharp"
     },
     {
@@ -11593,7 +11593,7 @@
         "check": "inventory-classification"
       },
       "fence": 6,
-      "line": 146,
+      "line": 145,
       "language": "yaml"
     },
     {
@@ -11606,7 +11606,7 @@
         "check": "inventory-classification"
       },
       "fence": 4,
-      "line": 77,
+      "line": 76,
       "language": "markdown"
     },
     {
@@ -11645,7 +11645,7 @@
         "check": "inventory-classification"
       },
       "fence": 5,
-      "line": 138,
+      "line": 137,
       "language": "python"
     },
     {
@@ -14271,7 +14271,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 461,
+      "line": 463,
       "language": "sql"
     },
     {
