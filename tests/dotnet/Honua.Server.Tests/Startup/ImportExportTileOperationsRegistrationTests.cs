@@ -54,8 +54,6 @@ public sealed class ImportExportTileOperationsRegistrationTests
         descriptor.ImplementationInstance.Should().BeSameAs(NullTileCacheKeyIndex.Instance);
     }
 
-    // ValidateOnBuild is on in Development. The tile-cache job service is registered only
-    // when Redis and a caching entitlement are both present and the metadata provider is scoped.
     [UnitTest]
     public void AddTileOperations_RedisEntitledWithScopedMetadataGraphProvider_ContainerValidates()
     {
