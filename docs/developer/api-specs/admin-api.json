@@ -50615,21 +50615,16 @@
           },
           "title": {
             "type": "string",
-            "nullable": true,
-            "maxLength": 512
+            "nullable": true
           },
           "description": {
             "type": "string",
-            "nullable": true,
-            "maxLength": 16384
+            "nullable": true
           },
           "keywords": {
             "type": "array",
-            "maxItems": 100,
             "items": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 256
+              "type": "string"
             }
           },
           "affectedPublications": {

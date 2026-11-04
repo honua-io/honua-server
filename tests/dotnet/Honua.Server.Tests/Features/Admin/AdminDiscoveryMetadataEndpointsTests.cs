@@ -150,7 +150,11 @@ public sealed class AdminDiscoveryMetadataEndpointsTests : IAsyncLifetime
         {
             Revision = snapshot.Revision + 1,
             Publications = snapshot.Graph.Publications.Select(publication => publication.ResourceId == resourceId
-                ? publication with { Identifier = publication.Identifier with { Value = "37" } }
+                ? publication with
+                {
+                    Identifier = publication.Identifier with { Value = "37" },
+                    ServiceLocalId = "37", LayerIndex = 37
+                }
                 : publication).ToArray()
         }, schema: _fixture.MetadataGraphSchema);
         var client = _fixture.CreateAdminClient();
