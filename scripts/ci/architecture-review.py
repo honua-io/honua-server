@@ -171,7 +171,6 @@ def get_honua_architecture_rules() -> str:
 - Dependency direction: Honua.Core must not reference Honua.Postgres or Honua.Server. Honua.Postgres and Honua.Server may depend on Honua.Core.
 - API pattern: No ControllerBase or [ApiController]; use Minimal APIs.
 - Encapsulation: Infrastructure implementation types must be internal (middleware, decorators, providers). Public DTOs/options/extensions are allowed.
-- Documentation: Public types require XML docs; internal types do not.
 - AOT: Avoid reflection/dynamic JSON in production code; use source-generated JSON/logging. GC APIs and CultureInfo are allowed.
 - Tests: Reflection or AOT-breaking code is allowed in test projects.
 
@@ -229,7 +228,6 @@ If the diff is in test code, do not flag reflection/dynamic/AOT-breaking pattern
         "- Dependency direction",
         "- Minimal API usage (no controllers)",
         "- Infrastructure encapsulation (internal types)",
-        "- Public XML docs",
         "- Dependency count limits",
         "- Sync-over-async"
     ]
@@ -308,7 +306,7 @@ def extract_assessment_level(analysis_text: str) -> str:
         "no acceptance criteria", "missing.*criteria", "changes.*don't.*address",
         "dependency violation", "controller inheritance", "controllerbase",
         "public repository", "public.*repository", "public.*dataaccess",
-        "missing xml documentation", "infrastructure dependency"
+        "infrastructure dependency"
     ]
 
     warning_keywords = [

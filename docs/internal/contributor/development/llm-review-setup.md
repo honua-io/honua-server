@@ -51,7 +51,6 @@ using Honua.Db.Postgres; // Core depending on Infrastructure - VIOLATION
 
 public class BadExample : ControllerBase  // Controller usage - VIOLATION
 {
-    // Missing XML documentation - VIOLATION
     public void DoSomething()
     {
         // Reflection in hot path - VIOLATION
@@ -99,7 +98,7 @@ Description of the issue...
 - **Dependency Violations**: Core depending on Infrastructure
 - **Controller Usage**: `ControllerBase` inheritance
 - **Public Database Types**: Repository/DataAccess classes public
-- **Missing Documentation**: Public APIs without XML docs
+- **Clean Code**: the blocking smells in [architecture criteria](../architecture-criteria.md#clean-code-robert-c-martin)
 
 *Note: AOT compatibility is validated by the main CI build, not LLM review*
 
@@ -112,7 +111,7 @@ Description of the issue...
 ### ✅ APPROVED (Pass)
 - **Clean Architecture**: Proper dependency flow
 - **AOT Ready**: Source generation patterns
-- **Well Documented**: Comprehensive XML docs
+- **Self-documenting**: intention-revealing names, comments only for what the code cannot say
 - **Vertical Slices**: Feature-based organization
 
 ## Cost Considerations
@@ -186,7 +185,7 @@ This LLM review runs **in addition to** existing CI checks with clear separation
 1. **Dependency Analysis**: Core→Infrastructure flow validation
 2. **Design Patterns**: Vertical slices, composition over inheritance
 3. **API Compliance**: Minimal APIs vs Controllers
-4. **Documentation**: XML docs coverage
+4. **Clean Code**: smell codes from the architecture criteria
 
 ### Human Review (Final Approval)
 - Complex architectural decisions

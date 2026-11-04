@@ -546,16 +546,18 @@ jobs:
               the authoritative review checklist — read it and apply it.
 
             Review scope: judge only this diff. Apply the BLOCKING vs WARNING
-            split that `AGENTS.md` defines under "Architecture Enforcement:
-            review rules (BLOCKING / WARNING)", and the invariants under
-            "Protocol Adapter Architecture". The full rubric with examples is
+            split that `AGENTS.md` defines under "Review guidelines", and the
+            invariants under "Protocol Adapter Architecture". Apply the Clean
+            Code review rules in `AGENTS.md`, citing smell codes (G5, C1, F3, ...).
+            The full rubric with examples is
             docs/internal/contributor/architecture-criteria.md.
 
             Treat as BLOCKING: correctness bugs the diff introduces, security
             problems, and anything `AGENTS.md` marks BLOCKING (dependency
-            direction, controller usage, public infrastructure types, missing XML
-            docs). Also blocking: a protocol adapter reimplementing a shared
-            canonical pipeline, and a new endpoint with no integration test.
+            direction, controller usage, public infrastructure types, the Clean
+            Code blocking smells, including new `///` XML doc comments). Also
+            blocking: a protocol adapter reimplementing a shared canonical
+            pipeline, and a new endpoint with no integration test.
 
             Treat as NON-blocking observations: everything `AGENTS.md` marks
             WARNING (organisational, complexity, performance anti-patterns) and

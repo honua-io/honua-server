@@ -1,6 +1,5 @@
 # honua-server: agent instructions
-<!-- Budget 120 lines / 8 KB (scripts/ci/check-agents-md.py); detail goes in docs/. Section headings are
-read by local-architecture-review.py, claude-review.yml and source comments: do not rename them. -->
+<!-- Budget: scripts/ci/check-agents-md.py; detail goes in docs/. Scripts and claude-review.yml read the headings. -->
 
 Honua Server exposes one geospatial capability set through thin protocol adapters (protocol list:
 README). It is a clean rewrite: read the archived `../Honua.Server` for behaviour, never copy from it.
@@ -33,8 +32,7 @@ build or test on docs-only tasks unless asked. Scope and flags: [local pre-PR va
   never reimplement shared behaviour. One protocol never calls another's handler: extract a neutral service.
 - **Intentional divergence**: if a protocol intentionally diverges from the shared pipeline, document why
   in code and add endpoint-level tests proving the divergence.
-- **DRY**: duplicate protocol helpers only for wire-format differences. Extract a shared helper when
-  duplicate logic affects behaviour, errors, auth, caching, telemetry, CRS, filters or data access.
+- **DRY**: duplicate protocol helpers only for wire-format differences.
 - **Security/RBAC**: authorization is enforced in the shared pipeline or a common policy service, never by
   caller discipline. Never leak exception text, SQL, stack traces, paths or connection strings to clients.
 - **Caching**: keys vary on every behaviour-changing input. No exact response cache for ad hoc spatial
@@ -45,21 +43,29 @@ build or test on docs-only tasks unless asked. Scope and flags: [local pre-PR va
 - **Docs examples** use the Honua CLI, SDKs or MCP, never raw HTTP (exceptions:
   `scripts/ci/doc-wire-reference-allowlist.v1.json`).
 - **Never quote CITE pass rates from memory**: `docs/cite-status.md` is the single source.
-Full pipeline list, logging/telemetry/validation rules, legacy-port policy and examples:
-[architecture criteria](docs/internal/contributor/architecture-criteria.md).
+Full rules and examples: [architecture criteria](docs/internal/contributor/architecture-criteria.md).
 
-## Architecture Enforcement: review rules (BLOCKING / WARNING)
+## Review guidelines: architecture enforcement and Clean Code (BLOCKING / WARNING)
+Reviews judge added or changed lines by *Clean Code* and cite smell codes ([rules](docs/internal/contributor/architecture-criteria.md#clean-code-robert-c-martin)).
+The `Clean code` PR check enforces what a tool can; `quality-exception: <reason>` in the PR body is logged.
+
 BLOCKING:
 - `Honua.Core` depending on a provider (`Honua.Db.*`) or on `Honua.Server`.
 - Any `ControllerBase` (Minimal APIs only).
 - Public implementation types in infrastructure/provider projects (abstractions may be public).
-- Public types without `///` XML docs.
 - A protocol adapter reimplementing a canonical pipeline; a new endpoint or operation with no integration test.
+- G5 duplication: search first (`gstack-code-intelligence search`); reuse or consolidate, never copy.
+- C1 history, ticket/PR refs or reviewer notes in code; C2-C4 obsolete, redundant or rambling comments;
+  C5 commented-out code. Comment only what the code cannot say.
+- XML doc comments (`///`): names carry the meaning (SDK packages: one-line `<summary>` only).
+- N1 names that hide intent; F1 more than 3-4 parameters; F2 output arguments; F3 boolean flags.
+- Over budget, no reason in the PR: functions ~40 lines or 2 nesting levels; classes, files ~400 lines.
 
 WARNING:
 - Layer-based folders (`Controllers/`, `Services/`) instead of vertical feature slices.
 - More than 5 dependencies per endpoint or 4 per handler.
 - Sync-over-async (`.Result`, `.Wait()`); inheritance deeper than 3 levels.
+- Other Clean Code smells (N2-N7, G6-G36, T1-T9), e.g. G25 magic numbers.
 
 ## Tests
 - **TDD**: write a failing integration test first (Testcontainers + PostGIS), then implement.
@@ -72,7 +78,6 @@ WARNING:
 ## Issues and PRs
 - **Issues**: search for duplicates, then `gh issue create` with a `.github/ISSUE_TEMPLATE/` form.
   Cross-repo work gets an umbrella issue plus linked children.
-- **PR body**: `.github/pull_request_template.md`. No CI validates it or the footer; both are a human contract.
 - **Required checks are `PR Gate` and `Review Gate`**; the full CI matrix trails on trunk. The fleet's
   lander merges green, thread-free, non-draft PRs based on `trunk`; do not dispatch anything.
   A bare `gh workflow run merge-train.yml` is a dry run. Never touch `land/batch/*` or `train/batch/*`.
@@ -83,10 +88,6 @@ WARNING:
 ## Release component versions
 Bump a contract or declared schema version? Update `release/component-versions.json` in the same PR
 (a new migration needs no edit). `ContractVersionsStartupCheck` and the release train refuse a mismatch.
-
-## Code search
-Prefer `gstack-code-intelligence search` or the ast-grep/tree-sitter MCP tools (register the worktree
-under a unique name) over broad reads; retrieve symbols and line ranges, not whole files.
 
 <!-- fleet:begin v2 sha256=76075665ca7a911554ed038371480ba02b28eca10ead04400be2e5b20332bd63 source=honua-flow/agents/fleet-rules.md -->
 ## Fleet rules (all Honua repos)
