@@ -50,7 +50,7 @@ public sealed class NAServerMetadataEndpointTests : IClassFixture<NAServerEndpoi
     [IntegrationTest]
     [Operation(Operations.Metadata)]
     [Endpoint("POST /rest/services/{serviceId}/NAServer")]
-    public async Task ServiceResource_AcceptsTheFormPostArcGisProIssues()
+    public async Task ServiceResource_AcceptsTheFormPostGeoServicesProIssues()
     {
         using var payload = new FormUrlEncodedContent([new KeyValuePair<string, string>("f", "pjson")]);
         using var response = await _fixture.Client.PostAsync("/rest/services/Routing/NAServer", payload);

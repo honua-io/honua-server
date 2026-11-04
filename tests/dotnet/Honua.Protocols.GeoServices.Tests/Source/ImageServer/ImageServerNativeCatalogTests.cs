@@ -21,7 +21,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 [Protocol(TestProtocols.ImageServer)]
 public sealed class ImageServerNativeCatalogTests : IAsyncLifetime
 {
-    private const string ArcGisNamespace = "http://www.esri.com/schemas/ArcGIS/10.8";
+    private const string GeoServicesNamespace = "http://www.esri.com/schemas/ArcGIS/10.8";
     private const string XsiNamespace = "http://www.w3.org/2001/XMLSchema-instance";
     private readonly WebAppFixture _fixture = new();
 
@@ -175,7 +175,7 @@ public sealed class ImageServerNativeCatalogTests : IAsyncLifetime
 
     private async Task<(HttpStatusCode Status, string Body)> PostSoapAsync(string operation, string where, string spatialReference)
     {
-        XNamespace arc = ArcGisNamespace;
+        XNamespace arc = GeoServicesNamespace;
         XNamespace xsi = XsiNamespace;
         XNamespace soap = "http://schemas.xmlsoap.org/soap/envelope/";
         var filter = new XElement(arc + "QueryFilter",

@@ -271,7 +271,7 @@ public class SnowflakeProviderResolutionTests
                     PermanentFilter = new MetadataV2PermanentFilter
                     {
                         Expression = permanentFilterExpression,
-                        Language = MetadataV2PermanentFilterLanguages.ArcGisSql
+                        Language = MetadataV2PermanentFilterLanguages.GeoServicesSql
                     }
                 }
             };

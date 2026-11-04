@@ -2298,7 +2298,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             PermanentFilter = new MetadataV2PermanentFilter
             {
                 Expression = "status = 'original'",
-                Language = MetadataV2PermanentFilterLanguages.ArcGisSql,
+                Language = MetadataV2PermanentFilterLanguages.GeoServicesSql,
             },
             Subtypes = new MetadataV2Subtypes
             {

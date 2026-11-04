@@ -176,19 +176,19 @@ internal static class AdminLayerFilterConfigurationEndpoints
         out string canonicalLanguage,
         out FilterLanguage filterLanguage)
     {
-        canonicalLanguage = PermanentFilterLanguages.ArcGisSql;
-        filterLanguage = FilterLanguage.ArcGisSql;
-        var normalized = (language ?? PermanentFilterLanguages.ArcGisSql)
+        canonicalLanguage = PermanentFilterLanguages.GeoServicesSql;
+        filterLanguage = FilterLanguage.GeoServicesSql;
+        var normalized = (language ?? PermanentFilterLanguages.GeoServicesSql)
             .Trim()
             .ToLowerInvariant();
 
         switch (normalized)
         {
-            case PermanentFilterLanguages.ArcGisSql:
+            case PermanentFilterLanguages.GeoServicesSql:
             case "arcgis":
             case "geoservices-sql":
-                canonicalLanguage = PermanentFilterLanguages.ArcGisSql;
-                filterLanguage = FilterLanguage.ArcGisSql;
+                canonicalLanguage = PermanentFilterLanguages.GeoServicesSql;
+                filterLanguage = FilterLanguage.GeoServicesSql;
                 return true;
             case PermanentFilterLanguages.Cql2Text:
             case "cql2":

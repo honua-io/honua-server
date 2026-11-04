@@ -409,7 +409,7 @@ internal sealed class QueryFeaturesTool : IMcpTool
             return null;
         }
 
-        var parse = filterService.Parse(FilterLanguage.ArcGisSql, where);
+        var parse = filterService.Parse(FilterLanguage.GeoServicesSql, where);
         if (!parse.IsSuccess)
         {
             throw new GeoprocessingValidationException(

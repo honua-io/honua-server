@@ -16,7 +16,7 @@ internal sealed record SharingInfoResponse
     // No ArcGIS Portal version (currentVersion/fullVersion) is advertised. Honua is an
     // independent, Esri-compatible server and must not impersonate a specific ArcGIS
     // Portal/Server release. Do NOT add a currentVersion/fullVersion field
-    // (guarded by NoArcGisServerVersionTests).
+    // (guarded by NoGeoServicesServerVersionTests).
 
     /// <summary>
     /// Actual public portal root, including its application mount point. Native
@@ -94,7 +94,7 @@ internal sealed record PortalSelfResponse
     public PortalHelperServices HelperServices { get; init; } = new();
 
     // No ArcGIS Portal version (currentVersion) is advertised — Honua does not impersonate a
-    // specific ArcGIS Portal release (guarded by NoArcGisServerVersionTests).
+    // specific ArcGIS Portal release (guarded by NoGeoServicesServerVersionTests).
 }
 
 /// <summary>Only synchronous solvers supported by the configured routing provider.</summary>

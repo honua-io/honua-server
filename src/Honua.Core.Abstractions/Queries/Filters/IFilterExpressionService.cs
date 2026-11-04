@@ -14,7 +14,7 @@ public enum FilterLanguage
     OData,
 
     /// <summary>GeoServices SQL (FeatureServer where clauses).</summary>
-    ArcGisSql,
+    GeoServicesSql,
 
     /// <summary>CQL2 text expressions.</summary>
     Cql2Text,

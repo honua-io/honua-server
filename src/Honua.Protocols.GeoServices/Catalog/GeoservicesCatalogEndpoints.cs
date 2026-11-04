@@ -130,7 +130,7 @@ internal static class GeoservicesCatalogEndpoints
 
         endpoints.MapPost("/services", HandlePostSoapCatalog)
             .WithDisplayName("ArcGIS SOAP Services Catalog")
-            .WithName("ArcGisSoapServicesCatalog")
+            .WithName("GeoServicesSoapServicesCatalog")
             .WithSummary("Discover supported ArcGIS services through SOAP")
             .WithDescription("Implements the protocol-wide ArcGIS Server SOAP catalog using the same principal-filtered projection as the REST services directory.")
             .WithTags("GeoServices Catalog")
@@ -157,7 +157,7 @@ internal static class GeoservicesCatalogEndpoints
 
         endpoints.MapGet("/services", HandleGetSoapCatalogWsdl)
             .WithDisplayName("ArcGIS SOAP Services Catalog WSDL")
-            .WithName("ArcGisSoapServicesCatalogWsdl")
+            .WithName("GeoServicesSoapServicesCatalogWsdl")
             .WithSummary("Get the ArcGIS SOAP services catalog WSDL")
             .WithDescription("Returns the SOAP 1.1 and SOAP 1.2 service-catalog contract for both the bare site-root form and the wsdl query flag.")
             .WithTags("GeoServices Catalog")
@@ -189,7 +189,7 @@ internal static class GeoservicesCatalogEndpoints
         XNamespace xs = "http://www.w3.org/2001/XMLSchema";
         XNamespace soap11 = "http://schemas.xmlsoap.org/wsdl/soap/";
         XNamespace soap12 = "http://schemas.xmlsoap.org/wsdl/soap12/";
-        XNamespace esri = ArcGisSoapNamespaces.Current;
+        XNamespace esri = GeoServicesSoapNamespaces.Current;
         var operations = new[]
         {
             "GetServiceDescriptions",
@@ -338,7 +338,7 @@ internal static class GeoservicesCatalogEndpoints
             operations.Select(operation => new XElement(
                 wsdl + "operation",
                 new XAttribute("name", operation),
-                new XElement(soap + "operation", new XAttribute("soapAction", $"{ArcGisSoapNamespaces.Current}/{operation}")),
+                new XElement(soap + "operation", new XAttribute("soapAction", $"{GeoServicesSoapNamespaces.Current}/{operation}")),
                 new XElement(wsdl + "input", new XElement(soap + "body", new XAttribute("use", "literal"))),
                 new XElement(wsdl + "output", new XElement(soap + "body", new XAttribute("use", "literal"))))));
 
@@ -365,7 +365,7 @@ internal static class GeoservicesCatalogEndpoints
         if (!IsSupportedSoapContentType(context.Request.ContentType))
         {
             var requestedSoap = RequestedSoapNamespace(context.Request);
-            return CreateSoapFault(
+            return GeoServicesSoapProtocol.CreateSoapFault(
                 "Content-Type must be text/xml or application/soap+xml.",
                 StatusCodes.Status415UnsupportedMediaType,
                 requestedSoap);
@@ -382,7 +382,7 @@ internal static class GeoservicesCatalogEndpoints
         }
         catch (Exception exception) when (exception is InvalidOperationException or XmlException or XmlSchemaValidationException)
         {
-            return CreateSoapFault(
+            return GeoServicesSoapProtocol.CreateSoapFault(
                 SoapRequestXml.GetSafeErrorMessage(exception),
                 StatusCodes.Status400BadRequest,
                 RequestedSoapNamespace(context.Request));
@@ -392,7 +392,7 @@ internal static class GeoservicesCatalogEndpoints
         if (request.Root?.Name.LocalName != "Envelope" ||
             (envelopeNamespace != Soap11EnvelopeNamespace && envelopeNamespace != Soap12EnvelopeNamespace))
         {
-            return CreateSoapFault(
+            return GeoServicesSoapProtocol.CreateSoapFault(
                 "Unsupported SOAP envelope namespace.",
                 StatusCodes.Status400BadRequest,
                 RequestedSoapNamespace(context.Request));
@@ -401,7 +401,7 @@ internal static class GeoservicesCatalogEndpoints
         var contentTypeSoap = RequestedSoapNamespace(context.Request);
         if (envelopeNamespace != contentTypeSoap)
         {
-            return CreateSoapFault(
+            return GeoServicesSoapProtocol.CreateSoapFault(
                 "Content-Type does not match the SOAP envelope version.",
                 StatusCodes.Status415UnsupportedMediaType,
                 contentTypeSoap);
@@ -411,7 +411,7 @@ internal static class GeoservicesCatalogEndpoints
         var bodies = request.Root.Elements(soap + "Body").Take(2).ToArray();
         if (bodies.Length != 1)
         {
-            return CreateSoapFault(
+            return GeoServicesSoapProtocol.CreateSoapFault(
                 "SOAP envelope must contain exactly one Body element.",
                 StatusCodes.Status400BadRequest,
                 soap);
@@ -420,18 +420,18 @@ internal static class GeoservicesCatalogEndpoints
         var operations = bodies[0].Elements().Take(2).ToArray();
         if (operations is not { Length: 1 })
         {
-            return CreateSoapFault(
+            return GeoServicesSoapProtocol.CreateSoapFault(
                 "SOAP body must contain exactly one catalog operation.",
                 StatusCodes.Status400BadRequest,
                 soap);
         }
 
-        var operation = ArcGisSoapProtocol.BindArgumentsByLocalName(operations[0]);
+        var operation = GeoServicesSoapProtocol.BindArgumentsByLocalName(operations[0]);
 
         var operationNamespace = operation.Name.Namespace;
-        if (!ArcGisSoapNamespaces.IsSupported(operationNamespace))
+        if (!GeoServicesSoapNamespaces.IsSupported(operationNamespace))
         {
-            return CreateSoapFault(
+            return GeoServicesSoapProtocol.CreateSoapFault(
                 "Unsupported ArcGIS SOAP operation namespace.",
                 StatusCodes.Status400BadRequest,
                 soap);
@@ -440,7 +440,7 @@ internal static class GeoservicesCatalogEndpoints
         var operationName = operation.Name.LocalName;
         if (!IsSupportedSoapCatalogOperation(operationName))
         {
-            return CreateSoapFault(
+            return GeoServicesSoapProtocol.CreateSoapFault(
                 $"Unsupported catalog operation '{operationName}'.",
                 StatusCodes.Status400BadRequest,
                 soap);
@@ -477,7 +477,7 @@ internal static class GeoservicesCatalogEndpoints
                         !string.Equals(argument.Name.LocalName, "FolderName", StringComparison.OrdinalIgnoreCase));
                     if (unsupportedArgument is not null)
                     {
-                        return CompleteSoapCatalogOperation(scope, CreateSoapFault(
+                        return CompleteSoapCatalogOperation(scope, GeoServicesSoapProtocol.CreateSoapFault(
                             $"GetServiceDescriptionsEx does not accept the '{unsupportedArgument.Name.LocalName}' argument; its only argument is FolderName.",
                             StatusCodes.Status400BadRequest,
                             soap));
@@ -485,7 +485,7 @@ internal static class GeoservicesCatalogEndpoints
 
                     if (arguments.Length > 1)
                     {
-                        return CompleteSoapCatalogOperation(scope, CreateSoapFault(
+                        return CompleteSoapCatalogOperation(scope, GeoServicesSoapProtocol.CreateSoapFault(
                             "GetServiceDescriptionsEx accepts at most one FolderName argument.",
                             StatusCodes.Status400BadRequest,
                             soap));
@@ -528,7 +528,7 @@ internal static class GeoservicesCatalogEndpoints
                         tokenOptions.Value.Enabled ? "1" : "0");
                     break;
                 default:
-                    return CompleteSoapCatalogOperation(scope, CreateSoapFault(
+                    return CompleteSoapCatalogOperation(scope, GeoServicesSoapProtocol.CreateSoapFault(
                         $"Unsupported catalog operation '{operation.Name.LocalName}'.",
                         StatusCodes.Status400BadRequest,
                         soap));
@@ -549,13 +549,13 @@ internal static class GeoservicesCatalogEndpoints
                             payload))));
 
             return CompleteSoapCatalogOperation(scope, Results.Content(
-                ArcGisSoapNamespaces.SerializeResponse(response),
+                GeoServicesSoapNamespaces.SerializeResponse(response),
                 contentType: SoapContentTypeFor(soap),
                 contentEncoding: Encoding.UTF8));
         }
         catch (SoapCatalogAccessException exception)
         {
-            return CompleteSoapCatalogOperation(scope, CreateSoapFault(
+            return CompleteSoapCatalogOperation(scope, GeoServicesSoapProtocol.CreateSoapFault(
                 exception.StatusCode == StatusCodes.Status401Unauthorized
                     ? "Authentication is required to discover these services."
                     : "The calling principal is not authorized to discover these services.",
@@ -572,7 +572,7 @@ internal static class GeoservicesCatalogEndpoints
                 logger,
                 operation.Name.LocalName,
                 exception);
-            var result = CompleteSoapCatalogOperation(scope, CreateSoapFault(
+            var result = CompleteSoapCatalogOperation(scope, GeoServicesSoapProtocol.CreateSoapFault(
                 "The SOAP services catalog is temporarily unavailable.",
                 StatusCodes.Status503ServiceUnavailable,
                 soap));
@@ -692,41 +692,6 @@ internal static class GeoservicesCatalogEndpoints
             SceneServerProtocolName => "Scene,Query",
             _ => string.Empty
         };
-
-    private static IResult CreateSoapFault(string message, int statusCode, XNamespace soap)
-    {
-        var isServerFault = statusCode >= StatusCodes.Status500InternalServerError;
-        var fault = soap == Soap12EnvelopeNamespace
-            ? new XElement(
-                soap + "Fault",
-                new XElement(
-                    soap + "Code",
-                    new XElement(soap + "Value", isServerFault ? "soap:Receiver" : "soap:Sender")),
-                new XElement(
-                    soap + "Reason",
-                    new XElement(
-                        soap + "Text",
-                        new XAttribute(XNamespace.Xml + "lang", "en"),
-                        message)))
-            : new XElement(
-                soap + "Fault",
-                new XElement("faultcode", isServerFault ? "soap:Server" : "soap:Client"),
-                new XElement("faultstring", message));
-        var response = new XDocument(
-            new XDeclaration("1.0", "utf-8", null),
-            new XElement(
-                soap + "Envelope",
-                new XAttribute(XNamespace.Xmlns + "soap", soap.NamespaceName),
-                new XElement(
-                    soap + "Body",
-                    fault)));
-
-        return Results.Content(
-            ArcGisSoapNamespaces.SerializeResponse(response),
-            contentType: SoapContentTypeFor(soap),
-            contentEncoding: Encoding.UTF8,
-            statusCode: statusCode);
-    }
 
     private static XNamespace RequestedSoapNamespace(HttpRequest request)
         => string.Equals(

@@ -258,7 +258,7 @@ public class StreamingImportTests : IAsyncLifetime
 
         response.BeSuccessful();
         var responseContent = await response.Content.ReadAsStringAsync();
-        responseContent.Should().Contain("EsriJson");
+        responseContent.Should().Contain("GeoServicesJson");
         responseContent.Should().Contain("\"featureCount\":2");
     }
 

@@ -8,7 +8,7 @@
     "catalogSourceRevision": "14d101ec17f4b7ccdc6106ee2cb5bd4d621d779f",
     "candidateBinding": "https://github.com/honua-io/honua-server/issues/3848",
     "layerReceiptEnforcement": "PR Gate step 'Prove the layer execution cases ran, not skipped' reads back layer-execution-proof.trx and fails unless every evidence test these rows still call proven in the Category=LayerExecutionProof files reports its own Passed receipt: source.honua-layer, source.esri-featureserver and sink.honua-layer. dotnet test exits 0 on a filter that matches nothing and on a cleanly-skipping fixture, so the step count alone could not tell a real PostGIS run from no run at all.",
-    "catalogSourceContentDigest": "sha256:78709df0d66b6d33587413db8527c9164b56220e3b87c1d0adb0b24740089918",
+    "catalogSourceContentDigest": "sha256:46e58b30fe4468388ff30ac10a4e56c7ec02792e7d3813bc10a2afa75aa4f397",
     "importEpochSourceAudit": "certification/gp-import-epoch-source-audit-20261028.md",
     "gpCorrectnessAudit": "certification/gp-correctness-audit-20261016.md",
     "releaseBindingRegistrationAudit": "certification/gp-release-binding-audit-20261015.md",
@@ -1439,19 +1439,19 @@
       "evidence": [
         {
           "path": "tests/dotnet/Honua.Db.Postgres.UnitTests/Features/Geoprocessing/DagSourceReaderTests.cs",
-          "test": "EsriFeatureServer_PaginatesUntilTransferLimitClears_AndConvertsGeometry",
+          "test": "GeoServicesFeatureServer_PaginatesUntilTransferLimitClears_AndConvertsGeometry",
           "assertion": "Connector pagination/content only; no process executor artifact path.",
-          "bodyDigest": "sha256:5f1148b702347f91945f11b1c8fde6c0dc46d8c68f2bff4431a9a956f6d10a49"
+          "bodyDigest": "sha256:9c025bfa4aced28df125a5f4d34cbab7aa7ddd88305dcf9e2de1fafde3a29350"
         },
         {
-          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/EsriSourceExecutionProofTests.cs",
-          "test": "EsriSource_PagedFilteredFixture_PublishesEverySelectedFeatureExactlyOnce",
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/GeoServicesSourceExecutionProofTests.cs",
+          "test": "GeoServicesSource_PagedFilteredFixture_PublishesEverySelectedFeatureExactlyOnce",
           "assertion": "Workflow-only entry point: real HTTP client, connector and executor over a deterministic paged fixture; literal IDs/attributes/null/coordinates, output SRID, offsets once and where/watermark/fields/SRID parameters.",
           "bodyDigest": "sha256:84a69f783af6092f6859451ed9deafb02103d909023925eb9e1f95a366ee9083"
         },
         {
-          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/EsriSourceExecutionProofTests.cs",
-          "test": "EsriSource_WellFormedWrongFixtureOutput_FailsSemanticOracle",
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/GeoServicesSourceExecutionProofTests.cs",
+          "test": "GeoServicesSource_WellFormedWrongFixtureOutput_FailsSemanticOracle",
           "assertion": "Production executor publishes valid artifacts from duplicate-page, swapped-axis and changed-attribute fixtures; the unchanged literal semantic oracle rejects each.",
           "bodyDigest": "sha256:11f6f523d24fc248b826a89e0729e700f0098ca30cf8eef0a34525e340446bf7"
         }

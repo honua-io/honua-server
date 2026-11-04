@@ -283,7 +283,7 @@ internal static partial class FeatureServerEndpoints
             return (query with { SqlFilter = addition, Where = null }, null);
         }
 
-        var parseResult = filterService.Parse(FilterLanguage.ArcGisSql, query.Where);
+        var parseResult = filterService.Parse(FilterLanguage.GeoServicesSql, query.Where);
         if (!parseResult.IsSuccess)
         {
             return (query, StandardErrorHelpers.CreateBadRequest(context,

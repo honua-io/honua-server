@@ -947,7 +947,7 @@ internal static class GeoServicesToMapLibreConverter
         color = default;
 
         if (TryGetSymbolStyle(symbol, out var style)
-            && EsriStyleMappings.IsNullFillStyle(style))
+            && GeoServicesStyleMappings.IsNullFillStyle(style))
         {
             color = new StyleColor(0, 0, 0, 0);
             return true;
@@ -1244,7 +1244,7 @@ internal static class GeoServicesToMapLibreConverter
             return false;
         }
 
-        return EsriStyleMappings.TryGetLineDashArray(style, out dashArray);
+        return GeoServicesStyleMappings.TryGetLineDashArray(style, out dashArray);
     }
 
     private static bool TryGetFillOpacityOverride(JsonElement symbol, out double? fillOpacity)
@@ -1256,7 +1256,7 @@ internal static class GeoServicesToMapLibreConverter
             return false;
         }
 
-        if (EsriStyleMappings.IsNullFillStyle(style))
+        if (GeoServicesStyleMappings.IsNullFillStyle(style))
         {
             fillOpacity = 0d;
             return true;
@@ -1284,14 +1284,14 @@ internal static class GeoServicesToMapLibreConverter
                     continue;
                 }
 
-                baselineStyle = EsriStyleMappings.LineStyleSolid;
+                baselineStyle = GeoServicesStyleMappings.LineStyleSolid;
                 continue;
             }
 
             if (baselineStyle == null)
             {
                 baselineStyle = style;
-                _ = EsriStyleMappings.TryGetLineDashArray(style, out baselineDash);
+                _ = GeoServicesStyleMappings.TryGetLineDashArray(style, out baselineDash);
                 continue;
             }
 

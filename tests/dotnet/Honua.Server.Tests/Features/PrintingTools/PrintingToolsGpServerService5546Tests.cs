@@ -25,7 +25,7 @@ public sealed class PrintingToolsGpServerService5546Tests : IAsyncLifetime
     private const string ServicePath = "/rest/services/Utilities/PrintingTools/GPServer";
     private const string SoapPath = "/services/Utilities/PrintingTools/GPServer";
     private const string QualifiedName = "Utilities/PrintingTools";
-    private const string ArcGisSoapNamespace = "http://www.esri.com/schemas/ArcGIS/10.8";
+    private const string GeoServicesSoapNamespace = "http://www.esri.com/schemas/ArcGIS/10.8";
     private static readonly string[] SoapNameOperations = ["GetTaskNames", "GetToolNames"];
 
     private readonly WebAppFixture _fixture = new();
@@ -205,7 +205,7 @@ public sealed class PrintingToolsGpServerService5546Tests : IAsyncLifetime
               <PropertyArray>
                 <PropertySetProperty>
                   <Key>{environmentName}</Key>
-                  <Value xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:tns="{ArcGisSoapNamespace}" xsi:type="tns:GPString">
+                  <Value xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:tns="{GeoServicesSoapNamespace}" xsi:type="tns:GPString">
                     <Value>3857</Value>
                   </Value>
                 </PropertySetProperty>
@@ -246,7 +246,7 @@ public sealed class PrintingToolsGpServerService5546Tests : IAsyncLifetime
         var response = await PostSoapAsync(SoapPath, "Execute", $"""
             <ToolName>Get Layout Templates Info Task</ToolName>
             <Values />
-            <EnvironmentValues xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:tns="{ArcGisSoapNamespace}">
+            <EnvironmentValues xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:tns="{GeoServicesSoapNamespace}">
               <PropertyArray>
                 <PropertySetProperty>
                   <Key>outputZFlag</Key>
@@ -333,7 +333,7 @@ public sealed class PrintingToolsGpServerService5546Tests : IAsyncLifetime
             {"mapOptions":{"extent":{"xmin":-122.5,"ymin":37.5,"xmax":-122.0,"ymax":38.0,"spatialReference":{"wkid":4326}}},"operationalLayers":[],"exportOptions":{"dpi":96,"outputSize":[32,32]}}
             """;
         return $"""
-            <Values xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:tns="{ArcGisSoapNamespace}">
+            <Values xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:tns="{GeoServicesSoapNamespace}">
               <GPValue xsi:type="tns:GPString"><Value>{webMap}</Value></GPValue>
             </Values>
             """;
@@ -372,7 +372,7 @@ public sealed class PrintingToolsGpServerService5546Tests : IAsyncLifetime
         var request = $"""
             <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
               <soap:Body>
-                <{operation} xmlns="{ArcGisSoapNamespace}">{arguments}</{operation}>
+                <{operation} xmlns="{GeoServicesSoapNamespace}">{arguments}</{operation}>
               </soap:Body>
             </soap:Envelope>
             """;

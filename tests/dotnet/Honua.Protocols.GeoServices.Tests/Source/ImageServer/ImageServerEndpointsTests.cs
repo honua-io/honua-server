@@ -4340,7 +4340,7 @@ public class ImageServerEndpointsTests
     [IntegrationTest]
     [Endpoint("GET /rest/services/{id}/ImageServer/conf.json")]
     [Operation(Operations.GetServiceInfo)]
-    public async Task ConfJson_ReturnsServiceDescriptor_InArcGisRuntimeCompatibleShape()
+    public async Task ConfJson_ReturnsServiceDescriptor_InGeoServicesRuntimeCompatibleShape()
     {
         // Regression for #1456: the ArcGIS Maps SDK for .NET ImageServiceRaster
         // unconditionally fetches conf.json while loading and parses it strictly.
@@ -4361,7 +4361,7 @@ public class ImageServerEndpointsTests
             var root = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
 
             // conf.json returns the service descriptor. Honua does not advertise an ArcGIS
-            // Server version (see NoArcGisServerVersionTests).
+            // Server version (see NoGeoServicesServerVersionTests).
             root.TryGetProperty("currentVersion", out _).Should().BeFalse();
             root.TryGetProperty("extent", out _).Should().BeTrue();
 

@@ -7,7 +7,7 @@
   "routeRoster": {
     "derivedFrom": "Honua.Server.EndpointRegistry.All, via the generated feature catalog (tests/dotnet/Honua.Architecture.Tests/FeatureCatalog/FeatureCatalogGenerator.cs).",
     "normalization": "A served route is normalized to its Esri-relative operation path by stripping route constraints ({layerId:int} -\u003E {layerId}) and dropping the service-instance address: under /rest/services/, every segment before the first segment ending in \u0027Server\u0027 is the address of a service instance, not part of the operation\u0027s identity. /rest/services/Utilities/Geometry/GeometryServer/clip and /rest/services/{id}/ImageServer/exportImage therefore normalize to /GeometryServer/clip and /ImageServer/exportImage. /sharing/rest/* and the catalog roots /rest/info and /rest/services carry no service address and normalize to themselves. The HTTP method is not part of the key, so the GET and POST forms of one Esri operation are one operation carrying one judgement; honuaEndpoints lists every served METHOD /path behind it.",
-    "note": "esriPaths, honuaEndpoints, and capabilityMaturity on every served operation below are DERIVED and must not be hand-edited. capabilityMaturity is the ADR-0058 capability tier (is this route in the release?), NOT the parity status (how much of Esri\u0027s behaviour does it support?) \u2014 a stub operation on an in-release route correctly reads status=stub, capabilityMaturity=[implemented]. Only status, name, notes, and the prose fields are authored, in docs/gis/data/geoservices-parity-judgment.json. Regenerate with scripts/generate-geoservices-parity.sh.",
+    "note": "geoServicesPaths, honuaEndpoints, and capabilityMaturity on every served operation below are DERIVED and must not be hand-edited. capabilityMaturity is the ADR-0058 capability tier (is this route in the release?), NOT the parity status (how much of Esri\u0027s behaviour does it support?) \u2014 a stub operation on an in-release route correctly reads status=stub, capabilityMaturity=[implemented]. Only status, name, notes, and the prose fields are authored, in docs/gis/data/geoservices-parity-judgment.json. Regenerate with scripts/generate-geoservices-parity.sh.",
     "excludedServiceTypes": [
       {
         "serviceType": "SceneServer",
@@ -110,7 +110,7 @@
           {
             "name": "Service metadata",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/FeatureServer"
             ],
             "honuaEndpoints": [
@@ -125,7 +125,7 @@
           {
             "name": "Append (service)",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/FeatureServer/append"
             ],
             "honuaEndpoints": [
@@ -139,7 +139,7 @@
           {
             "name": "Apply Edits (service)",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/FeatureServer/applyEdits"
             ],
             "honuaEndpoints": [
@@ -153,7 +153,7 @@
           {
             "name": "Create Replica",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/FeatureServer/createReplica"
             ],
             "honuaEndpoints": [
@@ -167,7 +167,7 @@
           {
             "name": "Extract Changes",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/FeatureServer/extractChanges"
             ],
             "honuaEndpoints": [
@@ -181,7 +181,7 @@
           {
             "name": "Get Estimates (service)",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/FeatureServer/getEstimates"
             ],
             "honuaEndpoints": [
@@ -195,7 +195,7 @@
           {
             "name": "Query (service)",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/FeatureServer/query"
             ],
             "honuaEndpoints": [
@@ -210,7 +210,7 @@
           {
             "name": "Query Contingent Values",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/FeatureServer/queryContingentValues"
             ],
             "honuaEndpoints": [
@@ -224,7 +224,7 @@
           {
             "name": "Query Domains",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/FeatureServer/queryDomains"
             ],
             "honuaEndpoints": [
@@ -239,7 +239,7 @@
           {
             "name": "Relationships",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/FeatureServer/relationships"
             ],
             "honuaEndpoints": [
@@ -253,7 +253,7 @@
           {
             "name": "List Replicas; replica info",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/FeatureServer/replicas",
               "/FeatureServer/replicas/{replicaId}"
             ],
@@ -269,7 +269,7 @@
           {
             "name": "Synchronize Replica",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/FeatureServer/synchronizeReplica"
             ],
             "honuaEndpoints": [
@@ -283,7 +283,7 @@
           {
             "name": "Unregister Replica",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/FeatureServer/unRegisterReplica"
             ],
             "honuaEndpoints": [
@@ -297,7 +297,7 @@
           {
             "name": "validateSQL (service)",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/FeatureServer/validateSQL"
             ],
             "honuaEndpoints": [
@@ -312,7 +312,7 @@
           {
             "name": "Layer metadata",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/FeatureServer/{layerId}"
             ],
             "honuaEndpoints": [
@@ -327,7 +327,7 @@
           {
             "name": "Add Features",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/FeatureServer/{layerId}/addFeatures"
             ],
             "honuaEndpoints": [
@@ -341,7 +341,7 @@
           {
             "name": "Append (layer)",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/FeatureServer/{layerId}/append"
             ],
             "honuaEndpoints": [
@@ -355,7 +355,7 @@
           {
             "name": "Apply Edits (layer)",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/FeatureServer/{layerId}/applyEdits"
             ],
             "honuaEndpoints": [
@@ -369,7 +369,7 @@
           {
             "name": "Calculate",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/FeatureServer/{layerId}/calculate"
             ],
             "honuaEndpoints": [
@@ -383,7 +383,7 @@
           {
             "name": "Delete Features",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/FeatureServer/{layerId}/deleteFeatures"
             ],
             "honuaEndpoints": [
@@ -397,7 +397,7 @@
           {
             "name": "Generate Renderer",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/FeatureServer/{layerId}/generateRenderer"
             ],
             "honuaEndpoints": [
@@ -412,7 +412,7 @@
           {
             "name": "Get Estimates (layer)",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/FeatureServer/{layerId}/getEstimates"
             ],
             "honuaEndpoints": [
@@ -426,7 +426,7 @@
           {
             "name": "Query (layer)",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/FeatureServer/{layerId}/query"
             ],
             "honuaEndpoints": [
@@ -441,7 +441,7 @@
           {
             "name": "Query Attachments",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/FeatureServer/{layerId}/queryAttachments"
             ],
             "honuaEndpoints": [
@@ -456,7 +456,7 @@
           {
             "name": "Query Bins",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/FeatureServer/{layerId}/queryBins"
             ],
             "honuaEndpoints": [
@@ -471,7 +471,7 @@
           {
             "name": "Query Date Bins",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/FeatureServer/{layerId}/queryDateBins"
             ],
             "honuaEndpoints": [
@@ -486,7 +486,7 @@
           {
             "name": "Query Related Records",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/FeatureServer/{layerId}/queryRelatedRecords"
             ],
             "honuaEndpoints": [
@@ -501,7 +501,7 @@
           {
             "name": "Query Top Features",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/FeatureServer/{layerId}/queryTopFeatures"
             ],
             "honuaEndpoints": [
@@ -516,7 +516,7 @@
           {
             "name": "Update Features",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/FeatureServer/{layerId}/updateFeatures"
             ],
             "honuaEndpoints": [
@@ -530,7 +530,7 @@
           {
             "name": "Validate SQL",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/FeatureServer/{layerId}/validateSQL"
             ],
             "honuaEndpoints": [
@@ -545,7 +545,7 @@
           {
             "name": "Add Attachment",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/FeatureServer/{layerId}/{featureId}/addAttachment"
             ],
             "honuaEndpoints": [
@@ -559,7 +559,7 @@
           {
             "name": "Query Attachment Infos",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/FeatureServer/{layerId}/{featureId}/attachments"
             ],
             "honuaEndpoints": [
@@ -574,7 +574,7 @@
           {
             "name": "Download Attachment",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/FeatureServer/{layerId}/{featureId}/attachments/{attachmentId}"
             ],
             "honuaEndpoints": [
@@ -589,7 +589,7 @@
           {
             "name": "Delete Attachments",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/FeatureServer/{layerId}/{featureId}/deleteAttachments"
             ],
             "honuaEndpoints": [
@@ -603,7 +603,7 @@
           {
             "name": "Update Attachment",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/FeatureServer/{layerId}/{featureId}/updateAttachment"
             ],
             "honuaEndpoints": [
@@ -620,7 +620,7 @@
           {
             "name": "HTML Popup",
             "status": "stub",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/FeatureServer/htmlPopup"
             ],
             "honuaEndpoints": [
@@ -634,7 +634,7 @@
           {
             "name": "Image",
             "status": "stub",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/FeatureServer/image"
             ],
             "honuaEndpoints": [
@@ -648,7 +648,7 @@
           {
             "name": "Shared Templates and child operations",
             "status": "stub",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/FeatureServer/sharedTemplates",
               "/FeatureServer/sharedTemplates/add",
               "/FeatureServer/sharedTemplates/delete",
@@ -670,7 +670,7 @@
           {
             "name": "Cleanup Assets",
             "status": "stub",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/FeatureServer/{layerId}/cleanupAssets"
             ],
             "honuaEndpoints": [
@@ -684,7 +684,7 @@
           {
             "name": "Convert 3D",
             "status": "stub",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/FeatureServer/{layerId}/convert3D"
             ],
             "honuaEndpoints": [
@@ -698,7 +698,7 @@
           {
             "name": "Has Assets",
             "status": "stub",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/FeatureServer/{layerId}/hasAssets"
             ],
             "honuaEndpoints": [
@@ -712,7 +712,7 @@
           {
             "name": "Update Metadata",
             "status": "stub",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/FeatureServer/{layerId}/metadata/update"
             ],
             "honuaEndpoints": [
@@ -726,7 +726,7 @@
           {
             "name": "Query 3D",
             "status": "stub",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/FeatureServer/{layerId}/query3D"
             ],
             "honuaEndpoints": [
@@ -740,7 +740,7 @@
           {
             "name": "Query Assets",
             "status": "stub",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/FeatureServer/{layerId}/queryAssets"
             ],
             "honuaEndpoints": [
@@ -754,7 +754,7 @@
           {
             "name": "Upload Assets",
             "status": "stub",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/FeatureServer/{layerId}/uploadAssets"
             ],
             "honuaEndpoints": [
@@ -769,7 +769,7 @@
         "notImplemented": [
           {
             "name": "Cleanup Change Tracking",
-            "esriPath": "/FeatureServer/cleanupChangeTracking",
+            "geoServicesPath": "/FeatureServer/cleanupChangeTracking",
             "notes": ""
           }
         ]
@@ -778,7 +778,7 @@
         {
           "name": "Temporal Extent (Honua extension)",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/FeatureServer/{layerId}/temporalExtent"
           ],
           "honuaEndpoints": [
@@ -797,7 +797,7 @@
         {
           "name": "Query Clusters (Honua extension)",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/FeatureServer/{layerId}/queryClusters"
           ],
           "honuaEndpoints": [
@@ -816,7 +816,7 @@
         {
           "name": "Spatial Join (Honua extension)",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/FeatureServer/{layerId}/spatialJoin"
           ],
           "honuaEndpoints": [
@@ -835,7 +835,7 @@
         {
           "name": "Query Buffer Aggregate (Honua extension)",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/FeatureServer/{layerId}/queryBufferAggregate"
           ],
           "honuaEndpoints": [
@@ -854,7 +854,7 @@
         {
           "name": "Query Density (Honua extension)",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/FeatureServer/{layerId}/queryDensity"
           ],
           "honuaEndpoints": [
@@ -873,7 +873,7 @@
         {
           "name": "Query H3 (Honua extension)",
           "status": "implemented",
-          "esriPaths": [
+          "geoServicesPaths": [
             "/FeatureServer/{layerId}/queryH3"
           ],
           "honuaEndpoints": [
@@ -1124,7 +1124,7 @@
           {
             "name": "Service metadata",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/MapServer"
             ],
             "honuaEndpoints": [
@@ -1139,7 +1139,7 @@
           {
             "name": "WMS",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/MapServer/WMS"
             ],
             "honuaEndpoints": [
@@ -1153,7 +1153,7 @@
           {
             "name": "All Layers and Tables",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/MapServer/allLayersAndTables"
             ],
             "honuaEndpoints": [
@@ -1168,7 +1168,7 @@
           {
             "name": "Export map",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/MapServer/export"
             ],
             "honuaEndpoints": [
@@ -1183,7 +1183,7 @@
           {
             "name": "Find",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/MapServer/find"
             ],
             "honuaEndpoints": [
@@ -1198,7 +1198,7 @@
           {
             "name": "Generate KML",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/MapServer/generateKml"
             ],
             "honuaEndpoints": [
@@ -1213,7 +1213,7 @@
           {
             "name": "Generate Renderer (service level)",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/MapServer/generateRenderer"
             ],
             "honuaEndpoints": [
@@ -1228,7 +1228,7 @@
           {
             "name": "Identify",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/MapServer/identify"
             ],
             "honuaEndpoints": [
@@ -1243,7 +1243,7 @@
           {
             "name": "Export Tiles job child resources",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/MapServer/jobs/{jobId}",
               "/MapServer/jobs/{jobId}/cancel",
               "/MapServer/jobs/{jobId}/results/out_service_url"
@@ -1261,7 +1261,7 @@
           {
             "name": "layers (allLayersAndTables alias)",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/MapServer/layers"
             ],
             "honuaEndpoints": [
@@ -1276,7 +1276,7 @@
           {
             "name": "Legend",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/MapServer/legend"
             ],
             "honuaEndpoints": [
@@ -1291,7 +1291,7 @@
           {
             "name": "Service query",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/MapServer/query"
             ],
             "honuaEndpoints": [
@@ -1306,7 +1306,7 @@
           {
             "name": "Query Domains",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/MapServer/queryDomains"
             ],
             "honuaEndpoints": [
@@ -1321,7 +1321,7 @@
           {
             "name": "Query Legends",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/MapServer/queryLegends"
             ],
             "honuaEndpoints": [
@@ -1336,7 +1336,7 @@
           {
             "name": "Tile",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/MapServer/tile/{z}/{y}/{x}"
             ],
             "honuaEndpoints": [
@@ -1350,7 +1350,7 @@
           {
             "name": "Layer metadata",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/MapServer/{layerId}"
             ],
             "honuaEndpoints": [
@@ -1365,7 +1365,7 @@
           {
             "name": "Generate Renderer (per layer)",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/MapServer/{layerId}/generateRenderer"
             ],
             "honuaEndpoints": [
@@ -1380,7 +1380,7 @@
           {
             "name": "Layer query",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/MapServer/{layerId}/query"
             ],
             "honuaEndpoints": [
@@ -1395,7 +1395,7 @@
           {
             "name": "Query Attachments",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/MapServer/{layerId}/queryAttachments"
             ],
             "honuaEndpoints": [
@@ -1410,7 +1410,7 @@
           {
             "name": "Query Related Records",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/MapServer/{layerId}/queryRelatedRecords"
             ],
             "honuaEndpoints": [
@@ -1425,7 +1425,7 @@
           {
             "name": "Feature child resource",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/MapServer/{layerId}/{featureId}"
             ],
             "honuaEndpoints": [
@@ -1441,7 +1441,7 @@
           {
             "name": "WMTS",
             "status": "partial",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/MapServer/WMTS",
               "/MapServer/WMTS/{**restPath}"
             ],
@@ -1457,7 +1457,7 @@
           {
             "name": "Dynamic Layer or Table resource",
             "status": "partial",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/MapServer/dynamicLayer"
             ],
             "honuaEndpoints": [
@@ -1471,7 +1471,7 @@
           {
             "name": "Estimate Export Tile Size",
             "status": "partial",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/MapServer/estimateExportTilesSize"
             ],
             "honuaEndpoints": [
@@ -1486,7 +1486,7 @@
           {
             "name": "Export Tiles",
             "status": "partial",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/MapServer/exportTiles"
             ],
             "honuaEndpoints": [
@@ -1503,22 +1503,22 @@
         "notImplemented": [
           {
             "name": "Map Service Extension",
-            "esriPath": "/MapServer/exts/*",
+            "geoServicesPath": "/MapServer/exts/*",
             "notes": ""
           },
           {
             "name": "Image child resource",
-            "esriPath": "/MapServer/image",
+            "geoServicesPath": "/MapServer/image",
             "notes": ""
           },
           {
             "name": "KML image child resource",
-            "esriPath": "/MapServer/kml/mapImage.kmz",
+            "geoServicesPath": "/MapServer/kml/mapImage.kmz",
             "notes": ""
           },
           {
             "name": "Query Analytic",
-            "esriPath": "/MapServer/{layerId}/queryAnalytic",
+            "geoServicesPath": "/MapServer/{layerId}/queryAnalytic",
             "notes": ""
           }
         ]
@@ -1671,7 +1671,7 @@
           {
             "name": "Service metadata",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/ImageServer"
             ],
             "honuaEndpoints": [
@@ -1688,7 +1688,7 @@
           {
             "name": "Colormap",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/ImageServer/colormap"
             ],
             "honuaEndpoints": [
@@ -1705,7 +1705,7 @@
           {
             "name": "Histograms",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/ImageServer/histograms"
             ],
             "honuaEndpoints": [
@@ -1722,7 +1722,7 @@
           {
             "name": "Export Tiles job child resources",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/ImageServer/jobs/{jobId}",
               "/ImageServer/jobs/{jobId}/cancel",
               "/ImageServer/jobs/{jobId}/results/out_service_url"
@@ -1743,7 +1743,7 @@
           {
             "name": "Key Properties",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/ImageServer/keyProperties"
             ],
             "honuaEndpoints": [
@@ -1760,7 +1760,7 @@
           {
             "name": "KML",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/ImageServer/kml/image.kmz"
             ],
             "honuaEndpoints": [
@@ -1775,7 +1775,7 @@
           {
             "name": "Multidimensional Info and Slices",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/ImageServer/multidimensionalInfo",
               "/ImageServer/slices"
             ],
@@ -1797,7 +1797,7 @@
           {
             "name": "Raster Attribute Table",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/ImageServer/rasterAttributeTable"
             ],
             "honuaEndpoints": [
@@ -1814,7 +1814,7 @@
           {
             "name": "Raster Function Infos",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/ImageServer/rasterFunctionInfos"
             ],
             "honuaEndpoints": [
@@ -1831,7 +1831,7 @@
           {
             "name": "Statistics",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/ImageServer/statistics"
             ],
             "honuaEndpoints": [
@@ -1848,7 +1848,7 @@
           {
             "name": "Tile",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/ImageServer/tile/{level}/{row}/{col}"
             ],
             "honuaEndpoints": [
@@ -1863,7 +1863,7 @@
           {
             "name": "Raster Catalog Item",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/ImageServer/{rasterId}"
             ],
             "honuaEndpoints": [
@@ -1878,7 +1878,7 @@
           {
             "name": "Raster Catalog Item Image and Info",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/ImageServer/{rasterId}/image",
               "/ImageServer/{rasterId}/info",
               "/ImageServer/{rasterId}/info/histograms",
@@ -1902,7 +1902,7 @@
           {
             "name": "Raster item thumbnail",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/ImageServer/{rasterId}/thumbnail"
             ],
             "honuaEndpoints": [
@@ -1919,7 +1919,7 @@
           {
             "name": "WCS",
             "status": "partial",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/ImageServer/WCS"
             ],
             "honuaEndpoints": [
@@ -1934,7 +1934,7 @@
           {
             "name": "WMTS",
             "status": "partial",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/ImageServer/WMTS",
               "/ImageServer/WMTS/{**restPath}"
             ],
@@ -1952,7 +1952,7 @@
           {
             "name": "Calculate Volume",
             "status": "partial",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/ImageServer/calculateVolume"
             ],
             "honuaEndpoints": [
@@ -1969,7 +1969,7 @@
           {
             "name": "Compute Cache Info",
             "status": "partial",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/ImageServer/computeCacheInfo"
             ],
             "honuaEndpoints": [
@@ -1986,7 +1986,7 @@
           {
             "name": "Compute Class Statistics",
             "status": "partial",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/ImageServer/computeClassStatistics"
             ],
             "honuaEndpoints": [
@@ -2003,7 +2003,7 @@
           {
             "name": "Compute Histograms",
             "status": "partial",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/ImageServer/computeHistograms"
             ],
             "honuaEndpoints": [
@@ -2020,7 +2020,7 @@
           {
             "name": "Compute Pixel Location",
             "status": "partial",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/ImageServer/computePixelLocation"
             ],
             "honuaEndpoints": [
@@ -2037,7 +2037,7 @@
           {
             "name": "Compute Statistics and Histograms",
             "status": "partial",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/ImageServer/computeStatisticsHistograms"
             ],
             "honuaEndpoints": [
@@ -2054,7 +2054,7 @@
           {
             "name": "Compute Tie Points",
             "status": "partial",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/ImageServer/computeTiePoints"
             ],
             "honuaEndpoints": [
@@ -2071,7 +2071,7 @@
           {
             "name": "conf.json (tile-cache configuration)",
             "status": "partial",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/ImageServer/conf.json"
             ],
             "honuaEndpoints": [
@@ -2086,7 +2086,7 @@
           {
             "name": "Estimate Export Tiles Size",
             "status": "partial",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/ImageServer/estimateExportTilesSize"
             ],
             "honuaEndpoints": [
@@ -2103,7 +2103,7 @@
           {
             "name": "Export Image",
             "status": "partial",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/ImageServer/exportImage"
             ],
             "honuaEndpoints": [
@@ -2120,7 +2120,7 @@
           {
             "name": "Export Tiles",
             "status": "partial",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/ImageServer/exportTiles"
             ],
             "honuaEndpoints": [
@@ -2137,7 +2137,7 @@
           {
             "name": "Find",
             "status": "partial",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/ImageServer/find"
             ],
             "honuaEndpoints": [
@@ -2154,7 +2154,7 @@
           {
             "name": "Get Samples",
             "status": "partial",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/ImageServer/getSamples"
             ],
             "honuaEndpoints": [
@@ -2171,7 +2171,7 @@
           {
             "name": "Identify",
             "status": "partial",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/ImageServer/identify"
             ],
             "honuaEndpoints": [
@@ -2188,7 +2188,7 @@
           {
             "name": "Legend",
             "status": "partial",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/ImageServer/legend"
             ],
             "honuaEndpoints": [
@@ -2205,7 +2205,7 @@
           {
             "name": "Measure",
             "status": "partial",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/ImageServer/measure"
             ],
             "honuaEndpoints": [
@@ -2222,7 +2222,7 @@
           {
             "name": "Project",
             "status": "partial",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/ImageServer/project"
             ],
             "honuaEndpoints": [
@@ -2239,7 +2239,7 @@
           {
             "name": "Query",
             "status": "partial",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/ImageServer/query"
             ],
             "honuaEndpoints": [
@@ -2256,7 +2256,7 @@
           {
             "name": "Query Boundary",
             "status": "partial",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/ImageServer/queryBoundary"
             ],
             "honuaEndpoints": [
@@ -2273,7 +2273,7 @@
           {
             "name": "Raster item image support data",
             "status": "partial",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/ImageServer/{rasterId}/imageSupportData"
             ],
             "honuaEndpoints": [
@@ -2290,7 +2290,7 @@
           {
             "name": "Raster item source file",
             "status": "stub",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/ImageServer/{rasterId}/rasterFile"
             ],
             "honuaEndpoints": [
@@ -2306,17 +2306,17 @@
         "notImplemented": [
           {
             "name": "Add Rasters",
-            "esriPath": "/ImageServer/addRasters",
+            "geoServicesPath": "/ImageServer/addRasters",
             "notes": ""
           },
           {
             "name": "Delete Rasters",
-            "esriPath": "/ImageServer/deleteRasters",
+            "geoServicesPath": "/ImageServer/deleteRasters",
             "notes": ""
           },
           {
             "name": "Download Rasters",
-            "esriPath": "/ImageServer/downloadRasters",
+            "geoServicesPath": "/ImageServer/downloadRasters",
             "notes": ""
           }
         ]
@@ -2594,7 +2594,7 @@
           {
             "name": "Style resource",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/VectorTileServer/resources/styles"
             ],
             "honuaEndpoints": [
@@ -2610,7 +2610,7 @@
           {
             "name": "Service metadata",
             "status": "partial",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/VectorTileServer"
             ],
             "honuaEndpoints": [
@@ -2625,7 +2625,7 @@
           {
             "name": "Font (glyph) resources",
             "status": "partial",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/VectorTileServer/resources/fonts/{fontstack}/{range}.pbf"
             ],
             "honuaEndpoints": [
@@ -2639,7 +2639,7 @@
           {
             "name": "Style sub-resource",
             "status": "partial",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/VectorTileServer/resources/styles/{**resourcePath}"
             ],
             "honuaEndpoints": [
@@ -2653,7 +2653,7 @@
           {
             "name": "Tile",
             "status": "partial",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/VectorTileServer/tile/{z}/{y}/{x}.pbf"
             ],
             "honuaEndpoints": [
@@ -2667,7 +2667,7 @@
           {
             "name": "Tilemap",
             "status": "partial",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/VectorTileServer/tilemap",
               "/VectorTileServer/tilemap/{z}/{y}/{x}/{dimension}/{dimension2}"
             ],
@@ -2685,7 +2685,7 @@
           {
             "name": "Sprite resources",
             "status": "stub",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/VectorTileServer/resources/sprites/{spriteResource}"
             ],
             "honuaEndpoints": [
@@ -2754,7 +2754,7 @@
           {
             "name": "Geometry Service metadata",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/GeometryServer"
             ],
             "honuaEndpoints": [
@@ -2769,7 +2769,7 @@
           {
             "name": "Areas and Lengths",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/GeometryServer/areasAndLengths"
             ],
             "honuaEndpoints": [
@@ -2784,7 +2784,7 @@
           {
             "name": "Auto Complete",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/GeometryServer/autoComplete"
             ],
             "honuaEndpoints": [
@@ -2799,7 +2799,7 @@
           {
             "name": "Buffer",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/GeometryServer/buffer"
             ],
             "honuaEndpoints": [
@@ -2814,7 +2814,7 @@
           {
             "name": "Clip",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/GeometryServer/clip"
             ],
             "honuaEndpoints": [
@@ -2829,7 +2829,7 @@
           {
             "name": "Convex Hull",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/GeometryServer/convexHull"
             ],
             "honuaEndpoints": [
@@ -2844,7 +2844,7 @@
           {
             "name": "Cut",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/GeometryServer/cut"
             ],
             "honuaEndpoints": [
@@ -2859,7 +2859,7 @@
           {
             "name": "Densify",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/GeometryServer/densify"
             ],
             "honuaEndpoints": [
@@ -2874,7 +2874,7 @@
           {
             "name": "Difference",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/GeometryServer/difference"
             ],
             "honuaEndpoints": [
@@ -2889,7 +2889,7 @@
           {
             "name": "Distance",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/GeometryServer/distance"
             ],
             "honuaEndpoints": [
@@ -2904,7 +2904,7 @@
           {
             "name": "Find Transformations",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/GeometryServer/findTransformations"
             ],
             "honuaEndpoints": [
@@ -2919,7 +2919,7 @@
           {
             "name": "From Geo Coordinate String",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/GeometryServer/fromGeoCoordinateString"
             ],
             "honuaEndpoints": [
@@ -2934,7 +2934,7 @@
           {
             "name": "Generalize",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/GeometryServer/generalize"
             ],
             "honuaEndpoints": [
@@ -2949,7 +2949,7 @@
           {
             "name": "Intersect",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/GeometryServer/intersect"
             ],
             "honuaEndpoints": [
@@ -2964,7 +2964,7 @@
           {
             "name": "Label Points",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/GeometryServer/labelPoints"
             ],
             "honuaEndpoints": [
@@ -2979,7 +2979,7 @@
           {
             "name": "Lengths",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/GeometryServer/lengths"
             ],
             "honuaEndpoints": [
@@ -2994,7 +2994,7 @@
           {
             "name": "Offset",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/GeometryServer/offset"
             ],
             "honuaEndpoints": [
@@ -3009,7 +3009,7 @@
           {
             "name": "Project",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/GeometryServer/project"
             ],
             "honuaEndpoints": [
@@ -3024,7 +3024,7 @@
           {
             "name": "Relation",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/GeometryServer/relation"
             ],
             "honuaEndpoints": [
@@ -3039,7 +3039,7 @@
           {
             "name": "Reshape",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/GeometryServer/reshape"
             ],
             "honuaEndpoints": [
@@ -3054,7 +3054,7 @@
           {
             "name": "Simplify",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/GeometryServer/simplify"
             ],
             "honuaEndpoints": [
@@ -3069,7 +3069,7 @@
           {
             "name": "To Geo Coordinate String",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/GeometryServer/toGeoCoordinateString"
             ],
             "honuaEndpoints": [
@@ -3084,7 +3084,7 @@
           {
             "name": "Trim/Extend",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/GeometryServer/trimExtend"
             ],
             "honuaEndpoints": [
@@ -3099,7 +3099,7 @@
           {
             "name": "Union",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/GeometryServer/union"
             ],
             "honuaEndpoints": [
@@ -3220,7 +3220,7 @@
           {
             "name": "GP Service Info (generic)",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/GPServer"
             ],
             "honuaEndpoints": [
@@ -3237,7 +3237,7 @@
           {
             "name": "Task Metadata",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/GPServer/Export Web Map Task"
             ],
             "honuaEndpoints": [
@@ -3251,7 +3251,7 @@
           {
             "name": "Execute Task (sync)",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/GPServer/Export Web Map Task/execute"
             ],
             "honuaEndpoints": [
@@ -3266,7 +3266,7 @@
           {
             "name": "Job Status",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/GPServer/Export Web Map Task/jobs/{jobId}"
             ],
             "honuaEndpoints": [
@@ -3280,7 +3280,7 @@
           {
             "name": "Job Results",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/GPServer/Export Web Map Task/jobs/{jobId}/results/Output_File"
             ],
             "honuaEndpoints": [
@@ -3294,7 +3294,7 @@
           {
             "name": "Submit Job (async)",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/GPServer/Export Web Map Task/submitJob"
             ],
             "honuaEndpoints": [
@@ -3309,7 +3309,7 @@
           {
             "name": "Layout template task metadata",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/GPServer/Get Layout Templates Info Task"
             ],
             "honuaEndpoints": [
@@ -3323,7 +3323,7 @@
           {
             "name": "Template Listing (sync)",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/GPServer/Get Layout Templates Info Task/execute"
             ],
             "honuaEndpoints": [
@@ -3337,7 +3337,7 @@
           {
             "name": "GP Task Info (generic)",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/GPServer/{taskName}"
             ],
             "honuaEndpoints": [
@@ -3352,7 +3352,7 @@
           {
             "name": "Execute Task (generic, sync)",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/GPServer/{taskName}/execute"
             ],
             "honuaEndpoints": [
@@ -3367,7 +3367,7 @@
           {
             "name": "Jobs List",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/GPServer/{taskName}/jobs"
             ],
             "honuaEndpoints": [
@@ -3381,7 +3381,7 @@
           {
             "name": "Job Status (generic)",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/GPServer/{taskName}/jobs/{jobId}"
             ],
             "honuaEndpoints": [
@@ -3395,7 +3395,7 @@
           {
             "name": "Cancel Job (generic)",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/GPServer/{taskName}/jobs/{jobId}/cancel"
             ],
             "honuaEndpoints": [
@@ -3410,7 +3410,7 @@
           {
             "name": "Job Results (generic)",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/GPServer/{taskName}/jobs/{jobId}/results/{paramName}"
             ],
             "honuaEndpoints": [
@@ -3424,7 +3424,7 @@
           {
             "name": "Submit Job (generic)",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/GPServer/{taskName}/submitJob"
             ],
             "honuaEndpoints": [
@@ -3501,7 +3501,7 @@
           {
             "name": "GeocodeServer metadata",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/GeocodeServer"
             ],
             "honuaEndpoints": [
@@ -3518,7 +3518,7 @@
           {
             "name": "Find Address Candidates",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/GeocodeServer/findAddressCandidates"
             ],
             "honuaEndpoints": [
@@ -3535,7 +3535,7 @@
           {
             "name": "Geocode Addresses (batch)",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/GeocodeServer/geocodeAddresses"
             ],
             "honuaEndpoints": [
@@ -3551,7 +3551,7 @@
           {
             "name": "Reverse Geocode",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/GeocodeServer/reverseGeocode"
             ],
             "honuaEndpoints": [
@@ -3567,7 +3567,7 @@
           {
             "name": "Suggest",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/GeocodeServer/suggest"
             ],
             "honuaEndpoints": [
@@ -3734,7 +3734,7 @@
           {
             "name": "Service resource",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/NAServer"
             ],
             "honuaEndpoints": [
@@ -3749,7 +3749,7 @@
           {
             "name": "ClosestFacility solveClosestFacility",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/NAServer/ClosestFacility/solveClosestFacility"
             ],
             "honuaEndpoints": [
@@ -3763,7 +3763,7 @@
           {
             "name": "Route solve",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/NAServer/Route/solve"
             ],
             "honuaEndpoints": [
@@ -3778,7 +3778,7 @@
           {
             "name": "ServiceArea solveServiceArea",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/NAServer/ServiceArea/solveServiceArea"
             ],
             "honuaEndpoints": [
@@ -3793,7 +3793,7 @@
           {
             "name": "Analysis layer resource",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/NAServer/{layerName}"
             ],
             "honuaEndpoints": [
@@ -3810,7 +3810,7 @@
           {
             "name": "FindRoutes synchronous subset",
             "status": "partial",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/NAServer/FindRoutes/execute"
             ],
             "honuaEndpoints": [
@@ -3825,7 +3825,7 @@
           {
             "name": "GenerateServiceAreas synchronous subset",
             "status": "partial",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/NAServer/GenerateServiceAreas/execute"
             ],
             "honuaEndpoints": [
@@ -3840,7 +3840,7 @@
           {
             "name": "LocationAllocation solveLocationAllocation",
             "status": "partial",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/NAServer/LocationAllocation/solveLocationAllocation"
             ],
             "honuaEndpoints": [
@@ -3854,7 +3854,7 @@
           {
             "name": "ODCostMatrix solveODCostMatrix",
             "status": "partial",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/NAServer/ODCostMatrix/solveODCostMatrix"
             ],
             "honuaEndpoints": [
@@ -3868,7 +3868,7 @@
           {
             "name": "Ready-to-use routing job status",
             "status": "partial",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/NAServer/{taskName}/jobs/{jobId}"
             ],
             "honuaEndpoints": [
@@ -3882,7 +3882,7 @@
           {
             "name": "Ready-to-use routing job results",
             "status": "partial",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/NAServer/{taskName}/jobs/{jobId}/results/{paramName}"
             ],
             "honuaEndpoints": [
@@ -3896,7 +3896,7 @@
           {
             "name": "Ready-to-use routing job submission",
             "status": "partial",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/NAServer/{taskName}/submitJob"
             ],
             "honuaEndpoints": [
@@ -3975,7 +3975,7 @@
           {
             "name": "Alter version; delete version",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/VersionManagementServer/delete",
               "/VersionManagementServer/versions/{versionGuid}/alter",
               "/VersionManagementServer/versions/{versionGuid}/delete"
@@ -3993,7 +3993,7 @@
           {
             "name": "List versions; version info",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/VersionManagementServer/versionInfos",
               "/VersionManagementServer/versions",
               "/VersionManagementServer/versions/{versionGuid}"
@@ -4013,7 +4013,7 @@
           {
             "name": "Reconcile; post; resolveConflicts; inspectConflicts",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/VersionManagementServer/versions/{versionGuid}/inspectConflicts",
               "/VersionManagementServer/versions/{versionGuid}/post",
               "/VersionManagementServer/versions/{versionGuid}/reconcile",
@@ -4033,7 +4033,7 @@
           {
             "name": "Version job status",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/VersionManagementServer/versions/{versionGuid}/jobs/{jobId}"
             ],
             "honuaEndpoints": [
@@ -4049,7 +4049,7 @@
           {
             "name": "Service metadata",
             "status": "partial",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/VersionManagementServer"
             ],
             "honuaEndpoints": [
@@ -4064,7 +4064,7 @@
           {
             "name": "Create version",
             "status": "partial",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/VersionManagementServer/create"
             ],
             "honuaEndpoints": [
@@ -4078,7 +4078,7 @@
           {
             "name": "startReading; stopReading; startEditing; stopEditing",
             "status": "partial",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/VersionManagementServer/versions/{versionGuid}/startEditing",
               "/VersionManagementServer/versions/{versionGuid}/startReading",
               "/VersionManagementServer/versions/{versionGuid}/stopEditing",
@@ -4134,7 +4134,7 @@
           {
             "name": "Catalog (service directory)",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/rest/services"
             ],
             "honuaEndpoints": [
@@ -4149,7 +4149,7 @@
           {
             "name": "PrintingTools service node",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/rest/services/Utilities/PrintingTools"
             ],
             "honuaEndpoints": [
@@ -4166,7 +4166,7 @@
           {
             "name": "Service administration metadata",
             "status": "partial",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/rest/admin/{serviceName}.{serviceType}"
             ],
             "honuaEndpoints": [
@@ -4181,7 +4181,7 @@
           {
             "name": "Service-name catalog node",
             "status": "partial",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/rest/services/{folderName}"
             ],
             "honuaEndpoints": [
@@ -4198,7 +4198,7 @@
           {
             "name": "REST Info",
             "status": "stub",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/rest/info"
             ],
             "honuaEndpoints": [
@@ -4261,7 +4261,7 @@
           {
             "name": "Generate Token",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/sharing/rest/generateToken"
             ],
             "honuaEndpoints": [
@@ -4276,7 +4276,7 @@
           {
             "name": "Sharing REST Info",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/sharing/rest/info"
             ],
             "honuaEndpoints": [
@@ -4290,7 +4290,7 @@
           {
             "name": "OAuth2 authorize; callback",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/sharing/rest/oauth2/authorize",
               "/sharing/rest/oauth2/callback"
             ],
@@ -4306,7 +4306,7 @@
           {
             "name": "OAuth2 introspect",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/sharing/rest/oauth2/introspect"
             ],
             "honuaEndpoints": [
@@ -4320,7 +4320,7 @@
           {
             "name": "OAuth2 revoke",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/sharing/rest/oauth2/revoke"
             ],
             "honuaEndpoints": [
@@ -4334,7 +4334,7 @@
           {
             "name": "OAuth2 token",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/sharing/rest/oauth2/token"
             ],
             "honuaEndpoints": [
@@ -4348,7 +4348,7 @@
           {
             "name": "OAuth2 userinfo",
             "status": "implemented",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/sharing/rest/oauth2/userinfo"
             ],
             "honuaEndpoints": [
@@ -4365,7 +4365,7 @@
           {
             "name": "Group; createGroup; addUsers; removeUsers; delete group",
             "status": "partial",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/sharing/rest/community/createGroup",
               "/sharing/rest/community/groups/{groupId}",
               "/sharing/rest/community/groups/{groupId}/addUsers",
@@ -4387,7 +4387,7 @@
           {
             "name": "Community Self",
             "status": "partial",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/sharing/rest/community/self"
             ],
             "honuaEndpoints": [
@@ -4401,7 +4401,7 @@
           {
             "name": "Community User",
             "status": "partial",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/sharing/rest/community/users/{username}"
             ],
             "honuaEndpoints": [
@@ -4415,7 +4415,7 @@
           {
             "name": "Group Content",
             "status": "partial",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/sharing/rest/content/groups/{groupId}"
             ],
             "honuaEndpoints": [
@@ -4429,7 +4429,7 @@
           {
             "name": "Item; item data",
             "status": "partial",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/sharing/rest/content/items/{id}",
               "/sharing/rest/content/items/{id}/data"
             ],
@@ -4445,7 +4445,7 @@
           {
             "name": "Share; unshare",
             "status": "partial",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/sharing/rest/content/items/{itemId}/share",
               "/sharing/rest/content/items/{itemId}/unshare"
             ],
@@ -4461,7 +4461,7 @@
           {
             "name": "User Content",
             "status": "partial",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/sharing/rest/content/users/{username}"
             ],
             "honuaEndpoints": [
@@ -4475,7 +4475,7 @@
           {
             "name": "Portal Self",
             "status": "partial",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/sharing/rest/portals/self"
             ],
             "honuaEndpoints": [
@@ -4489,7 +4489,7 @@
           {
             "name": "Search",
             "status": "partial",
-            "esriPaths": [
+            "geoServicesPaths": [
               "/sharing/rest/search"
             ],
             "honuaEndpoints": [

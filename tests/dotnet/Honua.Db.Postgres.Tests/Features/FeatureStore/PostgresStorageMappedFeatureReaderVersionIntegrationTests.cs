@@ -377,7 +377,7 @@ public sealed class PostgresStorageMappedFeatureReaderVersionIntegrationTests(Po
         };
         var filters = Substitute.For<IFilterExpressionService>();
         var expression = new Literal(true, LiteralType.Boolean);
-        filters.ParseAndNormalize(FilterLanguage.ArcGisSql, "count < 50", resource)
+        filters.ParseAndNormalize(FilterLanguage.GeoServicesSql, "count < 50", resource)
             .Returns(FilterParseResult.Success(expression));
         filters.Translate(expression, resource).Returns(FilterTranslationResult.Success(expression,
             new SqlFragment("(\"attributes\"->>'count')::integer < @p0", [50])));

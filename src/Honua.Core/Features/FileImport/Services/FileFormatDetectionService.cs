@@ -32,7 +32,7 @@ internal sealed class FileFormatDetectionService : IFileFormatDetectionService
         {
             [".geojson"] = SupportedFileFormat.GeoJson,
             [".json"] = SupportedFileFormat.GeoJson,
-            [".esrijson"] = SupportedFileFormat.EsriJson,
+            [".esrijson"] = SupportedFileFormat.GeoServicesJson,
             [".wkb"] = SupportedFileFormat.Wkb,
             [".kml"] = SupportedFileFormat.Kml,
             [".kmz"] = SupportedFileFormat.Kml,
@@ -186,7 +186,7 @@ internal sealed class FileFormatDetectionService : IFileFormatDetectionService
         // be silently misinterpreted (honua-server#2352).
         if (trimmed.StartsWith('{') && LooksLikeEsriJson(trimmed))
         {
-            return SupportedFileFormat.EsriJson;
+            return SupportedFileFormat.GeoServicesJson;
         }
 
         // GeoJSON detection

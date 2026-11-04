@@ -25,8 +25,8 @@ internal sealed partial class GeoservicesImportService
         string serviceType,
         string[] serviceCapabilities)
     {
-        var identity = _constructCapabilityRegistry.ResolveOrUnknown(EsriConstructCapabilityRegistry.Keys.ServiceIdentity);
-        var capabilities = _constructCapabilityRegistry.ResolveOrUnknown(EsriConstructCapabilityRegistry.Keys.ServiceCapabilities);
+        var identity = _constructCapabilityRegistry.ResolveOrUnknown(GeoServicesConstructCapabilityRegistry.Keys.ServiceIdentity);
+        var capabilities = _constructCapabilityRegistry.ResolveOrUnknown(GeoServicesConstructCapabilityRegistry.Keys.ServiceCapabilities);
         var hasCapabilities = serviceCapabilities.Length > 0;
 
         var records = new List<MigrationFidelityClassificationRecord>
@@ -73,9 +73,9 @@ internal sealed partial class GeoservicesImportService
         MigrationInventoryStyle? style,
         IReadOnlyCollection<MigrationExternalDependency> dependencies)
     {
-        var identity = _constructCapabilityRegistry.ResolveOrUnknown(EsriConstructCapabilityRegistry.Keys.ResourceIdentity);
-        var capabilities = _constructCapabilityRegistry.ResolveOrUnknown(EsriConstructCapabilityRegistry.Keys.ResourceCapabilities);
-        var fields = _constructCapabilityRegistry.ResolveOrUnknown(EsriConstructCapabilityRegistry.Keys.ResourceFields);
+        var identity = _constructCapabilityRegistry.ResolveOrUnknown(GeoServicesConstructCapabilityRegistry.Keys.ResourceIdentity);
+        var capabilities = _constructCapabilityRegistry.ResolveOrUnknown(GeoServicesConstructCapabilityRegistry.Keys.ResourceCapabilities);
+        var fields = _constructCapabilityRegistry.ResolveOrUnknown(GeoServicesConstructCapabilityRegistry.Keys.ResourceFields);
         var hasQuery = resource.Capabilities.Contains("Query", StringComparer.OrdinalIgnoreCase);
         var hasFields = resource.Fields.Length > 0;
 
@@ -124,10 +124,10 @@ internal sealed partial class GeoservicesImportService
         var domainFieldCount = resource.Fields.Count(field => !string.IsNullOrWhiteSpace(field.DomainType));
         if (domainFieldCount > 0)
         {
-            var domains = _constructCapabilityRegistry.ResolveOrUnknown(EsriConstructCapabilityRegistry.Keys.ResourceDomains);
+            var domains = _constructCapabilityRegistry.ResolveOrUnknown(GeoServicesConstructCapabilityRegistry.Keys.ResourceDomains);
 
             // #4600: the automated tier is only honest for domains the edit validator enforces. Each field's
-            // domain goes through EsriFieldDomainParser, the parser the importer persists from: a coded-value
+            // domain goes through GeoServicesFieldDomainParser, the parser the importer persists from: a coded-value
             // domain over the capture cap is not persisted at all, and an unknown domain type, an empty
             // coded-value list or a malformed range is persisted but accepts every value on edit.
             var (truncatedDomainCount, unenforceableDomainCount) = CountUnenforcedDomains(resourceElement);
@@ -147,7 +147,7 @@ internal sealed partial class GeoservicesImportService
 
             var (domainStatus, domainCode, domainReason, domainSteps) = truncatedDomainCount > 0
                 ? (domains.UnsupportedAutomationStatus ?? MigrationFidelityAutomationStatuses.ManualReview,
-                    domains.UnsupportedCode ?? ImportCompatibilityCodes.ArcGisDomainTruncated,
+                    domains.UnsupportedCode ?? ImportCompatibilityCodes.GeoServicesDomainTruncated,
                     domains.UnsupportedReason ?? domains.Reason,
                     domains.UnsupportedManualSteps)
                 : unenforceableDomainCount > 0
@@ -176,8 +176,8 @@ internal sealed partial class GeoservicesImportService
             // #4824 REQ-002: the finding is derived from the same parser the importer persists
             // from, so a source editing construct that cannot be captured is named here instead
             // of surfacing as an opaque failure of the whole layer read.
-            var subtypes = _constructCapabilityRegistry.ResolveOrUnknown(EsriConstructCapabilityRegistry.Keys.ResourceSubtypes);
-            var finding = EsriSubtypeFidelityClassifier.Classify(resourceElement, subtypes);
+            var subtypes = _constructCapabilityRegistry.ResolveOrUnknown(GeoServicesConstructCapabilityRegistry.Keys.ResourceSubtypes);
+            var finding = GeoServicesSubtypeFidelityClassifier.Classify(resourceElement, subtypes);
             records.Add(CreateFidelityRecord(
                 $"{resource.Id}:subtypes",
                 resource.Id,
@@ -199,7 +199,7 @@ internal sealed partial class GeoservicesImportService
                 .Where(static dependency => string.Equals(dependency.Kind, "attachments", StringComparison.Ordinal))
                 .Select(static dependency => dependency.Id)
                 .ToArray();
-            var attachments = _constructCapabilityRegistry.ResolveOrUnknown(EsriConstructCapabilityRegistry.Keys.ResourceAttachments);
+            var attachments = _constructCapabilityRegistry.ResolveOrUnknown(GeoServicesConstructCapabilityRegistry.Keys.ResourceAttachments);
             records.Add(CreateFidelityRecord(
                 $"{resource.Id}:attachments",
                 resource.Id,
@@ -215,7 +215,7 @@ internal sealed partial class GeoservicesImportService
 
         if (style != null)
         {
-            var renderers = _constructCapabilityRegistry.ResolveOrUnknown(EsriConstructCapabilityRegistry.Keys.ResourceRenderers);
+            var renderers = _constructCapabilityRegistry.ResolveOrUnknown(GeoServicesConstructCapabilityRegistry.Keys.ResourceRenderers);
             records.Add(CreateFidelityRecord(
                 $"{style.Id}:renderer",
                 style.Id,
@@ -232,7 +232,7 @@ internal sealed partial class GeoservicesImportService
 
         if (resourceElement.TryGetProperty("timeInfo", out var timeInfo) && timeInfo.ValueKind == JsonValueKind.Object)
         {
-            var time = _constructCapabilityRegistry.ResolveOrUnknown(EsriConstructCapabilityRegistry.Keys.ResourceTimeMetadata);
+            var time = _constructCapabilityRegistry.ResolveOrUnknown(GeoServicesConstructCapabilityRegistry.Keys.ResourceTimeMetadata);
             records.Add(CreateFidelityRecord(
                 $"{resource.Id}:time-metadata",
                 resource.Id,
@@ -301,12 +301,12 @@ internal sealed partial class GeoservicesImportService
                 continue;
             }
 
-            var parsed = EsriFieldDomainParser.Parse(field);
+            var parsed = GeoServicesFieldDomainParser.Parse(field);
             if (parsed.Truncated)
             {
                 truncated++;
             }
-            else if (!EsriFieldDomainParser.IsEnforceable(parsed.Domain))
+            else if (!GeoServicesFieldDomainParser.IsEnforceable(parsed.Domain))
             {
                 unenforceable++;
             }
@@ -341,7 +341,7 @@ internal sealed partial class GeoservicesImportService
             yield break;
         }
 
-        var descriptor = _constructCapabilityRegistry.ResolveOrUnknown(EsriConstructCapabilityRegistry.Keys.ResourceRelationships);
+        var descriptor = _constructCapabilityRegistry.ResolveOrUnknown(GeoServicesConstructCapabilityRegistry.Keys.ResourceRelationships);
 
         foreach (var relationship in relationships.EnumerateArray())
         {
@@ -379,7 +379,7 @@ internal sealed partial class GeoservicesImportService
                 : descriptor.UnsupportedAutomationStatus ?? MigrationFidelityAutomationStatuses.ManualReview;
             var compatibilityCode = automated
                 ? descriptor.Code
-                : descriptor.UnsupportedCode ?? ImportCompatibilityCodes.ArcGisRelationshipsManualReview;
+                : descriptor.UnsupportedCode ?? ImportCompatibilityCodes.GeoServicesRelationshipsManualReview;
 
             // Non-automated relationships are exactly composite or many-to-many, so the
             // remaining branch is many-to-many. A third message here was unreachable.

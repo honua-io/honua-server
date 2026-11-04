@@ -170,13 +170,6 @@ public sealed class GeoServicesParityMatrixDriftTests
             + "as though it does.");
     }
 
-    /// <summary>
-    /// The published artifact must equal freshly-generated output. This is what makes
-    /// the derivation real rather than aspirational: a hand edit to a derived field
-    /// (<c>esriPaths</c>, <c>honuaEndpoints</c>, <c>maturity</c>) cannot survive, and a
-    /// route change that the judgement source has not caught up with fails here.
-    /// Mirrors <c>FeatureCatalogDriftTests.CommittedCatalog_EqualsFreshlyGeneratedOutput</c>.
-    /// </summary>
     [ArchitectureTest]
     public void CommittedMatrix_EqualsFreshlyGeneratedOutput()
     {
@@ -231,7 +224,7 @@ public sealed class GeoServicesParityMatrixDriftTests
             .ToArray();
 
         offenders.Should().BeEmpty(
-            "every judgement entry must name at least one esriPath. An entry that binds to no operation is "
+            "every judgement entry must name at least one geoServicesPath. An entry that binds to no operation is "
             + "invisible to the join in both directions: nothing proves it is true, and nothing notices when it "
             + "stops being true.");
     }

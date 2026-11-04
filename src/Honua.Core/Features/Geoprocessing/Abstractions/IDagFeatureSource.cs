@@ -7,21 +7,6 @@ using Honua.Core.Features.Geoprocessing.Domain;
 
 namespace Honua.Core.Features.Geoprocessing.Abstractions;
 
-/// <summary>
-/// A first-class DAG source connector that streams features from a remote source
-/// into a geoprocessing workflow. Each implementation adapts ONE remote-source
-/// family (a Honua catalog layer, an ArcGIS GeoServices FeatureServer, an OGC API
-/// Features collection, a WFS feature type, or an external PostGIS table) onto the
-/// uniform <see cref="DagSourceFeature"/> stream the source executor encodes as the
-/// canonical FeatureCollection artifact.
-///
-/// Implementations REUSE the existing one-shot <c>Honua.Import</c> readers'
-/// pagination/streaming rather than re-implementing transport: the ArcGIS reader
-/// wraps the migration <c>ArcGisRestClient</c>; the catalog reader wraps the shared
-/// query pipeline (<c>IStreamingFeatureStore</c>/<c>IFeatureReader</c>); the OGC/WFS
-/// readers reuse the migration HTTP/paging path; the PostGIS reader reuses the same
-/// secure-connection secret handling as <c>sink.external-postgis</c>.
-/// </summary>
 public interface IDagFeatureSource
 {
     /// <summary>

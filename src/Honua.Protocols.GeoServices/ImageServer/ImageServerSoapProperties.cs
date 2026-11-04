@@ -16,7 +16,7 @@ using Honua.Protocols.GeoServices.ImageServer.Handlers;
 using Honua.Protocols.GeoServices.ImageServer.Models;
 using Honua.Protocols.GeoServices.ImageServer.Services;
 using Microsoft.Extensions.Primitives;
-using static Honua.Protocols.GeoServices.Soap.ArcGisSoapProtocol;
+using static Honua.Protocols.GeoServices.Soap.GeoServicesSoapProtocol;
 
 namespace Honua.Protocols.GeoServices.ImageServer;
 

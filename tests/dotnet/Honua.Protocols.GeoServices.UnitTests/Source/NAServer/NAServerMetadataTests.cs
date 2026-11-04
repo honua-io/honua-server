@@ -14,7 +14,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.NAServer;
 public sealed class NAServerMetadataTests
 {
     /// <summary>Esri's published FindRoutes parameter names, which arcpy.nax matches on.</summary>
-    private static readonly string[] EsriFindRoutesParameters =
+    private static readonly string[] GeoServicesFindRoutesParameters =
     [
         "Stops", "Measurement_Units", "Travel_Mode",
         "Reorder_Stops_to_Find_Optimal_Routes", "Output_Routes", "Solve_Succeeded"
@@ -94,7 +94,7 @@ public sealed class NAServerMetadataTests
 
         var names = info["parameters"]!.AsArray()
             .Select(p => p!["name"]!.GetValue<string>()).ToArray();
-        names.Should().Contain(EsriFindRoutesParameters,
+        names.Should().Contain(GeoServicesFindRoutesParameters,
             "arcpy.nax matches Esri's published parameter names when it resolves the tool");
 
         var stops = info["parameters"]!.AsArray()

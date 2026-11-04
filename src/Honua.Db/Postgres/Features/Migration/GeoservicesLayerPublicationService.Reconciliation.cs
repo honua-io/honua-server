@@ -174,7 +174,7 @@ internal sealed partial class GeoservicesLayerPublicationService
         return new LayerReconciliationRequest
         {
             RunId = jobId,
-            SourceKind = "arcgis-geoservices-rest",
+            SourceKind = MigrationSourceKinds.GeoServicesRest,
             Layers = [layerInput]
         };
     }
@@ -259,7 +259,7 @@ internal sealed partial class GeoservicesLayerPublicationService
 
         return MigrationCatalogReconciler.BuildReport(
             jobId,
-            "arcgis-geoservices-rest",
+            MigrationSourceKinds.GeoServicesRest,
             [
                 new MigrationCatalogReconciliationInput
                 {

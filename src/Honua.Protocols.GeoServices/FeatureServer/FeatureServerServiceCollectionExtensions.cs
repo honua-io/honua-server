@@ -23,7 +23,7 @@ internal static class FeatureServerServiceCollectionExtensions
         services.AddHttpContextAccessor();
 
         // Esri-default datum-transformation parity catalog (stateless, loaded once).
-        services.TryAddSingleton<IDatumTransformationCatalog>(static _ => EsriDatumTransformationCatalog.Create());
+        services.TryAddSingleton<IDatumTransformationCatalog>(static _ => GeoServicesDatumTransformationCatalog.Create());
 
         services.AddScoped<PbfQueryFormatter>();
         services.AddScoped<IQueryFormatter, QueryFormatter>();

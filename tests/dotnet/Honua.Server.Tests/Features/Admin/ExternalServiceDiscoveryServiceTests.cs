@@ -14,9 +14,9 @@ namespace Honua.Server.Tests.Features.Admin;
 public sealed class ExternalServiceDiscoveryServiceTests
 {
     [UnitTest]
-    public async Task DiscoverAsync_WithArcGisFeatureServerFixture_ReturnsLayerCandidateMetadata()
+    public async Task DiscoverAsync_WithGeoServicesFeatureServerFixture_ReturnsLayerCandidateMetadata()
     {
-        using var factory = new StubHttpClientFactory(ArcGisFeatureServerResponses());
+        using var factory = new StubHttpClientFactory(GeoServicesFeatureServerResponses());
         var service = new ExternalServiceDiscoveryService(
             factory,
             new AllowingNetworkGuard(),
@@ -150,7 +150,7 @@ public sealed class ExternalServiceDiscoveryServiceTests
 
     internal static Dictionary<string, string> AllDiscoveryResponses()
     {
-        var responses = ArcGisFeatureServerResponses();
+        var responses = GeoServicesFeatureServerResponses();
         foreach (var (url, body) in OgcApiFeaturesResponses())
         {
             responses[url] = body;
@@ -164,7 +164,7 @@ public sealed class ExternalServiceDiscoveryServiceTests
         return responses;
     }
 
-    internal static Dictionary<string, string> ArcGisFeatureServerResponses()
+    internal static Dictionary<string, string> GeoServicesFeatureServerResponses()
         => new(StringComparer.Ordinal)
         {
             ["https://services.example.test/arcgis/rest/services/Planning/FeatureServer?f=json"] = """

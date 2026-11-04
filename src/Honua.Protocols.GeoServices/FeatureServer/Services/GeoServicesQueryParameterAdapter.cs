@@ -99,7 +99,7 @@ internal sealed class GeoServicesQueryParameterAdapter(
             {
                 filter = QueryFilter.FromSql(
                     request.SqlFilter,
-                    new FilterSource(queryParams.Where ?? queryParams.Time ?? string.Empty, FilterLanguage.ArcGisSql, ProtocolName));
+                    new FilterSource(queryParams.Where ?? queryParams.Time ?? string.Empty, FilterLanguage.GeoServicesSql, ProtocolName));
             }
 
             QueryAggregation? aggregation = queryParams.ReturnDistinctValues

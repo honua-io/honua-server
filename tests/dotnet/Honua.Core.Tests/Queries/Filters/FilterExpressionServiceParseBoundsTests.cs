@@ -37,7 +37,7 @@ public sealed class FilterExpressionServiceParseBoundsTests
             "]}"
         },
         { FilterLanguage.OData, string.Join(" and ", Enumerable.Repeat("Name eq 'a'", OperandsBeyondLimit)) },
-        { FilterLanguage.ArcGisSql, string.Join(" AND ", Enumerable.Repeat("name = 'a'", OperandsBeyondLimit)) }
+        { FilterLanguage.GeoServicesSql, string.Join(" AND ", Enumerable.Repeat("name = 'a'", OperandsBeyondLimit)) }
     };
 
     [Trait("Tier", "Fast")]
@@ -57,7 +57,7 @@ public sealed class FilterExpressionServiceParseBoundsTests
     {
         var filter = string.Join(" AND ", Enumerable.Repeat("name = 'a'", FilterParserGuard.MaxExpressionDepth - 1));
 
-        var result = _service.Parse(FilterLanguage.ArcGisSql, filter);
+        var result = _service.Parse(FilterLanguage.GeoServicesSql, filter);
 
         result.IsSuccess.Should().BeTrue();
         result.Expression.Should().BeOfType<BinaryExpression>();
@@ -68,7 +68,7 @@ public sealed class FilterExpressionServiceParseBoundsTests
         { FilterLanguage.Cql2Text, $"name = '{TextBeyondLimit}'" },
         { FilterLanguage.Cql2Json, $$"""{"op":"=","args":[{"property":"name"},"{{TextBeyondLimit}}"]}""" },
         { FilterLanguage.OData, $"Name eq '{TextBeyondLimit}'" },
-        { FilterLanguage.ArcGisSql, $"name = '{TextBeyondLimit}'" }
+        { FilterLanguage.GeoServicesSql, $"name = '{TextBeyondLimit}'" }
     };
 
     [UnitTheory]
@@ -87,7 +87,7 @@ public sealed class FilterExpressionServiceParseBoundsTests
         { FilterLanguage.Cql2Json, $$"""{"op":"=","args":[{"property":"{{NameBeyondLimit}}"},"a"]}""" },
         { FilterLanguage.Cql2Json, $$"""{"op":"=","args":[{"op":"{{NameBeyondLimit}}","args":[]},"a"]}""" },
         { FilterLanguage.OData, $"{NameBeyondLimit} eq 'a'" },
-        { FilterLanguage.ArcGisSql, $"{NameBeyondLimit} = 'a'" }
+        { FilterLanguage.GeoServicesSql, $"{NameBeyondLimit} = 'a'" }
     };
 
     [UnitTheory]
@@ -106,8 +106,8 @@ public sealed class FilterExpressionServiceParseBoundsTests
         { FilterLanguage.Cql2Json, $$"""{"op":"=","args":[{"op":"f","args":[{{Values(ValuesBeyondLimit)}}]},1]}""" },
         { FilterLanguage.OData, $"Name in ({Values(ValuesBeyondLimit)})" },
         { FilterLanguage.OData, $"concat({Values(ValuesBeyondLimit)}) eq '1'" },
-        { FilterLanguage.ArcGisSql, $"name IN ({Values(ValuesBeyondLimit)})" },
-        { FilterLanguage.ArcGisSql, $"CONCAT({Values(ValuesBeyondLimit)}) = '1'" }
+        { FilterLanguage.GeoServicesSql, $"name IN ({Values(ValuesBeyondLimit)})" },
+        { FilterLanguage.GeoServicesSql, $"CONCAT({Values(ValuesBeyondLimit)}) = '1'" }
     };
 
     [UnitTheory]
@@ -125,7 +125,7 @@ public sealed class FilterExpressionServiceParseBoundsTests
     {
         { FilterLanguage.Cql2Json, $$"""{"op":"=","args":[{"property":"name"},"{{TextAtLimit}}"]}""" },
         { FilterLanguage.Cql2Json, $$"""{"op":"=","args":[{"property":"{{NameAtLimit}}"},"a"]}""" },
-        { FilterLanguage.ArcGisSql, $"name IN ({Values(FilterParserGuard.MaxInListSize)})" },
+        { FilterLanguage.GeoServicesSql, $"name IN ({Values(FilterParserGuard.MaxInListSize)})" },
         { FilterLanguage.Cql2Json, $$"""{"op":"in","args":[{"property":"name"},[{{Values(FilterParserGuard.MaxInListSize)}}]]}""" },
         { FilterLanguage.Cql2Json, $$"""{"op":"=","args":[{"op":"f","args":[{{Values(FilterParserGuard.MaxInListSize)}}]},1]}""" },
         { FilterLanguage.Cql2Text, $"A_CONTAINS(tags, ({Values(FilterParserGuard.MaxInListSize)}))" },
@@ -145,12 +145,12 @@ public sealed class FilterExpressionServiceParseBoundsTests
     }
 
     [UnitTest]
-    public void Parse_ArcGisSqlInListsBeyondSharedBudget_ReturnsFailure()
+    public void Parse_GeoServicesSqlInListsBeyondSharedBudget_ReturnsFailure()
     {
         var half = (FilterParserGuard.MaxInListSize / 2) + 1;
         var filter = $"name IN ({Values(half)}) OR kind IN ({Values(half)})";
 
-        var result = _service.Parse(FilterLanguage.ArcGisSql, filter);
+        var result = _service.Parse(FilterLanguage.GeoServicesSql, filter);
 
         result.IsSuccess.Should().BeFalse();
         result.Expression.Should().BeNull();
@@ -159,12 +159,12 @@ public sealed class FilterExpressionServiceParseBoundsTests
     }
 
     [UnitTest]
-    public void Parse_ArcGisSqlInListsWithinSharedBudget_ReturnsExpression()
+    public void Parse_GeoServicesSqlInListsWithinSharedBudget_ReturnsExpression()
     {
         var half = FilterParserGuard.MaxInListSize / 2;
         var filter = $"name IN ({Values(half)}) OR kind IN ({Values(half)})";
 
-        var result = _service.Parse(FilterLanguage.ArcGisSql, filter);
+        var result = _service.Parse(FilterLanguage.GeoServicesSql, filter);
 
         result.IsSuccess.Should().BeTrue(result.ErrorMessage);
         result.Expression.Should().NotBeNull();

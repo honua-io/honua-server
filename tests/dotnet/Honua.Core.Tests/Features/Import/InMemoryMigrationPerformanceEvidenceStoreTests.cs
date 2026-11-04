@@ -101,7 +101,7 @@ public sealed class InMemoryMigrationPerformanceEvidenceStoreTests
             sourceFamily: MigrationCostPerformanceSourceFamilies.GeoServerRest,
             size: MigrationCostPerformanceFixtureSizes.Medium));
         await store.SaveAsync(NewRecord("sha256:agis-s", "Pass", offsetSeconds: 60,
-            sourceFamily: MigrationCostPerformanceSourceFamilies.ArcGisGeoServicesRest,
+            sourceFamily: MigrationCostPerformanceSourceFamilies.GeoServicesRest,
             size: MigrationCostPerformanceFixtureSizes.Small));
 
         var geoServerOnly = await store.GetHistoryAsync(

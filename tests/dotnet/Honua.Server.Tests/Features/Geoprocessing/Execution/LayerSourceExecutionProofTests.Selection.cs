@@ -417,7 +417,7 @@ public sealed partial class LayerSourceExecutionProofTests
         // The row policy in the form the production row policy source emits: an ArcGIS SQL
         // predicate translated through the canonical filter service for this resource.
         var filterService = _fixture.GetService<IFilterExpressionService>();
-        var parsed = filterService.Parse(FilterLanguage.ArcGisSql, "owner = 'ops'");
+        var parsed = filterService.Parse(FilterLanguage.GeoServicesSql, "owner = 'ops'");
         parsed.IsSuccess.Should().BeTrue(parsed.ErrorMessage);
         var policy = filterService.Translate(parsed.Expression, temporal);
         policy.IsSuccess.Should().BeTrue(policy.ErrorMessage);

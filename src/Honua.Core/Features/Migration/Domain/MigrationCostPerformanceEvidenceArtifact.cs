@@ -50,7 +50,7 @@ public static class MigrationCostPerformancePhases
 public static class MigrationCostPerformanceSourceFamilies
 {
     /// <summary>ArcGIS GeoServices REST source family.</summary>
-    public const string ArcGisGeoServicesRest = "arcgis-geoservices-rest";
+    public const string GeoServicesRest = MigrationSourceKinds.GeoServicesRest;
 
     /// <summary>GeoServer REST source family.</summary>
     public const string GeoServerRest = "geoserver-rest";

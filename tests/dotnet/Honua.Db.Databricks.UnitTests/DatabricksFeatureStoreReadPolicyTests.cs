@@ -135,7 +135,7 @@ public class DatabricksFeatureStoreReadPolicyTests
                 PermanentFilter = permanentFilterExpression == null ? null : new MetadataV2PermanentFilter
                 {
                     Expression = permanentFilterExpression,
-                    Language = MetadataV2PermanentFilterLanguages.ArcGisSql
+                    Language = MetadataV2PermanentFilterLanguages.GeoServicesSql
                 }
             };
             var storageBinding = new MetadataV2StorageBinding

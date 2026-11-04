@@ -240,18 +240,18 @@ internal static partial class PrintingToolsEndpoints
         var allTemplates = LayoutTemplateRegistry.GetTemplates();
         var templates = isPro ? allTemplates : allTemplates.Where(t => t.IsMapOnly).ToList();
 
-        var templateInfos = templates.Select(t => new EsriLayoutTemplateInfo
+        var templateInfos = templates.Select(t => new GeoServicesLayoutTemplateInfo
         {
             LayoutTemplate = t.Name,
             PageSize = [Math.Round(t.PageWidth / 72.0, 3), Math.Round(t.PageHeight / 72.0, 3)],
             PageUnits = "inches",
             WebMapFrameSize = [Math.Round(t.MapFrame.Width / 72.0, 3), Math.Round(t.MapFrame.Height / 72.0, 3)],
-            LayoutOptions = new EsriLayoutOptions
+            LayoutOptions = new GeoServicesLayoutOptions
             {
-                TitleText = new EsriLayoutElement { Type = "esriLayoutTextElement", IsVisible = t.Title is not null },
-                LegendOptions = new EsriLayoutElement { Type = "esriLayoutLegendElement", IsVisible = t.Legend is not null },
-                ScaleBarOptions = new EsriLayoutElement { Type = "esriLayoutScaleBarElement", IsVisible = t.ScaleBar is not null },
-                CopyrightText = new EsriLayoutElement { Type = "esriLayoutTextElement", IsVisible = t.Attribution is not null }
+                TitleText = new GeoServicesLayoutElement { Type = "esriLayoutTextElement", IsVisible = t.Title is not null },
+                LegendOptions = new GeoServicesLayoutElement { Type = "esriLayoutLegendElement", IsVisible = t.Legend is not null },
+                ScaleBarOptions = new GeoServicesLayoutElement { Type = "esriLayoutScaleBarElement", IsVisible = t.ScaleBar is not null },
+                CopyrightText = new GeoServicesLayoutElement { Type = "esriLayoutTextElement", IsVisible = t.Attribution is not null }
             }
         }).ToArray();
 

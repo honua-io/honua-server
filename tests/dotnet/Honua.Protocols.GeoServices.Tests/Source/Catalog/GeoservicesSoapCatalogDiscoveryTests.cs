@@ -45,7 +45,7 @@ public sealed class GeoservicesSoapCatalogDiscoveryTests : IClassFixture<Geoserv
 
     private static readonly string[] _publishedTypes = ["FeatureServer", "MapServer", "GPServer", "VectorTileServer"];
 
-    private const string ArcGisSoapNamespace = "http://www.esri.com/schemas/ArcGIS/10.8";
+    private const string GeoServicesSoapNamespace = "http://www.esri.com/schemas/ArcGIS/10.8";
 
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
@@ -323,7 +323,7 @@ public sealed class GeoservicesSoapCatalogDiscoveryTests : IClassFixture<Geoserv
 
     // Captured verbatim from ArcGIS Pro 3.7.1 adding an ArcGIS Server connection (#4973):
     // the operation is qualified, its argument is unqualified (elementFormDefault="unqualified").
-    private const string ArcGisPro371GetServiceDescriptionsEx = """
+    private const string GeoServicesPro371GetServiceDescriptionsEx = """
         <?xml version="1.0" encoding="utf-8" ?>
         <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"
                        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -341,21 +341,21 @@ public sealed class GeoservicesSoapCatalogDiscoveryTests : IClassFixture<Geoserv
     [Operation(Operations.GetMetadata)]
     [InterfaceOperation(TestProtocols.GeoservicesCatalog, "GetServiceDescriptionsEx")]
     [Endpoint("POST /services")]
-    public async Task PostSoapCatalog_ArcGisPro371CapturedGetServiceDescriptionsEx_ReturnsServiceDescriptions()
+    public async Task PostSoapCatalog_GeoServicesPro371CapturedGetServiceDescriptionsEx_ReturnsServiceDescriptions()
     {
         using var client = _publicCatalog.Factory.CreateClient();
         using var baseline = await PostSoapAsync(client);
         var expected = ReadSoapEntries(XDocument.Parse(await baseline.Content.ReadAsStringAsync()));
         expected.Should().NotBeEmpty();
 
-        using var content = new StringContent(ArcGisPro371GetServiceDescriptionsEx, Encoding.UTF8, "text/xml");
+        using var content = new StringContent(GeoServicesPro371GetServiceDescriptionsEx, Encoding.UTF8, "text/xml");
         using var response = await client.PostAsync("/services", content);
 
         var body = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, body);
         var document = XDocument.Parse(body);
         document.Descendants().Should().NotContain(element => element.Name.LocalName == "Fault");
-        document.Descendants(XName.Get("GetServiceDescriptionsExResponse", ArcGisSoapNamespace)).Should().ContainSingle();
+        document.Descendants(XName.Get("GetServiceDescriptionsExResponse", GeoServicesSoapNamespace)).Should().ContainSingle();
         ReadSoapEntries(document).Should().BeEquivalentTo(expected, options => options.WithStrictOrdering());
     }
 
@@ -382,7 +382,7 @@ public sealed class GeoservicesSoapCatalogDiscoveryTests : IClassFixture<Geoserv
         using var client = _publicCatalog.Factory.CreateClient();
         var request = $"""
             <?xml version="1.0" encoding="utf-8" ?>
-            <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tns="{ArcGisSoapNamespace}">
+            <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tns="{GeoServicesSoapNamespace}">
               <soap:Body>{operation}</soap:Body>
             </soap:Envelope>
             """;
@@ -539,7 +539,7 @@ public sealed class GeoservicesSoapCatalogDiscoveryTests : IClassFixture<Geoserv
 
         using var folderResponse = await PostSoapAsync(
             client,
-            $"<GetServiceDescriptionsEx xmlns=\"{ArcGisSoapNamespace}\"><folderName>private</folderName></GetServiceDescriptionsEx>");
+            $"<GetServiceDescriptionsEx xmlns=\"{GeoServicesSoapNamespace}\"><folderName>private</folderName></GetServiceDescriptionsEx>");
         var folderBody = await folderResponse.Content.ReadAsStringAsync();
         folderResponse.StatusCode.Should().Be(expectedStatus, folderBody);
         XDocument.Parse(folderBody).Descendants()
@@ -595,7 +595,7 @@ public sealed class GeoservicesSoapCatalogDiscoveryTests : IClassFixture<Geoserv
         HttpClient client,
         string? operation = null)
     {
-        operation ??= $"<GetServiceDescriptions xmlns=\"{ArcGisSoapNamespace}\" />";
+        operation ??= $"<GetServiceDescriptions xmlns=\"{GeoServicesSoapNamespace}\" />";
         var request = $"""
             <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
               <soap:Body>

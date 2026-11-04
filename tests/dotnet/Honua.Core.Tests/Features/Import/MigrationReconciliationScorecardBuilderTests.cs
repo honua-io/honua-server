@@ -35,7 +35,7 @@ public sealed class MigrationReconciliationScorecardBuilderTests
             reasons: ["Feature-count delta 3 (1%) is outside the pass band; investigate."]);
 
         var scorecard = MigrationReconciliationScorecardBuilder.Build(
-            "run-1", "arcgis-geoservices-rest", GeneratedAt, artifact, catalogReport: null,
+            "run-1", "geoservices-rest", GeneratedAt, artifact, catalogReport: null,
             capabilityAutomationStatuses: ["automated", "automated", "unsupported"]);
 
         scorecard.Verdict.Should().Be(MigrationReconciliationClassifications.Warn);
@@ -60,7 +60,7 @@ public sealed class MigrationReconciliationScorecardBuilderTests
             reasons: []);
 
         var scorecard = MigrationReconciliationScorecardBuilder.Build(
-            "run-2", "arcgis-geoservices-rest", GeneratedAt, artifact, catalogReport: null,
+            "run-2", "geoservices-rest", GeneratedAt, artifact, catalogReport: null,
             capabilityAutomationStatuses: ["automated", "unsupported", "manual-review", "assisted"]);
 
         scorecard.Verdict.Should().Be(MigrationReconciliationClassifications.Pass);
@@ -88,7 +88,7 @@ public sealed class MigrationReconciliationScorecardBuilderTests
         var catalogReport = new MigrationCatalogReconciliationReport
         {
             RunId = "run-3",
-            SourceKind = "arcgis-geoservices-rest",
+            SourceKind = "geoservices-rest",
             Summary = new MigrationCatalogReconciliationSummary
             {
                 ResourceCount = 1,
@@ -115,7 +115,7 @@ public sealed class MigrationReconciliationScorecardBuilderTests
         };
 
         var scorecard = MigrationReconciliationScorecardBuilder.Build(
-            "run-3", "arcgis-geoservices-rest", GeneratedAt, artifact, catalogReport,
+            "run-3", "geoservices-rest", GeneratedAt, artifact, catalogReport,
             capabilityAutomationStatuses: []);
 
         scorecard.Verdict.Should().Be(MigrationReconciliationClassifications.Fail);
@@ -135,9 +135,9 @@ public sealed class MigrationReconciliationScorecardBuilderTests
             reasons: []);
 
         var first = MigrationReconciliationScorecardBuilder.Build(
-            "run-4", "arcgis-geoservices-rest", GeneratedAt, artifact, null, ["automated"]);
+            "run-4", "geoservices-rest", GeneratedAt, artifact, null, ["automated"]);
         var second = MigrationReconciliationScorecardBuilder.Build(
-            "run-4", "arcgis-geoservices-rest", GeneratedAt, artifact, null, ["automated"]);
+            "run-4", "geoservices-rest", GeneratedAt, artifact, null, ["automated"]);
 
         first.Fingerprint.Should().StartWith("sha256:");
         first.Fingerprint.Should().Be(second.Fingerprint);
@@ -158,7 +158,7 @@ public sealed class MigrationReconciliationScorecardBuilderTests
             reasons: []);
 
         var scorecard = MigrationReconciliationScorecardBuilder.Build(
-            "run-5", "arcgis-geoservices-rest", GeneratedAt, artifact, null, []);
+            "run-5", "geoservices-rest", GeneratedAt, artifact, null, []);
 
         scorecard.CapabilityParity.ConstructCount.Should().Be(0);
         scorecard.CapabilityParity.ParityRatio.Should().Be(1d);
@@ -190,7 +190,7 @@ public sealed class MigrationReconciliationScorecardBuilderTests
         return new MigrationReconciliationArtifact
         {
             RunId = "run",
-            SourceKind = "arcgis-geoservices-rest",
+            SourceKind = "geoservices-rest",
             Classification = classification,
             StartedAt = GeneratedAt,
             CompletedAt = GeneratedAt,
