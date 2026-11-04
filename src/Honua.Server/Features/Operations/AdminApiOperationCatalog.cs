@@ -152,7 +152,7 @@ internal static class AdminApiOperationCatalog
         throw new InvalidOperationException($"Admin OpenAPI operation '{operationId}' was not found.");
     }
 
-    private static IReadOnlyList<OperationParameterDescriptor> BuildOutputSchema(JsonElement root, JsonElement operation)
+    private static List<OperationParameterDescriptor> BuildOutputSchema(JsonElement root, JsonElement operation)
     {
         foreach (var response in operation.GetProperty("responses").EnumerateObject()
                      .OrderBy(static item => item.Name, StringComparer.Ordinal)
