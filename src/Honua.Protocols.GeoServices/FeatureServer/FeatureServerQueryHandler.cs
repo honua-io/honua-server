@@ -51,9 +51,6 @@ internal sealed partial class FeatureServerQueryHandler(
     ILogger<FeatureServerQueryHandler> logger) : IFeatureQueryDispatcher
 {
     private static readonly IResult _streamingResult = new StreamingResult();
-    private static readonly Regex _projectedUnitFactorPattern = new(
-        @"(?:LENGTHUNIT|UNIT)\s*\[\s*""[^""]+""\s*,\s*(?<factor>[-+]?(?:\d+\.?\d*|\.\d+)(?:[Ee][-+]?\d+)?)",
-        RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
     private readonly IResourceValidator _resourceValidator = dependencies?.ResourceValidator
         ?? throw new ArgumentNullException(nameof(dependencies));
     private readonly IFeatureServerQueryServices _queryServices = dependencies.QueryServices;
@@ -2824,25 +2821,13 @@ internal sealed partial class FeatureServerQueryHandler(
             return true;
         }
 
-        if (string.IsNullOrWhiteSpace(spatialReference.Wkt))
+        if (CrsLinearUnitFactor.LinearUnitFromWkt(spatialReference.Wkt) is not { } fromWkt)
         {
             return false;
         }
 
-        var matches = _projectedUnitFactorPattern.Matches(spatialReference.Wkt);
-        if (matches.Count == 0)
-        {
-            return false;
-        }
-
-        var factorValue = matches[^1].Groups["factor"].Value;
-        if (!double.TryParse(factorValue, NumberStyles.Float, CultureInfo.InvariantCulture, out metersPerUnit))
-        {
-            metersPerUnit = 0;
-            return false;
-        }
-
-        return double.IsFinite(metersPerUnit) && metersPerUnit > 0;
+        metersPerUnit = fromWkt;
+        return true;
     }
 
     // Parameters that change *result semantics* — rejecting them is correct because

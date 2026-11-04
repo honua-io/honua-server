@@ -4106,27 +4106,8 @@ internal sealed class GeometryServiceHandler(
     // calculationType=geodesic stays the vertex-geodesic path and is not retuned here.
     private static double ResolveMetersPerNativeUnit(string? wkt, bool isGeographic)
     {
-        var unitMatches = System.Text.RegularExpressions.Regex.Matches(
-            wkt ?? string.Empty,
-            @"(?:UNIT|LENGTHUNIT)\s*\[[^,\]]+,\s*([0-9.eE+-]+)",
-            System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
-        if (unitMatches.Count > 0)
-        {
-            var matchIndex = isGeographic ? 0 : unitMatches.Count - 1;
-            if (double.TryParse(
-                unitMatches[matchIndex].Groups[1].Value,
-                System.Globalization.NumberStyles.Float,
-                System.Globalization.CultureInfo.InvariantCulture,
-                out var unitFactor)
-                && unitFactor > 0)
-            {
-                return isGeographic
-                    ? MeanEarthRadiusMeters * unitFactor
-                    : unitFactor;
-            }
-        }
-
-        return isGeographic ? MeanEarthRadiusMeters * (Math.PI / 180d) : 1.0;
+        var unitFactor = CrsLinearUnitFactor.Resolve(proj4Text: null, wkt, isGeographic);
+        return isGeographic ? MeanEarthRadiusMeters * unitFactor : unitFactor;
     }
 
     private static (MeasurementCalculationType CalculationType, string? Error) ResolveMeasurementCalculationType(
