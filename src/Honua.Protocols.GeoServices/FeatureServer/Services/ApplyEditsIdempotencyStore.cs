@@ -3,6 +3,7 @@
 
 using System.Collections.Concurrent;
 using System.Text.Json;
+using Honua.Infrastructure.Security;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Microsoft.Extensions.Caching.Distributed;
 using StackExchange.Redis;
@@ -86,18 +87,18 @@ internal interface IApplyEditsIdempotencyStore
 }
 
 /// <summary>
-/// Identifies a single idempotent edit. The key is scoped to the principal, service, and layer so one
+/// Identifies a single idempotent edit. The key is scoped to the caller, service, and layer so one
 /// caller's key can never replay another caller's response, and the same key on different layers does
 /// not collide.
 /// </summary>
 /// <param name="ServiceId">The service the edit targets.</param>
 /// <param name="LayerId">The layer the edit targets.</param>
-/// <param name="Principal">The authenticated principal name, or <c>anonymous</c> when unauthenticated.</param>
+/// <param name="Caller">The tenant and actor the stored response belongs to.</param>
 /// <param name="IdempotencyKey">The validated client-supplied idempotency key.</param>
 internal readonly record struct ApplyEditsIdempotencyScope(
     string ServiceId,
     int LayerId,
-    string Principal,
+    IdempotencyCaller Caller,
     string IdempotencyKey);
 
 /// <summary>
@@ -204,23 +205,15 @@ internal sealed class DistributedApplyEditsIdempotencyStore : IApplyEditsIdempot
         => FeatureServerLog.ApplyEditsIdempotencyStoreUnavailable(_logger, scope.ServiceId, scope.LayerId, exception);
 
     private static string BuildKey(ApplyEditsIdempotencyScope scope)
-    {
-        // Hash the principal to prevent colon-based key collisions: a principal name
-        // containing ":" would allow crafted names to collide with other key segments.
-        // SHA256.HashData is AOT-compatible and allocation-efficient in .NET 6+.
-        var principalBytes = System.Text.Encoding.UTF8.GetBytes(scope.Principal);
-        var hash = System.Security.Cryptography.SHA256.HashData(principalBytes);
-        var principalHash = Convert.ToHexString(hash);
-        return string.Concat(
+        => string.Concat(
             KeyPrefix,
             scope.ServiceId,
             ":",
             scope.LayerId.ToString(System.Globalization.CultureInfo.InvariantCulture),
             ":",
-            principalHash,
+            scope.Caller.Fingerprint(),
             ":",
             scope.IdempotencyKey);
-    }
 
     private static byte[] Serialize(ApplyEditsResponse response)
         => JsonSerializer.SerializeToUtf8Bytes(response, FeatureServerJsonContext.Default.ApplyEditsResponse);

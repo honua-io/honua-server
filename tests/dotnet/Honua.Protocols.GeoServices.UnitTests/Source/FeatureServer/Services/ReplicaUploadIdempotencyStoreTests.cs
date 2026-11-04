@@ -1,9 +1,12 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Security.Claims;
 using FluentAssertions;
+using Honua.Infrastructure.Security;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Protocols.GeoServices.FeatureServer.Services;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Services;
@@ -19,6 +22,13 @@ public sealed class ReplicaUploadIdempotencyStoreTests
 {
     private static readonly ReplicaUploadRecord Recorded = new() { Fingerprint = "f00d", AppliedAdds = 1, ServerGeneration = 7 };
 
+    private static IdempotencyCaller Caller(string issuer)
+        => IdempotencyCaller.Resolve(new DefaultHttpContext
+        {
+            User = new ClaimsPrincipal(new ClaimsIdentity([new Claim("sub", "shared-sub"), new Claim("iss", issuer)], "Bearer")),
+        })
+           ?? throw new InvalidOperationException("The test caller must be bindable.");
+
     private static DistributedReplicaUploadIdempotencyStore CreateStore(TimeProvider? time = null, TimeSpan? reservationWindow = null)
         => new(multiplexer: null, cache: null, NullLogger<DistributedReplicaUploadIdempotencyStore>.Instance, reservationWindow, time);
 
@@ -26,7 +36,7 @@ public sealed class ReplicaUploadIdempotencyStoreTests
     public async Task TryReserveAsync_ConcurrentSameUpload_ExactlyOneWins()
     {
         var store = CreateStore();
-        var scope = new ReplicaUploadIdempotencyScope("svc", "replica-1", "alice", "fingerprint:abc:0");
+        var scope = new ReplicaUploadIdempotencyScope("svc", "replica-1", new IdempotencyCaller("none", "alice"), "fingerprint:abc:0");
 
         var tokens = await Task.WhenAll(Enumerable.Range(0, 10).Select(_ => store.TryReserveAsync(scope)));
 
@@ -38,7 +48,7 @@ public sealed class ReplicaUploadIdempotencyStoreTests
     public async Task RecordAsync_WithOwnReservation_RoundTripsTheRecordedOutcome()
     {
         var store = CreateStore();
-        var scope = new ReplicaUploadIdempotencyScope("svc", "replica-1", "alice", "key:upload-7");
+        var scope = new ReplicaUploadIdempotencyScope("svc", "replica-1", new IdempotencyCaller("none", "alice"), "key:upload-7");
         var token = await store.TryReserveAsync(scope);
         token.Should().NotBeNull();
 
@@ -75,19 +85,30 @@ public sealed class ReplicaUploadIdempotencyStoreTests
     public async Task TryGetAsync_DifferentReplicaPrincipalOrKeySpace_DoesNotSeeTheRecord()
     {
         var store = CreateStore();
-        var scope = new ReplicaUploadIdempotencyScope("svc", "replica-1", "alice", "key:shared");
+        var scope = new ReplicaUploadIdempotencyScope("svc", "replica-1", new IdempotencyCaller("none", "alice"), "key:shared");
         (await store.RecordAsync(scope, "unreserved", Recorded)).Should().BeTrue("an empty key can be recorded");
 
         (await store.TryGetAsync(scope with { ReplicaId = "replica-2" })).Should().BeNull();
-        (await store.TryGetAsync(scope with { Principal = "bob" })).Should().BeNull();
+        (await store.TryGetAsync(scope with { Caller = new IdempotencyCaller("none", "bob") })).Should().BeNull();
         (await store.TryGetAsync(scope with { UploadKey = "fingerprint:shared:0" })).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task TryGetAsync_SameSubjectFromAnotherIssuer_DoesNotSeeTheRecord()
+    {
+        var store = CreateStore();
+        var scope = new ReplicaUploadIdempotencyScope("svc", "replica-1", Caller("https://issuer-a.example"), "key:shared");
+        (await store.RecordAsync(scope, "unreserved", Recorded)).Should().BeTrue();
+
+        (await store.TryGetAsync(scope with { Caller = Caller("https://issuer-b.example") }))
+            .Should().BeNull("a subject from another issuer is a different actor");
     }
 
     [Fact]
     public async Task RecordAsync_WhileAnotherRequestHoldsTheKey_WritesNothing()
     {
         var store = CreateStore();
-        var scope = new ReplicaUploadIdempotencyScope("svc", "replica-1", "alice", "fingerprint:owned:3");
+        var scope = new ReplicaUploadIdempotencyScope("svc", "replica-1", new IdempotencyCaller("none", "alice"), "fingerprint:owned:3");
         var owner = await store.TryReserveAsync(scope);
         owner.Should().NotBeNull();
 
@@ -105,7 +126,7 @@ public sealed class ReplicaUploadIdempotencyStoreTests
         // A request that outlived its reservation must not clobber the retry that took the key over.
         var time = new ManualTimeProvider();
         var store = CreateStore(time);
-        var scope = new ReplicaUploadIdempotencyScope("svc", "replica-1", "alice", "fingerprint:slow:3");
+        var scope = new ReplicaUploadIdempotencyScope("svc", "replica-1", new IdempotencyCaller("none", "alice"), "fingerprint:slow:3");
         var slow = await store.TryReserveAsync(scope);
         slow.Should().NotBeNull();
 
@@ -123,7 +144,7 @@ public sealed class ReplicaUploadIdempotencyStoreTests
     {
         var time = new ManualTimeProvider();
         var store = CreateStore(time);
-        var scope = new ReplicaUploadIdempotencyScope("svc", "replica-1", "alice", "fingerprint:orphan:0");
+        var scope = new ReplicaUploadIdempotencyScope("svc", "replica-1", new IdempotencyCaller("none", "alice"), "fingerprint:orphan:0");
         (await store.TryReserveAsync(scope)).Should().NotBeNull();
 
         time.Advance(IdempotencyPayloadStore.ReservationWindow - TimeSpan.FromSeconds(1));
@@ -138,7 +159,7 @@ public sealed class ReplicaUploadIdempotencyStoreTests
     {
         var time = new ManualTimeProvider();
         var store = CreateStore(time);
-        var scope = new ReplicaUploadIdempotencyScope("svc", "replica-1", "alice", "key:day-old");
+        var scope = new ReplicaUploadIdempotencyScope("svc", "replica-1", new IdempotencyCaller("none", "alice"), "key:day-old");
         (await store.RecordAsync(scope, (await store.TryReserveAsync(scope))!, Recorded)).Should().BeTrue();
 
         time.Advance(IdempotencyPayloadStore.DedupeWindow + TimeSpan.FromSeconds(1));
@@ -157,7 +178,7 @@ public sealed class ReplicaUploadIdempotencyStoreTests
 
         var time = new ManualTimeProvider();
         var store = CreateStore(time, window);
-        var scope = new ReplicaUploadIdempotencyScope("svc", "replica-1", "alice", "fingerprint:large:0");
+        var scope = new ReplicaUploadIdempotencyScope("svc", "replica-1", new IdempotencyCaller("none", "alice"), "fingerprint:large:0");
         (await store.TryReserveAsync(scope)).Should().NotBeNull();
 
         time.Advance(TimeSpan.FromMinutes(10));
@@ -171,7 +192,7 @@ public sealed class ReplicaUploadIdempotencyStoreTests
     public async Task ReleaseAsync_OwnedReservation_FreesTheKeyButNeverARecord()
     {
         var store = CreateStore();
-        var scope = new ReplicaUploadIdempotencyScope("svc", "replica-1", "alice", "fingerprint:release:0");
+        var scope = new ReplicaUploadIdempotencyScope("svc", "replica-1", new IdempotencyCaller("none", "alice"), "fingerprint:release:0");
         var token = await store.TryReserveAsync(scope);
         token.Should().NotBeNull();
 

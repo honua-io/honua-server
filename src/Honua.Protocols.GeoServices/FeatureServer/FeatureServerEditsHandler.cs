@@ -271,16 +271,16 @@ internal sealed class FeatureServerEditsHandler(
             // shared edit pipeline rather than by caller discipline.
             var editPrincipal = ResolveEditPrincipal(httpContext);
 
-            // At-most-once replay (#2250): a retry carrying a previously-seen Idempotency-Key returns the
-            // original response without re-applying the edit, so a retried add cannot create a duplicate
-            // feature. The key is scoped to (principal, service, layer) inside the store.
-            ApplyEditsIdempotencyScope? idempotencyScope = idempotencyKey is null
-                ? null
-                : new ApplyEditsIdempotencyScope(
-                    serviceId,
-                    layerId,
-                    string.IsNullOrEmpty(editPrincipal.Name) ? "anonymous" : editPrincipal.Name,
-                    idempotencyKey);
+            ApplyEditsIdempotencyScope? idempotencyScope = null;
+            if (idempotencyKey is not null)
+            {
+                if (IdempotencyCaller.Resolve(httpContext) is not { } caller)
+                {
+                    return StandardErrorHelpers.CreateBadRequest(httpContext, IdempotencyCaller.UnbindableCallerMessage);
+                }
+
+                idempotencyScope = new ApplyEditsIdempotencyScope(serviceId, layerId, caller, idempotencyKey);
+            }
 
             if (idempotencyScope is { } replayScope)
             {

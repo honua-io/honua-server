@@ -162,7 +162,7 @@ rejects `gdbVersion` and `historicMoment` with 400 and accepts/ignores `returnTr
 an optional `Idempotency-Key` request header so a client can retry an edit on a transient
 failure without creating duplicate features. When the header is present, the first
 request that commits at least one row records its full response keyed by the
-`(principal, serviceId, layerId, key)` tuple; any later request that repeats the same key
+`(caller, serviceId, layerId, key)` tuple; any later request that repeats the same key
 within the dedupe window (24 hours) replays that original response — the same `objectId`s,
 with `success: true` — instead of re-applying the edit. This is the server-side contract the
 Honua SDKs and field clients rely on for true at-most-once semantics.
@@ -171,9 +171,11 @@ Contract details:
 
 - The key is a client-generated, stable string of at most 200 characters with no control
   characters; an empty, oversized, or malformed header is rejected with a 400.
-- The key is scoped to the authenticated principal, service, and layer — one caller's key
-  can never replay another caller's response, and the same key on a different layer is a
-  distinct edit.
+- The key is scoped to the caller, service, and layer. The caller is the scheme- and
+  issuer-qualified identity, the same binding gRPC `ApplyEdits` uses, so one caller's key can
+  never replay another caller's response, and the same key on a different layer is a distinct
+  edit. An authenticated caller whose identity cannot be bound (no subject, name or valid API
+  key id) is refused with a 400 when it sends a key.
 - Only requests that committed rows are recorded; a fully-failed/no-op request is not
   recorded, so it can be retried fresh.
 - The store is Redis-backed when Redis is configured (durable and atomic across replicas)

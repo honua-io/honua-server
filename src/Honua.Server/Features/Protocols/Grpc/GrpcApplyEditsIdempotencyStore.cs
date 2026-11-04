@@ -4,7 +4,6 @@ using System.Security.Cryptography;
 using System.Text;
 using Google.Protobuf;
 using Honua.Core.Features.FeatureStore.Abstractions;
-using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Infrastructure.Security;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -176,33 +175,16 @@ internal sealed partial class GrpcApplyEditsIdempotencyStore : IDisposable
     /// </summary>
     public static string? CreateScope(HttpContext? httpContext, string? serviceId, int layerId, string clientKey)
     {
-        var principal = httpContext?.User;
-        string actor;
-        if (principal?.Identity?.IsAuthenticated == true)
+        if (IdempotencyCaller.Resolve(httpContext) is not { } caller)
         {
-            var canonical = CanonicalSecurityActor.Resolve(principal);
-            if (canonical is null)
-            {
-                return null;
-            }
-
-            actor = canonical.ActorId;
+            return null;
         }
-        else
-        {
-            actor = "anonymous";
-        }
-
-        var tenantContext = httpContext?.RequestServices?.GetService<ITenantContext>();
-        var tenant = tenantContext is not null
-            ? tenantContext.TenantId
-            : principal is null ? null : CanonicalSecurityActor.FindStampedValue(principal, CanonicalSecurityActor.EffectiveTenantClaim);
 
         var canonicalScope = new StringBuilder("grpc-apply-edits/v2");
         AppendComponent(canonicalScope, serviceId ?? string.Empty);
         AppendComponent(canonicalScope, layerId.ToString(CultureInfo.InvariantCulture));
-        AppendComponent(canonicalScope, tenant is null ? "none" : "tenant:" + tenant);
-        AppendComponent(canonicalScope, actor);
+        AppendComponent(canonicalScope, caller.Tenant);
+        AppendComponent(canonicalScope, caller.Actor);
         AppendComponent(canonicalScope, clientKey);
         return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(canonicalScope.ToString())));
     }

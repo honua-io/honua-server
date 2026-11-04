@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Infrastructure.Security;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Protocols.GeoServices.FeatureServer.Services;
 using Honua.TestKit.Attributes;
@@ -34,7 +35,7 @@ public sealed class ApplyEditsIdempotencyStoreTests
         string service = "svc",
         int layer = 0,
         string principal = "alice")
-        => new(service, layer, principal, key);
+        => new(service, layer, new IdempotencyCaller("none", principal), key);
 
     [UnitTest]
     [Operation(Operations.ApplyEdits)]

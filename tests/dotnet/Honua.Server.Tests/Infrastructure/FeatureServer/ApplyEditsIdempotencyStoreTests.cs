@@ -3,6 +3,7 @@
 
 using System.Linq;
 using FluentAssertions;
+using Honua.Infrastructure.Security;
 using Honua.Protocols.GeoServices.FeatureServer.Services;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Caching.Distributed;
@@ -28,7 +29,7 @@ public sealed class ApplyEditsIdempotencyStoreTests
         string service = "svc",
         int layer = 0,
         string principal = "alice")
-        => new(service, layer, principal, key);
+        => new(service, layer, new IdempotencyCaller("none", principal), key);
 
     // ─── TryReserveAsync concurrency ───────────────────────────────────────────
 

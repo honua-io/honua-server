@@ -20,6 +20,7 @@ using Honua.Core.Queries.Filters;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Events;
 using Honua.Infrastructure.Helpers;
+using Honua.Infrastructure.Security;
 using Honua.Infrastructure.Services;
 using Honua.Infrastructure.Validation;
 using Honua.ServiceDefaults;
@@ -330,7 +331,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
                 context.GetHttpContext(), request.ServiceId, request.LayerId, idempotencyKey)
                 ?? throw new RpcException(new Status(
                     StatusCode.FailedPrecondition,
-                    "An idempotency key requires a caller identity the server can bind retries to."));
+                    IdempotencyCaller.UnbindableCallerMessage));
             idempotencyLease = await _idempotencyStore.EnterAsync(scope, context.CancellationToken).ConfigureAwait(false);
         }
         await using var heldIdempotencyLease = idempotencyLease;
