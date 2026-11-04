@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Honua.Infrastructure.Security;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Microsoft.Extensions.Caching.Distributed;
 using StackExchange.Redis;
@@ -44,12 +45,12 @@ internal interface IReplicaUploadIdempotencyStore
 }
 
 /// <summary>
-/// Identifies one replica upload. Scoped to the service, replica and principal so one caller's upload
+/// Identifies one replica upload. Scoped to the service, replica and caller so one caller's upload
 /// can never replay another's, and the same key on a different replica is a distinct upload.
 /// </summary>
 /// <param name="ServiceId">The replica's stored service id, so request path casing cannot fork the key.</param>
 /// <param name="ReplicaId">The replica being synchronized.</param>
-/// <param name="Principal">The authenticated principal name, or <c>anonymous</c>.</param>
+/// <param name="Caller">The tenant and actor the recorded upload belongs to.</param>
 /// <param name="UploadKey">
 /// <c>key:</c> followed by the client-supplied key, or <c>fingerprint:</c> followed by the upload
 /// fingerprint and the replica upload cursor it was sent at; the prefixes keep the key spaces apart.
@@ -57,7 +58,7 @@ internal interface IReplicaUploadIdempotencyStore
 internal readonly record struct ReplicaUploadIdempotencyScope(
     string ServiceId,
     string ReplicaId,
-    string Principal,
+    IdempotencyCaller Caller,
     string UploadKey);
 
 /// <summary>
@@ -191,10 +192,5 @@ internal sealed class DistributedReplicaUploadIdempotencyStore : IReplicaUploadI
         => FeatureServerLog.ReplicaUploadIdempotencyStoreUnavailable(_logger, scope.ServiceId, scope.ReplicaId, exception);
 
     private static string BuildKey(ReplicaUploadIdempotencyScope scope)
-    {
-        // Hash the principal so a name containing ":" cannot collide with other key segments.
-        var principalHash = Convert.ToHexString(
-            System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(scope.Principal)));
-        return string.Concat(KeyPrefix, scope.ServiceId, ":", scope.ReplicaId, ":", principalHash, ":", scope.UploadKey);
-    }
+        => string.Concat(KeyPrefix, scope.ServiceId, ":", scope.ReplicaId, ":", scope.Caller.Fingerprint(), ":", scope.UploadKey);
 }

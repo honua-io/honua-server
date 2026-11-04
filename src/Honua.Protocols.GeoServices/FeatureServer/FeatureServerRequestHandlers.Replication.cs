@@ -23,6 +23,7 @@ using Honua.Protocols.GeoServices.FeatureServer.Services;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Security;
 using Honua.Infrastructure.Validation;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Options;
@@ -1229,6 +1230,13 @@ internal static partial class FeatureServerEndpoints
                         [uploadKeyError!]);
                 }
 
+                if (IdempotencyCaller.Resolve(context) is not { } uploadCaller)
+                {
+                    return StandardErrorHelpers.CreateBadRequest(context,
+                        "Invalid synchronizeReplica request",
+                        [IdempotencyCaller.UnbindableCallerMessage]);
+                }
+
                 uploadStore = context.RequestServices.GetRequiredService<IReplicaUploadIdempotencyStore>();
                 uploadFingerprint = ComputeReplicaUploadFingerprint(syncDirection, rollbackOnFailure, rollbackOnFailureSupplied, lastWriteWins, editsJson!);
                 keylessUpload = explicitUploadKey is null;
@@ -1237,7 +1245,7 @@ internal static partial class FeatureServerEndpoints
                 var scope = new ReplicaUploadIdempotencyScope(
                     replica.ServiceId,
                     replicaId,
-                    EditOwnerSubject.Resolve(context.User) ?? "anonymous",
+                    uploadCaller,
                     keylessUpload
                         ? FingerprintUploadKey(uploadFingerprint, replica.UploadBaseGeneration)
                         : "key:" + explicitUploadKey);
