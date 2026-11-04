@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Globalization;
+using Honua.Core.Features.Validation;
 
 namespace Honua.Server.Features.Provisioner.BuildJobs;
 
@@ -102,15 +103,10 @@ public sealed record ProvisionerArea
             return false;
         }
 
-        var nums = new double[4];
-        for (var i = 0; i < 4; i++)
+        if (!BoundingBoxOrdinates.TryParse(parts, out var nums))
         {
-            if (!double.TryParse(parts[i], NumberStyles.Float, CultureInfo.InvariantCulture, out nums[i])
-                || double.IsNaN(nums[i]) || double.IsInfinity(nums[i]))
-            {
-                error = "bbox values must be finite numbers";
-                return false;
-            }
+            error = "bbox values must be finite numbers";
+            return false;
         }
 
         var (minLon, minLat, maxLon, maxLat) = (nums[0], nums[1], nums[2], nums[3]);

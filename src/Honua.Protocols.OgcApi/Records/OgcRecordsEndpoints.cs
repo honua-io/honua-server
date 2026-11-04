@@ -6,6 +6,7 @@ using System.Globalization;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Validation;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Middleware;
@@ -812,18 +813,7 @@ internal static class OgcRecordsEndpoints
             return true;
         }
 
-        var parts = value.Split(',', StringSplitOptions.TrimEntries);
-
-        // Accept the spec-legal 6-element (3D) bbox minx,miny,minz,maxx,maxy,maxz and use the
-        // horizontal coordinates (this 2D surface ignores Z) rather than 400-ing 3D-aware
-        // OGC/ArcGIS clients (#1987). Horizontal max ordinates are at 3,4 for a 6-value box.
-        var maxXIndex = parts.Length == 6 ? 3 : 2;
-        var maxYIndex = parts.Length == 6 ? 4 : 3;
-        if ((parts.Length != 4 && parts.Length != 6) ||
-            !double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var minX) ||
-            !double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var minY) ||
-            !double.TryParse(parts[maxXIndex], NumberStyles.Float, CultureInfo.InvariantCulture, out var maxX) ||
-            !double.TryParse(parts[maxYIndex], NumberStyles.Float, CultureInfo.InvariantCulture, out var maxY))
+        if (!BoundingBoxOrdinates.TryParse(value, out var ordinates))
         {
             error = "bbox must contain four (minx,miny,maxx,maxy) or six (minx,miny,minz,maxx,maxy,maxz) comma-separated numbers.";
             return false;
@@ -831,7 +821,8 @@ internal static class OgcRecordsEndpoints
 
         // minX > maxX is permitted: per RFC 7946 §5.2 and the OGC API bbox parameter,
         // west > east means the box crosses the antimeridian and must be honored.
-        if (!double.IsFinite(minX) || !double.IsFinite(minY) || !double.IsFinite(maxX) || !double.IsFinite(maxY) || minY > maxY)
+        var (minX, minY, maxX, maxY) = BoundingBoxOrdinates.Horizontal(ordinates);
+        if (minY > maxY)
         {
             error = "bbox values must be finite and ordered as minx,miny,maxx,maxy.";
             return false;

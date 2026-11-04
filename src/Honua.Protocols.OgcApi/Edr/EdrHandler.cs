@@ -9,6 +9,7 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Core.Features.Validation;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Validation;
@@ -727,25 +728,12 @@ internal sealed partial class EdrHandler
     private static bool TryParseBbox(string bbox, out double minX, out double minY, out double maxX, out double maxY)
     {
         minX = minY = maxX = maxY = 0;
-        if (string.IsNullOrWhiteSpace(bbox))
+        if (!BoundingBoxOrdinates.TryParse(bbox, out var ordinates) || ordinates.Length != 4)
         {
             return false;
         }
 
-        var parts = bbox.Split(',', StringSplitOptions.TrimEntries);
-        if (parts.Length != 4)
-        {
-            return false;
-        }
-
-        if (!double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out minX) ||
-            !double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out minY) ||
-            !double.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out maxX) ||
-            !double.TryParse(parts[3], NumberStyles.Float, CultureInfo.InvariantCulture, out maxY))
-        {
-            return false;
-        }
-
+        (minX, minY, maxX, maxY) = BoundingBoxOrdinates.Horizontal(ordinates);
         return maxX > minX && maxY > minY;
     }
 

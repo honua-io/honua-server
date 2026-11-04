@@ -11,6 +11,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Federation.Services;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Core.Features.Validation;
 using Honua.Core.Queries.Filters;
 using Honua.Infrastructure.Filtering;
 using Honua.Infrastructure.Helpers;
@@ -1572,28 +1573,15 @@ internal static class SearchEndpoints
 
     private static bool TryParseBbox(string bbox, out ImmutableArray<double> values, out string? error)
     {
-        var parts = bbox.Split(',', StringSplitOptions.None | StringSplitOptions.TrimEntries);
-        if (parts.Length is not 4 and not 6)
+        values = default;
+        if (!BoundingBoxOrdinates.TryParse(bbox, out var parsed))
         {
-            values = default;
-            error = "bbox must contain four or six numeric values.";
+            error = "bbox must contain four or six finite numeric values.";
             return false;
-        }
-
-        var parsed = new double[parts.Length];
-        for (var i = 0; i < parts.Length; i++)
-        {
-            if (!double.TryParse(parts[i], NumberStyles.Float, CultureInfo.InvariantCulture, out parsed[i]))
-            {
-                values = default;
-                error = "bbox contains an invalid numeric value.";
-                return false;
-            }
         }
 
         if (!StacFilterHelpers.TryExtractBbox2D(parsed, out _, out _, out _, out _, out error))
         {
-            values = default;
             return false;
         }
 
