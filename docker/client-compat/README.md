@@ -190,5 +190,5 @@ The REST stub lane and its Compose profile are now `geoservices-rest-stub`; call
 must update their lane selection and use the `GEOSERVICES_STUB_` environment
 settings. The previous profile is retired and Compose rejects it. The runner
 rejects retired environment settings rather than silently dropping credentials
-or timeout overrides. Historical baseline envelopes retain their original
-identity and are mapped only for baseline comparison; they are not new receipts.
+or timeout overrides. Committed baseline envelopes carry the current lane identity; they are
+baselines for comparison, not new receipts.

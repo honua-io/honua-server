@@ -40,8 +40,8 @@ cross-resource relationships; those bindings require separate migration evidence
 
 Honua provides protocol-level compatibility at GeoServices REST paths for
 selected, operation-scoped workflows. Client support is bounded by this matrix;
-it does not imply blanket compatibility for desktop GIS clients, GeoServices REST libraries, REST-enabled Leaflet clients,
-or the Python GIS API. This page summarizes endpoint-level parity per service;
+it does not imply blanket compatibility with ArcGIS Pro, the ArcGIS SDKs, Esri Leaflet,
+or the ArcGIS API for Python. This page summarizes endpoint-level parity per service;
 the machine-readable source is
 [`docs/gis/data/geoservices-rest-parity.json`](../../gis/data/geoservices-rest-parity.json).
 
@@ -530,12 +530,12 @@ The service catalog and service descriptors omit GeoServices REST server version
 that branch on those documents must treat the absence as "unknown", not as a version floor.
 
 SOAP arguments on `POST /services` and the per-service GPServer and ImageServer SOAP
-endpoints bind by local name. The unqualified arguments desktop GIS client and Python geoprocessing API send
+endpoints bind by local name. The unqualified arguments that desktop GIS clients and their Python geoprocessing APIs send
 (`elementFormDefault="unqualified"`), arguments qualified with the operation's
 namespace, and a default-namespace operation whose arguments inherit it are the
 same request. A fault for an unrecognised argument names the element.
 
-GPServer SOAP `GetJobStatus` accepts desktop GIS client's optional `GetProgressMsg` hint
+GPServer SOAP `GetJobStatus` accepts the optional `GetProgressMsg` hint that desktop GIS clients send
 with XML boolean values (`true`, `false`, `1`, or `0`). It always returns the scalar
 job status. A `true` hint is tolerated for client compatibility but does not inline
 progress messages; clients retrieve those through `GetJobMessages`. Malformed,
@@ -572,3 +572,7 @@ and the OAuth2 surface are gated by `Authentication:PortalToken:Enabled` plus th
 
 - [Supported clients](clients.md) — which GeoServices REST clients are certified against this surface.
 - [Run geoprocessing](../../guides/query-analyze/run-geoprocessing.md) and [authentication](../../guides/secure/authentication.md) — drill-downs for the services not detailed on this page.
+
+Esri, ArcGIS, and the Esri product names used here are trademarks, registered trademarks, or service
+marks of Esri in the United States and other countries. They identify the products Honua is compatible
+with; Honua is not affiliated with, sponsored by, or endorsed by Esri.

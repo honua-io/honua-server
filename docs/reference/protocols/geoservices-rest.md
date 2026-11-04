@@ -16,7 +16,7 @@ resources:
 ---
 # GeoServices REST
 
-Honua serves a GeoServices REST surface under `/rest/services`, plus a Portal Sharing slice under `/sharing/rest` for token issuance and item discovery. Compatibility is limited to the operations documented in the [GeoServices parity matrix](../compatibility/geoservices-parity.md) and the certified client workflows; it does not imply blanket support for desktop GIS client, Field Maps, Koop, or the JavaScript GIS client SDK.
+Honua serves a GeoServices REST surface under `/rest/services`, plus a Portal Sharing slice under `/sharing/rest` for token issuance and item discovery. Compatibility is limited to the operations documented in the [GeoServices parity matrix](../compatibility/geoservices-parity.md) and the certified client workflows; it does not imply blanket compatibility with ArcGIS Pro, ArcGIS Field Maps, Koop, or the ArcGIS Maps SDK for JavaScript.
 
 ## Catalog and portal routes
 
@@ -120,8 +120,8 @@ the same resources and storage bindings, with the corresponding drawing modes.
 | OGC pass-through | `/WMS`, `/WMTS`, `/WMTS/{**restPath}` | See [WMS, WFS, WCS, WMTS](wms-wfs-wcs-wmts.md). |
 
 Map export accepts `bbox` as either `xmin,ymin,xmax,ymax` or a GeoServices REST JSON envelope
-with those four properties, including the envelope representation emitted by
-desktop GIS client. Both representations use CRS x/y coordinate order and the same finite
+with those four properties, including the envelope representation that desktop GIS
+clients emit. Both representations use CRS x/y coordinate order and the same finite
 coordinate, extent and geographic-range validation. `bboxSR` controls the input
 CRS and defaults to the service CRS when omitted.
 
@@ -219,3 +219,7 @@ GeoServices REST parity is tracked per surface in [GeoServices parity](../compat
 - [Run geoprocessing](../../guides/query-analyze/run-geoprocessing.md)
 - [Work with time](../../guides/query-analyze/work-with-time.md)
 - [Client compatibility](../compatibility/clients.md)
+
+Esri, ArcGIS, and the Esri product names used here are trademarks, registered trademarks, or service
+marks of Esri in the United States and other countries. They identify the products Honua is compatible
+with; Honua is not affiliated with, sponsored by, or endorsed by Esri.

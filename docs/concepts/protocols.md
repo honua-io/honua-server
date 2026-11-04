@@ -1,29 +1,29 @@
 ---
 type: concept
 title: "Protocols"
-description: "Honua serves every published layer through multiple protocols at once — the same PostGIS table can be queried from desktop GIS client, QGIS, Excel, a MapLibre web map, and an AI agent without ETL or duplication."
+description: "Honua serves every published layer through multiple protocols at once — the same PostGIS table can be queried from a desktop GIS client, QGIS, Excel, a MapLibre web map, and an AI agent without ETL or duplication."
 resource: "honua://capability/serve.sensorthings"
 resources:
   - "honua://capability/serve.wps"
 ---
 # Protocols
 
-Honua serves every published layer through multiple protocols at once — the same PostGIS table can be queried from desktop GIS client, QGIS, Excel, a MapLibre web map, and an AI agent without ETL or duplication. This page is the canonical protocol matrix. For per-operation support detail use the [client compatibility contract](../reference/compatibility/clients.md), [GeoServices parity](../reference/compatibility/geoservices-parity.md), and [OGC conformance evidence](../reference/compatibility/ogc-conformance.md).
+Honua serves every published layer through multiple protocols at once — the same PostGIS table can be queried from a desktop GIS client, QGIS, Excel, a MapLibre web map, and an AI agent without ETL or duplication. This page is the canonical protocol matrix. For per-operation support detail use the [client compatibility contract](../reference/compatibility/clients.md), [GeoServices parity](../reference/compatibility/geoservices-parity.md), and [OGC conformance evidence](../reference/compatibility/ogc-conformance.md).
 
 ## Protocol matrix
 
 | Protocol | Base endpoint pattern | Typical clients | Use this when… |
 |---|---|---|---|
-| GeoServices FeatureServer | `/rest/services/{serviceId}/FeatureServer` | desktop GIS client, GIS client SDKs | GeoServices REST clients need feature query, editing, attachments, replicas |
-| GeoServices MapServer | `/rest/services/{serviceId}/MapServer` | desktop GIS client, GeoServices REST map clients | GeoServices REST clients need rendered map images, identify, legends |
+| GeoServices FeatureServer | `/rest/services/{serviceId}/FeatureServer` | Desktop GIS clients, GIS client SDKs | GeoServices REST clients need feature query, editing, attachments, replicas |
+| GeoServices MapServer | `/rest/services/{serviceId}/MapServer` | Desktop GIS clients, GeoServices REST map clients | GeoServices REST clients need rendered map images, identify, legends |
 | GeoServices ImageServer | `/rest/services/{serviceId}/ImageServer` | GeoServices REST raster workflows | GeoServices REST clients need raster export, identify, tiles, statistics |
 | GeoServices Geometry Service | `/rest/services/Utilities/Geometry/GeometryServer` | GIS client SDKs | Clients need server-side buffer, project, intersect, etc. |
-| GeoServices GPServer | `/rest/services/{serviceId}/GPServer` | desktop GIS client, GIS client SDKs | GeoServices REST clients run async geoprocessing jobs |
+| GeoServices GPServer | `/rest/services/{serviceId}/GPServer` | Desktop GIS clients, GIS client SDKs | GeoServices REST clients run async geoprocessing jobs |
 | GeoServices GeocodeServer | `/rest/services/{locatorName}/GeocodeServer` | GeoServices REST geocoding clients | GeoServices REST clients call `findAddressCandidates`-style geocoding against registered locators |
 | GeoServices VectorTileServer | `/rest/services/{serviceId}/VectorTileServer` | GeoServices REST vector-tile clients, GeoServices REST SDKs | GeoServices REST clients render vector tiles (`/tile/{z}/{y}/{x}.pbf`) |
 | GeoServices NAServer **(Pro)** | `/rest/services/{serviceId}/NAServer` | GeoServices REST routing clients | GeoServices REST clients solve routes, service areas, closest facility, OD cost matrices |
 | GeoServices VersionManagementServer **(Pro, Preview; experimental opt-in)** | `/rest/services/{serviceId}/VersionManagementServer` | GeoServices REST branch-versioning workflows | Named gdb versions with isolated edits and reconcile/post |
-| Portal token issuance | `/sharing/rest/generateToken` | desktop GIS client, GIS client SDKs | GeoServices REST clients authenticate with username/password tokens |
+| Portal token issuance | `/sharing/rest/generateToken` | Desktop GIS clients, GIS client SDKs | GeoServices REST clients authenticate with username/password tokens |
 | OGC API Features | `/ogc/features` | QGIS, GDAL, any OGC client | Standards-based feature access and CRUD with CQL2 filtering |
 | OGC API Maps | `/ogc/maps` | OGC map clients | Standards-based server-rendered map images |
 | OGC API Tiles | `/ogc/tiles` | QGIS, MapLibre | Standards-based vector/raster tile access with tile matrix sets |
@@ -35,7 +35,7 @@ Honua serves every published layer through multiple protocols at once — the sa
 | OGC SensorThings v1.1 (Preview) | `/sta/v1.1` | IoT/observation clients | Service discovery and linked REST access to Things, Datastreams, Sensors, ObservedProperties, and Observations; FeaturesOfInterest and Locations are not exposed; enable `Capabilities:Experimental:serve.sensorthings:Enabled=true` |
 | WMS 1.3 / 1.1.1 | `/rest/services/{serviceId}/MapServer/WMS` or `/ogc/services/{serviceId}/wms` | QGIS, legacy OGC clients | Clients expect classic GetMap/GetFeatureInfo |
 | WFS 2.0 / 1.1.0 / 1.0.0 | `/wfs` | QGIS, GDAL/OGR, legacy stacks | Clients expect classic GetFeature with GML output |
-| WCS 2.0.1 | `/rest/services/{serviceId}/ImageServer/WCS`, `/ogc/services/{serviceId}/wcs`, or `/ogc/wcs/{serviceId}` for desktop GIS client | Science/elevation tooling | Clients need raw subsetted coverage values |
+| WCS 2.0.1 | `/rest/services/{serviceId}/ImageServer/WCS`, `/ogc/services/{serviceId}/wcs`, or `/ogc/wcs/{serviceId}` for desktop GIS clients | Science/elevation tooling | Clients need raw subsetted coverage values |
 | WMTS 1.0 | `/rest/services/{serviceId}/MapServer/WMTS` or `/ogc/services/{serviceId}/wmts` | QGIS, legacy tile clients | Clients expect classic GetTile |
 | WPS 2.0 | `/wps` | Classic OGC processing clients | Clients expect classic WPS Execute/GetStatus/GetResult over the same job runtime |
 | OData v4 | `/odata` | Excel, Power BI, Tableau | BI tools consume spatial tables as entity sets |

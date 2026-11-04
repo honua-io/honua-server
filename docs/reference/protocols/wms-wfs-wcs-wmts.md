@@ -30,7 +30,7 @@ Honua serves the classic OGC KVP/XML web services for clients that have not move
 | GET | `/ogc/services/{serviceId}/wmts` | WMTS KVP. |
 | GET | `/rest/services/{serviceId}/MapServer/WMTS`, `.../WMTS/{**restPath}` | WMTS KVP + RESTful tile paths. |
 | GET | `/ogc/services/{serviceId}/wcs` | WCS 2.0.1, scoped to one service. |
-| GET | `/ogc/wcs/{serviceId}` | The same service-scoped WCS 2.0.1 without a `services` segment. Use this form in desktop GIS client. |
+| GET | `/ogc/wcs/{serviceId}` | The same service-scoped WCS 2.0.1 without a `services` segment. Use this form in desktop GIS clients. |
 | GET | `/rest/services/{serviceId}/ImageServer/WCS` | WCS 2.0.1, layer-scoped (`COVERAGEID` is the bare integer layer id). |
 
 ### Why WFS has no `/ogc/services/{serviceId}/wfs`
@@ -50,7 +50,7 @@ make the same feature addressable by more than one URL.
 
 So WFS is served **only** at the root `/wfs`. There is no service-scoped form
 and no GeoServices alias — `FeatureServer` has no `WFS` endpoint here for the
-same reason GeoServices REST own `FeatureServer` does not expose one.
+same reason a GeoServices REST server's own `FeatureServer` does not expose one.
 
 Asking for `/ogc/services/{serviceId}/wfs` returns **404**. A client configured to
 fail hard on HTTP errors and stay quiet reports that as a transport-style failure
@@ -181,11 +181,11 @@ anonymous services. Tenant restrictions apply to services, resources, and
 publications before scoped grants. Ordinary user role policies remain in force;
 authorization failures retain WCS XML exception responses.
 
-### Connecting desktop GIS client
+### Connecting desktop GIS clients
 
 Add the WCS server connection (or run `MakeWCSLayer`) with
 `https://server.example.com/ogc/wcs/{serviceId}`, not the `/ogc/services/{serviceId}/wcs`
-form. Over HTTPS, desktop GIS client 3.7 reads a URL containing `/services/{name}/` as a GeoServices REST
+form. Over HTTPS, desktop GIS clients that Honua works with, such as ArcGIS Pro 3.7, read a URL containing `/services/{name}/` as a GeoServices REST
 Server site. It probes discovery resources such as `{root}/rest/info` and
 `{root}/rest/services/`, and when those are not GeoServices REST server resources it fails with
 `ERROR 999999`. The `/ogc/wcs/{serviceId}` form serves the same service, access policy
@@ -238,3 +238,7 @@ The published classic-service profiles pass in full: WMS 1.1.1/1.3 (126/126 and 
 - [Connect from QGIS](../../guides/connect/qgis.md)
 - [Migrate from GeoServer](../../guides/migrate/from-geoserver.md)
 - [Publish rasters](../../guides/publish/publish-rasters.md)
+
+Esri, ArcGIS, and the Esri product names used here are trademarks, registered trademarks, or service
+marks of Esri in the United States and other countries. They identify the products Honua is compatible
+with; Honua is not affiliated with, sponsored by, or endorsed by Esri.

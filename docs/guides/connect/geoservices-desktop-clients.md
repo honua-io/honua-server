@@ -28,7 +28,7 @@ Honua exposes each published service as:
 
 Add a WCS server connection with `http://localhost:8080/ogc/wcs/{serviceId}` and version 2.0.1.
 
-Use the `/ogc/wcs/{serviceId}` form, not `/ogc/services/{serviceId}/wcs`. Over HTTPS, some desktop clients treat a URL containing `/services/{name}/` as a GeoServices REST server site, and the connection fails. See [connecting desktop clients](../../reference/protocols/wms-wfs-wcs-wmts.md#connecting-desktop-gis-client).
+Use the `/ogc/wcs/{serviceId}` form, not `/ogc/services/{serviceId}/wcs`. Over HTTPS, some desktop clients treat a URL containing `/services/{name}/` as a GeoServices REST server site, and the connection fails. See [connecting desktop clients](../../reference/protocols/wms-wfs-wcs-wmts.md#connecting-desktop-gis-clients).
 
 ### Token auth (if authentication is enabled)
 
