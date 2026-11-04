@@ -1997,6 +1997,7 @@ app.MapOperateStatusEndpoints();
 app.MapAdminLayerStyleEndpoints();
 app.MapAdminLayerFieldConfigurationEndpoints();
 app.MapAdminLayerAuthoringEndpoints();
+app.MapAdminDiscoveryMetadataEndpoints();
 app.MapAdminLayerFilterConfigurationEndpoints();
 if (offlineSyncEnabled)
 {

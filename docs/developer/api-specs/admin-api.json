@@ -21484,6 +21484,206 @@
           }
         }
       }
+    },
+    "/metadata/layers/{layerId}/discovery": {
+      "get": {
+        "tags": [
+          "Metadata"
+        ],
+        "summary": "Read title, description and keywords",
+        "description": "Layer IDs are global storage layer IDs, not service-local publication identifiers. Layer changes affect the shared resource and every listed publication. Other metadata is preserved. Service names address all protocol services with that logical name. Writes require the ETag returned by GET and reject stale revisions with 409.",
+        "parameters": [
+          {
+            "name": "layerId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Stored discovery metadata and affected publications",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscoveryMetadataEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "404": {
+            "description": "Target not found"
+          },
+          "409": {
+            "description": "Metadata changed; reload before saving"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Metadata"
+        ],
+        "summary": "Replace title, description and keywords",
+        "description": "Layer IDs are global storage layer IDs, not service-local publication identifiers. Layer changes affect the shared resource and every listed publication. Other metadata is preserved. Service names address all protocol services with that logical name. Writes require the ETag returned by GET and reject stale revisions with 409.",
+        "parameters": [
+          {
+            "name": "layerId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Stored discovery metadata and affected publications",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscoveryMetadataEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "404": {
+            "description": "Target not found"
+          },
+          "409": {
+            "description": "Metadata changed; reload before saving"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DiscoveryMetadataUpdateRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/services/{serviceName}/discovery": {
+      "get": {
+        "tags": [
+          "Metadata"
+        ],
+        "summary": "Read title, description and keywords",
+        "description": "Layer IDs are global storage layer IDs, not service-local publication identifiers. Layer changes affect the shared resource and every listed publication. Other metadata is preserved. Service names address all protocol services with that logical name. Writes require the ETag returned by GET and reject stale revisions with 409.",
+        "parameters": [
+          {
+            "name": "serviceName",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Stored discovery metadata and affected publications",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscoveryMetadataEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "404": {
+            "description": "Target not found"
+          },
+          "409": {
+            "description": "Metadata changed; reload before saving"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Metadata"
+        ],
+        "summary": "Replace title, description and keywords",
+        "description": "Layer IDs are global storage layer IDs, not service-local publication identifiers. Layer changes affect the shared resource and every listed publication. Other metadata is preserved. Service names address all protocol services with that logical name. Writes require the ETag returned by GET and reject stale revisions with 409.",
+        "parameters": [
+          {
+            "name": "serviceName",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Stored discovery metadata and affected publications",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscoveryMetadataEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "404": {
+            "description": "Target not found"
+          },
+          "409": {
+            "description": "Metadata changed; reload before saving"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DiscoveryMetadataUpdateRequest"
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -50368,6 +50568,98 @@
           },
           "artifactsUrl": {
             "type": "string"
+          }
+        }
+      },
+      "DiscoveryMetadataUpdateRequest": {
+        "type": "object",
+        "required": [
+          "etag"
+        ],
+        "properties": {
+          "etag": {
+            "type": "string",
+            "minLength": 1
+          },
+          "title": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 512
+          },
+          "description": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 16384
+          },
+          "keywords": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          }
+        }
+      },
+      "DiscoveryPublicationImpact": {
+        "type": "object",
+        "properties": {
+          "publicationId": {
+            "type": "string"
+          },
+          "serviceName": {
+            "type": "string"
+          },
+          "identifier": {
+            "type": "string"
+          }
+        }
+      },
+      "DiscoveryMetadataResponse": {
+        "type": "object",
+        "properties": {
+          "etag": {
+            "type": "string"
+          },
+          "entityId": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 512
+          },
+          "description": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 16384
+          },
+          "keywords": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          },
+          "affectedPublications": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DiscoveryPublicationImpact"
+            }
+          }
+        }
+      },
+      "DiscoveryMetadataEnvelope": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/DiscoveryMetadataResponse"
           }
         }
       }
