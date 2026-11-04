@@ -30,11 +30,11 @@ public static class CorsConfiguration
         "Content-Type", "Authorization", "X-Esri-Authorization", "X-API-Key", "X-Correlation-ID",
         "X-Grpc-Web", "X-User-Agent", "Range", "If-Range",
         "If-Match", "If-None-Match", "If-Modified-Since", "If-Unmodified-Since",
-        "Prefer", "X-Honua-Embed-Key"
+        "Prefer", "X-Honua-Embed-Key", "MCP-Protocol-Version", "Mcp-Method", "Mcp-Name"
     ];
 
-    public const string DevelopmentPolicy = "DevelopmentCors";
-    public const string ProductionPolicy = "ProductionCors";
+    public const string DevelopmentPolicy = HttpCorsPolicyNames.Development;
+    public const string ProductionPolicy = HttpCorsPolicyNames.Production;
     public const string RestrictedPolicy = "RestrictedCors";
 
     /// <summary>

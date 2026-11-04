@@ -22,6 +22,7 @@ namespace Honua.Ai.Protocols.Mcp.Models;
 [JsonSerializable(typeof(McpValidationViolation))]
 [JsonSerializable(typeof(McpJsonRpcNotification))]
 [JsonSerializable(typeof(McpProgressNotificationParams))]
+[JsonSerializable(typeof(McpDiscoverResult))]
 [JsonSerializable(typeof(McpInitializeParams))]
 [JsonSerializable(typeof(McpClientInfo))]
 [JsonSerializable(typeof(McpInitializeResult))]

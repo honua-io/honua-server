@@ -92,7 +92,9 @@ internal sealed class ListCapabilitiesTool : IMcpTool
         {
             ServerName = serverInfo.Name,
             ServerVersion = serverInfo.Version,
-            ProtocolVersions = McpDataAccessSurface.SupportedProtocolVersions
+            ProtocolVersions = httpContext.Items.ContainsKey(McpModernProtocol.RequestItemKey)
+                ? McpModernProtocol.SupportedVersions
+                : McpDataAccessSurface.SupportedLegacyProtocolVersions
         };
 
         // Project the live in-process catalog. Resolved leniently so a lightweight

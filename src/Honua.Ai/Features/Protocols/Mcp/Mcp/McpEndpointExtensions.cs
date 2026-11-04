@@ -14,29 +14,6 @@ using Microsoft.Net.Http.Headers;
 
 namespace Honua.Ai.Protocols.Mcp;
 
-/// <summary>
-/// Maps the JSON-RPC endpoint that hosts the MCP operator surface using the
-/// Streamable-HTTP transport (MCP 2025-03-26). Accepts both individual requests
-/// and JSON-RPC 2.0 batches on <c>POST /mcp</c>, enforces the MCP request-id
-/// rules (string or integer only), and manages <c>Mcp-Session-Id</c> sessions:
-/// a session id is issued on <c>initialize</c> and validated on every subsequent
-/// request. When a shared session store is composed (Redis connected) a session
-/// minted on any instance is honoured by every instance; an id no instance holds
-/// answers the strict spec HTTP 404 so the client re-initializes. Serving a
-/// well-formed unknown id session-less instead is an explicit development
-/// convenience (<see cref="McpOptions.StatelessSessionFallback"/>, on by default
-/// only in Development); malformed ids always 404. The transport negotiates the
-/// response content type from the client's <c>Accept</c> header — emitting a
-/// single Server-Sent-Events <c>message</c> frame when the client accepts
-/// <c>text/event-stream</c>, and plain JSON otherwise. <c>GET /mcp</c> opens an
-/// SSE stream the server can push notifications over, and <c>DELETE /mcp</c>
-/// terminates a session.
-/// Note that <c>initialize</c> is single-request-only per MCP 2025-03-26
-/// lifecycle — any batch containing an <c>initialize</c> element is rejected
-/// wholesale because the server cannot negotiate a protocol version mid-batch.
-/// The body size and batch length are bounded (<see cref="McpOptions.MaxRequestBodyBytes"/>,
-/// <see cref="McpOptions.MaxBatchSize"/>; SEC-18) before any element is dispatched.
-/// </summary>
 internal static class McpEndpointExtensions
 {
     /// <summary>
@@ -86,7 +63,7 @@ internal static class McpEndpointExtensions
             .WithDisplayName("MCP Operator Surface")
             .WithName("McpDataAccessSurface")
             .WithSummary("MCP JSON-RPC dispatcher for planning, execution, lifecycle, and results.")
-            .WithDescription("Accepts JSON-RPC 2.0 requests over the Streamable-HTTP transport. Issues an Mcp-Session-Id on initialize and validates it on subsequent requests. Responds with application/json or, when the client accepts text/event-stream, a single SSE message frame. Single-request-only: initialize (MCP lifecycle forbids batching). Single or batched: notifications/initialized, tools/list, tools/call, resources/list, resources/templates/list, resources/read, prompts/list, and prompts/get.")
+            .WithDescription("Accepts JSON-RPC 2.0 requests over the Streamable-HTTP transport. Supports stateless 2026-07-28 requests with per-request metadata and mirrored headers, including server/discover. Legacy initialize negotiates 2025-06-18 or 2025-03-26 sessions. Responds with application/json or, when the client accepts text/event-stream, a single SSE message frame. Modern requests are single messages. Legacy batches support: notifications/initialized, tools/list, tools/call, resources/list, resources/templates/list, resources/read, prompts/list, and prompts/get.")
             .WithTags("Mcp");
 
         endpoints.MapGet(RoutePath,
@@ -181,12 +158,7 @@ internal static class McpEndpointExtensions
         catch (JsonException ex)
         {
             McpLog.RequestParseFailed(logger, ex.Message);
-            await WriteSingleAsync(
-                context,
-                ErrorResponse(
-                    JsonNullId,
-                    McpErrorMapper.ParseError($"Request body is not valid JSON: {ex.Message}")),
-                cancellationToken).ConfigureAwait(false);
+            await WriteParseErrorAsync(context, ex, cancellationToken).ConfigureAwait(false);
             return;
         }
 
@@ -202,6 +174,12 @@ internal static class McpEndpointExtensions
                     context,
                     ErrorResponse(JsonNullId, McpErrorMapper.SessionActorRequired()),
                     cancellationToken).ConfigureAwait(false);
+                return;
+            }
+
+            if (McpModernProtocol.AppliesTo(context, root))
+            {
+                await McpModernHttp.HandlePostAsync(context, root, cancellationToken).ConfigureAwait(false);
                 return;
             }
 
@@ -357,6 +335,11 @@ internal static class McpEndpointExtensions
     /// </summary>
     private static async Task HandleGetAsync(HttpContext context, CancellationToken cancellationToken)
     {
+        if (await McpModernHttp.TryRejectSessionVerbAsync(context).ConfigureAwait(false))
+        {
+            return;
+        }
+
         var sessions = context.RequestServices.GetRequiredService<McpSessionManager>();
         var logger = context.RequestServices.GetRequiredService<ILogger<McpDataAccessSurface>>();
         var options = context.RequestServices.GetRequiredService<IOptions<McpOptions>>().Value;
@@ -458,6 +441,11 @@ internal static class McpEndpointExtensions
     /// </summary>
     private static async Task HandleDeleteAsync(HttpContext context, CancellationToken cancellationToken)
     {
+        if (await McpModernHttp.TryRejectSessionVerbAsync(context).ConfigureAwait(false))
+        {
+            return;
+        }
+
         var sessions = context.RequestServices.GetRequiredService<McpSessionManager>();
         var logger = context.RequestServices.GetRequiredService<ILogger<McpDataAccessSurface>>();
 
@@ -468,8 +456,6 @@ internal static class McpEndpointExtensions
             return;
         }
 
-        // Only the principal that owns the session may terminate it (A3 binding;
-        // #2537): a mismatched identity is forbidden, an unknown/expired id 404s.
         var principalKey = McpAuthorizationHelper.ResolveSessionBindingKey(context);
         if (principalKey is null)
         {
@@ -491,13 +477,13 @@ internal static class McpEndpointExtensions
                 return;
         }
 
-        // Removes the session from the shared store too, so DELETE on any instance
-        // ends the session on every instance. A 204 is only returned once the shared
-        // record is gone; otherwise other replicas could still honour the session.
-        // A stateless session (no shared store on a multi-instance host) cannot be
-        // revoked on other instances, so the server answers the spec's 405: "this
-        // server does not allow clients to terminate sessions". Clients treat that
-        // as a completed close; the id simply expires at the end of its lifetime.
+        await TerminateSessionAsync(context, sessionId, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task TerminateSessionAsync(HttpContext context, string sessionId, CancellationToken cancellationToken)
+    {
+        var sessions = context.RequestServices.GetRequiredService<McpSessionManager>();
+        var logger = context.RequestServices.GetRequiredService<ILogger<McpDataAccessSurface>>();
         var termination = await sessions.TerminateAsync(sessionId, cancellationToken).ConfigureAwait(false);
         McpLog.SessionTerminated(logger, sessionId, termination == McpSessionTermination.Terminated);
         if (termination == McpSessionTermination.NotRevocable)
@@ -690,7 +676,7 @@ internal static class McpEndpointExtensions
     /// it through the operator surface. Returns <c>null</c> when the element is
     /// a notification and no response must be emitted.
     /// </summary>
-    private static async Task<McpJsonRpcResponse?> ProcessMessageAsync(
+    internal static async Task<McpJsonRpcResponse?> ProcessMessageAsync(
         HttpContext context,
         McpDataAccessSurface surface,
         JsonElement message,
@@ -738,6 +724,11 @@ internal static class McpEndpointExtensions
         // Normalize request.Id so the dispatcher treats absent/notification the
         // same way regardless of how JsonElement? surfaced missing fields.
         request.Id = idState.Kind == RequestIdKind.Notification ? null : idState.Element;
+
+        if (context.Items.ContainsKey(McpModernProtocol.RequestItemKey))
+        {
+            return await surface.DispatchAsync(context, request, cancellationToken).ConfigureAwait(false);
+        }
 
         var sessions = context.RequestServices.GetRequiredService<McpSessionManager>();
         var sessionId = context.Request.Headers[McpSessionManager.SessionHeaderName].ToString();
@@ -797,7 +788,21 @@ internal static class McpEndpointExtensions
         }
     }
 
-    private static async Task WriteSingleAsync(
+    private static Task WriteParseErrorAsync(HttpContext context, JsonException exception, CancellationToken cancellationToken)
+    {
+        var status = StatusCodes.Status200OK;
+        if (McpModernProtocol.HasModernHeader(context.Request))
+        {
+            context.Items[McpModernProtocol.RequestItemKey] = true;
+            status = StatusCodes.Status400BadRequest;
+        }
+
+        return WriteSingleAsync(context,
+            ErrorResponse(JsonNullId, McpErrorMapper.ParseError($"Request body is not valid JSON: {exception.Message}")),
+            cancellationToken, status);
+    }
+
+    internal static async Task WriteSingleAsync(
         HttpContext context,
         McpJsonRpcResponse response,
         CancellationToken cancellationToken,
@@ -805,7 +810,7 @@ internal static class McpEndpointExtensions
     {
         context.Response.StatusCode = statusCode;
 
-        if (AcceptsEventStream(context))
+        if (AcceptsEventStream(context) && !context.Items.ContainsKey(McpModernProtocol.RequestItemKey))
         {
             // Streamable-HTTP: when the client accepts text/event-stream the
             // server MAY answer a POST with an SSE stream. We emit the single
@@ -829,7 +834,7 @@ internal static class McpEndpointExtensions
     {
         context.Response.StatusCode = StatusCodes.Status200OK;
 
-        if (AcceptsEventStream(context))
+        if (AcceptsEventStream(context) && !context.Items.ContainsKey(McpModernProtocol.RequestItemKey))
         {
             var payload = JsonSerializer.Serialize(responses, McpJsonContext.Default.ListMcpJsonRpcResponse);
             StartEventStream(context);
