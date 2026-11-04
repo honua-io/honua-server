@@ -119,7 +119,6 @@ internal sealed class ImageServerMetadataHandler
             // the whole metadata response instead of just omitting statistics (#2991).
             var rasterIds = rasters.Select(r => r.Id).ToArray();
             var schemaName = context.RequestServices.GetService<ISchemaContext>()?.CurrentSchema;
-            var statisticsBudgetExceeded = false;
             var statistics = await ImageServerStatisticsBudget.ResolveAsync(
                 context.RequestServices.GetRequiredService<IServiceScopeFactory>(),
                 ImageServerStatisticsBudget.CreateStatisticsOperationKey(
@@ -136,20 +135,8 @@ internal sealed class ImageServerMetadataHandler
                             mergeStrategy,
                             cancellationToken: ct);
                 },
-                onBudgetExceeded: () =>
-                {
-                    statisticsBudgetExceeded = true;
-                    ImageServerLog.StatisticsComputeBudgetExceeded(
-                        _logger, layerId, ImageServerStatisticsBudget.Timeout.TotalSeconds);
-                },
+                onBudgetExceeded: ImageServerStatisticsBudget.MarkResponseIncomplete(context.Response, _logger, layerId),
                 cancellationToken);
-            if (statisticsBudgetExceeded)
-            {
-                // Do not let the output-cache middleware persist the deliberately
-                // incomplete fallback. The background backfill may finish immediately
-                // after this response, so a subsequent request must be allowed to see it.
-                context.Response.Headers.CacheControl = "no-store";
-            }
 
             // A registered multidimensional coverage is the raster the slices come from.
             // Describe that grid instead of a co-registered base raster (#6493).

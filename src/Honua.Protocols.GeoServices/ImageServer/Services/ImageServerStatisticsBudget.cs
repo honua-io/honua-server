@@ -4,7 +4,9 @@
 using System.Collections.Concurrent;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Infrastructure.Middleware;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Services;
 
@@ -40,6 +42,14 @@ internal static class ImageServerStatisticsBudget
     /// client and infrastructure timeouts instead of racing them.
     /// </summary>
     internal static readonly TimeSpan Timeout = TimeSpan.FromSeconds(20);
+
+    // The incomplete fallback is replaced by the background backfill moments later, so no cache may keep it.
+    public static Action MarkResponseIncomplete(HttpResponse response, ILogger logger, int layerId)
+        => () =>
+        {
+            response.Headers.CacheControl = "no-store";
+            ImageServerLog.StatisticsComputeBudgetExceeded(logger, layerId, Timeout.TotalSeconds);
+        };
 
     /// <summary>
     /// Runs <paramref name="operation"/> with a bounded time budget layered on top of

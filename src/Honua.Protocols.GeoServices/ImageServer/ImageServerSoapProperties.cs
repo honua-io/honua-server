@@ -798,7 +798,10 @@ internal static partial class ImageServerSoapEndpoints
                         bands: bands,
                         cancellationToken: ct);
             },
-            onBudgetExceeded: () => context.Response.Headers.CacheControl = "no-store",
+            onBudgetExceeded: ImageServerStatisticsBudget.MarkResponseIncomplete(
+                context.Response,
+                context.RequestServices.GetRequiredService<ILogger<ImageServerSoapLog>>(),
+                layerId),
             cancellationToken).ConfigureAwait(false);
         return statistics.OrderBy(static statistic => statistic.Band).ToArray();
     }
