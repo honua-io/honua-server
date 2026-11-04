@@ -27,7 +27,8 @@ public sealed partial class FolderSnapshotCompatibilityTests : IAsyncLifetime
 
     public FolderSnapshotCompatibilityTests()
     {
-        _fixture = new WebAppFixture().ConfigureWebHost(b =>
+        _fixture = new WebAppFixture();
+        _fixture.ConfigureWebHost(b =>
         {
             b.UseEnvironment("Test");
             b.UseSetting("HONUA_DEV_AUTH", "false");

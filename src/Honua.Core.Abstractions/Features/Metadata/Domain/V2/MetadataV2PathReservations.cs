@@ -100,9 +100,8 @@ public static class MetadataV2PathReservations
         }
         var reserved = aliases[index];
         if (!MetadataV2ServicePaths.SameTenant(reserved.Tenant, path.Tenant) ||
-            !reserved.TargetFacetIds.Intersect(path.TargetFacetIds, StringComparer.Ordinal).Any() ||
-            (reserved.Retired && !path.Retired))
-            throw new InvalidOperationException("A permanent public path reservation cannot be rebound or reactivated.");
+            !reserved.TargetFacetIds.Intersect(path.TargetFacetIds, StringComparer.Ordinal).Any())
+            throw new InvalidOperationException("A permanent public path reservation cannot be rebound.");
         aliases[index] = reserved with
         {
             TargetFacetIds = reserved.TargetFacetIds.Concat(path.TargetFacetIds).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray(),

@@ -29,8 +29,8 @@ public sealed class FolderEndpointsTests : IAsyncLifetime
 
     public FolderEndpointsTests()
     {
-        _fixture = new WebAppFixture()
-            .ConfigureWebHost(b =>
+        _fixture = new WebAppFixture();
+        _fixture.ConfigureWebHost(b =>
             {
                 b.UseEnvironment("Test");
                 b.UseSetting("HONUA_DEV_AUTH", "false");

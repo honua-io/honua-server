@@ -719,7 +719,7 @@ public sealed class PostgresMetadataV2GraphStoreFreshDbTests(PostgresFixture fix
         {
             await CoreMigrationTestFixture.ApplyMetadataV2Async(fixture, schema);
             var store = new PostgresMetadataV2GraphStore(new TestConnectionProvider(fixture.DataSource, schema),
-                "Test", CreateGuard(schema), schema);
+                "Test", FixtureBypassDatabaseSchemaGuard.Instance, schema);
             var bootstrap = await store.GetCurrentAsync();
             var original = await store.SaveAsync(bootstrap.Graph, bootstrap.Etag);
             var folder = new MetadataV2Folder { Metadata = new() { Id = "folder", Name = "Survey" } };

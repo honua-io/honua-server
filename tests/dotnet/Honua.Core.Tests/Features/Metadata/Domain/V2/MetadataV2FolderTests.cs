@@ -46,6 +46,22 @@ public sealed class MetadataV2FolderTests
     }
 
     [Fact]
+    public void Reconcile_StaleAliasRetirementFlags_PreservesTombstonesInNewRevision()
+    {
+        var original = MetadataV2FolderMutations.Move(Graph(), "Parcels", "folder");
+        var older = original with { Services = [] };
+        var retired = MetadataV2PathReservations.Reconcile(original, older);
+        var unsafeActivation = () => MetadataV2PathReservations.EnsureActivationPreservesReservations(retired, older);
+        unsafeActivation.Should().Throw<MetadataV2PathReservationException>();
+        var recovered = MetadataV2PathReservations.Reconcile(retired, older);
+        recovered.ServicePathAliases.Should().OnlyContain(alias => alias.Retired);
+        var safeActivation = () => MetadataV2PathReservations.EnsureActivationPreservesReservations(retired, recovered);
+        safeActivation.Should().NotThrow();
+        var restoreLivePaths = () => MetadataV2PathReservations.Reconcile(retired, original);
+        restoreLivePaths.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
     public void Activate_OlderGraphErasingReservations_RequiresReconciledRevert()
     {
         var original = Graph();
