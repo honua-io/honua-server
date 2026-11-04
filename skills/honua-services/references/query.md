@@ -1,5 +1,8 @@
 # Verify the requested result
 
+Use the [query-view concept](https://honua.io/docs/concepts/domain/query-view/) and
+[filter reference](https://honua.io/docs/reference/cql2-and-filtering/) for filter semantics.
+
 Use `honua_list_layers` and `honua_describe_layer` to obtain the published layer
 identity and field schema. Use the discovered `honua_query_features` schema for
 the filter, selected fields, ordering, output CRS and paging arguments.

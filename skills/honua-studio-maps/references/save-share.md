@@ -1,5 +1,9 @@
 # Save styles and publication identity
 
+Read the [saved content-version concept](https://honua.io/docs/concepts/domain/content-version/),
+[style concept](https://honua.io/docs/concepts/domain/style/) and
+[map publication workflow](https://honua.io/docs/guides/workflows/publish-share-map/) before saving and sharing.
+
 A successful preview is not a durable map. A style reference must identify a
 persisted style (or an inline style key in the saved composition); changing a
 preview renderer alone is insufficient. In Console, save the style, including

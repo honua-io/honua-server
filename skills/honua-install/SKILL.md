@@ -31,3 +31,5 @@ Use Docker Compose v2, Python 3 and OpenSSL on a dedicated Docker host.
 Creating proposer and approver credentials is an operator step on the management
 API. Keep their values in the protected secret channel. Installing this skill
 neither grants credentials nor permits self-approval.
+
+See the [deployment concept](https://honua.io/docs/concepts/domain/deployment/) in the OKF documentation.

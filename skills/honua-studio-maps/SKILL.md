@@ -37,3 +37,5 @@ catalog layers with `honua_list_layers` and `honua_describe_layer` first.
 Map sharing and source service permissions are separate. Do not make services
 public to make a team map render. If the intended audience cannot access a
 layer, explain the gap and ask before widening that layer's access.
+
+See the [map concept](https://honua.io/docs/concepts/domain/map/) in the OKF documentation.

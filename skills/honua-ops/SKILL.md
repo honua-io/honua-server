@@ -5,6 +5,8 @@ description: Use when diagnosing Honua operational findings, proposing approved 
 
 # Operate Honua
 
+Operator-installed estates hand off to the installed server's own `/mcp` for day-2 work.
+
 Read the install's `AGENTS.md`. Discover tools on the endpoint where the action
 belongs: serving on port 18080, management on port 18082 in the quickstart.
 Use the live `tools/list` schemas; missing tools can mean the selected view,
@@ -26,3 +28,5 @@ After a lost reply to any mutation, read its proposal, job or target state
 before retrying. Retry only transient failures, at most three times, and stop
 on a permanent denial. Report what the readback proves, including pending or
 failed work.
+
+See the [approval concept](https://honua.io/docs/concepts/domain/approval/) in the OKF documentation.

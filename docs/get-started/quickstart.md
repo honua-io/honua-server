@@ -63,6 +63,27 @@ backup; unknown schemas and unsupported configuration changes fail closed. The
 executor retains backups under `backups/`; file storage needs its own backup.
 See [upgrade and rollback](../guides/deploy/upgrade-and-rollback.md).
 
+### Install operating skills
+
+From the trusted, extracted quickstart directory, install the same canonical
+files for either host (or both). These commands copy all five skills and their
+references without changing their bytes:
+
+```bash
+mkdir -p .claude/skills
+cp -R skills/. .claude/skills/
+mkdir -p .agents/skills
+cp -R skills/. .agents/skills/
+```
+
+Claude Code discovers project skills in `.claude/skills`; Codex discovers them in
+`.agents/skills`. Run the host from this project directory. Review any existing
+`honua-*` directories before copying: these commands replace matching files.
+The source stays in `skills/`; repeat the copy after upgrading the package.
+
+See [operating skills](../guides/connect/operating-skills.md) for verification
+and the distinction between file delivery and the MCP extension.
+
 ## Serving configuration reference
 
 The following recipe documents the serving portion included in the package and

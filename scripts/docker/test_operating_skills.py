@@ -1,5 +1,7 @@
 """Ensure the quickstart carries the canonical agent files with verifiable bytes."""
 import hashlib
+import importlib.util
+import re
 from pathlib import Path
 import subprocess
 import tempfile
@@ -8,6 +10,24 @@ import sys
 import unittest
 
 from package_quickstart import ROOT, package
+
+LINK_CHECK_SPEC = importlib.util.spec_from_file_location(
+    'doc_links', ROOT / 'scripts/ci/check-doc-links.py')
+DOC_LINKS = importlib.util.module_from_spec(LINK_CHECK_SPEC)
+LINK_CHECK_SPEC.loader.exec_module(DOC_LINKS)
+
+
+def skill_link_errors(skill_root):
+    _, relative_errors, _ = DOC_LINKS.check_relative_links(str(skill_root), str(ROOT), set())
+    references = []
+    for path in skill_root.rglob('*.md'):
+        for url in DOC_LINKS.RUNTIME_DOCS_URL_RE.findall(path.read_text()):
+            references.append({'url': url.rstrip(DOC_LINKS.URL_TRAILING_TRIM)})
+    manifest = {'references': list({entry['url']: entry for entry in references}.values())}
+    _, docs_errors, _, _ = DOC_LINKS.check_manifest(
+        manifest, str(ROOT), str(ROOT / 'docs'), {})
+    return relative_errors + docs_errors
+
 
 IMAGE = 'ghcr.io/honua-io/honua-server@sha256:' + 'a' * 64
 
@@ -38,6 +58,40 @@ class OperatingSkillsTests(unittest.TestCase):
             result = subprocess.run(['sha256sum', '-c', 'agent-files.sha256'], cwd=destination,
                                     capture_output=True, text=True)
             self.assertNotEqual(0, result.returncode)
+
+    def test_documented_host_installs_preserve_all_packaged_skill_bytes(self):
+        for document in ('docs/get-started/quickstart.md',
+                         'docs/guides/connect/operating-skills.md',
+                         'docs/guides/connect/working-with-ai-agents.md'):
+            with self.subTest(document=document), tempfile.TemporaryDirectory() as directory:
+                destination = Path(directory)
+                package(destination, IMAGE, IMAGE, IMAGE, 'test')
+                commands = re.search(
+                    r'```bash\n(mkdir -p \.claude/skills.*?)\n```',
+                    (ROOT / document).read_text(), re.S).group(1)
+                result = subprocess.run(['bash', '-eu', '-c', commands], cwd=destination,
+                                        capture_output=True, text=True)
+                self.assertEqual(0, result.returncode, result.stderr)
+                for host in ('.claude', '.agents'):
+                    installed = destination / host / 'skills'
+                    sources = {path.relative_to(destination / 'skills'): path.read_bytes()
+                               for path in (destination / 'skills').rglob('*') if path.is_file()}
+                    copies = {path.relative_to(installed): path.read_bytes()
+                              for path in installed.rglob('*') if path.is_file()}
+                    self.assertEqual(sources, copies)
+
+    def test_skill_relative_and_docs_links_resolve(self):
+        self.assertEqual([], skill_link_errors(ROOT / 'skills'))
+
+    def test_skill_links_reject_missing_files_and_anchors(self):
+        targets = ('references/missing.md', '#missing',
+                   'https://honua.io/docs/concepts/domain/missing/',
+                   'https://honua.io/docs/concepts/domain/layer/#missing')
+        for target in targets:
+            with self.subTest(target=target), tempfile.TemporaryDirectory() as directory:
+                skill_root = Path(directory)
+                (skill_root / 'SKILL.md').write_text(f'# Skill\n[Reference]({target})\n')
+                self.assertTrue(skill_link_errors(skill_root))
 
     def test_release_archive_preserves_skill_bytes_and_lock(self):
         with tempfile.TemporaryDirectory() as directory:

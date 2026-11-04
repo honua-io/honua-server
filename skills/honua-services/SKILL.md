@@ -30,3 +30,5 @@ connections and source tables before asking the operator for ids.
 6. Report the service/layer identifiers and exactly the result you verified.
    Leave any access restriction until verification is finished. Change service
    access only if the user asked for it.
+
+See the [layer concept](https://honua.io/docs/concepts/domain/layer/) in the OKF documentation.

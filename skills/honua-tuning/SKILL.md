@@ -11,11 +11,8 @@ redacted job/status evidence before changing settings. A caller timeout alone
 does not identify the server's bottleneck.
 
 For large layer publication or snapshot refresh, use
-`LayerPublishing__MaterializationTimeoutSeconds`. Its default is 300 seconds;
-valid values are integers from 1 through 3600. It controls the wall-clock and
-PostgreSQL command budget for the canonical snapshot copy, including delete
-work during refresh. It does not increase ordinary feature query timeouts or
-ignore caller cancellation. Read [materialization settings](references/materialization.md).
+`LayerPublishing__MaterializationTimeoutSeconds`. Read the current defaults, ranges and scope in
+[materialization settings](references/materialization.md) before choosing a value.
 
 Apply a justified value through the installation's supported configuration
 path, preserving the prior value. In a governed installation, propose any
@@ -27,3 +24,5 @@ After the approved change, verify readiness, the operation's terminal state,
 and a bounded query of the published layer. Compare duration and resource use
 with the baseline. Roll back the setting through the same approved path if the
 change does not help. Report the value, measured effect and remaining limit.
+
+See the [job concept](https://honua.io/docs/concepts/domain/job/) in the OKF documentation.

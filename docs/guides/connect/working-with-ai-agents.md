@@ -148,8 +148,20 @@ The package's `skills/` directory contains five optional Agent Skills:
 - `skills/honua-studio-maps/SKILL.md`: Studio styles, saved versions and sharing.
 - `skills/honua-tuning/SKILL.md`: measured publication tuning and supported budgets.
 
-Load the skill relevant to the task using your host's supported skill-loading
-mechanism. Merely reading a skill is not permission to execute its commands or
+Install the relevant skills from this directory before starting your host:
+
+```bash
+mkdir -p .claude/skills
+cp -R skills/. .claude/skills/
+mkdir -p .agents/skills
+cp -R skills/. .agents/skills/
+```
+
+Claude Code uses `.claude/skills`; Codex uses `.agents/skills`. These copies
+preserve the canonical `skills/` bytes. Review existing `honua-*` directories
+before replacing matching files; repeat the copy after a package upgrade.
+
+Load the skill relevant to the task. Merely reading a skill is not permission to execute its commands or
 bypass an approval. These public instructions contain no install credentials
 or tenant content. Verify the trusted package's agent files from its directory
 with `sha256sum -c agent-files.sha256`. The lock includes this `AGENTS.md` and

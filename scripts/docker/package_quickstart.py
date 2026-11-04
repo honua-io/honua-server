@@ -56,7 +56,11 @@ def package(destination, server, executor, worker, version):
         'Never guess its schema.\n\n'
         'AI coding agents working in this directory: read `AGENTS.md` first. It covers secrets, '
         'approvals, upgrades and verifying work before reporting it done. '
-        'Task-specific skills are in skills/. Verify agent files with '
+        'Task-specific skills are in skills/. To install for Claude Code, run '
+        '`mkdir -p .claude/skills && cp -R skills/. .claude/skills/`; for Codex, run '
+        '`mkdir -p .agents/skills && cp -R skills/. .agents/skills/`. '
+        'Review existing honua-* directories before replacing matching files; repeat after upgrades. '
+        'Both hosts receive the same source bytes. Verify agent files with '
         '`sha256sum -c agent-files.sha256` after verifying the release archive checksum.\n')
 
 

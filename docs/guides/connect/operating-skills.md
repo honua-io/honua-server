@@ -7,9 +7,8 @@ description: "Use the quickstart's task-specific Agent Skills and verify their p
 
 The Compose quickstart carries five [Agent Skills](https://agentskills.io/specification)
 under `skills/`, alongside `AGENTS.md`. Each directory contains `SKILL.md` and
-supporting references. Load the relevant skill using your coding host's supported
-filesystem skill mechanism. Host-specific installation locations differ; the
-package does not silently install into your home directory or change permissions.
+supporting references. Installation is explicit; the package does not change
+your home directory or permissions.
 
 | Skill | Use it for | Workflow family |
 | --- | --- | --- |
@@ -36,21 +35,34 @@ also has its published SHA-256 checksum. Verify that archive against the release
 before trusting its internal lock: matching hashes establish consistency, not
 the trustworthiness of instructions. Site edits to `AGENTS.md` change its digest.
 
+## Install for Claude Code and Codex
+
+From the trusted, extracted quickstart directory, install the same canonical
+files for either host (or both). These commands copy all five skills and their
+references without changing their bytes:
+
+```bash
+mkdir -p .claude/skills
+cp -R skills/. .claude/skills/
+mkdir -p .agents/skills
+cp -R skills/. .agents/skills/
+```
+
+Claude Code discovers project skills in `.claude/skills`; Codex discovers them in
+`.agents/skills`. Run the host from this project directory. Review any existing
+`honua-*` directories before copying: these commands replace matching files.
+The source stays in `skills/`; repeat the copy after upgrading the package.
+
 ## MCP host compatibility
 
 Filesystem skills and the MCP Skills extension are separate capabilities.
 The skills in this package can be used as filesystem skills; this content change
 does not add `skills/list` or `skills/get` to Honua's MCP endpoint.
 
-The [extension client matrix](https://modelcontextprotocol.io/extensions/client-matrix)
-currently marks ChatGPT plugin import, fast-agent and MCP Inspector as partial.
-The broader [implementations list](https://github.com/modelcontextprotocol/ext-skills/blob/main/docs/implementations.md)
-reports released-extension support in fast-agent, MCPJam Inspector, mcpc, vitehub
-and harness. ChatGPT plugin import takes a static submission snapshot. The two
-lists differ in granularity; consult each host's linked implementation before
-relying on a particular workflow. Neither list establishes MCP Skills parity
-for Codex or Claude Code. Local `SKILL.md` support does not imply remote skill
-verification, origin handling or approval support.
+Remote delivery is separate work. Consult the
+[MCP Skills extension](https://modelcontextprotocol.io/extensions/skills/overview)
+and its [client matrix](https://modelcontextprotocol.io/extensions/client-matrix)
+for host support; local skill discovery does not establish extension conformance.
 
 A host consuming future MCP-served skills must verify each file's digest and
 byte size against its retained manifest, preserve the server origin and apply
