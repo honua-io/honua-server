@@ -420,6 +420,9 @@
     "\"esriPath\"": "\"geoServicesPath\"",
     "\"esriPaths\"": "\"geoServicesPaths\""
   },
+  "preservedInputs": [
+    "arcgis-geoservices-rest"
+  ],
   "excludedPaths": [
     "src/Honua.Server/Migrations",
     "src/Honua.Db/Postgres/Migrations",

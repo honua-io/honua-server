@@ -35,6 +35,7 @@ class NamingMap:
     literal_fragments: dict[str, str]
     data_values: dict[str, str]
     excluded_paths: tuple[str, ...]
+    preserved_inputs: tuple[str, ...] = ()
 
     @classmethod
     def load(cls, path: Path) -> NamingMap:
@@ -45,6 +46,7 @@ class NamingMap:
             literal_fragments=raw["literalFragments"],
             data_values=raw["dataValues"],
             excluded_paths=tuple(raw["excludedPaths"]),
+            preserved_inputs=tuple(raw.get("preservedInputs", ())),
         )
 
     def rename_identifiers(self, text: str) -> str:
@@ -238,10 +240,134 @@ def rename_csharp(source: str, naming: NamingMap) -> str:
     return "".join(renamed)
 
 
-def rename_data(text: str, naming: NamingMap) -> str:
-    for old, new in naming.data_values.items():
+def _replace_data_values(text: str, data_values: dict[str, str]) -> str:
+    for old, new in data_values.items():
         text = text.replace(old, new)
     return text
+
+
+def _json_string_spans(text: str) -> list[tuple[int, int]]:
+    spans, index = [], 0
+    while index < len(text):
+        if text[index] != '"':
+            index += 1
+            continue
+        start = index + 1
+        index += 1
+        while index < len(text):
+            if text[index] == "\\":
+                index += 2
+                continue
+            if text[index] == '"':
+                spans.append((start, index))
+                index += 1
+                break
+            index += 1
+    return spans
+
+
+def _enum_array_spans(text: str) -> list[tuple[int, int]]:
+    spans, index = [], 0
+    while (key := text.find('"enum"', index)) >= 0:
+        cursor = _skip_space(text, key + len('"enum"'))
+        if cursor >= len(text) or text[cursor] != ":":
+            index = key + 1
+            continue
+        cursor = _skip_space(text, cursor + 1)
+        end = _matching_bracket(text, cursor) if cursor < len(text) and text[cursor] == "[" else None
+        if end is None:
+            index = key + 1
+            continue
+        spans.append((cursor, end + 1))
+        index = end + 1
+    return spans
+
+
+def _skip_space(text: str, index: int) -> int:
+    while index < len(text) and text[index] in " \t\r\n":
+        index += 1
+    return index
+
+
+def _matching_bracket(text: str, open_at: int) -> int | None:
+    depth, index, in_string = 0, open_at, False
+    while index < len(text):
+        char = text[index]
+        if in_string:
+            if char == "\\":
+                index += 2
+                continue
+            in_string = char != '"'
+        elif char == '"':
+            in_string = True
+        elif char == "[":
+            depth += 1
+        elif char == "]":
+            depth -= 1
+            if depth == 0:
+                return index
+        index += 1
+    return None
+
+
+def _mentions_distinct(text: str, value: str, legacy: str) -> bool:
+    start = 0
+    while (found := text.find(value, start)) >= 0:
+        embedded_at = found - (len(legacy) - len(value))
+        if embedded_at >= 0 and text[embedded_at:found + len(value)] == legacy:
+            start = found + len(value)
+            continue
+        return True
+    return False
+
+
+def _covering_enum(text: str, position: int, enums: list[tuple[int, int]]) -> str | None:
+    return next((text[start:end] for start, end in enums if start <= position < end), None)
+
+
+def _kept_alongside_canonical(inner: str, pair: tuple[str, str], enum_body: str | None) -> bool:
+    legacy, canonical = pair
+    return _mentions_distinct(inner, canonical, legacy) or (
+        enum_body is not None and f'"{canonical}"' in enum_body)
+
+
+def _mask_preserved_inputs(text: str, naming: NamingMap) -> tuple[str, dict[str, str]]:
+    enums = _enum_array_spans(text)
+    tokens: dict[str, str] = {}
+
+    def mask_string(inner: str, position: int) -> str:
+        enum_body = _covering_enum(text, position, enums)
+        for index, legacy in enumerate(naming.preserved_inputs):
+            canonical = naming.data_values.get(legacy)
+            if canonical is None or legacy not in inner:
+                continue
+            if not _kept_alongside_canonical(inner, (legacy, canonical), enum_body):
+                continue
+            token = f"\ue000{index}\ue001"
+            tokens[token] = legacy
+            inner = inner.replace(legacy, token)
+        return inner
+
+    pieces, cursor = [], 0
+    for start, end in _json_string_spans(text):
+        pieces.append(text[cursor:start])
+        pieces.append(mask_string(text[start:end], start))
+        cursor = end
+    pieces.append(text[cursor:])
+    return "".join(pieces), tokens
+
+
+def _restore_masks(text: str, tokens: dict[str, str]) -> str:
+    for token, legacy in tokens.items():
+        text = text.replace(token, legacy)
+    return text
+
+
+def rename_data(text: str, naming: NamingMap) -> str:
+    if not naming.preserved_inputs:
+        return _replace_data_values(text, naming.data_values)
+    masked, tokens = _mask_preserved_inputs(text, naming)
+    return _restore_masks(_replace_data_values(masked, naming.data_values), tokens)
 
 
 def renamed_path(path: Path, naming: NamingMap) -> Path:

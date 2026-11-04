@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 import unittest
 from pathlib import Path
@@ -84,6 +85,65 @@ class PathTests(unittest.TestCase):
     def test_rewrites_data_values(self):
         self.assertEqual('{"sourceKind": "geoservices-rest"}',
                          names.rename_data('{"sourceKind": "arcgis-geoservices-rest"}', NAMING))
+
+
+PRESERVING = names.NamingMap(
+    identifiers={},
+    literals={},
+    literal_fragments={},
+    data_values={
+        "arcgis-geoservices-rest": "geoservices-rest",
+        "\"esriAssess\"": "\"geoservicesAssess\"",
+    },
+    excluded_paths=(),
+    preserved_inputs=("arcgis-geoservices-rest",),
+)
+SCANNER_ENUM = [
+    "geoserver",
+    "geoserver-rest",
+    "geoservices",
+    "geoservices-rest",
+    "arcgis-geoservices-rest",
+]
+
+
+def scanner_source_kind_enum(document: str) -> list[str]:
+    schema = json.loads(document)["components"]["schemas"]["MigrationInventoryScanRequest"]
+    return schema["properties"]["sourceKind"]["enum"]
+
+
+class PreservedInputTests(unittest.TestCase):
+    def test_lone_value_and_quoted_token_still_rename(self):
+        source = '{"sourceKind": "arcgis-geoservices-rest", "esriAssess": 1, "enum": ["arcgis-geoservices-rest"]}'
+        renamed = names.rename_data(source, PRESERVING)
+        self.assertEqual(
+            '{"sourceKind": "geoservices-rest", "geoservicesAssess": 1, "enum": ["geoservices-rest"]}',
+            renamed)
+        self.assertEqual(renamed, names.rename_data(renamed, PRESERVING))
+
+    def test_scanner_enum_keeps_legacy_input_beside_canonical(self):
+        source = (
+            '{"description": "Values normalize to geoservices-rest; '
+            'the legacy value arcgis-geoservices-rest is still accepted.", '
+            '"enum": ["geoserver", "geoservices-rest", "arcgis-geoservices-rest"]}'
+        )
+        renamed = names.rename_data(source, PRESERVING)
+        self.assertEqual(source, renamed)
+        self.assertEqual(renamed.count("arcgis-geoservices-rest"), 2)
+        self.assertEqual(renamed.count('"geoservices-rest"'), 1)
+
+    def test_plan_keeps_the_checked_in_scanner_schema(self):
+        root = Path(__file__).resolve().parents[2]
+        path = root / "docs/developer/api-specs/admin-api.json"
+        naming = names.NamingMap.load(names.MAP_PATH)
+        text = path.read_text(encoding="utf-8")
+        renamed = names.transform(path, text, naming)
+        enum = scanner_source_kind_enum(renamed)
+        self.assertEqual(SCANNER_ENUM, enum)
+        self.assertEqual(len(enum), len(set(enum)))
+        self.assertEqual(text, renamed)
+        run = names.RenameRun(root, ["docs/developer/api-specs/admin-api.json"], naming)
+        self.assertIsNone(names.plan_change(run, path))
 
 
 if __name__ == "__main__":
