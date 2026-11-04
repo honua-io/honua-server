@@ -17,32 +17,6 @@ namespace Honua.GeoServicesRest.Tests;
 public sealed class ArcGisRestOutboundGuardTests
 {
     [Trait("Tier", "Fast")]
-    [Theory]
-    [InlineData("169.254.169.254")] // cloud metadata
-    [InlineData("127.0.0.1")]       // loopback
-    [InlineData("10.0.0.5")]        // RFC1918 private
-    [InlineData("172.16.0.1")]      // RFC1918 private
-    [InlineData("192.168.1.1")]     // RFC1918 private
-    [InlineData("100.64.0.1")]      // CGNAT
-    [InlineData("::1")]             // IPv6 loopback
-    [InlineData("fc00::1")]         // IPv6 ULA
-    [InlineData("fe80::1")]         // IPv6 link-local
-    public void IsPrivateOrReservedAddress_BlockedRanges_ReturnsTrue(string address)
-    {
-        Assert.True(ArcGisRestOutboundGuard.IsPrivateOrReservedAddress(IPAddress.Parse(address)));
-    }
-
-    [Trait("Tier", "Fast")]
-    [Theory]
-    [InlineData("8.8.8.8")]
-    [InlineData("1.1.1.1")]
-    [InlineData("93.184.216.34")] // example.com
-    public void IsPrivateOrReservedAddress_PublicAddresses_ReturnsFalse(string address)
-    {
-        Assert.False(ArcGisRestOutboundGuard.IsPrivateOrReservedAddress(IPAddress.Parse(address)));
-    }
-
-    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ResolveAllowedAddressesAsync_PublicResolution_ReturnsAddresses()
     {

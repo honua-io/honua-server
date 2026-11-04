@@ -3,14 +3,12 @@
 
 using System.Net;
 using System.Net.Http.Headers;
-using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Shared.Models;
-using Honua.Core.Features.Infrastructure.Internal;
 using Honua.Core.Features.Infrastructure.Resilience;
 using Honua.Core.Features.Infrastructure.Validation;
 using Microsoft.Extensions.Logging;
@@ -33,6 +31,13 @@ namespace Honua.Core.Features.Migration.Services;
 internal sealed partial class ArcGisRestClient
 {
     private const string DisallowedNetworkAddressMessage = "ArcGIS service URL resolves to a disallowed network address.";
+
+    // A slow ArcGIS endpoint must not exhaust the local socket pool during import discovery.
+    private const int MaxConnectionsPerArcGisHost = 32;
+
+    private static readonly PinnedDnsFailureMessages PinnedConnectionFailures = new(
+        DisallowedNetworkAddressMessage,
+        "Unable to establish a secure connection to the ArcGIS service host.");
     private const string InvalidServiceRootUrlMessage =
         "ArcGIS service URL must target a service root URL (FeatureServer or MapServer).";
 
@@ -55,15 +60,7 @@ internal sealed partial class ArcGisRestClient
     {
         var resolver = hostAddressResolver ?? ((host, ct) => Dns.GetHostAddressesAsync(host, ct));
 
-        return new SocketsHttpHandler
-        {
-            AllowAutoRedirect = false,
-            // Bound per-host connections against slow ArcGIS REST endpoints so import
-            // discovery cannot exhaust the local socket pool under pathological conditions.
-            MaxConnectionsPerServer = 32,
-            ConnectCallback = (context, cancellationToken) =>
-                ConnectWithPinnedDnsAsync(context, resolver, cancellationToken)
-        };
+        return new PinnedDnsConnector(resolver, PinnedConnectionFailures).CreateHandler(MaxConnectionsPerArcGisHost);
     }
 
     /// <summary>
@@ -679,86 +676,8 @@ internal sealed partial class ArcGisRestClient
         string host,
         Func<string, CancellationToken, Task<IPAddress[]>> hostAddressResolver,
         CancellationToken cancellationToken)
-    {
-        if (string.IsNullOrWhiteSpace(host))
-        {
-            throw new HttpRequestException(DisallowedNetworkAddressMessage);
-        }
-
-        if (OutboundHttpUrlValidator.IsLocalhostHostName(host))
-        {
-            throw new HttpRequestException(DisallowedNetworkAddressMessage);
-        }
-
-        if (IPAddress.TryParse(host, out var literalAddress))
-        {
-            if (OutboundHttpUrlValidator.IsPrivateOrReservedAddress(literalAddress))
-            {
-                throw new HttpRequestException(DisallowedNetworkAddressMessage);
-            }
-
-            return [literalAddress];
-        }
-
-        IPAddress[] addresses;
-        try
-        {
-            addresses = await hostAddressResolver(host, cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            throw new HttpRequestException(DisallowedNetworkAddressMessage, ex);
-        }
-
-        if (addresses.Length == 0)
-        {
-            throw new HttpRequestException(DisallowedNetworkAddressMessage);
-        }
-
-        if (addresses.Any(OutboundHttpUrlValidator.IsPrivateOrReservedAddress))
-        {
-            throw new HttpRequestException(DisallowedNetworkAddressMessage);
-        }
-
-        return addresses;
-    }
-
-    private static async ValueTask<Stream> ConnectWithPinnedDnsAsync(
-        SocketsHttpConnectionContext context,
-        Func<string, CancellationToken, Task<IPAddress[]>> hostAddressResolver,
-        CancellationToken cancellationToken)
-    {
-        var addresses = await ResolveAllowedAddressesAsync(
-                context.DnsEndPoint.Host,
-                hostAddressResolver,
-                cancellationToken)
-            .ConfigureAwait(false);
-
-        Exception? lastException = null;
-        foreach (var address in addresses)
-        {
-            using var socketOwner = new SocketConnectionOwner(
-                new Socket(address.AddressFamily, SocketType.Stream, ProtocolType.Tcp));
-
-            try
-            {
-                await socketOwner.Socket
-                    .ConnectAsync(address, context.DnsEndPoint.Port, cancellationToken)
-                    .ConfigureAwait(false);
-                return socketOwner.TransferToNetworkStream();
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (Exception ex) when (ex is SocketException or ObjectDisposedException)
-            {
-                lastException = ex;
-            }
-        }
-
-        throw new HttpRequestException("Unable to establish a secure connection to the ArcGIS service host.", lastException);
-    }
+        => await PinnedDnsConnector.TryResolveAllowedAddressesAsync(host, hostAddressResolver, cancellationToken).ConfigureAwait(false)
+           ?? throw new HttpRequestException(DisallowedNetworkAddressMessage);
 
     private static string ExtractServiceName(string url)
     {
