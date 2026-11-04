@@ -8,7 +8,6 @@ namespace Honua.Architecture.Tests;
 
 /// <summary>
 /// Basic architecture tests to validate project structure
-/// Reference: AGENTS.md Architecture Enforcement
 /// </summary>
 [Trait("Category", "Architecture")]
 public class BasicArchitectureTests

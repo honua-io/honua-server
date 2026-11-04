@@ -27,9 +27,11 @@
    - Database connection strings in non-infrastructure layers
 
 5. **Quality Gate Violations**
-   - Public types without XML documentation (`/// <summary>`)
    - Missing integration tests for new endpoints
-   - Detection: Missing XML docs on public APIs
+
+6. **Clean Code Violations**
+   - The blocking smells in [Clean Code](#clean-code-robert-c-martin) below, including new XML doc
+     comments (`///`) in application code
 
 ## ⚠️ NEEDS_ATTENTION (Pass with Warnings - Review Required)
 
@@ -52,8 +54,7 @@
    - Detection: Sync over async, allocation patterns
 
 4. **Maintainability Issues**
-   - God classes (>300 lines)
-   - Methods with >10 parameters
+   - The warning smells in [Clean Code](#clean-code-robert-c-martin) below
    - Lack of composition over inheritance
 
 ## ✅ APPROVED (Pass - Good to Merge)
@@ -70,7 +71,7 @@
    - Value types for data transfer
 
 3. **Quality Patterns**
-   - Comprehensive XML documentation
+   - Self-documenting names; comments only for what the code cannot say
    - Integration tests for public APIs
    - Proper error handling
 
@@ -83,7 +84,7 @@ def assess_overall_rating(analysis_text: str) -> str:
     blocking_keywords = [
         "dependency violation", "controller inheritance",
         "reflection in hot path", "public repository",
-        "missing xml documentation", "aot breaking"
+        "aot breaking"
     ]
 
     warning_keywords = [
@@ -132,7 +133,7 @@ architecture-gate:
 ## Rules In Full
 
 `AGENTS.md` carries the short form of these rules, under "Protocol Adapter Architecture" and
-"Architecture Enforcement". This section holds the full text and the examples that used to live
+"Review guidelines". This section holds the full text and the examples that used to live
 there. Source comments cite rules by name ("DRY", "Security/RBAC", "intentionally diverges"), and
 those names refer to the bullets below as well as to their short forms in `AGENTS.md`.
 
@@ -385,19 +386,12 @@ public static void MapFeatureServerEndpoints(this WebApplication app)
 }
 ```
 
-#### BLOCKING: encapsulation and XML docs
+#### BLOCKING: encapsulation
 
 ```csharp
 public class FeatureRepository { }     // BLOCKING: implementation types are internal
 internal class FeatureRepository { }   // OK
 public interface IFeatureReader { }    // OK: abstractions can be public
-
-public class LayerDefinition { }       // BLOCKING: public type without /// docs
-
-/// <summary>
-/// Represents a geospatial layer definition with metadata and spatial reference.
-/// </summary>
-public class LayerDefinition { }       // OK
 ```
 
 #### WARNING: organisation, complexity, performance
@@ -429,7 +423,7 @@ asyncOperation.Wait();
 1. Scan `using` statements for dependency-direction violations.
 2. Look for `ControllerBase` inheritance.
 3. Check for public class declarations in infrastructure projects; they should be internal.
-4. Verify XML documentation on every public type (`///`).
+4. Apply the Clean Code rules below and cite smell codes; new `///` XML docs are a C1/C3 finding.
 5. Count constructor parameters: endpoints <= 5, handlers <= 4.
 6. Search for `.Result` or `.Wait()`.
 7. Verify vertical-slice organisation.
@@ -440,10 +434,46 @@ asyncOperation.Wait();
 
 Severity:
 
-- **BLOCKING**: dependency violations, controller usage, public infrastructure types, missing
-  docs.
-- **WARNING**: organisational issues, complexity, performance anti-patterns.
-- **APPROVED**: clean dependencies, vertical slices, proper tests, good documentation.
+- **BLOCKING**: dependency violations, controller usage, public infrastructure types, the Clean
+  Code blocking smells.
+- **WARNING**: organisational issues, complexity, performance anti-patterns, the other Clean Code
+  smells.
+- **APPROVED**: clean dependencies, vertical slices, proper tests, self-documenting code.
+
+### Clean Code (Robert C. Martin)
+
+Every review applies *Clean Code* to the lines a PR adds or changes and cites the smell code.
+The `Clean code` PR check enforces what a tool can decide; its rules and budgets are in
+[honua-io/.github clean-code](https://github.com/honua-io/.github/tree/main/clean-code).
+
+BLOCKING:
+
+- **G5 Duplication.** Search before writing; reuse or consolidate. Never copy a handler, parser,
+  validator or HTTP pipeline.
+- **C1 Inappropriate information**: change history ("previously", "no longer"), ticket or PR
+  numbers, authors, reviewer notes. They belong in git.
+- **C2 obsolete, C3 redundant, C4 rambling comments.** A comment says only what the code cannot:
+  intent, an external constraint, a warning of consequences.
+- **C5 Commented-out code.** Delete it.
+- **XML doc comments (`///`) in application code** (C1/C3). Names carry the meaning. Only
+  published SDK packages keep a one-line `<summary>` on public members.
+- **N1** names that do not reveal intent.
+- **F1** more than 3 to 4 parameters (use a parameter object), **F2** output arguments, **F3**
+  boolean flag arguments (split the function).
+- **Size without a stated reason**: functions over about 40 lines or 2 nesting levels; classes and
+  files over about 400 lines. Split by responsibility, not by length.
+
+WARNING:
+
+- **Names**: N2 wrong abstraction level, N3 non-standard terms, N4 ambiguity, N5 length that does
+  not match scope, N6 encodings, N7 hidden side effects.
+- **General**: G6 wrong level of abstraction, G8 wide interfaces, G9/F4 dead code, G11 the same
+  concept done several ways, G12 clutter (including single-implementation interfaces), G14 feature
+  envy, G17 misplaced responsibility, G23 switch on type, G25 magic numbers, G28/G29 unencapsulated
+  or negative conditionals, G30/G34 functions that do more than one thing, G36 transitive
+  navigation.
+- **Tests**: F.I.R.S.T., one concept per test, T1 missing tests, T5 untested boundaries, giant
+  inline fixtures instead of parametrized cases.
 
 ### Deferred Refactors
 

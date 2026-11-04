@@ -50,7 +50,7 @@ It also monitors shard headroom (#3054). Each run records `capacity_status` in t
 ## Quality Gates
 
 - Warnings are treated as errors during CI builds.
-- XML docs (`CS1591`) are currently enforced for `Honua.Core` as warnings (phase-in plan), with full-repo enforcement planned.
+- XML docs are not wanted in application code: `CS1591` stays suppressed. `GenerateDocumentationFile` stays on only because IDE0005 needs it.
 - Formatting is enforced with `dotnet format` checks.
 - API surface coverage is enforced via architecture tests.
 ## Conformance Baseline Policy

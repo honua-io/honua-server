@@ -722,7 +722,7 @@ URL. This is asserted by an architecture test.
 | Unit / integration (`Honua.Server.Tests/Features/Licensing/`) | #338 runtime loader tests for no path, missing file, valid signed file, malformed JSON/Base64URL, oversized file, unknown key, invalid signature, expired file, upload size guard, HTTP 402 gate, and gRPC `FailedPrecondition`. | Deterministic Ed25519 test keys plus server fixtures where needed. |
 | Integration (`Honua.Server.Tests/Features/Admin`, `HealthEndpointsTests`) | Admin status/upload/entitlement endpoints and health/monitoring license summaries. | Testcontainers + Postgres + admin auth. |
 | Follow-on integration | Admin mint endpoints, file watcher hot reload, AWS poller, Azure webhook/reconciler, durable buffer fault-injection, public-key inspection, and key-rotation smoke. | Lands with the bounded child tickets that implement those surfaces. |
-| Architecture (`Honua.Architecture.Tests`) | No `Honua.Server` symbols leak into `Honua.Core/Features/Licensing/`; public types in `Honua.Core/Features/Licensing/Abstractions/` and `Honua.Core/Features/Licensing/Domain/` carry XML docs; no controllers. | Roslyn analyzers + assembly scan. |
+| Architecture (`Honua.Architecture.Tests`) | No `Honua.Server` symbols leak into `Honua.Core/Features/Licensing/`; no controllers. | Roslyn analyzers + assembly scan. |
 
 Per ADR-0011 every endpoint has at least one integration test and the
 `EndpointRegistry` and `OperationRegistry` architecture tests fail closed if

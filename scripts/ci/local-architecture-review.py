@@ -21,7 +21,7 @@ def get_honua_rules() -> str:
 
             # Extract the invariants and review rules (the sections the claude-review
             # Review Gate applies): "## Protocol Adapter Architecture" through
-            # "## Architecture Enforcement: review rules", up to "## Tests".
+            # "## Review guidelines", up to "## Tests".
             match = re.search(
                 r'^## Protocol Adapter Architecture.*?(?=^## Tests\b)',
                 content,
@@ -34,7 +34,7 @@ def get_honua_rules() -> str:
         # Fallback if AGENTS.md not found or section not found
         return """# Honua Architecture Rules (Fallback; full rubric: docs/internal/contributor/architecture-criteria.md)
 
-## Architecture Enforcement: review rules (BLOCKING / WARNING)
+## Review guidelines: architecture enforcement and Clean Code (BLOCKING / WARNING)
 
 ### Quality Standards
 - **Warnings as errors**: All builds must pass with TreatWarningsAsErrors=true
@@ -143,15 +143,6 @@ def is_test_path(file_path: str) -> bool:
         return True
     return False
 
-def is_reviewable_source_path(file_path: str) -> bool:
-    """Return True when a file belongs to source projects with public API guardrails."""
-    normalized = file_path.replace("\\", "/").lower()
-    return (
-        normalized.startswith("src/honua.core/")
-        or normalized.startswith("src/honua.server/")
-        or normalized.startswith("src/honua.postgres/")
-    )
-
 def analyze_api_patterns(file_path: str, content: str) -> List[str]:
     """Check for API pattern violations"""
     violations = []
@@ -163,58 +154,6 @@ def analyze_api_patterns(file_path: str, content: str) -> List[str]:
     # Check for public repository types (security issue)
     if "public class" in content and ("Repository" in content or "DataAccess" in content):
         violations.append(f"❌ BLOCKING: Public repository/data access type - should be internal")
-
-    return violations
-
-def analyze_documentation(file_path: str, content: str) -> List[str]:
-    """Check for missing documentation"""
-    violations = []
-
-    # Documentation blocking rules are enforced for public source APIs, not tests/tooling.
-    if not is_reviewable_source_path(file_path) or is_test_path(file_path):
-        return violations
-
-    # Match public type declarations and capture the declared type name.
-    type_decl_pattern = re.compile(
-        r'^\s*public\s+(?:sealed\s+|abstract\s+|static\s+|partial\s+)*'
-        r'(class|interface|record|enum)\s+([A-Za-z_][A-Za-z0-9_]*)'
-    )
-
-    def has_xml_doc(lines: List[str], index: int) -> bool:
-        # Walk upward over blank lines and attributes to find the nearest meaningful line.
-        #
-        # An attribute is skipped by matching its closing "]" back to the "[" that opened
-        # it, rather than assuming one attribute per line: a MULTI-LINE attribute (e.g.
-        # [JsonSourceGenerationOptions(\n  PropertyNamingPolicy = ...,\n  ...)]) ends on a
-        # line that does not start with "[", which stopped the walk early and reported a
-        # documented type as undocumented (every source-generated JSON context in the repo
-        # hit this).
-        cursor = index - 1
-        while cursor >= 0:
-            candidate = lines[cursor].strip()
-            if not candidate:
-                cursor -= 1
-                continue
-            if candidate.startswith("///"):
-                return True
-            if candidate.endswith("]"):
-                while cursor >= 0 and not lines[cursor].strip().startswith("["):
-                    cursor -= 1
-                cursor -= 1
-                continue
-            return False
-        return False
-
-    # Check for public types without XML docs
-    lines = content.split('\n')
-    for i, line in enumerate(lines):
-        match = type_decl_pattern.match(line)
-        if not match:
-            continue
-
-        type_name = match.group(2)
-        if not has_xml_doc(lines, i):
-            violations.append(f"❌ BLOCKING: Missing XML documentation for public type: {type_name}")
 
     return violations
 
@@ -270,10 +209,9 @@ def local_architecture_review() -> Dict[str, Any]:
         # Run checks
         dep_violations = analyze_dependencies(file_path, content)
         api_violations = analyze_api_patterns(file_path, content)
-        doc_violations = analyze_documentation(file_path, content)
         design_issues = analyze_design_patterns(file_path, content)
 
-        all_violations.extend(dep_violations + api_violations + doc_violations)
+        all_violations.extend(dep_violations + api_violations)
         all_warnings.extend(design_issues)
 
         # Note good patterns
