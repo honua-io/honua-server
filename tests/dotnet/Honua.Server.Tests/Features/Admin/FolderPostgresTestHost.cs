@@ -34,5 +34,16 @@ internal static class FolderPostgresTestHost
             var ddl = (await reader.ReadToEndAsync()).Replace("$HonuaSchema$", $"\"{fixture.CurrentSchema}\"", StringComparison.Ordinal);
             await fixture.Postgres.ExecuteDdlUnderLockAsync(ddl);
         }
+        await CopyLegacyCatalogAsync(fixture);
+    }
+
+    private static Task CopyLegacyCatalogAsync(WebAppFixture fixture)
+    {
+        var schema = $"\"{fixture.CurrentSchema}\"";
+        var statements = new[] { "services", "layers", "service_layers", "layer_fields" }.Select(table => $"""
+            CREATE TABLE IF NOT EXISTS {schema}.{table} (LIKE honua.{table} INCLUDING ALL);
+            INSERT INTO {schema}.{table} SELECT * FROM honua.{table} ON CONFLICT DO NOTHING;
+            """);
+        return fixture.Postgres.ExecuteDdlUnderLockAsync(string.Join(Environment.NewLine, statements));
     }
 }
