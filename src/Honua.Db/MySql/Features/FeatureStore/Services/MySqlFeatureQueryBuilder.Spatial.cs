@@ -91,21 +91,7 @@ internal sealed partial class MySqlFeatureQueryBuilder
         sb.Append(CultureInfo.InvariantCulture, $" AND {clause}");
     }
 
-    /// <summary>
-    /// Mirrors the Postgres builder's envelope-only point-intersects gate: the adapter must
-    /// have explicitly marked the filter as an envelope-window request
-    /// (<see cref="SpatialFilter.IsSimpleEnvelope"/> + <see cref="SpatialFilter.AllowEnvelopeOnly"/>,
-    /// per the documented bbox windowing semantics), the layer must be single-point-typed, and
-    /// null-geometry rows must not be requested.
-    /// </summary>
-    /// <remarks>
-    /// Restricted to <see cref="GeometryType.Point"/>, matching the Postgres gate. Only for a
-    /// single point is "MBR intersects the envelope" identical to "the geometry intersects the
-    /// envelope". A <c>MultiPoint</c> bounding rectangle can overlap the window while none of
-    /// its constituent points fall inside it (for example two points straddling a small bbox),
-    /// so extending the shortcut to multipoints would return features that do not actually
-    /// intersect the viewport.
-    /// </remarks>
+    // The envelope shortcut is limited to single points, because a multipoint box can overlap a window that contains none of its points.
     private static bool CanUseEnvelopeOnlyPointIntersects(
         FeatureQuery query,
         MySqlLayerMapping mapping,

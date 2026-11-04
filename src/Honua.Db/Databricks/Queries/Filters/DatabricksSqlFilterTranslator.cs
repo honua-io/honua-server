@@ -6,28 +6,6 @@ using Honua.Core.Queries.Filters;
 
 namespace Honua.Db.Databricks.Queries.Filters;
 
-/// <summary>
-/// Translates the canonical filter AST into parameterized Databricks SQL (Spark SQL).
-/// </summary>
-/// <remarks>
-/// <para>
-/// This translator is the read-only Databricks provider's answer to canonical WHERE
-/// translation: the GeoServices REST <c>where</c> clause is parsed into the shared
-/// <see cref="FilterExpression"/> AST by <c>GeoServicesSqlParser</c>, then walked here to
-/// emit Spark-SQL predicates whose literal operands are bound as <c>:pN</c> parameters.
-/// This replaces the previous verbatim WHERE pass-through, which forwarded the raw client
-/// string into the warehouse SQL without re-parsing or parameterization.
-/// </para>
-/// <para>
-/// Identifiers are backtick-quoted through <see cref="DatabricksSqlDialect"/>. Attribute
-/// predicates (comparison, logical, <c>IN</c>, <c>LIKE</c>, <c>BETWEEN</c>-as-range,
-/// <c>IS [NOT] NULL</c>, arithmetic) and envelope/relationship spatial predicates are
-/// supported. Temporal predicates, scalar <c>FunctionCall</c>s (EXTRACT/SUBSTRING/CAST and
-/// the rest of the GeoServices SQL function surface), distance predicates, and cross-SRID
-/// geometry literals are rejected with <see cref="NotSupportedException"/> in this slice so
-/// callers never receive over-broad results.
-/// </para>
-/// </remarks>
 internal sealed class DatabricksSqlFilterTranslator : SqlFilterExpressionVisitorBase
 {
     public DatabricksSqlFilterTranslator()
@@ -131,14 +109,6 @@ internal sealed class DatabricksSqlFilterTranslator : SqlFilterExpressionVisitor
         return FormatSpatialPredicate(spatial.Operator, left, right);
     }
 
-    /// <summary>
-    /// Formats a Spark SQL spatial relationship from the provider's operator table.
-    /// Callers choose operand order; Within and Contains must lead with the filter geometry.
-    /// </summary>
-    /// <param name="op">Spatial relationship to emit.</param>
-    /// <param name="left">Already-rendered left geometry expression.</param>
-    /// <param name="right">Already-rendered right geometry expression.</param>
-    /// <returns>A <c>st_*</c> call.</returns>
     internal static string FormatSpatialPredicate(SpatialOperator op, string left, string right) => op switch
     {
         SpatialOperator.Intersects => $"st_intersects({left}, {right})",

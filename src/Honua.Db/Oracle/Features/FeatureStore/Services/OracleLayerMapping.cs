@@ -6,33 +6,20 @@ using Honua.Core.Features.FeatureStore.Domain;
 
 namespace Honua.Db.Oracle.Features.FeatureStore.Services;
 
-/// <summary>
-/// Validated Oracle layer storage binding produced from a <see cref="FeatureStorageMapping"/>.
-/// All identifiers are pre-validated against an allow-list and double-quoted for Oracle.
-/// </summary>
 internal sealed record OracleLayerMapping
 {
-    /// <summary>Storage layer identifier this mapping serves.</summary>
     public required int LayerId { get; init; }
 
-    /// <summary>Physical table name (validated, unquoted).</summary>
     public required string TableName { get; init; }
 
-    /// <summary>Optional schema/owner qualifier.</summary>
     public string? SchemaName { get; init; }
 
-    /// <summary>Primary-key/object-identifier column name (validated, unquoted).</summary>
     public required string PrimaryKeyColumn { get; init; }
 
-    /// <summary>Geometry column name, or null when the layer has no geometry.</summary>
     public string? GeometryColumn { get; init; }
 
-    /// <summary>SRID of the stored geometry, when configured.</summary>
     public int? Srid { get; init; }
 
-    /// <summary>
-    /// Double-quoted table reference, including the schema/owner qualifier when configured.
-    /// </summary>
     public string QuotedTableReference
     {
         get
@@ -45,21 +32,11 @@ internal sealed record OracleLayerMapping
         }
     }
 
-    /// <summary>
-    /// Double-quoted primary-key column reference.
-    /// </summary>
     public string QuotedPrimaryKeyColumn => OracleIdentifier.Quote(PrimaryKeyColumn);
 
-    /// <summary>
-    /// Double-quoted geometry column reference, or null when the layer has no geometry.
-    /// </summary>
     public string? QuotedGeometryColumn =>
         GeometryColumn is null ? null : OracleIdentifier.Quote(GeometryColumn);
 
-    /// <summary>
-    /// Builds an <see cref="OracleLayerMapping"/> from the provider-neutral storage mapping,
-    /// validating identifiers.
-    /// </summary>
     public static OracleLayerMapping FromStorage(int layerId, LayerStorageMapping storage)
     {
         ArgumentNullException.ThrowIfNull(storage);
@@ -77,10 +54,6 @@ internal sealed record OracleLayerMapping
                 ProviderOptions: storage.ProviderOptions));
     }
 
-    /// <summary>
-    /// Builds an <see cref="OracleLayerMapping"/> from a Metadata v2 feature storage mapping,
-    /// validating identifiers.
-    /// </summary>
     public static OracleLayerMapping FromStorage(int layerId, FeatureStorageMapping storage)
     {
         ArgumentNullException.ThrowIfNull(storage);

@@ -7,28 +7,16 @@ using Honua.Plugins.Abstractions;
 
 namespace Honua.Io.Export;
 
-/// <summary>
-/// Built-in CSV feature output format (issue #2856, ADR-0067). Ported to flow through the
-/// <see cref="IFeatureOutputFormat"/> extension point so the export path exercises the same contract
-/// a third-party plugin format implements — the proof the seam is load-bearing, not decorative.
-/// Delegates the actual byte production to <see cref="CsvExportWriter"/> so behavior (UTF-8, WKT
-/// geometry column, streaming) is byte-identical to the pre-extension export.
-/// </summary>
 internal sealed class CsvOutputFormat : IFeatureOutputFormat
 {
-    /// <summary>A shared, stateless singleton the export endpoint dispatches CSV through.</summary>
     public static CsvOutputFormat Instance { get; } = new();
 
-    /// <inheritdoc />
     public string FormatId => "csv";
 
-    /// <inheritdoc />
     public string MediaType => "text/csv";
 
-    /// <inheritdoc />
     public string FileExtension => "csv";
 
-    /// <inheritdoc />
     public async ValueTask<long> WriteAsync(
         IAsyncEnumerable<Feature> features,
         FeatureOutputFormatContext context,

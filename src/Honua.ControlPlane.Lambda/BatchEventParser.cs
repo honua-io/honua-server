@@ -5,25 +5,12 @@ using System.Text.Json;
 
 namespace Honua.ControlPlane.Lambda;
 
-/// <summary>
-/// Pure parsing of an EventBridge "Batch Job State Change" event into the AWS Batch provider job id
-/// (<c>detail.jobId</c>) that the control-plane reconcile entrypoint forwards. Kept side-effect-free
-/// and dependency-free so the deserialization contract (sample event JSON → provider id) is fully
-/// unit-testable without the Lambda runtime.
-/// </summary>
 internal static class BatchEventParser
 {
-    /// <summary>The expected <c>source</c> of a Batch state-change event.</summary>
     internal const string ExpectedSource = "aws.batch";
 
-    /// <summary>The expected <c>detail-type</c> of a Batch state-change event.</summary>
     internal const string ExpectedDetailType = "Batch Job State Change";
 
-    /// <summary>
-    /// Extracts the AWS Batch provider job id (<c>detail.jobId</c>) from a deserialized event.
-    /// Returns <see langword="null"/> when the event is not a Batch state-change event or carries no
-    /// job id; callers treat a null result as "nothing to reconcile" and exit cleanly.
-    /// </summary>
     public static string? ExtractProviderOperationId(BatchJobStateChangeEvent? evt)
     {
         if (evt?.Detail is null)
@@ -50,11 +37,7 @@ internal static class BatchEventParser
         return string.IsNullOrWhiteSpace(jobId) ? null : jobId;
     }
 
-    /// <summary>
-    /// Deserializes raw EventBridge event JSON and extracts the provider job id. Returns
-    /// <see langword="null"/> for empty, malformed, or non-matching payloads (never throws on
-    /// malformed JSON), so a bad event becomes a clean no-op rather than a Lambda error.
-    /// </summary>
+    // Malformed EventBridge JSON returns null instead of throwing, so a bad event is a no-op rather than a Lambda failure.
     public static string? ExtractProviderOperationId(string? eventJson)
     {
         if (string.IsNullOrWhiteSpace(eventJson))

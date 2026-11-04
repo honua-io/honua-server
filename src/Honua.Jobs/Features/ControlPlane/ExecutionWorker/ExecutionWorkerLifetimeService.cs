@@ -6,19 +6,7 @@ using Honua.Core.Features.ControlPlane.Domain;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Decides the process exit code an execution worker reports to its compute provider, after the
-/// host has stopped. The job outcome itself always travels through the durable job store; the exit
-/// code only tells the provider whether its own retry machinery should treat this run as failed.
-/// </summary>
-/// <remarks>
-/// The rule is "succeed whenever the durable record no longer depends on this provider job". A
-/// terminal record, a record handed back for resubmission, or a record that has moved to another
-/// attempt exits 0, so a provider-native retry (for example AWS Batch <c>retryStrategy</c>) never
-/// competes with the serving host's reconciler for the next attempt. Only a record this launch still
-/// owns without an outcome — the worker could not run or report it — exits nonzero, so the
-/// provider's failure drives the reconciler's retry instead of a misleading success.
-/// </remarks>
+// The process exits 0 when the durable record does not depend on this provider job, so a provider-native retry does not race the reconciler.
 internal sealed partial class ExecutionWorkerExitState(
     ExecutionWorkerLaunch launch,
     IExecutionJobStore jobStore,
@@ -26,7 +14,6 @@ internal sealed partial class ExecutionWorkerExitState(
 {
     private static readonly TimeSpan FinalReadTimeout = TimeSpan.FromSeconds(10);
 
-    /// <summary>Reads the final durable state and returns the exit code.</summary>
     public async Task<int> ResolveAsync()
     {
         ExecutionJobRecord? job;
@@ -83,12 +70,6 @@ internal sealed partial class ExecutionWorkerExitState(
     }
 }
 
-/// <summary>
-/// Drives a run-to-completion execution worker: names the composition profile and the assigned
-/// operation at startup, waits for the shared execution loop to run (or refuse) that one
-/// operation, and stops the host. The exit code is resolved by <see cref="ExecutionWorkerExitState"/>
-/// once the host (and with it the execution loop) has stopped.
-/// </summary>
 internal sealed partial class ExecutionWorkerLifetimeService(
     ExecutionWorkerLaunch launch,
     AssignedExecutionJobQueue assignedQueue,

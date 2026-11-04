@@ -12,11 +12,6 @@ using ConnectionHealthStatus = Honua.Core.Features.Security.Domain.ConnectionHea
 
 namespace Honua.Db.Redshift.Features.Security;
 
-/// <summary>
-/// Amazon Redshift <see cref="IConnectionDriver"/>: builds an Npgsql connection string and probes
-/// health with a real <see cref="NpgsqlConnection"/> + <c>SELECT 1</c>. Redshift speaks the
-/// PostgreSQL wire protocol, so the Npgsql driver connects without modification.
-/// </summary>
 internal sealed partial class RedshiftConnectionDriver : IConnectionDriver
 {
     private readonly ILogger<RedshiftConnectionDriver> _logger;
@@ -92,10 +87,8 @@ internal sealed partial class RedshiftConnectionDriver : IConnectionDriver
     };
 }
 
-/// <summary>DI helper that registers the Redshift connection driver.</summary>
 public static class RedshiftConnectionDriverServiceCollectionExtensions
 {
-    /// <summary>Registers the Redshift <see cref="IConnectionDriver"/> for provider-aware connection testing.</summary>
     public static IServiceCollection AddRedshiftConnectionDriver(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);

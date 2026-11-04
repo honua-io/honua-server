@@ -9,9 +9,6 @@ using Honua.Core.Queries.Filters;
 
 namespace Honua.Protocols.Ogc.Classic.Wfs20.Services;
 
-/// <summary>
-/// Prepared WFS 2.0 query inputs ready for adapter conversion.
-/// </summary>
 internal readonly record struct Wfs20QueryRequest
 {
     public SqlFragment? SqlFilter { get; init; }
@@ -31,16 +28,10 @@ internal readonly record struct Wfs20QueryRequest
     public int? Limit { get; init; }
 }
 
-/// <summary>
-/// Prepared WFS 2.0 edit inputs ready for adapter conversion.
-/// </summary>
 internal readonly record struct Wfs20EditOperation(
     FeatureEditOperation Operation,
     EditUpdateMode UpdateMode = EditUpdateMode.Merge);
 
-/// <summary>
-/// Prepared WFS 2.0 transaction inputs ready for adapter conversion.
-/// </summary>
 internal readonly record struct Wfs20EditRequest
 {
     public ImmutableArray<Wfs20EditOperation> Operations { get; init; }
@@ -48,9 +39,6 @@ internal readonly record struct Wfs20EditRequest
     public bool RollbackOnFailure { get; init; }
 }
 
-/// <summary>
-/// Converts prepared WFS query inputs into the unified query model.
-/// </summary>
 internal sealed class Wfs20QueryParameterAdapter(
     ILogger<Wfs20QueryParameterAdapter> logger)
 {
@@ -102,9 +90,6 @@ internal sealed class Wfs20QueryParameterAdapter(
     }
 }
 
-/// <summary>
-/// Converts prepared WFS transaction operations into the unified edit model.
-/// </summary>
 internal sealed class Wfs20EditParameterAdapter(
     ILogger<Wfs20EditParameterAdapter> logger)
 {

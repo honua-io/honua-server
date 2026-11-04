@@ -33,10 +33,6 @@ using static Honua.Protocols.Ogc.Classic.OgcClassicRequestHelpers;
 
 namespace Honua.Protocols.Ogc.Classic.Wmts;
 
-/// <summary>
-/// CITE conformance: 60/60 (WMTS 1.0 `default` profile, 100% pass on trunk).
-/// Authoritative status: <see href="../../../../../../docs/cite-status.md">docs/cite-status.md</see>.
-/// </summary>
 internal static class WmtsRequestHandlers
 {
     private const double WebMercatorOrigin = SpatialConstants.WebMercatorExtent;
@@ -59,13 +55,6 @@ internal static class WmtsRequestHandlers
     private const string WmtsProtocolName = "Wmts";
     private static readonly char[] _wmtsAdditionalQuerySeparators = ['&', ';'];
 
-    /// <summary>
-    /// Resolved (resource, publication, storage layer id) triple for a single WMTS layer.
-    /// Replaces the legacy layer shape in the request pipeline. <see cref="Identifier"/>
-    /// is the protocol-facing LAYER value (either the publication's int LayerIndex stringified
-    /// or its service-local id when non-numeric); <see cref="StorageLayerId"/> is the integer
-    /// handle that <see cref="IFeatureReader"/> / the raster pipeline expects.
-    /// </summary>
     private readonly record struct WmtsLayer(
         MetadataV2Resource Resource,
         MetadataV2Publication Publication,
@@ -87,9 +76,6 @@ internal static class WmtsRequestHandlers
         All = ServiceIdentification | ServiceProvider | OperationsMetadata | Contents | Themes
     }
 
-    /// <summary>
-    /// Handle OGC WMTS requests (GetCapabilities, GetTile).
-    /// </summary>
     internal static async Task<IResult> HandleWmts(HttpContext context)
     {
         if (ShouldDisableWmtsCaching(context))
@@ -392,9 +378,6 @@ internal static class WmtsRequestHandlers
         }
     }
 
-    /// <summary>
-    /// Handles WMTS RESTful resources by translating path variables into WMTS KVP parameters.
-    /// </summary>
     internal static async Task<IResult> HandleWmtsRestful(HttpContext context)
     {
         if (ShouldDisableWmtsCaching(context))
@@ -1038,13 +1021,6 @@ internal static class WmtsRequestHandlers
         return Results.Content(body, PlainTextMimeType);
     }
 
-    /// <summary>
-    /// Walks the publications of <paramref name="service"/>, resolving each to its canonical
-    /// resource and integer storage layer handle. Dedupes by resource (prefers
-    /// <see cref="MetadataV2Publication.IsPrimary"/>) and drops publications that don't
-    /// resolve to a usable storage layer handle, since IFeatureReader / the raster pipeline
-    /// can't render those. Sorted by storage layer id so Themes/Contents order is stable.
-    /// </summary>
     private static WmtsLayer[] ResolveWmtsLayers(MetadataV2GraphSnapshot snapshot, MetadataV2Service service)
     {
         var byResource = new Dictionary<string, WmtsLayer>(StringComparer.Ordinal);
@@ -1080,17 +1056,6 @@ internal static class WmtsRequestHandlers
             .ToArray();
     }
 
-    /// <summary>
-    /// Source CRS for the raster pipeline / GetFeatureInfo query. The render pipeline
-    /// projects the request-side tile bbox (Web Mercator) into this SRID before issuing
-    /// the spatial filter, so it must match the SRID the feature store actually stores
-    /// geometries in. Resolution order:
-    /// 1. <see cref="MetadataV2Service.SpatialReference"/> when the service declares a
-    ///    rendering CRS;
-    /// 2. the resource's <see cref="MetadataV2ResourceSpatial.SpatialReference"/>;
-    /// 3. WGS84 (the table-default SRID in the postgres seed and the OGC Tiles
-    ///    convention used elsewhere in the V2 port).
-    /// </summary>
     private static int ResolveServiceSrid(MetadataV2Service service, MetadataV2Resource resource)
         => service.SpatialReference?.ResolveSrid()
             ?? resource.ReadSrid()
@@ -1616,21 +1581,6 @@ internal static class WmtsRequestHandlers
         return [];
     }
 
-    /// <summary>
-    /// Returns the dynamic dimension list, resolving the continuous time
-    /// dimension default value from the layer's temporal extent for capabilities
-    /// rendering. Non-temporal layers skip the database call entirely.
-    /// </summary>
-    /// <summary>
-    /// The resolution value that declares a temporal interval continuous.
-    /// </summary>
-    /// <remarks>
-    /// A time dimension value of <c>min/max/resolution</c> follows the same ISO 8601
-    /// convention WMS 1.3.0 Annex C states: <c>0</c> means every instant in the interval
-    /// is available, while a duration means the values are discrete and spaced by that
-    /// period. <c>PT0S</c> is a zero-length duration and is not a valid resolution -
-    /// ArcGIS Pro rejects a dimension declared that way. See honua-server#5172.
-    /// </remarks>
     private const string ContinuousTemporalResolution = "0";
 
     private static async Task<WmtsDimensionDefinition[]> GetWmtsDimensionDefinitionsAsync(
@@ -1696,11 +1646,6 @@ internal static class WmtsRequestHandlers
         return resolved;
     }
 
-    /// <summary>
-    /// Builds dimension definitions using a pre-fetched <paramref name="temporalRange"/>,
-    /// avoiding an additional database call when ranges are resolved concurrently before the
-    /// capabilities layer loop.
-    /// </summary>
     private static WmtsDimensionDefinition[] GetWmtsDimensionDefinitionsFromRange(
         WmtsLayer layer,
         MetadataV2TemporalRange? temporalRange)
@@ -1751,9 +1696,6 @@ internal static class WmtsRequestHandlers
         return resolved;
     }
 
-    /// <summary>
-    /// Resolves optional legend support without failing capabilities when a style is unavailable.
-    /// </summary>
     private static async Task<bool> ResolveWmtsLegendSupportAsync(
         ILayerStyleCatalog styleCatalog,
         WmtsLayer layer,
@@ -1779,11 +1721,6 @@ internal static class WmtsRequestHandlers
         }
     }
 
-    /// <summary>
-    /// Pre-fetches temporal extent ranges for all time-aware WMTS layers concurrently.
-    /// Returns a dictionary keyed by <see cref="WmtsLayer.StorageLayerId"/> so the
-    /// capabilities layer loop does not issue a sequential DB round-trip per layer.
-    /// </summary>
     private static async Task<Dictionary<int, MetadataV2TemporalRange>> PrefetchWmtsTemporalRangesAsync(
         IReadOnlyList<WmtsLayer> layers,
         IFeatureReader? featureReader,
@@ -1824,13 +1761,6 @@ internal static class WmtsRequestHandlers
         return dict;
     }
 
-    /// <summary>
-    /// Resolves a single WMTS layer's temporal range, degrading gracefully when the
-    /// underlying aggregate query fails (e.g. the configured time column holds values
-    /// the temporal cast cannot parse). A per-layer failure logs a warning and yields
-    /// <c>null</c> so the layer is advertised without a TIME dimension rather than
-    /// failing the whole capabilities document (honua-server#1911).
-    /// </summary>
     private static async Task<MetadataV2TemporalRange?> ResolveWmtsTemporalRangeSafeAsync(
         WmtsLayer layer,
         IFeatureReader featureReader,
@@ -2134,20 +2064,6 @@ internal static class WmtsRequestHandlers
         return true;
     }
 
-    /// <summary>
-    /// Builds the optional <see cref="TemporalFilter"/> for a WMTS GetTile or
-    /// GetFeatureInfo request from the validated <c>time</c> dimension value.
-    /// The validator (<see cref="TryValidateWmtsDimensionParameters"/>) has
-    /// already accepted the value as <c>default</c>/<c>current</c> or as an
-    /// RFC 3339 instant or interval; this helper resolves <c>default</c>/
-    /// <c>current</c> to the layer's max timestamp via
-    /// <see cref="TemporalExtentHelpers.TryResolveTemporalRangeV2Async"/> so it
-    /// matches the dimension that GetCapabilities advertises. CITE Terrain
-    /// owns its own non-temporal "time" handling and is bypassed so existing
-    /// CITE behavior is preserved. Resources without an opt-in temporal field
-    /// also bypass: their unadvertised time parameter is ignored as required
-    /// by the WMTS KVP binding.
-    /// </summary>
     private static async Task<(TemporalFilter? Filter, IResult? Error)> TryBuildWmtsLayerTemporalFilterAsync(
         HttpContext context,
         IQueryCollection query,
@@ -2218,25 +2134,6 @@ internal static class WmtsRequestHandlers
         return (parsed, null);
     }
 
-    /// <summary>
-    /// Resolves the optional <see cref="VerticalSelection"/> for a WMTS GetTile request from
-    /// the validated <c>elevation</c> dimension value. WMTS GetCapabilities already advertises
-    /// the discrete elevation dimension (see <see cref="GetWmtsDimensionDefinitions"/>) and
-    /// <see cref="TryValidateWmtsDimensionParameters"/> has already accepted (or rejected) the
-    /// supplied value against that dimension's enumerated values / <c>default</c> / <c>current</c>
-    /// tokens. This resolver mirrors <see cref="TryBuildWmtsLayerTemporalFilterAsync"/>: it maps
-    /// the validated token to the concrete advertised value and parses it into a numeric
-    /// selection so it can be RECORDED and threaded through the render call.
-    /// </summary>
-    /// <remarks>
-    /// Shape A (#1792): the returned selection is recorded/telemetry-tagged on the render
-    /// descriptor but does NOT change what is rendered for vector layers — there is no
-    /// Z-aware vector source yet (the Zarr datacube Z-slice render is the deferred Shape B
-    /// follow-up). When the parameter is omitted the dimension's advertised default (100) is
-    /// applied, matching the advertised contract. Layers that do not advertise an elevation
-    /// dimension (everything except CITE Terrain) return no selection and ignore
-    /// an unknown <c>elevation</c> key as required by the WMTS KVP binding.
-    /// </remarks>
     private static VerticalSelection? ResolveWmtsLayerVerticalSelection(WmtsLayer layer, IQueryCollection query)
     {
         WmtsDimensionDefinition? elevationDimension = GetWmtsDimensionDefinitions(layer)
@@ -2340,11 +2237,6 @@ internal static class WmtsRequestHandlers
         return value.ToString("0.################", CultureInfo.InvariantCulture);
     }
 
-    /// <summary>
-    /// Resolves a WMTS TILEMATRIXSET identifier to the shared rendering <see cref="TileGridKind"/>.
-    /// Only the advertised gridsets (WebMercatorQuad, WorldCRS84Quad) are accepted; matching is
-    /// case-insensitive to mirror the rest of the WMTS parameter handling.
-    /// </summary>
     private static bool TryResolveWmtsTileGrid(string? tileMatrixSet, out TileGridKind grid)
     {
         if (string.Equals(tileMatrixSet, "WebMercatorQuad", StringComparison.OrdinalIgnoreCase))
@@ -2363,18 +2255,9 @@ internal static class WmtsRequestHandlers
         return false;
     }
 
-    /// <summary>
-    /// Maximum valid TILEROW index (inclusive) for a tile matrix. Both supported gridsets
-    /// (WebMercatorQuad, WorldCRS84Quad) have <c>2^z</c> rows.
-    /// </summary>
     private static int GetWmtsMaxTileRowIndex(int tileMatrix)
         => tileMatrix < 0 ? 0 : (int)((1L << tileMatrix) - 1);
 
-    /// <summary>
-    /// Maximum valid TILECOL index (inclusive) for a tile matrix in the given gridset.
-    /// WebMercatorQuad has <c>2^z</c> columns; WorldCRS84Quad has <c>2 * 2^z</c> columns
-    /// (the world is two tiles wide at zoom 0).
-    /// </summary>
     private static int GetWmtsMaxTileColIndex(TileGridKind grid, int tileMatrix)
     {
         if (tileMatrix < 0)
@@ -2388,10 +2271,6 @@ internal static class WmtsRequestHandlers
         return (int)(columns - 1);
     }
 
-    /// <summary>
-    /// Emits a per-layer <c>TileMatrixSetLink</c> (with explicit limits) for the given gridset.
-    /// WorldCRS84Quad has twice as many columns as rows at every level.
-    /// </summary>
     private static void AppendWmtsTileMatrixSetLink(StringBuilder sb, TileGridKind grid, int wmtsMaxZoom)
     {
         var identifier = grid == TileGridKind.WorldCrs84Quad ? "WorldCRS84Quad" : "WebMercatorQuad";
@@ -2415,9 +2294,6 @@ internal static class WmtsRequestHandlers
         sb.AppendLine("      </TileMatrixSetLink>");
     }
 
-    /// <summary>
-    /// Emits the WebMercatorQuad <c>TileMatrixSet</c> definition (EPSG:3857, GoogleMapsCompatible).
-    /// </summary>
     private static void AppendWmtsWebMercatorTileMatrixSet(StringBuilder sb, int wmtsMaxZoom)
     {
         sb.AppendLine("    <TileMatrixSet>");
@@ -2450,11 +2326,6 @@ internal static class WmtsRequestHandlers
         sb.AppendLine("    </TileMatrixSet>");
     }
 
-    /// <summary>
-    /// Emits the WorldCRS84Quad <c>TileMatrixSet</c> definition (CRS84/EPSG:4326). The grid is
-    /// two tiles wide by one tile tall at level 0; the top-left corner follows the declared CRS84
-    /// EastNorth axis order (longitude, latitude) in the WMTS <c>TopLeftCorner</c> element (#2738).
-    /// </summary>
     private static void AppendWmtsWorldCrs84QuadTileMatrixSet(StringBuilder sb, int wmtsMaxZoom)
     {
         sb.AppendLine("    <TileMatrixSet>");
@@ -2494,11 +2365,6 @@ internal static class WmtsRequestHandlers
         sb.AppendLine("    </TileMatrixSet>");
     }
 
-    /// <summary>
-    /// Emits a per-layer <c>TileMatrixSetLink</c> (with explicit limits) for every operator-defined
-    /// custom gridset in the registry. Built-in links are emitted separately so their XML stays
-    /// byte-identical; this only adds the custom entries.
-    /// </summary>
     internal static void AppendWmtsCustomTileMatrixSetLinks(
         StringBuilder sb,
         ITileMatrixSetRegistry? registry,
@@ -2535,12 +2401,6 @@ internal static class WmtsRequestHandlers
         }
     }
 
-    /// <summary>
-    /// Emits the <c>TileMatrixSet</c> definition for every operator-defined custom gridset in the
-    /// registry. The <c>TopLeftCorner</c> axis order follows each declared CRS identifier: CRS84
-    /// uses longitude/latitude, EPSG geographic CRSes use latitude/longitude, and projected CRSes
-    /// use easting/northing (#2738).
-    /// </summary>
     internal static void AppendWmtsCustomTileMatrixSets(
         StringBuilder sb,
         ITileMatrixSetRegistry? registry,

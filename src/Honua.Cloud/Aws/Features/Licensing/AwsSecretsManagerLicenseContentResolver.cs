@@ -9,15 +9,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Cloud.Aws.Features.Licensing;
 
-/// <summary>
-/// Resolves a signed license envelope from AWS Secrets Manager. Confined to
-/// <c>Honua.Aws</c> so the AWSSDK.SecretsManager surface stays out of the
-/// cloud-neutral <c>Honua.Hosting</c> licensing pipeline (cloud-SDK isolation
-/// contract, <c>CloudSdkIsolationTests</c>). Activated when
-/// <c>Licensing:LicenseContentSecretRef=aws:secretsmanager:&lt;arn-or-name&gt;</c>
-/// is configured; on AWS Lambda this lets the ~2KB envelope be delivered via a
-/// Secrets Manager reference instead of an environment variable.
-/// </summary>
 internal sealed class AwsSecretsManagerLicenseContentResolver : ILicenseContentSecretResolver, IDisposable
 {
     private const string SecretsManagerPrefix = "aws:secretsmanager:";
@@ -36,13 +27,11 @@ internal sealed class AwsSecretsManagerLicenseContentResolver : ILicenseContentS
             : new Lazy<IAmazonSecretsManager>(() => client);
     }
 
-    /// <inheritdoc />
     public bool CanResolve(string? secretReference)
         => !string.IsNullOrWhiteSpace(secretReference)
            && secretReference.StartsWith(SecretsManagerPrefix, StringComparison.OrdinalIgnoreCase)
            && secretReference.Length > SecretsManagerPrefix.Length;
 
-    /// <inheritdoc />
     public async Task<string?> ResolveLicenseContentAsync(
         string secretReference,
         CancellationToken cancellationToken = default)

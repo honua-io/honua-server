@@ -5,19 +5,8 @@ using System.Globalization;
 
 namespace Honua.Protocols.OData.Services;
 
-/// <summary>
-/// Provides shared utilities for parsing OData query parameters.
-/// </summary>
 internal static class ODataParsingUtilities
 {
-    /// <summary>
-    /// Attempts to parse an optional integer parameter from a string value.
-    /// </summary>
-    /// <param name="value">The string value to parse.</param>
-    /// <param name="parameterName">The name of the parameter for error messages.</param>
-    /// <param name="parsed">The parsed integer value, or null if the input was null/empty.</param>
-    /// <param name="errorMessage">The error message if parsing failed.</param>
-    /// <returns>true if parsing succeeded or input was null/empty; false if parsing failed.</returns>
     public static bool TryParseOptionalInt(
         string? value,
         string parameterName,
@@ -42,14 +31,6 @@ internal static class ODataParsingUtilities
         return true;
     }
 
-    /// <summary>
-    /// Attempts to parse an optional boolean parameter from a string value.
-    /// </summary>
-    /// <param name="value">The string value to parse.</param>
-    /// <param name="parameterName">The name of the parameter for error messages.</param>
-    /// <param name="parsed">The parsed boolean value, or null if the input was null/empty.</param>
-    /// <param name="errorMessage">The error message if parsing failed.</param>
-    /// <returns>true if parsing succeeded or input was null/empty; false if parsing failed.</returns>
     public static bool TryParseOptionalBool(
         string? value,
         string parameterName,
@@ -74,11 +55,6 @@ internal static class ODataParsingUtilities
         return true;
     }
 
-    /// <summary>
-    /// Determines whether a comma-separated value contains an empty token.
-    /// </summary>
-    /// <param name="value">The raw comma-separated value.</param>
-    /// <returns>True when an empty token is present; otherwise false.</returns>
     public static bool HasEmptyCommaSeparatedToken(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))

@@ -6,25 +6,10 @@ using Honua.Core.Features.Security.Domain;
 
 namespace Honua.GeoServicesRest.Features.FeatureStore.Services;
 
-/// <summary>
-/// Resolves the remote ArcGIS REST service URL and optional API token from a
-/// <see cref="DataConnection"/>. The provider treats the connection string as
-/// the canonical service root URL (FeatureServer or MapServer) and reads an
-/// optional <c>token</c> property from <see cref="DataConnection.Properties"/>.
-/// </summary>
 internal static class GeoServicesRestServiceLocator
 {
-    /// <summary>
-    /// Connection properties key carrying an ArcGIS REST API token. Optional;
-    /// publicly readable services do not require it.
-    /// </summary>
     public const string TokenPropertyKey = "token";
 
-    /// <summary>
-    /// Connection properties key carrying the service URL when not stored in the
-    /// connection string. Useful when the connection string is reserved for
-    /// secret-store routing.
-    /// </summary>
     public const string ServiceUrlPropertyKey = "serviceUrl";
 
     // Cache of raw URL → normalized URL to avoid a blocking DNS lookup on every
@@ -37,16 +22,6 @@ internal static class GeoServicesRestServiceLocator
     private static readonly ConcurrentDictionary<string, string> _normalizedUrlCache =
         new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>
-    /// Resolves the canonical service root URL (FeatureServer/MapServer) and
-    /// optional API token from the supplied <paramref name="connection"/>.
-    /// URL validation (including DNS-based private-range check) is performed once
-    /// per distinct raw URL and cached for the lifetime of the process.
-    /// </summary>
-    /// <param name="connection">Secure connection bound by the metadata layer.</param>
-    /// <returns>Canonical service URL and optional API token.</returns>
-    /// <exception cref="InvalidOperationException">No usable URL is configured.</exception>
-    /// <exception cref="ArgumentException">The configured URL is not a valid HTTPS service root URL.</exception>
     public static GeoServicesRestServiceLocation Resolve(DataConnection? connection)
     {
         var rawUrl = ReadConnectionStringOrProperty(connection);
@@ -99,9 +74,4 @@ internal static class GeoServicesRestServiceLocator
     }
 }
 
-/// <summary>
-/// Resolved location of a remote ArcGIS REST service backing a federated publication.
-/// </summary>
-/// <param name="ServiceUrl">Canonical FeatureServer/MapServer service root URL (no trailing slash).</param>
-/// <param name="Token">Optional ArcGIS API token used to authenticate requests.</param>
 internal sealed record GeoServicesRestServiceLocation(string ServiceUrl, string? Token);

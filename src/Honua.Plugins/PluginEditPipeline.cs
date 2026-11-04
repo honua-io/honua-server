@@ -12,12 +12,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Plugins;
 
-/// <summary>
-/// Default <see cref="IPluginEditPipeline"/>. Aggregates the registered
-/// <see cref="IFeatureValidator"/>s and <see cref="IEditHook"/>s, runs them in deterministic
-/// plugin-id order, and gates the whole thing behind the Enterprise <c>plugin.sdk</c> entitlement
-/// plus the operator kill-switch. When unlicensed/disabled it allows every edit and does no work.
-/// </summary>
 internal sealed partial class PluginEditPipeline : IPluginEditPipeline
 {
     private const string ValidateExtensionPoint = "validate";
@@ -54,11 +48,9 @@ internal sealed partial class PluginEditPipeline : IPluginEditPipeline
         _enabledByConfig = options.Value.Enabled;
     }
 
-    /// <inheritdoc />
     public bool HasPlugins => _enabledByConfig
         && (_validators.Length > 0 || _fieldValidators.Length > 0 || _hooks.Length > 0);
 
-    /// <inheritdoc />
     public async ValueTask<PluginEditOutcome> ValidateAndRunBeforeHooksAsync(
         EditHookContext context,
         CancellationToken cancellationToken)
@@ -193,7 +185,6 @@ internal sealed partial class PluginEditPipeline : IPluginEditPipeline
             : new PluginEditOutcome(rejections.ToImmutable(), BatchRejected: false);
     }
 
-    /// <inheritdoc />
     public async ValueTask RunAfterHooksAsync(EditHookContext context, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);

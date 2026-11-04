@@ -5,9 +5,6 @@ using System.Globalization;
 
 namespace Honua.Db.Postgres.Features.Infrastructure;
 
-/// <summary>
-/// Shared opaque cursor encoding helpers for Postgres-backed paged readers.
-/// </summary>
 internal static class PostgresCursorCodec
 {
     public static string Encode(DateTimeOffset timestamp, string suffix)

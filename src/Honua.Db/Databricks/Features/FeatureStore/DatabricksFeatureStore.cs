@@ -10,21 +10,6 @@ using Honua.Db.Databricks.Features.Infrastructure;
 
 namespace Honua.Db.Databricks.Features.FeatureStore;
 
-/// <summary>
-/// Read-only Databricks feature provider. Each query is translated to Databricks SQL
-/// and submitted to a SQL Warehouse through the Statement Execution REST API.
-/// </summary>
-/// <remarks>
-/// <para>Implements the canonical <see cref="IFeatureDataProvider"/> +
-/// <see cref="IFeatureReader"/> surface so Databricks-backed layers participate in the
-/// Honua catalog through the shared <c>FeatureProviderQueryRouter</c> just like the
-/// other secondary providers. The provider is best-effort and read-only; writes,
-/// statistics, top-features, bins, H3 aggregation, and native MVT/FlatGeobuf/Geobuf/GML
-/// output are intentionally disabled. Shared formatters handle every output format above
-/// the canonical <see cref="Feature"/> stream.</para>
-/// <para>Spatial-function availability (<c>ST_*</c>) depends on the Databricks runtime /
-/// DBSQL the warehouse runs; spatial-filter and extent queries are therefore best-effort.</para>
-/// </remarks>
 internal sealed class DatabricksFeatureStore : IFeatureDataProvider, IFeatureReader, IBindableFeatureDataProvider
 {
     private static readonly FeatureProviderCapabilities _capabilities = new()
@@ -73,26 +58,20 @@ internal sealed class DatabricksFeatureStore : IFeatureDataProvider, IFeatureRea
         _binding = binding;
     }
 
-    /// <inheritdoc />
     public IFeatureReader CreateReaderForBinding(FeatureProviderBinding binding)
     {
         ArgumentNullException.ThrowIfNull(binding);
         return new DatabricksFeatureStore(_mappings, _queryBuilder, _dataAccess, _readSecurity, binding);
     }
 
-    /// <inheritdoc />
     public string ProviderName => DataProviderNames.Databricks;
 
-    /// <inheritdoc />
     public FeatureProviderCapabilities Capabilities => _capabilities;
 
-    /// <inheritdoc />
     public IFeatureReader Reader => this;
 
-    /// <inheritdoc />
     public IFeatureWriter? Writer => null;
 
-    /// <inheritdoc />
     public async Task<Feature?> GetAsync(int layerId, long featureId, CancellationToken cancellationToken = default)
     {
         var query = new FeatureQuery
@@ -104,7 +83,6 @@ internal sealed class DatabricksFeatureStore : IFeatureDataProvider, IFeatureRea
         return result.Items.Length == 0 ? null : result.Items[0];
     }
 
-    /// <inheritdoc />
     public async Task<QueryResult<Feature>> QueryAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
         var mapping = await ResolveMappingAsync(layerId, cancellationToken).ConfigureAwait(false);
@@ -130,11 +108,9 @@ internal sealed class DatabricksFeatureStore : IFeatureDataProvider, IFeatureRea
         return QueryResult<Feature>.Create(totalCount, features, hasMore);
     }
 
-    /// <inheritdoc />
     public Task<byte[]?> QueryFlatGeobufAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
         => Task.FromResult<byte[]?>(null);
 
-    /// <inheritdoc />
     public async Task<ImmutableArray<long>> QueryObjectIdsAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
         var mapping = await ResolveMappingAsync(layerId, cancellationToken).ConfigureAwait(false);
@@ -142,7 +118,6 @@ internal sealed class DatabricksFeatureStore : IFeatureDataProvider, IFeatureRea
         return await _dataAccess.ExecuteObjectIdsAsync(statement, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public async Task<long> CountAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
         var mapping = await ResolveMappingAsync(layerId, cancellationToken).ConfigureAwait(false);
@@ -150,7 +125,6 @@ internal sealed class DatabricksFeatureStore : IFeatureDataProvider, IFeatureRea
         return await _dataAccess.ExecuteCountAsync(statement, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public async Task<FeatureExtent?> GetExtentAsync(int layerId, FeatureQuery? query = null, CancellationToken cancellationToken = default)
     {
         var mapping = await ResolveMappingAsync(layerId, cancellationToken).ConfigureAwait(false);
@@ -158,7 +132,6 @@ internal sealed class DatabricksFeatureStore : IFeatureDataProvider, IFeatureRea
         return await _dataAccess.ExecuteExtentAsync(mapping, statement, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public async Task<EstimateResult> GetEstimatesAsync(int layerId, CancellationToken cancellationToken = default)
     {
         var countTask = CountAsync(layerId, default, cancellationToken);
@@ -172,7 +145,6 @@ internal sealed class DatabricksFeatureStore : IFeatureDataProvider, IFeatureRea
         };
     }
 
-    /// <inheritdoc />
     public async Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryStatisticsAsync(
         int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
@@ -181,36 +153,26 @@ internal sealed class DatabricksFeatureStore : IFeatureDataProvider, IFeatureRea
         return await _dataAccess.ExecuteStatisticsAsync(statement, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public Task<TemporalExtentResult?> GetTemporalExtentAsync(
         int layerId, string fieldName, TemporalPropertyType propertyType, CancellationToken cancellationToken = default)
         => throw NotSupported(nameof(GetTemporalExtentAsync), layerId);
 
-    /// <inheritdoc />
     public Task<QueryResult<Feature>> QueryTopFeaturesAsync(
         int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
         => throw NotSupported(nameof(QueryTopFeaturesAsync), layerId);
 
-    /// <inheritdoc />
     public Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryDateBinsAsync(
         int layerId, FeatureQuery query, DateBinDefinition dateBin, CancellationToken cancellationToken = default)
         => throw NotSupported(nameof(QueryDateBinsAsync), layerId);
 
-    /// <inheritdoc />
     public Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryBinsAsync(
         int layerId, FeatureQuery query, BinDefinition binDefinition, CancellationToken cancellationToken = default)
         => throw NotSupported(nameof(QueryBinsAsync), layerId);
 
-    /// <inheritdoc />
     public Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryH3Async(
         int layerId, FeatureQuery query, H3AggregationQuery h3Query, CancellationToken cancellationToken = default)
         => throw NotSupported(nameof(QueryH3Async), layerId);
 
-    /// <summary>
-    /// Resolves the layer mapping for a read. Every read path resolves its layer here, so this
-    /// is the single seam that refuses a read whose layer carries a read policy this provider
-    /// cannot enforce (permanent filter, row-level security predicate or field masks).
-    /// </summary>
     private async Task<DatabricksLayerMapping> ResolveMappingAsync(int layerId, CancellationToken cancellationToken)
     {
         if (_readSecurity is not null)

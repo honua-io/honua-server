@@ -11,9 +11,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Features.Infrastructure.Crs;
 
-/// <summary>
-/// Postgres-backed CRS registry using spatial_ref_sys.
-/// </summary>
 internal sealed partial class PostgresCrsRegistry : ICrsRegistry
 {
     private const string Crs84Uri = "http://www.opengis.net/def/crs/OGC/1.3/CRS84";
@@ -421,11 +418,6 @@ internal sealed partial class PostgresCrsRegistry : ICrsRegistry
         }
     }
 
-    /// <summary>
-    /// Returns true for transient connection-level failures that should propagate to the
-    /// caller rather than being silently converted to a 'CRS not found' null return.
-    /// Mirrors the SQL states checked by <see cref="Resilience.ResiliencePolicies.IsConnectionError"/>.
-    /// </summary>
     private static bool IsTransientConnectionError(Exception ex)
     {
         // IOException / SocketException covers physical-connection loss.

@@ -11,9 +11,6 @@ using Honua.Db.DuckDB.Features.Infrastructure;
 
 namespace Honua.Db.DuckDB.Queries.Filters;
 
-/// <summary>
-/// Translates the shared filter AST into parameterized DuckDB SQL.
-/// </summary>
 internal sealed class DuckDbSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISqlFilterTranslator
 {
     public DuckDbSqlFilterTranslator()
@@ -21,7 +18,6 @@ internal sealed class DuckDbSqlFilterTranslator : SqlFilterExpressionVisitorBase
     {
     }
 
-    /// <inheritdoc />
     public SqlFragment Translate(FilterExpression filter, MetadataV2Resource resource)
     {
         ArgumentNullException.ThrowIfNull(filter);

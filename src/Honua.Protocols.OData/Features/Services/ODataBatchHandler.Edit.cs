@@ -12,11 +12,6 @@ using Honua.Protocols.OData.Models;
 
 namespace Honua.Protocols.OData.Services;
 
-/// <summary>
-/// Feature-edit construction and precondition validation for the OData $batch handler.
-/// Builds validated edit batches, materializes Feature objects from OData request bodies,
-/// and evaluates If-Match/If-None-Match preconditions against existing rows.
-/// </summary>
 internal sealed partial class ODataBatchHandler
 {
     private async Task<(FeatureEditBatch? Batch, string? ErrorMessage)> BuildValidatedEditBatchAsync(
@@ -71,15 +66,6 @@ internal sealed partial class ODataBatchHandler
             }
         };
 
-    /// <summary>
-    /// Returns whether the OData request body explicitly specified a Geometry property.
-    /// PATCH and POST both run through CreateFeatureFromBodyAsync, which preserves the
-    /// existing row's geometry on partial-update requests; reading the post-merge feature
-    /// would report attribute-only PATCH as a geometry change. This helper parses the
-    /// raw body once so the outbox queue can be seeded with the request's actual intent.
-    /// Parse failures return false because the same body will fail
-    /// <c>CreateFeatureFromBodyAsync</c> and the request will not reach the outbox queue.
-    /// </summary>
     private static bool TryGetGeometrySpecified(Dictionary<string, object?>? body)
     {
         if (body is null || body.Count == 0)
@@ -229,14 +215,6 @@ internal sealed partial class ODataBatchHandler
         return (true, null);
     }
 
-    /// <summary>
-    /// Registers a transactional optimistic-concurrency precondition for a change-set
-    /// update/delete with If-Match, or for any PATCH that merges a read snapshot.
-    /// The canonical state token is computed from the same read snapshot
-    /// <see cref="ValidatePreconditionsAsync"/> validated the ETag against, and the
-    /// feature writer re-validates it inside the deferred ApplyEditsAsync transaction.
-    /// Unconditional replacements and deletes keep last-write-wins semantics.
-    /// </summary>
     private static void RegisterPrecondition(
         Dictionary<int, List<FeatureEditPrecondition>> preconditionsByLayer,
         int layerId,

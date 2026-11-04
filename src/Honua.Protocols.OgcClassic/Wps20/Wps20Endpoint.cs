@@ -18,9 +18,6 @@ using Honua.ServiceDefaults;
 
 namespace Honua.Protocols.Ogc.Classic.Wps20;
 
-/// <summary>
-/// Thin WPS 2.0.2 XML adapter over the canonical process catalog and job service.
-/// </summary>
 internal static partial class Wps20Endpoint
 {
     internal const string WpsNamespace = "http://www.opengis.net/wps/2.0";
@@ -75,11 +72,6 @@ internal static partial class Wps20Endpoint
         return result;
     }
 
-    /// <summary>
-    /// Execute is the only WPS KVP operation that creates durable work. The other dispatcher
-    /// operations are discovery or job-result reads and retain ordinary GET-equivalent HEAD
-    /// behavior.
-    /// </summary>
     private static bool ShouldRejectHead(HttpContext context)
     {
         var operation = context.Request.Query["request"].ToString().Trim();
@@ -831,12 +823,6 @@ internal static partial class Wps20Endpoint
         return Xml($"<?xml version=\"1.0\" encoding=\"UTF-8\"?><ows:ExceptionReport xmlns:ows=\"{OwsNamespace}\" version=\"{Version}\"><ows:Exception exceptionCode=\"{X(code)}\"{locatorAttribute}><ows:ExceptionText>{X(message)}</ows:ExceptionText>{extraTexts}</ows:Exception></ows:ExceptionReport>", statusCode);
     }
 
-    /// <summary>
-    /// The capability-unavailable receipt (honua-release#202) as additional
-    /// <c>ows:ExceptionText</c> lines. OWS 1.1 permits repeated ExceptionText elements, so this
-    /// adds machine-readable fields without inventing an exceptionCode outside the OWS vocabulary.
-    /// Returns <see langword="null"/> when the exception carries no receipt.
-    /// </summary>
     private static List<string>? BuildCapabilityUnavailableTexts(
         GeoprocessingStoreUnavailableException exception)
     {

@@ -6,17 +6,8 @@ using Honua.Core.Features.ControlPlane.Domain;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Resolution helpers for <see cref="IBatchComputeBackend"/> collections, keeping
-/// the <c>(BackendName, TargetKind)</c> lookup key consistent across the
-/// geoprocessing submit path and the execution-job reconciler.
-/// </summary>
 internal static class BatchComputeBackendExtensions
 {
-    /// <summary>
-    /// Resolves a backend by its canonical <c>(BackendName, TargetKind)</c> key,
-    /// returning null when no backend is registered for the combination.
-    /// </summary>
     public static IBatchComputeBackend? Resolve(
         this IEnumerable<IBatchComputeBackend> backends,
         string backendName,

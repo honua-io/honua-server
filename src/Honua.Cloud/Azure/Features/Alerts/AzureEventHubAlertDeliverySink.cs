@@ -10,9 +10,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Alerts;
 
-/// <summary>
-/// Thin adapter around <see cref="EventHubProducerClient"/> for testability.
-/// </summary>
 internal interface IEventHubPublisher : IAsyncDisposable
 {
     Task<EventHubPublishResult> SendAsync(

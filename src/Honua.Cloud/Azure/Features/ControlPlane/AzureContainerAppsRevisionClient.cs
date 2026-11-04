@@ -11,156 +11,75 @@ using Azure.Identity;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Traffic weight entry for an Azure Container Apps revision.
-/// </summary>
 internal sealed record AzureContainerAppsTrafficWeight
 {
-    /// <summary>
-    /// Revision name receiving this weight. Null when <see cref="LatestRevision"/> is true.
-    /// </summary>
     public string? RevisionName { get; init; }
 
-    /// <summary>
-    /// Whether this weight targets the latest ready revision.
-    /// </summary>
     public bool LatestRevision { get; init; }
 
-    /// <summary>
-    /// Percentage of traffic routed to this revision (0–100).
-    /// </summary>
     public int Weight { get; init; }
 
-    /// <summary>
-    /// Optional traffic label such as "stable" or "canary".
-    /// </summary>
     public string? Label { get; init; }
 }
 
-/// <summary>
-/// Summary of a single Container Apps revision from the revisions list.
-/// </summary>
 internal sealed record AzureContainerAppsRevisionSummary
 {
-    /// <summary>
-    /// Revision name.
-    /// </summary>
     public required string RevisionName { get; init; }
 
-    /// <summary>
-    /// Whether the revision is currently active and can receive traffic.
-    /// </summary>
     public bool Active { get; init; }
 
-    /// <summary>
-    /// Percentage of traffic currently routed to this revision.
-    /// </summary>
     public int TrafficWeight { get; init; }
 }
 
-/// <summary>
-/// Current ingress traffic configuration and active revision list for a Container App.
-/// </summary>
 internal sealed record AzureContainerAppsTrafficState
 {
-    /// <summary>
-    /// Current traffic weight configuration.
-    /// </summary>
     public IReadOnlyList<AzureContainerAppsTrafficWeight> Traffic { get; init; } =
         Array.Empty<AzureContainerAppsTrafficWeight>();
 
-    /// <summary>
-    /// Active revisions for this Container App.
-    /// </summary>
     public IReadOnlyList<AzureContainerAppsRevisionSummary> Revisions { get; init; } =
         Array.Empty<AzureContainerAppsRevisionSummary>();
 }
 
-/// <summary>
-/// Health and provisioning state for a specific Container Apps revision.
-/// </summary>
 internal sealed record AzureContainerAppsRevisionState
 {
-    /// <summary>
-    /// Revision name.
-    /// </summary>
     public required string RevisionName { get; init; }
 
-    /// <summary>
-    /// Provisioning state: Provisioning, Provisioned, Failed, Deprovisioning.
-    /// </summary>
     public string? ProvisioningState { get; init; }
 
-    /// <summary>
-    /// Running state: Running, Processing, Stopped, Degraded, Failed.
-    /// </summary>
     public string? RunningState { get; init; }
 
-    /// <summary>
-    /// Whether the revision is active and can receive traffic.
-    /// </summary>
     public bool Active { get; init; }
 
-    /// <summary>
-    /// Health state: Healthy, Unhealthy, None.
-    /// </summary>
     public string? HealthState { get; init; }
 
-    /// <summary>
-    /// Fully qualified domain name when available.
-    /// </summary>
     public string? Fqdn { get; init; }
 }
 
-/// <summary>
-/// Result of updating traffic weights for a Container App.
-/// </summary>
 internal sealed record AzureContainerAppsTrafficUpdateResult
 {
-    /// <summary>
-    /// HTTP status code returned by the ARM API.
-    /// </summary>
     public required HttpStatusCode StatusCode { get; init; }
 }
 
-/// <summary>
-/// ARM REST API client for Azure Container Apps revision and traffic management.
-/// </summary>
 internal interface IAzureContainerAppsRevisionClient
 {
-    /// <summary>
-    /// Gets current ingress traffic configuration and active revision list.
-    /// </summary>
     Task<AzureContainerAppsTrafficState> GetTrafficStateAsync(
         string subscriptionId, string resourceGroupName, string appName,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Gets health and provisioning status for a specific revision.
-    /// </summary>
     Task<AzureContainerAppsRevisionState> GetRevisionAsync(
         string subscriptionId, string resourceGroupName, string appName,
         string revisionName, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Updates ingress traffic weights between revisions.
-    /// </summary>
     Task<AzureContainerAppsTrafficUpdateResult> UpdateTrafficAsync(
         string subscriptionId, string resourceGroupName, string appName,
         IReadOnlyList<AzureContainerAppsTrafficWeight> weights,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Activates a deactivated revision so it can receive traffic.
-    /// </summary>
     Task ActivateRevisionAsync(
         string subscriptionId, string resourceGroupName, string appName,
         string revisionName, CancellationToken cancellationToken = default);
 }
 
-/// <summary>
-/// ARM REST API client for Azure Container Apps using direct HTTP calls to management.azure.com.
-/// </summary>
 internal sealed class AzureManagementContainerAppsRevisionClient(IHttpClientFactory httpClientFactory)
     : IAzureContainerAppsRevisionClient
 {

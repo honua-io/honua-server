@@ -8,7 +8,6 @@ using Amazon.ECS.Model;
 
 namespace Honua.ControlPlane;
 
-/// <summary>ECS service identity read back around a governed restart or desired-count change.</summary>
 internal sealed record EcsWorkloadSnapshot
 {
     public required string TaskDefinitionArn { get; init; }
@@ -16,10 +15,6 @@ internal sealed record EcsWorkloadSnapshot
     public int DesiredCount { get; init; }
 }
 
-/// <summary>
-/// Narrow ECS writes for governed workload actions. Task-definition rollout stays on the
-/// deploy backend. These calls never register a task definition or change an image.
-/// </summary>
 internal interface IEcsWorkloadControl
 {
     Task<EcsWorkloadSnapshot> DescribeAsync(
@@ -44,10 +39,6 @@ internal interface IEcsWorkloadControl
         CancellationToken cancellationToken = default);
 }
 
-/// <summary>
-/// UpdateService bodies for governed ECS actions. Each request sets one behavior and
-/// leaves task definition, network, and every other field unset.
-/// </summary>
 internal static class EcsWorkloadUpdate
 {
     public static UpdateServiceRequest ForceNewDeployment(string cluster, string serviceName)
@@ -67,7 +58,6 @@ internal static class EcsWorkloadUpdate
         };
 }
 
-/// <summary>Process-credential ECS client for governed restart and desired-count changes.</summary>
 internal sealed class AwsSdkEcsWorkloadControl : IEcsWorkloadControl
 {
     private static readonly SearchValues<char> HexDigits = SearchValues.Create("0123456789abcdef");

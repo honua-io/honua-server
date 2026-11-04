@@ -47,11 +47,6 @@ internal static class OgcClassicRequestHelpers
         return true;
     }
 
-    /// <summary>
-    /// Builds the GetFeatureInfo attribute set for one feature: internal attributes and the
-    /// resource's publisher-hidden fields are omitted (matching WFS GetFeature), while
-    /// undeclared runtime attributes pass through (#6098).
-    /// </summary>
     internal static Dictionary<string, object?> BuildVisibleFeatureInfoAttributes(
         Feature feature,
         IReadOnlySet<string> hiddenFields)
@@ -118,10 +113,6 @@ internal static class OgcClassicRequestHelpers
         return false;
     }
 
-    /// <summary>
-    /// Returns the resource's display name with any leading namespace prefix removed,
-    /// falling back to the publication's layer index when the resource has no name.
-    /// </summary>
     internal static string GetWmsLayerName(MetadataV2Resource resource, MetadataV2Publication? publication = null)
     {
         ArgumentNullException.ThrowIfNull(resource);

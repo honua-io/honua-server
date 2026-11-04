@@ -24,16 +24,10 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Io.Export;
 
-/// <summary>
-/// Minimal API endpoint for exporting layer data in traditional GIS interchange formats.
-/// </summary>
 internal static class ExportEndpoints
 {
     private const long AsyncThreshold = 50_000;
 
-    /// <summary>
-    /// Maps the export endpoint.
-    /// </summary>
     public static void MapExportEndpoints(this WebApplication app)
     {
         var group = app.MapGroup("/api/v{version:apiVersion}/admin/services/{serviceName}/layers/{layerId:int}/export")
@@ -302,12 +296,6 @@ internal static class ExportEndpoints
         }
     }
 
-    /// <summary>
-    /// Streams a feature export through an <see cref="IFeatureOutputFormat"/> — the built-in CSV
-    /// writer (<see cref="CsvOutputFormat"/>) or a plugin-contributed format (issue #2856, ADR-0067).
-    /// The host owns HTTP concerns (content type, download filename, telemetry); the format owns
-    /// only byte production.
-    /// </summary>
     private static async Task<IResult> WriteFeatureFormatResponseAsync(
         HttpContext httpContext,
         IFeatureOutputFormat format,
@@ -579,9 +567,6 @@ internal static class ExportEndpoints
     };
 }
 
-/// <summary>
-/// Represents a queued export job for background processing.
-/// </summary>
 internal sealed record ExportJob(
     string JobId,
     string ServiceName,

@@ -3,21 +3,12 @@
 
 namespace Honua.Protocols.Ogc.Classic.Wfs20;
 
-/// <summary>
-/// Extension methods to register WFS 2.0 endpoints
-/// </summary>
 internal static partial class Wfs20Endpoints
 {
-    /// <summary>
-    /// Logging class for WFS 2.0 endpoints
-    /// </summary>
     internal sealed class Wfs20EndpointsLog
     {
     }
 
-    /// <summary>
-    /// Maps all WFS 2.0 endpoints using a dispatcher pattern to handle routing
-    /// </summary>
     internal static IEndpointRouteBuilder MapWfs20Endpoints(this IEndpointRouteBuilder endpoints)
     {
         // Register single dispatcher endpoint that routes based on 'request' parameter

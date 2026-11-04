@@ -19,9 +19,6 @@ using Honua.Protocols.OData.Models;
 
 namespace Honua.Protocols.OData.Services;
 
-/// <summary>
-/// Log category for OData CRUD operations.
-/// </summary>
 internal sealed class ODataCrudLog;
 
 internal sealed record ODataCrudDependencies(
@@ -36,10 +33,6 @@ internal sealed record ODataCrudDependencies(
     IEditProcessor EditProcessor,
     IHttpContextAccessor? HttpContextAccessor = null);
 
-/// <summary>
-/// Service for handling OData CRUD operations (Create, Read, Update, Delete) on features.
-/// Provides validation, geometry processing, and error handling for feature operations.
-/// </summary>
 internal sealed partial class ODataCrudService
 {
     private readonly IResourceValidator _resourceValidator;
@@ -54,9 +47,6 @@ internal sealed partial class ODataCrudService
     private readonly IHttpContextAccessor? _httpContextAccessor;
     private readonly ILogger<ODataCrudLog> _logger;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="ODataCrudService"/> class.
-    /// </summary>
     public ODataCrudService(
         ODataCrudDependencies dependencies,
         ILogger<ODataCrudLog> logger)
@@ -76,9 +66,6 @@ internal sealed partial class ODataCrudService
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <summary>
-    /// Retrieves a single feature by its ID with proper validation and error handling.
-    /// </summary>
     public Task<ODataCrudResult<Dictionary<string, object?>>> GetFeatureAsync(
         int layerId,
         long objectId,
@@ -95,7 +82,6 @@ internal sealed partial class ODataCrudService
         CancellationToken cancellationToken = default)
         => GetFeatureAsync(layerId, objectId, baseUrl, reader, storageLayerId, null, cancellationToken);
 
-    /// <summary>Executes against the canonical resource resolved and authorized by the protocol handler.</summary>
     public async Task<ODataCrudResult<Dictionary<string, object?>>> GetFeatureAsync(
         int layerId,
         long objectId,
@@ -153,18 +139,6 @@ internal sealed partial class ODataCrudService
         }
     }
 
-    /// <summary>
-    /// Creates a new feature with validation and geometry processing.
-    /// </summary>
-    /// <param name="layerId">Service-local layer id the request addressed. Used for
-    /// validation, payload identity, ETags, and links.</param>
-    /// <param name="payload">Parsed request payload.</param>
-    /// <param name="baseUrl">Base URL used to build links.</param>
-    /// <param name="storageLayerId">Storage-layer handle the feature reader/writer
-    /// boundary is keyed on, resolved by the caller through the shared snapshot
-    /// resolver. Only coincides with <paramref name="layerId"/> when the publication's
-    /// identifier was assigned from the storage id.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
     public Task<ODataCrudResult<Dictionary<string, object?>>> CreateFeatureAsync(
         int layerId,
         ParsedFeaturePayload payload,
@@ -173,13 +147,6 @@ internal sealed partial class ODataCrudService
         CancellationToken cancellationToken = default)
         => CreateFeatureAsync(layerId, payload, baseUrl, storageLayerId, null, cancellationToken);
 
-    /// <summary>Executes against the canonical resource resolved and authorized by the protocol handler.</summary>
-    /// <param name="layerId">Service-local layer identifier.</param>
-    /// <param name="payload">Parsed feature payload.</param>
-    /// <param name="baseUrl">Base URL used for entity links.</param>
-    /// <param name="storageLayerId">Resolved physical storage-layer handle.</param>
-    /// <param name="resolvedResource">Authorized canonical feature resource, or null for legacy internal callers.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
     public async Task<ODataCrudResult<Dictionary<string, object?>>> CreateFeatureAsync(
         int layerId,
         ParsedFeaturePayload payload,
@@ -308,9 +275,6 @@ internal sealed partial class ODataCrudService
         }
     }
 
-    /// <summary>
-    /// Updates an existing feature with partial update support (PATCH semantics).
-    /// </summary>
     public Task<ODataCrudResult<Dictionary<string, object?>>> UpdateFeatureAsync(
         int layerId,
         long objectId,
@@ -323,7 +287,6 @@ internal sealed partial class ODataCrudService
         CancellationToken cancellationToken = default)
         => UpdateFeatureAsync(layerId, objectId, payload, baseUrl, ifMatch, ifNoneMatch, storageLayerId, replace, null, cancellationToken);
 
-    /// <summary>Executes against the canonical resource resolved and authorized by the protocol handler.</summary>
     public async Task<ODataCrudResult<Dictionary<string, object?>>> UpdateFeatureAsync(
         int layerId,
         long objectId,
@@ -525,9 +488,6 @@ internal sealed partial class ODataCrudService
         }
     }
 
-    /// <summary>
-    /// Deletes a feature with proper validation and error handling.
-    /// </summary>
     public Task<ODataCrudResult<object>> DeleteFeatureAsync(
         int layerId,
         long objectId,
@@ -537,7 +497,6 @@ internal sealed partial class ODataCrudService
         CancellationToken cancellationToken = default)
         => DeleteFeatureAsync(layerId, objectId, ifMatch, ifNoneMatch, storageLayerId, null, cancellationToken);
 
-    /// <summary>Executes against the canonical resource resolved and authorized by the protocol handler.</summary>
     public async Task<ODataCrudResult<object>> DeleteFeatureAsync(
         int layerId,
         long objectId,
@@ -649,9 +608,6 @@ internal sealed partial class ODataCrudService
             : ODataCrudResult<T>.NotFound(message);
     }
 
-    /// <summary>
-    /// Processes and validates geometry data from OData spatial payload.
-    /// </summary>
     private async Task<GeometryProcessingResult> ProcessGeometryAsync(
         MetadataV2Resource resource,
         ODataSpatialGeometry? geometry,
@@ -768,47 +724,25 @@ internal sealed partial class ODataCrudService
         return _etagService.ComputeETag(json);
     }
 
-    /// <summary>
-    /// Logging methods for OData CRUD operations.
-    /// </summary>
     private static partial class Log
     {
-        /// <summary>
-        /// Logs when getting a specific feature fails via OData.
-        /// </summary>
         [LoggerMessage(EventId = 3005, Level = LogLevel.Error, Message = "OData get feature failed for layer {LayerId} and objectId {ObjectId}.")]
         public static partial void GetFeatureFailed(ILogger logger, int layerId, long objectId, Exception exception);
 
-        /// <summary>
-        /// Logs when creating a feature fails via OData.
-        /// </summary>
         [LoggerMessage(EventId = 3006, Level = LogLevel.Error, Message = "OData create feature failed for layer {LayerId}.")]
         public static partial void CreateFeatureFailed(ILogger logger, int layerId, Exception exception);
 
-        /// <summary>
-        /// Logs when a feature to update is not found via OData.
-        /// </summary>
         [LoggerMessage(EventId = 3007, Level = LogLevel.Warning, Message = "OData update feature not found for layer {LayerId} and objectId {ObjectId}.")]
         public static partial void UpdateFeatureNotFound(ILogger logger, int layerId, long objectId, Exception exception);
 
-        /// <summary>
-        /// Logs when updating a feature fails via OData.
-        /// </summary>
         [LoggerMessage(EventId = 3008, Level = LogLevel.Error, Message = "OData update feature failed for layer {LayerId} and objectId {ObjectId}.")]
         public static partial void UpdateFeatureFailed(ILogger logger, int layerId, long objectId, Exception exception);
 
-        /// <summary>
-        /// Logs when deleting a feature fails via OData.
-        /// </summary>
         [LoggerMessage(EventId = 3009, Level = LogLevel.Error, Message = "OData delete feature failed for layer {LayerId} and objectId {ObjectId}.")]
         public static partial void DeleteFeatureFailed(ILogger logger, int layerId, long objectId, Exception exception);
     }
 }
 
-/// <summary>
-/// Result type for OData CRUD operations with status, data, and metadata.
-/// </summary>
-/// <typeparam name="T">The type of the result data.</typeparam>
 internal sealed record ODataCrudResult<T>
 {
     public bool IsSuccess { get; init; }
@@ -857,9 +791,6 @@ internal sealed record ODataCrudResult<T>
         => new() { IsSuccess = false, StatusCode = 500, ErrorMessage = message };
 }
 
-/// <summary>
-/// Result of geometry processing operations.
-/// </summary>
 internal sealed record GeometryProcessingResult
 {
     public bool IsValid { get; init; }

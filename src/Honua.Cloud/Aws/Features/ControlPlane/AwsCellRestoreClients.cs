@@ -10,26 +10,10 @@ using Amazon.SecretsManager.Model;
 
 namespace Honua.Cloud.Aws.Features.ControlPlane;
 
-/// <summary>Snapshot fields the server restore gate needs. No endpoint password and no raw error text.</summary>
-/// <param name="SnapshotId">Snapshot identifier.</param>
-/// <param name="Status">Provider status.</param>
-/// <param name="SchemaVersion">Value of the <c>Schema</c> tag, when it is an integer.</param>
-/// <param name="CellTagMatches">Whether the snapshot is tagged for this cell prefix.</param>
 internal sealed record AwsRdsSnapshotView(string SnapshotId, string Status, int? SchemaVersion, bool CellTagMatches);
 
-/// <summary>New instance the provider reported. <see cref="Endpoint"/> is set only when status is available.</summary>
-/// <param name="Available">Whether the instance is available and has an address.</param>
-/// <param name="Endpoint">Hostname, when <see cref="Available"/> is true.</param>
 internal sealed record AwsRdsInstanceView(bool Available, string? Endpoint);
 
-/// <summary>One restore of a cell snapshot into a new instance. Failed instances are left in place.</summary>
-/// <param name="SnapshotId">Snapshot identifier.</param>
-/// <param name="NewInstanceId">Identifier that already passed the cell prefix check.</param>
-/// <param name="CellPrefix">Prefix stored on the <c>Cell</c> tag.</param>
-/// <param name="SubnetGroupName">DB subnet group.</param>
-/// <param name="EnvironmentTag"><c>cert</c> or <c>demo</c>.</param>
-/// <param name="WaitSeconds">How long to poll before giving up.</param>
-/// <param name="SecurityGroupIds">Cell-authorized VPC security groups.</param>
 internal sealed record AwsRdsRestoreCommand(
     string SnapshotId,
     string NewInstanceId,
@@ -39,10 +23,6 @@ internal sealed record AwsRdsRestoreCommand(
     int WaitSeconds,
     IReadOnlyList<string> SecurityGroupIds);
 
-/// <summary>
-/// RDS snapshot describe and restore. The client is created on first use so a Compose host
-/// without AWS credentials can still start. This type never deletes an instance.
-/// </summary>
 internal sealed class AwsRdsCellRestoreClient : IDisposable
 {
     private readonly Lazy<IAmazonRDS> _client;
@@ -55,7 +35,6 @@ internal sealed class AwsRdsCellRestoreClient : IDisposable
             : new Lazy<IAmazonRDS>(() => client);
     }
 
-    /// <summary>Describes one snapshot. Null when it does not exist or the call fails.</summary>
     public async Task<AwsRdsSnapshotView?> DescribeAsync(
         string snapshotId,
         string cellPrefix,
@@ -91,7 +70,6 @@ internal sealed class AwsRdsCellRestoreClient : IDisposable
         }
     }
 
-    /// <summary>Restores a new instance and polls until it is available, failed, or the wait expires.</summary>
     public async Task<AwsRdsInstanceView> RestoreNewAsync(AwsRdsRestoreCommand command, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(command);
@@ -165,7 +143,6 @@ internal sealed class AwsRdsCellRestoreClient : IDisposable
         }
     }
 
-    /// <summary>Starts a new restore and returns the provider's immutable resource identity.</summary>
     public async Task<string?> BeginAsync(AwsRdsRestoreCommand command, CancellationToken cancellationToken)
     {
         try
@@ -194,7 +171,6 @@ internal sealed class AwsRdsCellRestoreClient : IDisposable
         }
     }
 
-    /// <summary>Observes only the resource identity returned by the original submission.</summary>
     public async Task<(bool Known, bool Available, bool Failed, string? Endpoint)> ObserveAsync(
         string instanceId, string resourceId, CancellationToken cancellationToken)
     {
@@ -278,7 +254,6 @@ internal sealed class AwsRdsCellRestoreClient : IDisposable
     }
 }
 
-/// <summary>Reads and replaces a Secrets Manager string. Callers must not log the value.</summary>
 internal sealed class AwsSecretStringClient : IDisposable
 {
     private readonly Lazy<IAmazonSecretsManager> _client;
@@ -291,7 +266,6 @@ internal sealed class AwsSecretStringClient : IDisposable
             : new Lazy<IAmazonSecretsManager>(() => client);
     }
 
-    /// <summary>Returns the secret string, or null when the read fails.</summary>
     public async Task<string?> GetAsync(string secretId, CancellationToken cancellationToken)
     {
         try
@@ -308,7 +282,6 @@ internal sealed class AwsSecretStringClient : IDisposable
         }
     }
 
-    /// <summary>Writes a new secret string. False when the write fails.</summary>
     public async Task<bool> PutAsync(string secretId, string secretString, CancellationToken cancellationToken)
     {
         try

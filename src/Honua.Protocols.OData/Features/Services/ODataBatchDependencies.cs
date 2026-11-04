@@ -14,9 +14,6 @@ using Honua.Protocols.OData;
 
 namespace Honua.Protocols.OData.Services;
 
-/// <summary>
-/// Aggregates OData batch dependencies to keep handler constructor limits small.
-/// </summary>
 internal sealed class ODataBatchDependencies
 {
     public ODataBatchDependencies(

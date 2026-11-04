@@ -6,42 +6,15 @@ using System.Text;
 
 namespace Honua.Geoprocessing.Cli;
 
-/// <summary>
-/// The kind of process <c>honua gp new</c> scaffolds. Drives which executor template
-/// and golden-fixture shape are emitted.
-/// </summary>
 public enum GpProcessKind
 {
-    /// <summary>
-    /// A lean, managed (NetTopologySuite-class) process. Scaffolds an
-    /// <c>IProcessExecutor</c> that runs in the GDAL-free serving image and emits a
-    /// vector GeoJSON artifact, asserted with the geometry-coordinate comparator.
-    /// </summary>
     Geometry,
 
-    /// <summary>
-    /// A native, GDAL-backed process. Scaffolds an <c>IProcessExecutor</c> that declares
-    /// the native runtime profile and emits a scalar JSON artifact, asserted with the
-    /// scalar/structural comparator.
-    /// </summary>
     Gdal,
 }
 
-/// <summary>
-/// A single file the scaffolder will write, captured as a plan entry so the caller can
-/// preview every emission (and the unit tests can assert template rendering) before any
-/// I/O happens.
-/// </summary>
-/// <param name="RelativePath">Repo-relative path the file is written to.</param>
-/// <param name="Contents">The rendered file contents.</param>
-/// <param name="Description">Short human-readable role of the file.</param>
 public sealed record GpScaffoldFile(string RelativePath, string Contents, string Description);
 
-/// <summary>
-/// The fully-rendered output of a <c>honua gp new</c> invocation: every file to write plus
-/// the next-steps guidance to print. Computed by <see cref="GpScaffolder.Plan"/> without
-/// touching the filesystem so it is unit-testable offline and previewable via <c>--output</c>.
-/// </summary>
 public sealed record GpScaffoldPlan(
     string ProcessId,
     GpProcessKind Kind,
@@ -49,47 +22,16 @@ public sealed record GpScaffoldPlan(
     IReadOnlyList<GpScaffoldFile> Files,
     string NextSteps);
 
-/// <summary>
-/// Renders a ready-to-edit, REGISTERED, runnable, golden-tested geoprocessing process from
-/// templates (GP Devkit P4, issue #2125): the antidote to authoring a <c>.pyt</c> in a
-/// licensed Esri toolbox. From zero, one command produces (1) an <c>IProcessExecutor</c>
-/// that declares its process id + typed param schema and returns a trivial valid result so
-/// it compiles, auto-registers, and runs immediately; (2) the one-line DI registration that
-/// wires it into the managed/native executor set; (3) a catalog entry so it has a title and
-/// is plannable; and (4) a P6 golden-test fixture under <c>samples/gp/&lt;id&gt;</c> so
-/// <c>gp test &lt;id&gt;</c> passes out of the box.
-///
-/// <para>
-/// The class is pure: <see cref="Plan"/> renders the full emission set without any I/O, and
-/// the CLI verb is responsible for writing the files and printing the next-steps. Collision
-/// detection against the live registered process set is supplied by the caller via the
-/// <c>existingProcessIds</c> argument, reusing the same P1 catalog/executor registration the
-/// runner routes on.
-/// </para>
-/// </summary>
 public static class GpScaffolder
 {
-    /// <summary>Repo-relative directory the managed executor template is written to.</summary>
     public const string ManagedExecutorDirectory =
         "src/Honua.Geoprocessing/Features/Geoprocessing/Execution";
 
-    /// <summary>Repo-relative directory the native (GDAL) executor template is written to.</summary>
     public const string GdalExecutorDirectory =
         "src/Honua.Worker.Gdal/Execution";
 
-    /// <summary>Repo-relative root the golden fixtures live under (P6 convention).</summary>
     public const string FixtureRoot = "samples/gp";
 
-    /// <summary>
-    /// Validates <paramref name="processId"/> as a canonical dotted geoprocessing id:
-    /// one or more dot-separated segments, each a lowercase letter followed by lowercase
-    /// letters, digits, or single internal hyphens (e.g. <c>geometry.buffer</c>,
-    /// <c>analytics.spatial-join</c>). This matches the shape of every built-in id and keeps
-    /// the generated C# type name, namespace, and fixture directory derivable.
-    /// </summary>
-    /// <param name="processId">The candidate process id.</param>
-    /// <param name="error">On failure, the reason the id was rejected.</param>
-    /// <returns><see langword="true"/> when the id is a valid canonical process id.</returns>
     public static bool TryValidateProcessId(string? processId, out string error)
     {
         if (string.IsNullOrWhiteSpace(processId))
@@ -153,13 +95,6 @@ public static class GpScaffolder
         return true;
     }
 
-    /// <summary>
-    /// Derives a PascalCase C# type identifier from a dotted process id (e.g.
-    /// <c>analytics.spatial-join</c> becomes <c>AnalyticsSpatialJoin</c>). The full executor
-    /// class name appends <c>JobExecutor</c> (managed) or <c>NativeJobExecutor</c> (GDAL).
-    /// </summary>
-    /// <param name="processId">A process id already validated by <see cref="TryValidateProcessId"/>.</param>
-    /// <returns>The PascalCase identifier stem.</returns>
     public static string ToTypeStem(string processId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(processId);
@@ -188,33 +123,12 @@ public static class GpScaffolder
         return sb.ToString();
     }
 
-    /// <summary>
-    /// The conventional fixture id for a process id: the dotted id with dots replaced by
-    /// hyphens (e.g. <c>geometry.buffer</c> becomes <c>geometry-buffer</c>), matching the
-    /// existing <c>samples/gp/&lt;id&gt;</c> directories.
-    /// </summary>
-    /// <param name="processId">A validated process id.</param>
-    /// <returns>The fixture id / directory name.</returns>
     public static string ToFixtureId(string processId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(processId);
         return processId.Replace('.', '-');
     }
 
-    /// <summary>
-    /// Renders the full scaffold plan for <paramref name="processId"/> of the given
-    /// <paramref name="kind"/>: the executor template, the DI registration + catalog-entry
-    /// notes, and the P6 golden fixture (manifest + golden + input note). Performs NO I/O.
-    /// </summary>
-    /// <param name="processId">The new process id (must pass <see cref="TryValidateProcessId"/>).</param>
-    /// <param name="kind">Whether to scaffold a managed (geometry) or native (gdal) process.</param>
-    /// <param name="existingProcessIds">
-    /// The live set of already-registered process ids, used for collision detection. Pass the
-    /// runner's <c>AvailableProcessIds</c> so the check reuses the real P1 registration.
-    /// </param>
-    /// <returns>The rendered plan.</returns>
-    /// <exception cref="ArgumentException">The process id is invalid.</exception>
-    /// <exception cref="InvalidOperationException">The process id collides with an existing one.</exception>
     public static GpScaffoldPlan Plan(
         string processId,
         GpProcessKind kind,
@@ -273,11 +187,6 @@ public static class GpScaffolder
     private static string GoldenFileName(GpProcessKind kind) =>
         kind == GpProcessKind.Gdal ? "golden.json" : "golden.geojson";
 
-    /// <summary>
-    /// Renders the executor <c>.cs</c>. The body is a clearly-marked TODO that returns a
-    /// trivial, deterministic valid result so the process compiles, auto-registers, and runs
-    /// (and golden-tests) immediately — the author replaces the body with real logic.
-    /// </summary>
     internal static string RenderExecutor(string processId, string className, GpProcessKind kind)
     {
         var ns = kind == GpProcessKind.Gdal ? "Honua.Worker.Gdal.Execution" : "Honua.Geoprocessing.Execution";
@@ -399,11 +308,6 @@ internal sealed class {className} : IProcessExecutor
 ";
     }
 
-    /// <summary>
-    /// Renders the P6 golden fixture manifest. The fixture supplies the single optional
-    /// <c>value</c> input and points at the golden the trivial body produces, so
-    /// <c>gp test &lt;id&gt;</c> passes immediately.
-    /// </summary>
     internal static string RenderFixtureManifest(string processId, string fixtureId, GpProcessKind kind)
     {
         var mode = kind == GpProcessKind.Gdal ? "scalarStructural" : "geometry";
@@ -423,10 +327,6 @@ $@"{{
 ";
     }
 
-    /// <summary>
-    /// Renders the golden file: the exact trivial artifact the scaffolded body emits for the
-    /// fixture's <c>value=hello</c> input, so the fixture passes out of the box.
-    /// </summary>
     internal static string RenderGolden(string processId, GpProcessKind kind) =>
         kind == GpProcessKind.Gdal
             ? $"{{\"processId\":\"{processId}\",\"status\":\"scaffolded\",\"echo\":\"hello\"}}"

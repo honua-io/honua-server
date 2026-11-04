@@ -9,25 +9,8 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Protocols.OData.Services;
 
-/// <summary>
-/// Metadata v2 lookup helpers scoped to the OData protocol family. Collapses the
-/// "OData-enabled publication walk + visible-layer filtering" used by the OData service
-/// document, $metadata, and layer collection endpoints into a single typed call.
-/// </summary>
 internal static class ODataV2Lookups
 {
-    /// <summary>
-    /// Resolved OData publication view: the canonical resource being published, the
-    /// matching publication, the publishing service, and the integer service-local
-    /// layer index used to address the underlying feature store.
-    /// </summary>
-    /// <remarks>
-    /// <see cref="LayerIndex"/> is required to be present on every OData publication; the
-    /// resolver skips publications without one because the data path
-    /// (<see cref="Honua.Core.Features.FeatureStore.Abstractions.IFeatureReader"/>) is still
-    /// keyed on a numeric layer id. This matches the layer-index identity open question
-    /// called out by the cutover plan.
-    /// </remarks>
     internal readonly record struct ResolvedODataPublication(
         MetadataV2Publication Publication,
         MetadataV2Resource Resource,
@@ -35,11 +18,6 @@ internal static class ODataV2Lookups
         int LayerIndex,
         int StorageLayerId);
 
-    /// <summary>
-    /// Returns the OData publications visible to the caller. A publication is OData-enabled
-    /// when its service protocol list contains the OData protocol name. The visible
-    /// subset adds the access policy check.
-    /// </summary>
     public static async Task<ResolvedODataPublication[]> ResolveVisibleODataPublicationsAsync(
         HttpContext context,
         CancellationToken cancellationToken)
@@ -98,11 +76,6 @@ internal static class ODataV2Lookups
         return resolved.ToArray();
     }
 
-    /// <summary>
-    /// Returns every OData-enabled publication (regardless of visibility) so callers can
-    /// emit "auth required" / "forbidden" responses when no resources are visible to the
-    /// caller but some exist.
-    /// </summary>
     public static async Task<ResolvedODataPublication[]> ResolveAllODataPublicationsAsync(
         HttpContext context,
         CancellationToken cancellationToken)
@@ -156,10 +129,6 @@ internal static class ODataV2Lookups
         return resolved.ToArray();
     }
 
-    /// <summary>
-    /// Resolves the integer storage-layer handle used by the feature-store boundary for
-    /// a validated OData publication/resource pair.
-    /// </summary>
     public static async Task<int?> ResolveStorageLayerIdAsync(
         HttpContext context,
         MetadataV2Publication? publication,

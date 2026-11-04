@@ -9,48 +9,27 @@ using Honua.Db.Databricks.Features.Infrastructure;
 
 namespace Honua.Db.Databricks.Features.FeatureStore.Services;
 
-/// <summary>
-/// Translates Databricks SQL Statement Execution result sets into the canonical
-/// feature-store domain types (features, counts, extents, object-id lists).
-/// </summary>
-/// <remarks>
-/// "Data access" here means submitting the SQL built by
-/// <see cref="DatabricksFeatureQueryBuilder"/> to the Statement Execution API through
-/// <see cref="IDatabricksStatementClient"/> and decoding the JSON rows. Geometry arrives
-/// as a WKB hex string and is decoded to the byte array carried by <see cref="Feature.Geometry"/>.
-/// </remarks>
 internal interface IDatabricksFeatureDataAccess
 {
-    /// <summary>Executes a SELECT statement and projects the rows into features.</summary>
     Task<ImmutableArray<Feature>> ExecuteSelectAsync(
         DatabricksLayerMapping mapping,
         DatabricksSqlStatement statement,
         CancellationToken cancellationToken);
 
-    /// <summary>Executes a COUNT statement and returns the scalar count.</summary>
     Task<long> ExecuteCountAsync(DatabricksSqlStatement statement, CancellationToken cancellationToken);
 
-    /// <summary>Executes an extent statement and returns the bounding box, if any.</summary>
     Task<FeatureExtent?> ExecuteExtentAsync(
         DatabricksLayerMapping mapping,
         DatabricksSqlStatement statement,
         CancellationToken cancellationToken);
 
-    /// <summary>Executes an object-id statement and returns the primary-key values.</summary>
     Task<ImmutableArray<long>> ExecuteObjectIdsAsync(DatabricksSqlStatement statement, CancellationToken cancellationToken);
 
-    /// <summary>
-    /// Executes an aggregate statistics statement and projects each result row into a
-    /// column-name-keyed dictionary (one row per group, or a single row when ungrouped).
-    /// </summary>
     Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> ExecuteStatisticsAsync(
         DatabricksSqlStatement statement,
         CancellationToken cancellationToken);
 }
 
-/// <summary>
-/// Default <see cref="IDatabricksFeatureDataAccess"/> implementation.
-/// </summary>
 internal sealed class DatabricksFeatureDataAccess : IDatabricksFeatureDataAccess
 {
     private readonly IDatabricksStatementClient _client;

@@ -10,35 +10,15 @@ using Azure.Identity;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// One Log Analytics scalar read. <see cref="NoRows"/> is set only when the query succeeded and its
-/// first table has no rows, which is what an error-count query with a <c>by</c> or <c>bin()</c>
-/// clause returns for an error-free window. A failed request, a missing table, an empty row or an
-/// unparseable or non-finite cell is never <see cref="NoRows"/>.
-/// </summary>
 internal readonly record struct AzureMonitorScalarReading(double? Value, bool NoRows)
 {
-    /// <summary>A successful query whose result table has no rows.</summary>
     public static AzureMonitorScalarReading Empty { get; } = new(null, NoRows: true);
 
-    /// <summary>A read that produced no usable value and no proof that the result is empty.</summary>
     public static AzureMonitorScalarReading Unavailable { get; } = new(null, NoRows: false);
 }
 
-/// <summary>
-/// Thin seam over the Azure Monitor Logs (Log Analytics / Application Insights) query API so the
-/// deploy telemetry gate can be unit-tested without a live Azure subscription. The production
-/// implementation is <see cref="AzureMonitorLogsQueryClient"/>; tests substitute a fake. The seam
-/// mirrors <c>ICloudWatchMetricClient</c> on the AWS side: a single scalar reading per configured
-/// signal evaluated over a fixed window.
-/// </summary>
 internal interface IAzureMonitorMetricClient
 {
-    /// <summary>
-    /// Evaluates a single Kusto (KQL) query against the supplied Log Analytics workspace over the
-    /// supplied window and returns the first scalar cell of the first result row, or no value
-    /// when the workspace returned no rows.
-    /// </summary>
     Task<AzureMonitorScalarReading> GetScalarReadingAsync(
         string workspaceId,
         string query,
@@ -47,14 +27,6 @@ internal interface IAzureMonitorMetricClient
         CancellationToken cancellationToken = default);
 }
 
-/// <summary>
-/// Azure Monitor Logs query client using direct HTTPS calls to the Log Analytics query API
-/// (<c>https://api.loganalytics.io</c> by default), authenticated with
-/// <see cref="DefaultAzureCredential"/>. Direct-REST is the same approach the sibling Azure deploy
-/// adapters (<c>AzureManagementContainerAppsRevisionClient</c>,
-/// <c>AzureManagementFunctionsSlotClient</c>) take against <c>management.azure.com</c>, so the
-/// Azure surface does not pull the heavier Azure.Monitor.Query SDK transitively.
-/// </summary>
 internal sealed class AzureMonitorLogsQueryClient(IHttpClientFactory httpClientFactory)
     : IAzureMonitorMetricClient
 {
@@ -163,10 +135,6 @@ internal sealed class AzureMonitorLogsQueryClient(IHttpClientFactory httpClientF
     internal static double? ParseScalar(JsonElement root)
         => ParseScalarReading(root).Value;
 
-    /// <summary>
-    /// Reads the scalar and classifies an empty answer: only a present first table whose
-    /// <c>rows</c> array is empty is <see cref="AzureMonitorScalarReading.NoRows"/>.
-    /// </summary>
     internal static AzureMonitorScalarReading ParseScalarReading(JsonElement root)
     {
         if (!root.TryGetProperty("tables", out var tables) ||
@@ -238,15 +206,6 @@ internal sealed class AzureMonitorLogsQueryClient(IHttpClientFactory httpClientF
     }
 }
 
-/// <summary>
-/// Azure Monitor-backed deploy telemetry provider. Selected when a telemetry connection's
-/// <c>Provider</c> is <c>azuremonitor</c>. The policy's error-rate / latency / sample-count query
-/// strings are interpreted as Log Analytics / Application Insights KQL queries that each project a
-/// single scalar. Thresholds and the promote/rollback/wait decision are shared with every other
-/// provider via <c>DeployTelemetrySignalEvaluator</c>, so only the query dialect differs from the
-/// Prometheus and CloudWatch evaluators — giving Azure deploy backends the same health-gated safe
-/// rollout + auto-rollback parity as the AWS backends.
-/// </summary>
 internal sealed class AzureMonitorDeployTelemetryProviderEvaluator(
     IAzureMonitorMetricClient metricClient) : IDeployTelemetryProviderEvaluator
 {

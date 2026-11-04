@@ -7,29 +7,20 @@ namespace Honua.GeoServicesRest.Features.FeatureStore.Services;
 
 internal interface IGeoServicesRestFeatureClient
 {
-    /// <summary>Fetches a page of features from the remote layer.</summary>
     Task<GeoServicesRestQueryResponse> QueryAsync(string url, string? authorizationHeader, CancellationToken cancellationToken);
 
-    /// <summary>Fetches a record-count from the remote layer.</summary>
     Task<GeoServicesRestCountResponse> QueryCountAsync(string url, string? authorizationHeader, CancellationToken cancellationToken);
 
-    /// <summary>Fetches the extent envelope from the remote layer.</summary>
     Task<GeoServicesRestExtentResponse> QueryExtentAsync(string url, string? authorizationHeader, CancellationToken cancellationToken);
 
-    /// <summary>Fetches an object-id list from the remote layer.</summary>
     Task<GeoServicesRestObjectIdsResponse> QueryObjectIdsAsync(string url, string? authorizationHeader, CancellationToken cancellationToken);
 
-    /// <summary>Fetches the layer metadata document for the remote layer.</summary>
     Task<GeoServicesRestLayerResponse> GetLayerMetadataAsync(string url, string? authorizationHeader, CancellationToken cancellationToken);
 }
 
 internal sealed class GeoServicesRestFeatureClient : IGeoServicesRestFeatureClient
 {
-    /// <summary>
-    /// ArcGIS Server and ArcGIS Online header for bearer-token authentication.
-    /// Using a request header rather than the <c>token</c> query parameter prevents
-    /// the credential from appearing in HTTP access logs and telemetry traces.
-    /// </summary>
+    // The ArcGIS token is sent in X-Esri-Authorization rather than the query string so it stays out of access logs and traces.
     private const string GeoServicesAuthorizationHeader = "X-Esri-Authorization";
 
     internal const long MaxResponseContentBytes = 64L * 1024 * 1024;
@@ -94,11 +85,6 @@ internal sealed class GeoServicesRestFeatureClient : IGeoServicesRestFeatureClie
             "ArcGIS REST service returned an empty response body.");
     }
 
-    /// <summary>
-    /// Read-only wrapper that fails fast once more than <c>maxBytes</c> have been
-    /// read from the underlying stream, bounding the memory a hostile upstream can
-    /// force the JSON deserializer to allocate from a streamed response body.
-    /// </summary>
     private sealed class LengthLimitedStream : Stream
     {
         private readonly Stream _inner;
@@ -178,13 +164,7 @@ internal sealed class GeoServicesRestFeatureClient : IGeoServicesRestFeatureClie
     }
 }
 
-/// <summary>
-/// Well-known DI client name registered through <c>AddHttpClient</c>. Lets host
-/// applications attach handlers (resilience, retry, telemetry) without taking a
-/// hard dependency on this provider's internals.
-/// </summary>
 internal static class GeoServicesRestServiceClientName
 {
-    /// <summary>Logical HttpClient name for federated ArcGIS REST outbound calls.</summary>
     public const string Default = "Honua.GeoServicesRest.Federation";
 }

@@ -121,11 +121,6 @@ internal sealed partial class MySqlFeatureQueryBuilder
         }
     }
 
-    /// <summary>
-    /// Orders a DISTINCT projection by columns that appear in the select list. MySQL
-    /// rejects ORDER BY expressions outside that list, and the primary key is omitted
-    /// so it cannot uniquify every distinct tuple.
-    /// </summary>
     private static void AppendDistinctOrderBy(StringBuilder sb, FeatureQuery query, IReadOnlyList<string> projectedAttributes)
     {
         var clauses = new List<string>();

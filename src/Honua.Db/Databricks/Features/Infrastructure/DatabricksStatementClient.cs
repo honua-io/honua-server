@@ -10,46 +10,13 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Db.Databricks.Features.Infrastructure;
 
-/// <summary>
-/// A fully materialized result set from the Statement Execution API: ordered column
-/// names plus the row data (each cell as a JSON element).
-/// </summary>
-/// <param name="Columns">Ordered column names.</param>
-/// <param name="Rows">Row data; each row aligns positionally with <paramref name="Columns"/>.</param>
 internal sealed record DatabricksResultSet(IReadOnlyList<string> Columns, IReadOnlyList<JsonElement[]> Rows);
 
-/// <summary>
-/// Submits SQL statements to the Databricks SQL Statement Execution REST API, polls
-/// for completion, and pages through inline result chunks.
-/// </summary>
 internal interface IDatabricksStatementClient
 {
-    /// <summary>
-    /// Executes <paramref name="statement"/> and returns the fully materialized result set.
-    /// </summary>
     Task<DatabricksResultSet> ExecuteAsync(DatabricksSqlStatement statement, CancellationToken cancellationToken);
 }
 
-/// <summary>
-/// HttpClient-backed implementation of <see cref="IDatabricksStatementClient"/>.
-/// </summary>
-/// <remarks>
-/// Statement Execution API flow (REST, JSON, bearer auth):
-/// <list type="number">
-///   <item>POST <c>/api/2.0/sql/statements/</c> with the SQL, warehouse id, parameters,
-///         <c>disposition=INLINE</c>, <c>format=JSON_ARRAY</c>, and a server-side
-///         <c>wait_timeout</c>.</item>
-///   <item>If the response state is <c>PENDING</c>/<c>RUNNING</c>, poll
-///         GET <c>/api/2.0/sql/statements/{id}</c> until <c>SUCCEEDED</c> (or the
-///         client budget elapses).</item>
-///   <item>Read inline <c>result.data_array</c> rows and follow
-///         <c>result.next_chunk_internal_link</c> to page additional chunks.</item>
-/// </list>
-/// The bearer token is sent only via the <c>Authorization</c> request header — never in
-/// a URL — and provider errors are surfaced as <see cref="InvalidOperationException"/>
-/// (mapped by shared problem helpers above this layer); tokens, URLs, and raw provider
-/// internals are never echoed to clients.
-/// </remarks>
 internal sealed class DatabricksStatementClient : IDatabricksStatementClient
 {
     private const string SubmitPath = "/api/2.0/sql/statements/";
@@ -272,19 +239,9 @@ internal sealed class DatabricksStatementClient : IDatabricksStatementClient
     }
 }
 
-/// <summary>
-/// Well-known DI client name registered through <c>AddHttpClient</c>. Lets host
-/// applications attach handlers (resilience, retry, telemetry) without taking a hard
-/// dependency on this provider's internals.
-/// </summary>
 internal static class DatabricksServiceClientName
 {
-    /// <summary>Logical HttpClient name for Databricks Statement Execution outbound calls.</summary>
     public const string Default = "Honua.Databricks.Statements";
 
-    /// <summary>
-    /// Service-type identifier used to isolate this provider's resilience (retry +
-    /// circuit-breaker) state from other external dependencies.
-    /// </summary>
     public const string ResilienceServiceType = "databricks-sql";
 }

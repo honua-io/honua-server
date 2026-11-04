@@ -8,27 +8,8 @@ using Honua.Scene.Assets;
 
 namespace Honua.Protocols.Scene.I3s;
 
-/// <summary>
-/// Builds Esri I3S SceneServer descriptors (service + scene layer) from a
-/// registered Honua <see cref="SceneDataset"/> and its known geographic extent.
-/// This is the inverse of <see cref="I3sToTilesetConverter"/>: it presents a
-/// hosted 3D Tiles scene to ArcGIS / I3S clients as a read-only 3D Object
-/// scene layer.
-/// </summary>
-/// <remarks>
-/// <para>
-/// Production descriptors use the same validated persisted revision as node
-/// pages and binary resources. Explicit transcoder-backed hosts can continue
-/// to use the legacy descriptor builder.
-/// </para>
-/// <para>
-/// Unavailable revisions omit node pages and resource definitions rather than
-/// advertising geometry or attributes that cannot be served.
-/// </para>
-/// </remarks>
 internal static class I3sSceneServiceBuilder
 {
-    /// <summary>Builds descriptors using the same canonical revision as the served resources.</summary>
     public static I3sSceneLayerDocument BuildPersistedLayer(SceneDataset scene, I3sSceneResources? resources,
         SceneDatasetType datasetType = SceneDatasetType.HostedTiles)
     {
@@ -47,50 +28,16 @@ internal static class I3sSceneServiceBuilder
         return layer;
     }
 
-    /// <summary>Default I3S layer type Honua serves for hosted scenes.</summary>
     public const string DefaultLayerType = "3DObject";
 
-    /// <summary>WGS-84 geographic well-known id used for served layers.</summary>
     public const int Wgs84Wkid = 4326;
 
-    /// <summary>
-    /// WGS-84 ellipsoidal-height vertical well-known id advertised on the
-    /// layer's spatial reference (EPSG:115700, the ellipsoidal vertical CRS for
-    /// WGS-84) so a client knows the z values are ellipsoidal metres.
-    /// </summary>
     public const int Wgs84EllipsoidVcsWkid = 115700;
 
-    /// <summary>The single layer id Honua exposes per scene (always 0).</summary>
     public const int LayerId = 0;
 
-    /// <summary>
-    /// I3S spec version targeted by the served descriptor shape.
-    /// </summary>
     public const string I3sVersion = "1.7";
 
-    /// <summary>
-    /// Builds the I3S scene-layer descriptor for a scene with the supplied
-    /// extent. Returns a 3D Object layer rooted at the geographic extent in
-    /// WGS-84.
-    /// </summary>
-    /// <param name="scene">The hosted scene dataset.</param>
-    /// <param name="extent">
-    /// The scene's WGS-84 extent, when known. When the extent carries a
-    /// vertical range (<see cref="SceneExtent.ZMin"/>/<see cref="SceneExtent.ZMax"/>,
-    /// read from the tileset's root bounding volume) the descriptor advertises a
-    /// z-bearing <c>fullExtent</c>; otherwise the vertical extent is omitted
-    /// rather than fabricated.
-    /// </param>
-    /// <param name="datasetType">
-    /// The dataset's I3S source kind, mapped to the advertised <c>layerType</c>
-    /// and store <c>profile</c> (#1812).
-    /// </param>
-    /// <param name="advertiseNodePages">
-    /// When <see langword="true"/>, the store advertises <c>nodePages</c> and a
-    /// <c>defaultGeometrySchema</c> so a conformant client traverses the layer
-    /// through <c>nodepages/{n}</c> (#1809). Only set when the tileset actually
-    /// projects to fetchable node pages.
-    /// </param>
     public static I3sSceneLayerDocument BuildLayer(
         SceneDataset scene,
         SceneExtent? extent,
@@ -177,13 +124,6 @@ internal static class I3sSceneServiceBuilder
         };
     }
 
-    /// <summary>
-    /// Per-attribute storage layout describing the default <c>OBJECTID</c> key
-    /// (<c>f_0</c>, <c>Oid32</c>) every served 3D Object node carries. The
-    /// <c>f_0</c> attribute file is fetchable at
-    /// <c>nodes/{id}/attributes/f_0/0</c> (#1811, identify parity); user-attribute
-    /// fields are descriptive only until the deferred property-table decode lands.
-    /// </summary>
     private static readonly IReadOnlyList<I3sAttributeStorageInfo> DefaultAttributeStorageInfo =
     [
         new I3sAttributeStorageInfo
@@ -203,11 +143,6 @@ internal static class I3sSceneServiceBuilder
         },
     ];
 
-    /// <summary>
-    /// Default node geometry schema: one uncompressed <c>PerAttributeArray</c>
-    /// buffer (position, normal, uv0, color, then per-feature id and faceRange).
-    /// Matches the bytes <see cref="I3sGeometryTranscoder"/> writes.
-    /// </summary>
     private static readonly IReadOnlyList<I3sGeometryDefinition> DefaultGeometryDefinitions =
     [
         new I3sGeometryDefinition
@@ -254,9 +189,6 @@ internal static class I3sSceneServiceBuilder
         },
     };
 
-    /// <summary>
-    /// Default PBR material the served geometry references. Descriptive only.
-    /// </summary>
     private static readonly IReadOnlyList<I3sMaterialDefinition> DefaultMaterialDefinitions =
     [
         new I3sMaterialDefinition
@@ -272,10 +204,6 @@ internal static class I3sSceneServiceBuilder
         },
     ];
 
-    /// <summary>
-    /// Default texture-set the served materials reference (JPEG). Descriptive
-    /// only.
-    /// </summary>
     private static readonly IReadOnlyList<I3sTextureSetDefinition> DefaultTextureSetDefinitions =
     [
         new I3sTextureSetDefinition
@@ -287,22 +215,6 @@ internal static class I3sSceneServiceBuilder
         },
     ];
 
-    /// <summary>
-    /// Builds the I3S SceneServer service descriptor wrapping a single scene
-    /// layer.
-    /// </summary>
-    /// <param name="scene">The hosted scene dataset.</param>
-    /// <param name="extent">
-    /// The scene's WGS-84 extent (optionally z-bearing), when known.
-    /// </param>
-    /// <param name="datasetType">
-    /// The dataset's I3S source kind, mapped to the advertised <c>layerType</c>
-    /// and store <c>profile</c> (#1812).
-    /// </param>
-    /// <param name="advertiseNodePages">
-    /// When <see langword="true"/>, the layer store advertises <c>nodePages</c>
-    /// so a client traverses the layer through <c>nodepages/{n}</c> (#1809).
-    /// </param>
     public static I3sSceneServiceDocument BuildService(
         SceneDataset scene,
         SceneExtent? extent,

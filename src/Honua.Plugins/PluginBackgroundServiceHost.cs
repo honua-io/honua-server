@@ -15,13 +15,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Plugins;
 
-/// <summary>
-/// Hosts every registered <see cref="IPluginBackgroundService"/> as a single
-/// <see cref="IHostedService"/> with per-service failure isolation. The whole feature is gated
-/// behind the Enterprise <c>plugin.sdk</c> entitlement and the operator kill-switch — when
-/// unlicensed/disabled it starts nothing. A background service that throws during execution is
-/// logged and dropped (auto-disabled) without affecting the host or sibling services.
-/// </summary>
 internal sealed partial class PluginBackgroundServiceHost : IHostedService
 {
     private const string ExtensionPoint = "background";
@@ -53,7 +46,6 @@ internal sealed partial class PluginBackgroundServiceHost : IHostedService
         _enabledByConfig = options.Value.Enabled;
     }
 
-    /// <inheritdoc />
     public Task StartAsync(CancellationToken cancellationToken)
     {
         if (_services.Length == 0)
@@ -76,7 +68,6 @@ internal sealed partial class PluginBackgroundServiceHost : IHostedService
         return Task.CompletedTask;
     }
 
-    /// <inheritdoc />
     public async Task StopAsync(CancellationToken cancellationToken)
     {
         if (_stoppingCts is null)

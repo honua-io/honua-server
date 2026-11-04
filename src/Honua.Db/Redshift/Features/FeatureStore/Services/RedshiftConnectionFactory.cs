@@ -8,23 +8,11 @@ using Npgsql;
 
 namespace Honua.Db.Redshift.Features.FeatureStore.Services;
 
-/// <summary>
-/// Resolves and opens an <see cref="NpgsqlConnection"/> for a Redshift feature operation.
-/// </summary>
 internal interface IRedshiftConnectionFactory
 {
-    /// <summary>
-    /// Opens a Redshift connection using the supplied <see cref="DataConnection"/> when
-    /// available, otherwise falling back to the configured default.
-    /// </summary>
     Task<NpgsqlConnection> OpenAsync(DataConnection? dataConnection, CancellationToken cancellationToken);
 }
 
-/// <summary>
-/// Default <see cref="IRedshiftConnectionFactory"/> implementation. Npgsql handles pooling
-/// internally; the factory just hands out new, opened connections. Redshift speaks the
-/// PostgreSQL wire protocol, so the Npgsql driver connects without modification.
-/// </summary>
 internal sealed class RedshiftConnectionFactory : IRedshiftConnectionFactory
 {
     private readonly IOptions<RedshiftOptions> _options;

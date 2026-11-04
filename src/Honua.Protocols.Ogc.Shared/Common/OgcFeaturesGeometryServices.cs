@@ -16,9 +16,6 @@ using NetTopologySuite.IO;
 
 namespace Honua.Protocols.Ogc.Common;
 
-/// <summary>
-/// Provides geometry processing, conversion, and validation services for OGC Features.
-/// </summary>
 internal sealed partial class OgcFeaturesGeometryServices
 {
     private readonly IGeometryService _geometryService;
@@ -45,9 +42,6 @@ internal sealed partial class OgcFeaturesGeometryServices
 
     public bool CanUsePreformattedGeoJson => _geometryLimits.SimplifyTolerance is not > 0;
 
-    /// <summary>
-    /// Result of geometry WKB creation operation.
-    /// </summary>
     internal sealed class WkbCreationResult
     {
         public bool IsSuccess { get; init; }
@@ -58,9 +52,6 @@ internal sealed partial class OgcFeaturesGeometryServices
         public static WkbCreationResult Failure(string errorMessage) => new() { IsSuccess = false, ErrorMessage = errorMessage };
     }
 
-    /// <summary>
-    /// Converts WKB geometry to simple GeoJSON geometry with proper axis ordering.
-    /// </summary>
     public SimpleGeoJsonGeometry? ConvertWkbToSimpleGeometry(byte[]? wkb, AxisOrder axisOrder)
     {
         if (wkb == null || wkb.Length == 0)
@@ -77,12 +68,6 @@ internal sealed partial class OgcFeaturesGeometryServices
         return ConvertGeometryToSimpleGeometry(geometry, axisOrder);
     }
 
-    /// <summary>
-    /// Converts a GeoJSON geometry fragment to simple GeoJSON geometry with proper axis ordering.
-    /// </summary>
-    /// <param name="geoJson">GeoJSON geometry fragment.</param>
-    /// <param name="axisOrder">Requested output axis order.</param>
-    /// <returns>Simple geometry representation, or null when the input cannot be parsed.</returns>
     public SimpleGeoJsonGeometry? ConvertGeoJsonToSimpleGeometry(string? geoJson, AxisOrder axisOrder)
     {
         if (string.IsNullOrWhiteSpace(geoJson))
@@ -339,9 +324,6 @@ internal sealed partial class OgcFeaturesGeometryServices
         };
     }
 
-    /// <summary>
-    /// Creates WKB from GeoJSON geometry with validation.
-    /// </summary>
     [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Kept as an instance method to preserve the current geometry service API.")]
     public WkbCreationResult TryCreateWkbFromGeoJson(
         SimpleGeoJsonGeometry geometry,
@@ -357,9 +339,6 @@ internal sealed partial class OgcFeaturesGeometryServices
         return WriteGeometryAsWkb(parseResult.Geometry, srid);
     }
 
-    /// <summary>
-    /// Creates WKB from GeoJSON geometry and transforms it into the target SRID when necessary.
-    /// </summary>
     public async Task<WkbCreationResult> TryCreateWkbFromGeoJsonAsync(
         SimpleGeoJsonGeometry geometry,
         int inputSrid,
@@ -387,9 +366,6 @@ internal sealed partial class OgcFeaturesGeometryServices
         return WriteGeometryAsWkb(ntsGeometry, targetSrid > 0 ? targetSrid : inputSrid);
     }
 
-    /// <summary>
-    /// Validates geometry complexity and ensures it meets system limits.
-    /// </summary>
     public static bool ValidateGeometryComplexity(Geometry geometry, int maxVertices = 10000)
     {
         if (geometry == null)
@@ -401,9 +377,6 @@ internal sealed partial class OgcFeaturesGeometryServices
         return vertexCount <= maxVertices;
     }
 
-    /// <summary>
-    /// Counts total vertices in a geometry including nested geometries.
-    /// </summary>
     public static int CountVertices(Geometry geometry)
     {
         return geometry switch
@@ -419,9 +392,6 @@ internal sealed partial class OgcFeaturesGeometryServices
         };
     }
 
-    /// <summary>
-    /// Simplifies geometry if it exceeds complexity thresholds.
-    /// </summary>
     public Geometry? SimplifyIfNeeded(Geometry? geometry, double tolerance = 0.0001)
     {
         if (geometry == null)
@@ -452,9 +422,6 @@ internal sealed partial class OgcFeaturesGeometryServices
         }
     }
 
-    /// <summary>
-    /// Validates that geometry is topologically valid.
-    /// </summary>
     public bool ValidateTopology(Geometry geometry)
     {
         if (geometry == null)
@@ -476,25 +443,16 @@ internal sealed partial class OgcFeaturesGeometryServices
         }
     }
 
-    /// <summary>
-    /// Extracts coordinate dimension information from geometry.
-    /// </summary>
     public static (bool hasZ, bool hasM) GetHasZandM(Geometry geometry)
     {
         return Honua.Infrastructure.Services.GeometryService.DetectZMFromGeometry(geometry);
     }
 
-    /// <summary>
-    /// Computes the bounding box of a geometry in the specified CRS.
-    /// </summary>
     public static Envelope? GetBoundingBox(Geometry geometry)
     {
         return geometry?.EnvelopeInternal;
     }
 
-    /// <summary>
-    /// Transforms geometry from one SRID to another.
-    /// </summary>
     public static Geometry? TransformGeometry(Geometry geometry, int fromSrid, int toSrid)
     {
         if (geometry == null || fromSrid == toSrid)

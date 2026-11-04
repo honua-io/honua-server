@@ -11,23 +11,9 @@ using StackExchange.Redis;
 
 namespace Honua.Protocols.SensorThings.Streaming;
 
-/// <summary>
-/// Manages OGC SensorThings real-time observation-stream sessions (Phase 3, #1747).
-/// This mirrors the proven transport pattern of the server feature-change stream
-/// (<c>FeatureStreamSessionManager</c>): each connected client (SSE or WebSocket) gets
-/// a bounded channel, a heartbeat keeps idle connections alive, a slow consumer whose
-/// buffer fills is disconnected, and — when Redis is present — newly-ingested observations
-/// are fanned out across nodes via pub/sub. The request-scoped publisher captures the
-/// resolved tenant and schema before calling this singleton. Observations are scoped
-/// to that boundary and optionally a Datastream so a client can tail a single feed.
-/// </summary>
 internal sealed class ObservationStreamSessionManager : IDisposable
 {
-    /// <summary>
-    /// The <see cref="Meter"/> name emitted for OpenTelemetry. Must be registered in the
-    /// service defaults meter allow-list (<c>Honua.ServiceDefaults.Extensions._meterNames</c>)
-    /// or the drop counter below is silently excluded from export (PA-112).
-    /// </summary>
+    // This meter name must be on the service-defaults allow-list or the drop counter is excluded from export.
     internal const string MeterName = "Honua.SensorThings";
 
     private const string UntenantedPartition = "untenanted";
@@ -88,37 +74,18 @@ internal sealed class ObservationStreamSessionManager : IDisposable
         }
     }
 
-    /// <summary>Number of slow-consumer disconnects since startup.</summary>
     public long SlowConsumerDrops => Interlocked.Read(ref _slowConsumerDrops);
 
-    /// <summary>
-    /// The underlying <see cref="Meter"/> instance. Exposed to tests so a per-instance
-    /// <see cref="MeterListener"/> can scope capture to this object rather than the shared
-    /// meter name, which prevents cross-test contamination under parallel execution.
-    /// </summary>
     internal Meter Meter => _meter;
 
-    /// <summary>The admission limits this manager enforces.</summary>
     internal ObservationStreamOptions Options => _options;
 
-    /// <summary>Current active session count.</summary>
     public int SessionCount => Volatile.Read(ref _activeSessionCount);
 
-    /// <summary>
-    /// Attempts to register a new session filtered to <paramref name="datastreamId"/>
-    /// (null = all datastreams). Returns null when an admission cap is reached.
-    /// </summary>
     public ObservationStreamSession? TryCreateSession(
         string transport, long? datastreamId, ObservationStreamScope scope, string? principalId = null)
         => TryCreateSession(transport, datastreamId, scope, principalId, out _);
 
-    /// <summary>
-    /// Attempts to register a new session for <paramref name="principalId"/> within the
-    /// tenant of <paramref name="scope"/>. A caller is admitted only while it is under its
-    /// own cap, its tenant's cap, and the node cap, so no single credential or tenant can
-    /// pin the node budget (#4198). Unidentified principals within a tenant share one
-    /// principal partition. On refusal <paramref name="rejectedBy"/> names the cap hit.
-    /// </summary>
     public ObservationStreamSession? TryCreateSession(
         string transport,
         long? datastreamId,
@@ -220,14 +187,9 @@ internal sealed class ObservationStreamSessionManager : IDisposable
         }
     }
 
-    /// <summary>Removes a session the client closed and releases its slot.</summary>
     public void RemoveSession(Guid sessionId)
         => RemoveSession(sessionId, ObservationStreamDisconnectReason.ClientClosed);
 
-    /// <summary>
-    /// Removes a session. The first reason wins, so a later client dispose cannot
-    /// overwrite a slow-consumer gap that the transport still has to emit.
-    /// </summary>
     private void RemoveSession(Guid sessionId, ObservationStreamDisconnectReason reason)
     {
         if (!_sessions.TryRemove(sessionId, out var entry))
@@ -246,7 +208,6 @@ internal sealed class ObservationStreamSessionManager : IDisposable
         entry.Cts.Dispose();
     }
 
-    /// <summary>Publishes committed observations only within their captured request scope.</summary>
     public void PublishObservations(IReadOnlyList<SensorThingsObservation> observations, ObservationStreamScope scope)
     {
         if (observations is null || observations.Count == 0)
@@ -339,7 +300,6 @@ internal sealed class ObservationStreamSessionManager : IDisposable
         DisconnectOverflow(overflow);
     }
 
-    /// <summary>Sends a heartbeat frame to every active session.</summary>
     public void BroadcastHeartbeat()
     {
         List<Guid>? overflow = null;
@@ -442,23 +402,15 @@ internal sealed class ObservationStreamSessionManager : IDisposable
     }
 }
 
-/// <summary>Why an observation-stream session ended. The first writer wins.</summary>
 internal enum ObservationStreamDisconnectReason
 {
-    /// <summary>The session is still registered.</summary>
     None = 0,
 
-    /// <summary>The client or the request finished.</summary>
     ClientClosed = 1,
 
-    /// <summary>The bounded buffer overflowed and the missed frames will not be replayed.</summary>
     SlowConsumer = 2,
 }
 
-/// <summary>
-/// Disconnect reason stored off the session token. The token source is disposed as soon as
-/// the session is removed, and the transport still needs the reason after that.
-/// </summary>
 internal sealed class ObservationStreamSessionState
 {
     private int _reason;
@@ -471,25 +423,17 @@ internal sealed class ObservationStreamSessionState
             == (int)ObservationStreamDisconnectReason.None;
 }
 
-/// <summary>The admission cap that refused an observation-stream session.</summary>
 internal enum ObservationStreamAdmissionLimit
 {
-    /// <summary>The session was admitted.</summary>
     None,
 
-    /// <summary>The calling principal already holds its maximum number of sessions.</summary>
     Principal,
 
-    /// <summary>The caller's tenant already holds its maximum number of sessions.</summary>
     Tenant,
 
-    /// <summary>This node already holds its maximum number of sessions.</summary>
     Node
 }
 
-/// <summary>
-/// Handle returned to the transport loop: drains frames and signals disconnect.
-/// </summary>
 internal sealed class ObservationStreamSession : IDisposable
 {
     private readonly ObservationStreamSessionManager _manager;
@@ -510,16 +454,12 @@ internal sealed class ObservationStreamSession : IDisposable
         _state = state;
     }
 
-    /// <summary>Unique session identifier.</summary>
     public Guid SessionId { get; }
 
-    /// <summary>Channel reader for the transport loop.</summary>
     public ChannelReader<ObservationStreamFrame> Reader { get; }
 
-    /// <summary>Fires when the session is removed.</summary>
     public CancellationToken DisconnectToken { get; }
 
-    /// <summary>Why the session was removed. Stays <see cref="ObservationStreamDisconnectReason.None"/> until then.</summary>
     public ObservationStreamDisconnectReason DisconnectReason => _state.Reason;
 
     public void Dispose() => _manager.RemoveSession(SessionId);

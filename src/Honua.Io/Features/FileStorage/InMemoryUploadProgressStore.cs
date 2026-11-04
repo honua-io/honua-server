@@ -7,16 +7,10 @@ using Honua.Core.Features.Infrastructure.Domain;
 
 namespace Honua.FileStorage;
 
-/// <summary>
-/// In-memory implementation of upload progress store.
-/// Note: This implementation does not persist across application restarts.
-/// For production scenarios, consider implementing a distributed cache-backed version.
-/// </summary>
 internal sealed class InMemoryUploadProgressStore : IUploadProgressStore
 {
     private readonly ConcurrentDictionary<string, (UploadProgress Progress, DateTimeOffset ExpiresAt)> _progressStore = new();
 
-    /// <inheritdoc />
     public Task SetProgressAsync(string uploadId, UploadProgress progress, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(uploadId);
@@ -28,7 +22,6 @@ internal sealed class InMemoryUploadProgressStore : IUploadProgressStore
         return Task.CompletedTask;
     }
 
-    /// <inheritdoc />
     public Task<UploadProgress?> GetProgressAsync(string uploadId, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(uploadId);
@@ -49,7 +42,6 @@ internal sealed class InMemoryUploadProgressStore : IUploadProgressStore
         return Task.FromResult<UploadProgress?>(null);
     }
 
-    /// <inheritdoc />
     public Task DeleteProgressAsync(string uploadId, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(uploadId);
@@ -58,7 +50,6 @@ internal sealed class InMemoryUploadProgressStore : IUploadProgressStore
         return Task.CompletedTask;
     }
 
-    /// <inheritdoc />
     public Task<IReadOnlyList<string>> GetActiveUploadIdsAsync(CancellationToken cancellationToken = default)
     {
         CleanupExpiredEntries();
@@ -71,7 +62,6 @@ internal sealed class InMemoryUploadProgressStore : IUploadProgressStore
         return Task.FromResult<IReadOnlyList<string>>(activeIds);
     }
 
-    /// <inheritdoc />
     public Task<IReadOnlyList<UploadProgress>> GetActiveUploadsAsync(CancellationToken cancellationToken = default)
     {
         CleanupExpiredEntries();
@@ -84,9 +74,6 @@ internal sealed class InMemoryUploadProgressStore : IUploadProgressStore
         return Task.FromResult<IReadOnlyList<UploadProgress>>(activeUploads);
     }
 
-    /// <summary>
-    /// Remove expired entries from the store.
-    /// </summary>
     private void CleanupExpiredEntries()
     {
         var now = DateTimeOffset.UtcNow;

@@ -13,15 +13,6 @@ using Honua.Db.DuckDB.Features.FeatureStore.Services;
 
 namespace Honua.Db.DuckDB.Features.FeatureStore;
 
-/// <summary>
-/// DuckDB implementation of feature storage using service composition.
-/// Implements read-only interfaces; write operations are handled by
-/// <see cref="Core.Features.FeatureStore.ReadOnlyProviders.ReadOnlyFeatureWriter"/>.
-/// </summary>
-/// <remarks>
-/// Follows the same delegation pattern as the Postgres provider:
-/// query builder produces SQL, data access executes it, cache manager provides metadata.
-/// </remarks>
 internal sealed class DuckDBFeatureStore :
     IFeatureDataProvider,
     IFeatureReader,
@@ -67,7 +58,6 @@ internal sealed class DuckDBFeatureStore :
         _binding = binding;
     }
 
-    /// <inheritdoc />
     public IFeatureReader CreateReaderForBinding(FeatureProviderBinding binding)
     {
         ArgumentNullException.ThrowIfNull(binding);
@@ -81,21 +71,16 @@ internal sealed class DuckDBFeatureStore :
             binding);
     }
 
-    /// <inheritdoc />
     public string ProviderName => DataProviderNames.DuckDb;
 
-    /// <inheritdoc />
     public FeatureProviderCapabilities Capabilities => FeatureProviderCapabilities.ReadOnlyAnalytical;
 
-    /// <inheritdoc />
     public IFeatureReader Reader => this;
 
-    /// <inheritdoc />
     public IFeatureWriter? Writer => null;
 
     #region IFeatureReader
 
-    /// <inheritdoc />
     public async Task<Feature?> GetAsync(int layerId, long featureId, CancellationToken cancellationToken = default)
     {
         var query = await ApplyPermanentFilterAsync(layerId, new FeatureQuery(), cancellationToken).ConfigureAwait(false);
@@ -110,7 +95,6 @@ internal sealed class DuckDBFeatureStore :
         return features.IsDefaultOrEmpty ? null : features[0];
     }
 
-    /// <inheritdoc />
     public Task<QueryResult<Feature>> QueryAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
         => ExecuteFormatQueryAsync(
             layerId, query,
@@ -119,7 +103,6 @@ internal sealed class DuckDBFeatureStore :
             QueryOptimizedAsync,
             cancellationToken);
 
-    /// <inheritdoc />
     public async Task<ImmutableArray<long>> QueryObjectIdsAsync(
         int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
@@ -129,14 +112,12 @@ internal sealed class DuckDBFeatureStore :
         return await _dataAccess.ExecuteSelectObjectIdsQueryAsync(objectIdsQuery, query, layerId, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public Task<byte[]?> QueryFlatGeobufAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
         // DuckDB does not support native FlatGeobuf; return null so server falls back
         return Task.FromResult<byte[]?>(null);
     }
 
-    /// <inheritdoc />
     public async Task<long> CountAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
         query = await ApplyPermanentFilterAsync(layerId, query, cancellationToken).ConfigureAwait(false);
@@ -145,7 +126,6 @@ internal sealed class DuckDBFeatureStore :
         return await _dataAccess.ExecuteCountQueryAsync(countQuery, query, layerId, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public async Task<FeatureExtent?> GetExtentAsync(int layerId, FeatureQuery? query = null, CancellationToken cancellationToken = default)
     {
         var effectiveQuery = await ApplyPermanentFilterAsync(layerId, query ?? new FeatureQuery(), cancellationToken).ConfigureAwait(false);
@@ -154,7 +134,6 @@ internal sealed class DuckDBFeatureStore :
         return await _dataAccess.GetExtentAsync(layerId, extentQuery, effectiveQuery, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public async Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryStatisticsAsync(
         int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
@@ -164,7 +143,6 @@ internal sealed class DuckDBFeatureStore :
         return await _dataAccess.ExecuteStatisticsQueryAsync(statisticsQuery, query, layerId, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public async Task<TemporalExtentResult?> GetTemporalExtentAsync(
         int layerId, string fieldName, TemporalPropertyType propertyType, CancellationToken cancellationToken = default)
     {
@@ -177,7 +155,6 @@ internal sealed class DuckDBFeatureStore :
         return await _dataAccess.GetTemporalExtentAsync(layerId, temporalQuery, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public async Task<EstimateResult> GetEstimatesAsync(int layerId, CancellationToken cancellationToken = default)
     {
         var countTask = CountAsync(layerId, new FeatureQuery(), cancellationToken);
@@ -191,7 +168,6 @@ internal sealed class DuckDBFeatureStore :
         };
     }
 
-    /// <inheritdoc />
     public async Task<QueryResult<Feature>> QueryTopFeaturesAsync(
         int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
@@ -205,7 +181,6 @@ internal sealed class DuckDBFeatureStore :
             : QueryResult<Feature>.Create(features.Length, features, false);
     }
 
-    /// <inheritdoc />
     public async Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryDateBinsAsync(
         int layerId, FeatureQuery query, DateBinDefinition dateBin, CancellationToken cancellationToken = default)
     {
@@ -215,7 +190,6 @@ internal sealed class DuckDBFeatureStore :
         return await _dataAccess.ExecuteStatisticsQueryAsync(dateBinsQuery, query, layerId, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public async Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryBinsAsync(
         int layerId, FeatureQuery query, BinDefinition binDefinition, CancellationToken cancellationToken = default)
     {
@@ -225,7 +199,6 @@ internal sealed class DuckDBFeatureStore :
         return await _dataAccess.ExecuteStatisticsQueryAsync(binsQuery, query, layerId, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public async Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryH3Async(
         int layerId, FeatureQuery query, H3AggregationQuery h3Query, CancellationToken cancellationToken = default)
     {
@@ -236,7 +209,6 @@ internal sealed class DuckDBFeatureStore :
 
     #region IGeoJsonFeatureStore
 
-    /// <inheritdoc />
     public Task<QueryResult<EncodedGeoJsonFeature>> QueryGeoJsonAsync(
         int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
         => ExecuteFormatQueryAsync(
@@ -250,7 +222,6 @@ internal sealed class DuckDBFeatureStore :
 
     #region IStreamingFeatureStore
 
-    /// <inheritdoc />
     public async IAsyncEnumerable<Feature> StreamFeaturesAsync(
         int layerId, FeatureQuery query, [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
@@ -263,7 +234,6 @@ internal sealed class DuckDBFeatureStore :
         }
     }
 
-    /// <inheritdoc />
     public async IAsyncEnumerable<IReadOnlyList<Feature>> StreamFeatureBatchesAsync(
         int layerId, FeatureQuery query, int batchSize = 1000, [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
@@ -284,7 +254,6 @@ internal sealed class DuckDBFeatureStore :
         }
     }
 
-    /// <inheritdoc />
     public async IAsyncEnumerable<GmlFeature> StreamGmlFeaturesAsync(
         int layerId, FeatureQuery query, [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
@@ -301,7 +270,6 @@ internal sealed class DuckDBFeatureStore :
 
     #region IPagedFeatureReader
 
-    /// <inheritdoc />
     public async Task<PagedQueryResult<Feature>> QueryPageAsync(
         int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
@@ -334,22 +302,12 @@ internal sealed class DuckDBFeatureStore :
 
     #region Private helpers
 
-    /// <summary>
-    /// Refuses the read when a row-level security or field-mask policy applies to the request:
-    /// this provider translates the layer's permanent filter but applies neither of those.
-    /// </summary>
     private Task EnsureRowAndFieldPolicyEnforceableAsync(int layerId, CancellationToken cancellationToken)
         => _readSecurity is null
             ? Task.CompletedTask
             : _readSecurity.EnsureNoUnenforcedPolicyAsync(
                 "DuckDB", layerId, _binding?.Resource, rejectPermanentFilter: false, cancellationToken);
 
-    /// <summary>
-    /// Resolves and applies the layer's permanent (row-visibility) filter to the query, after
-    /// refusing the read when a row-level security or field-mask policy applies that this
-    /// provider cannot enforce. The permanent filter step is idempotent: queries already
-    /// carrying an enforced filter are returned unchanged.
-    /// </summary>
     private async Task<FeatureQuery> ApplyPermanentFilterAsync(
         int layerId,
         FeatureQuery query,

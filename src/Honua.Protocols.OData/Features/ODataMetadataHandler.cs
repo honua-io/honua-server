@@ -9,11 +9,6 @@ using Honua.Protocols.OData.Services;
 
 namespace Honua.Protocols.OData;
 
-/// <summary>
-/// Handler for OData metadata operations including service document and schema metadata.
-/// Provides service discovery and metadata document generation with proper caching.
-/// Reads exclusively from the Metadata v2 graph.
-/// </summary>
 internal sealed class ODataMetadataHandler(
     ODataMetadataService metadataService,
     ODataValidationService validationService)
@@ -21,9 +16,6 @@ internal sealed class ODataMetadataHandler(
     private readonly ODataMetadataService _metadataService = metadataService ?? throw new ArgumentNullException(nameof(metadataService));
     private readonly ODataValidationService _validationService = validationService ?? throw new ArgumentNullException(nameof(validationService));
 
-    /// <summary>
-    /// Handles OData service document request
-    /// </summary>
     public async Task<IResult> HandleGetServiceDocument(HttpContext context)
     {
         var queryValidation = ODataRequestValidation.ValidateAllowedParameters(
@@ -68,9 +60,6 @@ internal sealed class ODataMetadataHandler(
             contentType: ODataUtilityService.GetODataContentType(context.Request, format: null));
     }
 
-    /// <summary>
-    /// Handles OData metadata document request
-    /// </summary>
     public async Task<IResult> HandleGetMetadataAsync(
         HttpContext context,
         CancellationToken cancellationToken = default)

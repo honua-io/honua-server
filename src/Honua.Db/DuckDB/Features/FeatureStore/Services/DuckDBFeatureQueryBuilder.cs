@@ -16,10 +16,6 @@ using Honua.Db.DuckDB.Features.Infrastructure;
 
 namespace Honua.Db.DuckDB.Features.FeatureStore.Services;
 
-/// <summary>
-/// Builds SQL queries for DuckDB feature store operations.
-/// DuckDB uses direct table columns (not JSONB) and PostGIS-compatible spatial functions.
-/// </summary>
 internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
 {
     private readonly DuckDBLayerRegistry _layerRegistry;
@@ -29,7 +25,6 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         _layerRegistry = layerRegistry ?? throw new ArgumentNullException(nameof(layerRegistry));
     }
 
-    /// <inheritdoc />
     public ParameterizedQuery BuildSelectQuery(
         int layerId,
         FeatureQuery query,
@@ -61,7 +56,6 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         return new ParameterizedQuery(sb.ToString(), parameters);
     }
 
-    /// <inheritdoc />
     public ParameterizedQuery BuildProjectedPointQuery(
         int layerId,
         FeatureQuery query,
@@ -84,7 +78,6 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         return new ParameterizedQuery(sb.ToString(), parameters);
     }
 
-    /// <inheritdoc />
     public ParameterizedQuery BuildObjectIdsQuery(
         int layerId,
         FeatureQuery query,
@@ -106,7 +99,6 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         return new ParameterizedQuery(sb.ToString(), parameters);
     }
 
-    /// <inheritdoc />
     public ParameterizedQuery BuildSelectFlatGeobufQuery(
         MetadataV2Resource resource,
         int layerId,
@@ -116,7 +108,6 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         throw new NotSupportedException("DuckDB provider does not support native FlatGeobuf encoding.");
     }
 
-    /// <inheritdoc />
     public ParameterizedQuery BuildSelectGeobufQuery(
         MetadataV2Resource resource,
         int layerId,
@@ -126,7 +117,6 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         throw new NotSupportedException("DuckDB provider does not support native Geobuf encoding.");
     }
 
-    /// <inheritdoc />
     public ParameterizedQuery BuildSelectGmlQuery(
         int layerId,
         FeatureQuery query,
@@ -136,7 +126,6 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         return BuildEncodedGeometrySelectQuery(layerId, query, "ST_AsText");
     }
 
-    /// <inheritdoc />
     public ParameterizedQuery BuildSelectGeoJsonQuery(
         int layerId,
         FeatureQuery query,
@@ -145,7 +134,6 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         return BuildEncodedGeometrySelectQuery(layerId, query, "ST_AsGeoJSON");
     }
 
-    /// <inheritdoc />
     public ParameterizedQuery BuildSelectKmlQuery(
         int layerId,
         FeatureQuery query,
@@ -155,7 +143,6 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         return BuildEncodedGeometrySelectQuery(layerId, query, "ST_AsText");
     }
 
-    /// <inheritdoc />
     public ParameterizedQuery BuildCountQuery(
         int layerId,
         FeatureQuery query,
@@ -175,7 +162,6 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         return new ParameterizedQuery(sb.ToString(), parameters);
     }
 
-    /// <inheritdoc />
     public ParameterizedQuery BuildOptimizedSelectQuery(
         int layerId,
         FeatureQuery query,
@@ -210,7 +196,6 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         return new ParameterizedQuery(sb.ToString(), parameters);
     }
 
-    /// <inheritdoc />
     public ParameterizedQuery BuildOptimizedSelectGmlQuery(
         int layerId,
         FeatureQuery query,
@@ -219,7 +204,6 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         return BuildOptimizedEncodedSelectQuery(layerId, query, "ST_AsText");
     }
 
-    /// <inheritdoc />
     public ParameterizedQuery BuildOptimizedSelectGeoJsonQuery(
         int layerId,
         FeatureQuery query,
@@ -228,7 +212,6 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         return BuildOptimizedEncodedSelectQuery(layerId, query, "ST_AsGeoJSON");
     }
 
-    /// <inheritdoc />
     public ParameterizedQuery BuildOptimizedSelectKmlQuery(
         int layerId,
         FeatureQuery query,
@@ -237,7 +220,6 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         return BuildOptimizedEncodedSelectQuery(layerId, query, "ST_AsText");
     }
 
-    /// <inheritdoc />
     public ParameterizedQuery BuildExtentQuery(
         int layerId,
         FeatureQuery? query,
@@ -267,7 +249,6 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         return new ParameterizedQuery(sb.ToString(), parameters);
     }
 
-    /// <inheritdoc />
     public ParameterizedQuery BuildTemporalExtentQuery(
         int layerId,
         string fieldName,
@@ -299,7 +280,6 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         return new ParameterizedQuery(sb.ToString(), parameters);
     }
 
-    /// <inheritdoc />
     public ParameterizedQuery BuildStatisticsQuery(
         int layerId,
         FeatureQuery query,
@@ -350,12 +330,6 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         return new ParameterizedQuery(sb.ToString(), parameters);
     }
 
-    /// <summary>
-    /// Appends ORDER BY to an aggregate statistics query (#3372). An aggregate result set only has
-    /// the declared statistic aliases and group-by columns, so each clause is re-resolved against
-    /// those declarations and the SQL is rebuilt from the matched declaration — the clause's own
-    /// text is never emitted, and an unmatched clause throws instead of reaching the database.
-    /// </summary>
     private static void AppendStatisticsOrderByClause(
         StringBuilder sb,
         System.Collections.Immutable.ImmutableArray<OrderByClause>? orderBy,
@@ -407,7 +381,6 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
             $"Invalid statistics order-by field name: {field}. Aggregate ordering must name a declared statistic alias or group-by field.");
     }
 
-    /// <inheritdoc />
     public ParameterizedQuery BuildTopFeaturesQuery(
         int layerId,
         FeatureQuery query,
@@ -472,7 +445,6 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         return new ParameterizedQuery(sb.ToString(), parameters);
     }
 
-    /// <inheritdoc />
     public ParameterizedQuery BuildDateBinsQuery(
         int layerId,
         FeatureQuery query,
@@ -528,7 +500,6 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         return new ParameterizedQuery(sb.ToString(), parameters);
     }
 
-    /// <inheritdoc />
     public ParameterizedQuery BuildBinsQuery(
         int layerId,
         FeatureQuery query,
@@ -591,7 +562,6 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         return new ParameterizedQuery(sb.ToString(), parameters);
     }
 
-    /// <inheritdoc />
     public ParameterizedQuery BuildMvtTileQuery(
         int layerId, int x, int y, int z,
         FeatureQuery? query,
@@ -603,7 +573,6 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         throw new NotSupportedException("DuckDB provider does not support native MVT tile generation (no ST_AsMVT).");
     }
 
-    /// <inheritdoc />
     public ParameterizedQuery BuildH3AggregationQuery(
         int layerId,
         FeatureQuery query,
@@ -613,7 +582,6 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         throw new NotSupportedException("DuckDB provider does not support H3 hexagonal aggregation.");
     }
 
-    /// <inheritdoc />
     public ParameterizedQuery BuildH3TileQuery(
         int layerId, int x, int y, int z, int resolution,
         FeatureQuery? query,
@@ -624,14 +592,6 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         throw new NotSupportedException("DuckDB provider does not support H3 tile generation.");
     }
 
-    /// <inheritdoc />
-    /// <remarks>
-    /// The spatial analytics endpoints (ticket #342) are PostGIS-only — they rely on
-    /// <c>ST_ClusterDBSCAN</c>/<c>ST_ClusterKMeans</c>, which DuckDB Spatial does not provide.
-    /// The DuckDB provider is read-only for catalog/GeoParquet workflows and intentionally
-    /// surfaces this gap with the same <see cref="NotSupportedException"/> pattern used by
-    /// the MVT and H3 helpers above.
-    /// </remarks>
     public ParameterizedQuery BuildClusterQuery(
         int layerId,
         FeatureQuery query,
@@ -642,8 +602,6 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
             "DuckDB provider does not support spatial clustering (ST_ClusterDBSCAN / ST_ClusterKMeans).");
     }
 
-    /// <inheritdoc />
-    /// <remarks>See <see cref="BuildClusterQuery"/> for the rationale behind the DuckDB gap.</remarks>
     public ParameterizedQuery BuildBufferAggregateQuery(
         int layerId,
         FeatureQuery query,
@@ -654,8 +612,6 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
             "DuckDB provider does not support buffer-aggregate analytics (requires PostGIS ST_Buffer/ST_Union).");
     }
 
-    /// <inheritdoc />
-    /// <remarks>See <see cref="BuildClusterQuery"/> for the rationale behind the DuckDB gap.</remarks>
     public ParameterizedQuery BuildDensityQuery(
         int layerId,
         FeatureQuery query,
@@ -666,8 +622,6 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
             "DuckDB provider does not support density binning (requires PostGIS ST_HexagonGrid / ST_SquareGrid).");
     }
 
-    /// <inheritdoc />
-    /// <remarks>See <see cref="BuildClusterQuery"/> for the rationale behind the DuckDB gap.</remarks>
     public ParameterizedQuery BuildSpatialJoinQuery(
         int targetLayerId,
         FeatureQuery targetQuery,
@@ -740,16 +694,7 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         return new ParameterizedQuery(sb.ToString(), parameters);
     }
 
-    /// <summary>
-    /// Returns a geometry SQL expression with ST_Transform applied when the requested
-    /// output SRID differs from the layer's source SRID.
-    /// </summary>
-    /// <remarks>
-    /// <c>always_xy := true</c> is required on every ST_Transform call: DuckDB's spatial
-    /// extension honours the authority axis order (latitude/longitude for EPSG:4326), while
-    /// Honua's canonical WKB contract stores coordinates X=longitude, Y=latitude. Without
-    /// this flag DuckDB would swap axes for geographic CRSs and emit transposed coordinates.
-    /// </remarks>
+    // ST_Transform sets always_xy because DuckDB otherwise follows EPSG:4326 latitude/longitude order and would swap this stack's longitude/latitude WKB.
     private static string BuildTransformedGeometryExpression(DuckDBLayerMapping mapping, FeatureQuery query)
     {
         if (query.OutputSrid.HasValue && query.OutputSrid.Value != mapping.Srid)
@@ -1295,11 +1240,6 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
     }
 
 
-    /// <summary>
-    /// Builds the SQL expression for a spatial filter geometry parameter, transforming
-    /// it from <see cref="SpatialFilter.Srid"/> into the layer SRID when they differ
-    /// so spatial predicates compare coordinates in the same CRS.
-    /// </summary>
     private static string BuildFilterGeometryExpression(
         SpatialFilter filter,
         DuckDBLayerMapping mapping,
@@ -1376,21 +1316,10 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         return $"ST_DWithin({geomCol}, {filterGeomParam}, ${paramIndex++})";
     }
 
-    /// <summary>
-    /// Returns <c>true</c> when the SRID lies in the EPSG geographic 2D code range (4000-4999)
-    /// but is not one of the codes explicitly recognised as geographic by
-    /// <see cref="DistanceConversions.IsGeographicSrid"/>. Such SRIDs are treated as
-    /// "geodesy-unestablished" for distance filters to avoid comparing metres against degrees.
-    /// </summary>
     private static bool IsUnlistedGeographicSridRange(int srid)
         => srid is >= 4000 and <= 4999 && !IsGeographicSrid(srid);
 
-    /// <summary>
-    /// Returns <c>true</c> for SRIDs known to be geographic (lat/lon degree-based) CRSs.
-    /// Uses an explicit enumeration rather than the 4000-4999 range because that range
-    /// includes non-geographic SRIDs (e.g. EPSG:4978 WGS 84 geocentric in meters) which
-    /// would cause incorrect distance function selection.
-    /// </summary>
+    // Geographic SRIDs are listed explicitly because the 4000-4999 band includes non-geographic codes such as EPSG:4978.
     private static bool IsGeographicSrid(int srid) => DistanceConversions.IsGeographicSrid(srid);
 
     private static double ConvertDistanceToMeters(double distance, DistanceUnit unit) =>

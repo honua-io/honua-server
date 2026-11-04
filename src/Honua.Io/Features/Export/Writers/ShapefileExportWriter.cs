@@ -16,10 +16,6 @@ using Feature = Honua.Core.Features.FeatureStore.Domain.Feature;
 
 namespace Honua.Io.Export.Writers;
 
-/// <summary>
-/// Writes features as an ESRI Shapefile packaged in a ZIP archive.
-/// Uses a scratch directory for intermediate files and streams the ZIP to output.
-/// </summary>
 internal static class ShapefileExportWriter
 {
     private const int MaxDbfFieldNameLength = 10;
@@ -475,7 +471,4 @@ internal static class ShapefileExportWriter
     }
 }
 
-/// <summary>
-/// Result of a Shapefile write operation.
-/// </summary>
 internal sealed record ShapefileWriteResult(int WrittenCount, int SkippedNullGeometry, List<string> Warnings);

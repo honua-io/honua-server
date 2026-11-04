@@ -7,9 +7,6 @@ using Honua.Core.Features.FeatureStore.Domain;
 
 namespace Honua.Db.DuckDB.Features.Infrastructure;
 
-/// <summary>
-/// Builds SQL fragments and bootstrap commands for DuckDB external file sources.
-/// </summary>
 internal static class DuckDBExternalSourceSql
 {
     public static IReadOnlyList<string> GetConfiguredPaths(DuckDBExternalSourceOptions source)
@@ -155,22 +152,6 @@ internal static class DuckDBExternalSourceSql
         return "\"" + identifier.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"";
     }
 
-    /// <summary>
-    /// Quotes an attribute column name that is admitted by the shared feature-field name
-    /// contract. Structural identifiers (table, geometry, object id) keep using
-    /// <see cref="QuoteIdentifier"/>.
-    /// </summary>
-    /// <remarks>
-    /// Attribute column names can originate from the backing table or Parquet schema through
-    /// automatic discovery, so the contract is re-checked here — at the point the name becomes
-    /// SQL — and not only where the name was collected. Mirrors the SQL Server, Oracle, MySQL,
-    /// Redshift and Databricks providers, which validate the same contract before quoting.
-    /// </remarks>
-    /// <param name="identifier">The attribute column name to quote.</param>
-    /// <returns>The quoted identifier.</returns>
-    /// <exception cref="ArgumentException">
-    /// Thrown when the name is outside <see cref="FeatureFieldNameSyntax"/>.
-    /// </exception>
     public static string QuoteAttribute(string identifier)
     {
         if (!FeatureFieldNameSyntax.IsValid(identifier))
@@ -183,11 +164,6 @@ internal static class DuckDBExternalSourceSql
         return QuoteIdentifier(identifier);
     }
 
-    /// <summary>
-    /// Returns whether an attribute column name can be served by the provider.
-    /// </summary>
-    /// <param name="identifier">The attribute column name to inspect.</param>
-    /// <returns><see langword="true"/> when the name is admitted by the shared contract.</returns>
     public static bool IsSupportedAttributeName(string? identifier)
         => FeatureFieldNameSyntax.IsValid(identifier);
 

@@ -10,19 +10,8 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Protocols.OData;
 
-/// <summary>
-/// OData <c>$format=parquet</c> adapter over the shared GeoParquet writer.
-/// </summary>
 internal static class ODataGeoParquetExport
 {
-    /// <summary>
-    /// Encodes one OData feature page as GeoParquet.
-    /// </summary>
-    /// <remarks>
-    /// OData has no <c>returnZ</c> switch. The JSON geometry payload keeps a declared Z,
-    /// and GeoParquet 1.1 stores XYZ, so this page keeps Z too. Measures stay omitted:
-    /// GeoParquet 1.1 does not store them.
-    /// </remarks>
     internal static (byte[] Payload, string ContentType) FormatPage(
         QueryResult<Feature> result,
         MetadataV2Resource resource,

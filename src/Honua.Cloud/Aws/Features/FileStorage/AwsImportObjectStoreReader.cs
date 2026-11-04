@@ -15,10 +15,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.FileStorage;
 
-/// <summary>
-/// Customer-bucket reader. Uses the host identity (the SDK default chain) and, when the
-/// request names an allow-listed role, assumes that role with the configured external id.
-/// </summary>
 internal sealed partial class AwsImportObjectStoreReader : IImportObjectStoreReader, IDisposable
 {
     internal const string RoleSessionName = "honua-import";
@@ -32,7 +28,6 @@ internal sealed partial class AwsImportObjectStoreReader : IImportObjectStoreRea
     private AmazonS3Config? _baseConfig;
     private bool _disposed;
 
-    /// <summary>Creates a reader that builds AWS clients on first use.</summary>
     public AwsImportObjectStoreReader(
         IOptionsMonitor<ImportObjectStoreOptions> options,
         ILogger<AwsImportObjectStoreReader> logger)
@@ -44,7 +39,6 @@ internal sealed partial class AwsImportObjectStoreReader : IImportObjectStoreRea
         _ownsClients = true;
     }
 
-    /// <summary>Creates a reader over clients the caller owns (emulator tests).</summary>
     internal AwsImportObjectStoreReader(
         IAmazonS3 client,
         IAmazonSecurityTokenService? sts,
@@ -61,7 +55,6 @@ internal sealed partial class AwsImportObjectStoreReader : IImportObjectStoreRea
         _baseConfig = client is AmazonS3Client s3 ? (AmazonS3Config)s3.Config : new AmazonS3Config();
     }
 
-    /// <summary>Builds the AssumeRole request. The external id is sent only when configured.</summary>
     internal static AssumeRoleRequest BuildAssumeRoleRequest(string roleArn, string? externalId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(roleArn);
@@ -79,7 +72,6 @@ internal sealed partial class AwsImportObjectStoreReader : IImportObjectStoreRea
         return request;
     }
 
-    /// <inheritdoc />
     public async Task<ImportObjectHead> HeadAsync(ImportObjectLocation location, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(location);
@@ -119,7 +111,6 @@ internal sealed partial class AwsImportObjectStoreReader : IImportObjectStoreRea
         }
     }
 
-    /// <inheritdoc />
     public async Task<Stream> OpenReadAsync(
         ImportObjectLocation location,
         string etag,
@@ -150,7 +141,6 @@ internal sealed partial class AwsImportObjectStoreReader : IImportObjectStoreRea
         }
     }
 
-    /// <inheritdoc />
     public void Dispose()
     {
         if (_disposed || !_ownsClients)
@@ -466,10 +456,8 @@ internal sealed partial class AwsImportObjectStoreReader : IImportObjectStoreRea
     }
 }
 
-/// <summary>Registers the customer-bucket reader. Options binding stays in the server composition.</summary>
 internal static class AwsImportObjectStoreServiceCollectionExtensions
 {
-    /// <summary>Registers <see cref="IImportObjectStoreReader"/>.</summary>
     public static IServiceCollection AddAwsImportObjectStore(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);

@@ -9,10 +9,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Db.DuckDB.Features.Infrastructure;
 
-/// <summary>
-/// DuckDB implementation of database connection provider.
-/// Opens read-only connections to a DuckDB database file.
-/// </summary>
 internal sealed class DuckDBConnectionProvider : IAdoNetDatabaseConnectionProvider
 {
     private readonly string _connectionString;
@@ -29,13 +25,11 @@ internal sealed class DuckDBConnectionProvider : IAdoNetDatabaseConnectionProvid
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <inheritdoc />
     public string GetConnectionString()
     {
         return _connectionString;
     }
 
-    /// <inheritdoc />
     public async Task<DbConnection> OpenConnectionAsync(CancellationToken cancellationToken = default)
     {
         var connection = new DuckDBConnection(_connectionString);
@@ -52,7 +46,6 @@ internal sealed class DuckDBConnectionProvider : IAdoNetDatabaseConnectionProvid
         }
     }
 
-    /// <inheritdoc />
     public async Task<(DbConnection Connection, DbTransaction Transaction)> OpenTransactionAsync(
         IsolationLevel isolationLevel = IsolationLevel.RepeatableRead,
         CancellationToken cancellationToken = default)
@@ -70,7 +63,6 @@ internal sealed class DuckDBConnectionProvider : IAdoNetDatabaseConnectionProvid
         }
     }
 
-    /// <inheritdoc />
     public async Task<T> ExecuteWithDeadlockRetryAsync<T>(
         Func<Task<T>> operation,
         CancellationToken cancellationToken = default)
@@ -80,7 +72,6 @@ internal sealed class DuckDBConnectionProvider : IAdoNetDatabaseConnectionProvid
         return await operation().ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public async Task ExecuteWithDeadlockRetryAsync(
         Func<Task> operation,
         CancellationToken cancellationToken = default)

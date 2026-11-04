@@ -8,22 +8,11 @@ using Oracle.ManagedDataAccess.Client;
 
 namespace Honua.Db.Oracle.Features.FeatureStore.Services;
 
-/// <summary>
-/// Resolves and opens an <see cref="OracleConnection"/> for an Oracle feature operation.
-/// </summary>
 internal interface IOracleConnectionFactory
 {
-    /// <summary>
-    /// Opens an Oracle connection using the supplied <see cref="DataConnection"/> when
-    /// available, otherwise falling back to the configured default.
-    /// </summary>
     Task<OracleConnection> OpenAsync(DataConnection? dataConnection, CancellationToken cancellationToken);
 }
 
-/// <summary>
-/// Default <see cref="IOracleConnectionFactory"/> implementation. Pooling is handled by
-/// <see cref="OracleConnection"/> internally; the factory just hands out new connections.
-/// </summary>
 internal sealed class OracleConnectionFactory : IOracleConnectionFactory
 {
     private readonly IOptions<OracleOptions> _options;

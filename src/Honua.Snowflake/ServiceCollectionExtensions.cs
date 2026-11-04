@@ -12,25 +12,8 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Snowflake;
 
-/// <summary>
-/// Public DI entry point for the Snowflake spatial feature provider (#1713).
-/// </summary>
 public static class ServiceCollectionExtensions
 {
-    /// <summary>
-    /// Registers the Snowflake feature provider as an additional <see cref="IFeatureDataProvider"/>
-    /// in the runtime, alongside the primary backend (PostGIS, DuckDB, MySQL). Layers whose
-    /// <see cref="Honua.Core.Features.Security.Domain.DataConnection"/> resolves to the
-    /// <c>snowflake</c>/<c>snowflakedb</c> provider name are routed to this implementation.
-    /// </summary>
-    /// <param name="services">Service collection.</param>
-    /// <param name="configuration">Application configuration. Reads the <c>Snowflake</c> section
-    /// to bind <see cref="SnowflakeOptions"/> (default connection string and command timeout).</param>
-    /// <returns>The same service collection for chaining.</returns>
-    /// <remarks>
-    /// AOT note: <c>Snowflake.Data</c> uses internal reflection and is not Native AOT-compatible.
-    /// Deployments that publish with Native AOT must exclude this provider.
-    /// </remarks>
     public static IServiceCollection AddSnowflakeFeatureProvider(this IServiceCollection services, IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(services);

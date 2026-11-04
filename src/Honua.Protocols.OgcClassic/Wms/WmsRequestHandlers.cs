@@ -36,11 +36,6 @@ using static Honua.Protocols.Ogc.Classic.OgcClassicRequestHelpers;
 
 namespace Honua.Protocols.Ogc.Classic.Wms;
 
-/// <summary>
-/// CITE conformance: 126/126 (WMS 1.1.1) and 213/213 (WMS 1.3)
-/// using the official `default` profiles, 100% pass on trunk.
-/// Authoritative status: <see href="../../../../../../docs/cite-status.md">docs/cite-status.md</see>.
-/// </summary>
 internal static partial class WmsRequestHandlers
 {
     private const int WmsMaxImageDimension = 4096;
@@ -103,14 +98,6 @@ internal static partial class WmsRequestHandlers
     private static readonly string[] _wms13CapabilitiesMediaTypes = [WmsCapabilitiesMimeType];
     private static readonly string[] _wms111CapabilitiesMediaTypes = [Wms111CapabilitiesMimeType, WmsCapabilitiesMimeType];
 
-    /// <summary>
-    /// Resolved (resource, publication, storage layer id) triple for a single WMS layer.
-    /// Replaces the legacy layer shape in the request pipeline. Mirrors the
-    /// <c>WmtsLayer</c> shape used by the WMTS port — Identifier is the
-    /// protocol-facing LAYER token (publication.LayerIndex stringified when numeric,
-    /// else ServiceLocalId/Name), StorageLayerId is the integer handle that
-    /// <see cref="IFeatureReader"/> and the raster pipeline expect.
-    /// </summary>
     private readonly record struct WmsLayer(
         MetadataV2Resource Resource,
         MetadataV2Publication Publication,
@@ -121,9 +108,6 @@ internal static partial class WmsRequestHandlers
     private static bool IsProtocolEnabled(MetadataV2Service? service, string protocol)
         => service?.Protocols.Any(enabled => string.Equals(enabled, protocol, StringComparison.OrdinalIgnoreCase)) == true;
 
-    /// <summary>
-    /// Handle OGC WMS requests (GetCapabilities, GetMap, GetFeatureInfo, GetLegendGraphic).
-    /// </summary>
     internal static async Task<IResult> HandleWms(HttpContext context)
     {
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
@@ -283,14 +267,6 @@ internal static partial class WmsRequestHandlers
         }
     }
 
-    /// <summary>
-    /// Walks the publications of <paramref name="service"/>, resolving each to its
-    /// canonical resource and integer storage layer handle. Dedupes by resource (prefers
-    /// <see cref="MetadataV2Publication.IsPrimary"/>) and drops publications that don't
-    /// resolve to a usable storage layer handle or whose resource does not carry
-    /// geometry (WMS is raster-only). Sorted by storage layer id so capabilities
-    /// ordering is stable.
-    /// </summary>
     private static WmsLayer[] ResolveWmsLayers(MetadataV2GraphSnapshot snapshot, MetadataV2Service service)
     {
         var byResource = new Dictionary<string, WmsLayer>(StringComparer.Ordinal);
@@ -326,11 +302,6 @@ internal static partial class WmsRequestHandlers
             .ToArray();
     }
 
-    /// <summary>
-    /// Selects the reader for one WMS layer. Publications with a storage binding resolve
-    /// through <see cref="FeatureProviderQueryRouter"/>; the injected reader remains the
-    /// fallback when that router is unwired or the binding is the managed features table.
-    /// </summary>
     private static async Task<IFeatureReader> ResolveLayerReaderAsync(
         HttpContext context,
         WmsLayer layer,
@@ -363,17 +334,6 @@ internal static partial class WmsRequestHandlers
         return read.UseInjectedReader ? fallback : read.Reader;
     }
 
-    /// <summary>
-    /// Source CRS for the GetMap / GetFeatureInfo feature query. The render pipeline
-    /// reprojects the request-side bbox into this SRID before issuing the spatial
-    /// filter, so it must match the SRID the feature store actually stores geometries
-    /// in. Resolution order:
-    /// 1. <see cref="MetadataV2Service.SpatialReference"/> when the service declares a
-    ///    rendering CRS;
-    /// 2. the resource's <see cref="MetadataV2ResourceSpatial.SpatialReference"/>;
-    /// 3. WGS84 (the seed-table default and the convention the OGC Tiles V2
-    ///    port uses).
-    /// </summary>
     private static int ResolveServiceSrid(MetadataV2Service service, MetadataV2Resource resource)
         => service.SpatialReference?.ResolveSrid()
             ?? resource.ReadSrid()
@@ -392,22 +352,9 @@ internal static partial class WmsRequestHandlers
         return resource.FindPrimaryGeometryField() is not null;
     }
 
-    /// <summary>
-    /// Display name used everywhere the WMS protocol surfaces a layer (LAYERS,
-    /// QUERY_LAYERS, Layer/Name in capabilities, layer label in GetFeatureInfo).
-    /// Returns the resource's display name with any namespace prefix removed (so
-    /// "cite:Lakes" surfaces as "Lakes" the way v1 did) and falls back to the
-    /// publication's identifier when the resource has no name.
-    /// </summary>
     private static string GetWmsLayerDisplayName(WmsLayer layer)
         => GetWmsLayerName(layer.Resource, layer.Publication);
 
-    /// <summary>
-    /// CITE conformance keys behaviour off the human-facing layer title with the
-    /// namespace intact (e.g. <c>cite:Autos</c>). Resource Name and Title both
-    /// carry it depending on the fixture, so check both. Matches the resolution
-    /// the WMTS V2 port uses for <c>cite:Terrain</c> / <c>cite:BasicPolygons</c>.
-    /// </summary>
     private static bool IsCiteLayerNamed(WmsLayer layer, string citeName)
     {
         var name = layer.Resource.Metadata.Name ?? string.Empty;
@@ -416,11 +363,6 @@ internal static partial class WmsRequestHandlers
                string.Equals(title, citeName, StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>
-    /// Maximum number of tokens accepted in a WMS <c>LAYERS</c> / <c>QUERY_LAYERS</c> list
-    /// (<see cref="QueryLimits.MaxMapLayersPerRequest"/>). Each distinct layer costs a bounded
-    /// feature scan and render under one shared render-capacity lease (#6097).
-    /// </summary>
     private static int GetWmsMaxLayersPerRequest(HttpContext context)
     {
         var configured = context.RequestServices.GetService<IOptions<LimitsOptions>>()?.Value?.Query?.MaxMapLayersPerRequest;
@@ -444,11 +386,6 @@ internal static partial class WmsRequestHandlers
             $"{parameterName} must name at most {maxLayers.ToString(CultureInfo.InvariantCulture)} layers.");
     }
 
-    /// <summary>
-    /// Collapses repeated requests for the same storage layer to its first occurrence, keeping
-    /// positional per-layer values (FILTER) aligned with the surviving layers. STYLES is
-    /// validated positionally against the original LAYERS list before this runs (#6097).
-    /// </summary>
     private static (WmsLayer[] Layers, SqlFragment?[]? Filters) DeduplicateWmsLayers(
         WmsLayer[] layers,
         SqlFragment?[]? filters)
@@ -544,14 +481,6 @@ internal static partial class WmsRequestHandlers
         return true;
     }
 
-    /// <summary>
-    /// Resolves the optional WMS 1.3 TIME parameter into per-layer
-    /// <see cref="TemporalFilter"/> values. WMS dimensions are per-layer: a TIME
-    /// parameter is ignored for layers that do not advertise a time dimension.
-    /// When TIME is omitted, the advertised default is applied. Instant requests
-    /// use the advertised nearest-value behavior and report that substitution in
-    /// a Warning header.
-    /// </summary>
     private static async Task<(TemporalFilter?[]? Filters, string[] Warnings, IResult? Error)> TryResolveWmsLayerTemporalFiltersAsync(
         HttpContext context,
         IQueryCollection query,
@@ -840,14 +769,6 @@ internal static partial class WmsRequestHandlers
         }
     }
 
-    /// <summary>
-    /// Maps the V2 schema field type for <paramref name="fieldName"/> to the WMS
-    /// TemporalFilter property type. Defaults to <see cref="TemporalPropertyType.DateTime"/>
-    /// when the field is not found or carries a non-temporal type so a misconfigured
-    /// resource doesn't drop into a NullReferenceException — capability gating earlier
-    /// in the pipeline already rejected requests for layers whose temporal fields
-    /// don't resolve.
-    /// </summary>
     private static TemporalPropertyType ResolveTemporalPropertyType(MetadataV2Resource resource, string fieldName)
     {
         var field = resource.SchemaFields.FirstOrDefault(f =>
@@ -904,13 +825,6 @@ internal static partial class WmsRequestHandlers
         return (layerFilters, null);
     }
 
-    /// <summary>
-    /// Parses one WMS FILTER token against the layer's public schema. Unknown properties,
-    /// namespaced ValueReferences, and literals the field cannot hold are client errors
-    /// (<c>InvalidParameterValue</c>), matching WFS (#6183). Publisher-hidden fields are
-    /// not part of that schema (#6098). A geometry literal with no <c>srsName</c> uses
-    /// this layer's storage CRS rather than EPSG:4326 (#6184).
-    /// </summary>
     internal static (SqlFragment? Filter, IResult? Error) TranslateWmsLayerFilter(
         HttpContext context,
         IFilterExpressionService filterExpressionService,
@@ -1148,14 +1062,6 @@ internal static partial class WmsRequestHandlers
         return true;
     }
 
-    /// <summary>
-    /// Returns true when the requested bbox intersects the CRS's valid bounds with
-    /// positive area. Unlike <see cref="IsExtentWithinCrsBounds"/>,
-    /// a partial overlap counts as intersecting: GetMap renders the in-bounds
-    /// portion and paints the out-of-bounds margin as background, so only a fully
-    /// disjoint bbox should short-circuit to a blank image. For CRSes without
-    /// declared bounds the bbox is always considered to intersect.
-    /// </summary>
     private static bool DoesExtentIntersectCrsBounds(SkiaMapRenderer.RenderExtent extent, string normalizedCrs)
     {
         if (string.Equals(normalizedCrs, "CRS:84", StringComparison.OrdinalIgnoreCase) ||
@@ -1370,11 +1276,6 @@ internal static partial class WmsRequestHandlers
                pixelY >= 0 && pixelY < imageHeight;
     }
 
-    /// <summary>
-    /// Splits a WMS FILTER parameter into per-layer tokens using only semicolons
-    /// at XML depth 0 as delimiters. Semicolons inside XML elements (entity
-    /// references, literal text) are preserved.
-    /// </summary>
     private static string[] SplitWmsFilterTokens(string filterParam)
     {
         var tokens = new List<string>();

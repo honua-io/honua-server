@@ -10,10 +10,6 @@ using StackExchange.Redis;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Redis-backed append-only store for structured execution log entries.
-/// Uses a Redis list per operation for chronological ordering.
-/// </summary>
 internal sealed partial class RedisExecutionLogStore(
     IConnectionMultiplexer redis,
     ILogger<RedisExecutionLogStore> logger) : IExecutionLogStore

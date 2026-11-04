@@ -8,9 +8,6 @@ using Honua.ServiceDefaults;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// OpenTelemetry instrumentation for control-plane workflow operations.
-/// </summary>
 internal static class ControlPlaneTelemetry
 {
     // Baggage key CorrelationIdMiddleware sets on the request activity.
@@ -26,14 +23,12 @@ internal static class ControlPlaneTelemetry
         public const string WorkflowReconcile = "honua.controlplane.workflow.reconcile";
         public const string BackendStart = "honua.controlplane.backend.start";
         public const string BackendObserve = "honua.controlplane.backend.observe";
-        /// <summary>Activity name for the backend-promote step that shifts traffic to 100% on the canary/new target.</summary>
         public const string BackendPromote = "honua.controlplane.backend.promote";
         public const string BackendRollback = "honua.controlplane.backend.rollback";
         public const string ExecutionStart = "honua.controlplane.execution.start";
         public const string ExecutionObserve = "honua.controlplane.execution.observe";
         public const string ExecutionCancel = "honua.controlplane.execution.cancel";
         public const string ExecutionReconcile = "honua.controlplane.execution.reconcile";
-        /// <summary>Activity name for the worker-side job execution loop (PA-159): claim through terminal finalize.</summary>
         public const string ExecutionRun = "honua.controlplane.execution.run";
     }
 
@@ -50,16 +45,8 @@ internal static class ControlPlaneTelemetry
         public const string ExecutionJobStatus = "honua.controlplane.execution.status";
         public const string ExecutionJobPreviousStatus = "honua.controlplane.execution.previous_status";
         public const string ExecutionResult = "honua.controlplane.execution.result";
-        /// <summary>Attempt number on the durable job at the time the span opened.</summary>
         public const string ExecutionAttempt = "honua.controlplane.execution.attempt";
-        /// <summary>Admitted 32-hex trace id. Omitted when the job recorded none.</summary>
         public const string ExecutionTraceId = "honua.trace_id";
-        /// <summary>
-        /// Outcome of a single <c>ExecutionReconcileCycles</c> tick (PA-165): one of
-        /// <c>changed</c>, <c>unchanged</c>, <c>not_found</c>, <c>terminal</c>,
-        /// <c>backend_missing</c>, <c>cas_conflict</c>, <c>lease_lost</c>, or <c>error</c>.
-        /// Lets the reconcile-cycle counter be sliced by outcome in addition to job kind.
-        /// </summary>
         public const string ExecutionReconcileOutcome = "honua.controlplane.execution.reconcile_outcome";
     }
 
@@ -149,22 +136,11 @@ internal static class ControlPlaneTelemetry
         unit: null,
         "Active execution jobs by status and backend (queued/provisioning/running).");
 
-    /// <summary>
-    /// Publishes the latest queue-depth snapshot for the observable gauge to report. Called by the
-    /// collector background service on each poll; the snapshot is an immutable low-cardinality list.
-    /// </summary>
-    /// <param name="snapshot">The current per-(status, backend) active-job counts.</param>
     public static void UpdateQueueDepth(IReadOnlyList<ExecutionQueueDepthEntry> snapshot)
     {
         _queueDepthSnapshot = snapshot ?? Array.Empty<ExecutionQueueDepthEntry>();
     }
 
-    /// <summary>
-    /// Buckets active execution jobs into per-(status, backend) counts for the queue-depth gauge.
-    /// Only the non-terminal queued/provisioning/running states are counted.
-    /// </summary>
-    /// <param name="activeJobs">The active execution job records.</param>
-    /// <returns>An immutable snapshot of queue-depth entries.</returns>
     public static IReadOnlyList<ExecutionQueueDepthEntry> ComputeQueueDepth(
         IReadOnlyList<ExecutionJobRecord> activeJobs)
     {
@@ -310,13 +286,7 @@ internal static class ControlPlaneTelemetry
         tags.Add(Tags.Environment, spec.Environment);
     }
 
-    /// <summary>
-    /// Stamps the submitting request's correlation ID and W3C trace context onto a durable job's
-    /// audit record. The record is the only carrier that survives the queue boundary, so without
-    /// this the worker's execution span cannot be joined to the submission (honua-server#5474).
-    /// The correlation ID is the one <c>CorrelationIdMiddleware</c> established for the request and
-    /// propagated as Activity baggage.
-    /// </summary>
+    // The correlation id is copied onto the durable job record, because that record is the only carrier that survives the queue boundary.
     public static OperationAuditInfo WithSubmissionTraceContext(OperationAuditInfo audit, Activity? submission)
     {
         ArgumentNullException.ThrowIfNull(audit);
@@ -441,11 +411,4 @@ internal static class ControlPlaneTelemetry
     }
 }
 
-/// <summary>
-/// A single queue-depth measurement: the count of active execution jobs in a given
-/// <paramref name="Status"/> on a given <paramref name="Backend"/>.
-/// </summary>
-/// <param name="Status">The non-terminal execution-job status (Queued/Provisioning/Running).</param>
-/// <param name="Backend">The batch-compute backend identifier the jobs are bound to.</param>
-/// <param name="Count">The number of active jobs in that status/backend bucket.</param>
 internal readonly record struct ExecutionQueueDepthEntry(string Status, string Backend, int Count);

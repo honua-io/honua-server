@@ -5,15 +5,6 @@ using Honua.Core.Features.Infrastructure.Events.Outbox;
 
 namespace Honua.Db.Redshift.Features.Infrastructure.Events.Outbox;
 
-/// <summary>
-/// Amazon Redshift is a read-only feature provider in this slice (#1712), so it does not support
-/// feature-mutation writes and therefore does not require a transactional outbox. Reports a clear
-/// capability limitation at startup so operators understand the durability tradeoff.
-/// </summary>
-/// <remarks>
-/// Redshift is an analytical warehouse without the transactional throughput profile a mutation
-/// outbox needs; write support is out of scope for the read-only slice.
-/// </remarks>
 internal sealed class RedshiftOutboxCapabilityProvider : IOutboxCapabilityProvider
 {
     public bool SupportsTransactionalOutbox => false;

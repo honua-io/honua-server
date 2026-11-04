@@ -39,9 +39,6 @@ using NetTopologySuite.IO;
 
 namespace Honua.Protocols.Ogc.Classic.Wfs20.Services;
 
-/// <summary>
-/// Core handler for WFS 2.0 operations backed by the shared catalog and feature stores.
-/// </summary>
 internal sealed partial class Wfs20Handler
 {
     // Fixed client-facing text for untyped validation exceptions, matching the
@@ -1050,12 +1047,6 @@ internal sealed partial class Wfs20Handler
     }
 
 
-    /// <summary>
-    /// Object-id probe size for one WFS-T action. Update and delete read one past the
-    /// tighter of the per-action and remaining transaction budgets so an oversized
-    /// match is rejected before feature rows are loaded. Replace identifies one feature
-    /// and probes two so a multi-match fails closed.
-    /// </summary>
     internal static int TransactionIdProbeLimit(EditLimits limits, int preparedCount, bool singleTarget)
     {
         ArgumentNullException.ThrowIfNull(limits);
@@ -1456,13 +1447,6 @@ internal sealed partial class Wfs20Handler
     }
 
 
-    /// <summary>
-    /// Extracts the <c>codeSpace</c> attribute carried by a <c>gml:identifier</c> property so it can
-    /// be persisted and round-tripped. <c>gml:identifier</c> is of type
-    /// <c>gml:CodeWithAuthorityType</c>, for which <c>codeSpace</c> is mandatory; the WFS 2.0 ETS
-    /// asserts the standard property survives a Replace round-trip and validates it against the GML
-    /// schema, so dropping the authority would emit schema-invalid GML on read-back.
-    /// </summary>
     private static string? ParseTransactionGmlCodeSpace(XElement valueElement)
     {
         var direct = valueElement.Attributes()
@@ -1661,12 +1645,6 @@ internal sealed partial class Wfs20Handler
         return geometryFactory.CreateLineString(coordinates);
     }
 
-    /// <summary>
-    /// Reads every segment of a gml:Curve. LineStringSegment coordinates are concatenated,
-    /// dropping a joint that repeats the previous vertex. Arc and ArcString control points
-    /// are sampled onto that linestring. Other segment types are rejected instead of stored
-    /// as their raw control points (#6130).
-    /// </summary>
     private static LineString ParseTransactionCurveGeometry(
         XElement geometryElement,
         GeometryFactory geometryFactory,
@@ -1775,11 +1753,6 @@ internal sealed partial class Wfs20Handler
         return SampleCircularArc(controlPoints[0], controlPoints[1], controlPoints[2], fullCircle: true);
     }
 
-    /// <summary>
-    /// Samples the circular arc through <paramref name="start"/>, <paramref name="middle"/>,
-    /// and <paramref name="end"/>. A full circle repeats the start point. Collinear control
-    /// points stay a straight polyline.
-    /// </summary>
     private static Coordinate[] SampleCircularArc(Coordinate start, Coordinate middle, Coordinate end, bool fullCircle)
     {
         var ax = start.X;
@@ -1898,11 +1871,6 @@ internal sealed partial class Wfs20Handler
         AxisOrder axisOrder)
         => ParseTransactionPolygonPatch(geometryElement, geometryFactory, axisOrder);
 
-    /// <summary>
-    /// Unions every PolygonPatch of a gml:Surface. One patch stays a polygon. Several patches
-    /// become their polygonal union, so a disjoint surface is a multipolygon and adjacent
-    /// patches become one polygon (#6130).
-    /// </summary>
     private static Geometry ParseTransactionSurfaceGeometry(
         XElement geometryElement,
         GeometryFactory geometryFactory,
@@ -2081,10 +2049,6 @@ internal sealed partial class Wfs20Handler
         return CreateTransactionCoordinate(ordinates[0], ordinates[1], axisOrder, z);
     }
 
-    /// <summary>
-    /// Reads srsDimension from the coordinate element or the nearest enclosing geometry.
-    /// Missing means 2. Only 2 and 3 are accepted.
-    /// </summary>
     private static int ResolveTransactionSrsDimension(XElement element)
     {
         foreach (var ancestor in element.AncestorsAndSelf())
@@ -2521,13 +2485,6 @@ internal sealed partial class Wfs20Handler
             : await writerTransaction.ApplyEditsAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Bin per-operation request-intent geometry flags by operation kind. The flags must
-    /// be supplied in the same order the operations appear in <paramref name="operations"/>
-    /// (which is the order ApplyOrderedEditsAsync dequeues from each kind's queue, since
-    /// it iterates ordered operations and dequeues from the matching kind queue per row).
-    /// Deletes always report false.
-    /// </summary>
     private static Dictionary<string, IReadOnlyList<bool>>? BuildPerOperationGeometryChanged(
         ImmutableArray<FeatureEditOperation> operations,
         ImmutableArray<bool> requestGeometryChangedFlags)
@@ -2938,13 +2895,6 @@ internal sealed partial class Wfs20Handler
             EditOperation,
             ActionKind == TransactionActionKind.Replace ? EditUpdateMode.Replace : EditUpdateMode.Merge);
 
-        /// <summary>
-        /// True when the originating request body explicitly specified a geometry. For
-        /// Insert/Replace this is always true (the request must carry the feature payload);
-        /// for Update this reflects <c>changes.GeometrySpecified</c> captured BEFORE merging
-        /// with the existing row, since <c>BuildTransactionUpdatedFeatureAsync</c> preserves
-        /// the existing WKB when the request omits geometry. Delete operations report false.
-        /// </summary>
         public bool RequestGeometryChanged { get; init; }
     }
 

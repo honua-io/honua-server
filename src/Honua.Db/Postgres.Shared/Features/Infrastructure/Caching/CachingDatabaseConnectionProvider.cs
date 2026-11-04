@@ -16,27 +16,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Features.Infrastructure.Caching;
 
-/// <summary>
-/// Enhanced PostgreSQL connection provider with prepared statement caching support
-/// </summary>
-/// <remarks>
-/// <para>
-/// Extends the base connection provider with intelligent prepared statement caching
-/// to optimize frequently-executed queries. Maintains compatibility with existing
-/// connection patterns while adding transparent performance improvements.
-/// </para>
-/// <para>
-/// PERFORMANCE FEATURES:
-/// - Automatic prepared statement management
-/// - Connection-aware caching for optimal resource usage
-/// - Graceful degradation when caching is disabled
-/// - Comprehensive monitoring and logging capabilities
-/// </para>
-/// <para>
-/// SECURITY: All existing parameterized query patterns remain secure.
-/// The caching layer only optimizes execution, not query construction.
-/// </para>
-/// </remarks>
 internal sealed partial class CachingDatabaseConnectionProvider : IPrimaryDatabaseConnectionProvider, IDisposable
 {
     private readonly NpgsqlDataSource _dataSource;
@@ -50,7 +29,6 @@ internal sealed partial class CachingDatabaseConnectionProvider : IPrimaryDataba
     // ActivitySource for tracing (same name as HonuaTelemetry for correlation)
     private static readonly ActivitySource _activitySource = new("Honua", "1.0.0");
 
-    /// <inheritdoc />
     public string GetConnectionString()
     {
         return _dataSource.ConnectionString;
@@ -81,11 +59,6 @@ internal sealed partial class CachingDatabaseConnectionProvider : IPrimaryDataba
         }
     }
 
-    /// <summary>
-    /// Opens a PostgreSQL connection with automatic retry for transient failures
-    /// </summary>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>A caching-enabled PostgreSQL connection</returns>
     public Task<DbConnection> OpenConnectionAsync(CancellationToken cancellationToken = default)
         => OpenConnectionCoreAsync(_dataSource, null, applyPrimarySchema: true, cancellationToken);
 
@@ -171,12 +144,6 @@ internal sealed partial class CachingDatabaseConnectionProvider : IPrimaryDataba
         }
     }
 
-    /// <summary>
-    /// Opens a PostgreSQL connection and begins a transaction with the specified isolation level
-    /// </summary>
-    /// <param name="isolationLevel">The isolation level for the transaction</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>A tuple containing the open connection and active transaction</returns>
     public async Task<(DbConnection Connection, DbTransaction Transaction)> OpenTransactionAsync(
         IsolationLevel isolationLevel = IsolationLevel.RepeatableRead,
         CancellationToken cancellationToken = default)
@@ -208,13 +175,6 @@ internal sealed partial class CachingDatabaseConnectionProvider : IPrimaryDataba
         }
     }
 
-    /// <summary>
-    /// Executes a database operation with deadlock retry policy
-    /// </summary>
-    /// <typeparam name="T">Return type of the operation</typeparam>
-    /// <param name="operation">The database operation to execute</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Result of the database operation</returns>
     public async Task<T> ExecuteWithDeadlockRetryAsync<T>(
         Func<Task<T>> operation,
         CancellationToken cancellationToken = default)
@@ -233,12 +193,6 @@ internal sealed partial class CachingDatabaseConnectionProvider : IPrimaryDataba
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Executes a database operation with deadlock retry policy (no return value)
-    /// </summary>
-    /// <param name="operation">The database operation to execute</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Task representing the completion of the operation</returns>
     public async Task ExecuteWithDeadlockRetryAsync(
         Func<Task> operation,
         CancellationToken cancellationToken = default)
@@ -257,10 +211,6 @@ internal sealed partial class CachingDatabaseConnectionProvider : IPrimaryDataba
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Releases all acquired gate slots. Called by the DI container when
-    /// the scoped provider is disposed at the end of the HTTP request.
-    /// </summary>
     public void Dispose()
     {
         var slots = Interlocked.Exchange(ref _acquiredSlots, 0);

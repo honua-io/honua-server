@@ -6,12 +6,6 @@ using Honua.Core.Features.ControlPlane.Domain;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Adapts the execution-job heartbeat/timeout reaping sweep to the control-plane scheduled-tick
-/// dispatcher so EventBridge Scheduler can drive one sweep under <c>TriggerMode=Event</c> without
-/// hosting the in-process timer. The sweep re-reads each candidate and mutates only via optimistic
-/// CAS, so a single invocation is safe and a duplicate is a no-op.
-/// </summary>
 internal sealed class JobReconciliationScheduledTickHandler(JobReconciliationService service)
     : Honua.Core.Features.ControlPlane.Abstractions.IScheduledTickHandler
 {
@@ -22,10 +16,6 @@ internal sealed class JobReconciliationScheduledTickHandler(JobReconciliationSer
         => service.SweepActiveJobsAsync(cancellationToken);
 }
 
-/// <summary>
-/// Background service that sweeps active execution jobs for expired heartbeats
-/// and timed-out executions, applying retry or terminal-failure policies.
-/// </summary>
 internal sealed partial class JobReconciliationService(
     IExecutionJobStore jobStore,
     IJobQueue jobQueue,
@@ -139,11 +129,6 @@ internal sealed partial class JobReconciliationService(
             .ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Whether the active record names an external provider job, so its liveness is observed by
-    /// the execution-job reconciler rather than by heartbeat expiry on this host. The in-process
-    /// <c>local</c> backend stamps the operation id itself as its provider id.
-    /// </summary>
     internal static bool IsProviderOwned(ExecutionJobRecord job)
         => !string.Equals(job.Spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal)
             && !string.IsNullOrEmpty(job.ProviderOperationId)
@@ -183,7 +168,6 @@ internal sealed partial class JobReconciliationService(
         return policy.IsExpired(startedAt.Value, now);
     }
 
-    /// <returns><c>true</c> when state was actually mutated; <c>false</c> when skipped.</returns>
     private async Task<bool> HandleHeartbeatExpiryAsync(
         ExecutionJobRecord snapshot,
         DateTimeOffset now,
@@ -352,7 +336,6 @@ internal sealed partial class JobReconciliationService(
         return true;
     }
 
-    /// <returns><c>true</c> when state was actually mutated; <c>false</c> when skipped.</returns>
     private async Task<bool> HandleTimeoutExpiryAsync(
         ExecutionJobRecord snapshot,
         DateTimeOffset now,
@@ -444,10 +427,6 @@ internal sealed partial class JobReconciliationService(
         }
     }
 
-    /// <summary>
-    /// Shared cancel-from-durable-signal path used by heartbeat-expiry handlers
-    /// when <see cref="ExecutionJobRecord.CancellationRequestedAt"/> is set.
-    /// </summary>
     private async Task<bool> TransitionToCancelledFromDurableSignalAsync(
         ExecutionJobRecord job,
         string claimedBy,
@@ -503,12 +482,6 @@ internal sealed partial class JobReconciliationService(
         return true;
     }
 
-    /// <summary>
-    /// Returns <c>true</c> when the fresh record is no longer the same actively
-    /// claimed attempt captured in the sweep snapshot. This mirrors the worker-
-    /// side ownership guard so the reconciler only mutates jobs that are still
-    /// in an active state owned by the same claim.
-    /// </summary>
     private static bool IsStaleSnapshot(ExecutionJobRecord snapshot, ExecutionJobRecord? current)
         => current is null
            || current.Status is not (ExecutionJobStatus.Provisioning or ExecutionJobStatus.Running)

@@ -8,19 +8,8 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Features.Infrastructure;
 
-/// <summary>
-/// Separates a database that is momentarily unreachable from one that is incompatible when the
-/// startup compatibility probe fails. Transient: Npgsql's own <see cref="NpgsqlException.IsTransient"/>
-/// flag, SQLSTATE classes <c>08</c> (connection exception) and <c>53</c> (insufficient resources,
-/// including <c>53300</c> too_many_connections), <c>57P03</c> cannot_connect_now, timeouts and socket
-/// failures. Everything else (authentication failures, missing objects, a wrong PostGIS install,
-/// a permanent TLS or protocol failure) is not transient and keeps failing startup.
-/// </summary>
 internal static class PostgresPreflightFailureClassifier
 {
-    /// <summary>Whether <paramref name="exception"/> is a transient availability failure.</summary>
-    /// <param name="exception">The failure raised by the compatibility probe.</param>
-    /// <returns><see langword="true"/> when startup should treat the database as unavailable rather than incompatible.</returns>
     public static bool IsTransient(Exception exception)
     {
         ArgumentNullException.ThrowIfNull(exception);
@@ -61,17 +50,6 @@ internal static class PostgresPreflightFailureClassifier
         return false;
     }
 
-    /// <summary>
-    /// Names the cause class of a preflight failure (honua-server#5916): see
-    /// <see cref="DatabasePreflightCauseClasses"/>. A connection that could not be borrowed (Npgsql
-    /// pool exhaustion, an RDS Proxy borrow timeout) is <c>connection-borrow-timeout</c> whatever
-    /// SQLSTATE the proxy attached; SQLSTATE class 28 is <c>auth</c>; a refused or unreachable
-    /// endpoint is <c>connection-refused</c>; any other availability failure is
-    /// <c>connection-unavailable</c>; everything else is <c>incompatible-database</c>, the only
-    /// fatal class.
-    /// </summary>
-    /// <param name="exception">The failure raised by the compatibility probe.</param>
-    /// <returns>The cause class.</returns>
     public static string Classify(Exception exception)
     {
         ArgumentNullException.ThrowIfNull(exception);
@@ -124,10 +102,6 @@ internal static class PostgresPreflightFailureClassifier
             : DatabasePreflightCauseClasses.IncompatibleDatabase;
     }
 
-    /// <summary>
-    /// Whether the failure means a connection could not be obtained in time from the client pool or
-    /// the RDS Proxy borrow queue. Matched on the provider message, which is never echoed.
-    /// </summary>
     private static bool IsBorrowTimeout(Exception exception)
     {
         for (var current = exception; current is not null; current = current.InnerException)
@@ -158,9 +132,6 @@ internal static class PostgresPreflightFailureClassifier
             or SocketError.TryAgain
             or SocketError.NoData;
 
-    /// <summary>Sanitized failure class for health and log surfaces.</summary>
-    /// <param name="exception">The failure raised by the compatibility probe.</param>
-    /// <returns>A description that never echoes connection-string fragments.</returns>
     public static string Describe(Exception exception)
         => StartupDatabaseResilience.DescribeFailureClass(exception);
 }

@@ -7,10 +7,6 @@ namespace Honua.GeoServicesRest.Features.FeatureStore;
 
 internal static partial class GeoServicesRestFeatureStoreLog
 {
-    /// <summary>
-    /// Debug-level summary of a completed federated query's paging loop (PA-108): how many
-    /// upstream <c>/query</c> round-trips were issued and how many features were assembled.
-    /// </summary>
     [LoggerMessage(
         EventId = 8100,
         Level = LogLevel.Debug,

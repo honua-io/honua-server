@@ -5,11 +5,6 @@ using Honua.Core.Features.Catalog.Domain;
 
 namespace Honua.Db.MySql;
 
-/// <summary>
-/// Validates <see cref="MySqlOptions"/> at startup. Surfaces all configuration errors
-/// at once via <see cref="InvalidOperationException"/> so misconfigured providers fail
-/// fast rather than at the first query.
-/// </summary>
 internal static class MySqlOptionsValidator
 {
     public static void ThrowIfInvalid(MySqlOptions options)

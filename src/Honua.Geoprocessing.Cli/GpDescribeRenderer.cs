@@ -9,32 +9,10 @@ using Honua.Core.Features.Geoprocessing.Domain;
 
 namespace Honua.Geoprocessing.Cli;
 
-/// <summary>
-/// Renders the <c>honua gp describe &lt;id&gt;</c> output (GP Devkit P3, issue #2124):
-/// the typed parameters, declared outputs, an inputs JSON Schema, and a parameterized
-/// example <c>honua gp run</c> command — so an author can treat a process like a typed
-/// library function rather than a black box. Rendering is split out as pure functions
-/// (no <see cref="Console"/> coupling) so the human and machine views can be unit-tested
-/// directly against a <see cref="ProcessDefinition"/>.
-/// </summary>
 internal static class GpDescribeRenderer
 {
-    /// <summary>
-    /// Renders the human-readable description: header metadata, a typed parameter table,
-    /// the declared output artifact kinds, the inputs JSON Schema, and an example
-    /// invocation.
-    /// </summary>
-    /// <param name="definition">The catalog definition to describe.</param>
-    /// <returns>The multi-line description text.</returns>
     public static string RenderText(ProcessDefinition definition) => RenderText(definition, null);
 
-    /// <summary>
-    /// Renders the description with the devkit's runnability verdict (execution mode,
-    /// prerequisites, whether it can run here, supported targets) when one is supplied.
-    /// </summary>
-    /// <param name="definition">The catalog definition to describe.</param>
-    /// <param name="runnability">The verdict, or null to omit it.</param>
-    /// <returns>The multi-line description text.</returns>
     public static string RenderText(ProcessDefinition definition, GpRunnability? runnability)
     {
         ArgumentNullException.ThrowIfNull(definition);
@@ -119,24 +97,8 @@ internal static class GpDescribeRenderer
         return builder.ToString();
     }
 
-    /// <summary>
-    /// Renders the machine-readable descriptor as a single JSON object: id/title/category/
-    /// runtime metadata, the inputs JSON Schema, the declared outputs, and an example
-    /// command. Built with <see cref="JsonNode"/> so it serializes without reflection
-    /// (trim/AOT friendly).
-    /// </summary>
-    /// <param name="definition">The catalog definition to describe.</param>
-    /// <returns>The indented JSON descriptor.</returns>
     public static string RenderJson(ProcessDefinition definition) => RenderJson(definition, null);
 
-    /// <summary>
-    /// Renders the descriptor with the devkit's runnability verdict and a valid example value
-    /// per parameter (<c>executionMode</c>, <c>prerequisites</c>, <c>runnableHere</c>,
-    /// <c>blockedBy</c>, <c>supportedTargets</c>, <c>parameterExamples</c>) when one is supplied.
-    /// </summary>
-    /// <param name="definition">The catalog definition to describe.</param>
-    /// <param name="runnability">The verdict, or null to omit it.</param>
-    /// <returns>The indented JSON descriptor.</returns>
     public static string RenderJson(ProcessDefinition definition, GpRunnability? runnability)
     {
         ArgumentNullException.ThrowIfNull(definition);
@@ -175,12 +137,6 @@ internal static class GpDescribeRenderer
 
     private static readonly JsonSerializerOptions IndentedOptions = new() { WriteIndented = true };
 
-    /// <summary>
-    /// Builds a JSON Schema (object) describing the process inputs: one property per
-    /// parameter typed from its <see cref="ProcessParameterValueType"/>, the required
-    /// names, declared defaults, and finite <c>enum</c> sets where the parameter has an
-    /// allowed-value list.
-    /// </summary>
     private static JsonObject BuildInputSchema(ProcessDefinition definition)
     {
         var properties = new JsonObject();
@@ -239,11 +195,6 @@ internal static class GpDescribeRenderer
         return schema;
     }
 
-    /// <summary>
-    /// Builds an example <c>honua gp run</c> command line: a <c>--param</c> for every
-    /// required parameter (using its default, first allowed value, or a typed placeholder)
-    /// so the author can copy, fill the placeholders, and run.
-    /// </summary>
     private static string BuildExampleCommand(ProcessDefinition definition)
     {
         var builder = new StringBuilder("honua gp run ");
@@ -285,9 +236,6 @@ internal static class GpDescribeRenderer
         };
     }
 
-    /// <summary>
-    /// Maps a <see cref="ProcessParameterValueType"/> onto its JSON Schema primitive type.
-    /// </summary>
     private static string MapSchemaType(ProcessParameterValueType valueType) => valueType switch
     {
         ProcessParameterValueType.WholeNumber => "integer",

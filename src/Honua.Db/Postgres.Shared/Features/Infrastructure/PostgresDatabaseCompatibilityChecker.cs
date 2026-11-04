@@ -9,10 +9,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Features.Infrastructure;
 
-/// <summary>
-/// Checks PostGIS and PostgreSQL compatibility by querying pg_extension and version().
-/// Runs once at startup before DI scopes are available.
-/// </summary>
 internal sealed partial class PostgresDatabaseCompatibilityChecker : IDatabaseCompatibilityChecker
 {
     internal const string MalformedConnectionStringMessage =
@@ -197,37 +193,21 @@ internal sealed partial class PostgresDatabaseCompatibilityChecker : IDatabaseCo
         }
     }
 
-    /// <summary>What a failed <c>CREATE EXTENSION postgis</c> means after a re-query.</summary>
     internal enum PostGisCreateFailureDisposition
     {
-        /// <summary>The role cannot create the extension, or the packages are not installed.</summary>
         MissingExtension = 0,
 
-        /// <summary>The failure is not a missing extension and must reach the preflight classifier.</summary>
         Propagate = 1,
 
-        /// <summary>The re-query found PostGIS, so a concurrent create won the race.</summary>
         CreatedByPeer = 2,
     }
 
-    /// <summary>
-    /// Rethrows the CREATE failure when the follow-up <c>pg_extension</c> read cannot run.
-    /// </summary>
-    /// <param name="createFailure">The exception raised by <c>CREATE EXTENSION</c>.</param>
     internal static void ThrowPreservedCreateFailure(Exception createFailure)
     {
         ArgumentNullException.ThrowIfNull(createFailure);
         ExceptionDispatchInfo.Capture(createFailure).Throw();
     }
 
-    /// <summary>
-    /// Classifies a create failure after <paramref name="installedAfterFailure"/> was read from
-    /// <c>pg_extension</c>. Privilege and missing-package errors stay a missing extension.
-    /// Everything else propagates.
-    /// </summary>
-    /// <param name="error">The exception raised by <c>CREATE EXTENSION</c>.</param>
-    /// <param name="installedAfterFailure">True when PostGIS is installed after that exception.</param>
-    /// <returns>How the preflight should treat the failure.</returns>
     internal static PostGisCreateFailureDisposition DecidePostGisCreateFailure(
         Exception error, bool installedAfterFailure)
     {

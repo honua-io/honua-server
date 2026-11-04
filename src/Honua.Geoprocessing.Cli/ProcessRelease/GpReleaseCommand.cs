@@ -6,25 +6,8 @@ using Honua.Geoprocessing.Release;
 
 namespace Honua.Geoprocessing.Cli.Release;
 
-/// <summary>
-/// Implements the <c>honua-gp-devkit release</c> verb (honua-server#6221):
-/// <list type="bullet">
-/// <item><c>release --descriptor honua-gp.yaml --output out/release [--source-repository o/n] [--source-sha sha] [--runtime-image ref@sha256:..] [--generated-at ts] [--json]</c>
-/// builds the process artifact once and writes the immutable lock the release workflow
-/// publishes by digest.</item>
-/// <item><c>release verify &lt;lock.json&gt; [--artifacts &lt;dir&gt;] [--json]</c> validates a lock,
-/// prints its digest, and checks that the artifacts on disk are the bytes it names.</item>
-/// </list>
-/// The command is offline: it talks to Git and the file system only. Publishing a lock to the
-/// server's release store is the binding/admission half of #6221 and is not part of this verb.
-/// </summary>
 internal static class GpReleaseCommand
 {
-    /// <summary>Runs the verb.</summary>
-    /// <param name="args">Everything after <c>release</c>.</param>
-    /// <param name="output">Standard output sink.</param>
-    /// <param name="error">Error output sink.</param>
-    /// <returns>0 on success, 1 when the release cannot be built or verified, 2 on usage error.</returns>
     public static int Run(string[] args, TextWriter output, TextWriter error)
     {
         ArgumentNullException.ThrowIfNull(args);

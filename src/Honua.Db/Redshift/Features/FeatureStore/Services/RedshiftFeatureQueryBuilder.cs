@@ -10,24 +10,8 @@ using Honua.Core.Queries.Filters;
 
 namespace Honua.Db.Redshift.Features.FeatureStore.Services;
 
-/// <summary>
-/// Translates a <see cref="FeatureQuery"/> into parameterized Redshift SQL for the read-only
-/// Redshift spatial provider. All identifiers are validated and double-quoted; all literal
-/// values flow through Npgsql named parameters.
-/// </summary>
-/// <remarks>
-/// Redshift speaks the PostgreSQL wire protocol but its spatial layer is <b>not</b> PostGIS.
-/// The builder therefore restricts itself to Redshift-native spatial SQL functions
-/// (<c>ST_AsBinary</c>, <c>ST_GeomFromWKB</c>, <c>ST_Intersects</c>, <c>ST_Within</c>,
-/// <c>ST_Contains</c>, <c>ST_Disjoint</c>, <c>ST_XMin</c>/<c>ST_YMin</c>/<c>ST_XMax</c>/<c>ST_YMax</c>)
-/// and the native <c>GEOMETRY</c>/<c>GEOGRAPHY</c> types.
-/// </remarks>
 internal static partial class RedshiftFeatureQueryBuilder
 {
-    /// <summary>
-    /// Builds a SELECT that returns the primary key, the geometry as WKB (or NULL when no
-    /// geometry column is configured), and any requested attribute columns.
-    /// </summary>
     public static ParameterizedQuery BuildSelectQuery(RedshiftLayerMapping mapping, FeatureQuery query, IReadOnlyList<string> attributeColumns)
     {
         ArgumentNullException.ThrowIfNull(mapping);
@@ -56,9 +40,6 @@ internal static partial class RedshiftFeatureQueryBuilder
         return new ParameterizedQuery(sb.ToString(), parameters);
     }
 
-    /// <summary>
-    /// Builds a SELECT COUNT(*) for the same query envelope as <see cref="BuildSelectQuery"/>.
-    /// </summary>
     public static ParameterizedQuery BuildCountQuery(RedshiftLayerMapping mapping, FeatureQuery query)
     {
         ArgumentNullException.ThrowIfNull(mapping);
@@ -77,10 +58,6 @@ internal static partial class RedshiftFeatureQueryBuilder
         return new ParameterizedQuery(sb.ToString(), parameters);
     }
 
-    /// <summary>
-    /// Builds a SELECT that returns the primary key for matching rows. Used for object-id
-    /// listings when only identifiers are needed.
-    /// </summary>
     public static ParameterizedQuery BuildObjectIdsQuery(RedshiftLayerMapping mapping, FeatureQuery query)
     {
         ArgumentNullException.ThrowIfNull(mapping);
@@ -102,11 +79,6 @@ internal static partial class RedshiftFeatureQueryBuilder
         return new ParameterizedQuery(sb.ToString(), parameters);
     }
 
-    /// <summary>
-    /// Builds an extent query using Redshift's native <c>ST_XMin</c>/<c>ST_YMin</c>/<c>ST_XMax</c>/
-    /// <c>ST_YMax</c> accessors aggregated with <c>MIN</c>/<c>MAX</c>. Geography columns are cast to
-    /// geometry first so the planar bounding-box accessors apply.
-    /// </summary>
     public static ParameterizedQuery BuildExtentQuery(RedshiftLayerMapping mapping, FeatureQuery? query)
     {
         ArgumentNullException.ThrowIfNull(mapping);
@@ -139,13 +111,6 @@ internal static partial class RedshiftFeatureQueryBuilder
         return new ParameterizedQuery(sb.ToString(), parameters);
     }
 
-    /// <summary>
-    /// Builds an aggregate statistics query (<c>outStatistics</c> plus optional
-    /// <c>groupByFieldsForStatistics</c>) over the same WHERE, object-id, and spatial
-    /// filter envelope as <see cref="BuildSelectQuery"/>. HAVING, ORDER BY, LIMIT, and
-    /// OFFSET apply to the aggregate result. ORDER BY accepts only a declared statistic
-    /// alias or group-by field.
-    /// </summary>
     public static ParameterizedQuery BuildStatistics(RedshiftLayerMapping mapping, FeatureQuery query)
     {
         ArgumentNullException.ThrowIfNull(mapping);
@@ -265,10 +230,6 @@ internal static partial class RedshiftFeatureQueryBuilder
         sb.Append(" ORDER BY ").Append(string.Join(", ", terms));
     }
 
-    /// <summary>
-    /// Resolves an aggregate ORDER BY name to the declared statistic alias or group-by field.
-    /// The caller's text is never emitted.
-    /// </summary>
     private static string ResolveStatisticsOrderBy(
         string field,
         ImmutableArray<StatisticDefinition> statistics,

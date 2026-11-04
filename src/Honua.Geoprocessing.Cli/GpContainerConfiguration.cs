@@ -8,7 +8,6 @@ using Microsoft.Extensions.Configuration;
 
 namespace Honua.Geoprocessing.Cli;
 
-/// <summary>Developer-owned bind mounts must be written by the invoking Unix identity.</summary>
 internal static partial class GpContainerConfiguration
 {
     internal static IConfiguration Create(Func<string, string?>? environment = null, string? scratchRoot = null)

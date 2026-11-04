@@ -11,46 +11,13 @@ using NetTopologySuite.Geometries;
 
 namespace Honua.Protocols.Ogc.Classic.Wcs20;
 
-/// <summary>
-/// WCS 1.0.0 encoding, served from the same routes and the same coverage resolution as
-/// 2.0.1 (honua-server#5020).
-/// </summary>
-/// <remarks>
-/// <para>
-/// This exists because every stock QGIS build - 3.44 LTR and 4.2 alike - ships a WCS
-/// provider that identifies itself as "version 1.0/1.1" and rejects anything else, so
-/// 2.0.1-only serving means no QGIS user can open a coverage at all. Upstream
-/// <c>qgis/QGIS#45584</c> ("Add support for WCS 2.x") is still open, so the server has to
-/// meet the client. ArcGIS Pro is unaffected: it negotiates 1.0.0 through 2.0.1 and
-/// already uses 2.0.1.
-/// </para>
-/// <para>
-/// It is a partial of <see cref="Wcs20Handler"/> rather than a separate handler so that
-/// coverage resolution - the metadata-graph walk, the per-service and per-layer access
-/// policy evaluation including the dual-policy fix in #4388, and the lifecycle
-/// routability checks - is shared rather than reimplemented. Duplicating that logic
-/// would duplicate a security boundary.
-/// </para>
-/// <para>
-/// The element shapes here are driven by what the QGIS provider actually reads
-/// (<c>qgswcscapabilities.cpp</c>, <c>qgswcsprovider.cpp</c>), not only by the schema:
-/// the capabilities document must expose <c>ContentMetadata/CoverageOfferingBrief</c>
-/// entries with <c>name</c>/<c>label</c>/<c>description</c> and a GetCoverage
-/// <c>OnlineResource</c>, and DescribeCoverage must expose a <c>RectifiedGrid</c> with
-/// <c>GridEnvelope</c> limits plus at least one usable CRS, because the provider derives
-/// raster width, height and CRS from exactly those.
-/// </para>
-/// </remarks>
+// WCS 1.0.0 is served beside 2.0.1 because stock QGIS rejects every later version and cannot open a coverage otherwise.
 internal sealed partial class Wcs20Handler
 {
     private static readonly XNamespace Wcs10 = Wcs20Utilities.Wcs10Namespace;
     private static readonly XNamespace Gml10 = Wcs20Utilities.Gml10Namespace;
 
-    /// <summary>
-    /// Formats advertised for 1.0.0. <c>GeoTIFF</c> leads deliberately: the QGIS provider
-    /// picks the first advertised format whose name contains "tif", and gives up entirely
-    /// when nothing is advertised.
-    /// </summary>
+    // GeoTIFF is advertised first because QGIS picks the first format whose name contains tif and gives up when none is advertised.
     private static readonly (string Name, RasterFormat Format)[] _wcs10Formats =
     [
         ("GeoTIFF", RasterFormat.TIFF),
@@ -173,15 +140,7 @@ internal sealed partial class Wcs20Handler
         return new XElement(Wcs10 + "CoverageOfferingBrief", children);
     }
 
-    /// <summary>
-    /// The 1.0 <c>lonLatEnvelope</c> must be WGS84. No in-process coordinate transform is
-    /// available on this path, so - exactly as the 2.0.1 <c>ows:WGS84BoundingBox</c> does -
-    /// it is emitted only when the coverage is already in WGS84 rather than reporting
-    /// native coordinates under a WGS84 label. Clients that need the extent of a
-    /// projected coverage read it from the DescribeCoverage <c>Envelope</c>, which carries
-    /// its real <c>srsName</c>; the QGIS provider treats <c>lonLatEnvelope</c> as optional
-    /// and derives extent from DescribeCoverage.
-    /// </summary>
+    // The 1.0 lonLatEnvelope is emitted only for a coverage already in WGS84, because this path cannot transform and must not label native coordinates as WGS84.
     private static XElement? BuildWcs10LonLatEnvelope(WcsCoverage coverage)
     {
         if (!TryResolveExtent(coverage.Raster, out var extent))
@@ -402,14 +361,7 @@ internal sealed partial class Wcs20Handler
             new XElement(Wcs10 + "RangeSet", rangeSetChildren));
     }
 
-    /// <summary>
-    /// CRS identifier in the short form WCS 1.0.0 uses, e.g. <c>EPSG:4326</c>. The 2.0.1
-    /// path emits an OGC URI (<c>http://www.opengis.net/def/crs/EPSG/0/4326</c>), which a
-    /// 1.0.0 client does not resolve: QGIS runs every advertised value through
-    /// <c>fromOgcWmsCrs()</c> and builds no layer when none survives, so advertising the
-    /// URI form left the coverage unopenable even though the document was otherwise
-    /// complete.
-    /// </summary>
+    // WCS 1.0.0 CRS values use the EPSG:4326 short form, because QGIS cannot resolve the OGC URI form and then builds no layer.
     private static string CreateWcs10CrsName(int srid)
         => string.Create(System.Globalization.CultureInfo.InvariantCulture, $"EPSG:{srid}");
 

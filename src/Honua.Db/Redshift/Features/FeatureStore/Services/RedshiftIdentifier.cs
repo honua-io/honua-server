@@ -6,28 +6,14 @@ using Honua.Core.Features.FeatureStore.Domain;
 
 namespace Honua.Db.Redshift.Features.FeatureStore.Services;
 
-/// <summary>
-/// Validates and double-quotes Amazon Redshift identifiers (schema, table, column).
-/// </summary>
-/// <remarks>
-/// Redshift speaks the PostgreSQL wire protocol and uses ANSI double-quote identifier
-/// quoting. The provider deliberately restricts configured identifiers to the regular form
-/// (<c>[A-Za-z_][A-Za-z0-9_]*</c>) so they are unambiguous and SQL-injection-safe even though
-/// quoted identifiers can technically contain other characters.
-/// </remarks>
+// Configured identifiers stay in the regular form, even though quoted Redshift names can be wider, so they cannot carry SQL.
 internal static partial class RedshiftIdentifier
 {
     private static readonly Regex _identifierRegex = IdentifierPattern();
 
-    /// <summary>
-    /// Returns true when the identifier matches the safe-identifier allow-list.
-    /// </summary>
     public static bool IsValid(string? value)
         => !string.IsNullOrWhiteSpace(value) && _identifierRegex.IsMatch(value);
 
-    /// <summary>
-    /// Throws <see cref="ArgumentException"/> when the identifier is not safe.
-    /// </summary>
     public static void EnsureValid(string value, string label)
     {
         if (!IsValid(value))
@@ -37,20 +23,12 @@ internal static partial class RedshiftIdentifier
         }
     }
 
-    /// <summary>
-    /// Double-quotes a previously validated identifier. Any embedded double-quote characters
-    /// are doubled to keep parsing robust even though the allow-list rejects them.
-    /// </summary>
     public static string Quote(string identifier)
     {
         EnsureValid(identifier, "identifier");
         return "\"" + identifier.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"";
     }
 
-    /// <summary>
-    /// Double-quotes an attribute name accepted by the shared feature-field contract.
-    /// Structural identifiers remain restricted to <see cref="Quote"/>.
-    /// </summary>
     public static string QuoteAttribute(string identifier)
     {
         if (!FeatureFieldNameSyntax.IsValid(identifier))

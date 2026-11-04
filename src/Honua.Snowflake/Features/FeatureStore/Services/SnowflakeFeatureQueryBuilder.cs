@@ -10,23 +10,8 @@ using Honua.Core.Queries.Filters;
 
 namespace Honua.Snowflake.Features.FeatureStore.Services;
 
-/// <summary>
-/// Translates a <see cref="FeatureQuery"/> into parameterized Snowflake SQL for the Snowflake
-/// spatial provider. All identifiers are validated and double-quoted; all literal values flow
-/// through SQL parameters (Snowflake positional <c>?</c> binds).
-/// </summary>
-/// <remarks>
-/// Geometry is emitted as OGC 2D WKB via <c>ST_ASWKB(...)</c>. Filter geometries are constructed
-/// in-database from WKB with <c>TO_GEOGRAPHY(?, true)</c> / <c>TO_GEOMETRY(?, true)</c> (the second
-/// argument enables WKB byte-string parsing). Spatial predicates use Snowflake's <c>ST_*</c>
-/// relationship functions.
-/// </remarks>
 internal static partial class SnowflakeFeatureQueryBuilder
 {
-    /// <summary>
-    /// Builds a SELECT that returns the primary key, the geometry as WKB (or NULL when no
-    /// geometry column is configured), and any requested attribute columns.
-    /// </summary>
     public static ParameterizedQuery BuildSelectQuery(SnowflakeLayerMapping mapping, FeatureQuery query, IReadOnlyList<string> attributeColumns)
     {
         ArgumentNullException.ThrowIfNull(mapping);
@@ -55,9 +40,6 @@ internal static partial class SnowflakeFeatureQueryBuilder
         return new ParameterizedQuery(sb.ToString(), parameters);
     }
 
-    /// <summary>
-    /// Builds a SELECT COUNT(*) for the same query envelope as <see cref="BuildSelectQuery"/>.
-    /// </summary>
     public static ParameterizedQuery BuildCountQuery(SnowflakeLayerMapping mapping, FeatureQuery query)
     {
         ArgumentNullException.ThrowIfNull(mapping);
@@ -76,10 +58,6 @@ internal static partial class SnowflakeFeatureQueryBuilder
         return new ParameterizedQuery(sb.ToString(), parameters);
     }
 
-    /// <summary>
-    /// Builds a SELECT that returns the primary key for matching rows. Used for object-id
-    /// listings when only identifiers are needed.
-    /// </summary>
     public static ParameterizedQuery BuildObjectIdsQuery(SnowflakeLayerMapping mapping, FeatureQuery query)
     {
         ArgumentNullException.ThrowIfNull(mapping);
@@ -101,11 +79,6 @@ internal static partial class SnowflakeFeatureQueryBuilder
         return new ParameterizedQuery(sb.ToString(), parameters);
     }
 
-    /// <summary>
-    /// Builds an extent query. Snowflake has no single-call envelope aggregate that returns
-    /// corner ordinates, so the builder aggregates each geometry's bounding ordinates with
-    /// <c>ST_XMIN</c>/<c>ST_YMIN</c>/<c>ST_XMAX</c>/<c>ST_YMAX</c> over the filtered subset.
-    /// </summary>
     public static ParameterizedQuery BuildExtentQuery(SnowflakeLayerMapping mapping, FeatureQuery? query)
     {
         ArgumentNullException.ThrowIfNull(mapping);
@@ -137,13 +110,6 @@ internal static partial class SnowflakeFeatureQueryBuilder
         return new ParameterizedQuery(sb.ToString(), parameters);
     }
 
-    /// <summary>
-    /// Builds an aggregate statistics query (<c>outStatistics</c> plus optional
-    /// <c>groupByFieldsForStatistics</c>) over the same WHERE, object-id, and spatial
-    /// filter envelope as <see cref="BuildSelectQuery"/>. HAVING, ORDER BY, LIMIT, and
-    /// OFFSET apply to the aggregate result. ORDER BY accepts only a declared statistic
-    /// alias or group-by field.
-    /// </summary>
     public static ParameterizedQuery BuildStatistics(SnowflakeLayerMapping mapping, FeatureQuery query)
     {
         ArgumentNullException.ThrowIfNull(mapping);
@@ -295,10 +261,6 @@ internal static partial class SnowflakeFeatureQueryBuilder
         }
     }
 
-    /// <summary>
-    /// Resolves an aggregate ORDER BY name to the declared statistic alias or group-by field.
-    /// The caller's text is never emitted.
-    /// </summary>
     private static string ResolveStatisticsOrderBy(
         string field,
         ImmutableArray<StatisticDefinition> statistics,
@@ -357,15 +319,7 @@ internal static partial class SnowflakeFeatureQueryBuilder
                 $"Having operator '{op}' is not supported by the Snowflake provider."),
         };
 
-    /// <summary>
-    /// Rejects a <see cref="FeatureQuery.TemporalFilter"/> the Snowflake provider cannot translate.
-    /// Temporal filters arrive on <see cref="FeatureQuery"/> from OGC API Features (<c>datetime</c>),
-    /// STAC search, and OData time-window queries. The provider does not yet emit Snowflake temporal
-    /// predicates, so the filter is surfaced as an eager <see cref="NotSupportedException"/> —
-    /// never silently dropped, which would return rows outside the requested window (a
-    /// correctness/data-leak bug). Mirrors the fail-loud contract of the MySQL/Redshift/Databricks
-    /// providers (temporal GA hardening, #2429).
-    /// </summary>
+    // A temporal filter this provider cannot translate is rejected, because dropping it would return rows outside the requested window.
     private static void GuardUnsupportedTemporalFilter(FeatureQuery query)
     {
         if (query.TemporalFilter.HasValue)

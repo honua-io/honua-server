@@ -5,10 +5,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Db.Redshift.Features.FeatureStore.Services;
 
-/// <summary>
-/// Source-generated structured logging for the Redshift feature store. AOT-safe; never
-/// emits raw exception messages, connection strings, or user-supplied SQL fragments.
-/// </summary>
 internal static partial class RedshiftFeatureLog
 {
     [LoggerMessage(

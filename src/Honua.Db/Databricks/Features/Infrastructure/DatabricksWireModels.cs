@@ -12,7 +12,6 @@ namespace Honua.Db.Databricks.Features.Infrastructure;
 
 #pragma warning disable CA1812 // Internal types are instantiated via JSON (de)serialization.
 
-/// <summary>Request body for submitting a statement to the SQL Statement Execution API.</summary>
 internal sealed record DatabricksStatementRequest
 {
     [JsonPropertyName("statement")]
@@ -43,7 +42,6 @@ internal sealed record DatabricksStatementRequest
     public IReadOnlyList<DatabricksStatementParameter>? Parameters { get; init; }
 }
 
-/// <summary>A named parameter sent alongside a statement.</summary>
 internal sealed record DatabricksStatementParameter
 {
     [JsonPropertyName("name")]
@@ -56,7 +54,6 @@ internal sealed record DatabricksStatementParameter
     public string? Type { get; init; }
 }
 
-/// <summary>Top-level response/poll payload for a statement.</summary>
 internal sealed record DatabricksStatementResponse
 {
     [JsonPropertyName("statement_id")]
@@ -72,7 +69,6 @@ internal sealed record DatabricksStatementResponse
     public DatabricksStatementResult? Result { get; init; }
 }
 
-/// <summary>Execution status block.</summary>
 internal sealed record DatabricksStatementStatus
 {
     [JsonPropertyName("state")]
@@ -82,7 +78,6 @@ internal sealed record DatabricksStatementStatus
     public DatabricksStatementError? Error { get; init; }
 }
 
-/// <summary>Structured error block returned on FAILED / CANCELED statements.</summary>
 internal sealed record DatabricksStatementError
 {
     [JsonPropertyName("error_code")]
@@ -92,7 +87,6 @@ internal sealed record DatabricksStatementError
     public string? Message { get; init; }
 }
 
-/// <summary>Result manifest carrying the column schema and chunk metadata.</summary>
 internal sealed record DatabricksStatementManifest
 {
     [JsonPropertyName("schema")]
@@ -102,14 +96,12 @@ internal sealed record DatabricksStatementManifest
     public long? TotalRowCount { get; init; }
 }
 
-/// <summary>Result schema (ordered column definitions).</summary>
 internal sealed record DatabricksResultSchema
 {
     [JsonPropertyName("columns")]
     public DatabricksResultColumn[]? Columns { get; init; }
 }
 
-/// <summary>A single result column definition.</summary>
 internal sealed record DatabricksResultColumn
 {
     [JsonPropertyName("name")]
@@ -122,7 +114,6 @@ internal sealed record DatabricksResultColumn
     public int Position { get; init; }
 }
 
-/// <summary>Inline result chunk with row data and a link to the next chunk, if any.</summary>
 internal sealed record DatabricksStatementResult
 {
     [JsonPropertyName("data_array")]
@@ -135,10 +126,6 @@ internal sealed record DatabricksStatementResult
     public string? NextChunkInternalLink { get; init; }
 }
 
-/// <summary>
-/// Source-generated JSON serialization context for Databricks Statement Execution
-/// API payloads. AOT/trim-safe so the provider can run under Native AOT.
-/// </summary>
 [JsonSerializable(typeof(DatabricksStatementRequest))]
 [JsonSerializable(typeof(DatabricksStatementResponse))]
 [JsonSourceGenerationOptions(DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]

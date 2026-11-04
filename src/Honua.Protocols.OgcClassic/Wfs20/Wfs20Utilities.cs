@@ -10,29 +10,14 @@ using Honua.Protocols.Ogc.Common;
 
 namespace Honua.Protocols.Ogc.Classic.Wfs20;
 
-/// <summary>
-/// Utilities and constants for WFS 2.0 implementation
-/// </summary>
 internal static class Wfs20Utilities
 {
-    /// <summary>
-    /// WFS 2.0 specification version
-    /// </summary>
     public const string Version = "2.0.0";
 
-    /// <summary>
-    /// WFS service type identifier
-    /// </summary>
     public const string ServiceType = "WFS";
 
-    /// <summary>
-    /// Current capabilities update sequence.
-    /// </summary>
     public const string CurrentUpdateSequence = "20260829";
 
-    /// <summary>
-    /// CRS84 identifiers accepted by WFS query parameters and advertised in capabilities.
-    /// </summary>
     public static readonly ImmutableArray<string> Crs84Identifiers =
     [
         "CRS:84",
@@ -40,44 +25,20 @@ internal static class Wfs20Utilities
         "http://www.opengis.net/def/crs/OGC/1.3/CRS84"
     ];
 
-    /// <summary>
-    /// Default namespace for WFS 2.0
-    /// </summary>
     public const string WfsNamespace = "http://www.opengis.net/wfs/2.0";
 
-    /// <summary>
-    /// Filter Encoding 2.0 namespace
-    /// </summary>
     public const string FesNamespace = "http://www.opengis.net/fes/2.0";
 
-    /// <summary>
-    /// GML 3.2 namespace
-    /// </summary>
     public const string GmlNamespace = "http://www.opengis.net/gml/3.2";
 
-    /// <summary>
-    /// OWS namespace for common elements
-    /// </summary>
     public const string OwsNamespace = "http://www.opengis.net/ows/1.1";
 
-    /// <summary>
-    /// XLink namespace for links
-    /// </summary>
     public const string XLinkNamespace = "http://www.w3.org/1999/xlink";
 
-    /// <summary>
-    /// XML Schema instance namespace
-    /// </summary>
     public const string XsiNamespace = "http://www.w3.org/2001/XMLSchema-instance";
 
-    /// <summary>
-    /// XML Schema namespace
-    /// </summary>
     public const string XsdNamespace = "http://www.w3.org/2001/XMLSchema";
 
-    /// <summary>
-    /// Supported WFS 2.0 operations
-    /// </summary>
     public static class Operations
     {
         public const string GetCapabilities = "GetCapabilities";
@@ -93,9 +54,6 @@ internal static class Wfs20Utilities
         public const string GetFeatureWithLock = "GetFeatureWithLock";
     }
 
-    /// <summary>
-    /// Supported output formats
-    /// </summary>
     public static class OutputFormats
     {
         public const string Gml32 = MediaTypes.Gml;
@@ -104,14 +62,8 @@ internal static class Wfs20Utilities
         public const string Csv = "text/csv";
         public const string Json = "application/json";
 
-        /// <summary>
-        /// Default output format for WFS 2.0
-        /// </summary>
         public const string Default = Gml32;
 
-        /// <summary>
-        /// All supported formats
-        /// </summary>
         public static readonly ImmutableArray<string> All = ImmutableArray.Create(
             Gml32,
             Gml32Simplified,
@@ -119,9 +71,6 @@ internal static class Wfs20Utilities
             Csv,
             Json);
 
-        /// <summary>
-        /// Normalizes output format strings to standard MIME types
-        /// </summary>
         public static string NormalizeOutputFormat(string? format)
         {
             if (string.IsNullOrEmpty(format))
@@ -142,9 +91,6 @@ internal static class Wfs20Utilities
         }
     }
 
-    /// <summary>
-    /// Parameter names for WFS 2.0 operations
-    /// </summary>
     public static class ParameterNames
     {
         // Common parameters
@@ -189,9 +135,6 @@ internal static class Wfs20Utilities
         public const string ReleaseAction = "RELEASEACTION";
     }
 
-    /// <summary>
-    /// Allowed query parameters for different operation types
-    /// </summary>
     public static class AllowedQueryParameters
     {
         public static readonly ImmutableHashSet<string> GetCapabilities = ImmutableHashSet.Create(
@@ -262,9 +205,6 @@ internal static class Wfs20Utilities
             ParameterNames.Resolve);
     }
 
-    /// <summary>
-    /// Supported GetCapabilities section names.
-    /// </summary>
     public static readonly ImmutableHashSet<string> GetCapabilitiesSections = ImmutableHashSet.Create(
         StringComparer.OrdinalIgnoreCase,
         "All",
@@ -274,9 +214,6 @@ internal static class Wfs20Utilities
         "FeatureTypeList",
         "Filter_Capabilities");
 
-    /// <summary>
-    /// WFS 2.0 conformance classes
-    /// </summary>
     public static class ConformanceClasses
     {
         public const string Core = "http://www.opengis.net/spec/wfs-2/2.0/conf/Core";
@@ -311,24 +248,12 @@ internal static class Wfs20Utilities
         public const string SchemaElementFunc = "http://www.opengis.net/spec/filter-2/2.0/conf/SchemaElementFunc";
     }
 
-    /// <summary>
-    /// Default maximum number of features to return
-    /// </summary>
     public const int DefaultMaxFeatures = 1000;
 
-    /// <summary>
-    /// Maximum allowed features per request
-    /// </summary>
     public const int MaxFeaturesPerRequest = 10000;
 
-    /// <summary>
-    /// Default spatial reference system (WGS84)
-    /// </summary>
     public const string DefaultSrs = "EPSG:4326";
 
-    /// <summary>
-    /// Validates WFS 2.0 request parameters
-    /// </summary>
     public static string? ValidateRequestParameters(IQueryCollection query, ImmutableHashSet<string> allowedParameters)
     {
         var service = query[ParameterNames.Service].FirstOrDefault();
@@ -431,9 +356,6 @@ internal static class Wfs20Utilities
                normalized.EndsWith("+xml", StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>
-    /// Parses type names parameter (comma-separated list)
-    /// </summary>
     public static string[] ParseTypeNames(string? typeNames)
     {
         if (string.IsNullOrEmpty(typeNames))
@@ -442,9 +364,6 @@ internal static class Wfs20Utilities
         return typeNames.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
     }
 
-    /// <summary>
-    /// Parses count parameter with validation
-    /// </summary>
     public static int ParseCount(string? count, int defaultValue = DefaultMaxFeatures)
     {
         return TryParseCount(count, out var value, defaultValue)
@@ -452,9 +371,6 @@ internal static class Wfs20Utilities
             : defaultValue;
     }
 
-    /// <summary>
-    /// Parses start index parameter with validation
-    /// </summary>
     public static int ParseStartIndex(string? startIndex)
     {
         return TryParseStartIndex(startIndex, out var value)
@@ -522,10 +438,6 @@ internal static class Wfs20Utilities
         return false;
     }
 
-    /// <summary>
-    /// Returns true when the <c>Accept</c> header cannot accept the XML response
-    /// representation produced by WFS 2.0 handlers.
-    /// </summary>
     public static bool AcceptHeaderExplicitlyRejectsXml(HttpRequest request)
     {
         var acceptHeader = request.Headers.Accept;

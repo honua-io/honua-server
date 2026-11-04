@@ -12,11 +12,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Snowflake.Features.FeatureStore.Services;
 
-/// <summary>
-/// Executes Snowflake feature queries built by <see cref="SnowflakeFeatureQueryBuilder"/>.
-/// All commands are parameterized (positional <c>?</c> binds) and double-quoted by the builder;
-/// this layer opens a connection, materializes rows, and emits telemetry.
-/// </summary>
 internal sealed class SnowflakeFeatureDataAccess
 {
     private static readonly ActivitySource _activitySource = new("Honua.Snowflake.FeatureStore");

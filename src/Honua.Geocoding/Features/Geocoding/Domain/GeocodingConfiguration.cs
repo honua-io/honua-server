@@ -3,147 +3,59 @@
 
 namespace Honua.Geocoding.Features.Geocoding.Domain;
 
-/// <summary>
-/// Main configuration for the geocoding system
-/// </summary>
 public sealed class GeocodingConfiguration
 {
-    /// <summary>
-    /// Configuration section name
-    /// </summary>
     public const string SectionName = "Geocoding";
 
-    /// <summary>
-    /// Whether geocoding is enabled
-    /// </summary>
     public bool Enabled { get; set; } = true;
 
-    /// <summary>
-    /// Default provider to use when none is specified
-    /// </summary>
     public string DefaultProvider { get; set; } = "nominatim";
 
-    /// <summary>
-    /// Default spatial reference system (WKID)
-    /// </summary>
     public int DefaultSpatialReferenceWkid { get; set; } = 4326;
 
-    /// <summary>
-    /// Default maximum results per request
-    /// </summary>
     public int DefaultMaxResults { get; set; } = 10;
 
-    /// <summary>
-    /// Default timeout in seconds for provider requests
-    /// </summary>
     public int DefaultTimeoutSeconds { get; set; } = 30;
 
-    /// <summary>
-    /// Whether to enable failover to backup providers
-    /// </summary>
     public bool EnableFailover { get; set; } = true;
 
-    /// <summary>
-    /// Maximum number of providers to attempt during failover
-    /// </summary>
     public int MaxFailoverAttempts { get; set; } = 3;
 
-    /// <summary>
-    /// Whether to cache results
-    /// </summary>
     public bool EnableCaching { get; set; } = true;
 
-    /// <summary>
-    /// Cache expiration time in minutes
-    /// </summary>
     public int CacheExpirationMinutes { get; set; } = 60;
 
-    /// <summary>
-    /// Whether to log geocoding requests and responses
-    /// </summary>
     public bool EnableLogging { get; set; } = true;
 
-    /// <summary>
-    /// Locator name for ArcGIS compatibility
-    /// </summary>
     public string LocatorName { get; set; } = "World";
 
-    /// <summary>
-    /// Whether advertised per-provider rate limits (<see cref="GeocodeProviderCapabilities.RateLimitPerMinute"/>)
-    /// are enforced at request time. When enabled, requests beyond the effective provider's
-    /// per-minute allowance are rejected with a conformant throttling error. Defaults to true so
-    /// advertised limits are not silently unenforced.
-    /// </summary>
     public bool EnforceRateLimits { get; set; } = true;
 
-    /// <summary>
-    /// Optional licensing/edition cap on the number of records accepted in a single batch geocode,
-    /// applied across all providers. The effective batch cap is the minimum of this value and the
-    /// active provider's <see cref="GeocodeProviderCapabilities.MaxBatchSize"/>. <see langword="null"/>
-    /// applies no additional license cap (the provider's advertised cap governs).
-    /// </summary>
     public int? MaxBatchSizeLimit { get; set; }
 
-    /// <summary>
-    /// Provider configurations
-    /// </summary>
     public ProvidersConfiguration Providers { get; set; } = new();
 }
 
-/// <summary>
-/// Configuration for all geocoding providers
-/// </summary>
 public sealed class ProvidersConfiguration
 {
-    /// <summary>
-    /// Nominatim provider configuration
-    /// </summary>
     public NominatimProviderConfiguration Nominatim { get; set; } = new();
 
-    /// <summary>
-    /// Amazon Location Service provider configuration
-    /// </summary>
     public AmazonLocationProviderConfiguration AmazonLocation { get; set; } = new();
 
-    /// <summary>
-    /// Azure Maps provider configuration
-    /// </summary>
     public AzureMapsProviderConfiguration AzureMaps { get; set; } = new();
 
-    /// <summary>
-    /// Local, self-hosted PostGIS-backed geocoder configuration
-    /// </summary>
     public LocalGeocoderProviderConfiguration Local { get; set; } = new();
 }
 
-/// <summary>
-/// Constants for provider names
-/// </summary>
 public static class GeocodeProviderNames
 {
-    /// <summary>
-    /// Nominatim provider name
-    /// </summary>
     public const string Nominatim = "nominatim";
 
-    /// <summary>
-    /// Amazon Location Service provider name
-    /// </summary>
     public const string AmazonLocation = "amazon-location";
 
-    /// <summary>
-    /// Azure Maps provider name
-    /// </summary>
     public const string AzureMaps = "azure-maps";
 
-    /// <summary>
-    /// Local, self-hosted PostGIS-backed geocoder provider name
-    /// </summary>
     public const string Local = "local";
 
-    /// <summary>
-    /// Get all available provider names
-    /// </summary>
-    /// <returns>Array of provider names</returns>
     public static string[] GetAll() => [Nominatim, AmazonLocation, AzureMaps, Local];
 }

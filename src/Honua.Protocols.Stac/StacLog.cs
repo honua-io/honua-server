@@ -3,10 +3,6 @@
 
 namespace Honua.Protocols.Stac;
 
-/// <summary>
-/// Source-generated log messages for STAC API endpoints.
-/// Event IDs: 5950–5999.
-/// </summary>
 internal static partial class StacLog
 {
     // 5950–5955: Catalog & Collections

@@ -5,15 +5,7 @@ using System.Xml.Linq;
 
 namespace Honua.Protocols.Ogc.Classic.Wcs20;
 
-/// <summary>
-/// WCS 1.0.0 error results. 1.0.0 predates OWS, so a failure is an OGC
-/// <c>ServiceExceptionReport</c> rather than the <c>ows:ExceptionReport</c> that
-/// <see cref="Wcs20ErrorResults"/> emits for 2.0.1. Clients key their error reporting on
-/// this shape - the QGIS provider parses a <c>ServiceException</c> element and reads its
-/// <c>code</c> attribute - so returning an OWS report to a 1.0.0 client would leave the
-/// failure unexplained in the UI even though the status code was correct
-/// (honua-server#5020).
-/// </summary>
+// WCS 1.0.0 returns a ServiceExceptionReport, because QGIS parses that element and an OWS ExceptionReport leaves the error unexplained.
 internal static class Wcs10ErrorResults
 {
     private static readonly XNamespace Ogc = Wcs20Utilities.OgcExceptionNamespace;

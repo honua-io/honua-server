@@ -10,226 +10,101 @@ using Azure.Identity;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Logical task-level execution state reported by Azure Batch.
-/// </summary>
 internal enum AzureBatchTaskExecutionState
 {
-    /// <summary>
-    /// The task does not yet exist in the service (404).
-    /// </summary>
     NotFound,
 
-    /// <summary>
-    /// The task is queued and waiting for a compute node.
-    /// </summary>
     Active,
 
-    /// <summary>
-    /// The task has been scheduled and is preparing to run (image pull, resource staging).
-    /// </summary>
     Preparing,
 
-    /// <summary>
-    /// The task is currently running on a compute node.
-    /// </summary>
     Running,
 
-    /// <summary>
-    /// The task finished with exit code 0.
-    /// </summary>
     CompletedSuccess,
 
-    /// <summary>
-    /// The task finished with a non-zero exit code or a scheduling/execution failure.
-    /// </summary>
     CompletedFailure,
 
-    /// <summary>
-    /// The task or job was terminated via an explicit cancellation request.
-    /// </summary>
     Cancelled
 }
 
-/// <summary>
-/// Observed state of an Azure Batch job and its primary task.
-/// </summary>
 internal sealed record AzureBatchJobState
 {
-    /// <summary>
-    /// Azure Batch job id.
-    /// </summary>
     public required string JobId { get; init; }
 
-    /// <summary>
-    /// Logical execution state derived from the task state, exit code, and failure info.
-    /// </summary>
     public required AzureBatchTaskExecutionState ExecutionState { get; init; }
 
-    /// <summary>
-    /// Raw Azure Batch task <c>state</c> string for diagnostics.
-    /// </summary>
     public string? RawTaskState { get; init; }
 
-    /// <summary>
-    /// Exit code from the task when available.
-    /// </summary>
     public int? ExitCode { get; init; }
 
-    /// <summary>
-    /// Human-readable failure message when the task or job failed.
-    /// </summary>
     public string? FailureMessage { get; init; }
 
-    /// <summary>
-    /// Retry attempts already consumed by the Azure Batch scheduler.
-    /// </summary>
     public int? RetryCount { get; init; }
 }
 
-/// <summary>
-/// Pool allocation snapshot used to validate that a pool can host a submitted task.
-/// </summary>
 internal sealed record AzureBatchPoolState
 {
-    /// <summary>
-    /// Azure Batch pool id.
-    /// </summary>
     public required string PoolId { get; init; }
 
-    /// <summary>
-    /// Pool <c>state</c> value: active, deleting, upgrading.
-    /// </summary>
     public string? State { get; init; }
 
-    /// <summary>
-    /// Pool allocation <c>allocationState</c>: steady, resizing, stopping.
-    /// </summary>
     public string? AllocationState { get; init; }
 
-    /// <summary>
-    /// Current count of dedicated nodes in the pool.
-    /// </summary>
     public int DedicatedNodes { get; init; }
 
-    /// <summary>
-    /// Current count of low-priority nodes in the pool.
-    /// </summary>
     public int LowPriorityNodes { get; init; }
 
-    /// <summary>
-    /// Target dedicated node count (non-zero when the pool is auto-scaling up).
-    /// </summary>
     public int TargetDedicatedNodes { get; init; }
 
-    /// <summary>
-    /// Target low-priority node count.
-    /// </summary>
     public int TargetLowPriorityNodes { get; init; }
 }
 
-/// <summary>
-/// Request to create an Azure Batch job and single primary task.
-/// </summary>
 internal sealed record AzureBatchJobSubmission
 {
-    /// <summary>
-    /// Azure Batch account data-plane endpoint, e.g. <c>https://myacct.eastus.batch.azure.com</c>.
-    /// </summary>
     public required string AccountUrl { get; init; }
 
-    /// <summary>
-    /// Deterministic job id (used as the primary task id as well).
-    /// </summary>
     public required string JobId { get; init; }
 
-    /// <summary>
-    /// Target pool id.
-    /// </summary>
     public required string PoolId { get; init; }
 
-    /// <summary>
-    /// Task command line executed inside the container.
-    /// </summary>
     public required string CommandLine { get; init; }
 
-    /// <summary>
-    /// Container image reference applied via <c>containerSettings.imageName</c>.
-    /// </summary>
     public string? ContainerImage { get; init; }
 
-    /// <summary>
-    /// Extra container run options (mounts, env, ports) passed verbatim.
-    /// </summary>
     public string? ContainerRunOptions { get; init; }
 
-    /// <summary>
-    /// Maximum retry attempts for transient failures at the Azure Batch scheduler layer.
-    /// </summary>
     public int MaxTaskRetryCount { get; init; } = 2;
 
-    /// <summary>
-    /// Task wall-clock execution timeout.
-    /// </summary>
     public TimeSpan? TaskTimeout { get; init; }
 
-    /// <summary>
-    /// Blob container shared access URL used as the destination for stdout/stderr uploads.
-    /// </summary>
     public string? OutputContainerUrl { get; init; }
 
-    /// <summary>
-    /// Environment variables forwarded to the task.
-    /// </summary>
     public IReadOnlyDictionary<string, string> EnvironmentSettings { get; init; } =
         new Dictionary<string, string>(StringComparer.Ordinal);
 }
 
-/// <summary>
-/// Azure Batch data-plane client covering the subset of operations required by the
-/// canonical execution-job adapter.
-/// </summary>
 internal interface IAzureBatchClient
 {
-    /// <summary>
-    /// Creates a job and a single primary task with the same id as the job. Returns
-    /// <see cref="HttpStatusCode.Conflict"/> when the job already exists (idempotent).
-    /// </summary>
     Task<HttpStatusCode> CreateJobAsync(
         AzureBatchJobSubmission submission,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Reads the current job + primary task state, collapsing Azure Batch's per-task
-    /// state machine into <see cref="AzureBatchTaskExecutionState"/>.
-    /// </summary>
     Task<AzureBatchJobState> GetJobStateAsync(
         string accountUrl,
         string jobId,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Terminates the Azure Batch job (and the primary task) as a cancellation signal.
-    /// </summary>
     Task TerminateJobAsync(
         string accountUrl,
         string jobId,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Reads the pool allocation state so callers can validate that tasks will be scheduled.
-    /// </summary>
     Task<AzureBatchPoolState> GetPoolStateAsync(
         string accountUrl,
         string poolId,
         CancellationToken cancellationToken = default);
 }
 
-/// <summary>
-/// Data-plane REST client for Azure Batch. Uses <see cref="DefaultAzureCredential"/>
-/// with the <c>https://batch.core.windows.net/.default</c> scope to mint a dedicated
-/// data-plane token per request, following the AzureContainerAppsRevisionClient pattern.
-/// </summary>
 internal sealed partial class AzureBatchDataPlaneClient : IAzureBatchClient
 {
     public const string HttpClientName = "control-plane-azure-batch";

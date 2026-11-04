@@ -23,10 +23,6 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Protocols.OData;
 
-/// <summary>
-/// Handler for OData streaming query operations for large-scale feature queries.
-/// Uses streaming JSON writing to reduce memory pressure for large result sets.
-/// </summary>
 internal sealed partial class ODataStreamingQueryHandler(
     ODataQueryDependencies dependencies,
     IStreamingFeatureStore streamingFeatureStore,
@@ -46,9 +42,6 @@ internal sealed partial class ODataStreamingQueryHandler(
     private const int FlushInterval = 32;
     private const string InvalidLayerIdFilterMessage = "LayerId filter must be a valid OData expression that resolves to a single layer.";
 
-    /// <summary>
-    /// Handles OData features collection request with streaming for large result sets
-    /// </summary>
     public async Task<IResult> HandleGetFeaturesAsync(
         HttpContext context,
         int? layerId,
@@ -661,9 +654,6 @@ internal sealed partial class ODataStreamingQueryHandler(
         }
     }
 
-    /// <summary>
-    /// Streams OData features response to reduce memory pressure
-    /// </summary>
     private static async Task StreamODataFeaturesAsync(
         IAsyncEnumerable<Feature> features,
         HttpContext context,
@@ -853,9 +843,6 @@ internal sealed partial class ODataStreamingQueryHandler(
         return null;
     }
 
-    /// <summary>
-    /// Writes a single feature in OData format
-    /// </summary>
     private static async Task WriteODataFeatureAsync(
         Utf8JsonWriter writer,
         Feature feature,
@@ -976,9 +963,6 @@ internal sealed partial class ODataStreamingQueryHandler(
         }
     }
 
-    /// <summary>
-    /// Writes OData JSON values with proper type handling
-    /// </summary>
     private static async Task WriteODataJsonValueAsync(
         Utf8JsonWriter writer,
         string propertyName,
@@ -1319,9 +1303,6 @@ internal sealed partial class ODataStreamingQueryHandler(
     }
 
 
-    /// <summary>
-    /// Logging methods for OData streaming query operations.
-    /// </summary>
     private static partial class Log
     {
         [LoggerMessage(EventId = 3020, Level = LogLevel.Warning, Message = "Invalid OData streaming features query for layer {LayerId}.")]
