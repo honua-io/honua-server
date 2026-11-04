@@ -135,10 +135,28 @@ Don't replace the serving container by hand, run `docker compose down --volumes`
   - "Unsure": say what you could not check.
 - A request, a dry run, or a pending proposal is not the change itself.
 - Quote ids and values from tool results. Don't reconstruct them.
+
+## 7. Operating skills
+
+The package's `skills/` directory contains five optional Agent Skills:
+
+- `skills/honua-install/SKILL.md`: install, readiness and secret files.
+- `skills/honua-ops/SKILL.md`: findings, approved restarts, upgrade and rollback.
+- `skills/honua-services/SKILL.md`: import, publish, filtered queries and readback.
+- `skills/honua-studio-maps/SKILL.md`: Studio styles, saved versions and sharing.
+- `skills/honua-tuning/SKILL.md`: measured publication tuning and supported budgets.
+
+Load the skill relevant to the task using your host's supported skill-loading
+mechanism. Merely reading a skill is not permission to execute its commands or
+bypass an approval. These public instructions contain no install credentials
+or tenant content. Verify the trusted package's agent files from its directory
+with `sha256sum -c agent-files.sha256`. The lock includes this `AGENTS.md` and
+every skill file; editing site rules changes its digest.
 <!-- agent-guide:end -->
 
 ## Related
 
+- [Operating skills and packaging](operating-skills.md)
 - [Connect AI agents to Honua over MCP](ai-agents-mcp.md), including
   [workflow views](ai-agents-mcp.md#workflow-views-bounded-discovery)
 - [What an agent can do in each edition](agent-capabilities-and-editions.md)

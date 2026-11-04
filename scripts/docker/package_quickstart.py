@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Package the customer Compose install with a lock of immutable release images."""
 import argparse
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -27,7 +28,8 @@ def package(destination, server, executor, worker, version):
     # The agent guide is published once, in the docs; the package carries that exact text.
     guide = (ROOT / 'docs/guides/connect/working-with-ai-agents.md').read_text()
     guide = re.search(r'<!-- agent-guide:begin -->\n(.*?)<!-- agent-guide:end -->', guide, re.S).group(1)
-    (destination / 'AGENTS.md').write_text(guide.strip() + '\n')
+    (destination / 'AGENTS.md').write_text(guide.strip() + '\n', encoding='utf-8')
+    package_agent_skills(destination)
     max_schema = max(int(path.name.split('_', 1)[0]) for path in
                      (ROOT / 'src/Honua.Server/Migrations').glob('[0-9]*_*.sql'))
     (destination / 'images.json').write_text(json.dumps(dict(server=server, executor=executor, worker=worker,
@@ -53,7 +55,20 @@ def package(destination, server, executor, worker, version):
         'For older images without a schema label, configure HONUA_PRIOR_MAX_SCHEMA from that exact image. '
         'Never guess its schema.\n\n'
         'AI coding agents working in this directory: read `AGENTS.md` first. It covers secrets, '
-        'approvals, upgrades and verifying work before reporting it done.\n')
+        'approvals, upgrades and verifying work before reporting it done. '
+        'Task-specific skills are in skills/. Verify agent files with '
+        '`sha256sum -c agent-files.sha256` after verifying the release archive checksum.\n')
+
+
+def package_agent_skills(destination):
+    shutil.copytree(ROOT / 'skills', destination / 'skills')
+    agent_files = [destination / 'AGENTS.md']
+    agent_files.extend(path for path in (destination / 'skills').rglob('*') if path.is_file())
+    checksums = []
+    for path in sorted(agent_files):
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        checksums.append(f'{digest}  {path.relative_to(destination).as_posix()}\n')
+    (destination / 'agent-files.sha256').write_text(''.join(checksums), encoding='utf-8')
 
 
 def main():
