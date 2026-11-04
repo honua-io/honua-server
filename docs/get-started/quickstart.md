@@ -69,6 +69,7 @@ From the trusted, extracted quickstart directory, install the same canonical
 files for either host (or both). These commands copy all five skills and their
 references without changing their bytes:
 
+<!-- docs-validation:install.skills mode=skip reason="Host skill installation is executed by scripts/docker/test_operating_skills.py" -->
 ```bash
 mkdir -p .claude/skills
 cp -R skills/. .claude/skills/
