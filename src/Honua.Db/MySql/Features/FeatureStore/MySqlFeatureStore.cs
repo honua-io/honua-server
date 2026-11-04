@@ -12,6 +12,13 @@ using Honua.Db.MySql;
 
 namespace Honua.Db.MySql.Features.FeatureStore;
 
+/// <summary>
+/// MySQL/MariaDB read-only feature store. Provides query, count, and extent paths over
+/// user-managed tables; statistics, edits, MVT, and KNN paths are intentionally
+/// declared unsupported in <see cref="FeatureProviderCapabilities.ReadOnlyMySql"/>.
+/// Streaming methods iterate the underlying data access in pages so DI consumers that
+/// require <see cref="IStreamingFeatureStore"/> can resolve under <c>DataSource:Provider=mysql</c>.
+/// </summary>
 internal sealed class MySqlFeatureStore :
     IFeatureDataProvider,
     IFeatureReader,
@@ -55,6 +62,7 @@ internal sealed class MySqlFeatureStore :
         _binding = binding;
     }
 
+    /// <inheritdoc />
     public IFeatureReader CreateReaderForBinding(FeatureProviderBinding binding)
     {
         ArgumentNullException.ThrowIfNull(binding);
@@ -67,14 +75,19 @@ internal sealed class MySqlFeatureStore :
             binding);
     }
 
+    /// <inheritdoc />
     public string ProviderName => DataProviderNames.MySql;
 
+    /// <inheritdoc />
     public FeatureProviderCapabilities Capabilities => FeatureProviderCapabilities.ReadOnlyMySql;
 
+    /// <inheritdoc />
     public IFeatureReader Reader => this;
 
+    /// <inheritdoc />
     public IFeatureWriter? Writer => null;
 
+    /// <inheritdoc />
     public async Task<Feature?> GetAsync(int layerId, long featureId, CancellationToken cancellationToken = default)
     {
         var query = await ApplyPermanentFilterAsync(layerId, new FeatureQuery(), cancellationToken).ConfigureAwait(false);
@@ -88,6 +101,7 @@ internal sealed class MySqlFeatureStore :
         return features.IsDefaultOrEmpty ? null : features[0];
     }
 
+    /// <inheritdoc />
     public async Task<QueryResult<Feature>> QueryAsync(
         int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
@@ -113,12 +127,14 @@ internal sealed class MySqlFeatureStore :
         return QueryResult<Feature>.Create(totalCount, features, hasMore);
     }
 
+    /// <inheritdoc />
     public Task<byte[]?> QueryFlatGeobufAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
         => throw MySqlUnsupportedFeature.Create(
             "Native FlatGeobuf output is not supported by the MySQL/MariaDB provider in this slice. " +
             "The FeatureServer guard rejects f=fgb against this provider before reaching the store; " +
             "this throw is defense-in-depth in case a caller invokes the reader directly.");
 
+    /// <inheritdoc />
     public async Task<ImmutableArray<long>> QueryObjectIdsAsync(
         int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
@@ -127,6 +143,7 @@ internal sealed class MySqlFeatureStore :
         return await _dataAccess.ExecuteSelectObjectIdsQueryAsync(objectIdsQuery, query, layerId, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <inheritdoc />
     public async Task<long> CountAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
         query = await ApplyPermanentFilterAsync(layerId, query, cancellationToken).ConfigureAwait(false);
@@ -134,6 +151,7 @@ internal sealed class MySqlFeatureStore :
         return await _dataAccess.ExecuteCountQueryAsync(countQuery, query, layerId, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <inheritdoc />
     public async Task<FeatureExtent?> GetExtentAsync(
         int layerId, FeatureQuery? query = null, CancellationToken cancellationToken = default)
     {
@@ -142,17 +160,20 @@ internal sealed class MySqlFeatureStore :
         return await _dataAccess.GetExtentAsync(layerId, extentQuery, effective, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <inheritdoc />
     public Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryStatisticsAsync(
         int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
         => throw MySqlUnsupportedFeature.Create(
             "Aggregate statistics queries are not supported by the MySQL/MariaDB provider in this slice. " +
             "Check FeatureProviderCapabilities.SupportsStatistics before invoking.");
 
+    /// <inheritdoc />
     public Task<TemporalExtentResult?> GetTemporalExtentAsync(
         int layerId, string fieldName, TemporalPropertyType propertyType, CancellationToken cancellationToken = default)
         => throw MySqlUnsupportedFeature.Create(
             "Temporal extent queries are not supported by the MySQL/MariaDB provider in this slice.");
 
+    /// <inheritdoc />
     public async Task<EstimateResult> GetEstimatesAsync(int layerId, CancellationToken cancellationToken = default)
     {
         var countTask = CountAsync(layerId, new FeatureQuery(), cancellationToken);
@@ -166,26 +187,31 @@ internal sealed class MySqlFeatureStore :
         };
     }
 
+    /// <inheritdoc />
     public Task<QueryResult<Feature>> QueryTopFeaturesAsync(
         int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
         => throw MySqlUnsupportedFeature.Create(
             "Top-features queries are not supported by the MySQL/MariaDB provider in this slice.");
 
+    /// <inheritdoc />
     public Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryDateBinsAsync(
         int layerId, FeatureQuery query, DateBinDefinition dateBin, CancellationToken cancellationToken = default)
         => throw MySqlUnsupportedFeature.Create(
             "Date-binning queries are not supported by the MySQL/MariaDB provider in this slice.");
 
+    /// <inheritdoc />
     public Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryBinsAsync(
         int layerId, FeatureQuery query, BinDefinition binDefinition, CancellationToken cancellationToken = default)
         => throw MySqlUnsupportedFeature.Create(
             "Numeric-binning queries are not supported by the MySQL/MariaDB provider in this slice.");
 
+    /// <inheritdoc />
     public Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryH3Async(
         int layerId, FeatureQuery query, H3AggregationQuery h3Query, CancellationToken cancellationToken = default)
         => throw MySqlUnsupportedFeature.Create(
             "H3 hexagonal aggregation is not supported by the MySQL/MariaDB provider.");
 
+    /// <inheritdoc />
     public async Task<PagedQueryResult<Feature>> QueryPageAsync(
         int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
@@ -212,6 +238,7 @@ internal sealed class MySqlFeatureStore :
         return PagedQueryResult<Feature>.Create(items, hasMore);
     }
 
+    /// <inheritdoc />
     public async IAsyncEnumerable<Feature> StreamFeaturesAsync(
         int layerId,
         FeatureQuery query,
@@ -226,6 +253,7 @@ internal sealed class MySqlFeatureStore :
         }
     }
 
+    /// <inheritdoc />
     public async IAsyncEnumerable<IReadOnlyList<Feature>> StreamFeatureBatchesAsync(
         int layerId,
         FeatureQuery query,
@@ -294,6 +322,7 @@ internal sealed class MySqlFeatureStore :
         }
     }
 
+    /// <inheritdoc />
     public IAsyncEnumerable<GmlFeature> StreamGmlFeaturesAsync(
         int layerId,
         FeatureQuery query,
@@ -301,12 +330,22 @@ internal sealed class MySqlFeatureStore :
         => throw MySqlUnsupportedFeature.Create(
             "Streaming GML features is not supported by the MySQL/MariaDB provider in this slice.");
 
+    /// <summary>
+    /// Refuses the read when a row-level security or field-mask policy applies to the request:
+    /// this provider translates the layer's permanent filter but applies neither of those.
+    /// </summary>
     private Task EnsureRowAndFieldPolicyEnforceableAsync(int layerId, CancellationToken cancellationToken)
         => _readSecurity is null
             ? Task.CompletedTask
             : _readSecurity.EnsureNoUnenforcedPolicyAsync(
                 "MySQL/MariaDB", layerId, _binding?.Resource, rejectPermanentFilter: false, cancellationToken);
 
+    /// <summary>
+    /// Resolves and applies the layer's permanent (row-visibility) filter to the query, after
+    /// refusing the read when a row-level security or field-mask policy applies that this
+    /// provider cannot enforce. The permanent filter step is idempotent: queries already
+    /// carrying an enforced filter are returned unchanged.
+    /// </summary>
     private async Task<FeatureQuery> ApplyPermanentFilterAsync(
         int layerId,
         FeatureQuery query,

@@ -5,6 +5,9 @@ using System.Collections.Immutable;
 
 namespace Honua.Db.DuckDB.Features.Infrastructure;
 
+/// <summary>
+/// Planned per-connection temporary view for a DuckDB external file source.
+/// </summary>
 internal sealed record DuckDBExternalSourcePlan(
     int LayerId,
     string ViewName,

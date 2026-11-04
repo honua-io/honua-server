@@ -12,6 +12,12 @@ using ConnectionHealthStatus = Honua.Core.Features.Security.Domain.ConnectionHea
 
 namespace Honua.Snowflake.Features.Security;
 
+/// <summary>
+/// Snowflake <see cref="IConnectionDriver"/>: builds a <c>Snowflake.Data</c> connection string
+/// (<c>account=...;user=...;password=...;db=...</c>, where the connection's "host" is the Snowflake
+/// account identifier and the "database" is the default Snowflake database) and probes health with a
+/// real <see cref="SnowflakeDbConnection"/> + <c>SELECT 1</c>.
+/// </summary>
 internal sealed partial class SnowflakeConnectionDriver : IConnectionDriver, ISecureConnectionStringPolicy
 {
     private readonly ILogger<SnowflakeConnectionDriver> _logger;
@@ -116,8 +122,10 @@ internal sealed partial class SnowflakeConnectionDriver : IConnectionDriver, ISe
     private partial void LogProbeFailed(Exception exception);
 }
 
+/// <summary>DI helper that registers the Snowflake connection driver.</summary>
 public static class SnowflakeConnectionDriverServiceCollectionExtensions
 {
+    /// <summary>Registers the Snowflake <see cref="IConnectionDriver"/> for provider-aware connection testing.</summary>
     public static IServiceCollection AddSnowflakeConnectionDriver(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);

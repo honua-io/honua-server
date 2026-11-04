@@ -13,6 +13,11 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Db.SqlServer.Features.FeatureStore.Services;
 
+/// <summary>
+/// Executes SQL Server feature queries built by <see cref="SqlServerFeatureQueryBuilder"/>.
+/// All commands are parameterized and bracket-quoted by the builder; this layer is responsible
+/// for opening a pooled <see cref="SqlConnection"/>, materializing rows, and emitting telemetry.
+/// </summary>
 internal sealed class SqlServerFeatureDataAccess
 {
     private static readonly ActivitySource _activitySource = new("Honua.SqlServer.FeatureStore");

@@ -6,14 +6,27 @@ using Honua.Db.MySql.Features.Infrastructure;
 
 namespace Honua.Db.MySql.Queries.Filters;
 
+/// <summary>
+/// MySQL / MariaDB implementation of <see cref="ISqlDialect"/>.
+/// </summary>
+/// <remarks>
+/// Identifiers are backtick-quoted with embedded backticks doubled. Parameters are
+/// <c>@</c>-prefixed (MySqlConnector named parameters). Quoting routes through the
+/// existing <see cref="MySqlIdentifier"/> helper so all in-tree call sites converge on
+/// one implementation.
+/// </remarks>
 internal sealed class MySqlSqlDialect : ISqlDialect
 {
+    /// <summary>Singleton instance — the dialect carries no per-call state.</summary>
     public static readonly MySqlSqlDialect Instance = new();
 
+    /// <inheritdoc />
     public string Name => "mysql";
 
+    /// <inheritdoc />
     public string ParameterPrefix => "@";
 
+    /// <inheritdoc />
     public string QuoteIdentifier(string identifier)
     {
         if (string.IsNullOrWhiteSpace(identifier))
@@ -24,6 +37,7 @@ internal sealed class MySqlSqlDialect : ISqlDialect
         return MySqlIdentifier.Quote(identifier);
     }
 
+    /// <inheritdoc />
     public string QuoteLiteral(string literal)
     {
         ArgumentNullException.ThrowIfNull(literal);

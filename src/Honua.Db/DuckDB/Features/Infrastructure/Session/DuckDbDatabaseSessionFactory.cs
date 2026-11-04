@@ -6,6 +6,11 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 
 namespace Honua.Db.DuckDB.Features.Infrastructure.Session;
 
+/// <summary>
+/// DuckDB implementation of <see cref="IDatabaseSessionFactory"/>. Wraps the
+/// existing <see cref="IAdoNetDatabaseConnectionProvider"/> so the spatial-extension
+/// bootstrap stays inside one place.
+/// </summary>
 internal sealed class DuckDbDatabaseSessionFactory : IDatabaseSessionFactory
 {
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;

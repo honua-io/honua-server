@@ -18,8 +18,17 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Db.MySql.Features.FeatureStore.Services;
 
+/// <summary>
+/// Executes MySQL/MariaDB read queries through <see cref="IAdoNetDatabaseConnectionProvider"/>
+/// and materialises feature, count, and extent results. Edits, statistics, MVT, and
+/// other unsupported paths surface <see cref="NotSupportedException"/> consistent with
+/// the provider capability declaration.
+/// </summary>
 internal sealed class MySqlFeatureDataAccess : IFeatureDataAccess
 {
+    /// <summary>
+    /// Activity source for MySQL/MariaDB feature data access spans.
+    /// </summary>
     public static readonly ActivitySource ActivitySource = new("Honua.MySql.FeatureDataAccess");
 
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
@@ -42,6 +51,7 @@ internal sealed class MySqlFeatureDataAccess : IFeatureDataAccess
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
+    /// <inheritdoc />
     public async Task<long> ExecuteCountQueryAsync(
         ParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken)
     {
@@ -58,6 +68,7 @@ internal sealed class MySqlFeatureDataAccess : IFeatureDataAccess
         }, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <inheritdoc />
     public async Task<ImmutableArray<Feature>> ExecuteSelectQueryAsync(
         ParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken)
     {
@@ -81,6 +92,7 @@ internal sealed class MySqlFeatureDataAccess : IFeatureDataAccess
         }, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <inheritdoc />
     public async Task<FeatureExtent?> GetExtentAsync(
         int layerId, ParameterizedQuery? query, FeatureQuery featureQuery, CancellationToken cancellationToken)
     {
@@ -111,6 +123,7 @@ internal sealed class MySqlFeatureDataAccess : IFeatureDataAccess
         }, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <inheritdoc />
     public async Task<ImmutableArray<long>> ExecuteSelectObjectIdsQueryAsync(
         ParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken)
     {
@@ -133,6 +146,7 @@ internal sealed class MySqlFeatureDataAccess : IFeatureDataAccess
         }, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <inheritdoc />
     public async Task<Feature?> GetFeatureAsync(int layerId, long featureId, CancellationToken cancellationToken)
     {
         var mapping = _layerRegistry.GetRequiredMapping(layerId);
@@ -162,58 +176,73 @@ internal sealed class MySqlFeatureDataAccess : IFeatureDataAccess
 
     #region Unsupported paths
 
+    /// <inheritdoc />
     public Task<ImmutableArray<ProjectedPoint>> ExecuteSelectProjectedPointsAsync(
         ParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken)
         => throw NotSupported(nameof(ExecuteSelectProjectedPointsAsync));
 
+    /// <inheritdoc />
     public Task<ImmutableArray<GmlFeature>> ExecuteSelectGmlQueryAsync(
         ParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken)
         => throw NotSupported(nameof(ExecuteSelectGmlQueryAsync));
 
+    /// <inheritdoc />
     public Task<ImmutableArray<EncodedGeoJsonFeature>> ExecuteSelectGeoJsonQueryAsync(
         ParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken)
         => throw NotSupported(nameof(ExecuteSelectGeoJsonQueryAsync));
 
+    /// <inheritdoc />
     public Task<ImmutableArray<RawGeoJsonFeature>> ExecuteSelectRawGeoJsonQueryAsync(
         ParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken)
         => throw NotSupported(nameof(ExecuteSelectRawGeoJsonQueryAsync));
 
+    /// <inheritdoc />
     public Task<ImmutableArray<KmlFeature>> ExecuteSelectKmlQueryAsync(
         ParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken)
         => throw NotSupported(nameof(ExecuteSelectKmlQueryAsync));
 
+    /// <inheritdoc />
     public Task<byte[]?> ExecuteSelectFlatGeobufQueryAsync(
         ParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken)
         => Task.FromResult<byte[]?>(null);
 
+    /// <inheritdoc />
     public Task<byte[]?> ExecuteSelectGeobufQueryAsync(
         ParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken)
         => Task.FromResult<byte[]?>(null);
 
+    /// <inheritdoc />
     public Task<QueryResult<Feature>> QueryRelatedAsync(int layerId, RelatedQuery query, CancellationToken cancellationToken)
         => throw NotSupported(nameof(QueryRelatedAsync));
 
+    /// <inheritdoc />
     public Task<Feature> CreateFeatureAsync(int layerId, Feature feature, CancellationToken cancellationToken)
         => throw NotSupported(nameof(CreateFeatureAsync));
 
+    /// <inheritdoc />
     public Task<Feature> UpdateFeatureAsync(int layerId, Feature feature, CancellationToken cancellationToken)
         => throw NotSupported(nameof(UpdateFeatureAsync));
 
+    /// <inheritdoc />
     public Task<bool> DeleteFeatureAsync(int layerId, long featureId, CancellationToken cancellationToken)
         => throw NotSupported(nameof(DeleteFeatureAsync));
 
+    /// <inheritdoc />
     public Task<TemporalExtentResult?> GetTemporalExtentAsync(
         int layerId, ParameterizedQuery? query, CancellationToken cancellationToken)
         => throw NotSupported(nameof(GetTemporalExtentAsync));
 
+    /// <inheritdoc />
     public Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> ExecuteStatisticsQueryAsync(
         ParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken)
         => throw NotSupported(nameof(ExecuteStatisticsQueryAsync));
 
+    /// <inheritdoc />
     public Task<byte[]?> GetMvtTileAsync(int layerId, ParameterizedQuery query, long maxTileSize, CancellationToken cancellationToken)
         => throw NotSupported(nameof(GetMvtTileAsync));
 
 #pragma warning disable CS1998
+    /// <inheritdoc />
     public async IAsyncEnumerable<Feature> StreamFeaturesAsync(
         int layerId, ParameterizedQuery query, FeatureQuery featureQuery,
         [EnumeratorCancellation] CancellationToken cancellationToken)
@@ -224,6 +253,7 @@ internal sealed class MySqlFeatureDataAccess : IFeatureDataAccess
 #pragma warning restore CS0162
     }
 
+    /// <inheritdoc />
     public async IAsyncEnumerable<GmlFeature> StreamGmlFeaturesAsync(
         int layerId, ParameterizedQuery query, FeatureQuery featureQuery,
         [EnumeratorCancellation] CancellationToken cancellationToken)
@@ -235,6 +265,7 @@ internal sealed class MySqlFeatureDataAccess : IFeatureDataAccess
     }
 #pragma warning restore CS1998
 
+    /// <inheritdoc />
     public Task<FeatureEditResult> ApplyEditsAsync(int layerId, FeatureEditBatch editBatch, CancellationToken cancellationToken)
         => throw NotSupported(nameof(ApplyEditsAsync));
 

@@ -20,6 +20,10 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Db.DuckDB.Features.FeatureStore.Services;
 
+/// <summary>
+/// Executes parameterized queries against DuckDB and materializes Feature objects.
+/// DuckDB tables use direct columns (not JSONB), so attribute reading iterates column values.
+/// </summary>
 internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
 {
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
@@ -39,6 +43,7 @@ internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
+    /// <inheritdoc />
     public async Task<long> ExecuteCountQueryAsync(
         ParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken)
     {
@@ -59,6 +64,7 @@ internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
             cancellationToken).ConfigureAwait(false);
     }
 
+    /// <inheritdoc />
     public async Task<ImmutableArray<Feature>> ExecuteSelectQueryAsync(
         ParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken)
     {
@@ -86,6 +92,7 @@ internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
             cancellationToken).ConfigureAwait(false);
     }
 
+    /// <inheritdoc />
     public async Task<ImmutableArray<ProjectedPoint>> ExecuteSelectProjectedPointsAsync(
         ParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken)
     {
@@ -114,6 +121,7 @@ internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
             cancellationToken).ConfigureAwait(false);
     }
 
+    /// <inheritdoc />
     public async Task<ImmutableArray<GmlFeature>> ExecuteSelectGmlQueryAsync(
         ParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken)
     {
@@ -129,6 +137,7 @@ internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
             cancellationToken);
     }
 
+    /// <inheritdoc />
     public async Task<ImmutableArray<EncodedGeoJsonFeature>> ExecuteSelectGeoJsonQueryAsync(
         ParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken)
     {
@@ -144,6 +153,7 @@ internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
             cancellationToken);
     }
 
+    /// <inheritdoc />
     public async Task<ImmutableArray<RawGeoJsonFeature>> ExecuteSelectRawGeoJsonQueryAsync(
         ParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken)
     {
@@ -155,6 +165,7 @@ internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
             .ToImmutableArray();
     }
 
+    /// <inheritdoc />
     public async Task<ImmutableArray<KmlFeature>> ExecuteSelectKmlQueryAsync(
         ParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken)
     {
@@ -170,6 +181,7 @@ internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
             cancellationToken);
     }
 
+    /// <inheritdoc />
     public Task<byte[]?> ExecuteSelectFlatGeobufQueryAsync(
         ParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken)
     {
@@ -177,6 +189,7 @@ internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
         return Task.FromResult<byte[]?>(null);
     }
 
+    /// <inheritdoc />
     public Task<byte[]?> ExecuteSelectGeobufQueryAsync(
         ParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken)
     {
@@ -184,6 +197,7 @@ internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
         return Task.FromResult<byte[]?>(null);
     }
 
+    /// <inheritdoc />
     public async Task<ImmutableArray<long>> ExecuteSelectObjectIdsQueryAsync(
         ParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken)
     {
@@ -210,27 +224,32 @@ internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
             cancellationToken).ConfigureAwait(false);
     }
 
+    /// <inheritdoc />
     public Task<QueryResult<Feature>> QueryRelatedAsync(
         int layerId, RelatedQuery query, CancellationToken cancellationToken)
     {
         throw new NotSupportedException("DuckDB provider does not support relationship queries.");
     }
 
+    /// <inheritdoc />
     public Task<Feature> CreateFeatureAsync(int layerId, Feature feature, CancellationToken cancellationToken)
     {
         throw new NotSupportedException("DuckDB provider is read-only.");
     }
 
+    /// <inheritdoc />
     public Task<Feature> UpdateFeatureAsync(int layerId, Feature feature, CancellationToken cancellationToken)
     {
         throw new NotSupportedException("DuckDB provider is read-only.");
     }
 
+    /// <inheritdoc />
     public Task<bool> DeleteFeatureAsync(int layerId, long featureId, CancellationToken cancellationToken)
     {
         throw new NotSupportedException("DuckDB provider is read-only.");
     }
 
+    /// <inheritdoc />
     public async Task<Feature?> GetFeatureAsync(int layerId, long featureId, CancellationToken cancellationToken)
     {
         var mapping = _layerRegistry.GetRequiredMapping(layerId);
@@ -265,6 +284,7 @@ internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
             cancellationToken).ConfigureAwait(false);
     }
 
+    /// <inheritdoc />
     public async Task<FeatureExtent?> GetExtentAsync(
         int layerId, ParameterizedQuery? query, FeatureQuery featureQuery, CancellationToken cancellationToken)
     {
@@ -304,6 +324,7 @@ internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
             cancellationToken).ConfigureAwait(false);
     }
 
+    /// <inheritdoc />
     public async Task<TemporalExtentResult?> GetTemporalExtentAsync(
         int layerId, ParameterizedQuery? query, CancellationToken cancellationToken)
     {
@@ -333,6 +354,7 @@ internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
             cancellationToken).ConfigureAwait(false);
     }
 
+    /// <inheritdoc />
     public async Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> ExecuteStatisticsQueryAsync(
         ParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken)
     {
@@ -365,11 +387,13 @@ internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
             cancellationToken).ConfigureAwait(false);
     }
 
+    /// <inheritdoc />
     public Task<byte[]?> GetMvtTileAsync(int layerId, ParameterizedQuery query, long maxTileSize, CancellationToken cancellationToken)
     {
         throw new NotSupportedException("DuckDB provider does not support native MVT tile generation.");
     }
 
+    /// <inheritdoc />
     public async IAsyncEnumerable<Feature> StreamFeaturesAsync(
         int layerId, ParameterizedQuery query, FeatureQuery featureQuery,
         [EnumeratorCancellation] CancellationToken cancellationToken)
@@ -390,6 +414,7 @@ internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
         }
     }
 
+    /// <inheritdoc />
     public async IAsyncEnumerable<GmlFeature> StreamGmlFeaturesAsync(
         int layerId, ParameterizedQuery query, FeatureQuery featureQuery,
         [EnumeratorCancellation] CancellationToken cancellationToken)
@@ -413,6 +438,7 @@ internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
         }
     }
 
+    /// <inheritdoc />
     public Task<FeatureEditResult> ApplyEditsAsync(int layerId, FeatureEditBatch editBatch, CancellationToken cancellationToken)
     {
         throw new NotSupportedException("DuckDB provider is read-only.");
@@ -446,6 +472,10 @@ internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
         return Feature.Create(id, geometry, attributes);
     }
 
+    /// <summary>
+    /// Reads a BLOB column value as byte[]. DuckDB.NET may return either byte[] or
+    /// <see cref="Stream"/> (UnmanagedMemoryStream) for binary columns like ST_AsWKB.
+    /// </summary>
     private static byte[]? ReadBlobValue(DbDataReader reader, int ordinal)
     {
         var value = reader.GetValue(ordinal);

@@ -10,8 +10,19 @@ using Npgsql;
 
 namespace Honua.Geocoding.Features.Geocoding.Providers;
 
+/// <summary>
+/// Self-hosted geocoder that runs entirely offline against a locally-loaded PostGIS reference
+/// dataset, making no external service calls. It supports forward geocode, reverse geocode, and
+/// suggest against a documented reference table (see
+/// <c>docs/reference/geocoding/local-postgis-geocoder.md</c>) and plugs into the shared provider
+/// abstraction so GeocodeServer can serve it like any hosted provider (#2151). This is also the
+/// substrate that the Esri <c>.loc/.lox</c> locator import (#2152) will target.
+/// </summary>
 internal sealed partial class LocalPostgisGeocodeProvider : BaseGeocodeProvider, IDisposable
 {
+    /// <summary>
+    /// Local PostGIS geocoder provider name constant.
+    /// </summary>
     public const string ProviderName = GeocodeProviderNames.Local;
 
     private readonly NpgsqlDataSource _dataSource;
@@ -19,6 +30,12 @@ internal sealed partial class LocalPostgisGeocodeProvider : BaseGeocodeProvider,
     private readonly bool _ownsDataSource;
     private readonly string _qualifiedTable;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="LocalPostgisGeocodeProvider"/> class.
+    /// </summary>
+    /// <param name="dataSource">PostGIS data source for the reference dataset.</param>
+    /// <param name="configuration">Provider configuration.</param>
+    /// <param name="ownsDataSource">Whether this provider should dispose <paramref name="dataSource"/>.</param>
     public LocalPostgisGeocodeProvider(
         NpgsqlDataSource dataSource,
         LocalGeocoderProviderConfiguration configuration,
@@ -30,8 +47,10 @@ internal sealed partial class LocalPostgisGeocodeProvider : BaseGeocodeProvider,
         _qualifiedTable = $"{QuoteIdentifier(configuration.Schema)}.{QuoteIdentifier(configuration.Table)}";
     }
 
+    /// <inheritdoc />
     public override string Name => ProviderName;
 
+    /// <inheritdoc />
     public override GeocodeProviderCapabilities Capabilities => new(
         SupportsForwardGeocode: true,
         SupportsReverseGeocode: true,
@@ -48,6 +67,7 @@ internal sealed partial class LocalPostgisGeocodeProvider : BaseGeocodeProvider,
         DefaultTimeoutSeconds = _configuration.TimeoutSeconds
     };
 
+    /// <inheritdoc />
     public override async Task<IReadOnlyList<GeocodeCandidate>> ForwardGeocodeAsync(
         ForwardGeocodeRequest request,
         CancellationToken cancellationToken = default)
@@ -129,6 +149,7 @@ internal sealed partial class LocalPostgisGeocodeProvider : BaseGeocodeProvider,
         return candidates;
     }
 
+    /// <inheritdoc />
     public override async Task<ReverseGeocodeMatch?> ReverseGeocodeAsync(
         ReverseGeocodeRequest request,
         CancellationToken cancellationToken = default)
@@ -193,6 +214,7 @@ internal sealed partial class LocalPostgisGeocodeProvider : BaseGeocodeProvider,
         };
     }
 
+    /// <inheritdoc />
     protected override async Task<IReadOnlyList<GeocodeSuggestion>> SuggestCoreAsync(
         SuggestGeocodeRequest request,
         CancellationToken cancellationToken = default)
@@ -235,12 +257,14 @@ internal sealed partial class LocalPostgisGeocodeProvider : BaseGeocodeProvider,
         return suggestions;
     }
 
+    /// <inheritdoc />
     protected override async Task CheckHealthCoreAsync(CancellationToken cancellationToken = default)
     {
         await using var command = _dataSource.CreateCommand($"SELECT 1 FROM {_qualifiedTable} LIMIT 1");
         await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    /// <inheritdoc />
     public void Dispose()
     {
         if (_ownsDataSource)

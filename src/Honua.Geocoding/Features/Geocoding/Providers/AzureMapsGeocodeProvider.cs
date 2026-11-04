@@ -10,14 +10,25 @@ using Honua.Core.Features.Infrastructure.Validation;
 
 namespace Honua.Geocoding.Features.Geocoding.Providers;
 
+/// <summary>
+/// Azure Maps geocoding provider
+/// </summary>
 internal sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
 {
+    /// <summary>
+    /// Azure Maps provider name constant
+    /// </summary>
     public const string ProviderName = "azure-maps";
 
     private readonly AzureMapsProviderConfiguration _configuration;
     private readonly HttpClient _httpClient;
     private int _validatedBaseUrl;
 
+    /// <summary>
+    /// Initialize a new Azure Maps geocode provider
+    /// </summary>
+    /// <param name="configuration">Provider configuration</param>
+    /// <param name="httpClient">HTTP client for API calls</param>
     public AzureMapsGeocodeProvider(
         AzureMapsProviderConfiguration configuration,
         HttpClient httpClient)
@@ -40,8 +51,10 @@ internal sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
         // applied on each outbound request instead (see SendGetAsync).
     }
 
+    /// <inheritdoc />
     public override string Name => ProviderName;
 
+    /// <inheritdoc />
     public override GeocodeProviderCapabilities Capabilities => new(
         SupportsForwardGeocode: true,
         SupportsReverseGeocode: true,
@@ -60,6 +73,7 @@ internal sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
         RateLimitPerMinute = 500 // Azure Maps default limit
     };
 
+    /// <inheritdoc />
     public override async Task<IReadOnlyList<GeocodeCandidate>> ForwardGeocodeAsync(
         ForwardGeocodeRequest request,
         CancellationToken cancellationToken = default)
@@ -122,6 +136,7 @@ internal sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
         }
     }
 
+    /// <inheritdoc />
     public override async Task<ReverseGeocodeMatch?> ReverseGeocodeAsync(
         ReverseGeocodeRequest request,
         CancellationToken cancellationToken = default)
@@ -179,6 +194,7 @@ internal sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
         }
     }
 
+    /// <inheritdoc />
     protected override async Task<IReadOnlyList<GeocodeSuggestion>> SuggestCoreAsync(
         SuggestGeocodeRequest request,
         CancellationToken cancellationToken = default)
@@ -233,6 +249,7 @@ internal sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
         }
     }
 
+    /// <inheritdoc />
     protected override async Task CheckHealthCoreAsync(CancellationToken cancellationToken = default)
     {
         await EnsureSafeBaseUrlAsync(cancellationToken).ConfigureAwait(false);
@@ -266,7 +283,12 @@ internal sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
         }
     }
 
-    // The subscription key is sent as a header so it is not captured by URL request logging.
+    /// <summary>
+    /// Issues a GET against the injected (potentially shared) HttpClient, applying the Azure Maps
+    /// subscription-key header and request timeout per request rather than mutating the shared
+    /// client. The key is sent as a header so it is not captured by URL request-logging. The
+    /// caller owns disposal of the returned response.
+    /// </summary>
     private async Task<HttpResponseMessage> SendGetAsync(string url, CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, url);

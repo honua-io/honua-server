@@ -7,8 +7,25 @@ using Honua.Core.Features.FeatureStore.Domain;
 
 namespace Honua.GeoServicesRest.Features.FeatureStore.Services;
 
+/// <summary>
+/// Translates a canonical <see cref="FeatureQuery"/> into ArcGIS REST <c>/query</c>
+/// request parameters. The provider issues GET requests with these parameters
+/// URL-encoded; structured edits and write-through paths are out of scope for
+/// the federated read-through provider.
+/// </summary>
 internal static class GeoServicesRestQueryParameters
 {
+    /// <summary>
+    /// Builds the <c>/query</c> URL for a feature page request.
+    /// The API token is not included in the URL; callers must pass it as the
+    /// <c>X-Esri-Authorization</c> request header via
+    /// <see cref="BuildAuthorizationHeader"/> so it does not appear in HTTP logs,
+    /// telemetry traces, or upstream server access logs.
+    /// </summary>
+    /// <param name="serviceUrl">Canonical FeatureServer/MapServer service root URL.</param>
+    /// <param name="layerId">Zero-based ArcGIS layer index.</param>
+    /// <param name="query">Feature query specification.</param>
+    /// <param name="token">Ignored; reserved for backward compatibility. Pass <see langword="null"/>.</param>
     public static string BuildFeatureQueryUrl(
         string serviceUrl,
         int layerId,
@@ -29,6 +46,15 @@ internal static class GeoServicesRestQueryParameters
         return builder.ToString();
     }
 
+    /// <summary>
+    /// Builds the <c>/query?returnCountOnly=true</c> URL.
+    /// The API token is not included in the URL; callers must pass it as the
+    /// <c>X-Esri-Authorization</c> request header via <see cref="BuildAuthorizationHeader"/>.
+    /// </summary>
+    /// <param name="serviceUrl">Canonical FeatureServer/MapServer service root URL.</param>
+    /// <param name="layerId">Zero-based ArcGIS layer index.</param>
+    /// <param name="query">Feature query specification.</param>
+    /// <param name="token">Ignored; reserved for backward compatibility. Pass <see langword="null"/>.</param>
     public static string BuildCountUrl(
         string serviceUrl,
         int layerId,
@@ -41,6 +67,15 @@ internal static class GeoServicesRestQueryParameters
         return builder.ToString();
     }
 
+    /// <summary>
+    /// Builds the <c>/query?returnExtentOnly=true</c> URL.
+    /// The API token is not included in the URL; callers must pass it as the
+    /// <c>X-Esri-Authorization</c> request header via <see cref="BuildAuthorizationHeader"/>.
+    /// </summary>
+    /// <param name="serviceUrl">Canonical FeatureServer/MapServer service root URL.</param>
+    /// <param name="layerId">Zero-based ArcGIS layer index.</param>
+    /// <param name="query">Feature query specification.</param>
+    /// <param name="token">Ignored; reserved for backward compatibility. Pass <see langword="null"/>.</param>
     public static string BuildExtentUrl(
         string serviceUrl,
         int layerId,
@@ -54,6 +89,15 @@ internal static class GeoServicesRestQueryParameters
         return builder.ToString();
     }
 
+    /// <summary>
+    /// Builds the <c>/query?returnIdsOnly=true</c> URL.
+    /// The API token is not included in the URL; callers must pass it as the
+    /// <c>X-Esri-Authorization</c> request header via <see cref="BuildAuthorizationHeader"/>.
+    /// </summary>
+    /// <param name="serviceUrl">Canonical FeatureServer/MapServer service root URL.</param>
+    /// <param name="layerId">Zero-based ArcGIS layer index.</param>
+    /// <param name="query">Feature query specification.</param>
+    /// <param name="token">Ignored; reserved for backward compatibility. Pass <see langword="null"/>.</param>
     public static string BuildObjectIdsUrl(
         string serviceUrl,
         int layerId,
@@ -72,6 +116,15 @@ internal static class GeoServicesRestQueryParameters
         return builder.ToString();
     }
 
+    /// <summary>
+    /// Builds the layer-metadata URL used to discover ObjectId field name and
+    /// extent at startup time.
+    /// The API token is not included in the URL; callers must pass it as the
+    /// <c>X-Esri-Authorization</c> request header via <see cref="BuildAuthorizationHeader"/>.
+    /// </summary>
+    /// <param name="serviceUrl">Canonical FeatureServer/MapServer service root URL.</param>
+    /// <param name="layerId">Zero-based ArcGIS layer index.</param>
+    /// <param name="token">Ignored; reserved for backward compatibility. Pass <see langword="null"/>.</param>
     public static string BuildLayerMetadataUrl(string serviceUrl, int layerId, string? token = null)
     {
         var builder = new StringBuilder();
@@ -79,6 +132,13 @@ internal static class GeoServicesRestQueryParameters
         return builder.ToString();
     }
 
+    /// <summary>
+    /// Returns the value for the <c>X-Esri-Authorization</c> request header that
+    /// carries the ArcGIS API token, or <see langword="null"/> when no token is
+    /// configured. Sending the token as a request header rather than a URL query
+    /// parameter prevents it from appearing in HTTP access logs, OpenTelemetry
+    /// traces (<c>url.full</c>), and upstream server access logs.
+    /// </summary>
     public static string? BuildAuthorizationHeader(string? token)
         => string.IsNullOrWhiteSpace(token) ? null : $"Bearer {token}";
 

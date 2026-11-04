@@ -5,6 +5,16 @@ using Honua.Core.Features.Infrastructure.Events.Outbox;
 
 namespace Honua.Db.Oracle.Features.Infrastructure.Events.Outbox;
 
+/// <summary>
+/// Oracle is a read-only feature provider in this slice (#1252), so it does not support
+/// feature-mutation writes and therefore does not require a transactional outbox. Reports a
+/// clear capability limitation at startup so operators understand the durability tradeoff.
+/// </summary>
+/// <remarks>
+/// When Oracle gains write support (out of scope for this slice — write-through to enterprise
+/// geodatabases is governed by both technical and IP considerations), replace this provider
+/// with a true Oracle outbox implementation.
+/// </remarks>
 internal sealed class OracleOutboxCapabilityProvider : IOutboxCapabilityProvider
 {
     public bool SupportsTransactionalOutbox => false;

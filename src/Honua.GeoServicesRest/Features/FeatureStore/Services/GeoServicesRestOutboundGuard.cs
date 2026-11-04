@@ -6,7 +6,10 @@ using Honua.Core.Features.Infrastructure.Validation;
 
 namespace Honua.GeoServicesRest.Features.FeatureStore.Services;
 
-// Redirects are never followed, and connections go only to addresses the pinned DNS connector allows.
+/// <summary>
+/// Outbound guard for the federated ArcGIS REST provider: redirects are never followed, and
+/// connections go only to addresses the shared <see cref="PinnedDnsConnector"/> allows.
+/// </summary>
 internal static class GeoServicesRestOutboundGuard
 {
     internal const string DisallowedNetworkAddressMessage =
@@ -27,6 +30,10 @@ internal static class GeoServicesRestOutboundGuard
         return new PinnedDnsConnector(resolver, PinnedConnectionFailures).CreateHandler(MaxConnectionsPerArcGisHost);
     }
 
+    /// <summary>
+    /// Resolves <paramref name="host"/> to its allowed addresses at configuration time, throwing
+    /// <see cref="ArgumentException"/> when the host is disallowed.
+    /// </summary>
     public static async Task<IPAddress[]> ResolveAllowedAddressesAsync(
         string host,
         Func<string, CancellationToken, Task<IPAddress[]>> hostAddressResolver,

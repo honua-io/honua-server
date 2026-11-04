@@ -7,11 +7,25 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Db.Oracle.Features.FeatureStore.Services;
 
-// ArcSDE ST_Geometry and versioned geodatabase bytes are refused before any geometry is decoded.
+/// <summary>
+/// Detects whether an Oracle table backs a standard <c>SDO_GEOMETRY</c> spatial source or an
+/// ArcSDE-proprietary surface (<c>ST_Geometry</c>/binary, versioned enterprise-geodatabase).
+/// </summary>
+/// <remarks>
+/// <para>The guard is the IP / clean-room enforcement point: ArcSDE formats must never have
+/// their bytes decoded by this provider. It probes Oracle's <c>ALL_TAB_COLUMNS</c> catalog
+/// once per binding and caches the result for subsequent reads.</para>
+/// <para>The cache key is the storage layer identifier; this is safe because schema metadata
+/// is stable for the lifetime of a deployment. There is no TTL.</para>
+/// </remarks>
 internal sealed class OracleSpatialGuard
 {
     private const string SdoGeometryDataType = "SDO_GEOMETRY";
 
+    /// <summary>
+    /// Known ArcSDE enterprise-geodatabase versioning columns that mark a table as versioned and
+    /// therefore out of scope for read-only standard-spatial serving.
+    /// </summary>
     public static readonly IReadOnlyList<string> ArcSdeVersioningColumns =
     [
         "GDB_FROM_DATE",
@@ -29,6 +43,11 @@ internal sealed class OracleSpatialGuard
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
+    /// <summary>
+    /// Ensures the table identified by <paramref name="mapping"/> is a standard <c>SDO_GEOMETRY</c>
+    /// surface and not an ArcSDE-versioned source. Throws <see cref="NotSupportedException"/>
+    /// before any geometry bytes are read when either check fails.
+    /// </summary>
     public async Task EnsureStandardSpatialAsync(
         OracleLayerMapping mapping,
         DataConnection? dataConnection,

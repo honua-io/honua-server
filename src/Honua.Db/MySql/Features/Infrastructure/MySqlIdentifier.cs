@@ -6,6 +6,10 @@ using Honua.Core.Features.FeatureStore.Domain;
 
 namespace Honua.Db.MySql.Features.Infrastructure;
 
+/// <summary>
+/// MySQL/MariaDB identifier helpers. Identifiers are backtick-quoted and embedded
+/// backticks are doubled per MySQL convention.
+/// </summary>
 internal static partial class MySqlIdentifier
 {
     // `\z`, not `$`: .NET's `$` also matches immediately before a trailing newline, so
@@ -15,6 +19,7 @@ internal static partial class MySqlIdentifier
     [GeneratedRegex(@"^[a-zA-Z_][a-zA-Z0-9_]*\z", RegexOptions.CultureInvariant)]
     private static partial Regex SimpleIdentifierRegex();
 
+    /// <summary>Quotes an identifier with MySQL backticks.</summary>
     public static string Quote(string identifier)
     {
         if (string.IsNullOrEmpty(identifier))
@@ -25,6 +30,12 @@ internal static partial class MySqlIdentifier
         return $"`{identifier.Replace("`", "``", StringComparison.Ordinal)}`";
     }
 
+    /// <summary>
+    /// Validates that <paramref name="fieldName"/> is a simple identifier
+    /// (letters, digits, underscores; not starting with a digit). Throws
+    /// <see cref="ArgumentException"/> otherwise. Used wherever user-supplied
+    /// field names enter SQL.
+    /// </summary>
     public static void ValidateFieldName(string fieldName)
     {
         if (string.IsNullOrWhiteSpace(fieldName) || !SimpleIdentifierRegex().IsMatch(fieldName))
@@ -33,6 +44,9 @@ internal static partial class MySqlIdentifier
         }
     }
 
+    /// <summary>
+    /// Validates a declared attribute name that will be emitted as one quoted identifier.
+    /// </summary>
     public static void ValidateAttributeName(string fieldName)
     {
         if (!FeatureFieldNameSyntax.IsValid(fieldName))

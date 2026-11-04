@@ -12,8 +12,17 @@ using Npgsql;
 
 namespace Honua.Geocoding.Features.Geocoding.Integration;
 
+/// <summary>
+/// Integration extensions for registering specific geocoding providers
+/// </summary>
 public static class ProviderIntegrationExtensions
 {
+    /// <summary>
+    /// Add the mock geocoding provider for testing
+    /// </summary>
+    /// <param name="services">Service collection</param>
+    /// <param name="configuration">Provider configuration (optional)</param>
+    /// <returns>Service collection for chaining</returns>
     public static IServiceCollection AddMockGeocodeProvider(
         this IServiceCollection services,
         MockGeocodeProviderConfiguration? configuration = null)
@@ -29,6 +38,12 @@ public static class ProviderIntegrationExtensions
         return services;
     }
 
+    /// <summary>
+    /// Add Nominatim geocoding provider
+    /// </summary>
+    /// <param name="services">Service collection</param>
+    /// <param name="configuration">Configuration</param>
+    /// <returns>Service collection for chaining</returns>
     public static IServiceCollection AddNominatimGeocodeProvider(
         this IServiceCollection services,
         IConfiguration configuration)
@@ -57,6 +72,12 @@ public static class ProviderIntegrationExtensions
         return services;
     }
 
+    /// <summary>
+    /// Add Amazon Location Services geocoding provider
+    /// </summary>
+    /// <param name="services">Service collection</param>
+    /// <param name="configuration">Configuration</param>
+    /// <returns>Service collection for chaining</returns>
     public static IServiceCollection AddAmazonLocationGeocodeProvider(
         this IServiceCollection services,
         IConfiguration configuration)
@@ -81,6 +102,12 @@ public static class ProviderIntegrationExtensions
         return services;
     }
 
+    /// <summary>
+    /// Add Azure Maps geocoding provider
+    /// </summary>
+    /// <param name="services">Service collection</param>
+    /// <param name="configuration">Configuration</param>
+    /// <returns>Service collection for chaining</returns>
     public static IServiceCollection AddAzureMapsGeocodeProvider(
         this IServiceCollection services,
         IConfiguration configuration)
@@ -109,6 +136,13 @@ public static class ProviderIntegrationExtensions
         return services;
     }
 
+    /// <summary>
+    /// Add the local, self-hosted PostGIS-backed geocoding provider. The provider runs entirely
+    /// offline against a locally-loaded reference dataset and makes no external service calls (#2151).
+    /// </summary>
+    /// <param name="services">Service collection</param>
+    /// <param name="configuration">Configuration</param>
+    /// <returns>Service collection for chaining</returns>
     public static IServiceCollection AddLocalGeocodeProvider(
         this IServiceCollection services,
         IConfiguration configuration)
@@ -148,6 +182,12 @@ public static class ProviderIntegrationExtensions
         return services;
     }
 
+    /// <summary>
+    /// Add all available geocoding providers based on configuration
+    /// </summary>
+    /// <param name="services">Service collection</param>
+    /// <param name="configuration">Configuration</param>
+    /// <returns>Service collection for chaining</returns>
     public static IServiceCollection AddAllGeocodeProviders(
         this IServiceCollection services,
         IConfiguration configuration)

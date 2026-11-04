@@ -136,6 +136,10 @@ internal sealed record GeoServicesRestError
 
 #pragma warning restore CA1812
 
+/// <summary>
+/// Source-generated JSON serialization context for ArcGIS REST API responses.
+/// AOT/trim-safe so the federated provider can run under Native AOT.
+/// </summary>
 [JsonSerializable(typeof(GeoServicesRestQueryResponse))]
 [JsonSerializable(typeof(GeoServicesRestCountResponse))]
 [JsonSerializable(typeof(GeoServicesRestExtentResponse))]

@@ -11,6 +11,12 @@ using Honua.Db.MySql.Features.Infrastructure;
 
 namespace Honua.Db.MySql.Queries.Filters;
 
+/// <summary>
+/// Translates filter expressions (CQL2/OGC AST) into MySQL/MariaDB-compatible SQL fragments.
+/// Identifiers are backtick-quoted, parameters are named <c>@p0, @p1, ...</c>, and spatial
+/// predicates use the canonical MySQL spatial functions. Cross-SRID geometry literals throw
+/// <see cref="NotSupportedException"/>; KNN is unsupported.
+/// </summary>
 internal sealed class MySqlSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISqlFilterTranslator
 {
     private readonly MySqlEngineFlavor _engineFlavor;
@@ -21,6 +27,7 @@ internal sealed class MySqlSqlFilterTranslator : SqlFilterExpressionVisitorBase,
         _engineFlavor = engineFlavor;
     }
 
+    /// <inheritdoc />
     public SqlFragment Translate(FilterExpression filter, MetadataV2Resource resource)
     {
         ArgumentNullException.ThrowIfNull(filter);

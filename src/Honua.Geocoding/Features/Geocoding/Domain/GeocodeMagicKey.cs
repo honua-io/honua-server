@@ -8,9 +8,41 @@ using System.Text;
 
 namespace Honua.Geocoding.Features.Geocoding.Domain;
 
+/// <summary>
+/// The identity a GeoServices <c>suggest</c> magicKey carries so that a later
+/// <c>findAddressCandidates</c> call can resolve the exact suggestion the user picked.
+/// </summary>
+/// <remarks>
+/// Esri locators mint an opaque <c>magicKey</c> per suggestion and resolve it server-side.
+/// Honua's backing providers (Nominatim, Azure Maps, Amazon Location) each surface a
+/// provider-internal id (an OSM place id, an Azure result id, an Amazon <c>PlaceId</c>) that
+/// is <em>not</em> resolvable through their public forward-geocode endpoints, so there is no
+/// portable provider id round-trip. Instead Honua self-issues a deterministic, signed, opaque
+/// token (see <see cref="GeocodeMagicKeyCodec"/>) that encodes the suggestion's stable identity
+/// — its display <see cref="Text"/>, optional <see cref="Category"/>, and originating
+/// <see cref="Provider"/>. Resolving the magicKey re-runs a forward geocode for that text against
+/// the same provider and applies the same category filter, which deterministically reproduces the
+/// suggested place. The same suggestion always encodes to the same token, and a token always
+/// resolves to the same query, so the round-trip is deterministic and provider-agnostic.
+/// </remarks>
+/// <param name="Text">The suggestion display text (the resolvable query).</param>
+/// <param name="Category">Optional category/address-type the suggestion was classified as.</param>
+/// <param name="Provider">The provider that issued the suggestion.</param>
 public sealed record GeocodeMagicKey(string Text, string? Category, string? Provider);
 
-// The magicKey HMAC is an integrity check, not a secret: the payload is only the suggestion text the caller already typed.
+/// <summary>
+/// Encodes and decodes self-issued GeoServices <c>magicKey</c> tokens. The token is a signed,
+/// opaque, URL-safe string that deterministically round-trips a <see cref="GeocodeMagicKey"/>.
+/// </summary>
+/// <remarks>
+/// Wire format: <c>{base64url(payload)}.{base64url(HMACSHA256(payload))}</c> where
+/// <c>payload</c> is a tab-delimited <c>version\ttext\tcategory\tprovider</c> UTF-8 record.
+/// The HMAC makes the token tamper-evident and opaque (clients must not parse it), while a fixed
+/// signing key keeps encoding deterministic across processes so a magicKey minted by one node
+/// resolves on any node. This is intentionally an integrity check, not a secrecy mechanism: the
+/// GeocodeServer surface is anonymous and read-only, and the payload only contains the suggestion
+/// text the caller already typed.
+/// </remarks>
 public static class GeocodeMagicKeyCodec
 {
     private const byte Version = 1;
@@ -22,6 +54,11 @@ public static class GeocodeMagicKeyCodec
     // host. Do not derive this from a per-process secret or determinism breaks across restarts.
     private static readonly byte[] SigningKey = "honua.geocode.magickey.v1"u8.ToArray();
 
+    /// <summary>
+    /// Encodes a <see cref="GeocodeMagicKey"/> into a deterministic, signed, opaque token.
+    /// </summary>
+    /// <param name="magicKey">The suggestion identity to encode.</param>
+    /// <returns>An opaque URL-safe magicKey token.</returns>
     public static string Encode(GeocodeMagicKey magicKey)
     {
         ArgumentNullException.ThrowIfNull(magicKey);
@@ -32,6 +69,13 @@ public static class GeocodeMagicKeyCodec
         return string.Concat(ToBase64Url(payload), ".", ToBase64Url(signature));
     }
 
+    /// <summary>
+    /// Attempts to decode an opaque magicKey token back into a <see cref="GeocodeMagicKey"/>.
+    /// Returns <see langword="false"/> for a malformed, truncated, or signature-mismatched token.
+    /// </summary>
+    /// <param name="token">The opaque magicKey token to decode.</param>
+    /// <param name="magicKey">The decoded suggestion identity when the token is valid.</param>
+    /// <returns><see langword="true"/> when the token decodes and its signature verifies.</returns>
     public static bool TryDecode(string? token, out GeocodeMagicKey? magicKey)
     {
         magicKey = null;

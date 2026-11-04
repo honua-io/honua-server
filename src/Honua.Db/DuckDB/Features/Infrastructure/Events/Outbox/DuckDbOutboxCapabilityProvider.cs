@@ -5,6 +5,12 @@ using Honua.Core.Features.Infrastructure.Events.Outbox;
 
 namespace Honua.Db.DuckDB.Features.Infrastructure.Events.Outbox;
 
+/// <summary>
+/// DuckDB is a read-only feature provider in v1, so it cannot write outbox rows for
+/// feature mutations. The capability provider reports the limitation so startup logs
+/// flag the gap and the readiness endpoint reflects that the provider falls through to
+/// the post-commit publish + retry queue path used for non-outbox-capable backends.
+/// </summary>
 internal sealed class DuckDbOutboxCapabilityProvider : IOutboxCapabilityProvider
 {
     public bool SupportsTransactionalOutbox => false;

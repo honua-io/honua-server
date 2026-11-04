@@ -6,6 +6,11 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 
 namespace Honua.Db.MySql.Features.Infrastructure.Session;
 
+/// <summary>
+/// MySQL/MariaDB implementation of <see cref="IDatabaseSessionFactory"/>. Wraps
+/// the existing <see cref="IAdoNetDatabaseConnectionProvider"/> so resilience and
+/// data-source pooling are reused.
+/// </summary>
 internal sealed class MySqlDatabaseSessionFactory : IDatabaseSessionFactory
 {
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;

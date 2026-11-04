@@ -6,14 +6,28 @@ using Honua.Core.Features.FeatureStore.Domain;
 
 namespace Honua.Db.Oracle.Features.FeatureStore.Services;
 
-// Configured identifiers stay in the regular form, even though quoted Oracle names can be wider, so they cannot carry SQL.
+/// <summary>
+/// Validates and double-quotes Oracle identifiers (schema, table, column).
+/// </summary>
+/// <remarks>
+/// Oracle quoted identifiers (<c>"…"</c>) are case-preserving and may contain other characters,
+/// but the provider deliberately restricts configured identifiers to the regular form
+/// (start with letter or underscore, followed by letters, digits, or underscores) so configured
+/// names are unambiguous and SQL-injection-safe.
+/// </remarks>
 internal static partial class OracleIdentifier
 {
     private static readonly Regex _identifierRegex = IdentifierPattern();
 
+    /// <summary>
+    /// Returns true when the identifier matches the safe-identifier allow-list.
+    /// </summary>
     public static bool IsValid(string? value)
         => !string.IsNullOrWhiteSpace(value) && _identifierRegex.IsMatch(value);
 
+    /// <summary>
+    /// Throws <see cref="ArgumentException"/> when the identifier is not safe.
+    /// </summary>
     public static void EnsureValid(string value, string label)
     {
         if (!IsValid(value))
@@ -23,12 +37,20 @@ internal static partial class OracleIdentifier
         }
     }
 
+    /// <summary>
+    /// Double-quotes a previously validated identifier. Any embedded double-quote characters in
+    /// the identifier are doubled to keep parsing robust even though the allow-list rejects them.
+    /// </summary>
     public static string Quote(string identifier)
     {
         EnsureValid(identifier, "identifier");
         return "\"" + identifier.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"";
     }
 
+    /// <summary>
+    /// Double-quotes an attribute name accepted by the shared feature-field contract.
+    /// Structural identifiers remain restricted to <see cref="Quote"/>.
+    /// </summary>
     public static string QuoteAttribute(string identifier)
     {
         if (!FeatureFieldNameSyntax.IsValid(identifier))

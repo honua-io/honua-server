@@ -10,14 +10,25 @@ using Honua.Core.Features.Infrastructure.Validation;
 
 namespace Honua.Geocoding.Features.Geocoding.Providers;
 
+/// <summary>
+/// Nominatim geocoding provider using OpenStreetMap data
+/// </summary>
 internal sealed class NominatimGeocodeProvider : BaseGeocodeProvider
 {
+    /// <summary>
+    /// Nominatim provider name constant
+    /// </summary>
     public const string ProviderName = "nominatim";
 
     private readonly NominatimProviderConfiguration _configuration;
     private readonly HttpClient _httpClient;
     private int _validatedBaseUrl;
 
+    /// <summary>
+    /// Initialize a new Nominatim geocode provider
+    /// </summary>
+    /// <param name="configuration">Provider configuration</param>
+    /// <param name="httpClient">HTTP client for API calls</param>
     public NominatimGeocodeProvider(
         NominatimProviderConfiguration configuration,
         HttpClient httpClient)
@@ -31,8 +42,10 @@ internal sealed class NominatimGeocodeProvider : BaseGeocodeProvider
         // applied on each outbound request instead (see SendAsync).
     }
 
+    /// <inheritdoc />
     public override string Name => ProviderName;
 
+    /// <inheritdoc />
     public override GeocodeProviderCapabilities Capabilities => new(
         SupportsForwardGeocode: true,
         SupportsReverseGeocode: true,
@@ -54,6 +67,7 @@ internal sealed class NominatimGeocodeProvider : BaseGeocodeProvider
         DefaultTimeoutSeconds = _configuration.TimeoutSeconds
     };
 
+    /// <inheritdoc />
     public override async Task<IReadOnlyList<GeocodeCandidate>> ForwardGeocodeAsync(
         ForwardGeocodeRequest request,
         CancellationToken cancellationToken = default)
@@ -118,6 +132,7 @@ internal sealed class NominatimGeocodeProvider : BaseGeocodeProvider
         }
     }
 
+    /// <inheritdoc />
     public override async Task<ReverseGeocodeMatch?> ReverseGeocodeAsync(
         ReverseGeocodeRequest request,
         CancellationToken cancellationToken = default)
@@ -177,6 +192,7 @@ internal sealed class NominatimGeocodeProvider : BaseGeocodeProvider
         }
     }
 
+    /// <inheritdoc />
     protected override async Task<IReadOnlyList<GeocodeSuggestion>> SuggestCoreAsync(
         SuggestGeocodeRequest request,
         CancellationToken cancellationToken = default)
@@ -205,6 +221,7 @@ internal sealed class NominatimGeocodeProvider : BaseGeocodeProvider
         }).ToArray();
     }
 
+    /// <inheritdoc />
     protected override async Task CheckHealthCoreAsync(CancellationToken cancellationToken = default)
     {
         await EnsureSafeBaseUrlAsync(cancellationToken).ConfigureAwait(false);
@@ -233,6 +250,11 @@ internal sealed class NominatimGeocodeProvider : BaseGeocodeProvider
         }
     }
 
+    /// <summary>
+    /// Issues a GET against the injected (potentially shared) HttpClient, applying the configured
+    /// User-Agent, optional contact email header, and request timeout per request rather than
+    /// mutating the shared client. The caller owns disposal of the returned response.
+    /// </summary>
     private async Task<HttpResponseMessage> SendGetAsync(string url, CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, url);

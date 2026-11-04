@@ -16,9 +16,32 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.GeoServicesRest.Features.FeatureStore;
 
+/// <summary>
+/// Read-through ArcGIS REST FeatureServer/MapServer feature provider. Each query
+/// proxies through to the source service so customers can register a live
+/// ArcGIS service as a federated layer without copying any data on day one.
+/// </summary>
+/// <remarks>
+/// <para>Implements the canonical <see cref="IFeatureDataProvider"/> +
+/// <see cref="IFeatureReader"/> surface so the federated layer participates in
+/// the Honua catalog identically to locally-hosted layers: REST,
+/// OGC Features, WFS, OData, GeoServices, and gRPC adapters all reach this
+/// provider through the shared <see cref="FeatureProviderQueryRouter"/>.</para>
+/// <para>Writes, statistics, top-features, bins, H3 aggregation, and native
+/// MVT/FlatGeobuf/Geobuf/GML output are intentionally disabled — the provider
+/// is read-only, and shared formatters handle every output format above the
+/// canonical <see cref="Feature"/> stream.</para>
+/// </remarks>
 internal sealed class GeoServicesRestFeatureStore : IFeatureDataProvider, IFeatureReader, IBindableFeatureDataProvider
 {
-    // This ActivitySource must be registered as Honua.GeoServicesRest or the tracer drops its spans.
+    /// <summary>
+    /// Dedicated ActivitySource for the federated ArcGIS REST provider (PA-108). One span
+    /// covers the entire paging loop in <see cref="QueryAsync"/> rather than per-page
+    /// spans, since a single query can issue up to <see cref="MaxPageIterations"/> outbound
+    /// HTTP calls and per-page spans would themselves become a cardinality problem. Must be
+    /// registered as <c>"Honua.GeoServicesRest"</c> in <c>Honua.ServiceDefaults.Extensions._activitySourceNames</c>
+    /// or the spans are silently dropped by the tracer provider.
+    /// </summary>
     private static readonly ActivitySource _activitySource = new("Honua.GeoServicesRest");
 
     private static readonly FeatureProviderCapabilities _capabilities = new()
@@ -38,8 +61,23 @@ internal sealed class GeoServicesRestFeatureStore : IFeatureDataProvider, IFeatu
         }
     };
 
+    /// <summary>
+    /// Per-page <c>resultRecordCount</c> requested when the caller did not cap the
+    /// query with an explicit <see cref="FeatureQuery.Limit"/>. The upstream service
+    /// still clamps each page to its own <c>maxRecordCount</c> (commonly 1000–2000)
+    /// and flags <c>exceededTransferLimit</c>; the provider advances by the actual
+    /// page length, so this value only bounds the request size, not correctness.
+    /// </summary>
     internal const int DefaultPageSize = 2000;
 
+    /// <summary>
+    /// Hard cap on the number of <c>/query</c> round-trips a single
+    /// <see cref="QueryAsync(int, FeatureQuery, CancellationToken)"/> /
+    /// <see cref="QueryObjectIdsAsync(int, FeatureQuery, CancellationToken)"/> call
+    /// will issue, guarding against an unbounded fetch when a misbehaving upstream
+    /// keeps flagging <c>exceededTransferLimit</c> without advancing the offset. At
+    /// the default page size this still admits millions of records.
+    /// </summary>
     private const int MaxPageIterations = 10_000;
 
     private readonly IGeoServicesRestFeatureClient _client;
@@ -67,20 +105,26 @@ internal sealed class GeoServicesRestFeatureStore : IFeatureDataProvider, IFeatu
         _binding = binding;
     }
 
+    /// <inheritdoc />
     public string ProviderName => DataProviderNames.GeoServicesRest;
 
+    /// <inheritdoc />
     public FeatureProviderCapabilities Capabilities => _capabilities;
 
+    /// <inheritdoc />
     public IFeatureReader Reader => this;
 
+    /// <inheritdoc />
     public IFeatureWriter? Writer => null;
 
+    /// <inheritdoc />
     public IFeatureReader CreateReaderForBinding(FeatureProviderBinding binding)
     {
         ArgumentNullException.ThrowIfNull(binding);
         return new GeoServicesRestFeatureStore(_client, _logger, _readSecurity, binding);
     }
 
+    /// <inheritdoc />
     public async Task<Feature?> GetAsync(int layerId, long featureId, CancellationToken cancellationToken = default)
     {
         var query = new FeatureQuery
@@ -92,6 +136,7 @@ internal sealed class GeoServicesRestFeatureStore : IFeatureDataProvider, IFeatu
         return result.Items.Length == 0 ? null : result.Items[0];
     }
 
+    /// <inheritdoc />
     public async Task<QueryResult<Feature>> QueryAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
         var context = await ResolveBindingAsync(layerId, cancellationToken).ConfigureAwait(false);
@@ -210,6 +255,7 @@ internal sealed class GeoServicesRestFeatureStore : IFeatureDataProvider, IFeatu
         return QueryResult<Feature>.Create(totalCount, built, exceededTransferLimit);
     }
 
+    /// <inheritdoc />
     public Task<byte[]?> QueryFlatGeobufAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
         // The provider does not advertise native FlatGeobuf; return null so the
@@ -217,6 +263,7 @@ internal sealed class GeoServicesRestFeatureStore : IFeatureDataProvider, IFeatu
         return Task.FromResult<byte[]?>(null);
     }
 
+    /// <inheritdoc />
     public async Task<ImmutableArray<long>> QueryObjectIdsAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
         var context = await ResolveBindingAsync(layerId, cancellationToken).ConfigureAwait(false);
@@ -279,6 +326,7 @@ internal sealed class GeoServicesRestFeatureStore : IFeatureDataProvider, IFeatu
         return ids.Count == 0 ? ImmutableArray<long>.Empty : ids.ToImmutable();
     }
 
+    /// <inheritdoc />
     public async Task<long> CountAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
         var context = await ResolveBindingAsync(layerId, cancellationToken).ConfigureAwait(false);
@@ -293,6 +341,7 @@ internal sealed class GeoServicesRestFeatureStore : IFeatureDataProvider, IFeatu
         return response.Count;
     }
 
+    /// <inheritdoc />
     public async Task<FeatureExtent?> GetExtentAsync(int layerId, FeatureQuery? query = null, CancellationToken cancellationToken = default)
     {
         var context = await ResolveBindingAsync(layerId, cancellationToken).ConfigureAwait(false);
@@ -315,14 +364,17 @@ internal sealed class GeoServicesRestFeatureStore : IFeatureDataProvider, IFeatu
         return FeatureExtent.Create(extent.Xmin, extent.Ymin, extent.Xmax, extent.Ymax, srid);
     }
 
+    /// <inheritdoc />
     public Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryStatisticsAsync(
         int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
         => throw NotSupported(nameof(QueryStatisticsAsync), layerId);
 
+    /// <inheritdoc />
     public Task<TemporalExtentResult?> GetTemporalExtentAsync(
         int layerId, string fieldName, TemporalPropertyType propertyType, CancellationToken cancellationToken = default)
         => throw NotSupported(nameof(GetTemporalExtentAsync), layerId);
 
+    /// <inheritdoc />
     public async Task<EstimateResult> GetEstimatesAsync(int layerId, CancellationToken cancellationToken = default)
     {
         var countTask = CountAsync(layerId, new FeatureQuery(), cancellationToken);
@@ -336,22 +388,31 @@ internal sealed class GeoServicesRestFeatureStore : IFeatureDataProvider, IFeatu
         };
     }
 
+    /// <inheritdoc />
     public Task<QueryResult<Feature>> QueryTopFeaturesAsync(
         int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
         => throw NotSupported(nameof(QueryTopFeaturesAsync), layerId);
 
+    /// <inheritdoc />
     public Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryDateBinsAsync(
         int layerId, FeatureQuery query, DateBinDefinition dateBin, CancellationToken cancellationToken = default)
         => throw NotSupported(nameof(QueryDateBinsAsync), layerId);
 
+    /// <inheritdoc />
     public Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryBinsAsync(
         int layerId, FeatureQuery query, BinDefinition binDefinition, CancellationToken cancellationToken = default)
         => throw NotSupported(nameof(QueryBinsAsync), layerId);
 
+    /// <inheritdoc />
     public Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryH3Async(
         int layerId, FeatureQuery query, H3AggregationQuery h3Query, CancellationToken cancellationToken = default)
         => throw NotSupported(nameof(QueryH3Async), layerId);
 
+    /// <summary>
+    /// Resolves the binding for a read. Every read path resolves its layer here, so this is the
+    /// single seam that refuses a read whose layer carries a read policy this provider cannot
+    /// enforce (permanent filter, row-level security predicate or field masks).
+    /// </summary>
     private async Task<ResolvedBinding> ResolveBindingAsync(int layerId, CancellationToken cancellationToken)
     {
         var resolved = ResolveBinding(layerId);
@@ -445,7 +506,22 @@ internal sealed class GeoServicesRestFeatureStore : IFeatureDataProvider, IFeatu
         return Feature.Create(id, wkb, attributes);
     }
 
-    // A non-integer upstream object id collapses to 0, so a publication that needs stable feature ids must expose an integer object-id field.
+    /// <summary>
+    /// Resolves the canonical <see cref="Feature"/> id from the upstream object-id
+    /// attribute.
+    /// </summary>
+    /// <remarks>
+    /// Returns <c>0</c> when the object-id field is unknown, absent, or carries a
+    /// value that is not an integer (or integer-formatted string). The canonical
+    /// <see cref="Feature"/> id is a <see cref="long"/>, so a non-integer upstream id
+    /// (e.g. a GUID GlobalId) cannot be preserved verbatim and collapses to the
+    /// <c>0</c> fallback. Multiple unresolvable features in a page therefore share id
+    /// <c>0</c>, which can confuse id-based consumers and <see cref="GetAsync"/>-by-id
+    /// semantics. This is acceptable for a read-through provider whose canonical
+    /// access path is the WHERE/paging query rather than id lookup, but the
+    /// collision is intentional and silent — publications relying on stable feature
+    /// ids must expose an integer object-id field.
+    /// </remarks>
     private static long ResolveObjectId(IReadOnlyDictionary<string, JsonElement>? attributes, string? objectIdFieldName)
     {
         if (attributes is null || string.IsNullOrWhiteSpace(objectIdFieldName))

@@ -6,14 +6,28 @@ using Honua.Db.SqlServer.Features.FeatureStore.Services;
 
 namespace Honua.Db.SqlServer.Queries.Filters;
 
+/// <summary>
+/// SQL Server / Azure SQL implementation of <see cref="ISqlDialect"/>.
+/// </summary>
+/// <remarks>
+/// Identifiers are bracket-quoted (<c>[…]</c>) with embedded closing brackets doubled.
+/// The provider deliberately restricts identifiers to the regular form
+/// (<c>[A-Za-z_][A-Za-z0-9_]*</c>) — see <see cref="SqlServerIdentifier"/> — so that
+/// configured names are unambiguous and SQL-injection-safe. Parameters are
+/// <c>@</c>-prefixed (Microsoft.Data.SqlClient named parameters).
+/// </remarks>
 internal sealed class SqlServerSqlDialect : ISqlDialect
 {
+    /// <summary>Singleton instance — the dialect carries no per-call state.</summary>
     public static readonly SqlServerSqlDialect Instance = new();
 
+    /// <inheritdoc />
     public string Name => "sqlserver";
 
+    /// <inheritdoc />
     public string ParameterPrefix => "@";
 
+    /// <inheritdoc />
     public string QuoteIdentifier(string identifier)
     {
         if (string.IsNullOrWhiteSpace(identifier))

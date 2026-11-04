@@ -7,6 +7,22 @@ using Honua.Core.Features.Observability.Domain;
 
 namespace Honua.ServiceDefaults;
 
+/// <summary>
+/// In-process, bounded-memory rolling aggregation of serving-plane request latency,
+/// partitioned by GIS protocol. Each observed protocol keeps a fixed-size ring reservoir
+/// of the most recent duration samples tagged with a monotonic timestamp; a read computes
+/// per-protocol p50/p95/p99 plus request/error counts over the configured window.
+/// </summary>
+/// <remarks>
+/// The hot path (<see cref="Record"/>) is allocation-free after the first sample per
+/// protocol: it takes a short per-protocol lock and writes three primitives into
+/// pre-allocated arrays. Memory is bounded by <c>samplesPerProtocol × observedProtocols</c>;
+/// under sustained throughput above the ring capacity the effective window shrinks to the
+/// most recent <c>samplesPerProtocol</c> samples, so the reported count reflects the actual
+/// number of in-window samples retained rather than total traffic. Timestamps are
+/// <see cref="Stopwatch"/> ticks (monotonic, unaffected by wall-clock changes); the
+/// timestamp source is injectable for deterministic testing.
+/// </remarks>
 public sealed class ServingLatencyAggregator
 {
     private readonly ConcurrentDictionary<string, Reservoir> _reservoirs = new(StringComparer.Ordinal);
@@ -15,8 +31,21 @@ public sealed class ServingLatencyAggregator
     private readonly TimeSpan _window;
     private readonly Func<long> _timestamp;
 
+    /// <summary>
+    /// Serving-plane HTTP status floor that classifies a request as a server error for the
+    /// window error rate. Client errors (4xx) are counted as requests but not errors.
+    /// </summary>
     private const int ServerErrorFloor = 500;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="ServingLatencyAggregator"/> class.
+    /// </summary>
+    /// <param name="window">The rolling window length. Samples older than this are excluded from snapshots.</param>
+    /// <param name="samplesPerProtocol">The fixed reservoir capacity per protocol (bounds memory).</param>
+    /// <param name="timestampProvider">
+    /// Optional monotonic timestamp source in <see cref="Stopwatch"/>-tick units; defaults to
+    /// <see cref="Stopwatch.GetTimestamp"/>. Supplied by tests to simulate window expiry.
+    /// </param>
     public ServingLatencyAggregator(TimeSpan window, int samplesPerProtocol, Func<long>? timestampProvider = null)
     {
         if (window <= TimeSpan.Zero)
@@ -35,6 +64,12 @@ public sealed class ServingLatencyAggregator
         _windowTicks = Math.Max(1L, (long)(window.TotalSeconds * Stopwatch.Frequency));
     }
 
+    /// <summary>
+    /// Records a completed serving-plane request. No-op for a blank protocol or negative duration.
+    /// </summary>
+    /// <param name="protocol">The GIS protocol family (bounded cardinality from the fixed protocol set).</param>
+    /// <param name="durationMs">The elapsed request duration in milliseconds.</param>
+    /// <param name="statusCode">The HTTP status code; <c>&gt;= 500</c> counts toward the error rate.</param>
     public void Record(string protocol, double durationMs, int statusCode)
     {
         if (string.IsNullOrWhiteSpace(protocol) || durationMs < 0 || double.IsNaN(durationMs))
@@ -46,6 +81,10 @@ public sealed class ServingLatencyAggregator
         reservoir.Add(_timestamp(), durationMs, statusCode >= ServerErrorFloor);
     }
 
+    /// <summary>
+    /// Computes a point-in-time snapshot of per-protocol latency percentiles and counts over the window.
+    /// </summary>
+    /// <returns>The serving latency snapshot; protocol entries are ordered by protocol name.</returns>
     public ServingLatencySnapshot GetSnapshot()
     {
         var now = _timestamp();
@@ -210,55 +249,94 @@ public sealed class ServingLatencyAggregator
         long NewestTimestamp);
 }
 
+/// <summary>
+/// Point-in-time snapshot of serving-plane latency, aggregated per protocol over a rolling window.
+/// </summary>
 public sealed record ServingLatencySnapshot
 {
+    /// <summary>Gets the rolling window length, in seconds, over which the percentiles are computed.</summary>
     public required double WindowSeconds { get; init; }
 
+    /// <summary>Gets the UTC timestamp at which the snapshot was produced.</summary>
     public required DateTimeOffset GeneratedAt { get; init; }
 
+    /// <summary>Gets the per-protocol latency entries (only protocols with in-window samples), ordered by protocol name.</summary>
     public required IReadOnlyList<ServingLatencyProtocolSnapshot> Protocols { get; init; }
 
+    /// <summary>
+    /// Gets the protocols that recorded traffic since the process-local reset but retain no
+    /// in-window samples, ordered by protocol name. These carry lifetime counters only, so a
+    /// replica that has gone quiet is distinguishable from one that just restarted. They are
+    /// deliberately absent from <see cref="Protocols"/> because they have no latency population.
+    /// </summary>
     public IReadOnlyList<ServingLatencyIdleProtocol> IdleProtocols { get; init; } = [];
 }
 
+/// <summary>
+/// Lifetime counters for a protocol whose retained samples have all aged out of the window.
+/// </summary>
 public sealed record ServingLatencyIdleProtocol
 {
+    /// <summary>Gets the GIS protocol family this entry describes.</summary>
     public required string Protocol { get; init; }
 
+    /// <summary>Gets the fixed number of samples this replica can retain for the protocol.</summary>
     public required int RetentionCapacity { get; init; }
 
+    /// <summary>Gets the number of samples recorded since the last process-local reset.</summary>
     public required long TotalRecordedSinceReset { get; init; }
 
+    /// <summary>Gets the number of samples overwritten after the fixed reservoir reached capacity.</summary>
     public required long OverwrittenSampleCount { get; init; }
 }
 
+/// <summary>
+/// Per-protocol serving latency percentiles and request/error counts over the aggregation window.
+/// </summary>
 public sealed record ServingLatencyProtocolSnapshot
 {
+    /// <summary>Gets the GIS protocol family this entry describes.</summary>
     public required string Protocol { get; init; }
 
+    /// <summary>Gets the number of in-window samples retained for this protocol.</summary>
     public required long RequestCount { get; init; }
 
+    /// <summary>Gets the number of retained samples that were server errors (HTTP status &gt;= 500).</summary>
     public required long ErrorCount { get; init; }
 
+    /// <summary>Gets the server-error rate over the retained samples (0.0 to 1.0).</summary>
     public required double ErrorRate { get; init; }
 
+    /// <summary>Gets the 50th-percentile (median) request duration in milliseconds.</summary>
     public required double P50Ms { get; init; }
 
+    /// <summary>Gets the 95th-percentile request duration in milliseconds.</summary>
     public required double P95Ms { get; init; }
 
+    /// <summary>Gets the 99th-percentile request duration in milliseconds.</summary>
     public required double P99Ms { get; init; }
 
+    /// <summary>Gets the maximum retained request duration in milliseconds.</summary>
     public required double MaxMs { get; init; }
 
+    /// <summary>Gets the fixed number of samples this replica can retain for the protocol.</summary>
     public int RetentionCapacity { get; init; }
 
+    /// <summary>Gets the number of protocol samples recorded by this aggregator since its last process-local reset.</summary>
     public long TotalRecordedSinceReset { get; init; }
 
+    /// <summary>Gets the number of samples overwritten after the fixed reservoir reached capacity.</summary>
     public long OverwrittenSampleCount { get; init; }
 
+    /// <summary>Gets the age in seconds of the oldest sample actually retained in the current snapshot.</summary>
     public double OldestRetainedSampleAgeSeconds { get; init; }
 
+    /// <summary>Gets the age in seconds of the newest sample actually retained in the current snapshot.</summary>
     public double NewestRetainedSampleAgeSeconds { get; init; }
 
+    /// <summary>
+    /// Gets the mergeable latency distribution sketch over the retained in-window samples (#2809). Persisted
+    /// per replica so cross-replica cluster percentiles are recomputed from merged distributions.
+    /// </summary>
     public LatencyDistribution? Distribution { get; init; }
 }

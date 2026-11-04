@@ -13,6 +13,11 @@ using Npgsql;
 
 namespace Honua.Db.Redshift.Features.FeatureStore.Services;
 
+/// <summary>
+/// Executes Redshift feature queries built by <see cref="RedshiftFeatureQueryBuilder"/>.
+/// All commands are parameterized and double-quoted by the builder; this layer opens a pooled
+/// <see cref="NpgsqlConnection"/>, materializes rows, and emits telemetry.
+/// </summary>
 internal sealed class RedshiftFeatureDataAccess
 {
     private static readonly ActivitySource _activitySource = new("Honua.Redshift.FeatureStore");

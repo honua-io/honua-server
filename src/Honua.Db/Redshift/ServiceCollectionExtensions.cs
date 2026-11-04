@@ -12,8 +12,21 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Db.Redshift;
 
+/// <summary>
+/// Public DI entry point for the read-only Amazon Redshift spatial feature provider (#1712).
+/// </summary>
 public static class ServiceCollectionExtensions
 {
+    /// <summary>
+    /// Registers the Redshift feature provider as an additional <see cref="IFeatureDataProvider"/>
+    /// in the runtime, alongside the primary backend (PostGIS or DuckDB). Layers whose
+    /// <see cref="Honua.Core.Features.Security.Domain.DataConnection"/> resolves to the
+    /// <c>redshift</c> provider name are routed to this implementation.
+    /// </summary>
+    /// <param name="services">Service collection.</param>
+    /// <param name="configuration">Application configuration. Reads the <c>Redshift</c> section
+    /// to bind <see cref="RedshiftOptions"/> (default connection string and command timeout).</param>
+    /// <returns>The same service collection for chaining.</returns>
     public static IServiceCollection AddRedshiftFeatureProvider(this IServiceCollection services, IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(services);

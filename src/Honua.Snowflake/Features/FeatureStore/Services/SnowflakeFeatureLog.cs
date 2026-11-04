@@ -5,6 +5,10 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Snowflake.Features.FeatureStore.Services;
 
+/// <summary>
+/// Source-generated structured logging for the Snowflake feature store. AOT-safe; never emits raw
+/// exception messages, connection strings, or user-supplied SQL fragments.
+/// </summary>
 internal static partial class SnowflakeFeatureLog
 {
     [LoggerMessage(

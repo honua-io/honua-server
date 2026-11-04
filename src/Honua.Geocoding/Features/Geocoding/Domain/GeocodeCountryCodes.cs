@@ -5,12 +5,23 @@ using System.Globalization;
 
 namespace Honua.Geocoding.Features.Geocoding.Domain;
 
+/// <summary>
+/// Parses the advertised comma-separated, two-letter geocoding country filter.
+/// </summary>
 public static class GeocodeCountryCodes
 {
     private static readonly Lazy<CountryAliases> Aliases = new(CreateAliases);
 
+    /// <summary>The client error returned for a malformed country filter.</summary>
     public const string InvalidMessage = "Invalid countryCodes: expected comma-separated two-letter ISO country codes.";
 
+    /// <summary>
+    /// Parses country codes without accepting an empty entry or a non-ASCII code.
+    /// A missing or whitespace-only filter applies no country restriction.
+    /// </summary>
+    /// <param name="value">The requested comma-separated country codes.</param>
+    /// <param name="codes">Distinct uppercase codes, or null for no filter.</param>
+    /// <returns>True when the filter has the advertised shape.</returns>
     public static bool TryParse(string? value, out string[]? codes)
     {
         codes = null;
@@ -39,6 +50,11 @@ public static class GeocodeCountryCodes
         return true;
     }
 
+    /// <summary>
+    /// Resolves the GeoServices singular countryCode field, which accepts a full country
+    /// name or an ISO alpha-2/alpha-3 code. The Honua countryCodes extension retains its
+    /// narrower, comma-separated alpha-2 contract.
+    /// </summary>
     public static bool TryParseGeoServicesCountry(string? value, out string? code)
     {
         code = null;
@@ -62,6 +78,10 @@ public static class GeocodeCountryCodes
         return Aliases.Value.UniqueCodeByAlias.TryGetValue(token, out code);
     }
 
+    /// <summary>
+    /// Includes equivalent values that existing reference imports may have stored unchanged.
+    /// Ambiguous names are excluded, so a country filter cannot admit another country.
+    /// </summary>
     public static string[] StoredRepresentations(IEnumerable<string> codes)
     {
         var aliases = Aliases.Value.AliasesByCode;
@@ -70,6 +90,7 @@ public static class GeocodeCountryCodes
             .ToArray();
     }
 
+    /// <summary>Whether an imported country value denotes one of the requested countries.</summary>
     public static bool Matches(string? value, IEnumerable<string> codes)
         => value is not null && StoredRepresentations(codes)
             .Contains(value.Trim().ToUpperInvariant(), StringComparer.Ordinal);

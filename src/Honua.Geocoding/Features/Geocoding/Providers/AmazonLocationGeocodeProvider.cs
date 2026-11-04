@@ -11,14 +11,25 @@ using Honua.Geocoding.Features.Geocoding.Domain;
 
 namespace Honua.Geocoding.Features.Geocoding.Providers;
 
+/// <summary>
+/// Amazon Location Service geocoding provider
+/// </summary>
 internal sealed class AmazonLocationGeocodeProvider : BaseGeocodeProvider, IDisposable
 {
+    /// <summary>
+    /// Amazon Location Service provider name constant
+    /// </summary>
     public const string ProviderName = "amazon-location";
 
     private readonly AmazonLocationProviderConfiguration _configuration;
     private readonly IAmazonLocationService _locationClient;
     private readonly bool _disposeClient;
 
+    /// <summary>
+    /// Initialize a new Amazon Location Service geocode provider
+    /// </summary>
+    /// <param name="configuration">Provider configuration</param>
+    /// <param name="locationClient">Optional pre-configured Amazon Location Service client</param>
     public AmazonLocationGeocodeProvider(
         AmazonLocationProviderConfiguration configuration,
         IAmazonLocationService? locationClient = null)
@@ -46,8 +57,10 @@ internal sealed class AmazonLocationGeocodeProvider : BaseGeocodeProvider, IDisp
         }
     }
 
+    /// <inheritdoc />
     public override string Name => ProviderName;
 
+    /// <inheritdoc />
     public override GeocodeProviderCapabilities Capabilities => new(
         SupportsForwardGeocode: true,
         SupportsReverseGeocode: true,
@@ -66,6 +79,7 @@ internal sealed class AmazonLocationGeocodeProvider : BaseGeocodeProvider, IDisp
         RateLimitPerMinute = 100 // AWS Location Service default limit
     };
 
+    /// <inheritdoc />
     public override async Task<IReadOnlyList<GeocodeCandidate>> ForwardGeocodeAsync(
         ForwardGeocodeRequest request,
         CancellationToken cancellationToken = default)
@@ -159,6 +173,7 @@ internal sealed class AmazonLocationGeocodeProvider : BaseGeocodeProvider, IDisp
         }
     }
 
+    /// <inheritdoc />
     public override async Task<ReverseGeocodeMatch?> ReverseGeocodeAsync(
         ReverseGeocodeRequest request,
         CancellationToken cancellationToken = default)
@@ -225,6 +240,7 @@ internal sealed class AmazonLocationGeocodeProvider : BaseGeocodeProvider, IDisp
         }
     }
 
+    /// <inheritdoc />
     protected override async Task<IReadOnlyList<GeocodeSuggestion>> SuggestCoreAsync(
         SuggestGeocodeRequest request,
         CancellationToken cancellationToken = default)
@@ -297,6 +313,7 @@ internal sealed class AmazonLocationGeocodeProvider : BaseGeocodeProvider, IDisp
         }
     }
 
+    /// <inheritdoc />
     protected override async Task CheckHealthCoreAsync(CancellationToken cancellationToken = default)
     {
         try
@@ -333,6 +350,7 @@ internal sealed class AmazonLocationGeocodeProvider : BaseGeocodeProvider, IDisp
         }
     }
 
+    /// <inheritdoc />
     public void Dispose()
     {
         if (_disposeClient)

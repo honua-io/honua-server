@@ -6,17 +6,27 @@ using OpenTelemetry.Trace;
 
 namespace Honua.ServiceDefaults;
 
+/// <summary>
+/// OpenTelemetry sampler that integrates with the Honua adaptive sampling engine.
+/// Bridges OpenTelemetry's sampling interface with intelligent adaptive sampling logic.
+/// </summary>
 public sealed class AdaptiveOpenTelemetrySampler : Sampler
 {
     private readonly IAdaptiveSampler _adaptiveSampler;
     private readonly TracingOptions _tracingOptions;
 
+    /// <summary>
+    /// Initializes a new adaptive OpenTelemetry sampler.
+    /// </summary>
     public AdaptiveOpenTelemetrySampler(IAdaptiveSampler adaptiveSampler, TracingOptions tracingOptions)
     {
         _adaptiveSampler = adaptiveSampler ?? throw new ArgumentNullException(nameof(adaptiveSampler));
         _tracingOptions = tracingOptions ?? throw new ArgumentNullException(nameof(tracingOptions));
     }
 
+    /// <summary>
+    /// Makes sampling decisions based on adaptive sampling logic.
+    /// </summary>
     public override SamplingResult ShouldSample(in SamplingParameters samplingParameters)
     {
         // If tracing is disabled, never sample
@@ -36,6 +46,9 @@ public sealed class AdaptiveOpenTelemetrySampler : Sampler
         return new SamplingResult(decision);
     }
 
+    /// <summary>
+    /// Returns a description of this sampler for debugging.
+    /// </summary>
     public new string Description =>
         $"AdaptiveOpenTelemetrySampler(currentRate={_adaptiveSampler.GetCurrentSamplingRate():P2})";
 }

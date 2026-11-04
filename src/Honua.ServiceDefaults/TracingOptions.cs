@@ -3,40 +3,112 @@
 
 namespace Honua.ServiceDefaults;
 
+/// <summary>
+/// Configuration options for OpenTelemetry distributed tracing.
+/// </summary>
 public sealed class TracingOptions
 {
+    /// <summary>
+    /// Configuration section name.
+    /// </summary>
     public const string SectionName = "Tracing";
 
+    /// <summary>
+    /// Gets or sets whether tracing is enabled. Default is true.
+    /// </summary>
     public bool Enabled { get; set; } = true;
 
+    /// <summary>
+    /// Gets or sets the sampling ratio (0.0 to 1.0).
+    /// 1.0 means all traces are sampled (development default).
+    /// For production, a lower value like 0.1 (10%) is recommended.
+    /// </summary>
     public double SamplingRatio { get; set; } = 1.0;
 
+    /// <summary>
+    /// Gets or sets whether to include database query text in spans.
+    /// Disable in production for security if queries contain sensitive data.
+    /// </summary>
     public bool IncludeDbStatementText { get; set; }
 
+    /// <summary>
+    /// Gets or sets whether to trace health check endpoints.
+    /// Disable to reduce noise from frequent health checks.
+    /// </summary>
     public bool TraceHealthEndpoints { get; set; }
 
+    /// <summary>
+    /// Gets or sets whether sanitized exception details should be exported on spans. Applies to
+    /// span tags, the span status description and span-event attributes alike.
+    /// </summary>
     public bool ExportExceptionDetails { get; set; }
 
+    /// <summary>
+    /// Gets or sets whether sanitized exception stack traces should be included when exception details are exported.
+    /// </summary>
     public bool RecordExceptionStackTraces { get; set; }
 
+    /// <summary>
+    /// Gets or sets the maximum length for sanitized exception text that is exported on spans.
+    /// </summary>
     public int MaxExceptionDetailLength { get; set; } = 256;
 
+    /// <summary>
+    /// Gets or sets the rolling window, in seconds, over which the in-process serving-latency
+    /// snapshot (per-protocol p50/p95/p99 + error rate, surfaced by the admin ops-health endpoint)
+    /// is aggregated. Default is 300 (5 minutes).
+    /// </summary>
     public int ServingLatencyWindowSeconds { get; set; } = 300;
 
+    /// <summary>
+    /// Gets or sets the per-protocol reservoir capacity for the in-process serving-latency snapshot.
+    /// Bounds aggregation memory; under throughput above this rate the effective window shrinks to the
+    /// most recent samples. Default is 4096.
+    /// </summary>
     public int ServingLatencySamplesPerProtocol { get; set; } = 4096;
 
+    /// <summary>
+    /// Gets or sets the maximum number of attributes per span.
+    /// </summary>
     public int MaxAttributesPerSpan { get; set; } = 128;
 
+    /// <summary>
+    /// Gets or sets the maximum number of events per span. Enforced by the OTLP exporter, which drops
+    /// later events and reports them as dropped, unless <c>OTEL_SPAN_EVENT_COUNT_LIMIT</c> is set.
+    /// </summary>
     public int MaxEventsPerSpan { get; set; } = 128;
 
+    /// <summary>
+    /// Gets or sets the OTLP exporter endpoint URL.
+    /// When not set, uses the OTEL_EXPORTER_OTLP_ENDPOINT environment variable.
+    /// </summary>
     public string? OtlpEndpoint { get; set; }
 
+    /// <summary>
+    /// Gets or sets additional OTLP exporter headers (e.g., for authentication).
+    /// Format: "key1=value1,key2=value2"
+    /// </summary>
     public string? OtlpHeaders { get; set; }
 
+    /// <summary>
+    /// Gets or sets the AWS X-Ray tracing options. When enabled, the tracer
+    /// emits X-Ray-compatible trace IDs and propagation so spans nest into the
+    /// Lambda/API Gateway trace and surface in the X-Ray service map.
+    /// </summary>
     public XRayTracingOptions XRay { get; set; } = new();
 }
 
+/// <summary>
+/// Configuration options for AWS X-Ray distributed tracing.
+/// </summary>
 public sealed class XRayTracingOptions
 {
+    /// <summary>
+    /// Gets or sets a value indicating whether X-Ray-compatible trace ID
+    /// generation and propagation are enabled. Default is false so non-AWS
+    /// runs are unaffected. When unset in configuration, the
+    /// <c>AWS_XRAY_TRACING_ENABLED</c> / <c>AWS_XRAY_DAEMON_ADDRESS</c>
+    /// environment signals can opt the process in (see resolution logic).
+    /// </summary>
     public bool Enabled { get; set; }
 }

@@ -6,6 +6,10 @@ using Honua.Core.Features.FeatureStore.Domain;
 
 namespace Honua.Db.Redshift.Features.FeatureStore.Services;
 
+/// <summary>
+/// Validated Redshift layer storage binding produced from a <see cref="LayerStorageMapping"/>.
+/// All identifiers are pre-validated against an allow-list and double-quoted for Redshift.
+/// </summary>
 internal sealed record RedshiftLayerMapping
 {
     public required int LayerId { get; init; }
@@ -22,6 +26,9 @@ internal sealed record RedshiftLayerMapping
 
     public required RedshiftGeometryColumnType GeometryColumnType { get; init; }
 
+    /// <summary>
+    /// Double-quoted table reference, including the schema qualifier when configured.
+    /// </summary>
     public string QuotedTableReference
     {
         get
@@ -36,11 +43,21 @@ internal sealed record RedshiftLayerMapping
         }
     }
 
+    /// <summary>
+    /// Double-quoted primary-key column reference.
+    /// </summary>
     public string QuotedPrimaryKeyColumn => RedshiftIdentifier.Quote(PrimaryKeyColumn);
 
+    /// <summary>
+    /// Double-quoted geometry column reference, or null when the layer has no geometry.
+    /// </summary>
     public string? QuotedGeometryColumn =>
         GeometryColumn is null ? null : RedshiftIdentifier.Quote(GeometryColumn);
 
+    /// <summary>
+    /// Builds a <see cref="RedshiftLayerMapping"/> from the provider-neutral storage mapping,
+    /// validating identifiers and resolving Redshift-specific provider options.
+    /// </summary>
     public static RedshiftLayerMapping FromStorage(int layerId, LayerStorageMapping storage)
     {
         ArgumentNullException.ThrowIfNull(storage);
@@ -58,6 +75,10 @@ internal sealed record RedshiftLayerMapping
                 ProviderOptions: storage.ProviderOptions));
     }
 
+    /// <summary>
+    /// Builds a <see cref="RedshiftLayerMapping"/> from a Metadata v2 feature storage mapping,
+    /// validating identifiers and resolving Redshift-specific provider options.
+    /// </summary>
     public static RedshiftLayerMapping FromStorage(int layerId, FeatureStorageMapping storage)
     {
         ArgumentNullException.ThrowIfNull(storage);
@@ -112,9 +133,18 @@ internal sealed record RedshiftLayerMapping
     }
 }
 
+/// <summary>
+/// Native Redshift spatial column type a layer is stored under.
+/// </summary>
 internal enum RedshiftGeometryColumnType
 {
+    /// <summary>
+    /// Planar <c>GEOMETRY</c> column. Distances and lengths are in CRS units.
+    /// </summary>
     Geometry,
 
+    /// <summary>
+    /// Geodetic <c>GEOGRAPHY</c> column. Distances and lengths are in meters on the spheroid.
+    /// </summary>
     Geography
 }

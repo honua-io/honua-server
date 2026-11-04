@@ -11,10 +11,19 @@ using Honua.Core.Features.FeatureStore.Services;
 
 namespace Honua.Db.SqlServer.Features.FeatureStore.Services;
 
+/// <summary>
+/// Translates a <see cref="FeatureQuery"/> into parameterized T-SQL for the SQL Server
+/// spatial provider. All identifiers are validated and bracket-quoted; all literal values
+/// flow through SQL parameters.
+/// </summary>
 internal static partial class SqlServerFeatureQueryBuilder
 {
     internal const string ProviderLabel = "SQL Server";
 
+    /// <summary>
+    /// Builds a SELECT that returns the primary key, the geometry as WKB (or NULL when no
+    /// geometry column is configured), and any requested attribute columns.
+    /// </summary>
     public static ParameterizedQuery BuildSelectQuery(SqlServerLayerMapping mapping, FeatureQuery query, IReadOnlyList<string> attributeColumns)
     {
         ArgumentNullException.ThrowIfNull(mapping);
@@ -66,9 +75,18 @@ internal static partial class SqlServerFeatureQueryBuilder
         return new ParameterizedQuery(sb.ToString(), parameters);
     }
 
+    /// <summary>
+    /// Builds a SELECT COUNT(*) for the same query envelope as <see cref="BuildSelectQuery"/>.
+    /// </summary>
     public static ParameterizedQuery BuildCountQuery(SqlServerLayerMapping mapping, FeatureQuery query)
         => BuildCountQuery(mapping, query, attributeColumns: null);
 
+    /// <summary>
+    /// Builds a count for <paramref name="query"/>. When <see cref="FeatureQuery.Distinct"/> is set,
+    /// the count is the number of distinct projected attribute tuples, not the raw row count.
+    /// WHERE fields must be the primary key, the geometry column, or one of
+    /// <paramref name="attributeColumns"/>; a <see langword="null"/> list admits no attributes.
+    /// </summary>
     public static ParameterizedQuery BuildCountQuery(
         SqlServerLayerMapping mapping,
         FeatureQuery query,
@@ -118,6 +136,11 @@ internal static partial class SqlServerFeatureQueryBuilder
         return new ParameterizedQuery(sb.ToString(), parameters);
     }
 
+    /// <summary>
+    /// Builds a SELECT that returns the primary key for matching rows. Used for object-id
+    /// listings when only identifiers are needed. WHERE and ORDER BY fields must be declared on
+    /// the layer (primary key, geometry, or <paramref name="attributeColumns"/>).
+    /// </summary>
     public static ParameterizedQuery BuildObjectIdsQuery(
         SqlServerLayerMapping mapping,
         FeatureQuery query,
@@ -144,6 +167,14 @@ internal static partial class SqlServerFeatureQueryBuilder
         return new ParameterizedQuery(sb.ToString(), parameters);
     }
 
+    /// <summary>
+    /// Builds an extent query using <c>geometry::EnvelopeAggregate</c> or
+    /// <c>geography::EnvelopeAggregate</c> (both SQL Server 2012+). The corner extraction
+    /// uses geometry-typed <c>STX</c>/<c>STY</c> properties for planar layers and
+    /// geography-typed <c>Long</c>/<c>Lat</c> properties for geodetic layers, since SQL Server
+    /// exposes a different point coordinate API per spatial type. WHERE fields must be declared on
+    /// the layer (primary key, geometry, or <paramref name="attributeColumns"/>).
+    /// </summary>
     public static ParameterizedQuery BuildExtentQuery(
         SqlServerLayerMapping mapping,
         FeatureQuery? query,
@@ -184,7 +215,15 @@ internal static partial class SqlServerFeatureQueryBuilder
         return new ParameterizedQuery(sb.ToString(), parameters);
     }
 
-    // A temporal filter this provider cannot translate is rejected, because dropping it would return rows outside the requested window.
+    /// <summary>
+    /// Rejects a <see cref="FeatureQuery.TemporalFilter"/> the SQL Server provider cannot
+    /// translate. Temporal filters arrive on <see cref="FeatureQuery"/> from OGC API Features
+    /// (<c>datetime</c>), STAC search, and OData time-window queries. The provider does not yet
+    /// emit T-SQL temporal predicates, so the filter is surfaced as an eager
+    /// <see cref="NotSupportedException"/> — never silently dropped, which would return rows
+    /// outside the requested window (a correctness/data-leak bug). Mirrors the fail-loud
+    /// contract of the MySQL/Redshift/Databricks providers (temporal GA hardening, #2429).
+    /// </summary>
     private static void GuardUnsupportedTemporalFilter(FeatureQuery query)
     {
         if (query.TemporalFilter.HasValue)
@@ -195,6 +234,11 @@ internal static partial class SqlServerFeatureQueryBuilder
         }
     }
 
+    /// <summary>
+    /// Recovers provider-neutral constraints from a Postgres-translated <see cref="FeatureQuery.SqlFilter"/>.
+    /// A pure integral <c>IN</c> list is lifted only when its target is the object id or the
+    /// layer primary key. Attribute <c>IN</c> lists and <c>NOT IN</c> stay unlifted.
+    /// </summary>
     internal static FeatureQuery NormalizeConstraints(
         FeatureQuery query,
         SqlFragment? translationOfWhere,
@@ -498,6 +542,11 @@ internal static partial class SqlServerFeatureQueryBuilder
     private static bool IsPaging(FeatureQuery query)
         => query.Limit.HasValue || query.Offset is > 0;
 
+    /// <summary>
+    /// Orders a DISTINCT projection by columns that appear in the select list. SQL Server
+    /// rejects ORDER BY expressions that are not projected, and the primary key is not part
+    /// of a distinct-values tuple.
+    /// </summary>
     private static void AppendDistinctOrderBy(StringBuilder sb, FeatureQuery query, IReadOnlyList<string> projectedAttributes)
     {
         var clauses = new List<string>();

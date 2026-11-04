@@ -6,14 +6,28 @@ using Honua.Core.Features.FeatureStore.Domain;
 
 namespace Honua.Db.SqlServer.Features.FeatureStore.Services;
 
-// Configured identifiers stay in the regular form, even though bracket-quoted SQL Server names can be wider, so they cannot carry SQL.
+/// <summary>
+/// Validates and bracket-quotes SQL Server identifiers (schema, table, column).
+/// </summary>
+/// <remarks>
+/// SQL Server identifier rules (the regular form supported here): start with letter or
+/// underscore, followed by letters, digits, or underscores. Quoted identifiers ([..])
+/// can technically contain other characters, but the provider deliberately restricts
+/// configured identifiers to the regular form so they are unambiguous and SQL-injection-safe.
+/// </remarks>
 internal static partial class SqlServerIdentifier
 {
     private static readonly Regex _identifierRegex = IdentifierPattern();
 
+    /// <summary>
+    /// Returns true when the identifier matches the safe-identifier allow-list.
+    /// </summary>
     public static bool IsValid(string? value)
         => !string.IsNullOrWhiteSpace(value) && _identifierRegex.IsMatch(value);
 
+    /// <summary>
+    /// Throws <see cref="ArgumentException"/> when the identifier is not safe.
+    /// </summary>
     public static void EnsureValid(string value, string label)
     {
         if (!IsValid(value))
@@ -23,12 +37,20 @@ internal static partial class SqlServerIdentifier
         }
     }
 
+    /// <summary>
+    /// Bracket-quotes a previously validated identifier. Any closing brackets in the
+    /// identifier are doubled to keep parsing robust even though the allow-list rejects them.
+    /// </summary>
     public static string Quote(string identifier)
     {
         EnsureValid(identifier, "identifier");
         return "[" + identifier.Replace("]", "]]", StringComparison.Ordinal) + "]";
     }
 
+    /// <summary>
+    /// Bracket-quotes an attribute name accepted by the shared feature-field contract.
+    /// Structural identifiers remain restricted to <see cref="Quote"/>.
+    /// </summary>
     public static string QuoteAttribute(string identifier)
     {
         if (!FeatureFieldNameSyntax.IsValid(identifier))

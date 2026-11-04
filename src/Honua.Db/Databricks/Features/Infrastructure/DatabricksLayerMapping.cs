@@ -10,31 +10,60 @@ using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Db.Databricks.Features.Infrastructure;
 
+/// <summary>
+/// Provider-option keys recognized on a Metadata v2 <see cref="FeatureStorageMapping"/>.
+/// </summary>
 internal static class DatabricksProviderOptions
 {
+    /// <summary>
+    /// Declared OGC geometry type (<c>Point</c>, <c>Polygon</c>, and the other
+    /// <see cref="GeometryType"/> names). Defaults to <see cref="GeometryType.Point"/>.
+    /// </summary>
     public const string GeometryType = "geometryType";
 }
 
+/// <summary>
+/// Resolved physical mapping for a single Databricks-backed layer. Built from
+/// <c>Databricks:Layers</c> or from a Metadata v2 <see cref="FeatureStorageMapping"/>
+/// when the layer's connection provider is Databricks. Carries the fully qualified
+/// table reference and the column names used to emit SQL against the SQL Warehouse.
+/// </summary>
 internal sealed class DatabricksLayerMapping
 {
+    /// <summary>Honua layer ID.</summary>
     public required int LayerId { get; init; }
 
+    /// <summary>Table or view name.</summary>
     public required string Table { get; init; }
 
+    /// <summary>Optional catalog qualifier (resolved layer-over-global).</summary>
     public string? Catalog { get; init; }
 
+    /// <summary>Optional schema qualifier (resolved layer-over-global).</summary>
     public string? Schema { get; init; }
 
+    /// <summary>Geometry column name.</summary>
     public required string GeometryColumn { get; init; }
 
+    /// <summary>Primary-key column name.</summary>
     public required string PrimaryKeyColumn { get; init; }
 
+    /// <summary>Stored geometry SRID.</summary>
     public required int Srid { get; init; }
 
+    /// <summary>Declared geometry type.</summary>
     public required GeometryType GeometryType { get; init; }
 
+    /// <summary>Attribute column names exposed by the layer.</summary>
     public required IReadOnlyList<string> AttributeColumns { get; init; }
 
+    /// <summary>
+    /// Builds a <see cref="DatabricksLayerMapping"/> from a Metadata v2 feature storage
+    /// mapping, validating catalog, schema, table, geometry, and object-id identifiers.
+    /// </summary>
+    /// <param name="layerId">Honua layer id.</param>
+    /// <param name="storage">Provider-neutral storage mapping.</param>
+    /// <returns>Validated layer mapping. Attribute columns are empty until the resource schema is applied.</returns>
     public static DatabricksLayerMapping FromStorage(int layerId, FeatureStorageMapping storage)
     {
         ArgumentNullException.ThrowIfNull(storage);
@@ -93,6 +122,13 @@ internal sealed class DatabricksLayerMapping
         };
     }
 
+    /// <summary>
+    /// Returns a copy whose attribute columns and, when <paramref name="geometryType"/> is set,
+    /// geometry type come from the Metadata v2 resource schema.
+    /// </summary>
+    /// <param name="attributeColumns">Attribute columns declared by the resource.</param>
+    /// <param name="geometryType">Resource geometry type, or null to keep the storage mapping's type.</param>
+    /// <returns>Copy with the schema applied.</returns>
     public DatabricksLayerMapping WithSchema(IReadOnlyList<string> attributeColumns, GeometryType? geometryType)
     {
         ArgumentNullException.ThrowIfNull(attributeColumns);
@@ -110,6 +146,10 @@ internal sealed class DatabricksLayerMapping
         };
     }
 
+    /// <summary>
+    /// Builds the backtick-quoted, fully qualified table reference
+    /// (<c>`catalog`.`schema`.`table`</c>) honoring any configured catalog/schema.
+    /// </summary>
     public string QualifiedTable()
     {
         var parts = new List<string>(3);
@@ -149,19 +189,40 @@ internal sealed class DatabricksLayerMapping
         => string.IsNullOrWhiteSpace(value) ? null : value;
 }
 
+/// <summary>
+/// Registry of Databricks layer mappings keyed by Honua layer id. A Metadata v2 binding
+/// whose connection provider is <c>databricks</c> (aliases <c>databrickssql</c>, <c>dbsql</c>)
+/// wins over <c>Databricks:Layers</c>.
+/// </summary>
 internal sealed class DatabricksLayerMappingRegistry
 {
     private readonly Dictionary<int, DatabricksLayerMapping> _mappings;
 
+    /// <summary>
+    /// Initializes the registry from the resolved layer mappings.
+    /// </summary>
+    /// <param name="mappings">Resolved layer mappings.</param>
     public DatabricksLayerMappingRegistry(IEnumerable<DatabricksLayerMapping> mappings)
     {
         ArgumentNullException.ThrowIfNull(mappings);
         _mappings = mappings.ToDictionary(static m => m.LayerId);
     }
 
+    /// <summary>
+    /// Resolves the mapping for <paramref name="layerId"/> from static configuration.
+    /// </summary>
+    /// <param name="layerId">Honua layer id.</param>
+    /// <returns>Resolved layer mapping.</returns>
     public DatabricksLayerMapping Resolve(int layerId)
         => Resolve(layerId, binding: null);
 
+    /// <summary>
+    /// Resolves <paramref name="layerId"/> from <paramref name="binding"/> when that binding's
+    /// connection provider is Databricks; otherwise falls back to <c>Databricks:Layers</c>.
+    /// </summary>
+    /// <param name="layerId">Honua layer id.</param>
+    /// <param name="binding">Metadata v2 provider binding, or null when the read is not routed.</param>
+    /// <returns>Resolved layer mapping.</returns>
     public DatabricksLayerMapping Resolve(int layerId, FeatureProviderBinding? binding)
     {
         if (binding is not null && UsesMetadataBinding(binding))

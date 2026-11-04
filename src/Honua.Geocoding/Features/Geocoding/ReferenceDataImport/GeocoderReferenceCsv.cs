@@ -6,8 +6,22 @@ using System.Text;
 
 namespace Honua.Geocoding.Features.Geocoding.ReferenceDataImport;
 
+/// <summary>
+/// Minimal streaming RFC 4180 CSV record reader for geocoder reference data uploads.
+/// </summary>
+/// <remarks>
+/// Scoped to the reference data import path: the shared feature-oriented CSV reader lives in the
+/// geometry satellite (<c>Honua.Geometry</c>, internal, <c>IFeature</c>-shaped), which the
+/// geocoding satellite cannot reference under the module dependency policy, so this reader
+/// handles the raw-record shape the reference loader needs (quoted fields, escaped quotes,
+/// CRLF/LF, streaming — no full-file buffering).
+/// </remarks>
 internal static class GeocoderReferenceCsv
 {
+    /// <summary>
+    /// Streams CSV records (including the header row) from <paramref name="reader"/>. Records that
+    /// are completely empty are skipped.
+    /// </summary>
     public static async IAsyncEnumerable<string[]> ReadRecordsAsync(
         TextReader reader,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)

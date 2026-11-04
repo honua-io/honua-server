@@ -12,8 +12,26 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Db.Oracle;
 
+/// <summary>
+/// Public DI entry point for the Oracle spatial feature provider (#1252).
+/// </summary>
 public static class ServiceCollectionExtensions
 {
+    /// <summary>
+    /// Registers the Oracle feature provider as an additional <see cref="IFeatureDataProvider"/>
+    /// in the runtime, alongside the primary backend (PostGIS, DuckDB, MySQL). Layers whose
+    /// <see cref="Honua.Core.Features.Security.Domain.DataConnection"/> resolves to the
+    /// <c>oracle</c>/<c>oracledb</c> provider name are routed to this implementation.
+    /// </summary>
+    /// <param name="services">Service collection.</param>
+    /// <param name="configuration">Application configuration. Reads the <c>Oracle</c> section
+    /// to bind <see cref="OracleOptions"/> (default connection string and command timeout).</param>
+    /// <returns>The same service collection for chaining.</returns>
+    /// <remarks>
+    /// AOT note: <c>Oracle.ManagedDataAccess.Core</c> uses internal reflection and is not
+    /// Native AOT-compatible. Deployments that publish with Native AOT must exclude this
+    /// provider.
+    /// </remarks>
     public static IServiceCollection AddOracleFeatureProvider(this IServiceCollection services, IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(services);

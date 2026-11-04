@@ -8,6 +8,23 @@ using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.GeoServicesRest.Features.FeatureStore.Services;
 
+/// <summary>
+/// Converts Esri JSON geometry payloads returned from ArcGIS REST <c>/query</c> into
+/// canonical Well-Known Binary (WKB) byte arrays consumed by Honua's
+/// <see cref="Honua.Core.Features.FeatureStore.Domain.Feature"/> record.
+/// </summary>
+/// <remarks>
+/// <para>Supports the four wire-format shapes Esri publishes on
+/// FeatureServer/MapServer query responses:
+/// point (x/y), multipoint (points[]), polyline (paths[][][]), and polygon
+/// (rings[][][]). Z and M coordinates are dropped — the read-through provider
+/// projects 2D geometries through Honua's canonical pipeline.</para>
+/// <para>Output uses little-endian WKB encoding to match the convention used by
+/// every other Honua reader. Polygons (both single and multi-part) have their rings
+/// classified by signed-area orientation per the Esri convention (clockwise = exterior
+/// shell, counter-clockwise = hole) and are emitted as WKB MultiPolygon when more
+/// than one shell is detected.</para>
+/// </remarks>
 internal static class GeoServicesJsonWkbWriter
 {
     private const byte LittleEndian = 0x01;
@@ -28,6 +45,15 @@ internal static class GeoServicesJsonWkbWriter
     // real payloads far below this bound.
     private const long MaxWkbBufferBytes = 256L * 1024 * 1024;
 
+    /// <summary>
+    /// Converts an Esri JSON geometry element into a WKB byte array.
+    /// </summary>
+    /// <param name="geometry">JSON geometry element from an ArcGIS REST response. May be undefined or null.</param>
+    /// <param name="declaredGeometryType">Geometry type declared on the publication; used to disambiguate
+    /// between LineString/MultiLineString (Esri encodes both as <c>paths</c>) and
+    /// Polygon/MultiPolygon (Esri encodes both as <c>rings</c>).</param>
+    /// <returns>WKB-encoded geometry, or <c>null</c> when the source element is empty.</returns>
+    /// <exception cref="InvalidOperationException">The Esri geometry shape is malformed or unsupported.</exception>
     public static byte[]? Write(JsonElement? geometry, MetadataV2GeometryType declaredGeometryType)
     {
         if (geometry is not { } element || element.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
@@ -471,6 +497,15 @@ internal static class GeoServicesJsonWkbWriter
         y = ReadCoordinate(point[1], "y");
     }
 
+    /// <summary>
+    /// Reads a single coordinate scalar, enforcing the writer's documented
+    /// <see cref="InvalidOperationException"/> contract for malformed geometry. A
+    /// bare <see cref="JsonElement.GetDouble"/> would surface a non-numeric string
+    /// as <see cref="InvalidOperationException"/> but an out-of-range number as
+    /// <see cref="FormatException"/>; validating the value kind (and using
+    /// <see cref="JsonElement.TryGetDouble"/>) keeps every malformed coordinate on
+    /// the documented exception type.
+    /// </summary>
     private static double ReadCoordinate(JsonElement value, string axis)
     {
         if (value.ValueKind != JsonValueKind.Number || !value.TryGetDouble(out var result))
@@ -498,6 +533,12 @@ internal static class GeoServicesJsonWkbWriter
         }
     }
 
+    /// <summary>
+    /// Computes a WKB buffer length as <c>header + (count * elementSize)</c> using
+    /// 64-bit arithmetic and validates it against <see cref="MaxWkbBufferBytes"/>,
+    /// so an oversized untrusted coordinate count fails loudly instead of silently
+    /// overflowing Int32 into a wrong-sized (or negative) allocation.
+    /// </summary>
     internal static int CheckedBufferSize(int headerBytes, int count, int elementSize)
     {
         var total = headerBytes + ((long)count * elementSize);
@@ -510,7 +551,14 @@ internal static class GeoServicesJsonWkbWriter
         return (int)total;
     }
 
-    // Part lengths are summed in a long so many near-cap parts cannot wrap a 32-bit total into a negative allocation.
+    /// <summary>
+    /// Validates an already-computed running total (the sum of several sub-buffer
+    /// lengths for a multi-part geometry) against <see cref="MaxWkbBufferBytes"/>
+    /// before casting back to int for the final allocation. Each sub-buffer is
+    /// individually bounded by <see cref="CheckedBufferSize"/>, but the running sum
+    /// is accumulated in a long so summing many near-cap parts cannot overflow
+    /// Int32 into a wrong-sized (or negative) allocation.
+    /// </summary>
     internal static int CheckedTotalSize(long total)
     {
         if (total < 0 || total > MaxWkbBufferBytes)

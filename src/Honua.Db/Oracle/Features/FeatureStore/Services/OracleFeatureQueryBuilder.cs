@@ -11,10 +11,28 @@ using Honua.Core.Queries.Filters;
 
 namespace Honua.Db.Oracle.Features.FeatureStore.Services;
 
+/// <summary>
+/// Translates a <see cref="FeatureQuery"/> into parameterized Oracle SQL for the Oracle
+/// spatial provider. All identifiers are validated and double-quoted; all literal values
+/// flow through named bind parameters (<c>:p0</c>, <c>:p1</c>, …) with
+/// <c>BindByName = true</c>.
+/// </summary>
+/// <remarks>
+/// Oracle 12c+ is assumed for <c>OFFSET … FETCH NEXT</c> pagination. Spatial functions used:
+/// <list type="bullet">
+///   <item><c>SDO_UTIL.TO_WKBGEOMETRY</c> (Oracle Spatial 10g R2+) for OGC WKB output.</item>
+///   <item><c>SDO_UTIL.FROM_WKBGEOMETRY</c> (Oracle Spatial 11g R1+) for filter geometries.</item>
+///   <item><c>SDO_RELATE</c> + <c>SDO_AGGR_MBR</c> for spatial filtering and extents.</item>
+/// </list>
+/// </remarks>
 internal static partial class OracleFeatureQueryBuilder
 {
     internal const string ProviderLabel = "Oracle";
 
+    /// <summary>
+    /// Builds a SELECT that returns the primary key, the geometry as WKB (or NULL when no
+    /// geometry column is configured), and any requested attribute columns.
+    /// </summary>
     public static ParameterizedQuery BuildSelectQuery(OracleLayerMapping mapping, FeatureQuery query, IReadOnlyList<string> attributeColumns)
     {
         ArgumentNullException.ThrowIfNull(mapping);
@@ -66,6 +84,9 @@ internal static partial class OracleFeatureQueryBuilder
         return new ParameterizedQuery(sb.ToString(), parameters);
     }
 
+    /// <summary>
+    /// Builds a SELECT COUNT(*) for the same query envelope as <see cref="BuildSelectQuery"/>.
+    /// </summary>
     public static ParameterizedQuery BuildCountQuery(
         OracleLayerMapping mapping,
         FeatureQuery query,
@@ -115,6 +136,10 @@ internal static partial class OracleFeatureQueryBuilder
         return new ParameterizedQuery(sb.ToString(), parameters);
     }
 
+    /// <summary>
+    /// Builds a SELECT that returns the primary key for matching rows. Used for object-id
+    /// listings when only identifiers are needed.
+    /// </summary>
     public static ParameterizedQuery BuildObjectIdsQuery(
         OracleLayerMapping mapping,
         FeatureQuery query,
@@ -141,6 +166,11 @@ internal static partial class OracleFeatureQueryBuilder
         return new ParameterizedQuery(sb.ToString(), parameters);
     }
 
+    /// <summary>
+    /// Builds an extent query using <c>SDO_AGGR_MBR</c>. The aggregate returns a rectangle
+    /// SDO_GEOMETRY whose <c>SDO_ORDINATES</c> varray contains <c>(minX, minY, maxX, maxY)</c>
+    /// in the source CRS.
+    /// </summary>
     public static ParameterizedQuery BuildExtentQuery(
         OracleLayerMapping mapping,
         FeatureQuery? query,
@@ -179,7 +209,15 @@ internal static partial class OracleFeatureQueryBuilder
         return new ParameterizedQuery(sb.ToString(), parameters);
     }
 
-    // A temporal filter this provider cannot translate is rejected, because dropping it would return rows outside the requested window.
+    /// <summary>
+    /// Rejects a <see cref="FeatureQuery.TemporalFilter"/> the Oracle provider cannot translate.
+    /// Temporal filters arrive on <see cref="FeatureQuery"/> from OGC API Features (<c>datetime</c>),
+    /// STAC search, and OData time-window queries. The provider does not yet emit Oracle temporal
+    /// predicates, so the filter is surfaced as an eager <see cref="NotSupportedException"/> —
+    /// never silently dropped, which would return rows outside the requested window (a
+    /// correctness/data-leak bug). Mirrors the fail-loud contract of the MySQL/Redshift/Databricks
+    /// providers (temporal GA hardening, #2429).
+    /// </summary>
     private static void GuardUnsupportedTemporalFilter(FeatureQuery query)
     {
         if (query.TemporalFilter.HasValue)
@@ -190,6 +228,11 @@ internal static partial class OracleFeatureQueryBuilder
         }
     }
 
+    /// <summary>
+    /// Recovers provider-neutral constraints from a Postgres-translated <see cref="FeatureQuery.SqlFilter"/>.
+    /// A pure integral <c>IN</c> list is lifted only when its target is the object id or the
+    /// layer primary key. Attribute <c>IN</c> lists and <c>NOT IN</c> stay unlifted.
+    /// </summary>
     internal static FeatureQuery NormalizeConstraints(
         FeatureQuery query,
         SqlFragment? translationOfWhere,
@@ -501,6 +544,11 @@ internal static partial class OracleFeatureQueryBuilder
     private static bool IsPaging(FeatureQuery query)
         => query.Limit.HasValue || query.Offset is > 0;
 
+    /// <summary>
+    /// Orders a DISTINCT projection by columns that appear in the select list. Oracle
+    /// rejects ORDER BY expressions outside that list, and the primary key is omitted
+    /// so it cannot uniquify every distinct tuple.
+    /// </summary>
     private static void AppendDistinctOrderBy(
         StringBuilder sb,
         FeatureQuery query,

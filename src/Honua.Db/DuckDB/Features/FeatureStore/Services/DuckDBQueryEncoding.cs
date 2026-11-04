@@ -3,6 +3,9 @@
 
 namespace Honua.Db.DuckDB.Features.FeatureStore.Services;
 
+/// <summary>
+/// Shared constants for internal column names used across DuckDB query building, execution, and result processing.
+/// </summary>
 internal static class DuckDBQueryEncoding
 {
     internal const string InternalTotalCountColumn = "__honua_total_count";

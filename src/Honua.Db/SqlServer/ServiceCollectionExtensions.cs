@@ -12,8 +12,21 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Db.SqlServer;
 
+/// <summary>
+/// Public DI entry point for the SQL Server spatial feature provider (#850).
+/// </summary>
 public static class ServiceCollectionExtensions
 {
+    /// <summary>
+    /// Registers the SQL Server feature provider as an additional <see cref="IFeatureDataProvider"/>
+    /// in the runtime, alongside the primary backend (PostGIS or DuckDB). Layers whose
+    /// <see cref="Honua.Core.Features.Security.Domain.DataConnection"/> resolves to the
+    /// <c>sqlserver</c>/<c>mssql</c> provider name are routed to this implementation.
+    /// </summary>
+    /// <param name="services">Service collection.</param>
+    /// <param name="configuration">Application configuration. Reads the <c>SqlServer</c> section
+    /// to bind <see cref="SqlServerOptions"/> (default connection string and command timeout).</param>
+    /// <returns>The same service collection for chaining.</returns>
     public static IServiceCollection AddSqlServerFeatureProvider(this IServiceCollection services, IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(services);

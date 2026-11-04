@@ -8,6 +8,11 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Db.DuckDB.Features.Infrastructure;
 
+/// <summary>
+/// Installs the DuckDB spatial extension once per process and loads it onto every
+/// connection handed out by <see cref="DuckDBConnectionProvider"/>.
+/// Supports an optional offline extension directory for air-gapped deployments.
+/// </summary>
 internal sealed class DuckDBSpatialBootstrap : IDisposable
 {
     private static readonly ImmutableArray<string> SpatialExtension = ["spatial"];
@@ -46,7 +51,12 @@ internal sealed class DuckDBSpatialBootstrap : IDisposable
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    // LOAD spatial is connection-scoped in DuckDB, so every new connection must load it or ST_* calls fail.
+    /// <summary>
+    /// Ensures the spatial extension is installed (once per process) and loaded on the
+    /// given connection. <c>LOAD spatial</c> and <c>SET extension_directory</c> are
+    /// connection-scoped in DuckDB, so they must run on every freshly opened connection
+    /// or query execution will fail when spatial <c>ST_*</c> functions are referenced.
+    /// </summary>
     public async Task EnsureSpatialExtensionAsync(DbConnection connection, CancellationToken cancellationToken)
     {
         // SET extension_directory is connection-scoped — apply on every fresh connection

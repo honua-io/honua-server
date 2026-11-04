@@ -13,8 +13,17 @@ using System.Diagnostics.CodeAnalysis;
 
 namespace Honua.Geocoding.Features.Geocoding;
 
+/// <summary>
+/// Service collection extensions for geocoding infrastructure (basic implementation).
+/// </summary>
 public static class ServiceCollectionExtensions
 {
+    /// <summary>
+    /// Registers the core geocoding services and configuration.
+    /// </summary>
+    /// <param name="services">Service collection.</param>
+    /// <param name="configuration">Application configuration.</param>
+    /// <returns>Service collection for chaining.</returns>
     public static IServiceCollection AddGeocodingCore(
         this IServiceCollection services,
         IConfiguration configuration)
@@ -53,6 +62,14 @@ public static class ServiceCollectionExtensions
         return services;
     }
 
+    /// <summary>
+    /// Register a geocoding provider.
+    /// </summary>
+    /// <typeparam name="TProvider">Provider implementation type</typeparam>
+    /// <param name="services">Service collection</param>
+    /// <param name="providerName">Name of the provider</param>
+    /// <param name="lifetime">Service lifetime</param>
+    /// <returns>Service collection for chaining</returns>
     public static IServiceCollection AddGeocodeProvider<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TProvider>(
         this IServiceCollection services,
@@ -68,6 +85,14 @@ public static class ServiceCollectionExtensions
         return services;
     }
 
+    /// <summary>
+    /// Register a geocoding provider with a factory.
+    /// </summary>
+    /// <param name="services">Service collection</param>
+    /// <param name="providerName">Name of the provider</param>
+    /// <param name="factory">Factory function</param>
+    /// <param name="lifetime">Service lifetime</param>
+    /// <returns>Service collection for chaining</returns>
     public static IServiceCollection AddGeocodeProvider<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TProvider>(
         this IServiceCollection services,

@@ -9,11 +9,22 @@ using Snowflake.Data.Client;
 
 namespace Honua.Snowflake.Features.FeatureStore.Services;
 
+/// <summary>
+/// Resolves and opens a Snowflake <see cref="DbConnection"/> for a feature operation.
+/// </summary>
 internal interface ISnowflakeConnectionFactory
 {
+    /// <summary>
+    /// Opens a Snowflake connection using the supplied <see cref="DataConnection"/> when available,
+    /// otherwise falling back to the configured default connection string.
+    /// </summary>
     Task<DbConnection> OpenAsync(DataConnection? dataConnection, CancellationToken cancellationToken);
 }
 
+/// <summary>
+/// Default <see cref="ISnowflakeConnectionFactory"/> implementation. Connection pooling is handled
+/// by <c>Snowflake.Data</c> internally; the factory just hands out freshly opened connections.
+/// </summary>
 internal sealed class SnowflakeConnectionFactory : ISnowflakeConnectionFactory
 {
     private readonly IOptions<SnowflakeOptions> _options;
