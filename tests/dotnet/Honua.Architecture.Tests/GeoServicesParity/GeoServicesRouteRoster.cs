@@ -6,66 +6,6 @@ using Honua.Architecture.Tests.FeatureCatalog;
 
 namespace Honua.Architecture.Tests.GeoServicesParity;
 
-/// <summary>
-/// Derives the GeoServices route roster — <b>which Esri operations Honua serves</b> —
-/// from the generated capability data, so the published parity matrix
-/// (<c>docs/gis/data/geoservices-rest-parity.json</c>) can consume it instead of
-/// restating it by hand (#2861 / #2863).
-/// </summary>
-/// <remarks>
-/// <para>
-/// <b>Why this exists.</b> Which routes exist is a mechanical fact that
-/// <see cref="FeatureCatalogGenerator"/> already extracts from
-/// <see cref="Honua.Server.EndpointRegistry.All"/> and that
-/// <c>FeatureCatalogDriftTests</c> already gates byte-for-byte. Until #2863 the
-/// parity matrix re-stated those same routes by hand, in a second vocabulary, and
-/// nothing compared the two — so it drifted in both directions at once (a published
-/// <c>computeClass</c> route that was never served; the async exportTiles lifecycle
-/// still published as deferred a day after it shipped). ADR-0058 names that pattern
-/// as the defect; a second gate over a duplicated roster would preserve it. This
-/// type removes the duplication: the roster has exactly one source, and the matrix
-/// annotates it.
-/// </para>
-/// <para>
-/// <b>The normalization (served route → <c>esriPath</c>).</b> The two vocabularies
-/// differ in exactly one place: the <i>service instance address</i>. Esri documents
-/// an operation relative to its service (<c>/GeometryServer/areasAndLengths</c>);
-/// Honua serves it at a concrete address
-/// (<c>/rest/services/Utilities/Geometry/GeometryServer/areasAndLengths</c>). The
-/// address is not part of the operation's identity — it is where the
-/// <c>{id}</c>-vs-<c>{serviceId}</c> alias divergence lives — so collapsing it is the
-/// whole normalization:
-/// </para>
-/// <list type="number">
-///   <item><description>
-///     strip route constraints (<c>{layerId:int}</c> → <c>{layerId}</c>);
-///   </description></item>
-///   <item><description>
-///     under <c>/rest/services/</c>, drop every segment before the first segment
-///     ending in <c>Server</c>. That prefix is the service address and may be empty
-///     (<c>/rest/services/GeocodeServer</c>), a route parameter (<c>{id}</c>,
-///     <c>{serviceId}</c>, <c>{locatorName}</c>), or literal
-///     (<c>Utilities/Geometry</c>). What remains is the Esri-relative operation path;
-///   </description></item>
-///   <item><description>
-///     <c>/sharing/rest/*</c> (ArcGIS portal sharing) and the catalog roots
-///     <c>/rest/info</c> and <c>/rest/services</c> carry no service address, so they
-///     normalize to themselves;
-///   </description></item>
-///   <item><description>
-///     the HTTP method is <b>not</b> part of the key. <c>GET</c> and <c>POST</c> forms
-///     of one Esri operation are one operation carrying one judgement; every served
-///     <c>METHOD /path</c> that normalizes to the same <c>esriPath</c> is emitted as
-///     that operation's <c>honuaEndpoints</c>. This is what collapses the ~70
-///     alias/method variants mechanically rather than by hand.
-///   </description></item>
-/// </list>
-/// <para>
-/// A route under <c>/rest/</c> that does not normalize is <b>not</b> silently dropped —
-/// <see cref="Derive"/> surfaces it through <see cref="GeoServicesRoster.Unmapped"/> so
-/// the join gate fails loudly rather than under-reporting the served surface.
-/// </para>
-/// </remarks>
 internal static class GeoServicesRouteRoster
 {
     /// <summary>Route-constraint stripper: <c>{layerId:int}</c> → <c>{layerId}</c>.</summary>
@@ -144,7 +84,7 @@ internal static class GeoServicesRouteRoster
                 continue;
             }
 
-            var (serviceType, esriPath) = normalized.Value;
+            var (serviceType, geoServicesPath) = normalized.Value;
 
             if (ExcludedServiceTypes.ContainsKey(serviceType))
             {
@@ -152,11 +92,11 @@ internal static class GeoServicesRouteRoster
                 continue;
             }
 
-            if (!operations.TryGetValue(esriPath, out var routes))
+            if (!operations.TryGetValue(geoServicesPath, out var routes))
             {
                 routes = [];
-                operations[esriPath] = routes;
-                serviceTypes[esriPath] = serviceType;
+                operations[geoServicesPath] = routes;
+                serviceTypes[geoServicesPath] = serviceType;
             }
 
             routes.Add((entry.Method, entry.Route, entry.Maturity));
@@ -165,7 +105,7 @@ internal static class GeoServicesRouteRoster
         var derived = operations
             .Select(pair => new GeoServicesOperation
             {
-                EsriPath = pair.Key,
+                GeoServicesPath = pair.Key,
                 ServiceType = serviceTypes[pair.Key],
                 HonuaEndpoints = pair.Value
                     .Select(route => EndpointKey.Format(route.Method, route.Route))
@@ -174,7 +114,7 @@ internal static class GeoServicesRouteRoster
                     .ToArray(),
                 Maturity = ResolveMaturity(pair.Value.Select(route => route.Maturity)),
             })
-            .OrderBy(operation => operation.EsriPath, StringComparer.Ordinal)
+            .OrderBy(operation => operation.GeoServicesPath, StringComparer.Ordinal)
             .ToArray();
 
         return new GeoServicesRoster
@@ -195,12 +135,7 @@ internal static class GeoServicesRouteRoster
         => route.StartsWith("/rest/", StringComparison.OrdinalIgnoreCase)
             || route.StartsWith("/sharing/rest/", StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>
-    /// Applies the served-route → <c>esriPath</c> normalization documented on this type.
-    /// Returns <c>null</c> when the route is under a GeoServices family but carries no
-    /// recognizable service type, which the join gate reports rather than swallows.
-    /// </summary>
-    public static (string ServiceType, string EsriPath)? Normalize(string route)
+    public static (string ServiceType, string GeoServicesPath)? Normalize(string route)
     {
         var path = RouteConstraintRegex.Replace(route.Trim(), "{${name}}");
 
@@ -256,12 +191,11 @@ internal static class GeoServicesRouteRoster
 internal sealed class GeoServicesOperation
 {
     /// <summary>Esri-relative operation path; the join key between roster and judgement.</summary>
-    public required string EsriPath { get; init; }
+    public required string GeoServicesPath { get; init; }
 
     /// <summary>Esri service type that owns the operation (<c>FeatureServer</c>, …).</summary>
     public required string ServiceType { get; init; }
 
-    /// <summary>Every served <c>METHOD /path</c> that normalizes to <see cref="EsriPath"/>.</summary>
     public required string[] HonuaEndpoints { get; init; }
 
     /// <summary>Capability-registry maturity tier carried through from the feature catalog.</summary>
@@ -271,7 +205,6 @@ internal sealed class GeoServicesOperation
 /// <summary>The derived GeoServices roster plus what the derivation could not place.</summary>
 internal sealed class GeoServicesRoster
 {
-    /// <summary>Served operations, ordered by <see cref="GeoServicesOperation.EsriPath"/>.</summary>
     public required GeoServicesOperation[] Operations { get; init; }
 
     /// <summary>Served GeoServices-family routes that carry no recognizable service type.</summary>

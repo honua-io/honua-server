@@ -440,7 +440,7 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             "filegdb",
             "flatgeobuf",
             "geoparquet",
-            "esrijson",
+            "geoservicesjson",
             "wkb",
         ];
 

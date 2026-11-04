@@ -9,30 +9,12 @@ using NetTopologySuite.IO;
 
 namespace Honua.Protocols.GeoServices.GPServer;
 
-/// <summary>
-/// Translates stock ArcGIS GP geometry inputs — <c>esriGeometry</c> JSON
-/// (point / polyline / polygon / multipoint / envelope) and the
-/// <c>GPFeatureRecordSetLayer</c> / <c>GPRecordSet</c> <c>FeatureSet</c>
-/// envelope — into the canonical WKB or GeoJSON FeatureCollection contract
-/// declared by the process parameter.
-///
-/// This is additive: native string inputs and base64-WKB inputs pass through
-/// untouched. Only values whose JSON shape matches a recognised Esri geometry
-/// or FeatureSet payload are rewritten.
-///
-/// Honua <c>geometry.*</c> processes execute on a SINGLE geometry + SRID, so a
-/// multi-feature FeatureSet cannot be flattened to a single canonical input
-/// without losing data. Such inputs are surfaced through
-/// <see cref="EsriInputTranslationResult.RequiresFeatureCollectionExecution"/>
-/// so the adapter can return an honest capability message rather than silently
-/// dropping features.
-/// </summary>
 internal static class GPServerEsriInputTranslation
 {
     /// <summary>
     /// Outcome of attempting to translate Esri geometry/FeatureSet inputs.
     /// </summary>
-    internal readonly record struct EsriInputTranslationResult(
+    internal readonly record struct GeoServicesInputTranslationResult(
         Dictionary<string, string> Inputs,
         bool RequiresFeatureCollectionExecution,
         string? CapabilityMessage,
@@ -55,7 +37,7 @@ internal static class GPServerEsriInputTranslation
     /// <param name="maxCurveVertices">
     /// True-curve densification budget. Null uses the converter default.
     /// </param>
-    public static EsriInputTranslationResult Translate(
+    public static GeoServicesInputTranslationResult Translate(
         IReadOnlyDictionary<string, string> inputs,
         IReadOnlySet<string>? featureCollectionParameters = null,
         bool includeDerivedSrid = true,
@@ -112,12 +94,12 @@ internal static class GPServerEsriInputTranslation
                     {
                         if (!TryConvertFeatureSet(root, maxCurveVertices, out var collection, out var collectionSrid, out var collectionError))
                         {
-                            return new EsriInputTranslationResult(translated, false,
+                            return new GeoServicesInputTranslationResult(translated, false,
                                 $"Input '{key}': {collectionError}", inputSpatialReference);
                         }
                         if (inputSpatialReference is { } previous && collectionSrid is { } current && previous != current)
                         {
-                            return new EsriInputTranslationResult(translated, false,
+                            return new GeoServicesInputTranslationResult(translated, false,
                                 "FeatureSet inputs must use the same spatial reference.", inputSpatialReference);
                         }
                         translated[key] = collection;
@@ -129,7 +111,7 @@ internal static class GPServerEsriInputTranslation
                     var featureCount = featuresProp.GetArrayLength();
                     if (featureCount == 0)
                     {
-                        return new EsriInputTranslationResult(
+                        return new GeoServicesInputTranslationResult(
                             translated,
                             RequiresFeatureCollectionExecution: false,
                             CapabilityMessage:
@@ -143,7 +125,7 @@ internal static class GPServerEsriInputTranslation
                         // Multi-feature execution requires the server feature-collection /
                         // layer-level execution stream, which is not part of the
                         // single-geometry geometry.* contract. Do not fake a result.
-                        return new EsriInputTranslationResult(
+                        return new GeoServicesInputTranslationResult(
                             translated,
                             RequiresFeatureCollectionExecution: true,
                             CapabilityMessage:
@@ -161,7 +143,7 @@ internal static class GPServerEsriInputTranslation
                     if (!feature.TryGetProperty("geometry", out var featureGeometry) ||
                         featureGeometry.ValueKind != JsonValueKind.Object)
                     {
-                        return new EsriInputTranslationResult(
+                        return new GeoServicesInputTranslationResult(
                             translated,
                             RequiresFeatureCollectionExecution: false,
                             CapabilityMessage:
@@ -172,7 +154,7 @@ internal static class GPServerEsriInputTranslation
 
                     if (!TryConvertEsriGeometry(featureGeometry, setSr, maxCurveVertices, out var wkbBase64, out var sr, out var convertError))
                     {
-                        return new EsriInputTranslationResult(
+                        return new GeoServicesInputTranslationResult(
                             translated,
                             RequiresFeatureCollectionExecution: false,
                             CapabilityMessage: $"Input '{key}' FeatureSet geometry could not be translated: {convertError}",
@@ -191,7 +173,7 @@ internal static class GPServerEsriInputTranslation
                 {
                     if (!TryConvertEsriGeometry(root, parentSpatialReference: null, maxCurveVertices, out var wkbBase64, out var sr, out var convertError))
                     {
-                        return new EsriInputTranslationResult(
+                        return new GeoServicesInputTranslationResult(
                             translated,
                             RequiresFeatureCollectionExecution: false,
                             CapabilityMessage: $"Input '{key}' esriGeometry could not be translated: {convertError}",
@@ -218,7 +200,7 @@ internal static class GPServerEsriInputTranslation
             translated["srid"] = sridValue.ToString(System.Globalization.CultureInfo.InvariantCulture);
         }
 
-        return new EsriInputTranslationResult(
+        return new GeoServicesInputTranslationResult(
             translated,
             RequiresFeatureCollectionExecution: false,
             CapabilityMessage: null,

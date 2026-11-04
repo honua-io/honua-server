@@ -199,7 +199,7 @@ internal sealed class FeatureServerRelatedRecordsHandler(
             SqlFragment? sqlFilter = null;
             if (!string.IsNullOrWhiteSpace(validatedParams.Where))
             {
-                var parseResult = _filterExpressionService.Parse(FilterLanguage.ArcGisSql, validatedParams.Where);
+                var parseResult = _filterExpressionService.Parse(FilterLanguage.GeoServicesSql, validatedParams.Where);
                 if (!parseResult.IsSuccess)
                 {
                     return StandardErrorHelpers.CreateBadRequest(httpContext,

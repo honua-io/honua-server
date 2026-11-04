@@ -124,8 +124,8 @@ public sealed class MigrationParityEvidenceGeneratorTests
             [
                 CreateFidelity("workspace:roads:identity", "workspace:roads", "identity", MigrationFidelityAutomationStatuses.Automated, ImportCompatibilityCodes.Compatible),
                 CreateFidelity("workspace:roads:domains", "workspace:roads", "domains", MigrationFidelityAutomationStatuses.Assisted, ImportCompatibilityCodes.ManualReview),
-                CreateFidelity("workspace:roads:relationships", "workspace:roads", "relationships", MigrationFidelityAutomationStatuses.ManualReview, ImportCompatibilityCodes.ArcGisRelationshipsManualReview),
-                CreateFidelity("renderer:roads:heatmap", "renderer:roads", "renderers", MigrationFidelityAutomationStatuses.Unsupported, ImportCompatibilityCodes.ArcGisUnsupportedRenderer)
+                CreateFidelity("workspace:roads:relationships", "workspace:roads", "relationships", MigrationFidelityAutomationStatuses.ManualReview, ImportCompatibilityCodes.GeoServicesRelationshipsManualReview),
+                CreateFidelity("renderer:roads:heatmap", "renderer:roads", "renderers", MigrationFidelityAutomationStatuses.Unsupported, ImportCompatibilityCodes.GeoServicesUnsupportedRenderer)
             ]);
 
         var evidence = MigrationParityEvidenceGenerator.Generate(inventory, MigrationManifestTranslator.Translate(inventory));

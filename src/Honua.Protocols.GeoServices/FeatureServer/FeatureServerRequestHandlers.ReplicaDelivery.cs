@@ -381,7 +381,7 @@ internal static partial class FeatureServerEndpoints
             if (!string.IsNullOrWhiteSpace(layerQuery?.Where))
             {
                 var filterService = context.RequestServices.GetRequiredService<IFilterExpressionService>();
-                var parseResult = filterService.Parse(FilterLanguage.ArcGisSql, layerQuery.Where);
+                var parseResult = filterService.Parse(FilterLanguage.GeoServicesSql, layerQuery.Where);
                 if (!parseResult.IsSuccess)
                 {
                     error = $"Layer {layer.PublicLayerId} where clause is invalid: {parseResult.ErrorMessage ?? "invalid filter syntax."}";

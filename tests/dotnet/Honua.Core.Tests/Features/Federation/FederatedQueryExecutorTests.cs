@@ -79,7 +79,7 @@ public sealed class FederatedQueryExecutorTests
         var executor = BuildExecutor(new StubConnector(FederatedSourceKind.HonuaGrpc, ImmutableArray<Feature>.Empty));
 
         var ex = await Assert.ThrowsAsync<FederatedSourceUnavailableException>(
-            () => executor.ExecuteAsync(Source(FederatedSourceKind.EsriRest), new FeatureQuery()));
+            () => executor.ExecuteAsync(Source(FederatedSourceKind.GeoServicesRest), new FeatureQuery()));
 
         Assert.Equal(FederatedSourceUnavailableReason.NoConnector, ex.Reason);
     }
@@ -127,7 +127,7 @@ public sealed class FederatedQueryExecutorTests
         ActivitySource.AddActivityListener(listener);
 
         await Assert.ThrowsAsync<FederatedSourceUnavailableException>(
-            () => executor.ExecuteAsync(Source(FederatedSourceKind.EsriRest), new FeatureQuery()));
+            () => executor.ExecuteAsync(Source(FederatedSourceKind.GeoServicesRest), new FeatureQuery()));
 
         Assert.Contains(activities, activity => activity.Status == ActivityStatusCode.Error);
     }
@@ -178,7 +178,7 @@ public sealed class FederatedQueryExecutorTests
             Feature(1, ("t", new DateTimeOffset(2020, 1, 1, 0, 0, 0, TimeSpan.Zero))),
             Feature(2, ("t", new DateTimeOffset(2024, 6, 1, 0, 0, 0, TimeSpan.Zero))),
             Feature(3, ("t", new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero))));
-        var executor = BuildExecutor(new StubConnector(FederatedSourceKind.EsriRest, rows));
+        var executor = BuildExecutor(new StubConnector(FederatedSourceKind.GeoServicesRest, rows));
 
         var query = new FeatureQuery
         {
@@ -191,7 +191,7 @@ public sealed class FederatedQueryExecutorTests
             },
         };
 
-        var result = await executor.ExecuteAsync(Source(FederatedSourceKind.EsriRest), query);
+        var result = await executor.ExecuteAsync(Source(FederatedSourceKind.GeoServicesRest), query);
 
         Assert.Equal(new long[] { 2 }, result.Result.Items.Select(f => f.Id).ToArray());
     }
@@ -200,7 +200,7 @@ public sealed class FederatedQueryExecutorTests
     public async Task ExecuteAsync_ExactSpatialRelationship_RecordsUnappliedRefinement()
     {
         var rows = ImmutableArray.Create(Feature(1), Feature(2));
-        var executor = BuildExecutor(new StubConnector(FederatedSourceKind.EsriRest, rows));
+        var executor = BuildExecutor(new StubConnector(FederatedSourceKind.GeoServicesRest, rows));
 
         var query = FeatureQuery.WithSpatialFilter(new SpatialFilter
         {
@@ -208,7 +208,7 @@ public sealed class FederatedQueryExecutorTests
             SpatialRelationship = SpatialRelationship.Within,
         });
 
-        var result = await executor.ExecuteAsync(Source(FederatedSourceKind.EsriRest), query);
+        var result = await executor.ExecuteAsync(Source(FederatedSourceKind.GeoServicesRest), query);
 
         Assert.Contains(FederationPredicateKind.SpatialFilter, result.UnappliedLocalRefinements);
         Assert.Equal(2, result.Result.Items.Length);
@@ -217,8 +217,8 @@ public sealed class FederatedQueryExecutorTests
     [UnitTest]
     public async Task ExecuteAsync_CircuitBreaker_OpensAfterConsecutiveFailures()
     {
-        var executor = BuildExecutor(new ThrowingConnector(FederatedSourceKind.EsriRest), FastFail);
-        var source = Source(FederatedSourceKind.EsriRest);
+        var executor = BuildExecutor(new ThrowingConnector(FederatedSourceKind.GeoServicesRest), FastFail);
+        var source = Source(FederatedSourceKind.GeoServicesRest);
 
         var reasons = new System.Collections.Generic.List<FederatedSourceUnavailableReason>();
         for (var i = 0; i < 4; i++)
@@ -237,8 +237,8 @@ public sealed class FederatedQueryExecutorTests
     [UnitTest]
     public async Task ExecuteAsync_SlowSource_TranslatesToTimeout()
     {
-        var executor = BuildExecutor(new SlowConnector(FederatedSourceKind.EsriRest), FastFail);
-        var source = Source(FederatedSourceKind.EsriRest, TimeSpan.FromMilliseconds(50));
+        var executor = BuildExecutor(new SlowConnector(FederatedSourceKind.GeoServicesRest), FastFail);
+        var source = Source(FederatedSourceKind.GeoServicesRest, TimeSpan.FromMilliseconds(50));
 
         var ex = await Assert.ThrowsAsync<FederatedSourceUnavailableException>(
             () => executor.ExecuteAsync(source, new FeatureQuery()));
@@ -249,8 +249,8 @@ public sealed class FederatedQueryExecutorTests
     [UnitTest]
     public async Task ExecuteAsync_CallerCancellation_PropagatesWithoutWrapping()
     {
-        var executor = BuildExecutor(new SlowConnector(FederatedSourceKind.EsriRest), FastFail);
-        var source = Source(FederatedSourceKind.EsriRest);
+        var executor = BuildExecutor(new SlowConnector(FederatedSourceKind.GeoServicesRest), FastFail);
+        var source = Source(FederatedSourceKind.GeoServicesRest);
         using var cts = new CancellationTokenSource();
         cts.CancelAfter(TimeSpan.FromMilliseconds(50));
 

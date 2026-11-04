@@ -13,21 +13,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// Issue #4600, acceptance criterion 4: an imported domain is verified by behavior, not only by JSON
-/// capture. Each Esri field definition is parsed by <see cref="EsriFieldDomainParser"/>, the parser the
-/// importer uses to build the published field (persistence through publish is proven separately by
-/// <c>GeoservicesImportDomainPersistenceTests</c>). The resulting field is then run through the
-/// <see cref="FeatureMutationValidator"/> the FeatureServer <c>applyEdits</c> handler uses, in
-/// GeoServices mode.
-/// </summary>
-/// <remarks>
-/// Expected outcomes come from the source domain definitions in this file, not from validator output.
-/// The coded-value domain allows exactly A, C and P; the range domain allows 0 through 100 inclusive.
-/// This is the behavior the capability registry now claims for <c>resource.domains</c>. The truncated
-/// case pins its fallback: a coded-value domain over the capture cap is not persisted, so it is not
-/// enforced either.
-/// </remarks>
 [Protocol(TestProtocols.FeatureServer)]
 public sealed class ImportedDomainEnforcementTests
 {
@@ -105,7 +90,7 @@ public sealed class ImportedDomainEnforcementTests
     [Operation(Operations.ApplyEdits)]
     public void ApplyEditsValidation_CodedValueDomainOverTheCaptureCap_IsNotPersistedAndNotEnforced()
     {
-        var codes = Enumerable.Range(0, EsriFieldDomainParser.CodedValueDomainCap + 1)
+        var codes = Enumerable.Range(0, GeoServicesFieldDomainParser.CodedValueDomainCap + 1)
             .Select(static i => $$"""{ "code": "C{{i}}", "name": "Code {{i}}" }""");
         var fieldJson = $$"""
             {
@@ -116,7 +101,7 @@ public sealed class ImportedDomainEnforcementTests
             """;
 
         using var document = JsonDocument.Parse(fieldJson);
-        var parsed = EsriFieldDomainParser.Parse(document.RootElement);
+        var parsed = GeoServicesFieldDomainParser.Parse(document.RootElement);
         parsed.Truncated.Should().BeTrue();
         parsed.Domain.Should().BeNull("a truncated coded-value domain is not persisted");
 
@@ -125,12 +110,6 @@ public sealed class ImportedDomainEnforcementTests
             "with no persisted domain nothing is enforced, which is why the registry reports a truncated domain as manual review");
     }
 
-    /// <summary>
-    /// #4600 review: <see cref="EsriFieldDomainParser.IsEnforceable"/> is what keeps a domain in the
-    /// automated classification tier, so it must agree with the validator. Each unenforceable variant is
-    /// persisted by the parser yet accepts a value outside anything the source declared; each enforceable
-    /// variant rejects it.
-    /// </summary>
     [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [Operation(Operations.ApplyEdits)]
@@ -143,9 +122,9 @@ public sealed class ImportedDomainEnforcementTests
     public void IsEnforceable_AgreesWithApplyEditsValidation(string domainJson, bool expectedEnforceable)
     {
         using var document = JsonDocument.Parse($$"""{ "name": "odd", "type": "esriFieldTypeInteger", "domain": {{domainJson}} }""");
-        var parsed = EsriFieldDomainParser.Parse(document.RootElement);
+        var parsed = GeoServicesFieldDomainParser.Parse(document.RootElement);
 
-        EsriFieldDomainParser.IsEnforceable(parsed.Domain).Should().Be(expectedEnforceable);
+        GeoServicesFieldDomainParser.IsEnforceable(parsed.Domain).Should().Be(expectedEnforceable);
 
         // 1000 is outside every enforceable variant above (codes {7}, range [1, 9]).
         var field = new MetadataV2Field { Name = "odd", Type = MetadataV2FieldType.Integer, Nullable = true, Domain = parsed.Domain };
@@ -158,7 +137,7 @@ public sealed class ImportedDomainEnforcementTests
     {
         using var document = JsonDocument.Parse(fieldJson);
         var root = document.RootElement;
-        var parsed = EsriFieldDomainParser.Parse(root);
+        var parsed = GeoServicesFieldDomainParser.Parse(root);
         parsed.Truncated.Should().BeFalse();
         parsed.Domain.Should().NotBeNull();
 

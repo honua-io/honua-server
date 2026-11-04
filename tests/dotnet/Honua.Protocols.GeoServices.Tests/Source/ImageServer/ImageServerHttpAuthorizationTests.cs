@@ -71,7 +71,7 @@ public sealed class ImageServerHttpAuthorizationTests
     private const double EastRasterValue = 40;
 
     /// <summary>Esri's <c>TokenRequired</c> error code, returned to an unauthenticated caller.</summary>
-    private const int EsriTokenRequired = 499;
+    private const int GeoServicesTokenRequired = 499;
 
     /// <summary>
     /// getSamples takes its points in the Esri multipoint JSON form; the bare <c>x,y</c> form
@@ -289,7 +289,7 @@ public sealed class ImageServerHttpAuthorizationTests
         else
         {
             ((int)response.StatusCode).Should().BeOneOf(
-                [(int)HttpStatusCode.Unauthorized, (int)HttpStatusCode.Forbidden, EsriTokenRequired],
+                [(int)HttpStatusCode.Unauthorized, (int)HttpStatusCode.Forbidden, GeoServicesTokenRequired],
                 "{0} must be refused {1}; body: {2}",
                 who,
                 operation,
@@ -323,7 +323,7 @@ public sealed class ImageServerHttpAuthorizationTests
         document.RootElement.TryGetProperty("error", out var error).Should().BeTrue(
             "{0} must receive the GeoServices error envelope from {1}; body: {2}", who, operation, body);
         error.GetProperty("code").GetInt32().Should().BeOneOf(
-            [(int)HttpStatusCode.Unauthorized, (int)HttpStatusCode.Forbidden, EsriTokenRequired],
+            [(int)HttpStatusCode.Unauthorized, (int)HttpStatusCode.Forbidden, GeoServicesTokenRequired],
             "{0} must be refused {1} by an authorization decision; body: {2}", who, operation, body);
     }
 

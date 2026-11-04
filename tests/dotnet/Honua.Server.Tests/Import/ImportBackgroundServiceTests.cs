@@ -78,7 +78,7 @@ public sealed class ImportBackgroundServiceTests
             completed.ServiceName.Should().Be("imported-service");
             completed.PublishedLayerId.Should().Be(42);
             completed.LayerId.Should().Be(42);
-            completed.SourceKind.Should().Be("arcgis-geoservices-rest");
+            completed.SourceKind.Should().Be("geoservices-rest");
             completed.SourceUrl.Should().Be(request.ServiceUrl);
             completed.SourceLayerName.Should().Be("Roads");
             // #4600: the verdict travels with the persisted job, not only with the in-memory result.

@@ -228,7 +228,7 @@ public static class MigrationCatalogReconciler
             return;
         }
 
-        // Respect the capture-time coded-value cap (EsriFieldDomainParser.CodedValueDomainCap). A
+        // Respect the capture-time coded-value cap (GeoServicesFieldDomainParser.CodedValueDomainCap). A
         // coded-value domain that exceeded the cap at scan time is captured with its type/name but
         // NO coded values (DomainValues is null/empty) and is deliberately omitted from the publish
         // path (it would otherwise materialize as a misleading partial lookup). Reconciling such a

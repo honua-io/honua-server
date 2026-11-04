@@ -84,7 +84,7 @@ internal sealed partial class GeoservicesImportService
         return segments.Length == 0 ? "GeoServices" : segments[^1];
     }
 
-    private static string? BuildArcGisSourceValue(int? wkid, int? latestWkid, string? wkt)
+    private static string? BuildGeoServicesSourceValue(int? wkid, int? latestWkid, string? wkt)
     {
         if (wkid.HasValue)
         {
@@ -104,7 +104,7 @@ internal sealed partial class GeoservicesImportService
         return wkt;
     }
 
-    private static int? NormalizeArcGisWkid(int? wkid)
+    private static int? NormalizeGeoServicesWkid(int? wkid)
         => wkid.HasValue
             ? SpatialReferenceExtensions.NormalizeWebMercatorSrid(wkid.Value)
             : null;
@@ -112,7 +112,7 @@ internal sealed partial class GeoservicesImportService
     // True only for the ArcGIS Web Mercator alias codes (not canonical 3857 itself), so callers can
     // detect that an incoming WKID needs alias normalization. Routed through the canonical
     // classifier (#2732): an alias is any Web Mercator SRID other than 3857.
-    private static bool IsKnownArcGisAlias(int? wkid)
+    private static bool IsKnownGeoServicesAlias(int? wkid)
         => wkid is int w && w != 3857 && SpatialReferenceExtensions.IsWebMercatorSrid(w);
 
     private static string[] SplitCsv(string? value)
@@ -246,18 +246,18 @@ internal sealed partial class GeoservicesImportService
         => credentials?.HasCredentialMaterial == true &&
             credentials.GetNormalizedMode() != GeoservicesAuthenticationModes.Anonymous;
 
-    private static (string AuthMode, string CompatibilityCode) ClassifyArcGisError(
+    private static (string AuthMode, string CompatibilityCode) ClassifyGeoServicesError(
         int? errorCode,
         GeoservicesCredentialDescriptor? credentials)
         => errorCode switch
         {
-            498 => (GeoservicesAuthenticationModes.ExpiredToken, ImportCompatibilityCodes.ArcGisTokenExpired),
-            499 => (GeoservicesAuthenticationModes.AuthRequired, ImportCompatibilityCodes.ArcGisTokenRequired),
+            498 => (GeoservicesAuthenticationModes.ExpiredToken, ImportCompatibilityCodes.GeoServicesTokenExpired),
+            499 => (GeoservicesAuthenticationModes.AuthRequired, ImportCompatibilityCodes.GeoServicesTokenRequired),
             401 => (HasCredentialMaterial(credentials)
                 ? GeoservicesAuthenticationModes.Denied
-                : GeoservicesAuthenticationModes.AuthRequired, ImportCompatibilityCodes.ArcGisTokenRequired),
-            403 => (GeoservicesAuthenticationModes.Denied, ImportCompatibilityCodes.ArcGisAccessDenied),
-            _ => (GeoservicesAuthenticationModes.Unknown, ImportCompatibilityCodes.ArcGisServiceError)
+                : GeoservicesAuthenticationModes.AuthRequired, ImportCompatibilityCodes.GeoServicesTokenRequired),
+            403 => (GeoservicesAuthenticationModes.Denied, ImportCompatibilityCodes.GeoServicesAccessDenied),
+            _ => (GeoservicesAuthenticationModes.Unknown, ImportCompatibilityCodes.GeoServicesServiceError)
         };
 
     private sealed record GeoservicesResourceReference(int Id, string Name, string Kind);

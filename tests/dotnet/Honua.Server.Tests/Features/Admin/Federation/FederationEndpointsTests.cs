@@ -52,7 +52,7 @@ public sealed class FederationEndpointsTests : IAsyncLifetime
                         {
                             Id = "esri-parcels",
                             DisplayName = "County Parcels (Esri)",
-                            Kind = FederatedSourceKind.EsriRest,
+                            Kind = FederatedSourceKind.GeoServicesRest,
                             Endpoint = "https://gis.example.gov/arcgis/rest/services/Parcels/FeatureServer",
                             RemoteLayer = "0",
                             RequestTimeoutSeconds = 15,

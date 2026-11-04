@@ -443,5 +443,5 @@ public static class MediaTypes
     /// <summary>
     /// Esri GeoServices drawingInfo renderer media type (OGC API - Styles derived encoding, ADR-0002).
     /// </summary>
-    public const string EsriDrawingInfo = "application/vnd.esri.drawinginfo+json";
+    public const string GeoServicesDrawingInfo = "application/vnd.esri.drawinginfo+json";
 }

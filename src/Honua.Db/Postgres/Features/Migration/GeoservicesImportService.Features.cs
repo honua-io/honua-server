@@ -27,7 +27,7 @@ internal sealed partial class GeoservicesImportService
         string schemaName,
         string tableName,
         GeoservicesLayerInfo layerInfo,
-        ArcGisFeature[] features,
+        GeoServicesSourceFeature[] features,
         int targetSrid,
         CancellationToken cancellationToken)
     {
@@ -230,7 +230,7 @@ internal sealed partial class GeoservicesImportService
     }
 
     private static bool TryReadSourceObjectId(
-        ArcGisFeature feature,
+        GeoServicesSourceFeature feature,
         string sourceObjectIdField,
         out long sourceObjectId)
     {

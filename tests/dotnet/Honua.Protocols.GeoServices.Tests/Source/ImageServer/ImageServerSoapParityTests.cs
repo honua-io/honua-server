@@ -34,7 +34,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 [Protocol(TestProtocols.ImageServer)]
 public sealed class ImageServerSoapParityTests : IAsyncLifetime
 {
-    private const string ArcGisNamespace = "http://www.esri.com/schemas/ArcGIS/10.8";
+    private const string GeoServicesNamespace = "http://www.esri.com/schemas/ArcGIS/10.8";
     private const string XsiNamespace = "http://www.w3.org/2001/XMLSchema-instance";
     private const string NameFilter = "( Name = 'Test Raster RGB' )";
     private const double ServiceLowCellSize = 0.0021875;
@@ -66,7 +66,7 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
         var rasters = await _fixture.GetService<IRasterStore>()
             .ListRastersAsync(WebAppFixture.TestLayerId, CancellationToken.None);
         var reference = rasters.First(raster => raster.Extent.HasValue);
-        var response = await PostSoapAsync($"""<GetView xmlns="{ArcGisNamespace}">{viewIdElement}</GetView>""");
+        var response = await PostSoapAsync($"""<GetView xmlns="{GeoServicesNamespace}">{viewIdElement}</GetView>""");
         response.Status.Should().Be(HttpStatusCode.OK, response.Body);
         var result = Element(response.Document, "Result");
         result.Attribute(XName.Get("type", XsiNamespace))!.Value.Should().Be("tns:ImageView");
@@ -96,7 +96,7 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
     [Endpoint("POST /services/{serviceId}/ImageServer")]
     public async Task GetView_UnknownNamedViewIsNotTheDefaultView()
     {
-        var response = await PostSoapAsync($"""<GetView xmlns="{ArcGisNamespace}"><VID>foreign-view</VID></GetView>""");
+        var response = await PostSoapAsync($"""<GetView xmlns="{GeoServicesNamespace}"><VID>foreign-view</VID></GetView>""");
         response.Status.Should().Be(HttpStatusCode.NotFound, response.Body);
         response.Body.Should().Contain("Image view was not found");
         response.Document.Descendants().Should().NotContain(element => element.Name.LocalName == "Result");
@@ -119,8 +119,8 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
         }).ToArray();
         store.ListRastersAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(projected);
 
-        var fields = await PostSoapAsync($"""<GetFields xmlns="{ArcGisNamespace}" />""");
-        var info = await PostSoapAsync($"""<GetServiceInfo xmlns="{ArcGisNamespace}" />""");
+        var fields = await PostSoapAsync($"""<GetFields xmlns="{GeoServicesNamespace}" />""");
+        var info = await PostSoapAsync($"""<GetServiceInfo xmlns="{GeoServicesNamespace}" />""");
         fields.Status.Should().Be(HttpStatusCode.OK, fields.Body);
         info.Status.Should().Be(HttpStatusCode.OK, info.Body);
         var geometry = Element(fields.Document, "GeometryDef");
@@ -213,7 +213,7 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
 
         var unknownField = await PostSoapAsync(
             $"""
-            <GetCatalogItems xmlns="{ArcGisNamespace}">
+            <GetCatalogItems xmlns="{GeoServicesNamespace}">
               <QueryFilter><SubFields>NotAField</SubFields></QueryFilter>
             </GetCatalogItems>
             """);
@@ -301,7 +301,7 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
         var serviceJson = await ReadJsonAsync(rest);
         var itemJson = await ReadJsonAsync(restItem);
 
-        var properties = await PostSoapAsync($"""<GetKeyProperties xmlns="{ArcGisNamespace}" />""");
+        var properties = await PostSoapAsync($"""<GetKeyProperties xmlns="{GeoServicesNamespace}" />""");
         properties.Status.Should().Be(HttpStatusCode.OK, properties.Body);
         AssertKeyProperties(properties.Document, serviceJson);
         Property(properties.Document, "LowCellSize").Should().Be(ServiceLowCellSize);
@@ -311,7 +311,7 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
 
         var extended = await PostSoapAsync(
             $"""
-            <GetKeyPropertiesX xmlns="{ArcGisNamespace}" xmlns:xsi="{XsiNamespace}">
+            <GetKeyPropertiesX xmlns="{GeoServicesNamespace}" xmlns:xsi="{XsiNamespace}">
               <RenderingRule xsi:nil="true" />
             </GetKeyPropertiesX>
             """);
@@ -320,7 +320,7 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
 
         var item = await PostSoapAsync(
             $"""
-            <GetRasterKeyProperties xmlns="{ArcGisNamespace}">
+            <GetRasterKeyProperties xmlns="{GeoServicesNamespace}">
               <RID>3</RID>
             </GetRasterKeyProperties>
             """);
@@ -361,11 +361,11 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
         var histogramJson = await ReadJsonAsync(restHistograms);
         histogramJson.GetProperty("histograms")[0].TryGetProperty("SourceBand", out _).Should().BeFalse();
         histogramJson.GetProperty("histograms")[0].TryGetProperty("sourceBand", out _).Should().BeFalse();
-        var serviceInfo = await PostSoapAsync($"""<GetServiceInfo xmlns="{ArcGisNamespace}" />""");
+        var serviceInfo = await PostSoapAsync($"""<GetServiceInfo xmlns="{GeoServicesNamespace}" />""");
         serviceInfo.Status.Should().Be(HttpStatusCode.OK, serviceInfo.Body);
         foreach (var operation in new[] { "GetKeyProperties", "GetKeyPropertiesX" })
         {
-            var response = await PostSoapAsync($"""<{operation} xmlns="{ArcGisNamespace}" />""");
+            var response = await PostSoapAsync($"""<{operation} xmlns="{GeoServicesNamespace}" />""");
             response.Status.Should().Be(HttpStatusCode.OK, response.Body);
             var rasterInfo = MultidimensionalPropertyValue(Element(response.Document, "Result"), "RasterInfo");
             rasterInfo.Attribute(XName.Get("type", XsiNamespace))!.Value.Should().Be("tns:RasterInfo");
@@ -403,7 +403,7 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
                 new RasterStatistics { Band = 2, MinValue = 21, MaxValue = 29, MeanValue = 25 }
             ]);
         var response = await PostSoapAsync($"""
-            <GetKeyPropertiesX xmlns="{ArcGisNamespace}" xmlns:xsi="{XsiNamespace}">
+            <GetKeyPropertiesX xmlns="{GeoServicesNamespace}" xmlns:xsi="{XsiNamespace}">
               <RenderingRule><FunctionName>ExtractBand</FunctionName><Arguments>
                 <PropertySetProperty><Key>BandIds</Key><Value xsi:type="tns:ArrayOfInt"><Int>2</Int><Int>0</Int></Value></PropertySetProperty>
               </Arguments></RenderingRule>
@@ -434,7 +434,7 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
         store.ClearReceivedCalls();
         var values = string.Concat(Enumerable.Repeat("<Int>0</Int>", count));
         var response = await PostSoapAsync($"""
-            <GetKeyPropertiesX xmlns="{ArcGisNamespace}" xmlns:xsi="{XsiNamespace}">
+            <GetKeyPropertiesX xmlns="{GeoServicesNamespace}" xmlns:xsi="{XsiNamespace}">
               <RenderingRule><FunctionName>ExtractBand</FunctionName><Arguments>
                 <PropertySetProperty><Key>BandIds</Key><Value xsi:type="tns:ArrayOfInt">{values}</Value></PropertySetProperty>
               </Arguments></RenderingRule>
@@ -473,7 +473,7 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
                 new RasterHistogram { Band = 3, BinCount = 1, Min = 30, Max = 39, Counts = [300] }
             ]);
         var response = await PostSoapAsync($"""
-            <GetKeyPropertiesX xmlns="{ArcGisNamespace}" xmlns:xsi="{XsiNamespace}">
+            <GetKeyPropertiesX xmlns="{GeoServicesNamespace}" xmlns:xsi="{XsiNamespace}">
               <RenderingRule><FunctionName>Identity</FunctionName><Arguments>
                 <PropertySetProperty><Key>Raster</Key><Value xsi:type="tns:RasterFunction">
                   <FunctionName>ExtractBand</FunctionName><Arguments>
@@ -506,7 +506,7 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
     public async Task KeyPropertiesRenderingRule_PixelTransformReturnsExplicitUnsupportedFault()
     {
         var response = await PostSoapAsync($"""
-            <GetKeyPropertiesX xmlns="{ArcGisNamespace}">
+            <GetKeyPropertiesX xmlns="{GeoServicesNamespace}">
               <RenderingRule><FunctionName>Slope</FunctionName></RenderingRule>
             </GetKeyPropertiesX>
             """);
@@ -551,7 +551,7 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
             Arg.Any<int[]?>(), Arg.Any<int>(), Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>())
             .Returns([new RasterHistogram { Band = 1, BinCount = 1, Min = 900, Max = 999, Counts = [999] }]);
 
-        var response = await PostSoapAsync($"""<GetKeyPropertiesX xmlns="{ArcGisNamespace}" />""");
+        var response = await PostSoapAsync($"""<GetKeyPropertiesX xmlns="{GeoServicesNamespace}" />""");
         response.Status.Should().Be(HttpStatusCode.OK, response.Body);
         graphActivated.Should().BeTrue("the graph activation must occur after SOAP publication revalidation");
         var info = MultidimensionalPropertyValue(Element(response.Document, "Result"), "RasterInfo");
@@ -580,9 +580,9 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
         }).ToArray();
         store.ListRastersAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(projected);
 
-        var view = await PostSoapAsync($"""<GetView xmlns="{ArcGisNamespace}" />""");
-        var fields = await PostSoapAsync($"""<GetFields xmlns="{ArcGisNamespace}" />""");
-        var info = await PostSoapAsync($"""<GetServiceInfo xmlns="{ArcGisNamespace}" />""");
+        var view = await PostSoapAsync($"""<GetView xmlns="{GeoServicesNamespace}" />""");
+        var fields = await PostSoapAsync($"""<GetFields xmlns="{GeoServicesNamespace}" />""");
+        var info = await PostSoapAsync($"""<GetServiceInfo xmlns="{GeoServicesNamespace}" />""");
         view.Status.Should().Be(HttpStatusCode.OK, view.Body);
         fields.Status.Should().Be(HttpStatusCode.OK, fields.Body);
         info.Status.Should().Be(HttpStatusCode.OK, info.Body);
@@ -619,7 +619,7 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
         var restVariable = multidim.GetProperty("multidimensionalInfo").GetProperty("variables")[0];
         restVariable.GetProperty("name").GetString().Should().Be("sea_surface_temperature");
 
-        var soapInfo = await PostSoapAsync($"""<GetServiceInfo xmlns="{ArcGisNamespace}" />""");
+        var soapInfo = await PostSoapAsync($"""<GetServiceInfo xmlns="{GeoServicesNamespace}" />""");
         soapInfo.Status.Should().Be(HttpStatusCode.OK, soapInfo.Body);
         Element(soapInfo.Document, "SupportsTime").Value.Should().Be("true");
         // Attribute time is advertised only through catalog fields; the fixture's
@@ -643,7 +643,7 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
 
         soapEnd?.Value.Should().BeOneOf(catalogFields);
 
-        var soapMultidim = await PostSoapAsync($"""<GetMultidimensionalInfo xmlns="{ArcGisNamespace}" />""");
+        var soapMultidim = await PostSoapAsync($"""<GetMultidimensionalInfo xmlns="{GeoServicesNamespace}" />""");
         soapMultidim.Status.Should().Be(HttpStatusCode.OK, soapMultidim.Body);
         var result = soapMultidim.Document.Descendants().Single(element => element.Name.LocalName == "Result");
         result.Attribute(XName.Get("nil", XsiNamespace)).Should().BeNull();
@@ -692,7 +692,7 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
 
         var computed = await PostSoapAsync(
             $"""
-            <ComputeHistograms xmlns="{ArcGisNamespace}" xmlns:xsi="{XsiNamespace}">
+            <ComputeHistograms xmlns="{GeoServicesNamespace}" xmlns:xsi="{XsiNamespace}">
               <Geometry xsi:nil="true" />
               <MosaicRule xsi:nil="true" />
               <PixelSize xsi:nil="true" />
@@ -703,7 +703,7 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
         computed.Body.Should().NotContain("Unsupported ImageServer operation");
         AssertHistograms(computed.Document.Descendants().Single(element => element.Name.LocalName == "Result"), expected);
 
-        var serviceInfo = await PostSoapAsync($"""<GetServiceInfo xmlns="{ArcGisNamespace}" />""");
+        var serviceInfo = await PostSoapAsync($"""<GetServiceInfo xmlns="{GeoServicesNamespace}" />""");
         serviceInfo.Status.Should().Be(HttpStatusCode.OK, serviceInfo.Body);
         AssertHistograms(Element(serviceInfo.Document, "Histograms"), expected);
     }
@@ -752,17 +752,17 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
         var info = await ReadJsonAsync(rest);
         info.GetProperty("singleFusedMapCache").GetBoolean().Should().BeFalse();
 
-        var fixedScale = await PostSoapAsync($"""<IsFixedScaleImage xmlns="{ArcGisNamespace}" />""");
+        var fixedScale = await PostSoapAsync($"""<IsFixedScaleImage xmlns="{GeoServicesNamespace}" />""");
         fixedScale.Status.Should().Be(HttpStatusCode.OK, fixedScale.Body);
         Element(fixedScale.Document, "Result").Value.Should().Be("false");
 
-        var description = await PostSoapAsync($"""<GetCacheDescriptionInfo xmlns="{ArcGisNamespace}" />""");
+        var description = await PostSoapAsync($"""<GetCacheDescriptionInfo xmlns="{GeoServicesNamespace}" />""");
         description.Status.Should().Be(HttpStatusCode.OK, description.Body);
         description.Body.Should().NotContain("Unsupported ImageServer operation");
         Element(description.Document, "TileCacheInfo")
             .Attribute(XName.Get("nil", XsiNamespace))!.Value.Should().Be("true");
 
-        var tileInfo = await PostSoapAsync($"""<GetTileCacheInfo xmlns="{ArcGisNamespace}" />""");
+        var tileInfo = await PostSoapAsync($"""<GetTileCacheInfo xmlns="{GeoServicesNamespace}" />""");
         tileInfo.Status.Should().Be(HttpStatusCode.BadRequest, tileInfo.Body);
         tileInfo.Body.Should().NotContain("Unsupported ImageServer operation");
 
@@ -788,11 +788,11 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
             info.GetProperty("singleFusedMapCache").GetBoolean().Should().BeTrue();
             var tileInfo = info.GetProperty("tileInfo");
 
-            var fixedScale = await PostSoapAsync(fixture, $"""<IsFixedScaleImage xmlns="{ArcGisNamespace}" />""");
+            var fixedScale = await PostSoapAsync(fixture, $"""<IsFixedScaleImage xmlns="{GeoServicesNamespace}" />""");
             fixedScale.Status.Should().Be(HttpStatusCode.OK, fixedScale.Body);
             Element(fixedScale.Document, "Result").Value.Should().Be("true");
 
-            var description = await PostSoapAsync(fixture, $"""<GetCacheDescriptionInfo xmlns="{ArcGisNamespace}" />""");
+            var description = await PostSoapAsync(fixture, $"""<GetCacheDescriptionInfo xmlns="{GeoServicesNamespace}" />""");
             description.Status.Should().Be(HttpStatusCode.OK, description.Body);
             description.Body.Should().NotContain("Unsupported ImageServer operation");
             AssertTileCache(Element(description.Document, "TileCacheInfo"), tileInfo);
@@ -811,11 +811,11 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
             // ImageServer JSON omits nulls, so an unset compression quality is absent rather than null.
             tileInfo.TryGetProperty("compressionQuality", out _).Should().BeFalse();
 
-            var cacheInfo = await PostSoapAsync(fixture, $"""<GetTileCacheInfo xmlns="{ArcGisNamespace}" />""");
+            var cacheInfo = await PostSoapAsync(fixture, $"""<GetTileCacheInfo xmlns="{GeoServicesNamespace}" />""");
             cacheInfo.Status.Should().Be(HttpStatusCode.OK, cacheInfo.Body);
             AssertTileCache(Element(cacheInfo.Document, "Result"), tileInfo);
 
-            var tileImage = await PostSoapAsync(fixture, $"""<GetTileImageInfo xmlns="{ArcGisNamespace}" />""");
+            var tileImage = await PostSoapAsync(fixture, $"""<GetTileImageInfo xmlns="{GeoServicesNamespace}" />""");
             tileImage.Status.Should().Be(HttpStatusCode.OK, tileImage.Body);
             Child(Element(tileImage.Document, "Result"), "CacheTileFormat").Value.Should().Be("PNG");
 
@@ -979,7 +979,7 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
 
     private static string CatalogRequest(string operation, string? where, string catalogName = "Catalog")
         => $"""
-            <{operation} xmlns="{ArcGisNamespace}">
+            <{operation} xmlns="{GeoServicesNamespace}">
               <Name>{catalogName}</Name>
               <QueryFilter>
                 <WhereClause>{where}</WhereClause>
@@ -989,7 +989,7 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
 
     private static string CatalogItemsRequest()
         => $"""
-            <GetCatalogItems xmlns="{ArcGisNamespace}">
+            <GetCatalogItems xmlns="{GeoServicesNamespace}">
               <Name>Catalog</Name>
               <QueryFilter>
                 <SubFields>OBJECTID,Name,Shape</SubFields>
@@ -1004,7 +1004,7 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
 
     private static string SpatialCatalogRequest(string operation, string filter)
         => $"""
-            <{operation} xmlns="{ArcGisNamespace}" xmlns:xsi="{XsiNamespace}">
+            <{operation} xmlns="{GeoServicesNamespace}" xmlns:xsi="{XsiNamespace}">
               <Name>Catalog</Name>
               <QueryFilter xsi:type="tns:SpatialFilter">
                 {filter}
@@ -1063,7 +1063,7 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
               <RenderingRule xsi:nil="true" />
               """;
         return $"""
-            <ComputeHistograms xmlns="{ArcGisNamespace}" xmlns:xsi="{XsiNamespace}">
+            <ComputeHistograms xmlns="{GeoServicesNamespace}" xmlns:xsi="{XsiNamespace}">
               <Geometry xsi:type="tns:EnvelopeN">
                 <XMin>0</XMin>
                 <YMin>0</YMin>
@@ -1078,7 +1078,7 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
 
     private static string ImageTileRequest()
         => $"""
-            <GetImageTile xmlns="{ArcGisNamespace}">
+            <GetImageTile xmlns="{GeoServicesNamespace}">
               <Level>0</Level>
               <Row>0</Row>
               <Column>0</Column>

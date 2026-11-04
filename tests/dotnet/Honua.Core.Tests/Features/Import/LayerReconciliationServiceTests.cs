@@ -43,7 +43,7 @@ public sealed class LayerReconciliationServiceTests
         var request = new LayerReconciliationRequest
         {
             RunId = "table-run",
-            SourceKind = "arcgis-geoservices-rest",
+            SourceKind = "geoservices-rest",
             Layers = [new LayerReconciliationLayerInput
             {
                 SourceLayerId = "svc#1", TargetHonuaLayerId = 1,
@@ -144,7 +144,7 @@ public sealed class LayerReconciliationServiceTests
         var artifact = await service.ReconcileAsync(new LayerReconciliationRequest
         {
             RunId = "run",
-            SourceKind = "arcgis-geoservices-rest",
+            SourceKind = "geoservices-rest",
             Layers =
             [
                 new LayerReconciliationLayerInput
@@ -984,7 +984,7 @@ public sealed class LayerReconciliationServiceTests
         var graph = new Mock<IMetadataV2GraphProvider>();
         graph.Setup(provider => provider.GetCurrentAsync(It.IsAny<CancellationToken>())).ReturnsAsync(snapshot);
         var filters = new Mock<IFilterExpressionService>();
-        filters.Setup(service => service.Parse(FilterLanguage.ArcGisSql, It.IsAny<string>()))
+        filters.Setup(service => service.Parse(FilterLanguage.GeoServicesSql, It.IsAny<string>()))
             .Returns((FilterLanguage _, string filter) => FilterParseResult.Success(new GeoServicesSqlParser().Parse(filter)));
         filters.Setup(service => service.Translate(It.IsAny<FilterExpression>(), resource))
             .Returns((FilterExpression expression, MetadataV2Resource _) =>
@@ -1012,7 +1012,7 @@ public sealed class LayerReconciliationServiceTests
         => new()
         {
             RunId = "run",
-            SourceKind = "arcgis-geoservices-rest",
+            SourceKind = "geoservices-rest",
             Layers =
             [
                 new LayerReconciliationLayerInput

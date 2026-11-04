@@ -186,7 +186,7 @@ internal sealed class LayoutTemplatesInfoResult
     /// <summary>
     /// Layout template information array in Esri-canonical shape.
     /// </summary>
-    public EsriLayoutTemplateInfo[]? Value { get; set; }
+    public GeoServicesLayoutTemplateInfo[]? Value { get; set; }
 }
 
 /// <summary>

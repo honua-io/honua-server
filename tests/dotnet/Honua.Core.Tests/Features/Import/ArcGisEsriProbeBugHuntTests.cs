@@ -71,12 +71,12 @@ public sealed class ArcGisEsriProbeBugHuntTests
         var handler = new RecordingHandler("{\"error\":{\"code\":499,\"message\":\"Token required\"}}");
         var client = CreateClient(handler);
 
-        var exception = await Assert.ThrowsAsync<ArcGisAuthenticationException>(() => client.DiscoverServiceAsync(
+        var exception = await Assert.ThrowsAsync<GeoServicesAuthenticationException>(() => client.DiscoverServiceAsync(
             ServiceUrl,
             timeoutSeconds: 5,
             maxRetries: 0,
             CancellationToken.None));
-        Assert.Equal(ArcGisAuthenticationFailureKind.CredentialRequired, exception.Kind);
+        Assert.Equal(GeoServicesAuthenticationFailureKind.CredentialRequired, exception.Kind);
     }
 
     [Trait("Tier", "Fast")]
@@ -147,8 +147,8 @@ public sealed class ArcGisEsriProbeBugHuntTests
         Assert.Equal(2, handler.RequestCount);
     }
 
-    private static ArcGisRestClient CreateClient(HttpMessageHandler handler)
-        => new(new HttpClient(handler), NullLogger<ArcGisRestClient>.Instance, PublicResolver);
+    private static GeoServicesRestClient CreateClient(HttpMessageHandler handler)
+        => new(new HttpClient(handler), NullLogger<GeoServicesRestClient>.Instance, PublicResolver);
 
     private const string ServiceUrl =
         "https://example.com/arcgis/rest/services/Probe/FeatureServer";

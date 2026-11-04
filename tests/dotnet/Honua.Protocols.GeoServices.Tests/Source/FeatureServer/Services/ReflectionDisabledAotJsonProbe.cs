@@ -199,7 +199,7 @@ internal static class ReflectionDisabledAotJsonProbe
         };
         var manifest = new MigrationManifestArtifact
         {
-            SourceKind = "arcgis-geoservices-rest",
+            SourceKind = "geoservices-rest",
             Source = source,
             Summary = new MigrationManifestSummary
             {
@@ -224,8 +224,8 @@ internal static class ReflectionDisabledAotJsonProbe
                 }
             ]
         };
-        var manifestJson = PostgresArcGisMigrationEvidenceStore.SerializeManifest(manifest);
-        var manifestRoundTrip = PostgresArcGisMigrationEvidenceStore.DeserializeManifest(manifestJson);
+        var manifestJson = PostgresGeoServicesMigrationEvidenceStore.SerializeManifest(manifest);
+        var manifestRoundTrip = PostgresGeoServicesMigrationEvidenceStore.DeserializeManifest(manifestJson);
         if (manifestRoundTrip is null
             || manifestRoundTrip.TargetResources.Length != 1
             || !string.Equals(manifestRoundTrip.SourceKind, manifest.SourceKind, StringComparison.Ordinal)
@@ -234,15 +234,15 @@ internal static class ReflectionDisabledAotJsonProbe
             throw new InvalidOperationException($"Migration manifest JSON did not round-trip: {manifestJson}");
         }
 
-        var parity = new ArcGisMigrationParityArtifact
+        var parity = new GeoServicesMigrationParityArtifact
         {
             SourceKind = manifest.SourceKind,
             Source = source,
             Classification = "pass",
             Reasons = ["probe"]
         };
-        var parityJson = PostgresArcGisMigrationEvidenceStore.SerializeParity(parity);
-        var parityRoundTrip = PostgresArcGisMigrationEvidenceStore.DeserializeParity(parityJson);
+        var parityJson = PostgresGeoServicesMigrationEvidenceStore.SerializeParity(parity);
+        var parityRoundTrip = PostgresGeoServicesMigrationEvidenceStore.DeserializeParity(parityJson);
         if (parityRoundTrip is null
             || !string.Equals(parityRoundTrip.Classification, "pass", StringComparison.Ordinal)
             || parityRoundTrip.Reasons.Length != 1)

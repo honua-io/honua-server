@@ -102,7 +102,6 @@ internal sealed class JudgmentService
     /// <summary>Code/test paths a reader can use to verify the claims, as authored.</summary>
     public Dictionary<string, string[]>? Evidence { get; init; }
 
-    /// <summary>Classified served operations, keyed by derived <c>esriPath</c>, as authored.</summary>
     public JudgmentOperation[]? Operations { get; init; }
 
     /// <summary>Esri operations Honua does not serve at all, as authored.</summary>
@@ -140,7 +139,7 @@ internal sealed class JudgmentOperation
     /// The derived Esri-relative operation paths this judgement covers — the join keys —
     /// as authored. Each must be served, and no other entry may claim the same path.
     /// </summary>
-    public string[]? EsriPaths { get; init; }
+    public string[]? GeoServicesPaths { get; init; }
 
     /// <summary>Set when the operation has no Esri equivalent (a Honua extension).</summary>
     public HonuaExtension? HonuaExtension { get; init; }
@@ -153,7 +152,7 @@ internal sealed class JudgmentOperation
     /// than letting a judgement float free of any operation.
     /// </summary>
     [JsonIgnore]
-    public string[] PathList => EsriPaths ?? [];
+    public string[] PathList => GeoServicesPaths ?? [];
 }
 
 /// <summary>An Esri operation Honua does not serve.</summary>
@@ -163,7 +162,7 @@ internal sealed class AbsentOperation
     public string Name { get; init; } = string.Empty;
 
     /// <summary>Esri-relative path of the operation Honua does not serve.</summary>
-    public string EsriPath { get; init; } = string.Empty;
+    public string GeoServicesPath { get; init; } = string.Empty;
 
     /// <summary>Why it is not served.</summary>
     public string Notes { get; init; } = string.Empty;
@@ -233,7 +232,6 @@ internal sealed class ParityRosterProvenance
     /// <summary>The generated capability data the roster is projected from.</summary>
     public string DerivedFrom { get; init; } = string.Empty;
 
-    /// <summary>The served-route → <c>esriPath</c> normalization, stated in full.</summary>
     public string Normalization { get; init; } = string.Empty;
 
     /// <summary>Which fields are derived and must not be hand-edited.</summary>
@@ -335,7 +333,7 @@ internal sealed class ParityOperation
     public string Status { get; init; } = string.Empty;
 
     /// <summary>Esri-relative operation paths. DERIVED — do not hand-edit.</summary>
-    public string[] EsriPaths { get; init; } = [];
+    public string[] GeoServicesPaths { get; init; } = [];
 
     /// <summary>Every served <c>METHOD /path</c> behind those operations. DERIVED — do not hand-edit.</summary>
     public string[] HonuaEndpoints { get; init; } = [];

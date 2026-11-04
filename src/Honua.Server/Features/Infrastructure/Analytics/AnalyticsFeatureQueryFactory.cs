@@ -135,7 +135,7 @@ internal static class AnalyticsFeatureQueryFactory
         FilterExpression? whereExpression = null;
         if (!string.IsNullOrWhiteSpace(where))
         {
-            var parseResult = filterService.Parse(FilterLanguage.ArcGisSql, where);
+            var parseResult = filterService.Parse(FilterLanguage.GeoServicesSql, where);
             if (!parseResult.IsSuccess)
             {
                 return LayerSelectionTranslation.Failure(

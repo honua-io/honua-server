@@ -30,7 +30,7 @@ namespace Honua.Server.Tests.Features.Styling;
 public sealed class OgcStylesDepthTests : IAsyncLifetime
 {
     private const string MapboxStyleMediaType = "application/vnd.mapbox.style+json";
-    private const string EsriDrawingInfoMediaType = "application/vnd.esri.drawinginfo+json";
+    private const string GeoServicesDrawingInfoMediaType = "application/vnd.esri.drawinginfo+json";
     private const string SldMediaType = "application/vnd.ogc.sld+xml";
 
     private readonly WebAppFixture _fixture = new();
@@ -50,12 +50,12 @@ public sealed class OgcStylesDepthTests : IAsyncLifetime
         var styleId = await SeedAndResolveStyleIdAsync(client);
 
         using var request = new HttpRequestMessage(HttpMethod.Get, $"/ogc/styles/{Uri.EscapeDataString(styleId)}");
-        request.Headers.TryAddWithoutValidation("Accept", EsriDrawingInfoMediaType);
+        request.Headers.TryAddWithoutValidation("Accept", GeoServicesDrawingInfoMediaType);
 
         var response = await client.SendAsync(request);
 
         response.Be200Ok();
-        response.Content.Headers.ContentType?.MediaType.Should().Be(EsriDrawingInfoMediaType);
+        response.Content.Headers.ContentType?.MediaType.Should().Be(GeoServicesDrawingInfoMediaType);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         document.RootElement.ValueKind.Should().Be(JsonValueKind.Object);
         document.RootElement.TryGetProperty("renderer", out var renderer).Should().BeTrue(
@@ -135,7 +135,7 @@ public sealed class OgcStylesDepthTests : IAsyncLifetime
         {
             request.Headers.TryAddWithoutValidation(
                 "Accept",
-                $"{EsriDrawingInfoMediaType};q=0, */*;q=1");
+                $"{GeoServicesDrawingInfoMediaType};q=0, */*;q=1");
             var response = await client.SendAsync(request);
             response.Be200Ok();
             response.Content.Headers.ContentType?.MediaType.Should().Be(MapboxStyleMediaType);
@@ -157,7 +157,7 @@ public sealed class OgcStylesDepthTests : IAsyncLifetime
         {
             request.Headers.TryAddWithoutValidation(
                 "Accept",
-                $"application/json;q=1, application/*;q=0.1, {EsriDrawingInfoMediaType};q=0.5");
+                $"application/json;q=1, application/*;q=0.1, {GeoServicesDrawingInfoMediaType};q=0.5");
             var response = await client.SendAsync(request);
             response.Be200Ok();
             response.Content.Headers.ContentType?.MediaType.Should().Be(MapboxStyleMediaType);
@@ -169,10 +169,10 @@ public sealed class OgcStylesDepthTests : IAsyncLifetime
         {
             request.Headers.TryAddWithoutValidation(
                 "Accept",
-                $"application/json;q=1, {MapboxStyleMediaType};q=0, {EsriDrawingInfoMediaType};q=0.5");
+                $"application/json;q=1, {MapboxStyleMediaType};q=0, {GeoServicesDrawingInfoMediaType};q=0.5");
             var response = await client.SendAsync(request);
             response.Be200Ok();
-            response.Content.Headers.ContentType?.MediaType.Should().Be(EsriDrawingInfoMediaType);
+            response.Content.Headers.ContentType?.MediaType.Should().Be(GeoServicesDrawingInfoMediaType);
         }
 
         // A versioned SLD range is more specific than the same unversioned media type.
@@ -182,7 +182,7 @@ public sealed class OgcStylesDepthTests : IAsyncLifetime
         {
             request.Headers.TryAddWithoutValidation(
                 "Accept",
-                $"{SldMediaType};version=1.0;q=0, {SldMediaType};q=1, {EsriDrawingInfoMediaType};q=0.5");
+                $"{SldMediaType};version=1.0;q=0, {SldMediaType};q=1, {GeoServicesDrawingInfoMediaType};q=0.5");
             var response = await client.SendAsync(request);
             response.Be200Ok();
             response.Content.Headers.ContentType?.MediaType.Should().Be(SldMediaType);
@@ -214,7 +214,7 @@ public sealed class OgcStylesDepthTests : IAsyncLifetime
         {
             request.Headers.TryAddWithoutValidation(
                 "Accept",
-                $"{EsriDrawingInfoMediaType};profile=unsupported;q=1, {EsriDrawingInfoMediaType};q=0");
+                $"{GeoServicesDrawingInfoMediaType};profile=unsupported;q=1, {GeoServicesDrawingInfoMediaType};q=0");
             (await client.SendAsync(request)).StatusCode.Should().Be(HttpStatusCode.NotAcceptable);
         }
 
@@ -234,10 +234,10 @@ public sealed class OgcStylesDepthTests : IAsyncLifetime
         {
             request.Headers.TryAddWithoutValidation(
                 "Accept",
-                $"{SldMediaType};version=2.0;q=1, {EsriDrawingInfoMediaType};q=0.5");
+                $"{SldMediaType};version=2.0;q=1, {GeoServicesDrawingInfoMediaType};q=0.5");
             var response = await client.SendAsync(request);
             response.Be200Ok();
-            response.Content.Headers.ContentType?.MediaType.Should().Be(EsriDrawingInfoMediaType);
+            response.Content.Headers.ContentType?.MediaType.Should().Be(GeoServicesDrawingInfoMediaType);
         }
 
         // HTTP media type tokens are case-insensitive for both aliases and concrete
@@ -247,7 +247,7 @@ public sealed class OgcStylesDepthTests : IAsyncLifetime
             request.Headers.TryAddWithoutValidation("Accept", "Application/Vnd.Esri.DrawingInfo+Json");
             var response = await client.SendAsync(request);
             response.Be200Ok();
-            response.Content.Headers.ContentType?.MediaType.Should().Be(EsriDrawingInfoMediaType);
+            response.Content.Headers.ContentType?.MediaType.Should().Be(GeoServicesDrawingInfoMediaType);
         }
 
         // The responses are emitted as UTF-8, so a charset=utf-8 media-range parameter
@@ -255,10 +255,10 @@ public sealed class OgcStylesDepthTests : IAsyncLifetime
         // parameter does. Case is insignificant for the charset token as well.
         using (var request = new HttpRequestMessage(HttpMethod.Get, path))
         {
-            request.Headers.TryAddWithoutValidation("Accept", $"{EsriDrawingInfoMediaType}; charset=UTF-8");
+            request.Headers.TryAddWithoutValidation("Accept", $"{GeoServicesDrawingInfoMediaType}; charset=UTF-8");
             var response = await client.SendAsync(request);
             response.Be200Ok();
-            response.Content.Headers.ContentType?.MediaType.Should().Be(EsriDrawingInfoMediaType);
+            response.Content.Headers.ContentType?.MediaType.Should().Be(GeoServicesDrawingInfoMediaType);
         }
 
         using (var request = new HttpRequestMessage(HttpMethod.Get, path))
@@ -275,14 +275,14 @@ public sealed class OgcStylesDepthTests : IAsyncLifetime
         {
             request.Headers.TryAddWithoutValidation(
                 "Accept",
-                $"{EsriDrawingInfoMediaType};charset=iso-8859-1;q=1, {EsriDrawingInfoMediaType};q=0");
+                $"{GeoServicesDrawingInfoMediaType};charset=iso-8859-1;q=1, {GeoServicesDrawingInfoMediaType};q=0");
             (await client.SendAsync(request)).StatusCode.Should().Be(HttpStatusCode.NotAcceptable);
         }
 
         // Without an acceptable fallback, q=0 means the representation is rejected.
         using (var request = new HttpRequestMessage(HttpMethod.Get, path))
         {
-            request.Headers.TryAddWithoutValidation("Accept", $"{EsriDrawingInfoMediaType};q=0");
+            request.Headers.TryAddWithoutValidation("Accept", $"{GeoServicesDrawingInfoMediaType};q=0");
             (await client.SendAsync(request)).StatusCode.Should().Be(HttpStatusCode.NotAcceptable);
         }
     }
@@ -329,7 +329,7 @@ public sealed class OgcStylesDepthTests : IAsyncLifetime
         // drawingInfo request encoding is a PUT-only capability.
         var client = _fixture.CreateAdminClient();
 
-        using var content = new StringContent(SimpleRendererDrawingInfoJson, Encoding.UTF8, EsriDrawingInfoMediaType);
+        using var content = new StringContent(SimpleRendererDrawingInfoJson, Encoding.UTF8, GeoServicesDrawingInfoMediaType);
         var response = await client.PostAsync("/ogc/styles", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.UnsupportedMediaType);
@@ -434,7 +434,7 @@ public sealed class OgcStylesDepthTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         using (var problem = JsonDocument.Parse(await response.Content.ReadAsStringAsync()))
         {
-            problem.RootElement.GetProperty("detail").GetString().Should().Contain(EsriDrawingInfoMediaType);
+            problem.RootElement.GetProperty("detail").GetString().Should().Contain(GeoServicesDrawingInfoMediaType);
             problem.RootElement.GetProperty("detail").GetString().Should().Contain("submit a standalone MapLibre style");
         }
 
@@ -457,7 +457,7 @@ public sealed class OgcStylesDepthTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         using (var problem = JsonDocument.Parse(await response.Content.ReadAsStringAsync()))
         {
-            problem.RootElement.GetProperty("detail").GetString().Should().Contain(EsriDrawingInfoMediaType);
+            problem.RootElement.GetProperty("detail").GetString().Should().Contain(GeoServicesDrawingInfoMediaType);
         }
 
         var storedResponse = await client.GetAsync(path);
@@ -506,7 +506,7 @@ public sealed class OgcStylesDepthTests : IAsyncLifetime
         var styleId = await SeedAndResolveStyleIdAsync(client);
         var path = $"/ogc/styles/{Uri.EscapeDataString(styleId)}";
 
-        using (var content = new StringContent(SimpleRendererDrawingInfoJson, Encoding.UTF8, EsriDrawingInfoMediaType))
+        using (var content = new StringContent(SimpleRendererDrawingInfoJson, Encoding.UTF8, GeoServicesDrawingInfoMediaType))
         {
             var putResponse = await client.PutAsync(path, content);
             putResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
@@ -530,7 +530,7 @@ public sealed class OgcStylesDepthTests : IAsyncLifetime
 
         // Esri read-back: drawingInfo is back-generated from the stored MapLibre.
         using var esriRequest = new HttpRequestMessage(HttpMethod.Get, path);
-        esriRequest.Headers.TryAddWithoutValidation("Accept", EsriDrawingInfoMediaType);
+        esriRequest.Headers.TryAddWithoutValidation("Accept", GeoServicesDrawingInfoMediaType);
         var esriResponse = await client.SendAsync(esriRequest);
         esriResponse.Be200Ok();
         using (var document = JsonDocument.Parse(await esriResponse.Content.ReadAsStringAsync()))
@@ -576,7 +576,7 @@ public sealed class OgcStylesDepthTests : IAsyncLifetime
         using var drawingInfo = new StringContent(
             SimpleRendererDrawingInfoJson,
             Encoding.UTF8,
-            EsriDrawingInfoMediaType);
+            GeoServicesDrawingInfoMediaType);
         var response = await client.PutAsync($"/ogc/styles/{Uri.EscapeDataString(styleId)}", drawingInfo);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -598,7 +598,7 @@ public sealed class OgcStylesDepthTests : IAsyncLifetime
         var client = _fixture.CreateAdminClient();
         var styleId = await SeedAndResolveStyleIdAsync(client);
 
-        using var content = new StringContent("{ nope", Encoding.UTF8, EsriDrawingInfoMediaType);
+        using var content = new StringContent("{ nope", Encoding.UTF8, GeoServicesDrawingInfoMediaType);
         var response = await client.PutAsync($"/ogc/styles/{Uri.EscapeDataString(styleId)}", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -612,7 +612,7 @@ public sealed class OgcStylesDepthTests : IAsyncLifetime
         var client = _fixture.CreateAdminClient();
         var styleId = await SeedAndResolveStyleIdAsync(client);
 
-        using var content = new StringContent(NonUniformPictureMarkerDrawingInfoJson, Encoding.UTF8, EsriDrawingInfoMediaType);
+        using var content = new StringContent(NonUniformPictureMarkerDrawingInfoJson, Encoding.UTF8, GeoServicesDrawingInfoMediaType);
         var response = await client.PutAsync($"/ogc/styles/{Uri.EscapeDataString(styleId)}", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.NoContent);
@@ -629,7 +629,7 @@ public sealed class OgcStylesDepthTests : IAsyncLifetime
         var client = _fixture.CreateAdminClient();
         var styleId = await SeedAndResolveStyleIdAsync(client);
 
-        using var content = new StringContent(NonUniformPictureMarkerDrawingInfoJson, Encoding.UTF8, EsriDrawingInfoMediaType);
+        using var content = new StringContent(NonUniformPictureMarkerDrawingInfoJson, Encoding.UTF8, GeoServicesDrawingInfoMediaType);
         using var request = new HttpRequestMessage(HttpMethod.Put, $"/ogc/styles/{Uri.EscapeDataString(styleId)}")
         {
             Content = content
@@ -712,12 +712,12 @@ public sealed class OgcStylesDepthTests : IAsyncLifetime
         var styleId = await CreateStandaloneStyleAsync(client);
 
         using var request = new HttpRequestMessage(HttpMethod.Get, $"/ogc/styles/{Uri.EscapeDataString(styleId)}");
-        request.Headers.TryAddWithoutValidation("Accept", EsriDrawingInfoMediaType);
+        request.Headers.TryAddWithoutValidation("Accept", GeoServicesDrawingInfoMediaType);
 
         var response = await client.SendAsync(request);
 
         response.Be200Ok();
-        response.Content.Headers.ContentType?.MediaType.Should().Be(EsriDrawingInfoMediaType);
+        response.Content.Headers.ContentType?.MediaType.Should().Be(GeoServicesDrawingInfoMediaType);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         document.RootElement.TryGetProperty("renderer", out _).Should().BeTrue();
     }

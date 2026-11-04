@@ -1,7 +1,7 @@
 {
   "artifactKind": "honua.migration.source-inventory",
   "artifactVersion": "1.0",
-  "sourceKind": "arcgis-geoservices-rest",
+  "sourceKind": "geoservices-rest",
   "source": {
     "displayName": "Public Mapping",
     "baseUrl": "https://example.com/arcgis/rest/services/Public/MapServer",
@@ -52,7 +52,7 @@
       "title": "Public Mapping",
       "compatibility": {
         "level": "incompatible",
-        "code": "ARCGIS_MIXED_RENDERERS",
+        "code": "GEOSERVICES_MIXED_RENDERERS",
         "reason": "Compatible: 2; partial: 2; incompatible: 1.",
         "warnings": [
           "Renderer references external symbol URLs.",
@@ -185,7 +185,7 @@
       },
       "compatibility": {
         "level": "partial",
-        "code": "ARCGIS_EXTERNAL_SYMBOL",
+        "code": "GEOSERVICES_EXTERNAL_SYMBOL",
         "reason": "Renderer type \u0027classBreaks\u0027 can be recreated in Honua with manual follow-up.",
         "warnings": [
           "Renderer references external symbol URLs."
@@ -211,7 +211,7 @@
       },
       "compatibility": {
         "level": "incompatible",
-        "code": "ARCGIS_UNSUPPORTED_RENDERER",
+        "code": "GEOSERVICES_UNSUPPORTED_RENDERER",
         "reason": "Renderer type \u0027heatmap\u0027 is not currently classified as portable to Honua.",
         "warnings": [],
         "manualSteps": [
@@ -235,7 +235,7 @@
       "spatialReferences": [],
       "compatibility": {
         "level": "partial",
-        "code": "ARCGIS_EXTERNAL_SYMBOL",
+        "code": "GEOSERVICES_EXTERNAL_SYMBOL",
         "reason": "External symbol URLs require manual migration review.",
         "warnings": [
           "The renderer references one or more external URLs."
@@ -254,7 +254,7 @@
       "category": "renderers",
       "name": "BlockGroups",
       "automationStatus": "manual-review",
-      "code": "ARCGIS_EXTERNAL_SYMBOL",
+      "code": "GEOSERVICES_EXTERNAL_SYMBOL",
       "reason": "Renderer type \u0027classBreaks\u0027 can be recreated in Honua with manual follow-up.",
       "manualSteps": [
         "Mirror or replace external symbol assets in the target deployment.",
@@ -275,7 +275,7 @@
       "category": "renderers",
       "name": "PopulationDensity",
       "automationStatus": "unsupported",
-      "code": "ARCGIS_UNSUPPORTED_RENDERER",
+      "code": "GEOSERVICES_UNSUPPORTED_RENDERER",
       "reason": "Renderer type \u0027heatmap\u0027 is not currently classified as portable to Honua.",
       "manualSteps": [
         "Review the renderer manually and rebuild an equivalent target style."
@@ -483,7 +483,7 @@
           "renderer:Public:0"
         ],
         "codes": [
-          "ARCGIS_EXTERNAL_SYMBOL"
+          "GEOSERVICES_EXTERNAL_SYMBOL"
         ],
         "targetIds": [],
         "relatedIds": [
@@ -506,7 +506,7 @@
           "renderer:Public:1"
         ],
         "codes": [
-          "ARCGIS_UNSUPPORTED_RENDERER"
+          "GEOSERVICES_UNSUPPORTED_RENDERER"
         ],
         "targetIds": [],
         "relatedIds": [

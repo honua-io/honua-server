@@ -633,18 +633,6 @@
       "path": "/alerts/zones/{zoneId}"
     },
     {
-      "operationId": "getArcGisMigrationManifest",
-      "catalogOperationId": null,
-      "method": "GET",
-      "path": "/import/arcgis/migrations/{runId}/manifest"
-    },
-    {
-      "operationId": "getArcGisMigrationParity",
-      "catalogOperationId": null,
-      "method": "GET",
-      "path": "/import/arcgis/migrations/{runId}/parity"
-    },
-    {
       "operationId": "getClientCertificateTrustProfile",
       "catalogOperationId": null,
       "method": "GET",
@@ -883,6 +871,18 @@
       "catalogOperationId": null,
       "method": "GET",
       "path": "/import/geoserver/jobs/{jobId}"
+    },
+    {
+      "operationId": "getGeoServicesMigrationManifest",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/import/geoservices-rest/migrations/{runId}/manifest"
+    },
+    {
+      "operationId": "getGeoServicesMigrationParity",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/import/geoservices-rest/migrations/{runId}/parity"
     },
     {
       "operationId": "getGeocodingProviders",
@@ -1437,12 +1437,6 @@
       "path": "/alerts/zones"
     },
     {
-      "operationId": "listArcGisMigrationRuns",
-      "catalogOperationId": null,
-      "method": "GET",
-      "path": "/import/arcgis/migrations"
-    },
-    {
       "operationId": "listClientCertificatePrincipalMappings",
       "catalogOperationId": null,
       "method": "GET",
@@ -1531,6 +1525,12 @@
       "catalogOperationId": null,
       "method": "GET",
       "path": "/import/geoserver/jobs"
+    },
+    {
+      "operationId": "listGeoServicesMigrationRuns",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/import/geoservices-rest/migrations"
     },
     {
       "operationId": "listGeoservicesImportJobs",
@@ -1851,16 +1851,16 @@
       "path": "/metadata/environment-bindings/query"
     },
     {
-      "operationId": "recordArcGisMigrationManifest",
+      "operationId": "recordGeoServicesMigrationManifest",
       "catalogOperationId": null,
       "method": "POST",
-      "path": "/import/arcgis/migrations/{runId}/manifest"
+      "path": "/import/geoservices-rest/migrations/{runId}/manifest"
     },
     {
-      "operationId": "recordArcGisMigrationParity",
+      "operationId": "recordGeoServicesMigrationParity",
       "catalogOperationId": null,
       "method": "POST",
-      "path": "/import/arcgis/migrations/{runId}/parity"
+      "path": "/import/geoservices-rest/migrations/{runId}/parity"
     },
     {
       "operationId": "recordMigrationRunScorecard",

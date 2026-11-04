@@ -35,7 +35,7 @@ internal sealed class FederationQueryPlanner : IFederationQueryPlanner
         // result paging, but only envelope-grade spatial relationships and no first-class
         // temporal-interval predicate, so exact spatial relationships and temporal filters
         // are refined locally.
-        FederatedSourceKind.EsriRest => new FederatedSourceCapabilities
+        FederatedSourceKind.GeoServicesRest => new FederatedSourceCapabilities
         {
             SupportsAttributeFilterPushdown = true,
             SupportsSpatialFilterPushdown = true,

@@ -38,7 +38,7 @@ public static class DataProviderNames
     /// Bound to secure-connection records whose connection-string field holds a
     /// remote ArcGIS service root URL.
     /// </summary>
-    public const string ArcGisRest = "arcgis-rest";
+    public const string GeoServicesRest = "arcgis-rest";
 
     /// <summary>
     /// Canonical Oracle provider name.
@@ -90,15 +90,15 @@ public static class DataProviderNames
             "mysql" => MySql,
             "mariadb" => MySql,
             "duckdb" => DuckDb,
-            "arcgisrest" => ArcGisRest,
-            "arcgis-rest" => ArcGisRest,
-            "arcgis" => ArcGisRest,
-            "esri" => ArcGisRest,
-            "esri-rest" => ArcGisRest,
-            "esrirest" => ArcGisRest,
-            "esri-featureserver" => ArcGisRest,
-            "esrifeatureserver" => ArcGisRest,
-            "featureserver" => ArcGisRest,
+            "arcgisrest" => GeoServicesRest,
+            "arcgis-rest" => GeoServicesRest,
+            "arcgis" => GeoServicesRest,
+            "esri" => GeoServicesRest,
+            "esri-rest" => GeoServicesRest,
+            "esrirest" => GeoServicesRest,
+            "esri-featureserver" => GeoServicesRest,
+            "esrifeatureserver" => GeoServicesRest,
+            "featureserver" => GeoServicesRest,
             "oracle" => Oracle,
             "oracledb" => Oracle,
             "redshift" => Redshift,

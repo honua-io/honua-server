@@ -49,12 +49,12 @@ public static class FormatCapabilityGate
     /// <summary>
     /// Evaluates a single data-format name (the segment after
     /// <see cref="CapabilityRegistry.DataFormatIdPrefix"/>, for example
-    /// <c>geoparquet</c> or <c>esrijson</c>) against the capability registry.
+    /// <c>geoparquet</c> or <c>geoservicesjson</c>) against the capability registry.
     /// </summary>
     /// <param name="formatName">
     /// The registry data-format name (case-insensitive), <b>not</b> a protocol wire
     /// token — the seam is responsible for mapping its wire token (for example the
-    /// GeoServices <c>f=json</c>) to the registry name (<c>esrijson</c>) first.
+    /// GeoServices <c>f=json</c>) to the registry name (<c>geoservicesjson</c>) first.
     /// </param>
     /// <param name="context">
     /// The edition/environment/experimental-flag inputs, or <c>null</c> for

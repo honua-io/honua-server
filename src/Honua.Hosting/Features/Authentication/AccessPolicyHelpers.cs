@@ -79,7 +79,7 @@ internal static class AccessPolicyHelpers
             && value.StartsWith(PortalTokenAuthenticationHandler.BearerPrefix, StringComparison.OrdinalIgnoreCase));
 
         return IsBearer(request.Headers.Authorization)
-            || IsBearer(request.Headers[PortalTokenAuthenticationHandler.EsriAuthorizationHeader])
+            || IsBearer(request.Headers[PortalTokenAuthenticationHandler.GeoServicesAuthorizationHeader])
             || request.Query.ContainsKey(PortalTokenAuthenticationHandler.TokenQueryParameter)
             || request.HttpContext.Features.Get<IFormFeature>()?.Form?.ContainsKey(PortalTokenAuthenticationHandler.TokenQueryParameter) == true;
     }

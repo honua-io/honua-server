@@ -22,7 +22,7 @@ public sealed class ODataFeatureProviderResolverTests
     {
         var connectionId = Guid.NewGuid();
         var provider = Substitute.For<IFeatureDataProvider>();
-        provider.ProviderName.Returns(DataProviderNames.ArcGisRest);
+        provider.ProviderName.Returns(DataProviderNames.GeoServicesRest);
         provider.Capabilities.Returns(FeatureProviderCapabilities.ReadOnlyAnalytical);
         provider.Reader.Returns(Substitute.For<IFeatureReader>());
         var resolver = new ODataFeatureProviderResolver(

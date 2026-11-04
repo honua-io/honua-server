@@ -620,7 +620,7 @@ internal static partial class MapServerEndpoints
         out SqlFragment? sqlFilter)
     {
         sqlFilter = null;
-        var parseResult = filterExpressionService.Parse(FilterLanguage.ArcGisSql, whereClause);
+        var parseResult = filterExpressionService.Parse(FilterLanguage.GeoServicesSql, whereClause);
         if (!parseResult.IsSuccess)
         {
             return false;
