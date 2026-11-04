@@ -22,10 +22,13 @@ catalog layers with `honua_list_layers` and `honua_describe_layer` first.
    re-read the draft and reconcile the intended edit; do not overwrite concurrent
    edits with a stale generation. Validate with `honua_studio_validate_draft`
    and preview with `honua_studio_preview_draft`.
-5. Save with `honua_studio_save_version`. Retain the returned `itemId`,
-   `versionId` and `contentHash`. If approval is required, wait for completion;
-   there is no saved version until the operation succeeds. Verify with
-   `honua_studio_get_version` and render the saved map in Console.
+5. Save with `honua_studio_save_version`. Retain `version.itemId`,
+   `version.versionId` and `version.contentHash` from its non-null `version`.
+   If approval is required, wait for completion; there is no saved version
+   until the operation succeeds. Call
+   `honua_studio_get_version` with that item and version; compare its top-level
+   `versionId` and `contentHash` with the saved identity. Render the saved map
+   in Console.
 6. Share only the saved version and requested audience. Use
    `honua_studio_propose_publication` with the exact item, version, hash, route
    and visibility, following the server's schema. A separate approver handles

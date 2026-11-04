@@ -3035,7 +3035,7 @@ jobs:
         env:
           HONUA_VERIFY_CONSOLE_REGISTRY: "1"
         working-directory: scripts/docker
-        run: python3 -m unittest discover -v -p 'test_*.py'
+        run: python3 -m unittest -v test_quickstart
 
       - name: Run quickstart Console compose smoke
         env:

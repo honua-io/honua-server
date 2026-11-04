@@ -56,6 +56,7 @@ Examples use `http://localhost:8080`, the repository Compose default. A quicksta
 | Build MapLibre web maps | [MapLibre web maps](connect/maplibre-web-maps.md) |
 | Let AI agents use the server via MCP | [AI agents (MCP)](connect/ai-agents-mcp.md) |
 | Set operating rules for a coding agent on an install | [Work with AI coding agents](connect/working-with-ai-agents.md) |
+| Load task-specific install and operating workflows | [Honua operating skills](connect/operating-skills.md) |
 
 ## Edit data
 

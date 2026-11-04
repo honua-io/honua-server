@@ -18,8 +18,8 @@ connections and source tables before asking the operator for ids.
    `honua_admin_layer_publish`, whichever the server advertises for the task.
    Copy source identity and field metadata from discovery/import results. Follow
    the live schema rather than substituting a display name for an id.
-3. Treat `RequiresApproval`/`AwaitingApproval` as pending and `Queued` as a job to
-   poll. A request or accepted proposal is not a published service. Let a separate
+3. Treat a publish handle's `RequiresApproval` or a proposal's `AwaitingApproval`
+   as pending; a `Queued` publish handle identifies a job to poll. A request or accepted proposal is not a published service. Let a separate
    approver act when required.
 4. On a lost response, read back the operation, job, proposal and published layer
    inventory before retrying. Publishing is not inherently idempotent: a repeated

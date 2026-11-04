@@ -11,14 +11,18 @@
    management status's declared `releaseVersion` matches the requested target.
 5. Call `honua_propose_platform_release_convergence` using the discovered schema
    and target version. A separate approver reviews and approves the proposal.
-   Poll its returned proposal URI until `Completed` or `Failed`.
+   Poll its returned proposal URI until `Succeeded` or `Completed` (success),
+   or `Failed`, `Rejected` or `Cancelled` (stop). A rejection is a denial, not
+   permission to retry through another route.
 6. For rollback, call `honua_propose_rollback`. Inspect its `diff` and `dryRun`,
    especially the selected revision and backup, before approval. Never guess a
    prior image's maximum schema; obtain it from that exact image's metadata.
-7. Read release status again. Check `observedArtifactReference` against the
-   target image pin, `skewed: false`, and `isCoVersioned: true`. The local
-   `observedImageId` is not the release image reference. Use `deploymentRevision`
-   or image digest to identify the running build, rather than a version label.
+7. Read release status again. For each `serving` element, compare its
+   `observedArtifactReference` to the target image pin and require `skewed: false`.
+   Require top-level `isCoVersioned: true` and an empty `skewedIds` array. A
+   serving element's local `observedImageId` is not the release image reference.
+   For another build identifier, read `deploymentRevision` from the capability
+   manifest; it is not a field of the release-status tool.
 
 Never run `docker compose down --volumes` or remove backups as recovery. A
 failed proposal requires diagnosis; it is not permission to edit the serving

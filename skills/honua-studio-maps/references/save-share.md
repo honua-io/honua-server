@@ -12,8 +12,8 @@ host cannot operate Console, report that step as pending rather than inventing
 an MCP style-write tool.
 
 Use the latest returned generation for draft mutations. Saving refreshes the
-draft generation; read it again before further editing. Use the immutable
-version's returned `itemId`, `versionId` and `contentHash` for publication,
+draft generation; read it again before further editing. For publication, use
+the save result's `version.itemId`, `version.versionId` and `version.contentHash`,
 not a draft id or a recomputed hash.
 
 For team or organization sharing, confirm the actual audience accepted by this
