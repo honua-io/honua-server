@@ -15,6 +15,7 @@ internal sealed record FederationSourceResponse
     /// <summary>Human-readable display name.</summary>
     public string DisplayName { get; init; } = string.Empty;
 
+    /// <summary>Transport family (HonuaGrpc, EsriRest, OgcWfs).</summary>
     public string Kind { get; init; } = string.Empty;
 
     /// <summary>Base endpoint URL of the remote service.</summary>

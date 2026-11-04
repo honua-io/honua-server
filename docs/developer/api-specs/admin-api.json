@@ -24551,7 +24551,7 @@
               "geoserver-rest",
               "geoservices",
               "geoservices-rest",
-              "geoservices-rest"
+              "arcgis-geoservices-rest"
             ]
           },
           "sourceUrl": {

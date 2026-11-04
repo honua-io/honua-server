@@ -157,7 +157,7 @@ public sealed class MigrationReaderCompatibilityTests
             ["a.001_x.sql", "a.128_y.sql", "a.notes.sql", "a.009_z.sql"]).Should().Be(128);
 
     [UnitTest]
-    public void CompatibilityException_WithoutDeclarations_KeepsTheOriginalMessage()
+    public void CompatibilityException_WithoutDeclarations_PointsToTheRollbackBoundaries()
     {
         var withoutDeclarations = new DatabaseSchemaCompatibilityException([Name]);
         var withEmptyRefusals = new DatabaseSchemaCompatibilityException([Name], new Dictionary<string, string>());
@@ -165,7 +165,8 @@ public sealed class MigrationReaderCompatibilityTests
         withoutDeclarations.Message.Should().Be(
             $"schema_reader_incompatible: this server cannot verify compatibility with applied migration(s): {Name}. " +
             "Start a compatible server or restore the database backup matching this revision. " +
-            "Application rollback does not reverse database migrations.");
+            "Application rollback does not reverse database migrations. " +
+            "Rollback boundaries: https://docs.honua.io/guides/deploy/upgrade-and-rollback#rollback-boundaries.");
         withEmptyRefusals.Message.Should().Be(withoutDeclarations.Message);
         withoutDeclarations.DeclarationRefusals.Should().BeEmpty();
     }

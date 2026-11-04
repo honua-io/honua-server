@@ -4,6 +4,8 @@
 -- Stored migration runs, batches and catalog rows name the GeoServices REST source kind by its current
 -- value. Fingerprinted evidence (migration_runs.evidence_pack_body, migration_performance_evidence) keeps
 -- its recorded bytes; readers accept both values.
+-- honua:compatibility-review reason=rewrites the stored GeoServices REST source kind; rollback across it restores the pre-upgrade backup
+-- honua:reader-incompatible reason=servers without this migration read only the legacy source kind
 
 UPDATE honua.migration_runs
 SET source_kind = 'geoservices-rest'
@@ -28,5 +30,5 @@ WHERE legacy.source_kind = 'arcgis-geoservices-rest'
       WHERE current_row.source_kind = 'geoservices-rest' AND current_row.source_id = legacy.source_id);
 
 UPDATE honua.arcgis_migration_runs
-SET manifest_json = replace(manifest_json::text, '"arcgis-geoservices-rest"', '"geoservices-rest"')::jsonb
-WHERE manifest_json::text LIKE '%"arcgis-geoservices-rest"%';
+SET manifest_json = jsonb_set(manifest_json, '{sourceKind}', '"geoservices-rest"'::jsonb)
+WHERE manifest_json ->> 'sourceKind' = 'arcgis-geoservices-rest';

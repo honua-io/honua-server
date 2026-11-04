@@ -192,7 +192,7 @@ public sealed class FederatedSourceConnectorTests
     {
         Id = "esri",
         DisplayName = "Esri",
-        Kind = FederatedSourceKind.GeoServicesRest,
+        Kind = FederatedSourceKind.EsriRest,
         Endpoint = new Uri("https://gis.example.gov/arcgis/rest/services/Parcels/FeatureServer"),
         RemoteLayer = "0",
         RequestTimeout = TimeSpan.FromSeconds(15),

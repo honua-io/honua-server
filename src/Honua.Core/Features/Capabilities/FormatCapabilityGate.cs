@@ -46,24 +46,8 @@ public static class FormatCapabilityGate
     // future DI callers can pass an explicit registry.
     private static readonly CapabilityRegistry SharedRegistry = new();
 
-    /// <summary>
-    /// Evaluates a single data-format name (the segment after
-    /// <see cref="CapabilityRegistry.DataFormatIdPrefix"/>, for example
-    /// <c>geoparquet</c> or <c>geoservicesjson</c>) against the capability registry.
-    /// </summary>
-    /// <param name="formatName">
-    /// The registry data-format name (case-insensitive), <b>not</b> a protocol wire
-    /// token — the seam is responsible for mapping its wire token (for example the
-    /// GeoServices <c>f=json</c>) to the registry name (<c>geoservicesjson</c>) first.
-    /// </param>
-    /// <param name="context">
-    /// The edition/environment/experimental-flag inputs, or <c>null</c> for
-    /// <see cref="CapabilityGateContext.Default"/> (Community edition, flags off).
-    /// </param>
-    /// <param name="registry">
-    /// The capability registry to resolve against, or <c>null</c> for the shared
-    /// default registry.
-    /// </param>
+    // formatName is the registry data-format name (case-insensitive), not a protocol wire token: callers map
+    // their wire token (for example GeoServices f=json) to the registry name first.
     public static FormatGateDecision Evaluate(
         string formatName,
         CapabilityGateContext? context = null,

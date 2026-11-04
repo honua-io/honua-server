@@ -22,7 +22,7 @@ public sealed class GeoServicesRestSourceKindMigrationTests
 
     [IntegrationTest]
     [Operation(Operations.ContractTesting)]
-    public async Task Migration144_OnAnExistingDatabase_RewritesStoredRunKindsAndKeepsConflictingCatalogRows()
+    public async Task Migration144_OnAnExistingDatabase_RewritesOnlySourceKindFieldsAndIsRepeatable()
     {
         await using var container = new PostgreSqlBuilder().WithImage(PostgisImage).WithDatabase("honua_source_kind").Build();
         await container.StartAsync();
@@ -31,9 +31,9 @@ public sealed class GeoServicesRestSourceKindMigrationTests
             + "CREATE EXTENSION IF NOT EXISTS unaccent; CREATE EXTENSION IF NOT EXISTS pgcrypto;");
         await MigrateAsync(connectionString);
         await ExecuteAsync(connectionString, SeedLegacyRows);
-        await ExecuteAsync(connectionString, $"DELETE FROM public.schema_versions WHERE scriptname LIKE '%{Migration}';");
-
-        await MigrateAsync(connectionString);
+        await ReapplyMigration144Async(connectionString);
+        var firstManifest = await ScalarAsync(connectionString, ManifestQuery);
+        await ReapplyMigration144Async(connectionString);
 
         (await ScalarAsync(connectionString, "SELECT source_kind FROM honua.migration_runs WHERE run_id = 'run-legacy'"))
             .Should().Be(CurrentKind);
@@ -43,8 +43,21 @@ public sealed class GeoServicesRestSourceKindMigrationTests
             .Should().Be("1");
         (await ScalarAsync(connectionString, "SELECT string_agg(source_kind, ',' ORDER BY source_kind) FROM honua.migration_styles WHERE source_id = 'roads'"))
             .Should().Be($"{LegacyKind},{CurrentKind}", "a row already stored under the current kind is not overwritten");
-        (await ScalarAsync(connectionString, "SELECT manifest_json::text FROM honua.arcgis_migration_runs WHERE run_id = 'evidence-legacy'"))
-            .Should().NotContain(LegacyKind).And.Contain(CurrentKind);
+        (await ScalarAsync(connectionString, "SELECT manifest_json ->> 'sourceKind' FROM honua.arcgis_migration_runs WHERE run_id = 'evidence-legacy'"))
+            .Should().Be(CurrentKind);
+        (await ScalarAsync(connectionString, "SELECT manifest_json #>> '{targetResources,0,sourceKind}' FROM honua.arcgis_migration_runs WHERE run_id = 'evidence-legacy'"))
+            .Should().Be(LegacyKind, "a target resource kind is not the source family");
+        (await ScalarAsync(connectionString, "SELECT manifest_json #>> '{targetResources,0,targetResourceName}' FROM honua.arcgis_migration_runs WHERE run_id = 'evidence-legacy'"))
+            .Should().Be(LegacyKind, "names that equal the legacy value are data, not discriminators");
+        (await ScalarAsync(connectionString, ManifestQuery)).Should().Be(firstManifest, "re-applying the migration changes nothing");
+    }
+
+    private const string ManifestQuery = "SELECT manifest_json::text FROM honua.arcgis_migration_runs WHERE run_id = 'evidence-legacy'";
+
+    private static async Task ReapplyMigration144Async(string connectionString)
+    {
+        await ExecuteAsync(connectionString, $"DELETE FROM public.schema_versions WHERE scriptname LIKE '%{Migration}';");
+        await MigrateAsync(connectionString);
     }
 
     private const string SeedLegacyRows = $$"""
@@ -56,7 +69,7 @@ public sealed class GeoServicesRestSourceKindMigrationTests
             VALUES ('{{LegacyKind}}', 'roads', 'roads', 'roads-legacy'), ('{{CurrentKind}}', 'roads', 'roads', 'roads-current');
         INSERT INTO honua.arcgis_migration_runs (run_id, source_url, manifest_json)
             VALUES ('evidence-legacy', 'https://gis.example.test/rest/services/Parcels/FeatureServer',
-                    '{"sourceKind": "{{LegacyKind}}", "targetResources": [{"sourceKind": "{{LegacyKind}}"}]}');
+                    '{"sourceKind": "{{LegacyKind}}", "targetResources": [{"sourceKind": "{{LegacyKind}}", "targetResourceName": "{{LegacyKind}}"}]}');
         """;
 
     private static async Task MigrateAsync(string connectionString)

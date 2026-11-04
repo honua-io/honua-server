@@ -14,6 +14,7 @@ import json
 import re
 import subprocess
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -74,6 +75,17 @@ class StringForm:
     raw: bool
 
 
+CodeEnd = Callable[[str, int], bool]
+
+
+def never_ends(token: str, depth: int) -> bool:
+    return False
+
+
+def closes_interpolation_hole(token: str, depth: int) -> bool:
+    return token == "}" and depth == 0
+
+
 class CSharpSegmenter:
     """Splits C# source into code, comment and string-content segments, recursing into
     interpolation holes so the identifiers inside them are treated as code."""
@@ -84,19 +96,19 @@ class CSharpSegmenter:
         self.segments: list[Segment] = []
 
     def split(self) -> list[Segment]:
-        self._read_code(stop_at_brace=False)
+        self._read_code(ends_at=never_ends)
         return self.segments
 
     def _emit(self, kind: str, text: str) -> None:
         if text:
             self.segments.append(Segment(kind, text))
 
-    def _read_code(self, stop_at_brace: bool) -> None:
+    def _read_code(self, ends_at: CodeEnd) -> None:
         start, depth = self.position, 0
         while (match := TOKEN_START.search(self.source, self.position)) is not None:
             self.position, token = match.start(), match.group(0)
             if token in "{}":
-                if token == "}" and stop_at_brace and depth == 0:
+                if ends_at(token, depth):
                     break
                 depth += 1 if token == "{" else -1
                 self.position += 1
@@ -176,7 +188,7 @@ class CSharpSegmenter:
     def _read_hole(self, braces: int) -> None:
         self._emit("delimiter", "{" * braces)
         self.position += braces
-        self._read_code(stop_at_brace=True)
+        self._read_code(ends_at=closes_interpolation_hole)
         self._emit("delimiter", self.source[self.position:self.position + braces])
         self.position += braces
 
@@ -254,39 +266,51 @@ def read_text_or_none(path: Path) -> str | None:
         return None
 
 
-def transform(path: Path, naming: NamingMap) -> str | None:
+def transform(path: Path, text: str, naming: NamingMap) -> str:
+    return rename_csharp(text, naming) if path.suffix == ".cs" else rename_data(text, naming)
+
+
+@dataclass(frozen=True)
+class RenameRun:
+    root: Path
+    scopes: list[str]
+    naming: NamingMap
+
+
+@dataclass(frozen=True)
+class FileChange:
+    source: Path
+    target: Path
+    content: str
+
+    def relative_to(self, root: Path) -> str:
+        return self.source.relative_to(root).as_posix()
+
+
+def plan_change(run: RenameRun, path: Path) -> FileChange | None:
+    if is_excluded(path.relative_to(run.root).as_posix(), run.naming):
+        return None
     if path.suffix != ".cs" and path.suffix not in DATA_SUFFIXES:
         return None
-    try:
-        text = path.read_text(encoding="utf-8")
-    except UnicodeDecodeError:
+    text = read_text_or_none(path)
+    if text is None:
         return None
-    if path.suffix == ".cs":
-        return rename_csharp(text, naming)
-    return rename_data(text, naming)
+    updated = transform(path, text, run.naming)
+    target = renamed_path(path, run.naming) if path.suffix == ".cs" else path
+    if updated == text and target == path:
+        return None
+    return FileChange(path, target, updated)
 
 
-def apply(root: Path, scopes: list[str], naming: NamingMap, check_only: bool) -> list[str]:
-    changed = []
-    for path in tracked_files(root, scopes):
-        relative = path.relative_to(root).as_posix()
-        if is_excluded(relative, naming):
-            continue
-        updated = transform(path, naming)
-        target = renamed_path(path, naming) if path.suffix == ".cs" else path
-        if (updated is None or updated == read_text_or_none(path)) and target == path:
-            continue
-        changed.append(relative)
-        if not check_only:
-            write_renamed(root, path, target, updated)
-    return changed
+def plan_changes(run: RenameRun) -> list[FileChange]:
+    planned = (plan_change(run, path) for path in tracked_files(run.root, run.scopes))
+    return [change for change in planned if change is not None]
 
 
-def write_renamed(root: Path, path: Path, target: Path, content: str | None) -> None:
-    if target != path:
-        subprocess.run(["git", "-C", str(root), "mv", str(path), str(target)], check=True)
-    if content is not None:
-        target.write_text(content, encoding="utf-8")
+def write_change(root: Path, change: FileChange) -> None:
+    if change.target != change.source:
+        subprocess.run(["git", "-C", str(root), "mv", str(change.source), str(change.target)], check=True)
+    change.target.write_text(change.content, encoding="utf-8")
 
 
 def main() -> int:
@@ -295,10 +319,15 @@ def main() -> int:
     parser.add_argument("--check", action="store_true", help="list files that would change; exit 1 if any")
     parser.add_argument("paths", nargs="*", default=["src", "tests"])
     args = parser.parse_args()
-    changed = apply(args.root.resolve(), args.paths, NamingMap.load(MAP_PATH), args.check)
-    for relative in changed:
-        print(relative)
-    return 1 if args.check and changed else 0
+    run = RenameRun(args.root.resolve(), args.paths, NamingMap.load(MAP_PATH))
+    changes = plan_changes(run)
+    for change in changes:
+        print(change.relative_to(run.root))
+    if args.check:
+        return 1 if changes else 0
+    for change in changes:
+        write_change(run.root, change)
+    return 0
 
 
 if __name__ == "__main__":

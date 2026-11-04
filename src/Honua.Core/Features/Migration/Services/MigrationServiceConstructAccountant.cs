@@ -21,8 +21,6 @@ namespace Honua.Core.Features.Migration.Services;
 /// </remarks>
 public static class MigrationServiceConstructAccountant
 {
-    /// <summary>The source kind the construct matrix is defined for.</summary>
-
     private static readonly string[] SupportedServiceTypes = ["FeatureServer", "MapServer"];
 
     private static readonly string[] EditCapabilities = ["Create", "Delete", "Editing", "Update", "Uploads"];

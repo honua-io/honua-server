@@ -12,6 +12,8 @@ public sealed class DatabaseSchemaCompatibilityException : InvalidOperationExcep
     /// <summary>Stable startup failure code for deployment and release receipts.</summary>
     public const string ErrorCode = "schema_reader_incompatible";
 
+    public const string RollbackBoundariesUrl = "https://docs.honua.io/guides/deploy/upgrade-and-rollback#rollback-boundaries";
+
     /// <summary>Creates a failure for unrecognized applied migrations.</summary>
     public DatabaseSchemaCompatibilityException(IReadOnlyList<string> unknownMigrations)
         : this(unknownMigrations, null)
@@ -29,7 +31,8 @@ public sealed class DatabaseSchemaCompatibilityException : InvalidOperationExcep
         IReadOnlyDictionary<string, string>? declarationRefusals)
         : base($"{ErrorCode}: this server cannot verify compatibility with applied migration(s): " +
             $"{string.Join(", ", unknownMigrations)}. Start a compatible server or restore the database " +
-            "backup matching this revision. Application rollback does not reverse database migrations." +
+            "backup matching this revision. Application rollback does not reverse database migrations. " +
+            $"Rollback boundaries: {RollbackBoundariesUrl}." +
             DescribeRefusals(declarationRefusals))
     {
         UnknownMigrations = unknownMigrations.ToArray();

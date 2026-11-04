@@ -193,7 +193,6 @@
     "EsriPaths": "GeoServicesPaths",
     "EsriPoint": "GeoServicesPoint",
     "EsriPolygonRing": "GeoServicesPolygonRing",
-    "EsriRest": "GeoServicesRest",
     "EsriRestFederatedSourceConnector": "GeoServicesRestFederatedSourceConnector",
     "EsriRest_NoAttributeFilter_SendsSelectAllWhere": "GeoServicesRest_NoAttributeFilter_SendsSelectAllWhere",
     "EsriRest_PushesDownWhereEnvelopeAndPaging_AndMapsFeatures": "GeoServicesRest_PushesDownWhereEnvelopeAndPaging_AndMapsFeatures",
