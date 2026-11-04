@@ -96,21 +96,7 @@ internal static class FolderEndpoints
             return Results.Problem(statusCode: 503, detail: "Folder mutations are unavailable on this read-only metadata catalog.");
         try
         {
-            var snapshot = await store.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
-            if (snapshot.Etag != context.Request.Headers.IfMatch.ToString())
-                return Results.Problem(statusCode: 412, detail: "The metadata snapshot has changed. Refresh and retry.");
-            var changed = mutation(snapshot.Graph);
-            var denial = await AuthorizeAffectedServices(context, snapshot.Graph, changed).ConfigureAwait(false);
-            if (denial is not null) return denial;
-            var saved = await store.SaveAsync(changed.Graph, snapshot.Etag, context.RequestAborted).ConfigureAwait(false);
-            context.Response.Headers.ETag = saved.Etag;
-            var logger = context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("FolderMutations");
-            FolderAuditLog.Mutated(logger, context.Request.Method, saved.Graph.Revision);
-            if (changed.Status == 204) return Results.NoContent();
-            var folder = saved.Graph.Folders.Single(f => f.Metadata.Id == changed.Folder!.Metadata.Id);
-            if (changed.Status == 201) context.Response.Headers.Location = $"{context.Request.PathBase}/api/v1/admin/folders/{folder.Metadata.Id}";
-            return Results.Json(ApiResponse<MetadataV2Folder>.CreateSuccess(folder),
-                FolderJsonContext.Default.ApiResponseMetadataV2Folder, statusCode: changed.Status);
+            return await CommitMutationAsync(context, mutation, store).ConfigureAwait(false);
         }
         catch (MetadataV2GraphConcurrencyException) { return Results.Problem(statusCode: 412, detail: "The metadata snapshot has changed. Refresh and retry."); }
         catch (KeyNotFoundException) { return Results.NotFound(); }
@@ -120,6 +106,26 @@ internal static class FolderEndpoints
                 detail: "Invalid folder input. Use an unreserved ASCII folder name beginning with a letter, and supply folderId (null for root) when moving a service.");
         }
         catch (InvalidOperationException) { return Results.Problem(statusCode: 409, detail: "Folder or public path conflicts with the current catalog or a permanent reservation."); }
+    }
+
+    private static async Task<IResult> CommitMutationAsync(
+        HttpContext context, Func<MetadataV2Graph, FolderMutation> mutation, IMetadataV2GraphStore store)
+    {
+        var snapshot = await store.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
+        if (snapshot.Etag != context.Request.Headers.IfMatch.ToString())
+            return Results.Problem(statusCode: 412, detail: "The metadata snapshot has changed. Refresh and retry.");
+        var changed = mutation(snapshot.Graph);
+        var denial = await AuthorizeAffectedServices(context, snapshot.Graph, changed).ConfigureAwait(false);
+        if (denial is not null) return denial;
+        var saved = await store.SaveAsync(changed.Graph, snapshot.Etag, context.RequestAborted).ConfigureAwait(false);
+        context.Response.Headers.ETag = saved.Etag;
+        var logger = context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("FolderMutations");
+        FolderAuditLog.Mutated(logger, context.Request.Method, saved.Graph.Revision);
+        if (changed.Status == 204) return Results.NoContent();
+        var folder = saved.Graph.Folders.Single(f => f.Metadata.Id == changed.Folder!.Metadata.Id);
+        if (changed.Status == 201) context.Response.Headers.Location = $"{context.Request.PathBase}/api/v1/admin/folders/{folder.Metadata.Id}";
+        return Results.Json(ApiResponse<MetadataV2Folder>.CreateSuccess(folder),
+            FolderJsonContext.Default.ApiResponseMetadataV2Folder, statusCode: changed.Status);
     }
 
     private static async Task<IResult?> AuthorizeMutation(HttpContext context)
