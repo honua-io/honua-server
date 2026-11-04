@@ -272,6 +272,14 @@ public static class StudioCompositionBodyEditor
         return envelope with { Body = document.RootElement.Clone() };
     }
 
+    public static StudioPackageEnvelope EditBody(
+        StudioPackageEnvelope envelope,
+        Func<StudioCompositionBody, StudioCompositionBody> edit)
+    {
+        ArgumentNullException.ThrowIfNull(edit);
+        return WriteBody(envelope, edit(ReadBody(envelope)));
+    }
+
     /// <summary>
     /// Adds a layer to the composition. <paramref name="beforeId"/> inserts before an
     /// existing layer id (append when omitted or unmatched — mirrors the SDK agent-tools
@@ -318,23 +326,58 @@ public static class StudioCompositionBodyEditor
 
         EnsureComponentIsUnreferenced(body, StudioInteractionVocabulary.LayerRefPrefix + layerId);
 
+        var remainingLayers = body.Layers
+            .Where(existing => !string.Equals(existing.Id, layerId, StringComparison.Ordinal))
+            .ToList();
         var updated = body with
         {
-            Layers = body.Layers.Where(existing => !string.Equals(existing.Id, layerId, StringComparison.Ordinal)).ToList()
+            Layers = remainingLayers,
+            SourceBindingIds = WithoutSource(body.SourceBindingIds, SourceOrphanedBy(removedLayer, remainingLayers)),
         };
-        var orphanedControl = (body.Controls ?? []).FirstOrDefault(control =>
-            control.SourceId is not null
-            && (string.Equals(control.SourceId, removedLayer.Id, StringComparison.Ordinal)
-                || string.Equals(control.SourceId, removedLayer.SourceId, StringComparison.Ordinal))
-            && !StudioInteractionVocabulary.IsDeclaredSourceId(updated, control.SourceId));
-        if (orphanedControl is not null)
+        var unbound = SourcedComponents(body).FirstOrDefault(component =>
+            component.SourceId is not null
+            && IsSourceOf(removedLayer, component.SourceId)
+            && !AnyLayerReadsSource(remainingLayers, component.SourceId));
+        if (unbound is not null)
         {
             throw new StudioCompositionConflictException(
-                $"Cannot remove layer '{layerId}' because control '{orphanedControl.Id}' still uses sourceId "
-                + $"'{orphanedControl.SourceId}'. Remove or rebind the control first.");
+                $"Cannot remove layer '{layerId}' because {unbound.Kind} '{unbound.Id}' still uses sourceId "
+                + $"'{unbound.SourceId}'. Remove or rebind the {unbound.Kind} first.");
         }
 
         return updated;
+    }
+
+    private sealed record SourcedComponent(string Kind, string Id, string? SourceId);
+
+    private static IEnumerable<SourcedComponent> SourcedComponents(StudioCompositionBody body) =>
+        (body.Controls ?? [])
+            .Select(control => new SourcedComponent("control", control.Id, control.SourceId))
+            .Concat(body.Widgets.Select(widget => new SourcedComponent("widget", widget.Id, widget.SourceId)));
+
+    private static bool IsSourceOf(StudioCompositionLayer layer, string sourceId) =>
+        string.Equals(sourceId, layer.Id, StringComparison.Ordinal)
+        || string.Equals(sourceId, layer.SourceId, StringComparison.Ordinal);
+
+    internal static string? SourceOrphanedBy(
+        StudioCompositionLayer removedLayer,
+        IEnumerable<StudioCompositionLayer> remainingLayers) =>
+        removedLayer.SourceId is { } sourceId && !AnyLayerReadsSource(remainingLayers, sourceId)
+            ? sourceId
+            : null;
+
+    private static bool AnyLayerReadsSource(IEnumerable<StudioCompositionLayer> layers, string sourceId) =>
+        layers.Any(layer => string.Equals(layer.SourceId, sourceId, StringComparison.Ordinal));
+
+    private static HashSet<string> WithoutSource(IReadOnlySet<string> sourceIds, string? removedSourceId)
+    {
+        var remaining = new HashSet<string>(sourceIds, StringComparer.Ordinal);
+        if (removedSourceId is not null)
+        {
+            remaining.Remove(removedSourceId);
+        }
+
+        return remaining;
     }
 
     /// <summary>Sets (or clears) a layer's bound <see cref="StudioCompositionLayer.StyleRef"/>.</summary>

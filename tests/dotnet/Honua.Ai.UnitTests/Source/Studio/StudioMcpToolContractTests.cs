@@ -91,7 +91,7 @@ public sealed class StudioMcpToolContractTests
     public void CompositionTools_AdvertiseDashboardEligibility()
     {
         var tools = BuildAllTools().OfType<StudioCompositionToolBase>().Cast<IMcpTool>().ToArray();
-        tools.Should().HaveCount(11);
+        tools.Should().HaveCount(12);
         // codeql[cs/linq/missed-select]: asserts each tool descriptor mentions dashboard
         foreach (var tool in tools)
         {
@@ -772,6 +772,7 @@ public sealed class StudioMcpToolContractTests
             new RemoveStudioLayerTool(jobService, NullLogger<RemoveStudioLayerTool>.Instance),
             new SetStudioLayerStyleTool(jobService, NullLogger<SetStudioLayerStyleTool>.Instance),
             new SetStudioLayerVisibilityTool(jobService, NullLogger<SetStudioLayerVisibilityTool>.Instance),
+            new SetStudioMapStyleTool(jobService, NullLogger<SetStudioMapStyleTool>.Instance),
             new SetStudioViewTool(jobService, NullLogger<SetStudioViewTool>.Instance),
             new AddStudioWidgetTool(jobService, NullLogger<AddStudioWidgetTool>.Instance),
             new RemoveStudioWidgetTool(jobService, NullLogger<RemoveStudioWidgetTool>.Instance),

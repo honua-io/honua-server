@@ -299,12 +299,12 @@ internal static class McpToolHelpers
             return violations;
         }
 
-        return exception is GeoprocessingValidationException
+        return exception is GeoprocessingValidationException validation
             ?
             [
                 new McpValidationViolation
                 {
-                    Code = "INVALID_ARGUMENT",
+                    Code = validation.ViolationCode ?? "INVALID_ARGUMENT",
                     Message = jsonRpcError.Message
                 }
             ]
