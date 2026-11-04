@@ -610,7 +610,7 @@ internal sealed class PostgresRasterStore : IRasterStore
             sourceExpr = BuildTerrainExpression(sourceExpr, terrain);
         }
 
-        if (query.Stretch is { } stretch && CanResolveStretchBounds(stretch, query.BandArithmetic))
+        if (query.Stretch is { } stretch && CanResolveStretchBounds(stretch, query.BandArithmetic, query.Terrain))
         {
             var stretchBounds = await ResolveStretchBoundsAsync(
                 stretch, layerId, referenceRasterId, query.Bands, cancellationToken).ConfigureAwait(false);
@@ -817,11 +817,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         }
 
         // 1b. Apply display stretch (renderingRule Stretch) on the selected bands.
-        // The persisted whole-raster band statistics describe the source pixels, not a
-        // band-math output, so when BandArithmetic is set only an explicitly-supplied
-        // stretch range is honoured; auto-derived bounds are skipped to avoid mis-stretching
-        // the analytic band (NDVI's [-1, 1] range pairs with an explicit Colormap instead).
-        if (query.Stretch is { } stretch && CanResolveStretchBounds(stretch, query.BandArithmetic))
+        if (query.Stretch is { } stretch && CanResolveStretchBounds(stretch, query.BandArithmetic, query.Terrain))
         {
             var stretchBounds = await ResolveStretchBoundsAsync(
                 stretch, layerId, rasterId, query.Bands, cancellationToken).ConfigureAwait(false);
@@ -1269,16 +1265,10 @@ internal sealed class PostgresRasterStore : IRasterStore
         }
     }
 
-    // Persisted band statistics describe the source pixels, not a band-math output. When
-    // BandArithmetic is set, only an explicitly-supplied stretch range (Statistics on the
-    // rule) is meaningful over the derived band; auto-derived bounds are skipped.
-    private static bool CanResolveStretchBounds(RasterStretch stretch, RasterBandArithmetic? bandArithmetic)
-        => bandArithmetic is null || (stretch.StatisticsMin is not null && stretch.StatisticsMax is not null);
-
-    // Mosaic equivalent of CanResolveStretchBounds: when band arithmetic OR an inline terrain
-    // function has reshaped the band semantics, the persisted whole-mosaic statistics no longer
-    // describe the analytic band, so only an explicitly-supplied stretch range is honoured.
-    private static bool CanResolveMosaicStretchBounds(
+    // Persisted statistics describe the source pixels, not a band that band arithmetic or a
+    // terrain function (NDVI, hillshade, slope, aspect) has reshaped. Such a band is stretched
+    // only by an explicit range.
+    internal static bool CanResolveStretchBounds(
         RasterStretch stretch,
         RasterBandArithmetic? bandArithmetic,
         RasterTerrainFunction? terrain)
@@ -1610,7 +1600,7 @@ internal sealed class PostgresRasterStore : IRasterStore
             rasterExpr = BuildTerrainExpression(rasterExpr, terrain);
         }
 
-        if (rendering.Stretch is { } stretch)
+        if (rendering.Stretch is { } stretch && CanResolveStretchBounds(stretch, rendering.BandArithmetic, rendering.Terrain))
         {
             var bounds = await resolveStretchBounds(stretch).ConfigureAwait(false);
             if (bounds is { Count: > 0 })
@@ -2205,11 +2195,8 @@ internal sealed class PostgresRasterStore : IRasterStore
             postMergeRasterExpr = BuildTerrainExpression(postMergeRasterExpr, mosaicTerrain);
         }
 
-        // Apply display stretch (renderingRule Stretch) on the merged mosaic bands. When band
-        // arithmetic or a terrain function reshaped the band semantics the persisted mosaic
-        // statistics no longer describe the analytic band, so only an explicitly-supplied stretch
-        // range is honoured (mirrors the single-raster CanResolveStretchBounds guard).
-        if (query.Stretch is { } stretch && CanResolveMosaicStretchBounds(stretch, query.BandArithmetic, query.Terrain))
+        // Apply display stretch (renderingRule Stretch) on the merged mosaic bands.
+        if (query.Stretch is { } stretch && CanResolveStretchBounds(stretch, query.BandArithmetic, query.Terrain))
         {
             var stretchBounds = await ResolveMosaicStretchBoundsAsync(
                 stretch, layerId, rasterIds, mergeStrategy, cancellationToken).ConfigureAwait(false);
