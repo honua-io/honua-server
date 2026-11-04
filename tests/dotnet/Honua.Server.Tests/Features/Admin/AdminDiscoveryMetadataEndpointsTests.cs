@@ -35,6 +35,8 @@ public sealed class AdminDiscoveryMetadataEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/discovery")]
     [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/discovery")]
     [Endpoint("GET /ogc/features/collections/{collectionId}")]
+    [Endpoint("GET /ogc/services/{serviceId}/wms")]
+    [InterfaceOperation(TestProtocols.Wms13, "GetCapabilities")]
     [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/popup-info")]
     public async Task UpdateLayer_RoundTripsThroughProtocolAndPreservesOtherMetadata()
     {
@@ -62,6 +64,7 @@ public sealed class AdminDiscoveryMetadataEndpointsTests : IAsyncLifetime
         using var document = JsonDocument.Parse(await protocol.Content.ReadAsStringAsync());
         document.RootElement.GetProperty("title").GetString().Should().Be(saved.Title);
         document.RootElement.GetProperty("description").GetString().Should().Be(saved.Description);
+        await AssertLayerKeywordsAsync(client);
     }
 
     [IntegrationTest]
@@ -192,6 +195,45 @@ public sealed class AdminDiscoveryMetadataEndpointsTests : IAsyncLifetime
         cleared.Description.Should().BeNull();
         cleared.Keywords.Should().BeEmpty();
         cleared.EntityId.Should().Be(before.EntityId);
+    }
+
+    [IntegrationTheory]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/discovery")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/discovery")]
+    [InlineData("null")]
+    [InlineData("empty")]
+    public async Task Discovery_LegacyPublicationIdentifier_ReturnsStoredLocalId(string identifierShape)
+    {
+        var snapshot = _fixture.GetCurrentV2GraphSnapshot();
+        var resourceId = snapshot.Index.ResourcesByStorageLayerId[0].Metadata.Id;
+        _fixture.Services.GetRequiredService<TestMetadataV2GraphProvider>().SetGraph(snapshot.Graph with
+        {
+            Revision = snapshot.Revision + 1,
+            Publications = snapshot.Graph.Publications.Select(publication => publication.ResourceId == resourceId
+                ? publication with
+                {
+                    Identifier = identifierShape == "null" ? null! : new(),
+                    ServiceLocalId = "legacy-layer", LayerIndex = publication.LayerIndex
+                }
+                : publication).ToArray()
+        }, schema: _fixture.MetadataGraphSchema);
+        var client = _fixture.CreateAdminClient();
+        const string path = "/api/v1/admin/metadata/layers/0/discovery";
+        var before = await ReadAsync(client, path);
+        before.AffectedPublications.Should().NotBeEmpty()
+            .And.OnlyContain(publication => publication.Identifier == "legacy-layer");
+        (await UpdateAsync(client, path, before.Etag)).StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    private static async Task AssertLayerKeywordsAsync(HttpClient client)
+    {
+        using var response = await client.GetAsync("/ogc/services/test/wms?SERVICE=WMS&REQUEST=GetCapabilities");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var document = XDocument.Parse(await response.Content.ReadAsStringAsync());
+        var layer = document.Descendants().Single(element => element.Name.LocalName == "Layer" &&
+            element.Elements().Any(child => child.Name.LocalName == "Title" && child.Value == "Road survey"));
+        layer.Descendants().Where(element => element.Name.LocalName == "Keyword").Select(element => element.Value)
+            .Should().Contain(["roads", "survey"]);
     }
 
     private MetadataV2GraphSnapshot SeedLayerGovernance()

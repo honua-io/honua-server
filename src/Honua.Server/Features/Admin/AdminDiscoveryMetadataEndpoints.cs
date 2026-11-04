@@ -41,13 +41,11 @@ internal static class AdminDiscoveryMetadataEndpoints
         [FromServices] IMetadataV2GraphProvider provider) =>
         ReadAsync(context, provider, snapshot => DiscoveryMetadataTarget.ForService(snapshot, serviceName));
 
-    private static Task<IResult> UpdateLayerAsync(int layerId, DiscoveryMetadataUpdateRequest request,
-        HttpContext context, [AsParameters] DiscoveryWriteServices services) =>
-        WriteAsync(new(context, request, services), snapshot => DiscoveryMetadataTarget.ForLayer(snapshot, layerId));
+    private static Task<IResult> UpdateLayerAsync(int layerId, [AsParameters] DiscoveryWriteContext write) =>
+        WriteAsync(write, snapshot => DiscoveryMetadataTarget.ForLayer(snapshot, layerId));
 
-    private static Task<IResult> UpdateServiceAsync(string serviceName, DiscoveryMetadataUpdateRequest request,
-        HttpContext context, [AsParameters] DiscoveryWriteServices services) =>
-        WriteAsync(new(context, request, services), snapshot => DiscoveryMetadataTarget.ForService(snapshot, serviceName));
+    private static Task<IResult> UpdateServiceAsync(string serviceName, [AsParameters] DiscoveryWriteContext write) =>
+        WriteAsync(write, snapshot => DiscoveryMetadataTarget.ForService(snapshot, serviceName));
 
     private static async Task<IResult> ReadAsync(HttpContext context, IMetadataV2GraphProvider provider,
         Func<MetadataV2GraphSnapshot, DiscoveryMetadataTarget?> resolve)
@@ -57,13 +55,13 @@ internal static class AdminDiscoveryMetadataEndpoints
         return target is null ? Problem(context, 404, "Metadata target not found.") : Respond(snapshot, target);
     }
 
-    private static async Task<IResult> WriteAsync(DiscoveryWrite write,
+    private static async Task<IResult> WriteAsync(DiscoveryWriteContext write,
         Func<MetadataV2GraphSnapshot, DiscoveryMetadataTarget?> resolve)
     {
         var error = Validate(write.Request);
         if (error is not null)
             return Problem(write.Context, 400, error);
-        var snapshot = await write.Services.Store.GetCurrentAsync(write.Context.RequestAborted).ConfigureAwait(false);
+        var snapshot = await write.Store.GetCurrentAsync(write.Context.RequestAborted).ConfigureAwait(false);
         var target = resolve(snapshot);
         if (target is null)
             return Problem(write.Context, 404, "Metadata target not found.");
@@ -72,14 +70,14 @@ internal static class AdminDiscoveryMetadataEndpoints
         MetadataV2GraphSnapshot saved;
         try
         {
-            saved = await write.Services.Store.SaveAsync(target.Apply(snapshot.Graph, write.Request),
+            saved = await write.Store.SaveAsync(target.Apply(snapshot.Graph, write.Request),
                 snapshot.Etag, write.Context.RequestAborted).ConfigureAwait(false);
         }
         catch (MetadataV2GraphConcurrencyException)
         {
             return Problem(write.Context, 409, "Metadata changed. Reload before saving.");
         }
-        await write.Services.Cache.InvalidateServiceCatalogAsync(null, null, write.Context.RequestAborted).ConfigureAwait(false);
+        await write.Cache.InvalidateServiceCatalogAsync(null, null, write.Context.RequestAborted).ConfigureAwait(false);
         return Respond(saved, resolve(saved)!);
     }
 
@@ -109,9 +107,11 @@ internal static class AdminDiscoveryMetadataEndpoints
     private static IResult Problem(HttpContext context, int status, string detail) =>
         ProblemDetailsHelpers.CreateAdminProblem(context, status, detail);
 
-    internal sealed record DiscoveryWriteServices(
-        [FromServices] IMetadataV2GraphStore Store,
-        [FromServices] OutputCacheInvalidationService Cache);
-
-    private sealed record DiscoveryWrite(HttpContext Context, DiscoveryMetadataUpdateRequest Request, DiscoveryWriteServices Services);
+    internal sealed class DiscoveryWriteContext
+    {
+        [FromBody] public required DiscoveryMetadataUpdateRequest Request { get; init; }
+        public required HttpContext Context { get; init; }
+        [FromServices] public required IMetadataV2GraphStore Store { get; init; }
+        [FromServices] public required OutputCacheInvalidationService Cache { get; init; }
+    }
 }

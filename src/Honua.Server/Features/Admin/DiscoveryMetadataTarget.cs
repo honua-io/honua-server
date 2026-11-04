@@ -50,5 +50,5 @@ internal sealed record DiscoveryMetadataTarget(
     private static DiscoveryPublicationImpact[] Impact(MetadataV2GraphSnapshot snapshot,
         IEnumerable<MetadataV2Publication> publications) => publications.Select(publication => new DiscoveryPublicationImpact(
             publication.Metadata.Id, snapshot.Index.ServicesById[publication.ServiceId].Metadata.Name,
-            publication.Identifier.Value)).ToArray();
+            publication.ServiceLocalId ?? string.Empty)).ToArray();
 }

@@ -21513,9 +21513,6 @@
               }
             }
           },
-          "400": {
-            "description": "Invalid input"
-          },
           "401": {
             "description": "Authentication required"
           },
@@ -21524,9 +21521,6 @@
           },
           "404": {
             "description": "Target not found"
-          },
-          "409": {
-            "description": "Metadata changed; reload before saving"
           }
         }
       },
@@ -21613,9 +21607,6 @@
               }
             }
           },
-          "400": {
-            "description": "Invalid input"
-          },
           "401": {
             "description": "Authentication required"
           },
@@ -21624,9 +21615,6 @@
           },
           "404": {
             "description": "Target not found"
-          },
-          "409": {
-            "description": "Metadata changed; reload before saving"
           }
         }
       },
