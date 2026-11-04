@@ -1,6 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Ai.Protocols.Mcp.Discovery;
+using Honua.Ai.Protocols.Mcp.MapTools;
 using Honua.Ai.Protocols.Mcp.Studio;
 using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.Geoprocessing;
@@ -8,9 +10,9 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-internal static class StudioMcpTools
+internal static class McpToolRoster
 {
-    internal static IMcpTool[] Create(IGeoprocessingJobService jobService) =>
+    internal static IMcpTool[] Studio(IGeoprocessingJobService jobService) =>
     [
         new CreateStudioDraftTool(jobService, NullLogger<CreateStudioDraftTool>.Instance),
         new GetStudioDraftTool(jobService, NullLogger<GetStudioDraftTool>.Instance),
@@ -33,5 +35,22 @@ internal static class StudioMcpTools
         new AddStudioControlTool(jobService, NullLogger<AddStudioControlTool>.Instance),
         new RemoveStudioControlTool(jobService, NullLogger<RemoveStudioControlTool>.Instance),
         new ProposeStudioPublicationTool(jobService, NullLogger<ProposeStudioPublicationTool>.Instance),
+    ];
+
+    internal static IMcpTool[] MapDiscoveryAndStudio(IGeoprocessingJobService jobService) =>
+    [
+        new ListLayersTool(jobService, NullLogger<ListLayersTool>.Instance),
+        new DescribeLayerTool(jobService, NullLogger<DescribeLayerTool>.Instance),
+        new ListJobsTool(jobService, NullLogger<ListJobsTool>.Instance),
+        new GetJobResultsTool(jobService, NullLogger<GetJobResultsTool>.Instance),
+        new DiagnoseJobTool(NullLogger<DiagnoseJobTool>.Instance),
+        new JobEvidenceTool(NullLogger<JobEvidenceTool>.Instance),
+        new QueryFeaturesTool(jobService, NullLogger<QueryFeaturesTool>.Instance),
+        new RenderMapTool(jobService, NullLogger<RenderMapTool>.Instance),
+        new GetStyleTool(jobService, NullLogger<GetStyleTool>.Instance),
+        new ApplyStylePresetTool(jobService, NullLogger<ApplyStylePresetTool>.Instance),
+        new ResolveEntityTool(jobService, NullLogger<ResolveEntityTool>.Instance),
+        new ListCapabilitiesTool(jobService, NullLogger<ListCapabilitiesTool>.Instance),
+        ..Studio(jobService),
     ];
 }

@@ -33,7 +33,7 @@
     <Compile Include="../Shared/ProtocolUnits/Ai/McpTelemetryCollectionDefinition.cs" Link="Shared/McpTelemetryCollectionDefinition.cs" />
     <Compile Include="../Shared/ProtocolUnits/Ai/StudioAiProxyTestHttp.cs" Link="Shared/StudioAiProxyTestHttp.cs" />
     <Compile Include="../Shared/ProtocolUnits/Ai/McpTaxonomyAlignmentTests.Shared.cs" Link="Shared/McpTaxonomyAlignmentTests.Shared.cs" />
-    <Compile Include="../Shared/ProtocolUnits/Ai/StudioMcpTools.cs" Link="Shared/StudioMcpTools.cs" />
+    <Compile Include="../Shared/ProtocolUnits/Ai/McpToolRoster.cs" Link="Shared/McpToolRoster.cs" />
     <Compile Include="../Shared/ProtocolUnits/Ai/McpSessionSharedStoreTests.Shared.cs" Link="Shared/McpSessionSharedStoreTests.Shared.cs" />
     <Content Include="../Honua.Ai.Tests/ConformanceSchemas/**/*.json" Link="ConformanceSchemas/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="../Honua.Ai.Tests/ConformanceSchemas/**/*.yaml" Link="ConformanceSchemas/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />

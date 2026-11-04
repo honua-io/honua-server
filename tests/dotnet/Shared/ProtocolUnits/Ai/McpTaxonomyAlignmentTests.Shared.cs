@@ -81,27 +81,7 @@ public sealed partial class McpTaxonomyAlignmentTests
             new ProposeDeployOperationTool(NullLogger<ProposeDeployOperationTool>.Instance),
             new ProposeMetadataReleaseTool(NullLogger<ProposeMetadataReleaseTool>.Instance),
             new ProposePlatformReleaseConvergenceTool(NullLogger<ProposePlatformReleaseConvergenceTool>.Instance),
-            new Honua.Ai.Protocols.Mcp.MapTools.ListLayersTool(
-                jobService, NullLogger<Honua.Ai.Protocols.Mcp.MapTools.ListLayersTool>.Instance),
-            new Honua.Ai.Protocols.Mcp.MapTools.DescribeLayerTool(
-                jobService, NullLogger<Honua.Ai.Protocols.Mcp.MapTools.DescribeLayerTool>.Instance),
-            new ListJobsTool(jobService, NullLogger<ListJobsTool>.Instance),
-            new GetJobResultsTool(jobService, NullLogger<GetJobResultsTool>.Instance),
-            new DiagnoseJobTool(NullLogger<DiagnoseJobTool>.Instance),
-            new JobEvidenceTool(NullLogger<JobEvidenceTool>.Instance),
-            new Honua.Ai.Protocols.Mcp.MapTools.QueryFeaturesTool(
-                jobService, NullLogger<Honua.Ai.Protocols.Mcp.MapTools.QueryFeaturesTool>.Instance),
-            new Honua.Ai.Protocols.Mcp.MapTools.RenderMapTool(
-                jobService, NullLogger<Honua.Ai.Protocols.Mcp.MapTools.RenderMapTool>.Instance),
-            new Honua.Ai.Protocols.Mcp.MapTools.GetStyleTool(
-                jobService, NullLogger<Honua.Ai.Protocols.Mcp.MapTools.GetStyleTool>.Instance),
-            new Honua.Ai.Protocols.Mcp.MapTools.ApplyStylePresetTool(
-                jobService, NullLogger<Honua.Ai.Protocols.Mcp.MapTools.ApplyStylePresetTool>.Instance),
-            new Honua.Ai.Protocols.Mcp.Discovery.ResolveEntityTool(
-                jobService, NullLogger<Honua.Ai.Protocols.Mcp.Discovery.ResolveEntityTool>.Instance),
-            new Honua.Ai.Protocols.Mcp.Discovery.ListCapabilitiesTool(
-                jobService, NullLogger<Honua.Ai.Protocols.Mcp.Discovery.ListCapabilitiesTool>.Instance),
-            ..StudioMcpTools.Create(jobService),
+            ..McpToolRoster.MapDiscoveryAndStudio(jobService),
         ];
     }
 

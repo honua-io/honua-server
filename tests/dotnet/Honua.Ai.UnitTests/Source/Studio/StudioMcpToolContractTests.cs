@@ -756,7 +756,7 @@ public sealed class StudioMcpToolContractTests
         });
 
     private static IReadOnlyList<IMcpTool> BuildAllTools() =>
-        StudioMcpTools.Create(Substitute.For<IGeoprocessingJobService>());
+        McpToolRoster.Studio(Substitute.For<IGeoprocessingJobService>());
 
     private static StudioPackageDraft BuildDraft(StudioPackageFamily family, long generation)
     {
