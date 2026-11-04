@@ -21511,7 +21511,20 @@
           "Services"
         ],
         "summary": "listFolders",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "namespace",
+            "in": "query",
+            "required": false,
+            "description": "Omit for unscoped catalog ownership; supply a publication namespace to select the resolved tenant.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9._-]+$"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Success",
@@ -21558,6 +21571,18 @@
             "description": "Current graph snapshot ETag, returned by folder/service listing.",
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "namespace",
+            "in": "query",
+            "required": false,
+            "description": "Omit for unscoped catalog ownership; supply a publication namespace to select the resolved tenant.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9._-]+$"
             }
           }
         ],
@@ -21649,6 +21674,18 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "namespace",
+            "in": "query",
+            "required": false,
+            "description": "Omit for unscoped catalog ownership; supply a publication namespace to select the resolved tenant.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9._-]+$"
+            }
           }
         ],
         "responses": {
@@ -21731,6 +21768,18 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "namespace",
+            "in": "query",
+            "required": false,
+            "description": "Omit for unscoped catalog ownership; supply a publication namespace to select the resolved tenant.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9._-]+$"
+            }
           }
         ],
         "responses": {
@@ -21789,6 +21838,18 @@
             "description": "Current graph snapshot ETag, returned by folder/service listing.",
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "namespace",
+            "in": "query",
+            "required": false,
+            "description": "Omit for unscoped catalog ownership; supply a publication namespace to select the resolved tenant.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9._-]+$"
             }
           }
         ],

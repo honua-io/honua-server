@@ -34,7 +34,6 @@ public sealed class FolderEndpointsTests : IAsyncLifetime
             {
                 b.UseEnvironment("Test");
                 b.UseSetting("HONUA_DEV_AUTH", "false");
-                b.UseSetting("MultiTenancy:DefaultTenantId", "");
                 b.UseSetting("HONUA_ADMIN_PASSWORD", "folder-test-key");
             })
             .ConfigureServices(services =>
@@ -127,6 +126,29 @@ public sealed class FolderEndpointsTests : IAsyncLifetime
             _client.PostAsJsonAsync("/api/v1/admin/folders", new { name = "SurveyB" }));
         responses.Select(r => r.StatusCode).Should().BeEquivalentTo(
             new[] { HttpStatusCode.Created, HttpStatusCode.PreconditionFailed });
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/folders")]
+    [Endpoint("POST /api/v1/admin/folders")]
+    public async Task FolderScope_OmittedOrSuppliedNamespace_UsesPublicationOwnership()
+    {
+        SetEtag(await _client.GetAsync("/api/v1/admin/folders"));
+        var unscoped = await _client.PostAsJsonAsync("/api/v1/admin/folders", new { name = "Shared" });
+        unscoped.StatusCode.Should().Be(HttpStatusCode.Created);
+        using var unscopedBody = JsonDocument.Parse(await unscoped.Content.ReadAsStringAsync());
+        unscopedBody.RootElement.GetProperty("data").GetProperty("metadata").GetProperty("tenant")
+            .ValueKind.Should().Be(JsonValueKind.Null);
+        SetEtag(unscoped);
+        var scoped = await _client.PostAsJsonAsync("/api/v1/admin/folders?namespace=workspace", new { name = "Owned" });
+        scoped.StatusCode.Should().Be(HttpStatusCode.Created);
+        using var scopedBody = JsonDocument.Parse(await scoped.Content.ReadAsStringAsync());
+        scopedBody.RootElement.GetProperty("data").GetProperty("metadata").GetProperty("tenant")
+            .GetString().Should().Be("public");
+        var listing = await _client.GetStringAsync("/api/v1/admin/folders");
+        listing.Should().Contain("Shared").And.NotContain("Owned");
+        var scopedListing = await _client.GetStringAsync("/api/v1/admin/folders?namespace=workspace");
+        scopedListing.Should().Contain("Owned").And.NotContain("Shared");
     }
 
     private sealed class FacetAuthorization : IOperatorAuthorizationEvaluator

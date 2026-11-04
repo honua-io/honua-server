@@ -23,35 +23,10 @@ the existing metadata release revert path (`CommitRevertAsync`), which saves a r
 revision. Immutable historical documents and ETags are preserved. Stage similarly reconciles
 against the current graph; a target staged before a later reservation may require restaging.
 
-## Mixed-version deployment and rollback
-
-Freeze every graph and catalog writer before the first old/new process overlap, including Admin,
-MCP, imports, publishing, metadata releases, configuration writers and background catalog jobs.
-Data queries and data edits that do not mutate catalog metadata may continue. Keep this freeze
-through the entire rollback window; enable folder writes only after all catalog writers run the
-new binary. An old writer accepts unknown JSON fields when reading, then drops them on Save or
-Stage. Reader tolerance does not make old writers safe.
-
-Back up a folder-bearing revision and retain its full graph document before rollback. The baseline
-binary presents services flat and cannot route new folder-qualified URLs. After returning to the
-new binary, recover via a reconciled revert revision before resuming catalog writes. Do not rewrite
-a historical document beneath its retained ETag or activate an unsafe old target.
+Folder operations follow publication scope: omit the optional `namespace` query parameter for
+unscoped ownership; supply it to select the resolved tenant. Canonical operations preserve that
+selection through approval replay. A namespace selects ownership and confers no access.
 
 This model/Admin change does not advertise folder-qualified protocol URLs. Routing and discovery
 must ship together in the next server change before folder paths are offered to public clients.
 SDK and Console releases follow that routing contract.
-
-## Binary compatibility validation
-
-The opt-in `FolderSnapshotCompatibilityTests` use `HONUA_FOLDER_COMPAT_DIRECTORY` for snapshots
-shared between the new and pre-folder binaries. Run `NewWriter_ProducesFolderSnapshotForBaselineReader`
-with the new binary first. In a clean pre-folder checkout, copy the shared probe and
-`FolderPostgresTestHost` into the Admin test directory, then copy
-`tests/compatibility/metadata-folders/BaselineReader.cs.template` there as a `.cs` file. Run
-`BaselineReader_ReadsNewSnapshotAndProvesSaveStageFieldLoss` against that checkout's product code.
-Finally run `NewReader_ReadsBaselineSaveAndStageAsRootServices` with the new binary. Each phase
-uses the real Postgres store and restarts the HTTP host over its persisted snapshot.
-
-The recovery probe keeps logical and effective public identities unchanged to isolate folder
-field loss and reconciled backup recovery. It does not make old-writer catalog mutations safe
-or prove arbitrary identity recovery after violating the required write freeze.

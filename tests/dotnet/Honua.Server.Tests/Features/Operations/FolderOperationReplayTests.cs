@@ -24,12 +24,13 @@ public sealed class FolderOperationReplayTests
         var request = new OperationRequest
         {
             OperationId = executor.OperationId, ServiceName = "test",
-            Parameters = new Dictionary<string, string?> { ["folderId"] = null, ["If-Match"] = "\"current\"" }
+            Parameters = new Dictionary<string, string?> { ["folderId"] = null, ["namespace"] = "workspace", ["If-Match"] = "\"current\"" }
         };
         (await executor.ValidateAsync(request)).IsValid.Should().BeTrue();
         var result = await executor.SubmitAsync(request, new OperationPolicyContext());
         result.Status.Should().Be(OperationHandleStatus.Completed);
         handler.Precondition.Should().Be("\"current\"");
+        handler.Query.Should().Be("?namespace=workspace");
         handler.Body.Should().Be("{\"folderId\":null}");
         result.Result!.Details["etag"].Should().Be("\"updated\"");
     }
@@ -62,9 +63,11 @@ public sealed class FolderOperationReplayTests
     {
         public string? Precondition { get; private set; }
         public string? Body { get; private set; }
+        public string? Query { get; private set; }
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
+            Query = request.RequestUri!.Query;
             Precondition = request.Headers.IfMatch.SingleOrDefault()?.ToString();
             Body = request.Content is null ? null : await request.Content.ReadAsStringAsync(cancellationToken);
             var response = new HttpResponseMessage(status)

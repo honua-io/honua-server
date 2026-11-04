@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Text.Json.Serialization;
+using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -26,6 +27,8 @@ internal static class FolderEndpoints
 
     private static async Task<IResult> List(HttpContext context)
     {
+        var scopeError = ValidateScope(context);
+        if (scopeError is not null) return scopeError;
         var gate = context.RequestServices.GetRequiredService<OperatorApprovalGate>();
         var denial = await gate.EvaluateAuthorizationAsync(context, OperatorResourceType.Catalog, OperatorOperation.Read).ConfigureAwait(false);
         if (denial is not null) return denial;
@@ -87,6 +90,8 @@ internal static class FolderEndpoints
 
     private static async Task<IResult> Mutate(HttpContext context, Func<MetadataV2Graph, FolderMutation> mutation)
     {
+        var scopeError = ValidateScope(context);
+        if (scopeError is not null) return scopeError;
         var denied = await AuthorizeMutation(context).ConfigureAwait(false);
         if (denied is not null) return denied;
         if (context.Request.Headers.IfMatch.Count != 1 || string.IsNullOrWhiteSpace(context.Request.Headers.IfMatch))
@@ -175,8 +180,20 @@ internal static class FolderEndpoints
         => graph.Folders.FirstOrDefault(f => !f.Deleted && f.Metadata.Id == id &&
             MetadataV2ServicePaths.SameTenant(f.Metadata.Tenant, tenant)) ?? throw new KeyNotFoundException();
 
+    private static IResult? ValidateScope(HttpContext context)
+    {
+        var selection = context.Request.Query["namespace"];
+        if (selection.Count > 1 || !LayerPublicationNamespace.IsValid(selection.Count == 0 ? null : selection.ToString()))
+            return Results.Problem(statusCode: 400, detail: "Invalid namespace. Use 1-128 ASCII letters, digits, '.', '_' or '-'.");
+        if (selection.Count != 0 && Tenant(context) is null)
+            return Results.Problem(statusCode: 400, detail: "Namespaced folder operations require a resolved tenant.");
+        return null;
+    }
+
     private static string? Tenant(HttpContext context)
-        => MetadataV2ServicePaths.NormalizeTenant(context.RequestServices.GetService<ITenantContext>()?.TenantId);
+        => context.Request.Query.ContainsKey("namespace")
+            ? MetadataV2ServicePaths.NormalizeTenant(context.RequestServices.GetService<ITenantContext>()?.TenantId)
+            : null;
 
     private sealed record FolderMutation(MetadataV2Graph Graph, MetadataV2Folder? Folder, int Status = 200)
     {
