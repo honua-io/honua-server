@@ -3334,7 +3334,18 @@
           "403": {
             "$ref": "#/components/responses/Forbidden"
           }
-        }
+        },
+        "parameters": [
+          {
+            "name": "folderId",
+            "in": "query",
+            "required": false,
+            "description": "Omit for all services; root selects services without a folder.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
       }
     },
     "/services/{serviceName}/settings": {
@@ -21484,6 +21495,349 @@
           }
         }
       }
+    },
+    "/folders": {
+      "get": {
+        "operationId": "listFolders",
+        "tags": [
+          "Services"
+        ],
+        "summary": "listFolders",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Current graph snapshot ETag"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ServiceFolder"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createFolder",
+        "tags": [
+          "Services"
+        ],
+        "summary": "createFolder",
+        "parameters": [
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "description": "Current graph snapshot ETag, returned by folder/service listing.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Current graph snapshot ETag"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/ServiceFolder"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "409": {
+            "description": "Catalog or permanent path reservation conflict"
+          },
+          "412": {
+            "description": "Snapshot changed"
+          },
+          "428": {
+            "description": "If-Match is required"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FolderRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/folders/{id}": {
+      "patch": {
+        "operationId": "updateFolder",
+        "tags": [
+          "Services"
+        ],
+        "summary": "updateFolder",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "description": "Current graph snapshot ETag, returned by folder/service listing.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Current graph snapshot ETag"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/ServiceFolder"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "409": {
+            "description": "Catalog or permanent path reservation conflict"
+          },
+          "412": {
+            "description": "Snapshot changed"
+          },
+          "428": {
+            "description": "If-Match is required"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FolderRequest"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteFolder",
+        "tags": [
+          "Services"
+        ],
+        "summary": "deleteFolder",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "description": "Current graph snapshot ETag, returned by folder/service listing.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Current graph snapshot ETag"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/ServiceFolder"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "409": {
+            "description": "Catalog or permanent path reservation conflict"
+          },
+          "412": {
+            "description": "Snapshot changed"
+          },
+          "428": {
+            "description": "If-Match is required"
+          }
+        }
+      }
+    },
+    "/services/{serviceName}/folder": {
+      "put": {
+        "operationId": "moveService",
+        "tags": [
+          "Services"
+        ],
+        "summary": "moveService",
+        "parameters": [
+          {
+            "name": "serviceName",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "description": "Current graph snapshot ETag, returned by folder/service listing.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Current graph snapshot ETag"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/ServiceFolder"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "409": {
+            "description": "Catalog or permanent path reservation conflict"
+          },
+          "412": {
+            "description": "Snapshot changed"
+          },
+          "428": {
+            "description": "If-Match is required"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MoveServiceRequest"
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -24062,6 +24416,14 @@
             "type": "boolean",
             "default": false,
             "description": "Declares attachment support for the published resource. Does not enable editing."
+          },
+          "folderId": {
+            "type": "string",
+            "nullable": true
+          },
+          "publicName": {
+            "type": "string",
+            "maxLength": 64
           }
         }
       },
@@ -26045,6 +26407,22 @@
             "items": {
               "type": "string"
             }
+          },
+          "folderId": {
+            "type": "string",
+            "nullable": true
+          },
+          "folderName": {
+            "type": "string",
+            "nullable": true
+          },
+          "publicName": {
+            "type": "string",
+            "nullable": true
+          },
+          "title": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -50368,6 +50746,66 @@
           },
           "artifactsUrl": {
             "type": "string"
+          }
+        }
+      },
+      "ServiceFolder": {
+        "type": "object",
+        "properties": {
+          "metadata": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "nullable": true
+              },
+              "name": {
+                "type": "string",
+                "nullable": true
+              },
+              "title": {
+                "type": "string",
+                "nullable": true
+              },
+              "tenant": {
+                "type": "string",
+                "nullable": true
+              }
+            }
+          },
+          "previousNames": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "deleted": {
+            "type": "boolean"
+          }
+        }
+      },
+      "FolderRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "title": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "MoveServiceRequest": {
+        "type": "object",
+        "required": [
+          "folderId"
+        ],
+        "properties": {
+          "folderId": {
+            "type": "string",
+            "nullable": true
           }
         }
       }

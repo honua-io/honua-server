@@ -1,0 +1,167 @@
+// Copyright (c) Honua Geo Inc. All rights reserved.
+// Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
+
+using System.Text.Json.Serialization;
+using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Models;
+
+namespace Honua.Server.Features.Admin;
+
+internal static class FolderEndpoints
+{
+    public static void MapFolderEndpoints(this IEndpointRouteBuilder endpoints)
+    {
+        var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin")
+            .WithApiVersionSet().HasApiVersion(1, 0).WithTags("Admin", "Services").RequireAdminAuthorization();
+        group.MapGet("/folders", List);
+        group.MapPost("/folders", Create);
+        group.MapPatch("/folders/{id}", Update);
+        group.MapDelete("/folders/{id}", Delete);
+        group.MapPut("/services/{serviceName}/folder", Move);
+    }
+
+    private static async Task<IResult> List(HttpContext context)
+    {
+        var gate = context.RequestServices.GetRequiredService<OperatorApprovalGate>();
+        var denial = await gate.EvaluateAuthorizationAsync(context, OperatorResourceType.Catalog, OperatorOperation.Discover).ConfigureAwait(false);
+        if (denial is not null) return denial;
+        var snapshot = await Store(context).GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
+        context.Response.Headers.ETag = snapshot.Etag;
+        var folders = snapshot.Graph.Folders.Where(f => !f.Deleted &&
+            MetadataV2TenantVisibility.IsVisibleToTenant(f.Metadata.Tenant, Tenant(context))).ToArray();
+        return Results.Ok(ApiResponse<MetadataV2Folder[]>.CreateSuccess(folders));
+    }
+
+    private static Task<IResult> Create(FolderRequest request, HttpContext context)
+        => Mutate(context, graph =>
+        {
+            var folder = new MetadataV2Folder
+            {
+                Metadata = new MetadataV2ObjectMetadata
+                {
+                    Id = Guid.NewGuid().ToString("N"), Name = request.Name ?? string.Empty,
+                    Title = request.Title, Tenant = Tenant(context)
+                }
+            };
+            return new(MetadataV2FolderMutations.Create(graph, folder), folder, StatusCodes.Status201Created);
+        });
+
+    private static Task<IResult> Update(string id, FolderRequest request, HttpContext context)
+        => Mutate(context, graph =>
+        {
+            var folder = FindFolder(graph, id, Tenant(context));
+            var updated = folder with
+            {
+                Metadata = folder.Metadata with
+                {
+                    Name = request.Name ?? folder.Metadata.Name,
+                    Title = request.Title ?? folder.Metadata.Title
+                }
+            };
+            return new(MetadataV2FolderMutations.Update(graph, updated), updated);
+        });
+
+    private static Task<IResult> Delete(string id, HttpContext context)
+        => Mutate(context, graph =>
+        {
+            var folder = FindFolder(graph, id, Tenant(context));
+            return new(MetadataV2FolderMutations.Delete(graph, id), folder, StatusCodes.Status204NoContent);
+        });
+
+    private static Task<IResult> Move(string serviceName, MoveServiceRequest request, HttpContext context)
+        => Mutate(context, graph =>
+        {
+            var services = graph.Services.Where(s => string.Equals(s.Metadata.Name, serviceName, StringComparison.OrdinalIgnoreCase)).ToArray();
+            if (services.Length == 0 || services.Any(s =>
+                MetadataV2ServicePaths.NormalizeTenant(s.Metadata.Tenant) != Tenant(context))) throw new KeyNotFoundException();
+            if (!request.FolderId.IsSpecified) throw new ArgumentException("folderId is required; null selects root.");
+            if (request.FolderId.Value is not null) FindFolder(graph, request.FolderId.Value, Tenant(context));
+            var changed = MetadataV2FolderMutations.Move(graph, serviceName, request.FolderId.Value);
+            return new(changed, null);
+        });
+
+    private static async Task<IResult> Mutate(HttpContext context, Func<MetadataV2Graph, FolderMutation> mutation)
+    {
+        var denied = await AuthorizeMutation(context).ConfigureAwait(false);
+        if (denied is not null) return denied;
+        if (context.Request.Headers.IfMatch.Count != 1 || string.IsNullOrWhiteSpace(context.Request.Headers.IfMatch))
+            return Results.Problem(statusCode: 428, detail: "The current snapshot ETag is required in If-Match.");
+        try
+        {
+            var snapshot = await Store(context).GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
+            if (snapshot.Etag != context.Request.Headers.IfMatch.ToString())
+                return Results.Problem(statusCode: 412, detail: "The metadata snapshot has changed. Refresh and retry.");
+            var changed = mutation(snapshot.Graph);
+            var denial = await AuthorizeAffectedServices(context, snapshot.Graph, changed.Graph).ConfigureAwait(false);
+            if (denial is not null) return denial;
+            var saved = await Store(context).SaveAsync(changed.Graph, snapshot.Etag, context.RequestAborted).ConfigureAwait(false);
+            context.Response.Headers.ETag = saved.Etag;
+            FolderAuditLog.Mutated(context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("FolderMutations"),
+                context.Request.Method, saved.Graph.Revision);
+            if (changed.Status == 204) return Results.NoContent();
+            if (changed.Status == 201) context.Response.Headers.Location = $"{context.Request.PathBase}/api/v1/admin/folders/{changed.Folder!.Metadata.Id}";
+            return Results.Json(ApiResponse<MetadataV2Folder?>.CreateSuccess(changed.Folder),
+                FolderJsonContext.Default.ApiResponseMetadataV2Folder, statusCode: changed.Status);
+        }
+        catch (MetadataV2GraphConcurrencyException) { return Results.Problem(statusCode: 412, detail: "The metadata snapshot has changed. Refresh and retry."); }
+        catch (KeyNotFoundException) { return Results.NotFound(); }
+        catch (ArgumentException ex) { return Results.Problem(statusCode: 400, detail: ex.Message); }
+        catch (InvalidOperationException) { return Results.Problem(statusCode: 409, detail: "Folder or public path conflicts with the current catalog or a permanent reservation."); }
+    }
+
+    private static async Task<IResult?> AuthorizeMutation(HttpContext context)
+    {
+        var gate = context.RequestServices.GetRequiredService<OperatorApprovalGate>();
+        var denied = await gate.EvaluateAuthorizationAsync(context, OperatorResourceType.Catalog, OperatorOperation.Publish).ConfigureAwait(false);
+        return denied ?? gate.EvaluateApproval(context, OperatorResourceType.Catalog, OperatorOperation.Publish);
+    }
+
+    private static async Task<IResult?> AuthorizeAffectedServices(HttpContext context, MetadataV2Graph original, MetadataV2Graph changed)
+    {
+        var changedFolders = original.Folders.Where(f => !changed.Folders.Contains(f)).Select(f => f.Metadata.Id).ToHashSet(StringComparer.Ordinal);
+        var affected = original.Services.Where(s => !changed.Services.Contains(s) ||
+            (s.FolderId is not null && changedFolders.Contains(s.FolderId)));
+        var gate = context.RequestServices.GetRequiredService<OperatorApprovalGate>();
+        foreach (var service in affected)
+        {
+            if (MetadataV2ServicePaths.NormalizeTenant(service.Metadata.Tenant) != Tenant(context)) return Results.NotFound();
+            var denied = await gate.EvaluateAuthorizationAsync(context, OperatorResourceType.PublishedService,
+                OperatorOperation.Update, service.Metadata.Id).ConfigureAwait(false);
+            if (denied is not null) return denied;
+        }
+        return null;
+    }
+
+    private static MetadataV2Folder FindFolder(MetadataV2Graph graph, string id, string? tenant)
+        => graph.Folders.FirstOrDefault(f => !f.Deleted && f.Metadata.Id == id &&
+            MetadataV2ServicePaths.NormalizeTenant(f.Metadata.Tenant) == tenant) ?? throw new KeyNotFoundException();
+
+    private static string? Tenant(HttpContext context)
+        => MetadataV2ServicePaths.NormalizeTenant(context.RequestServices.GetService<ITenantContext>()?.TenantId);
+
+    private static IMetadataV2GraphStore Store(HttpContext context)
+        => context.RequestServices.GetRequiredService<IMetadataV2GraphStore>();
+
+    private sealed record FolderMutation(MetadataV2Graph Graph, MetadataV2Folder? Folder, int Status = 200);
+}
+
+internal sealed record FolderRequest(string? Name, string? Title);
+internal sealed record MoveServiceRequest(MetadataV2FolderSelection FolderId);
+
+[JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
+[JsonSerializable(typeof(FolderRequest))]
+[JsonSerializable(typeof(MoveServiceRequest))]
+[JsonSerializable(typeof(ApiResponse<MetadataV2Folder>))]
+[JsonSerializable(typeof(ApiResponse<MetadataV2Folder[]>))]
+internal sealed partial class FolderJsonContext : JsonSerializerContext;
+
+internal static partial class FolderAuditLog
+{
+    [Microsoft.Extensions.Logging.LoggerMessage(EventId = 9460, Level = LogLevel.Information,
+        Message = "Folder catalog mutation {Method} committed metadata revision {Revision}")]
+    public static partial void Mutated(ILogger logger, string method, long revision);
+}

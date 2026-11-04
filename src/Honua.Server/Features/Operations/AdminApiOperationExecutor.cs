@@ -47,7 +47,7 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor, IOperation
             {
                 "connectionId" => !string.IsNullOrWhiteSpace(request.ConnectionId),
                 "serviceName" when RouteNames().Contains("serviceName") => !string.IsNullOrWhiteSpace(request.ServiceName),
-                "body" => request.Parameters.ContainsKey(parameter.Name),
+                "body" or "folderId" => request.Parameters.ContainsKey(parameter.Name),
                 _ => request.Parameters.TryGetValue(parameter.Name, out var value) && !string.IsNullOrWhiteSpace(value)
             };
             if (!present) missing.Add($"Required parameter '{parameter.Name}' is missing.");
@@ -81,6 +81,8 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor, IOperation
         }.Uri;
         using var message = new HttpRequestMessage(_definition.Method, uri);
         message.Headers.Host = current.Request.Host.Value;
+        if (request.Parameters.TryGetValue("If-Match", out var expectedEtag))
+            message.Headers.TryAddWithoutValidation("If-Match", expectedEtag);
         OperationLineageHeaders.Apply(message, context, _lineageAttestationStore);
         AdminApiKeyRecord? executionCredential = null;
         if (!string.IsNullOrWhiteSpace(context.ApprovedProposalId))
@@ -219,7 +221,7 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor, IOperation
         {
             writer.WriteStartObject();
             foreach (var parameter in descriptor.InputSchema
-                         .Where(parameter => !routeNames.Contains(parameter.Name) && !excluded.Contains(parameter.Name))
+                         .Where(parameter => parameter.Name != "If-Match" && !routeNames.Contains(parameter.Name) && !excluded.Contains(parameter.Name))
                          .Where(parameter => request.Parameters.ContainsKey(parameter.Name)))
             {
                 var value = request.Parameters[parameter.Name];

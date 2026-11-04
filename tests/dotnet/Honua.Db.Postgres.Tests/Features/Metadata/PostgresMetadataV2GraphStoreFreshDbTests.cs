@@ -711,6 +711,37 @@ public sealed class PostgresMetadataV2GraphStoreFreshDbTests(PostgresFixture fix
         }
     }
 
+    [IntegrationTest]
+    public async Task SaveStageActivate_WithFolders_PersistsBootstrapAndRefusesReservationLoss()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresMetadataV2GraphStoreFreshDbTests));
+        try
+        {
+            await CoreMigrationTestFixture.ApplyMetadataV2Async(fixture, schema);
+            var store = new PostgresMetadataV2GraphStore(new TestConnectionProvider(fixture.DataSource, schema),
+                "Test", CreateGuard(schema), schema);
+            var bootstrap = await store.GetCurrentAsync();
+            var original = await store.SaveAsync(bootstrap.Graph, bootstrap.Etag);
+            var folder = new MetadataV2Folder { Metadata = new() { Id = "folder", Name = "Survey" } };
+            var graph = MetadataV2FolderMutations.Create(original.Graph, folder);
+            var saved = await store.SaveAsync(graph, original.Etag);
+            (await store.GetCurrentAsync()).Graph.Folders.Should().ContainSingle();
+            var oldActivation = () => store.ActivateRevisionAsync(original.Revision, saved.Etag);
+            await oldActivation.Should().ThrowAsync<InvalidOperationException>().WithMessage("*revert path*");
+            var staged = await store.StageAsync(original.Graph);
+            staged.Graph.Folders.Single().Deleted.Should().BeTrue();
+            (await store.GetCurrentAsync()).Etag.Should().Be(saved.Etag);
+            var activated = await store.ActivateRevisionAsync(staged.Revision, saved.Etag);
+            activated.Graph.Folders.Single().Deleted.Should().BeTrue();
+            var stale = () => store.SaveAsync(graph, saved.Etag);
+            await stale.Should().ThrowAsync<MetadataV2GraphConcurrencyException>();
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
     private static PostgresCoreSchemaGuard CreateGuard(string schema)
         => new(
             TestCoreSchemaMigrations.Manifest,

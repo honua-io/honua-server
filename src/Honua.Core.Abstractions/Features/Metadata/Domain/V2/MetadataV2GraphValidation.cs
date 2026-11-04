@@ -19,7 +19,7 @@ public static class MetadataV2GraphValidator
     {
         ArgumentNullException.ThrowIfNull(graph);
 
-        var errors = new List<string>();
+        var errors = new List<string>(MetadataV2FolderValidation.Validate(graph));
         var entityIds = new HashSet<string>(StringComparer.Ordinal);
 
         AddEntityIds(errors, entityIds, "resource", graph.Resources.Select(resource => resource.Metadata.Id));

@@ -54,6 +54,8 @@ internal static class ServicePublishOperation
             Optional("geometryType", "Geometry type", WorkflowSchemaValueType.Text),
             Optional("primaryKey", "Primary key", WorkflowSchemaValueType.Text),
             Optional("srid", "Target SRID", WorkflowSchemaValueType.WholeNumber),
+            Optional("folderId", "Folder id (null selects root)", WorkflowSchemaValueType.Text),
+            Optional("publicName", "Immutable public service name", WorkflowSchemaValueType.Text),
             Optional("description", "Description", WorkflowSchemaValueType.Text)
         ],
         OutputSchema =

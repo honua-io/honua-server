@@ -196,6 +196,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             };
         }
         service = service with { Metadata = ApplyPublicationScope(service.Metadata, publicationScope) };
+        service = PublishedServiceOrganization.Apply(graph, service, request);
         resource = resource with { Metadata = ApplyPublicationScope(resource.Metadata, publicationScope) };
         binding = binding with { Metadata = ApplyPublicationScope(binding.Metadata, publicationScope) };
         featurePublication = featurePublication with { Metadata = ApplyPublicationScope(featurePublication.Metadata, publicationScope) };

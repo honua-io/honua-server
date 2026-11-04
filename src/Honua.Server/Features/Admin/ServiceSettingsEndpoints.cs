@@ -85,7 +85,16 @@ internal static class ServiceSettingsEndpoints
             // preserve that contract here by grouping on Metadata.Name and unioning
             // protocols + layer counts.
             var snapshot = await graphProvider.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
+            var folderId = context.Request.Query["folderId"].ToString();
+            if (folderId.Length > 0 && folderId != "root" && !snapshot.Graph.Folders.Any(f => !f.Deleted && f.Metadata.Id == folderId &&
+                MetadataV2TenantVisibility.IsVisibleToTenant(f.Metadata.Tenant,
+                    context.RequestServices.GetService<Honua.Core.Features.MultiTenancy.Abstractions.ITenantContext>()?.TenantId)))
+                return TypedResults.Problem(statusCode: 404, detail: "Folder not found.");
+            context.Response.Headers.ETag = snapshot.Etag;
             var summaries = snapshot.Graph.Services
+                .Where(s => Honua.Core.Features.Metadata.Domain.V2.MetadataV2TenantVisibility.IsVisibleToTenant(s.Metadata.Tenant,
+                    context.RequestServices.GetService<Honua.Core.Features.MultiTenancy.Abstractions.ITenantContext>()?.TenantId))
+                .Where(s => folderId.Length == 0 || (folderId == "root" ? s.FolderId is null : s.FolderId == folderId))
                 .GroupBy(s => s.Metadata.Name, StringComparer.OrdinalIgnoreCase)
                 .Select(group =>
                 {
@@ -102,6 +111,10 @@ internal static class ServiceSettingsEndpoints
                     return new ServiceSummary
                     {
                         ServiceName = representative.Metadata.Name,
+                        FolderId = representative.FolderId,
+                        FolderName = MetadataV2ServicePaths.FolderName(snapshot.Graph, representative),
+                        PublicName = representative.EffectivePublicName,
+                        Title = representative.Metadata.Title,
                         Description = representative.Metadata.Description ?? string.Empty,
                         LayerCount = layerCount,
                         EnabledProtocols = enabled.Length == 0 ? MetadataV2ServiceProtocols.All : enabled,

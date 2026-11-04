@@ -280,6 +280,7 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
         // publisher may therefore have consumed the proposed revision, and an interrupted
         // writer may have left a higher orphan snapshot. Allocate above every retained
         // snapshot while holding the shared environment lock.
+        graph = await ReconcileReservationsAsync(connection, transaction, graph, cancellationToken).ConfigureAwait(false);
         var revision = await ReadNextRevisionAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
         graph = graph with { Revision = revision };
         var json = JsonSerializer.Serialize(graph, MetadataV2JsonContext.Default.MetadataV2Graph);
@@ -379,6 +380,18 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
             ?? throw new InvalidOperationException(
                 $"Metadata v2 revision {revision} is not retained for environment '{_environment}'.");
 
+        var active = current is { } state
+            ? await ReadSnapshotAsync(connection, transaction, state.Revision, cancellationToken).ConfigureAwait(false)
+            : null;
+        try
+        {
+            MetadataV2PathReservations.EnsureActivationPreservesReservations(active?.Graph ?? new(), target.Graph);
+        }
+        catch (InvalidOperationException)
+        {
+            throw new InvalidOperationException("Activation would erase or rebind permanent public path reservations. Use the metadata revert path to create a reconciled new revision.");
+        }
+
         // A bootstrap write can clear sidecars for every retained revision before it
         // activates its new snapshot. Rebuild the target revision's derived indexes from
         // the immutable document before repointing current so the activated graph and its
@@ -421,6 +434,7 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
         // sidecar indexes are touched: canonical readers stay on the active revision, and
         // ActivateRevisionAsync rebuilds the target's sidecars when it repoints current.
         await AcquireEnvironmentWriteLockAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
+        graph = await ReconcileReservationsAsync(connection, transaction, graph, cancellationToken).ConfigureAwait(false);
         var revision = await ReadNextRevisionAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
         graph = graph with { Revision = revision };
         var json = JsonSerializer.Serialize(graph, MetadataV2JsonContext.Default.MetadataV2Graph);
@@ -1034,6 +1048,19 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
             throw new InvalidDataException("Stored Metadata v2 document is empty.");
         }
         return new MetadataV2GraphSnapshot(graph, etag, DateTimeOffset.UtcNow);
+    }
+
+    private async Task<MetadataV2Graph> ReconcileReservationsAsync(
+        NpgsqlConnection connection, NpgsqlTransaction transaction,
+        MetadataV2Graph candidate, CancellationToken cancellationToken)
+    {
+        var state = await ReadCurrentStateAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
+        var current = state is { } active
+            ? await ReadSnapshotAsync(connection, transaction, active.Revision, cancellationToken).ConfigureAwait(false)
+            : await HasV1CatalogAsync(connection, transaction, cancellationToken).ConfigureAwait(false)
+                ? await TryBuildCompatSnapshotFromV1CatalogAsync(connection, transaction, cancellationToken).ConfigureAwait(false)
+                : null;
+        return MetadataV2PathReservations.Reconcile(current?.Graph ?? new(), candidate);
     }
 
     private static string ComputeEtag(string json)
