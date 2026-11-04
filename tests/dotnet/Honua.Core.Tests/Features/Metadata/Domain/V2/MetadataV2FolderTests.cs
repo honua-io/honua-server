@@ -202,6 +202,24 @@ public sealed class MetadataV2FolderTests
         ambiguousMove.Should().Throw<InvalidOperationException>();
     }
 
+    [Fact]
+    public void Reconcile_RevertingOriginalFolderDeletion_PreservesEveryNameReservation()
+    {
+        var original = MetadataV2FolderMutations.Create(new(), Folder("folder", "Survey"));
+        var renamed = MetadataV2FolderMutations.Update(original, Folder("folder", "Field"));
+        var deleted = MetadataV2FolderMutations.Delete(renamed, "folder");
+        var unsafeActivation = () => MetadataV2PathReservations.EnsureActivationPreservesReservations(deleted, original);
+        unsafeActivation.Should().Throw<MetadataV2PathReservationException>();
+        var recovered = MetadataV2PathReservations.Reconcile(deleted, original);
+        recovered.Folders.Single().Metadata.Id.Should().Be("folder");
+        recovered.Folders.Single().PreviousNames.Should().Contain("Field");
+        recovered.Folders.Single().Deleted.Should().BeFalse();
+        var activateRecovery = () => MetadataV2PathReservations.EnsureActivationPreservesReservations(deleted, recovered);
+        activateRecovery.Should().NotThrow();
+        var rebind = () => MetadataV2FolderMutations.Create(recovered, Folder("other", "Field"));
+        rebind.Should().Throw<InvalidOperationException>();
+    }
+
     private static MetadataV2Graph Graph() => new()
     {
         Folders = [Folder("folder", "Survey")],

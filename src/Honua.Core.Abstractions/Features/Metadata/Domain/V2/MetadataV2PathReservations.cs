@@ -78,9 +78,8 @@ public static class MetadataV2PathReservations
                 continue;
             }
             var folder = folders[index];
-            if (MetadataV2ServicePaths.NormalizeTenant(oldFolder.Metadata.Tenant) != MetadataV2ServicePaths.NormalizeTenant(folder.Metadata.Tenant) ||
-                (oldFolder.Deleted && !folder.Deleted))
-                throw new InvalidOperationException("Folder tenants are immutable and deleted folder ids cannot be reused.");
+            if (!MetadataV2ServicePaths.SameTenant(oldFolder.Metadata.Tenant, folder.Metadata.Tenant))
+                throw new InvalidOperationException("Folder tenants are immutable.");
             folders[index] = folder with
             {
                 PreviousNames = oldFolder.PreviousNames.Append(oldFolder.Metadata.Name)
