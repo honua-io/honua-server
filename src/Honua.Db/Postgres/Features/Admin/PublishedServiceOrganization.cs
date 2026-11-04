@@ -11,14 +11,20 @@ internal static class PublishedServiceOrganization
     public static MetadataV2Service Apply(MetadataV2Graph graph, MetadataV2Service service, LayerPublishRequest request)
     {
         var existing = graph.Services.FirstOrDefault(s => string.Equals(s.Metadata.Name, service.Metadata.Name, StringComparison.OrdinalIgnoreCase));
-        if (existing is not null)
-        {
-            if ((request.FolderId.IsSpecified && request.FolderId.Value != existing.FolderId) ||
-                (request.PublicName is not null && request.PublicName != existing.EffectivePublicName))
-                throw new LayerPublishingException(LayerPublishingErrorKind.Conflict,
-                    "Publishing cannot change service membership or public name. Use the service move operation for membership changes.");
-            return service with { FolderId = existing.FolderId, PublicName = existing.PublicName };
-        }
+        return existing is null ? Create(graph, service, request) : Preserve(existing, service, request);
+    }
+
+    private static MetadataV2Service Preserve(MetadataV2Service existing, MetadataV2Service service, LayerPublishRequest request)
+    {
+        if ((request.FolderId.IsSpecified && request.FolderId.Value != existing.FolderId) ||
+            (request.PublicName is not null && request.PublicName != existing.EffectivePublicName))
+            throw new LayerPublishingException(LayerPublishingErrorKind.Conflict,
+                "Publishing cannot change service membership or public name. Use the service move operation for membership changes.");
+        return service with { FolderId = existing.FolderId, PublicName = existing.PublicName };
+    }
+
+    private static MetadataV2Service Create(MetadataV2Graph graph, MetadataV2Service service, LayerPublishRequest request)
+    {
         var leaf = request.PublicName ?? service.Metadata.Name;
         if (!MetadataV2ServicePaths.IsIdentifier(leaf) || MetadataV2ServicePaths.IsReserved(leaf))
             throw new LayerPublishingException(LayerPublishingErrorKind.Validation, "Invalid or reserved public service name.");

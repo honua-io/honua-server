@@ -104,7 +104,7 @@ internal static class FolderEndpoints
                 context.Request.Method, saved.Graph.Revision);
             if (changed.Status == 204) return Results.NoContent();
             if (changed.Status == 201) context.Response.Headers.Location = $"{context.Request.PathBase}/api/v1/admin/folders/{changed.Folder!.Metadata.Id}";
-            return Results.Json(ApiResponse<MetadataV2Folder?>.CreateSuccess(changed.Folder),
+            return Results.Json(ApiResponse<MetadataV2Folder>.CreateSuccess(changed.Folder!),
                 FolderJsonContext.Default.ApiResponseMetadataV2Folder, statusCode: changed.Status);
         }
         catch (MetadataV2GraphConcurrencyException) { return Results.Problem(statusCode: 412, detail: "The metadata snapshot has changed. Refresh and retry."); }

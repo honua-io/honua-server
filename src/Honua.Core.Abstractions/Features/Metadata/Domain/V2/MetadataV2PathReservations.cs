@@ -57,7 +57,7 @@ public static class MetadataV2PathReservations
         }
     }
 
-    private static IReadOnlyList<MetadataV2Folder> ReconcileFolders(MetadataV2Graph previous, MetadataV2Graph candidate)
+    private static List<MetadataV2Folder> ReconcileFolders(MetadataV2Graph previous, MetadataV2Graph candidate)
     {
         var folders = candidate.Folders.ToList();
         foreach (var oldFolder in previous.Folders)

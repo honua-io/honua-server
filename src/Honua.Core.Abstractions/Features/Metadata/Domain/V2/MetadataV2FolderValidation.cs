@@ -71,6 +71,11 @@ public static class MetadataV2FolderValidation
                 (a.Retired || !a.TargetFacetIds.Intersect(path.TargetFacetIds, StringComparer.Ordinal).Any())))
                 errors.Add("A public service path cannot reuse a reservation from another service incarnation.");
         }
+        ValidateAliases(graph, errors);
+    }
+
+    private static void ValidateAliases(MetadataV2Graph graph, List<string> errors)
+    {
         foreach (var alias in graph.ServicePathAliases)
         {
             var targets = graph.Services.Where(s => alias.TargetFacetIds.Contains(s.Metadata.Id, StringComparer.Ordinal)).ToArray();

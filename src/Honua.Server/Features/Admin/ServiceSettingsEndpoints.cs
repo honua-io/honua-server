@@ -96,30 +96,7 @@ internal static class ServiceSettingsEndpoints
                     context.RequestServices.GetService<Honua.Core.Features.MultiTenancy.Abstractions.ITenantContext>()?.TenantId))
                 .Where(s => folderId.Length == 0 || (folderId == "root" ? s.FolderId is null : s.FolderId == folderId))
                 .GroupBy(s => s.Metadata.Name, StringComparer.OrdinalIgnoreCase)
-                .Select(group =>
-                {
-                    var representative = group.First();
-                    var enabled = group
-                        .SelectMany(s => s.Protocols)
-                        .Distinct(StringComparer.Ordinal)
-                        .ToArray();
-                    var layerCount = group
-                        .SelectMany(s => snapshot.Index.PublicationsByService[s.Metadata.Id])
-                        .Select(p => p.ResourceId)
-                        .Distinct(StringComparer.Ordinal)
-                        .Count();
-                    return new ServiceSummary
-                    {
-                        ServiceName = representative.Metadata.Name,
-                        FolderId = representative.FolderId,
-                        FolderName = MetadataV2ServicePaths.FolderName(snapshot.Graph, representative),
-                        PublicName = representative.EffectivePublicName,
-                        Title = representative.Metadata.Title,
-                        Description = representative.Metadata.Description ?? string.Empty,
-                        LayerCount = layerCount,
-                        EnabledProtocols = enabled.Length == 0 ? MetadataV2ServiceProtocols.All : enabled,
-                    };
-                })
+                .Select(group => BuildServiceSummary(group, snapshot))
                 .ToArray();
 
             return TypedResults.Ok(ApiResponse<ServiceSummary[]>.CreateSuccess(summaries));
@@ -132,6 +109,25 @@ internal static class ServiceSettingsEndpoints
                 detail: "An internal error occurred while listing services.",
                 statusCode: StatusCodes.Status500InternalServerError);
         }
+    }
+
+    private static ServiceSummary BuildServiceSummary(IGrouping<string, MetadataV2Service> services, MetadataV2GraphSnapshot snapshot)
+    {
+        var representative = services.First();
+        var enabled = services.SelectMany(s => s.Protocols).Distinct(StringComparer.Ordinal).ToArray();
+        var layerCount = services.SelectMany(s => snapshot.Index.PublicationsByService[s.Metadata.Id])
+            .Select(p => p.ResourceId).Distinct(StringComparer.Ordinal).Count();
+        return new ServiceSummary
+        {
+            ServiceName = representative.Metadata.Name,
+            FolderId = representative.FolderId,
+            FolderName = MetadataV2ServicePaths.FolderName(snapshot.Graph, representative),
+            PublicName = representative.EffectivePublicName,
+            Title = representative.Metadata.Title,
+            Description = representative.Metadata.Description ?? string.Empty,
+            LayerCount = layerCount,
+            EnabledProtocols = enabled.Length == 0 ? MetadataV2ServiceProtocols.All : enabled,
+        };
     }
 
     private static async Task<Results<Ok<ApiResponse<ServiceSettingsResponse>>, NotFound<ApiResponse<object>>, ProblemHttpResult>>
