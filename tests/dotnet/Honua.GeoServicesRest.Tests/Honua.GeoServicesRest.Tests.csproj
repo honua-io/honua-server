@@ -21,4 +21,7 @@
     </PackageReference>
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Include="../Shared/OutboundSecurity/OutboundAddressCases.cs" Link="Shared/OutboundAddressCases.cs" />
+  </ItemGroup>
 </Project>

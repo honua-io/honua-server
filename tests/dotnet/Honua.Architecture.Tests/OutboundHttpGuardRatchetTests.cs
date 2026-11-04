@@ -11,13 +11,13 @@ namespace Honua.Architecture.Tests;
 /// Ratchet for local outbound HTTP guards under <c>src/</c>.
 /// </summary>
 /// <remarks>
-/// New pinned-DNS and private-address checks belong on
-/// <c>OutboundHttpUrlValidator</c> and <c>MigrationPinnedDns</c>. A file that
-/// declares its own <c>IsPrivateOrReservedAddress</c> or connect-pin method, or
-/// that opens a <c>Socket</c> from a <c>ConnectCallback</c> without delegating
-/// to <c>MigrationPinnedDns</c>, is a local guard. Callers that only forward to
-/// <c>MigrationPinnedDns</c> are not. The baseline lists the copies that already
-/// exist and may only shrink once it is on trunk.
+/// Private-address checks belong on <c>OutboundHttpUrlValidator</c> and pinned
+/// connections on <c>PinnedDnsConnector</c> (or <c>MigrationPinnedDns</c>, which
+/// adds the migration clients' local-source opt-in). A file that declares its own
+/// <c>IsPrivateOrReservedAddress</c> or connect-pin method, or that opens a
+/// <c>Socket</c> from a <c>ConnectCallback</c> without delegating to one of them,
+/// is a local guard. The baseline lists the copies that already exist and may
+/// only shrink once it is on trunk.
 /// </remarks>
 [Trait("Category", "Architecture")]
 public sealed partial class OutboundHttpGuardRatchetTests
@@ -28,7 +28,10 @@ public sealed partial class OutboundHttpGuardRatchetTests
     [
         "src/Honua.Core/Features/Infrastructure/Validation/OutboundHttpUrlValidator.cs",
         "src/Honua.Core/Features/Migration/Services/MigrationPinnedDns.cs",
+        "src/Honua.Core/Features/Infrastructure/Validation/PinnedDnsConnector.cs",
     ];
+
+    private static readonly string[] CanonicalConnectors = ["MigrationPinnedDns.", "PinnedDnsConnector."];
 
     [ArchitectureTest]
     public void LocalOutboundGuards_MustMatchTheBaseline()
@@ -90,7 +93,7 @@ public sealed partial class OutboundHttpGuardRatchetTests
             // "new Socket(" so "new SocketsHttpHandler" is not a pinned socket.
             var inlinePin = text.Contains("ConnectCallback", StringComparison.Ordinal) &&
                 text.Contains("new Socket(", StringComparison.Ordinal) &&
-                !text.Contains("MigrationPinnedDns.", StringComparison.Ordinal);
+                !CanonicalConnectors.Any(connector => text.Contains(connector, StringComparison.Ordinal));
             if (declared || inlinePin)
             {
                 guards.Add(relative);

@@ -30,4 +30,7 @@
   <ItemGroup>
     <Compile Include="../Honua.TestKit/Infrastructure/TestMetadataV2GraphProvider.cs" Link="Shared/TestMetadataV2GraphProvider.cs" />
   </ItemGroup>
+  <ItemGroup>
+    <Compile Include="../Shared/OutboundSecurity/OutboundAddressCases.cs" Link="Shared/OutboundAddressCases.cs" />
+  </ItemGroup>
 </Project>

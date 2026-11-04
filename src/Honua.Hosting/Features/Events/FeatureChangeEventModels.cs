@@ -3,7 +3,7 @@
 
 using System.Linq;
 using System.Net;
-using System.Net.Sockets;
+using Honua.Core.Features.Infrastructure.Validation;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Events;
@@ -203,7 +203,7 @@ internal static class FeatureChangeWebhookUrlValidation
             return failure;
         }
 
-        if (IPAddress.TryParse(uri.Host, out var literalAddress) && IsPrivateOrReservedAddress(literalAddress))
+        if (IPAddress.TryParse(uri.Host, out var literalAddress) && OutboundHttpUrlValidator.IsPrivateOrReservedAddress(literalAddress))
         {
             return FeatureChangeWebhookUrlValidationResult.Failure(DisallowedAddressMessage);
         }
@@ -247,7 +247,7 @@ internal static class FeatureChangeWebhookUrlValidation
             return false;
         }
 
-        if (uri.IsLoopback || IsLocalhostHostName(uri.Host))
+        if (uri.IsLoopback || OutboundHttpUrlValidator.IsLocalhostHostName(uri.Host))
         {
             failure = FeatureChangeWebhookUrlValidationResult.Failure(DisallowedAddressMessage);
             return false;
@@ -264,88 +264,9 @@ internal static class FeatureChangeWebhookUrlValidation
         Uri uri,
         Func<string, CancellationToken, Task<IPAddress[]>> hostAddressResolver,
         CancellationToken cancellationToken)
-    {
-        if (IPAddress.TryParse(uri.Host, out var literalAddress))
-        {
-            return IsPrivateOrReservedAddress(literalAddress);
-        }
+        => await PinnedDnsConnector.TryResolveAllowedAddressesAsync(uri.DnsSafeHost, hostAddressResolver, cancellationToken)
+            .ConfigureAwait(false) is null;
 
-        IPAddress[] addresses;
-        try
-        {
-            addresses = await hostAddressResolver(uri.DnsSafeHost, cancellationToken).ConfigureAwait(false);
-        }
-        catch (SocketException)
-        {
-            return true;
-        }
-        catch (ArgumentException)
-        {
-            return true;
-        }
-
-        if (addresses.Length == 0)
-        {
-            return true;
-        }
-
-        return addresses.Any(IsPrivateOrReservedAddress);
-    }
-
-    private static bool IsLocalhostHostName(string host)
-        => string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase)
-           || host.EndsWith(".localhost", StringComparison.OrdinalIgnoreCase);
-
-    private static bool IsPrivateOrReservedAddress(IPAddress address)
-    {
-        if (IPAddress.IsLoopback(address))
-        {
-            return true;
-        }
-
-        if (address.IsIPv4MappedToIPv6)
-        {
-            address = address.MapToIPv4();
-        }
-
-        if (address.AddressFamily == AddressFamily.InterNetwork)
-        {
-            var bytes = address.GetAddressBytes();
-
-            if (bytes[0] == 0 ||
-                bytes[0] == 10 ||
-                (bytes[0] == 100 && bytes[1] >= 64 && bytes[1] <= 127) ||
-                bytes[0] == 127 ||
-                (bytes[0] == 169 && bytes[1] == 254) ||
-                (bytes[0] == 172 && bytes[1] >= 16 && bytes[1] <= 31) ||
-                (bytes[0] == 192 && bytes[1] == 0 && bytes[2] == 0) ||
-                (bytes[0] == 192 && bytes[1] == 0 && bytes[2] == 2) ||
-                (bytes[0] == 192 && bytes[1] == 168) ||
-                (bytes[0] == 198 && (bytes[1] == 18 || bytes[1] == 19)) ||
-                (bytes[0] == 198 && bytes[1] == 51 && bytes[2] == 100) ||
-                (bytes[0] == 203 && bytes[1] == 0 && bytes[2] == 113) ||
-                bytes[0] >= 224)
-            {
-                return true;
-            }
-        }
-        else if (address.AddressFamily == AddressFamily.InterNetworkV6)
-        {
-            var bytes = address.GetAddressBytes();
-
-            if (address.Equals(IPAddress.IPv6None) ||
-                address.Equals(IPAddress.IPv6Loopback) ||
-                (bytes[0] == 0xfe && (bytes[1] & 0xc0) == 0x80) ||
-                (bytes[0] == 0xfe && (bytes[1] & 0xc0) == 0xc0) ||
-                (bytes[0] & 0xfe) == 0xfc ||
-                (bytes[0] == 0x20 && bytes[1] == 0x01 && bytes[2] == 0x0d && bytes[3] == 0xb8))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
 }
 
 internal sealed class FeatureChangeWebhookOptionsValidator : IValidateOptions<FeatureChangeWebhookOptions>
