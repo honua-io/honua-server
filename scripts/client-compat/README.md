@@ -11,7 +11,6 @@ Validates that desktop GIS and BI clients can connect to and work with Honua Ser
 > update that script before using it for release evidence.
 >
 > Desktop ArcGIS evidence is identifier `desktop-arcgis`.
-> `docs/internal/evidence/ARCGIS_PRO_LICENSED_EVIDENCE.md` names it.
 > Procedure stays in private honua-esri-compat. Ordinary PR gates do not
 > require ArcGIS Pro. This helper does not configure that lane.
 

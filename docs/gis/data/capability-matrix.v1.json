@@ -1732,7 +1732,7 @@
           }
         },
         {
-          "clientLane": "arcgis-stub",
+          "clientLane": "geoservices-rest-stub",
           "protocol": "featureserver",
           "freshness": {
             "state": "stale",
@@ -1883,7 +1883,7 @@
           }
         },
         {
-          "clientLane": "arcgis-stub",
+          "clientLane": "geoservices-rest-stub",
           "protocol": "mapserver",
           "freshness": {
             "state": "stale",

@@ -88,7 +88,7 @@ PAGE_SIZE = 3
 # ApiKeyAuthenticationHandler.cs). The compose stack sets that env var to
 # ADMIN_API_KEY below. `admin` / ADMIN_API_KEY is also the named-user
 # credential pair the Portal/Sharing facade accepts on
-# /sharing/rest/generateToken, which is what the arcgis-stub lane uses.
+# /sharing/rest/generateToken, which is what the geoservices-rest-stub lane uses.
 ADMIN_PROBE_PATH = "/api/v1/admin/services"
 ADMIN_API_KEY_HEADER = "X-API-Key"
 ADMIN_API_KEY = "ClientCompatAdmin123!"
