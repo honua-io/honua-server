@@ -6,7 +6,7 @@
       "sourceBindings": [
         {
           "sourceId": "parcels",
-          "protocol": "geoservices-feature-service",
+          "protocol": "geoservices_feature_service",
           "locator": {
             "url": "/rest/services/parcels/FeatureServer/0",
             "serviceId": "parcels",
@@ -15,7 +15,7 @@
         },
         {
           "sourceId": "roads",
-          "protocol": "geoservices-feature-service",
+          "protocol": "geoservices_feature_service",
           "locator": {
             "url": "/rest/services/roads/FeatureServer/0",
             "serviceId": "roads",
@@ -109,7 +109,7 @@
       "sourceBindings": [
         {
           "sourceId": "parcels",
-          "protocol": "geoservices-feature-service",
+          "protocol": "geoservices_feature_service",
           "locator": {
             "url": "/rest/services/parcels/FeatureServer/0",
             "serviceId": "parcels",
@@ -118,7 +118,7 @@
         },
         {
           "sourceId": "roads",
-          "protocol": "geoservices-feature-service",
+          "protocol": "geoservices_feature_service",
           "locator": {
             "url": "/rest/services/roads/FeatureServer/0",
             "serviceId": "roads",
@@ -127,7 +127,7 @@
         },
         {
           "sourceId": "retired",
-          "protocol": "geoservices-feature-service",
+          "protocol": "geoservices_feature_service",
           "locator": {
             "url": "/rest/services/retired/FeatureServer/0",
             "serviceId": "retired",
@@ -221,7 +221,7 @@
       "sourceBindings": [
         {
           "sourceId": "parcels",
-          "protocol": "geoservices-feature-service",
+          "protocol": "geoservices_feature_service",
           "locator": {
             "url": "/rest/services/parcels/FeatureServer/0",
             "serviceId": "parcels",
@@ -230,7 +230,7 @@
         },
         {
           "sourceId": "roads",
-          "protocol": "geoservices-feature-service",
+          "protocol": "geoservices_feature_service",
           "locator": {
             "url": "/rest/services/roads/FeatureServer/0",
             "serviceId": "roads",
@@ -331,7 +331,7 @@
       "sourceBindings": [
         {
           "sourceId": "parcels",
-          "protocol": "geoservices-feature-service",
+          "protocol": "geoservices_feature_service",
           "locator": {
             "url": "/rest/services/parcels/FeatureServer/0",
             "serviceId": "parcels",
@@ -340,7 +340,7 @@
         },
         {
           "sourceId": "roads",
-          "protocol": "geoservices-feature-service",
+          "protocol": "geoservices_feature_service",
           "locator": {
             "url": "/rest/services/roads/FeatureServer/0",
             "serviceId": "roads",
@@ -440,7 +440,7 @@
       "sourceBindings": [
         {
           "sourceId": "parcels",
-          "protocol": "geoservices-feature-service",
+          "protocol": "geoservices_feature_service",
           "locator": {
             "url": "/rest/services/parcels/FeatureServer/0",
             "serviceId": "parcels",
@@ -449,7 +449,7 @@
         },
         {
           "sourceId": "roads",
-          "protocol": "geoservices-feature-service",
+          "protocol": "geoservices_feature_service",
           "locator": {
             "url": "/rest/services/roads/FeatureServer/0",
             "serviceId": "roads",
@@ -556,7 +556,7 @@
       "sourceBindings": [
         {
           "sourceId": "parcels",
-          "protocol": "geoservices-feature-service",
+          "protocol": "geoservices_feature_service",
           "locator": {
             "url": "/rest/services/parcels/FeatureServer/0",
             "serviceId": "parcels",
@@ -565,7 +565,7 @@
         },
         {
           "sourceId": "roads",
-          "protocol": "geoservices-feature-service",
+          "protocol": "geoservices_feature_service",
           "locator": {
             "url": "/rest/services/roads/FeatureServer/0",
             "serviceId": "roads",
@@ -666,7 +666,7 @@
       "sourceBindings": [
         {
           "sourceId": "dataset",
-          "protocol": "geoservices-feature-service",
+          "protocol": "geoservices_feature_service",
           "locator": {
             "url": "/rest/services/dataset/FeatureServer/0",
             "serviceId": "dataset",
@@ -675,7 +675,7 @@
         },
         {
           "sourceId": "different",
-          "protocol": "geoservices-feature-service",
+          "protocol": "geoservices_feature_service",
           "locator": {
             "url": "/rest/services/different/FeatureServer/0",
             "serviceId": "different",
@@ -712,7 +712,7 @@
       "sourceBindings": [
         {
           "sourceId": "dataset",
-          "protocol": "geoservices-feature-service",
+          "protocol": "geoservices_feature_service",
           "locator": {
             "url": "/rest/services/dataset/FeatureServer/0",
             "serviceId": "dataset",
@@ -721,7 +721,7 @@
         },
         {
           "sourceId": "presentation",
-          "protocol": "geoservices-feature-service",
+          "protocol": "geoservices_feature_service",
           "locator": {
             "url": "/rest/services/presentation/FeatureServer/0",
             "serviceId": "presentation",
@@ -753,7 +753,7 @@
       "sourceBindings": [
         {
           "sourceId": "dataset",
-          "protocol": "geoservices-feature-service",
+          "protocol": "geoservices_feature_service",
           "locator": {
             "url": "/rest/services/dataset/FeatureServer/0",
             "serviceId": "dataset",
@@ -809,7 +809,7 @@
           "sourceBindings": [
             {
               "sourceId": "parcels",
-              "protocol": "geoservices-feature-service",
+              "protocol": "geoservices_feature_service",
               "locator": {
                 "url": "/rest/services/parcels/FeatureServer/0",
                 "serviceId": "parcels",
@@ -883,7 +883,7 @@
           "sourceBindings": [
             {
               "sourceId": "parcels",
-              "protocol": "geoservices-feature-service",
+              "protocol": "geoservices_feature_service",
               "locator": {
                 "url": "/rest/services/parcels/FeatureServer/0",
                 "serviceId": "parcels",
@@ -892,7 +892,7 @@
             },
             {
               "sourceId": "roads",
-              "protocol": "geoservices-feature-service",
+              "protocol": "geoservices_feature_service",
               "locator": {
                 "url": "/rest/services/roads/FeatureServer/0",
                 "serviceId": "roads",
@@ -995,7 +995,7 @@
           "sourceBindings": [
             {
               "sourceId": "parcels",
-              "protocol": "geoservices-feature-service",
+              "protocol": "geoservices_feature_service",
               "locator": {
                 "url": "/rest/services/parcels/FeatureServer/0",
                 "serviceId": "parcels",
@@ -1141,7 +1141,7 @@
           "sourceBindings": [
             {
               "sourceId": "parcels",
-              "protocol": "geoservices-feature-service",
+              "protocol": "geoservices_feature_service",
               "locator": {
                 "url": "/rest/services/parcels/FeatureServer/0",
                 "serviceId": "parcels",
@@ -1150,7 +1150,7 @@
             },
             {
               "sourceId": "roads",
-              "protocol": "geoservices-feature-service",
+              "protocol": "geoservices_feature_service",
               "locator": {
                 "url": "/rest/services/roads/FeatureServer/0",
                 "serviceId": "roads",
@@ -1261,7 +1261,7 @@
           "sourceBindings": [
             {
               "sourceId": "parcels",
-              "protocol": "geoservices-feature-service",
+              "protocol": "geoservices_feature_service",
               "locator": {
                 "url": "/rest/services/parcels/FeatureServer/0",
                 "serviceId": "parcels",
@@ -1270,7 +1270,7 @@
             },
             {
               "sourceId": "roads",
-              "protocol": "geoservices-feature-service",
+              "protocol": "geoservices_feature_service",
               "locator": {
                 "url": "/rest/services/roads/FeatureServer/0",
                 "serviceId": "roads",
@@ -1422,7 +1422,7 @@
           "sourceBindings": [
             {
               "sourceId": "parcels",
-              "protocol": "geoservices-feature-service",
+              "protocol": "geoservices_feature_service",
               "locator": {
                 "url": "/rest/services/parcels/FeatureServer/0",
                 "serviceId": "parcels",
@@ -1431,7 +1431,7 @@
             },
             {
               "sourceId": "roads",
-              "protocol": "geoservices-feature-service",
+              "protocol": "geoservices_feature_service",
               "locator": {
                 "url": "/rest/services/roads/FeatureServer/0",
                 "serviceId": "roads",
@@ -1556,7 +1556,7 @@
           "sourceBindings": [
             {
               "sourceId": "parcels",
-              "protocol": "geoservices-feature-service",
+              "protocol": "geoservices_feature_service",
               "locator": {
                 "url": "/rest/services/parcels/FeatureServer/0",
                 "serviceId": "parcels",
@@ -1565,7 +1565,7 @@
             },
             {
               "sourceId": "roads",
-              "protocol": "geoservices-feature-service",
+              "protocol": "geoservices_feature_service",
               "locator": {
                 "url": "/rest/services/roads/FeatureServer/0",
                 "serviceId": "roads",
@@ -1725,7 +1725,7 @@
           "sourceBindings": [
             {
               "sourceId": "dataset",
-              "protocol": "geoservices-feature-service",
+              "protocol": "geoservices_feature_service",
               "locator": {
                 "url": "/rest/services/dataset/FeatureServer/0",
                 "serviceId": "dataset",
