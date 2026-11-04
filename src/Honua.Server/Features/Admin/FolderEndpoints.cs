@@ -114,7 +114,11 @@ internal static class FolderEndpoints
         }
         catch (MetadataV2GraphConcurrencyException) { return Results.Problem(statusCode: 412, detail: "The metadata snapshot has changed. Refresh and retry."); }
         catch (KeyNotFoundException) { return Results.NotFound(); }
-        catch (ArgumentException ex) { return Results.Problem(statusCode: 400, detail: ex.Message); }
+        catch (ArgumentException)
+        {
+            return Results.Problem(statusCode: 400,
+                detail: "Invalid folder input. Use an unreserved ASCII folder name beginning with a letter, and supply folderId (null for root) when moving a service.");
+        }
         catch (InvalidOperationException) { return Results.Problem(statusCode: 409, detail: "Folder or public path conflicts with the current catalog or a permanent reservation."); }
     }
 
