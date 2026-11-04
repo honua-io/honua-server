@@ -6,7 +6,6 @@ using FluentAssertions;
 using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.Protocols.Mcp.Models;
 using Honua.Ai.Protocols.Mcp.Resources;
-using Honua.Ai.Protocols.Mcp.Studio;
 using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.Deployment.Abstractions;
@@ -19,6 +18,7 @@ using Honua.Core.Features.Reporting.Abstractions;
 using Honua.Core.Features.Studio.Drafts;
 using Honua.Geoprocessing;
 using Honua.Infrastructure.Services;
+using Honua.Server.Tests.Features.Protocols.Mcp;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Http;
@@ -435,27 +435,7 @@ public sealed class CapabilityRegistryConformanceTests
                 jobService, NullLogger<Honua.Ai.Protocols.Mcp.Discovery.ResolveEntityTool>.Instance),
             new Honua.Ai.Protocols.Mcp.Discovery.ListCapabilitiesTool(
                 jobService, NullLogger<Honua.Ai.Protocols.Mcp.Discovery.ListCapabilitiesTool>.Instance),
-            new CreateStudioDraftTool(jobService, NullLogger<CreateStudioDraftTool>.Instance),
-            new GetStudioDraftTool(jobService, NullLogger<GetStudioDraftTool>.Instance),
-            new UpdateStudioDraftTool(jobService, NullLogger<UpdateStudioDraftTool>.Instance),
-            new ValidateStudioDraftTool(jobService, NullLogger<ValidateStudioDraftTool>.Instance),
-            new PreviewStudioDraftTool(jobService, NullLogger<PreviewStudioDraftTool>.Instance),
-            new SaveStudioVersionTool(jobService, NullLogger<SaveStudioVersionTool>.Instance),
-            new GetStudioVersionTool(jobService, NullLogger<GetStudioVersionTool>.Instance),
-            new ReopenStudioVersionTool(jobService, NullLogger<ReopenStudioVersionTool>.Instance),
-            new AddStudioLayerTool(jobService, NullLogger<AddStudioLayerTool>.Instance),
-            new RemoveStudioLayerTool(jobService, NullLogger<RemoveStudioLayerTool>.Instance),
-            new SetStudioLayerStyleTool(jobService, NullLogger<SetStudioLayerStyleTool>.Instance),
-            new SetStudioLayerVisibilityTool(jobService, NullLogger<SetStudioLayerVisibilityTool>.Instance),
-            new SetStudioMapStyleTool(jobService, NullLogger<SetStudioMapStyleTool>.Instance),
-            new SetStudioViewTool(jobService, NullLogger<SetStudioViewTool>.Instance),
-            new AddStudioWidgetTool(jobService, NullLogger<AddStudioWidgetTool>.Instance),
-            new RemoveStudioWidgetTool(jobService, NullLogger<RemoveStudioWidgetTool>.Instance),
-            new BindStudioInteractionTool(jobService, NullLogger<BindStudioInteractionTool>.Instance),
-            new RemoveStudioInteractionTool(jobService, NullLogger<RemoveStudioInteractionTool>.Instance),
-            new AddStudioControlTool(jobService, NullLogger<AddStudioControlTool>.Instance),
-            new RemoveStudioControlTool(jobService, NullLogger<RemoveStudioControlTool>.Instance),
-            new ProposeStudioPublicationTool(jobService, NullLogger<ProposeStudioPublicationTool>.Instance),
+            ..StudioMcpTools.Create(jobService),
         ];
     }
 
