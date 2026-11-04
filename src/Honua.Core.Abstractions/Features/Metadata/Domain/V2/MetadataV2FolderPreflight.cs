@@ -13,6 +13,8 @@ public static class MetadataV2FolderPreflight
         var siblings = graph.Services.Where(s => string.Equals(s.Metadata.Name, service.Metadata.Name, StringComparison.OrdinalIgnoreCase));
         if (siblings.Select(s => s.Metadata.Name).Distinct(StringComparer.Ordinal).Skip(1).Any())
             issues.Add("ambiguous-logical-name");
+        if (siblings.Select(s => MetadataV2ServicePaths.NormalizeTenant(s.Metadata.Tenant)).Distinct(StringComparer.Ordinal).Skip(1).Any())
+            issues.Add("ambiguous-tenant-scope");
         return issues;
     }
 }

@@ -41,10 +41,11 @@ public static class MetadataV2ServicePaths
            string.Equals(first.PublicName, second.PublicName, StringComparison.OrdinalIgnoreCase);
 
     public static IReadOnlyList<MetadataV2ServicePathAlias> CanonicalPaths(MetadataV2Graph graph)
-        => graph.Services.GroupBy(s => (s.Metadata.Tenant, s.Metadata.Name))
+        => graph.Services.GroupBy(service => NormalizeTenant(service.Metadata.Tenant), StringComparer.Ordinal)
+            .SelectMany(scope => scope.GroupBy(service => service.Metadata.Name, StringComparer.OrdinalIgnoreCase))
             .Select(group => new MetadataV2ServicePathAlias
             {
-                Tenant = NormalizeTenant(group.Key.Tenant),
+                Tenant = NormalizeTenant(group.First().Metadata.Tenant),
                 FolderName = FolderName(graph, group.First()),
                 PublicName = group.First().EffectivePublicName,
                 TargetFacetIds = group.Select(s => s.Metadata.Id).Order(StringComparer.Ordinal).ToArray()

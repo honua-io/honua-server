@@ -40,7 +40,7 @@ public static class MetadataV2PathReservations
             throw new MetadataV2PathReservationException();
         }
         var aliasesPreserved = reconciled.ServicePathAliases.All(expected => target.ServicePathAliases.Any(actual =>
-            MetadataV2ServicePaths.SamePath(expected, actual) && expected.Tenant == actual.Tenant &&
+            MetadataV2ServicePaths.SamePath(expected, actual) && MetadataV2ServicePaths.SameTenant(expected.Tenant, actual.Tenant) &&
             expected.Retired == actual.Retired && expected.TargetFacetIds.ToHashSet(StringComparer.Ordinal).SetEquals(actual.TargetFacetIds)));
         var foldersPreserved = reconciled.Folders.All(expected => target.Folders.Any(actual =>
             expected.Metadata.Id == actual.Metadata.Id && expected.Deleted == actual.Deleted &&
@@ -100,7 +100,7 @@ public static class MetadataV2PathReservations
             return;
         }
         var reserved = aliases[index];
-        if (reserved.Tenant != path.Tenant ||
+        if (!MetadataV2ServicePaths.SameTenant(reserved.Tenant, path.Tenant) ||
             !reserved.TargetFacetIds.Intersect(path.TargetFacetIds, StringComparer.Ordinal).Any() ||
             (reserved.Retired && !path.Retired))
             throw new InvalidOperationException("A permanent public path reservation cannot be rebound or reactivated.");

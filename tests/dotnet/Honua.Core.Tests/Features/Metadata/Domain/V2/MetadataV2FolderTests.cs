@@ -166,6 +166,32 @@ public sealed class MetadataV2FolderTests
         default(MetadataV2FolderSelection).IsSpecified.Should().BeFalse();
     }
 
+    [Fact]
+    public void Move_MixedNullAndWhitespaceUnscopedFacets_PreservesOnePathIdentity()
+    {
+        var graph = Graph();
+        graph = graph with
+        {
+            Services = [graph.Services[0], graph.Services[1] with { Metadata = graph.Services[1].Metadata with { Tenant = " " } }]
+        };
+        var moved = MetadataV2FolderMutations.Move(graph, "Parcels", "folder");
+        moved.ServicePathAliases.Should().HaveCount(2);
+        Resolve(moved, null, "Parcels").Should().HaveCount(2);
+        Resolve(moved, "Survey", "Parcels").Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void Create_UnrelatedFolderWithLegacyCaseVariants_PreservesIdentitiesAndReportsPreflight()
+    {
+        var legacy = new MetadataV2Graph { Services = [Service("a", "Parcels"), Service("b", "parcels")] };
+        var organized = MetadataV2FolderMutations.Create(legacy, Folder("folder", "Survey"));
+        organized.Services.Select(s => s.Metadata.Name).Should().Equal("Parcels", "parcels");
+        organized.ServicePathAliases.Single().TargetFacetIds.Should().BeEquivalentTo(new[] { "a", "b" });
+        MetadataV2FolderPreflight.Inspect(organized, organized.Services[0]).Should().Contain("ambiguous-logical-name");
+        var ambiguousMove = () => MetadataV2FolderMutations.Move(organized, "Parcels", "folder");
+        ambiguousMove.Should().Throw<InvalidOperationException>();
+    }
+
     private static MetadataV2Graph Graph() => new()
     {
         Folders = [Folder("folder", "Survey")],
