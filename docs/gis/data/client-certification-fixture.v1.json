@@ -4210,7 +4210,7 @@
       "id": "licensed-entitlement-unrealized-locally",
       "area": "auth-profile",
       "reason": "Entitlement-bound access is only realizable on the licensed release overlay; the unlicensed local profile has no entitlement to present.",
-      "trackingIssue": "https://github.com/honua-io/honua-esri-compat/issues/75"
+      "trackingIssue": "https://github.com/honua-io/honua-server/issues/3389"
     },
     {
       "id": "tls-not-exercised-in-local-profile",

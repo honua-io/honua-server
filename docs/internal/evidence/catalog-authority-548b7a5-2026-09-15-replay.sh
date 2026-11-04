@@ -2,23 +2,26 @@
 # Candidate-bound replay for honua-server#4783 on a pinned image digest.
 #
 # Boots an isolated PostGIS + Redis + honua-server stack from the image digest,
-# seeds honua-esri-compat's role-restricted authz fixture (arcgis_compat_protected
+# seeds a caller-supplied role-restricted authz fixture (arcgis_compat_protected
 # allowedRoles=[admin], arcgis_compat_scoped allowedRoles=[scoped-api-key],
 # browser_compat anonymous), runs the per-principal catalog/handoff probe and
 # tears everything down. The transcript carries no credentials.
 #
 #   HONUA_SERVER_IMAGE=ghcr.io/honua-io/honua-server@sha256:... \
 #   HONUA_SERVER_REVISION=<40-char sha> \
-#   ESRI_COMPAT_REF=<honua-esri-compat commit> \
+#   REPLAY_SEED_SQL=<local SQL file> \
 #   ./catalog-authority-548b7a5-2026-09-15-replay.sh <transcript.json>
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 server_repo="$(git -C "$here" rev-parse --show-toplevel)"
-compat_repo="${ESRI_COMPAT_REPO:-$server_repo/../honua-esri-compat}"
 image="${HONUA_SERVER_IMAGE:?image digest reference required}"
 revision="${HONUA_SERVER_REVISION:?source revision required}"
-compat_ref="${ESRI_COMPAT_REF:?honua-esri-compat commit required}"
+seed_sql="${REPLAY_SEED_SQL:?local seed SQL path required}"
+if [[ ! -f "$seed_sql" ]]; then
+  echo "local seed SQL not found" >&2
+  exit 2
+fi
 out="${1:?transcript path required}"
 lane="${REPLAY_LANE:-h4783-replay}"
 port="${REPLAY_PORT:-18780}"
@@ -43,7 +46,7 @@ openssl req -x509 -newkey rsa:2048 -nodes -keyout "$work/k.key" -out "$work/k.cr
 openssl pkcs12 -export -inkey "$work/k.key" -in "$work/k.crt" -out "$work/keyring.pfx" -passout pass:
 chmod 644 "$work/keyring.pfx"
 
-git -C "$compat_repo" show "$compat_ref:docker/seed/arcgis-compat.sql" > "$work/arcgis-compat.sql"
+cp "$seed_sql" "$work/arcgis-compat.sql"
 git -C "$server_repo" show "$revision:tests/seed/base-schema.sql" > "$work/base-schema.sql"
 python3 - "$work/base-schema.sql" > "$work/compile-v2.sql" <<'PY'
 import sys
@@ -116,6 +119,5 @@ REPLAY_IMAGE_ID="$running_image" \
 REPLAY_IMAGE_REVISION="$running_revision" \
 REPLAY_EXPECTED_REVISION="$revision" \
 REPLAY_IMAGE_REF="$image" \
-REPLAY_COMPAT_REF="$compat_ref" \
 REPLAY_SEED_SHA256="$(sha256sum "$work/arcgis-compat.sql" | cut -d' ' -f1)" \
   python3 "$here/catalog-authority-548b7a5-2026-09-15-probe.py" "$out"

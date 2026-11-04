@@ -13,7 +13,7 @@ version: 1
 #
 # Layer IDs 3000-3002 avoid collision with base-schema (0), js_test_server
 # (1000), and browser_compat (2000-2002). This fixture is the server-owned
-# "seed/bootstrap contract" that SDK CI (honua-sdk-js @honua/sdk-esri-compat)
+# "seed/bootstrap contract" that SDK CI (honua-sdk-js)
 # and the licensed evidence lanes target; see
 # docs/gis/PORTAL_FACADE_SEED_CONTRACT.md.
 sql:

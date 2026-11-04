@@ -124,7 +124,7 @@ an ArcGIS Server site. In the 2026-09-08 proxy traces it probed `{root}/rest/inf
 `{root}/services/{name}`, `{root}/rest/services/` and `{root}/services`. Those are not
 ArcGIS Server resources, so the tool fails with `ERROR 999999`.
 
-The honua-esri-compat route investigation (2026-09-08) held the server bytes
+A 2026-09-08 route investigation held the server bytes
 fixed and varied only the request path. Every path with a `services` segment
 failed, including a fresh service name and a fresh root. `/ogc/wcs/{name}` and a
 two-segment control exported all 32 expected Float32 values at the exact extent.

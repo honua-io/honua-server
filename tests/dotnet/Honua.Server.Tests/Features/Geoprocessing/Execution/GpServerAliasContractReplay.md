@@ -2,9 +2,8 @@
 
 PR #4903 fixed the contract/claim/published-list agreement on trunk and
 released the one criterion that needs a certified image
-(`Refs #4781 (released: the honua-esri-compat matrix and the alias
-certification case are bound to the next certified image, per that issue's
-own acceptance)`). That trunk commit (`f820af6712`) merged **after** the
+(`Refs #4781 (released: the alias certification case is bound to the next
+certified image, per that issue's own acceptance)`). That trunk commit (`f820af6712`) merged **after** the
 2026.1 candidate re-pinned to `548b7a5263da` (release PR #349); it is not an
 ancestor of the pin (`git merge-base --is-ancestor f820af6712
 548b7a5263da5a3f2381eb43f232687cdf92b0bf` fails), so the fix is not inside
@@ -37,13 +36,13 @@ So the runtime publish behavior at this pin was already job-callable-only
 (inherited from #4409, unchanged by #4903); what #4903 corrected is the
 *declared* contract and parity claim, which still overclaim 39 on this pin.
 
-**Disposition: released, unchanged from #4903.** The honua-esri-compat
-matrix regeneration and `GP-PRM-TASKNAME-ESRI-CONVENTIONAL-ALIASES` cannot
+**Disposition: released, unchanged from #4903.** Regenerating
+`GP-PRM-TASKNAME-ESRI-CONVENTIONAL-ALIASES` cannot
 pass against a candidate that predates the fix — regenerating their matrix
 before a re-pin containing `f820af6712` would fail their own drift gate (it
 checks out honua-server at the candidate's `source_sha`). All three of the
 issue's acceptance criteria that live in this repo (contract/claim/published
 list agree, and a structural test pinning it) are satisfied on trunk since
 #4903. The remaining criterion needs a re-pin past `f820af6712` before
-honua-esri-compat can act on it; #4781 stays open with that dependency
+that dependency is not in this repository; #4781 stays open with it
 recorded here and on the issue.

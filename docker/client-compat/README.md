@@ -20,7 +20,7 @@ prove that real clients can consume the server.
 | `geoservices-rest-stub` | `python:3.12-slim` | GeoServices REST FeatureServer / MapServer (REST stub) |
 
 `geoservices-rest-stub` is a REST stub, not a desktop client. Render cases stay `skip`.
-Desktop evidence is identifier `desktop-arcgis` in honua-esri-compat.
+This repository does not certify ArcGIS clients. Lane id `desktop-arcgis`.
 
 ## Runtime contract
 

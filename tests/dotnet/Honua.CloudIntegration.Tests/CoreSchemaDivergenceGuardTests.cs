@@ -1833,7 +1833,7 @@ public sealed partial class CoreSchemaDivergenceGuardTests(LocalSubstratePostgre
     {
         Skip.IfNot(postgres.Available, "Docker/PostgreSQL is not available for the late-raster seed lane.");
 
-        // honua-esri-compat scripts/up.sh + scripts/seed.sh (#4744): Honua boots and migrates
+        // The seed enables postgis_raster after the first boot: Honua boots and migrates
         // before postgis_raster exists, the seed then enables the extension and creates the
         // raster tables itself, and the harness restarts Honua.
         var connectionString = await postgres.CreateFreshDatabaseAsync(enablePostGis: true);
