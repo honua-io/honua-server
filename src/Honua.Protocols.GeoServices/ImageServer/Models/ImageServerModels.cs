@@ -831,7 +831,7 @@ public sealed class IdentifyCatalogItems
 /// <summary>
 /// Export image request parameters.
 /// </summary>
-public sealed class ExportImageRequest
+public sealed record ExportImageRequest
 {
     [RegularExpression(@"^-?\d+(\.\d+)?,-?\d+(\.\d+)?,-?\d+(\.\d+)?,-?\d+(\.\d+)?$",
         ErrorMessage = "Bbox must be in format: minX,minY,maxX,maxY")]

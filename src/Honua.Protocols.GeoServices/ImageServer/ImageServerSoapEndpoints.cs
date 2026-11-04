@@ -595,7 +595,7 @@ internal static partial class ImageServerSoapEndpoints
             // The samples' NoData values already match every source. MatchAny still
             // needs an AND of the canonical per-band validity masks on the BSQ wire.
             requireAllBandsValid = string.Equals(request.NoDataInterpretation, "esriNoDataMatchAny", StringComparison.OrdinalIgnoreCase);
-            request = CopyWithoutNoData(request);
+            request = request with { NoData = null };
         }
 
         request = CopyWithResponseFormat(
@@ -1066,44 +1066,19 @@ internal static partial class ImageServerSoapEndpoints
         return true;
     }
 
-    private static ExportImageRequest CopyWithoutNoData(ExportImageRequest request)
-        => new()
-        {
-            Bbox = request.Bbox,
-            Size = request.Size,
-            ImageSr = request.ImageSr,
-            BboxSr = request.BboxSr,
-            Format = request.Format,
-            PixelType = request.PixelType,
-            Interpolation = request.Interpolation,
-            Compression = request.Compression,
-            CompressionQuality = request.CompressionQuality,
-            BandIds = request.BandIds,
-            MosaicRule = request.MosaicRule,
-            F = request.F
-        };
 
-    private static ExportImageRequest CopyWithResponseFormat(
+    internal static ExportImageRequest CopyWithResponseFormat(
         ExportImageRequest request,
         string responseFormat,
         string? sourcePixelType = null,
         string? formatOverride = null)
-        => new()
+        => request with
         {
-            Bbox = request.Bbox,
-            Size = request.Size,
-            ImageSr = request.ImageSr,
-            BboxSr = request.BboxSr,
             Format = formatOverride ?? request.Format,
             PixelType = string.Equals(request.PixelType, sourcePixelType, StringComparison.OrdinalIgnoreCase)
                 ? null
                 : request.PixelType,
-            NoData = request.NoData,
-            Interpolation = request.Interpolation,
-            Compression = request.Compression,
-            CompressionQuality = request.CompressionQuality,
             BandIds = string.IsNullOrWhiteSpace(request.BandIds) ? null : request.BandIds,
-            MosaicRule = request.MosaicRule,
             F = responseFormat
         };
 
