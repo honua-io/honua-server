@@ -2112,11 +2112,11 @@ internal sealed partial class Wfs20Handler
 
     private static double ParseTransactionOrdinate(string value)
     {
-        // Client-supplied coordinate text must surface as InvalidParameterValue (400),
-        // not FormatException/OverflowException falling through to a 500.
-        if (!double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var ordinate))
+        // An ArgumentException surfaces as InvalidParameterValue (400) rather than a 500.
+        if (!double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var ordinate) ||
+            !double.IsFinite(ordinate))
         {
-            throw new ArgumentException($"Invalid GML coordinate value '{value}'.");
+            throw new ArgumentException($"Invalid GML coordinate value '{value}'; ordinates must be finite numbers.");
         }
 
         return ordinate;
