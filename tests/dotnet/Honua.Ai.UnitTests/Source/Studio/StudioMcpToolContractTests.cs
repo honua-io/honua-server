@@ -755,7 +755,7 @@ public sealed class StudioMcpToolContractTests
             McpTestFactory.AddAllowingStudioAuthorization(services);
         });
 
-    private static IReadOnlyList<IMcpTool> BuildAllTools() =>
+    private static IMcpTool[] BuildAllTools() =>
         McpToolRoster.Studio(Substitute.For<IGeoprocessingJobService>());
 
     private static StudioPackageDraft BuildDraft(StudioPackageFamily family, long generation)
