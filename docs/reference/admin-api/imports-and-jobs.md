@@ -152,8 +152,8 @@ Run `GET /api/v1/admin/operations/{operationId}` with the operation id returned 
 
 - [Import files](../../guides/publish/import-files.md)
 - [Import from object storage](../../guides/publish/import-from-object-storage.md)
-- [Import from ArcGIS services](../../guides/publish/import-from-arcgis-services.md)
-- [Migrate from GeoServer](../../guides/migrate/from-geoserver.md) and [from ArcGIS Server](../../guides/migrate/from-arcgis-server.md)
+- [Import from ArcGIS services](../../guides/publish/import-from-geoservices-rest.md)
+- [Migrate from GeoServer](../../guides/migrate/from-geoserver.md) and [from ArcGIS Server](../../guides/migrate/from-geoservices-rest.md)
 - [Publish rasters](../../guides/publish/publish-rasters.md)
 - [Publish tiles](../../guides/publish/publish-tiles.md)
 - [Monitor Honua Server](../../guides/deploy/monitoring.md)

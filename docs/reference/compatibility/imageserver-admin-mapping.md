@@ -1,12 +1,12 @@
 ---
 type: reference
 title: "ImageServer admin operations → Honua admin API"
-description: "ArcGIS ImageServer exposes a set of admin/mutation operations (addRasters, deleteRasters, updateRaster, uploads, downloadRasters, validate, calculateVolume, computeMultidimensionalInfo, computeTiePoints)."
+description: "GeoServices REST ImageServer exposes a set of admin/mutation operations (addRasters, deleteRasters, updateRaster, uploads, downloadRasters, validate, calculateVolume, computeMultidimensionalInfo, computeTiePoints)."
 resource: "honua://capability/serve.geoservices-imageserver"
 ---
 # ImageServer admin operations → Honua admin API
 
-ArcGIS ImageServer exposes a set of **admin/mutation** operations
+GeoServices REST ImageServer exposes a set of **admin/mutation** operations
 (`addRasters`, `deleteRasters`, `updateRaster`, `uploads`, `downloadRasters`,
 `validate`, `calculateVolume`, `computeMultidimensionalInfo`,
 `computeTiePoints`). Honua intentionally does **not** re-implement these as
@@ -16,10 +16,10 @@ Honua admin API, which enforces layer homogeneity, advisory locks, EXTERNAL-TOAS
 storage, statistics, and tile pre-generation atomically through a single hardened
 pipeline.
 
-This page maps each Esri ImageServer admin op to its Honua admin equivalent for
-ArcGIS-client users migrating to Honua.
+This page maps each GeoServices REST ImageServer admin op to its Honua admin equivalent for
+GeoServices REST-client users migrating to Honua.
 
-| Esri ImageServer admin op | Honua admin equivalent | Status |
+| GeoServices REST ImageServer admin op | Honua admin equivalent | Status |
 |---|---|---|
 | `addRasters` | `POST /api/v1/admin/import/raster` (multipart GeoTIFF/PNG/JPEG upload) and `POST /api/v1/admin/cloud-rasters` (register a cloud-hosted COG) | Supported (single-file, synchronous) |
 | `deleteRasters` | `DELETE /api/v1/admin/import/raster/{rasterId}` (cascades to statistics, tiles, and sensor metadata) and `DELETE /api/v1/admin/cloud-rasters/{id}` for registered COGs | Supported |
@@ -37,7 +37,7 @@ ArcGIS-client users migrating to Honua.
    enforces layer homogeneity (SRID/band-count), advisory locks, EXTERNAL-TOAST
    storage, statistics, and tile pre-generation atomically. A second
    ingestion path over GeoServices REST would duplicate or bypass all of that.
-2. **The Esri admin ops assume a mosaic-dataset model Honua does not have.**
+2. **The GeoServices REST admin ops assume a mosaic-dataset model Honua does not have.**
    Honua's catalog is an implicit projection of `raster_data`; each row *is* a
    catalog item. Faithful `addRasters`/`uploads`/`validate` parity would require
    inventing a mosaic-dataset/job subsystem.

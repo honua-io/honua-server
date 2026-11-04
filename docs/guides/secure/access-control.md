@@ -95,7 +95,7 @@ case-insensitive matching, even when the client explicitly requests them.
 
 Row-level security and field-mask policies are enforced by the PostgreSQL provider.
 Layers served by another provider (DuckDB, MySQL/MariaDB, SQL Server, Oracle,
-Redshift, Snowflake, Databricks, ArcGIS REST) cannot apply them. Creating a policy
+Redshift, Snowflake, Databricks, GeoServices REST) cannot apply them. Creating a policy
 whose scope includes such a layer is rejected with `400`, naming the layer and its
 provider, and a read of such a layer by a caller that an existing policy applies to
 is refused rather than served unfiltered. In a deployment that mixes providers, scope

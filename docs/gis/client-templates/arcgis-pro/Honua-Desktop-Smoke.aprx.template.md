@@ -10,4 +10,4 @@ Public evidence identifier: lane `desktop-arcgis`, envelopes
 `docs/gis/certification-evidence/20260402T000000Z/` are not certified.
 
 Customer connection steps that are not a certification recipe stay in
-[Connect ArcGIS Pro](../../../guides/connect/arcgis-pro.md).
+[Connect ArcGIS Pro](../../../guides/connect/geoservices-desktop-clients.md).

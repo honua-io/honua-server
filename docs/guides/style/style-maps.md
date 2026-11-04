@@ -1,18 +1,18 @@
 ---
 type: guide
 title: "Style map layers"
-description: "Set a layer's symbology once, as a MapLibre Style Spec v8 document, so vector-tile clients, WMS and static-map rendering, and ArcGIS drawingInfo read the same document. The server does not generate or paint label classes. An author-supplied drawingInfo, including labelingInfo, is stored and returned unchanged."
+description: "Set a layer's symbology once, as a MapLibre Style Spec v8 document, so vector-tile clients, WMS and static-map rendering, and the `drawingInfo` response reads the same document. The server does not generate or paint label classes. An author-supplied drawingInfo, including labelingInfo, is stored and returned unchanged."
 resource: "honua://capability/styling.defaults"
 resources:
   - "honua://capability/styling.auto-suggest"
 ---
 # Style map layers
 
-Set a layer's symbology once, as a MapLibre Style Spec v8 document, so vector-tile clients, WMS and static-map rendering, and ArcGIS `drawingInfo` read the same document. Generated feature labels are not part of that contract. An author-supplied `labelingInfo` is.
+Set a layer's symbology once, as a MapLibre Style Spec v8 document, so vector-tile clients, WMS and static-map rendering, and the `drawingInfo` response reads the same document. Generated feature labels are not part of that contract. An author-supplied `labelingInfo` is.
 
 **Prerequisites:** a running server ([quickstart](../../get-started/quickstart.md)), a published layer ([publish layers](../publish/publish-layers.md)), and an admin API key ([authentication](../secure/authentication.md)).
 
-Honua stores exactly one canonical style per layer — MapLibre JSON. Esri `drawingInfo` and SLD are accepted as inputs and derived as outputs. Fill, line, and circle symbology is what those renderers share. Also available in Honua Console — UI guide coming soon.
+Honua stores exactly one canonical style per layer — MapLibre JSON. `drawingInfo` and SLD are accepted as inputs and derived as outputs. Fill, line, and circle symbology is what those renderers share. Also available in Honua Console — UI guide coming soon.
 
 ## Feature labeling is not served
 
@@ -22,7 +22,7 @@ The styling capability keys are `styling.defaults`, `styling.auto-suggest`, and 
 - Generated `drawingInfo` is a renderer. The default sets `labelingInfo` to null (`FeatureServerMetadataHandlers.BuildDefaultDrawingInfoV2`). `MapLibreToGeoServicesConverter.BuildDrawingInfo` writes a renderer, or a picture marker from `icon-image`, and does not synthesize `labelingInfo`.
 - Author-supplied `drawingInfo` is passthrough, not generation. `AdminLayerAuthoringEndpoints.HandleSetDrawingInfo` stores the JSON object unchanged under `geoservices:drawingInfo` (`SetExtensionAsync`). `FeatureServerMetadataHandlers.ResolveDrawingInfoV2` returns that extension before a saved style encoding or the generated default, so an authored `labelingInfo` array is published in FeatureServer metadata. MapServer metadata reads the same extension (`ResolveMapServerDrawingInfo`).
 - SLD import stores a `TextSymbolizer` whose label is an `ogc:PropertyName` as a `symbol` layer `text-field` (`SldToMapLibreConverter.BuildTextLayer`). `SldParser.ParseTextSymbolizer` drops `LabelPlacement`. That import does not emit `labelingInfo`. Tests of it check the stored JSON only.
-- ArcGIS source `labelingInfo` is recorded as migration diagnostics (`MigrationManifestTranslator.BuildResourceLabelClassDiagnostics`). Apply does not write a label style or `labelingInfo` from those diagnostics. A simple field token classified `automated` can still be reported as construct disposition `migrated`. An operator can still store an authored document on the drawing-info route above.
+- Source `labelingInfo` is recorded as migration diagnostics (`MigrationManifestTranslator.BuildResourceLabelClassDiagnostics`). Apply does not write a label style or `labelingInfo` from those diagnostics. A simple field token classified `automated` can still be reported as construct disposition `migrated`. An operator can still store an authored document on the drawing-info route above.
 - When a stored style already contains a `symbol` layer, VectorTileServer points `glyphs` at one bundled sans-serif face (Basic Latin and Latin-1). That face is for a client that implements text layout. Default styles omit symbol layers, and the server does not generate label classes.
 - Visual certification `CERT-RNDR-LBL-01` has no substantiating lane.
 
@@ -63,7 +63,7 @@ A MapLibre client may paint `text-field` from the style document it fetches. Tha
    }
    ```
 
-   The same endpoint also accepts `{ "drawingInfo": { ... } }` with an Esri `simple`, `uniqueValue`, or `classBreaks` renderer; it is converted to MapLibre, and anything that cannot be translated is reported in `unsupportedSymbolizers[]` in the response.
+   The same endpoint also accepts `{ "drawingInfo": { ... } }` with a `simple`, `uniqueValue`, or `classBreaks` renderer; it is converted to MapLibre, and anything that cannot be translated is reported in `unsupportedSymbolizers[]` in the response.
 
 3. Ask the server to suggest a style instead of writing one by hand. The suggestion is advisory — apply it with the PUT above:
 

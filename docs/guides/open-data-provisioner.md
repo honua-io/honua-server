@@ -6,14 +6,14 @@ title: "Open-data area-import provisioner"
 
 > Status: **first slice.** A curated open-data source catalog plus one
 > end-to-end, area-parameterized import that rides existing Honua Server
-> primitives. Esri's "give me a county and load it with their data" workflow,
+> primitives. GeoServices REST "give me a county and load it with their data" workflow,
 > repeatable from a single command.
 
 ## What this is
 
 Sales and onboarding repeatedly need the same thing: pick a county / state /
 city, load it with high-value open government data, and have it served by Honua
-in minutes -- without an Esri data credit in sight. This slice delivers:
+in minutes -- without a GeoServices REST data credit in sight. This slice delivers:
 
 1. A **structured source catalog** (`data/open-data-catalog/catalog.json`,
    validated by `schema.json`) -- config-as-data, so adding a source is a data

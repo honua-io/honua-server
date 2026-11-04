@@ -1,4 +1,3 @@
-# QGIS, PyQGIS, ArcGIS Pro and ArcPy certification
 
 This is the current scope and completion contract for the four native clients.
 Its [JSON projection](data/client-certification-checklist.v1.json) contains the
@@ -16,7 +15,6 @@ adding inventory rows does not establish a complete executable test suite.
 |---|---|
 | This checklist and its JSON | Four-client scope, open coverage work and completion criteria |
 | [honua-client-compat inventory](https://github.com/honua-io/honua-client-compat/blob/main/desktop/certification-matrix.json) | QGIS capabilities, providers, algorithms, authentication and workflow review obligations; QGIS/PyQGIS execution belongs there |
-| [honua-esri-compat](https://github.com/honua-io/honua-esri-compat) | Esri operation/parameter inventories and native evidence. Runner and licence setup stay there |
 | [Shared CERT vocabulary](CROSS_CLIENT_CERTIFICATION_MATRIX.md) | Common evidence IDs across desktop, SDK and other clients |
 | [Platform roster](data/client-certification-roster.v1.json) | Governed platform identities and release projection; platform release policy remains owned by honua-release |
 | Dated plans and receipts | Historical observations and provenance, not competing current completion rules |
@@ -24,15 +22,11 @@ adding inventory rows does not establish a complete executable test suite.
 The [pre-audit checklist](https://github.com/honua-io/honua-server/blob/ab2e3ed3d58196658fbd98567de65eec4db7dc64/docs/gis/CLIENT_CERTIFICATION_CHECKLIST.md)
 preserves the former baseline narrative. Existing operation cells, receipt
 references and exclusions are retained. A new finding must preserve the observation
-it supersedes. The [first exclusion review](client-exclusion-audit-2026-09-20.md)
-and [follow-up](client-exclusion-followup-2026-09-20.md) remain evidence history.
 
 ## Targets and profiles
 
 | Lane | Historical baseline build | Evidence owner |
 |---|---|---|
-| `pro-ui` | ArcGIS Pro 3.7.1.1904 | honua-esri-compat; actual application operations |
-| `arcpy` | ArcPy bundled with Pro 3.7.1.1904 | honua-esri-compat; native Python operations |
 | `qgis-ui` | QGIS 3.44.14 LTR | honua-client-compat; actual application operations |
 | `pyqgis` | PyQGIS bundled with QGIS 3.44.14 LTR | honua-client-compat; native Python operations |
 
@@ -41,7 +35,6 @@ only QGIS 3.44.14 LTR**, per the September 30 scope instruction. The wider inven
 and diagnostics retain QGIS/PyQGIS 4.2.2 as historical records; no 4.2.2 certification
 rerun is required and its unresolved reviews cannot block LTR acceptance.
 Verify installed versions before running and create a new target revision for a
-different build. ArcGIS Pro/ArcPy's updated 3.7.2 installation remains an open target
 binding; 3.7.1 receipts retain their historical identities.
 
 Licence, extension, and portal-entitlement detail stays in the client evidence
@@ -81,11 +74,7 @@ read-only controls; edits and failure cases use owned fixtures. Manuals establis
 paths and limitations, not successful Honua execution.
 
 The current manual review covers [QGIS 3.44 service paths](https://doc.qgis.org/3.44/en/docs/user_manual/working_with_ogc/ogc_client_support.html),
-[service-backed Pro routing](https://doc.esri.com/en/arcgis-pro/latest/help/analysis/networks/what-is-network-analysis-using-web-services.html),
-[branch-version prerequisites](https://doc.esri.com/en/arcgis-pro/latest/help/data/geodatabases/overview/manage-branch-versions.html)
-and [Pro OGC API limits](https://doc.esri.com/en/arcgis-pro/latest/help/data/services/use-ogc-api-services.html).
 The JSON records the review date, affected protocols, limitations and next native
-checks. Esri's `latest` pages still require confirmation against the installed build.
 
 The September 29 vector review adds exact installed QGIS source revisions
 `1a4cda5f262` (3.44.14) and `f1431de8676` (4.2.2). Independent 107-record fixtures
@@ -195,7 +184,6 @@ Missing receipts, failed required cases, unresolved harness defects and stale
 candidate bindings prevent that claim. Licensed skips and N/A are separately
 reported limitations, never successful execution of those operations.
 
-UI results require actual inspected UI evidence. ArcPy/PyQGIS, REST probes,
 conformance suites, mocks and adapted/plugin paths retain their own identities.
 A parent operation cannot inherit success from one passing child or tool alias.
 Historical JIT receipts remain useful diagnostics and regression evidence.

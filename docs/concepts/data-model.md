@@ -47,7 +47,7 @@ Services are managed at `/api/v1/admin/services` (settings, protocols, access po
 
 ## Styles and metadata
 
-Each layer can carry one or more styles. Honua keeps a canonical style document per layer and serves it to every protocol: it drives the auto-generated MapLibre style for vector tiles (`/api/styles/{layerId}.json`), server-side rendering for MapServer/WMS/OGC Maps, and Esri `drawingInfo` for GeoServices clients. Styles are edited via `/api/v1/admin/metadata/layers/{id}/style` and the `/ogc/styles` API.
+Each layer can carry one or more styles. Honua keeps a canonical style document per layer and serves it to every protocol: it drives the auto-generated MapLibre style for vector tiles (`/api/styles/{layerId}.json`), server-side rendering for MapServer/WMS/OGC Maps, and GeoServices REST `drawingInfo` for GeoServices clients. Styles are edited via `/api/v1/admin/metadata/layers/{id}/style` and the `/ogc/styles` API.
 
 Descriptive metadata (title, description, keywords, attribution, temporal info) feeds every protocol's discovery surface — GeoServices service/layer info, OGC collection documents, STAC collections, OData `$metadata`, WMS/WFS capabilities — from one definition.
 

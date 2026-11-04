@@ -21,7 +21,7 @@ npx --yes -p @honua/sdk-js@0.2.6 honua layers "$HONUA_SERVICE"
 
 ## What a layer publish writes
 
-A new service is created with the shared protocol list enabled and an active lifecycle. That list is FeatureServer, MapServer, ImageServer, GPServer, VectorTileServer, the OGC API and classic OGC protocols, OData, gRPC, STAC, SensorThings, terrain, and elevation. SceneServer is not on it; scenes are registered separately. The primary publication is an Esri feature layer. When the storage has a geometry column, a STAC collection publication is written on the same service as well. Both use the numeric layer id as their publication identifier, which is the layer index catalogs match.
+A new service is created with the shared protocol list enabled and an active lifecycle. That list is FeatureServer, MapServer, ImageServer, GPServer, VectorTileServer, the OGC API and classic OGC protocols, OData, gRPC, STAC, SensorThings, terrain, and elevation. SceneServer is not on it; scenes are registered separately. The primary publication is a feature layer. When the storage has a geometry column, a STAC collection publication is written on the same service as well. Both use the numeric layer id as their publication identifier, which is the layer index catalogs match.
 
 Publishing another layer into a service that already exists only adds publications. It does not turn protocols back on, and it does not clear a lifecycle the service already has.
 
@@ -45,7 +45,7 @@ An empty catalog for one protocol while another protocol lists the layer usually
 | --- | --- | --- |
 | OGC API Records | `serve.ogc-api-records` | One read-only collection, `honua-catalog`, of service and dataset records. |
 | STAC API | `serve.stac` | One collection per routable STAC-collection publication. |
-| GeoServices directory | `serve.geoservices-root` | One entry per enabled Esri service type, plus a few built-ins. |
+| GeoServices directory | `serve.geoservices-root` | One entry per enabled service type, plus a few built-ins. |
 | OGC API Features, Maps, Tiles | the matching `serve.ogc-api-*` key | Collections for routable publications on services that enable that protocol. |
 | OGC API Coverages | `serve.ogc-api-coverages` | Raster-backed collections. Preview in 2026.1. |
 | WMS, WFS 2.0, WMTS, WCS | the matching classic serve keys | Capabilities documents built from the same routable publications. |
@@ -75,7 +75,7 @@ The open-data STAC projection under the open-data API is not this catalog. A pub
 
 ### GeoServices directory
 
-The services directory (`serve.geoservices-root`) lists each Esri protocol the service enables: FeatureServer, MapServer, ImageServer, GPServer, and VectorTileServer. A service enabled for more than one of those is listed once per type. OGC, STAC, and OData protocols are not directory entries; they have their own catalogs. There is no ArcGIS folder tree. The only folder-shaped node is the built-in Utilities/PrintingTools GPServer.
+The services directory (`serve.geoservices-root`) lists each service type the service enables: FeatureServer, MapServer, ImageServer, GPServer, and VectorTileServer. A service enabled for more than one of those is listed once per type. OGC, STAC, and OData protocols are not directory entries; they have their own catalogs. There is no nested folder hierarchy. The only folder-shaped node is the built-in Utilities/PrintingTools GPServer.
 
 A service with no visible resource is omitted, except a layerless GPServer the caller is allowed to query. ImageServer is listed only when a raster probe resolves a layer. SceneServer entries are appended only for active registered scenes, and only on an Enterprise license; other editions omit them with no error. An enabled geocoder is listed as GeocodeServer even when the metadata graph is empty. PrintingTools is added to a directory the caller is allowed to see.
 

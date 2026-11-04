@@ -32,7 +32,7 @@ Temporal behavior is opt-in: a layer advertises a time dimension only after you 
    }
    ```
 
-2. Discover the temporal contract. Layer metadata now carries an ArcGIS-compatible `timeInfo` block, and a dedicated endpoint returns the actual data extent:
+2. Discover the temporal contract. Layer metadata now carries a GeoServices REST-compatible `timeInfo` block, and a dedicated endpoint returns the actual data extent:
 
 > Open `/rest/services/{service}/FeatureServer/{layerId}?f=json`, `/rest/services/{service}/FeatureServer/{layerId}/temporalExtent?f=json` in a browser.
 

@@ -242,7 +242,7 @@ Cesium: `JS-CES-IMG-01`, `JS-CES-TILE-01`. Esri Leaflet: `EL-EXT-01`, `EL-EXT-02
 | `js-cesium` | active | `wms`, `wmts`, `ogc-tiles`, `ogc-maps` on `browser_compat` |
 | `desktop-qgis` | active | `ogc-features` and `wfs` on the canonical service |
 | `cli` | active | `ogc-features` and `wfs` on the canonical service |
-| `arcgis-stub` | active | `featureserver` and `mapserver` on `browser_compat` 2000; `portal` on the tier ladder |
+| `geoservices-rest-stub` | active | `featureserver` and `mapserver` on `browser_compat` 2000; `portal` on the tier ladder |
 | `py-geopandas` | landing | `ogc-features` and `wfs` on the canonical service |
 | `py-owslib` | landing | `ogc-features` and `wfs` on the canonical service; `wms` and `wmts` on `browser_compat` |
 | `duckdb` | landing | `ogc-features` on the canonical service |
@@ -256,8 +256,8 @@ and the two BI extensions (planned, licensed, release-tier lanes).
 Two of the five active lanes do not bind the canonical vector identity today, and the manifest says
 so rather than pretending otherwise. The `js` lane is configured onto `browser_compat` layer 2000
 and still falls back to the first advertised collection, and its WFS binding picks the first feature
-type that returns features (`js-lane-identity-not-pinned`); the `arcgis-stub` lane is pointed at
-`browser_compat` 2000 by `ARCGIS_STUB_SERVICE_NAME` and `ARCGIS_STUB_LAYER_ID`. That layer carries
+type that returns features (`js-lane-identity-not-pinned`); the `geoservices-rest-stub` lane is pointed at
+`browser_compat` 2000 by `GEOSERVICES_STUB_SERVICE_NAME` and `GEOSERVICES_STUB_LAYER_ID`. That layer carries
 three point features and only `objectid`, `name`, and `shape`, so those lanes exercise neither the
 canonical attribute-type spread nor the null geometry nor the ten-feature pagination shape
 (`active-lanes-bind-render-fixture-not-canonical-vector`). Only `desktop-qgis` and `cli` bind
