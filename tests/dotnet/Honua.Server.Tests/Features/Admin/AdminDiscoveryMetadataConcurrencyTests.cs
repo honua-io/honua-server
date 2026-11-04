@@ -37,7 +37,8 @@ public sealed class AdminDiscoveryMetadataEndpointsConcurrencyTests : IAsyncLife
         var before = _fixture.GetCurrentV2GraphSnapshot();
         using var content = JsonContent.Create(new DiscoveryMetadataUpdateRequest
         {
-            Etag = before.Etag, Title = "Rejected title"
+            Etag = before.Etag,
+            Title = "Rejected title"
         }, DiscoveryMetadataJsonContext.Default.DiscoveryMetadataUpdateRequest);
         var response = await _fixture.CreateAdminClient().PutAsync(path, content);
         response.StatusCode.Should().Be(HttpStatusCode.Conflict);

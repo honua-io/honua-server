@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Globalization;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Admin.Models;
 
@@ -43,12 +44,20 @@ internal sealed record DiscoveryMetadataTarget(
 
     private static MetadataV2ObjectMetadata ApplyFields(MetadataV2ObjectMetadata metadata,
         DiscoveryMetadataUpdateRequest request) => metadata with
-    {
-        Title = request.Title, Description = request.Description, Keywords = request.Keywords
-    };
+        {
+            Title = request.Title,
+            Description = request.Description,
+            Keywords = request.Keywords
+        };
 
     private static DiscoveryPublicationImpact[] Impact(MetadataV2GraphSnapshot snapshot,
         IEnumerable<MetadataV2Publication> publications) => publications.Select(publication => new DiscoveryPublicationImpact(
             publication.Metadata.Id, snapshot.Index.ServicesById[publication.ServiceId].Metadata.Name,
-            publication.ServiceLocalId ?? string.Empty)).ToArray();
+            ReadPublicationIdentifier(publication))).ToArray();
+
+    private static string ReadPublicationIdentifier(MetadataV2Publication publication)
+    {
+        var publicationWithIdentifier = publication.Identifier is null ? publication with { Identifier = new() } : publication;
+        return publicationWithIdentifier.ServiceLocalId ?? publicationWithIdentifier.LayerIndex?.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
+    }
 }

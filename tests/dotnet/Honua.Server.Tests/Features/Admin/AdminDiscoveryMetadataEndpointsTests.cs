@@ -153,7 +153,8 @@ public sealed class AdminDiscoveryMetadataEndpointsTests : IAsyncLifetime
                 ? publication with
                 {
                     Identifier = publication.Identifier with { Value = "37" },
-                    ServiceLocalId = "37", LayerIndex = 37
+                    ServiceLocalId = "37",
+                    LayerIndex = 37
                 }
                 : publication).ToArray()
         }, schema: _fixture.MetadataGraphSchema);
@@ -204,9 +205,11 @@ public sealed class AdminDiscoveryMetadataEndpointsTests : IAsyncLifetime
     [IntegrationTheory]
     [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/discovery")]
     [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/discovery")]
-    [InlineData("null")]
-    [InlineData("empty")]
-    public async Task Discovery_LegacyPublicationIdentifier_ReturnsStoredLocalId(string identifierShape)
+    [InlineData("null", "legacy-layer")]
+    [InlineData("empty", "legacy-layer")]
+    [InlineData("null", null)]
+    [InlineData("empty", null)]
+    public async Task Discovery_LegacyPublicationIdentifier_ReturnsStoredLocalId(string identifierShape, string? storedLocalId)
     {
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
         var resourceId = snapshot.Index.ResourcesByStorageLayerId[0].Metadata.Id;
@@ -217,7 +220,8 @@ public sealed class AdminDiscoveryMetadataEndpointsTests : IAsyncLifetime
                 ? publication with
                 {
                     Identifier = identifierShape == "null" ? null! : new(),
-                    ServiceLocalId = "legacy-layer", LayerIndex = publication.LayerIndex
+                    ServiceLocalId = storedLocalId,
+                    LayerIndex = 37
                 }
                 : publication).ToArray()
         }, schema: _fixture.MetadataGraphSchema);
@@ -225,7 +229,7 @@ public sealed class AdminDiscoveryMetadataEndpointsTests : IAsyncLifetime
         const string path = "/api/v1/admin/metadata/layers/0/discovery";
         var before = await ReadAsync(client, path);
         before.AffectedPublications.Should().NotBeEmpty()
-            .And.OnlyContain(publication => publication.Identifier == "legacy-layer");
+            .And.OnlyContain(publication => publication.Identifier == (storedLocalId ?? "37"));
         (await UpdateAsync(client, path, before.Etag)).StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -267,6 +271,9 @@ public sealed class AdminDiscoveryMetadataEndpointsTests : IAsyncLifetime
     private static Task<HttpResponseMessage> UpdateAsync(HttpClient client, string path, string etag) =>
         client.PutAsJsonAsync(path, new DiscoveryMetadataUpdateRequest
         {
-            Etag = etag, Title = "Road survey", Description = "Surveyed streets", Keywords = ["roads", "survey"]
+            Etag = etag,
+            Title = "Road survey",
+            Description = "Surveyed streets",
+            Keywords = ["roads", "survey"]
         }, DiscoveryMetadataJsonContext.Default.DiscoveryMetadataUpdateRequest);
 }

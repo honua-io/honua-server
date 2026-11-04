@@ -101,9 +101,12 @@ internal static class AdminDiscoveryMetadataEndpoints
     private static IResult Respond(MetadataV2GraphSnapshot snapshot, DiscoveryMetadataTarget target) =>
         Results.Json(ApiResponse<DiscoveryMetadataResponse>.CreateSuccess(new()
         {
-            Etag = snapshot.Etag, EntityId = target.Metadata.Id,
-            Title = target.Metadata.Title, Description = target.Metadata.Description,
-            Keywords = target.Metadata.Keywords, AffectedPublications = target.Publications
+            Etag = snapshot.Etag,
+            EntityId = target.Metadata.Id,
+            Title = target.Metadata.Title,
+            Description = target.Metadata.Description,
+            Keywords = target.Metadata.Keywords,
+            AffectedPublications = target.Publications
         }), DiscoveryMetadataJsonContext.Default.ApiResponseDiscoveryMetadataResponse);
 
     private static IResult Problem(HttpContext context, int status, string detail) =>
