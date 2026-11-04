@@ -5,8 +5,29 @@ using System.Text.Json;
 
 namespace Honua.Geoprocessing.Testing;
 
+/// <summary>
+/// Compares a raster/scalar/tabular artifact (e.g. a GDAL convert/CSV output, a raster
+/// statistics document, a scalar metric) against its golden with a numeric tolerance
+/// rather than byte-equality (GP Devkit P6, issue #2127).
+///
+/// <para>
+/// When both sides parse as JSON, they are diffed structurally: objects must share a key
+/// set, arrays must share a length, and number leaves match within
+/// <see cref="GoldenTolerance.Numeric"/> (so GDAL's least-significant-digit formatting drift
+/// does not fail a stable golden). Otherwise the payloads are diffed as normalized text —
+/// line-endings unified and trailing whitespace trimmed — and the first differing line is
+/// reported.
+/// </para>
+/// </summary>
 public static class ScalarStructuralGoldenComparer
 {
+    /// <summary>
+    /// Compares <paramref name="actual"/> against <paramref name="golden"/>.
+    /// </summary>
+    /// <param name="actual">The text the process produced.</param>
+    /// <param name="golden">The recorded golden text.</param>
+    /// <param name="tolerance">The numeric tolerance to apply to JSON number leaves.</param>
+    /// <returns>A matched result, or a mismatch carrying located differences.</returns>
     public static GoldenComparisonResult Compare(string actual, string golden, GoldenTolerance tolerance)
     {
         ArgumentNullException.ThrowIfNull(actual);

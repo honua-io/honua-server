@@ -6,8 +6,29 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Geoprocessing.Testing;
 
+/// <summary>
+/// Discovers and loads golden GP fixtures from on-disk JSON manifests (GP Devkit P6, issue
+/// #2127). A fixture directory holds a <c>fixture.json</c> manifest next to its input + golden
+/// files; <c>honua gp test</c> walks <c>samples/gp/</c> (or any root) to find them. The
+/// manifests double as copy-paste authoring examples.
+///
+/// <para>Manifest shape (<c>fixture.json</c>):</para>
+/// <code>
+/// {
+///   "id": "geometry-buffer-point",
+///   "process": "geometry.buffer",
+///   "description": "Buffer a point by 10 units.",
+///   "mode": "geometry",          // "auto" | "geometry" | "scalarStructural"
+///   "tolerance": { "coordinate": 1e-6, "numeric": 1e-6 },
+///   "inputs": { "wkb": "...base64...", "srid": "4326", "distance": "10" },
+///   "inputFiles": { "wkb": "input.wkb" },   // file contents are base64-encoded into the input
+///   "golden": "golden.geojson"
+/// }
+/// </code>
+/// </summary>
 public static class GoldenFixtureLoader
 {
+    /// <summary>The conventional manifest file name within a fixture directory.</summary>
     public const string ManifestFileName = "fixture.json";
 
     private static readonly JsonSerializerOptions ManifestOptions = new()
@@ -17,6 +38,13 @@ public static class GoldenFixtureLoader
         AllowTrailingCommas = true,
     };
 
+    /// <summary>
+    /// Recursively discovers every fixture under <paramref name="rootDirectory"/> (each
+    /// directory containing a <see cref="ManifestFileName"/>), ordered by id.
+    /// </summary>
+    /// <param name="rootDirectory">The root to search (e.g. <c>samples/gp</c>).</param>
+    /// <returns>The loaded fixtures, ordered by id.</returns>
+    /// <exception cref="DirectoryNotFoundException">The root does not exist.</exception>
     public static IReadOnlyList<GoldenFixture> Discover(string rootDirectory)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(rootDirectory);
@@ -34,6 +62,13 @@ public static class GoldenFixtureLoader
         return fixtures.OrderBy(f => f.Id, StringComparer.Ordinal).ToArray();
     }
 
+    /// <summary>
+    /// Loads a single fixture from its <c>fixture.json</c> manifest path, resolving the golden
+    /// path and any input-file references relative to the manifest's directory and base64-
+    /// encoding referenced input files into the inputs the process reads.
+    /// </summary>
+    /// <param name="manifestPath">Path to the fixture manifest.</param>
+    /// <returns>The loaded fixture.</returns>
     public static GoldenFixture Load(string manifestPath)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(manifestPath);
@@ -130,6 +165,7 @@ public static class GoldenFixtureLoader
     };
 }
 
+/// <summary>JSON manifest model for a golden GP fixture (GP Devkit P6, issue #2127).</summary>
 internal sealed class GoldenFixtureManifest
 {
     [JsonPropertyName("id")]
@@ -157,6 +193,7 @@ internal sealed class GoldenFixtureManifest
     public string? Golden { get; set; }
 }
 
+/// <summary>JSON manifest model for the per-fixture tolerance override.</summary>
 internal sealed class GoldenToleranceManifest
 {
     [JsonPropertyName("coordinate")]

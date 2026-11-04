@@ -185,6 +185,7 @@ internal interface IAwsEcsClient
             "ECS task describe is not available on this client."));
 }
 
+// The provider stop reason is omitted so an operator message cannot carry it.
 internal sealed record AwsEcsStoppedTask
 {
     public required string LastStatus { get; init; }

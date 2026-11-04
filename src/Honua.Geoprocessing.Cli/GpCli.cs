@@ -20,8 +20,22 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Geoprocessing.Cli;
 
+/// <summary>
+/// The <c>honua gp</c> dev tool (GP Devkit, issue #2123): a headless, Redis-free
+/// geoprocessing dev loop. It builds the SAME managed + native GDAL
+/// <see cref="IProcessExecutor"/> set the serving/worker hosts register, then drives
+/// a single process directly through <see cref="GeoprocessingLocalRunner"/> — with
+/// NO Redis, NO job store, NO queue, and NO control plane — so the inner-loop GP
+/// edit/run cycle is sub-second and works fully offline. It is a dev tool only and is
+/// deliberately kept out of the AOT-published server surface.
+/// </summary>
 public static class GpCli
 {
+    /// <summary>
+    /// Parses argv and dispatches to a devkit verb (<c>list</c>, <c>run</c>, <c>reproduce</c>, and the others in <see cref="PrintUsage"/>).
+    /// </summary>
+    /// <param name="args">Process arguments (the verb plus its options).</param>
+    /// <returns>A process exit code: 0 success, non-zero on usage error or a failed run.</returns>
     public static async Task<int> RunAsync(string[] args)
     {
         ArgumentNullException.ThrowIfNull(args);
@@ -94,6 +108,19 @@ public static class GpCli
         return services.BuildServiceProvider();
     }
 
+    /// <summary>
+    /// Resolves the registered <see cref="IProcessExecutor"/> set for the local runner,
+    /// de-duplicating any process id claimed by BOTH a managed executor and a native GDAL
+    /// executor. In the real system the managed executors (server host) and the native GDAL
+    /// executors (worker host) run in SEPARATE processes, so an id handled by both — e.g.
+    /// <c>transform.reproject</c> (managed NTS reproject vs native <c>ogr2ogr</c>) — never
+    /// collides there. The devkit composes BOTH sets into one provider for a single offline
+    /// loop, so the overlap is resolved deterministically here: the managed executor wins (the
+    /// sub-second, binary-free default), and a native executor is dropped only when EVERY id it
+    /// handles is already owned by a managed executor. Its distinct <c>gdal.*</c> ids and the
+    /// <c>--real-worker</c> fidelity path are unaffected; a partial overlap is left for
+    /// <see cref="ProcessExecutorRouteTable"/> to surface as the authoring error it is.
+    /// </summary>
     private static List<IProcessExecutor> ResolveExecutors(ServiceProvider provider)
     {
         var all = provider.GetServices<IProcessExecutor>().ToList();
@@ -118,6 +145,11 @@ public static class GpCli
         return resolved;
     }
 
+    /// <summary>
+    /// One in-process local run against a scratch directory the caller created.
+    /// Same executor set as <c>honua gp run</c>, without a receipt directory, glass box,
+    /// or container probe.
+    /// </summary>
     internal static async Task<LocalRunResult> ExecuteLocalAsync(
         string processId,
         IReadOnlyDictionary<string, string> inputs,
@@ -216,6 +248,7 @@ public static class GpCli
         return 0;
     }
 
+    /// <summary>The runtime profile the registered executor for <paramref name="processId"/> accepts.</summary>
     private static string? ExecutorProfile(IEnumerable<IProcessExecutor> executors, string processId)
     {
         var executor = executors.FirstOrDefault(e => e.ProcessIds.Contains(processId, StringComparer.Ordinal));
@@ -229,6 +262,10 @@ public static class GpCli
             : null;
     }
 
+    /// <summary>
+    /// The machine facts runnability is judged against. The container probe shells out to
+    /// the container runtime, so it runs only on request (or when a run already resolved it).
+    /// </summary>
     private static GpEnvironmentProbe BuildProbe(bool probeContainer, bool? knownImageAvailability = null)
     {
         var configuration = GpContainerConfiguration.Create();
@@ -502,6 +539,11 @@ public static class GpCli
         return 0;
     }
 
+    /// <summary>
+    /// Writes <c>&lt;dir&gt;/&lt;runId&gt;/receipt.json</c> and <c>events.jsonl</c>
+    /// (<c>honua.gp.events/v1</c>, see docs/reference/gp-harness-events.v1.md) for a devkit
+    /// run. Returns the receipt path.
+    /// </summary>
     private static async Task<string> WriteRunReceiptAsync(string receiptRoot, LocalRunResult result, string runnerLabel)
     {
         var runId = Guid.NewGuid().ToString("N");
@@ -561,6 +603,19 @@ public static class GpCli
         return value is "1" or "true" or "TRUE" or "True" or "yes" or "on";
     }
 
+    /// <summary>
+    /// Resolves which GDAL command-runner mode <c>gp run</c> uses for native ops
+    /// (issue #2180), honoring an explicit <c>--real-worker</c>/<c>--in-process</c>
+    /// override and otherwise auto-selecting the container path only when the worker
+    /// image is already present locally (so the managed sub-second loop is never
+    /// blocked on a pull).
+    /// <list type="bullet">
+    /// <item><c>--real-worker</c> (force container): fails fast when the worker image is
+    /// absent so a developer who asked for full fidelity is not silently downgraded.</item>
+    /// <item><c>--in-process</c> (force fast): always the host CLIs.</item>
+    /// <item>default (auto): container when the image is available, else in-process.</item>
+    /// </list>
+    /// </summary>
     private static async Task<GdalProcessExecutorMode> ResolveGdalModeAsync(bool? forceContainer)
     {
         if (forceContainer == false)
@@ -591,6 +646,12 @@ public static class GpCli
         return imageAvailable ? GdalProcessExecutorMode.Container : GdalProcessExecutorMode.InProcess;
     }
 
+    /// <summary>
+    /// Renders the DEV-ONLY glass-box section (issue #2128): the phase/timeline, the
+    /// UNSANITIZED native command(s) with their real scratch paths and FULL stdout/stderr,
+    /// the scratch directories, an artifact preview, and a "repro locally" hint. This block
+    /// only ever prints when the run was driven under the explicit glass-box opt-in.
+    /// </summary>
     private static void PrintGlassBox(GlassBoxReport glassBox)
     {
         Console.WriteLine();
@@ -783,6 +844,10 @@ public static class GpCli
             : "Plan is INVALID — fix the errors above before submitting.");
     }
 
+    /// <summary>
+    /// Parses the shared <c>&lt;processId&gt; [--input f] [--param k=v ...] [--out f]</c>
+    /// argument shape used by both <c>run</c> and <c>plan</c>.
+    /// </summary>
     private static ProcessArgs ParseProcessArgs(string[] args, string usage)
     {
         if (args.Length == 0)
@@ -844,6 +909,13 @@ public static class GpCli
         return new ProcessArgs(processId, inputPath, outPath, glassBoxRequested, forceContainer, inputs, receiptDir, noReceipt);
     }
 
+    /// <summary>
+    /// Binds <c>--input &lt;file&gt;</c>: reads the file, base64-encodes its bytes, and
+    /// assigns it to the process's primary file-like input (unless the caller already
+    /// supplied that key via <c>--param</c>). Returns the raw (decoded) byte length of
+    /// the supplied input so the plan size estimate has an anchor — 0 when no file
+    /// input was bound.
+    /// </summary>
     private static async Task<long> BindFileInputAsync(
         string processId,
         string? inputPath,
@@ -1290,6 +1362,10 @@ public static class GpCli
             Console.Error).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Default REST-client factory for the publish verb: a real <see cref="HttpClient"/> rooted at
+    /// the <c>--server</c> base URL, authenticated with the admin API key (or a bearer token).
+    /// </summary>
     private static WorkflowPackagePublishClient CreatePublishClient(GpPublishOptions options)
     {
         if (!Uri.TryCreate(options.Server, UriKind.Absolute, out var baseAddress))
@@ -1304,6 +1380,11 @@ public static class GpCli
         return new WorkflowPackagePublishClient(http, options.ApiKey, options.BearerToken);
     }
 
+    /// <summary>
+    /// Injects the DI registration line and the catalog <c>ProcessDefinition</c> for the new
+    /// process so it is registered + plannable. Reports (rather than fails) when an anchor is
+    /// missing so the author can wire the one line by hand from the printed note.
+    /// </summary>
     private static async Task InjectRegistrationAndCatalogAsync(
         string repoRoot,
         string processId,
@@ -1376,6 +1457,11 @@ public static class GpCli
         }
     }
 
+    /// <summary>
+    /// Resolves the repository root by walking up from the current directory looking for
+    /// <c>Honua.sln</c>, so the scaffolder writes files to the right place regardless of the
+    /// working directory inside the checkout.
+    /// </summary>
     private static string? ResolveRepoRoot()
     {
         // dir.FullName is always an absolute directory path from DirectoryInfo, and "Honua.sln"
@@ -1394,6 +1480,11 @@ public static class GpCli
         return null;
     }
 
+    /// <summary>
+    /// Resolves the GP fixtures root: the explicit <c>--root</c> when supplied, else the
+    /// first <c>samples/gp</c> found by walking up from the current directory (so the tool
+    /// works from anywhere in a checkout).
+    /// </summary>
     private static string? ResolveFixtureRoot(string? explicitRoot)
     {
         if (explicitRoot is not null)
@@ -1429,6 +1520,11 @@ public static class GpCli
         string? ReceiptDir = null,
         bool NoReceipt = false);
 
+    /// <summary>
+    /// Resolves the parameter name that <c>--input &lt;file&gt;</c> binds to: the
+    /// first required file-like (<c>Wkb</c>/<c>WkbArray</c>/<c>Text</c>) parameter the
+    /// process declares, or <c>null</c> when the process has none.
+    /// </summary>
     private static string? ResolveFileInputKey(ProcessDefinition? definition)
     {
         if (definition is null)
@@ -1575,4 +1671,8 @@ public static class GpCli
     }
 }
 
+/// <summary>
+/// Signals a CLI usage error that should print the message plus usage and exit
+/// non-zero, distinct from an executor-reported run failure.
+/// </summary>
 internal sealed class GpCliUsageException(string message) : Exception(message);

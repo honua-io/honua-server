@@ -23,6 +23,7 @@ internal sealed record AwsRdsRestoreCommand(
     int WaitSeconds,
     IReadOnlyList<string> SecurityGroupIds);
 
+// Describes and restores snapshots only. Deleting an instance is outside this client.
 internal sealed class AwsRdsCellRestoreClient : IDisposable
 {
     private readonly Lazy<IAmazonRDS> _client;
@@ -254,6 +255,7 @@ internal sealed class AwsRdsCellRestoreClient : IDisposable
     }
 }
 
+// The string this client reads and writes is secret material and must not be logged.
 internal sealed class AwsSecretStringClient : IDisposable
 {
     private readonly Lazy<IAmazonSecretsManager> _client;

@@ -13,55 +13,87 @@ using YamlDotNet.RepresentationModel;
 
 namespace Honua.Geoprocessing.Cli;
 
+/// <summary>The language a scaffolded custom-code project is written in.</summary>
 public enum GpProjectLanguage
 {
+    /// <summary>A Python <c>execute(context)</c> tool run by the Python harness.</summary>
     Python,
 
+    /// <summary>A .NET <c>IGeoprocessingTool</c> run by the .NET harness.</summary>
     Dotnet,
 }
 
+/// <summary>
+/// The <c>honua-gp.yaml</c> project descriptor <c>honua-gp-devkit init</c> writes next to
+/// a copied template. New projects share the release v1 descriptor, with local fixture
+/// settings in its authoring section. Existing local-only v0 descriptors remain readable.
+/// </summary>
 public sealed record GpProjectManifest
 {
+    /// <summary>The file name.</summary>
     public const string FileName = "honua-gp.yaml";
 
+    /// <summary>The descriptor schema identifier.</summary>
     public const string Schema = "honua.gp-process/v1";
 
+    /// <summary>The original local-only descriptor, still readable for existing projects.</summary>
     public const string LegacySchema = "honua.gp.project/v0";
 
+    /// <summary>The project name (lowercase letters, digits, hyphens).</summary>
     public required string Name { get; init; }
 
+    /// <summary>The language.</summary>
     public required GpProjectLanguage Language { get; init; }
 
+    /// <summary>The template the project was scaffolded from (<c>gp-python</c> or <c>gp-dotnet</c>).</summary>
     public string? Template { get; init; }
 
+    /// <summary>The honua-samples commit the template was taken from.</summary>
     public string? TemplateCommit { get; init; }
 
+    /// <summary>The honua-server checkout holding the harnesses, when <c>init</c> knew it.</summary>
     public string? HarnessRoot { get; init; }
 
+    /// <summary>Exact installed devkit payload version used by this project.</summary>
     public string? ToolchainVersion { get; init; }
 
+    /// <summary>Descriptor-relative dependency lock, when the descriptor names one.</summary>
     public string? DependencyLock { get; init; }
 
+    /// <summary>
+    /// The lock path discovery checks. A declared <see cref="DependencyLock"/> wins; otherwise
+    /// Python projects use <c>requirements.lock</c> and .NET projects use <c>process/packages.lock.json</c>.
+    /// </summary>
     public string DependencyLockPath => string.IsNullOrWhiteSpace(DependencyLock)
         ? Language == GpProjectLanguage.Python ? "requirements.lock" : "process/packages.lock.json"
         : DependencyLock;
 
+    /// <summary>The harness entrypoint (<c>module:function</c> or <c>Assembly::Namespace.Type</c>).</summary>
     public required string Entrypoint { get; init; }
 
+    /// <summary>The source directory (Python package directory or the .csproj's directory).</summary>
     public required string Source { get; init; }
 
+    /// <summary>The .NET project <c>test</c> builds first (builds the process and the harness).</summary>
     public string? Build { get; init; }
 
+    /// <summary>The built process assembly directory (dotnet).</summary>
     public string? AssemblyDir { get; init; }
 
+    /// <summary>The built local harness (dotnet).</summary>
     public string? HarnessDll { get; init; }
 
+    /// <summary>The fixture parameters file.</summary>
     public required string FixtureParams { get; init; }
 
+    /// <summary>Fixture input name to file path.</summary>
     public required IReadOnlyDictionary<string, string> FixtureInputs { get; init; }
 
+    /// <summary>The directory holding the expected artifacts and <c>golden.json</c>.</summary>
     public required string Expected { get; init; }
 
+    /// <summary>Loads and validates a descriptor.</summary>
+    /// <param name="path">The <c>honua-gp.yaml</c> path.</param>
     public static GpProjectManifest Load(string path)
     {
         var yaml = File.ReadAllText(path);
@@ -170,8 +202,15 @@ public sealed record GpProjectManifest
     }
 }
 
+/// <summary>
+/// A reader for the flat YAML subset the devkit writes: <c>key: value</c> scalars, nested
+/// maps by two-space indentation (flattened to dotted keys), comments and blank lines.
+/// Quoted scalars lose their quotes. Anything else is rejected rather than guessed.
+/// </summary>
 public static partial class GpFlatYaml
 {
+    /// <summary>Parses the subset into dotted keys.</summary>
+    /// <param name="text">The document.</param>
     public static IReadOnlyDictionary<string, string> Parse(string text)
     {
         ArgumentNullException.ThrowIfNull(text);
@@ -234,16 +273,33 @@ public static partial class GpFlatYaml
     private static partial Regex EntryPattern();
 }
 
+/// <summary>A file the scaffold writes.</summary>
+/// <param name="RelativePath">Path under the project root, forward slashes.</param>
+/// <param name="Contents">File bytes.</param>
 public sealed record GpProjectFile(string RelativePath, byte[] Contents);
 
+/// <summary>
+/// Scaffolds a custom-code project from the honua-samples templates (<c>templates/gp-python</c>,
+/// <c>templates/gp-dotnet</c>), which are embedded in the devkit byte for byte together with
+/// their <c>TEMPLATE-MANIFEST.json</c> so drift is checkable in both directions. The template
+/// already carries a working process, the input schema, fixtures, golden expectations, the
+/// dependency lock, golden tests, VS Code launch and task configurations and a container
+/// debug recipe; <c>init</c> adds only <c>honua-gp.yaml</c> (and, for .NET, a
+/// <c>Directory.Build.rsp</c> that points the template's build at the harness checkout).
+/// </summary>
 public static partial class GpCustomProjectScaffolder
 {
+    /// <summary>The honua-samples commit the embedded templates were copied from.</summary>
     public const string TemplateCommit = "04506bba05ed051139b9f248089e57df32f31880";
 
+    /// <summary>The honua-samples repository.</summary>
     public const string TemplateSource = "honua-io/honua-samples";
 
     private const string ResourcePrefix = "Templates/";
 
+    /// <summary>Validates a project name: lowercase letters, digits, single internal hyphens.</summary>
+    /// <param name="name">The candidate name.</param>
+    /// <param name="error">Why it was rejected.</param>
     public static bool TryValidateName(string? name, out string error)
     {
         if (string.IsNullOrWhiteSpace(name) || name.Length is < 2 or > 63 || !NamePattern().IsMatch(name))
@@ -256,8 +312,16 @@ public static partial class GpCustomProjectScaffolder
         return true;
     }
 
+    /// <summary>The template name for a language.</summary>
     public static string TemplateFor(GpProjectLanguage language) => language == GpProjectLanguage.Python ? "gp-python" : "gp-dotnet";
 
+    /// <summary>
+    /// Finds the honua-server checkout holding the harnesses: <paramref name="explicitRoot"/>,
+    /// then <c>HONUA_GP_HARNESS_ROOT</c> / <c>HONUA_SERVER_CHECKOUT</c>, then the bundled
+    /// project-local toolchain under <paramref name="startDirectory"/> when its recorded
+    /// version is this devkit and <paramref name="bundledToolchainVersion"/> asks for it.
+    /// No implicit checkout discovery.
+    /// </summary>
     public static string? ResolveHarnessRoot(string? explicitRoot, string startDirectory, string? bundledToolchainVersion = null)
     {
         foreach (var candidate in new[] { explicitRoot, Environment.GetEnvironmentVariable("HONUA_GP_HARNESS_ROOT"), Environment.GetEnvironmentVariable("HONUA_SERVER_CHECKOUT") })
@@ -283,6 +347,8 @@ public static partial class GpCustomProjectScaffolder
         => Directory.Exists(Path.Join(candidate, "docker", "worker-customcode-python", "harness")) &&
            Directory.Exists(Path.Join(candidate, "docker", "worker-customcode-dotnet", "harness"));
 
+    /// <summary>Lists the embedded files of a template (manifest included), forward-slash paths.</summary>
+    /// <param name="template">The template name.</param>
     public static IReadOnlyList<string> EmbeddedFiles(string template)
     {
         var prefix = ResourcePrefix + template + "/";
@@ -294,6 +360,9 @@ public static partial class GpCustomProjectScaffolder
             .ToList();
     }
 
+    /// <summary>Reads one embedded template file.</summary>
+    /// <param name="template">The template name.</param>
+    /// <param name="relativePath">The file path inside the template, forward slashes.</param>
     public static byte[] ReadEmbedded(string template, string relativePath)
     {
         var assembly = typeof(GpCustomProjectScaffolder).Assembly;
@@ -306,6 +375,12 @@ public static partial class GpCustomProjectScaffolder
         return buffer.ToArray();
     }
 
+    /// <summary>
+    /// Verifies the embedded template against its manifest: every manifest entry is present
+    /// with the recorded SHA-256, and nothing beyond the manifest and the manifest file is
+    /// embedded. Returns the problems found (empty when the template is intact).
+    /// </summary>
+    /// <param name="template">The template name.</param>
     public static IReadOnlyList<string> VerifyEmbedded(string template)
     {
         var problems = new List<string>();
@@ -338,6 +413,10 @@ public static partial class GpCustomProjectScaffolder
         return problems;
     }
 
+    /// <summary>Plans the files for a project: the template, verbatim, plus the devkit's descriptor.</summary>
+    /// <param name="language">Python or .NET.</param>
+    /// <param name="name">The validated project name.</param>
+    /// <param name="harnessRoot">The honua-server checkout holding the harnesses, or null when unknown.</param>
     public static IReadOnlyList<GpProjectFile> Plan(GpProjectLanguage language, string name, string? harnessRoot)
     {
         if (!TryValidateName(name, out var error))
@@ -364,6 +443,9 @@ public static partial class GpCustomProjectScaffolder
         return files;
     }
 
+    /// <summary>Writes a plan to disk; refuses to overwrite existing files.</summary>
+    /// <param name="projectDirectory">The project root.</param>
+    /// <param name="files">The planned files.</param>
     public static void Apply(string projectDirectory, IReadOnlyList<GpProjectFile> files)
     {
         ArgumentNullException.ThrowIfNull(files);
@@ -445,21 +527,41 @@ public static partial class GpCustomProjectScaffolder
     }
 }
 
+/// <summary>The outcome of <c>honua-gp-devkit test</c> for a custom-code project.</summary>
 public sealed record GpCustomProjectTestResult
 {
+    /// <summary>Whether every expected artifact matched.</summary>
     public required bool Passed { get; init; }
 
+    /// <summary>The receipt path of the run, when the harness produced one.</summary>
     public string? ReceiptPath { get; init; }
 
+    /// <summary>The harness run status.</summary>
     public string? Status { get; init; }
 
+    /// <summary>Per-artifact lines (PASS/FAIL/UPDATED/NOTE with the first difference).</summary>
     public required IReadOnlyList<string> Lines { get; init; }
 
+    /// <summary>A reason when the run itself failed before comparison.</summary>
     public string? Error { get; init; }
 }
 
+/// <summary>
+/// Runs a project's fixtures through the matching local harness and compares the published
+/// artifacts with <c>expected/</c>: JSON and GeoJSON structurally with a numeric tolerance,
+/// everything else by SHA-256, and the artifact named in <c>expected/golden.json</c> also
+/// byte-for-byte against its recorded digest. Failures name the first differing value and the
+/// receipt path. <c>--update</c> rewrites the expectations and the golden digest.
+/// </summary>
 public static class GpCustomProjectTester
 {
+    /// <summary>Runs the project's test.</summary>
+    /// <param name="projectDirectory">The project root holding <c>honua-gp.yaml</c>.</param>
+    /// <param name="harnessRoot">The honua-server checkout holding the harnesses.</param>
+    /// <param name="update">Whether to rewrite expectations instead of comparing.</param>
+    /// <param name="tolerance">Numeric tolerance for JSON comparison.</param>
+    /// <param name="probe">Machine facts. Null inspects this machine. The harness directory is already resolved; a missing runtime or lock fails before the process starts.</param>
+    /// <param name="cancellationToken">Cancellation.</param>
     public static async Task<GpCustomProjectTestResult> RunAsync(string projectDirectory, string harnessRoot, bool update, double tolerance = 1e-9, GpEnvironmentProbe? probe = null, CancellationToken cancellationToken = default)
     {
         // MSBuild identifies project instances and incremental outputs by their paths.
@@ -643,6 +745,11 @@ public static class GpCustomProjectTester
         }
     }
 
+    /// <summary>
+    /// Compares an expected file with a produced one. JSON/GeoJSON are compared structurally
+    /// (numbers within <paramref name="tolerance"/>, object key order ignored); other files
+    /// byte-for-byte. Returns the first difference, or null when equal.
+    /// </summary>
     public static string? Compare(string expectedPath, string producedPath, double tolerance)
     {
         var extension = Path.GetExtension(expectedPath).ToLowerInvariant();

@@ -5,6 +5,12 @@ using Honua.Geoprocessing.LocalRunner;
 
 namespace Honua.Geoprocessing.Testing;
 
+/// <summary>
+/// The outcome of running one golden GP test (GP Devkit P6, issue #2127): the process run
+/// itself, the golden comparison (when the run produced an artifact), and a classified
+/// terminal <see cref="Outcome"/>. <see cref="Passed"/> folds run success + golden match (or
+/// a successful update) into a single boolean for the assertion helper and the CLI.
+/// </summary>
 public sealed class GpGoldenTestResult
 {
     private GpGoldenTestResult(
@@ -21,19 +27,29 @@ public sealed class GpGoldenTestResult
         Artifact = artifact;
     }
 
+    /// <summary>The fixture that was run.</summary>
     public GoldenFixture Fixture { get; }
 
+    /// <summary>The classified terminal outcome.</summary>
     public GoldenTestOutcome Outcome { get; }
 
+    /// <summary>The underlying headless run result.</summary>
     public LocalRunResult Run { get; }
 
+    /// <summary>The golden comparison, or <c>null</c> when the run failed or was updated.</summary>
     public GoldenComparisonResult? Comparison { get; }
 
+    /// <summary>The decoded artifact payload, or <c>null</c> when no artifact was produced.</summary>
     public ArtifactPayload? Artifact { get; }
 
+    /// <summary>Whether the test passed: the golden matched, or the golden was regenerated.</summary>
     public bool Passed =>
         Outcome is GoldenTestOutcome.Matched or GoldenTestOutcome.Updated;
 
+    /// <summary>
+    /// A one-line, human-readable reason for the outcome (run error, comparison summary, or
+    /// a success note) suitable for CLI output and assertion messages.
+    /// </summary>
     public string Reason => Outcome switch
     {
         GoldenTestOutcome.Matched => "golden matched within tolerance",
@@ -46,6 +62,12 @@ public sealed class GpGoldenTestResult
         _ => "unknown outcome",
     };
 
+    /// <summary>
+    /// Renders a full multi-line failure report — the headline reason plus the located
+    /// comparison differences — for an assertion message. Empty when <see cref="Passed"/>.
+    /// </summary>
+    /// <param name="maxDifferences">Maximum difference lines to render.</param>
+    /// <returns>The formatted report, or an empty string on pass.</returns>
     public string FormatFailure(int maxDifferences = 20)
     {
         if (Passed)
@@ -87,17 +109,26 @@ public sealed class GpGoldenTestResult
         => new(fixture, GoldenTestOutcome.MissingGolden, run, comparison: null, artifact: null);
 }
 
+/// <summary>
+/// The classified terminal outcome of a golden GP test (GP Devkit P6, issue #2127).
+/// </summary>
 public enum GoldenTestOutcome
 {
+    /// <summary>The run succeeded and its artifact matched the golden within tolerance.</summary>
     Matched = 0,
 
+    /// <summary>The run succeeded but its artifact diverged from the golden beyond tolerance.</summary>
     Mismatch = 1,
 
+    /// <summary>The golden was regenerated from the produced artifact (update mode).</summary>
     Updated = 2,
 
+    /// <summary>The process run itself failed before producing an artifact.</summary>
     RunFailed = 3,
 
+    /// <summary>The run succeeded but published no artifact to compare.</summary>
     NoArtifact = 4,
 
+    /// <summary>No golden file exists yet for the fixture (and update mode was off).</summary>
     MissingGolden = 5,
 }
