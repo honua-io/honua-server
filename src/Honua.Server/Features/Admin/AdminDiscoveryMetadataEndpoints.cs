@@ -41,11 +41,11 @@ internal static class AdminDiscoveryMetadataEndpoints
         [FromServices] IMetadataV2GraphProvider provider) =>
         ReadAsync(context, provider, snapshot => DiscoveryMetadataTarget.ForService(snapshot, serviceName));
 
-    private static Task<IResult> UpdateLayerAsync(int layerId, [AsParameters] DiscoveryWriteContext write) =>
-        WriteAsync(write, snapshot => DiscoveryMetadataTarget.ForLayer(snapshot, layerId));
+    private static Task<IResult> UpdateLayerAsync(int layerId, DiscoveryMetadataUpdateRequest request, HttpContext context) =>
+        WriteAsync(context, request, snapshot => DiscoveryMetadataTarget.ForLayer(snapshot, layerId));
 
-    private static Task<IResult> UpdateServiceAsync(string serviceName, [AsParameters] DiscoveryWriteContext write) =>
-        WriteAsync(write, snapshot => DiscoveryMetadataTarget.ForService(snapshot, serviceName));
+    private static Task<IResult> UpdateServiceAsync(string serviceName, DiscoveryMetadataUpdateRequest request, HttpContext context) =>
+        WriteAsync(context, request, snapshot => DiscoveryMetadataTarget.ForService(snapshot, serviceName));
 
     private static async Task<IResult> ReadAsync(HttpContext context, IMetadataV2GraphProvider provider,
         Func<MetadataV2GraphSnapshot, DiscoveryMetadataTarget?> resolve)
@@ -55,29 +55,31 @@ internal static class AdminDiscoveryMetadataEndpoints
         return target is null ? Problem(context, 404, "Metadata target not found.") : Respond(snapshot, target);
     }
 
-    private static async Task<IResult> WriteAsync(DiscoveryWriteContext write,
+    private static async Task<IResult> WriteAsync(HttpContext context, DiscoveryMetadataUpdateRequest request,
         Func<MetadataV2GraphSnapshot, DiscoveryMetadataTarget?> resolve)
     {
-        var error = Validate(write.Request);
+        var error = Validate(request);
         if (error is not null)
-            return Problem(write.Context, 400, error);
-        var snapshot = await write.Store.GetCurrentAsync(write.Context.RequestAborted).ConfigureAwait(false);
+            return Problem(context, 400, error);
+        var store = context.RequestServices.GetRequiredService<IMetadataV2GraphStore>();
+        var snapshot = await store.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
         var target = resolve(snapshot);
         if (target is null)
-            return Problem(write.Context, 404, "Metadata target not found.");
-        if (!string.Equals(snapshot.Etag, write.Request.Etag, StringComparison.Ordinal))
-            return Problem(write.Context, 409, "Metadata changed. Reload before saving.");
+            return Problem(context, 404, "Metadata target not found.");
+        if (!string.Equals(snapshot.Etag, request.Etag, StringComparison.Ordinal))
+            return Problem(context, 409, "Metadata changed. Reload before saving.");
         MetadataV2GraphSnapshot saved;
         try
         {
-            saved = await write.Store.SaveAsync(target.Apply(snapshot.Graph, write.Request),
-                snapshot.Etag, write.Context.RequestAborted).ConfigureAwait(false);
+            saved = await store.SaveAsync(target.Apply(snapshot.Graph, request),
+                snapshot.Etag, context.RequestAborted).ConfigureAwait(false);
         }
         catch (MetadataV2GraphConcurrencyException)
         {
-            return Problem(write.Context, 409, "Metadata changed. Reload before saving.");
+            return Problem(context, 409, "Metadata changed. Reload before saving.");
         }
-        await write.Cache.InvalidateServiceCatalogAsync(null, null, write.Context.RequestAborted).ConfigureAwait(false);
+        var cache = context.RequestServices.GetRequiredService<OutputCacheInvalidationService>();
+        await cache.InvalidateServiceCatalogAsync(null, null, context.RequestAborted).ConfigureAwait(false);
         return Respond(saved, resolve(saved)!);
     }
 
@@ -107,11 +109,4 @@ internal static class AdminDiscoveryMetadataEndpoints
     private static IResult Problem(HttpContext context, int status, string detail) =>
         ProblemDetailsHelpers.CreateAdminProblem(context, status, detail);
 
-    internal sealed class DiscoveryWriteContext
-    {
-        [FromBody] public required DiscoveryMetadataUpdateRequest Request { get; init; }
-        public required HttpContext Context { get; init; }
-        [FromServices] public required IMetadataV2GraphStore Store { get; init; }
-        [FromServices] public required OutputCacheInvalidationService Cache { get; init; }
-    }
 }
