@@ -6,6 +6,7 @@ using System.Net;
 using System.Net.Sockets;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Internal;
+using Honua.Core.Features.Infrastructure.Validation;
 
 namespace Honua.GeoServicesRest.Features.FeatureStore.Services;
 
@@ -62,14 +63,14 @@ internal static class ArcGisRestOutboundGuard
         Func<string, CancellationToken, Task<IPAddress[]>> hostAddressResolver,
         CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(host) || IsLocalhostHostName(host))
+        if (string.IsNullOrWhiteSpace(host) || OutboundHttpUrlValidator.IsLocalhostHostName(host))
         {
             throw new ArgumentException(DisallowedNetworkAddressMessage);
         }
 
         if (IPAddress.TryParse(host, out var literalAddress))
         {
-            if (IsPrivateOrReservedAddressCore(literalAddress))
+            if (OutboundHttpUrlValidator.IsPrivateOrReservedAddress(literalAddress))
             {
                 throw new ArgumentException(DisallowedNetworkAddressMessage);
             }
@@ -92,17 +93,13 @@ internal static class ArcGisRestOutboundGuard
             throw new ArgumentException(DisallowedNetworkAddressMessage);
         }
 
-        if (addresses.Any(IsPrivateOrReservedAddressCore))
+        if (addresses.Any(OutboundHttpUrlValidator.IsPrivateOrReservedAddress))
         {
             throw new ArgumentException(DisallowedNetworkAddressMessage);
         }
 
         return addresses;
     }
-
-    public static bool IsLocalhostHostName(string host)
-        => string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase)
-           || host.EndsWith(".localhost", StringComparison.OrdinalIgnoreCase);
 
     private static async ValueTask<Stream> ConnectWithPinnedDnsAsync(
         SocketsHttpConnectionContext context,
@@ -142,153 +139,4 @@ internal static class ArcGisRestOutboundGuard
             "Unable to establish a secure connection to the ArcGIS service host.", lastException);
     }
 
-    /// <summary>
-    /// Returns <c>true</c> when <paramref name="address"/> falls in a private,
-    /// loopback, link-local, CGNAT, ULA, documentation, benchmarking, or otherwise
-    /// reserved range that the federated provider must never target. Exposed so the
-    /// URL validator can apply the same check at configuration time (defense in
-    /// depth) and not only at connect time.
-    /// </summary>
-    public static bool IsPrivateOrReservedAddress(IPAddress address)
-    {
-        ArgumentNullException.ThrowIfNull(address);
-        return IsPrivateOrReservedAddressCore(address);
-    }
-
-    private static bool IsPrivateOrReservedAddressCore(IPAddress address)
-    {
-        if (IPAddress.IsLoopback(address))
-        {
-            return true;
-        }
-
-        if (address.IsIPv4MappedToIPv6)
-        {
-            address = address.MapToIPv4();
-        }
-
-        if (address.AddressFamily == AddressFamily.InterNetwork)
-        {
-            var bytes = address.GetAddressBytes();
-
-            // 0.0.0.0/8 — "this network"
-            if (bytes[0] == 0)
-            {
-                return true;
-            }
-
-            // 10.0.0.0/8 — private
-            if (bytes[0] == 10)
-            {
-                return true;
-            }
-
-            // 100.64.0.0/10 — CGNAT
-            if (bytes[0] == 100 && bytes[1] >= 64 && bytes[1] <= 127)
-            {
-                return true;
-            }
-
-            // 127.0.0.0/8 — loopback
-            if (bytes[0] == 127)
-            {
-                return true;
-            }
-
-            // 169.254.0.0/16 — link-local (cloud metadata 169.254.169.254)
-            if (bytes[0] == 169 && bytes[1] == 254)
-            {
-                return true;
-            }
-
-            // 172.16.0.0/12 — private
-            if (bytes[0] == 172 && bytes[1] >= 16 && bytes[1] <= 31)
-            {
-                return true;
-            }
-
-            // 192.0.0.0/24 — IETF protocol assignments
-            if (bytes[0] == 192 && bytes[1] == 0 && bytes[2] == 0)
-            {
-                return true;
-            }
-
-            // 192.0.2.0/24 — TEST-NET-1 documentation
-            if (bytes[0] == 192 && bytes[1] == 0 && bytes[2] == 2)
-            {
-                return true;
-            }
-
-            // 192.168.0.0/16 — private
-            if (bytes[0] == 192 && bytes[1] == 168)
-            {
-                return true;
-            }
-
-            // 198.18.0.0/15 — benchmarking
-            if (bytes[0] == 198 && (bytes[1] == 18 || bytes[1] == 19))
-            {
-                return true;
-            }
-
-            // 198.51.100.0/24 — TEST-NET-2 documentation
-            if (bytes[0] == 198 && bytes[1] == 51 && bytes[2] == 100)
-            {
-                return true;
-            }
-
-            // 203.0.113.0/24 — TEST-NET-3 documentation
-            if (bytes[0] == 203 && bytes[1] == 0 && bytes[2] == 113)
-            {
-                return true;
-            }
-
-            // 224.0.0.0/4 multicast + 240.0.0.0/4 reserved
-            if (bytes[0] >= 224)
-            {
-                return true;
-            }
-        }
-        else if (address.AddressFamily == AddressFamily.InterNetworkV6)
-        {
-            var bytes = address.GetAddressBytes();
-
-            if (address.Equals(IPAddress.IPv6None) || address.Equals(IPAddress.IPv6Loopback))
-            {
-                return true;
-            }
-
-            // fe80::/10 — link-local
-            if (bytes[0] == 0xfe && (bytes[1] & 0xc0) == 0x80)
-            {
-                return true;
-            }
-
-            // fec0::/10 — deprecated site-local
-            if (bytes[0] == 0xfe && (bytes[1] & 0xc0) == 0xc0)
-            {
-                return true;
-            }
-
-            // fc00::/7 — unique local addresses
-            if ((bytes[0] & 0xfe) == 0xfc)
-            {
-                return true;
-            }
-
-            // 2001:db8::/32 — documentation
-            if (bytes[0] == 0x20 && bytes[1] == 0x01 && bytes[2] == 0x0d && bytes[3] == 0xb8)
-            {
-                return true;
-            }
-
-            // ff00::/8 — multicast
-            if (bytes[0] == 0xff)
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
 }
