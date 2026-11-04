@@ -29,7 +29,8 @@ internal static class FolderEndpoints
         var gate = context.RequestServices.GetRequiredService<OperatorApprovalGate>();
         var denial = await gate.EvaluateAuthorizationAsync(context, OperatorResourceType.Catalog, OperatorOperation.Read).ConfigureAwait(false);
         if (denial is not null) return denial;
-        var snapshot = await Store(context).GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
+        var provider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
+        var snapshot = await provider.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
         context.Response.Headers.ETag = snapshot.Etag;
         var folders = snapshot.Graph.Folders.Where(f => !f.Deleted &&
             MetadataV2ServicePaths.SameTenant(f.Metadata.Tenant, Tenant(context))).ToArray();
@@ -90,15 +91,18 @@ internal static class FolderEndpoints
         if (denied is not null) return denied;
         if (context.Request.Headers.IfMatch.Count != 1 || string.IsNullOrWhiteSpace(context.Request.Headers.IfMatch))
             return Results.Problem(statusCode: 428, detail: "The current snapshot ETag is required in If-Match.");
+        var store = context.RequestServices.GetService<IMetadataV2GraphStore>();
+        if (store is null)
+            return Results.Problem(statusCode: 503, detail: "Folder mutations are unavailable on this read-only metadata catalog.");
         try
         {
-            var snapshot = await Store(context).GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
+            var snapshot = await store.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
             if (snapshot.Etag != context.Request.Headers.IfMatch.ToString())
                 return Results.Problem(statusCode: 412, detail: "The metadata snapshot has changed. Refresh and retry.");
             var changed = mutation(snapshot.Graph);
             var denial = await AuthorizeAffectedServices(context, snapshot.Graph, changed).ConfigureAwait(false);
             if (denial is not null) return denial;
-            var saved = await Store(context).SaveAsync(changed.Graph, snapshot.Etag, context.RequestAborted).ConfigureAwait(false);
+            var saved = await store.SaveAsync(changed.Graph, snapshot.Etag, context.RequestAborted).ConfigureAwait(false);
             context.Response.Headers.ETag = saved.Etag;
             var logger = context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("FolderMutations");
             FolderAuditLog.Mutated(logger, context.Request.Method, saved.Graph.Revision);
@@ -163,9 +167,6 @@ internal static class FolderEndpoints
 
     private static string? Tenant(HttpContext context)
         => MetadataV2ServicePaths.NormalizeTenant(context.RequestServices.GetService<ITenantContext>()?.TenantId);
-
-    private static IMetadataV2GraphStore Store(HttpContext context)
-        => context.RequestServices.GetRequiredService<IMetadataV2GraphStore>();
 
     private sealed record FolderMutation(MetadataV2Graph Graph, MetadataV2Folder? Folder, int Status = 200)
     {

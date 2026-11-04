@@ -21608,6 +21608,9 @@
           },
           "428": {
             "description": "If-Match is required"
+          },
+          "503": {
+            "description": "Folder mutation is unavailable on a read-only metadata catalog."
           }
         },
         "requestBody": {
@@ -21689,6 +21692,9 @@
           },
           "428": {
             "description": "If-Match is required"
+          },
+          "503": {
+            "description": "Folder mutation is unavailable on a read-only metadata catalog."
           }
         },
         "requestBody": {
@@ -21753,6 +21759,9 @@
           },
           "428": {
             "description": "If-Match is required"
+          },
+          "503": {
+            "description": "Folder mutation is unavailable on a read-only metadata catalog."
           }
         }
       }
@@ -21809,6 +21818,9 @@
                 "description": "Current graph snapshot ETag; pass unchanged as If-Match on the next mutation."
               }
             }
+          },
+          "503": {
+            "description": "Folder mutation is unavailable on a read-only metadata catalog."
           }
         },
         "requestBody": {
