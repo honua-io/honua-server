@@ -9,6 +9,7 @@ using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
 using Honua.Infrastructure.Events;
+using Honua.Infrastructure.Security;
 using Honua.Infrastructure.Validation;
 using Honua.Plugins.Abstractions;
 using Honua.Protocols.GeoServices.FeatureServer;
@@ -36,8 +37,8 @@ public sealed class FeatureServerCalculateDurableCommitTests
         transaction.CommitAsync(Arg.Any<CancellationToken>())
             .Returns(FeatureWriterTransactionCommitOutcome.Committed);
         var handler = CreateHandler(store);
-        var committedScope = new ApplyEditsIdempotencyScope("svc", 1, "user", "calc-key-0");
-        var idleScope = new ApplyEditsIdempotencyScope("svc", 1, "user", "calc-key-idle");
+        var committedScope = new ApplyEditsIdempotencyScope("svc", 1, new IdempotencyCaller("none", "user"), "calc-key-0");
+        var idleScope = new ApplyEditsIdempotencyScope("svc", 1, new IdempotencyCaller("none", "user"), "calc-key-idle");
         store.Hold(committedScope.IdempotencyKey);
         store.Hold(idleScope.IdempotencyKey);
         var ambient = new AmbientFeatureEditTransaction { Transaction = transaction };
@@ -63,7 +64,7 @@ public sealed class FeatureServerCalculateDurableCommitTests
         transaction.CommitAsync(Arg.Any<CancellationToken>())
             .Returns(FeatureWriterTransactionCommitOutcome.Committed);
         var handler = CreateHandler(store);
-        var scope = new ApplyEditsIdempotencyScope("svc", 1, "user", "calc-key-hook");
+        var scope = new ApplyEditsIdempotencyScope("svc", 1, new IdempotencyCaller("none", "user"), "calc-key-hook");
         store.Hold(scope.IdempotencyKey);
         var ambient = new AmbientFeatureEditTransaction { Transaction = transaction };
         ambient.HeldReservations.Add((scope, "token-hook"));

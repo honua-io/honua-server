@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Infrastructure.Security;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Protocols.GeoServices.FeatureServer.Services;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -31,7 +32,7 @@ public sealed class ApplyEditsIdempotencyStoreTests
             cache: null,
             NullLogger<DistributedApplyEditsIdempotencyStore>.Instance);
 
-        var scope = new ApplyEditsIdempotencyScope("svc", 0, "alice", "key-race");
+        var scope = new ApplyEditsIdempotencyScope("svc", 0, new IdempotencyCaller("none", "alice"), "key-race");
 
         // Act: fire 10 concurrent reserve calls.
         var tasks = Enumerable.Range(0, 10)
@@ -57,7 +58,7 @@ public sealed class ApplyEditsIdempotencyStoreTests
             cache: null,
             NullLogger<DistributedApplyEditsIdempotencyStore>.Instance);
 
-        var scope = new ApplyEditsIdempotencyScope("svc", 0, "alice", "key-sentinel");
+        var scope = new ApplyEditsIdempotencyScope("svc", 0, new IdempotencyCaller("none", "alice"), "key-sentinel");
 
         var reserved = await store.TryReserveAsync(scope);
         reserved.Should().NotBeNull("first reserve must succeed");
@@ -77,7 +78,7 @@ public sealed class ApplyEditsIdempotencyStoreTests
             cache: null,
             NullLogger<DistributedApplyEditsIdempotencyStore>.Instance);
 
-        var scope = new ApplyEditsIdempotencyScope("svc", 0, "alice", "key-full");
+        var scope = new ApplyEditsIdempotencyScope("svc", 0, new IdempotencyCaller("none", "alice"), "key-full");
         var expected = BuildTestResponse();
 
         var reserved = await store.TryReserveAsync(scope);
@@ -107,7 +108,7 @@ public sealed class ApplyEditsIdempotencyStoreTests
         var store = new DistributedApplyEditsIdempotencyStore(
             cache: null,
             NullLogger<DistributedApplyEditsIdempotencyStore>.Instance);
-        var scope = new ApplyEditsIdempotencyScope("svc", 0, "alice", "key-owned");
+        var scope = new ApplyEditsIdempotencyScope("svc", 0, new IdempotencyCaller("none", "alice"), "key-owned");
         var owner = await store.TryReserveAsync(scope);
         owner.Should().NotBeNull();
 
@@ -128,7 +129,7 @@ public sealed class ApplyEditsIdempotencyStoreTests
             cache: null,
             NullLogger<DistributedApplyEditsIdempotencyStore>.Instance,
             timeProvider: time);
-        var scope = new ApplyEditsIdempotencyScope("svc", 0, "alice", "key-slow");
+        var scope = new ApplyEditsIdempotencyScope("svc", 0, new IdempotencyCaller("none", "alice"), "key-slow");
         var slow = await store.TryReserveAsync(scope);
         slow.Should().NotBeNull();
 
@@ -156,7 +157,7 @@ public sealed class ApplyEditsIdempotencyStoreTests
             NullLogger<DistributedApplyEditsIdempotencyStore>.Instance,
             reservationWindow: window,
             timeProvider: time);
-        var scope = new ApplyEditsIdempotencyScope("svc", 0, "alice", "key-long");
+        var scope = new ApplyEditsIdempotencyScope("svc", 0, new IdempotencyCaller("none", "alice"), "key-long");
         (await store.TryReserveAsync(scope)).Should().NotBeNull();
 
         time.Advance(TimeSpan.FromMinutes(10));
