@@ -16,7 +16,7 @@ plane by typed artifact reference.
 
 ## Context
 
-Operating a GIS server — deploy, upgrade, scale, run geoprocessing, tune, troubleshoot, roll back — is the platform's sharpest wedge against ArcGIS Server. ArcGIS makes the *human* the control loop: you monitor, diagnose, fix, scale, and upgrade a Byzantine, stateful, click-configured stack by hand. Honua's opportunity is to close that loop so the operator **supervises** instead of operates.
+Operating a GIS server — deploy, upgrade, scale, run geoprocessing, tune, troubleshoot, roll back — is the platform's sharpest wedge against GeoServices REST server. GeoServices REST makes the *human* the control loop: you monitor, diagnose, fix, scale, and upgrade a Byzantine, stateful, click-configured stack by hand. Honua's opportunity is to close that loop so the operator **supervises** instead of operates.
 
 The control plane already abstracts substrates via two backend interfaces (`src/Honua.Core/Features/ControlPlane/Abstractions/OperationInterfaces.cs`):
 
@@ -65,9 +65,9 @@ The `honua-devops` ops-brain (diagnose / tune / upgrade) proposes catalog diffs 
 ## Consequences
 
 - **Portability**: identical ops semantics on VM / on-prem / air-gapped / K8s / serverless — the topology-neutral promise made real.
-- **Uniformity**: one reviewed-diff-through-one-pipeline model for all ops; the moat is the model + encoded GIS-ops expertise, not any cloud's primitive. Esri (stateful pet, in-place patch) cannot retrofit it.
+- **Uniformity**: one reviewed-diff-through-one-pipeline model for all ops; the moat is the model + encoded GIS-ops expertise, not any cloud's primitive. GeoServices REST (stateful pet, in-place patch) cannot retrofit it.
 - **Prerequisites**: close local-disk statelessness leaks (stage-to-scratch, externalize outputs); adopt expand/contract authoring discipline; verify against real cloud (see below).
-- **Migration wedge compounds**: "import your ArcGIS services, then never touch a server again."
+- **Migration wedge compounds**: "import your GeoServices REST services, then never touch a server again."
 
 ## Alternatives considered
 - **AWS/K8s-native blue/green as the primitive** — rejected: couples ops to a substrate, breaks on-prem/air-gapped, unnecessary given stateless compute.

@@ -13,7 +13,7 @@ resolves to the `databricks` provider is read through this implementation.
 
 > **Status: best-effort, read-only.** Databricks has no first-class .NET ADO.NET
 > driver, so this provider is an HTTP read-through adapter over the Databricks **SQL
-> Statement Execution REST API**, closer in shape to the ArcGIS REST provider than to
+> Statement Execution REST API**, closer in shape to the GeoServices REST provider than to
 > the in-process RDBMS providers. A hardening follow-up is expected. Read the
 > [limitations](#limitations) before relying on it in production.
 
@@ -153,10 +153,10 @@ Any other filter geometry is bound as a named string parameter (WKB hex) and par
 set and matches the layer; otherwise it is the layer SRID. A filter SRID that differs from
 the layer SRID is rejected. This provider does not transform across SRIDs.
 
-`esriSpatialRelIntersects` and `esriSpatialRelDisjoint` lead with the feature column.
-`esriSpatialRelContains` and `esriSpatialRelWithin` lead with the filter geometry, matching
-Esri semantics (`st_contains(filter, feature)` / `st_within(filter, feature)`).
-`esriSpatialRelEnvelopeIntersects` is
+The `esriSpatialRelIntersects` and `esriSpatialRelDisjoint` operators lead with the feature column.
+The `esriSpatialRelContains` and `esriSpatialRelWithin` operators lead with the filter geometry,
+so the filter geometry is the first argument to `st_contains` and `st_within`.
+The `esriSpatialRelEnvelopeIntersects` operator is
 `st_intersects(st_envelope(column), st_envelope(filter))`. Distance and nearest-neighbor
 relationships are not translated.
 

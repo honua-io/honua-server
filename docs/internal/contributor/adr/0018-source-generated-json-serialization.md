@@ -18,7 +18,7 @@ Traditional JSON serialization approaches have limitations:
 
 The application serves various JSON formats:
 - GeoJSON for OGC API Features
-- Esri JSON for GeoServices REST
+- GeoServices REST JSON
 - OData JSON for OData v4 protocol
 - Custom administrative and configuration APIs
 
@@ -71,7 +71,7 @@ internal partial class ODataJsonContext : JsonSerializerContext
 
 **Protocol-Specific Optimizations**
 - GeoJSON: Optimized coordinate array handling
-- Esri JSON: Efficient geometry serialization
+- GeoServices REST JSON: Efficient geometry serialization
 - OData: Metadata-aware serialization
 
 ## Consequences
@@ -112,7 +112,6 @@ internal partial class ODataJsonContext : JsonSerializerContext
 ```csharp
 [JsonSerializable(typeof(FeatureSet))]
 [JsonSerializable(typeof(Feature))]
-[JsonSerializable(typeof(EsriGeometry))]
 internal partial class FeatureServerJsonContext : JsonSerializerContext { }
 ```
 

@@ -36,9 +36,9 @@ on the same missing piece:
    split-screen application is not expressible regardless of which components
    exist.
 
-3. **Esri migration.** `honua-sdk-js/src/migration/widget-dispositions.ts` is a
+3. **GeoServices REST migration.** `honua-sdk-js/src/migration/widget-dispositions.ts` is a
    real disposition matrix — 25 `automated`, 14 `compat-shim`, 4 `assisted` —
-   codemodding ArcGIS widgets onto `@honua/app-platform/web-components`. Every
+   codemodding GeoServices REST widgets onto `@honua/app-platform/web-components`. Every
    entry is map-domain, and the `no-equivalent` bucket is 3D scene analysis
    (Daylight, LineOfSight, ShadowCast, Slice, Weather). Application chrome is
    not merely uncovered; it is not represented in the matrix even as a gap.
@@ -49,7 +49,7 @@ on the same missing piece:
    manifests, and submission idempotency. The *document* format exists. There
    is no rendering vocabulary to put it on a screen.
 
-Esri solves this for itself with Calcite Design System. Building an equivalent
+GeoServices REST solves this for itself with Calcite Design System. Building an equivalent
 is a multi-year effort with a dedicated team, it is not where Honua
 differentiates, and a home-grown set would arrive without the accessibility
 and internationalization evidence that government and enterprise procurement
@@ -222,16 +222,6 @@ concern is that Adobe's primary consumer is React Spectrum, which makes the
 long-term priority of the framework-agnostic sibling less certain than UI5's,
 where web components *are* the vendor's strategy for non-native consumers.
 
-**Esri Calcite Design System** is the best functional fit for map-adjacent
-chrome and carries genuine migration affinity: a hand-coded ArcGIS Maps SDK
-application's chrome is frequently the majority of its source, and rendering
-Calcite would let that markup survive migration with only map and data calls
-changing. It was rejected as the primary set because it is a hard runtime
-dependency on a competitor's roadmap — the Apache-2.0 grant protects the
-versions already held, not release cadence, breaking changes, or direction —
-and because every Honua application would then carry a competitor's visual
-identity. It is retained in a narrower role; see below.
-
 **Shoelace / Web Awesome** was rejected because the successor project moved a
 substantial share of components behind a paid Pro tier, leaving the MIT
 Shoelace 2.x line as a frozen predecessor.
@@ -251,7 +241,7 @@ requires.
 ## Calcite on the migration path only
 
 `widget-dispositions.ts` already treats `compat-shim` as a first-class
-disposition with 14 existing entries. Migrated hand-coded ArcGIS applications
+disposition with 14 existing entries. Migrated hand-coded GeoServices REST applications
 may therefore retain their Calcite markup through a compat shim on the
 migration path, without Calcite becoming a dependency of new-application
 authoring and without it entering the composition vocabulary. This preserves
@@ -326,7 +316,7 @@ more of its own runtime than a plain Lit library — bootstrap, theming, i18n an
 theme asset loading — which is more integration surface and is the part most
 likely to misbehave under CSP or in the Blazor host. Public-facing embeds pay a
 bundle-weight cost that requires per-component imports and ongoing measurement.
-And hand-coded ArcGIS chrome gains no migration affinity except through the
+And hand-coded GeoServices REST chrome gains no migration affinity except through the
 compat shim.
 
 ## Non-goals

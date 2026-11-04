@@ -11,8 +11,8 @@ the V2 model can losslessly round-trip every concept these standards expose.
 - ⊘ — concept doesn't apply to the standard
 
 ## Scope
-- **APIs**: OGC API - Features / Maps / Tiles / Coverages / Records / Styles / Common; WMS 1.3.0; WMTS 1.0.0; WFS 2.0; WCS 2.0; Esri FeatureServer / MapServer / ImageServer (GeoServices REST); STAC API 1.0; OData v4
-- **Package formats**: GeoJSON (RFC 7946); GeoParquet; FlatGeobuf; GeoPackage; KML; GML 3.2.1; Shapefile; MBTiles; PMTiles; Cloud-Optimized GeoTIFF; Zarr; NetCDF; STAC items/collections; Esri JSON
+- **APIs**: OGC API - Features / Maps / Tiles / Coverages / Records / Styles / Common; WMS 1.3.0; WMTS 1.0.0; WFS 2.0; WCS 2.0; GeoServices REST FeatureServer / MapServer / ImageServer (GeoServices REST); STAC API 1.0; OData v4
+- **Package formats**: GeoJSON (RFC 7946); GeoParquet; FlatGeobuf; GeoPackage; KML; GML 3.2.1; Shapefile; MBTiles; PMTiles; Cloud-Optimized GeoTIFF; Zarr; NetCDF; STAC items/collections; GeoServices REST JSON
 
 ---
 
@@ -24,7 +24,7 @@ the V2 model can losslessly round-trip every concept these standards expose.
 | `Resource.Metadata.Name` (slug, machine-friendly) | ✅ |
 | `Resource.Metadata.Title` (human-readable) | ✅ |
 | `Publication.Identifier.Value` (protocol-facing route key) | ✅ |
-| `Publication.Identifier.IsNumeric` (Esri-style numeric vs name) | ✅ |
+| `Publication.Identifier.IsNumeric` (GeoServices REST-style numeric vs name) | ✅ |
 | `Publication.Identifier.PathOverride` (full URL path override) | ✅ |
 
 | Standard | Maps to |
@@ -37,9 +37,9 @@ the V2 model can losslessly round-trip every concept these standards expose.
 | WMTS | `<ows:Identifier>` ← `Identifier.Value`; `<ows:Title>` ← `Metadata.Title` |
 | WFS 2.0 | `<wfs:Name>` ← namespaced (`prefix:Metadata.Name`); `<wfs:Title>` ← `Metadata.Title` |
 | WCS 2.0 | `<wcs:CoverageId>` ← `Identifier.Value`; `<ows:Title>` ← `Metadata.Title` |
-| Esri FeatureServer | layer `id` ← `Identifier.LayerIndex`; `name` ← `Metadata.Name` |
-| Esri MapServer | layer `id` ← `Identifier.LayerIndex`; `name` ← `Metadata.Name` |
-| Esri ImageServer | service-level; `name` ← `Metadata.Name` |
+| GeoServices REST FeatureServer | layer `id` ← `Identifier.LayerIndex`; `name` ← `Metadata.Name` |
+| GeoServices REST MapServer | layer `id` ← `Identifier.LayerIndex`; `name` ← `Metadata.Name` |
+| GeoServices REST ImageServer | service-level; `name` ← `Metadata.Name` |
 | STAC | `collection.id` ← `Metadata.Id`; `collection.title` ← `Metadata.Title` |
 | OData | entity set name ← `Metadata.Name`; entity type ← derived |
 | GeoJSON | n/a at feature level; collection-level via `properties.id` |
@@ -75,9 +75,9 @@ the V2 model can losslessly round-trip every concept these standards expose.
 | WMTS | `<ows:Abstract>` ← `Description`; `<ows:Keywords>` ← `Keywords` |
 | WFS 2.0 | `<wfs:Abstract>` ← `Description`; `<ows:Keywords>` |
 | WCS 2.0 | `<ows:Abstract>` ← `Description`; `<ows:Keywords>` |
-| Esri FeatureServer | `serviceDescription`, `description`, `documentInfo.Keywords`, `documentInfo.Subject`, `documentInfo.Category` |
-| Esri MapServer | same plus `mapName`, `documentInfo.AntialiasingMode` |
-| Esri ImageServer | `description`, `serviceDataType`, `documentInfo.*` |
+| GeoServices REST FeatureServer | `serviceDescription`, `description`, `documentInfo.Keywords`, `documentInfo.Subject`, `documentInfo.Category` |
+| GeoServices REST MapServer | same plus `mapName`, `documentInfo.AntialiasingMode` |
+| GeoServices REST ImageServer | `description`, `serviceDataType`, `documentInfo.*` |
 | STAC | `collection.description` ← required; `collection.keywords` ← optional; `collection.themes` ← optional |
 | OData | `<Summary>`, `<LongDescription>` annotations on EntityType/EntitySet |
 | GeoJSON | n/a |
@@ -107,7 +107,7 @@ the V2 model can losslessly round-trip every concept these standards expose.
 |---|---|
 | OGC API - Features | `collection.itemType`, links `rel=alternate` for versioning; ETag headers ← Graph.Revision-derived |
 | OGC API - Records | `record.created`, `record.updated`, `record.published` |
-| Esri FeatureServer | `currentVersion`, `serviceItemId`, layer-level `cimVersion` |
+| GeoServices REST FeatureServer | `currentVersion`, `serviceItemId`, layer-level `cimVersion` |
 | STAC | `properties.datetime`, `properties.created`, `properties.updated` (Item); `extent.temporal.interval[0]` (Collection) |
 | OData | `@odata.etag` ← per-entity hash |
 | GeoPackage | `gpkg_contents.last_change` |
@@ -133,8 +133,8 @@ the V2 model can losslessly round-trip every concept these standards expose.
 | OGC API - Records | `record.license` (SPDX) — **required for many catalogs** |
 | WMS | `<AttributionURL>`, `<AccessConstraints>`, `<Fees>` |
 | WMTS | `<ows:AccessConstraints>`, `<ows:Fees>` |
-| Esri FeatureServer | `copyrightText`, `documentInfo.Credits` |
-| Esri MapServer | `copyrightText`, `mapName`, `documentInfo.Credits` |
+| GeoServices REST FeatureServer | `copyrightText`, `documentInfo.Credits` |
+| GeoServices REST MapServer | `copyrightText`, `mapName`, `documentInfo.Credits` |
 | STAC | `collection.license` (**required**), `collection.providers[]` with `roles`, `attribution` |
 | OData | `<Annotation Term="org.example.License">` |
 | GeoPackage | `gpkg_contents.description` (free-form) |
@@ -159,7 +159,7 @@ the V2 model can losslessly round-trip every concept these standards expose.
 | WMS | `<ContactInformation>` with `<ContactPersonPrimary>`, `<ContactAddress>`, `<ContactVoiceTelephone>`, `<ContactElectronicMailAddress>` |
 | WMTS | `<ows:ServiceContact>` |
 | WFS / WCS | same `<ows:ServiceContact>` |
-| Esri | `documentInfo.Author`, `documentInfo.Credits` |
+| GeoServices REST | `documentInfo.Author`, `documentInfo.Credits` |
 | STAC | `providers[].name`, `providers[].url`, `providers[].roles[]` (producer/processor/licensor/host) |
 | DCAT (via Records) | `dcat:publisher`, `dcat:contactPoint` |
 | OData | annotation `org.example.Contact` |
@@ -190,9 +190,9 @@ the V2 model can losslessly round-trip every concept these standards expose.
 | WMTS | `<ows:WGS84BoundingBox>`, `<TileMatrixSet>` references |
 | WFS 2.0 | `<ows:WGS84BoundingBox>`, `<DefaultCRS>`, `<OtherCRS>[]` |
 | WCS 2.0 | `<gml:boundedBy><gml:Envelope srsName="…">` |
-| Esri FeatureServer | `spatialReference.wkid` / `latestWkid`; `extent` with `xmin/ymin/xmax/ymax/spatialReference`; per-layer `extent` |
-| Esri MapServer | `spatialReference`, `initialExtent`, `fullExtent` (both) |
-| Esri ImageServer | `spatialReference`, `extent`, `pixelType`, `pixelSizeX`, `pixelSizeY` |
+| GeoServices REST FeatureServer | `spatialReference.wkid` / `latestWkid`; `extent` with `xmin/ymin/xmax/ymax/spatialReference`; per-layer `extent` |
+| GeoServices REST MapServer | `spatialReference`, `initialExtent`, `fullExtent` (both) |
+| GeoServices REST ImageServer | `spatialReference`, `extent`, `pixelType`, `pixelSizeX`, `pixelSizeY` |
 | STAC | `collection.extent.spatial.bbox[]` (multi-polygon supported), `crs` extension |
 | OData | spatial type metadata via Edm.GeographyPoint etc.; SRID annotation |
 | GeoJSON | implicit CRS84 (longitude/latitude), optional `bbox` at FC level |
@@ -217,8 +217,8 @@ the V2 model can losslessly round-trip every concept these standards expose.
 | `Resource.Temporal.EndTimeField` | ✅ |
 | `Resource.Temporal.TrackIdField` | ✅ |
 | `Resource.Temporal.Extent` ({Start, End}) | ✅ |
-| `Resource.Temporal.TimeReference` (timezone) | ❌ — gap (Esri `dateFieldsTimeReference`) |
-| `Resource.Temporal.HasLiveData` (Esri) | ❌ — leaking through Extensions if needed |
+| `Resource.Temporal.TimeReference` (timezone) | ❌ — gap (GeoServices REST `dateFieldsTimeReference`) |
+| `Resource.Temporal.HasLiveData` (GeoServices REST) | ❌ — leaking through Extensions if needed |
 | Multi-interval extent | ❌ — only single `Extent` |
 
 | Standard | Maps to |
@@ -228,8 +228,8 @@ the V2 model can losslessly round-trip every concept these standards expose.
 | WMS | `<Dimension name="time" units="ISO8601">` |
 | WMTS | `<Dimension>` (TIME) |
 | WFS 2.0 | filter encoding for temporal predicates |
-| Esri FeatureServer | `timeInfo.{startTimeField, endTimeField, trackIdField, timeExtent, timeReference, timeInterval, hasLiveData}` |
-| Esri MapServer | `timeInfo` (same) per-layer |
+| GeoServices REST FeatureServer | `timeInfo.{startTimeField, endTimeField, trackIdField, timeExtent, timeReference, timeInterval, hasLiveData}` |
+| GeoServices REST MapServer | `timeInfo` (same) per-layer |
 | STAC | `properties.datetime` (Item), `extent.temporal.interval[][]` (Collection) — supports nulls for open ranges |
 | OData | Edm.DateTimeOffset properties |
 | GeoJSON | non-standard; convention `properties.datetime` |
@@ -238,7 +238,7 @@ the V2 model can losslessly round-trip every concept these standards expose.
 | KML | `<TimeStamp>` or `<TimeSpan>` |
 | NetCDF | CF time variable with `units`, `calendar`, `time_origin` |
 
-**Verdict**: ⚠️ Covered for the common case. Gaps: **TimeReference** (timezone hint for Esri/CF compliance), **multi-interval extents** (STAC + OGC API Features both support; we have single-interval), **HasLiveData** (Esri flag for streaming time-aware data). Add to `MetadataV2ResourceTemporal` as optional fields.
+**Verdict**: ⚠️ Covered for the common case. Gaps: **TimeReference** (timezone hint for GeoServices REST/CF compliance), **multi-interval extents** (STAC + OGC API Features both support; we have single-interval), **HasLiveData** (GeoServices REST flag for streaming time-aware data). Add to `MetadataV2ResourceTemporal` as optional fields.
 
 ---
 
@@ -252,7 +252,7 @@ the V2 model can losslessly round-trip every concept these standards expose.
 | `Field.Description` | ✅ |
 | `Field.Nullable` | ✅ |
 | `Field.SemanticRoles[]` (id.primary, geometry.primary, …) | ✅ |
-| `Field.Alias` | ❌ — gap (Esri field aliases) |
+| `Field.Alias` | ❌ — gap (GeoServices REST field aliases) |
 | `Field.Editable` | ❌ — gap |
 | `Field.Length` (for VARCHAR-typed) | ❌ — gap |
 | `Field.DefaultValue` | ❌ — gap |
@@ -266,8 +266,8 @@ the V2 model can losslessly round-trip every concept these standards expose.
 | OGC API - Features Part 5 (Schemas) | JSON Schema document at `/collections/{id}/schema`; field properties: `title`, `description`, `type`, `format`, `enum` (← Domain.codedValues), `minimum`/`maximum` (← Domain.range), `default` (← DefaultValue), `nullable`, custom `x-ogc-role` (← SemanticRoles) |
 | OGC API - Features Part 3 (Filter) | `/collections/{id}/queryables` lists filter-able properties with JSON Schema |
 | WFS 2.0 DescribeFeatureType | xsd:schema with xsd:element per field (name + type + nullable) |
-| Esri FeatureServer fields | `name`, `type` (esriFieldType*), `alias`, `sqlType`, `nullable`, `editable`, `length`, `defaultValue`, `domain` (codedValue or range with `inheritedFrom`), `description` |
-| Esri MapServer fields | same as FeatureServer |
+| GeoServices REST FeatureServer fields | `name`, `type` (esriFieldType*), `alias`, `sqlType`, `nullable`, `editable`, `length`, `defaultValue`, `domain` (codedValue or range with `inheritedFrom`), `description` |
+| GeoServices REST MapServer fields | same as FeatureServer |
 | STAC | `properties.*` arbitrary; STAC extensions add typed shapes (eo:bands, sar:polarizations, view:angles) |
 | OData | `<Property Name="…" Type="Edm.X" Nullable="…" DefaultValue="…" MaxLength="…">` |
 | GeoJSON | `properties.*` arbitrary, untyped at the spec level |
@@ -278,7 +278,7 @@ the V2 model can losslessly round-trip every concept these standards expose.
 | GML | xsd:schema in app schema |
 | Shapefile | `.dbf` header (name, type, length, decimal-count) |
 
-**Verdict**: ❌ Field-level metadata is the biggest current gap. Esri FeatureServer fields[] needs `alias`, `editable`, `length`, `defaultValue`, `domain` to round-trip. OData EDM needs `MaxLength`. GeoPackage `gpkg_data_column_constraints` maps directly to `Domain`. **Field extensions are slice A from my prior reply — necessary for parity.**
+**Verdict**: ❌ Field-level metadata is the biggest current gap. GeoServices REST FeatureServer fields[] needs `alias`, `editable`, `length`, `defaultValue`, `domain` to round-trip. OData EDM needs `MaxLength`. GeoPackage `gpkg_data_column_constraints` maps directly to `Domain`. **Field extensions are slice A from my prior reply — necessary for parity.**
 
 ---
 
@@ -292,7 +292,7 @@ the V2 model can losslessly round-trip every concept these standards expose.
 | `Resource.Display.Queryable` | ❌ — proposed |
 | `Resource.Display.Opaque` (WMS) | ❌ — proposed |
 | `Resource.Display.HasZ` / `HasM` | ❌ — proposed |
-| `Resource.Display.HtmlPopupType` (Esri) | ⚠️ — would live in `Extensions["esri-popup"]` |
+| `Resource.Display.HtmlPopupType` (GeoServices REST) | ⚠️ — would live in a source-specific extension |
 | `Resource.Display.CanScaleSymbols` | ❌ — proposed (cap flag) |
 
 | Standard | Maps to |
@@ -303,8 +303,8 @@ the V2 model can losslessly round-trip every concept these standards expose.
 | OGC API - Styles | scale ranges live inside the style body, not on the resource |
 | WMS | `<MinScaleDenominator>`, `<MaxScaleDenominator>` per layer; `queryable="1"`; `opaque="1"`; `noSubsets`, `fixedWidth`, `fixedHeight`; per-style scale denominators |
 | WMTS | scale via TileMatrix `ScaleDenominator`; visibility implicit |
-| Esri FeatureServer | `minScale`, `maxScale`, `defaultVisibility`, `displayField`, `htmlPopupType`, `canModifyLayer`, `canScaleSymbols`, `hasLabels`, `hasZ`, `hasM` |
-| Esri MapServer | same per-layer |
+| GeoServices REST FeatureServer | `minScale`, `maxScale`, `defaultVisibility`, `displayField`, `htmlPopupType`, `canModifyLayer`, `canScaleSymbols`, `hasLabels`, `hasZ`, `hasM` |
+| GeoServices REST MapServer | same per-layer |
 | STAC | `properties.proj:epsg` per item; thumbnail asset link |
 | OData | n/a |
 
@@ -317,14 +317,14 @@ the V2 model can losslessly round-trip every concept these standards expose.
 | V2 canonical | Status |
 |---|---|
 | `Resource.PermanentFilter.Expression` | ✅ |
-| `Resource.PermanentFilter.Language` (arcgis-sql / cql2-text / cql2-json) | ✅ |
+| `Resource.PermanentFilter.Language` (compatibility SQL / cql2-text / cql2-json) | ✅ |
 
 | Standard | Maps to |
 |---|---|
 | OGC API - Features Part 3 | `/collections/{id}` doesn't expose; permanently applied server-side. Conformance class `https://www.opengis.net/spec/ogcapi-features-3/1.0/conf/filter` |
 | WFS 2.0 | server-side; not advertised in capabilities |
-| Esri FeatureServer | `definitionExpression` per layer (visible in layer metadata) |
-| Esri MapServer | `definitionExpression` per layer |
+| GeoServices REST FeatureServer | `definitionExpression` per layer (visible in layer metadata) |
+| GeoServices REST MapServer | `definitionExpression` per layer |
 | STAC | server-side filtering of items; not advertised |
 | OData | applied as `$filter` prefix server-side |
 
@@ -344,19 +344,19 @@ the V2 model can losslessly round-trip every concept these standards expose.
 | `Relationship.Cardinality` | ✅ |
 | `Relationship.OriginField` | ✅ |
 | `Relationship.DestinationField` | ✅ |
-| `Relationship.EsriRelationshipId` (int) | ✅ |
+| `Relationship.RelationshipId` (int) | ✅ |
 
 | Standard | Maps to |
 |---|---|
 | OGC API - Features | non-standard; STAC `links rel=related` or extension `links rel=child` |
-| Esri FeatureServer | `relationships[]` per layer + service-level `relationships[]` registry. Fields: `id` (int), `name`, `relatedTableId`, `role` (origin/destination), `keyField`, `cardinality`, `composite` |
-| Esri MapServer | same |
+| GeoServices REST FeatureServer | `relationships[]` per layer + service-level `relationships[]` registry. Fields: `id` (int), `name`, `relatedTableId`, `role` (origin/destination), `keyField`, `cardinality`, `composite` |
+| GeoServices REST MapServer | same |
 | WFS 2.0 | join queries via `<wfs:Join>` extension |
 | OData | `<NavigationProperty>` between EntityTypes; `$expand` |
 | STAC | `links rel=parent`, `links rel=collection`, `links rel=item`, `links rel=related` |
 | GeoPackage | `gpkg_extensions` with `gpkg_related_tables` extension (RTE) |
 
-**Verdict**: ✅ Covered. The OData `NavigationProperty` and Esri `relatedTableId/role/keyField` map cleanly onto our `RelatedResourceId/Role/OriginField/DestinationField`.
+**Verdict**: ✅ Covered. The OData `NavigationProperty` and GeoServices REST `relatedTableId/role/keyField` map cleanly onto our `RelatedResourceId/Role/OriginField/DestinationField`.
 
 ---
 
@@ -379,7 +379,7 @@ the V2 model can losslessly round-trip every concept these standards expose.
 | Standard | Maps to |
 |---|---|
 | OGC API - * | n/a — not exposed externally |
-| Esri | n/a — not exposed externally |
+| GeoServices REST | n/a — not exposed externally |
 | STAC | `assets.*` (item-level), `assets[].href`, `assets[].type`, `assets[].roles[]` — **closest match** for storage-as-asset |
 | GeoPackage | `gpkg_contents` row per table; data lives in the same file |
 | MBTiles / PMTiles | metadata table at file level |
@@ -395,7 +395,7 @@ the V2 model can losslessly round-trip every concept these standards expose.
 |---|---|
 | `Resource.StyleResourceIds[]` ([0] = primary) | ❌ — deleted in slice 66/N, **must re-add** |
 | `Resource.Style` (on `Type=Style` resources) | ❌ — proposed, not landed |
-| `Style.Encodings[]` (mapbox / sld-1.0.0 / sld-1.1.0 / esri-drawing-info / esri-image-renderer / 3d-tiles-styling) | ❌ — proposed |
+| `Style.Encodings[]` (mapbox / sld-1.0.0 / sld-1.1.0 / source renderer / 3d-tiles-styling) | ❌ — proposed |
 | `Style.StyleVersion` (cache key) | ❌ — currently in `LayerStyleDefinition` (v1) |
 | `Style.Title` / `Abstract` / `LegendUrl` | ❌ — proposed |
 
@@ -405,9 +405,9 @@ the V2 model can losslessly round-trip every concept these standards expose.
 | OGC API - Maps | optional `styleId` query parameter |
 | WMS | `<Style><Name>`, `<Title>`, `<Abstract>`, `<LegendURL>` per layer; SLD via `?SLD_BODY=` or named via `?STYLES=` |
 | WMTS | `<Style>` per layer with `<ows:Identifier>`, `<ows:Title>`, `<LegendURL>`, `isDefault` |
-| Esri FeatureServer | `drawingInfo` (`renderer`, `labelingInfo`, `transparency`, `scaleSymbols`) per layer |
-| Esri MapServer | `drawingInfo` per layer |
-| Esri ImageServer | `defaultRenderingRule`, `mosaicRule`, `serviceDataType` |
+| GeoServices REST FeatureServer | `drawingInfo` (`renderer`, `labelingInfo`, `transparency`, `scaleSymbols`) per layer |
+| GeoServices REST MapServer | `drawingInfo` per layer |
+| GeoServices REST ImageServer | `defaultRenderingRule`, `mosaicRule`, `serviceDataType` |
 | STAC | `assets[]` with `roles=["overview"]` for legend thumbnails |
 | MBTiles | `metadata` table with `vector_layers` array |
 | PMTiles | `tilejson` header with `vector_layers` |
@@ -436,13 +436,13 @@ the V2 model can losslessly round-trip every concept these standards expose.
 | WMTS | `<Operations>` |
 | WFS 2.0 | `<ows:OperationsMetadata>` with `<Operation>` entries |
 | WCS 2.0 | `<ows:OperationsMetadata>` |
-| Esri FeatureServer | `capabilities` (csv string: `"Create,Delete,Query,Update,Editing,Sync"`); per-layer `capabilities` |
-| Esri MapServer | `capabilities` (csv) |
-| Esri ImageServer | `capabilities` (`"Image,Catalog,Metadata,Download,Pixels"`) |
+| GeoServices REST FeatureServer | `capabilities` (csv string: `"Create,Delete,Query,Update,Editing,Sync"`); per-layer `capabilities` |
+| GeoServices REST MapServer | `capabilities` (csv) |
+| GeoServices REST ImageServer | `capabilities` (`"Image,Catalog,Metadata,Download,Pixels"`) |
 | STAC | `links[]` with `rel=search`, `rel=conformance`; `conformsTo[]` |
 | OData | `$metadata` document with `Capabilities.*` annotations |
 
-**Verdict**: ⚠️ Service-level protocols covered. Resource-level editing capabilities (per-layer `canModify`, attachments, related records, labels) are gaps — needed by both Esri layer metadata and OGC API Features Part 4 (Editing). **Land Editing slot.**
+**Verdict**: ⚠️ Service-level protocols covered. Resource-level editing capabilities (per-layer `canModify`, attachments, related records, labels) are gaps — needed by both GeoServices REST layer metadata and OGC API Features Part 4 (Editing). **Land Editing slot.**
 
 ---
 
@@ -458,13 +458,13 @@ the V2 model can losslessly round-trip every concept these standards expose.
 
 | Standard | Maps to |
 |---|---|
-| Esri FeatureServer | `editorTrackingInfo.{enableEditorTracking, creatorField, createdAtField, editorField, editedAtField, enableOwnershipAccessControl, allowOthersToUpdate, allowOthersToDelete}`; `globalIdField` |
+| GeoServices REST FeatureServer | `editorTrackingInfo.{enableEditorTracking, creatorField, createdAtField, editorField, editedAtField, enableOwnershipAccessControl, allowOthersToUpdate, allowOthersToDelete}`; `globalIdField` |
 | OGC API - Features Part 4 | optional headers `Created-By`, `Modified-By` on item PATCH/PUT; field-level tracking is implementation-defined |
 | OData | `Org.OData.Capabilities.V1.ChangeTrackingRetention` annotation; `$audit` extensions |
 | GeoPackage | metadata extension; not core |
 | STAC | `properties.created`, `properties.updated` at item level |
 
-**Verdict**: ❌ Major Esri feature with no V2 home. Land the Editing slot.
+**Verdict**: ❌ Major GeoServices REST feature with no V2 home. Land the Editing slot.
 
 ---
 
@@ -491,9 +491,9 @@ the V2 model can losslessly round-trip every concept these standards expose.
 | WMS | `<MaxWidth>`, `<MaxHeight>`, format list in `<Request>` |
 | WMTS | format list per layer |
 | WFS 2.0 | `<wfs:Constraint name="CountDefault" value="…">` |
-| Esri FeatureServer | `maxRecordCount`, `maxRecordCountFactor`, `supportedQueryFormats`, `supportedExportFormats`, `syncEnabled`, `syncCapabilities` |
-| Esri MapServer | `maxImageWidth`, `maxImageHeight`, `maxRecordCount`, `supportedImageFormatTypes` |
-| Esri ImageServer | `maxImageWidth`, `maxImageHeight`, `maxDownloadImageCount`, `allowedCompressions` |
+| GeoServices REST FeatureServer | `maxRecordCount`, `maxRecordCountFactor`, `supportedQueryFormats`, `supportedExportFormats`, `syncEnabled`, `syncCapabilities` |
+| GeoServices REST MapServer | `maxImageWidth`, `maxImageHeight`, `maxRecordCount`, `supportedImageFormatTypes` |
+| GeoServices REST ImageServer | `maxImageWidth`, `maxImageHeight`, `maxDownloadImageCount`, `allowedCompressions` |
 | STAC | `links[].method`, `links[].body` define server constraints implicitly |
 | OData | `Org.OData.Capabilities.V1.TopSupported`, `MaxResults` annotations |
 
@@ -513,7 +513,7 @@ the V2 model can losslessly round-trip every concept these standards expose.
 | OGC API - Features | same |
 | OGC API - Records | `links[]` mandatory; rels above + `via`, `child`, `parent`, `related` |
 | OGC API - Styles | `links[]` with `rel=stylesheet` (one per encoding) |
-| Esri | `Esri` REST is JSON-only, no link rels; but `/info` endpoint references parent service |
+| GeoServices REST | `GeoServices REST` REST is JSON-only, no link rels; but `/info` endpoint references parent service |
 | STAC | `links[]` mandatory. Rels: `self`, `parent`, `root`, `collection`, `item`, `items`, `child`, `data`, `search`, `derived_from`, `via`, `cite-as`, `next`/`prev` (pagination), `service-doc`, `service-desc`, `license`, `canonical` |
 | OData | `@odata.context`, `@odata.nextLink`, `@odata.deltaLink`, `<Annotation Term="Org.OData.Core.V1.Links">` |
 | GeoJSON | non-standard; sometimes `properties.@links` |
@@ -536,7 +536,7 @@ the V2 model can losslessly round-trip every concept these standards expose.
 |---|---|
 | OGC API - Tiles | `tileMatrixSetLinks[]`, `tileMatrixSetURI`, per-collection min/max zoom |
 | WMTS | `<TileMatrixSet>` (full geometry of every zoom level), `<TileMatrixSetLink>`, `<TileMatrixLimits>` |
-| Esri MapServer (cached) | `tileInfo.{rows, cols, dpi, format, compressionQuality, origin, spatialReference, lods[]}` |
+| GeoServices REST MapServer (cached) | `tileInfo.{rows, cols, dpi, format, compressionQuality, origin, spatialReference, lods[]}` |
 | MBTiles | `metadata` table: `name`, `format`, `minzoom`, `maxzoom`, `bounds`, `center`, `attribution` |
 | PMTiles | header: `tile_compression`, `tile_type`, `min_zoom`, `max_zoom`, `min_lon`, `max_lon`, `min_lat`, `max_lat`, `center_zoom` |
 | TileJSON (Mapbox) | top-level: `tilejson`, `tiles[]`, `minzoom`, `maxzoom`, `bounds`, `center`, `vector_layers[]` |
@@ -559,13 +559,13 @@ Recommend the latter only when a real consumer needs the non-standard tile schem
 | Stretch / colormap defaults | ⚠️ — in style |
 | Pixel type, size | ❌ |
 | Compression info | ❌ |
-| Mosaic rules (Esri) | ⚠️ — in `Resource.Extensions["rasterMosaic"]` per ImageServer port |
+| Mosaic rules (GeoServices REST) | ⚠️ — in `Resource.Extensions["rasterMosaic"]` per ImageServer port |
 
 | Standard | Maps to |
 |---|---|
 | OGC API - Coverages | `coverage.coverageRangeType`, `coverage.domainSet`, `coverage.metadata` |
 | WCS 2.0 | `<gmlcov:rangeType>` with `<swe:DataRecord>` describing bands; `<gmlcov:metadata>`; `<wcs:CoverageId>` |
-| Esri ImageServer | `pixelType`, `bandCount`, `serviceDataType`, `noData`, `defaultMosaicMethod`, `allowedMosaicMethods[]`, `bandNames[]`, `histograms`, `statistics` |
+| GeoServices REST ImageServer | `pixelType`, `bandCount`, `serviceDataType`, `noData`, `defaultMosaicMethod`, `allowedMosaicMethods[]`, `bandNames[]`, `histograms`, `statistics` |
 | STAC | `assets[].roles=["data"]`, plus `eo` extension for bands, `raster` extension for sample type, `proj` extension for grid |
 | COG | TIFF tags: `BitsPerSample`, `SampleFormat`, `PhotometricInterpretation`, `NoDataValue`, `ColorMap` |
 | Zarr | `zarr.json` with `data_type`, `fill_value`, `chunks`, `codec` |
@@ -651,8 +651,8 @@ Ranked by impact (most → least):
 ### Critical (blocks correct response in major catalog standards)
 1. **`Metadata.Links[]`** — required by every OGC API spec
 2. **`Metadata.License`** + **`Metadata.Attribution`** — required by STAC and OGC API Records
-3. **`Field.Alias` / `Field.Editable` / `Field.Length` / `Field.DefaultValue` / `Field.Domain`** — Esri FeatureServer parity
-4. **`Resource.Editing.*`** (GlobalIdField, EditorTracking, capability flags) — Esri parity + OGC API Features Part 4
+3. **`Field.Alias` / `Field.Editable` / `Field.Length` / `Field.DefaultValue` / `Field.Domain`** — GeoServices REST FeatureServer parity
+4. **`Resource.Editing.*`** (GlobalIdField, EditorTracking, capability flags) — GeoServices REST parity + OGC API Features Part 4
 5. **`Resource.Display.*`** (MinScale/MaxScale/DefaultVisibility/DisplayField/Queryable/Opaque/HasZ/HasM) — required by every Map/Tile protocol
 6. **`Service.Settings.*`** — required by every protocol's capability/limit reporting
 7. **`Style.Encodings[]`** model (re-add deleted `Resource.StyleResourceIds`)
@@ -665,7 +665,7 @@ Ranked by impact (most → least):
 
 ### Minor (niche or already in Extensions)
 12. **`Resource.Metadata.Generation`** — re-add (deleted in slice 65/N); needed by OData ETags + admin if-match
-13. **`Esri templates / subtypes / htmlPopupType`** — keep in `Extensions["esri-*"]`
+13. **`GeoServices REST templates / subtypes / htmlPopupType`** — keep in a source-specific extension
 14. **`STAC extensions`** — keep in `Extensions["stac"]`
 15. **`indexes[]`** — informational; keep in `Extensions` if surfaced
 16. **`Tiling per-publication metadata`** — only when MBTiles/PMTiles publishing needs non-standard tile schemes

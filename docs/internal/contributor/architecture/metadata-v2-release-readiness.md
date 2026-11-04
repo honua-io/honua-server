@@ -54,7 +54,7 @@ Derived from:
 Release evidence:
 
 - Canonical resource metadata can project to OGC Records, DCAT, STAC, ISO
-  19115, Esri catalog/items, GeoServices REST, OGC API, and OData.
+  19115, GeoServices REST catalog/items, GeoServices REST, OGC API, and OData.
 - Standards-specific data is sparse override data, not a competing source of
   truth.
 - Field roles drive target mappings before advanced target-specific bindings.

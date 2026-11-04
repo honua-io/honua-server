@@ -14,9 +14,9 @@
     "not-executable": "The inventory item is not an independent runnable example; no green execution claim is made."
   },
   "summary": {
-    "total": 1229,
+    "total": 1223,
     "byStatus": {
-      "not-executable": 1213,
+      "not-executable": 1207,
       "unvalidated": 13,
       "passed": 3
     }
@@ -1216,19 +1216,6 @@
       },
       "fence": 1,
       "line": 20,
-      "language": "csharp"
-    },
-    {
-      "id": "29a1014a647ea85e",
-      "kind": "docs-fence",
-      "path": "docs/archive/contributor/unified-response-system.md",
-      "validation": {
-        "status": "not-executable",
-        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
-        "check": "inventory-classification"
-      },
-      "fence": 14,
-      "line": 292,
       "language": "csharp"
     },
     {
@@ -3351,19 +3338,6 @@
       "language": "json"
     },
     {
-      "id": "293322b0de19de0c",
-      "kind": "docs-fence",
-      "path": "docs/contributor/i3s-sceneserver-smoke.md",
-      "validation": {
-        "status": "not-executable",
-        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
-        "check": "inventory-classification"
-      },
-      "fence": 1,
-      "line": 48,
-      "language": "js"
-    },
-    {
       "id": "2f133822f8bd23c7",
       "kind": "docs-fence",
       "path": "docs/customcode/raster-gp-pattern.md",
@@ -4100,7 +4074,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 164,
+      "line": 158,
       "language": "bash"
     },
     {
@@ -4113,7 +4087,7 @@
         "check": "inventory-classification"
       },
       "fence": 2,
-      "line": 169,
+      "line": 163,
       "language": "python"
     },
     {
@@ -4152,7 +4126,7 @@
         "check": "inventory-classification"
       },
       "fence": 4,
-      "line": 109,
+      "line": 106,
       "language": "bash"
     },
     {
@@ -4165,7 +4139,7 @@
         "check": "inventory-classification"
       },
       "fence": 3,
-      "line": 52,
+      "line": 51,
       "language": "text"
     },
     {
@@ -4178,7 +4152,7 @@
         "check": "inventory-classification"
       },
       "fence": 2,
-      "line": 39,
+      "line": 38,
       "language": "text"
     },
     {
@@ -4191,7 +4165,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 31,
+      "line": 30,
       "language": "text"
     },
     {
@@ -4204,7 +4178,7 @@
         "check": "inventory-classification"
       },
       "fence": 8,
-      "line": 265,
+      "line": 264,
       "language": "json"
     },
     {
@@ -4347,7 +4321,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 9,
+      "line": 7,
       "language": "text"
     },
     {
@@ -4386,7 +4360,7 @@
         "check": "inventory-classification"
       },
       "fence": 6,
-      "line": 396,
+      "line": 394,
       "language": "jsonc"
     },
     {
@@ -4442,32 +4416,6 @@
       "language": "json"
     },
     {
-      "id": "63687bb6ab3d8c31",
-      "kind": "docs-fence",
-      "path": "docs/guides/connect/arcgis-pro.md",
-      "validation": {
-        "status": "not-executable",
-        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
-        "check": "inventory-classification"
-      },
-      "fence": 1,
-      "line": 42,
-      "language": "js"
-    },
-    {
-      "id": "6f409c3dd131f299",
-      "kind": "docs-fence",
-      "path": "docs/guides/connect/arcgis-pro.md",
-      "validation": {
-        "status": "not-executable",
-        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
-        "check": "inventory-classification"
-      },
-      "fence": 2,
-      "line": 59,
-      "language": "js"
-    },
-    {
       "id": "5a90c53a48123eb3",
       "kind": "docs-fence",
       "path": "docs/guides/connect/excel-power-bi.md",
@@ -4492,6 +4440,32 @@
       "fence": 1,
       "line": 35,
       "language": "text"
+    },
+    {
+      "id": "259b77c69d69bd68",
+      "kind": "docs-fence",
+      "path": "docs/guides/connect/geoservices-desktop-clients.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 2,
+      "line": 54,
+      "language": "js"
+    },
+    {
+      "id": "7791b5d099e33733",
+      "kind": "docs-fence",
+      "path": "docs/guides/connect/geoservices-desktop-clients.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 1,
+      "line": 37,
+      "language": "js"
     },
     {
       "id": "c4b9adc8e2e1e182",
@@ -5600,7 +5574,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 53,
+      "line": 54,
       "language": "json"
     },
     {
@@ -5613,8 +5587,8 @@
         "check": "inventory-classification"
       },
       "fence": 3,
-      "line": 70,
-      "language": "javascript"
+      "line": 89,
+      "language": "json"
     },
     {
       "id": "20c47835e4126579",
@@ -5626,21 +5600,8 @@
         "check": "inventory-classification"
       },
       "fence": 2,
-      "line": 37,
+      "line": 59,
       "language": "javascript"
-    },
-    {
-      "id": "cf0d705fec0dda2f",
-      "kind": "docs-fence",
-      "path": "docs/guides/edit/edit-features.md",
-      "validation": {
-        "status": "not-executable",
-        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
-        "check": "inventory-classification"
-      },
-      "fence": 4,
-      "line": 100,
-      "language": "json"
     },
     {
       "id": "f43db6a7c32c9c23",
@@ -5652,7 +5613,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 21,
+      "line": 26,
       "language": "javascript"
     },
     {
@@ -5734,162 +5695,6 @@
       "language": "json"
     },
     {
-      "id": "136b06dfd7c8a8b7",
-      "kind": "docs-fence",
-      "path": "docs/guides/migrate/arcgis-apps-and-sdks.md",
-      "validation": {
-        "status": "not-executable",
-        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
-        "check": "inventory-classification"
-      },
-      "fence": 2,
-      "line": 36,
-      "language": "bash"
-    },
-    {
-      "id": "343bb337448d1f2f",
-      "kind": "docs-fence",
-      "path": "docs/guides/migrate/arcgis-apps-and-sdks.md",
-      "validation": {
-        "status": "not-executable",
-        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
-        "check": "inventory-classification"
-      },
-      "fence": 5,
-      "line": 91,
-      "language": "bash"
-    },
-    {
-      "id": "6fd592c2f0adfdb8",
-      "kind": "docs-fence",
-      "path": "docs/guides/migrate/arcgis-apps-and-sdks.md",
-      "validation": {
-        "status": "not-executable",
-        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
-        "check": "inventory-classification"
-      },
-      "fence": 4,
-      "line": 57,
-      "language": "bash"
-    },
-    {
-      "id": "d8a986088adc8cea",
-      "kind": "docs-fence",
-      "path": "docs/guides/migrate/arcgis-apps-and-sdks.md",
-      "validation": {
-        "status": "not-executable",
-        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
-        "check": "inventory-classification"
-      },
-      "fence": 1,
-      "line": 26,
-      "language": "bash"
-    },
-    {
-      "id": "fc441e5c3bb30208",
-      "kind": "docs-fence",
-      "path": "docs/guides/migrate/arcgis-apps-and-sdks.md",
-      "validation": {
-        "status": "not-executable",
-        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
-        "check": "inventory-classification"
-      },
-      "fence": 3,
-      "line": 42,
-      "language": "js"
-    },
-    {
-      "id": "0035cd58713a2832",
-      "kind": "docs-fence",
-      "path": "docs/guides/migrate/from-arcgis-server.md",
-      "validation": {
-        "status": "not-executable",
-        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
-        "check": "inventory-classification"
-      },
-      "fence": 2,
-      "line": 25,
-      "language": "bash"
-    },
-    {
-      "id": "533bfc67979453ee",
-      "kind": "docs-fence",
-      "path": "docs/guides/migrate/from-arcgis-server.md",
-      "validation": {
-        "status": "not-executable",
-        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
-        "check": "inventory-classification"
-      },
-      "fence": 3,
-      "line": 38,
-      "language": "bash"
-    },
-    {
-      "id": "67235dc6ffdd28c6",
-      "kind": "docs-fence",
-      "path": "docs/guides/migrate/from-arcgis-server.md",
-      "validation": {
-        "status": "not-executable",
-        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
-        "check": "inventory-classification"
-      },
-      "fence": 5,
-      "line": 65,
-      "language": "bash"
-    },
-    {
-      "id": "6daa71ec746e0ee5",
-      "kind": "docs-fence",
-      "path": "docs/guides/migrate/from-arcgis-server.md",
-      "validation": {
-        "status": "not-executable",
-        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
-        "check": "inventory-classification"
-      },
-      "fence": 6,
-      "line": 77,
-      "language": "bash"
-    },
-    {
-      "id": "7b6c56249c96f7db",
-      "kind": "docs-fence",
-      "path": "docs/guides/migrate/from-arcgis-server.md",
-      "validation": {
-        "status": "not-executable",
-        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
-        "check": "inventory-classification"
-      },
-      "fence": 7,
-      "line": 91,
-      "language": "bash"
-    },
-    {
-      "id": "a275f854cbe3728e",
-      "kind": "docs-fence",
-      "path": "docs/guides/migrate/from-arcgis-server.md",
-      "validation": {
-        "status": "not-executable",
-        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
-        "check": "inventory-classification"
-      },
-      "fence": 1,
-      "line": 17,
-      "language": "bash"
-    },
-    {
-      "id": "e915de3438fffc58",
-      "kind": "docs-fence",
-      "path": "docs/guides/migrate/from-arcgis-server.md",
-      "validation": {
-        "status": "not-executable",
-        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
-        "check": "inventory-classification"
-      },
-      "fence": 4,
-      "line": 55,
-      "language": "bash"
-    },
-    {
       "id": "3d7ed2ea1acbc68b",
       "kind": "docs-fence",
       "path": "docs/guides/migrate/from-geoserver.md",
@@ -5966,6 +5771,162 @@
       "fence": 1,
       "line": 17,
       "language": "bash"
+    },
+    {
+      "id": "253d524728ccb7ae",
+      "kind": "docs-fence",
+      "path": "docs/guides/migrate/from-geoservices-rest.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 4,
+      "line": 55,
+      "language": "bash"
+    },
+    {
+      "id": "40c30dd8a50462b3",
+      "kind": "docs-fence",
+      "path": "docs/guides/migrate/from-geoservices-rest.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 5,
+      "line": 65,
+      "language": "bash"
+    },
+    {
+      "id": "69cf208e2eebd87f",
+      "kind": "docs-fence",
+      "path": "docs/guides/migrate/from-geoservices-rest.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 3,
+      "line": 38,
+      "language": "bash"
+    },
+    {
+      "id": "71993f1aeb025f77",
+      "kind": "docs-fence",
+      "path": "docs/guides/migrate/from-geoservices-rest.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 6,
+      "line": 77,
+      "language": "bash"
+    },
+    {
+      "id": "bc075c323e2ef9a1",
+      "kind": "docs-fence",
+      "path": "docs/guides/migrate/from-geoservices-rest.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 7,
+      "line": 91,
+      "language": "bash"
+    },
+    {
+      "id": "d5454a2e263211bf",
+      "kind": "docs-fence",
+      "path": "docs/guides/migrate/from-geoservices-rest.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 2,
+      "line": 25,
+      "language": "bash"
+    },
+    {
+      "id": "f51653ef5b9bb6a8",
+      "kind": "docs-fence",
+      "path": "docs/guides/migrate/from-geoservices-rest.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 1,
+      "line": 17,
+      "language": "bash"
+    },
+    {
+      "id": "37903061a3b1de23",
+      "kind": "docs-fence",
+      "path": "docs/guides/migrate/geoservices-apps-and-sdks.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 5,
+      "line": 91,
+      "language": "bash"
+    },
+    {
+      "id": "53167d5c97af8da3",
+      "kind": "docs-fence",
+      "path": "docs/guides/migrate/geoservices-apps-and-sdks.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 4,
+      "line": 57,
+      "language": "bash"
+    },
+    {
+      "id": "56aa5861018e38de",
+      "kind": "docs-fence",
+      "path": "docs/guides/migrate/geoservices-apps-and-sdks.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 1,
+      "line": 26,
+      "language": "bash"
+    },
+    {
+      "id": "8711af467f797e2b",
+      "kind": "docs-fence",
+      "path": "docs/guides/migrate/geoservices-apps-and-sdks.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 2,
+      "line": 36,
+      "language": "bash"
+    },
+    {
+      "id": "f67aaf42da7f7732",
+      "kind": "docs-fence",
+      "path": "docs/guides/migrate/geoservices-apps-and-sdks.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 3,
+      "line": 42,
+      "language": "js"
     },
     {
       "id": "20865327c6d4a609",
@@ -6198,13 +6159,13 @@
         "check": "inventory-classification"
       },
       "fence": 3,
-      "line": 164,
+      "line": 163,
       "language": "sql"
     },
     {
-      "id": "295d291f94a50f91",
+      "id": "761c83a9a06f8d74",
       "kind": "docs-fence",
-      "path": "docs/guides/publish/import-from-arcgis-services.md",
+      "path": "docs/guides/publish/import-from-geoservices-rest.md",
       "validation": {
         "status": "not-executable",
         "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
@@ -6215,9 +6176,9 @@
       "language": "json"
     },
     {
-      "id": "3c622cfbdcc9c69a",
+      "id": "7d82ca293ccb0817",
       "kind": "docs-fence",
-      "path": "docs/guides/publish/import-from-arcgis-services.md",
+      "path": "docs/guides/publish/import-from-geoservices-rest.md",
       "validation": {
         "status": "not-executable",
         "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
@@ -6228,9 +6189,9 @@
       "language": "json"
     },
     {
-      "id": "4cf43416fc55cc2c",
+      "id": "ddb34edb39a53085",
       "kind": "docs-fence",
-      "path": "docs/guides/publish/import-from-arcgis-services.md",
+      "path": "docs/guides/publish/import-from-geoservices-rest.md",
       "validation": {
         "status": "not-executable",
         "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
@@ -6241,9 +6202,9 @@
       "language": "json"
     },
     {
-      "id": "d8d0afc40407c764",
+      "id": "faa3268c3110f603",
       "kind": "docs-fence",
-      "path": "docs/guides/publish/import-from-arcgis-services.md",
+      "path": "docs/guides/publish/import-from-geoservices-rest.md",
       "validation": {
         "status": "not-executable",
         "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
@@ -7095,7 +7056,7 @@
         "check": "inventory-classification"
       },
       "fence": 7,
-      "line": 72,
+      "line": 71,
       "language": "bash"
     },
     {
@@ -7108,7 +7069,7 @@
         "check": "inventory-classification"
       },
       "fence": 8,
-      "line": 78,
+      "line": 77,
       "language": "json"
     },
     {
@@ -7134,7 +7095,7 @@
         "check": "inventory-classification"
       },
       "fence": 2,
-      "line": 187,
+      "line": 186,
       "language": "json"
     },
     {
@@ -9838,7 +9799,7 @@
         "check": "inventory-classification"
       },
       "fence": 5,
-      "line": 332,
+      "line": 339,
       "language": "csharp"
     },
     {
@@ -9877,7 +9838,7 @@
         "check": "inventory-classification"
       },
       "fence": 6,
-      "line": 409,
+      "line": 389,
       "language": "csharp"
     },
     {
@@ -9890,8 +9851,8 @@
         "check": "inventory-classification"
       },
       "fence": 7,
-      "line": 459,
-      "language": "csharp"
+      "line": 543,
+      "language": "yaml"
     },
     {
       "id": "807d03e48a3ee543",
@@ -9905,19 +9866,6 @@
       "fence": 1,
       "line": 35,
       "language": "csharp"
-    },
-    {
-      "id": "9bcca03ab5024666",
-      "kind": "docs-fence",
-      "path": "docs/internal/contributor/adr/0016-performance-optimization-strategies.md",
-      "validation": {
-        "status": "not-executable",
-        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
-        "check": "inventory-classification"
-      },
-      "fence": 8,
-      "line": 613,
-      "language": "yaml"
     },
     {
       "id": "ce7aa888813b99a8",
@@ -9968,7 +9916,7 @@
         "check": "inventory-classification"
       },
       "fence": 3,
-      "line": 120,
+      "line": 119,
       "language": "csharp"
     },
     {
@@ -9994,7 +9942,7 @@
         "check": "inventory-classification"
       },
       "fence": 4,
-      "line": 128,
+      "line": 127,
       "language": "csharp"
     },
     {
@@ -10254,7 +10202,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 79,
+      "line": 80,
       "language": "python"
     },
     {
@@ -10267,7 +10215,7 @@
         "check": "inventory-classification"
       },
       "fence": 6,
-      "line": 390,
+      "line": 391,
       "language": "csharp"
     },
     {
@@ -10280,7 +10228,7 @@
         "check": "inventory-classification"
       },
       "fence": 2,
-      "line": 111,
+      "line": 112,
       "language": "yaml"
     },
     {
@@ -10293,7 +10241,7 @@
         "check": "inventory-classification"
       },
       "fence": 8,
-      "line": 415,
+      "line": 409,
       "language": "csharp"
     },
     {
@@ -10306,7 +10254,7 @@
         "check": "inventory-classification"
       },
       "fence": 4,
-      "line": 354,
+      "line": 355,
       "language": "csharp"
     },
     {
@@ -10319,7 +10267,7 @@
         "check": "inventory-classification"
       },
       "fence": 3,
-      "line": 345,
+      "line": 346,
       "language": "csharp"
     },
     {
@@ -10332,7 +10280,7 @@
         "check": "inventory-classification"
       },
       "fence": 7,
-      "line": 408,
+      "line": 402,
       "language": "text"
     },
     {
@@ -10345,7 +10293,7 @@
         "check": "inventory-classification"
       },
       "fence": 5,
-      "line": 375,
+      "line": 376,
       "language": "csharp"
     },
     {
@@ -11593,7 +11541,7 @@
         "check": "inventory-classification"
       },
       "fence": 6,
-      "line": 146,
+      "line": 145,
       "language": "yaml"
     },
     {
@@ -11606,7 +11554,7 @@
         "check": "inventory-classification"
       },
       "fence": 4,
-      "line": 77,
+      "line": 76,
       "language": "markdown"
     },
     {
@@ -11645,7 +11593,7 @@
         "check": "inventory-classification"
       },
       "fence": 5,
-      "line": 138,
+      "line": 137,
       "language": "python"
     },
     {
@@ -11710,7 +11658,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 198,
+      "line": 193,
       "language": "bash"
     },
     {
@@ -11905,7 +11853,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 70,
+      "line": 61,
       "language": "bash"
     },
     {
@@ -12048,7 +11996,7 @@
         "check": "inventory-classification"
       },
       "fence": 4,
-      "line": 103,
+      "line": 102,
       "language": "bash"
     },
     {
@@ -12087,7 +12035,7 @@
         "check": "inventory-classification"
       },
       "fence": 3,
-      "line": 94,
+      "line": 93,
       "language": "bash"
     },
     {
@@ -12217,7 +12165,7 @@
         "check": "inventory-classification"
       },
       "fence": 11,
-      "line": 220,
+      "line": 285,
       "language": "csharp"
     },
     {
@@ -12230,7 +12178,7 @@
         "check": "inventory-classification"
       },
       "fence": 20,
-      "line": 425,
+      "line": 741,
       "language": "bash"
     },
     {
@@ -12243,7 +12191,7 @@
         "check": "inventory-classification"
       },
       "fence": 6,
-      "line": 157,
+      "line": 166,
       "language": "bash"
     },
     {
@@ -12256,8 +12204,8 @@
         "check": "inventory-classification"
       },
       "fence": 17,
-      "line": 335,
-      "language": "csharp"
+      "line": 369,
+      "language": "plain"
     },
     {
       "id": "11b945398267de84",
@@ -12282,7 +12230,7 @@
         "check": "inventory-classification"
       },
       "fence": 15,
-      "line": 316,
+      "line": 327,
       "language": "csharp"
     },
     {
@@ -12295,20 +12243,7 @@
         "check": "inventory-classification"
       },
       "fence": 8,
-      "line": 174,
-      "language": "bash"
-    },
-    {
-      "id": "31f4e6738d6e8d84",
-      "kind": "docs-fence",
-      "path": "docs/internal/contributor/testkit.md",
-      "validation": {
-        "status": "not-executable",
-        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
-        "check": "inventory-classification"
-      },
-      "fence": 21,
-      "line": 608,
+      "line": 203,
       "language": "bash"
     },
     {
@@ -12322,19 +12257,6 @@
       },
       "fence": 5,
       "line": 149,
-      "language": "bash"
-    },
-    {
-      "id": "6c4c5000fcecec90",
-      "kind": "docs-fence",
-      "path": "docs/internal/contributor/testkit.md",
-      "validation": {
-        "status": "not-executable",
-        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
-        "check": "inventory-classification"
-      },
-      "fence": 22,
-      "line": 749,
       "language": "bash"
     },
     {
@@ -12373,8 +12295,8 @@
         "check": "inventory-classification"
       },
       "fence": 10,
-      "line": 211,
-      "language": "bash"
+      "line": 240,
+      "language": "csharp"
     },
     {
       "id": "a59aeff646be1caf",
@@ -12386,8 +12308,8 @@
         "check": "inventory-classification"
       },
       "fence": 7,
-      "line": 163,
-      "language": "bash"
+      "line": 192,
+      "language": "csharp"
     },
     {
       "id": "ad8c3e26b80a5104",
@@ -12399,7 +12321,7 @@
         "check": "inventory-classification"
       },
       "fence": 12,
-      "line": 248,
+      "line": 299,
       "language": "csharp"
     },
     {
@@ -12412,7 +12334,7 @@
         "check": "inventory-classification"
       },
       "fence": 13,
-      "line": 293,
+      "line": 308,
       "language": "csharp"
     },
     {
@@ -12425,7 +12347,7 @@
         "check": "inventory-classification"
       },
       "fence": 9,
-      "line": 200,
+      "line": 212,
       "language": "csharp"
     },
     {
@@ -12451,8 +12373,8 @@
         "check": "inventory-classification"
       },
       "fence": 18,
-      "line": 353,
-      "language": "csharp"
+      "line": 417,
+      "language": "bash"
     },
     {
       "id": "d4e9be72e296c362",
@@ -12464,7 +12386,7 @@
         "check": "inventory-classification"
       },
       "fence": 14,
-      "line": 307,
+      "line": 316,
       "language": "csharp"
     },
     {
@@ -12477,7 +12399,7 @@
         "check": "inventory-classification"
       },
       "fence": 16,
-      "line": 324,
+      "line": 345,
       "language": "csharp"
     },
     {
@@ -12490,8 +12412,8 @@
         "check": "inventory-classification"
       },
       "fence": 19,
-      "line": 377,
-      "language": "plain"
+      "line": 600,
+      "language": "bash"
     },
     {
       "id": "b28339b89f66c4ae",
@@ -13270,7 +13192,7 @@
         "check": "inventory-classification"
       },
       "fence": 3,
-      "line": 152,
+      "line": 135,
       "language": "json"
     },
     {
@@ -13283,7 +13205,7 @@
         "check": "inventory-classification"
       },
       "fence": 2,
-      "line": 133,
+      "line": 117,
       "language": "json"
     },
     {
@@ -13296,7 +13218,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 55,
+      "line": 54,
       "language": "json"
     },
     {
@@ -13751,7 +13673,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 64,
+      "line": 60,
       "language": "bash"
     },
     {
@@ -13881,7 +13803,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 267,
+      "line": 266,
       "language": "bash"
     },
     {

@@ -10,7 +10,7 @@ Two of the most common reads with the Honua Python SDK: querying a FeatureServer
 
 ## Query a FeatureServer layer
 
-Honua serves layers over the ArcGIS-compatible [GeoServices REST](../../reference/protocols/geoservices-rest.md) FeatureServer. Two ways to query it:
+Honua serves layers over the GeoServices REST FeatureServer. Two ways to query it:
 
 **Protocol-neutral (`source` + `Query`)** — the same code shape for any protocol:
 

@@ -82,7 +82,7 @@ Currently seeded fixture coverage:
 
 - GeoServer REST small (`geoserver-small-v1`): up to 20 workspaces, 200
   layers, 10k features, 60s wall-clock envelope. Medium and large GeoServer
-  bands plus ArcGIS, OGC Features, OGC map/tile-metadata, and coverage
+  bands plus GeoServices REST, OGC Features, OGC map/tile-metadata, and coverage
   baselines are deferred to follow-on slices so each can be calibrated
   against a real fixture run.
 

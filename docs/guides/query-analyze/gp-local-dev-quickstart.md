@@ -260,7 +260,7 @@ execute through the canonical `honua-geoprocessing` plan process. See
 [run geoprocessing](run-geoprocessing.md) and the [operation reference](../../reference/geoprocessing-operations.md).
 
 For AI clients, connect to this server's `/mcp` endpoint and follow
-[geoprocessing with AI](geoprocessing-with-ai.md). For ArcGIS clients, the
+[geoprocessing with AI](geoprocessing-with-ai.md). For GeoServices REST clients, the
 [GPServer adapter](run-geoprocessing.md) exposes service-scoped tasks over the
 same runtime. The [sample README](../../../samples/gp-local-dev/README.md)
 links the SDK, native, and MCP examples.

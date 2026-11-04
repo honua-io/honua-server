@@ -10,7 +10,7 @@ Install the Honua JavaScript/TypeScript SDK, construct a client, authenticate wi
 
 **Prerequisites:** A running Honua server ([quickstart](../../get-started/quickstart.md)) with at least one published layer ([publish layers](../../guides/publish/publish-layers.md)), Node.js 20 or newer, and an API key (see [Authenticate clients](../../guides/secure/authentication.md) — the SDK landing page shows how to [mint a scoped key](../README.md#authentication)).
 
-The SDK ships as `@honua/sdk-js` on npm. It is **ESM-only** and targets **Node ≥ 20**. The current release is **0.1.12** — pin the exact version and expect breaking changes in minor releases for symbols marked experimental. The companion `@honua/mcp-server` package ships `honua-mcp-proxy`, the stdio bridge that lets Claude Desktop and similar hosts reach a Honua deployment's `/mcp` endpoint, and a standalone `honua-mcp` server for public ArcGIS and OGC endpoints (see [AI agents (MCP)](../../guides/connect/ai-agents-mcp.md)). ArcGIS code migration is owned by [`honua-migrate`](https://github.com/honua-io/honua-migrate) (see [ArcGIS apps & SDKs](../../guides/migrate/arcgis-apps-and-sdks.md)).
+The SDK ships as `@honua/sdk-js` on npm. It is **ESM-only** and targets **Node ≥ 20**. The current release is **0.1.12** — pin the exact version and expect breaking changes in minor releases for symbols marked experimental. The companion `@honua/mcp-server` package ships `honua-mcp-proxy`, the stdio bridge that lets Claude Desktop and similar hosts reach a Honua deployment's `/mcp` endpoint, and a standalone `honua-mcp` server for public GeoServices REST and OGC endpoints (see [AI agents (MCP)](../../guides/connect/ai-agents-mcp.md)). GeoServices REST code migration is owned by [`honua-migrate`](https://github.com/honua-io/honua-migrate) (see [GeoServices REST apps & SDKs](../../guides/migrate/from-geoservices-rest.md)).
 
 ## Steps
 
@@ -81,7 +81,7 @@ A wrong or missing API key surfaces as an authentication error from the client. 
 |---|---|
 | `@honua/sdk-js/honua` | `HonuaClient` plus native wrappers — `HonuaFeatureLayer`, `HonuaStacSearch`, `HonuaOgcFeatures`, `HonuaWms`, `HonuaOdataEntitySet`, … |
 | `@honua/sdk-js/contract` | Protocol-neutral `Dataset` / `Source` / `Query` / `Result` and source factories |
-| `@honua/sdk-js/esri-compat` | ArcGIS compatibility layer for gradual migration |
+| GeoServices REST compatibility | Client helpers for gradual migration |
 | [`@honua/honua-migrate`](https://github.com/honua-io/honua-migrate) | Separate scanner, codemod, content, and reconciliation package |
 
 ## Troubleshoot

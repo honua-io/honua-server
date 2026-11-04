@@ -1,8 +1,6 @@
 # Pilot Baseline Scorecard
 
-Captures the starting state at pilot kickoff. All fields align with the migration plan
-[success metrics](../ESRI_MIGRATION_PLATFORM_PLAN.md#success-metrics-defined) and
-[pilot dependency rule](../ESRI_MIGRATION_PLATFORM_PLAN.md#pilot-dependency-rule).
+Captures the starting state at pilot kickoff. All fields align with the pilot success metrics and dependency rules.
 
 ---
 
@@ -45,7 +43,7 @@ Aligned with the four success metrics defined in the migration plan.
 
 | Metric | Value |
 |--------|-------|
-| Total ArcGIS API call sites (scanner) | |
+| Total GeoServices REST API call sites (scanner) | |
 | Call-site breakdown by category | |
 
 ### Capability Coverage

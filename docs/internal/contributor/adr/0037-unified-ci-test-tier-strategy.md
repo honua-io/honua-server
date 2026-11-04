@@ -475,7 +475,7 @@ remove it from the coverage ledger.
 - `nightly-slow-tier.yml` currently runs `Tier=Slow&Category=Emulator`
   because LocalStack S3 + Azurite + Postgres are the only fixtures
   provisioned. The Scale, Cloud, and ExternalService subfamilies need
-  dedicated fixtures (multi-node compose, real cloud credentials, Esri
+  dedicated fixtures (multi-node compose, real cloud credentials, GeoServices REST
   Geoportal) and are tracked as separate workflows; their attributes still
   emit `Tier=Slow` so a future workflow can opt them in by tightening
   `Category=`.

@@ -10,14 +10,14 @@ The ImageServer compatibility surface already ships Basic map-space mensuration
 (#2734), DEM-backed height mensuration ([#1879](https://github.com/honua-io/honua-server/issues/1879)),
 orientation-ranked `find` ([#1880](https://github.com/honua-io/honua-server/issues/1880)),
 and image-coordinate-system `project` warps ([#1881](https://github.com/honua-io/honua-server/issues/1881)).
-The remaining ArcGIS sensor-model analytics — `computeTiePoints`, shadow /
+The remaining GeoServices REST sensor-model analytics — `computeTiePoints`, shadow /
 photogrammetric 3D height mensuration, and volume (`calculateVolume`) — are a
 distinct advanced-analytics capability with materially different metadata,
 compute, and operational requirements than the parity work already landed
 ([#2667](https://github.com/honua-io/honua-server/issues/2667), parent
 [#2636](https://github.com/honua-io/honua-server/issues/2636)).
 
-The central tension is `computeTiePoints`. A faithful ArcGIS `computeTiePoints`
+The central tension is `computeTiePoints`. A faithful GeoServices REST `computeTiePoints`
 runs **automatic feature detection + descriptor matching + RANSAC** across
 overlapping images to *derive* tie points where none were previously known. That
 is research-grade computer vision and requires a heavy CV dependency
@@ -84,7 +84,7 @@ the server or SDKs. This is a hard boundary, not a deferral of convenience:
   through the async job envelope (§4), and it does not change the synchronous
   pass-through contract defined here.
 
-The documented Esri tuning parameters that only govern automatic matching
+The documented GeoServices REST tuning parameters that only govern automatic matching
 (`minRegionSize`, `maxLevel`, `skipFactor`, `searchSize`, `similarity`) are
 **accepted for wire compatibility but have no effect**, because no matching is
 performed. This is documented in the operation response path and here so clients
@@ -121,7 +121,7 @@ a reference point:
   defensively; a payload that parses to zero valid pairs is treated as "no
   control points" (→ honest `501`, §5).
 
-**Decision note (wire ambiguity):** the Esri Enterprise REST reference documents
+**Decision note (wire ambiguity):** the GeoServices REST Enterprise REST reference documents
 the `computeTiePoints` response as a `tiePoints` object with parallel
 `sourcePoints[]` / `targetPoints[]` arrays (each point `{x, y, spatialReference}`),
 rather than a per-point `{imagePoint, referencePoint}` pairing. We adopt the
@@ -158,7 +158,7 @@ parseable-but-unsupported request:
 - **Malformed request parameters** (e.g. non-numeric `rasterId`) → **`400`**.
 - **Layer / primary raster not found** → **`404`**.
 - Under the GeoServices REST convention (PA-070/PA-117), these surface as the
-  Esri `{"error":{"code":N,...}}` body (HTTP 200 with body code, or a legacy
+  GeoServices REST `{"error":{"code":N,...}}` body (HTTP 200 with body code, or a legacy
   `>= 400` status); `501` passes its code through per #2795.
 
 ### 6. Numerical-fixture expectations
@@ -205,12 +205,12 @@ Cut/fill volumes are computed against the layer's DEM surface
 (`raster_sensor_metadata.dem_source`, the same source the DEM-height path uses),
 integrating over the DEM pixels inside each area-of-interest.
 
-- **Wire contract.** Follows the ArcGIS Enterprise REST `Calculate Volume`
+- **Wire contract.** Follows the GeoServices REST Enterprise REST `Calculate Volume`
   reference (not invented): request `geometries` (array of polygon/envelope AOIs),
   `geometryType`, `baseType`, `constantZ` (base plane, required for `baseType=0`),
   `pixelSize`, `mosaicRule`, `f`; response `{ "results": [ { "area", "cut",
   "fill", "minz", "maxz", "meanz" } ] }` with one entry per AOI. `fill` is
-  negative per the Esri convention. There is **no `net` field** in the reference,
+  negative per the GeoServices REST convention. There is **no `net` field** in the reference,
   so none is emitted (the net is `cut + fill`).
 - **Base plane.** Only **`baseType=0` (constant elevation plane, `constantZ`)** is
   supported. The shared clip primitive returns per-pixel band *values* with no
@@ -259,7 +259,7 @@ integrating over the DEM pixels inside each area-of-interest.
 - Reusing the existing `raster_sensor_metadata` exterior-orientation JSONB avoids
   a schema migration in this slice; the control-point schema is documented here
   so producers (import/registration paths) have a stable target.
-- The response adopts the documented Esri dual-array shape; clients that expected
+- The response adopts the documented GeoServices REST dual-array shape; clients that expected
   a per-point pairing must read the index-aligned arrays. The divergence between
   stored schema (paired) and wire schema (dual-array) is deliberate and
   documented.
@@ -277,5 +277,4 @@ integrating over the DEM pixels inside each area-of-interest.
 - honua-io/honua-server#2667 (this epic), #2636 (parent), #1879 (DEM height),
   #1880 (orientation-ranked find), #1881 (image-CS project / RPC first-order),
   #2707 (durable job envelope), #2795 (501 pass-through)
-- Esri ArcGIS REST reference: Compute Tie Points (Image Service) —
-  `developers.arcgis.com/rest/services-reference/enterprise/compute-tie-points/`
+- GeoServices REST reference: Compute Tie Points (Image Service) —

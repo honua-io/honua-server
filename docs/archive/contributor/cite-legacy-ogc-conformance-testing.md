@@ -53,7 +53,7 @@ The legacy OGC versions are intended for clients that have not yet adopted the m
 | Client | Protocol versions consumed | Wire-shape contract verified by |
 |---|---|---|
 | QGIS (legacy releases) | WMS 1.1.1, WFS 1.1.0 | `<WMT_MS_Capabilities>` + `SRS=` parsing; OWS 1.0 capabilities + GML 3.1.1 features |
-| ArcGIS Desktop / ArcMap | WMS 1.1.1, WFS 1.1.0 | EPSG:4326 lon/lat BBOX; `<ServiceExceptionReport>` with DTD reference; OWS 1.0 exceptions |
+| GeoServices REST Desktop / ArcMap | WMS 1.1.1, WFS 1.1.0 | EPSG:4326 lon/lat BBOX; `<ServiceExceptionReport>` with DTD reference; OWS 1.0 exceptions |
 | GDAL / OGR (`-oo VERSION=...`) | WMS 1.1.1, WFS 1.1.0, WFS 1.0.0 | All three capabilities roots; GML 2.1.2 `<gml:coordinates>`; KVP `MAXFEATURES`/`TYPENAME` |
 | Enterprise stacks pinned to WFS 1.0.0 | WFS 1.0.0 | `<WFS_Capabilities version="1.0.0">`; GML 2 `<gml:Box>`/`<gml:coordinates>` text |
 

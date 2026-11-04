@@ -63,7 +63,7 @@ Automated checks are necessary but not sufficient for production sign-off. Compl
 
 1. GIS client compatibility:
 - QGIS against OGC API Features/Tiles
-- ArcGIS Pro against FeatureServer/MapServer
+- desktop GIS client against FeatureServer/MapServer
 - Web client (Leaflet/MapLibre) against MVT/WMTS/WMS
 - Run [Client Templates + Manual Smoke Runbook](../../gis/CLIENT_TEMPLATE_RUNBOOK.md) and update [Client Template Version Matrix](../../gis/CLIENT_TEMPLATE_VERSION_MATRIX.md)
 

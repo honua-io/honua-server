@@ -13,7 +13,7 @@ Honua is developed as a family of repositories around this server. This page map
 |---|---|
 | [honua-server](https://github.com/honua-io/honua-server) | The server runtime (this repo): protocol adapters, canonical pipelines, admin API, conformance and test infrastructure |
 | [honua-console](https://github.com/honua-io/honua-console) | Web administration UI — Catalog, Operate, Share, and retained package/style editors. The former Console Studio builders are legacy; current conversational authoring lives in `honua-studio`. |
-| [honua-sdk-js](https://github.com/honua-io/honua-sdk-js) | JavaScript/TypeScript SDKs, including multiple renderers, the MCP server package, and the ArcGIS compatibility layer |
+| [honua-sdk-js](https://github.com/honua-io/honua-sdk-js) | JavaScript/TypeScript SDKs, including multiple renderers, the MCP server package, and the GeoServices REST compatibility layer |
 | [honua-migrate](https://github.com/honua-io/honua-migrate) | Assessment, service and content migration, codemods, durable execution, and reconciliation CLIs |
 | [honua-sdk-dotnet](https://github.com/honua-io/honua-sdk-dotnet) | .NET SDKs (`Honua.Sdk.*` packages, admin + gRPC clients) |
 | [honua-sdk-python](https://github.com/honua-io/honua-sdk-python) | Python SDK for the control plane and data APIs |

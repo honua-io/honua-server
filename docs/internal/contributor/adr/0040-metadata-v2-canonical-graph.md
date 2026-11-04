@@ -11,10 +11,10 @@ honua-server grew from a single FeatureServer prototype into a multi-protocol
 service supporting:
 
 - **APIs**: OGC API Features/Maps/Tiles/Coverages/Records/Styles/Common, WMS 1.3,
-  WMTS 1.0, WFS 2.0, WCS 2.0, Esri FeatureServer/MapServer/ImageServer, STAC API
+  WMTS 1.0, WFS 2.0, WCS 2.0, GeoServices REST FeatureServer/MapServer/ImageServer, STAC API
   1.0, OData v4
 - **Package formats**: GeoJSON, GeoParquet, FlatGeobuf, GeoPackage, KML, GML,
-  Shapefile, MBTiles, PMTiles, COG, Zarr, NetCDF, Esri JSON
+  Shapefile, MBTiles, PMTiles, COG, Zarr, NetCDF, GeoServices REST JSON
 
 Five structural problems with v1 became blocking by mid-2026:
 
@@ -28,7 +28,7 @@ Five structural problems with v1 became blocking by mid-2026:
    field touched every consumer.
 3. **No projection contract.** Each protocol cluster (FeatureServer, OGC API
    Features, STAC, OData, …) built ad-hoc transformations from v1 types into
-   wire format. The same Esri-style "drawingInfo" derivation appeared in three
+   wire format. The same GeoServices REST-style "drawingInfo" derivation appeared in three
    places. No single semantic mapping for shared concepts like "license".
 4. **No structural validation.** Orphan FKs (publication pointing at missing
    resource, storage binding for deleted layer) survived in production catalogs.
@@ -69,7 +69,7 @@ semantic, format-specific, or pure derivation:
 ├─────────────────────────────────────────────────────────────────┤
 │ Layer 2 — Format-specific (Extensions["<format>:<key>"])        │
 │ Concepts that exist in one format's vocabulary. Stable          │
-│ namespaced keys. Examples: esri-templates, stac:eo, wms-render. │
+│ namespaced keys. Examples: protocol-specific metadata, stac:eo, wms-render. │
 ├─────────────────────────────────────────────────────────────────┤
 │ Layer 1 — Shared semantic (typed V2 graph slots)                │
 │ Concepts that map to ≥2 standards with consistent meaning, OR   │
@@ -88,7 +88,7 @@ Promote a field from Extensions to a typed slot when **any** of:
 
 #### Stays L2 when
 
-1. Named after one protocol (`Esri*`, `stac:*`, `wms:*`).
+1. Named after one protocol (protocol-specific, `stac:*`, `wms:*`).
 2. Encodes one format's response *shape* rather than the underlying concept.
 3. Only one cluster's projection code consumes it.
 
@@ -100,7 +100,7 @@ Documented in `MetadataV2Resource.Extensions` / `MetadataV2Service.Extensions` /
 | Key prefix | Owner |
 |---|---|
 | `stac`, `stac:<ext>` | STAC ecosystem (eo, sar, view, proj, raster, processing, mlm, web-map-links, …) |
-| `esri-<aspect>` | Esri runtime fields (esri-popup, esri-templates, esri-subtypes, esri-sync, esri-render, esri-time, esri-document-info, esri-paging, esri-runtime) |
+| protocol-specific extension keys | GeoServices REST runtime metadata |
 | `wms-render` | WMS render flags (opaque, fixedWidth, fixedHeight, noSubsets) |
 | `wcs` | WCS XML encoding hints |
 | `odata-annotations` | OData annotations that aren't derivable |
@@ -177,7 +177,7 @@ problems (Principles 1–4) would persist in the adapter outputs, propagating
 through every cluster handler.
 
 ### Alternative B: Per-protocol metadata classes
-`EsriLayerDefinition`, `StacCollection`, `OgcApiFeatureCollection`, etc. — each
+`GeoServices RESTLayerDefinition`, `StacCollection`, `OgcApiFeatureCollection`, etc. — each
 cluster gets its own typed shape.
 
 **Rejected because**: shared concepts (license, attribution, spatial extent,
@@ -189,25 +189,25 @@ v1's situation.
 `MetadataV2Resource` carries every field every format could ever want, all typed.
 
 **Rejected because**: chases a moving target (STAC extensions, OGC API draft
-specs, vendor-specific Esri fields evolve faster than canonical type can be
+specs, protocol-specific GeoServices REST fields evolve faster than canonical type can be
 updated). Extensions bag with documented vocabulary is the right escape hatch.
 
 ### Alternative D: Inline storage of every format's payload
-`Resource.Esri = <EsriJson>`, `Resource.Stac = <StacItem>`, etc. — store the
-literal projection alongside the canonical form.
+Store each protocol's literal projection alongside the canonical form in its
+resource extension.
 
 **Rejected because**: storage explodes, sync drift between canonical and
 projections becomes inevitable, and the projection logic still has to live
 somewhere. Layer 3 derivation at render time is the right call.
 
 ### Alternative E: Catalog as a first-class entity
-Add `MetadataV2Catalog` with parent/child hierarchy for STAC catalogs / Esri
-folders / OGC Records hierarchies.
+Add `MetadataV2Catalog` with parent/child hierarchy for STAC catalogs / service
+groups / OGC Records hierarchies.
 
 **Rejected (deleted in slice 63/N)** because: catalog *projection* is an output
 concern, not a graph-storage concern. Endpoints walk publications filtered by
-`PublicationType` and project to each catalog's wire format. Esri folder
-grouping handled by convention (dotted `Metadata.Name` or future `Service.Group`
+`PublicationType` and project to each catalog's wire format. Service grouping is
+handled by convention (dotted `Metadata.Name` or future `Service.Group`
 slot). STAC parent/child can be modeled via `Relationships` with role `parent`
 or `child` when a concrete consumer needs it.
 
@@ -216,14 +216,14 @@ or `child` when a concrete consumer needs it.
 ### Positive
 - **Single source of truth.** Every shared concept lives in exactly one typed
   slot. Adding a new protocol consumer reads from the same slots existing ones
-  use; no parallel "Esri metadata" / "STAC metadata" / "OGC metadata" structs.
+  use; no parallel "GeoServices REST metadata" / "STAC metadata" / "OGC metadata" structs.
 - **Validated at construction.** Orphan FKs, missing primary geometry fields,
   duplicate semantic roles surface immediately rather than during request
   handling.
 - **Typed safety in hot paths.** `MetadataV2FieldType` enum replaces ~6
   string-table parsers across the codebase. Compiler catches typos.
-- **Extensible without re-architecting.** STAC extensions, vendor-specific
-  Esri fields, format-specific render flags all land in namespaced
+- **Extensible without re-architecting.** STAC extensions, GeoServices REST-specific
+  fields, and format-specific render flags all land in namespaced
   `Extensions` keys with documented conventions.
 - **Render-time projection composable.** `Map*ResponseV2` builders in each
   cluster consume the same typed slots and emit format-specific wire shapes.
@@ -239,7 +239,7 @@ or `child` when a concrete consumer needs it.
   WMTS, WFS, WCS, MapServer, ImageServer, STAC, OGC API Maps/Tiles/Coverages/
   Records). Adapter contracts (`IQueryParameterAdapter`, `IEditParameterAdapter`)
   carry v1 + V2 method overloads during the transition.
-- **Crosswalk maintenance.** New OGC API specs, STAC extensions, or Esri runtime
+- **Crosswalk maintenance.** New OGC API specs, STAC extensions, or GeoServices REST runtime
   fields all need triage against the Layer 1/2/3 criteria. The crosswalk doc
   (`docs/contributor/architecture/metadata-v2-crosswalk.md`) is a living
   artifact.
@@ -293,9 +293,9 @@ handler porting:
 
 1. `Metadata.Links[]` — required by every OGC API spec
 2. `Metadata.{License, Attribution, Keywords, Themes, Language, ContactPoint, Publisher}` — universal catalog facets
-3. `Field.{Alias, Editable, Length, DefaultValue, Domain}` — Esri/OData parity
+3. `Field.{Alias, Editable, Length, DefaultValue, Domain}` — GeoServices REST/OData parity
 4. `Resource.Display.*` — every Map/Tile protocol needs MinScale/MaxScale/etc.
-5. `Resource.Editing.*` — Esri capability + OGC API Features Part 4 parity
+5. `Resource.Editing.*` — GeoServices REST capability + OGC API Features Part 4 parity
 6. `Service.Settings.*` — operational limits per protocol
 7. `Resource.Spatial.{SupportedCrs, StorageCrs, StorageCrsCoordinateEpoch}` — OGC API Features Part 2
 8. `Resource.Style` + `Resource.StyleResourceIds` — OGC API Styles + multi-encoding.

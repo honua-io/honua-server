@@ -13,7 +13,7 @@ Verify protocol coverage against the canonical matrices for operations in scope.
 
 | Protocol | Coverage Matrix | In-Scope Operations | Status |
 |----------|----------------|---------------------|--------|
-| GeoServices REST parity landing page | [geoservices-rest-parity.md](../../../reference/compatibility/geoservices-parity.md) | Pilot-critical Esri operations across FeatureServer, MapServer, ImageServer, and Geometry Service | |
+| GeoServices REST parity landing page | [geoservices-rest-parity.md](../../../reference/compatibility/geoservices-parity.md) | Pilot-critical GeoServices REST operations across FeatureServer, MapServer, ImageServer, and Geometry Service | |
 | GeoServices REST parity data | [geoservices-rest-parity.json](../../../gis/data/geoservices-rest-parity.json) | Machine-readable review of operation status, parameter support, and evidence links | |
 | FeatureServer | [feature-server-matrix.md](../../../reference/compatibility/geoservices-parity.md) | | |
 | MapServer | [map-server-matrix.md](../../../reference/compatibility/geoservices-parity.md) | | |

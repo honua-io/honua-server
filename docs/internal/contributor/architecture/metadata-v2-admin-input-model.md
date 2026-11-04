@@ -11,7 +11,7 @@ inputs vs which are read-only / system-computed / discovered from data.
 The user-facing hierarchy in the admin UI:
 
 ```
-Folder (Esri-style grouping, optional)
+Folder (optional grouping)
 └── Service               (protocol exposure: FeatureServer, OGC API Features, ...)
     └── Layer             (operator-facing concept = Publication + Resource view)
         ├── Source         ← Resource.StorageBindings[0] + Connection
@@ -252,13 +252,13 @@ Style resources themselves (Type=Style) have their own form:
 | `Style.Abstract` | string | ✏️ |
 | `Style.LegendUrl` | URL | ✏️ — or "Upload legend graphic" with auto-fill |
 | `Style.StyleVersion` | int | 🧮 — auto-incremented on each Save |
-| `Style.Encodings[].Encoding` | enum string | ✏️ — picker (mapbox-style / sld-1.0.0 / esri-drawing-info / ...) |
+| `Style.Encodings[].Encoding` | enum string | ✏️ — picker (MapLibre style / SLD / GeoServices REST renderer) |
 | `Style.Encodings[].Body` | string (code editor) | ✏️ — embedded editor with format-aware syntax highlighting (MapLibre / XML / JSON) |
 | `Style.Encodings[].StorageBindingId` | FK | ✏️ — alternative to Body when payload is large |
 | `Style.Encodings[].ContentType` | MIME | 🧮 — derived from Encoding |
 
 UI: Maputnik-style preview pane next to the editor for the mapbox-style encoding.
-For non-primary encodings (SLD, Esri), preview is read-only render.
+For non-primary encodings (SLD and GeoServices REST renderer), preview is read-only render.
 
 ---
 
@@ -284,7 +284,7 @@ analyst-only read."
 | Field | Type | UI |
 |---|---|---|
 | `PermanentFilter.Expression` | string | ✏️ — code editor with filter-language syntax highlighting |
-| `PermanentFilter.Language` | enum (arcgis-sql / cql2-text / cql2-json) | ✏️ — picker |
+| `PermanentFilter.Language` | enum (compatibility SQL / cql2-text / cql2-json) | ✏️ — picker |
 
 UI: "Test filter" button runs against the storage backend and shows match count.
 
@@ -302,7 +302,7 @@ UI: "Test filter" button runs against the storage backend and shows match count.
 | `Cardinality` | enum | ✏️ — radio (1:1 / 1:N / N:M) |
 | `OriginField` | string | ✏️ — picker from current resource's fields |
 | `DestinationField` | string | ✏️ — picker from related resource's fields (after RelatedResourceId set) |
-| `EsriRelationshipId` | int? | 🧮 — auto-assigned stable int from Id hash; operator can override |
+| Stable relationship identifier | int? | 🧮 — auto-assigned stable int from Id hash; operator can override |
 
 ---
 
@@ -315,7 +315,7 @@ UI: "Test filter" button runs against the storage backend and shows match count.
 | `Metadata.Description` | string | ✏️ |
 | `Metadata.Keywords` / `Themes` / `Language` / `License` / `Attribution` / `ContactPoint` / `Publisher` / `Links` | same shape as Resource.Metadata | ✏️ — defaults can inherit from resources in the service |
 | `Route` | string | 🧮 — derived from Service.Group + Name; operator can override (rare) |
-| `Group` (Esri folder, when added) | string | ✏️ — picker or freetext |
+| `Group` (optional service grouping) | string | ✏️ — picker or freetext |
 | `Protocols[]` | string[] | ✏️ — multi-select from supported protocols list |
 | `SpatialReference` | SpatialReference | 🔍 — derived from primary resources; operator can pin if the service forces a single CRS |
 | `AccessPolicy` | AccessPolicy | ✏️ — same shape as Resource |
@@ -333,7 +333,7 @@ UI: "Test filter" button runs against the storage backend and shows match count.
 
 | Field | Type | UI | Default |
 |---|---|---|---|
-| `Settings.MaxRecordCount` | int? | ✏️ — number input | 2000 (Esri convention) |
+| `Settings.MaxRecordCount` | int? | ✏️ — number input | 2000 (common service convention) |
 | `Settings.DefaultRecordCount` | int? | ✏️ | 1000 |
 | `Settings.MaxImageWidth` | int? | ✏️ — applies to MapServer/WMS | 2048 |
 | `Settings.MaxImageHeight` | int? | ✏️ — applies to MapServer/WMS | 2048 |
@@ -368,8 +368,8 @@ override:
 | `ServiceId` | FK | ✏️ — already set by navigation context |
 | `ResourceId` | FK | ✏️ — picker from available resources |
 | `StorageBindingId` | FK? | ✏️ — picker; auto = resource's primary binding |
-| `PublicationType` | enum (OgcCollection / EsriFeatureLayer / WfsFeatureType / WmsLayer / WmtsLayer / StacCollection / OgcRecord / ODataEntitySet / Custom) | 🧮 — derived from Service.Protocols + Resource.Type |
-| `Identifier.Value` | string | ✏️ — operator picks or auto-assigns ("0", "1", ... for Esri-style numeric; resource name for OGC-style) |
+| `PublicationType` | enum | 🧮 — derived from Service.Protocols + Resource.Type |
+| `Identifier.Value` | string | ✏️ — operator picks or auto-assigns (numeric for GeoServices REST; resource name for OGC-style) |
 | `Identifier.IsNumeric` | bool | 🧮 — derived from Value (digit-only) |
 | `Identifier.PathOverride` | string? | ✏️ — rare; operator only sets for non-default URLs |
 | `IsPrimary` | bool, default true on first | ✏️ — checkbox |
@@ -379,7 +379,7 @@ override:
 | `Capabilities` (per-publication overrides) | derived | 🧮 — read-only display showing which Resource capabilities are exposed on this service |
 
 UI flow: "Add layer to service" → picks Resource → auto-suggests Identifier
-(next int for Esri-style services; resource name for OGC-style). Operator
+(next integer for GeoServices REST services; resource name for OGC-style). Operator
 confirms or edits. Save creates Publication.
 
 ---

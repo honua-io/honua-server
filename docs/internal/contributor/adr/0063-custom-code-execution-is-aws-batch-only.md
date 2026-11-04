@@ -93,44 +93,6 @@ sanctioning custom-code dispatch on Kubernetes, Azure, or the server host.
 
 ## How this is enforced
 
-1. **Startup configuration gate (primary).**
-   `ControlPlaneOptionsValidator` (registered with `ValidateOnStart`) fails
-   startup when any `ControlPlane:ExecutionWorkloads` entry declares
-   `RuntimeProfile = "custom-code"` with a `TargetKind` other than `AwsBatch`. The
-   failure message names the offending workload and points here. A future PR that
-   reintroduces an on-host (or other) custom-code backend therefore trips an
-   explicit, documented gate rather than silently landing.
-   *(Unit tests: `ControlPlaneOptionsValidatorTests` — a non-AWS-Batch custom-code
-   workload fails; an AWS-Batch one, and an on-host **non**-custom-code workload,
-   succeed.)*
-2. **Runtime claim fence (backstop).** `CustomCodeDispatchJobExecutor` fails a
-   custom-code job that is ever claimed by an in-process worker, so even if a job
-   reached a host worker it would fail loudly instead of running untrusted code in
-   the server process.
-3. **Credential-free Fargate boundary.** Custom-code definitions must use Fargate,
-   the sanctioned non-root user (`1001:1001`), no task `jobRoleArn`, no injected
-   secrets or mounted volumes, and no cloud credential environment. Dispatch reads
-   the exact AWS definition revision and refuses other shapes. The provider-only
-   execution role supplies image pulls and logging; it is not handed to the task.
-   EC2 Batch is refused because instance-profile metadata would add ambient IAM.
-   The entrypoint rejects cloud credential environments before restoring dependencies
-   and launches a sanitized child. Environment deletion is defense in depth, **not**
-   a hostile-code security boundary: initial values can survive in `/proc`.
-   User code deliberately holds a Honua capability limited to its frozen resource
-   scope, job and dispatch attempt. Artifacts and the failure journal go through the
-   authenticated, bounded server broker; no direct S3 credential transport is used.
-   Changing worker images/server/IaC is a coordinated upgrade. Source and CI checks
-   establish these enforced guards; live Fargate/IAM qualification remains required
-   before claiming hostile multi-tenant production qualification.
-4. **SDK exposes no local server-job execution path.** `honua-sdk-python` has **no**
-   custom-code job-submission surface and cannot influence backend selection
-   (backend is server configuration). Its ArcPy/ModelBuilder migration codemod
-   translates recognized tools only to **built-in server processes**
-   (`EXECUTABLE_PROCESS_IDS`); unrecognized tools become `manual-review`, never an
-   auto-submitted custom-code job. A tripwire test locks in the absence of any
-   custom-code submission or backend-selection surface in the SDK. The explicit
-   developer CLI adapter described above is separate from this server contract.
-
 ## Consequences
 
 - Untrusted operator code has exactly one execution path, and that path is an

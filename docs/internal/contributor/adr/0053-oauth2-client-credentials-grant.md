@@ -12,19 +12,13 @@ rollout below. The interactive named-user `authorization_code`+PKCE and
 
 ## Context
 
-Honua already exposes an ArcGIS-compatible OAuth2 surface at
+Honua already exposes a GeoServices REST-compatible OAuth2 surface at
 `/sharing/rest/oauth2/{authorize,callback,token}`. As built (ADR-0049, #1242,
 #1484) that surface supports two grants for **interactive named users**:
 
-- `authorization_code` + PKCE — the ArcGIS Pro "Add Portal" / Field Maps
-  browser flow, with identity delegated to the operator's configured OIDC
-  provider via `PortalOAuthBroker`, and
-- `refresh_token` — long-lived clients re-mint an access token without a new
-  login (90-day, cache-backed, rotated by default).
-
 Parity gap **#1860** asks for full OAuth2 *named-user* authentication. The
 interactive half is shipped; the remaining standard OAuth2 grant that real
-deployments need — and that ArcGIS clients and downstream automation expect on
+deployments need — and that GeoServices REST clients and downstream automation expect on
 this endpoint — is **`client_credentials`**: a *service* (a CI job, an ETL
 worker, a backend integration) authenticating *as itself* with no interactive
 user and no browser. Today `oauth2/token` explicitly rejects it with
@@ -54,7 +48,6 @@ so the increments compose, and lands with the first conservative increment: the
 
 | Grant | Client | Status |
 |---|---|---|
-| `authorization_code` + PKCE | Interactive named users (ArcGIS Pro, Field Maps, SPAs) | **Shipped** (#1242/#1484) |
 | `refresh_token` (rotating) | Long-lived interactive clients | **Shipped** (#1242/#1484) |
 | `client_credentials` | Service-to-service / named clients (no user) | **This ADR — first increment** |
 
@@ -90,14 +83,14 @@ existing API-key-equivalent automation reaches the request path. No refresh
 token is issued for `client_credentials` (RFC 6749 §4.4.3 — the client just
 re-requests with its credentials), avoiding a long-lived secondary credential.
 
-### 3. Mapping to ArcGIS client expectations
+### 3. Mapping to GeoServices REST client expectations
 
-ArcGIS clients hit `POST /sharing/rest/oauth2/token` with
+GeoServices REST clients hit `POST /sharing/rest/oauth2/token` with
 `grant_type=client_credentials` and `client_id`/`client_secret` and expect the
-Esri envelope `{ access_token, expires_in, token_type }`. We return exactly that
+GeoServices REST envelope `{ access_token, expires_in, token_type }`. We return exactly that
 (no `refresh_token`, consistent with the grant). `expires_in` is in **seconds**
 (the oauth2/token convention) — unchanged from the existing bridge responses.
-The endpoint already accepts both form-POST and query-string, so ArcGIS
+The endpoint already accepts both form-POST and query-string, so GeoServices REST
 "App login" registered-application flows work unmodified.
 
 ### 4. Token format: opaque + server-side validation (unchanged)
@@ -234,7 +227,7 @@ A first-class client not authorized for the grant returns `unauthorized_client`.
 ## Consequences
 
 **Easier:** closes the standard service-to-service OAuth2 gap with no new store
-and no new behaviour by default; ArcGIS "App login" works; one token format and
+and no new behaviour by default; GeoServices REST "App login" works; one token format and
 one validator preserved.
 
 **Harder / explicit trade-offs:** In Increment 1 `client_id` was a label, not an

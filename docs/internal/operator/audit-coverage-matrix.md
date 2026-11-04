@@ -57,7 +57,7 @@ rejected `401`/`403` is still captured by the authorization row below.
 |---|---|---|---|---|---|
 | Admin OIDC backend-assisted login (code → token exchange) | `/api/v{version}/admin/auth/providers/{providerKey}/token` | `POST` | `Authentication` | `auth.login` | 2xx → `Success`; failure → `Failure`/`Denied` |
 | First-party OAuth token issuance | `/oauth/token`, `/sharing/rest/oauth2/token` | `POST` | `Authentication` | `auth.token.issue` | 2xx → `Success`; failure → `Failure`/`Denied` |
-| ArcGIS-compatible portal token issuance | `/sharing/rest/generateToken` | `POST`, `GET` | `Authentication` | `auth.token.issue` | 2xx → `Success`; failure (including `400` for unusable credentials) → `Failure`/`Denied` |
+| GeoServices REST-compatible portal token issuance | `/sharing/rest/generateToken` | `POST`, `GET` | `Authentication` | `auth.token.issue` | 2xx → `Success`; failure (including `400` for unusable credentials) → `Failure`/`Denied` |
 | Failed authentication (any route) | `**` | any | `Authentication` | `auth.failure` | `401` → `Failure` |
 | Permission denied (any route) | `**` | any | `Authorization` | `auth.denied` | `403` → `Denied` |
 | Update console share access | `/api/v{version}/console/content/{id}/share/access` | `PUT` | `AdminAction` | `console.share.access.update` | 2xx → `Success`; failure → `Failure`/`Denied` |

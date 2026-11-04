@@ -1,21 +1,21 @@
 ---
 type: guide
 title: "Authenticate clients"
-description: "Set up the three ways callers prove who they are: API keys for automation and the admin API, OIDC for browser and console sign-in, and ArcGIS-compatible portal tokens for Esri clients."
+description: "Set up the three ways callers prove who they are: API keys for automation and the admin API, OIDC for browser and console sign-in, and GeoServices REST-compatible portal tokens for GeoServices REST clients."
 resource: "honua://capability/identity.oidc"
 resources:
   - "honua://capability/identity.oidc-multi-provider"
 ---
 # Authenticate clients
 
-Set up the three ways callers prove who they are: API keys for automation and the admin API, OIDC for browser and console sign-in, and ArcGIS-compatible portal tokens for Esri clients.
+Set up the three ways callers prove who they are: API keys for automation and the admin API, OIDC for browser and console sign-in, and GeoServices REST-compatible portal tokens for GeoServices REST clients.
 
 **Prerequisites:** A running Honua server and the ability to set its environment variables. For what authenticated callers are then *allowed* to do, see [Control access](access-control.md); for client-certificate (mTLS) authentication, see [TLS and mTLS](tls-and-mtls.md).
 
 ## Client response caching
 
 Authenticated HTTP responses use `Cache-Control: no-store`. HTTP 401/403 responses
-and equivalent protocol-formatted errors use the same policy, including Esri
+and equivalent protocol-formatted errors use the same policy, including GeoServices REST
 498/499 errors carried as HTTP 200. This prevents compliant HTTP caches from
 reusing an earlier response after credentials change. Public anonymous responses
 retain their normal endpoint cache policy.
@@ -114,7 +114,7 @@ that work and add request restrictions when you create them:
 - A restricted key cannot be exchanged for a portal token (`generateToken` or the
   OAuth2 `client_credentials` fallback), because the token would not carry the key's
   restrictions.
-- Refusals answer like an invalid key (`401`, or the Esri `498` invalid-token error on
+- Refusals answer like an invalid key (`401`, or the GeoServices REST `498` invalid-token error on
   GeoServices routes) and are logged at Warning with event id `4118`, naming the key
   id and the failed restriction but never the key.
 
@@ -252,16 +252,16 @@ key value in the secret store, outside Terraform configuration and release
 evidence. Deployments without a static key continue using provider metadata and
 JWKS discovery.
 
-### 4. Issue ArcGIS-compatible tokens
+### 4. Issue GeoServices REST-compatible tokens
 
-Esri clients (ArcGIS Pro, Maps SDKs) authenticate against the portal token endpoint, which is always on:
+GeoServices REST clients, including desktop GIS applications and native client SDKs, authenticate against the portal token endpoint, which is always available:
 
-Use `PortalCompat.generateToken` from `@honua/sdk-js/esri-compat` with `username`, `password`, `client: "referer"`, `referer: "https://app.example.com"`, and `expiration: 60`. ArcGIS Pro and other Esri clients discover the same endpoint automatically when they prompt for credentials.
+Applications can call the same endpoint with `username`, `password`, `client: "referer"`, `referer: "https://app.example.com"`, and `expiration: 60`. Desktop GIS clients and other GeoServices REST clients can discover the endpoint when they prompt for credentials.
 
 The local admin credential bridge accepts the bootstrap admin password and managed
 API keys that already confer full administration. Service/layer keys, narrow admin
 or operations grants, and approved-operation replay credentials cannot be exchanged
-through this admin bridge: issuance returns the Esri `400` "Unable to generate
+through this admin bridge: issuance returns the GeoServices REST `400` "Unable to generate
 token" error. Continue using those keys through their supported API-key transport;
 configured OIDC identities use the separate identity-provider bridge. A refused
 exchange is not a successful scoped Portal-token workflow.
@@ -272,7 +272,7 @@ they remain valid until revoked or expired. Revoke tokens that may have been iss
 from constrained keys and require affected clients to authenticate again. Upgrade
 all token-issuance nodes before resuming those exchanges.
 
-The response is `{ "token": "...", "expires": ..., "ssl": true }`. Tokens are opaque, cached server-side (Redis when enabled), and bound either to the supplied referer (`client=referer`, the default) or to the request's client IP (`client=ip` or `client=requestip`, the Esri SDK default for IP-bound tokens) — a mismatched binding fails validation. Use them on `/rest/services/...` via `?token=`, `Authorization: Bearer`, `X-Esri-Authorization: Bearer`, or a form-encoded POST `token` field. An API key is accepted on the same transports, on the GeoServices surfaces and on every other surface that honours the `token` query parameter (OGC services included), so a client that sends a key as its `token` works without custom headers. The key keeps its own scope, exactly as in `X-API-Key`, and is recorded as an API-key credential; the Admin API still requires `X-API-Key`. A key with administrative authority is refused in the `token` query parameter (send it in a header), and a key's referrer and IP restrictions apply on this transport too, so restrict any key you hand to clients that can only use `?token=` (see [Restrict keys used from browsers or in URLs](#restrict-keys-used-from-browsers-or-in-urls)). Per RFC 6750 §2.3, every response to a request authenticated by a `token` query parameter carries `Cache-Control: private` (credentialed responses are additionally `no-store`), so shared caches and CDNs do not store responses keyed by a URL that contains the credential. Issuance is HTTPS-only by default; expiry is clamped to `Authentication__PortalToken__MaxExpirationMinutes` (default 14400) **and to the expiry of the credential the token was issued from**, so a key that expires in five minutes never yields a ten-day token. The issued token is also tied to that credential for its whole life: revoking or rotating the API key it came from, or rotating the admin password, stops it on the next request without needing the token value. The credential is re-read at most once per `Authentication__PortalToken__SourceRevalidationSeconds` (default 10) per instance, which is also the worst-case delay before a revocation takes effect; set it to `0` to re-read on every request. Tokens issued before an upgrade to this behaviour carry no credential reference and are refused — affected clients simply call `generateToken` again. An opt-in OAuth2 bridge (`/sharing/rest/oauth2/*`) brokers named-user sign-in to your OIDC provider. It needs `Oidc__Enabled=true`, a valid provider (`Oidc__Generic__Enabled`, `Oidc__Generic__Authority`, `Oidc__Generic__ClientId`, and that provider's client secret), and every client redirect registered in `Authentication__PortalToken__OAuth2__AllowedRedirectUris`. The callback validates the IdP token with the OIDC verifier whenever that bridge is configured. `Authentication__PortalCredentialVerifier__UseOidc` is not required for the bridge; it still selects OIDC for `generateToken` password checks. After the redirect URI has been accepted, a later authorization failure is returned to it as `error` and `state`, not as a JSON body on the callback.
+The response is `{ "token": "...", "expires": ..., "ssl": true }`. Tokens are opaque, cached server-side (Redis when enabled), and bound either to the supplied referer (`client=referer`, the default) or to the request's client IP (`client=ip` or `client=requestip`, the GIS client SDK default for IP-bound tokens) — a mismatched binding fails validation. Use them on `/rest/services/...` via `?token=`, `Authorization: Bearer`, `X-Esri-Authorization: Bearer`, or a form-encoded POST `token` field. An API key is accepted on the same transports, on the GeoServices surfaces and on every other surface that honours the `token` query parameter (OGC services included), so a client that sends a key as its `token` works without custom headers. The key keeps its own scope, exactly as in `X-API-Key`, and is recorded as an API-key credential; the Admin API still requires `X-API-Key`. A key with administrative authority is refused in the `token` query parameter (send it in a header), and a key's referrer and IP restrictions apply on this transport too, so restrict any key you hand to clients that can only use `?token=` (see [Restrict keys used from browsers or in URLs](#restrict-keys-used-from-browsers-or-in-urls)). Per RFC 6750 §2.3, every response to a request authenticated by a `token` query parameter carries `Cache-Control: private` (credentialed responses are additionally `no-store`), so shared caches and CDNs do not store responses keyed by a URL that contains the credential. Issuance is HTTPS-only by default; expiry is clamped to `Authentication__PortalToken__MaxExpirationMinutes` (default 14400) **and to the expiry of the credential the token was issued from**, so a key that expires in five minutes never yields a ten-day token. The issued token is also tied to that credential for its whole life: revoking or rotating the API key it came from, or rotating the admin password, stops it on the next request without needing the token value. The credential is re-read at most once per `Authentication__PortalToken__SourceRevalidationSeconds` (default 10) per instance, which is also the worst-case delay before a revocation takes effect; set it to `0` to re-read on every request. Tokens issued before an upgrade to this behaviour carry no credential reference and are refused — affected clients simply call `generateToken` again. An opt-in OAuth2 bridge (`/sharing/rest/oauth2/*`) brokers named-user sign-in to your OIDC provider. It needs `Oidc__Enabled=true`, a valid provider (`Oidc__Generic__Enabled`, `Oidc__Generic__Authority`, `Oidc__Generic__ClientId`, and that provider's client secret), and every client redirect registered in `Authentication__PortalToken__OAuth2__AllowedRedirectUris`. The callback validates the IdP token with the OIDC verifier whenever that bridge is configured. `Authentication__PortalCredentialVerifier__UseOidc` is not required for the bridge; it still selects OIDC for `generateToken` password checks. After the redirect URI has been accepted, a later authorization failure is returned to it as `error` and `state`, not as a JSON body on the callback.
 
 Named-user OAuth authorization-code tokens for registered native redirects (loopback
 HTTP URLs or custom app schemes) work with `Authorization: Bearer` without a
@@ -298,7 +298,7 @@ For a true per-application client identity (rather than reusing a human API key)
 |---|---|
 | CI, scripts, server-to-server | Scoped API key in `X-API-Key` |
 | Browser console / admin UI users | OIDC bearer sign-in |
-| ArcGIS Pro, Esri SDKs, legacy Esri apps | `generateToken` portal tokens |
+| Desktop GIS clients, native client SDKs, legacy GeoServices REST applications | `generateToken` portal tokens |
 | Native operator clients in locked-down environments | Client certificates — [TLS and mTLS](tls-and-mtls.md) |
 
 A legacy Basic compatibility mode (`HONUA_ENABLE_BASIC_AUTH_COMPAT=true`, with `HONUA_REQUIRE_HTTPS_FOR_BASIC_AUTH=true` enforced in production) maps the Basic password to the admin API key; use it only during migrations.

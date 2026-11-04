@@ -9,7 +9,7 @@ noted inline and tracked in #1511.
 
 ## Context
 
-Esri-style **branch versioning** (issue #1272, epic #1270) requires Honua to serve
+GeoServices REST-style **branch versioning** (issue #1272, epic #1270) requires Honua to serve
 and edit named versions that diverge from the published `DEFAULT` data, then
 `reconcile`/`post` those edits back. The open architectural question is **how
 versioned edits are physically stored and read**, and which **native PostgreSQL
@@ -89,8 +89,8 @@ structural reason plus two semantic ones:
 
 - **ObjectID identity (decisive).** `features.objectid` is the *global* primary key,
   so the same `objectid` cannot exist under both the base layer_id and a branch
-  layer_id. A branch therefore cannot preserve a DEFAULT feature's OID — but Esri
-  branch versioning, ArcGIS clients, and reconcile-by-OID all require OID stability
+  layer_id. A branch therefore cannot preserve a DEFAULT feature's OID — but GeoServices REST
+  branch versioning, GeoServices REST clients, and reconcile-by-OID all require OID stability
   across versions. No amount of layer_id machinery fixes this: it is a consequence
   of the global-PK schema. The overlay table keys on `(version_id, layer_id,
   objectid)`, so the *same* OID lives in DEFAULT and in the branch overlay — identity
@@ -247,12 +247,12 @@ only**; the durable `sync_generation` sequence as the "moment."
 - **Single global generation sequence serializes posts.** Accepted for v1; per-layer
   generation streams are a future option if concurrent multi-version post throughput
   becomes a bottleneck (tracked in #1726, revisit only on a measured bottleneck).
-- **Esri `startReading`/`stopReading`/`startEditing`/`stopEditing`** remain stateless
+- **GeoServices REST `startReading`/`stopReading`/`startEditing`/`stopEditing`** remain stateless
   acknowledgements (the overlay/moment model carries the version per-request via
   `gdbVersion`, so there is no server-held session token / edit lock to mint). They are
   no longer no-ops, though (#1511): each resolves the named version (unknown → 404),
   returns the version's durable `BranchGeneration` as the read/edit `moment` — a stable
-  cursor an Esri client can echo to pin a consistent snapshot, rather than a throwaway
+  cursor a GeoServices REST client can echo to pin a consistent snapshot, rather than a throwaway
   wall-clock value — and `startEditing` refuses with a 409 in-progress when the version
   is mid-reconcile/post (locked). A full server-held session-token/edit-lock handshake is
   still only warranted if a target client requires it; no such client is in scope.

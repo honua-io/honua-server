@@ -57,14 +57,14 @@ advertised in the capability manifest):
   pipeline.
 - **Geoprocessing / GP** — the server-canonical engine and its protocol surfaces
   (per [ADR-0057](0057-geoprocessing-capability-boundaries.md)).
-- **Core server** — OGC (WMS/WFS/WCS/WMTS + OGC API), Esri GeoServices REST
+- **Core server** — OGC (WMS/WFS/WCS/WMTS + OGC API), GeoServices REST
   (incl. GPServer), STAC, OData, and tiles/MVT, CITE-certified.
 - **Console Studio** — the `map` / `query` / `analysis` / `dashboard` / `report`
   / `app` package families.
 - **SDKs** — `honua-sdk-js`, `honua-sdk-dotnet`, `honua-sdk-python`.
 - **Single-environment deploy** — one deployable artifact, one origin, one
   environment.
-- **Migration / interop** — live Esri REST migration, FileGDB import, Esri REST
+- **Migration / interop** — live GeoServices REST migration, FileGDB import, GeoServices REST
   northbound interop (sufficient, not exhaustive parity).
 - **Data formats** — GeoParquet, GeoArrow, GeoBuf, and FileGDB read/serve
   support are **supported (in-scope)** for the first release. They were never

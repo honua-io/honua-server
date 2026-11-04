@@ -12,12 +12,12 @@ Honua is the antidote: GIS democratized. We bring broad compatibility, cloud-nat
 - Complexity: GIS requires specialized teams and bespoke setups.
 - Inefficiency: heavyweight infrastructure and slow upgrades.
 - Not cloud-native: deployments do not fit modern infra patterns.
-- Poor interoperability: Esri vs open standards forces either/or.
+- Poor interoperability: GeoServices REST vs open standards forces either/or.
 
 ## The Honua antidote
 
-- Broad compatibility: Esri FeatureServer + MapServer + OGC API Features + OData.
-- Minimal switching cost: Esri import and drop-in interoperability.
+- Broad compatibility: GeoServices REST FeatureServer + MapServer + OGC API Features + OData.
+- Minimal switching cost: GeoServices REST import and drop-in interoperability.
 - Cloud-native by design: efficient infra with optional serverless paths.
 - Ops-friendly: observability, predictable upgrades, reliable rollouts.
 - Cost-efficient: lean infrastructure and transparent ownership.
@@ -47,7 +47,7 @@ We are explicit about the tradeoff. The enterprise tier will prioritize features
 
 ## What this means in practice
 
-- Esri users: keep workflows, drop the licensing burden.
+- GeoServices REST users: keep workflows, drop the licensing burden.
 - Business users: GIS through BI tools, not GIS suites.
 - DevOps teams: predictable deployments, efficient infra, safe upgrades.
 - ISVs: publish GIS services without punitive ASP licensing.

@@ -13,9 +13,9 @@ saved-map style overrides remain separately tracked in
 The server delivers the canonical style through OGC API - Styles
 (`/ogc/styles/{styleId}`, ADR-0048) and the legacy
 `/api/styles/{layerId}.json` alias. The embedded Studio editor is dual-mode: it
-supports MapLibre/Maputnik visual authoring and Esri-renderer (`drawingInfo`)
+supports MapLibre/Maputnik visual authoring and GeoServices REST-renderer (`drawingInfo`)
 authoring (simple, unique-value, and class-breaks). Both modes author the same
-canonical style; the server round-trips MapLibre and Esri `drawingInfo`
+canonical style; the server round-trips MapLibre and GeoServices REST `drawingInfo`
 (ADR-0002).
 
 ## Context

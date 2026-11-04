@@ -23,7 +23,7 @@ Key design constraints:
 3. **Never gate SDKs.** The JS, Python, and .NET SDKs are the developer
    adoption funnel. Gating client libraries creates friction at the exact
    moment a developer decides to evaluate Honua.
-4. **The Community tier must replace ArcGIS Server for a single team.** If
+4. **The Community tier must replace GeoServices REST server for a single team.** If
    Community can't do that, the adoption story collapses.
 5. **Align paid tiers to the EnterpriseReady framework** (enterpriseready.io):
    SSO, RBAC, Audit Logging, Change Management, Product Assurance, Deployment
@@ -51,9 +51,9 @@ A complete, production-capable feature server for a single-process deployment.
 | Area | Included |
 |------|----------|
 | **Protocols** | All — GeoServices REST (FeatureServer, MapServer, ImageServer, GeometryService), OGC API (Features, Tiles, Maps), WMS 1.3, WMTS 1.0, OData v4, MVT, gRPC (unary) |
-| **Data** | PostGIS backend; GeoJSON, Shapefile, GeoPackage, GPX, KML, WKT, FlatGeobuf, File Geodatabase, GeoParquet import; public ArcGIS GeoServices REST layer import; GeoServer/ArcGIS migration inventory |
+| **Data** | PostGIS backend; GeoJSON, Shapefile, GeoPackage, GPX, KML, WKT, FlatGeobuf, File Geodatabase, GeoParquet import; public GeoServices REST layer import; GeoServer/GeoServices REST migration inventory |
 | **Query** | Full Filter AST (CQL2, OData `$filter`, WHERE), spatial queries, statistics, pagination |
-| **Edits** | Full CRUD via the open protocols — OGC API Features, WFS-T, OData, gRPC — plus attachments and related records. The Esri GeoServices FeatureServer *write dialect* (`applyEdits`/`addFeatures`/`updateFeatures`/`deleteFeatures`/`calculate`) is Pro (`editing.featureserver-edits`, #1591): a compatibility surface for deployed Esri clients, not the only edit path |
+| **Edits** | Full CRUD via the open protocols — OGC API Features, WFS-T, OData, gRPC — plus attachments and related records. The GeoServices REST FeatureServer *write dialect* (`applyEdits`/`addFeatures`/`updateFeatures`/`deleteFeatures`/`calculate`) is Pro (`editing.featureserver-edits`, #1591): a compatibility surface for deployed GeoServices REST clients, not the only edit path |
 | **SDKs** | JS SDK, Python SDK, .NET SDK — full query + edit capabilities |
 | **MCP Server** | AI-assisted discovery, query, statistics (REST transport) |
 | **Admin UI** | Connections, layer publishing, JSON-based style editing with Maputnik visual editing tracked as backlog, map preview, import wizard, spatial SQL playground (query editor with autocomplete, inline map preview, EXPLAIN visualization) |
@@ -97,7 +97,7 @@ Everything in Community, plus:
 multi-node and high-concurrency serverless actually viable. Without it, each
 process is an island. Teams that hit this ceiling have production traffic and
 budget. The streaming and analytics features are high-value capabilities that
-Esri charges $10K+/year for as separate products.
+GeoServices REST charges $10K+/year for as separate products.
 
 #### Enterprise (Per-Node License, Annual Contract)
 
@@ -114,7 +114,7 @@ Everything in Pro, plus:
 | **Change Management** | Advanced GitOps automation, drift detection and organisational approval workflows; essential rollback/recovery remains baseline | Change Management |
 | **Private Operator Copilot** | AI DevOps/operator tooling, rollout planning, delegated operations, and implementation workflows delivered through private enterprise tooling on top of the public control-plane API | Change Management / Support |
 | **Compliance** | SOC 2 / FedRAMP evidence collection; data residency controls; encryption-at-rest key rotation | Product Assurance |
-| **Federated Queries** | Cross-instance queries (Honua-to-Honua); external source proxy (Esri REST, OGC WFS) | Integrations |
+| **Federated Queries** | Cross-instance queries (Honua-to-Honua); external source proxy (GeoServices REST, OGC WFS) | Integrations |
 | **Multi-Tenancy (internal)** | Used only on Honua's demo infrastructure at demo.honua.io, its sole deployment. It is not offered for customer deployment and carries no availability, performance, or support claim. Cross-tenant disclosure remains a full-severity security defect on that stack. | Deployment Options |
 | **Usage Analytics** | Dashboard — queries/sec, popular layers, slow queries, storage growth, user activity | Reporting |
 | **Plugin SDK** | Custom endpoints, pre/post-edit hooks, validators, computed fields (.NET source-gen, AOT-safe) | Integrations |
@@ -201,7 +201,7 @@ License checks must be:
 ### Positive
 
 - **Generous Community tier drives adoption.** A free Honua replaces a $20K+/year
-  ArcGIS Server license for most single-team use cases. This fills the top of the
+  GeoServices REST server license for most single-team use cases. This fills the top of the
   funnel.
 - **Clean gate boundaries.** "Distributed coordination" and "governance" are
   natural inflection points that correlate with organizational budget, not
@@ -266,7 +266,7 @@ areas. Decisions, all "gate as declared" (no tier changes):
   makes the *entitled* path correct, since the `admin` role synthesized from
   `AdminRoles` is written as a `ClaimTypes.Role` claim that an identity keyed on
   `groups` could never resolve.
-  **Roles that outlive the request are revalidated, not trusted.** The ArcGIS
+  **Roles that outlive the request are revalidated, not trusted.** The GeoServices REST
   portal token exchange persists the transformed roles into a durable record and
   the restore path never re-runs the transformation, so a token minted while the
   entitlement was valid would keep satisfying role authorization after it expired.

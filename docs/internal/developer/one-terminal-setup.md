@@ -93,7 +93,7 @@ Retain its revision, membership and descriptor digests, descriptor count,
 byte size and paging state. The source view is `setup.v6`; a discovered
 descriptor does not prove its downstream operation works. Record the
 candidate's actual profile/catalog counts instead of copying historical
-counts. Discover the explicit analysis and Esri GP profile surfaces when
+counts. Discover the explicit analysis and GeoServices REST GP profile surfaces when
 testing GP; profile filtering and the GA process catalog are different
 denominators. Missing tools are a stop condition, not permission to synthesize
 a client-owned replacement catalog.
@@ -149,7 +149,7 @@ For synchronous Community OGC execution, retrieve output through the SDK's
 asynchronous OGC request, poll its returned OGC job URL and follow its results
 link. In each case retain the output artifact and CRS.
 
-Use the explicit analysis/Esri profile discovery to check the candidate's
+Use the explicit analysis/GeoServices REST profile discovery to check the candidate's
 available adapters. Never infer a direct `buffer_features` implementation
 from a profile name: the source guide still identifies #3269 as its blocker.
 The one buffer example is a bounded walkthrough of the **whole-catalog GP GA

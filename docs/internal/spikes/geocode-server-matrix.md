@@ -1,16 +1,13 @@
-# GeocodeServer Matrix (Esri Enterprise vs Honua)
+# GeocodeServer Matrix (GeoServices REST Enterprise vs Honua)
 
 Canonical GeoServices entry point: [GeoServices REST Parity](../../reference/compatibility/geoservices-parity.md)
 
-Sources:
-- https://developers.arcgis.com/rest/services-reference/enterprise/geocode-service/
-- https://developers.arcgis.com/rest/geocode/api-reference/overview-world-geocoding-service.htm
 
 ## Status vocabulary
 
-- Implemented: the Esri operation/resource exists in Honua and the documented behavior is supported.
-- Partial: the Esri operation/resource exists, but only a subset of documented parameters or behavior is supported.
-- Not implemented: the Esri operation/resource is not exposed by Honua.
+- Implemented: the GeoServices REST operation/resource exists in Honua and the documented behavior is supported.
+- Partial: the GeoServices REST operation/resource exists, but only a subset of documented parameters or behavior is supported.
+- Not implemented: the GeoServices REST operation/resource is not exposed by Honua.
 
 Honua exposes a single configured locator. The service is anonymous and read-only.
 The default backing provider is Nominatim (OpenStreetMap); Azure Maps and Amazon
@@ -44,18 +41,18 @@ category parameter):
 
 The Honua endpoint columns in this section and the operation table below are projections of `docs/gis/data/feature-catalog.json`; `DocumentationMatrixDriftTests` gates the join in both directions. Behavioral status and provider notes remain hand-authored.
 
-| Esri resource | Esri path | Methods | Honua status | Honua endpoint(s) | Notes |
+| GeoServices REST resource | GeoServices REST path | Methods | Honua status | Honua endpoint(s) | Notes |
 | --- | --- | --- | --- | --- | --- |
 | GeocodeServer metadata | `/GeocodeServer` | GET, POST | Partial | `GET/POST /rest/services/{locatorName}/GeocodeServer`, `GET/POST /rest/services/GeocodeServer` | Returns `currentVersion`, `serviceDescription`, `capabilities`, `spatialReference`, `singleLineAddressField`, `addressFields`, `candidateFields` (the attributes every candidate emits), the `categories` array (the address/place families candidates are classified into, e.g. `Address`, `POI`, `City`), and `locatorProperties`. |
 
-## Esri GeocodeServer operation coverage
+## GeoServices REST GeocodeServer operation coverage
 
-| Esri operation | Esri path | Methods | Honua status | Honua endpoint(s) | Notes |
+| GeoServices REST operation | GeoServices REST path | Methods | Honua status | Honua endpoint(s) | Notes |
 | --- | --- | --- | --- | --- | --- |
 | Find Address Candidates | `/GeocodeServer/findAddressCandidates` | GET, POST | Partial | `GET/POST /rest/services/{locatorName}/GeocodeServer/findAddressCandidates`, `GET/POST /rest/services/GeocodeServer/findAddressCandidates` | Forward geocode from `singleLine` or structured fields. Honors `maxLocations`, `outSR` (reprojected via the shared transform service), `countryCode`/`countryCodes`, `searchExtent` (passed to the provider as a search/view bounds when the provider supports it), `magicKey` (resolves a suggestion issued by `suggest`), and `category` (narrows candidates by provider-supplied address type). |
 | Reverse Geocode | `/GeocodeServer/reverseGeocode` | GET, POST | Partial | `GET/POST /rest/services/{locatorName}/GeocodeServer/reverseGeocode`, `GET /rest/services/GeocodeServer/reverseGeocode` | Resolves `location` (`x,y` or JSON `{x,y}`/`{lon,lat}`) to the nearest address. Honors `outSR` (reprojected via the shared transform service), `langCode` (passed to providers that support localized results), and the provider-dependent `distance` (search radius, meters) and `featureTypes` (type filter) parameters where a backing provider supports them (Azure Maps `radius`/`entityType`). |
 | Suggest | `/GeocodeServer/suggest` | GET, POST | Partial | `GET/POST /rest/services/{locatorName}/GeocodeServer/suggest`, `GET /rest/services/GeocodeServer/suggest` | Ranked suggestions from `text`. Honors `maxSuggestions`, `countryCode`/`countryCodes`, `searchExtent`, `location` (bias), and `category` (narrows suggestions by provider-supplied category) when the provider supports them. Returns a self-issued, signed, opaque `magicKey` per suggestion that round-trips through `findAddressCandidates`. |
-| Geocode Addresses (batch) | `/GeocodeServer/geocodeAddresses` | GET, POST | Partial | `GET/POST /rest/services/{locatorName}/GeocodeServer/geocodeAddresses`, `GET /rest/services/GeocodeServer/geocodeAddresses` | Batch forward geocode. Accepts the Esri `addresses={"records":[...]}` payload (and a bare `records` array). Honors `outSR` (reprojected via the shared transform service) and `countryCode`/`countryCodes`. Enforces the provider batch-size cap. |
+| Geocode Addresses (batch) | `/GeocodeServer/geocodeAddresses` | GET, POST | Partial | `GET/POST /rest/services/{locatorName}/GeocodeServer/geocodeAddresses`, `GET /rest/services/GeocodeServer/geocodeAddresses` | Batch forward geocode. Accepts the GeoServices REST `addresses={"records":[...]}` payload (and a bare `records` array). Honors `outSR` (reprojected via the shared transform service) and `countryCode`/`countryCodes`. Enforces the provider batch-size cap. |
 
 ## Request parameter coverage
 
@@ -63,7 +60,7 @@ The Honua endpoint columns in this section and the operation table below are pro
 
 | Parameter | Honua status | Notes |
 | --- | --- | --- |
-| `f` | Partial | Supports `json` and `pjson` only. Esri `html` output is not supported. |
+| `f` | Partial | Supports `json` and `pjson` only. GeoServices REST `html` output is not supported. |
 | `provider` | Implemented (Honua extension) | Selects a specific registered geocode provider; unknown providers return 400. Omitting it uses the default provider with coordinator failover. |
 
 ### Find Address Candidates
@@ -74,11 +71,11 @@ The Honua endpoint columns in this section and the operation table below are pro
 | `address`, `city`, `region`, `postal`, `countryCode` | Implemented | Structured fields are concatenated into a single-line query when `singleLine` is absent. |
 | `maxLocations` | Implemented | Positive integer; defaults to the provider's configured result count. |
 | `outSR` | Implemented | Output coordinates are reprojected to the requested WKID via the shared coordinate-transform service; a transform the service cannot perform returns 400. |
-| `searchExtent` | Implemented | Accepts `xmin,ymin,xmax,ymax` or an Esri envelope JSON. Forwarded to the provider as a search/view bounds (e.g. Nominatim `viewbox`+`bounded`, Azure/Amazon `bbox`). Must be in the default spatial reference. |
+| `searchExtent` | Implemented | Accepts `xmin,ymin,xmax,ymax` or a GeoServices REST envelope JSON. Forwarded to the provider as a search/view bounds (e.g. Nominatim `viewbox`+`bounded`, Azure/Amazon `bbox`). Must be in the default spatial reference. |
 | `countryCode` / `countryCodes` | Implemented | Restricts results to the given country code(s). |
 | `outFields` | Implemented | Restricts the returned `attributes` to the requested fields (case-insensitive). `*` or an omitted value returns all attributes; an empty field token returns 400. |
 | `category` | Implemented (#1867) | Comma/semicolon-delimited category tokens (e.g. `Address`, `POI`, `City`). Candidates are filtered by their provider-supplied `AddressType` on the shared interface after the provider returns. No backing provider exposes a forward category parameter (Nominatim `/search`, Azure `/search/address`, Amazon `SearchPlaceIndexForText`), so filtering is applied to the data providers return, not forwarded upstream. `Address` matches the point/street/subaddress family. A result with no category data cannot satisfy an explicit filter. |
-| `magicKey` | Implemented (#1867) | A self-issued, signed, opaque token minted by `suggest` (see the magicKey/category note in the service overview above). `findAddressCandidates` decodes it and resolves the encoded suggestion deterministically against the encoded provider, applying the encoded category. Provider-internal ids are not resolvable through the providers' forward endpoints, so they are never surfaced. A token that fails signature verification returns 400. Per the Esri contract `SingleLine`/`text` is still echoed alongside `magicKey`. |
+| `magicKey` | Implemented (#1867) | A self-issued, signed, opaque token minted by `suggest` (see the magicKey/category note in the service overview above). `findAddressCandidates` decodes it and resolves the encoded suggestion deterministically against the encoded provider, applying the encoded category. Provider-internal ids are not resolvable through the providers' forward endpoints, so they are never surfaced. A token that fails signature verification returns 400. Per the GeoServices REST contract `SingleLine`/`text` is still echoed alongside `magicKey`. |
 | `location` | Not implemented | Point biasing is not applied to forward candidates (no backing provider honors it for this operation). |
 | `matchOutOfRange`, `forStorage` | Not implemented (re-deferred) | Accepted but ignored. `matchOutOfRange` (out-of-range house-number interpolation) and `forStorage` (a licensing/storage billing flag) are not modeled by any backing provider. |
 
@@ -89,7 +86,7 @@ The Honua endpoint columns in this section and the operation table below are pro
 | `location` | Implemented | Required. Accepts `x,y` or JSON `{x,y}` / `{lon,lat}`. |
 | `outSR` | Implemented | Output coordinates are reprojected to the requested WKID via the shared coordinate-transform service; a transform the service cannot perform returns 400. |
 | `langCode` | Implemented | Forwarded to providers that support localized results (Nominatim `accept-language`, Amazon Location `Language`). |
-| `featureTypes` | Implemented (provider-dependent) | Comma-delimited Esri feature-type tokens are parsed and forwarded as the canonical request's `FeatureTypes`. Honored by providers that filter reverse matches by type (Azure Maps `entityType`, with Esri tokens mapped to Azure entity types). Nominatim and Amazon Location ignore it and return the nearest match. |
+| `featureTypes` | Implemented (provider-dependent) | Comma-delimited GeoServices REST feature-type tokens are parsed and forwarded as the canonical request's `FeatureTypes`. Honored by providers that filter reverse matches by type (Azure Maps `entityType`, with GeoServices REST tokens mapped to Azure entity types). Nominatim and Amazon Location ignore it and return the nearest match. |
 | `distance` | Implemented (provider-dependent) | A positive search radius in meters; non-positive values return 400. Forwarded as the canonical request's `DistanceMeters` and honored by providers that bound the reverse search by radius (Azure Maps `radius`). Nominatim and Amazon Location ignore it. |
 
 ### Suggest
@@ -107,7 +104,7 @@ The Honua endpoint columns in this section and the operation table below are pro
 
 | Parameter | Honua status | Notes |
 | --- | --- | --- |
-| `addresses` / `records` | Implemented | Accepts the Esri `{"records":[{"attributes":{...}}]}` payload (primary) and a bare JSON array. Each record resolves `SingleLine` first, then structured fields. |
+| `addresses` / `records` | Implemented | Accepts the GeoServices REST `{"records":[{"attributes":{...}}]}` payload (primary) and a bare JSON array. Each record resolves `SingleLine` first, then structured fields. |
 | `outSR` | Implemented | Output coordinates are reprojected to the requested WKID via the shared coordinate-transform service; a transform the service cannot perform returns 400. |
 | `countryCode` / `countryCodes` | Implemented | Applied to every record in the batch. |
 | `sourceCountry`, `matchOutOfRange`, `category` | Not implemented | Accepted but ignored. |

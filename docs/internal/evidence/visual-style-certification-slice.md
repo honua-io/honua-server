@@ -41,13 +41,13 @@ keeps existing IDs append-only.
 
 All scenarios in this slice are exercised in **EPSG:3857 (Web
 Mercator)**. Web Mercator is the lowest-common-denominator CRS across
-the four target client lanes (OpenLayers, Esri Leaflet, MapLibre, and
+the four target client lanes (OpenLayers, REST-enabled Leaflet client, MapLibre, and
 PyQGIS) and removes per-CRS reprojection drift from the diff signal.
 Lane harnesses set the destination CRS explicitly when the client
 defaults differ:
 
 - OpenLayers — `ol.proj.fromLonLat()` projects view center to 3857
-- Esri Leaflet — Leaflet defaults to `L.CRS.EPSG3857`
+- REST-enabled Leaflet client — Leaflet defaults to `L.CRS.EPSG3857`
 - PyQGIS — `QgsMapSettings.setDestinationCrs(QgsCoordinateReferenceSystem("EPSG:3857"))`
   combined with a `QgsCoordinateTransform` that projects
   `layer.extent()` from the OAPIF source CRS into EPSG:3857 before it
@@ -72,7 +72,7 @@ Two complementary assertion strategies are sanctioned for this slice:
    the preferred strategy because it is deterministic across GPU,
    font, and AA stacks.
 2. **Snapshot diff.** The lane harness commits a baseline PNG and
-   diffs new renders against it. This is the existing Esri Leaflet
+   diffs new renders against it. This is the existing REST-enabled Leaflet client
    approach for `feature-layer-symbology.png`.
 
 When snapshot diffing is used, the default tolerance is
@@ -119,7 +119,7 @@ scenario, and the evidence path that shows up in the per-lane
 | Style source | drawingInfo (FS) / inline ol.style.Circle (OGC vector tiles) / QGIS marker symbol (PyQGIS) |
 | Expected color | `#1e64c8` (declared, distinctive blue) |
 | Pass criterion | At least 25 pixels of the declared symbol color in the canvas |
-| Lanes substantiating | Esri Leaflet (drawingInfo), OpenLayers (ol/style/Circle), PyQGIS (QgsMarkerSymbol) |
+| Lanes substantiating | REST-enabled Leaflet client (drawingInfo), OpenLayers (ol/style/Circle), PyQGIS (QgsMarkerSymbol) |
 
 ### CERT-RNDR-LIN-01 — Line stroke
 
@@ -176,7 +176,7 @@ scenario, and the evidence path that shows up in the per-lane
 | Fixture | `client-compat-v1` — drawingInfo on the FeatureServer layer; OGC tileset metadata on the vector tile collection |
 | Style source | `/rest/services/{id}/FeatureServer/{layerId}?f=json` (drawingInfo) and `/ogc/tiles/collections/{id}/tiles/WebMercatorQuad` (TileSetMetadata) |
 | Pass criterion | Client successfully fetches the style/metadata document and uses it to drive the layer |
-| Lanes substantiating | Esri Leaflet (drawingInfo via FeatureServer metadata), OpenLayers (OGC TileSetMetadata via OGCVectorTile source) |
+| Lanes substantiating | REST-enabled Leaflet client (drawingInfo via FeatureServer metadata), OpenLayers (OGC TileSetMetadata via OGCVectorTile source) |
 
 > Protocol applicability aligns with [`CROSS_CLIENT_CERTIFICATION_MATRIX.md`](../../gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md) row `CERT-RNDR-URL-01` (FS, MVT). OGC API Features does not ship a style URL / metadata document today; the SCHM/DISC IDs already cover its collection-metadata discovery path, so `CERT-RNDR-URL-01` is recorded as `not-applicable` on `ogc-features` envelopes per the applicability sets in [`tests/js/openlayers/shared/evidence.ts`](../../../tests/js/openlayers/shared/evidence.ts).
 
@@ -189,7 +189,7 @@ utility is introduced.
 | Lane | Collector | Substantiated | Pending-fixture |
 |---|---|---|---|
 | **JS — OpenLayers** | [`tests/js/openlayers/shared/evidence.ts`](../../../tests/js/openlayers/shared/evidence.ts) | `CERT-RNDR-SYM-01`, `CERT-RNDR-LIN-01`, `CERT-RNDR-FIL-01`, `CERT-RNDR-URL-01` | `CERT-RNDR-LBL-01`, `CERT-RNDR-SPR-01` |
-| **JS — Esri Leaflet** | [`tests/js-browser/leaflet-client/support/cert-reporter.ts`](../../../tests/js-browser/leaflet-client/support/cert-reporter.ts) | `CERT-RNDR-SYM-01`, `CERT-RNDR-URL-01` | `CERT-RNDR-LIN-01`, `CERT-RNDR-FIL-01`, `CERT-RNDR-LBL-01`, `CERT-RNDR-SPR-01` |
+| **JS — REST-enabled Leaflet client** | [`tests/js-browser/leaflet-client/support/cert-reporter.ts`](../../../tests/js-browser/leaflet-client/support/cert-reporter.ts) | `CERT-RNDR-SYM-01`, `CERT-RNDR-URL-01` | `CERT-RNDR-LIN-01`, `CERT-RNDR-FIL-01`, `CERT-RNDR-LBL-01`, `CERT-RNDR-SPR-01` |
 | **Desktop — PyQGIS** | [`tests/python/pyqgis/conftest.py`](../../../tests/python/pyqgis/conftest.py) | `CERT-RNDR-SYM-01`, `CERT-RNDR-LIN-01`, `CERT-RNDR-FIL-01` | `CERT-RNDR-LBL-01`, `CERT-RNDR-SPR-01`, `CERT-RNDR-URL-01` |
 
 The pixel-color sampling assertions in the JS lanes use the same RGB
@@ -204,7 +204,7 @@ collectors continue to write `.cert.json` envelopes per the existing
 schema. The slice IDs flow into the same envelopes as the original
 CERT-* IDs:
 
-- JS Esri Leaflet — `tests/js-browser/evidence/<run-id>-js-<protocol>.cert.json`
+- JS REST-enabled Leaflet client — `tests/js-browser/evidence/<run-id>-js-<protocol>.cert.json`
 - JS OpenLayers — `tests/js/certification-evidence/<run-id>-js-<protocol>.cert.json`
 - PyQGIS — `tests/TestResults/<run-id>-desktop-qgis-<protocol>.cert.json`
 
@@ -234,7 +234,6 @@ the existing evidence pipelines.
 | Lane | Job | PR-blocking | Snapshot policy |
 |---|---|---|---|
 | OpenLayers | `js-integration-tests` (`.github/workflows/ci.yml`) | yes | `updateSnapshots: 'none'` (CI), `'missing'` (local) |
-| Esri Leaflet | `esri-leaflet-browser-tests` (`.github/workflows/ci.yml`) | yes | `updateSnapshots: 'none'` (CI), `'missing'` (local) |
 | PyQGIS | `pyqgis-client-compat-nightly` (`.github/workflows/pyqgis-client-compat-nightly.yml`) | nightly (not PR-blocking) | structural assertion + envelope validation |
 
 The PyQGIS lane stays nightly because its runtime budget (QGIS
@@ -261,7 +260,7 @@ The substantiation point lives in
 
 ## How to Refresh a Baseline
 
-For tests that use snapshot diffing (Esri Leaflet
+For tests that use snapshot diffing (REST-enabled Leaflet client
 `feature-layer-symbology.png` is the only snapshot today):
 
 ```bash
@@ -287,20 +286,6 @@ on the existing per-layer cache key isolation — they do not require
 a `Cache-Control: no-cache` override.
 
 ## Out of Scope
-
-- **Server-side style generation.** This slice exercises stored
-  drawingInfo and stored tileset metadata. The
-  `Honua.Db.Postgres.Features.Styling.PostgresLayerStyleCatalog`
-  drawingInfo generation gap noted in the design brief is a separate
-  ticket and not closed by this slice.
-- **Desktop and BI client lanes.** ArcGIS Pro certification detail stays in
-  private `honua-esri-compat` (evidence identifier `desktop-arcgis`). Power BI
-  and Excel remain on the manual lanes in
-  [`CLIENT_TEMPLATE_RUNBOOK.md`](../../gis/CLIENT_TEMPLATE_RUNBOOK.md). None of
-  them are in scope for this slice.
-- **No new server endpoints.** The slice consumes only existing
-  routes (`/rest/services/.../FeatureServer`, `/ogc/features/...`,
-  `/ogc/tiles/collections/.../tiles/WebMercatorQuad`).
 
 ## Slice Version
 

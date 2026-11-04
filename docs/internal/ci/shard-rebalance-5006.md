@@ -97,7 +97,7 @@ three `OgcMapsBasicTests.GetCollection_*` cases introduced on trunk by #5009
 132 passed, zero failed/skipped, zero missing and zero duplicate cases.
 
 The full matrix is **not claimed green**: Python Integration Tests failed
-three Esri identity expectations (service lookup and HTTPS token issuance),
+three GeoServices REST identity expectations (service lookup and HTTPS token issuance),
 and File and Raster Import failed
 `ImportFile_DefaultOperationalSchema_CanDiscoverPublishAndQueryFeatureServer`
 with an object/string JSON mismatch at `ImportEndpointTests.cs:667`. Those jobs,

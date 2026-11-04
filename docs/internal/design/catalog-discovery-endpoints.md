@@ -7,7 +7,7 @@ detail, and per-item editor)
 **Audience:** the engineer/agent implementing the honua-server side
 **Goal:** populate the catalog discovery-endpoints registry from **real published catalog state** and add
 the **enable/disable (and auto-default vs opt-in) mutation** the `/operate/catalogs` surface needs, so the
-page renders live discovery endpoints (Esri / OGC API Records / OData / STAC / DCAT) instead of the honest
+page renders live discovery endpoints (GeoServices REST / OGC API Records / OData / STAC / DCAT) instead of the honest
 missing-binding/empty state it shows today.
 
 ---
@@ -127,7 +127,7 @@ operator overrides layered over the projected baseline.
   "workspaceName": "Default workspace",
   "publicHost": "https://maps.example.gov",
   "endpoints": [
-    { "key": "esri",  "title": "Esri catalog",      "dialect": "esri",  "enabled": true,  "autoDefault": true,
+    { "key": "esri",  "title": "GeoServices REST catalog",      "dialect": "esri",  "enabled": true,  "autoDefault": true,
       "url": "https://maps.example.gov/rest/services", "entries": 42, "fedBy": "12 FeatureServers",
       "feeders": [ { "kind": "feature-server", "label": "public-works-fs" } ], "issueCount": 0 },
     { "key": "stac",  "title": "STAC catalog",       "dialect": "stac",  "enabled": false, "autoDefault": false,

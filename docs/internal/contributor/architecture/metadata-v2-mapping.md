@@ -84,8 +84,8 @@ Layer:        L1
 V2 source:    Publication.Identifier (Value / IsNumeric / PathOverride)
 Fallback:     (required — non-empty by graph validation when Publication
               participates in service routing)
-Standards:    Esri-FeatureServer.layer.id         ← Publication.Identifier.Value (parsed int when IsNumeric)
-              Esri-MapServer.layer.id             ← same
+Standards:    GeoServices REST-FeatureServer.layer.id         ← Publication.Identifier.Value (parsed int when IsNumeric)
+              GeoServices REST-MapServer.layer.id             ← same
               WMS.<Name>                          ← OgcClassicRequestHelpers.GetWmsLayerName(resource, publication)
               WMTS.<ows:Identifier>               ← Publication.Identifier.Value
               WFS-2.<wfs:Name>                    ← namespaced (prefix:Resource.Metadata.Name)
@@ -111,11 +111,11 @@ Standards:    OGC-API-*.collection.title          ← Title ?? Name
               WMTS.<ows:Title>                    ← Title ?? Name
               WFS-2.<wfs:Title>                   ← Title ?? Name
               WCS-2.<ows:Title>                   ← Title ?? Name
-              Esri-FeatureServer.name             ← Name (not Title — Esri uses identifier-shaped name)
-              Esri-FeatureServer.alias            ← Title ?? Name (in field aliases context)
+              GeoServices REST-FeatureServer.name             ← Name (not Title — GeoServices REST uses identifier-shaped name)
+              GeoServices REST-FeatureServer.alias            ← Title ?? Name (in field aliases context)
               OData.<EntityType.@odata.title>     ← Title ?? Name annotation
 Derivation:   Per-publication: Publication.TitleOverride wins when projecting to
-              that publication's service (Esri MapServer "Service Name" vs OGC
+              that publication's service (GeoServices REST MapServer "Service Name" vs OGC
               "collection title" can differ).
 Status:       ✅ stable
 ```
@@ -126,11 +126,11 @@ Status:       ✅ stable
 Layer:        L1
 V2 source:    Service.Metadata.Name + Service.Route
 Fallback:     Service.Metadata.Id when Name empty
-Standards:    Esri-FeatureServer service root    ← /rest/services/{group}/{name}/FeatureServer
+Standards:    GeoServices REST-FeatureServer service root    ← /rest/services/{group}/{name}/FeatureServer
               OGC-API-Common landingPage          ← Service.Route
               WMS service URL                     ← Service.Route + ?service=WMS
               STAC API root                       ← Service.Route
-Derivation:   - Esri folder grouping: from Service.Metadata.Name dotted prefix
+Derivation:   - GeoServices REST folder grouping: from Service.Metadata.Name dotted prefix
                 ("PublicWorks.Roads" → /rest/services/PublicWorks/Roads/...)
                 or from future Service.Group slot
               - Protocol suffix appended per Service.Protocols entry
@@ -154,8 +154,8 @@ Standards:    OGC-API-*.collection.description   ← Description
               WMTS.<ows:Abstract>                ← Description
               WFS-2.<wfs:Abstract>               ← Description
               WCS-2.<ows:Abstract>               ← Description
-              Esri-FeatureServer.description     ← Description
-              Esri-FeatureServer.serviceDescription ← Service.Metadata.Description
+              GeoServices REST-FeatureServer.description     ← Description
+              GeoServices REST-FeatureServer.serviceDescription ← Service.Metadata.Description
               OData.<Summary>                    ← Description
               GeoPackage.gpkg_contents.description ← Description
               FlatGeobuf.header.description      ← Description
@@ -175,7 +175,7 @@ Standards:    OGC-API-Records.record.keywords    ← Keywords
               WMTS.<ows:Keywords><ows:Keyword>   ← Keywords
               WFS-2.<ows:Keywords>               ← Keywords
               WCS-2.<ows:Keywords>               ← Keywords
-              Esri.documentInfo.Keywords         ← comma-joined Keywords
+              GeoServices REST.documentInfo.Keywords         ← comma-joined Keywords
               OData.<Annotation Term="Org.OData.Core.V1.Tags"> ← Keywords array
 Status:       ⚠️ slice 1 (needs landing)
 ```
@@ -232,12 +232,12 @@ Standards:    OGC-API-Records.record.created     ← CreatedAt (ISO 8601)
               STAC.properties.created           ← CreatedAt (item-level)
               STAC.properties.updated           ← UpdatedAt
               STAC.collection.extent.temporal   ← UpdatedAt? (collection-level)
-              Esri.editFieldsInfo.creationDate  ← CreatedAt (Esri Date as ms-since-epoch)
-              Esri.editFieldsInfo.editDate      ← UpdatedAt
+              GeoServices REST.editFieldsInfo.creationDate  ← CreatedAt (GeoServices REST Date as ms-since-epoch)
+              GeoServices REST.editFieldsInfo.editDate      ← UpdatedAt
               OData.@odata.etag                 ← derived (see 3.3)
               GeoPackage.gpkg_contents.last_change ← UpdatedAt ?? CreatedAt
               KML.<atom:updated>                ← UpdatedAt
-Derivation:   Esri Date format = milliseconds since Unix epoch
+Derivation:   GeoServices REST Date format = milliseconds since Unix epoch
               ISO 8601 strings always include offset (Z for UTC)
 Status:       ✅ stable
 ```
@@ -249,7 +249,7 @@ Layer:        L1
 V2 source:    Graph.Revision (long, monotonic)
 Standards:    OGC-API-* response Last-Modified header / ETag derivation
               STAC root / catalog ETag
-              Esri service.currentVersion        ← Graph.Revision (cast)
+              GeoServices REST service.currentVersion        ← Graph.Revision (cast)
               OData @odata.etag base             ← Graph.Revision
 Derivation:   Server-wide monotonic counter; never exposed directly except
               implicitly via ETag headers.
@@ -301,8 +301,8 @@ Standards:    STAC.collection.license            ← License (REQUIRED — SPDX 
               WMS.<Fees>                         ← "none" unless Extensions["wms-legal"]["fees"]
               WMTS.<ows:AccessConstraints>       ← same
               WCS-2.<ows:AccessConstraints>      ← same
-              Esri.copyrightText                 ← Resource.Metadata.Attribution OR License (license used as fallback)
-              Esri.documentInfo.Credits          ← Attribution
+              GeoServices REST.copyrightText                 ← Resource.Metadata.Attribution OR License (license used as fallback)
+              GeoServices REST.documentInfo.Credits          ← Attribution
               GeoPackage.gpkg_contents.description (free-form; not standard slot)
 Derivation:   - SPDX → URL: "https://spdx.org/licenses/" + License + ".html"
               - WMS access constraints text:
@@ -323,8 +323,8 @@ Standards:    OGC-API-Features.collection.attribution ← Attribution
               OGC-API-Records.record.attribution     ← Attribution (when present)
               STAC.collection.providers[?].name      ← Attribution split into provider records
               WMS.<AttributionURL>                   ← Attribution string with URL detection
-              Esri.copyrightText                     ← Attribution
-              Esri.documentInfo.Credits              ← Attribution
+              GeoServices REST.copyrightText                     ← Attribution
+              GeoServices REST.documentInfo.Credits              ← Attribution
 Status:       ⚠️ slice 1
 ```
 
@@ -343,7 +343,7 @@ Standards:    OGC-API-Common landingPage.contact     ← ContactPoint
               WMTS.<ows:ServiceContact>              ← OWS Service Contact shape
               WFS-2.<ows:ServiceContact>             ← same
               WCS-2.<ows:ServiceContact>             ← same
-              Esri.documentInfo.Author               ← ContactPoint.Name
+              GeoServices REST.documentInfo.Author               ← ContactPoint.Name
               STAC.collection.providers[?]           ← split per role; ContactPoint.Url → providers[].url
 Derivation:   STAC providers split: when ContactPoint set, emit one provider
               with roles=["host"] (server hosting). Add roles=["producer"] entry
@@ -360,7 +360,7 @@ Fallback:     null (omit)
 Standards:    OGC-API-Records.record.publisher       ← Publisher
               DCAT.dcat:publisher                    ← Publisher (URI when Url set)
               STAC.collection.providers[role=producer] ← Publisher
-              Esri.documentInfo.Subject              ← Publisher (loose mapping)
+              GeoServices REST.documentInfo.Subject              ← Publisher (loose mapping)
 Status:       ⚠️ slice 1
 ```
 
@@ -381,10 +381,10 @@ Standards:    OGC-API-Features.extent.spatial.bbox    ← [[W, S, E, N]] (multi-
               WMTS.<ows:WGS84BoundingBox>             ← WGS84-transformed
               WFS-2.<ows:WGS84BoundingBox>            ← same
               WCS-2.<gml:boundedBy><gml:Envelope>     ← srsName=Resource.Spatial.SpatialReference
-              Esri-FeatureServer.extent               ← { xmin, ymin, xmax, ymax, spatialReference: { wkid: srid, latestWkid: srid } }
-              Esri-FeatureServer.fullExtent           ← same as extent
-              Esri-MapServer.fullExtent / initialExtent ← same; initialExtent may be different (admin-settable)
-              Esri-ImageServer.extent                 ← same
+              GeoServices REST-FeatureServer.extent               ← { xmin, ymin, xmax, ymax, spatialReference: { wkid: srid, latestWkid: srid } }
+              GeoServices REST-FeatureServer.fullExtent           ← same as extent
+              GeoServices REST-MapServer.fullExtent / initialExtent ← same; initialExtent may be different (admin-settable)
+              GeoServices REST-ImageServer.extent                 ← same
               GeoJSON.bbox                            ← [W, S, E, N] (CRS84)
               GeoPackage.gpkg_contents.min_x/min_y/max_x/max_y ← Bbox
               FlatGeobuf.header.envelope              ← Bbox
@@ -393,7 +393,7 @@ Standards:    OGC-API-Features.extent.spatial.bbox    ← [[W, S, E, N]] (multi-
               Shapefile (.shp header)                 ← Bbox in native CRS
 Derivation:   WGS84/CRS84 transform when Resource.Spatial.SpatialReference != WGS84:
                 use CoordinateTransformer.TransformBbox(srid → 4326).
-              Latest WKID: SridLookup.LatestWkid(srid) — Esri prefers latest equivalents.
+              Latest WKID: SridLookup.LatestWkid(srid) — GeoServices REST prefers latest equivalents.
 Status:       ✅ stable
 ```
 
@@ -409,7 +409,7 @@ Standards:    OGC-API-Features Part 1.collection.extent.spatial.crs ← Crs URI
               WMTS.<TileMatrixSet>.SupportedCRS        ← Crs URI
               WFS-2.<DefaultCRS> / <OtherCRS>          ← primary + SupportedCrs[]
               WCS-2.<gml:Envelope srsName="...">       ← Crs URI on every envelope
-              Esri-FeatureServer.spatialReference      ← { wkid: Srid, latestWkid: SridLookup.LatestWkid(Srid) }
+              GeoServices REST-FeatureServer.spatialReference      ← { wkid: Srid, latestWkid: SridLookup.LatestWkid(Srid) }
               GeoParquet.geo.columns[].crs             ← PROJJSON of Crs
               FlatGeobuf.header.crs                    ← { org: "EPSG", code: Srid, name: ..., wkt: ... }
               GeoPackage.gpkg_spatial_ref_sys row      ← row with srs_id, organization, organization_coordsys_id, definition (WKT)
@@ -431,14 +431,14 @@ Layer:        L1
 V2 source:    Resource.Spatial.GeometryType (MetadataV2GeometryType enum)
 Fallback:     None (tabular resource)
 Standards:    OGC-API-Features.collection (informational; no required slot)
-              Esri-FeatureServer.geometryType         ← "esriGeometryPoint" / "esriGeometryMultipoint" / "esriGeometryPolyline" / "esriGeometryPolygon" / "esriGeometryEnvelope" / "esriGeometryMultipatch"
+              GeoServices REST FeatureServer.geometryType         ← "esriGeometryPoint" / "esriGeometryMultipoint" / "esriGeometryPolyline" / "esriGeometryPolygon" / "esriGeometryEnvelope" / "esriGeometryMultipatch"
               STAC (informational; not exposed at collection level)
               GeoParquet.geo.columns[].geometry_types ← ["Point"] etc. (SF type names)
               FlatGeobuf.header.geometry_type         ← FlatGeobuf enum
               GeoPackage.gpkg_geometry_columns.geometry_type_name ← "POINT" etc.
               WFS-2 DescribeFeatureType               ← gml:Point / gml:LineString / gml:Polygon / gml:Multi* / gml:GeometryCollection element types
               GML.gml:Point etc.                      ← determined per feature element
-Derivation:   Esri mapping:
+Derivation:   GeoServices REST mapping:
                 Point → esriGeometryPoint
                 MultiPoint → esriGeometryMultipoint
                 LineString | MultiLineString → esriGeometryPolyline
@@ -461,7 +461,7 @@ Standards:    OGC-API-Features Part 2 (CRS).collection.crs[]                  �
               OGC-API-Features Part 2.collection.storageCrs                  ← StorageCrs.Crs URI
               OGC-API-Features Part 2.collection.storageCrsCoordinateEpoch  ← StorageCrsCoordinateEpoch
               WFS-2.<DefaultCRS> / <OtherCRS>                                ← StorageCrs + SupportedCrs
-              Esri-FeatureServer.advancedQueryCapabilities.supportsReturningQueryGeometry ← (irrelevant — Esri uses single CRS per service)
+              GeoServices REST-FeatureServer.advancedQueryCapabilities.supportsReturningQueryGeometry ← (irrelevant — GeoServices REST uses single CRS per service)
               GeoParquet.geo.columns[].epoch                                 ← StorageCrsCoordinateEpoch
               GeoParquet.geo.columns[].crs                                   ← StorageCrs
 Status:       ❌ gap; slice 4
@@ -477,9 +477,9 @@ Status:       ❌ gap; slice 4
 Layer:        L1
 V2 source:    Resource.Temporal.{StartTimeField, EndTimeField, TrackIdField}
 Fallback:     null (resource is non-temporal)
-Standards:    Esri-FeatureServer.timeInfo.startTimeField  ← StartTimeField
-              Esri-FeatureServer.timeInfo.endTimeField    ← EndTimeField
-              Esri-FeatureServer.timeInfo.trackIdField    ← TrackIdField
+Standards:    GeoServices REST-FeatureServer.timeInfo.startTimeField  ← StartTimeField
+              GeoServices REST-FeatureServer.timeInfo.endTimeField    ← EndTimeField
+              GeoServices REST-FeatureServer.timeInfo.trackIdField    ← TrackIdField
               OGC-API-Features Part 1.collection.extent.temporal.interval ← derived from data
               WMS.<Dimension name="time"></Dimension>     ← derived extent (no field-name surface)
               STAC.collection.extent.temporal.interval[][] ← from Extent + computed
@@ -498,8 +498,8 @@ Standards:    OGC-API-Features.extent.temporal.interval[0][0] ← Extent.Start (
               STAC.collection.extent.temporal.interval[0][0]  ← Extent.Start
               STAC.collection.extent.temporal.interval[0][1]  ← Extent.End
               WMS.<Dimension name="time">                     ← Extent.Start "/" Extent.End "/PT1S" (or computed period)
-              Esri-FeatureServer.timeInfo.timeExtent           ← [Start.UnixMs, End.UnixMs]
-Derivation:   Esri timeExtent uses ms-since-epoch
+              GeoServices REST-FeatureServer.timeInfo.timeExtent           ← [Start.UnixMs, End.UnixMs]
+Derivation:   GeoServices REST timeExtent uses ms-since-epoch
               ISO 8601: omit endpoint when null (open interval)
               Multi-interval extent: not currently supported (slice 6 to add)
 Status:       ✅ stable
@@ -518,8 +518,8 @@ Standards:    OGC-API-Features Part 5.schema (JSON Schema).properties[].type ←
                 String → "string"; Integer/BigInteger → "integer"; Double/Float → "number";
                 Boolean → "boolean"; DateTime/Date/Time → "string" + format; Uuid → "string" + format=uuid;
                 Json → "object"; Binary → "string" + contentEncoding=base64; Geometry/Geography → ref to geom schema
-              Esri-FeatureServer.fields[].name                          ← Field.Name
-              Esri-FeatureServer.fields[].type                          ← MetadataV2FieldType → esriField*:
+              GeoServices REST-FeatureServer.fields[].name                          ← Field.Name
+              GeoServices REST FeatureServer.fields[].type                          ← MetadataV2FieldType → esriField*:
                 String → esriFieldTypeString; Integer → esriFieldTypeInteger; BigInteger → esriFieldTypeBigInteger;
                 Double → esriFieldTypeDouble; Float → esriFieldTypeSingle; Boolean → esriFieldTypeSmallInteger (0/1);
                 DateTime → esriFieldTypeDate; Date → esriFieldTypeDateOnly; Time → esriFieldTypeTimeOnly;
@@ -545,7 +545,7 @@ Status:       ✅ stable
 Layer:        L1 (slice 2)
 V2 source:    Field.Alias
 Fallback:     Field.Title → Field.Name
-Standards:    Esri-FeatureServer.fields[].alias                          ← Alias ?? Title ?? Name
+Standards:    GeoServices REST-FeatureServer.fields[].alias                          ← Alias ?? Title ?? Name
               OData.<Annotation Term="Org.OData.Core.V1.Label">          ← Alias
               OGC-API-Features Part 5 schema.properties[].title          ← Alias ?? Title
               GeoPackage.gpkg_data_columns.title                         ← Alias ?? Title
@@ -557,7 +557,7 @@ Status:       ❌ slice 2
 ```
 Layer:        L1 (slice 2)
 V2 source:    Field.Editable (bool, default true)
-Standards:    Esri-FeatureServer.fields[].editable                       ← Editable
+Standards:    GeoServices REST-FeatureServer.fields[].editable                       ← Editable
               OData.<Annotation Term="Org.OData.Core.V1.Immutable">      ← !Editable
               OGC-API-Features Part 4 (Editing).schema.properties[].readOnly ← !Editable
 Status:       ❌ slice 2
@@ -568,7 +568,7 @@ Status:       ❌ slice 2
 ```
 Layer:        L1 (slice 2)
 V2 source:    Field.Length (int?) — for VARCHAR / character-typed fields
-Standards:    Esri-FeatureServer.fields[].length                         ← Length
+Standards:    GeoServices REST-FeatureServer.fields[].length                         ← Length
               OData.<Property MaxLength="...">                            ← Length
               OGC-API-Features Part 5 schema.properties[].maxLength      ← Length
               GeoPackage.gpkg_data_column_constraints                    ← maxLength constraint row
@@ -581,7 +581,7 @@ Status:       ❌ slice 2
 ```
 Layer:        L1 (slice 2)
 V2 source:    Field.DefaultValue (JsonElement?)
-Standards:    Esri-FeatureServer.fields[].defaultValue                   ← DefaultValue (typed by Field.Type)
+Standards:    GeoServices REST-FeatureServer.fields[].defaultValue                   ← DefaultValue (typed by Field.Type)
               OData.<Property DefaultValue="...">                         ← DefaultValue serialized
               OGC-API-Features Part 5 schema.properties[].default        ← DefaultValue
               OGC-API-Features Part 4 (Editing) — used on POST when client omits
@@ -593,7 +593,7 @@ Status:       ❌ slice 2
 ```
 Layer:        L1 (slice 2)
 V2 source:    Field.Domain ({ Type, CodedValues[] | Range[] })
-Standards:    Esri-FeatureServer.fields[].domain
+Standards:    GeoServices REST-FeatureServer.fields[].domain
                 For coded-value: { type: "codedValue", name, codedValues: [{ code, name }] }
                 For range:       { type: "range", name, range: [min, max] }
               OData.<Annotation Term="Org.OData.Core.V1.OptionalProperties.Values">
@@ -611,8 +611,8 @@ Status:       ❌ slice 2
 Layer:        L1
 V2 source:    Field.SemanticRoles[] (string[]; canonical roles below)
 Canonical roles:
-  - "id.primary"        — primary identifier (resolves to Esri OBJECTID)
-  - "id.global"         — global stable id (Esri globalIdField; OData @odata.id)
+  - "id.primary"        — primary identifier (resolves to GeoServices REST OBJECTID)
+  - "id.global"         — global stable id (GeoServices REST globalIdField; OData @odata.id)
   - "geometry.primary"  — primary geometry column
   - "geometry.envelope" — derived envelope column
   - "temporal.start"    — start-time field (matches Resource.Temporal.StartTimeField)
@@ -641,8 +641,8 @@ V2 source:    Resource.Display.MinScale / MaxScale (double? denominators)
 Standards:    WMS.<MinScaleDenominator>                                ← MinScale
               WMS.<MaxScaleDenominator>                                ← MaxScale
               WMTS — derived to TileMatrix range
-              Esri-FeatureServer.minScale / maxScale                   ← MinScale / MaxScale
-              Esri-MapServer.minScale / maxScale                       ← same
+              GeoServices REST-FeatureServer.minScale / maxScale                   ← MinScale / MaxScale
+              GeoServices REST-MapServer.minScale / maxScale                       ← same
               OGC-API-Maps.collection.minScaleDenominator / max...     ← MinScale / MaxScale
               MapLibre style layers.minzoom / maxzoom                  ← scale-to-zoom conversion
 Derivation:   Web Mercator scale→zoom: zoom ≈ log2(559082264.0287 / scale)
@@ -657,8 +657,8 @@ Status:       ❌ slice 3
 ```
 Layer:        L1 (slice 3)
 V2 source:    Resource.Display.DefaultVisibility (bool, default true)
-Standards:    Esri-FeatureServer.layer.defaultVisibility               ← DefaultVisibility
-              Esri-MapServer.layers[].defaultVisibility                ← same
+Standards:    GeoServices REST-FeatureServer.layer.defaultVisibility               ← DefaultVisibility
+              GeoServices REST-MapServer.layers[].defaultVisibility                ← same
               MapLibre style.layers[].layout.visibility                ← "visible" / "none"
               WMS — implicit (no flag; default to all layers shown when no LAYERS=)
               OGC-API-Tiles — implicit
@@ -672,8 +672,8 @@ Layer:        L1 (slice 3)
 V2 source:    Resource.Display.DisplayField
 Fallback:     first field with SemanticRoles containing "display.label"
               → first field of type String with Name not equal to objectid
-Standards:    Esri-FeatureServer.layer.displayField                    ← DisplayField
-              Esri-MapServer.layers[].displayField                     ← same
+Standards:    GeoServices REST-FeatureServer.layer.displayField                    ← DisplayField
+              GeoServices REST-MapServer.layers[].displayField                     ← same
               MapLibre style.symbol layers.text-field                  ← "{DisplayField}" expression
               OGC-API-Features (informational) — link rel=describedby
 Status:       ❌ slice 3
@@ -687,7 +687,7 @@ V2 source:    Resource.Display.Queryable (bool, default true)
 Standards:    WMS.<Layer queryable="1" / queryable="0">                ← Queryable
               OGC-API-Features.conformance includes /conf/queryables    ← when Queryable=true (per-collection allowance still implicit)
               OGC-API-Features Part 3 (Filter) declared per collection ← derived from Queryable + Service.Protocols
-              Esri-FeatureServer.capabilities CSV includes "Query"     ← derived
+              GeoServices REST-FeatureServer.capabilities CSV includes "Query"     ← derived
 Status:       ❌ slice 3
 ```
 
@@ -696,7 +696,7 @@ Status:       ❌ slice 3
 ```
 Layer:        L1 (slice 3)
 V2 source:    Resource.Display.HasZ / HasM (bool, default false)
-Standards:    Esri-FeatureServer.hasZ / hasM                            ← HasZ / HasM
+Standards:    GeoServices REST-FeatureServer.hasZ / hasM                            ← HasZ / HasM
               FlatGeobuf.header.has_z / has_m                          ← HasZ / HasM
               GeoParquet.geo.columns[].geometry_types includes "Z" /"M" suffix variants
               GeoPackage.gpkg_geometry_columns.z / .m                  ← HasZ ? 1 : 0
@@ -714,16 +714,16 @@ Status:       ❌ slice 3
 Layer:        L1
 V2 source:    Resource.PermanentFilter ({ Expression, Language })
 Fallback:     null (no permanent filter)
-Standards:    Esri-FeatureServer.layer.definitionExpression             ← Expression (when Language="arcgis-sql")
-              Esri-MapServer.layers[].definitionExpression              ← same
+Standards:    GeoServices REST FeatureServer.layer.definitionExpression             ← Expression (when the compatibility SQL language is configured)
+              GeoServices REST-MapServer.layers[].definitionExpression              ← same
               OGC-API-Features Part 3 (Filter) — server-side; never exposed in response
               WFS-2 — server-side; never exposed
               OData — server-side; never exposed
               STAC — server-side
 Derivation:   Expression is parsed by IFilterExpressionService and ANDed with
               per-request filter at query time.
-              For Esri: emit raw arcgis-sql expression when Language matches;
-              when Language="cql2-text" or "cql2-json", translate to arcgis-sql
+              For GeoServices REST: emit the configured compatibility SQL expression;
+              when Language="cql2-text" or "cql2-json", translate to the compatibility SQL dialect
               (lossy at edges).
 Status:       ✅ stable
 ```
@@ -739,15 +739,15 @@ Layer:        L1
 V2 source:    Resource.Relationships[] (MetadataV2Relationship)
               Each carries: Id, Name, RelatedResourceId, Role ("origin" | "destination"),
               Cardinality ("one-to-one" | "one-to-many" | "many-to-many"),
-              OriginField, DestinationField, EsriRelationshipId? (int)
-Standards:    Esri-FeatureServer.layer.relationships[]                  ← Relationships with mappings:
-                id          ← EsriRelationshipId ?? FNV1a(Id) mod 2^31
+              OriginField, DestinationField, RelationshipId? (int)
+Standards:    GeoServices REST-FeatureServer.layer.relationships[]                  ← Relationships with mappings:
+                id          ← RelationshipId ?? FNV1a(Id) mod 2^31
                 name        ← Name
                 relatedTableId ← snapshot.ResolveStorageLayerId(RelatedResourceId)
                 role        ← Role
                 keyField    ← OriginField (when Role="origin") / DestinationField (when "destination")
                 cardinality ← Cardinality → "esriRelCardinalityOneToOne" etc.
-              Esri-MapServer.layers[].relationships[]                   ← same
+              GeoServices REST-MapServer.layers[].relationships[]                   ← same
               OData.<NavigationProperty Name=Name Type=Collection(RelatedEntity)> ← Relationships
               OGC-API-Features (informational) — link rel=related        ← Relationships
               STAC.links[rel=related]                                    ← Relationships
@@ -778,8 +778,8 @@ Standards:    WMS.<Style>                                              ← one p
               WMTS.<Style isDefault="true">                            ← true on first
               OGC-API-Styles.styles[].id                               ← Resource.Metadata.Id (style-typed)
               OGC-API-Maps.styleId query parameter                     ← StyleResourceIds membership check
-              Esri-FeatureServer.drawingInfo                           ← StyleResourceIds[0] body
-              Esri-MapServer.layers[].drawingInfo                      ← same
+              GeoServices REST-FeatureServer.drawingInfo                           ← StyleResourceIds[0] body
+              GeoServices REST-MapServer.layers[].drawingInfo                      ← same
               MapLibre style document                                  ← StyleResourceIds[0] body
 Status:       ❌ slice 5
 ```
@@ -790,14 +790,14 @@ Status:       ❌ slice 5
 Layer:        L1 (slice 5)
 V2 source:    Resource.Style.Encodings[] on Type=Style resources
               Encoding values: "mapbox-style", "sld-1.0.0", "sld-1.1.0",
-                "esri-drawing-info", "esri-image-renderer", "3d-tiles-styling"
+                source renderer encodings, "3d-tiles-styling"
 Standards:    OGC-API-Styles.<style>.<encoding-link href>              ← Encodings[*]
               WMS GetStyles                                            ← prefer SLD encoding when present;
                                                                           generate from mapbox-style otherwise
               WMS SLD_BODY parameter                                   ← convert mapbox-style → sld at render time
-              Esri-FeatureServer.drawingInfo.renderer                  ← prefer esri-drawing-info encoding;
+              GeoServices REST-FeatureServer.drawingInfo.renderer                  ← prefer source renderer encoding;
                                                                           generate from mapbox-style otherwise
-              Esri-ImageServer renderingRule                           ← esri-image-renderer encoding
+              GeoServices REST-ImageServer renderingRule                           ← source raster-renderer encoding
               MapLibre tile style URL                                  ← mapbox-style encoding (raw passthrough)
               3D Tiles styling                                         ← 3d-tiles-styling encoding
 Derivation:   See ADR-0002 (MapLibre canonical); converters live in render layer.
@@ -818,14 +818,14 @@ Standards:    OGC-API-* /conformance                                    ← deri
                 from each Service.Protocols entry, map to declared conformance classes
                 (e.g. ServiceProtocols.OgcFeatures → /conf/core, /conf/oas30, /conf/geojson,
                 + Part 2/3/4/5 when admin opts in)
-              Esri-FeatureServer.capabilities CSV                       ← derived from Resource.Editing.*:
+              GeoServices REST-FeatureServer.capabilities CSV                       ← derived from Resource.Editing.*:
                 "Query" — always (when any Resource.Display.Queryable)
                 "Create" — when any Resource.Editing.CanModify
                 "Update" — same
                 "Delete" — same
                 "Editing" — convenience prefix when any modify capability present
-              Esri-MapServer.capabilities                               ← same
-              Esri-ImageServer.capabilities                             ← "Image,Catalog,Metadata"
+              GeoServices REST-MapServer.capabilities                               ← same
+              GeoServices REST-ImageServer.capabilities                             ← "Image,Catalog,Metadata"
               WMS.<Request><Operation>                                  ← derived from Service.Protocols
               WFS-2.<ows:OperationsMetadata>                            ← derived
               WCS-2.<ows:OperationsMetadata>                            ← derived
@@ -840,13 +840,13 @@ Layer:        L1 (slice 3)
 V2 source:    Resource.Editing ({ GlobalIdField, CreatorField, CreatedAtField,
                 EditorField, UpdatedAtField, CanModify, SupportsAttachments,
                 SupportsRelatedRecords, HasLabels })
-Standards:    Esri-FeatureServer.layer.globalIdField                    ← GlobalIdField
-              Esri-FeatureServer.layer.editorTrackingInfo               ← from Creator/Created/Editor/Updated fields
-              Esri-FeatureServer.layer.editFieldsInfo                   ← same (compatibility alias)
-              Esri-FeatureServer.layer.canModifyLayer                   ← CanModify
-              Esri-FeatureServer.layer.hasLabels                        ← HasLabels (slice 3)
-              Esri-FeatureServer.layer.supportsAttachments              ← SupportsAttachments
-              Esri-FeatureServer.layer.supportsRelatedRecords           ← SupportsRelatedRecords
+Standards:    GeoServices REST-FeatureServer.layer.globalIdField                    ← GlobalIdField
+              GeoServices REST-FeatureServer.layer.editorTrackingInfo               ← from Creator/Created/Editor/Updated fields
+              GeoServices REST-FeatureServer.layer.editFieldsInfo                   ← same (compatibility alias)
+              GeoServices REST-FeatureServer.layer.canModifyLayer                   ← CanModify
+              GeoServices REST-FeatureServer.layer.hasLabels                        ← HasLabels (slice 3)
+              GeoServices REST-FeatureServer.layer.supportsAttachments              ← SupportsAttachments
+              GeoServices REST-FeatureServer.layer.supportsRelatedRecords           ← SupportsRelatedRecords
               OGC-API-Features Part 4 (Editing).conformance class       ← derive from CanModify across collections
               OData.@odata.id field                                     ← derived from GlobalIdField when set
               OData.<Annotation Term="Org.OData.Capabilities.V1.ChangeTracking"> ← derive from editor tracking fields presence
@@ -862,12 +862,12 @@ Layer:        L1 (slice 4)
 V2 source:    Service.Settings ({ MaxRecordCount, DefaultRecordCount,
                 MaxImageWidth, MaxImageHeight, DefaultDpi, MaxFeaturesPerLayer,
                 DefaultFormat, DefaultTileMatrixSet, SupportedFormats[] })
-Standards:    Esri-FeatureServer.maxRecordCount                          ← MaxRecordCount
-              Esri-FeatureServer.standardMaxRecordCount                  ← MaxRecordCount
-              Esri-FeatureServer.supportedQueryFormats                   ← join SupportedFormats with ","
-              Esri-MapServer.maxImageWidth / maxImageHeight              ← MaxImageWidth / MaxImageHeight
-              Esri-MapServer.maxRecordCount                              ← MaxRecordCount
-              Esri-ImageServer.maxImageWidth / maxImageHeight            ← same
+Standards:    GeoServices REST-FeatureServer.maxRecordCount                          ← MaxRecordCount
+              GeoServices REST-FeatureServer.standardMaxRecordCount                  ← MaxRecordCount
+              GeoServices REST-FeatureServer.supportedQueryFormats                   ← join SupportedFormats with ","
+              GeoServices REST-MapServer.maxImageWidth / maxImageHeight              ← MaxImageWidth / MaxImageHeight
+              GeoServices REST-MapServer.maxRecordCount                              ← MaxRecordCount
+              GeoServices REST-ImageServer.maxImageWidth / maxImageHeight            ← same
               WMS.<MaxWidth> / <MaxHeight>                              ← MaxImageWidth / MaxImageHeight
               WMS.<Format>                                              ← SupportedFormats
               WFS-2.<wfs:Constraint name="CountDefault">                ← DefaultRecordCount
@@ -921,7 +921,7 @@ Fallback:     "WebMercatorQuad" (de-facto default)
 Standards:    OGC-API-Tiles.tileMatrixSetURI                            ← URI lookup from identifier
               OGC-API-Tiles.tileMatrixSets[]                            ← list of supported (from server registry)
               WMTS.<TileMatrixSet>                                      ← full geometry of every level (computed from identifier)
-              Esri tileInfo.lods[]                                       ← computed from identifier + min/max
+              GeoServices REST tileInfo.lods[]                                       ← computed from identifier + min/max
               MBTiles.metadata.format = "pbf"|"png"|"jpg"               ← Service.Settings.DefaultFormat
               PMTiles.header.tile_type                                  ← same
               TileJSON tilejson="3.0.0"                                 ← computed
@@ -993,9 +993,9 @@ Status:       ✅ stable
 ```
 Layer:        ❌ GAP (deferred — slice 6 when raster handlers consume)
 V2 source:    Resource.Raster.PixelType / BandCount / NoData[] (not yet defined)
-Standards:    Esri-ImageServer.pixelType                                ← PixelType → esriPixelType*
-              Esri-ImageServer.bandCount                                ← BandCount
-              Esri-ImageServer.noDataValue                              ← NoData
+Standards:    GeoServices REST ImageServer.pixelType                                ← PixelType → esriPixelType*
+              GeoServices REST-ImageServer.bandCount                                ← BandCount
+              GeoServices REST-ImageServer.noDataValue                              ← NoData
               WCS-2.<gmlcov:rangeType>                                  ← BandCount + per-band type
               OGC-API-Coverages.coverage.coverageRangeType              ← derived per-band
               COG TIFF tags BitsPerSample, SampleFormat                  ← PixelType

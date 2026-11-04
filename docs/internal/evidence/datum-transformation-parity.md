@@ -1,28 +1,27 @@
-# Datum / vertical transformation fidelity (Esri-default parity)
+# Datum / vertical transformation fidelity (GeoServices REST default parity)
 
 Honua reprojects geometry with PostGIS' embedded PROJ engine. The accuracy gap this
 document addresses is **pipeline selection**, not engine capability: a bare
 `ST_Transform(geom, toSrid)` lets PROJ choose its own "best available" pipeline, which
-does not always match the geographic (datum) transformation ArcGIS selects by default.
+does not always match the geographic (datum) transformation a GeoServices REST client selects by default.
 That divergence is small but real — roughly 1–2 m for NAD83↔WGS84 and larger for NAD27.
 
-To close the gap, Honua models the Esri default geotransformations as an auditable
+To close the gap, Honua models the curated default geotransformations as an auditable
 data table and drives PostGIS' `ST_TransformPipeline(geom, '<proj-pipeline>', toSrid)`
-so the selected (Esri-parity) pipeline is used.
+so the selected pipeline is used.
 
 ## How it works
 
 - `IDatumTransformationCatalog` (`Honua.Core.Features.Infrastructure.Crs`) resolves a
   `(fromSrid, toSrid)` reprojection to a `DatumTransformationSelection` carrying the
-  Esri WKID, EPSG operation code, and explicit PROJ pipeline string.
-- `EsriDatumTransformationCatalog` is backed by the embedded table
-  `src/Honua.Core/Features/Infrastructure/Crs/Resources/esri-default-datum-transformations.json`.
+  GeoServices REST WKID, EPSG operation code, and explicit PROJ pipeline string.
+- A curated transformation table supplies the catalog's source data.
 - The GeoServices FeatureServer query handler:
   - **Honors** a client-supplied `datumTransformation` (bare WKID or
     `{"geoTransforms":[{"wkid":...,"transformForward":...}]}`) by resolving it against
-    the catalog. An unknown or inapplicable WKID returns an **explicit** Esri-style
+    the catalog. An unknown or inapplicable WKID returns an explicit GeoServices REST
     error — it is never silently substituted.
-  - **Defaults** to the catalog's Esri default for the layerSR→outSR pair when the
+  - **Defaults** to the catalog's default selection for the layerSR→outSR pair when the
     client sends no `datumTransformation`.
   - Surfaces support via `supportsQueryWithDatumTransformation` in layer metadata.
 - All output-CRS `ST_Transform` SQL call sites route through the single
@@ -34,20 +33,20 @@ so the selected (Esri-parity) pipeline is used.
 Parity is asserted against the **published EPSG/PROJ transformation parameters** as the
 test oracle. Tolerances below are the maximum acceptable horizontal divergence between
 Honua's selected-pipeline output and the EPSG/PROJ reference for the listed pair. The
-tests are structured so an ArcGIS-generated golden coordinate set can be dropped in
+tests are structured so an independently sourced golden coordinate set can be dropped in
 later (a fixture with documented provenance) without restructuring.
 
-| From | To | Esri default | WKID | EPSG op | Tolerance (horizontal) | Notes |
+| From | To | Catalog selection | WKID | EPSG op | Tolerance (horizontal) | Notes |
 |---|---|---|---|---:|---:|---|
 | NAD83 (4269) | WGS84 (4326) | NAD_1983_To_WGS_1984_1 | 108001 | 1188 | 1e-9 deg | EPSG 1188 is a null transformation; pipeline is `+proj=noop` (exact identity, PROJ-version stable). Validated against the runtime. |
-| NAD83(HARN) (4152) | WGS84 (4326) | NAD_1983_HARN_To_WGS_1984_1 | — | 1580 | 1e-9 deg | EPSG 1580 is a null transformation (`+proj=noop`). Seeded under #1501; validated against the runtime in both directions. No distinct Esri WKID — ArcGIS applies no geographic transformation by default for this pair. |
+| NAD83(HARN) (4152) | WGS84 (4326) | NAD_1983_HARN_To_WGS_1984_1 | — | 1580 | 1e-9 deg | EPSG 1580 is a null transformation (`+proj=noop`). Seeded under #1501; validated against the runtime in both directions. No protocol WKID is defined for this pair; no geographic transformation applies by default. |
 | NAD83(NSRS2007) (4759) | WGS84 (4326) | NAD_1983_NSRS2007_To_WGS_1984_1 | — | 15931 | 1e-9 deg | EPSG 15931 null transformation (`+proj=noop`). Seeded under #1501; runtime-validated. |
 | NAD83(2011) (6318) | WGS84 (4326) | NAD_1983_2011_To_WGS_1984_1 | — | 9774 | 1e-9 deg | EPSG 9774 null transformation (`+proj=noop`). Seeded under #1501; runtime-validated. |
 | NAD27 (4267) | NAD83 (4269) | NAD_1927_To_NAD_1983_NADCON | 1241 | 1241 | 5e-6 deg | The no-envelope default is CONUS `us_noaa_conus.tif`. An envelope fully inside one catalog area selects that grid (Alaska `us_noaa_alaska.tif`, Canada `ca_nrc_ntv2_0.tif`). An envelope in none, or in more than one, uses 2-argument `ST_Transform` instead of CONUS. |
 
 Tolerances are conservative upper bounds for the *selection* test: they prove Honua
 applies the correct pipeline, not that PROJ and EPSG agree to sub-millimeter. Tighten
-them when an ArcGIS golden set is added.
+them when an independent golden set is added.
 
 ### Seeded vs deferred pairs
 
@@ -56,7 +55,7 @@ Only pipelines verified against the PostGIS/PROJ runtime are seeded in the table
 Seeded under #1501: the WGS84-realization pairs **NAD83(HARN) → WGS84** (EPSG 1580),
 **NAD83(NSRS2007) → WGS84** (EPSG 15931), and **NAD83(2011) → WGS84** (EPSG 9774). EPSG
 defines all three as **null transformations** (the datums are coincident at the meter
-level, which is exactly the ArcGIS default of applying no geographic transformation). They
+level, which is the default behavior of applying no geographic transformation). They
 are expressed as the exact-identity `+proj=noop` and validated against the runtime in both
 directions (`DatumTransformationParityTests.TransformPoint_Wgs84RealizationNullPair_SeededPipelineApplies`).
 The all-zero geocentric-translation Helmert parameters were confirmed against the runtime
@@ -130,9 +129,9 @@ the default-path / explicit-failure contract on the grid-less fixture.
 ## Import / reprojection path
 
 The file/migration **import** reprojection path (`StreamingFileImportService`) now honors
-the same auditable Esri-default selection as the query path (#1501). When a feature is
+the same auditable catalog-default selection as the query path (#1501). When a feature is
 reprojected on import (`sourceSrid → targetSrid`), the service resolves the catalog's
-Esri-default pipeline via `IDatumTransformationCatalog.TryGetDefault` and applies it
+default pipeline via `IDatumTransformationCatalog.TryGetDefault` and applies it
 through `ST_TransformPipeline` inside `honua.insert_import_feature` (migration 123).
 The text argument of `ST_Transform` is a source CRS and cannot execute an operation
 pipeline. An exact `+proj=noop` selection is rewritten to `ST_SetSRID`, matching

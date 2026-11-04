@@ -77,7 +77,7 @@ The configuration supports multiple providers with individual settings:
       "Nominatim": { ... },
       "AmazonLocation": { ... },
       "AzureMaps": { ... },
-      "Esri": { ... },
+      "geoservices": { ... },
       "GoogleMaps": { ... },
       "Mapbox": { ... }
     }
@@ -102,7 +102,7 @@ The architecture is designed to support these providers:
 1. **Nominatim** (OpenStreetMap) - Free, open source
 2. **Amazon Location Services** - AWS-based geocoding
 3. **Azure Maps** - Microsoft's mapping platform
-4. **Esri ArcGIS** - Enterprise GIS geocoding
+4. **GeoServices REST** - Enterprise GIS geocoding
 5. **Google Maps** - Google's geocoding API
 6. **MapBox** - Open source friendly commercial service
 
@@ -110,7 +110,7 @@ Each provider has its own configuration class with provider-specific options.
 
 ## GeoServices Compatibility
 
-The architecture maintains compatibility with ArcGIS GeoServices REST API by:
+The architecture maintains compatibility with GeoServices REST API by:
 
 - Supporting the same request/response models in the server layer
 - Mapping core models to GeoServices formats

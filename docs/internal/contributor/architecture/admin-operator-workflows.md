@@ -48,7 +48,7 @@ needs, even though the target metadata model is different.
 | `manage-connection-component` lists, tests, saves, edits, and deletes database connections | Operators must manage reusable data connections without exposing secrets | Connections list/detail with provider, endpoint, database/schema, secret reference, health, and usage |
 | `add-layer-from-database-component` selects a table and generates a layer | Operators must create a resource from an existing table | Create Data Resource from Table wizard |
 | `add-layer-from-file-component` uploads GIS files and creates layers asynchronously | Operators must create resources from files with format detection and progress | Create Data Resource from File import job |
-| `import-service-modal-component` discovers ArcGIS MapServer/FeatureServer layers from a URL | Operators must import remote Esri services as many Honua resources | Import Esri Service wizard with discovery, selection, mapping, materialization choice, and job progress |
+| `import-service-modal-component` discovers GeoServices REST MapServer/FeatureServer layers from a URL | Operators must import remote GeoServices REST services as many Honua resources | Import GeoServices REST Service wizard with discovery, selection, mapping, materialization choice, and job progress |
 | `create-service-modal-component` configures service type, connection, CRS, scale, records, WMS, tiles, and anonymous access | Operators must create service and catalog endpoints from publishable resources | Services and Catalogs detail pages with publishing targets and runtime settings |
 | `layer-field-component` edits field aliases, inclusion, editability, domains, display field, filters, and time awareness | Operators must define field meaning and exposure once | Fields tab with roles, aliases, domains, query/edit exposure, temporal role, display role, and standard bindings in advanced view |
 | `create-renderer-component`, labels, HTML popups, related records, events, and versions | Operators need presentation and behavior controls around resources | Styles, Labels, Popups, Relationships, Events, and History tabs or panels |
@@ -93,10 +93,10 @@ landing page.
 | Data Resource | The canonical thing Honua manages and describes once | Resource identity, resource kind, source binding, field model, descriptive metadata, lifecycle state |
 | Field | A source attribute with display, query, edit, sensitivity, and semantic role controls | Field name/type, alias, role, domain, exposure, target-specific bindings in advanced view |
 | Metadata | Human and standards meaning for the resource | Description, contacts, rights, license, dates, extents, quality, lineage, links, distributions |
-| Service or Catalog | Runtime endpoint or catalog surface that can expose one or more resources | GeoServices, OGC API, WMS, WMTS, WFS, OData, STAC, DCAT, OGC Records, Esri catalog |
-| Service Layer Slot | A service-local publication position for one resource, especially useful for Esri MapServer/FeatureServer ergonomics | Service id, layer index or route, display name, linked data resource, readiness state |
+| Service or Catalog | Runtime endpoint or catalog surface that can expose one or more resources | GeoServices, OGC API, WMS, WMTS, WFS, OData, STAC, DCAT, OGC Records, GeoServices REST catalog |
+| Service Layer Slot | A service-local publication position for one resource, especially useful for GeoServices REST MapServer/FeatureServer ergonomics | Service id, layer index or route, display name, linked data resource, readiness state |
 | Publication | A resource exposed to a target endpoint, service layer slot, or catalog item | Target, path or item identity, field exposure, metadata projection, readiness state |
-| Projection Preview | Read-only preview of target output before publish | Derived standard output for OGC, DCAT, STAC, ISO, GeoServices, OData, or Esri catalog |
+| Projection Preview | Read-only preview of target output before publish | Derived standard output for OGC, DCAT, STAC, ISO, GeoServices, OData, or GeoServices REST catalog |
 | Access Preset | Human-readable security choice | Roles, grants, anonymous access, service/resource/field restrictions, advanced policy diagnostics |
 | Job | Long-running import, publish, tile, validation, or migration operation | Job type, status, progress, logs, result links, retry/cancel support |
 | Validation Result | Readiness issue tied to a fix location | Severity, target, resource, workflow area, blocker or warning, deep link |
@@ -105,7 +105,7 @@ The semantic center is the Data Resource, not the service. Canonical source
 binding, field roles, descriptive metadata, lineage, rights, and access policy
 remain owned by the Data Resource. A resource can publish to many service and
 catalog formats. A service or catalog is a target surface, not the owner of the
-resource meaning. For multi-layer Esri services, the service can have many
+resource meaning. For multi-layer GeoServices REST services, the service can have many
 layer slots or publication entries under it; each slot is a publication
 representation linked back to one Data Resource.
 
@@ -119,7 +119,7 @@ The admin UI should reinforce these rules:
 - Data Resource explains what the thing means and owns the canonical source,
   fields, metadata, lineage, rights, and access controls.
 - Field roles explain field semantics once.
-- Publication explains where the resource is exposed. In an Esri service this
+- Publication explains where the resource is exposed. In a GeoServices REST service this
   may be a service layer slot with a service-local layer id, route, display
   name, renderer, popup, or field exposure override.
 - Projection Preview explains how that one resource will look in a specific
@@ -131,14 +131,14 @@ This keeps one storage model able to support many source types and one metadata
 model able to support many output formats. For example, the same parcel resource
 can originate from a PostGIS table, carry one canonical field and metadata
 model, publish to GeoServices FeatureServer and OGC API Features, and project
-catalog meaning into OGC Records, DCAT, STAC, and an Esri catalog item.
+catalog meaning into OGC Records, DCAT, STAC, and a GeoServices REST catalog item.
 
 Target-specific differences belong in the publication or projection preview,
 not in duplicated resource metadata. A target may need a collection id, item id,
 layer index, route, output format, thumbnail, or field exposure override, but
 those choices should not fork the canonical resource meaning.
 
-Service detail pages should still show layers underneath a service for Esri
+Service detail pages should still show layers underneath a service for GeoServices REST
 admin ergonomics. This is a navigation and publication-management view, not a
 change in ownership: service layers are slots/publication entries, and edits to
 source, fields, metadata, lineage, rights, or canonical access deep-link back to
@@ -151,7 +151,7 @@ the linked Data Resource.
 | Create connection | Connections -> New connection | Saved connection with secret reference, health, and usage summary | Empty, testing, valid, warning, failed |
 | Create resource from table | Data Resources -> Create -> Database table | Draft data resource with table source and detected fields | Selecting, inspecting, draft, blocked, ready |
 | Create resource from file | Imports -> File import or Data Resources -> Create -> File | One or more draft resources and import job result | Uploading, scanning, mapping, importing, complete, failed |
-| Import Esri service | Imports -> Esri service | Imported draft resources, optional publications, import job | Discovering, selecting, mapping, importing, partial, failed |
+| Import GeoServices REST service | Imports -> GeoServices REST service | Imported draft resources, optional publications, import job | Discovering, selecting, mapping, importing, partial, failed |
 | Create service/catalog endpoint | Services and Catalogs -> New endpoint | Service/catalog target ready for publications | Draft, configured, running, stopped, degraded |
 | Publish resource | Resource -> Publish or Publishing matrix | Publication to service/catalog target | Compatible, warning, blocked, published |
 | Configure fields/domains | Resource -> Fields | Field roles, aliases, domains, exposure, sensitivity | Clean, changed, invalid, saved |
@@ -274,17 +274,17 @@ Outputs:
 - One or more draft data resources.
 - Import diagnostics and source file provenance.
 
-### Import Esri Service
+### Import GeoServices REST Service
 
 Entry points:
 
-- Imports -> Esri service
+- Imports -> GeoServices REST service
 - Data Resources -> Create -> Remote service
 - Services and Catalogs -> Import existing service
 
 Steps:
 
-1. Enter ArcGIS REST service URL.
+1. Enter GeoServices REST service URL.
 2. Discover service metadata and layers from MapServer or FeatureServer.
 3. Show service summary: title, service type, layer count, spatial reference,
    capabilities, extent, ownership, auth requirement, and warnings.
@@ -330,7 +330,7 @@ Entry points:
 Steps:
 
 1. Choose endpoint type: GeoServices MapServer/FeatureServer/ImageServer,
-   OGC API, WMS, WMTS, WFS, OData, STAC, DCAT, OGC Records, or Esri catalog.
+   OGC API, WMS, WMTS, WFS, OData, STAC, DCAT, OGC Records, or GeoServices REST catalog.
 2. Set route, display name, description, and runtime state.
 3. Configure target-specific settings: CRS, scale range, max record count,
    cache settings, allowed output formats, metadata profile, and anonymous
@@ -373,9 +373,9 @@ Outputs:
 ### Service Detail Layer Slots
 
 Service and catalog detail pages should include a concise table of the
-publication entries under that service. For Esri MapServer and FeatureServer
+publication entries under that service. For GeoServices REST MapServer and FeatureServer
 targets, label these entries as layers so administrators can scan the service in
-the same shape as ArcGIS REST.
+the same shape as GeoServices REST.
 
 Recommended columns:
 
@@ -409,7 +409,7 @@ Recommended columns:
 |---|---|
 | Target | Service, catalog, or standard output name |
 | Entry | Layer index, collection id, route, entity set, record id, or portal item |
-| Type | GeoServices, OGC API, WMS, WFS, OData, STAC, DCAT, OGC Records, or Esri catalog |
+| Type | GeoServices, OGC API, WMS, WFS, OData, STAC, DCAT, OGC Records, or GeoServices REST catalog |
 | Projection | Ready, warning, blocked, or stale projection state |
 | Access | Effective access compared with the resource policy |
 | Last publish | Timestamp, author, and job link |
@@ -577,7 +577,7 @@ Claude Design should produce:
 - Data Resources list and resource detail layout.
 - Create resource from table wizard.
 - Create resource from file wizard.
-- Import Esri service wizard.
+- Import GeoServices REST service wizard.
 - Services and Catalogs list and endpoint detail pages.
 - Publishing matrix and publication flow.
 - Resource tabs for Overview, Source, Fields, Metadata, Publish, Access,

@@ -30,7 +30,7 @@ These stay because they are not exclusively the excluded serving surface:
 - Elevation HTTP. Scene dataset, generation, BIM ingest, and point-cloud ingest endpoints compile only with the scene module.
 - gRPC NuGet packages. `HonuaFeatureService` is omitted when GeoServices is excluded, because it binds that assembly's spatial-reference resolver. `HonuaProcessService` stays in Honua.Geoprocessing. Only `MapGrpcService`, gRPC-Web, reflection, and serving-status capture are compile-gated.
 
-Geometry, objectId, and time filter translation for spatial analytics and GP layer selection binds the GeoServices query grammar, so those endpoints are part of the gsr closure. OGC profiles still run geoprocessing. Data enrichment where-filters use the shared filter service on the other profiles. Esri catalog discovery returns no entries when GeoServices is excluded.
+Geometry, objectId, and time filter translation for spatial analytics and GP layer selection binds the GeoServices query grammar, so those endpoints are part of the gsr closure. OGC profiles still run geoprocessing. Data enrichment where-filters use the shared filter service on the other profiles. GeoServices REST catalog discovery returns no entries when GeoServices is excluded.
 
 ## Build and publish
 

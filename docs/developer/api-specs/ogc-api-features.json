@@ -961,7 +961,7 @@
                   },
                   "where": {
                     "type": "string",
-                    "description": "ArcGIS SQL filter applied before clustering."
+                    "description": "Source SQL filter applied before clustering."
                   },
                   "objectIds": {
                     "type": "string",
@@ -1094,7 +1094,7 @@
                   },
                   "where": {
                     "type": "string",
-                    "description": "ArcGIS SQL filter applied before the spatial join."
+                    "description": "Source SQL filter applied before the spatial join."
                   },
                   "objectIds": {
                     "type": "string",
@@ -1229,7 +1229,7 @@
                   },
                   "where": {
                     "type": "string",
-                    "description": "ArcGIS SQL filter applied before the buffer aggregate operation."
+                    "description": "Source SQL filter applied before the buffer aggregate operation."
                   },
                   "objectIds": {
                     "type": "string",
@@ -1353,7 +1353,7 @@
                   },
                   "where": {
                     "type": "string",
-                    "description": "ArcGIS SQL filter applied before density binning."
+                    "description": "Source SQL filter applied before density binning."
                   },
                   "objectIds": {
                     "type": "string",

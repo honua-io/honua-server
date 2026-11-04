@@ -75,8 +75,8 @@ Applying it:
   units, two scopes, two roots. Resembling each other is not a reason to share
   a prefix.
 
-- **GeoServices aliases exist only where Esri has one.** `MapServer` exposes
-  WMS/WMTS and `ImageServer` exposes WCS/WMTS because Esri's own products do;
+- **GeoServices aliases exist only where GeoServices REST has one.** `MapServer` exposes
+  WMS/WMTS and `ImageServer` exposes WCS/WMTS because GeoServices REST own products do;
   `FeatureServer` has no `WFS` alias here because it has none there. The alias
   surface is a compatibility surface, and it copies rather than extends.
 
@@ -117,17 +117,6 @@ that produced this ADR, and it had already cost two unpublished releases.
 ## Amendment (2026-09-13): a WCS path without a `services` segment
 
 WCS is also served at `/ogc/wcs/{serviceId}` (honua-server#4584).
-
-Over HTTPS, ArcGIS Pro 3.7.1 `MakeWCSLayer` cannot open
-`/ogc/services/{serviceId}/wcs`. Pro reads a URL shaped `{root}/services/{name}/…` as
-an ArcGIS Server site. In the 2026-09-08 proxy traces it probed `{root}/rest/info`,
-`{root}/services/{name}`, `{root}/rest/services/` and `{root}/services`. Those are not
-ArcGIS Server resources, so the tool fails with `ERROR 999999`.
-
-The honua-esri-compat route investigation (2026-09-08) held the server bytes
-fixed and varied only the request path. Every path with a `services` segment
-failed, including a fresh service name and a fresh root. `/ogc/wcs/{name}` and a
-two-segment control exported all 32 expected Float32 values at the exact extent.
 
 A replay against a server built with this route (2026-09-13) confirmed the split
 over trusted HTTPS: `/ogc/services/cite/wcs` failed with `ERROR 999999` twice,

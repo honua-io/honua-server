@@ -2,7 +2,7 @@
 
 The release-bundle orchestrator turns the manual release checklist into one
 evidence-first CI run. It builds **one** Native AOT release-candidate image, runs
-the integration/conformance and Esri-SDK evidence against that exact image
+the integration/conformance and GeoServices REST-SDK evidence against that exact image
 digest, cuts every SDK against the same candidate (dry-run), assembles the
 release-train manifest, and runs the honua-devops validator to emit the
 release-train scoreboard.
@@ -78,7 +78,7 @@ when `channel: ga`; preview and RC promotions do not move the stable tags.
 
 ### Required secret
 
-`RELEASE_BUNDLE_TOKEN` — a PAT with `actions:write` on the SDK/esri/console/helm
+`RELEASE_BUNDLE_TOKEN` — a PAT with `actions:write` on the SDK/console/helm
 repos (cross-repo dispatch; the repo-scoped `GITHUB_TOKEN` cannot trigger other
 repos) and `contents:read` to check out honua-devops for the validator.
 

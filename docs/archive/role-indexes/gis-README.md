@@ -10,7 +10,7 @@ Connect to Honua from desktop GIS applications and consume geospatial services.
 
 ## Client Templates
 
-- [Client Setup Runbook](../../gis/CLIENT_TEMPLATE_RUNBOOK.md) — ArcGIS Pro, QGIS, Power BI, Excel
+- [Client Setup Runbook](../../gis/CLIENT_TEMPLATE_RUNBOOK.md) — desktop GIS client, QGIS, Power BI, Excel
 - [Version Matrix](../../gis/CLIENT_TEMPLATE_VERSION_MATRIX.md) — Tested client software versions
 - [Template Files](../../gis/client-templates) — Ready-to-use project templates
 - [Honua QGIS Plugin](https://github.com/honua-io/honua-qgis) — Two-click "Add Honua Server" plugin sources, packaging, and registry submission notes
@@ -33,9 +33,9 @@ Connect to Honua from desktop GIS applications and consume geospatial services.
 
 - [GeoServices REST Parity](../../reference/compatibility/geoservices-parity.md) — Canonical landing page for FeatureServer, MapServer, ImageServer, Geometry Service, and GPServer
 - [GeoServices REST Parity Data (JSON)](../../gis/data/geoservices-rest-parity.json) — Machine-readable export of the same parity contract
-- [FeatureServer Matrix](../../reference/compatibility/geoservices-parity.md) — Esri FeatureServer endpoint coverage
+- [FeatureServer Matrix](../../reference/compatibility/geoservices-parity.md) — GeoServices REST FeatureServer endpoint coverage
 - [MapServer Matrix](../../reference/compatibility/geoservices-parity.md) — MapServer, WMS 1.3, WMTS 1.0 coverage
-- [ImageServer Matrix](../../reference/compatibility/geoservices-parity.md) — Esri ImageServer endpoint coverage
+- [ImageServer Matrix](../../reference/compatibility/geoservices-parity.md) — GeoServices REST ImageServer endpoint coverage
 - [Geometry Service Matrix](../../reference/compatibility/geoservices-parity.md) — Geometry operations plus Honua supplemental `area` and `length` routes
 - [Geoprocess Framework Analysis](../../guides/query-analyze/run-geoprocessing.md) — GPServer, OGC API Processes, and GeoServer WPS mapped to Honua canonical model
 - [OGC API Features](../../reference/protocols/ogc-apis.md) — Parts [1](../../reference/protocols/ogc-apis.md), [2](../../reference/protocols/ogc-apis.md), [3](../../reference/protocols/ogc-apis.md)
@@ -56,7 +56,7 @@ Connect to Honua from desktop GIS applications and consume geospatial services.
 ## Compatibility
 
 - [Known Limitations](../../reference/compatibility/clients.md) — Current protocol limitations
-- [I3S Compatibility Matrix](../../internal/spikes/i3s-compatibility-matrix.md) — Esri Indexed 3D Scene Layer compatibility spike and Enterprise-roadmap conformance plan
+- [I3S Compatibility Matrix](../../internal/spikes/i3s-compatibility-matrix.md) — GeoServices REST Indexed 3D Scene Layer compatibility spike and Enterprise-roadmap conformance plan
 - [Public Interface Proof Ledger](../../gis/data/public-interface-proof.json) — Machine-readable inventory of every shipped public surface, proof classes, CI lanes, and evidence locations
 - [Certification Matrix](../../gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md) — Cross-client interop test results
 - [Certification Evidence](../../gis/CROSS_CLIENT_CERTIFICATION_EVIDENCE.md) — Final `.cert.json` envelope plus the Windows client smoke-artifact contract

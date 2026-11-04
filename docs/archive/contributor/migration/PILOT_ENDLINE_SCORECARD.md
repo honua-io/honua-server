@@ -19,14 +19,14 @@ Mirrors the [baseline scorecard](PILOT_BASELINE_SCORECARD.md) with measured outc
 
 ## Success Metrics -- Measured
 
-Targets from the [migration plan success metrics](../ESRI_MIGRATION_PLATFORM_PLAN.md#success-metrics-defined).
+Targets follow the pilot success metrics.
 
 ### Manual Rewrite Ratio
 
 | Metric | Actual | Target |
 |--------|--------|--------|
 | Manual call sites after codemods | | |
-| Total ArcGIS API call sites | | |
+| Total GeoServices REST API call sites | | |
 | **Ratio** | | <= 25% |
 
 ### Capability Coverage

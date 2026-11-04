@@ -96,7 +96,7 @@ There is not yet a server-native portable offline package manifest endpoint dist
 
 ### Replica upload envelopes and download acknowledgements
 
-`synchronizeReplica` accepts Esri per-layer `features: {adds, updates, deleteIds}` envelopes,
+`synchronizeReplica` accepts GeoServices REST per-layer `features: {adds, updates, deleteIds}` envelopes,
 as well as the existing flat operation arrays and the flat `deleteIds` alias. Empty attachment
 collections are accepted; nonempty attachment operations return an explicit unsupported error.
 Ambiguous mixtures of nested and flat feature operations are rejected before applying edits.

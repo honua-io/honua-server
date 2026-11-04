@@ -2,10 +2,6 @@
 
 Last reviewed: 2026-05-18
 
-This page defines the first server-side evidence slice for migrated
-geoprocessing workloads. It is intentionally narrower than full ArcPy,
-ModelBuilder, GeoServer WPS, or arbitrary OGC API Processes portability.
-
 ## Claim Scope
 
 Honua can project a first set of deterministic vector processes as concrete
@@ -16,11 +12,6 @@ expose result artifact references through:
 - OGC API Processes: `GET /ogc/processes/jobs/{jobId}/results`
 - GeoServices GPServer:
   `GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/results/{paramName}`
-
-The current scaffold does not claim full source-script translation or full
-runtime parity for every built-in process. Python SDK ArcPy scanning and parity
-execution remains tracked in
-[honua-sdk-python#59](https://github.com/honua-io/honua-sdk-python/issues/59).
 
 ## First Supported Vector Set
 
@@ -46,7 +37,7 @@ non-empty result artifacts. The protocol contracts are:
 - OGC API Processes returns a document-mode JSON object keyed by stable output
   parameter names such as `outputFeatureLayer`.
 - GPServer returns per-output responses under `results/{paramName}`, with
-  `paramName`, Esri GP data type, and an artifact value/reference.
+  `paramName`, GeoServices REST GP data type, and an artifact value/reference.
 - Artifact metadata should carry
   `geoservices.output_parameter` when a stable GPServer output binding is known.
 - Failed and cancelled jobs remain status evidence, not successful migration
@@ -74,28 +65,8 @@ dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
 
 ## Toolbox Translation Lane (#2145)
 
-The arcpy/toolbox (`.pyt`/`.tbx`/`.atbx`) translation lane is split across
+The toolbox (Python toolbox source, binary toolbox, or toolbox package) translation lane is split across
 repos by design:
-
-- **honua-sdk-python** (`honua-migrate`, sdk issues #59/#123/#124) owns
-  parsing toolbox sources, scanning arcpy constructs, and proposing per-tool
-  mappings onto native Honua processes. Binary `.tbx`/`.atbx` parsing remains
-  an explicit `UnsupportedToolboxError` stub SDK-side.
-- **honua-server** owns the round-trip proof and the canonical runtime. The
-  process catalog is the single source of truth for executable signatures, so
-  the server validates SDK-translated manifests via
-  `POST /api/v1/admin/import/toolbox/translation/validate`
-  (`ToolboxTranslationEndpoints` -> `ToolboxTranslationValidator`) and returns
-  a `honua.migration.toolbox-translation-report` artifact: per-tool
-  classification (`translated` / `partially-translated` / `unsupported`),
-  round-tripped canonical parameter bindings, and explicit issue codes
-  (`no-native-executor`, `unknown-process`, `unknown-target-parameter`,
-  `duplicate-target-parameter`, `missing-required-parameter`,
-  `unsupported-construct`, `unsatisfied-conditional-inputs`,
-  `unverifiable-conditional-branches`, `process-not-job-executable`). Tools that cannot
-  supply a required parameter are `unsupported`, never stubbed as executable.
-  Inbound manifests must carry a supported `artifactKind`/`artifactVersion`;
-  an incompatible identity is rejected rather than reinterpreted.
 
 Static `Required` flags are not the whole admissibility contract: several
 processes declare mutually-substitutable optional inputs (for example the
@@ -149,10 +120,6 @@ a GUID, a numeric list); a token domain rejects all of them, while a
 format-only rule such as `connectionId`'s GUID check accepts one. Declaring
 `allowedValues` for a discriminator moves it out of this bucket and into exact
 branch enumeration, which is the follow-up path for tightening the report.
-
-The server never parses toolbox sources and never emulates arcpy execution;
-translated tools execute only as existing native processes through the
-canonical process/job runtime (OGC API Processes / GPServer).
 
 Contract fixtures live under `tests/fixtures/toolbox-translation/`
 (translatable, partially translatable, and fully unsupported toolboxes) and

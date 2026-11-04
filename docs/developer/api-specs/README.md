@@ -107,7 +107,7 @@ Use the capability manifest when Console, MCP, QGIS plugins, native hosts, or SD
 > API under `/api/v1/analysis/**` and is not yet part of this snapshot.
 >
 > **Migration scanner note**: `POST /api/v1/admin/import/scan` returns the inventory artifact itself, not the usual admin envelope, and a `200` response can still carry `scanCompleteness.status = "failed"`.
-> Request aliases normalize `sourceKind` to `geoserver-rest` or `arcgis-geoservices-rest`, and dependency addresses plus secret-like metadata are sanitized for planning-safe export.
+> Request aliases normalize `sourceKind` to `geoserver-rest` or `geoservices-rest`, and dependency addresses plus secret-like metadata are sanitized for planning-safe export.
 > Stable IDs cross-link `resources[*].styleIds`, `styles[*].resourceIds`, and `externalDependencies[*].resourceId` so review tooling can traverse the artifact without guessing by display name.
 >
 > **Control-plane direction**: this API is intended to back a Honua-managed control plane. Honua is not positioning Flux or Argo CD as the primary rollout controller.
@@ -129,7 +129,7 @@ Use the capability manifest when Console, MCP, QGIS plugins, native hosts, or SD
 - Control layer enabling/disabling and protocol settings
 - Manage map styles and layer styling
 - Create Metadata v2 release packages and prevalidate release compatibility against target environments before GitOps promotion
-- Scan GeoServer REST and ArcGIS GeoServices REST FeatureServer/MapServer service roots into deterministic migration inventory artifacts with compatibility rollups
+- Scan GeoServer REST and GeoServices REST FeatureServer/MapServer service roots into deterministic migration inventory artifacts with compatibility rollups
 - Monitor system health and observability
 - Render Console GP/ETL workflow palettes and manage workflow package versions through the sibling `/api/v1/console/workflow-*` surface
 - Inspect durable background jobs, structured logs, artifacts, control actions, and Operate event correlations
@@ -155,11 +155,11 @@ Studio route without updating the document fails the OpenAPI drift gate.
 
 ## GeoServices REST Services
 
-**Protocol**: Esri-compatible REST API
+**Protocol**: GeoServices REST
 **Base URL**: `/rest/services`
-**Compatibility**: Esri-compatible subset (see coverage matrices for exact operation support)
+**Compatibility**: Supported GeoServices REST subset (see coverage matrices for operation support)
 
-> **Note**: FeatureServer, MapServer, and ImageServer endpoints follow Esri REST conventions and provide service-specific self-describing metadata. Geometry Service currently exposes operation endpoints only; Honua does not implement the root GeometryServer metadata resource.
+> **Note**: FeatureServer, MapServer, and ImageServer endpoints follow GeoServices REST conventions and provide service-specific self-describing metadata. Geometry Service currently exposes operation endpoints only; Honua does not implement the root GeometryServer metadata resource.
 >
 > For detailed endpoint reference, start with the [GeoServices REST Parity landing page](../../reference/compatibility/geoservices-parity.md), use the [machine-readable parity JSON](../../gis/data/geoservices-rest-parity.json) when tooling needs the same contract, and then drill into the [FeatureServer](../../reference/compatibility/geoservices-parity.md), [MapServer](../../reference/compatibility/geoservices-parity.md), [ImageServer](../../reference/compatibility/geoservices-parity.md), and [Geometry Service](../../reference/compatibility/geoservices-parity.md) matrices.
 
