@@ -4,6 +4,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -62,7 +63,13 @@ public sealed partial class FolderSnapshotCompatibilityTests : IAsyncLifetime
         _client.DefaultRequestHeaders.TryAddWithoutValidation("If-Match", created.Headers.ETag!.ToString());
         (await _client.PutAsJsonAsync("/api/v1/admin/services/test/folder", new { folderId = id })).EnsureSuccessStatusCode();
         using var scope = _fixture.Services.CreateScope();
-        var snapshot = await scope.ServiceProvider.GetRequiredService<IMetadataV2GraphStore>().GetCurrentAsync();
+        var store = scope.ServiceProvider.GetRequiredService<IMetadataV2GraphStore>();
+        var snapshot = await store.GetCurrentAsync();
+        var explicitLeaf = JsonNode.Parse(JsonSerializer.Serialize(snapshot.Graph, MetadataV2JsonContext.Default.MetadataV2Graph))!;
+        foreach (var service in explicitLeaf["services"]!.AsArray().Where(service => service!["metadata"]!["name"]!.GetValue<string>() == "test"))
+            service!["publicName"] = "test";
+        var candidate = JsonSerializer.Deserialize(explicitLeaf.ToJsonString(), MetadataV2JsonContext.Default.MetadataV2Graph)!;
+        snapshot = await store.SaveAsync(candidate, snapshot.Etag);
         using var serialized = JsonDocument.Parse(JsonSerializer.Serialize(snapshot.Graph, MetadataV2JsonContext.Default.MetadataV2Graph));
         serialized.RootElement.GetProperty("folders").GetArrayLength().Should().BeGreaterThan(0);
         await WriteSnapshot("new", snapshot);
@@ -81,6 +88,9 @@ public sealed partial class FolderSnapshotCompatibilityTests : IAsyncLifetime
             document.RootElement.GetProperty("servicePathAliases").GetArrayLength().Should().Be(0);
             await RestartHost();
             await AssertFlatReads();
+            await RestoreBackup();
+            await RestartHost();
+            await AssertFlatReads();
         }
     }
 
@@ -90,9 +100,10 @@ public sealed partial class FolderSnapshotCompatibilityTests : IAsyncLifetime
         var store = scope.ServiceProvider.GetRequiredService<IMetadataV2GraphStore>();
         var current = await store.GetCurrentAsync();
         current = await store.SaveAsync(current.Graph, current.Etag);
-        var sourceSchema = await File.ReadAllTextAsync(Path.Join(Directory!, name + ".schema"));
-        var json = (await File.ReadAllTextAsync(Path.Join(Directory!, name + ".json")))
-            .Replace(sourceSchema, _fixture.CurrentSchema!, StringComparison.Ordinal);
+        var document = JsonNode.Parse(await ReadSnapshotJson(name))!;
+        document["revision"] = current.Revision;
+        document["environment"] = current.Graph.Environment;
+        var json = document.ToJsonString();
         await using var connection = await scope.ServiceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>().OpenConnectionAsync();
         await using var command = connection.CreateCommand();
         command.CommandText = $"""
@@ -110,6 +121,26 @@ public sealed partial class FolderSnapshotCompatibilityTests : IAsyncLifetime
         return await store.GetCurrentAsync();
     }
 
+    private async Task<string> ReadSnapshotJson(string name)
+    {
+        var sourceSchema = await File.ReadAllTextAsync(Path.Join(Directory, name + ".schema"));
+        return (await File.ReadAllTextAsync(Path.Join(Directory, name + ".json")))
+            .Replace(sourceSchema, _fixture.CurrentSchema!, StringComparison.Ordinal);
+    }
+
+    private async Task RestoreBackup()
+    {
+        using var scope = _fixture.Services.CreateScope();
+        var store = scope.ServiceProvider.GetRequiredService<IMetadataV2GraphStore>();
+        var current = await store.GetCurrentAsync();
+        var backup = JsonSerializer.Deserialize(await ReadSnapshotJson("new"), MetadataV2JsonContext.Default.MetadataV2Graph)!;
+        var recovered = await store.SaveAsync(backup, current.Etag);
+        recovered.Revision.Should().BeGreaterThan(current.Revision);
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(recovered.Graph, MetadataV2JsonContext.Default.MetadataV2Graph));
+        document.RootElement.GetProperty("folders").GetArrayLength().Should().BeGreaterThan(0);
+        document.RootElement.GetProperty("servicePathAliases").GetArrayLength().Should().BeGreaterThan(0);
+    }
+
     private async Task RestartHost()
     {
         _client.Dispose();
@@ -119,7 +150,7 @@ public sealed partial class FolderSnapshotCompatibilityTests : IAsyncLifetime
 
     private async Task AssertFlatReads()
     {
-        foreach (var path in new[] { "/rest/services", "/rest/services/test/FeatureServer", "/rest/services/test/FeatureServer/0/query?where=1%3D1&outFields=*&f=json" })
+        foreach (var path in new[] { "/rest/services?f=json", "/rest/services/test/FeatureServer?f=json", "/rest/services/test/FeatureServer/0/query?where=1%3D1&outFields=*&f=json" })
         {
             var response = await _client.GetAsync(path);
             response.StatusCode.Should().Be(HttpStatusCode.OK);

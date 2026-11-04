@@ -16,8 +16,14 @@ public sealed partial class FolderSnapshotCompatibilityTests
     public async Task BaselineReader_ReadsNewSnapshotAndProvesSaveStageFieldLoss()
     {
         var snapshot = await InstallSnapshot("new");
-        var serialized = JsonSerializer.Serialize(snapshot.Graph, MetadataV2JsonContext.Default.MetadataV2Graph);
-        serialized.Should().NotContain("\"folders\"");
+        using var serialized = JsonDocument.Parse(JsonSerializer.Serialize(snapshot.Graph, MetadataV2JsonContext.Default.MetadataV2Graph));
+        serialized.RootElement.TryGetProperty("folders", out _).Should().BeFalse();
+        serialized.RootElement.TryGetProperty("servicePathAliases", out _).Should().BeFalse();
+        foreach (var service in serialized.RootElement.GetProperty("services").EnumerateArray())
+        {
+            service.TryGetProperty("folderId", out _).Should().BeFalse();
+            service.TryGetProperty("publicName", out _).Should().BeFalse();
+        }
         await RestartHost();
         await AssertFlatReads();
         using var scope = _fixture.Services.CreateScope();
