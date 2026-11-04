@@ -77,8 +77,7 @@ internal sealed class ImageServerRasterMetadataHandler
                         : rasterStore.GetMosaicStatisticsAsync(
                             layerId, rasterIds, mergeStrategy, bands: null, cancellationToken: ct);
                 },
-                onBudgetExceeded: () => ImageServerLog.StatisticsComputeBudgetExceeded(
-                    _logger, layerId, ImageServerStatisticsBudget.Timeout.TotalSeconds),
+                onBudgetExceeded: ImageServerStatisticsBudget.MarkResponseIncomplete(context.Response, _logger, layerId),
                 cancellationToken);
             var entries = new StatisticsEntry[statistics.Length];
             for (var i = 0; i < statistics.Length; i++)

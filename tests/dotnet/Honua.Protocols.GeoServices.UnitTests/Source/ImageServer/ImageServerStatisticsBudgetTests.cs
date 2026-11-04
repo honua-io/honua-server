@@ -8,7 +8,9 @@ using Honua.Infrastructure.Middleware;
 using Honua.Protocols.GeoServices.ImageServer.Services;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 
@@ -287,5 +289,30 @@ public sealed class ImageServerStatisticsBudgetTests
             new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public void Dispose() => Disposed.TrySetResult(true);
+    }
+
+    [UnitTest]
+    public void MarkResponseIncomplete_WhenInvoked_ForbidsCachingAndLogsTheOverrun()
+    {
+        var context = new DefaultHttpContext();
+        var logger = new RecordingLogger();
+
+        ImageServerStatisticsBudget.MarkResponseIncomplete(context.Response, logger, layerId: 7)();
+
+        context.Response.Headers.CacheControl.ToString().Should().Be("no-store");
+        logger.Entries.Should().ContainSingle(entry => entry.Level == LogLevel.Warning && entry.EventId == 5854);
+    }
+
+    private sealed class RecordingLogger : ILogger
+    {
+        public List<(LogLevel Level, int EventId)> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+            => Entries.Add((logLevel, eventId.Id));
     }
 }

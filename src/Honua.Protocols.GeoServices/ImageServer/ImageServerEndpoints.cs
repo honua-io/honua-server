@@ -3994,27 +3994,7 @@ internal static class ImageServerEndpoints
     private static ExportImageRequest CreateRasterItemImageRequest(
         IReadOnlyDictionary<string, StringValues> values,
         long rasterId)
-    {
-        var request = CreateExportImageRequest(values);
-        return new ExportImageRequest
-        {
-            Bbox = request.Bbox,
-            Size = request.Size,
-            ImageSr = request.ImageSr,
-            BboxSr = request.BboxSr,
-            Format = request.Format,
-            PixelType = request.PixelType,
-            NoData = request.NoData,
-            NoDataInterpretation = request.NoDataInterpretation,
-            Interpolation = request.Interpolation,
-            Compression = request.Compression,
-            CompressionQuality = request.CompressionQuality,
-            BandIds = request.BandIds,
-            MosaicRule = FormattableString.Invariant($"{{\"mosaicMethod\":\"esriMosaicLockRaster\",\"lockRasterIds\":[{rasterId}]}}"),
-            RenderingRule = request.RenderingRule,
-            F = request.F,
-        };
-    }
+        => LockToRaster(CreateExportImageRequest(values), rasterId);
 
     // Thumbnail is a small rendered preview of one raster item. It reuses the shared export
     // pipeline (no new data pathway): the item is locked via mosaicRule and a small default size
@@ -4027,26 +4007,19 @@ internal static class ImageServerEndpoints
         IReadOnlyDictionary<string, StringValues> values,
         long rasterId)
     {
-        var request = CreateExportImageRequest(values);
-        return new ExportImageRequest
-        {
-            Bbox = request.Bbox,
-            Size = request.Size ?? DefaultThumbnailSize,
-            ImageSr = request.ImageSr,
-            BboxSr = request.BboxSr,
-            Format = request.Format,
-            PixelType = request.PixelType,
-            NoData = request.NoData,
-            NoDataInterpretation = request.NoDataInterpretation,
-            Interpolation = request.Interpolation,
-            Compression = request.Compression,
-            CompressionQuality = request.CompressionQuality,
-            BandIds = request.BandIds,
-            MosaicRule = FormattableString.Invariant($"{{\"mosaicMethod\":\"esriMosaicLockRaster\",\"lockRasterIds\":[{rasterId}]}}"),
-            RenderingRule = request.RenderingRule,
-            F = GetString(values, "f") ?? InlineImageFormat,
-        };
+        var item = LockToRaster(CreateExportImageRequest(values), rasterId);
+        return item with { Size = item.Size ?? DefaultThumbnailSize, F = GetString(values, "f") ?? InlineImageFormat };
     }
+
+    // A raster item renders one locked raster, so the time and multidimensional slices that choose
+    // between rasters are not forwarded.
+    private static ExportImageRequest LockToRaster(ExportImageRequest request, long rasterId)
+        => request with
+        {
+            MosaicRule = FormattableString.Invariant($"{{\"mosaicMethod\":\"esriMosaicLockRaster\",\"lockRasterIds\":[{rasterId}]}}"),
+            MultidimensionalDefinition = null,
+            Time = null,
+        };
 
     private static IdentifyRequest CreateIdentifyRequest(IReadOnlyDictionary<string, StringValues> values)
         => new()

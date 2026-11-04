@@ -47,7 +47,7 @@ public static partial class CrsLinearUnitFactor
             return fromUnits;
         }
 
-        if (TryWkt(wkt, isGeographic, out var fromWkt))
+        if ((isGeographic ? AngularUnitFromWkt(wkt) : LinearUnitFromWkt(wkt)) is { } fromWkt)
         {
             return fromWkt;
         }
@@ -135,25 +135,19 @@ public static partial class CrsLinearUnitFactor
         return false;
     }
 
-    private static bool TryWkt(string? wkt, bool isGeographic, out double factor)
-    {
-        factor = 0;
-        if (string.IsNullOrWhiteSpace(wkt))
-        {
-            return false;
-        }
+    public static double? LinearUnitFromWkt(string? wkt) =>
+        string.IsNullOrWhiteSpace(wkt) ? null : ParseUnitFactor(LinearUnitPattern().Matches(wkt).LastOrDefault());
 
-        var matches = UnitPattern().Matches(wkt);
-        if (matches.Count == 0)
-        {
-            return false;
-        }
+    private static double? AngularUnitFromWkt(string? wkt) =>
+        string.IsNullOrWhiteSpace(wkt) ? null : ParseUnitFactor(AngularUnitPattern().Match(wkt));
 
-        var match = isGeographic ? matches[0] : matches[^1];
-        return double.TryParse(match.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out factor)
-            && factor > 0
-            && double.IsFinite(factor);
-    }
+    private static double? ParseUnitFactor(Match? match) =>
+        match is { Success: true }
+        && double.TryParse(match.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var factor)
+        && factor > 0
+        && double.IsFinite(factor)
+            ? factor
+            : null;
 
     [GeneratedRegex(@"[+]to_meter=([0-9.eE+-]+)", RegexOptions.CultureInvariant)]
     private static partial Regex ToMeterPattern();
@@ -161,7 +155,11 @@ public static partial class CrsLinearUnitFactor
     [GeneratedRegex(@"[+]units=([A-Za-z0-9_-]+)", RegexOptions.CultureInvariant)]
     private static partial Regex UnitsPattern();
 
-    // ANGLEUNIT contains UNIT. The lookbehind keeps the angular name from being read as linear.
-    [GeneratedRegex(@"(?<!ANGLE)(?:LENGTHUNIT|UNIT)\s*\[[^,\]]+,\s*([0-9.eE+-]+)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex UnitPattern();
+    // WKT2 names each unit kind (ANGLEUNIT, LENGTHUNIT, SCALEUNIT) and WKT1 writes a bare UNIT, so
+    // each pattern accepts its own kind or a bare UNIT, never UNIT as the tail of another keyword.
+    [GeneratedRegex(@"(?<![A-Za-z])(?:LENGTHUNIT|UNIT)\s*\[[^,\]]+,\s*([0-9.eE+-]+)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex LinearUnitPattern();
+
+    [GeneratedRegex(@"(?<![A-Za-z])(?:ANGLEUNIT|UNIT)\s*\[[^,\]]+,\s*([0-9.eE+-]+)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex AngularUnitPattern();
 }
