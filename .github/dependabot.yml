@@ -36,6 +36,10 @@ updates:
     labels:
       - "dependencies"
       - "github-actions"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
 
   # Docker (for Testcontainers base images if we add Dockerfile)
   - package-ecosystem: "docker"
