@@ -11,6 +11,10 @@ public static partial class EndpointRegistry
     [
         // v1 admin metadata resource CRUD endpoints removed in #1035 cutover.
         // (Layer-style/fields/filter/validation endpoints below still serve v1 layer ids.)
+        new("GET", "/api/v1/admin/metadata/layers/{layerId}/discovery"),
+        new("PUT", "/api/v1/admin/metadata/layers/{layerId}/discovery"),
+        new("GET", "/api/v1/admin/services/{serviceName}/discovery"),
+        new("PUT", "/api/v1/admin/services/{serviceName}/discovery"),
         new("GET", "/api/v1/admin/metadata/layers/{layerId}/style"),
         new("PUT", "/api/v1/admin/metadata/layers/{layerId}/style"),
         new("GET", "/api/v1/admin/metadata/layers/{layerId}/fields"),

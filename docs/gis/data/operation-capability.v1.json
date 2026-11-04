@@ -7,11 +7,11 @@
     "capabilities": "docs/gis/data/feature-catalog.json"
   },
   "summary": {
-    "operationCount": 508,
+    "operationCount": 512,
     "unresolvedCount": 0,
     "capabilityCount": 23,
     "perSpec": {
-      "admin-api": 415,
+      "admin-api": 419,
       "ogc-api-coverages": 8,
       "ogc-api-features": 19,
       "ogc-api-maps": 10,
@@ -21,7 +21,7 @@
       "studio-api": 23
     },
     "perCapability": {
-      "admin.control-plane": 295,
+      "admin.control-plane": 299,
       "admin.multi-tenancy": 7,
       "alerts.evaluation": 18,
       "analytics.h3": 1,
@@ -2020,6 +2020,26 @@
     {
       "spec": "admin-api",
       "method": "GET",
+      "path": "/api/v1/admin/metadata/layers/{layerId}/discovery",
+      "operationId": null,
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-metadata-layers-layerid-discovery"
+    },
+    {
+      "spec": "admin-api",
+      "method": "PUT",
+      "path": "/api/v1/admin/metadata/layers/{layerId}/discovery",
+      "operationId": null,
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "put-api-v1-admin-metadata-layers-layerid-discovery"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
       "path": "/api/v1/admin/metadata/layers/{layerId}/drawing-info",
       "operationId": "getAdminLayerDrawingInfo",
       "capability": "admin.control-plane",
@@ -3716,6 +3736,26 @@
       "family": "Admin API",
       "maturity": "implemented",
       "catalogEntryId": "put-api-v1-admin-services-servicename-access-policy"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/services/{serviceName}/discovery",
+      "operationId": null,
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-services-servicename-discovery"
+    },
+    {
+      "spec": "admin-api",
+      "method": "PUT",
+      "path": "/api/v1/admin/services/{serviceName}/discovery",
+      "operationId": null,
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "put-api-v1-admin-services-servicename-discovery"
     },
     {
       "spec": "admin-api",

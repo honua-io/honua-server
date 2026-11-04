@@ -429,11 +429,8 @@ internal static partial class WmsRequestHandlers
             .AppendLine("</Name>");
         sb.Append("    <Title>").Append(EscapeXml(serviceTitle)).AppendLine("</Title>");
         sb.Append("    <Abstract>").Append(EscapeXml(serviceAbstract)).AppendLine("</Abstract>");
-        sb.AppendLine("    <KeywordList>");
-        sb.AppendLine("      <Keyword>WMS</Keyword>");
-        sb.AppendLine("      <Keyword>OGC</Keyword>");
-        sb.Append("      <Keyword>").Append(EscapeXml(service.Metadata.Name ?? serviceId)).AppendLine("</Keyword>");
-        sb.AppendLine("    </KeywordList>");
+        AppendWmsKeywords(sb, service.Metadata.Keywords
+            .Prepend(service.Metadata.Name ?? serviceId).Prepend("OGC").Prepend("WMS"), "    ");
         AppendWmsOnlineResource(sb, "    ", wmsEndpoint, isWms111);
         sb.AppendLine("    <ContactInformation>");
         sb.AppendLine("      <ContactPersonPrimary>");
@@ -549,9 +546,7 @@ internal static partial class WmsRequestHandlers
             sb.Append("        <Name>").Append(EscapeXml(layerName)).AppendLine("</Name>");
             sb.Append("        <Title>").Append(EscapeXml(resourceTitle)).AppendLine("</Title>");
             sb.Append("        <Abstract>").Append(EscapeXml(layerAbstract)).AppendLine("</Abstract>");
-            sb.AppendLine("        <KeywordList>");
-            sb.Append("          <Keyword>").Append(EscapeXml(layerName)).AppendLine("</Keyword>");
-            sb.AppendLine("        </KeywordList>");
+            AppendWmsKeywords(sb, layer.Resource.Metadata.Keywords.Prepend(layerName), "        ");
             sb.Append("        <").Append(crsElementName).AppendLine(">EPSG:4326</" + crsElementName + ">");
             sb.Append("        <").Append(crsElementName).AppendLine(">EPSG:3857</" + crsElementName + ">");
             if (!isWms111)
@@ -742,6 +737,16 @@ internal static partial class WmsRequestHandlers
         }
 
         return Task.CompletedTask;
+    }
+
+    private static void AppendWmsKeywords(StringBuilder builder, IEnumerable<string> keywords, string indent)
+    {
+        builder.Append(indent).AppendLine("<KeywordList>");
+        foreach (var keyword in keywords.Where(keyword => !string.IsNullOrWhiteSpace(keyword)).Distinct(StringComparer.Ordinal))
+        {
+            builder.Append(indent).Append("  <Keyword>").Append(EscapeXml(keyword)).AppendLine("</Keyword>");
+        }
+        builder.Append(indent).AppendLine("</KeywordList>");
     }
 
     private static void AppendWmsGeographicBoundingBox(
