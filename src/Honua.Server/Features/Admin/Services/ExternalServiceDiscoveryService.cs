@@ -3,14 +3,13 @@
 
 using System.Net;
 using System.Net.Http.Json;
-using System.Net.Sockets;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Xml;
 using System.Xml.Linq;
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Core.Features.Infrastructure.Internal;
+using Honua.Core.Features.Infrastructure.Validation;
 using Honua.Server.Features.Admin.Models;
 using Honua.Import;
 using Honua.Migration;
@@ -30,6 +29,10 @@ internal sealed partial class ExternalServiceDiscoveryService(
     private const int MaxCatalogServices = 250;
     private const int CatalogConcurrency = 6;
 
+    private static readonly PinnedDnsFailureMessages PinnedConnectionFailures = new(
+        "External service host resolves to a private, loopback, or unresolvable network address, which is not allowed.",
+        "Unable to establish a connection to the external service host.");
+
     /// <summary>
     /// Upper bound on a single JSON discovery response. The XML path is already bounded
     /// (<see cref="CreateSecureXmlReaderSettings"/> caps the document at 2M characters); this is the
@@ -39,67 +42,14 @@ internal sealed partial class ExternalServiceDiscoveryService(
     internal const long MaxJsonResponseBytes = 8 * 1024 * 1024;
 
     /// <summary>
-    /// Primary handler for the <see cref="HttpClientName"/> client. SSRF hardening for the admin
-    /// discovery surface: redirects are never followed (a remote 302 could point the request at a
-    /// private/loopback/cloud-metadata address — or downgrade to plain HTTP — after the pre-request
-    /// network guard has passed), and connections are pinned to a freshly resolved, guard-validated
-    /// address so DNS rebinding between the guard check and the connect cannot reach a disallowed
-    /// network address. Mirrors <c>ArcGisRestClient.CreatePinnedDnsHttpMessageHandler</c>.
+    /// Primary handler for the <see cref="HttpClientName"/> client: no redirects, and connections
+    /// only to addresses the shared outbound address check allows.
     /// </summary>
     internal static HttpMessageHandler CreatePinnedDnsHttpMessageHandler()
-        => new SocketsHttpHandler
-        {
-            AllowAutoRedirect = false,
-            ConnectCallback = static (context, cancellationToken) =>
-                ConnectWithValidatedAddressAsync(context, cancellationToken)
-        };
-
-    private static async ValueTask<Stream> ConnectWithValidatedAddressAsync(
-        SocketsHttpConnectionContext context,
-        CancellationToken cancellationToken)
-    {
-        var host = context.DnsEndPoint.Host;
-        IPAddress[] addresses = IPAddress.TryParse(host, out var literalAddress)
-            ? [literalAddress]
-            : await Dns.GetHostAddressesAsync(host, cancellationToken).ConfigureAwait(false);
-
-        // Re-run the network guard against the addresses this connection will actually use.
-        var hostUri = new UriBuilder(Uri.UriSchemeHttps, host).Uri;
-        var disallowed = await NetworkAddressValidator.IsDisallowedAddressAsync(
-                hostUri,
-                (_, _) => Task.FromResult(addresses),
-                cancellationToken)
-            .ConfigureAwait(false);
-        if (disallowed || addresses.Length == 0)
-        {
-            throw new HttpRequestException(
-                "External service host resolves to a private, loopback, or unresolvable network address, which is not allowed.");
-        }
-
-        Exception? lastException = null;
-        foreach (var address in addresses)
-        {
-            using var socketOwner = new SocketConnectionOwner(
-                new Socket(address.AddressFamily, SocketType.Stream, ProtocolType.Tcp) { NoDelay = true });
-            try
-            {
-                await socketOwner.Socket
-                    .ConnectAsync(address, context.DnsEndPoint.Port, cancellationToken)
-                    .ConfigureAwait(false);
-                return socketOwner.TransferToNetworkStream();
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (Exception ex) when (ex is SocketException or ObjectDisposedException)
-            {
-                lastException = ex;
-            }
-        }
-
-        throw new HttpRequestException("Unable to establish a connection to the external service host.", lastException);
-    }
+        => PinnedDnsConnector.CreateHandler(
+            static (host, cancellationToken) => Dns.GetHostAddressesAsync(host, cancellationToken),
+            PinnedConnectionFailures,
+            maxConnectionsPerServer: int.MaxValue);
 
     public async Task<ExternalServiceDiscoveryResponse> DiscoverAsync(
         ExternalServiceDiscoveryRequest request,

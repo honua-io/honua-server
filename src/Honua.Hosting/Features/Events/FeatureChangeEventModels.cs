@@ -3,9 +3,8 @@
 
 using System.Linq;
 using System.Net;
-using System.Net.Sockets;
-using Microsoft.Extensions.Options;
 using Honua.Core.Features.Infrastructure.Validation;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Events;
 
@@ -265,33 +264,8 @@ internal static class FeatureChangeWebhookUrlValidation
         Uri uri,
         Func<string, CancellationToken, Task<IPAddress[]>> hostAddressResolver,
         CancellationToken cancellationToken)
-    {
-        if (IPAddress.TryParse(uri.Host, out var literalAddress))
-        {
-            return OutboundHttpUrlValidator.IsPrivateOrReservedAddress(literalAddress);
-        }
-
-        IPAddress[] addresses;
-        try
-        {
-            addresses = await hostAddressResolver(uri.DnsSafeHost, cancellationToken).ConfigureAwait(false);
-        }
-        catch (SocketException)
-        {
-            return true;
-        }
-        catch (ArgumentException)
-        {
-            return true;
-        }
-
-        if (addresses.Length == 0)
-        {
-            return true;
-        }
-
-        return addresses.Any(OutboundHttpUrlValidator.IsPrivateOrReservedAddress);
-    }
+        => await PinnedDnsConnector.TryResolveAllowedAddressesAsync(uri.DnsSafeHost, hostAddressResolver, cancellationToken)
+            .ConfigureAwait(false) is null;
 
 }
 

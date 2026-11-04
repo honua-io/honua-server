@@ -5,11 +5,9 @@ using System.Globalization;
 using System.Linq;
 using System.Net;
 using System.Net.Http.Headers;
-using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Core.Features.Infrastructure.Internal;
 using Honua.Core.Features.Infrastructure.Validation;
 
 namespace Honua.Infrastructure.Events;
@@ -20,21 +18,19 @@ namespace Honua.Infrastructure.Events;
 /// </summary>
 internal static partial class WebhookDeliveryHelper
 {
+    // A slow webhook consumer must not absorb every outbound socket; 64 covers burst delivery.
+    private const int MaxConnectionsPerWebhookHost = 64;
+
+    private static readonly PinnedDnsFailureMessages PinnedConnectionFailures = new(
+        FeatureChangeWebhookUrlValidation.DisallowedAddressMessage,
+        "Unable to establish a secure connection to the webhook host.");
+
     internal static HttpMessageHandler CreatePinnedDnsHttpMessageHandler(
         Func<string, CancellationToken, Task<IPAddress[]>>? hostAddressResolver = null)
     {
         var resolver = hostAddressResolver ?? ((host, ct) => Dns.GetHostAddressesAsync(host, ct));
 
-        return new SocketsHttpHandler
-        {
-            AllowAutoRedirect = false,
-            // Cap outbound concurrency per destination to prevent a slow webhook consumer
-            // from absorbing the entire thread pool's worth of sockets. The default is
-            // unbounded; 64 is enough for hot burst workloads without starving the host.
-            MaxConnectionsPerServer = 64,
-            ConnectCallback = (context, cancellationToken) =>
-                ConnectWithPinnedDnsAsync(context, resolver, cancellationToken)
-        };
+        return PinnedDnsConnector.CreateHandler(resolver, PinnedConnectionFailures, MaxConnectionsPerWebhookHost);
     }
 
     /// <summary>
@@ -180,85 +176,6 @@ internal static partial class WebhookDeliveryHelper
 
             return hash;
         }
-    }
-
-    private static async ValueTask<Stream> ConnectWithPinnedDnsAsync(
-        SocketsHttpConnectionContext context,
-        Func<string, CancellationToken, Task<IPAddress[]>> hostAddressResolver,
-        CancellationToken cancellationToken)
-    {
-        var addresses = await ResolveAllowedAddressesAsync(
-                context.DnsEndPoint.Host,
-                hostAddressResolver,
-                cancellationToken)
-            .ConfigureAwait(false);
-
-        Exception? lastException = null;
-        foreach (var address in addresses)
-        {
-            using var socketOwner = new SocketConnectionOwner(
-                new Socket(address.AddressFamily, SocketType.Stream, ProtocolType.Tcp));
-
-            try
-            {
-                await socketOwner.Socket
-                    .ConnectAsync(address, context.DnsEndPoint.Port, cancellationToken)
-                    .ConfigureAwait(false);
-                return socketOwner.TransferToNetworkStream();
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (Exception ex) when (ex is SocketException or ObjectDisposedException)
-            {
-                lastException = ex;
-            }
-        }
-
-        throw new HttpRequestException("Unable to establish a secure connection to the webhook host.", lastException);
-    }
-
-    private static async Task<IPAddress[]> ResolveAllowedAddressesAsync(
-        string host,
-        Func<string, CancellationToken, Task<IPAddress[]>> hostAddressResolver,
-        CancellationToken cancellationToken)
-    {
-        if (IPAddress.TryParse(host, out var literalAddress))
-        {
-            if (OutboundHttpUrlValidator.IsPrivateOrReservedAddress(literalAddress))
-            {
-                throw new HttpRequestException(FeatureChangeWebhookUrlValidation.DisallowedAddressMessage);
-            }
-
-            return [literalAddress];
-        }
-
-        IPAddress[] addresses;
-        try
-        {
-            addresses = await hostAddressResolver(host, cancellationToken).ConfigureAwait(false);
-        }
-        catch (SocketException)
-        {
-            throw new HttpRequestException(FeatureChangeWebhookUrlValidation.DisallowedAddressMessage);
-        }
-        catch (ArgumentException)
-        {
-            throw new HttpRequestException(FeatureChangeWebhookUrlValidation.DisallowedAddressMessage);
-        }
-
-        if (addresses.Length == 0)
-        {
-            throw new HttpRequestException(FeatureChangeWebhookUrlValidation.DisallowedAddressMessage);
-        }
-
-        if (addresses.Any(OutboundHttpUrlValidator.IsPrivateOrReservedAddress))
-        {
-            throw new HttpRequestException(FeatureChangeWebhookUrlValidation.DisallowedAddressMessage);
-        }
-
-        return addresses;
     }
 
     [LoggerMessage(EventId = 9001, Level = LogLevel.Debug, Message = "Webhook delivery succeeded for event {EventId} with status {StatusCode}.")]
