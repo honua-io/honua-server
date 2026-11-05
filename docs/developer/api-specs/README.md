@@ -155,9 +155,9 @@ Studio route without updating the document fails the OpenAPI drift gate.
 
 ## GeoServices REST Services
 
-**Protocol**: Esri-compatible REST API
+**Protocol**: GeoServices REST
 **Base URL**: `/rest/services`
-**Compatibility**: Esri-compatible subset (see coverage matrices for exact operation support)
+**Coverage**: GeoServices REST subset (see coverage matrices for exact operation support)
 
 > **Note**: FeatureServer, MapServer, and ImageServer endpoints follow Esri REST conventions and provide service-specific self-describing metadata. Geometry Service currently exposes operation endpoints only; Honua does not implement the root GeometryServer metadata resource.
 >

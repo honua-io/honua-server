@@ -165,15 +165,8 @@ public static class FeatureCatalog
     /// </summary>
     public const string BranchVersioningKey = "editing.branch-versioning";
 
-    /// <summary>
-    /// Entitlement key for editing through the Esri GeoServices FeatureServer write surface —
-    /// applyEdits/addFeatures/updateFeatures/deleteFeatures and the calculate bulk field update.
-    /// Pro-tier (#1591): the Esri-compatibility premium is paid on the write side only. Feature
-    /// editing via the open protocols (OGC API Features mutations, WFS-T, OData CRUD/$batch, and
-    /// gRPC edits) is Community and carries no entitlement gate, while still flowing through the
-    /// shared edit/transaction pipeline. Pro branch versioning
-    /// (<c>editing.branch-versioning</c>) is a separate entitlement.
-    /// </summary>
+    // Pro entitlement for FeatureServer writes. Open-protocol edits stay Community and ungated.
+    // Branch versioning is a separate entitlement.
     public const string FeatureServerEditsKey = "editing.featureserver-edits";
 
     /// <summary>

@@ -5,9 +5,6 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Models;
 
-/// <summary>
-/// Esri-compatible metadata for one raster catalog item's <c>info</c> resource.
-/// </summary>
 public sealed class RasterItemInfoResponse
 {
     /// <summary>Upper-left raster origin in source coordinates.</summary>

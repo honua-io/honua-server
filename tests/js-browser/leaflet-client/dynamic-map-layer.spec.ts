@@ -61,7 +61,7 @@ test.describe('DynamicMapLayer — MapServer Consumption', () => {
     const metadataResult = result as any;
     expect(metadataResult.ok, metadataResult.error ?? 'MapServer metadata request failed').toBe(true);
     expect(metadataResult.metadata.mapName).toBeTruthy();
-    // Honua is an independent Esri-compatible server and intentionally does NOT advertise an
+    // Honua is an independent GeoServices REST server and intentionally does NOT advertise an
     // ArcGIS Server/Portal version (no `currentVersion`) — see honua-server #1857 and the
     // NoArcGisServerVersionTests guard. Validate the fields Honua DOES emit instead: a layer
     // catalog (`layers`) for the consumed MapServer. `currentVersion` is deliberately absent.

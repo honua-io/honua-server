@@ -19,11 +19,7 @@ using Microsoft.Extensions.Primitives;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Handlers;
 
-/// <summary>
-/// Handler for the Esri Image Server <c>query</c> endpoint, which exposes the
-/// raster catalog as Esri-compatible features. Mirrors the FeatureServer query
-/// envelope so the Esri client SDKs can drive both protocols with shared code.
-/// </summary>
+// Catalog query returns features in the FeatureServer query envelope.
 internal sealed class ImageServerCatalogQueryHandler
 {
     /// <summary>Maximum number of records the catalog query will ever return per page.</summary>

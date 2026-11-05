@@ -1,8 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 //
-// VectorTileServer resources surface (honua-server#1779 styles + honua-server#1780 sprites/glyphs,
-// epic #1776). Implements the Esri-compatible default-style document (root.json) by composing the
+// VectorTileServer resources surface for styles, sprites, and glyphs.
+// The GeoServices REST default-style document (root.json) is composed from the
 // canonical MapLibre style stored for the service's primary layer into a Mapbox GL v8 document
 // whose vector source references this service's descriptor (url, #5534) and its
 // tile/{z}/{y}/{x}.pbf route (tiles) (VectorTileStyleComposer). The composed style references sprite/glyphs (pointed at the
