@@ -74,7 +74,7 @@ public sealed class FolderOperationIntegrationTests(RedisFixture redis) : IAsync
         var initial = await SnapshotAsync();
         var listed = await SubmitAsync("folder.list", []);
         listed.GetProperty("result").GetProperty("details").GetProperty("etag").GetString().Should().Be(initial.Etag);
-        await ApplyAsync("folder.create", new() { ["name"] = "Survey", ["If-Match"] = initial.Etag });
+        await ApplyAsync("folder.create", new() { ["name"] = "Survey", ["title"] = "Field survey", ["If-Match"] = initial.Etag });
         var created = await SnapshotAsync();
         var folder = created.Graph.Folders.Should().ContainSingle().Subject;
         await ApplyAsync("service.move", new() { ["folderId"] = folder.Metadata.Id, ["If-Match"] = created.Etag });
@@ -84,6 +84,7 @@ public sealed class FolderOperationIntegrationTests(RedisFixture redis) : IAsync
         await ApplyAsync("folder.update", new() { ["id"] = folder.Metadata.Id, ["name"] = "Survey2", ["If-Match"] = moved.Etag });
         var renamed = await SnapshotAsync();
         renamed.Graph.Folders.Single().PreviousNames.Should().Contain("Survey");
+        renamed.Graph.Folders.Single().Metadata.Title.Should().Be("Field survey");
         await ApplyAsync("service.move", new() { ["folderId"] = null, ["If-Match"] = renamed.Etag });
         var returned = await SnapshotAsync();
         returned.Graph.Services.Where(service => service.Metadata.Name == "test").Should().OnlyContain(service => service.FolderId == null);

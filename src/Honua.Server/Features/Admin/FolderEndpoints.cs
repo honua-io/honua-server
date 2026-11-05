@@ -225,10 +225,10 @@ internal sealed class FolderRequest
     public string? Title
     {
         get => _title;
-        init { _title = value; TitleSpecified = true; }
+        set { _title = value; TitleSpecified = true; }
     }
     [JsonIgnore]
-    public bool TitleSpecified { get; private init; }
+    public bool TitleSpecified { get; private set; }
 }
 internal sealed record MoveServiceRequest(MetadataV2FolderSelection FolderId);
 

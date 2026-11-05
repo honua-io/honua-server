@@ -44,6 +44,7 @@ public sealed class FolderReplayAuthorizationFilterTests
     [InlineData("wrong-folder-path", false)]
     [InlineData("wrong-proposal-lineage", false)]
     [InlineData("changed-body", false)]
+    [InlineData("changed-title", false)]
     [InlineData("changed-etag", false)]
     [InlineData("changed-namespace", false)]
     [InlineData("missing-payload", false)]
@@ -119,6 +120,17 @@ public sealed class FolderReplayAuthorizationFilterTests
         });
     }
 
+    [UnitTheory]
+    [InlineData("{\"name\":\"Folder\"}", false, null)]
+    [InlineData("{\"title\":null}", true, null)]
+    [InlineData("{\"title\":\"Display\"}", true, "Display")]
+    public void Deserialize_TitlePresence_ReflectsSuppliedJson(string json, bool specified, string? title)
+    {
+        var request = JsonSerializer.Deserialize(json, FolderJsonContext.Default.FolderRequest)!;
+        request.TitleSpecified.Should().Be(specified);
+        request.Title.Should().Be(title);
+    }
+
     private static ServiceProvider Services(OperationProposal proposal, string tenantId)
     {
         var store = Substitute.For<IOperationProposalStore>();
@@ -191,8 +203,11 @@ public sealed class FolderReplayAuthorizationFilterTests
         object? result = null;
         var middleware = new OperationLineageAttestationMiddleware(async current =>
         {
-            result = await new FolderReplayAuthorizationFilter().InvokeAsync(EndpointFilterInvocationContext.Create(current, "folder",
-                new FolderRequest { Name = scenario == "changed-body" ? "Unapproved" : "Approved" }, current), next);
+            var body = scenario == "changed-title"
+                ? new FolderRequest { Name = "Approved", Title = null }
+                : new FolderRequest { Name = scenario == "changed-body" ? "Unapproved" : "Approved" };
+            result = await new FolderReplayAuthorizationFilter().InvokeAsync(
+                EndpointFilterInvocationContext.Create(current, "folder", body, current), next);
         });
         await middleware.InvokeAsync(context, lineage);
         return result;
