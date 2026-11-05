@@ -2,6 +2,10 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Net;
+using System.Security.Claims;
+using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Security.Domain;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
@@ -26,6 +30,7 @@ namespace Honua.Server.Tests.Features.OperationsToolset;
 public sealed class FolderOperationIntegrationTests(RedisFixture redis) : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();
+    private ReplayServiceAuthorization _authorization = null!;
     private HttpClient _proposer = null!;
     private HttpClient _approver = null!;
     private IOperationProposalStore _proposals = null!;
@@ -41,7 +46,12 @@ public sealed class FolderOperationIntegrationTests(RedisFixture redis) : IAsync
             builder.UseSetting("Licensing:DevGrantEdition", "Pro");
             builder.ConfigureAppConfiguration((_, configuration) =>
                 configuration.AddInMemoryCollection(ApprovalPolicy()));
-        }).ConfigureServices(services => FolderPostgresTestHost.Configure(services, () => _fixture.CurrentSchema));
+        }).ConfigureServices(services =>
+        {
+            FolderPostgresTestHost.Configure(services, () => _fixture.CurrentSchema);
+            services.AddSingleton<IOperatorAuthorizationEvaluator>(provider =>
+                _authorization = new ReplayServiceAuthorization(ActivatorUtilities.CreateInstance<OperatorAuthorizationEvaluator>(provider)));
+        });
         await _fixture.InitializeAsync();
         await FolderPostgresTestHost.InstallSchemaAsync(_fixture);
         _proposer = await CreateClientAsync("proposer", ["admin:*"]);
@@ -133,7 +143,11 @@ public sealed class FolderOperationIntegrationTests(RedisFixture redis) : IAsync
             await ApproveAsync(id.GetString()!);
             (await _proposals.GetAsync(id.GetString()!, CancellationToken.None))!.Status.Should().Be(OperationProposalStatus.Failed);
         }
-        else response.IsSuccessStatusCode.Should().BeFalse();
+        else
+        {
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            body.RootElement.GetProperty("data").GetProperty("status").GetString().Should().Be("failed");
+        }
         (await SnapshotAsync()).Etag.Should().Be(initial.Etag);
     }
 
@@ -150,13 +164,45 @@ public sealed class FolderOperationIntegrationTests(RedisFixture redis) : IAsync
         (await SnapshotAsync()).Etag.Should().Be(initial.Etag);
     }
 
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/operations/{id}/submit")]
+    [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
+    public async Task ServiceMove_AccessDeniedAfterSubmission_ApprovalCannotMutateMembership()
+    {
+        var initial = await SnapshotAsync();
+        await ApplyAsync("folder.create", new() { ["name"] = "Destination", ["If-Match"] = initial.Etag });
+        var before = await SnapshotAsync();
+        var proposal = await ProposeAsync("service.move", new()
+        {
+            ["folderId"] = before.Graph.Folders.Single().Metadata.Id, ["If-Match"] = before.Etag
+        });
+        _authorization.DeniedService = "test";
+        await ApproveAsync(proposal);
+        (await _proposals.GetAsync(proposal, CancellationToken.None))!.Status.Should().Be(OperationProposalStatus.Failed);
+        (await SnapshotAsync()).Etag.Should().Be(before.Etag);
+        (await SnapshotAsync()).Graph.Services.Where(service => service.Metadata.Name == "test")
+            .Should().OnlyContain(service => service.FolderId == null);
+    }
+
+    private sealed class ReplayServiceAuthorization(IOperatorAuthorizationEvaluator evaluator) : IOperatorAuthorizationEvaluator
+    {
+        public string? DeniedService { get; set; }
+
+        public Task<AccessDecision> EvaluateAsync(ClaimsPrincipal principal, OperatorAuthorizationRequest request,
+            CancellationToken cancellationToken = default)
+            => request.ResourceType == OperatorResourceType.PublishedService && request.ResourceId == DeniedService
+                ? Task.FromResult(AccessDecision.Forbidden("Service access denied."))
+                : evaluator.EvaluateAsync(principal, request, cancellationToken);
+    }
+
     private async Task ApplyAsync(string operationId, Dictionary<string, string?> parameters)
     {
         var before = await SnapshotAsync();
         var proposal = await ProposeAsync(operationId, parameters);
         (await SnapshotAsync()).Etag.Should().Be(before.Etag, "submission must wait for separate approval");
         await ApproveAsync(proposal);
-        (await _proposals.GetAsync(proposal, CancellationToken.None))!.Status.Should().Be(OperationProposalStatus.Succeeded);
+        var applied = (await _proposals.GetAsync(proposal, CancellationToken.None))!;
+        applied.Status.Should().Be(OperationProposalStatus.Succeeded, string.Join("; ", applied.Plan.BlockingReasons));
         var after = await SnapshotAsync();
         after.Etag.Should().NotBe(before.Etag);
         using var replay = await _approver.PostAsync($"/api/v1/admin/proposals/{proposal}/approve", null);

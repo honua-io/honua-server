@@ -17,6 +17,7 @@ internal static class FolderEndpoints
     public static void MapFolderEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin")
+            .AddEndpointFilter<FolderReplayAuthorizationFilter>()
             .WithApiVersionSet().HasApiVersion(1, 0).WithTags("Admin", "Services").RequireAdminAuthorization();
         group.MapGet("/folders", (Delegate)List);
         group.MapPost("/folders", Create);
