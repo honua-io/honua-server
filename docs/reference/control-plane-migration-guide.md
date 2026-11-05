@@ -117,7 +117,7 @@ Regenerate admin clients from `docs/developer/api-specs/admin-api.json` after up
 | Schema and operation names beginning `ImportArcGisMigration` or `ArcGisMigration` | The same names beginning `ImportGeoServicesMigration` or `GeoServicesMigration` |
 | `sourceKind` value `arcgis-geoservices-rest` | `geoservices-rest`. A scan request still accepts `arcgis-geoservices-rest` |
 | Diagnostic codes `ARCGIS_*` | `GEOSERVICES_*`. Reports already stored keep the codes they were written with |
-| File-import preview format `EsriJson` | `GeoServicesJson`. A request body still accepts `EsriJson` |
+| File-import preview format `EsriJson` | `GeoServicesJson` |
 | Configuration section `ArcGisRest` | `GeoServicesRest`. Startup fails while `ArcGisRest` is set and names this replacement |
 
 Migration 144 rewrites stored source-kind values to `geoservices-rest`. An older server refuses that database. The refusal points at [Rollback boundaries](../guides/deploy/upgrade-and-rollback.md#rollback-boundaries). Restore the backup taken before that migration, then start the older image.

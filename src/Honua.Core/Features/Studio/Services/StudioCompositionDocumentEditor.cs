@@ -83,7 +83,8 @@ public static class StudioCompositionDocumentEditor
             }
 
             RemoveArrayItems(styleRefs, styleRef => HasMember(styleRef, "styleId", styleId));
-            styleRefs.Add(new JsonObject { ["styleId"] = styleId, ["body"] = styleNode });
+            JsonNode inlineStyleRef = new JsonObject { ["styleId"] = styleId, ["body"] = styleNode };
+            styleRefs.Add(inlineStyleRef);
         });
     }
 
