@@ -13,43 +13,15 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// Shared adapter for threading the GeoServices <c>gdbVersion</c> parameter into the canonical
-/// query/edit pipeline (#1272, ADR-0051). Resolves the requested version through the provider's
-/// <see cref="IVersionManager"/>:
-/// <list type="bullet">
-/// <item>absent / empty / <c>SDE.DEFAULT</c> resolves to <see cref="VersionContext.Default"/> with no
-/// entitlement check, preserving the byte-identical non-versioned DEFAULT path (CITE-protected);</item>
-/// <item>a named version is Pro-gated and Postgres-only, and must exist, otherwise an
-/// Esri-style error result is returned.</item>
-/// </list>
-/// </summary>
+// An absent, empty, or SDE.DEFAULT version skips the entitlement check and stays on the non-versioned path; a named version is Pro-gated, Postgres-only, and must exist.
 internal static class FeatureServerVersioning
 {
-    /// <summary>
-    /// Resolves the <c>gdbVersion</c> parameter for an edit request.
-    /// </summary>
-    /// <param name="context">The HTTP context.</param>
-    /// <param name="gdbVersion">The requested version identity, or null/empty for DEFAULT.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>
-    /// The resolved <see cref="VersionContext"/> (DEFAULT when absent) and a null error on success;
-    /// or a default context and a non-null error result when gating/lookup fails.
-    /// </returns>
     public static Task<(VersionContext? Version, IResult? Error)> ResolveEditVersionAsync(
         HttpContext context,
         string? gdbVersion,
         CancellationToken cancellationToken)
         => ResolveAsync(context, gdbVersion, cancellationToken);
 
-    /// <summary>
-    /// Resolves the <c>gdbVersion</c> parameter for a query request. Identical gating to the edit
-    /// path; the canonical read overlay is a no-op for DEFAULT.
-    /// </summary>
-    /// <param name="context">The HTTP context.</param>
-    /// <param name="gdbVersion">The requested version identity, or null/empty for DEFAULT.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The resolved context and a null error on success, or an error result on failure.</returns>
     public static Task<(VersionContext? Version, IResult? Error)> ResolveQueryVersionAsync(
         HttpContext context,
         string? gdbVersion,

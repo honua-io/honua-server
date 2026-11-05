@@ -6,11 +6,6 @@ using Honua.Core.Features.Portal.Domain;
 
 namespace Honua.Protocols.GeoServices.Sharing;
 
-/// <summary>
-/// Response body for <c>/sharing/rest/info</c> (and the <c>/rest/info</c> alias).
-/// Mirrors the ArcGIS Portal <c>info</c> document so packaged Esri clients can
-/// discover the portal version and the supported authentication scheme.
-/// </summary>
 internal sealed record SharingInfoResponse
 {
     // No ArcGIS Portal version (currentVersion/fullVersion) is advertised. Honua is an
@@ -18,78 +13,46 @@ internal sealed record SharingInfoResponse
     // Portal/Server release. Do NOT add a currentVersion/fullVersion field
     // (guarded by NoGeoServicesServerVersionTests).
 
-    /// <summary>
-    /// Actual public portal root, including its application mount point. Native
-    /// clients use it to resolve Sharing resources without treating the token
-    /// service's <c>/sharing</c> segment as the portal root.
-    /// </summary>
+    // OwningSystemUrl is the public portal root, including its application mount, so native clients do not treat the token service's /sharing segment as that root.
     [JsonPropertyName("owningSystemUrl")]
     public required string OwningSystemUrl { get; init; }
 
-    /// <summary>
-    /// Authentication metadata advertising token-based security and the
-    /// token-issuance endpoint.
-    /// </summary>
     [JsonPropertyName("authInfo")]
     public required SharingAuthInfo AuthInfo { get; init; }
 }
 
-/// <summary>Portal Sharing REST root discovery document.</summary>
 internal sealed record SharingRootResponse
 {
-    /// <summary>Identifies this endpoint as a portal sharing root.</summary>
     [JsonPropertyName("isPortal")]
     public bool IsPortal { get; init; } = true;
 }
 
-/// <summary>
-/// Authentication metadata block embedded in <see cref="SharingInfoResponse"/>.
-/// </summary>
 internal sealed record SharingAuthInfo
 {
-    /// <summary>
-    /// Whether the portal uses token-based security.
-    /// </summary>
     [JsonPropertyName("isTokenBasedSecurity")]
     public bool IsTokenBasedSecurity { get; init; } = true;
 
-    /// <summary>
-    /// Absolute URL of the token-issuance endpoint (<c>/sharing/rest/generateToken</c>),
-    /// honouring the forwarded scheme/host.
-    /// </summary>
     [JsonPropertyName("tokenServicesUrl")]
     public string TokenServicesUrl { get; init; } = string.Empty;
 }
 
-/// <summary>
-/// Response body for <c>/sharing/rest/portals/self</c>. A minimal, RBAC-scoped
-/// projection of the portal the caller is connected to.
-/// </summary>
 internal sealed record PortalSelfResponse
 {
-    /// <summary>Stable portal identifier.</summary>
     [JsonPropertyName("id")]
     public required string Id { get; init; }
 
-    /// <summary>Whether the caller authenticated.</summary>
     [JsonPropertyName("isPortal")]
     public bool IsPortal { get; init; } = true;
 
-    /// <summary>Portal display name.</summary>
     [JsonPropertyName("name")]
     public required string Name { get; init; }
 
-    /// <summary>Portal short name / URL key.</summary>
     [JsonPropertyName("portalName")]
     public string PortalName { get; init; } = "Honua";
 
-    /// <summary>
-    /// Authenticated user document, or <see langword="null"/> for anonymous callers.
-    /// </summary>
     [JsonPropertyName("user")]
     public PortalUser? User { get; init; }
 
-    /// <summary>Supported routing helpers clients can resolve through this portal.</summary>
     [JsonPropertyName("helperServices")]
     public PortalHelperServices HelperServices { get; init; } = new();
 
@@ -97,7 +60,6 @@ internal sealed record PortalSelfResponse
     // specific ArcGIS Portal release (guarded by NoGeoServicesServerVersionTests).
 }
 
-/// <summary>Only synchronous solvers supported by the configured routing provider.</summary>
 internal sealed record PortalHelperServices
 {
     [JsonPropertyName("route")]
@@ -117,41 +79,30 @@ internal sealed record PortalHelperServices
     public PortalHelperService? OdCostMatrix { get; init; }
 }
 
-/// <summary>Canonical URL of an available helper service.</summary>
 internal sealed record PortalHelperService
 {
     [JsonPropertyName("url")]
     public required string Url { get; init; }
 }
 
-/// <summary>
-/// Response body for <c>/sharing/rest/community/self</c>. The RBAC-scoped user
-/// document for the calling principal.
-/// </summary>
 internal sealed record CommunitySelfResponse
 {
-    /// <summary>Stable identifier of the calling principal.</summary>
     [JsonPropertyName("id")]
     public required string Id { get; init; }
 
-    /// <summary>Username of the calling principal.</summary>
     [JsonPropertyName("username")]
     public required string Username { get; init; }
 
-    /// <summary>Display name of the calling principal.</summary>
     [JsonPropertyName("fullName")]
     public string FullName { get; init; } = string.Empty;
 
-    /// <summary>Roles granted to the calling principal.</summary>
     [JsonPropertyName("role")]
     public string Role { get; init; } = "org_user";
 
-    /// <summary>Groups visible through this minimal portal facade.</summary>
     [JsonPropertyName("groups")]
     public IReadOnlyList<GroupResponse> Groups { get; init; } = Array.Empty<GroupResponse>();
 }
 
-/// <summary>Content collection for an authenticated portal user.</summary>
 internal sealed record ContentUserResponse
 {
     [JsonPropertyName("username")]
@@ -167,55 +118,35 @@ internal sealed record ContentUserResponse
     public IReadOnlyList<PortalItem> Items { get; init; } = Array.Empty<PortalItem>();
 }
 
-/// <summary>
-/// The user sub-document embedded in <see cref="PortalSelfResponse"/>.
-/// </summary>
 internal sealed record PortalUser
 {
-    /// <summary>Username of the calling principal.</summary>
     [JsonPropertyName("username")]
     public required string Username { get; init; }
 
-    /// <summary>Display name of the calling principal.</summary>
     [JsonPropertyName("fullName")]
     public string FullName { get; init; } = string.Empty;
 
-    /// <summary>Coarse role string for the calling principal.</summary>
     [JsonPropertyName("role")]
     public string Role { get; init; } = "org_user";
 }
 
-/// <summary>
-/// Response envelope for <c>/sharing/rest/search</c>. Matches the ArcGIS Portal
-/// search result shape (<c>total</c>/<c>start</c>/<c>num</c>/<c>nextStart</c>/
-/// <c>results</c>) so Esri clients can page through visible items.
-/// </summary>
 internal sealed record SearchResponse
 {
-    /// <summary>The search query echoed back to the caller.</summary>
     [JsonPropertyName("query")]
     public string Query { get; init; } = string.Empty;
 
-    /// <summary>Total number of items matching the (access-filtered) query.</summary>
     [JsonPropertyName("total")]
     public int Total { get; init; }
 
-    /// <summary>1-based index of the first returned result.</summary>
     [JsonPropertyName("start")]
     public int Start { get; init; }
 
-    /// <summary>Number of results in this page.</summary>
     [JsonPropertyName("num")]
     public int Num { get; init; }
 
-    /// <summary>
-    /// 1-based index of the next page's first result, or <c>-1</c> when this is the
-    /// last page (the Esri sentinel).
-    /// </summary>
     [JsonPropertyName("nextStart")]
     public int NextStart { get; init; }
 
-    /// <summary>The projected, access-filtered items in this page.</summary>
     [JsonPropertyName("results")]
     public IReadOnlyList<PortalItem> Results { get; init; } = Array.Empty<PortalItem>();
 }

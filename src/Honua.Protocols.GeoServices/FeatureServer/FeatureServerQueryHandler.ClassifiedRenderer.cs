@@ -12,11 +12,6 @@ using Honua.Infrastructure.Models;
 
 namespace Honua.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// Classified <c>generateRenderer</c> support (classBreaksDef + uniqueValueDef).
-/// Both paths reuse the shared FeatureServer query/statistics executor rather
-/// than building a parallel data access path.
-/// </summary>
 internal sealed partial class FeatureServerQueryHandler
 {
     private const int MaxClassBreakCount = 32;
@@ -50,11 +45,6 @@ internal sealed partial class FeatureServerQueryHandler
         [ 23, 190, 207 ],
     ];
 
-    /// <summary>
-    /// Builds a classified renderer (<c>classBreaks</c> or <c>uniqueValue</c>)
-    /// for the supplied <c>classificationDef</c>. Returns an Esri renderer JSON
-    /// document on success, or a problem result describing the validation error.
-    /// </summary>
     public async Task<IResult> HandleGenerateClassifiedRendererAsync(
         string serviceId,
         int layerId,
@@ -326,13 +316,6 @@ internal sealed partial class FeatureServerQueryHandler
         return Results.Json(renderer, FeatureServerJsonContext.Default.DictionaryStringObject, contentType: "application/json");
     }
 
-    /// <summary>
-    /// Computes the class-break upper bounds (and the minimum value) for the
-    /// classification field. EqualInterval and StandardDeviation derive breaks
-    /// from the shared statistics executor (min/max/avg/stddev); Quantile and
-    /// NaturalBreaks materialize the ordered field values through the shared
-    /// query executor and compute breaks in-memory.
-    /// </summary>
     private async Task<(double MinValue, double[] Breaks)> ComputeClassBreaksAsync(
         QueryLayerContext queryLayer,
         string classificationField,

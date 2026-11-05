@@ -14,18 +14,8 @@ namespace Honua.Protocols.GeoServices.MapServer;
 
 internal static partial class MapServerEndpoints
 {
-    /// <summary>
-    /// Maximum number of distinct left-side join keys batched into a single right-side lookup.
-    /// Bounds both the IN-list size and the memory held while materializing the join. Larger left
-    /// result sets are handled by processing keys in successive batches.
-    /// </summary>
     private const int DynamicJoinKeyBatchSize = 500;
 
-    /// <summary>
-    /// Right-side rows for a <c>joinTable</c>, indexed by their (string-normalized) join-key value.
-    /// Built once per export/identify request by querying the allowlisted right layer with a
-    /// parameter-safe key filter, then used to enrich left features without any further data access.
-    /// </summary>
     private sealed class DynamicJoinLookup
     {
         private readonly Dictionary<string, IReadOnlyList<IReadOnlyDictionary<string, object?>>> _rowsByKey;
@@ -36,7 +26,6 @@ internal static partial class MapServerEndpoints
             _rowsByKey = rowsByKey;
         }
 
-        /// <summary>True when the right source returned no rows for any requested key.</summary>
         public bool IsEmpty => _rowsByKey.Count == 0;
 
         public bool TryGetFirstMatch(object? leftKeyValue, out IReadOnlyDictionary<string, object?> row)
@@ -163,11 +152,6 @@ internal static partial class MapServerEndpoints
             return new DynamicJoinLookup(rowsByKey);
         }
 
-        /// <summary>
-        /// Builds a parameter-safe <c>"field" IN (@p0, @p1, ...)</c> filter for the right source.
-        /// The field name is a validated identifier (see <c>IsSafeFieldIdentifier</c>); every key
-        /// value is bound as a parameter so no caller-controlled value reaches the SQL text.
-        /// </summary>
         private static SqlFragment BuildKeyInFilter(string keyField, object[] keys)
         {
             var placeholders = new string[keys.Length];
@@ -183,11 +167,7 @@ internal static partial class MapServerEndpoints
         }
     }
 
-    /// <summary>
-    /// Normalizes a join-key value to a stable string used for equality matching across the left
-    /// and right sources. Numeric values are compared by invariant decimal form so an integer left
-    /// key matches a long/decimal right key; everything else uses the invariant string form.
-    /// </summary>
+    // Numeric join keys are compared by invariant decimal form so an integer matches a long or decimal.
     private static string? NormalizeJoinKey(object? value)
     {
         switch (value)
@@ -229,11 +209,6 @@ internal static partial class MapServerEndpoints
             _ => null,
         };
 
-    /// <summary>
-    /// True when a feature attribute may be emitted by a MapServer read surface: neither an
-    /// internal (<c>__</c>-prefixed) attribute nor a declared publisher-hidden field. Undeclared
-    /// runtime attributes stay visible, matching the FeatureServer query formatter (#6098).
-    /// </summary>
     private static bool IsPublicAttribute(string attributeName, IReadOnlySet<string> hiddenFields)
         => !FeatureAttributeVisibility.IsInternalAttribute(attributeName) && !hiddenFields.Contains(attributeName);
 
@@ -252,12 +227,6 @@ internal static partial class MapServerEndpoints
         return false;
     }
 
-    /// <summary>
-    /// Merges the right-source attributes of the first matching join row onto a copy of the left
-    /// feature's attributes. Right attributes are qualified as <c>{qualifier}.{field}</c> to match
-    /// Esri joined-field naming and to avoid clobbering left attributes. Returns <see langword="null"/>
-    /// for an inner join when no right row matches (the left feature is dropped).
-    /// </summary>
     private static Dictionary<string, object?>? ApplyDynamicJoinAttributes(
         IReadOnlyDictionary<string, object?> leftAttributes,
         string leftKeyField,

@@ -30,21 +30,10 @@ using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.Servic
 
 namespace Honua.Protocols.GeoServices.VectorTileServer;
 
-/// <summary>
-/// Maps GeoServices VectorTileServer REST API endpoints (Esri vector tile service adapter).
-/// </summary>
 internal static partial class VectorTileServerEndpoints
 {
     private const string JsonContentType = "application/json";
 
-    /// <summary>
-    /// Maps VectorTileServer REST API endpoints using AOT-compatible routing. The
-    /// service identifier in the route is the GeoServices service NAME, resolved through
-    /// the shared <c>ValidateServiceV2Async</c> helper against the
-    /// <see cref="MetadataV2ServiceProtocols.VectorTileServer"/> protocol.
-    /// </summary>
-    /// <param name="endpoints">The endpoint route builder to register routes on.</param>
-    /// <returns>The same <paramref name="endpoints"/> instance for chaining.</returns>
     public static IEndpointRouteBuilder MapVectorTileServerEndpoints(this IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
@@ -78,11 +67,6 @@ internal static partial class VectorTileServerEndpoints
         return endpoints;
     }
 
-    /// <summary>
-    /// Handle VectorTileServer service metadata requests. Resolves the service by name and
-    /// emits the Esri VectorTileServer descriptor (tiles template, WebMercatorQuad tileInfo,
-    /// styles / tileMap pointers, and the service extent resolved like MapServer).
-    /// </summary>
     private static async Task<IResult> HandleGetServiceMetadata(HttpContext context)
     {
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);

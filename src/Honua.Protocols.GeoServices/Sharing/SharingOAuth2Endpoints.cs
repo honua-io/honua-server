@@ -16,22 +16,10 @@ using Microsoft.Extensions.Primitives;
 
 namespace Honua.Protocols.GeoServices.Sharing;
 
-/// <summary>
-/// ArcGIS-compatible <c>/sharing/rest/oauth2</c> named-user endpoints (#1242):
-/// <c>authorize</c>, <c>callback</c>, and <c>token</c>. Per ADR-0049 this is a thin
-/// bridge over the shared OIDC identity core and <c>IPortalTokenIssuer</c> â€” it does
-/// not introduce a parallel user or token store. The interactive
-/// authorization-code+PKCE leg is delegated to the operator's configured OIDC
-/// provider through <see cref="PortalOAuthBroker"/>; the access token returned to
-/// the ArcGIS client is the same opaque portal token <c>generateToken</c> mints.
-/// </summary>
 internal static class SharingOAuth2Endpoints
 {
     private const string JsonContentType = "application/json";
 
-    /// <summary>Maps the OAuth2 authorize/callback/token endpoints.</summary>
-    /// <param name="endpoints">Endpoint route builder to extend.</param>
-    /// <returns>The original builder, to support fluent chaining.</returns>
     public static IEndpointRouteBuilder MapSharingOAuth2Endpoints(this IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);

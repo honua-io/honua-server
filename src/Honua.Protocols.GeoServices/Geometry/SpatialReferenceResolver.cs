@@ -11,9 +11,6 @@ using Honua.Protocols.GeoServices.FeatureServer.Models;
 
 namespace Honua.Infrastructure.Services;
 
-/// <summary>
-/// Shared service for resolving spatial reference system identifiers from various input formats.
-/// </summary>
 internal class SpatialReferenceResolver
 {
     private static readonly Regex _wktAuthorityNodeRegex = new(
@@ -31,9 +28,6 @@ internal class SpatialReferenceResolver
         _crsRegistry = crsRegistry ?? throw new ArgumentNullException(nameof(crsRegistry));
     }
 
-    /// <summary>
-    /// Resolves spatial reference identifier from string value or geometry spatial reference.
-    /// </summary>
     public async Task<int?> ResolveSridAsync(
         string? srValue,
         GeoServicesSpatialReference? geometrySpatialReference,
@@ -54,10 +48,6 @@ internal class SpatialReferenceResolver
         return null;
     }
 
-    /// <summary>
-    /// Resolves a projected CRS to the EPSG identifier of its geodetic base CRS.
-    /// Geographic and unresolvable definitions retain their original SRID.
-    /// </summary>
     public async Task<int> ResolveGeodeticBaseSridAsync(
         int srid,
         CancellationToken cancellationToken = default)
@@ -183,9 +173,6 @@ internal class SpatialReferenceResolver
             : null;
     }
 
-    /// <summary>
-    /// Parses SRID from various string formats.
-    /// </summary>
     public async Task<int?> ParseSridAsync(string? srValue, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(srValue))

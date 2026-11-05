@@ -829,12 +829,6 @@ internal static partial class FeatureServerEndpoints
         };
     }
 
-    /// <summary>
-    /// Counts the features matching the base query plus the bucket's range filter.
-    /// Returns <see langword="null"/> when the bucket filter could not be translated
-    /// (missing filter service/resource or translation failure) so callers can report
-    /// a degraded reason instead of presenting a fabricated 0 as a legitimate count.
-    /// </summary>
     private static async Task<long?> CountRangeAsync(
         IFeatureReader featureReader,
         MetadataV2Resource? resource,

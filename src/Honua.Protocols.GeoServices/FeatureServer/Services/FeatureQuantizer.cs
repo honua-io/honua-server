@@ -7,11 +7,6 @@ using Honua.Protocols.GeoServices.FeatureServer.Models;
 
 namespace Honua.Protocols.GeoServices.FeatureServer.Services;
 
-/// <summary>
-/// Quantization transform derived from an Esri <c>quantizationParameters</c> request.
-/// Maps world coordinates onto an integer grid whose cell size is the requested
-/// tolerance, anchored at the transform origin.
-/// </summary>
 internal sealed record QuantizationTransform(
     string OriginPosition,
     double ScaleX,
@@ -19,10 +14,8 @@ internal sealed record QuantizationTransform(
     double TranslateX,
     double TranslateY)
 {
-    /// <summary>Esri default origin: integers grow right/down from the extent's upper-left.</summary>
     public const string UpperLeft = "upperLeft";
 
-    /// <summary>Integers grow right/up from the extent's lower-left.</summary>
     public const string LowerLeft = "lowerLeft";
 
     public long QuantizeX(double x)
@@ -34,17 +27,8 @@ internal sealed record QuantizationTransform(
             : (long)Math.Round((TranslateY - y) / ScaleY, MidpointRounding.AwayFromZero);
 }
 
-/// <summary>
-/// Parses Esri <c>quantizationParameters</c> and applies the resulting transform to
-/// GeoServices geometries (integer grid coordinates, delta-encoded per ring/path).
-/// </summary>
 internal static class FeatureQuantizer
 {
-    /// <summary>
-    /// Parses the <c>quantizationParameters</c> JSON document. Returns <c>false</c> with an
-    /// error when the document is malformed or unsupported; sets <paramref name="transform"/>
-    /// to <c>null</c> (and returns <c>true</c>) when no quantization was requested.
-    /// </summary>
     public static bool TryParse(string? raw, out QuantizationTransform? transform, out string? error)
     {
         transform = null;
@@ -124,11 +108,6 @@ internal static class FeatureQuantizer
         return true;
     }
 
-    /// <summary>
-    /// Rebuilds the Esri json featureSet with quantized (integer grid, delta-encoded)
-    /// geometry coordinates and the matching transform, which lets clients recover
-    /// world coordinates.
-    /// </summary>
     public static QueryResponse Apply(QueryResponse response, QuantizationTransform transform)
     {
         ArgumentNullException.ThrowIfNull(response);
@@ -178,11 +157,6 @@ internal static class FeatureQuantizer
         };
     }
 
-    /// <summary>
-    /// Returns a copy of <paramref name="geometry"/> with its coordinates quantized to the
-    /// integer grid and delta-encoded per ring/path. Only the X/Y ordinates are quantized;
-    /// envelope geometries and null geometries are returned unchanged.
-    /// </summary>
     public static GeoServicesGeometry Quantize(GeoServicesGeometry geometry, QuantizationTransform transform)
     {
         ArgumentNullException.ThrowIfNull(geometry);

@@ -11,7 +11,6 @@ using Honua.Protocols.GeoServices.Soap;
 
 namespace Honua.Protocols.GeoServices.GPServer;
 
-/// <summary>SOAP GPValue wire translation; execution remains in the shared GP handlers.</summary>
 internal static partial class GPServerSoapExecution
 {
     private static readonly XNamespace Xsi = "http://www.w3.org/2001/XMLSchema-instance";

@@ -13,21 +13,6 @@ using NetTopologySuite.IO;
 
 namespace Honua.Protocols.GeoServices.GPServer;
 
-/// <summary>
-/// Honors the GP environment control <c>env:outSR</c> for synchronous results
-/// by reprojecting a <c>data:application/geo+json</c> output artifact from the
-/// process's working SRID to the requested output SRID, using the same
-/// in-memory <see cref="CoordinateTransformer"/> path the
-/// <c>geometry.project</c> executor uses.
-///
-/// The deterministic <c>geometry.*</c> executors emit a single GeoJSON
-/// <c>Feature</c> as a base64 <c>data:</c> URI. When the requested transform is
-/// supported, the coordinates are walked and rewritten; the GeoJSON structure
-/// and feature properties are preserved. When the transform is not supported
-/// (e.g. a datum-shift pair requiring <c>ST_Transform</c>, or a non-vector
-/// output), the caller is told to omit <c>env:outSR</c> rather than receiving a
-/// silently-unprojected result.
-/// </summary>
 internal static class GPServerOutputReprojection
 {
     private const string GeoJsonDataUriPrefix = "data:application/geo+json;base64,";
@@ -44,10 +29,6 @@ internal static class GPServerOutputReprojection
         string? Value,
         string? CapabilityMessage);
 
-    /// <summary>
-    /// Returns <c>true</c> when the requested transform from <paramref name="fromSrid"/>
-    /// to <paramref name="toSrid"/> is supported by the in-memory transform path.
-    /// </summary>
     public static bool IsTransformSupported(int fromSrid, int toSrid)
     {
         if (fromSrid <= 0 || toSrid <= 0)
@@ -78,11 +59,6 @@ internal static class GPServerOutputReprojection
         return false;
     }
 
-    /// <summary>
-    /// Attempts to reproject a GeoJSON <c>data:</c> URI output value to
-    /// <paramref name="outSrid"/>. Non-GeoJSON values and unsupported transforms
-    /// are reported through <see cref="ReprojectionOutcome.CapabilityMessage"/>.
-    /// </summary>
     public static ReprojectionOutcome TryReprojectGeoJsonValue(string? value, int fromSrid, int outSrid)
     {
         if (string.IsNullOrEmpty(value) ||
@@ -151,17 +127,7 @@ internal static class GPServerOutputReprojection
         }
     }
 
-    /// <summary>
-    /// Normalizes polygon ring winding in a FeatureLayer GeoJSON <c>data:</c> URI value to the
-    /// RFC 7946 right-hand rule so the non-reprojected egress path (no <c>env:outSR</c>, or an
-    /// identity transform) emits the same winding the reprojected path already produces (#2745).
-    /// Handles both single <c>Feature</c> payloads (the deterministic <c>geometry.*</c> executors)
-    /// and <c>FeatureCollection</c> payloads (layer/overlay tools emitting through
-    /// <c>FeatureCollectionArtifact</c>). Non-GeoJSON values, malformed payloads, and geometries
-    /// that are already correctly wound are returned unchanged.
-    /// </summary>
-    /// <param name="value">The served artifact value (a base64 GeoJSON <c>data:</c> URI, or any other string).</param>
-    /// <returns>The value with normalized winding, or the original value when no change applies.</returns>
+    // Polygon rings in a non-reprojected GeoJSON data URI are normalized to the RFC 7946 right-hand rule so that path matches the winding the reprojected path already emits.
     public static string? NormalizeGeoJsonWinding(string? value)
     {
         if (string.IsNullOrEmpty(value) ||
@@ -231,11 +197,6 @@ internal static class GPServerOutputReprojection
         }
     }
 
-    /// <summary>
-    /// Normalizes one GeoJSON geometry element to the right-hand rule. Returns the rewritten
-    /// geometry JSON, or <c>null</c> when the geometry is empty, unparseable, or already
-    /// correctly wound (so the caller preserves the original bytes).
-    /// </summary>
     private static string? TryNormalizeGeometryJson(GeoJsonReader geoJsonReader, JsonElement geometryElement)
     {
         var geometry = geoJsonReader.Read<Geometry>(geometryElement.GetRawText());
@@ -248,11 +209,6 @@ internal static class GPServerOutputReprojection
         return ReferenceEquals(normalized, geometry) ? null : SharedWriter.Write(normalized);
     }
 
-    /// <summary>
-    /// Normalizes each <c>features[*].geometry</c> of a FeatureCollection. Returns a per-index
-    /// array of replacement geometry JSON (<c>null</c> entries keep the original feature), or
-    /// <c>null</c> when no feature needed rewinding.
-    /// </summary>
     private static string?[]? NormalizeFeatureGeometries(GeoJsonReader geoJsonReader, JsonElement featuresElement)
     {
         string?[]? normalized = null;

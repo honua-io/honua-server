@@ -6,16 +6,8 @@ using System.Text.Json;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Handlers;
 
-/// <summary>
-/// Parses ImageServer <c>rasterIds</c> and <c>bandIds</c> lists shared by the
-/// statistics handlers.
-/// </summary>
 internal static class ImageServerCatalogIdParser
 {
-    /// <summary>
-    /// Parses the Esri <c>rasterIds</c> parameter as a list of raster catalog object IDs (long).
-    /// Accepts CSV (e.g. <c>1,3</c>) or JSON array (e.g. <c>[1,3]</c>) form.
-    /// </summary>
     internal static bool TryParseRasterIds(string? raw, out long[]? rasterIds, out string? error)
     {
         rasterIds = null;
@@ -77,11 +69,6 @@ internal static class ImageServerCatalogIdParser
         return true;
     }
 
-    /// <summary>
-    /// Parses the optional <c>bandIds</c> extension parameter as a list of 0-based band indices
-    /// (the same base as <c>exportImage</c>, #4068) and returns them as 1-based raster-store bands.
-    /// Accepts CSV or JSON array form.
-    /// </summary>
     internal static bool TryParseBandIds(string? raw, out int[]? bands, out string? error)
     {
         bands = null;

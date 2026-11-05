@@ -15,17 +15,7 @@ using Microsoft.Extensions.Primitives;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Handlers;
 
-/// <summary>
-/// Handler for the ImageServer <c>calculateVolume</c> operation. Computes cut/fill volumes and the
-/// 2D surface area of each area-of-interest polygon against the layer's associated DEM elevation
-/// surface (<c>raster_sensor_metadata.dem_source</c>) by integrating
-/// <c>Σ (elevation − basePlane) · pixelArea</c> over the DEM pixels inside the AOI, split into cut
-/// (above the base) and fill (below). The DEM pixels are read through the same shared clip primitive
-/// (<see cref="IRasterStore.ReadClippedBandVectorsAsync"/>) that <c>computeClassStatistics</c> uses,
-/// bounded by a per-operation pixel budget. Returns an honest <c>501</c> when no DEM is modeled and
-/// a <c>400</c> when the AOI exceeds the synchronous budget — never a fabricated value or a
-/// <c>500</c>. See ADR-0065.
-/// </summary>
+// Cut and fill are integrated from the associated DEM, and a missing DEM or an area over the pixel budget returns 501 or 400 rather than a fabricated volume.
 internal sealed class ImageServerCalculateVolumeHandler
 {
     private const string NoDemMessage =
@@ -46,12 +36,6 @@ internal sealed class ImageServerCalculateVolumeHandler
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <summary>
-    /// Calculates cut/fill volumes for the request's area-of-interest geometries. Returns 404 when
-    /// the layer has no primary raster, 400 for malformed parameters or an over-budget AOI, and 501
-    /// when no DEM is modeled or a base-plane type other than the supported constant plane is
-    /// requested.
-    /// </summary>
     public async Task<IResult> CalculateVolumeAsync(
         HttpContext context,
         int layerId,
@@ -194,11 +178,6 @@ internal sealed class ImageServerCalculateVolumeHandler
         }
     }
 
-    /// <summary>
-    /// Integrates the DEM pixel elevations against the base plane: cut is the volume above the plane
-    /// (positive), fill the volume below (negative, per Esri convention), area is the 2D coverage.
-    /// An AOI with no covered pixels yields an all-zero result.
-    /// </summary>
     private static CalculateVolumeResult Integrate(IReadOnlyList<double[]> pixels, double basePlane, double pixelArea)
     {
         if (pixels.Count == 0)

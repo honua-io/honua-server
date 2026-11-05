@@ -8,9 +8,6 @@ using Honua.Infrastructure.Helpers;
 
 namespace Honua.Protocols.GeoServices;
 
-/// <summary>
-/// Builds temporal filter expressions for GeoServices time queries.
-/// </summary>
 internal static class GeoServicesTemporalQueryBuilder
 {
     internal enum TimeRelation
@@ -47,17 +44,7 @@ internal static class GeoServicesTemporalQueryBuilder
         BeforeEndTime
     }
 
-    /// <summary>
-    /// Builds a temporal filter expression from raw time values against a Metadata v2
-    /// canonical resource. The resource must be configured as opt-in time-aware
-    /// (start-time field declared on the temporal extension and resolving to a
-    /// date/datetime schema field) before a non-empty time= filter is honored.
-    /// When the resource is not time-enabled a non-empty time= filter is REJECTED with
-    /// an <see cref="ArgumentException"/> (HTTP 400) per honua's documented temporal
-    /// contract (docs/gis/temporal-animation-api.md); this is an intentional divergence
-    /// from Esri's lenient "ignore time" behavior (issue #1444).
-    /// The <c>time=null,null</c> no-op form returns null without throwing.
-    /// </summary>
+    // A non-empty time filter on a resource that is not time-enabled is rejected, which diverges from Esri ignoring that filter, and time=null,null stays a no-op.
     internal static FilterExpression? BuildTemporalExpression(
         string? time,
         string? timeRelation,
@@ -319,12 +306,6 @@ internal static class GeoServicesTemporalQueryBuilder
         return new BinaryExpression(left, BinaryOperator.Or, right);
     }
 
-    /// <summary>
-    /// Parses time parameter string into start/end times.
-    /// Supports Unix timestamps in milliseconds, ISO 8601, and open intervals using null/empty.
-    /// An extent may also be written as a bracketed JSON array (<c>[start, end]</c>), the form
-    /// the ArcGIS API for Python sends from a layer's <c>timeInfo.timeExtent</c> (#4782).
-    /// </summary>
     internal static bool TryParseTimeParameter(string timeParam, out DateTimeOffset? start, out DateTimeOffset? end)
     {
         start = null;
@@ -382,13 +363,6 @@ internal static class GeoServicesTemporalQueryBuilder
         return true;
     }
 
-    /// <summary>
-    /// Unwraps a bracketed JSON-array time extent (<c>[start, end]</c>) into the plain
-    /// <c>start,end</c> form. Each element may be epoch milliseconds, <c>null</c>, or a JSON string
-    /// holding an instant. Anything but exactly two non-empty elements inside one balanced pair of
-    /// brackets is malformed, so the caller still answers the Esri 400. Empty elements are rejected
-    /// here even though the plain form reads an empty bound as open: <c>[,]</c> is not a JSON array.
-    /// </summary>
     private static bool TryUnwrapBracketedExtent(string value, out string extent)
     {
         extent = string.Empty;
@@ -442,9 +416,6 @@ internal static class GeoServicesTemporalQueryBuilder
         return TryParseSingleTime(timeValue, out time);
     }
 
-    /// <summary>
-    /// Parses a single time value (Unix timestamp or ISO 8601)
-    /// </summary>
     internal static bool TryParseSingleTime(string timeValue, out DateTimeOffset? time)
     {
         time = null;

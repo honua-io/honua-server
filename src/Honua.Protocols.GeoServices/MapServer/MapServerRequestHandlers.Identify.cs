@@ -84,9 +84,6 @@ internal static partial class MapServerEndpoints
         int? Wkid,
         int? LatestWkid);
 
-    /// <summary>
-    /// Handle MapServer identify (click-query) requests.
-    /// </summary>
     private static async Task<IResult> HandleIdentify(HttpContext context)
     {
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
@@ -656,12 +653,6 @@ internal static partial class MapServerEndpoints
             out srid,
             out error);
 
-    /// <summary>
-    /// Resolves the output spatial reference for MapServer identify and find.
-    /// An explicit <c>sr</c> wins, then the geometry's latestWkid or wkid. When both
-    /// are omitted the service advertises Web Mercator (3857), so the output uses
-    /// that CRS rather than the native layer CRS.
-    /// </summary>
     internal static bool TryResolveMapServerRequestSrid(
         string? srValue,
         int? geometryLatestWkid,
@@ -1237,13 +1228,6 @@ internal static partial class MapServerEndpoints
                string.Equals(token, "top", StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>
-    /// Maps an identify <c>layers</c> mode/visibility token to an <see cref="IdentifyLayerMode"/> and
-    /// whether the accompanying ids should be excluded rather than selected.
-    /// Accepts the identify mode tokens (<c>top</c>/<c>visible</c>/<c>all</c>) and the GeoServices
-    /// visibility prefixes (<c>show</c>/<c>hide</c>/<c>include</c>/<c>exclude</c>). <c>show</c> and
-    /// <c>include</c> select the listed ids; <c>hide</c> and <c>exclude</c> exclude them.
-    /// </summary>
     private static (IdentifyLayerMode Mode, bool ExcludeIds) ResolveIdentifyLayerMode(string? modeToken)
     {
         return modeToken?.ToLowerInvariant() switch
@@ -1494,12 +1478,7 @@ internal static partial class MapServerEndpoints
         return false;
     }
 
-    /// <summary>
-    /// Resolves the right (secondary) layer of an identify <c>joinTable</c> source and enforces its
-    /// access policy. The right layer must be a published layer in the same service and must be
-    /// accessible to the caller — otherwise the join is rejected rather than leaking right-source
-    /// attributes the caller is not entitled to read.
-    /// </summary>
+    // The right side of an identify join must be a published layer in the same service that the caller can read, or the join is rejected.
     private static bool TryResolveIdentifyJoinRightLayer(
         IReadOnlyList<IdentifyLayerDescriptor> publishedLayers,
         ResourceAccessSet access,
@@ -1526,9 +1505,6 @@ internal static partial class MapServerEndpoints
         return true;
     }
 
-    /// <summary>
-    /// Extracts the left-source join-key value from each left feature.
-    /// </summary>
     private static List<object?> ExtractJoinKeyValues(
         System.Collections.Immutable.ImmutableArray<Feature> features,
         string leftKeyField)

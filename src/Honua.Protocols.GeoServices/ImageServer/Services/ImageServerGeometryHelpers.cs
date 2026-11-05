@@ -8,31 +8,15 @@ using GeoServicesGeometryConverter = Honua.Protocols.GeoServices.GeoServicesGeom
 
 namespace Honua.Protocols.GeoServices.ImageServer.Services;
 
-/// <summary>
-/// Minimal Esri-JSON geometry parsing shared by the ImageServer compute operations
-/// (<c>computeHistograms</c>, <c>computeStatisticsHistograms</c>, <c>getSamples</c>).
-/// These helpers extract only the pieces the raster pipeline consumes: the bounding
-/// envelope used to scope raster selection, the sample points for pixel sampling, and
-/// the spatial reference wkid. Polygon AOIs are converted to WKB through the shared
-/// GeoServices geometry converter so statistics clip to the polygon rather than only
-/// its bounding envelope. Raster selection still uses <see cref="TryGetEnvelope"/>.
-/// </summary>
 internal static class ImageServerGeometryHelpers
 {
     private static readonly string[] CompositeCoordinatePropertyNames = ["paths", "rings"];
 
-    /// <summary>Axis-aligned bounding box of an Esri geometry.</summary>
     internal readonly record struct GeometryEnvelope(double XMin, double YMin, double XMax, double YMax, int? Srid);
 
-    /// <summary>A single sample point with its spatial reference.</summary>
     internal readonly record struct SamplePoint(double X, double Y, int? Srid);
 
-    /// <summary>
-    /// Builds polygon WKB for an Esri polygon AOI. Envelope and point geometries return
-    /// <c>true</c> with <paramref name="clipWkb"/> left null so the caller keeps the
-    /// envelope clip. A polygon that cannot be converted fails instead of falling back
-    /// to the bounding envelope.
-    /// </summary>
+    // An envelope or point leaves the polygon empty so the caller keeps the envelope clip, and a polygon that cannot be converted fails instead of falling back to that envelope.
     internal static bool TryCreatePolygonClipGeometry(
         string geometryJson,
         string? geometryType,
@@ -112,10 +96,6 @@ internal static class ImageServerGeometryHelpers
         }
     }
 
-    /// <summary>
-    /// Computes the bounding envelope of an Esri-JSON geometry. Supports envelope,
-    /// point, multipoint, polyline (paths) and polygon (rings) geometry types.
-    /// </summary>
     internal static bool TryGetEnvelope(string? geometryJson, out GeometryEnvelope envelope, out string? error)
     {
         envelope = default;
@@ -188,10 +168,6 @@ internal static class ImageServerGeometryHelpers
         }
     }
 
-    /// <summary>
-    /// Extracts the sample points from an Esri-JSON geometry for <c>getSamples</c>.
-    /// A point yields one sample; a multipoint, polyline, or polygon yields its vertices.
-    /// </summary>
     internal static bool TryGetSamplePoints(
         string? geometryJson,
         out IReadOnlyList<SamplePoint> points,

@@ -7,17 +7,10 @@ using Honua.Infrastructure.Middleware;
 
 namespace Honua.Protocols.GeoServices.GeometryService;
 
-/// <summary>
-/// Maps geometry service REST endpoints under the canonical GeometryServer route.
-/// Supports both GET and POST for each operation per ArcGIS specification.
-/// </summary>
 internal static class GeometryServiceEndpoints
 {
     private const string GeometryRoutePrefix = "/rest/services/Utilities/Geometry/GeometryServer";
 
-    /// <summary>
-    /// Maps geometry service endpoints under the canonical GeometryServer route.
-    /// </summary>
     public static IEndpointRouteBuilder MapGeometryServiceEndpoints(this IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);

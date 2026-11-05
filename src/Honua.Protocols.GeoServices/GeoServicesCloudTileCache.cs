@@ -13,9 +13,6 @@ using Honua.ServiceDefaults;
 
 namespace Honua.Protocols.GeoServices;
 
-/// <summary>
-/// Helpers for optional storage-backed tile caching across GeoServices adapters.
-/// </summary>
 internal static class GeoServicesCloudTileCache
 {
     private const string DefaultContentType = "application/octet-stream";
@@ -24,12 +21,6 @@ internal static class GeoServicesCloudTileCache
 
     private readonly record struct GenerationObservation(bool IsFresh, bool Exists, string? ETag);
 
-    /// <summary>
-    /// Generated tile-cache serve-path hit/miss counters (#2661). Recorded here rather than in the
-    /// per-protocol handlers so every generated-cache read is counted exactly once, and only when
-    /// the cache was actually consulted (a disabled or unconfigured store is neither a hit nor a
-    /// miss).
-    /// </summary>
     private static readonly System.Diagnostics.Metrics.Counter<long> CacheHits =
         // `unit: null` on the instruments below is deliberate, not an oversight. The OpenTelemetry
         // Prometheus exporter derives the exported series name from the instrument name AND its unit:

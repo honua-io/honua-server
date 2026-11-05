@@ -60,16 +60,7 @@ internal sealed class FeatureServerEditsDependencies
     public IPluginEditPipeline PluginPipeline { get; }
     public IApplyEditsIdempotencyStore IdempotencyStore { get; }
 
-    /// <summary>
-    /// Collaborative-editing guard consulted before an update or delete mutates a
-    /// feature, so a lease handed out by <c>/collaboration/feature-locks</c> is
-    /// binding on the GeoServices write path (#4402).
-    /// </summary>
     public IFeatureEditGuard EditGuard { get; }
 
-    /// <summary>
-    /// Lease store, used only for the per-request "is anything locked at all?" probe
-    /// that lets an uncontended batch skip per-feature guard evaluation.
-    /// </summary>
     public IFeatureLockService FeatureLocks { get; }
 }

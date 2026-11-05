@@ -566,10 +566,6 @@ internal static partial class FeatureServerEndpoints
         return Results.Bytes(tileData, "application/vnd.mapbox-vector-tile");
     }
 
-    /// <summary>
-    /// Maps zoom level to a reasonable default H3 resolution.
-    /// Lower zoom = coarser cells, higher zoom = finer cells.
-    /// </summary>
     private static int ZoomToH3Resolution(int zoom) => zoom switch
     {
         <= 2 => 1,

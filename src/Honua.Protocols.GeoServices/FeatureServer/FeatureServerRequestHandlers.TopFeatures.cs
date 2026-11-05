@@ -367,10 +367,6 @@ internal static partial class FeatureServerEndpoints
         return response;
     }
 
-    /// <summary>
-    /// Serializes a queryTopFeatures JSON response, emitting indented JSON for
-    /// <c>f=pjson</c> and compact JSON otherwise (#1824).
-    /// </summary>
     private static IResult CreateTopFeaturesJsonResult(QueryResponse response, bool pretty)
     {
         if (!pretty)
@@ -383,12 +379,6 @@ internal static partial class FeatureServerEndpoints
         return Results.Bytes(prettyPayload, "application/json");
     }
 
-    /// <summary>
-    /// Parses the queryTopFeatures <c>outSR</c> parameter into an output WKID. Accepts
-    /// a bare integer WKID or a spatialReference JSON object (<c>{ "wkid": N }</c> /
-    /// <c>{ "latestWkid": N }</c>), mirroring the layer query operation (#1906). A null
-    /// or empty value yields no output SRID (geometry stays in the layer's CRS).
-    /// </summary>
     private static bool TryParseTopFeaturesOutputSrid(string? raw, out int? outputSrid, out string? error)
     {
         outputSrid = null;

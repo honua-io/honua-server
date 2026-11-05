@@ -20,9 +20,6 @@ using IGeographicSridClassifier = Honua.Core.Features.Shared.Models.IGeographicS
 
 namespace Honua.Protocols.GeoServices.ImageServer.Handlers;
 
-/// <summary>
-/// Handler for ImageServer coordinate and boundary metadata operations.
-/// </summary>
 internal sealed class ImageServerCoordinateMetadataHandler
 {
     private const double WebMercatorEarthRadius = 6378137d;
@@ -47,9 +44,6 @@ internal sealed class ImageServerCoordinateMetadataHandler
         _geographicSridClassifier = geographicSridClassifier;
     }
 
-    /// <summary>
-    /// Returns conservative ImageServer cache metadata for dynamic raster layers.
-    /// </summary>
     public async Task<IResult> ComputeCacheInfoAsync(
         HttpContext context,
         int layerId,
@@ -110,9 +104,6 @@ internal sealed class ImageServerCoordinateMetadataHandler
         }
     }
 
-    /// <summary>
-    /// Computes image pixel column/row coordinates for map-space point geometries.
-    /// </summary>
     public async Task<IResult> ComputePixelLocationAsync(
         HttpContext context,
         int layerId,
@@ -197,9 +188,6 @@ internal sealed class ImageServerCoordinateMetadataHandler
         }
     }
 
-    /// <summary>
-    /// Returns the aggregate raster footprint boundary for an ImageServer layer.
-    /// </summary>
     public async Task<IResult> QueryBoundaryAsync(
         HttpContext context,
         int layerId,
@@ -544,13 +532,6 @@ internal sealed class ImageServerCoordinateMetadataHandler
         };
     }
 
-    /// <summary>
-    /// Resolves whether the extent's SRID measures as geographic (lon/lat degrees) for the offline
-    /// area computation, preferring the registry-backed <see cref="IGeographicSridClassifier"/>
-    /// (#2794) and falling back to the static
-    /// <see cref="Honua.Core.Features.Shared.Models.GeographicSridClassifier.IsGeographicOrUnlistedGeographicRangeSrid(int)"/>
-    /// heuristic when no classifier is injected (e.g. read-only providers without a CRS registry).
-    /// </summary>
     private async ValueTask<bool> ResolveExtentIsGeographicForMeasurementAsync(
         int? srid,
         CancellationToken cancellationToken)

@@ -7,40 +7,17 @@ using Honua.Protocols.GeoServices.ImageServer.Models;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Services;
 
-/// <summary>
-/// Translates cached <see cref="MultidimensionalCoverageMetadata"/> (populated by
-/// <see cref="IMultidimensionalCoverageMetadataReader"/> at registration/scan time)
-/// into the Esri <c>multidimensionalInfo</c> shape that the ArcGIS Maps SDK reads
-/// via <c>ImageryLayer.multidimensional_info</c>.
-/// </summary>
 internal interface IImageServerMultidimensionalInfoBuilder
 {
-    /// <summary>
-    /// Builds the Esri multidimensional info document for a layer by reading the
-    /// layer's registered multidimensional coverage metadata. Returns
-    /// <see langword="null"/> when the layer has no multidimensional coverage with
-    /// scanned metadata (the caller should then advertise <c>hasMultidimensions=false</c>
-    /// and emit an empty <c>variables</c> array).
-    /// </summary>
     Task<ImageServerMultidimensionalInfo?> BuildAsync(
         int layerId,
         CancellationToken cancellationToken);
 
-    /// <summary>
-    /// Returns the coverage grid a service should describe when the layer has scanned
-    /// multidimensional metadata with a spatial extent. Null when the layer has no
-    /// such coverage (the base raster remains the service description).
-    /// </summary>
     Task<ImageServerCoverageGrid?> DescribeGridAsync(
         int layerId,
         CancellationToken cancellationToken);
 }
 
-/// <summary>
-/// Default builder backed by <see cref="IMultidimensionalCoverageStore"/>. The store
-/// is optional: deployments without a configured multidimensional coverage provider
-/// resolve a <see langword="null"/> store and always report "not multidimensional".
-/// </summary>
 internal sealed class ImageServerMultidimensionalInfoBuilder(
     IMultidimensionalCoverageStore? coverageStore = null) : IImageServerMultidimensionalInfoBuilder
 {
@@ -61,7 +38,6 @@ internal sealed class ImageServerMultidimensionalInfoBuilder(
         "z", "level", "depth", "altitude", "height", "pressure", "plev", "lev", "stdz"
     };
 
-    /// <inheritdoc />
     public async Task<ImageServerMultidimensionalInfo?> BuildAsync(
         int layerId,
         CancellationToken cancellationToken)
@@ -84,7 +60,6 @@ internal sealed class ImageServerMultidimensionalInfoBuilder(
         return new ImageServerMultidimensionalInfo { Variables = variables };
     }
 
-    /// <inheritdoc />
     public async Task<ImageServerCoverageGrid?> DescribeGridAsync(
         int layerId,
         CancellationToken cancellationToken)
@@ -197,16 +172,7 @@ internal sealed class ImageServerMultidimensionalInfoBuilder(
         };
     }
 
-    /// <summary>
-    /// Synthesizes the evenly-spaced coordinate values for a regular dimension whose
-    /// inclusive [<paramref name="min"/>, <paramref name="max"/>] extent and step count
-    /// (<paramref name="size"/>) are known. ArcGIS enumerates one slice per coordinate,
-    /// so a coverage that advertises <c>dimensionSize:N</c> must surface N values for the
-    /// slices operation to enumerate (honua-server#1825). Returns <see langword="null"/>
-    /// when the axis is not safely enumerable (non-positive size, non-finite bounds, or an
-    /// implausibly large size that would balloon the document) so the dimension falls back
-    /// to extent-only and contributes no slices.
-    /// </summary>
+    // A regular axis that advertises dimensionSize N must emit N coordinates, and an axis that cannot be enumerated safely contributes no slices.
     private static double[]? EnumerateRegularValues(double min, double max, long size)
     {
         const long MaxEnumerableSize = 10_000;

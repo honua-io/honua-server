@@ -11,12 +11,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Protocols.GeoServices.FeatureServer.Services;
 
-/// <summary>
-/// Implements three-layer geometry validation and repair.
-/// Layer 1: Esri JSON input validation
-/// Layer 2: WKB structure validation
-/// Layer 3: Topology validation via configured backend
-/// </summary>
 internal sealed partial class GeometryValidator : IGeometryValidator
 {
     private readonly GeometryValidationOptions _options;
@@ -32,7 +26,6 @@ internal sealed partial class GeometryValidator : IGeometryValidator
         _binary = new WkbGeometryValidator(limitsOptions ?? Options.Create(resolvedLimits), topologyValidator, logger);
     }
 
-    /// <inheritdoc />
     public GeometryValidationResult ValidateEsriJson(object? geometry)
     {
         if (geometry == null)
@@ -98,18 +91,14 @@ internal sealed partial class GeometryValidator : IGeometryValidator
         };
     }
 
-    /// <inheritdoc />
     public GeometryValidationResult ValidateWkb(byte[]? wkb) => _binary.ValidateWkb(wkb);
 
-    /// <inheritdoc />
     public Task<GeometryValidationResult> ValidateTopologyAsync(byte[] wkb, CancellationToken cancellationToken = default)
         => _binary.ValidateTopologyAsync(wkb, cancellationToken);
 
-    /// <inheritdoc />
     public Task<GeometryRepairResult> RepairAsync(byte[] wkb, CancellationToken cancellationToken = default)
         => _binary.RepairAsync(wkb, cancellationToken);
 
-    /// <inheritdoc />
     public Task<GeometryValidationResult> ValidateCompleteAsync(byte[] wkb, CancellationToken cancellationToken = default)
         => _binary.ValidateCompleteAsync(wkb, cancellationToken);
 

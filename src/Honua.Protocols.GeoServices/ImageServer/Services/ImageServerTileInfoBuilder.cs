@@ -6,49 +6,21 @@ using SpatialConstants = Honua.Core.Features.Shared.Models.SpatialConstants;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Services;
 
-/// <summary>
-/// Builds the static WebMercatorQuad (Esri "GoogleMapsCompatible") <c>tileInfo</c>
-/// descriptor advertised by ImageServer service metadata when tiled consumption is
-/// enabled. The level-of-detail table is fixed for the Web Mercator (EPSG:3857)
-/// 256-pixel tiling scheme that the live <c>/tile/{level}/{row}/{col}</c> route
-/// serves, so this is pure metadata assembly — not a new serving capability (#1648).
-/// </summary>
 internal static class ImageServerTileInfoBuilder
 {
-    /// <summary>Standard tile dimension, in pixels, for the WebMercatorQuad scheme.</summary>
     private const int TileSize = 256;
 
-    /// <summary>Esri advertises a logical 96 DPI for WebMercator basemap caches.</summary>
     private const int Dpi = 96;
 
-    /// <summary>
-    /// Ground resolution (meters per pixel) at zoom level 0 for a 256-pixel
-    /// WebMercatorQuad tile: <c>(2 * WebMercatorExtent) / 256</c>.
-    /// </summary>
     private const double Resolution0 = (2.0 * SpatialConstants.WebMercatorExtent) / TileSize;
 
-    /// <summary>
-    /// ArcGIS scale at the advertised 96 DPI. Web Mercator uses meters as map
-    /// units; 39.37 converts meters to inches. WMTS independently uses its
-    /// standardized 0.28 mm pixel size and must retain its own scale denominator.
-    /// </summary>
+    // ArcGIS scale at 96 DPI converts Web Mercator meters with 39.37, while WMTS keeps its own 0.28 mm pixel size.
     private const double Scale0 = Resolution0 * Dpi * 39.37;
 
-    /// <summary>WebMercator spatial reference well-known id used by Esri tile caches.</summary>
     private const int WebMercatorWkid = 102100;
 
-    /// <summary>The EPSG-aligned latest well-known id for WebMercator (3857).</summary>
     private const int WebMercatorLatestWkid = 3857;
 
-    /// <summary>
-    /// Builds the fixed WebMercatorQuad <see cref="TileInfo"/> descriptor covering
-    /// levels <c>0..maxLevel</c> inclusive.
-    /// </summary>
-    /// <param name="maxLevel">
-    /// Highest zoom level to include in the LOD array (clamped to the Web Mercator
-    /// range 0–28 that the tile route accepts).
-    /// </param>
-    /// <returns>A populated <see cref="TileInfo"/> descriptor.</returns>
     public static TileInfo Build(int maxLevel)
     {
         var clampedMax = Math.Clamp(maxLevel, 0, 28);

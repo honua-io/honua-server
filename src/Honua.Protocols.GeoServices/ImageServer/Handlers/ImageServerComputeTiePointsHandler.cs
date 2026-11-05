@@ -13,21 +13,9 @@ using Microsoft.Extensions.Primitives;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Handlers;
 
-/// <summary>
-/// Handler for the ImageServer <c>computeTiePoints</c> operation. Honua returns tie points
-/// <b>only</b> when the raster carries pre-registered control points / ground control points in
-/// its sensor metadata; those are passed through verbatim. Automatic feature detection /
-/// descriptor matching (the way ArcGIS <i>derives</i> tie points) requires a computer-vision
-/// dependency this repository bars, so it is out of scope by design — when no control points are
-/// modeled the operation returns an actionable <c>501</c> rather than a fabricated result,
-/// mirroring the DEM-height 501 discipline (#1879). See ADR-0065.
-/// </summary>
 internal sealed class ImageServerComputeTiePointsHandler
 {
-    /// <summary>
-    /// Defensive upper bound on the number of pre-registered control points returned in one
-    /// response, so a pathological metadata payload cannot produce an unbounded document.
-    /// </summary>
+    // The control-point list is capped so a metadata payload cannot return an unbounded document.
     private const int MaxTiePoints = 10_000;
 
     private const string NoControlPointsMessage =
@@ -45,11 +33,6 @@ internal sealed class ImageServerComputeTiePointsHandler
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <summary>
-    /// Computes tie points for the layer's primary raster by passing through its pre-registered
-    /// control points. Returns 404 when the layer has no primary raster, 400 when a supplied
-    /// <c>rasterId</c> is not a valid identifier, and 501 when no control points are modeled.
-    /// </summary>
     public async Task<IResult> ComputeTiePointsAsync(
         HttpContext context,
         int layerId,

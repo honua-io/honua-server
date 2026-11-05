@@ -8,11 +8,7 @@ namespace Honua.Protocols.GeoServices.FeatureServer;
 
 internal static partial class FeatureServerEndpoints
 {
-    /// <summary>
-    /// Projects accessible publications to unique, service-local relationship classes.
-    /// Canonical fields describe this resource and its related resource; destination-side
-    /// metadata must therefore be reversed when describing the whole relationship class.
-    /// </summary>
+    // Destination-side metadata is reversed when the relationship class is described from the other resource.
     internal static ServiceRelationshipInfo[] BuildServiceRelationshipResponseV2(
         IReadOnlyList<(MetadataV2Publication Publication, MetadataV2Resource Resource)> publications,
         MetadataV2GraphSnapshot snapshot)

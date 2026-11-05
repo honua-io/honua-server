@@ -7,12 +7,6 @@ using Honua.Protocols.GeoServices.FeatureServer.Models;
 
 namespace Honua.Protocols.GeoServices.FeatureServer.Services;
 
-/// <summary>
-/// Maps the canonical <see cref="MetadataV2Subtypes"/> resource model onto the
-/// Esri-style FeatureServer layer subtype surface. Reuses
-/// <see cref="GeoServicesFieldDomainMapper"/> for per-subtype field domains so the
-/// served domain shape stays consistent with the layer-level field domains.
-/// </summary>
 internal static class GeoServicesSubtypeMapper
 {
     public static GeoServicesSubtypeInfo[]? Map(MetadataV2Subtypes? subtypes)

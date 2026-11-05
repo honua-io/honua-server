@@ -11,18 +11,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Protocols.GeoServices.GPServer;
 
-/// <summary>
-/// The NetworkAnalysisUtilities tasks (<c>GetTravelModes</c>, <c>GetToolInfo</c>) every
-/// GPServer resolves by name beside its process-catalog tasks (#5035).
-/// </summary>
-/// <remarks>
-/// ArcGIS Pro and <c>arcpy.nax</c> take a stand-alone routing service as
-/// <c>{url: .../NAServer, utilityUrl: .../GPServer}</c> and execute these two tasks on
-/// the utility service before any solve; without them the dictionary is refused
-/// client-side. They are synchronous, read-only projections of the routing provider,
-/// so they neither enter the job runtime nor require the job authorization the
-/// catalog tasks do: anonymous, like the NAServer solves they describe.
-/// </remarks>
 internal static partial class GPServerEndpoints
 {
     private const string NetworkAnalysisUtilitiesContentType = "application/json";

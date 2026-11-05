@@ -20,17 +20,8 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// Metadata handlers for FeatureServer endpoints. Ported to V2 metadata (issue #1035
-/// cutover 92/N): the canonical (service, publication, resource) triple is resolved
-/// through the V2 graph and responses are built via the V2 overloads on
-/// <see cref="FeatureServerEndpoints"/> (see <c>FeatureServerUtilities.V2.cs</c>).
-/// </summary>
 internal static partial class FeatureServerEndpoints
 {
-    /// <summary>
-    /// Handle service metadata requests
-    /// </summary>
     private static async Task<IResult> HandleGetServiceMetadata(HttpContext context)
     {
         var queryValidator = context.RequestServices.GetRequiredService<ICommonQueryValidator>();
@@ -117,9 +108,6 @@ internal static partial class FeatureServerEndpoints
             cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Gets service metadata asynchronously
-    /// </summary>
     private static async Task<IResult> GetServiceMetadataAsync(
         HttpContext context,
         MetadataV2Service service,
@@ -169,13 +157,7 @@ internal static partial class FeatureServerEndpoints
         }
     }
 
-    /// <summary>
-    /// Whether branch versioning is available for the current request: the active feature provider
-    /// supports it (Postgres) and the Pro branch-versioning entitlement is active (#1272, ADR-0051).
-    /// A prerequisite for metadata; the bound publication must also support branch reads (#5047).
-    /// The separate experimental VMS
-    /// gate does not disable FeatureServer gdbVersion queries or replication.
-    /// </summary>
+    // The experimental VersionManagementServer gate does not disable FeatureServer gdbVersion queries or replication.
     internal static bool IsBranchVersioningAvailable(HttpContext context)
     {
         // Resolve defensively: the IVersionManager registration constructs a provider-specific manager
@@ -202,16 +184,10 @@ internal static partial class FeatureServerEndpoints
             context.RequestServices, FeatureCatalog.BranchVersioningKey);
     }
 
-    /// <summary>
-    /// Whether the companion VMS lifecycle surface is enabled in addition to versioned data access.
-    /// </summary>
     internal static bool IsVersionManagementAvailable(HttpContext context, bool branchVersioningAvailable)
         => branchVersioningAvailable && CapabilityFlagOptions.IsExperimentalEnabled(
             context.RequestServices.GetRequiredService<IConfiguration>(), "versioning.branch");
 
-    /// <summary>
-    /// Handle layer metadata requests
-    /// </summary>
     private static async Task<IResult> HandleLayerMetadata(HttpContext context)
     {
         var queryValidator = context.RequestServices.GetRequiredService<ICommonQueryValidator>();
@@ -295,9 +271,6 @@ internal static partial class FeatureServerEndpoints
             cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Fetches layer metadata asynchronously
-    /// </summary>
     private static async Task<IResult> FetchLayerMetadataAsync(
         HttpContext context,
         string serviceId,
@@ -461,12 +434,6 @@ internal static partial class FeatureServerEndpoints
         return BuildDefaultDrawingInfoV2(resource);
     }
 
-    /// <summary>
-    /// Builds a default <c>drawingInfo</c> with a simple renderer derived from the
-    /// resource geometry type, mirroring the symbol the <c>generateRenderer</c>
-    /// operation returns. Returns <see langword="null"/> for layers whose geometry
-    /// type is unknown or unsupported (no default symbology can be inferred).
-    /// </summary>
     private static JsonElement? BuildDefaultDrawingInfoV2(MetadataV2Resource resource)
     {
         var geometryType = resource.Spatial?.GeometryType ?? MetadataV2GeometryType.None;
@@ -511,11 +478,6 @@ internal static partial class FeatureServerEndpoints
         return false;
     }
 
-    /// <summary>
-    /// Returns an author-supplied Esri <c>popupInfo</c> template stored on the resource
-    /// (<c>resource.Extensions["geoservices:popupInfo"]</c>), or null when none is set. Esri clients read
-    /// popupInfo to drive feature popups; the FeatureServer omits it unless an operator has authored one.
-    /// </summary>
     private static JsonElement? ResolvePopupInfoV2(MetadataV2Resource resource)
     {
         if (resource.Extensions is not null
@@ -545,13 +507,7 @@ internal static partial class FeatureServerEndpoints
         }
     }
 
-    /// <summary>
-    /// V2 variant of <c>RequiresDefaultMetadataAuthentication</c>. Identical contract:
-    /// in production, require authentication when neither the service nor any layer
-    /// declares an explicit access policy (so unconfigured services don't leak metadata
-    /// to anonymous callers). In non-production environments, anonymous access is
-    /// allowed so dev/test loops can hit metadata without setting up identity.
-    /// </summary>
+    // In production, authentication is required when neither the service nor any layer declares an access policy, so an unconfigured service does not leak metadata; non-production still allows anonymous metadata reads.
     private static bool RequiresDefaultMetadataAuthenticationV2(
         HttpContext context,
         bool hasServicePolicy,

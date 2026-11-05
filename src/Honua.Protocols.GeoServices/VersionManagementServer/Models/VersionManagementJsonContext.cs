@@ -5,10 +5,6 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Protocols.GeoServices.VersionManagementServer.Models;
 
-/// <summary>
-/// Source-generated JSON serialization context for VersionManagementServer DTOs (AOT-compatible,
-/// camelCase to match the Esri wire shape).
-/// </summary>
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     PropertyNameCaseInsensitive = true,

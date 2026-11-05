@@ -12,19 +12,8 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Protocols.GeoServices.ImageServer;
 
-/// <summary>
-/// Service collection extensions for Image Server feature registration.
-/// </summary>
 internal static class ImageServerServiceCollectionExtensions
 {
-    /// <summary>
-    /// Registers Image Server services with dependency injection.
-    /// </summary>
-    /// <param name="services">The service collection to register into.</param>
-    /// <param name="configuration">
-    /// Application configuration used to bind <see cref="ImageServerTileMetadataOptions"/>
-    /// (the opt-in tiled-consumption metadata flag, #1648).
-    /// </param>
     public static IServiceCollection AddImageServer(this IServiceCollection services, IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(services);

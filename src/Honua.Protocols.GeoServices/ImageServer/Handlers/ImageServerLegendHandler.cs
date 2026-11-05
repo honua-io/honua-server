@@ -16,22 +16,10 @@ using SkiaSharp;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Handlers;
 
-/// <summary>
-/// Handler for the Esri Image Server <c>legend</c> endpoint. Generates a small
-/// equal-interval class breaks legend for the layer's primary raster using the
-/// stretched range of the first band as the value space. The renderer is
-/// intentionally fixed (5-class viridis-style ramp) until 520-D's renderer
-/// abstraction supports user-defined classes.
-/// </summary>
 internal sealed class ImageServerLegendHandler
 {
-    /// <summary>Number of equal-interval classes when no renderer is supplied.</summary>
     private const int DefaultClassCount = 5;
 
-    /// <summary>
-    /// Default colour ramp for the legend swatches. Picked to match a viridis-like
-    /// progression so that legends remain readable on light and dark backgrounds.
-    /// </summary>
     private static readonly SKColor[] DefaultColorRamp =
     [
         new SKColor(68, 1, 84),
@@ -58,9 +46,6 @@ internal sealed class ImageServerLegendHandler
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <summary>
-    /// Builds the legend payload for the layer's primary raster.
-    /// </summary>
     public async Task<IResult> GetLegendAsync(
         HttpContext context,
         int layerId,
