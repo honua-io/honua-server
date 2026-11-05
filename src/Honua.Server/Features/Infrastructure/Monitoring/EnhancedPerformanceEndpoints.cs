@@ -10,20 +10,8 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Infrastructure.Monitoring;
 
-/// <summary>
-/// Enhanced performance monitoring endpoints providing detailed insights into
-/// database query performance, resource usage, exception telemetry, and caching effectiveness.
-/// </summary>
-/// <remarks>
-/// These endpoints provide real-time performance metrics to help identify optimization
-/// opportunities and monitor the health of performance-critical systems.
-/// </remarks>
 internal static partial class EnhancedPerformanceEndpoints
 {
-    /// <summary>
-    /// Registers enhanced performance monitoring endpoints with formal API versioning.
-    /// </summary>
-    /// <param name="app">Web application builder</param>
     public static void MapEnhancedPerformanceEndpoints(this WebApplication app)
     {
         var group = app.MapGroup("/api/v{version:apiVersion}/admin/performance/enhanced")
@@ -587,9 +575,6 @@ internal static partial class EnhancedPerformanceEndpoints
 
 // Response models for the monitoring endpoints
 
-/// <summary>
-/// Response model for slow query requests.
-/// </summary>
 internal sealed class SlowQueryResponse
 {
     public IReadOnlyList<SlowQueryRecord> SlowQueries { get; set; } = Array.Empty<SlowQueryRecord>();
@@ -597,9 +582,6 @@ internal sealed class SlowQueryResponse
     public DateTime CollectedAt { get; set; }
 }
 
-/// <summary>
-/// Response model for resource leak requests.
-/// </summary>
 internal sealed class ResourceLeakResponse
 {
     public IReadOnlyList<ResourceLeakInfo> PotentialLeaks { get; set; } = Array.Empty<ResourceLeakInfo>();
@@ -607,9 +589,6 @@ internal sealed class ResourceLeakResponse
     public DateTime CollectedAt { get; set; }
 }
 
-/// <summary>
-/// Response model for exception history requests.
-/// </summary>
 internal sealed class ExceptionHistoryResponse
 {
     public IReadOnlyList<ExceptionRecord> Exceptions { get; set; } = Array.Empty<ExceptionRecord>();
@@ -617,9 +596,6 @@ internal sealed class ExceptionHistoryResponse
     public DateTime CollectedAt { get; set; }
 }
 
-/// <summary>
-/// Response model for cache invalidation requests.
-/// </summary>
 internal sealed class CacheInvalidationResponse
 {
     public string Pattern { get; set; } = string.Empty;
@@ -627,9 +603,6 @@ internal sealed class CacheInvalidationResponse
     public DateTime InvalidatedAt { get; set; }
 }
 
-/// <summary>
-/// Comprehensive performance summary response.
-/// </summary>
 internal sealed class PerformanceSummaryResponse
 {
     public QueryPerformanceStatistics? QueryPerformance { get; set; }

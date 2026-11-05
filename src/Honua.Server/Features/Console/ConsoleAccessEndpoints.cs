@@ -15,7 +15,6 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Console;
 
-/// <summary>Console-facing projection over the canonical role, user, and audit stores.</summary>
 internal static class ConsoleAccessEndpoints
 {
     private const string ConsoleAccessService = "console-access";
@@ -48,7 +47,6 @@ internal static class ConsoleAccessEndpoints
     private static readonly HashSet<string> PermissionKeys =
         Permissions.Select(static permission => permission.Key).ToHashSet(StringComparer.Ordinal);
 
-    /// <summary>Maps the six admin-authorized Console Access routes.</summary>
     public static void MapConsoleAccessEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/console/access/{workspaceId}")

@@ -10,16 +10,8 @@ using Npgsql;
 
 namespace Honua.Infrastructure.DataIntegrity;
 
-/// <summary>
-/// Coordinates data integrity operations across file storage, database, and cache layers
-/// to prevent race conditions and ensure ACID properties.
-/// </summary>
 public interface IDataIntegrityCoordinator
 {
-    /// <summary>
-    /// Executes a coordinated transaction that spans database, file storage, and cache operations
-    /// with proper rollback capabilities and consistency guarantees.
-    /// </summary>
     Task<T> ExecuteCoordinatedTransactionAsync<T>(
         string operationId,
         Func<IDataIntegrityTransaction, CancellationToken, Task<T>> operation,
@@ -27,63 +19,34 @@ public interface IDataIntegrityCoordinator
         TimeSpan? timeout = null,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Acquires a named coordination lock. The current implementation is process-local
-    /// (a per-key <see cref="SemaphoreSlim"/>) and does NOT provide cross-instance
-    /// exclusion; multi-node deployments require a Redis- or database-backed lock.
-    /// </summary>
     Task<IAsyncDisposable> AcquireDistributedLockAsync(
         string lockKey,
         TimeSpan timeout,
         CancellationToken cancellationToken = default);
 }
 
-/// <summary>
-/// Represents a coordinated transaction that can span multiple data stores.
-/// </summary>
 public interface IDataIntegrityTransaction : IAsyncDisposable
 {
-    /// <summary>
-    /// Gets the database transaction for this coordinated transaction.
-    /// </summary>
     NpgsqlTransaction DatabaseTransaction { get; }
 
-    /// <summary>
-    /// Gets the connection for this transaction.
-    /// </summary>
     NpgsqlConnection Connection { get; }
 
-    /// <summary>
-    /// Registers a file operation to be committed or rolled back with the transaction.
-    /// </summary>
     void RegisterFileOperation(
         string operationType,
         string filePath,
         Func<CancellationToken, Task> commitAction,
         Func<CancellationToken, Task> rollbackAction);
 
-    /// <summary>
-    /// Registers a cache operation to be committed or rolled back with the transaction.
-    /// </summary>
     void RegisterCacheOperation(
         string cacheKey,
         Func<CancellationToken, Task> commitAction,
         Func<CancellationToken, Task> rollbackAction);
 
-    /// <summary>
-    /// Commits all registered operations atomically.
-    /// </summary>
     Task CommitAsync(CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Rolls back all registered operations.
-    /// </summary>
     Task RollbackAsync(CancellationToken cancellationToken = default);
 }
 
-/// <summary>
-/// Implementation of coordinated data integrity operations with proper ACID guarantees.
-/// </summary>
 internal sealed class DataIntegrityCoordinator : IDataIntegrityCoordinator
 {
     private readonly NpgsqlDataSource _dataSource;
@@ -117,12 +80,7 @@ internal sealed class DataIntegrityCoordinator : IDataIntegrityCoordinator
         Interlocked.CompareExchange(ref _cleanupLogger, logger, null);
     }
 
-    /// <summary>
-    /// Per-key lock state. <see cref="RefCount"/> counts active holders and waiters and
-    /// is mutated under a lock on the entry; the cleanup timer only removes and disposes
-    /// entries whose ref count is zero, so a semaphore can never be disposed out from
-    /// under a live holder or queued waiter (which would silently break mutual exclusion).
-    /// </summary>
+    // A lock entry is disposed only when its ref count is zero, so a live holder cannot lose mutual exclusion.
     private sealed class LockEntry : IDisposable
     {
         public readonly SemaphoreSlim Semaphore = new(1, 1);
@@ -460,13 +418,6 @@ internal sealed class DataIntegrityCoordinator : IDataIntegrityCoordinator
         }
     }
 
-    /// <summary>
-    /// Cleanup idle locks to prevent memory leaks in the static collections.
-    /// Only entries with no holders or waiters (ref count zero) are removed and
-    /// disposed: disposing a held semaphore would make the holder's Release()
-    /// throw and let a concurrent caller mint a fresh semaphore for the same key,
-    /// silently breaking mutual exclusion.
-    /// </summary>
     private static void CleanupExpiredLocks(object? state)
     {
         // Use bounded wait instead of silent return to ensure cleanup happens
@@ -544,11 +495,6 @@ internal sealed class DataIntegrityCoordinator : IDataIntegrityCoordinator
         }
     }
 
-    /// <summary>
-    /// Removes and disposes the lock entry for <paramref name="lockKey"/> only when it
-    /// has no holders or waiters. Marks the entry as removed under its lock so a racing
-    /// acquirer that fetched the same instance retries against a fresh entry.
-    /// </summary>
     private static bool TryRemoveIdleEntry(string lockKey)
     {
         if (!_globalLocks.TryGetValue(lockKey, out var entry))
@@ -571,14 +517,8 @@ internal sealed class DataIntegrityCoordinator : IDataIntegrityCoordinator
     }
 }
 
-/// <summary>
-/// Service collection extensions for data integrity coordination.
-/// </summary>
 public static class DataIntegrityCoordinatorServiceCollectionExtensions
 {
-    /// <summary>
-    /// Adds data integrity coordination services to the service collection.
-    /// </summary>
     public static IServiceCollection AddDataIntegrityCoordination(this IServiceCollection services)
     {
         services.AddScoped<IDataIntegrityCoordinator, DataIntegrityCoordinator>();

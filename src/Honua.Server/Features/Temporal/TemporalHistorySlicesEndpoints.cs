@@ -13,23 +13,10 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Features.Temporal;
 
-/// <summary>
-/// Admin endpoint group for slices 2-5 of the temporal data history API (honua-server#1166): diff,
-/// feature timeline, attribution (surfaced in diff/timeline), and governed rollback planning/execution.
-/// These are thin adapters — they parse, authorize, delegate to <see cref="ITemporalHistoryService"/>, and
-/// format results — and never reimplement query/edit/job logic.
-/// </summary>
-/// <remarks>
-/// Each surface enforces a distinct permission: diff reads use the diff-read policy, timeline reads reuse
-/// the history-read policy, rollback planning uses the history-read policy (read-only analysis), and
-/// rollback execution uses the dedicated rollback-execution policy.
-/// </remarks>
 internal static partial class TemporalHistorySlicesEndpoints
 {
-    /// <summary>Log category for temporal history slice 2-5 endpoints.</summary>
     internal sealed class TemporalHistorySlicesEndpointsLog;
 
-    /// <summary>Maps the slice 2-5 temporal history admin endpoints.</summary>
     public static IEndpointRouteBuilder MapTemporalHistorySliceEndpoints(this IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);

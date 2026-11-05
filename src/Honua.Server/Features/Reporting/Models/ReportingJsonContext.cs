@@ -7,11 +7,6 @@ using Honua.Core.Features.Reporting.Domain;
 
 namespace Honua.Server.Features.Reporting.Models;
 
-/// <summary>
-/// AOT-friendly JSON context for the reporting feature. Covers the OpenAI
-/// narrative wire models, the on-the-wire AnalysisReport envelope (used for
-/// HTTP/MCP responses), and the polymorphic section subtypes.
-/// </summary>
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]

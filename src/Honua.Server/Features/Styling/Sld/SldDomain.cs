@@ -3,17 +3,11 @@
 
 namespace Honua.Server.Features.Styling.Sld;
 
-/// <summary>
-/// Internal SLD/SE document tree captured by <see cref="SldParser"/>.
-/// </summary>
 internal sealed record SldDocument(
     SldVersion Version,
     IReadOnlyList<SldNamedLayer> NamedLayers,
     IReadOnlyList<SldConversionDiagnostic> ParseDiagnostics);
 
-/// <summary>
-/// SLD specification version detected from the root element.
-/// </summary>
 internal enum SldVersion
 {
     Sld10,
@@ -69,9 +63,6 @@ internal sealed record SldFont(string? Family, double? Size, string? Style, stri
 
 internal sealed record SldHalo(double? Radius, SldFill? Fill);
 
-/// <summary>
-/// Parsed OGC Filter abstract syntax tree.
-/// </summary>
 internal abstract record SldFilter;
 
 internal sealed record SldFilterAnd(IReadOnlyList<SldFilter> Operands) : SldFilter;

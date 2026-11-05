@@ -6,17 +6,7 @@ using Honua.Core.Features.ControlPlane.Domain;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Decorates the durable workflow-operation store to raise <see cref="IWorkflowOperationTransitionListener"/>
-/// observers on operator-meaningful transitions (created / submitted / promoted / rolled-back /
-/// manual-intervention). Every persisted transition from both <c>DeployWorkflowService</c> and
-/// <c>DeployWorkflowReconciler</c> funnels through <see cref="IWorkflowOperationStore.SetAsync"/> /
-/// <see cref="IWorkflowOperationStore.TrySetAsync"/> / <see cref="IWorkflowOperationStore.TryCreateAsync"/>,
-/// so decorating those three write points is a single seam that covers them all without scattering
-/// notification calls across the reconciler. Listeners are invoked best-effort AFTER the authoritative
-/// inner write; a throwing listener is isolated and never fails the write or starves siblings. Reads,
-/// leases, and queries pass straight through.
-/// </summary>
+// A throwing listener is isolated and never fails the authoritative write.
 internal sealed partial class TransitionObservingWorkflowOperationStore : IWorkflowOperationStore
 {
     private readonly IWorkflowOperationStore _inner;
@@ -72,24 +62,6 @@ internal sealed partial class TransitionObservingWorkflowOperationStore : IWorkf
             ? RaiseAsync(operation, kind, cancellationToken)
             : Task.CompletedTask;
 
-    /// <summary>
-    /// Maps a persisted operation to a transition kind. Intermediate states (planned / awaiting approval /
-    /// reconciling / failed) are intentionally not surfaced: the seam reports operator-meaningful
-    /// lifecycle moments, and mapping only <see cref="WorkflowOperationStatus.Submitted"/> (not the
-    /// repeatedly-written <see cref="WorkflowOperationStatus.Reconciling"/>) keeps in-flight polling from
-    /// emitting duplicate submitted events.
-    /// <para>
-    /// The one deliberate exception (honua-server#4618): a candidate that just cut over now stays
-    /// <see cref="WorkflowOperationStatus.Reconciling"/> for its post-activation observation window
-    /// instead of jumping straight to <see cref="WorkflowOperationStatus.Succeeded"/>, so the operator-
-    /// meaningful "promoted" milestone needs a signal that survives that change without re-firing on
-    /// every repeatedly-written observation-window bookkeeping update. <c>Deploy.Protection</c> is
-    /// created exactly once per activation, and only the write that creates it stamps the record's
-    /// <c>UpdatedAt</c> and the protection's <c>FirstExposureAt</c> from the very same timestamp — every
-    /// later write during the window advances <c>UpdatedAt</c> further while <c>FirstExposureAt</c> stays
-    /// fixed, so comparing the two is a write-once signal without needing the previous record.
-    /// </para>
-    /// </summary>
     private static bool TryClassify(WorkflowOperationRecord operation, out WorkflowOperationTransitionKind kind)
     {
         switch (operation.Status)

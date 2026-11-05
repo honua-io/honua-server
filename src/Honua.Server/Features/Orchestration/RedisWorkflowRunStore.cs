@@ -8,9 +8,6 @@ using StackExchange.Redis;
 
 namespace Honua.Server.Features.Orchestration;
 
-/// <summary>
-/// Redis-backed durable store for workflow runs.
-/// </summary>
 internal sealed class RedisWorkflowRunStore(IConnectionMultiplexer redis) : IWorkflowRunStore
 {
     private const string RunKeyPrefix = "orchestration:run:";

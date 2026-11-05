@@ -9,14 +9,7 @@ using Honua.Geoprocessing.CustomCode;
 
 namespace Honua.Server.Features.Admin.Jobs;
 
-/// <summary>
-/// Sanitized, read-only per-step glass-box projection for the console job detail.
-/// Surfaces the depth the dev CLI shows — the per-step phase timeline, the GDAL
-/// command, and an artifact summary over the production HTTP surface. Phase,
-/// message, command, and metadata values pass through <see cref="WorkspacePathSanitizer"/>.
-/// Artifact labels and metadata keys preserve their stored identities; this is
-/// recognizable credential and path redaction, not a general support-bundle sanitizer.
-/// </summary>
+// Step text is redacted for credentials and paths, and that redaction is not a general support-bundle sanitizer.
 internal sealed partial class ConsoleJobService
 {
     // Metadata keys an executor / the GP devkit may persist onto an execution-log

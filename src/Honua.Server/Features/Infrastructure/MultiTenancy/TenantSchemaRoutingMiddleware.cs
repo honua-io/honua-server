@@ -13,23 +13,7 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.MultiTenancy;
 
-/// <summary>
-/// Routes the current request to its tenant's PostgreSQL schema and records a usage signal
-/// (issue #346). Runs after <c>TenantContextMiddleware</c> has resolved <see cref="ITenantContext"/>
-/// and feeds the resolved schema into the request-scoped
-/// <see cref="Honua.Core.Features.Infrastructure.Abstractions.ISchemaContext"/> so the existing
-/// <c>SET search_path</c> data path enforces isolation.
-/// </summary>
-/// <remarks>
-/// This middleware is only registered when <see cref="TenantSchemaOptions.Enabled"/> is
-/// <see langword="true"/>. When disabled it is absent from the pipeline entirely, so
-/// single-tenant deployments retain byte-identical behavior (no schema context is written and
-/// the database keeps its configured default schema).
-///
-/// When a request carries an explicit test schema header (<c>X-Honua-Test-Schema</c>) the
-/// schema context is already populated by <c>TestSchemaMiddleware</c>; this middleware never
-/// overwrites a schema that another component already set, so test isolation continues to win.
-/// </remarks>
+// This middleware never overwrites a schema another component already set, so the test schema header wins.
 internal sealed class TenantSchemaRoutingMiddleware(
     RequestDelegate next,
     ITenantSchemaResolver schemaResolver,

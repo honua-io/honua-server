@@ -6,82 +6,33 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Server.Features.Streaming;
 
-/// <summary>
-/// Envelope pushed to streaming clients. Contains the same data as <see cref="Honua.Infrastructure.Events.FeatureChangeEvent"/>
-/// but serialized once and shared across transports.
-/// </summary>
 internal sealed record FeatureStreamEnvelope
 {
-    /// <summary>
-    /// Frame type identifier.
-    /// </summary>
     public string Type { get; init; } = "feature-change";
 
-    /// <summary>
-    /// Unique event identifier.
-    /// </summary>
     public required string EventId { get; init; }
 
-    /// <summary>
-    /// Monotonic cursor for ordering and replay. This is the durable global event-store
-    /// position and is deliberately NOT a per-subscription sequence: a filtered
-    /// subscription legitimately skips cursor values that belong to events it does not
-    /// admit. Use <see cref="Sequence"/> for continuity checks.
-    /// </summary>
+    // The cursor is the store position, not a per-subscription sequence, because a filtered subscription skips values.
     public required long Cursor { get; init; }
 
-    /// <summary>
-    /// Subscription-local monotonic sequence. Starts at 0 for the first frame admitted by
-    /// the subscription (the snapshot baseline when snapshot-then-delta mode is active) and
-    /// advances by exactly one for every subsequent admitted snapshot or delta frame, so it
-    /// is contiguous even where the global <see cref="Cursor"/> skips. Null on legacy
-    /// delta-only paths that predate sequence assignment.
-    /// </summary>
     public long? Sequence { get; init; }
 
-    /// <summary>
-    /// When the event was recorded.
-    /// </summary>
     public required DateTimeOffset Timestamp { get; init; }
 
-    /// <summary>
-    /// Originating service identifier.
-    /// </summary>
     public string? SourceId { get; init; }
 
-    /// <summary>
-    /// Originating service identifier.
-    /// </summary>
     public required string ServiceId { get; init; }
 
-    /// <summary>
-    /// Layer the feature belongs to.
-    /// </summary>
     public required int LayerId { get; init; }
 
-    /// <summary>
-    /// Feature object identifier.
-    /// </summary>
     public string FeatureId { get; init; } = string.Empty;
 
-    /// <summary>
-    /// Feature object identifier.
-    /// </summary>
     public required long ObjectId { get; init; }
 
-    /// <summary>
-    /// Mutation type: insert, update, or delete.
-    /// </summary>
     public required string Operation { get; init; }
 
-    /// <summary>
-    /// Protocol that originated the change.
-    /// </summary>
     public required string Protocol { get; init; }
 
-    /// <summary>
-    /// Correlation request identifier.
-    /// </summary>
     public required string RequestId { get; init; }
 
     public string? OperationInstanceId { get; init; }
@@ -89,560 +40,304 @@ internal sealed record FeatureStreamEnvelope
     public string? AuditId { get; init; }
     public string? ProposalId { get; init; }
 
-    /// <summary>
-    /// Server-assigned subscription identifier that matched this event.
-    /// </summary>
     public string? SubscriptionId { get; init; }
 
-    /// <summary>
-    /// GeoJSON geometry for insert/update and delete tombstones when available.
-    /// </summary>
     public System.Text.Json.JsonElement? Geometry { get; init; }
 
-    /// <summary>
-    /// CRS identifier for <see cref="Geometry"/>.
-    /// </summary>
     public string? GeometryCrs { get; init; }
 
-    /// <summary>
-    /// Full attribute snapshot after insert/update, or before-image for deletes when available.
-    /// </summary>
     public Dictionary<string, System.Text.Json.JsonElement>? Attributes { get; init; }
 
-    /// <summary>
-    /// Optional. Changed attribute values when available. Null when the originating
-    /// protocol does not provide attribute-level change tracking, or for deletes.
-    /// </summary>
     public Dictionary<string, object?>? ChangedAttributes { get; init; }
 
-    /// <summary>
-    /// Whether the feature's geometry was modified by this operation.
-    /// Best-effort: may default to false when the originating protocol cannot determine this.
-    /// </summary>
     public bool GeometryChanged { get; init; }
 }
 
-/// <summary>
-/// Client WebSocket control frame for subscription lifecycle operations.
-/// </summary>
 internal sealed record FeatureStreamControlMessage
 {
-    /// <summary>Control frame type: subscribe, unsubscribe, or ping.</summary>
     public string? Type { get; init; }
 
-    /// <summary>Subscription identifier for unsubscribe.</summary>
     public string? SubscriptionId { get; init; }
 
-    /// <summary>Optional client label for diagnostics.</summary>
     public string? ClientLabel { get; init; }
 
-    /// <summary>Service scope for subscribe.</summary>
     public string? ServiceId { get; init; }
 
-    /// <summary>Single layer scope for subscribe.</summary>
     public int? LayerId { get; init; }
 
-    /// <summary>Layer scopes for subscribe.</summary>
     public int[]? Layers { get; init; }
 
-    /// <summary>Legacy layer scopes for subscribe.</summary>
     public int[]? LayerIds { get; init; }
 
-    /// <summary>Optional bbox filter [minX,minY,maxX,maxY].</summary>
     public double[]? Bbox { get; init; }
 
-    /// <summary>Optional bbox CRS. Defaults to EPSG:4326.</summary>
     public string? BboxCrs { get; init; }
 
-    /// <summary>Optional CQL2 attribute filter.</summary>
     public string? Filter { get; init; }
 
-    /// <summary>Optional filter language. Defaults to cql2-text.</summary>
     public string? FilterLang { get; init; }
 
-    /// <summary>Optional OGC datetime/interval temporal filter.</summary>
     public string? Datetime { get; init; }
 
-    /// <summary>Optional replay cursor for this subscription.</summary>
     public long? Cursor { get; init; }
 
-    /// <summary>
-    /// Optional subscription mode: <c>delta</c> (default, change-only) or <c>snapshot</c>
-    /// (snapshot-then-delta — a complete baseline is emitted before live deltas).
-    /// </summary>
     public string? Mode { get; init; }
 }
 
-/// <summary>
-/// Delivery mode requested for a subscription.
-/// </summary>
 internal enum FeatureStreamSubscriptionMode
 {
-    /// <summary>Change-only delivery. No baseline is emitted.</summary>
     Delta,
 
-    /// <summary>
-    /// Snapshot-then-delta delivery with <b>streamed</b> baseline framing: the baseline is
-    /// written as <c>snapshot-begin</c>, one <c>snapshot-feature</c> per admitted feature,
-    /// then <c>snapshot-end</c>, and a replacement snapshot is emitted instead of deltas
-    /// when a supplied replay cursor has fallen outside the retained window. Each frame
-    /// consumes one subscription-local sequence, so a large baseline never has to be
-    /// buffered whole on either side.
-    /// </summary>
     Snapshot,
 
-    /// <summary>
-    /// Snapshot-then-delta delivery with <b>batched</b> baseline framing: the whole
-    /// baseline is written as a single <c>snapshot</c> frame carrying a <c>features</c>
-    /// array, consuming exactly one subscription-local sequence. Boundary cursor,
-    /// replacement-snapshot reasons, truncation reporting, and delta resumption are
-    /// identical to <see cref="Snapshot"/> — only the framing differs. This is the
-    /// vocabulary the <c>@honua/sdk-js</c> realtime client reduces natively, so a
-    /// snapshot-plus-delta contract can be verified end to end without a client-side
-    /// re-framing shim (#3038).
-    /// </summary>
     SnapshotThenDelta
 }
 
-/// <summary>
-/// Reason a baseline snapshot was emitted.
-/// </summary>
 internal static class FeatureStreamSnapshotReasons
 {
-    /// <summary>First baseline for a newly opened snapshot-then-delta subscription.</summary>
     public const string Initial = "initial";
 
-    /// <summary>
-    /// Replacement baseline: the supplied replay cursor is older than the oldest retained
-    /// event, so the deltas needed to reach the current state no longer exist.
-    /// </summary>
     public const string CursorExpired = "cursor-expired";
 
-    /// <summary>
-    /// Replacement baseline: the supplied replay cursor is ahead of the durable store's
-    /// current position (forked or fabricated cursor) and cannot be resumed from.
-    /// </summary>
     public const string CursorInvalid = "cursor-invalid";
 }
 
-/// <summary>
-/// Opening frame of a baseline snapshot.
-/// </summary>
 internal sealed record FeatureStreamSnapshotBeginFrame
 {
-    /// <summary>Frame type identifier.</summary>
     public string Type { get; init; } = "snapshot-begin";
 
-    /// <summary>Identifier correlating every frame of this snapshot.</summary>
     public required string SnapshotId { get; init; }
 
-    /// <summary>Subscription this snapshot belongs to.</summary>
     public required string SubscriptionId { get; init; }
 
-    /// <summary>Subscription-local monotonic sequence.</summary>
     public required long Sequence { get; init; }
 
-    /// <summary>
-    /// Global event-store position captured before the baseline read began. Every delta
-    /// with a cursor greater than this value is delivered after <c>snapshot-end</c>.
-    /// </summary>
     public required long Cursor { get; init; }
 
-    /// <summary>Why the snapshot was emitted. See <see cref="FeatureStreamSnapshotReasons"/>.</summary>
     public required string Reason { get; init; }
 
-    /// <summary>Service scope of the snapshot, when the subscription is service-scoped.</summary>
     public string? ServiceId { get; init; }
 
-    /// <summary>Layer scope of the snapshot.</summary>
     public required int[] LayerIds { get; init; }
 
-    /// <summary>Server timestamp.</summary>
     public DateTimeOffset Timestamp { get; init; } = DateTimeOffset.UtcNow;
 }
 
-/// <summary>
-/// One feature of a baseline snapshot.
-/// </summary>
 internal sealed record FeatureStreamSnapshotFeatureFrame
 {
-    /// <summary>Frame type identifier.</summary>
     public string Type { get; init; } = "snapshot-feature";
 
-    /// <summary>Identifier correlating every frame of this snapshot.</summary>
     public required string SnapshotId { get; init; }
 
-    /// <summary>Subscription this frame belongs to.</summary>
     public required string SubscriptionId { get; init; }
 
-    /// <summary>Subscription-local monotonic sequence.</summary>
     public required long Sequence { get; init; }
 
-    /// <summary>Baseline cursor boundary (identical for every frame of the snapshot).</summary>
     public required long Cursor { get; init; }
 
-    /// <summary>Service the feature belongs to.</summary>
     public required string ServiceId { get; init; }
 
-    /// <summary>Layer the feature belongs to.</summary>
     public required int LayerId { get; init; }
 
-    /// <summary>Feature object identifier in string form.</summary>
     public required string FeatureId { get; init; }
 
-    /// <summary>Feature object identifier.</summary>
     public required long ObjectId { get; init; }
 
-    /// <summary>GeoJSON geometry, when the feature has one with resolvable CRS.</summary>
     public System.Text.Json.JsonElement? Geometry { get; init; }
 
-    /// <summary>CRS identifier for <see cref="Geometry"/>.</summary>
     public string? GeometryCrs { get; init; }
 
-    /// <summary>Full attribute snapshot.</summary>
     public Dictionary<string, System.Text.Json.JsonElement>? Attributes { get; init; }
 }
 
-/// <summary>
-/// Closing frame of a baseline snapshot.
-/// </summary>
 internal sealed record FeatureStreamSnapshotEndFrame
 {
-    /// <summary>Frame type identifier.</summary>
     public string Type { get; init; } = "snapshot-end";
 
-    /// <summary>Identifier correlating every frame of this snapshot.</summary>
     public required string SnapshotId { get; init; }
 
-    /// <summary>Subscription this snapshot belongs to.</summary>
     public required string SubscriptionId { get; init; }
 
-    /// <summary>Subscription-local monotonic sequence.</summary>
     public required long Sequence { get; init; }
 
-    /// <summary>Baseline cursor boundary. Deltas resume strictly after this position.</summary>
     public required long Cursor { get; init; }
 
-    /// <summary>Number of <c>snapshot-feature</c> frames emitted.</summary>
     public required long FeatureCount { get; init; }
 
-    /// <summary>
-    /// Whether the baseline is complete. False when the configured snapshot feature or
-    /// scan bound was reached first — the client must not treat a truncated baseline as
-    /// authoritative state.
-    /// </summary>
+    // The client must not treat a truncated baseline as authoritative state.
     public required bool Complete { get; init; }
 }
 
-/// <summary>
-/// Batched baseline frame emitted by <see cref="FeatureStreamSubscriptionMode.SnapshotThenDelta"/>.
-/// Carries the entire baseline in one frame and therefore consumes exactly one
-/// subscription-local sequence, so the first delta continues at <c>sequence + 1</c>.
-/// </summary>
 internal sealed record FeatureStreamSnapshotFrame
 {
-    /// <summary>Frame type identifier.</summary>
     public string Type { get; init; } = "snapshot";
 
-    /// <summary>Identifier correlating this snapshot with its server-side log records.</summary>
     public required string SnapshotId { get; init; }
 
-    /// <summary>Subscription this snapshot belongs to.</summary>
     public required string SubscriptionId { get; init; }
 
-    /// <summary>Subscription-local monotonic sequence.</summary>
     public required long Sequence { get; init; }
 
-    /// <summary>
-    /// Global event-store position captured before the baseline read began. Every delta
-    /// with a cursor greater than this value is delivered after this frame.
-    /// </summary>
     public required long Cursor { get; init; }
 
-    /// <summary>Why the snapshot was emitted. See <see cref="FeatureStreamSnapshotReasons"/>.</summary>
     public required string Reason { get; init; }
 
-    /// <summary>
-    /// Always true: a Honua baseline replaces the client's live set rather than merging
-    /// into it. Emitted explicitly because a merging snapshot cannot establish a resume
-    /// baseline and clients must be able to tell the two apart without inference.
-    /// </summary>
+    // A baseline replaces the client's set, and the flag is explicit so a client does not infer a merge.
     public bool Replace { get; init; } = true;
 
-    /// <summary>Service scope of the snapshot, when the subscription is service-scoped.</summary>
     public string? ServiceId { get; init; }
 
-    /// <summary>Layer scope of the snapshot.</summary>
     public required int[] LayerIds { get; init; }
 
-    /// <summary>Number of features carried by <see cref="Features"/>.</summary>
     public required long FeatureCount { get; init; }
 
-    /// <summary>
-    /// Whether the baseline is complete. False when the configured snapshot feature or
-    /// scan bound was reached first — the client must not treat a truncated baseline as
-    /// authoritative state.
-    /// </summary>
+    // The client must not treat a truncated baseline as authoritative state.
     public required bool Complete { get; init; }
 
-    /// <summary>The baseline itself.</summary>
     public required FeatureStreamSnapshotFeature[] Features { get; init; }
 
-    /// <summary>Server timestamp.</summary>
     public DateTimeOffset Timestamp { get; init; } = DateTimeOffset.UtcNow;
 }
 
-/// <summary>
-/// One feature of a batched baseline. The identity fields mirror the delta envelope
-/// exactly (<c>featureId</c> string form as the id, <c>serviceId</c> as the source id) so a
-/// client keys the baseline record and its later deltas identically.
-/// </summary>
 internal sealed record FeatureStreamSnapshotFeature
 {
-    /// <summary>Feature object identifier in string form, matching the delta envelope's <c>featureId</c>.</summary>
     public required string Id { get; init; }
 
-    /// <summary>Service the feature belongs to, matching the delta envelope's <c>serviceId</c>.</summary>
     public required string SourceId { get; init; }
 
-    /// <summary>Layer the feature belongs to.</summary>
     public required int LayerId { get; init; }
 
-    /// <summary>CRS identifier for the feature geometry, when resolvable.</summary>
     public string? GeometryCrs { get; init; }
 
-    /// <summary>The feature itself, as GeoJSON.</summary>
     public required FeatureStreamSnapshotGeoJsonFeature Feature { get; init; }
 }
 
-/// <summary>
-/// GeoJSON projection of one baseline feature, shaped exactly like the after-image the
-/// delta envelope projects (<c>type</c>/<c>id</c>/<c>geometry</c>/<c>properties</c>) so the
-/// baseline and the deltas that follow it describe a record the same way.
-/// </summary>
 internal sealed record FeatureStreamSnapshotGeoJsonFeature
 {
-    /// <summary>GeoJSON object type.</summary>
     public string Type { get; init; } = "Feature";
 
-    /// <summary>Feature identifier.</summary>
     public required string Id { get; init; }
 
-    /// <summary>
-    /// GeoJSON geometry, or null when the feature has none. Written even when null:
-    /// a GeoJSON Feature is required to carry the member, and a consumer that must
-    /// distinguish "no geometry" from "geometry withheld" cannot do so if it is dropped.
-    /// </summary>
+    // A null geometry is written, because omitting the member cannot be told from withheld geometry.
     [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     public JsonElement? Geometry { get; init; }
 
-    /// <summary>Full attribute snapshot. Written even when null, for the same reason as <see cref="Geometry"/>.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     public Dictionary<string, JsonElement>? Properties { get; init; }
 }
 
-/// <summary>
-/// Server status frame sent over WebSocket and SSE.
-/// </summary>
 internal sealed record FeatureStreamStatusFrame
 {
-    /// <summary>Frame type identifier.</summary>
     public string Type { get; init; } = "status";
 
-    /// <summary>Machine-readable status value.</summary>
     public required string Status { get; init; }
 
-    /// <summary>Human-readable client-safe message.</summary>
     public required string Message { get; init; }
 
-    /// <summary>Server timestamp.</summary>
     public DateTimeOffset Timestamp { get; init; } = DateTimeOffset.UtcNow;
 
-    /// <summary>Session identifier when available.</summary>
     public Guid? SessionId { get; init; }
 
-    /// <summary>Subscription identifier when available.</summary>
     public string? SubscriptionId { get; init; }
 
-    /// <summary>Current or replay cursor when available.</summary>
     public long? Cursor { get; init; }
 }
 
-/// <summary>
-/// Client-safe WebSocket control error frame.
-/// </summary>
 internal sealed record FeatureStreamErrorFrame
 {
-    /// <summary>Frame type identifier.</summary>
     public string Type { get; init; } = "error";
 
-    /// <summary>Stable error code.</summary>
     public required string Code { get; init; }
 
-    /// <summary>Client-safe message.</summary>
     public required string Message { get; init; }
 
-    /// <summary>Subscription identifier when the error is scoped to one subscription.</summary>
     public string? SubscriptionId { get; init; }
 }
 
-/// <summary>
-/// Discoverable streaming capability metadata.
-/// </summary>
 internal sealed record FeatureStreamCapabilitiesResponse
 {
-    /// <summary>Whether streaming is enabled for the active edition.</summary>
     public required bool Enabled { get; init; }
 
-    /// <summary>Current platform edition.</summary>
     public required string Edition { get; init; }
 
-    /// <summary>Minimum edition required for streaming.</summary>
     public required string MinimumEdition { get; init; }
 
-    /// <summary>Available transports.</summary>
     public required string[] Transports { get; init; }
 
-    /// <summary>Supported subscription filter families.</summary>
     public required string[] FilterFamilies { get; init; }
 
-    /// <summary>Whether cursor replay is supported.</summary>
     public required bool ReplaySupported { get; init; }
 
-    /// <summary>Cursor retention limit for the active store.</summary>
     public required int CursorRetentionLimit { get; init; }
 
-    /// <summary>Heartbeat interval in seconds.</summary>
     public required double HeartbeatIntervalSeconds { get; init; }
 
-    /// <summary>Maximum concurrent stream sessions.</summary>
     public required int MaxConcurrentSessions { get; init; }
 
-    /// <summary>Whether delete before-images can be emitted when providers supply them.</summary>
     public required bool DeleteBeforeImages { get; init; }
 
-    /// <summary>
-    /// Supported subscription modes. <c>delta</c> is always available; <c>snapshot</c>
-    /// indicates snapshot-then-delta subscriptions are supported.
-    /// </summary>
     public required string[] Modes { get; init; }
 
-    /// <summary>
-    /// Whether every admitted snapshot/delta frame carries a subscription-local monotonic
-    /// sequence that is contiguous independently of the global replay cursor.
-    /// </summary>
     public required bool SubscriptionSequence { get; init; }
 
-    /// <summary>Maximum number of features emitted in one baseline snapshot.</summary>
     public required int MaxSnapshotFeatures { get; init; }
 
-    /// <summary>Maximum number of stored rows scanned while building one baseline snapshot.</summary>
     public required int MaxSnapshotScanRows { get; init; }
 
-    /// <summary>
-    /// Maximum serialized payload, in bytes, one baseline snapshot may emit before it is
-    /// truncated with <c>complete: false</c>. Advertised because it is a bound a client can
-    /// observe: a large-geometry layer reaches it long before the feature cap.
-    /// </summary>
     public required int MaxSnapshotBytes { get; init; }
 
-    /// <summary>
-    /// Mutable server release version. Changes on releases and is NOT a deployment identity.
-    /// </summary>
     public required string ServerVersion { get; init; }
 
-    /// <summary>
-    /// Immutable deployment revision: a 40-character commit SHA or a
-    /// <c>sha256:&lt;64 hex&gt;</c> image digest. Null when the deployment carries no
-    /// verifiable revision.
-    /// </summary>
     public string? DeploymentRevision { get; init; }
 
-    /// <summary>How <see cref="DeploymentRevision"/> was resolved.</summary>
     public string? DeploymentRevisionSource { get; init; }
 
-    /// <summary>
-    /// The same immutable deployment revision as <see cref="DeploymentRevision"/>, published
-    /// under the field name realtime clients read when they bind retained evidence to the
-    /// exact deployment under review. Both names are emitted: a manifest that advertises the
-    /// revision under a name no client reads is indistinguishable, to that client, from a
-    /// deployment that has no revision at all (#3038).
-    /// </summary>
     public string? ServerRevision { get; init; }
 
-    /// <summary>
-    /// Controlled-conformance mutation contract, when the deployment provisions one.
-    /// Always present so an anonymous caller can tell "not configured here" from "this
-    /// server does not know the contract"; carries no credential material.
-    /// </summary>
+    // The contract is always present and carries no credential, so a caller can tell that it is not configured.
     public required FeatureStreamConformanceCapability Conformance { get; init; }
 
-    /// <summary>Per-layer capability summaries.</summary>
     public required FeatureStreamLayerCapability[] Layers { get; init; }
 }
 
-/// <summary>
-/// Anonymous-safe advertisement of the controlled-conformance mutation contract. Every
-/// field is either a static bound or a counter; nothing here identifies a run, a caller,
-/// or a credential.
-/// </summary>
+// The advertisement identifies no run, caller, or credential.
 internal sealed record FeatureStreamConformanceCapability
 {
-    /// <summary>Whether this deployment provisions a controlled-conformance source.</summary>
     public required bool Enabled { get; init; }
 
-    /// <summary>Dedicated conformance service identifier, when enabled.</summary>
     public string? ServiceId { get; init; }
 
-    /// <summary>Dedicated conformance layer identifier, when enabled.</summary>
     public int? LayerId { get; init; }
 
-    /// <summary>Attribute carrying the run-ownership marker on controlled records.</summary>
     public string? RunIdField { get; init; }
 
-    /// <summary>Maximum number of conformance runs that may hold a lease at once.</summary>
     public int? MaxConcurrentRuns { get; init; }
 
-    /// <summary>Runs currently holding a lease.</summary>
     public int? ActiveRuns { get; init; }
 
-    /// <summary>Lease time-to-live in seconds. A run is swept once it expires.</summary>
     public int? RunTtlSeconds { get; init; }
 
-    /// <summary>Maximum mutations one run may perform.</summary>
     public int? MaxMutationsPerRun { get; init; }
 
-    /// <summary>Maximum controlled records one run may hold at once.</summary>
     public int? MaxRecordsPerRun { get; init; }
 
-    /// <summary>Mutation operations the controlled workflow accepts.</summary>
     public string[]? Operations { get; init; }
 }
 
-/// <summary>
-/// Per-layer streaming capability metadata.
-/// </summary>
 internal sealed record FeatureStreamLayerCapability
 {
-    /// <summary>Layer identifier.</summary>
     public required int LayerId { get; init; }
 
-    /// <summary>Layer name.</summary>
     public required string Name { get; init; }
 
-    /// <summary>Whether the active caller can subscribe to this layer.</summary>
     public required bool CanSubscribe { get; init; }
 
-    /// <summary>Whether spatial filters are supported.</summary>
     public required bool SupportsSpatialFilters { get; init; }
 
-    /// <summary>Whether temporal filters are supported.</summary>
     public required bool SupportsTemporalFilters { get; init; }
 
-    /// <summary>Layer time fields when time-aware.</summary>
     public string[]? TemporalFields { get; init; }
 
-    /// <summary>Layer CRS identifier.</summary>
     public required string Crs { get; init; }
 }
 
@@ -652,23 +347,12 @@ internal sealed record StreamTemporalFilter(
     DateTimeOffset? Start,
     DateTimeOffset? End);
 
-/// <summary>
-/// Point-in-time view of the cross-node broadcast backlog, consumed by
-/// <c>FeatureStreamHealthCheck</c>. <paramref name="Configured"/> is true when Redis is
-/// wired (multi-node topology); <paramref name="Enabled"/> is true when the broadcast
-/// subscription is currently active. <paramref name="BacklogDepth"/> is the number of
-/// payloads buffered awaiting a publish retry; <paramref name="Dropped"/> is the
-/// cumulative count of payloads shed on backlog overflow since startup.
-/// </summary>
 internal readonly record struct ClusterBroadcastBacklogSnapshot(
     bool Configured,
     bool Enabled,
     int BacklogDepth,
     long Dropped);
 
-/// <summary>
-/// Metadata about an active feature-stream session for admin visibility.
-/// </summary>
 internal sealed record FeatureStreamSessionInfo(
     Guid SessionId,
     DateTimeOffset ConnectedAt,
@@ -680,67 +364,36 @@ internal sealed record FeatureStreamSessionInfo(
     string? ServiceIdFilter = null,
     int[]? LayerIdFilter = null);
 
-/// <summary>
-/// Result of <see cref="FeatureStreamSessionManager.TryAddSubscription"/>.
-/// </summary>
 internal enum AddSubscriptionResult
 {
-    /// <summary>Subscription was registered on the session.</summary>
     Added,
 
-    /// <summary>Session no longer exists (e.g., disconnected mid-handshake).</summary>
     SessionGone,
 
-    /// <summary>The per-session subscription cap is full.</summary>
     LimitReached
 }
 
-/// <summary>
-/// Outcome of <see cref="FeatureStreamSessionManager.TryAddSubscription"/>: status plus the
-/// generation assigned to the subscription. Generation is monotonically increasing per session
-/// and changes on every add (including same-id replacement), so callers can pin the generation
-/// they observed when issuing replay or send-time delivery claims.
-/// </summary>
 internal readonly record struct AddSubscriptionOutcome(AddSubscriptionResult Result, long Generation);
 
-/// <summary>
-/// Result of <see cref="FeatureStreamSessionManager.TryClaimSubscriptionDelivery"/>. The
-/// writer distinguishes a stale-generation drop (which is observable telemetry — frames are
-/// being orphaned by unsubscribe/replacement) from a benign dedup skip (the per-subscription
-/// replay path already claimed and sent the frame for the same subscription generation).
-/// </summary>
 internal enum SubscriptionDeliveryClaim
 {
-    /// <summary>Caller owns the slot; send the frame.</summary>
     Claimed,
 
-    /// <summary>Slot was already claimed by a concurrent send-time path; skip silently.</summary>
     AlreadyDelivered,
 
-    /// <summary>Subscription was removed or replaced; drop the queued frame and emit telemetry.</summary>
     StaleGeneration
 }
 
-/// <summary>
-/// Disconnect reason for feature-stream sessions.
-/// </summary>
 internal enum FeatureStreamDisconnectReason
 {
-    /// <summary>Client closed the connection gracefully.</summary>
     ClientClosed,
 
-    /// <summary>Server shut down or request was aborted.</summary>
     ServerShutdown,
 
-    /// <summary>Connection was force-disconnected by admin.</summary>
     AdminDisconnect,
 
-    /// <summary>Client failed to keep up with the event stream.</summary>
     SlowConsumer,
 
-    /// <summary>
-    /// The subscriber's refreshed read policies deny a layer it was reading, or could not be
-    /// re-resolved; the client must re-subscribe through normal admission.
-    /// </summary>
+    // A revoked layer closes the subscription, and the client must re-subscribe.
     PolicyRevoked
 }

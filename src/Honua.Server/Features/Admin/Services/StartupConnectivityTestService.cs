@@ -7,10 +7,6 @@ using System.Diagnostics;
 
 namespace Honua.Server.Features.Admin.Services;
 
-/// <summary>
-/// Service for testing connectivity to all external dependencies during startup.
-/// Validates secret references and external service availability.
-/// </summary>
 internal sealed class StartupConnectivityTestService
 {
     public const string HttpClientName = "StartupConnectivity";
@@ -38,11 +34,6 @@ internal sealed class StartupConnectivityTestService
         _logger = logger;
     }
 
-    /// <summary>
-    /// Performs comprehensive connectivity testing during application startup.
-    /// </summary>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Connectivity test results</returns>
     public async Task<ConnectivityTestResult> TestConnectivityAsync(CancellationToken cancellationToken = default)
     {
         var stopwatch = Stopwatch.StartNew();
@@ -96,9 +87,6 @@ internal sealed class StartupConnectivityTestService
         }
     }
 
-    /// <summary>
-    /// Tests all configured secret providers.
-    /// </summary>
     private async Task TestSecretProvidersAsync(ConnectivityTestResult result, CancellationToken cancellationToken)
     {
         // Test secret provider availability
@@ -168,9 +156,6 @@ internal sealed class StartupConnectivityTestService
         }
     }
 
-    /// <summary>
-    /// Tests database connectivity for all configured connection strings.
-    /// </summary>
     private async Task TestDatabaseConnectionsAsync(ConnectivityTestResult result, CancellationToken cancellationToken)
     {
         var connectionStrings = GetConnectionStringsFromConfiguration();
@@ -231,9 +216,6 @@ internal sealed class StartupConnectivityTestService
         }
     }
 
-    /// <summary>
-    /// Tests a specific database connection string.
-    /// </summary>
     private async Task TestDatabaseConnectionStringAsync(ConnectivityTest test, string connectionString, CancellationToken cancellationToken)
     {
         // Get connection health tester from DI
@@ -274,9 +256,6 @@ internal sealed class StartupConnectivityTestService
         }
     }
 
-    /// <summary>
-    /// Tests external service URLs for connectivity.
-    /// </summary>
     private async Task TestExternalServicesAsync(ConnectivityTestResult result, CancellationToken cancellationToken)
     {
         var externalUrls = GetExternalUrlsFromConfiguration();
@@ -327,9 +306,6 @@ internal sealed class StartupConnectivityTestService
         }
     }
 
-    /// <summary>
-    /// Tests cache (Redis) connectivity.
-    /// </summary>
     private async Task TestCacheConnectivityAsync(ConnectivityTestResult result, CancellationToken cancellationToken)
     {
         var test = new ConnectivityTest
@@ -385,9 +361,6 @@ internal sealed class StartupConnectivityTestService
         result.Tests.Add(test);
     }
 
-    /// <summary>
-    /// Tests cloud storage connectivity.
-    /// </summary>
     private async Task TestCloudStorageConnectivityAsync(ConnectivityTestResult result, CancellationToken cancellationToken)
     {
         // Test cloud storage if configured
@@ -435,9 +408,6 @@ internal sealed class StartupConnectivityTestService
         }
     }
 
-    /// <summary>
-    /// Extracts secret references from configuration.
-    /// </summary>
     private List<string> GetSecretReferencesFromConfiguration()
     {
         return _configuration.AsEnumerable()
@@ -447,9 +417,6 @@ internal sealed class StartupConnectivityTestService
             .ToList();
     }
 
-    /// <summary>
-    /// Extracts connection strings from configuration.
-    /// </summary>
     private List<(string Name, string ConnectionString)> GetConnectionStringsFromConfiguration()
     {
         var connectionStringsSection = _configuration.GetSection("ConnectionStrings");
@@ -459,9 +426,6 @@ internal sealed class StartupConnectivityTestService
             .ToList();
     }
 
-    /// <summary>
-    /// Extracts external service URLs from configuration.
-    /// </summary>
     private List<(string Name, string Url)> GetExternalUrlsFromConfiguration()
     {
         // Look for URL patterns in configuration
@@ -475,9 +439,6 @@ internal sealed class StartupConnectivityTestService
             .ToList();
     }
 
-    /// <summary>
-    /// Masks sensitive parts of secret references for logging.
-    /// </summary>
     private static string MaskSecretReference(string secretRef)
     {
         var colonIndex = secretRef.IndexOf(':', StringComparison.Ordinal);
@@ -509,81 +470,36 @@ internal sealed class StartupConnectivityTestService
         => $"{fallback} ({exception.GetType().Name}).";
 }
 
-/// <summary>
-/// Result of connectivity testing.
-/// </summary>
 public sealed class ConnectivityTestResult
 {
-    /// <summary>
-    /// When testing started.
-    /// </summary>
     public DateTimeOffset StartTime { get; set; }
 
-    /// <summary>
-    /// When testing ended.
-    /// </summary>
     public DateTimeOffset EndTime { get; set; }
 
-    /// <summary>
-    /// Total duration of testing.
-    /// </summary>
     public TimeSpan Duration { get; set; }
 
-    /// <summary>
-    /// Whether all tests passed.
-    /// </summary>
     public bool OverallSuccess { get; set; }
 
-    /// <summary>
-    /// General error if the entire test run failed.
-    /// </summary>
     public string? GeneralError { get; set; }
 
-    /// <summary>
-    /// Individual connectivity tests.
-    /// </summary>
     public List<ConnectivityTest> Tests { get; set; } = new();
 }
 
-/// <summary>
-/// Individual connectivity test result.
-/// </summary>
 public sealed class ConnectivityTest
 {
-    /// <summary>
-    /// Name of the test.
-    /// </summary>
     public string Name { get; set; } = string.Empty;
 
-    /// <summary>
-    /// Category of the test.
-    /// </summary>
     public string Category { get; set; } = string.Empty;
 
-    /// <summary>
-    /// Description of what the test does.
-    /// </summary>
     public string Description { get; set; } = string.Empty;
 
-    /// <summary>
-    /// Whether the test passed.
-    /// </summary>
     public bool Success { get; set; }
 
-    /// <summary>
-    /// Error message if the test failed.
-    /// </summary>
     public string? Error { get; set; }
 
-    /// <summary>
-    /// Additional test details.
-    /// </summary>
     public Dictionary<string, string> Details { get; set; } = new();
 }
 
-/// <summary>
-/// Logging extensions for connectivity testing.
-/// </summary>
 internal static partial class ConnectivityTestLog
 {
     [LoggerMessage(

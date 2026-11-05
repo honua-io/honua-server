@@ -15,16 +15,7 @@ internal sealed class OperateObservabilityFixtureOptions
 
     public bool SeedOnStartup { get; set; }
 
-    /// <summary>
-    /// Resolves the effective enabled state by honouring either the nested
-    /// <c>OperateObservabilityFixture:Enabled</c> config key or the flat
-    /// <see cref="OperateObservabilityFixtureConstants.EnableEnvironmentVariable"/> alias.
-    /// </summary>
-    /// <remarks>
-    /// The flat alias makes the seed path a single documented switch for CI and Console
-    /// Testcontainers (#1229). It can only turn the feature on; it never disables an explicit
-    /// <c>OperateObservabilityFixture:Enabled=true</c>.
-    /// </remarks>
+    // The flat enabled alias can turn the fixture on and cannot turn an explicit enabled setting off.
     public static bool ResolveEnabled(IConfiguration configuration, bool boundEnabled)
     {
         ArgumentNullException.ThrowIfNull(configuration);

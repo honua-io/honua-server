@@ -7,11 +7,6 @@ using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Server.Features.Streaming;
 
-/// <summary>
-/// Holds the latest metadata-derived service/layer routing set for already-open stream filters.
-/// Updating the immutable state changes matching for every filter that references this singleton,
-/// so retiring a publication does not require reconnecting each transport first.
-/// </summary>
 internal sealed class FeatureStreamRoutabilityGuard
 {
     private long _nextRefreshGeneration;

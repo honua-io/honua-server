@@ -6,18 +6,6 @@ using Microsoft.Extensions.Primitives;
 
 namespace Honua.Infrastructure.Middleware;
 
-/// <summary>
-/// Stamps every response with the <c>Honua-Instance</c> header carrying
-/// <see cref="Honua.Core.Features.Infrastructure.Abstractions.IInstanceIdentity.InstanceId"/>, so a caller behind a load balancer or Lambda
-/// alias can tell which replica answered.
-/// </summary>
-/// <remarks>
-/// The header is written from a <see cref="HttpResponse.OnStarting(Func{object, Task}, object)"/>
-/// callback rather than up front: exception handlers and error envelopes that clear the response
-/// (<c>HttpResponse.Clear()</c>) drop headers set earlier but keep starting callbacks, and a
-/// response replayed from an output cache gets this replica's id rather than the one it was
-/// captured on.
-/// </remarks>
 internal sealed class ServerInstanceHeaderMiddleware
 {
     private readonly RequestDelegate _next;
@@ -45,13 +33,8 @@ internal sealed class ServerInstanceHeaderMiddleware
     }
 }
 
-/// <summary>Extension methods for registering <see cref="ServerInstanceHeaderMiddleware"/>.</summary>
 internal static class ServerInstanceHeaderMiddlewareExtensions
 {
-    /// <summary>
-    /// Adds the <c>Honua-Instance</c> response header. Register first in the pipeline so responses
-    /// short-circuited by later middleware (host validation, redirects, auth) carry it too.
-    /// </summary>
     public static IApplicationBuilder UseServerInstanceHeader(this IApplicationBuilder app)
     {
         ArgumentNullException.ThrowIfNull(app);

@@ -3,11 +3,6 @@
 
 namespace Honua.Server.Features.Protocols.SpatialAnalytics.Models;
 
-/// <summary>
-/// Shared parameter-name constants for the spatial analytics endpoints. The same
-/// names are accepted in query-string and POST body so REST and OGC callers have
-/// identical semantics.
-/// </summary>
 internal static class SpatialAnalyticsParameters
 {
     // Shared filter parameters (same shape as queryH3, queryBins, etc.)

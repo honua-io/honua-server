@@ -10,19 +10,8 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Features.Admin.Federation;
 
-/// <summary>
-/// Service registration for the federation admin surface and query planner (issue #341).
-/// </summary>
 public static class FederationServiceCollectionExtensions
 {
-    /// <summary>
-    /// Registers the federation query planner, the remote-execution layer, the configuration-backed
-    /// source registry, the HTTP transport connectors (Esri REST and OGC API - Features / WFS),
-    /// and binds <see cref="FederationSourceOptions"/> from the <c>Federation</c> section.
-    /// </summary>
-    /// <param name="services">The service collection.</param>
-    /// <param name="configuration">The application configuration.</param>
-    /// <returns>The service collection for chaining.</returns>
     public static IServiceCollection AddFederationServices(this IServiceCollection services, IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(configuration);

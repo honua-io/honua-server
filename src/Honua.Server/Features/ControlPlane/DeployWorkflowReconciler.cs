@@ -8,9 +8,6 @@ using Microsoft.Extensions.Hosting;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Reconciles durable deploy workflow operations against provider backends.
-/// </summary>
 internal sealed partial class DeployWorkflowReconciler(
     IWorkflowOperationStore workflowStore,
     IDeployTargetRegistry targetRegistry,
@@ -365,16 +362,7 @@ internal sealed partial class DeployWorkflowReconciler(
         }
     }
 
-    /// <summary>
-    /// Stamps the first observation that the candidate is serving (Reconciling, or a backend that cuts
-    /// over straight to Succeeded) as the traffic-exposure moment, so the telemetry gate's warmup/bake
-    /// window anchors on actual exposure rather than operation creation (#4617). The stamp is persisted
-    /// with the operation and never moved, so it survives controller restarts and lease hand-offs. An
-    /// operation that was already serving before exposure tracking existed keeps its prior CreatedAt
-    /// anchor rather than having its bake window restarted by an upgrade. A backend that stages the
-    /// candidate without traffic reports Reconciling while nothing reaches the candidate, so its exposure
-    /// is stamped at the promotion cutover instead (<see cref="BeginPostActivationObservationIfPromoted"/>).
-    /// </summary>
+    // The exposure stamp is persisted with the operation and never moved, so a restart or a lease hand-off does not restart the bake window.
     private static DateTimeOffset? StampTrafficExposure(
         WorkflowOperationRecord operation,
         WorkflowOperationStatus observedStatus,
@@ -695,30 +683,14 @@ internal sealed partial class DeployWorkflowReconciler(
         };
     }
 
-    /// <summary>
-    /// Reserved deploy-spec parameter key carrying the count of consecutive transient rollback
-    /// failures between reconcile cycles. The reconciler persists the updated spec parameters, so the
-    /// attempt budget survives without a separate store (mirroring the telemetry breach-streak key).
-    /// </summary>
+    // The rollback-failure count is carried in the deploy parameters so the attempt budget survives without a separate store.
     internal const string RollbackTransientAttemptsParameterKey = "deployment.rollback.transient_attempts";
 
-    /// <summary>
-    /// Reserved deploy-spec parameter key carrying the timestamp at which provider observations
-    /// first entered the rollback-settling state.
-    /// </summary>
     internal const string RollbackObservationStartedAtParameterKey = "deployment.rollback.observation_started_at";
 
-    /// <summary>
-    /// Optional deploy-spec parameter controlling the maximum rollback-settling duration. The value
-    /// is clamped so provider polling can never become unbounded.
-    /// </summary>
+    // The rollback-settling duration is clamped so provider polling cannot become unbounded.
     internal const string RollbackObservationTimeoutSecondsParameterKey = "deployment.rollback.observation_timeout_seconds";
 
-    /// <summary>
-    /// Reserved deploy-spec parameter key bounding how many consecutive transient rollback failures
-    /// are retried before the reconciler escalates to manual intervention. Defaults to
-    /// <see cref="DefaultRollbackRetryBudget"/>; clamped to <see cref="MaximumRollbackRetryBudget"/>.
-    /// </summary>
     internal const string RollbackRetryBudgetParameterKey = "deployment.rollback.retry_budget";
 
     private const int DefaultRollbackRetryBudget = 3;
@@ -775,34 +747,14 @@ internal sealed partial class DeployWorkflowReconciler(
         };
     }
 
-    /// <summary>
-    /// Optional deploy-spec parameter controlling how long a fully-promoted candidate is observed
-    /// before the post-activation protection window closes and the previous revision's retained
-    /// recovery capacity is retired. Clamped to <see cref="MaximumProtectionObservationWindow"/> so
-    /// old-revision retention (and the deterministic-rollback safety net it enables) is always bounded.
-    /// </summary>
+    // Old-revision retention is clamped so the recovery window is always bounded.
     internal const string ProtectionObservationWindowSecondsParameterKey = "deployment.protection.observation_window_seconds";
 
-    /// <summary>
-    /// Protection reason code recorded while the telemetry gate is still waiting for evidence inside an
-    /// open observation window (honua-server#4617). The window does not commit while it is set.
-    /// </summary>
     internal const string TelemetryEvidencePendingReasonCode = "telemetry-evidence-pending";
 
     private static readonly TimeSpan DefaultProtectionObservationWindow = TimeSpan.FromMinutes(10);
     private static readonly TimeSpan MaximumProtectionObservationWindow = TimeSpan.FromHours(24);
 
-    /// <summary>
-    /// Begins the durable post-activation observation window (honua-server#4618) once a candidate has
-    /// been fully promoted, whether by the reconciler's own promotion decision or by an operator's
-    /// manual promote call (<see cref="DeployWorkflowService.PromoteAsync"/> calls this directly since it
-    /// drives the backend outside the reconcile loop). Forces the operation back into
-    /// <see cref="WorkflowOperationStatus.Reconciling"/> so terminal deploys stop dropping out of
-    /// reconciliation the moment cutover completes, which previously let a self-hosted backend retire
-    /// its old replica before the advertised rollback protection window elapsed. Also stamps
-    /// <see cref="DeployOperationSpec.TrafficExposedAt"/> when it is still unset: for a backend that
-    /// stages the candidate without traffic, the cutover is the moment of exposure (#4617).
-    /// </summary>
     internal static WorkflowOperationRecord BeginPostActivationObservationIfPromoted(WorkflowOperationRecord promoted)
     {
         var deploy = promoted.Deploy;
@@ -846,15 +798,6 @@ internal sealed partial class DeployWorkflowReconciler(
         };
     }
 
-    /// <summary>
-    /// Advances or closes an open post-activation observation window (honua-server#4618). Called after
-    /// <see cref="ApplyRollbackSignalsAsync"/> and <see cref="ApplyRollbackObservationTimeout"/> so a
-    /// rollback triggered this cycle (status no longer <see cref="WorkflowOperationStatus.Reconciling"/>)
-    /// always wins over window bookkeeping. While the window is open and no rollback fired, holds the
-    /// operation non-terminal until the deadline, then finalizes through
-    /// <see cref="IDeployBackend.CompleteProtectionAsync"/> so any capacity a backend retained purely for
-    /// recovery is retired deterministically rather than left to a caller-side timer.
-    /// </summary>
     private static async Task<WorkflowOperationRecord> ApplyPostActivationProtectionWindowAsync(
         WorkflowOperationRecord current,
         IDeployBackend backend,
@@ -944,13 +887,7 @@ internal sealed partial class DeployWorkflowReconciler(
         return DefaultProtectionObservationWindow;
     }
 
-    /// <summary>
-    /// Stable digest of the safety-policy inputs in effect when a candidate is activated: the resolved
-    /// promotion gate, the target kind, and every <c>deployment.*</c>/<c>telemetry.*</c> parameter that
-    /// governs rollback or observation behavior, sorted for determinism. Recovery always replays this
-    /// approved policy rather than re-deciding it (AC: "no second model decision is required"), and
-    /// persisting the digest lets an operator detect policy drift mid-window.
-    /// </summary>
+    // Recovery replays the policy digest captured at activation rather than deciding the policy again.
     private static string ComputePolicyDigest(DeployOperationSpec spec)
     {
         var relevantParameters = spec.Parameters
@@ -970,12 +907,7 @@ internal sealed partial class DeployWorkflowReconciler(
         return Convert.ToHexString(hash);
     }
 
-    /// <summary>
-    /// Derives the stable recovery-grant identity for a protected activation (honua-server#4958).
-    /// Bound to the operation, its target, the prior/candidate revision pair, the policy digest that
-    /// was actually in effect and the exposure instant, so a re-activation of the same revisions mints
-    /// a different grant and a grant quoted from a superseded window can never satisfy the fence.
-    /// </summary>
+    // The recovery grant is bound to the revision pair, the policy digest, and the exposure instant, so a grant from a superseded window cannot satisfy the fence.
     private static string ComputeRecoveryGrantId(
         string operationId,
         string targetId,
@@ -996,13 +928,6 @@ internal sealed partial class DeployWorkflowReconciler(
         return "grant-" + Convert.ToHexString(hash)[..32].ToLowerInvariant();
     }
 
-    /// <summary>
-    /// Transitions an open post-activation protection window to a new phase (honua-server#4618).
-    /// Internal (not private) so <see cref="DeployWorkflowService"/> can keep the record's
-    /// <c>Deploy.Protection</c> state consistent when it drives a rollback out-of-band (manual/
-    /// coordinated-release-triggered), not only when the reconciler itself decides to roll back through
-    /// <see cref="ApplyRollbackSignalsAsync"/>. No-ops when no window is open.
-    /// </summary>
     internal static DeployOperationSpec WithProtectionPhase(
         DeployOperationSpec spec,
         DeployProtectionPhase phase,
@@ -1025,18 +950,12 @@ internal sealed partial class DeployWorkflowReconciler(
         };
     }
 
-    /// <summary>
-    /// A settled <see cref="WorkflowOperationStatus.RolledBack"/> never carries a protection window
-    /// (honua-server#4989). Applied after every reconcile step so no settle path, whichever cycle or
-    /// caller requested the rollback, can leave a terminal operation reporting a recovery in flight
-    /// (<c>recovering</c>) or a live observation window (<c>observing</c>).
-    /// </summary>
+    // A settled rollback never carries a protection window.
     private static WorkflowOperationRecord ClearProtectionOnSettledRollback(WorkflowOperationRecord current)
         => current is { Status: WorkflowOperationStatus.RolledBack, Deploy.Protection: not null }
             ? current with { Deploy = WithoutProtection(current.Deploy) }
             : current;
 
-    /// <summary>Clears an open post-activation protection window (honua-server#4618); see <see cref="WithProtectionPhase"/>.</summary>
     internal static DeployOperationSpec WithoutProtection(DeployOperationSpec spec)
         => spec.Protection == null ? spec : spec with { Protection = null };
 
@@ -1111,19 +1030,8 @@ internal sealed partial class DeployWorkflowReconciler(
         return spec with { Parameters = parameters };
     }
 
-    /// <summary>
-    /// Generic backend-neutral key the deploy backends read to resolve the desired canary
-    /// traffic share. The progressive ramp drives stepped weights through this key so the
-    /// existing <see cref="IDeployBackend"/> contract does not need a weight argument.
-    /// </summary>
     private const string CanaryWeightParameterKey = "deployment.canary_weight_percentage";
 
-    /// <summary>
-    /// Holds the current ramp step until its bake window elapses. Returns null when no ramp is
-    /// configured (single-step default), the ramp is invalid, or the step has finished baking.
-    /// Lazily initializes the first step's bake clock and synchronizes the canary weight
-    /// parameter so the backend applies the configured step weight.
-    /// </summary>
     private static WorkflowOperationRecord? GetCanaryRampBakeHold(WorkflowOperationRecord current)
     {
         var deploy = current.Deploy;
@@ -1171,12 +1079,6 @@ internal sealed partial class DeployWorkflowReconciler(
         };
     }
 
-    /// <summary>
-    /// Advances the progressive canary ramp to the next step (applying the next weight through
-    /// <see cref="IDeployBackend.StartAsync"/>) or promotes the deploy to full traffic at the
-    /// terminal step. Without a configured ramp this preserves the single-step default by calling
-    /// <see cref="IDeployBackend.PromoteAsync"/> once.
-    /// </summary>
     internal static async Task<WorkflowOperationRecord> AdvanceOrPromoteAsync(
         WorkflowOperationRecord current,
         IDeployBackend backend,
@@ -1295,9 +1197,6 @@ internal sealed partial class DeployWorkflowReconciler(
     }
 }
 
-/// <summary>
-/// Background worker that continuously reconciles active deploy workflow operations.
-/// </summary>
 internal sealed class DeployWorkflowReconcilerBackgroundService(
     IWorkflowOperationStore workflowStore,
     IWorkflowOperationReconciler reconciler,

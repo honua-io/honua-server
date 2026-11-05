@@ -9,122 +9,48 @@ using Honua.Core.Features.Infrastructure.Validation;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Configuration-backed catalogs for control-plane deploy targets and workload definitions.
-/// </summary>
 internal sealed class ControlPlaneOptions
 {
-    /// <summary>
-    /// Configuration section name for control-plane catalogs.
-    /// </summary>
     public const string SectionName = "ControlPlane";
 
-    /// <summary>
-    /// Stable deploy target catalog entries.
-    /// </summary>
     public List<DeployTargetOptions> DeployTargets { get; set; } = [];
 
-    /// <summary>
-    /// Stable execution workload catalog entries.
-    /// </summary>
     public List<ExecutionWorkloadOptions> ExecutionWorkloads { get; set; } = [];
 
-    /// <summary>
-    /// Named telemetry query connections used for deploy health gating.
-    /// </summary>
     public List<DeployTelemetryConnectionOptions> TelemetryConnections { get; set; } = [];
 
-    /// <summary>
-    /// Optional Kubernetes execution backend configuration. Left at defaults when
-    /// Kubernetes is not used; populated when operators enable the adapter.
-    /// </summary>
     public KubernetesExecutionOptions Kubernetes { get; set; } = new();
 
-    /// <summary>
-    /// Optional Azure Batch worker-image contract attestations. Unlisted images remain
-    /// compatible with only the v1 execution contract during rolling deployments.
-    /// </summary>
     public AzureBatchExecutionOptions AzureBatch { get; set; } = new();
 
-    /// <summary>
-    /// Optional versioned platform release that co-versions the serving and geoprocessing planes
-    /// (ADR-0060 WS2). When declared, both catalogs project their artifact from it: deploy targets
-    /// without an explicit artifact inherit <see cref="PlatformReleaseOptions.ServingArtifactReference"/>
-    /// and execution workloads without an explicit artifact inherit the matching worker image, so an
-    /// upgrade is a single diff bumping both planes together.
-    /// </summary>
     public PlatformReleaseOptions PlatformRelease { get; set; } = new();
 
-    /// <summary>
-    /// Deployment substrate profile used to fail closed when the single-host local batch-compute
-    /// backends are registered on a substrate they cannot work on (serverless, or multi-node without
-    /// a shared work directory). Defaults to the single-host on-prem profile so existing deployments
-    /// are unaffected.
-    /// </summary>
+    // Single-host batch backends fail closed on serverless, or on multi-node without a shared work directory.
     public SubstrateOptions Substrate { get; set; } = new();
 }
 
-/// <summary>
-/// Configuration for the deployment substrate profile (<c>ControlPlane:Substrate</c>).
-/// </summary>
 internal sealed class SubstrateOptions
 {
-    /// <summary>
-    /// The declared deployment substrate profile. Left at
-    /// <see cref="BatchComputeSubstrateProfile.SingleHost"/> for the on-prem/air-gapped default;
-    /// set to <c>MultiNode</c> or <c>Serverless</c> to declare a scale-out/ephemeral substrate.
-    /// </summary>
     public BatchComputeSubstrateProfile Profile { get; set; } = BatchComputeSubstrateProfile.SingleHost;
 
-    /// <summary>
-    /// Operator assertion that a shared/persistent work directory reachable from every node is
-    /// configured, which is what makes the local process-pool backend safe on a multi-node substrate.
-    /// Ignored for the single-host and serverless profiles.
-    /// </summary>
     public bool SharedWorkDir { get; set; }
 
-    /// <summary>
-    /// Whether to auto-escalate the effective profile to <see cref="BatchComputeSubstrateProfile.Serverless"/>
-    /// when a well-known serverless runtime is detected from the environment (AWS Lambda, Azure
-    /// Functions, Cloud Run). Defaults to <c>true</c>; the explicit <see cref="Profile"/> always wins
-    /// when it declares a more restrictive substrate.
-    /// </summary>
     public bool AutoDetectServerless { get; set; } = true;
 }
 
-/// <summary>
-/// Configuration model for the versioned platform release desired state.
-/// </summary>
 internal sealed class PlatformReleaseOptions
 {
-    /// <summary>
-    /// Stable release version that co-versions both planes (for example <c>2026.07.0</c>).
-    /// </summary>
     public string Version { get; set; } = string.Empty;
 
-    /// <summary>
-    /// Serving-plane artifact/image reference projected onto deploy targets that pin no explicit artifact.
-    /// </summary>
     public string? ServingArtifactReference { get; set; }
 
-    /// <summary>
-    /// Geoprocessing worker images declared by this release, keyed by runtime profile.
-    /// </summary>
     public List<PlatformReleaseWorkerImageOptions> Workers { get; set; } = [];
 
-    /// <summary>
-    /// Whether this section is at its declared-nothing default and should be treated as "no release".
-    /// </summary>
     public bool IsEmpty =>
         string.IsNullOrWhiteSpace(Version) &&
         string.IsNullOrWhiteSpace(ServingArtifactReference) &&
         Workers.Count == 0;
 
-    /// <summary>
-    /// Maps this configuration section into the shared <see cref="PlatformReleaseDefinition"/> domain
-    /// model, or returns null when no platform release is declared.
-    /// </summary>
-    /// <returns>The mapped release definition, or null when the section is empty.</returns>
     public PlatformReleaseDefinition? ToDefinition()
     {
         if (IsEmpty)
@@ -151,189 +77,76 @@ internal sealed class PlatformReleaseOptions
     }
 }
 
-/// <summary>
-/// Configuration model for a single platform-release geoprocessing worker image.
-/// </summary>
 internal sealed class PlatformReleaseWorkerImageOptions
 {
-    /// <summary>
-    /// Runtime profile (workload family) this image serves; empty declares the default image.
-    /// </summary>
     public string? RuntimeProfile { get; set; }
 
-    /// <summary>
-    /// Worker container image / artifact reference for this runtime profile.
-    /// </summary>
     public string ArtifactReference { get; set; } = string.Empty;
 }
 
-/// <summary>
-/// Configuration model for the optional Kubernetes Jobs execution backend.
-/// </summary>
 internal sealed class KubernetesExecutionOptions
 {
-    /// <summary>
-    /// When true, the adapter attempts to discover its API server, bearer token,
-    /// and CA bundle from the projected service-account mount before falling back
-    /// to explicit configuration. Defaults to <c>true</c> so in-cluster
-    /// deployments are zero-config.
-    /// </summary>
     public bool InClusterAutoDetect { get; set; } = true;
 
-    /// <summary>
-    /// Explicit Kubernetes API server URL. Required when the adapter is used
-    /// out-of-cluster or when auto-detection is disabled.
-    /// </summary>
+    // The API server URL is required out of cluster or when auto-detection is disabled.
     public string? ApiServerUrl { get; set; }
 
-    /// <summary>
-    /// File path to a bearer token the adapter should present. Typically a
-    /// projected service-account token or a kubeconfig-derived token file.
-    /// </summary>
     public string? BearerTokenPath { get; set; }
 
-    /// <summary>
-    /// Optional literal bearer token. Use <see cref="BearerTokenPath"/> when
-    /// possible so rotation is picked up without restarts.
-    /// </summary>
     public string? BearerToken { get; set; }
 
-    /// <summary>
-    /// Optional path to a PEM-encoded CA bundle that the adapter should trust when
-    /// verifying the Kubernetes API server certificate. Required for out-of-cluster
-    /// targets whose API server certificate is signed by a private or self-signed CA
-    /// that does not chain to the OS trust store. Ignored only when
-    /// <see cref="InClusterAutoDetect"/> is enabled and the projected service-account
-    /// CA bundle is available; in that case the in-cluster bundle is used. When
-    /// <see cref="InClusterAutoDetect"/> is disabled — including from inside a pod
-    /// that targets a different cluster — this value is honored even if the local
-    /// projected CA file exists.
-    /// </summary>
+    // A private CA bundle is required for an out-of-cluster API server that does not chain to the OS trust store, and it is ignored only when in-cluster detection uses the projected bundle.
     public string? CaBundlePath { get; set; }
 
-    /// <summary>
-    /// Namespace used when an execution job does not specify one through its spec
-    /// parameters. When unset, the projected in-cluster namespace is used when
-    /// available; otherwise falls back to <c>default</c>.
-    /// </summary>
     public string? DefaultNamespace { get; set; }
 
-    /// <summary>
-    /// Fallback container image used when a job spec does not resolve to one.
-    /// </summary>
     public string? DefaultImage { get; set; }
 
-    /// <summary>
-    /// Highest execution contract supported by <see cref="DefaultImage"/>. Defaults to v1 so a
-    /// control-plane rollout cannot send a newer durable spec to an older worker image unless the
-    /// deployment explicitly attests that image's contract.
-    /// </summary>
+    // The default contract is v1 so a rollout cannot send a newer spec to an older worker unless the deployment attests that image.
     public int DefaultImageMaxSupportedContractVersion { get; set; } = 1;
 
-    /// <summary>
-    /// Image contract attestations for images selectable by a job's artifact or <c>k8s.image</c>
-    /// override. Image identities are entry values because tags/digests contain configuration-path
-    /// delimiters. Unlisted overrides are treated as v1 workers.
-    /// </summary>
+    // Image identities are dictionary values because tags contain configuration-path delimiters, and an unlisted override is a v1 worker.
     public List<WorkerImageContractOptions> ImageContracts { get; set; } = [];
 
-    /// <summary>
-    /// Fallback image pull policy (<c>Always</c>, <c>IfNotPresent</c>, <c>Never</c>).
-    /// </summary>
     public string? DefaultImagePullPolicy { get; set; }
 
-    /// <summary>
-    /// Fallback service account for pods.
-    /// </summary>
     public string? DefaultServiceAccount { get; set; }
 
-    /// <summary>
-    /// Fallback container CPU request (for example <c>500m</c>).
-    /// </summary>
     public string? DefaultCpuRequest { get; set; }
 
-    /// <summary>
-    /// Fallback container CPU limit.
-    /// </summary>
     public string? DefaultCpuLimit { get; set; }
 
-    /// <summary>
-    /// Fallback container memory request (for example <c>4Gi</c>).
-    /// </summary>
     public string? DefaultMemoryRequest { get; set; }
 
-    /// <summary>
-    /// Fallback container memory limit.
-    /// </summary>
     public string? DefaultMemoryLimit { get; set; }
 
-    /// <summary>
-    /// Fallback node selector applied to pods when a job spec does not override it.
-    /// Useful for steering GDAL-class workloads onto dedicated nodes.
-    /// </summary>
     public Dictionary<string, string> DefaultNodeSelector { get; set; } = new(StringComparer.Ordinal);
 
-    /// <summary>
-    /// Fallback image pull secret names.
-    /// </summary>
     public List<string> DefaultImagePullSecrets { get; set; } = [];
 
-    /// <summary>
-    /// Secrets imported whole (container <c>envFrom[].secretRef</c>) into EVERY Job this backend
-    /// launches, ahead of any per-workload <c>k8s.envFrom.secret.&lt;n&gt;</c>. Lets a chart wire one
-    /// chart-managed runtime Secret (database, Redis, master key) once, for example
-    /// <c>ControlPlane__Kubernetes__DefaultEnvFromSecrets__0=honua-runtime</c>. Each entry is
-    /// <c>&lt;secretName&gt;</c> or <c>&lt;secretName&gt;:&lt;prefix&gt;</c>. Only the name reaches the
-    /// server; the kubelet resolves the contents at pod start.
-    /// </summary>
+    // These secrets are imported into every job this backend launches, and only the secret name reaches the server.
     public List<string> DefaultEnvFromSecrets { get; set; } = [];
 
-    /// <summary>
-    /// ConfigMaps imported whole (container <c>envFrom[].configMapRef</c>) into every Job, after
-    /// <see cref="DefaultEnvFromSecrets"/> and ahead of per-workload <c>k8s.envFrom.*</c> entries.
-    /// Each entry is <c>&lt;configMapName&gt;</c> or <c>&lt;configMapName&gt;:&lt;prefix&gt;</c>.
-    /// </summary>
     public List<string> DefaultEnvFromConfigMaps { get; set; } = [];
 
-    /// <summary>
-    /// Fallback pod active deadline in seconds. Overridden by the spec when present
-    /// or by the job's <see cref="Honua.Core.Features.ControlPlane.Domain.JobTimeoutPolicy"/>.
-    /// </summary>
     public int? DefaultActiveDeadlineSeconds { get; set; }
 
-    /// <summary>
-    /// Fallback <c>ttlSecondsAfterFinished</c> used so completed Jobs clean up
-    /// automatically without relying on the canonical runtime's retention.
-    /// </summary>
     public int? DefaultTtlSecondsAfterFinished { get; set; } = 3600;
 }
 
-/// <summary>
-/// Configuration model for Azure Batch worker-image execution contracts.
-/// </summary>
 internal sealed class AzureBatchExecutionOptions
 {
-    /// <summary>
-    /// Image contract attestations for images selectable through <c>azure.batch.container_image</c>
-    /// or an execution workload's artifact reference. Image identities are entry values because
-    /// tags/digests contain configuration-path delimiters. Unlisted images are treated as v1 workers.
-    /// </summary>
+    // Unlisted images are treated as v1 workers, and image identities are dictionary values because tags contain configuration-path delimiters.
     public List<WorkerImageContractOptions> ImageContracts { get; set; } = [];
 }
 
-/// <summary>An exact worker-image identity and its supported execution contract.</summary>
 internal sealed class WorkerImageContractOptions
 {
-    /// <summary>Exact tagged or digest image reference selected by the workload.</summary>
     public string Image { get; set; } = string.Empty;
 
-    /// <summary>Highest execution contract understood by this image.</summary>
     public int MaxSupportedContractVersion { get; set; } = 1;
 }
 
-/// <summary>
-/// Configuration model for a stable deploy target.
-/// </summary>
 internal sealed class DeployTargetOptions
 {
     public string TargetId { get; set; } = string.Empty;
@@ -356,33 +169,15 @@ internal sealed class DeployTargetOptions
 
     public Dictionary<string, string> Parameters { get; set; } = new(StringComparer.Ordinal);
 
-    /// <summary>
-    /// Environment-friendly key/value parameter entries for providers that cannot expose dotted
-    /// dictionary keys directly through environment variables.
-    /// </summary>
     public List<ConfigurationParameterEntryOptions> ParameterEntries { get; set; } = [];
 }
 
-/// <summary>
-/// Configuration model for a telemetry query connection used by deploy rollback gates.
-/// </summary>
 internal sealed class DeployTelemetryConnectionOptions
 {
     public string ConnectionId { get; set; } = string.Empty;
 
-    /// <summary>
-    /// Metrics backend that executes this connection's deploy-gate queries. Supported values:
-    /// <c>prometheus</c> (default) and <c>cloudwatch</c>. An unsupported value disables
-    /// auto-rollback signals for the connection and is logged at startup-evaluation time.
-    /// </summary>
     public string Provider { get; set; } = "prometheus";
 
-    /// <summary>
-    /// For <c>prometheus</c>, the HTTPS base URL of the query API. For cloud providers such as
-    /// <c>cloudwatch</c>, the regional endpoint (for example
-    /// <c>https://monitoring.us-east-1.amazonaws.com</c>) used only to infer the region when
-    /// <see cref="Region"/> is not set.
-    /// </summary>
     public string BaseUrl { get; set; } = string.Empty;
 
     public string QueryPath { get; set; } = "/api/v1/query";
@@ -391,30 +186,13 @@ internal sealed class DeployTelemetryConnectionOptions
 
     public string? AuthHeaderValue { get; set; }
 
-    /// <summary>
-    /// Optional AWS region (for example <c>us-east-1</c>) for the <c>cloudwatch</c> provider.
-    /// When unset the region is inferred from <see cref="BaseUrl"/>; failing that the AWS SDK's
-    /// default region resolution applies. Ignored by the <c>prometheus</c> provider.
-    /// </summary>
     public string? Region { get; set; }
 
     public int TimeoutSeconds { get; set; } = 10;
 
-    /// <summary>
-    /// Explicit operator opt-in that relaxes the outbound SSRF guard for this telemetry connection so
-    /// a private-network or loopback metrics backend can be used — for example an on-prem/air-gapped
-    /// Prometheus at <c>http://localhost:9090</c> or a <c>10.x</c>/<c>192.168.x</c> address. When
-    /// <see langword="true"/>, <see cref="BaseUrl"/> may use the <c>http</c> scheme and resolve to a
-    /// private, loopback, or reserved address. Defaults to <see langword="false"/>, keeping the strict
-    /// HTTPS-only, no-private-destination posture. Only enable for a trusted, operator-controlled
-    /// endpoint inside your own network.
-    /// </summary>
     public bool AllowPrivateNetworks { get; set; }
 }
 
-/// <summary>
-/// Configuration model for a stable execution workload definition.
-/// </summary>
 internal sealed class ExecutionWorkloadOptions
 {
     public string WorkloadId { get; set; } = string.Empty;
@@ -431,20 +209,11 @@ internal sealed class ExecutionWorkloadOptions
 
     public string? RuntimeProfile { get; set; }
 
-    /// <summary>
-    /// The serving↔worker job-contract version jobs built for this workload require
-    /// (ADR-0060 principle #3b). Defaults to 1 (the initial contract); raise it only when the
-    /// workload's payload needs a newer worker, so the dispatcher can refuse to submit to a
-    /// backend whose workers cannot run it mid-upgrade.
-    /// </summary>
+    // The contract is raised only when the payload needs a newer worker, so the dispatcher can refuse a backend whose workers cannot run it.
     public int ContractVersion { get; set; } = 1;
 
     public Dictionary<string, string> Parameters { get; set; } = new(StringComparer.Ordinal);
 
-    /// <summary>
-    /// Environment-friendly key/value parameter entries for providers that cannot expose dotted
-    /// dictionary keys directly through environment variables.
-    /// </summary>
     public List<ConfigurationParameterEntryOptions> ParameterEntries { get; set; } = [];
 }
 
@@ -457,13 +226,7 @@ internal sealed class ConfigurationParameterEntryOptions
 
 internal sealed class ControlPlaneOptionsValidator : OptionsValidator<ControlPlaneOptions>
 {
-    /// <summary>
-    /// The runtime-profile discriminator carried by a custom-code execution workload.
-    /// Kept as a literal (mirroring <c>ExecutionWorkloadGate</c>'s literal contract
-    /// keys) so this validator takes no dependency on the internal
-    /// <c>Honua.Geoprocessing</c> <c>CustomCodeJobContract.RuntimeProfile</c> constant,
-    /// whose value this must stay in lockstep with.
-    /// </summary>
+    // This literal stays in lockstep with the geoprocessing runtime-profile constant so the validator does not reference that internal type.
     private const string CustomCodeRuntimeProfile = "custom-code";
 
     protected override void ValidateOptions(ControlPlaneOptions options, List<string> failures)
@@ -531,26 +294,7 @@ internal sealed class ControlPlaneOptionsValidator : OptionsValidator<ControlPla
         }
     }
 
-    /// <summary>
-    /// Enforces the custom-code-is-AWS-Batch-only policy (ADR-0063) at startup: a
-    /// configuration-declared execution workload that carries the
-    /// <see cref="CustomCodeRuntimeProfile"/> runtime profile may target ONLY the AWS
-    /// Batch backend family (<see cref="BatchComputeTargetKind.AwsBatch"/>).
-    /// </summary>
-    /// <remarks>
-    /// Custom (operator-supplied, untrusted) geoprocessing code must run only inside an
-    /// isolated, cloud-managed AWS Batch container, never in-process/on-host with
-    /// honua-server. On-host batch backends exist for ordinary trusted workloads
-    /// (<c>LocalBatchComputeBackend</c> = <c>local</c>/KubernetesJob family,
-    /// <c>LocalProcessPoolBatchComputeBackend</c> = <c>honua-local-process</c>/LocalProcess
-    /// family), and other cloud families (Azure Batch, Kubernetes Job) are not sanctioned
-    /// for custom code. Pointing a <c>custom-code</c> workload at any of them would route
-    /// untrusted code onto a non-AWS-Batch substrate, so we fail startup here rather than
-    /// let it silently land. The in-process claim fence
-    /// (<c>CustomCodeDispatchJobExecutor</c>) is the runtime backstop; this is the
-    /// configuration-time gate. Local-process execution was evaluated in the closed
-    /// honua-server#2672 and rejected — reintroducing it must trip this explicit gate.
-    /// </remarks>
+    // Custom geoprocessing code may target only the AWS Batch backend family, and any other substrate fails startup.
     private static void ValidateCustomCodeWorkloadsAreBatchOnly(
         List<ExecutionWorkloadOptions> workloads,
         List<string> failures)

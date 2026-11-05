@@ -8,14 +8,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Alerts;
 
-/// <summary>
-/// Cloud-neutral orchestration over the alert delivery channels: registers the
-/// HTTP-based sinks (Webhook, Slack, Teams, Email digest, WebSocket) and then
-/// delegates AWS / Azure channel registration to the per-cloud extensions in
-/// Honua.Aws / Honua.Azure. Keeping the AWS / Azure SDK surface confined to
-/// those assemblies preserves the cloud-SDK isolation contract enforced by
-/// CloudSdkIsolationTests.
-/// </summary>
 internal static class AlertDeliveryServiceCollectionExtensions
 {
     public static IServiceCollection AddAlertDeliveryChannels(this IServiceCollection services, IConfiguration configuration)

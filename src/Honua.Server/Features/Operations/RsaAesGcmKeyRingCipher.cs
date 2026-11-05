@@ -12,37 +12,14 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Features.Operations;
 
-/// <summary>
-/// The certificate Native AOT uses to encrypt the shared operation-secret key ring.
-/// </summary>
-/// <remarks>
-/// Registered as its own type so the decryptor can resolve this certificate from the
-/// application provider. A bare <see cref="X509Certificate2"/> singleton would collide
-/// with any other certificate the host composes.
-/// </remarks>
 internal sealed class RsaAesGcmKeyRingMaterial(X509Certificate2 certificate)
 {
     public X509Certificate2 Certificate { get; } = certificate;
 }
 
-/// <summary>
-/// Composes the Native AOT protection for the shared operation-secret key ring.
-/// </summary>
 internal static class RsaAesGcmKeyRingProtection
 {
-    /// <summary>
-    /// Wraps every new key with <paramref name="certificate"/> and lets the decryptor
-    /// resolve the same certificate when DataProtection reads the ring back.
-    /// </summary>
-    /// <remarks>
-    /// DataProtection never calls the decryptor constructor directly. It writes the
-    /// decryptor's type name into the key XML and later activates it by reflection:
-    /// SimpleActivator looks up <c>.ctor(IServiceProvider)</c> and otherwise falls back to
-    /// a parameterless constructor. The only static reference to the decryptor is a
-    /// <c>typeof</c>, so Native AOT keeps the type but not its constructor metadata, the
-    /// lookup returns null, and every key fails with MissingMethodException. The dynamic
-    /// dependency keeps that constructor reflectable wherever this composition is reachable.
-    /// </remarks>
+    // The dynamic dependency keeps the decryptor constructor reflectable, because native AOT otherwise drops it and every key fails.
     [DynamicDependency(DynamicallyAccessedMemberTypes.PublicConstructors, typeof(RsaAesGcmKeyRingDecryptor))]
     public static IDataProtectionBuilder ProtectKeysWithRsaAesGcm(
         this IDataProtectionBuilder builder,
@@ -57,14 +34,7 @@ internal static class RsaAesGcmKeyRingProtection
     }
 }
 
-/// <summary>
-/// Encrypts a data-protection key with AES-GCM and wraps that key with the certificate.
-/// </summary>
-/// <remarks>
-/// ProtectKeysWithCertificate uses EncryptedXml, which Native AOT cannot run. RSA-OAEP
-/// plus AES-GCM uses the same certificate and stays on algorithms the AOT host can
-/// execute, so every Lambda environment can unwrap the one ring stored in Redis.
-/// </remarks>
+// The ring is wrapped with RSA-OAEP and AES-GCM because the certificate XML protector cannot run under native AOT.
 internal sealed class RsaAesGcmKeyRingEncryptor(X509Certificate2 certificate) : IXmlEncryptor
 {
     public EncryptedXmlInfo Encrypt(XElement plaintextElement)
@@ -76,7 +46,6 @@ internal sealed class RsaAesGcmKeyRingEncryptor(X509Certificate2 certificate) : 
     }
 }
 
-/// <summary>Decrypts a key written by <see cref="RsaAesGcmKeyRingEncryptor"/>.</summary>
 public sealed class RsaAesGcmKeyRingDecryptor : IXmlDecryptor
 {
     private readonly X509Certificate2 _certificate;

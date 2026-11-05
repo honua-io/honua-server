@@ -31,14 +31,6 @@ using Microsoft.Extensions.Primitives;
 
 namespace Honua.Server.Features.DataEnrichment;
 
-/// <summary>
-/// Request handlers for the data-enrichment API (#374; #2280/#2282/#2284). Discovery
-/// (<c>GET /api/enrich/datasets</c>) reads the managed catalog filtered by the
-/// caller's edition; the synchronous compute endpoint (<c>POST /api/enrich</c>) is a
-/// thin adapter over the shared <see cref="ISpatialAnalyticsReader"/> spatial-join
-/// pipeline. Compute is Pro-tier gated (reuses the <c>analytics.spatial-join</c>
-/// entitlement).
-/// </summary>
 internal static class DataEnrichmentRequestHandlers
 {
     private const string LoggerCategory = "Honua.Server.Features.DataEnrichment";
@@ -48,12 +40,6 @@ internal static class DataEnrichmentRequestHandlers
     // spatial-join entitlement rather than introducing a separate SKU line.
     private const string EnrichmentEntitlementKey = "analytics.spatial-join";
 
-    /// <summary>
-    /// Lists the configuration-driven enrichment catalog (back-compat
-    /// <c>GET /api/enrich/catalog</c>). Pro-tier gated.
-    /// </summary>
-    /// <param name="context">The HTTP context.</param>
-    /// <returns>The enrichment catalog response, or a 402 when not entitled.</returns>
     public static IResult HandleCatalogGet(HttpContext context)
     {
         var logger = context.RequestServices.GetService<ILoggerFactory>()?.CreateLogger(LoggerCategory);
@@ -82,14 +68,6 @@ internal static class DataEnrichmentRequestHandlers
         return Results.Json(response, EnrichmentJsonContext.Default.EnrichmentCatalogResponse);
     }
 
-    /// <summary>
-    /// Discovers the managed enrichment-dataset catalog filtered by the caller's
-    /// edition (<c>GET /api/enrich/datasets</c>, #2280). Carries
-    /// provenance/attribution/license so downstream consumers can comply with the
-    /// data provider's terms.
-    /// </summary>
-    /// <param name="context">The HTTP context.</param>
-    /// <returns>The edition-filtered enrichment datasets.</returns>
     public static async Task<IResult> HandleDatasetsGet(HttpContext context)
     {
         var catalog = context.RequestServices.GetRequiredService<EnrichmentDatasetCatalogService>();
@@ -100,13 +78,6 @@ internal static class DataEnrichmentRequestHandlers
         return Results.Json(response, EnrichmentJsonContext.Default.EnrichmentDatasetsResponse);
     }
 
-    /// <summary>
-    /// Discovers a single managed enrichment dataset by id, edition-filtered
-    /// (<c>GET /api/enrich/datasets/{id}</c>, #2280).
-    /// </summary>
-    /// <param name="id">Dataset id (slug).</param>
-    /// <param name="context">The HTTP context.</param>
-    /// <returns>The dataset metadata, or 404 when missing or hidden by edition.</returns>
     public static async Task<IResult> HandleDatasetGet(string id, HttpContext context)
     {
         var catalog = context.RequestServices.GetRequiredService<EnrichmentDatasetCatalogService>();
@@ -124,14 +95,6 @@ internal static class DataEnrichmentRequestHandlers
         return Results.Json(dataset, EnrichmentJsonContext.Default.EnrichmentDatasetMetadata);
     }
 
-    /// <summary>
-    /// Enriches a registered source layer with attributes drawn from an enrichment
-    /// dataset (<c>POST /api/enrich</c>, #2282). Thin adapter over the shared
-    /// spatial-join pipeline; resolves the dataset through the managed catalog and
-    /// maps the enrichment <c>method</c> vocabulary to canonical spatial predicates.
-    /// </summary>
-    /// <param name="context">The HTTP context.</param>
-    /// <returns>The enriched GeoJSON FeatureCollection, or an error result.</returns>
     public static async Task<IResult> HandleEnrichPost(HttpContext context)
     {
         var logger = context.RequestServices.GetService<ILoggerFactory>()?.CreateLogger(LoggerCategory);
@@ -625,10 +588,6 @@ internal static class DataEnrichmentRequestHandlers
     private static void LogEnrichFailed(ILogger logger, string datasetId, int sourceLayerId, Exception ex)
         => _enrichFailed(logger, datasetId, sourceLayerId, ex);
 
-    /// <summary>
-    /// Lightweight internal carrier for a deferred enrichment validation error so
-    /// the predicate resolver can signal both 400 and 501 outcomes.
-    /// </summary>
     private sealed record EnrichmentError(int Status, string Title, IReadOnlyList<string> Details);
 
 #if HONUA_EXCLUDE_GEOSERVICES

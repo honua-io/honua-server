@@ -10,23 +10,7 @@ using Microsoft.AspNetCore.SignalR;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Fans ops-health snapshots (from the #2553 flush signal) and deploy/workflow-operation transitions (from
-/// the #2562 transition seam, forwarded by <see cref="RealtimeOperationTransitionListener"/>) out to the
-/// admin hub groups over the Redis backplane (#2554).
-/// </summary>
-/// <remarks>
-/// Isolation guarantees:
-/// <list type="bullet">
-/// <item>The flush-signal handler and the transition enqueue are non-blocking <c>TryWrite</c>s into bounded
-/// channels — they never block the sampler loop or the store-write path, and never throw back into them.</item>
-/// <item>The channels are bounded with <see cref="BoundedChannelFullMode.DropOldest"/> so a slow/backed-up
-/// broadcast can never grow memory without bound. Dropped items are acceptable: the durable ops-health
-/// history and the deploy-operations list API are the authoritative sources a client re-syncs from.</item>
-/// <item>Every hub send is wrapped so a backplane/transport fault degrades to a logged miss instead of
-/// faulting the loop — serving and the producers are unaffected (fail-open).</item>
-/// </list>
-/// </remarks>
+// Broadcasts are non-blocking writes into bounded channels, and a hub failure is logged instead of faulting the sampler or the store write.
 internal sealed partial class AdminRealtimeBroadcaster : BackgroundService
 {
     // Latest-wins: only the freshest ops-health snapshot matters, so a capacity of one that drops the older
@@ -70,11 +54,7 @@ internal sealed partial class AdminRealtimeBroadcaster : BackgroundService
         _flushSignal.Flushed += OnFlushed;
     }
 
-    /// <summary>
-    /// Forwards a workflow-operation transition to the deploy-operations / operate-events groups. Non-blocking
-    /// and exception-isolated so the store-write path that raised the transition is never slowed or faulted.
-    /// </summary>
-    /// <param name="transition">The observed transition.</param>
+    // The transition forward is non-blocking and swallows transport faults so the store write that raised it is not failed.
     public void EnqueueTransition(WorkflowOperationTransition transition)
     {
         ArgumentNullException.ThrowIfNull(transition);

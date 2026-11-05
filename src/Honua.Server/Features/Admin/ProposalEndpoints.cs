@@ -29,13 +29,6 @@ using CanonicalOperationExecutor = Honua.Core.Features.Operations.Abstractions.I
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Console-facing REST API for the agent-operation approval surface: list pending
-/// proposals, inspect a proposal's plan/diff/dry-run/risk, and approve or reject
-/// one. Approval is gated by the RBAC <see cref="AuthorizationOperation.Approve"/>
-/// grant (distinct from the proposer's grant) and every decision is audited
-/// through the gateway (#1694).
-/// </summary>
 internal static class ProposalEndpoints
 {
     // Reserved RBAC scope for operation-approval decisions.
@@ -86,14 +79,6 @@ internal static class ProposalEndpoints
             .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
     }
 
-    /// <summary>
-    /// The durable control plane (<see cref="IOperationProposalStore"/>,
-    /// <see cref="IOperationGateway"/>) is composed only when Redis is configured, but these
-    /// routes are mapped unconditionally. Before honua-release#202 that combination produced an
-    /// untyped <c>500</c> leaking the unresolved DI service name on a Redis-less install; the
-    /// approval surface is journey-critical, so it now refuses with the same machine-readable
-    /// capability-unavailable receipt the geoprocessing job surfaces emit.
-    /// </summary>
     private static IResult ControlPlaneUnavailable(HttpContext context)
     {
         // Report the composition cause, not a blanket "add Redis": on a host where Redis is
@@ -409,14 +394,6 @@ internal static class ProposalEndpoints
                 statusCode: StatusCodes.Status403Forbidden);
     }
 
-    /// <summary>
-    /// Every framework-derived identifier that names the approving principal. Proposal writers
-    /// record the requester in different encodings: the raw subject or API-key id (admin
-    /// surfaces), the scheme-qualified canonical actor (MCP evidence-bound proposals), and the
-    /// Studio owner key <c>subject:{iss}:{sub}@tenant:{tenant}</c> (Studio publication and
-    /// rollback requests). Comparing only the raw subject let a Studio proposer approve their
-    /// own publication, so the separation-of-duties check refuses a match against any of them.
-    /// </summary>
     private static HashSet<string> ResolveApproverIdentities(HttpContext context, string? actor)
     {
         var identities = new HashSet<string>(StringComparer.OrdinalIgnoreCase);

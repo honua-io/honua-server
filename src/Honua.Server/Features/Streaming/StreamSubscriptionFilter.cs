@@ -6,11 +6,6 @@ using Honua.Core.Queries.Filters;
 
 namespace Honua.Server.Features.Streaming;
 
-/// <summary>
-/// Composite subscription filter that evaluates in cheapest-first order:
-/// layer filter, subscriber read policy, bbox filter, then attribute filter.
-/// Delete events bypass client value filters only after subscriber row authorization.
-/// </summary>
 internal sealed class StreamSubscriptionFilter : IStreamSubscriptionFilter
 {
     private static readonly IReadOnlyDictionary<string, JsonElement> EmptyProperties =
@@ -27,19 +22,6 @@ internal sealed class StreamSubscriptionFilter : IStreamSubscriptionFilter
     private readonly StreamTemporalFilter? _temporalFilter;
     private readonly FeatureStreamRoutabilityGuard? _routabilityGuard;
 
-    /// <summary>
-    /// Creates a composite subscription filter.
-    /// </summary>
-    /// <param name="serviceId">Allowed service ID (null = all services).</param>
-    /// <param name="serviceIdIsExact">Whether <paramref name="serviceId"/> is an exact catalog identity.</param>
-    /// <param name="resolvedServiceId">Resolved catalog service ID, retained separately from a display-name scope.</param>
-    /// <param name="hasExplicitLayerScope">Whether the client explicitly supplied one or more layer IDs.</param>
-    /// <param name="layerIds">Allowed layer IDs (null = all layers).</param>
-    /// <param name="bbox">Bounding box [MinX, MinY, MaxX, MaxY] (null = no spatial filter).</param>
-    /// <param name="attributeFilter">Parsed filter expression (null = no attribute filter).</param>
-    /// <param name="temporalFilter">Parsed temporal interval filter (null = no temporal filter).</param>
-    /// <param name="routabilityGuard">Live metadata-derived routing guard for open subscriptions.</param>
-    /// <param name="subscriberSecurity">Subscriber row and field policies resolved by the shared read sources.</param>
     public StreamSubscriptionFilter(
         string? serviceId = null,
         bool serviceIdIsExact = false,
@@ -66,48 +48,21 @@ internal sealed class StreamSubscriptionFilter : IStreamSubscriptionFilter
         _routabilityGuard = routabilityGuard;
     }
 
-    /// <summary>
-    /// Service ID restriction, if any.
-    /// </summary>
     public string? ServiceId => _serviceId;
 
-    /// <summary>
-    /// Resolved catalog service identity, if admission resolved a service scope.
-    /// </summary>
     public string? ResolvedServiceId => _resolvedServiceId;
 
-    /// <summary>
-    /// Whether the client explicitly supplied the layer scope rather than inheriting all service layers.
-    /// </summary>
     public bool HasExplicitLayerScope => _hasExplicitLayerScope;
 
-    /// <summary>
-    /// Layer restrictions, if any.
-    /// </summary>
     public int[]? LayerIds => _layerIds;
 
-    /// <summary>
-    /// Subscriber row and field policies, refreshed in place by the session manager.
-    /// </summary>
     internal StreamSubscriberSecurity? SubscriberSecurity => _subscriberSecurity;
 
-    /// <summary>
-    /// True when membership depends on a feature's VALUE (bbox, attributes, or time) rather
-    /// than on where it lives.
-    /// </summary>
-    /// <remarks>
-    /// A feature cannot leave the service/layer scope by being edited, but it can be updated so
-    /// its geometry, attributes, or timestamp no longer match — and both replay and live fan-out
-    /// evaluate the post-mutation image, so the leaving update is filtered out and never
-    /// delivered. Baseline-plus-deltas is therefore not convergent for these filters without
-    /// transition semantics (a before-image or an explicit removal frame), which the event
-    /// pipeline does not carry (honua-server#3038 review).
-    /// </remarks>
+    // A value filter is not convergent across baseline and deltas, because the leaving update is judged on the image after the edit and is not delivered.
     public bool HasValueDependentPredicate =>
         _subscriberSecurity?.HasRowPredicates == true ||
         _bbox is not null || _attributeFilter is not null || _temporalFilter is not null;
 
-    /// <inheritdoc />
     public string Summary
     {
         get
@@ -142,7 +97,6 @@ internal sealed class StreamSubscriptionFilter : IStreamSubscriptionFilter
         }
     }
 
-    /// <inheritdoc />
     public bool Matches(FeatureStreamEnvelope envelope, double[]? geometryEnvelope, string? propertiesJson)
     {
         IReadOnlyDictionary<string, JsonElement>? parsedProperties = null;
@@ -345,10 +299,6 @@ internal sealed class StreamSubscriptionFilter : IStreamSubscriptionFilter
         return false;
     }
 
-    /// <summary>
-    /// Tests whether two axis-aligned bounding boxes intersect.
-    /// Both arrays are [MinX, MinY, MaxX, MaxY].
-    /// </summary>
     private static bool EnvelopesIntersect(double[] a, double[] b)
     {
         // Two AABBs do NOT intersect when one is entirely to the left/right/above/below the other.

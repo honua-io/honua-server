@@ -3,86 +3,55 @@
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Operator configuration for the Compose proposal executor. Bound from
-/// <c>ControlPlane:ComposeExecutor</c> (environment <c>ControlPlane__ComposeExecutor__*</c>).
-/// Properties use setters because the configuration binding source generator rejects init-only
-/// properties. The serving process reads <see cref="SocketPath"/> and <see cref="ReleaseImage"/>
-/// only. The sidecar reads the rest and is the only process with the Docker socket.
-/// </summary>
+// The serving process reads the socket settings only; the sidecar is the only process with the Docker socket.
 internal sealed class ComposeExecutorOptions
 {
-    /// <summary>Configuration section name.</summary>
     public const string SectionName = "ControlPlane:ComposeExecutor";
 
-    /// <summary>Unix socket the serving process uses to reach the sidecar.</summary>
     public string SocketPath { get; set; } = string.Empty;
 
-    /// <summary>Directory that contains the Compose file. The sidecar must be able to write the image override here.</summary>
+    // The sidecar must be able to write the image override into the Compose directory.
     public string ProjectDirectory { get; set; } = string.Empty;
 
-    /// <summary>Compose project name. Taken from configuration, never from a model request.</summary>
+    // The Compose project name comes from configuration and never from a model request.
     public string ProjectName { get; set; } = string.Empty;
 
-    /// <summary>
-    /// Compose file relative to <see cref="ProjectDirectory"/>. Used when <see cref="ComposeFiles"/> is empty.
-    /// </summary>
     public string ComposeFile { get; set; } = "compose.yaml";
 
-    /// <summary>
-    /// Ordered compose files relative to <see cref="ProjectDirectory"/>. Later files add to earlier ones.
-    /// The image override is appended after this list. Empty means <see cref="ComposeFile"/> alone.
-    /// The model cannot add a file.
-    /// </summary>
+    // The model cannot add a compose file; the image override is appended after the configured list.
     public string[] ComposeFiles { get; set; } = [];
 
-    /// <summary>Exact immutable images and schemas for older images that do not carry a schema label.</summary>
     public List<ComposeImageSchemaOption> Revisions { get; set; } = [];
 
-    /// <summary>Service whose image the executor replaces.</summary>
     public string ServiceName { get; set; } = "honua";
 
-    /// <summary>Registered target bound to this single-project executor.</summary>
     public string TargetId { get; set; } = "compose-local";
 
-    /// <summary>Redis service observed and eligible for approved restart; empty disables Redis observation.</summary>
     public string RedisService { get; set; } = "redis";
 
-    /// <summary>Serving bootstrap credential used only for the authenticated version readback.</summary>
+    // This credential is used only for the authenticated version readback.
     public string VersionProbeApiKey { get; set; } = string.Empty;
 
-    /// <summary>Postgres service used for <c>pg_dump</c> and <c>pg_restore</c>.</summary>
     public string PostgresService { get; set; } = "postgres";
 
-    /// <summary>Database name inside the Postgres service.</summary>
     public string DatabaseName { get; set; } = "honua";
 
-    /// <summary>Database user. The local Postgres socket is trust, so the executor does not pass a password.</summary>
     public string DatabaseUser { get; set; } = "honua";
 
-    /// <summary>Directory of backup manifests and <c>audit.jsonl</c>. The operator creates it. The product does not.</summary>
     public string BackupDirectory { get; set; } = string.Empty;
 
-    /// <summary>Operator URL that must return HTTP 200 and a non-empty body after a change.</summary>
+    // This URL must return HTTP 200 and a non-empty body after a change.
     public string CustomerProbeUrl { get; set; } = string.Empty;
 
-    /// <summary>Operator URL that must return HTTP 200 after a change.</summary>
+    // This URL must return HTTP 200 after a change.
     public string HealthProbeUrl { get; set; } = string.Empty;
 
-    /// <summary>Immutable digest of the release the executor is allowed to converge to.</summary>
     public string ReleaseImage { get; set; } = string.Empty;
 
-    /// <summary>Per-probe HTTP timeout in seconds.</summary>
     public int ProbeTimeoutSeconds { get; set; } = 10;
 
-    /// <summary><c>docker compose up --wait-timeout</c> in seconds.</summary>
     public int ComposeWaitTimeoutSeconds { get; set; } = 180;
 
-    /// <summary>
-    /// Validates the fields the sidecar needs before it binds a socket. Returns null when the
-    /// configuration can serve. A relative compose file that escapes the project directory is a
-    /// scope violation.
-    /// </summary>
     internal ComposeExecutorConfigProblem? ValidateForCommand()
     {
         if (string.IsNullOrWhiteSpace(SocketPath) || !Path.IsPathRooted(SocketPath))
@@ -95,10 +64,6 @@ internal sealed class ComposeExecutorOptions
         return ValidateForProcess();
     }
 
-    /// <summary>
-    /// Validates the fields the controller needs before any docker invocation. Unit tests call this
-    /// path without a socket.
-    /// </summary>
     internal ComposeExecutorConfigProblem? ValidateForProcess()
     {
         if (string.IsNullOrWhiteSpace(ProjectDirectory) || !Path.IsPathRooted(ProjectDirectory) || !Directory.Exists(ProjectDirectory))
@@ -174,7 +139,6 @@ internal sealed class ComposeExecutorOptions
         return null;
     }
 
-    /// <summary>Absolute paths of the configured compose files, in operator order.</summary>
     internal string[] ComposeFilePaths()
     {
         var root = Path.GetFullPath(ProjectDirectory);
@@ -206,15 +170,11 @@ internal sealed class ComposeExecutorOptions
         => new(ComposeExecutorCodes.ScopeViolation, message);
 }
 
-/// <summary>A configuration problem that refuses the executor before docker runs.</summary>
 internal readonly record struct ComposeExecutorConfigProblem(string Code, string Message);
 
-/// <summary>Operator-owned schema catalog entry for an immutable image without a schema label.</summary>
 internal sealed class ComposeImageSchemaOption
 {
-    /// <summary>Exact immutable image reference or image id.</summary>
     public string Image { get; set; } = string.Empty;
 
-    /// <summary>Highest numbered migration shipped by that image.</summary>
     public int MaxSchema { get; set; }
 }

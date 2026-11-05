@@ -16,9 +16,6 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Admin endpoints for persisted layer field configuration.
-/// </summary>
 internal static class AdminLayerFieldConfigurationEndpoints
 {
     private const int MaxFieldAliasLength = 256;
@@ -26,9 +23,6 @@ internal static class AdminLayerFieldConfigurationEndpoints
     private const int MaxDomainLabelLength = 256;
     private const int MaxCodedValues = 512;
 
-    /// <summary>
-    /// Maps layer field configuration endpoints to the admin metadata API group.
-    /// </summary>
     public static void MapAdminLayerFieldConfigurationEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/metadata/layers")
@@ -205,14 +199,7 @@ internal static class AdminLayerFieldConfigurationEndpoints
         return null;
     }
 
-    /// <summary>
-    /// V2 cutover: a field is "required by public protocol contracts" when it is the
-    /// primary geometry column, the resource's primary id field (semantic role
-    /// <c>id.primary</c>, fall-back name-equality on <c>objectid</c>/<c>id</c>), or the
-    /// canonical <c>OBJECTID</c> alias. Mirrors the v1
-    /// <c>IsGeometry || layer.ObjectIdFieldName || FieldNames.ObjectId</c> check using
-    /// V2 field types and the resolved primary-id field name.
-    /// </summary>
+    // A field is locked as a public protocol contract when it is the primary geometry, the primary id, or the OBJECTID alias.
     private static bool IsRequiredProtocolField(MetadataV2Field field, string? primaryIdFieldName)
         => field.Type is MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography
            || (primaryIdFieldName is not null
@@ -300,11 +287,6 @@ internal static class AdminLayerFieldConfigurationEndpoints
         };
     }
 
-    /// <summary>
-    /// Persists field configuration for the single resource that <paramref name="layerId"/> addresses.
-    /// An ambiguous id is refused before either store is written. The graph is written before the
-    /// field store so a graph failure does not leave alias, domain, and hidden rows committed.
-    /// </summary>
     internal static async Task<AdminLayerFieldApplyResult> ApplyUpdatedFieldConfigurationsAsync(
         IMetadataV2GraphStore graphStore,
         ILayerFieldConfigurationStore fieldConfigurationStore,
@@ -341,10 +323,6 @@ internal static class AdminLayerFieldConfigurationEndpoints
         return new AdminLayerFieldApplyResult(false, null, stored);
     }
 
-    /// <summary>
-    /// Applies updates with the same rules as the field store: alias and domain are replaced,
-    /// and a null hidden flag preserves the stored value.
-    /// </summary>
     private static List<LayerFieldConfiguration> MergeFieldConfigurations(
         IReadOnlyList<LayerFieldConfiguration> existing,
         IReadOnlyList<LayerFieldConfigurationUpdate> updates)
@@ -400,16 +378,11 @@ internal static class AdminLayerFieldConfigurationEndpoints
     }
 }
 
-/// <summary>Result of applying a layer field-configuration update.</summary>
-/// <param name="IsAmbiguous">True when the layer id addresses more than one resource and nothing was written.</param>
-/// <param name="ConflictDetail">Conflict explanation when <paramref name="IsAmbiguous"/> is true.</param>
-/// <param name="Configurations">Field configurations written when the layer id was unique.</param>
 internal readonly record struct AdminLayerFieldApplyResult(
     bool IsAmbiguous,
     string? ConflictDetail,
     IReadOnlyList<LayerFieldConfiguration> Configurations)
 {
-    /// <summary>Creates a conflict result that did not write.</summary>
     public static AdminLayerFieldApplyResult Ambiguous(string detail)
         => new(true, detail, Array.Empty<LayerFieldConfiguration>());
 }

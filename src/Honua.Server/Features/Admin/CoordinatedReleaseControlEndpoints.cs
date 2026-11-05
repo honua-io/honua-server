@@ -17,12 +17,6 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Admin endpoints for coordinated platform-upgrade releases (Demo C). A coordinated release composes
-/// the container rollout, the additive DB script migration, and the metadata-v2 activation into one
-/// ordered, gated, rollback-able operation. These endpoints are the create / read / gate-approve /
-/// rollback surface the console's GitOps Releases page consumes.
-/// </summary>
 internal static class CoordinatedReleaseControlEndpoints
 {
     private const string ControlUnavailableMessage = "Coordinated release control is temporarily unavailable.";

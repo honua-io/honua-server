@@ -6,19 +6,10 @@ using Honua.Core.Features.Styling.Domain;
 
 namespace Honua.Server.Features.Styling;
 
-/// <summary>
-/// Generates MapLibre v8 style documents and GeoServices drawingInfo from style suggestions.
-/// </summary>
 internal static class StyleSuggestionGenerator
 {
-    /// <summary>
-    /// Fallback color for features that do not match any classified category or break.
-    /// Must stay in sync with the MapLibre match/step fallback emitted by <see cref="BuildColorExpression"/>.
-    /// </summary>
+    // The fallback color must stay in sync with the MapLibre match and step fallback.
     private const string FallbackColor = "#CCCCCC";
-    /// <summary>
-    /// Generates a complete MapLibre style document from a style suggestion.
-    /// </summary>
     public static Dictionary<string, object?> GenerateMapLibreStyle(
         MetadataV2Resource resource,
         int storageLayerId,
@@ -29,9 +20,6 @@ internal static class StyleSuggestionGenerator
         return StyleDefaults.BuildStyleDocument(storageLayerId, resource.Metadata.Name, layers);
     }
 
-    /// <summary>
-    /// Generates a complete MapLibre style document from a style suggestion.
-    /// </summary>
     public static Dictionary<string, object?> GenerateMapLibreStyle(
         StyleLayerDescriptor layer,
         StyleSuggestion suggestion)
@@ -41,17 +29,11 @@ internal static class StyleSuggestionGenerator
         return StyleDefaults.BuildStyleDocument(layer, layers);
     }
 
-    /// <summary>
-    /// Generates GeoServices drawingInfo from a style suggestion.
-    /// </summary>
     public static Dictionary<string, object?> GenerateDrawingInfo(
         MetadataV2Resource resource,
         StyleSuggestion suggestion)
         => GenerateDrawingInfo(resource.ReadGeometryType(), suggestion);
 
-    /// <summary>
-    /// Generates GeoServices drawingInfo from a style suggestion.
-    /// </summary>
     public static Dictionary<string, object?> GenerateDrawingInfo(
         StyleLayerDescriptor layer,
         StyleSuggestion suggestion)
@@ -70,25 +52,15 @@ internal static class StyleSuggestionGenerator
         return BuildClassBreaksDrawingInfo(geometryType, suggestion);
     }
 
-    /// <summary>
-    /// Generates a GeoServices drawingInfo that matches the enhanced MapLibre defaults.
-    /// Used for geometry-only suggestions (Community tier or no suitable classification field).
-    /// </summary>
     public static Dictionary<string, object?> GenerateEnhancedDrawingInfo(MetadataV2Resource resource)
         => GenerateEnhancedDrawingInfo(resource.ReadGeometryType());
 
-    /// <summary>
-    /// Generates a GeoServices drawingInfo that matches the enhanced MapLibre defaults.
-    /// </summary>
     public static Dictionary<string, object?> GenerateEnhancedDrawingInfo(StyleLayerDescriptor layer)
         => GenerateEnhancedDrawingInfo(layer.GeometryType);
 
     private static Dictionary<string, object?> GenerateEnhancedDrawingInfo(MetadataV2GeometryType geometryType)
         => StyleDefaults.BuildDefaultDrawingInfo(geometryType);
 
-    /// <summary>
-    /// Generates enhanced geometry-only defaults (Community tier).
-    /// </summary>
     public static Dictionary<string, object?> GenerateEnhancedDefaults(
         MetadataV2Resource resource,
         int storageLayerId)
@@ -98,9 +70,6 @@ internal static class StyleSuggestionGenerator
         return StyleDefaults.BuildStyleDocument(storageLayerId, resource.Metadata.Name, layers);
     }
 
-    /// <summary>
-    /// Generates enhanced geometry-only defaults (Community tier).
-    /// </summary>
     public static Dictionary<string, object?> GenerateEnhancedDefaults(StyleLayerDescriptor layer)
     {
         var sourceId = StyleDefaults.GetSourceId(layer);
@@ -388,10 +357,6 @@ internal static class StyleSuggestionGenerator
         };
     }
 
-    /// <summary>
-    /// Returns geometry-specific visual parameters that match the MapLibre styled layers,
-    /// with MapLibre opacity baked into the GeoServices alpha channel.
-    /// </summary>
     private static (byte FillAlpha, StyleColor? OutlineColor, double LineWidth, double? Size) GetGeometryParams(
         MetadataV2GeometryType geometryType)
     {
@@ -409,10 +374,6 @@ internal static class StyleSuggestionGenerator
         };
     }
 
-    /// <summary>
-    /// Builds a GeoServices symbol using <see cref="FallbackColor"/> so that the
-    /// <c>defaultSymbol</c> in drawingInfo matches the MapLibre expression fallback.
-    /// </summary>
     private static Dictionary<string, object?> BuildFallbackSymbol(
         MetadataV2GeometryType geometryType, byte fillAlpha, StyleColor? outlineColor,
         double lineWidth, double? size)

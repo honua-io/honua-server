@@ -7,9 +7,6 @@ using Honua.Server.Features.PrintingTools.Models;
 
 namespace Honua.Server.Features.PrintingTools;
 
-/// <summary>
-/// Registers PrintingTools services.
-/// </summary>
 internal static class PrintingToolsServiceCollectionExtensions
 {
     public static IServiceCollection AddPrintingTools(this IServiceCollection services)

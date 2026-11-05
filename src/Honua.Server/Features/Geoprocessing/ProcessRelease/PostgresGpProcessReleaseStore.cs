@@ -13,14 +13,7 @@ using NpgsqlTypes;
 
 namespace Honua.Server.Features.Geoprocessing.ProcessRelease;
 
-/// <summary>
-/// Durable release records and bindings (migration <c>131_CreateGpProcessReleases.sql</c>,
-/// honua-server#6221). Activation takes a per-process advisory lock and the binding row lock
-/// inside one transaction, evaluates the policy against the live row, and writes the new
-/// version plus a history row, so concurrent activations serialize on the process and exactly
-/// one with the expected version succeeds across every replica. The store opens a short child
-/// scope per call so it never captures the scoped connection provider.
-/// </summary>
+// Activation takes the process advisory lock and the binding row lock in one transaction, so exactly one expected version succeeds across replicas.
 internal sealed class PostgresGpProcessReleaseStore(
     IServiceScopeFactory scopeFactory,
     TimeProvider time,
@@ -322,10 +315,7 @@ internal sealed class PostgresGpProcessReleaseStore(
         return list.ToArray();
     }
 
-    /// <summary>
-    /// Fails closed with a named migration when the tables are absent. This is a read-only
-    /// catalog probe: schema evolution belongs to the numbered migrations, never to a store.
-    /// </summary>
+    // A missing table fails closed with a named migration, and this probe never evolves the schema.
     private async Task VerifyMigrationAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
     {
         const string sql = """

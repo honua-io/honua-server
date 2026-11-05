@@ -7,17 +7,8 @@ using Proto = Geospatial.V1;
 
 namespace Honua.Server.Features.Spec;
 
-/// <summary>
-/// Translates between the spec domain records and the generated
-/// <c>geospatial.v1</c> proto messages.
-/// </summary>
 internal static class SpecProtoMapping
 {
-    /// <summary>
-    /// <c>ErrorDetail.details</c> key carrying the symbolic diagnostic code. Geospatial.Grpc
-    /// 0.2.0-alpha.1 folded <c>SpecDiagnostic</c> (which had a <c>string code</c>) into
-    /// <c>ErrorDetail</c> (whose <c>code</c> is an <c>int32</c>), so the symbol lives here.
-    /// </summary>
     internal const string ErrorCodeDetailKey = "error_code";
 
     public static CanonicalSpecDocument FromProto(Proto.CanonicalSpecDocument proto)
@@ -238,18 +229,6 @@ internal static class SpecProtoMapping
         _ => Proto.SpecApplyEventKind.Unspecified
     };
 
-    /// <summary>
-    /// Maps a spec diagnostic to the shared <c>ErrorDetail</c>. Geospatial.Grpc 0.2.0-alpha.1
-    /// retired <c>SpecDiagnostic</c>; <c>ErrorDetail</c> gained <c>severity</c> (9) and
-    /// <c>remedy</c> (10) to absorb it.
-    /// </summary>
-    /// <remarks>
-    /// The spec diagnostic code is a kebab-case symbol (<see cref="SpecDiagnosticCodes"/>) and
-    /// <c>ErrorDetail.code</c> is an <c>int32</c>, so the symbol travels in
-    /// <c>details["<see cref="ErrorCodeDetailKey"/>"]</c> — the same slot the geoprocessing
-    /// mapper uses — and the numeric field is left unset. Admin tooling that keys off the
-    /// diagnostic code reads that entry.
-    /// </remarks>
     public static Proto.ErrorDetail ToProto(SpecWarning warning)
     {
         ArgumentNullException.ThrowIfNull(warning);
@@ -284,16 +263,6 @@ internal static class SpecProtoMapping
         _ => Proto.Severity.Unspecified
     };
 
-    /// <summary>
-    /// Maps a per-node cost estimate onto <c>DryRunResult</c> fields 5-7. Geospatial.Grpc
-    /// 0.2.0-alpha.1 retired <c>SpecCostEstimate</c>.
-    /// </summary>
-    /// <remarks>
-    /// <c>SpecCostEstimate</c> carried <c>optional</c> scalars, so "not estimated" and "estimated
-    /// zero" were distinguishable. The <c>DryRunResult</c> replacements are plain proto3 scalars
-    /// with no presence, so an unknown estimate now serializes as <c>0</c>. That fidelity loss is
-    /// inherent to the upstream shape; nothing on the server side can restore it.
-    /// </remarks>
     public static Proto.DryRunResult ToProto(SpecCostEstimate cost)
     {
         var proto = new Proto.DryRunResult();
@@ -315,11 +284,6 @@ internal static class SpecProtoMapping
         return proto;
     }
 
-    /// <summary>
-    /// Maps per-node actual execution metrics onto <c>DryRunResult</c> fields 8-10. Geospatial.Grpc
-    /// 0.2.0-alpha.1 retired <c>SpecCostActual</c>. The same presence loss described on
-    /// <see cref="ToProto(SpecCostEstimate)"/> applies to <c>actual_rows</c> / <c>actual_bytes</c>.
-    /// </summary>
     public static Proto.DryRunResult ToProto(SpecCostActual cost)
     {
         var proto = new Proto.DryRunResult
@@ -339,20 +303,6 @@ internal static class SpecProtoMapping
         return proto;
     }
 
-    /// <summary>
-    /// Reads a <c>map&lt;string, ParameterValue&gt;</c> node fragment back into the domain's
-    /// string-keyed, string-valued dictionary.
-    /// </summary>
-    /// <remarks>
-    /// Geospatial.Grpc 0.2.0-alpha.1 retyped <c>CanonicalSpecNode.inputs</c> and
-    /// <c>.parameters</c> from <c>map&lt;string, string&gt;</c> to
-    /// <c>map&lt;string, ParameterValue&gt;</c>; the proto documents string fragments as the
-    /// <c>string_value</c> branch. Only that branch (and an unset value, which reads as the empty
-    /// string the previous map could carry) is accepted. Coercing an <c>int64_value</c> or
-    /// <c>double_value</c> to text would let two structurally different documents canonicalize to
-    /// the same content hash, so a non-string branch is rejected at the transport boundary rather
-    /// than silently flattened.
-    /// </remarks>
     private static Dictionary<string, string> FromProtoParameterMap(
         string nodeId,
         string fieldName,

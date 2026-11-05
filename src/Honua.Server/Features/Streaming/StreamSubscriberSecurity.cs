@@ -5,12 +5,7 @@ using Honua.Core.Queries.Filters;
 
 namespace Honua.Server.Features.Streaming;
 
-/// <summary>
-/// Subscriber read policies, resolved with the request identity and applied to each stored
-/// event image before live or replay delivery. The policy set is an immutable snapshot that a
-/// periodic refresh replaces atomically, so access, row-level security and field-mask changes
-/// made after connect apply to frames matched after the refresh (honua-server#6105).
-/// </summary>
+// The policy snapshot is replaced as a whole, so a change applies to frames matched after the refresh.
 internal sealed class StreamSubscriberSecurity
 {
     private PolicyState _state;
@@ -32,7 +27,6 @@ internal sealed class StreamSubscriberSecurity
 
     public bool HasRowPredicates => Volatile.Read(ref _state).HasRowPredicates;
 
-    /// <summary>Whether a refresh source is attached to this subscriber's policies.</summary>
     public bool IsRefreshable => Volatile.Read(ref _refresh) is not null;
 
     public bool Allows(FeatureStreamEnvelope envelope)
@@ -79,21 +73,13 @@ internal sealed class StreamSubscriberSecurity
         };
     }
 
-    /// <summary>
-    /// Attaches the source that re-resolves this subscriber's policies against the current
-    /// metadata and policy stores. The source runs on the periodic refresh tick only, never per event.
-    /// </summary>
+    // The refresh source runs on the tick, never on each event.
     public void EnableRefresh(Func<CancellationToken, Task<StreamSubscriberSecurity>> refresh)
     {
         ArgumentNullException.ThrowIfNull(refresh);
         Volatile.Write(ref _refresh, refresh);
     }
 
-    /// <summary>
-    /// Re-resolves the policies and swaps them in atomically. A route that was readable before
-    /// the refresh and is still published but now denied reports <see cref="StreamSubscriberSecurityRefreshOutcome.Revoked"/>.
-    /// A failed re-resolution fails closed (no route remains readable) and rethrows.
-    /// </summary>
     public async Task<StreamSubscriberSecurityRefreshOutcome> RefreshAsync(CancellationToken cancellationToken)
     {
         var refresh = Volatile.Read(ref _refresh);
@@ -161,23 +147,18 @@ internal sealed class StreamSubscriberSecurity
     }
 }
 
-/// <summary>Result of one subscriber policy refresh.</summary>
 internal enum StreamSubscriberSecurityRefreshOutcome
 {
-    /// <summary>No refresh source is attached (policies are fixed for the subscription).</summary>
     NotRefreshable,
 
-    /// <summary>Another refresh of the same subscriber is still running.</summary>
     InProgress,
 
-    /// <summary>The current policies were swapped in; every previously readable route is still readable or retired.</summary>
     Refreshed,
 
-    /// <summary>A previously readable, still-published route is now denied; the subscription must end.</summary>
+    // A route the subscriber could read that is denied ends the subscription.
     Revoked
 }
 
-/// <summary>All row restrictions and the union of field masks for one readable publication.</summary>
 internal sealed record StreamLayerReadPolicy(
     IReadOnlyList<FilterExpression> Predicates,
     HashSet<string> MaskedFields);

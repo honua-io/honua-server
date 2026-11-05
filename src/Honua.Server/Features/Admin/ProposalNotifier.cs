@@ -7,11 +7,6 @@ using Microsoft.AspNetCore.SignalR;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Publishes proposal lifecycle events to the <see cref="AdminHub"/> proposals
-/// group so the console reacts live. Emitted from the gateway/store boundary, not
-/// per-endpoint (#1695).
-/// </summary>
 internal sealed partial class ProposalNotifier(
     IHubContext<AdminHub> hubContext,
     ILogger<ProposalNotifier> logger) : IProposalNotifier

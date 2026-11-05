@@ -7,13 +7,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Identity.Scim;
 
-/// <summary>
-/// SCIM 2.0 service-provider discovery documents (#2154, RFC 7643 §5-7): the
-/// <c>/ServiceProviderConfig</c>, <c>/ResourceTypes</c>, and <c>/Schemas</c> endpoints an IdP
-/// queries to learn which optional features, resource types, and attribute schemas Honua
-/// supports. These are static, provider-agnostic descriptions of the implemented surface and
-/// are gated by the same bearer token as the rest of the SCIM API.
-/// </summary>
 internal static partial class ScimEndpoints
 {
     // ---- ServiceProviderConfig --------------------------------------------------------

@@ -28,12 +28,6 @@ internal sealed record FeatureLockMutationRequest
     // happened to use still matches the key every write path evaluates (#4402).
     public FeatureRef ToFeatureRef() => FeatureRef.Canonical(ServiceName, LayerId, FeatureId);
 
-    /// <summary>
-    /// Builds the holder, stamping the authenticated principal over anything the request
-    /// body carried. The principal is the only unforgeable part of a lease identity: the
-    /// holder id, session and tenant are all caller-chosen and are echoed back in conflict
-    /// responses, so a second editor could otherwise replay them to be treated as the owner.
-    /// </summary>
     public LockHolder ToHolder(ClaimsPrincipal? principal) =>
         new(HolderId, DisplayName, SessionId, TenantId, ResolvePrincipalName(principal));
 

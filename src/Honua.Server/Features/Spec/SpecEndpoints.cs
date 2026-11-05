@@ -16,24 +16,9 @@ using SpecCanonicalJsonReader = Honua.Core.Features.Spec.Canonical.SpecJsonReade
 
 namespace Honua.Server.Features.Spec;
 
-/// <summary>
-/// Maps the Terraform-style <c>/v1/spec/*</c> endpoints:
-/// <list type="bullet">
-///   <item><c>POST /v1/spec/plan</c> — returns the DAG, cost estimates, and warnings.</item>
-///   <item><c>POST /v1/spec/apply</c> — streams per-node apply events over SSE.</item>
-///   <item><c>POST /v1/spec/cancel</c> — cooperatively cancels an in-flight run.</item>
-///   <item><c>GET /v1/spec/artifact/{hash}</c> — retrieves a cached artifact by hash.</item>
-/// </list>
-/// </summary>
 internal static class SpecEndpoints
 {
-    /// <summary>
-    /// Server-side ceiling on per-run apply parallelism. The orchestrator only
-    /// clamps the lower bound, and the spec surface is anonymous in early access
-    /// (see TODO(#1144) below), so the request value must not be allowed to
-    /// request effectively unlimited intra-run concurrency. Shared with the gRPC
-    /// adapter (<see cref="HonuaSpecService"/>).
-    /// </summary>
+    // The request must not raise per-run parallelism without this ceiling.
     internal const int MaxApplyConcurrency = 16;
 
     public static IEndpointRouteBuilder MapSpecEndpoints(this IEndpointRouteBuilder endpoints)

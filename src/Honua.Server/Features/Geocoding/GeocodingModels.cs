@@ -11,12 +11,6 @@ internal sealed record GeocodeProviderCapabilities(
     bool SupportsStructuredInput,
     bool SupportsBiasing);
 
-/// <summary>
-/// The category tokens GeocodeServer advertises for <c>category</c> filtering. They mirror the
-/// address-type families Honua's backing providers classify candidates and suggestions into
-/// (see each provider's <c>GetAddressType</c> mapping), so filtering only ever matches data the
-/// provider already returns.
-/// </summary>
 internal static class GeocodeSupportedCategories
 {
     public static readonly string[] All =

@@ -11,19 +11,8 @@ namespace Honua.Server.Features.Styling;
 
 internal static class GeoServicesToMapLibreConverter
 {
-    /// <summary>
-    /// Tolerance for comparing picture-marker offset/rotation values (in pixels/degrees)
-    /// against zero or against each other. Matches the tolerance already used to detect
-    /// uniform per-stop layouts below; avoids exact double equality on style-authored values.
-    /// </summary>
     private const double OffsetEqualityEpsilon = 0.01d;
 
-    /// <summary>
-    /// Converts a GeoServices drawingInfo payload to canonical MapLibre Style Spec v8 JSON
-    /// and reports any symbolizer inputs that could not be losslessly translated.  When
-    /// inputs are unsupported, callers still receive a best-effort default MapLibre style
-    /// so downstream consumers continue to render.
-    /// </summary>
     public static StyleConversionResult Convert(JsonElement drawingInfo, StyleLayerDescriptor layer)
     {
         var unsupported = new List<UnsupportedSymbolizerInfo>();
@@ -78,14 +67,6 @@ internal static class GeoServicesToMapLibreConverter
     private static readonly string[] SupportedLineSymbolTypes = ["esriSLS"];
     private static readonly string[] SupportedFillSymbolTypes = ["esriSFS"];
 
-    /// <summary>
-    /// Records a <see cref="StyleErrorCodes.RendererPayloadIncomplete"/> entry
-    /// when a supported renderer (<c>simple</c>, <c>uniqueValue</c>, or
-    /// <c>classBreaks</c>) is missing required fields and falls back to the
-    /// default MapLibre style.  Centralized so the four call sites stay in
-    /// sync with the public contract documented in
-    /// <c>docs/gis/style-engine-protocol-consumption.md</c>.
-    /// </summary>
     private static void RecordPayloadIncomplete(
         List<UnsupportedSymbolizerInfo> unsupported,
         string rendererType,
@@ -99,13 +80,6 @@ internal static class GeoServicesToMapLibreConverter
         });
     }
 
-    /// <summary>
-    /// Inspects <paramref name="symbol"/> for a recognized GeoServices symbol type
-    /// and records a <see cref="StyleErrorCodes.SymbolTypeUnsupported"/> entry on
-    /// <paramref name="unsupported"/> when the type is outside the supported set
-    /// for <paramref name="layer"/>'s geometry.  Conversion still proceeds with a
-    /// best-effort default so callers always receive a renderable MapLibre style.
-    /// </summary>
     private static void ValidateSymbolType(
         JsonElement symbol,
         StyleLayerDescriptor layer,
@@ -142,12 +116,6 @@ internal static class GeoServicesToMapLibreConverter
         });
     }
 
-    /// <summary>
-    /// Records a <see cref="StyleErrorCodes.PictureMarkerPartial"/> entry when the
-    /// supplied picture marker stops carry per-stop offsets or rotation that the
-    /// canonical MapLibre style cannot losslessly express across data-driven stops.
-    /// The image payloads themselves are still preserved in the style metadata.
-    /// </summary>
     private static void RecordPictureMarkerPartialIfNeeded(
         IReadOnlyCollection<PictureMarkerPayload> payloads,
         List<UnsupportedSymbolizerInfo> unsupported)
@@ -1314,11 +1282,6 @@ internal static class GeoServicesToMapLibreConverter
         return StyleParsingHelpers.TryGetDouble(prop, out var value) ? value : null;
     }
 
-    /// <summary>
-    /// Converts a GeoServices value token to its string representation, matching
-    /// the output of MapLibre's <c>to-string</c> coercion so that <c>match</c>
-    /// stops agree with the coerced input type.
-    /// </summary>
     private static string ConvertValueTokenAsString(JsonElement element)
     {
         return element.ValueKind switch
@@ -1333,13 +1296,6 @@ internal static class GeoServicesToMapLibreConverter
     }
 }
 
-/// <summary>
-/// Result of a GeoServices-to-MapLibre style conversion.  Contains the canonical
-/// MapLibre JSON plus any symbolizers that could not be losslessly translated.
-/// Callers that only need the JSON can rely on the implicit string conversion;
-/// callers that need to surface unsupported-symbolizer reporting access
-/// <see cref="Unsupported"/> directly.
-/// </summary>
 internal sealed record StyleConversionResult(
     string MapLibreStyleJson,
     IReadOnlyList<UnsupportedSymbolizerInfo> Unsupported)

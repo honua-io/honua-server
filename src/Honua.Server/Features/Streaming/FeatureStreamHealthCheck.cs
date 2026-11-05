@@ -6,26 +6,7 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 namespace Honua.Server.Features.Streaming;
 
-/// <summary>
-/// Surfaces real-time feature-stream backpressure and cross-node delivery health through
-/// the <see cref="HealthCheckService"/> roll-up so operators see streaming degradation
-/// before clients silently miss events. Added with the GA promotion (#2428); modeled on
-/// the alert dispatch / outbox health checks. Reports:
-/// <list type="bullet">
-///   <item><description>
-///     <b>Degraded</b> when active sessions approach the concurrent-session cap (new
-///     connections are rejected with 503 once saturated);
-///   </description></item>
-///   <item><description>
-///     <b>Degraded</b> when the cross-node broadcast backlog is buffering because Redis
-///     publish is failing, or has shed payloads on overflow (cross-node live events may be
-///     missed — they remain recoverable through the durable store + cross-node poll).
-///   </description></item>
-/// </list>
-/// Never reports Unhealthy: streaming delivery is best-effort with durable replay, so its
-/// degradation must not fail readiness. Reads only in-process counters (no I/O). Runs via
-/// the IHealthCheck registry, not the <c>/healthz/ready</c> probe.
-/// </summary>
+// Streaming degradation does not fail readiness, because delivery stays recoverable from the durable store.
 internal sealed class FeatureStreamHealthCheck : IHealthCheck
 {
     // Fraction of the concurrent-session cap above which the check reports Degraded.

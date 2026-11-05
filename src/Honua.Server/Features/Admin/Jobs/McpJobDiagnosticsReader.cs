@@ -9,13 +9,7 @@ using Honua.Geoprocessing;
 
 namespace Honua.Server.Features.Admin.Jobs;
 
-/// <summary>
-/// Server-side adapter behind <c>honua_diagnose_job</c> and <c>honua_job_evidence</c>
-/// (honua-server#6219). It reads the same <see cref="ConsoleJobDiagnostics"/> projection
-/// as <c>GET /api/v1/admin/jobs/{jobId}/diagnostics</c> under the same Job Read gate, then
-/// splits it into observed facts and inferred explanations so an agent cannot mistake the
-/// server's reading of the evidence for the evidence itself.
-/// </summary>
+// The agent projection splits observed facts from inferred explanations so a reading of the evidence is not returned as the evidence.
 internal sealed class McpJobDiagnosticsReader(IConsoleJobService jobs) : IMcpJobDiagnosticsReader
 {
     public const string DiagnosisSchemaId = "honua.mcp.job-diagnosis/v1";

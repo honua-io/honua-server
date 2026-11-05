@@ -6,41 +6,23 @@ using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Resolves the single feature or table resource addressed by an admin layer id.
-/// </summary>
-/// <remarks>
-/// Layer indexes are service-local. Filter, field, popup, and drawing writes must
-/// not fan out across every resource that happens to reuse the index. A raster
-/// sidecar may share the index with its feature layer and is not a second target.
-/// Matching uses <see cref="MetadataV2Publication.LayerIndex"/> alone: legacy
-/// snapshots leave <see cref="MetadataV2Publication.Identifier"/> unset, and
-/// reading <c>Identifier.IsNumeric</c> throws.
-/// </remarks>
+// A layer index is service-local, so a write addresses one feature or table resource; a raster sidecar that shares the index is not a second target, and an unset identifier is not numeric.
 internal static class AdminLayerConfigurationTargets
 {
     private const int MetadataMutationMaxAttempts = 5;
 
-    /// <summary>The resource a layer-id write may update, or a conflict when the id is shared.</summary>
-    /// <param name="Resource">The single routable feature or table resource, when the id is unique.</param>
-    /// <param name="ConflictDetail">Why the id cannot be written, when more than one resource matches.</param>
+    // The result is a conflict when more than one resource matches the layer id.
     internal readonly record struct AdminLayerConfigurationTarget(
         MetadataV2Resource? Resource,
         string? ConflictDetail)
     {
-        /// <summary>True when more than one routable feature or table resource publishes the layer id.</summary>
         public bool IsAmbiguous => ConflictDetail is not null;
 
-        /// <summary>Creates a unique target.</summary>
         public static AdminLayerConfigurationTarget Unique(MetadataV2Resource resource) => new(resource, null);
 
-        /// <summary>Creates an ambiguous-id conflict.</summary>
         public static AdminLayerConfigurationTarget Ambiguous(string detail) => new(null, detail);
     }
 
-    /// <summary>
-    /// Resolves <paramref name="layerId"/> to one routable feature dataset or table.
-    /// </summary>
     internal static AdminLayerConfigurationTarget Resolve(MetadataV2GraphSnapshot snapshot, int layerId)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
@@ -86,10 +68,6 @@ internal static class AdminLayerConfigurationTargets
             $"Layer {layerId} is published by more than one resource ({listed}). Update one service's layer at a time.");
     }
 
-    /// <summary>
-    /// Applies <paramref name="mutate"/> to the single resource for <paramref name="layerId"/>.
-    /// An ambiguous id is not written. Retries an optimistic-concurrency etag mismatch.
-    /// </summary>
     internal static async Task<AdminLayerConfigurationTarget> WriteAsync(
         IMetadataV2GraphStore graphStore,
         int layerId,

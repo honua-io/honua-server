@@ -23,11 +23,6 @@ using Microsoft.IdentityModel.Tokens;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Anonymous admin auth bootstrap endpoints for the hosted admin UI.
-/// Provider connection details stay server-side; the client receives only provider labels
-/// and uses backend-assisted login, token exchange, and logout discovery.
-/// </summary>
 internal static class AdminAuthEndpoints
 {
     private const string AdminAuthHttpClient = "AdminAuthOidc";
@@ -39,9 +34,6 @@ internal static class AdminAuthEndpoints
 
     internal sealed class AdminAuthEndpointsLog;
 
-    /// <summary>
-    /// Registers the admin auth configuration and backend-assisted OIDC flow endpoints.
-    /// </summary>
     public static void MapAdminAuthEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/auth")

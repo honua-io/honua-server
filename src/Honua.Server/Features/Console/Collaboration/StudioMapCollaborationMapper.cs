@@ -7,11 +7,6 @@ using Honua.Server.Features.Console.Collaboration.Models;
 
 namespace Honua.Server.Features.Console.Collaboration;
 
-/// <summary>
-/// Projects durable collaboration domain records onto the Console-facing wire DTOs,
-/// deriving presentation-only fields (avatar initials/color, relative time) that the
-/// Console comment drawer and activity sidebar render.
-/// </summary>
 internal static class StudioMapCollaborationMapper
 {
     // Deterministic palette mirrored from the Console collaboration mockup so the

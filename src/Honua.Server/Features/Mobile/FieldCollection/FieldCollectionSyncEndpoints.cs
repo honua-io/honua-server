@@ -14,11 +14,6 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Mobile.FieldCollection;
 
-/// <summary>
-/// FieldCollection mobile sync endpoints (#894). Exposes generation, sync-cursor,
-/// pull, and push paths consumed by the <c>honua-mobile</c> FieldCollection
-/// offline sync clients.
-/// </summary>
 internal static class FieldCollectionSyncEndpoints
 {
     internal const string ClientIdHeader = "X-Honua-Client-Id";
@@ -28,17 +23,6 @@ internal static class FieldCollectionSyncEndpoints
     private const int DefaultPullLimit = 200;
     private const int MaxPullLimit = 1_000;
 
-    /// <summary>
-    /// Maps the four FieldCollection mobile sync endpoints to the supplied app.
-    /// </summary>
-    /// <remarks>
-    /// No-op when <see cref="IFieldCollectionSyncStore"/> is not registered, which
-    /// is the case for non-Postgres data-source profiles (DuckDB, MySQL/MariaDB,
-    /// SQL Server). Without this gate, requests would fail with an internal DI
-    /// resolution error instead of a deliberate 404. Registration is probed via
-    /// <see cref="IServiceProviderIsService"/> so that the scoped store is not
-    /// constructed from the root provider during route mapping.
-    /// </remarks>
     public static void MapFieldCollectionSyncEndpoints(this WebApplication app)
     {
         ArgumentNullException.ThrowIfNull(app);
@@ -441,15 +425,6 @@ internal static class FieldCollectionSyncEndpoints
             FieldCollectionSyncJsonContext.Default.FieldCollectionPushResponse);
     }
 
-    /// <summary>
-    /// Resolves a stable per-client identifier for sync-cursor partitioning.
-    /// Mobile clients should send <c>X-Honua-Client-Id</c> on every sync call so
-    /// that multiple field devices sharing one API key keep independent cursors.
-    /// When the header is absent (legacy callers, server-to-server probes,
-    /// admin clients) the principal name from <see cref="ApiKeyAuthenticationHandler"/>
-    /// is used; that handler emits a single <c>"admin"</c> name, so callers in
-    /// this branch share one cursor by design.
-    /// </summary>
     private static string ResolveClientId(HttpContext context)
     {
         if (context.Request.Headers.TryGetValue(ClientIdHeader, out var headerValues))

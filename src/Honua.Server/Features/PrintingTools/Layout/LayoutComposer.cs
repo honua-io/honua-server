@@ -7,33 +7,14 @@ using SkiaSharp;
 
 namespace Honua.Server.Features.PrintingTools.Layout;
 
-/// <summary>
-/// Composes a print layout by rendering map frame and layout elements onto a Skia canvas
-/// according to a layout template's slot geometry.
-/// </summary>
 internal static class LayoutComposer
 {
     private const float DefaultFontSize = 10f;
     private const float TitleFontSize = 16f;
     private const float AttributionFontSize = 8f;
 
-    /// <summary>
-    /// Tolerance for comparing a computed "nice" scale-bar distance against 1.0 to pick
-    /// singular vs. plural units. Avoids exact double equality on a computed value.
-    /// </summary>
     private const double NiceNumberEpsilon = 1e-9;
 
-    /// <summary>
-    /// Composes a full page layout onto the given canvas at the specified DPI.
-    /// </summary>
-    /// <param name="canvas">Target canvas to draw on.</param>
-    /// <param name="template">Layout template defining element positions.</param>
-    /// <param name="mapImageBytes">Pre-rendered map frame image (PNG bytes).</param>
-    /// <param name="legendSwatches">Legend entries with label and swatch image.</param>
-    /// <param name="titleText">Title text to display, null to omit.</param>
-    /// <param name="attributionText">Attribution/copyright text.</param>
-    /// <param name="scaleDenominator">Map scale denominator for scale bar.</param>
-    /// <param name="dpi">Output DPI for scaling.</param>
     internal static void Compose(
         SKCanvas canvas,
         PrintLayoutTemplate template,
@@ -327,10 +308,6 @@ internal static class LayoutComposer
             Embolden = bold
         };
 
-    /// <summary>
-    /// Returns the largest value in {1, 2, 5} × 10^n that does not exceed <paramref name="value"/>.
-    /// Used by the scale bar to guarantee the label never exceeds the visual bar length.
-    /// </summary>
     private static double FloorToNiceNumber(double value)
     {
         if (value <= 0) return 1;
@@ -346,18 +323,9 @@ internal static class LayoutComposer
     }
 }
 
-/// <summary>
-/// A legend swatch with label and image bytes.
-/// </summary>
 internal sealed class LegendSwatchEntry
 {
-    /// <summary>
-    /// Display label for this legend entry.
-    /// </summary>
     public string? Label { get; init; }
 
-    /// <summary>
-    /// PNG swatch image bytes.
-    /// </summary>
     public byte[]? SwatchBytes { get; init; }
 }

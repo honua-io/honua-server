@@ -12,18 +12,7 @@ using StackExchange.Redis;
 
 namespace Honua.Server.Features.Protocols.Grpc;
 
-/// <summary>At-most-once store for gRPC ApplyEdits retries, shared through Redis when configured.</summary>
-/// <remarks>
-/// A retry scope binds the service, layer, effective tenant and the scheme- and
-/// issuer-qualified actor (<see cref="CreateScope"/>), so a stored result is replayed only to
-/// the caller that produced it. With Redis, the first caller holds an owner-token reservation
-/// that is renewed for as long as its edit runs, and its result replaces the reservation only
-/// while that token still holds it. A writer that can no longer prove it holds the reservation
-/// is cancelled a full safety margin before the reservation could lapse, so a second replica
-/// never begins the same edit while the first can still commit. Local state is bounded: key
-/// gates are reference counted and dropped when idle, and local result copies live in a
-/// size-limited, expiring cache that, with Redis, only holds results Redis could not persist.
-/// </remarks>
+// A writer that cannot prove the reservation is cancelled before it can lapse, so a second replica never starts the same edit.
 internal sealed partial class GrpcApplyEditsIdempotencyStore : IDisposable
 {
     internal static readonly TimeSpan DefaultResponseWindow = TimeSpan.FromHours(24);
@@ -147,10 +136,8 @@ internal sealed partial class GrpcApplyEditsIdempotencyStore : IDisposable
 
     internal int UnpublishedResultCount => _unpublished.Count;
 
-    /// <summary>When a receipt written with this store stops being replayable.</summary>
     internal DateTimeOffset ResponseExpiresAt => _timeProvider.GetUtcNow() + _responseWindow;
 
-    /// <summary>Bytes stored for a committed edit: the receipt marker followed by the proto response.</summary>
     internal static byte[] EncodeReceipt(Proto.ApplyEditsResponse response)
     {
         ArgumentNullException.ThrowIfNull(response);
@@ -161,18 +148,13 @@ internal sealed partial class GrpcApplyEditsIdempotencyStore : IDisposable
         return receipt;
     }
 
-    /// <summary>A committed database receipt, or an undecodable payload that must not be executed again.</summary>
+    // An undecodable payload must not be executed again.
     internal readonly record struct DurableEditReceipt(Proto.ApplyEditsResponse? Response, bool OutcomeUnknown)
     {
         public bool Found => Response is not null || OutcomeUnknown;
     }
 
-    /// <summary>
-    /// Builds the retry scope for a client idempotency key: service, layer, effective tenant,
-    /// canonical actor and key, length-prefixed and hashed so no component can collide with
-    /// another. Returns <see langword="null"/> for an authenticated caller whose identity
-    /// cannot be bound to a durable actor.
-    /// </summary>
+    // An identity that cannot be bound to a durable actor gets no retry scope.
     public static string? CreateScope(HttpContext? httpContext, string? serviceId, int layerId, string clientKey)
     {
         if (IdempotencyCaller.Resolve(httpContext) is not { } caller)
@@ -522,7 +504,6 @@ internal sealed partial class GrpcApplyEditsIdempotencyStore : IDisposable
         }
     }
 
-    /// <summary>The caller's hold on one retry scope; dispose it when the edit request ends.</summary>
     public sealed class Lease : IAsyncDisposable
     {
         private readonly GrpcApplyEditsIdempotencyStore _store;
@@ -550,24 +531,14 @@ internal sealed partial class GrpcApplyEditsIdempotencyStore : IDisposable
             OutcomeUnknown = outcomeUnknown;
         }
 
-        /// <summary>The stored result to replay, or <see langword="null"/> when this caller must execute.</summary>
         public Proto.ApplyEditsResponse? Response { get; }
 
-        /// <summary>
-        /// A previous keyed write may have committed. The caller must not execute the edit again
-        /// and must not treat this as a stored failure receipt.
-        /// </summary>
+        // A keyed write that may have committed must not be executed again, and it is not a stored failure.
         public bool OutcomeUnknown { get; }
 
-        /// <summary>Whether the shared reservation was lost before the edit completed.</summary>
         public bool OwnershipLost => _reservation?.Lost.IsCancellationRequested == true;
 
-        /// <summary>
-        /// Confirms the reservation is still held immediately before the write and returns the
-        /// token the writer must observe: it is cancelled with the request or as soon as the
-        /// reservation can no longer be proven held. Returns <see langword="null"/> when the
-        /// reservation is already lost, in which case the caller must not write.
-        /// </summary>
+        // A lost reservation means the caller must not write.
         public async Task<CancellationToken?> TryBeginWriteAsync(CancellationToken requestCancellation)
         {
             if (_reservation is null)
@@ -588,7 +559,6 @@ internal sealed partial class GrpcApplyEditsIdempotencyStore : IDisposable
             return _writeCancellation.Token;
         }
 
-        /// <summary>Records the committed result so retries in the same scope replay it.</summary>
         public async Task CompleteAsync(Proto.ApplyEditsResponse response)
         {
             if (_completed)
@@ -622,10 +592,7 @@ internal sealed partial class GrpcApplyEditsIdempotencyStore : IDisposable
             }
         }
 
-        /// <summary>
-        /// Drops this request's reservation without storing its local result. The committed
-        /// receipt already lives in the database, so a retry must read that instead.
-        /// </summary>
+        // The reservation is dropped without storing a local result, because the receipt is in the database.
         public async Task ReleaseAsAlreadyRecordedAsync()
         {
             if (_completed)
@@ -643,10 +610,7 @@ internal sealed partial class GrpcApplyEditsIdempotencyStore : IDisposable
             await _store.ReleaseTokenAsync(_reservation.Key, _reservation.Token).ConfigureAwait(false);
         }
 
-        /// <summary>
-        /// Keeps the key for the response window without storing a failure receipt. A retry must
-        /// not execute the edit again. The marker replaces this request's reservation only.
-        /// </summary>
+        // A retry must not execute the edit again, and the marker replaces only this request's reservation.
         public async Task RetainAmbiguousAsync()
         {
             if (_completed)
@@ -710,13 +674,11 @@ internal sealed partial class GrpcApplyEditsIdempotencyStore : IDisposable
 
     private sealed record UnpublishedResult(RedisKey Key, byte[] Token, byte[] Receipt, long QueuedAt);
 
-    /// <summary>Serializes callers on one scope; <see cref="References"/> counts holders and waiters.</summary>
     internal sealed class KeyGate() : SemaphoreSlim(1, 1)
     {
         public int References { get; set; }
     }
 
-    /// <summary>A held Redis reservation, renewed in the background until stopped.</summary>
     internal sealed class Reservation : IDisposable
     {
         private readonly GrpcApplyEditsIdempotencyStore _store;
@@ -767,7 +729,6 @@ internal sealed partial class GrpcApplyEditsIdempotencyStore : IDisposable
             await _renewal.ConfigureAwait(false);
         }
 
-        /// <summary>Releases the token sources; call only after <see cref="StopAsync"/>.</summary>
         public void Dispose()
         {
             _lost.Dispose();

@@ -11,34 +11,12 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Admin editing surface for the addressable network-dataset registry (#1882). Provides
-/// CRUD over <c>honua.network_datasets</c> — register / update / delete a dataset's
-/// source-table mapping and metadata — gated by the admin authorization policy, mirroring
-/// the scene-dataset registry admin endpoints.
-/// </summary>
-/// <remarks>
-/// This edits the dataset <em>registry</em> (mapping + descriptive metadata), which is the
-/// addressable editing surface built on the Phase-0 registry. Edge/vertex feature editing,
-/// turn/restriction-attribute editing, and topology rebuild are deliberately deferred (the
-/// rare, heavyweight tail of the parity row) and not exposed here.
-/// All edge/vertex table names are validated as safe schema-qualified identifiers before
-/// persistence because the routing read path interpolates them into the pgRouting
-/// edges-SQL string.
-/// </remarks>
+// Dataset table names are validated as schema-qualified identifiers before they are stored, because the routing query interpolates them into SQL.
 internal static partial class NetworkDatasetAdminEndpoints
 {
     private const string TagAdmin = "Admin";
     private const string TagNetworkDatasets = "Network Datasets";
 
-    /// <summary>
-    /// Maps the network-dataset admin endpoints into the request pipeline.
-    /// </summary>
-    /// <remarks>
-    /// No-op when <see cref="INetworkDatasetStore"/> is not registered, which is the case
-    /// for non-Postgres data-source profiles (the registry table is Postgres-only). The
-    /// read-only routing path is unaffected; only the admin CRUD surface is suppressed.
-    /// </remarks>
     public static IEndpointRouteBuilder MapNetworkDatasetAdminEndpoints(this IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
@@ -432,14 +410,8 @@ internal static partial class NetworkDatasetAdminEndpoints
     private static string ResolveActor(HttpContext context)
         => context.User.Identity?.Name is { Length: > 0 } name ? name : "admin";
 
-    /// <summary>
-    /// Log category marker used by <see cref="ILogger{TCategoryName}"/> bindings.
-    /// </summary>
     internal sealed class NetworkDatasetAdminLogCategory;
 
-    /// <summary>
-    /// Source-generated logger messages for the network-dataset admin endpoints.
-    /// </summary>
     internal static partial class NetworkDatasetAdminLog
     {
         [LoggerMessage(EventId = 4600, Level = LogLevel.Information,

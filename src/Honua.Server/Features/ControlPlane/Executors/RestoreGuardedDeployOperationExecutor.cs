@@ -10,11 +10,7 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.ControlPlane.Executors;
 
-/// <summary>
-/// Deploy executor that restores a verified pre-migration backup before a reader-incompatible
-/// rollback starts the prior image. Forward deploys and compatible rollbacks pass through.
-/// A failed restore throws, so the gateway cannot record an operation id as success.
-/// </summary>
+// A failed restore throws, so the gateway cannot record the operation as a success, and forward deploys pass through.
 internal sealed class RestoreGuardedDeployOperationExecutor(
     DeployOperationExecutor inner,
     PreMigrationRestoreCoordinator coordinator,
@@ -25,7 +21,6 @@ internal sealed class RestoreGuardedDeployOperationExecutor(
 {
     public OperationClass OperationClass => OperationClass.Deploy;
 
-    /// <inheritdoc />
     public async Task<OperationProposalPlan?> PlanAsync(
         OperationGatewayRequest request,
         CancellationToken cancellationToken = default)
@@ -67,7 +62,6 @@ internal sealed class RestoreGuardedDeployOperationExecutor(
         return plan;
     }
 
-    /// <inheritdoc />
     public async Task<string?> ExecuteAsync(
         OperationGatewayRequest request,
         string? executionPayload,
@@ -116,7 +110,6 @@ internal sealed class RestoreGuardedDeployOperationExecutor(
     }
 
 
-    /// <inheritdoc />
     public async Task<OperationBackendStatus?> GetBackendStatusAsync(
         string executionOperationId,
         CancellationToken cancellationToken = default)
@@ -133,10 +126,8 @@ internal sealed class RestoreGuardedDeployOperationExecutor(
     }
 }
 
-/// <summary>Starts the prior image through the existing deploy workflow, and only when the gate calls it.</summary>
 internal sealed class DeployPriorImageStarter(DeployOperationExecutor inner, TimeSpan budget) : IPriorImageStarter
 {
-    /// <inheritdoc />
     public async Task<string?> StartAsync(
         OperationGatewayRequest request,
         string? executionPayload,
@@ -158,13 +149,8 @@ internal sealed class DeployPriorImageStarter(DeployOperationExecutor inner, Tim
     }
 }
 
-/// <summary>Polls a deploy workflow until it succeeds, fails, or the budget ends.</summary>
 internal static class PriorImageReadiness
 {
-    /// <summary>
-    /// Returns true only when a read reports <see cref="OperationBackendState.Succeeded"/>.
-    /// A terminal failure returns false without waiting out the budget.
-    /// </summary>
     public static async Task<bool> WaitAsync(
         Func<CancellationToken, Task<OperationBackendStatus?>> read,
         TimeSpan budget,

@@ -31,10 +31,6 @@ using Proto = Geospatial.V1;
 
 namespace Honua.Server.Features.Protocols.Grpc;
 
-/// <summary>
-/// gRPC service implementation for feature queries.
-/// Delegates to existing infrastructure (IResourceValidator, IFeatureReader, IStreamingFeatureStore).
-/// </summary>
 internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceBase
 {
     private const string GrpcProtocolName = "Grpc";
@@ -609,10 +605,6 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         StatusCode.Aborted,
         "The edit lost its idempotency reservation before it completed; retry with the same idempotency key."));
 
-    /// <summary>
-    /// True when the writer could not prove the transaction rolled back and reported no
-    /// successful row. A confirmed rollback and a known partial success are receipts.
-    /// </summary>
     private static bool IsAmbiguousCommit(FeatureEditResult result)
     {
         if (result.WasRolledBack || result.CreatedCount + result.UpdatedCount + result.DeletedCount > 0)
@@ -652,15 +644,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Pre-reads every update and delete target through the RLS-enforced
-    /// <see cref="IFeatureReader.GetAsync(int, long, CancellationToken)"/> so the gRPC edit
-    /// surface enforces the same row-level visibility as the read path. A row that is hidden
-    /// from the caller by a row-level-security policy or a metadata permanent filter resolves
-    /// to <see langword="null"/>; the request is rejected (fail closed) rather than mutating or
-    /// deleting it, because the underlying edit SQL filters only on <c>(layer_id, objectid)</c>
-    /// with no RLS predicate (#2071). Adds carry no objectid and are not pre-read.
-    /// </summary>
+    // A row hidden by row-level security is rejected rather than edited, because the edit statement has no row-level predicate.
     private async Task<FeatureEditBatch> EnsureEditTargetsVisibleAsync(
         int storageLayerId,
         FeatureEditBatch editBatch,
@@ -754,11 +738,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         };
     }
 
-    /// <summary>
-    /// Omitted geometry keeps the stored geometry. There is no protobuf signal for
-    /// clearing geometry. Omitted attributes are not copied from this snapshot: the
-    /// writer merges them from the locked row, including fields this caller cannot see.
-    /// </summary>
+    // Omitted geometry keeps the stored geometry, and omitted attributes are merged from the locked row.
     private static Feature MergePartialUpdate(Feature update, Feature stored)
         => update with
         {
@@ -839,13 +819,6 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         }
     }
 
-    /// <summary>
-    /// Build per-operation-kind queues of geometry-change flags in the same order
-    /// ApplyEditsAsync iterates rows for each kind, so the outbox payload's
-    /// <c>GeometryChanged</c> field tracks the originating request's intent rather than
-    /// inferring from the post-mutation snapshot. Deletes default to false (the inline
-    /// publish path also defaults to false for delete events).
-    /// </summary>
     private static Dictionary<string, IReadOnlyList<bool>>? BuildPerOperationGeometryChanged(FeatureEditBatch editBatch)
     {
         if (editBatch.Creates.IsDefaultOrEmpty && editBatch.Updates.IsDefaultOrEmpty && editBatch.Deletes.IsDefaultOrEmpty)
@@ -1090,13 +1063,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             request.ReturnGeometry);
     }
 
-    /// <summary>
-    /// Binds the request's <c>where</c> clause to the shared filter pipeline, as FeatureServer
-    /// does with the same GeoServices SQL parameter: the clause is parsed by the shared parser,
-    /// refused when any field it references is masked from the caller, and translated against
-    /// the layer schema. The raw text stays on <see cref="FeatureQuery.Where"/> for providers
-    /// that re-parse it, and the provider's own field-security check still runs on both.
-    /// </summary>
+    // A where clause that names a masked field is refused.
     private static async Task<SqlFragment?> BindWhereClauseAsync(
         string? where,
         MetadataV2Resource resource,
@@ -1292,11 +1259,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         }
     }
 
-    /// <summary>
-    /// Rejects an edit kind the publication's declared capabilities omit (SEC-5), matching
-    /// the FeatureServer and OGC API Features surfaces. Metadata that declares no
-    /// capabilities keeps the legacy behaviour.
-    /// </summary>
+    // An edit kind the publication omits is rejected.
     private static void EnsureDeclaredEditCapabilities(
         MetadataV2Service service,
         MetadataV2Publication publication,
@@ -1318,10 +1281,6 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         }
     }
 
-    /// <summary>
-    /// Applies the shared <see cref="EditLimitPolicy"/> (the same policy FeatureServer applyEdits
-    /// and OData <c>$batch</c> use) before any read or write.
-    /// </summary>
     private static void EnsureEditLimits(FeatureEditBatch editBatch, EditLimits editLimits)
     {
         var creates = editBatch.Creates.IsDefault ? 0 : editBatch.Creates.Length;

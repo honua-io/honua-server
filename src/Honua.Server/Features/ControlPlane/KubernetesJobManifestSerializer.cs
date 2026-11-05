@@ -5,17 +5,8 @@ using System.Text.Json;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Low-level JSON helpers for Kubernetes Job and Pod payloads. Uses
-/// <see cref="Utf8JsonWriter"/> and <see cref="JsonDocument"/> directly so the
-/// client stays AOT- and trim-safe without pulling in the official Kubernetes
-/// client or reflection-based serialization.
-/// </summary>
 internal static class KubernetesJobManifestSerializer
 {
-    /// <summary>
-    /// Builds a minimal <c>batch/v1</c> Job manifest payload.
-    /// </summary>
     public static byte[] SerializeJobManifest(KubernetesJobManifest manifest)
     {
         ArgumentNullException.ThrowIfNull(manifest);
@@ -148,9 +139,6 @@ internal static class KubernetesJobManifestSerializer
         return stream.ToArray();
     }
 
-    /// <summary>
-    /// Builds the request body for a Job DELETE call with cascade propagation.
-    /// </summary>
     public static byte[] SerializeDeleteOptions(string propagationPolicy)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(propagationPolicy);
@@ -171,9 +159,6 @@ internal static class KubernetesJobManifestSerializer
         return stream.ToArray();
     }
 
-    /// <summary>
-    /// Extracts the lifecycle-relevant fields from a Job API response payload.
-    /// </summary>
     public static KubernetesJobStatusSnapshot ParseJobStatus(JsonElement root)
     {
         string? uid = null;
@@ -254,9 +239,6 @@ internal static class KubernetesJobManifestSerializer
         };
     }
 
-    /// <summary>
-    /// Extracts per-pod lifecycle state from a pod list response.
-    /// </summary>
     public static IReadOnlyList<KubernetesPodStatusSnapshot> ParsePodList(JsonElement root)
     {
         if (!root.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array)

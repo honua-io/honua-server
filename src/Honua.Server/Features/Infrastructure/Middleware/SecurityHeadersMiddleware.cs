@@ -6,25 +6,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Middleware;
 
-/// <summary>
-/// Middleware that adds comprehensive security headers to protect against common web vulnerabilities.
-/// Implements defense-in-depth security practices including CSP, HSTS, frame protection, and more.
-/// </summary>
-/// <remarks>
-/// Security headers added:
-/// - Strict-Transport-Security (HSTS): Enforces HTTPS connections
-/// - Content-Security-Policy (CSP): Prevents XSS and injection attacks
-/// - X-Frame-Options: Prevents clickjacking attacks
-/// - X-Content-Type-Options: Prevents MIME-type confusion attacks
-/// - Referrer-Policy: Controls referrer information leakage
-/// - X-XSS-Protection: Enables XSS filtering in older browsers
-/// - Cross-Origin-Opener-Policy (COOP): Isolates browsing context
-/// - Cross-Origin-Embedder-Policy (COEP): Controls cross-origin resource loading
-/// - Permissions-Policy: Restricts access to browser features
-///
-/// This middleware should be placed early in the pipeline to ensure all responses
-/// receive security headers, including error responses.
-/// </remarks>
 internal sealed class SecurityHeadersMiddleware
 {
     private readonly RequestDelegate _next;
@@ -65,12 +46,6 @@ internal sealed class SecurityHeadersMiddleware
         await _next(context);
     }
 
-    /// <summary>
-    /// Applies comprehensive security headers to the HTTP response, taking into
-    /// account HTTPS gating for HSTS, HEAD/OPTIONS short-circuits, and route-prefix
-    /// CSP overrides defined in <see cref="SecurityHeadersOptions.RouteOverrides"/>.
-    /// </summary>
-    /// <param name="context">The HTTP context for the current request.</param>
     private void ApplySecurityHeaders(HttpContext context)
     {
         var headers = context.Response.Headers;
@@ -149,10 +124,6 @@ internal sealed class SecurityHeadersMiddleware
         }
     }
 
-    /// <summary>
-    /// Resolves the most-specific route override (by longest path-prefix match)
-    /// for the supplied request path. Returns <c>null</c> when no override applies.
-    /// </summary>
     private SecurityHeadersRouteOverride? ResolveRouteOverride(PathString path)
     {
         if (_options.RouteOverrides == null || _options.RouteOverrides.Count == 0 || !path.HasValue)
@@ -181,13 +152,6 @@ internal sealed class SecurityHeadersMiddleware
         return match;
     }
 
-    /// <summary>
-    /// Resolves the Content Security Policy header for a request, substituting a
-    /// route-specific override (e.g. a looser policy for admin/Swagger UI) when one
-    /// applies and otherwise returning the precomputed default policy.
-    /// </summary>
-    /// <param name="routeOverride">Optional per-route CSP override.</param>
-    /// <returns>A tuple containing the header name and policy value</returns>
     private (string headerName, string policy) ResolveContentSecurityPolicy(SecurityHeadersRouteOverride? routeOverride)
     {
         // Route-level override wins, regardless of global settings, so callers can
@@ -203,12 +167,6 @@ internal sealed class SecurityHeadersMiddleware
         return _defaultCspHeader;
     }
 
-    /// <summary>
-    /// Builds the default Content Security Policy header from configuration. Called
-    /// once from the constructor; per-request resolution uses the cached result via
-    /// <see cref="ResolveContentSecurityPolicy"/>.
-    /// </summary>
-    /// <returns>A tuple containing the header name and policy value</returns>
     private (string headerName, string policy) BuildContentSecurityPolicy()
     {
         // If CSP config is not provided, use the simple string policy
@@ -312,256 +270,95 @@ internal sealed class SecurityHeadersMiddleware
     }
 }
 
-/// <summary>
-/// Configuration options for security headers middleware.
-/// Provides comprehensive security header configuration with secure defaults.
-/// </summary>
 public sealed class SecurityHeadersOptions
 {
-    /// <summary>
-    /// Configuration section name for binding from appsettings.json.
-    /// </summary>
     public const string SectionName = "SecurityHeaders";
 
-    /// <summary>
-    /// Enable HTTP Strict Transport Security (HSTS) header.
-    /// Default: true (recommended for production).
-    /// </summary>
     public bool EnableHsts { get; set; } = true;
 
-    /// <summary>
-    /// HSTS max-age directive in seconds.
-    /// Default: 63072000 (2 years), matching hstspreload.org submission requirements.
-    /// </summary>
     public int HstsMaxAge { get; set; } = 63072000; // 2 years
 
-    /// <summary>
-    /// Include subdomains in HSTS policy.
-    /// Default: true (recommended for complete coverage).
-    /// </summary>
     public bool HstsIncludeSubdomains { get; set; } = true;
 
-    /// <summary>
-    /// Enable HSTS preload (eligible for browser preload-list submission).
-    /// Default: true. Operators MUST own the apex domain and accept the lock-in
-    /// before enabling preload in production.
-    /// </summary>
+    // Operators must own the apex domain and accept the lock-in before enabling HSTS preload.
     public bool HstsPreload { get; set; } = true;
 
-    /// <summary>
-    /// Restrict HSTS emission to HTTPS requests only, per RFC 6797 §7.2.
-    /// Default: true. Operators behind TLS-terminating proxies that forward HTTP
-    /// internally should keep this enabled and use ForwardedHeaders/UseHttpsRedirection
-    /// so that <c>HttpContext.Request.IsHttps</c> reflects the edge scheme.
-    /// </summary>
+    // HSTS is emitted only on HTTPS requests.
     public bool HstsHttpsOnly { get; set; } = true;
 
-    /// <summary>
-    /// Skip CSP / COEP / Permissions-Policy on HEAD and OPTIONS responses.
-    /// Default: true. These methods carry no body the browser can interpret, so
-    /// emitting body-relevant headers is wasted bytes (notably on CORS preflight).
-    /// Transport-level headers (HSTS, X-Frame-Options, X-Content-Type-Options,
-    /// Referrer-Policy, COOP) are still applied.
-    /// </summary>
     public bool SkipHeadersForPreflight { get; set; } = true;
 
-    /// <summary>
-    /// Content Security Policy (CSP) directives.
-    /// Default: Strict policy suitable for geospatial APIs.
-    /// </summary>
     public string ContentSecurityPolicy { get; set; } =
         "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; " +
         "connect-src 'self'; font-src 'self'; media-src 'self'; object-src 'none'; " +
         "frame-ancestors 'none'; form-action 'self'; base-uri 'self'";
 
-    /// <summary>
-    /// CSP policy configuration for different environments.
-    /// When specified, overrides the ContentSecurityPolicy setting based on environment.
-    /// </summary>
     public ContentSecurityPolicyConfig? Csp { get; set; }
 
-    /// <summary>
-    /// X-Frame-Options header value.
-    /// Default: "DENY" (prevents all framing).
-    /// </summary>
     public string XFrameOptions { get; set; } = "DENY";
 
-    /// <summary>
-    /// Referrer-Policy header value.
-    /// Default: "strict-origin-when-cross-origin" (balanced security and functionality).
-    /// </summary>
     public string ReferrerPolicy { get; set; } = "strict-origin-when-cross-origin";
 
-    /// <summary>
-    /// Enable X-XSS-Protection header (for legacy browser support).
-    /// Default: true (provides defense-in-depth).
-    /// </summary>
     public bool EnableXssProtection { get; set; } = true;
 
-    /// <summary>
-    /// Cross-Origin-Opener-Policy header value.
-    /// Default: "same-origin" (isolates browsing context).
-    /// </summary>
     public string CrossOriginOpenerPolicy { get; set; } = "same-origin";
 
-    /// <summary>
-    /// Cross-Origin-Embedder-Policy header value.
-    /// Default: "unsafe-none". <c>require-corp</c> breaks Scalar / Swagger UI and
-    /// most map tile providers without explicit CORP headers from those origins,
-    /// so we ship the relaxed default and let deployments tighten it as needed.
-    /// </summary>
+    // The embedder policy stays relaxed because a stricter value breaks the API docs and map tile providers.
     public string CrossOriginEmbedderPolicy { get; set; } = "unsafe-none";
 
-    /// <summary>
-    /// Permissions-Policy header value (restricts browser features).
-    /// Default: Restrictive policy disabling unnecessary features.
-    /// </summary>
     public string PermissionsPolicy { get; set; } =
         "camera=(), microphone=(), geolocation=(), payment=(), usb=(), " +
         "magnetometer=(), gyroscope=(), accelerometer=(), ambient-light-sensor=(), " +
         "autoplay=(), encrypted-media=(), fullscreen=(), picture-in-picture=()";
 
-    /// <summary>
-    /// Additional custom security headers to apply.
-    /// Key-value pairs of header names and values.
-    /// </summary>
     public Dictionary<string, string>? CustomHeaders { get; set; }
 
-    /// <summary>
-    /// Per-route CSP overrides keyed by request path prefix (e.g. <c>/admin</c>,
-    /// <c>/docs</c>). The longest matching prefix wins. Use this to loosen CSP for
-    /// Scalar/Swagger UI or admin HTML sub-trees without weakening the API default.
-    /// </summary>
     public Dictionary<string, SecurityHeadersRouteOverride>? RouteOverrides { get; set; }
 }
 
-/// <summary>
-/// Route-prefix scoped overrides for security headers. Currently exposes a CSP
-/// substitution; additional per-route knobs can be added without changing the
-/// middleware signature.
-/// </summary>
 public sealed class SecurityHeadersRouteOverride
 {
-    /// <summary>
-    /// CSP value to use for responses matching the parent route prefix.
-    /// When null/empty the global CSP applies unchanged.
-    /// </summary>
     public string? ContentSecurityPolicy { get; set; }
 
-    /// <summary>
-    /// When true, emits the override as <c>Content-Security-Policy-Report-Only</c>
-    /// so violations are reported without blocking content. Useful when staging a
-    /// stricter policy for a UI sub-tree before enforcing it.
-    /// </summary>
     public bool ReportOnly { get; set; }
 }
 
-/// <summary>
-/// Configuration for Content Security Policy with environment-specific settings.
-/// </summary>
 public sealed class ContentSecurityPolicyConfig
 {
-    /// <summary>
-    /// CSP policy type to use. Determines the base policy before customizations.
-    /// </summary>
     public CspPolicyType PolicyType { get; set; } = CspPolicyType.GeospatialApi;
 
-    /// <summary>
-    /// Whether to use development-friendly CSP settings.
-    /// When true, allows unsafe-eval and relaxed localhost policies.
-    /// </summary>
     public bool AllowDevelopmentFeatures { get; set; }
 
-    /// <summary>
-    /// Trusted tile server domains for map rendering.
-    /// These will be added to img-src and connect-src directives.
-    /// </summary>
     public string[] TrustedTileServers { get; set; } = Array.Empty<string>();
 
-    /// <summary>
-    /// Trusted CDN domains for mapping libraries.
-    /// These will be added to script-src, style-src, and font-src directives.
-    /// </summary>
     public string[] TrustedCdns { get; set; } = Array.Empty<string>();
 
-    /// <summary>
-    /// Trusted geospatial API domains.
-    /// These will be added to connect-src directive.
-    /// </summary>
     public string[] TrustedGeospatialApis { get; set; } = Array.Empty<string>();
 
-    /// <summary>
-    /// WebSocket URLs for real-time data connections.
-    /// These will be added to connect-src directive with ws:// or wss:// protocols.
-    /// </summary>
     public string[] WebSocketUrls { get; set; } = Array.Empty<string>();
 
-    /// <summary>
-    /// SHA256 hashes of allowed inline styles.
-    /// These will be added to style-src directive as 'sha256-{hash}'.
-    /// </summary>
     public string[] AllowedStyleHashes { get; set; } = Array.Empty<string>();
 
-    /// <summary>
-    /// SHA256 hashes of allowed inline scripts.
-    /// These will be added to script-src directive as 'sha256-{hash}'.
-    /// </summary>
     public string[] AllowedScriptHashes { get; set; } = Array.Empty<string>();
 
-    /// <summary>
-    /// Custom CSP directives to add or override.
-    /// Key is the directive name, value is the space-separated list of sources.
-    /// </summary>
     public Dictionary<string, string>? CustomDirectives { get; set; }
 
-    /// <summary>
-    /// Report URI for CSP violation reporting.
-    /// If specified, adds report-uri directive to the policy.
-    /// </summary>
     public string? ReportUri { get; set; }
 
-    /// <summary>
-    /// Whether to use report-only mode.
-    /// When true, uses Content-Security-Policy-Report-Only header instead of enforcing.
-    /// </summary>
     public bool ReportOnly { get; set; }
 }
 
-/// <summary>
-/// Predefined CSP policy types for different use cases.
-/// </summary>
 public enum CspPolicyType
 {
-    /// <summary>
-    /// Restrictive policy for API-only endpoints with no browser UI.
-    /// </summary>
     ApiOnly = 0,
 
-    /// <summary>
-    /// Balanced policy for geospatial APIs that may serve web content.
-    /// Allows necessary resources for map rendering while maintaining security.
-    /// </summary>
     GeospatialApi = 1,
 
-    /// <summary>
-    /// Custom policy built entirely from configuration.
-    /// Uses only the CustomDirectives specified in config.
-    /// </summary>
     Custom = 2
 }
 
-/// <summary>
-/// Extension methods for registering security headers middleware and services.
-/// </summary>
 public static class SecurityHeadersMiddlewareExtensions
 {
-    /// <summary>
-    /// Adds security headers services to the dependency injection container.
-    /// Configures SecurityHeadersOptions from the "SecurityHeaders" configuration section.
-    /// </summary>
-    /// <param name="services">The service collection</param>
-    /// <param name="configuration">The application configuration</param>
-    /// <returns>The service collection for method chaining</returns>
     public static IServiceCollection AddSecurityHeaders(
         this IServiceCollection services,
         IConfiguration configuration)
@@ -581,12 +378,6 @@ public static class SecurityHeadersMiddlewareExtensions
         return services;
     }
 
-    /// <summary>
-    /// Adds security headers services to the dependency injection container with custom configuration.
-    /// </summary>
-    /// <param name="services">The service collection</param>
-    /// <param name="configureOptions">Action to configure security headers options</param>
-    /// <returns>The service collection for method chaining</returns>
     public static IServiceCollection AddSecurityHeaders(
         this IServiceCollection services,
         Action<SecurityHeadersOptions> configureOptions)
@@ -598,37 +389,18 @@ public static class SecurityHeadersMiddlewareExtensions
         return services;
     }
 
-    /// <summary>
-    /// Adds the security headers middleware to the application pipeline.
-    /// Should be registered early in the pipeline to ensure all responses receive security headers.
-    /// </summary>
-    /// <param name="app">The application builder</param>
-    /// <returns>The application builder for method chaining</returns>
     public static IApplicationBuilder UseSecurityHeaders(this IApplicationBuilder app)
     {
         ArgumentNullException.ThrowIfNull(app);
         return app.UseMiddleware<SecurityHeadersMiddleware>();
     }
 
-    /// <summary>
-    /// Adds the Honua security headers middleware to the application pipeline.
-    /// This is the canonical entry point for the audit-fix integration (#1144);
-    /// it is functionally identical to <see cref="UseSecurityHeaders"/> but uses
-    /// the Honua-namespaced name so the wiring step is self-documenting.
-    /// </summary>
-    /// <param name="app">The application builder</param>
-    /// <returns>The application builder for method chaining</returns>
     public static IApplicationBuilder UseHonuaSecurityHeaders(this IApplicationBuilder app)
     {
         ArgumentNullException.ThrowIfNull(app);
         return app.UseMiddleware<SecurityHeadersMiddleware>();
     }
 
-    /// <summary>
-    /// Validates security headers configuration for critical security issues.
-    /// </summary>
-    /// <param name="options">The security headers options to validate</param>
-    /// <exception cref="InvalidOperationException">Thrown when critical security misconfigurations are detected</exception>
     private static void ValidateSecurityHeadersOptions(SecurityHeadersOptions options)
     {
         var errors = new List<string>();
@@ -675,38 +447,20 @@ public static class SecurityHeadersMiddlewareExtensions
     }
 }
 
-/// <summary>
-/// High-performance logging for security headers middleware using source generation for AOT compatibility.
-/// </summary>
 internal static partial class SecurityHeadersLog
 {
-    /// <summary>
-    /// Logs when security headers are applied to a response (debug level).
-    /// </summary>
-    /// <param name="logger">The logger instance</param>
-    /// <param name="requestPath">The request path that received security headers</param>
-    /// <param name="requestMethod">The HTTP method of the request</param>
     [LoggerMessage(
         EventId = 4200,
         Level = LogLevel.Debug,
         Message = "Security headers applied to response: {RequestMethod} {RequestPath}")]
     public static partial void SecurityHeadersApplied(ILogger logger, string requestPath, string requestMethod);
 
-    /// <summary>
-    /// Logs when security headers configuration is validated at startup.
-    /// </summary>
-    /// <param name="logger">The logger instance</param>
     [LoggerMessage(
         EventId = 4201,
         Level = LogLevel.Information,
         Message = "Security headers configuration validated successfully")]
     public static partial void SecurityHeadersConfigurationValidated(ILogger logger);
 
-    /// <summary>
-    /// Logs when security headers configuration contains warnings.
-    /// </summary>
-    /// <param name="logger">The logger instance</param>
-    /// <param name="warning">The configuration warning message</param>
     [LoggerMessage(
         EventId = 4202,
         Level = LogLevel.Warning,

@@ -13,9 +13,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Admin endpoints for identity provider configuration and connectivity testing.
-/// </summary>
 internal static class IdentityAdminEndpoints
 {
     internal sealed class IdentityAdminEndpointsLog;

@@ -14,9 +14,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Admin endpoints for lightweight observability support.
-/// </summary>
 internal static class ObservabilityEndpoints
 {
     private const string ExporterStateConfigured = "configured";

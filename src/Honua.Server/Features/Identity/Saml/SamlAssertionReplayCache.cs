@@ -6,24 +6,13 @@ using StackExchange.Redis;
 
 namespace Honua.Server.Features.Identity.Saml;
 
-/// <summary>
-/// One-time cache of SAML assertion and response identifiers. A repeated id is a replay.
-/// </summary>
 internal interface ISamlAssertionReplayCache
 {
-    /// <summary>
-    /// Records <paramref name="id"/> until <paramref name="notOnOrAfter"/>.
-    /// Returns <see langword="false"/> when the id was already seen, is empty, or a configured
-    /// Redis store cannot record the claim. Node-local memory is not a substitute for Redis.
-    /// </summary>
+    // A repeated, empty, or unrecordable assertion id is rejected, and node-local memory is not a substitute for Redis.
     bool TryRemember(string id, DateTimeOffset notOnOrAfter);
 }
 
-/// <summary>
-/// Distributed replay cache. When Redis is configured, the assertion is accepted only after
-/// this node records the SET NX. A disconnect or timeout rejects the assertion. Memory is the
-/// store only when no Redis multiplexer is configured.
-/// </summary>
+// When Redis is configured the assertion is accepted only after this node records it, and a disconnect or timeout rejects it.
 internal sealed class SamlAssertionReplayCache(IMemoryCache memoryCache, IConnectionMultiplexer? redis = null)
     : ISamlAssertionReplayCache
 {
@@ -32,7 +21,6 @@ internal sealed class SamlAssertionReplayCache(IMemoryCache memoryCache, IConnec
     private readonly IMemoryCache _memoryCache = memoryCache;
     private readonly IConnectionMultiplexer? _redis = redis;
 
-    /// <inheritdoc />
     public bool TryRemember(string id, DateTimeOffset notOnOrAfter)
     {
         if (string.IsNullOrWhiteSpace(id))

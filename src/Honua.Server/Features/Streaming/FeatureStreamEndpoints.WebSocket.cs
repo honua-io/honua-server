@@ -15,11 +15,6 @@ using Honua.Protocols.Ogc.Common;
 
 namespace Honua.Server.Features.Streaming;
 
-/// <summary>
-/// WebSocket transport for feature-change streaming: connect handshake, the
-/// channel-drain writer loop, the control-frame dispatcher, subscribe/unsubscribe
-/// handlers, and the WebSocket framing/dedup helpers.
-/// </summary>
 internal static partial class FeatureStreamEndpoints
 {
     private static async Task HandleWebSocketStream(
@@ -1438,10 +1433,6 @@ internal static partial class FeatureStreamEndpoints
         }
     }
 
-    /// <summary>
-    /// Sends a terminal <c>status: error</c> frame naming why the stream is ending. Best effort:
-    /// the socket may already be gone, and the caller is closing it either way.
-    /// </summary>
     private static async Task TrySendWebSocketTerminalErrorAsync(
         WebSocket webSocket,
         SemaphoreSlim writeLock,
@@ -1502,18 +1493,6 @@ internal static partial class FeatureStreamEndpoints
                 FeatureStreamJsonContext.Default.FeatureStreamErrorFrame),
             cancellationToken);
 
-    /// <summary>
-    /// Allocates the subscription-local sequence and writes the frame under ONE acquisition of
-    /// the session write lock, so allocation order is wire order.
-    /// </summary>
-    /// <remarks>
-    /// Stamping before the lock let two producers for the same subscription — the writer task
-    /// draining live events and the receive loop running a control-frame subscription's
-    /// post-unpause sweep — allocate N and N+1, then reach the wire in the opposite order after
-    /// a scheduling slip. The client observed a gap or a reversal despite receiving every frame
-    /// (honua-server#3038 review). The lock already serializes the sends; moving allocation
-    /// inside it makes the two orders the same order.
-    /// </remarks>
     internal static async Task<bool> SendStampedWebSocketJsonAsync(
         WebSocket webSocket,
         SemaphoreSlim writeLock,

@@ -15,14 +15,8 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Admin endpoints for OIDC identity provider configuration.
-/// </summary>
 internal static partial class OidcProviderEndpoints
 {
-    /// <summary>
-    /// Log category for OIDC provider endpoints.
-    /// </summary>
     internal sealed class OidcProviderEndpointsLog;
 
     internal static partial class OidcProviderLog
@@ -44,9 +38,6 @@ internal static partial class OidcProviderEndpoints
         public static partial void ProviderTested(ILogger logger, Guid providerId, bool isReachable);
     }
 
-    /// <summary>
-    /// Configure OIDC provider admin endpoints.
-    /// </summary>
     public static void MapOidcProviderEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/oidc/providers")
@@ -91,37 +82,15 @@ internal static partial class OidcProviderEndpoints
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
     }
 
-    /// <summary>
-    /// Marker metadata identifying the provider-create route (<c>POST …/providers</c>). The
-    /// entitlement filter tells the create route apart from the connectivity-test route
-    /// (<c>POST …/providers/{id}/test</c>) from the matched endpoint's metadata instead of the
-    /// request path: the previous "path does not end in <c>/test</c>" check classified the equally
-    /// valid <c>…/providers/{id}/test/</c> form (trailing slash, which routing still matches) as a
-    /// create and rejected a connectivity test with the multi-provider 402.
-    /// </summary>
     internal sealed class CreateProviderRoute
     {
         internal static readonly CreateProviderRoute Instance = new();
     }
 
-    /// <summary>
-    /// Serializes provider creation so the provider-count check and the store mutation form one
-    /// critical section. Two concurrent Pro creates could otherwise both observe an empty store,
-    /// both pass the preflight, and both be accepted with distinct generated IDs — silently
-    /// bypassing the Enterprise identity.oidc-multi-provider entitlement. The lock is
-    /// process-wide, which matches the scope of the current in-memory store; when the persistent
-    /// store lands (#496) the invariant must move into the store's own transaction so it holds
-    /// across replicas too.
-    /// </summary>
+    // Provider creation is serialized so two concurrent creates cannot both pass the single-provider entitlement check.
     private static readonly SemaphoreSlim ProviderCreationGate = new(1, 1);
 
-    /// <summary>
-    /// #2997: applies the OIDC provider admin entitlement gates. Reads and non-create mutations
-    /// only need the Pro <c>identity.oidc</c> entitlement; a create that would grow the store past
-    /// a single provider needs the Enterprise <c>identity.oidc-multi-provider</c> entitlement,
-    /// checked first so the 402 names the entitlement actually being exceeded and evaluated inside
-    /// <see cref="ProviderCreationGate"/> so it cannot be raced by a concurrent create.
-    /// </summary>
+    // A create past a single provider requires the multi-provider entitlement, and that check runs inside the creation lock.
     internal static async ValueTask<object?> ApplyProviderEntitlementGatesAsync(
         EndpointFilterInvocationContext invocationContext,
         EndpointFilterDelegate next)

@@ -8,17 +8,9 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Authority boundary for creating or advancing Deploy and platform-release operations
-/// (honua-server#4842). Deployment targets are platform resources with no owning tenant,
-/// so while tenant resolution is enabled a tenant-bound principal must also hold one of
-/// the configured multi-tenant (platform) administrator roles. Principals without a tenant
-/// binding, and installations with <c>MultiTenancy:Enabled=false</c>, keep the existing
-/// admin-policy and operator-scope authorization unchanged.
-/// </summary>
+// While tenant resolution is enabled, a tenant-bound principal also needs a platform administrator role to create or advance a deploy.
 internal static class PlatformDeployAuthority
 {
-    /// <summary>Stable machine-readable denial code surfaced by REST and MCP.</summary>
     internal const string DenialCode = "platform_admin_required";
 
     internal const string DenialMessage =
@@ -42,7 +34,6 @@ internal static class PlatformDeployAuthority
         return !IsTenantBound(principal, options);
     }
 
-    /// <summary>Returns a 403 problem when the caller lacks platform deploy authority.</summary>
     public static IResult? Deny(HttpContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -56,12 +47,7 @@ internal static class PlatformDeployAuthority
                 extensions: new Dictionary<string, object?> { ["code"] = DenialCode });
     }
 
-    /// <summary>
-    /// The principal's tenant binding, or null when it has none (honua-server#4958). Read from the same
-    /// validated sources as <see cref="IsTenantBound"/> so a recovery grant's tenant can never be
-    /// asserted by a request header. Returns null when tenant resolution is disabled, which keeps a
-    /// single-tenant installation's recovery fence purely actor-bound.
-    /// </summary>
+    // The recovery grant's tenant comes from the validated identity and never from a request header.
     public static string? ResolveTenantId(ClaimsPrincipal? principal, TenantContextOptions? options)
     {
         options ??= new TenantContextOptions();

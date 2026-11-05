@@ -14,20 +14,12 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Features.Console.Publications;
 
-/// <summary>
-/// Authenticated content publication management endpoints. These are thin adapters:
-/// they parse, authorize (admin), map to <see cref="IContentPublicationService"/>,
-/// audit, invalidate caches, and format results. Validation, route-pointer semantics,
-/// and dependency resolution live in the service/store.
-/// </summary>
 internal static class ContentPublicationEndpoints
 {
     private const int MaxVersionsPageSize = 100;
 
-    /// <summary>Log category for content publication management endpoints.</summary>
     internal sealed class ContentPublicationManagementLog;
 
-    /// <summary>Maps the authenticated content publication endpoints.</summary>
     public static void MapContentPublicationEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/console/publications")
@@ -387,13 +379,7 @@ internal static class ContentPublicationEndpoints
         }
     }
 
-    /// <summary>
-    /// Maps a <see cref="ContentPublicationException"/> to an RFC-7807 problem result. Validation
-    /// failures (a <see cref="ContentPublicationValidationException"/>) are field-addressable, so they
-    /// flow through <see cref="ProblemDetailsHelpers.CreateValidationProblem"/> with the shared
-    /// <c>errors[]</c> extension the console binds onto report/dashboard inputs; all other publication
-    /// errors (404/409/503) keep the flat admin problem shape.
-    /// </summary>
+    // Validation failures carry the errors extension; other publication errors stay a flat problem.
     private static IResult ToProblem(HttpContext context, ContentPublicationException exception)
         => exception is ContentPublicationValidationException validation
             ? ProblemDetailsHelpers.CreateValidationProblem(context, validation.StatusCode, validation.Errors, validation.Message)

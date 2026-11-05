@@ -6,22 +6,11 @@ using Honua.Core.Features.WorkflowPackages.Domain;
 
 namespace Honua.Server.Features.WorkflowPackages;
 
-/// <summary>
-/// Translates workflow graph data edges into the canonical execution-plan wiring used by
-/// the geoprocessing and orchestration runtimes. Keeps edge-to-binding semantics in one
-/// place so the single-plan and scheduled-definition compilers stay consistent.
-/// </summary>
 internal static class WorkflowPackageGraphCompiler
 {
     private const string ArtifactSelectorPrefix = "artifact:";
 
-    /// <summary>
-    /// Builds the analysis-plan step inputs for <paramref name="node"/>: literal node parameters,
-    /// plus a placeholder for every required input that an incoming data edge supplies. The
-    /// placeholder lets plan validation/dry-run treat wired inputs as present; the orchestration
-    /// runtime later overrides it with the resolved upstream artifact via <see cref="StepInputBinding"/>.
-    /// Literal parameters always win so explicit values are never replaced by a placeholder.
-    /// </summary>
+    // Literal parameters always win over a placeholder for a wired input.
     public static Dictionary<string, string> BuildStepInputs(WorkflowNode node, WorkflowGraph graph)
     {
         ArgumentNullException.ThrowIfNull(node);
@@ -40,10 +29,6 @@ internal static class WorkflowPackageGraphCompiler
         return inputs;
     }
 
-    /// <summary>
-    /// Builds the canonical <see cref="StepInputBinding"/> list for <paramref name="nodeId"/> from the
-    /// incoming data edges so the orchestration engine can chain upstream outputs into downstream inputs.
-    /// </summary>
     public static IReadOnlyList<StepInputBinding> BuildStepInputBindings(WorkflowGraph graph, string nodeId)
     {
         ArgumentNullException.ThrowIfNull(graph);
@@ -63,11 +48,6 @@ internal static class WorkflowPackageGraphCompiler
         return (IReadOnlyList<StepInputBinding>?)bindings ?? Array.Empty<StepInputBinding>();
     }
 
-    /// <summary>
-    /// Builds the geoprocessing validator field paths for inputs supplied by data edges. Static
-    /// plan validation still checks literal inputs, unknown parameters, and unsupported processes,
-    /// but runtime-resolved data bindings cannot be type-checked until the upstream artifact exists.
-    /// </summary>
     public static HashSet<string> BuildDataBoundInputFieldPaths(WorkflowGraph graph)
     {
         ArgumentNullException.ThrowIfNull(graph);
@@ -83,11 +63,7 @@ internal static class WorkflowPackageGraphCompiler
         return paths;
     }
 
-    /// <summary>
-    /// Returns <c>true</c> when the graph wires data between distinct nodes — i.e. carries at least one
-    /// data edge with a target input port. Such graphs require a runtime that can resolve cross-step
-    /// artifacts (the orchestration engine) and cannot run as a single dispatched geoprocessing job.
-    /// </summary>
+    // A graph with a data edge between nodes cannot run as one geoprocessing job.
     public static bool HasCrossNodeDataBindings(WorkflowGraph graph)
     {
         ArgumentNullException.ThrowIfNull(graph);

@@ -7,31 +7,21 @@ using Honua.Infrastructure.Models;
 
 namespace Honua.Server.Features.Admin.Models;
 
-/// <summary>
-/// Request body for Metadata v2 compatibility prevalidation.
-/// </summary>
 internal sealed record MetadataPrevalidateRequest
 {
-    /// <summary>Persisted release package identifier.</summary>
     [JsonPropertyName("releasePackageId")]
     public Guid? ReleasePackageId { get; init; }
 
-    /// <summary>Inline release package payload.</summary>
     [JsonPropertyName("releasePackage")]
     public MetadataReleasePackage? ReleasePackage { get; init; }
 
-    /// <summary>Target environment to compare against.</summary>
     [JsonPropertyName("targetEnvironment")]
     public required string TargetEnvironment { get; init; }
 
-    /// <summary>Optional declared data script contracts.</summary>
     [JsonPropertyName("dataScripts")]
     public IReadOnlyList<MetadataDataScriptEntry>? DataScripts { get; init; } =
         Array.Empty<MetadataDataScriptEntry>();
 
-    /// <summary>
-    /// Converts the server request DTO into the Core service request.
-    /// </summary>
     public MetadataCompatibilityPrevalidationRequest ToCoreRequest()
         => new()
         {
@@ -137,9 +127,6 @@ internal sealed record MetadataPrevalidateRequest
             };
 }
 
-/// <summary>
-/// JSON source generation context for Metadata v2 compatibility prevalidation APIs.
-/// </summary>
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,

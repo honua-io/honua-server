@@ -7,18 +7,8 @@ using Honua.Core.Features.Observability.Domain;
 
 namespace Honua.Infrastructure.Monitoring;
 
-/// <summary>
-/// Maps an observed workflow-operation transition onto the normalized <see cref="OperateEventKind.Release"/>
-/// timeline event. Shared by the in-process <see cref="ReleaseTimelineTransitionListener"/> (which appends
-/// to the <see cref="ReleaseTimelineBuffer"/> so releases show on the Operate timeline) and the realtime
-/// broadcaster (#2554, which pushes the same event to the <c>operate-events</c> hub group). Keeping one
-/// mapping guarantees a live-pushed release event is identical to the one read back from the timeline API.
-/// </summary>
 internal static class ReleaseTimelineEventFactory
 {
-    /// <summary>Builds the release timeline event for a transition.</summary>
-    /// <param name="transition">The observed workflow-operation transition.</param>
-    /// <returns>The normalized release event.</returns>
     public static OperateEvent Create(WorkflowOperationTransition transition)
     {
         ArgumentNullException.ThrowIfNull(transition);

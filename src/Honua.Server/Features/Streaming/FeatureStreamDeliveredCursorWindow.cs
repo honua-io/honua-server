@@ -3,35 +3,9 @@
 
 namespace Honua.Server.Features.Streaming;
 
-/// <summary>
-/// Per-connection delivery fence for the default subscription of a live feature stream
-/// (honua-server#6104).
-/// </summary>
-/// <remarks>
-/// <para>
-/// The fence has two parts. <see cref="Floor"/> is the durable-store sweep cursor: every
-/// cursor at or below it was read by a store sweep and either delivered or filtered, so a
-/// live frame at or below it is a duplicate. Live sends never advance the floor. Instead,
-/// each live-delivered cursor above the floor is remembered in a bounded set, which both
-/// drops true duplicates (the same event re-broadcast locally or echoed over Redis) and
-/// lets the next store sweep skip frames the live path already sent.
-/// </para>
-/// <para>
-/// Out-of-order arrival is routine (publisher continuations on different threads, cross-node
-/// events over Redis pub/sub), so a live frame whose cursor is below the highest cursor
-/// delivered so far but above the floor is still delivered. Because the sweep resumes from
-/// the floor rather than from the live high-water mark, an event whose live broadcast never
-/// arrives is also recovered from the durable store.
-/// </para>
-/// <para>
-/// Memory is bounded by <see cref="DefaultCapacity"/>. If more live frames than that are
-/// delivered between two sweeps, the lowest remembered cursors are forgotten; the next sweep
-/// may then re-send them, which keeps the at-least-once contract rather than dropping events.
-/// </para>
-/// </remarks>
+// Live sends never advance the floor, a frame above the floor is still delivered, and a forgotten cursor may be sent again rather than dropped.
 internal sealed class FeatureStreamDeliveredCursorWindow
 {
-    /// <summary>Maximum number of live-delivered cursors remembered above the floor.</summary>
     internal const int DefaultCapacity = 4096;
 
     private readonly Lock _gate = new();
@@ -46,7 +20,6 @@ internal sealed class FeatureStreamDeliveredCursorWindow
         _capacity = capacity;
     }
 
-    /// <summary>Cursor through which the durable store has been swept.</summary>
     public long Floor
     {
         get
@@ -58,7 +31,6 @@ internal sealed class FeatureStreamDeliveredCursorWindow
         }
     }
 
-    /// <summary>Number of live-delivered cursors currently remembered above the floor.</summary>
     public int Count
     {
         get
@@ -70,11 +42,7 @@ internal sealed class FeatureStreamDeliveredCursorWindow
         }
     }
 
-    /// <summary>
-    /// Returns <see langword="true"/> when a live frame at <paramref name="cursor"/> was already
-    /// handled: at or below the swept floor, or already delivered live. Non-positive cursors
-    /// (frames without a durable cursor) are never treated as handled.
-    /// </summary>
+    // A cursor that is not positive is never treated as already handled.
     public bool IsHandled(long cursor)
     {
         if (cursor <= 0)
@@ -88,7 +56,6 @@ internal sealed class FeatureStreamDeliveredCursorWindow
         }
     }
 
-    /// <summary>Returns <see langword="true"/> when <paramref name="cursor"/> was delivered live above the floor.</summary>
     public bool WasDeliveredLive(long cursor)
     {
         lock (_gate)
@@ -97,7 +64,6 @@ internal sealed class FeatureStreamDeliveredCursorWindow
         }
     }
 
-    /// <summary>Records a cursor delivered by the live path.</summary>
     public void MarkDelivered(long cursor)
     {
         if (cursor <= 0)
@@ -120,10 +86,7 @@ internal sealed class FeatureStreamDeliveredCursorWindow
         }
     }
 
-    /// <summary>
-    /// Advances the swept floor after a durable-store sweep and forgets live-delivered cursors
-    /// it now covers. The floor never moves backwards.
-    /// </summary>
+    // The floor never moves backwards.
     public void AdvanceFloor(long sweptThrough)
     {
         lock (_gate)

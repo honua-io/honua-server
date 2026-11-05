@@ -24,10 +24,6 @@ using Honua.ServiceDefaults;
 
 namespace Honua.Server.Features.Admin.Services;
 
-/// <summary>
-/// Enhanced configuration discovery service that provides automatic documentation
-/// generation, metadata extraction, and introspection capabilities.
-/// </summary>
 public sealed class ConfigurationDiscoveryService
 {
     private readonly IServiceProvider _serviceProvider;
@@ -54,9 +50,6 @@ public sealed class ConfigurationDiscoveryService
         _documentationService = documentationService;
     }
 
-    /// <summary>
-    /// Discovers all IOptions configuration classes and their metadata.
-    /// </summary>
     public async Task<ConfigurationDiscoveryResult> DiscoverConfigurationAsync(CancellationToken cancellationToken = default)
     {
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
@@ -102,9 +95,6 @@ public sealed class ConfigurationDiscoveryService
         }
     }
 
-    /// <summary>
-    /// Discovers all registered IOptions types in the service provider.
-    /// </summary>
     private async Task<List<ConfigurationTypeInfo>> DiscoverOptionsTypesAsync(CancellationToken cancellationToken)
     {
         var registeredOptions = _configurationDiscovery.GetAllOptions()
@@ -121,9 +111,6 @@ public sealed class ConfigurationDiscoveryService
         return discoveredTypes;
     }
 
-    /// <summary>
-    /// Creates type information for a registered configuration class.
-    /// </summary>
     private async Task<ConfigurationTypeInfo> CreateTypeInfoAsync(ConfigurationOptionsMetadata metadata)
     {
         var optionsType = metadata.OptionsType;
@@ -142,9 +129,6 @@ public sealed class ConfigurationDiscoveryService
         };
     }
 
-    /// <summary>
-    /// Maps configuration property metadata from the registration catalog into the admin discovery model.
-    /// </summary>
     private static List<PropertyMetadata> MapPropertyMetadata(
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties)] Type optionsType,
         IReadOnlyList<ConfigurationPropertyMetadata> properties)
@@ -173,9 +157,6 @@ public sealed class ConfigurationDiscoveryService
         return mappedProperties;
     }
 
-    /// <summary>
-    /// Gets the description for a property.
-    /// </summary>
     private static string? GetPropertyDescription(PropertyInfo property)
     {
         var descriptionAttr = property.GetCustomAttribute<DescriptionAttribute>();
@@ -188,9 +169,6 @@ public sealed class ConfigurationDiscoveryService
         return ExtractXmlDocComment(property);
     }
 
-    /// <summary>
-    /// Attempts to extract XML documentation comments.
-    /// </summary>
     private static string? ExtractXmlDocComment(PropertyInfo property)
     {
         // This is a simplified implementation
@@ -198,17 +176,11 @@ public sealed class ConfigurationDiscoveryService
         return null;
     }
 
-    /// <summary>
-    /// Extracts validation rules from property attributes.
-    /// </summary>
     private static List<ValidationRuleInfo> ExtractValidationRules(PropertyInfo property)
     {
         return ExtractValidationRules(property.GetCustomAttributes<ValidationAttribute>());
     }
 
-    /// <summary>
-    /// Extracts validation rules from validation attributes.
-    /// </summary>
     private static List<ValidationRuleInfo> ExtractValidationRules(IEnumerable<ValidationAttribute> validationAttributes)
     {
         var rules = new List<ValidationRuleInfo>();
@@ -246,9 +218,6 @@ public sealed class ConfigurationDiscoveryService
         return rules;
     }
 
-    /// <summary>
-    /// Determines if a property contains secret data.
-    /// </summary>
     private static bool IsSecretProperty(PropertyInfo property)
     {
         var name = property.Name.ToLowerInvariant();
@@ -256,19 +225,11 @@ public sealed class ConfigurationDiscoveryService
             || property.GetCustomAttribute<SecretReferenceAttribute>() != null;
     }
 
-    /// <summary>
-    /// Determines if a property name implies secret data. Delegates to the shared deny-by-default
-    /// redactor so the discovery <c>IsSecret</c> flag and value masking agree on what is sensitive.
-    /// </summary>
+    // The secret flag and value masking share one deny-by-default redactor so they agree on what is sensitive.
     private static bool IsSecretPropertyName(string propertyName)
         => ConfigurationSecretRedactor.IsSensitiveName(propertyName);
 
-    /// <summary>
-    /// Applies deny-by-default redaction to a discovered configuration value. Sensitive-named
-    /// properties are masked unconditionally; any value that looks credential-bearing (connection
-    /// string, endpoint/URI with embedded credentials, key=value secret fragment, or high-entropy
-    /// token) is masked even when its property name looks innocuous (honua-server#2804).
-    /// </summary>
+    // A credential-shaped value is masked even when its property name looks ordinary.
     private static object? RedactConfigurationValue(PropertyInfo property, object? value)
     {
         if (value is null)
@@ -281,9 +242,6 @@ public sealed class ConfigurationDiscoveryService
             : ConfigurationSecretRedactor.Redact(property.Name, value);
     }
 
-    /// <summary>
-    /// Gets current configuration values for a type.
-    /// </summary>
     private async Task<Dictionary<string, object?>> GetCurrentConfigurationValuesAsync(
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)] Type type,
         string sectionName)
@@ -342,9 +300,6 @@ public sealed class ConfigurationDiscoveryService
         return values;
     }
 
-    /// <summary>
-    /// Extracts metadata for all discovered types.
-    /// </summary>
     private static Task<List<ConfigurationMetadata>> ExtractMetadataAsync(List<ConfigurationTypeInfo> types, CancellationToken cancellationToken)
     {
         var metadata = new List<ConfigurationMetadata>();
@@ -371,9 +326,6 @@ public sealed class ConfigurationDiscoveryService
         return Task.FromResult(metadata);
     }
 
-    /// <summary>
-    /// Gets the last modified time for a type's assembly.
-    /// </summary>
     private static DateTimeOffset GetLastModifiedTime(Type type)
     {
         try
@@ -402,9 +354,6 @@ public sealed class ConfigurationDiscoveryService
         }
     }
 
-    /// <summary>
-    /// Generates automatic documentation for undocumented configuration types.
-    /// </summary>
     private static List<AutoGeneratedDocumentationSection> GenerateAutoDocumentation(List<ConfigurationTypeInfo> types, List<ConfigurationMetadata> metadata)
     {
         return types.Select(typeInfo => new AutoGeneratedDocumentationSection
@@ -426,9 +375,6 @@ public sealed class ConfigurationDiscoveryService
         }).ToList();
     }
 
-    /// <summary>
-    /// Generates a description for a property based on its name and type.
-    /// </summary>
     private static string GeneratePropertyDescription(PropertyMetadata property)
     {
         var name = property.Name;
@@ -449,17 +395,11 @@ public sealed class ConfigurationDiscoveryService
         return $"Configuration setting for {name}";
     }
 
-    /// <summary>
-    /// Gets the environment variable name for a configuration property.
-    /// </summary>
     private static string GetEnvironmentVariableName(string sectionName, string propertyName)
     {
         return $"{sectionName}__{propertyName}".Replace(":", "__");
     }
 
-    /// <summary>
-    /// Gets a summary of validation rules for a property.
-    /// </summary>
     private static string GetValidationSummary(List<ValidationRuleInfo> rules)
     {
         if (rules.Count == 0)
@@ -489,9 +429,6 @@ public sealed class ConfigurationDiscoveryService
         return summaries.Count > 0 ? string.Join(", ", summaries) : "Custom validation";
     }
 
-    /// <summary>
-    /// Validates all secret references in the configuration.
-    /// </summary>
     private async Task<SecretValidationResult> ValidateSecretReferencesAsync(CancellationToken cancellationToken)
     {
         var result = new SecretValidationResult
@@ -574,9 +511,6 @@ public sealed class ConfigurationDiscoveryService
         return result;
     }
 
-    /// <summary>
-    /// Scans configuration for potential secret references.
-    /// </summary>
     private List<string> ScanForSecretReferences()
     {
         // Scan all configuration sections
@@ -587,9 +521,6 @@ public sealed class ConfigurationDiscoveryService
             .ToList();
     }
 
-    /// <summary>
-    /// Determines if a value looks like a secret reference.
-    /// </summary>
     private static bool IsLikelySecretReference(string value)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -621,9 +552,6 @@ public sealed class ConfigurationDiscoveryService
         return $"{secretReference[..colonIndex]}:[redacted]";
     }
 
-    /// <summary>
-    /// Gets configuration audit information.
-    /// </summary>
     private ConfigurationAuditInfo GetConfigurationAuditInfo()
     {
         return new ConfigurationAuditInfo
@@ -640,9 +568,6 @@ public sealed class ConfigurationDiscoveryService
         };
     }
 
-    /// <summary>
-    /// Determines the source type for a configuration key.
-    /// </summary>
     private static string GetConfigurationSourceType(string key)
     {
         if (key.Contains("__"))
@@ -659,406 +584,172 @@ public sealed class ConfigurationDiscoveryService
 
 // Additional model classes for the discovery service...
 
-/// <summary>
-/// Result of configuration discovery operation.
-/// </summary>
 public sealed class ConfigurationDiscoveryResult
 {
-    /// <summary>
-    /// Existing configuration documentation.
-    /// </summary>
     public ConfigurationDocumentation ExistingDocumentation { get; set; } = null!;
 
-    /// <summary>
-    /// Discovered configuration types.
-    /// </summary>
     public List<ConfigurationTypeInfo> DiscoveredTypes { get; set; } = new();
 
-    /// <summary>
-    /// Extracted metadata for all types.
-    /// </summary>
     public List<ConfigurationMetadata> ExtractedMetadata { get; set; } = new();
 
-    /// <summary>
-    /// Auto-generated documentation.
-    /// </summary>
     public List<AutoGeneratedDocumentationSection> AutoGeneratedDocumentation { get; set; } = new();
 
-    /// <summary>
-    /// Secret reference validation results.
-    /// </summary>
     public SecretValidationResult SecretValidation { get; set; } = new();
 
-    /// <summary>
-    /// Configuration audit information.
-    /// </summary>
     public ConfigurationAuditInfo AuditInformation { get; set; } = new();
 
-    /// <summary>
-    /// Duration of the discovery operation in milliseconds.
-    /// </summary>
     public long DiscoveryDurationMs { get; set; }
 
-    /// <summary>
-    /// Timestamp when discovery was performed.
-    /// </summary>
     public DateTimeOffset Timestamp { get; set; }
 }
 
-/// <summary>
-/// Information about a discovered configuration type.
-/// </summary>
 public sealed class ConfigurationTypeInfo
 {
-    /// <summary>
-    /// The .NET type.
-    /// </summary>
     [JsonIgnore]
     [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)]
     public Type Type { get; set; } = null!;
 
-    /// <summary>
-    /// Configuration section name.
-    /// </summary>
     public string SectionName { get; set; } = string.Empty;
 
-    /// <summary>
-    /// Simple type name.
-    /// </summary>
     public string TypeName { get; set; } = string.Empty;
 
-    /// <summary>
-    /// Full type name including namespace.
-    /// </summary>
     public string FullTypeName { get; set; } = string.Empty;
 
-    /// <summary>
-    /// Assembly name where the type is defined.
-    /// </summary>
     public string Assembly { get; set; } = string.Empty;
 
-    /// <summary>
-    /// Properties of the configuration type.
-    /// </summary>
     public List<PropertyMetadata> Properties { get; set; } = new();
 
-    /// <summary>
-    /// Whether the type is registered in dependency injection.
-    /// </summary>
     public bool IsRegisteredInDi { get; set; }
 
-    /// <summary>
-    /// Current configuration values.
-    /// </summary>
     public Dictionary<string, object?> CurrentValues { get; set; } = new();
 }
 
-/// <summary>
-/// Metadata about a configuration property.
-/// </summary>
 public sealed class PropertyMetadata
 {
-    /// <summary>
-    /// Property name.
-    /// </summary>
     public string Name { get; set; } = string.Empty;
 
-    /// <summary>
-    /// Property type name.
-    /// </summary>
     public string Type { get; set; } = string.Empty;
 
-    /// <summary>
-    /// Full property type name.
-    /// </summary>
     public string FullType { get; set; } = string.Empty;
 
-    /// <summary>
-    /// Whether the property is required.
-    /// </summary>
     public bool IsRequired { get; set; }
 
-    /// <summary>
-    /// Default value of the property.
-    /// </summary>
     public object? DefaultValue { get; set; }
 
-    /// <summary>
-    /// Property description.
-    /// </summary>
     public string? Description { get; set; }
 
-    /// <summary>
-    /// Validation rules applied to the property.
-    /// </summary>
     public List<ValidationRuleInfo> ValidationRules { get; set; } = new();
 
-    /// <summary>
-    /// Whether the property contains secret data.
-    /// </summary>
     public bool IsSecret { get; set; }
 }
 
-/// <summary>
-/// Information about a validation rule.
-/// </summary>
 public sealed class ValidationRuleInfo
 {
-    /// <summary>
-    /// Type of validation attribute.
-    /// </summary>
     public string AttributeType { get; set; } = string.Empty;
 
-    /// <summary>
-    /// Error message for the validation rule.
-    /// </summary>
     public string? ErrorMessage { get; set; }
 
-    /// <summary>
-    /// Whether it's a configuration-specific validation attribute.
-    /// </summary>
     public bool IsConfigurationValidation { get; set; }
 
-    /// <summary>
-    /// Minimum value for range validation.
-    /// </summary>
     public object? MinValue { get; set; }
 
-    /// <summary>
-    /// Maximum value for range validation.
-    /// </summary>
     public object? MaxValue { get; set; }
 
-    /// <summary>
-    /// Minimum length for string validation.
-    /// </summary>
     public int? MinLength { get; set; }
 
-    /// <summary>
-    /// Maximum length for string validation.
-    /// </summary>
     public int? MaxLength { get; set; }
 
-    /// <summary>
-    /// Minimum TTL for TTL validation.
-    /// </summary>
     public string? MinimumTtl { get; set; }
 
-    /// <summary>
-    /// Maximum TTL for TTL validation.
-    /// </summary>
     public string? MaximumTtl { get; set; }
 
-    /// <summary>
-    /// Recommended minimum TTL for production.
-    /// </summary>
     public string? RecommendedMinimumInProduction { get; set; }
 }
 
-/// <summary>
-/// Configuration metadata summary.
-/// </summary>
 public sealed class ConfigurationMetadata
 {
-    /// <summary>
-    /// Configuration section name.
-    /// </summary>
     public string SectionName { get; set; } = string.Empty;
 
-    /// <summary>
-    /// Type name.
-    /// </summary>
     public string TypeName { get; set; } = string.Empty;
 
-    /// <summary>
-    /// Number of properties.
-    /// </summary>
     public int PropertyCount { get; set; }
 
-    /// <summary>
-    /// Number of secret properties.
-    /// </summary>
     public int SecretPropertyCount { get; set; }
 
-    /// <summary>
-    /// Number of required properties.
-    /// </summary>
     public int RequiredPropertyCount { get; set; }
 
-    /// <summary>
-    /// Whether the type has validation rules.
-    /// </summary>
     public bool HasValidation { get; set; }
 
-    /// <summary>
-    /// Whether the type is registered in DI.
-    /// </summary>
     public bool IsRegistered { get; set; }
 
-    /// <summary>
-    /// Last modified time of the type.
-    /// </summary>
     public DateTimeOffset LastModified { get; set; }
 }
 
-/// <summary>
-/// Auto-generated documentation section.
-/// </summary>
 public sealed class AutoGeneratedDocumentationSection
 {
-    /// <summary>
-    /// Configuration section name.
-    /// </summary>
     public string SectionName { get; set; } = string.Empty;
 
-    /// <summary>
-    /// Type name.
-    /// </summary>
     public string TypeName { get; set; } = string.Empty;
 
-    /// <summary>
-    /// Section description.
-    /// </summary>
     public string Description { get; set; } = string.Empty;
 
-    /// <summary>
-    /// Properties in the section.
-    /// </summary>
     public List<AutoGeneratedPropertyDoc> Properties { get; set; } = new();
 }
 
-/// <summary>
-/// Auto-generated property documentation.
-/// </summary>
 public sealed class AutoGeneratedPropertyDoc
 {
-    /// <summary>
-    /// Property name.
-    /// </summary>
     public string Name { get; set; } = string.Empty;
 
-    /// <summary>
-    /// Property type.
-    /// </summary>
     public string Type { get; set; } = string.Empty;
 
-    /// <summary>
-    /// Property description.
-    /// </summary>
     public string Description { get; set; } = string.Empty;
 
-    /// <summary>
-    /// Default value.
-    /// </summary>
     public object? DefaultValue { get; set; }
 
-    /// <summary>
-    /// Whether the property is required.
-    /// </summary>
     public bool IsRequired { get; set; }
 
-    /// <summary>
-    /// Whether the property is secret.
-    /// </summary>
     public bool IsSecret { get; set; }
 
-    /// <summary>
-    /// Environment variable name.
-    /// </summary>
     public string EnvironmentVariable { get; set; } = string.Empty;
 
-    /// <summary>
-    /// Validation summary.
-    /// </summary>
     public string ValidationSummary { get; set; } = string.Empty;
 }
 
-/// <summary>
-/// Secret validation results.
-/// </summary>
 public sealed class SecretValidationResult
 {
-    /// <summary>
-    /// Total number of secrets found.
-    /// </summary>
     public int TotalSecrets { get; set; }
 
-    /// <summary>
-    /// Number of valid secrets.
-    /// </summary>
     public int ValidSecrets { get; set; }
 
-    /// <summary>
-    /// Number of invalid secrets.
-    /// </summary>
     public int InvalidSecrets { get; set; }
 
-    /// <summary>
-    /// Validation issues found.
-    /// </summary>
     public List<SecretValidationIssue> Issues { get; set; } = new();
 }
 
-/// <summary>
-/// A secret validation issue.
-/// </summary>
 public sealed class SecretValidationIssue
 {
-    /// <summary>
-    /// Secret reference that has an issue.
-    /// </summary>
     public string SecretReference { get; set; } = string.Empty;
 
-    /// <summary>
-    /// Description of the issue.
-    /// </summary>
     public string Issue { get; set; } = string.Empty;
 
-    /// <summary>
-    /// Severity of the issue.
-    /// </summary>
     public string Severity { get; set; } = string.Empty;
 }
 
-/// <summary>
-/// Configuration audit information.
-/// </summary>
 public sealed class ConfigurationAuditInfo
 {
-    /// <summary>
-    /// Current environment name.
-    /// </summary>
     public string Environment { get; set; } = string.Empty;
 
-    /// <summary>
-    /// Machine name where the application is running.
-    /// </summary>
     public string MachineName { get; set; } = string.Empty;
 
-    /// <summary>
-    /// Application name.
-    /// </summary>
     public string ApplicationName { get; set; } = string.Empty;
 
-    /// <summary>
-    /// Content root path.
-    /// </summary>
     public string ContentRoot { get; set; } = string.Empty;
 
-    /// <summary>
-    /// Configuration sources and their key counts.
-    /// </summary>
     public Dictionary<string, int> ConfigurationSources { get; set; } = new();
 
-    /// <summary>
-    /// Total number of configuration keys.
-    /// </summary>
     public int TotalConfigurationKeys { get; set; }
 }
 
-/// <summary>
-/// Logging extensions for configuration discovery.
-/// </summary>
 internal static partial class ConfigurationDiscoveryLog
 {
     [LoggerMessage(

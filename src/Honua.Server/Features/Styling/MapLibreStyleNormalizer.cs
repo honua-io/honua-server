@@ -150,12 +150,6 @@ internal static class MapLibreStyleNormalizer
         return true;
     }
 
-    /// <summary>
-    /// Validates a standalone MapLibre style without requiring it to reference the
-    /// server-generated Honua source. Standalone catalog styles may use any declared
-    /// vector or GeoJSON source, but strict handling still enforces the same layer
-    /// structure and supported styling surface as layer-bound styles.
-    /// </summary>
     public static bool TryValidateStandalone(JsonElement style, out string? error)
     {
         error = null;

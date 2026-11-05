@@ -13,9 +13,6 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Console Operate investigation endpoints (#1168).
-/// </summary>
 internal static class InvestigationEndpoints
 {
     private const int MaxTitleLength = 256;

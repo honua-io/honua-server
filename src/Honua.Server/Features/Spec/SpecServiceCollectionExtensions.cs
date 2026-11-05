@@ -7,16 +7,8 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Features.Spec;
 
-/// <summary>
-/// Dependency-injection wiring for the spec plan / apply vertical slice.
-/// </summary>
 internal static class SpecServiceCollectionExtensions
 {
-    /// <summary>
-    /// Registers the Core planner / apply engine and the server-side compute
-    /// executor used by the <c>/v1/spec/*</c> surface and the gRPC
-    /// <c>SpecService</c>.
-    /// </summary>
     public static IServiceCollection AddSpec(this IServiceCollection services, IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(services);

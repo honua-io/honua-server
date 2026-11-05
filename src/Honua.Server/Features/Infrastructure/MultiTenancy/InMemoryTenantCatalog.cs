@@ -7,15 +7,6 @@ using Honua.Core.Features.MultiTenancy.Domain;
 
 namespace Honua.Infrastructure.MultiTenancy;
 
-/// <summary>
-/// Process-local tenant catalog backing the tenant lifecycle admin surface (issue #2156).
-/// </summary>
-/// <remarks>
-/// Like the in-memory rate-limit policy store and usage meter, this is the thin shipped seam:
-/// tenants are held per-node so operators can model the create/suspend/resume/delete lifecycle
-/// without standing up durable provisioning infrastructure. A durable, cluster-shared
-/// (schema/migration backed) implementation can replace this without changing callers.
-/// </remarks>
 internal sealed class InMemoryTenantCatalog : ITenantCatalog
 {
     private readonly ConcurrentDictionary<string, TenantRecord> _tenants =

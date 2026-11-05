@@ -10,10 +10,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Streaming;
 
-/// <summary>
-/// Dependency bundle for feature stream endpoints. Keeps the endpoint method
-/// signature within the 5-dependency limit (follows <c>FeatureServerEditsDependencies</c> pattern).
-/// </summary>
 internal sealed class FeatureStreamDependencies
 {
     public FeatureStreamDependencies(
@@ -47,9 +43,5 @@ internal sealed class FeatureStreamDependencies
     public FeatureStreamRoutabilityGuard RoutabilityGuard { get; }
     public IGeometryOperationService GeometryOperationService { get; }
 
-    /// <summary>
-    /// Shared feature reader used to build snapshot-then-delta baselines through the
-    /// canonical query pipeline rather than a stream-local data access path.
-    /// </summary>
     public IFeatureReader FeatureReader { get; }
 }

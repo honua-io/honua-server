@@ -3,9 +3,6 @@
 
 namespace Honua.Server.Features.Admin.Models;
 
-/// <summary>
-/// Validation response for a persisted layer and its backing storage.
-/// </summary>
 internal sealed record LayerValidationResponse
 {
     public int LayerId { get; init; }
@@ -25,9 +22,6 @@ internal sealed record LayerValidationResponse
     public LayerValidationCheck[] Checks { get; init; } = [];
 }
 
-/// <summary>
-/// Individual validation check result.
-/// </summary>
 internal sealed record LayerValidationCheck
 {
     public required string Code { get; init; }

@@ -9,20 +9,7 @@ using System.Xml.Linq;
 
 namespace Honua.Server.Features.Identity.Saml;
 
-/// <summary>
-/// Verifies an enveloped XML-DSig signature on a SAML assertion using only
-/// <see cref="System.Security.Cryptography"/> primitives plus a focused Exclusive XML
-/// Canonicalization (C14N, RFC 3741) implementation. This avoids
-/// <c>System.Security.Cryptography.Xml.SignedXml</c>, which is not in the in-box shared
-/// framework and is hostile to AOT/trimming.
-/// </summary>
-/// <remarks>
-/// Security scope: supports the standard SAML SP profile — a single enveloped signature over
-/// the assertion, the Enveloped-Signature transform, Exclusive C14N, SHA-256/SHA-1 digests,
-/// and RSA-SHA256/RSA-SHA1 (and ECDSA equivalents) signatures. Both the digest of the signed
-/// element AND the signature over <c>SignedInfo</c> are checked, the signed element is pinned
-/// to the assertion by ID, and the signing key must be the configured IdP certificate's key.
-/// </remarks>
+// Both the digest and the signature over SignedInfo are checked, the signed element is pinned to the assertion id, and the key must be the configured provider certificate.
 internal static class SamlSignatureVerifier
 {
     private const string DsigNs = "http://www.w3.org/2000/09/xmldsig#";
@@ -142,12 +129,7 @@ internal static class SamlSignatureVerifier
             : VerificationResult.Fail("SAML SignedInfo signature is invalid.");
     }
 
-    /// <summary>
-    /// Copies namespace declarations that are in scope on <paramref name="source"/> but not
-    /// already present on <paramref name="copy"/>. Nearer ancestors win. Exclusive C14N emits
-    /// only visibly utilized prefixes and InclusiveNamespaces entries, so unused declarations
-    /// seeded here do not change the digest.
-    /// </summary>
+    // Exclusive canonicalization emits only visibly utilized prefixes, so unused declarations copied here do not change the digest.
     private static void CopyInScopeNamespaceDeclarations(XElement source, XElement copy)
     {
         for (var ancestor = source.Parent; ancestor is not null; ancestor = ancestor.Parent)

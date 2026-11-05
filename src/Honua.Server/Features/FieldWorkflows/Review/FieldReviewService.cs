@@ -11,12 +11,6 @@ using Honua.ServiceDefaults;
 
 namespace Honua.Server.Features.FieldWorkflows.Review;
 
-/// <summary>
-/// Back-office field data review and QA service (#1159). Adapts admin requests
-/// into the shared <see cref="IFieldReviewStore"/>, audits every review state
-/// transition, and maps failures through shared problem helpers. Authorization
-/// is enforced at the route group via <c>RequireAdminAuthorization</c>.
-/// </summary>
 internal sealed class FieldReviewService
 {
     private const int MaxLimit = 500;

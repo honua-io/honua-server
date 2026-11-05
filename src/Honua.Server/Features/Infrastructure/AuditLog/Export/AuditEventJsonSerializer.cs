@@ -9,20 +9,8 @@ using Honua.Core.Features.AuditLog.Abstractions;
 
 namespace Honua.Server.Features.Infrastructure.AuditLog.Export;
 
-/// <summary>
-/// Reflection-free serializer that renders an <see cref="AuditEvent"/> as a JSON
-/// object using <see cref="Utf8JsonWriter"/>. Kept hand-written so the export
-/// sinks stay AOT/trim-safe and do not depend on a runtime serializer context.
-/// </summary>
 internal static class AuditEventJsonSerializer
 {
-    /// <summary>
-    /// Writes a single <see cref="AuditEvent"/> as a JSON object to the writer.
-    /// <c>Details</c> is emitted as a raw JSON value when it parses as JSON,
-    /// otherwise as a JSON string, so already-structured detail is not double-encoded.
-    /// </summary>
-    /// <param name="writer">The target writer.</param>
-    /// <param name="evt">The event to serialize.</param>
     public static void Write(Utf8JsonWriter writer, AuditEvent evt)
     {
         ArgumentNullException.ThrowIfNull(writer);
@@ -68,11 +56,6 @@ internal static class AuditEventJsonSerializer
         writer.WriteEndObject();
     }
 
-    /// <summary>
-    /// Serializes a single event to a UTF-8 JSON object byte array.
-    /// </summary>
-    /// <param name="evt">The event.</param>
-    /// <returns>UTF-8 encoded JSON.</returns>
     public static byte[] SerializeObject(AuditEvent evt)
     {
         var buffer = new ArrayBufferWriter<byte>();
@@ -84,11 +67,6 @@ internal static class AuditEventJsonSerializer
         return buffer.WrittenSpan.ToArray();
     }
 
-    /// <summary>
-    /// Serializes a batch of events to a UTF-8 JSON array.
-    /// </summary>
-    /// <param name="events">The events.</param>
-    /// <returns>UTF-8 encoded JSON array.</returns>
     public static byte[] SerializeArray(IReadOnlyList<AuditEvent> events)
     {
         ArgumentNullException.ThrowIfNull(events);
@@ -107,11 +85,6 @@ internal static class AuditEventJsonSerializer
         return buffer.WrittenSpan.ToArray();
     }
 
-    /// <summary>
-    /// Serializes a batch of events as newline-delimited JSON (one object per line).
-    /// </summary>
-    /// <param name="events">The events.</param>
-    /// <returns>UTF-8 encoded JSON Lines.</returns>
     public static byte[] SerializeNdjson(IReadOnlyList<AuditEvent> events)
     {
         ArgumentNullException.ThrowIfNull(events);

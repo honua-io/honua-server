@@ -12,62 +12,40 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Monitoring;
 
-/// <summary>
-/// Configuration-backed defaults for deterministic ops-finding autonomy policy.
-/// </summary>
 internal sealed class OpsAutonomyOptions
 {
-    /// <summary>Configuration section name.</summary>
     public const string SectionName = "Observability:OpsFindings:Autonomy";
 
-    /// <summary>Gets or sets a value indicating whether autonomy evaluation is enabled.</summary>
     public bool Enabled { get; set; } = true;
 
-    /// <summary>Gets or sets a global kill switch that forces all rules back to propose-only.</summary>
     public bool KillSwitchEnabled { get; set; }
 
-    /// <summary>Gets or sets the background evaluator poll interval in seconds.</summary>
     [Range(5, 3600)]
     public int EvaluationSeconds { get; set; } = 60;
 
-    /// <summary>Gets or sets the default maximum auto-actions per rule window.</summary>
     [Range(1, int.MaxValue)]
     public int DefaultMaxAutoActionsPerWindow { get; set; } = 1;
 
-    /// <summary>Gets or sets the default rolling rate-limit window in seconds.</summary>
     [Range(1, 86400)]
     public int DefaultWindowSeconds { get; set; } = 3600;
 
-    /// <summary>Gets or sets the default maximum blast-radius value.</summary>
     [Range(1, int.MaxValue)]
     public int DefaultMaxBlastRadius { get; set; } = 10;
 
-    /// <summary>Gets or sets per-rule policy defaults from configuration.</summary>
     public Dictionary<string, OpsAutonomyRuleOptions> Rules { get; set; } = new(StringComparer.Ordinal);
 }
 
-/// <summary>
-/// Configuration-backed policy defaults for one rule.
-/// </summary>
 internal sealed class OpsAutonomyRuleOptions
 {
-    /// <summary>Gets or sets the autonomy mode (<c>ProposeOnly</c> or <c>AutoApply</c>).</summary>
     public string? Mode { get; set; }
 
-    /// <summary>Gets or sets the maximum auto-actions per rolling window.</summary>
     public int? MaxAutoActionsPerWindow { get; set; }
 
-    /// <summary>Gets or sets the rolling rate-limit window in seconds.</summary>
     public int? WindowSeconds { get; set; }
 
-    /// <summary>Gets or sets the maximum blast-radius value.</summary>
     public int? MaxBlastRadius { get; set; }
 }
 
-/// <summary>
-/// Default deterministic autonomy evaluator. It never performs work itself; it only decides whether
-/// the operation gateway may convert an approval-tier finding remediation to direct execution.
-/// </summary>
 internal sealed class OpsAutonomyEvaluator(
     IOptionsMonitor<OpsAutonomyOptions> options,
     IOpsAutonomyPolicyStore? store = null,

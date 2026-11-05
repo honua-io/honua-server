@@ -9,16 +9,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Alerts.Ops;
 
-/// <summary>
-/// Decorates the durable workflow-operation store to emit an ops notification when a
-/// <see cref="WorkflowOperationKind.Deploy"/> operation reaches a terminal status. This
-/// is the single seam for deploy terminal transitions: every persisted transition from
-/// both <c>DeployWorkflowService</c> and <c>DeployWorkflowReconciler</c> funnels through
-/// <see cref="IWorkflowOperationStore.SetAsync"/>, so decorating it covers them all
-/// without scattering notification calls across the reconciler. Notification is
-/// best-effort and fired AFTER the authoritative inner write; idempotency is provided
-/// by the outbox dedupe key, so repeated terminal writes enqueue at most once.
-/// </summary>
 internal sealed partial class NotifyingWorkflowOperationStore : IWorkflowOperationStore
 {
     private const string OpsSource = "deploy-workflow";

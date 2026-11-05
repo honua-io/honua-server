@@ -14,17 +14,9 @@ internal static class WorkflowPackageMetadataKeys
     public const string Target = "workflow.publicationTarget";
     public const string ProcessId = "workflow.processId";
 
-    /// <summary>
-    /// Prefix under which caller-supplied run parameters are recorded in run provenance
-    /// (<c>workflow.parameter.&lt;name&gt;</c>), keeping them apart from the stamped provenance
-    /// keys and from every parameter namespace the job runtime owns.
-    /// </summary>
     public const string RunParameterPrefix = "workflow.parameter.";
 
-    /// <summary>
-    /// Server-stamped provenance keys that callers must not override on run requests.
-    /// Protects traceability of jobs/runs back to the originating package version.
-    /// </summary>
+    // Callers must not override these provenance keys on a run request.
     private static readonly FrozenSet<string> ReservedKeys = new[]
     {
         PackageId,
@@ -35,8 +27,5 @@ internal static class WorkflowPackageMetadataKeys
         ProcessId
     }.ToFrozenSet(StringComparer.Ordinal);
 
-    /// <summary>
-    /// Returns <c>true</c> when <paramref name="key"/> is a reserved workflow provenance key.
-    /// </summary>
     public static bool IsReserved(string key) => ReservedKeys.Contains(key);
 }

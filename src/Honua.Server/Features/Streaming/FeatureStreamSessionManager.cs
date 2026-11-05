@@ -12,10 +12,6 @@ using StackExchange.Redis;
 
 namespace Honua.Server.Features.Streaming;
 
-/// <summary>
-/// Manages feature-stream sessions with bounded channels, heartbeat, and slow-consumer disconnect.
-/// Each connected client (WebSocket or SSE) gets a session backed by a bounded channel.
-/// </summary>
 internal sealed class FeatureStreamSessionManager : IDisposable
 {
     internal const string DefaultSubscriptionId = "default";
@@ -25,13 +21,6 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     private const int RecentEventIdCapacity = 128;
     private const int SubscriberSecurityRefreshParallelism = 8;
 
-    /// <summary>
-    /// Upper bound on retained cluster-broadcast payloads while Redis publish is
-    /// failing. Missed live events are recoverable through the durable event store
-    /// and the cross-node poll, so the backlog only needs to smooth short outages;
-    /// beyond the cap the oldest payloads are dropped instead of growing without
-    /// bound under sustained edit traffic.
-    /// </summary>
     private const int MaxClusterBroadcastBacklog = 1024;
     private readonly ConcurrentDictionary<Guid, SessionEntry> _sessions = new();
     private readonly ConcurrentQueue<string> _clusterBroadcastBacklog = new();
@@ -103,27 +92,14 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             ClusterBroadcastRecoveryInterval);
     }
 
-    /// <summary>
-    /// Total slow-consumer disconnections since startup.
-    /// </summary>
     public long SlowConsumerDrops => Interlocked.Read(ref _slowConsumerDrops);
 
-    /// <summary>
-    /// Total heartbeat frames sent since startup.
-    /// </summary>
     public long HeartbeatsSent => Interlocked.Read(ref _heartbeatsSent);
 
-    /// <summary>
-    /// Current number of active sessions (non-allocating).
-    /// </summary>
     public int SessionCount => Volatile.Read(ref _activeSessionCount);
 
-    /// <summary>
-    /// Configured concurrent-session cap per tenant or principal. Exposed for the health check's saturation signal.
-    /// </summary>
     public int MaxConcurrentSessions => _options.Value.MaxConcurrentSessions;
 
-    /// <summary>Largest active partition occupancy, without exposing tenant or principal identifiers.</summary>
     public int MaximumPartitionSessionCount
     {
         get
@@ -135,10 +111,6 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         }
     }
 
-    /// <summary>
-    /// Refreshes the routing state referenced by all open scoped subscriptions. Failure clears
-    /// the state so a stale filter fails closed until metadata becomes readable again.
-    /// </summary>
     public async ValueTask<bool> RefreshRoutabilityAsync(CancellationToken cancellationToken = default)
     {
         if (_serviceScopeFactory is null || _routabilityGuard is null)
@@ -193,14 +165,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         }
     }
 
-    /// <summary>
-    /// Re-resolves layer access, row-level security and field masks for every open subscription
-    /// and swaps the result into its filter, so later matches use the current policies
-    /// (honua-server#6105). A session whose previously readable layer is now denied, or whose
-    /// policies cannot be re-resolved, is terminated like an admin disconnect; the client
-    /// reconnects through normal admission. Policy stores are read once per subscription per
-    /// tick, never per event.
-    /// </summary>
+    // A layer the refresh denies, or that cannot be re-resolved, ends the session, and policy is read once per tick.
     public async Task RefreshSubscriberSecurityAsync(CancellationToken cancellationToken = default)
     {
         var work = new List<(Guid SessionId, StreamSubscriberSecurity Security)>();
@@ -279,12 +244,6 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         return await provider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Point-in-time snapshot of the cross-node broadcast backlog for the health check:
-    /// whether cluster broadcast is configured (Redis present), whether it is currently
-    /// enabled (subscribed), the number of payloads buffered awaiting a publish retry, and
-    /// the cumulative dropped count since startup.
-    /// </summary>
     public ClusterBroadcastBacklogSnapshot GetClusterBroadcastBacklogSnapshot()
     {
         lock (_clusterBroadcastLock)
@@ -297,30 +256,14 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         }
     }
 
-    /// <summary>
-    /// Refreshes the OTel observable-gauge snapshot (active sessions, cluster backlog depth).
-    /// Called on session add/remove and cluster-broadcast backlog changes; cheap and lock-free
-    /// for the session count, best-effort for the backlog depth.
-    /// </summary>
     private void UpdateGaugeSnapshot()
         => _metrics.RecordGaugeSnapshot(
             Volatile.Read(ref _activeSessionCount),
             Volatile.Read(ref _clusterBroadcastBacklogCount));
 
-    /// <summary>
-    /// Records durable-replay events delivered to a reconnecting client for the given transport.
-    /// The replay helpers funnel through the session manager so all feature-stream metrics share
-    /// the manager's owned <see cref="FeatureStreamMetrics"/> instance.
-    /// </summary>
     public void RecordReplayEventsDelivered(string transport, long count)
         => _metrics.RecordReplayEventsDelivered(transport, count);
 
-    /// <summary>
-    /// Creates a new session and returns its channel reader for the transport loop.
-    /// Live broadcasts are queued into the bounded channel immediately. When a session
-    /// is replaying, the transport writes replay events directly while the channel
-    /// accumulates live events; the drain loop deduplicates using the replay cursor.
-    /// </summary>
     public FeatureStreamSession CreateSession(string transport, string? clientLabel)
         => CreateSession(transport, clientLabel, filter: null);
 
@@ -329,10 +272,6 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             ?? throw new InvalidOperationException(
                 $"Feature stream session limit of {_options.Value.MaxConcurrentSessions} concurrent sessions reached.");
 
-    /// <summary>
-    /// Attempts to create a new session. Returns null when the tenant or principal concurrent-session
-    /// cap has been reached.
-    /// </summary>
     public FeatureStreamSession? TryCreateSession(
         string transport,
         string? clientLabel,
@@ -408,12 +347,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         }
     }
 
-    /// <summary>
-    /// Marks a session's drain loop as active. Grace is set to the larger of the current
-    /// channel depth and <paramref name="minimumGrace"/>. Overflow events within the grace
-    /// window are silently dropped (no disconnect); once exhausted, a full channel triggers
-    /// a slow-consumer disconnect.
-    /// </summary>
+    // Overflow inside the grace window is dropped without a disconnect.
     public void MarkDrainStarted(Guid sessionId, long minimumGrace = 0)
     {
         if (_sessions.TryGetValue(sessionId, out var entry))
@@ -425,11 +359,6 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         }
     }
 
-    /// <summary>
-    /// Resets the drain grace window to zero so any subsequent overflow is treated
-    /// as a genuine slow consumer. Call after the replay handoff is complete and
-    /// the live drain loop is about to start.
-    /// </summary>
     public void ClearDrainGrace(Guid sessionId)
     {
         if (_sessions.TryGetValue(sessionId, out var entry))
@@ -438,9 +367,6 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         }
     }
 
-    /// <summary>
-    /// Removes a session. Called by the transport loop on disconnect.
-    /// </summary>
     public void RemoveSession(Guid sessionId, FeatureStreamDisconnectReason reason)
         => TryRemoveSession(sessionId, reason);
 
@@ -465,14 +391,6 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         return true;
     }
 
-    /// <summary>
-    /// Fan-out a live event to all connected sessions. When a session's bounded channel
-    /// is full: pre-drain overflows are silently dropped; post-drain overflows consume a
-    /// grace window (equal to the inherited replay-era backlog depth) before triggering a
-    /// slow-consumer disconnect. Sessions with subscription filters only receive matching events.
-    /// Returns the number of local sessions that accepted the message; cross-node fan-out is
-    /// handled separately through Redis.
-    /// </summary>
     public int Broadcast(FeatureStreamMessage message)
     {
         var delivered = BroadcastLocally(message);
@@ -545,11 +463,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         }
     }
 
-    /// <summary>
-    /// Enqueues a payload for retry while cluster publish is unavailable, dropping
-    /// the oldest entries beyond <see cref="MaxClusterBroadcastBacklog"/>. Callers
-    /// must hold <see cref="_clusterBroadcastLock"/>.
-    /// </summary>
+    // Callers must hold the lock while a retry is queued.
     private void EnqueueClusterBroadcastBacklogLocked(string payload)
     {
         _clusterBroadcastBacklog.Enqueue(payload);
@@ -811,9 +725,6 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         UpdateGaugeSnapshot();
     }
 
-    /// <summary>
-    /// Sends a heartbeat to all connected sessions.
-    /// </summary>
     public void BroadcastHeartbeat()
     {
         var heartbeat = FeatureStreamMessage.Heartbeat();
@@ -849,9 +760,6 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         _metrics.RecordHeartbeatsSent(sent);
     }
 
-    /// <summary>
-    /// Writes a message directly to a specific session's channel (used for replay).
-    /// </summary>
     public bool TryWriteToSession(Guid sessionId, FeatureStreamMessage message)
     {
         if (!_sessions.TryGetValue(sessionId, out var entry))
@@ -871,23 +779,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         return true;
     }
 
-    /// <summary>
-    /// Registers a subscription on an existing WebSocket session and returns the generation
-    /// assigned to it. The generation is monotonic per session and changes on every add
-    /// (including same-id replacement), so the caller must pin the returned generation when
-    /// issuing replay or send-time delivery claims for this subscription. Frames stamped with
-    /// an older generation are rejected at send time, fencing stale queued frames after
-    /// unsubscribe or replacement.
-    ///
-    /// When <paramref name="paused"/> is true, the broadcast fan-out skips this subscription
-    /// until <see cref="TryUnpauseSubscription"/> is called. This lets the subscribe handler
-    /// replay missed events from the durable store without the live channel writer
-    /// interleaving frames at the same cursor range.
-    ///
-    /// Returns <see cref="AddSubscriptionResult.SessionGone"/> when the session is closed
-    /// and <see cref="AddSubscriptionResult.LimitReached"/> when the per-session cap is hit;
-    /// the caller should reject the subscribe frame with a client-safe error.
-    /// </summary>
+    // The caller must pin the generation, and live fan-out waits until replay finishes so the two do not interleave.
     public AddSubscriptionOutcome TryAddSubscription(Guid sessionId, string subscriptionId, IStreamSubscriptionFilter? filter, bool paused = false)
     {
         if (!_sessions.TryGetValue(sessionId, out var entry))
@@ -900,18 +792,9 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             : new AddSubscriptionOutcome(AddSubscriptionResult.LimitReached, 0);
     }
 
-    /// <summary>
-    /// Returns the generation assigned to the default subscription on the named session, or
-    /// 0 if the session does not exist or has no default subscription. Used by the WebSocket
-    /// writer's replay callbacks for the default subscription (which is never replaced and so
-    /// has a stable generation for the life of the session).
-    /// </summary>
     public long GetDefaultSubscriptionGeneration(Guid sessionId)
         => _sessions.TryGetValue(sessionId, out var entry) ? entry.DefaultSubscriptionGeneration : 0;
 
-    /// <summary>
-    /// Clears the broadcast-paused flag on a subscription so live events resume queueing.
-    /// </summary>
     public bool TryUnpauseSubscription(Guid sessionId, string subscriptionId)
     {
         if (!_sessions.TryGetValue(sessionId, out var entry))
@@ -922,16 +805,6 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         return entry.SetSubscriptionPaused(subscriptionId, paused: false);
     }
 
-    /// <summary>
-    /// Atomically records that an event was delivered for a specific subscription
-    /// on a session. Returns true if the caller should send the event, false if it
-    /// was already recorded (caller should skip to avoid duplicate delivery).
-    /// Used by the per-subscription replay path which writes directly to the
-    /// transport, bypassing the channel/broadcast dedup. Does not check generation —
-    /// callers that own the subscription's current generation should prefer
-    /// <see cref="TryClaimSubscriptionDelivery"/>, which atomically rejects stale-
-    /// generation frames before claiming dedup.
-    /// </summary>
     public bool TryRememberSubscriptionDelivery(Guid sessionId, string subscriptionId, string eventId)
     {
         if (!_sessions.TryGetValue(sessionId, out var entry))
@@ -942,17 +815,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         return entry.TryRememberEvent(string.Concat(eventId, ":", subscriptionId));
     }
 
-    /// <summary>
-    /// Atomically verifies the subscription still exists with the supplied generation and,
-    /// if so, claims the (event, subscription, generation) delivery slot. Returns
-    /// <see cref="SubscriptionDeliveryClaim.StaleGeneration"/> when the session is gone or
-    /// the subscription was removed or replaced (so callers must drop the queued frame
-    /// without claiming dedup), and <see cref="SubscriptionDeliveryClaim.AlreadyDelivered"/>
-    /// when a concurrent send-time path already claimed the slot. Used by the WebSocket writer
-    /// and per-subscription replay so stale frames queued before an unsubscribe or same-id
-    /// resubscribe are dropped without claiming dedup, leaving future replay free to deliver
-    /// the event under the new generation.
-    /// </summary>
+    // A replaced subscription drops the queued frame without claiming delivery, so a later replay can still deliver it.
     public SubscriptionDeliveryClaim TryClaimSubscriptionDelivery(Guid sessionId, string subscriptionId, long generation, string eventId)
     {
         if (!_sessions.TryGetValue(sessionId, out var entry))
@@ -963,11 +826,6 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         return entry.TryClaimSubscriptionDelivery(subscriptionId, generation, eventId);
     }
 
-    /// <summary>
-    /// Snapshots non-default, non-paused subscriptions on the session so the WebSocket writer's
-    /// cross-node poll can replay each one through the per-(event, subscription) dedup claim.
-    /// Returns an empty array when the session is gone or has no eligible subscriptions.
-    /// </summary>
     public PollableSubscription[] GetActivePollableSubscriptions(Guid sessionId)
     {
         return _sessions.TryGetValue(sessionId, out var entry)
@@ -975,26 +833,13 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             : [];
     }
 
-    /// <summary>
-    /// Advances the per-subscription poll cursor when the supplied generation still owns the
-    /// subscription. Returns false when the session or subscription is gone, the generation
-    /// has been replaced, or the supplied cursor is not strictly greater than the recorded
-    /// value. Used by the WebSocket writer's cross-node poll after each per-subscription
-    /// store sweep so the next interval starts from the watermark just delivered.
-    /// </summary>
     public bool TryAdvanceSubscriptionPollCursor(Guid sessionId, string subscriptionId, long generation, long cursor)
     {
         return _sessions.TryGetValue(sessionId, out var entry)
             && entry.TryAdvanceSubscriptionPollCursor(subscriptionId, generation, cursor);
     }
 
-    /// <summary>
-    /// Allocates the next subscription-local monotonic sequence for a subscription, or
-    /// returns -1 when the session or subscription is gone or the generation has been
-    /// replaced. Callers must allocate immediately before writing the frame to the wire so
-    /// the sequence stays contiguous for frames the subscription actually admits, even
-    /// where the global replay cursor skips values belonging to filtered-out events.
-    /// </summary>
+    // The sequence is allocated immediately before the write so a filtered cursor does not burn a number.
     public long NextSubscriptionSequence(Guid sessionId, string subscriptionId, long generation = 0)
     {
         return _sessions.TryGetValue(sessionId, out var entry)
@@ -1003,9 +848,6 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             : -1;
     }
 
-    /// <summary>
-    /// Removes a subscription from an existing WebSocket session.
-    /// </summary>
     public bool TryRemoveSubscription(Guid sessionId, string subscriptionId)
     {
         if (!_sessions.TryGetValue(sessionId, out var entry))
@@ -1016,15 +858,9 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         return entry.RemoveSubscription(subscriptionId);
     }
 
-    /// <summary>
-    /// Force-disconnect a session (admin action).
-    /// </summary>
     public bool DisconnectSession(Guid sessionId)
         => TryRemoveSession(sessionId, FeatureStreamDisconnectReason.AdminDisconnect);
 
-    /// <summary>
-    /// Returns a snapshot of all active sessions for admin/health visibility.
-    /// </summary>
     public IReadOnlyList<FeatureStreamSessionInfo> GetSessions()
     {
         return _sessions.Select(kvp =>
@@ -1135,11 +971,6 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             long LastPolledCursor,
             long NextSequence = 0);
 
-        /// <summary>
-        /// Generation assigned to the default subscription at session creation. Stable for the
-        /// life of the session because the default subscription is never replaced (control-frame
-        /// subscribes always create distinct ids).
-        /// </summary>
         public long DefaultSubscriptionGeneration { get; }
 
         public Guid Id { get; }
@@ -1218,30 +1049,16 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             Interlocked.Exchange(ref _lastQueuedCursor, cursor);
         }
 
-        /// <summary>
-        /// Sets the number of post-drain overflow events to tolerate before
-        /// treating a full channel as a genuine slow consumer.
-        /// </summary>
         public void SetDrainGrace(long count)
         {
             Interlocked.Exchange(ref _drainGraceRemaining, count);
         }
 
-        /// <summary>
-        /// Returns true if grace remains (overflow is tolerated); false when exhausted.
-        /// </summary>
         public bool TryConsumeDrainGrace()
         {
             return Interlocked.Decrement(ref _drainGraceRemaining) >= 0;
         }
 
-        /// <summary>
-        /// Atomically records that an event was delivered for this session.
-        /// Returns true if the event is newly recorded (caller should deliver),
-        /// false if it was already recorded (caller should skip to avoid duplicate
-        /// delivery). Used by both the broadcast fan-out and the per-subscription
-        /// replay path to keep the replay-to-live handoff exactly-once.
-        /// </summary>
         public bool TryRememberEvent(string eventId)
         {
             lock (_recentEventLock)
@@ -1267,11 +1084,6 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             return true;
         }
 
-        /// <summary>
-        /// Adds or replaces a subscription, allocating a new generation each call. Callers must
-        /// pin the returned generation when issuing later replay or send-time delivery claims so
-        /// stale frames queued before a replacement or unsubscribe are rejected at send time.
-        /// </summary>
         public bool TryAddSubscription(
             string subscriptionId,
             IStreamSubscriptionFilter? filter,
@@ -1318,16 +1130,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             }
         }
 
-        /// <summary>
-        /// Atomically verifies the subscription still exists with the supplied generation and,
-        /// if so, claims the (event, subscription, generation) delivery slot. Returns
-        /// <see cref="SubscriptionDeliveryClaim.StaleGeneration"/> when the generation no
-        /// longer matches (subscription removed or replaced) — the caller must drop the queued
-        /// frame without sending and without claiming dedup, so a future replay for the same
-        /// id can still deliver the event under a new generation. Returns
-        /// <see cref="SubscriptionDeliveryClaim.AlreadyDelivered"/> when a concurrent send-time
-        /// path already claimed the slot (benign — the other path is sending the frame).
-        /// </summary>
+        // A replaced generation drops the queued frame without claiming delivery, so a later replay can still deliver it.
         public SubscriptionDeliveryClaim TryClaimSubscriptionDelivery(string subscriptionId, long generation, string eventId)
         {
             lock (_subscriptionLock)
@@ -1353,14 +1156,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             }
         }
 
-        /// <summary>
-        /// Allocates the next subscription-local sequence number. Sequence assignment happens
-        /// at send time (after the delivery claim), never at queue time, so numbers are never
-        /// burned by frames that are filtered out, deduplicated, or fenced by generation —
-        /// which is what makes the sequence contiguous while the global cursor skips.
-        /// A <paramref name="generation"/> of 0 skips the generation check for call sites that
-        /// own the session's default subscription for its whole lifetime.
-        /// </summary>
+        // The sequence is assigned at send time, so a frame that is filtered or fenced does not burn a number.
         public bool TryNextSubscriptionSequence(string subscriptionId, long generation, out long sequence)
         {
             lock (_subscriptionLock)
@@ -1378,12 +1174,6 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             }
         }
 
-        /// <summary>
-        /// Snapshots non-default, non-paused subscriptions on this session for the writer's
-        /// cross-node poll. Each entry carries the generation observed at snapshot time so the
-        /// poll can fence stale frames at send time, plus the per-subscription poll cursor that
-        /// scopes the next durable-store sweep to events past the last delivered cursor.
-        /// </summary>
         public PollableSubscription[] GetActivePollableSubscriptions()
         {
             lock (_subscriptionLock)
@@ -1417,11 +1207,6 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             }
         }
 
-        /// <summary>
-        /// Advances the per-subscription poll cursor when the supplied generation still owns the
-        /// subscription. Returns false when the subscription is gone, the generation has been
-        /// replaced, or the supplied cursor is not strictly greater than the recorded value.
-        /// </summary>
         public bool TryAdvanceSubscriptionPollCursor(string subscriptionId, long generation, long cursor)
         {
             lock (_subscriptionLock)
@@ -1497,20 +1282,8 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         }
     }
 
-    /// <summary>
-    /// Subscription match returned by <see cref="SessionEntry.GetMatchingSubscriptions"/>:
-    /// id plus the generation observed at match time. The generation travels with the
-    /// queued frame so the writer can verify the subscription has not been replaced or
-    /// removed before sending.
-    /// </summary>
     internal readonly record struct SubscriptionMatch(string SubscriptionId, long Generation, FeatureStreamEnvelope? Envelope = null);
 
-    /// <summary>
-    /// Snapshot of a non-default WebSocket subscription that the writer's cross-node poll
-    /// can replay on the next interval. Carries the generation captured at snapshot time so
-    /// stale-generation frames are fenced at send time, plus the last poll cursor so the
-    /// store sweep starts from the watermark already delivered to this subscription.
-    /// </summary>
     internal readonly record struct PollableSubscription(
         string SubscriptionId,
         long Generation,
@@ -1518,10 +1291,6 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         long LastPolledCursor);
 }
 
-/// <summary>
-/// Handle returned to the transport loop. The reader drains messages; the disconnect token
-/// signals when the session has been removed.
-/// </summary>
 internal sealed class FeatureStreamSession : IDisposable
 {
     private readonly FeatureStreamSessionManager _manager;
@@ -1539,27 +1308,13 @@ internal sealed class FeatureStreamSession : IDisposable
         _manager = manager;
     }
 
-    /// <summary>
-    /// Unique session identifier.
-    /// </summary>
     public Guid SessionId { get; }
 
-    /// <summary>
-    /// Channel reader for the transport loop to consume messages.
-    /// </summary>
     public ChannelReader<FeatureStreamMessage> Reader { get; }
 
-    /// <summary>
-    /// Fires when the session is removed (admin disconnect, slow consumer, etc.).
-    /// </summary>
     public CancellationToken DisconnectToken { get; }
 
-    /// <summary>
-    /// Serializes WebSocket transport writes for this session. The transport spec
-    /// requires that only one <c>SendAsync</c> is in flight at a time, and per-subscription
-    /// replay must be atomic against live channel drains; both paths acquire this lock
-    /// before sending so cursors stay ordered and frames never interleave on the wire.
-    /// </summary>
+    // Only one socket send is in flight, and replay and the live drain share that lock.
     public SemaphoreSlim WriteLock => _writeLock;
 
     public void Dispose()
@@ -1569,43 +1324,18 @@ internal sealed class FeatureStreamSession : IDisposable
     }
 }
 
-/// <summary>
-/// Message placed on a session's bounded channel.
-/// </summary>
 internal readonly record struct FeatureStreamMessage
 {
-    /// <summary>
-    /// True if this is a heartbeat frame rather than a data envelope.
-    /// </summary>
     public bool IsHeartbeat { get; init; }
 
-    /// <summary>
-    /// The event envelope (only meaningful when <see cref="IsHeartbeat"/> is false).
-    /// </summary>
     public FeatureStreamEnvelope Envelope { get; init; }
 
-    /// <summary>
-    /// Geometry bounding box from the enriched event (internal only, never serialized to clients).
-    /// </summary>
     public double[]? GeometryEnvelope { get; init; }
 
-    /// <summary>
-    /// Pre-serialized attribute JSON from the enriched event (internal only, never serialized to clients).
-    /// </summary>
     public string? PropertiesJson { get; init; }
 
-    /// <summary>
-    /// Generation of the subscription this frame was queued for. The writer drain rejects
-    /// frames whose generation no longer matches the subscription's current generation,
-    /// fencing stale frames after unsubscribe or same-id replacement. Zero on heartbeats and
-    /// on legacy paths that do not pin a generation (the SSE single-default-subscription
-    /// drain falls back to the session-wide watermark).
-    /// </summary>
     public long SubscriptionGeneration { get; init; }
 
-    /// <summary>
-    /// Creates a data message with optional enrichment for subscription filtering.
-    /// </summary>
     public static FeatureStreamMessage Data(
         FeatureStreamEnvelope envelope,
         double[]? geometryEnvelope = null,
@@ -1618,35 +1348,17 @@ internal readonly record struct FeatureStreamMessage
             PropertiesJson = propertiesJson
         };
 
-    /// <summary>
-    /// Creates a heartbeat message.
-    /// </summary>
     public static FeatureStreamMessage Heartbeat() =>
         new() { IsHeartbeat = true };
 }
 
-/// <summary>
-/// Redis pub/sub envelope used to fan out live stream events across nodes.
-/// </summary>
 internal sealed record FeatureStreamBroadcastMessage
 {
-    /// <summary>
-    /// Unique instance identifier for the originating node.
-    /// </summary>
     public required string OriginInstanceId { get; init; }
 
-    /// <summary>
-    /// Event envelope delivered to subscribers.
-    /// </summary>
     public required FeatureStreamEnvelope Envelope { get; init; }
 
-    /// <summary>
-    /// Optional geometry envelope used by subscription filters.
-    /// </summary>
     public double[]? GeometryEnvelope { get; init; }
 
-    /// <summary>
-    /// Optional pre-serialized feature properties used by subscription filters.
-    /// </summary>
     public string? PropertiesJson { get; init; }
 }

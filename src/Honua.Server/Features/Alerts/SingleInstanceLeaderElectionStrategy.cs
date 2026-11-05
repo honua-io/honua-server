@@ -5,15 +5,10 @@ using Honua.Core.Features.Alerts.Abstractions;
 
 namespace Honua.Alerts;
 
-/// <summary>
-/// Local fallback used when alert evaluation runs without a database-backed leader election dependency.
-/// This keeps single-instance and test hosts working when no distributed coordinator is configured.
-/// </summary>
 internal sealed class SingleInstanceLeaderElectionStrategy : ILeaderElectionStrategy
 {
     public bool IsLeader { get; private set; }
 
-    /// <summary>Always <c>false</c>: single-instance acquisition never faults.</summary>
     public bool LastAcquireFaulted => false;
 
     public string InstanceId { get; } = $"{Environment.MachineName}-{Environment.ProcessId}";

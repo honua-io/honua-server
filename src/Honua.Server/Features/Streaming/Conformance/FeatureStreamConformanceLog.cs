@@ -3,11 +3,6 @@
 
 namespace Honua.Server.Features.Streaming.Conformance;
 
-/// <summary>
-/// Source-generated logging for the controlled-conformance workflow. Every controlled write
-/// is logged with its run identity so the mutation surface is auditable (NFR-002); no run
-/// token or caller-supplied free text is ever logged.
-/// </summary>
 internal static partial class FeatureStreamConformanceLog
 {
     [LoggerMessage(

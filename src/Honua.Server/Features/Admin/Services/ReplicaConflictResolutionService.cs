@@ -14,14 +14,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Server.Features.Admin.Services;
 
-/// <summary>
-/// Outcome of an operator-selected disconnected-sync conflict resolution.
-/// </summary>
-/// <param name="Status">Terminal status of the resolution attempt.</param>
-/// <param name="Record">The conflict record after a successful resolution.</param>
-/// <param name="CommittedNewServerState">Whether the resolution produced a new committed server state.</param>
-/// <param name="Effect">The feature-store effect the resolution applied.</param>
-/// <param name="Message">Client-safe explanation for a non-success status.</param>
 internal readonly record struct ReplicaConflictResolutionResult(
     ReplicaConflictResolutionStatus Status,
     ReplicaConflictRecord? Record,
@@ -29,95 +21,39 @@ internal readonly record struct ReplicaConflictResolutionResult(
     ReplicaConflictResolutionEffect Effect,
     string? Message);
 
-/// <summary>
-/// Terminal status of an operator-selected conflict resolution.
-/// </summary>
 internal enum ReplicaConflictResolutionStatus
 {
-    /// <summary>The resolution was applied and recorded.</summary>
     Applied = 0,
 
-    /// <summary>The conflict does not exist (or does not belong to the addressed replica).</summary>
     NotFound = 1,
 
-    /// <summary>The conflict was already resolved, including by a concurrent operator.</summary>
     AlreadyResolved = 2,
 
-    /// <summary>The request payload was malformed for the selected action.</summary>
     InvalidRequest = 3,
 
-    /// <summary>The action does not apply to this conflict's type or recorded state.</summary>
     NotApplicable = 4,
 
-    /// <summary>
-    /// The resolution needs a feature write, but this deployment has no replica-capable protocol
-    /// adapter registered to perform it.
-    /// </summary>
     WriteUnsupported = 5,
 
-    /// <summary>The resolved feature state failed to commit through the shared edit pipeline.</summary>
     WriteFailed = 6,
 
-    /// <summary>
-    /// The feature was edited after the conflict was recorded, so applying the conflict-time
-    /// resolution would overwrite that newer edit.
-    /// </summary>
     Stale = 7,
 
-    /// <summary>
-    /// The synchronization that produced this conflict is still recording it, so its detection state
-    /// is provisional and cannot be resolved against yet.
-    /// </summary>
+    // A conflict whose detection state is still being recorded cannot be resolved yet.
     DetectionInFlight = 8,
 
-    /// <summary>
-    /// The shared edit pipeline could not determine whether the resolved state committed. The
-    /// resolution stays claimed and resumable so a retry re-applies it idempotently, because
-    /// releasing it would let the next attempt see this resolution's own change as a post-conflict
-    /// edit and strand the conflict as permanently stale.
-    /// </summary>
+    // An indeterminate commit stays claimed so a retry reapplies it idempotently; releasing it would let the next attempt treat this write as a later edit.
     WriteOutcomeUnknown = 9,
 }
 
-/// <summary>
-/// Applies operator-selected disconnected-sync conflict resolutions: plans the feature-store effect,
-/// commits the resolved feature state through the shared edit pipeline, records the durable resolution
-/// with the generation it actually produced, and emits audit and telemetry evidence (#2430).
-/// </summary>
-/// <remarks>
-/// <para>
-/// Conflict review used to be bookkeeping-only — resolving recorded an action and a generation cursor
-/// but never wrote feature data, so under the default last-write-wins sync mode "keep server" left the
-/// client's overwrite in place while reporting a new committed server state. This service closes that
-/// gap: the write happens first through <see cref="IReplicaConflictResolutionApplier"/> (the shared
-/// applyEdits pipeline, so entitlement, per-layer data-editor authorization, validation, geometry
-/// conversion, telemetry, and the transactional outbox all apply), and the durable resolution is only
-/// recorded once the write commits. A failed write leaves the conflict pending and reviewable rather
-/// than marking it resolved against a state that never landed.
-/// </para>
-/// <para>
-/// The service is deliberately protocol-neutral: it depends on the canonical applier abstraction, not
-/// on any protocol adapter, so the admin conflict-review surface stays a thin adapter over shared
-/// pipelines.
-/// </para>
-/// </remarks>
+// The feature write commits before the resolution is recorded, and a failed write leaves the conflict pending.
 internal sealed partial class ReplicaConflictResolutionService
 {
     private static readonly ActivitySource _activitySource = new("Honua.Server.ReplicaConflicts");
 
-    /// <summary>
-    /// How long a claimed-but-unfinalized resolution is assumed to still be in flight. Only a claim
-    /// older than this is treated as abandoned and eligible for resume or release, so a second request
-    /// from the same operator cannot tear down its own live first attempt (#2430).
-    /// </summary>
+    // A claim younger than this lease is still the caller's own attempt and is not torn down by a second request.
     private static readonly TimeSpan ClaimLease = TimeSpan.FromMinutes(2);
 
-    /// <summary>
-    /// How long after detection an incomplete conflict is still plausibly being recorded by an
-    /// in-flight sync. Used only to word the rejection: inside the window a retry may well succeed,
-    /// past it the originating sync did not finish and the operator needs to re-run it. Completeness,
-    /// not age, decides whether the conflict is resolvable (#2430).
-    /// </summary>
     private static readonly TimeSpan DetectionSettleWindow = TimeSpan.FromMinutes(2);
 
     private readonly IReplicaConflictRepository _conflictRepository;
@@ -126,18 +62,6 @@ internal sealed partial class ReplicaConflictResolutionService
     private readonly IReplicaConflictResolutionApplier? _applier;
     private readonly ILogger<ReplicaConflictResolutionService> _logger;
 
-    /// <summary>
-    /// Initializes the service.
-    /// </summary>
-    /// <param name="conflictRepository">Durable conflict-record store.</param>
-    /// <param name="changeTracker">Change-log reader used to stamp the produced server generation.</param>
-    /// <param name="auditLog">Audit sink for resolution evidence.</param>
-    /// <param name="logger">Logger.</param>
-    /// <param name="applier">
-    /// Shared-edit-pipeline applier supplied by the replica-capable protocol adapter. Absent on
-    /// deployments without one, in which case resolutions that need a write are reported as
-    /// unsupported instead of being recorded against a state that was never written.
-    /// </param>
     public ReplicaConflictResolutionService(
         IReplicaConflictRepository conflictRepository,
         IChangeTracker changeTracker,
@@ -152,11 +76,6 @@ internal sealed partial class ReplicaConflictResolutionService
         _applier = applier;
     }
 
-    /// <summary>
-    /// Resolves a pending conflict for a replica.
-    /// </summary>
-    /// <param name="request">The resolution request (conflict identity, action, operator inputs).</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
     public async Task<ReplicaConflictResolutionResult> ResolveAsync(
         ReplicaConflictResolutionServiceRequest request,
         CancellationToken cancellationToken = default)
@@ -523,18 +442,7 @@ internal sealed partial class ReplicaConflictResolutionService
             Message: null);
     }
 
-    /// <summary>
-    /// Whether the conflict's own sync batch is still finalizing its detection state. The batch stamps
-    /// <see cref="ReplicaConflictRecord.ResolutionBaseGeneration"/> once it has settled, so a record
-    /// that lacks it and was detected moments ago is still in flight and must not be resolved yet.
-    /// </summary>
-    /// <remarks>
-    /// A record's storage-layer id is what separates a current record from a legacy one: every current
-    /// sync stamps it at insert, and conflicts recorded before that state existed will never gain it.
-    /// Legacy records are therefore treated as settled and stay resolvable (with the staleness
-    /// precondition skipped, as documented on <see cref="HasPostConflictEditAsync"/>), while a current
-    /// record is judged on whether it actually carries the state a resolution reads.
-    /// </remarks>
+    // A current record that has not settled must not be resolved; a legacy record with no storage-layer id is treated as settled.
     private static bool IsDetectionInFlight(ReplicaConflictRecord conflict)
     {
         if (conflict.StorageLayerId is null)
@@ -553,23 +461,7 @@ internal sealed partial class ReplicaConflictResolutionService
         return IsDetectionIncomplete(conflict);
     }
 
-    /// <summary>
-    /// Whether a conflict recorded by a current sync is missing state a resolution reads.
-    /// </summary>
-    /// <remarks>
-    /// The base generation alone is NOT the completion signal: the sync service stamps it before the
-    /// protocol adapter attaches the server envelope, so a record can look settled while a state a
-    /// resolution actually reads is still missing (#2430). Both envelopes must be durable: the client
-    /// side is written with the record while the server side is attached afterwards, so "either one
-    /// present" let an operator resolve in between and run a field merge or geometry choice against the
-    /// client envelope alone, overwriting server attributes that were supposed to be preserved.
-    /// <para>
-    /// A record that is still incomplete after the settle window is not "settled" — its originating
-    /// sync was cut short between the insert and the enrichment. Ageing it out would skip the staleness
-    /// precondition (there is no base generation to check against) and let a resolution overwrite edits
-    /// made after the aborted sync, so it stays blocked until the state it needs exists.
-    /// </para>
-    /// </remarks>
+    // Both the client and server envelopes must be durable before a resolution runs, and an incomplete current record stays blocked after the settle window.
     private static bool IsDetectionIncomplete(ReplicaConflictRecord conflict)
     {
         if (conflict.ResolutionBaseGeneration is null)
@@ -600,17 +492,7 @@ internal sealed partial class ReplicaConflictResolutionService
             || (serverOwed && string.IsNullOrWhiteSpace(conflict.ServerStateJson));
     }
 
-    /// <summary>
-    /// Decides what a lost claim means. A conflict whose resolution is already finalized is genuinely
-    /// already-resolved. One that was claimed but never finalized is a previous attempt of this same
-    /// resolution that failed part-way through finalization: it is resumed and completed here rather
-    /// than short-circuited, so the produced generation and audit evidence cannot be stranded (#2430).
-    /// </summary>
-    /// <remarks>
-    /// Resume never re-applies the feature write — <see cref="ReplicaConflictRecord.WriteCommitted"/>
-    /// records that it already landed, and a record that was claimed without the write committing is
-    /// released back to pending so the operator can retry cleanly.
-    /// </remarks>
+    // A claimed resolution that never finalized is resumed without repeating a feature write that already landed.
     private async Task<ReplicaConflictResolutionResult> ResumeOrRejectAsync(
         ReplicaConflictRecord existing,
         ReplicaConflictResolutionServiceRequest request,
@@ -846,12 +728,6 @@ internal sealed partial class ReplicaConflictResolutionService
             Message: null);
     }
 
-    /// <summary>
-    /// Completes a claimed resolution: stamps the generation the committed write produced, records the
-    /// audit evidence, and marks the resolution finalized. Idempotent — a resume re-runs it without
-    /// re-applying the feature write, and an already-stamped generation is reused rather than replaced.
-    /// </summary>
-    /// <returns>The finalized record, or null when ownership of the claim was lost mid-finalization.</returns>
     private async Task<ReplicaConflictRecord?> FinalizeAsync(
         ReplicaConflictRecord claimed,
         ReplicaConflictResolutionServiceRequest request,
@@ -935,18 +811,7 @@ internal sealed partial class ReplicaConflictResolutionService
         return claimed;
     }
 
-    /// <summary>
-    /// Re-points a conflict at the state the feature actually holds now: refreshes the captured server
-    /// envelope and moves the resolution base generation to the current cursor.
-    /// </summary>
-    /// <remarks>
-    /// Used when a resolution's own write can no longer be attributed, where releasing alone would
-    /// strand the conflict — a later attempt's staleness probe would trip over this resolution's own
-    /// change and answer Stale forever. Re-baselining makes the conflict reviewable against reality
-    /// instead. Runs AFTER the claim is released, because the detection-state update is guarded on the
-    /// conflict being pending — the same guard that stops detection post-processing from reopening a
-    /// resolved conflict. Best-effort: a failure here leaves the conflict as it was (#2430).
-    /// </remarks>
+    // Re-baselining runs after the claim is released, because the detection update only applies while the conflict is pending.
     private async Task RebaselineAsync(ReplicaConflictRecord conflict, CancellationToken cancellationToken)
     {
         if (_applier is null || conflict.StorageLayerId is not { } storageLayerId)
@@ -1025,13 +890,7 @@ internal sealed partial class ReplicaConflictResolutionService
             ? ReplicaConflictType.DeleteDelete
             : ReplicaConflictType.UpdateDelete;
 
-    /// <summary>
-    /// Back-dates a retained claim past its lease so the operator's own retry can resume it at once.
-    /// Used only for an indeterminate write, where the attempt has finished but cannot say whether it
-    /// committed: the claim must stay (releasing it strands the conflict as permanently stale if the
-    /// write did land), yet holding a live lease would make every retry look like a concurrent
-    /// duplicate for the length of the lease (#2430).
-    /// </summary>
+    // An indeterminate write keeps its claim but back-dates the lease so a retry is not treated as a concurrent duplicate.
     private Task<bool> ExpireClaimLeaseAsync(
         ReplicaConflictRecord claimed,
         ReplicaConflictResolutionServiceRequest request)
@@ -1043,12 +902,6 @@ internal sealed partial class ReplicaConflictResolutionService
             DateTimeOffset.UtcNow - ClaimLease - TimeSpan.FromSeconds(1),
             CancellationToken.None);
 
-    /// <summary>
-    /// A stable hash of everything that determines which state a resolution writes: the action plus the
-    /// operator-supplied field values and geometry side. Used to prove that a resume is completing the
-    /// same request that was claimed, rather than finalizing an earlier write under a new request's
-    /// description (#2430).
-    /// </summary>
     private static string ComputeInputHash(ReplicaConflictResolutionServiceRequest request)
     {
         var builder = new StringBuilder();
@@ -1084,11 +937,6 @@ internal sealed partial class ReplicaConflictResolutionService
         return Convert.ToHexStringLower(hash);
     }
 
-    /// <summary>
-    /// Dispatches the planned resolution write through the shared edit pipeline. Idempotent by
-    /// construction — it sets a known target state or deletes a known feature — which is what lets an
-    /// interrupted attempt simply re-run it rather than having to guess whether it landed.
-    /// </summary>
     private Task<ReplicaConflictApplyResult> ApplyResolutionWriteAsync(
         ReplicaConflictRecord conflict,
         ReplicaConflictResolutionPlan plan,
@@ -1111,18 +959,7 @@ internal sealed partial class ReplicaConflictResolutionService
             },
             cancellationToken);
 
-    /// <summary>
-    /// Whether the conflicting feature has been edited since the generation the conflict's captured
-    /// states describe. That is the precondition a late resolution must satisfy: without it a
-    /// keep-server, field merge, geometry choice, or accepted delete reviewed long after detection
-    /// silently overwrites a legitimate post-conflict edit (#2430).
-    /// </summary>
-    /// <remarks>
-    /// Requires both the storage-layer id and the resolution-base generation the sync service stamps
-    /// on the record. Conflicts recorded before those existed carry neither, and the precondition is
-    /// skipped for them rather than blocking every legacy conflict from ever being resolved; the same
-    /// applies when the change tracker cannot answer, which is logged.
-    /// </remarks>
+    // A late resolution must not overwrite an edit made after detection; records from before that generation stamp skip the check.
     private async Task<bool> HasPostConflictEditAsync(
         ReplicaConflictRecord conflict,
         CancellationToken cancellationToken)
@@ -1142,21 +979,7 @@ internal sealed partial class ReplicaConflictResolutionService
         return changes.Any(change => change.ObjectId == storageObjectId);
     }
 
-    /// <summary>
-    /// Returns a claimed conflict to the pending, reviewable state after its feature write failed to
-    /// commit, so the failed attempt does not leave a terminal resolution recorded against a state
-    /// that never landed. Always invoked with a fresh cancellation token by its callers, because the
-    /// write it is cleaning up after may itself have failed due to cancellation. Any failure to
-    /// release is logged rather than thrown — including cancellation — since the caller is already
-    /// reporting the write failure and masking that with a second error would lose the real cause.
-    /// </summary>
-    /// <param name="conflict">
-    /// The record returned by the atomic claim, never the pre-claim read. Detection post-processing
-    /// can promote <c>ClientEditApplied</c> or attach state envelopes between the two, and releasing
-    /// from the stale snapshot would erase those and make the next resolution plan against incorrect
-    /// state (#2430).
-    /// </param>
-    /// <param name="cancellationToken">Fresh token; see the summary.</param>
+    // Releasing a failed write uses the post-claim record and a fresh cancellation token so detection updates made during the attempt are not erased.
     private async Task ReleaseClaimAsync(ReplicaConflictRecord conflict, CancellationToken cancellationToken)
     {
         try
@@ -1291,17 +1114,6 @@ internal sealed partial class ReplicaConflictResolutionService
     }
 }
 
-/// <summary>
-/// Request handed to <see cref="ReplicaConflictResolutionService"/> by the admin conflict-review
-/// endpoint.
-/// </summary>
-/// <param name="ReplicaId">Replica the conflict must belong to.</param>
-/// <param name="ConflictId">Conflict being resolved.</param>
-/// <param name="Action">Operator-selected resolution action.</param>
-/// <param name="ActionName">Wire spelling of the action, used for audit evidence.</param>
-/// <param name="Inputs">Operator inputs for merge/geometry actions.</param>
-/// <param name="Actor">Resolving operator (audit evidence).</param>
-/// <param name="CorrelationId">Request correlation id.</param>
 internal readonly record struct ReplicaConflictResolutionServiceRequest(
     string ReplicaId,
     string ConflictId,

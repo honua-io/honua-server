@@ -25,22 +25,12 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Studio;
 
-/// <summary>
-/// Minimal API endpoints for the Studio package lifecycle.
-/// </summary>
 internal static class StudioPackageEndpoints
 {
     private const string ProblemType = "https://honua.io/problems/studio";
 
-    /// <summary>
-    /// Defence-in-depth ceiling on the content-item/draft list page size, mirroring the
-    /// Console content list cap (<c>ConsoleContentEndpoints.MaxListLimit</c>).
-    /// </summary>
     private const int MaxListLimit = 1_000;
 
-    /// <summary>
-    /// Maps Studio package lifecycle endpoints.
-    /// </summary>
     public static void MapStudioPackageEndpoints(this IEndpointRouteBuilder endpoints)
     {
         // honua-server#3001: RequireStudioLifecycleAuthorization() admits admin unconditionally
@@ -356,12 +346,6 @@ internal static class StudioPackageEndpoints
         }
     }
 
-    /// <summary>
-    /// Creates a <c>studio-app/v1</c> app package draft deterministically from structured
-    /// composition input (ADR-0076). No model is called: the handler parses the body onto the
-    /// canonical <see cref="AppPackageDraftRequest"/> and lets the shared
-    /// <see cref="IAppPackageDraftFactory"/> own every validation rule.
-    /// </summary>
     private static async Task<IResult> HandleCreateAppPackageDraft(
         HttpContext context,
         [FromServices] IAppPackageDraftFactory drafts,
@@ -410,10 +394,6 @@ internal static class StudioPackageEndpoints
             statusCode: StatusCodes.Status201Created);
     }
 
-    /// <summary>
-    /// Creates a map package draft deterministically from structured composition input
-    /// (ADR-0076). Counterpart to <see cref="HandleCreateAppPackageDraft"/>.
-    /// </summary>
     private static async Task<IResult> HandleCreateMapPackageDraft(
         HttpContext context,
         [FromServices] IMapPackageDraftFactory drafts,
@@ -460,10 +440,6 @@ internal static class StudioPackageEndpoints
             statusCode: StatusCodes.Status201Created);
     }
 
-    /// <summary>
-    /// Renders blocking draft findings into a single problem detail string, preserving each
-    /// finding's stable code and JSON pointer so a client can act on them without re-parsing.
-    /// </summary>
     private static string DescribeFindings(string summary, IReadOnlyList<PackageDraftFinding> findings)
         => findings.Count == 0
             ? summary + "."
@@ -1266,15 +1242,7 @@ internal static class StudioPackageEndpoints
         _ => "active",
     };
 
-    /// <summary>
-    /// Resolves the <c>owner</c> query filter actually applied to a Studio enumeration query
-    /// (honua-server#3001, item 3). Admins (and every caller while the flag is off) keep today's
-    /// behavior: the client-supplied <paramref name="requestedOwner"/> is honored as-is (or
-    /// omitted, listing every item/draft). Once end-user mode is on, a non-admin caller's
-    /// effective owner filter is always forced to their own resolved id -- the list is
-    /// server-side scoped to "my content", never trusting a client-supplied <c>owner</c> value
-    /// to see another principal's items.
-    /// </summary>
+    // A non-admin caller is forced to their own owner id, and a client-supplied owner is not trusted.
     private static string? ResolveEffectiveOwnerFilter(
         StudioEndpointAuthorization authorization,
         HttpContext context,
@@ -1288,17 +1256,7 @@ internal static class StudioPackageEndpoints
         return authorization.ResolveCallerId(context.User);
     }
 
-    /// <summary>
-    /// Denies a scoped Studio enumeration request (honua-server#3001 follow-up) when end-user
-    /// mode is on, the caller is non-admin, and <see cref="StudioEndpointAuthorization.ResolveCallerId"/>
-    /// cannot resolve a caller id (for example a principal with none of NameIdentifier, "sub",
-    /// the admin API-key id/name claims, or <see cref="System.Security.Claims.ClaimsIdentity.Name"/>).
-    /// Without this check, <see cref="ResolveEffectiveOwnerFilter"/> would return null for such a
-    /// caller, which downstream <see cref="NormalizeOptionalQueryValue"/> treats as "no owner
-    /// filter" -- silently listing every draft/content item instead of scoping to "my content".
-    /// Returns the RFC 7807 problem response to return directly, or <see langword="null"/> when
-    /// the caller should proceed.
-    /// </summary>
+    // A non-admin with no resolvable id is denied, because an empty filter would list every item.
     private static async Task<IResult?> DenyIfCallerUnresolvedForScopedListingAsync(
         StudioEndpointAuthorization authorization,
         HttpContext context,
@@ -1325,19 +1283,7 @@ internal static class StudioPackageEndpoints
             StudioAuthorizationService.AuthenticationRequiredCode).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Returns whether the caller is the admin or the resource's recorded owner (honua-server#3001).
-    /// Distinct from <see cref="EnsureAuthorizedAsync"/>'s allow/deny outcome: a caller can be
-    /// authorized to reach a resource without being its owner (public-read visibility, an
-    /// elevated delegate grant), and some responses -- content-version listing, deliverable
-    /// export -- must additionally narrow their payload/target in exactly that case. Mirrors
-    /// <see cref="Honua.Core.Features.Studio.Services.StudioAuthorizationService"/>'s fail-closed
-    /// ownership check: a null <paramref name="resourceOwnerId"/> (an existing resource with no
-    /// recorded owner, for example an unbackfilled legacy row) is never treated as owned by the
-    /// caller, so a non-admin caller who only reached this point via public-read visibility is
-    /// correctly narrowed to the published version rather than granted full owner-equivalent
-    /// access.
-    /// </summary>
+    // A resource with no recorded owner is never treated as owned by the caller.
     private static bool IsOwnerOrAdmin(
         StudioEndpointAuthorization authorization,
         HttpContext context,
@@ -1963,14 +1909,6 @@ internal static class StudioPackageEndpoints
         }
     }
 
-    /// <summary>
-    /// Authorizes the AI generation endpoints (honua-server#3023): unlike the lifecycle
-    /// handlers, generation has no existing resource whose ownership can gate it, and it
-    /// consumes model resources — so it is an elevated operation. Admins pass unchanged;
-    /// with the end-user flag on, a non-admin needs a <c>StudioDraft</c> <c>Execute</c>
-    /// operator grant (the <c>own</c> sentinel form), keeping the group-level policy widening
-    /// from implicitly opening generation to every authenticated principal.
-    /// </summary>
     private static Task<IResult?> EnsureGenerateAuthorizedAsync(
         StudioEndpointAuthorization authorization,
         HttpContext context,
@@ -1983,19 +1921,7 @@ internal static class StudioPackageEndpoints
             resourceType: resourceType,
             resourceId: null);
 
-    /// <summary>
-    /// Authorizes a Studio package-lifecycle operation against the target resource's recorded
-    /// owner (honua-server#3001). Returns <see langword="null"/> when authorized (the caller
-    /// should proceed); otherwise returns the RFC 7807 problem response to return directly,
-    /// having already recorded the denial to the audit log (REQ-003/item 5). Elevated
-    /// (operator-grant-gated) allow decisions are also audited.
-    /// </summary>
-    /// <summary>
-    /// Answers a lookup miss without disclosing whether the resource exists (#3429): the caller is
-    /// first authorized against an ownerless target, so a non-owner receives the same governed
-    /// denial for an unknown id as for another owner's resource. Only a caller entitled to act on
-    /// that target (an admin or a matching delegate grant) learns that it was not found.
-    /// </summary>
+    // A lookup miss uses the same denial as another owner's resource, and only an entitled caller learns that it is missing.
     private static async Task<IResult> NotFoundAfterAuthorizationAsync(
         StudioEndpointAuthorization authorization,
         HttpContext context,
@@ -2052,11 +1978,6 @@ internal static class StudioPackageEndpoints
         return Forbidden(context, decision.Reason ?? "The caller is not authorized to perform this operation.", decision.Code ?? "studio_authorization/denied");
     }
 
-    /// <summary>
-    /// Records a stable, explicit Studio authorization denial through the shared endpoint audit
-    /// seam before returning its RFC 7807 response. Use this for secondary target/scope checks
-    /// that are intentionally stricter than the baseline authorization service decision.
-    /// </summary>
     private static async Task<IResult> DenyAsync(
         StudioEndpointAuthorization authorization,
         HttpContext context,
@@ -2095,22 +2016,12 @@ internal static class StudioPackageEndpoints
     private static IResult BadRequest(HttpContext context, string detail)
         => ProblemDetailsHelpers.CreateProblem(context, ProblemType, StatusCodes.Status400BadRequest, "Bad Request", detail);
 
-    /// <summary>
-    /// Builds the Studio package-lifecycle authorization-denied RFC 7807 problem, extended with
-    /// a machine-readable <c>code</c> member (honua-server#3001, REQ-004) the SDK client can
-    /// branch on (for example <c>studio_authorization/cross_user_denied</c>).
-    /// </summary>
     private static IResult Forbidden(HttpContext context, string detail, string code)
         => ProblemDetailsHelpers.CreateProblem(context, ProblemType, StatusCodes.Status403Forbidden, "Forbidden", detail, code);
 
     private static IResult NotFound(HttpContext context, string detail)
         => ProblemDetailsHelpers.CreateProblem(context, ProblemType, StatusCodes.Status404NotFound, "Not Found", detail);
 
-    /// <summary>
-    /// Builds a Studio <c>404 Not Found</c> problem carrying a machine-readable <c>code</c>
-    /// member, used by the tenant boundary so a refusal stays diagnosable without disclosing
-    /// that another tenant's resource exists (honua-server#4905).
-    /// </summary>
     private static IResult NotFound(HttpContext context, string detail, string code)
         => ProblemDetailsHelpers.CreateProblem(context, ProblemType, StatusCodes.Status404NotFound, "Not Found", detail, code);
 
@@ -2134,11 +2045,6 @@ internal static class StudioPackageEndpoints
     private static IResult ServerError(HttpContext context, string detail)
         => ProblemDetailsHelpers.CreateProblem(context, ProblemType, StatusCodes.Status500InternalServerError, "Internal Server Error", detail);
 
-    /// <summary>
-    /// Builds the deliverable-render-unavailable RFC 7807 problem (honua-server#4908): a machine-
-    /// readable <c>code</c> member so a caller can distinguish "no renderable typeface on this
-    /// host" from a generic 503, rather than receiving a 200 over a blank artifact.
-    /// </summary>
     private static IResult ServiceUnavailable(HttpContext context, string detail, string code)
         => ProblemDetailsHelpers.CreateProblem(context, ProblemType, StatusCodes.Status503ServiceUnavailable, "Service Unavailable", detail, code);
 

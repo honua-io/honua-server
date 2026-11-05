@@ -9,14 +9,6 @@ using StackExchange.Redis;
 
 namespace Honua.Infrastructure.Coordination;
 
-/// <summary>
-/// Redis-backed <see cref="IVersionLock"/> (#1553). Serializes branch-version reconcile/post/resolve
-/// per (service, version) across every server replica using the StackExchange.Redis lock primitive
-/// (<c>LockTakeAsync</c>/<c>LockExtendAsync</c>/<c>LockReleaseAsync</c>) — the same primitive the event
-/// lease coordinator and execution-job store already use, so this reuses the established lock mechanism
-/// rather than inventing a new one. When Redis is not connected it delegates to the single-node
-/// in-process lock, which is correct for single-node and development/test deployments.
-/// </summary>
 internal sealed partial class RedisVersionLock : IVersionLock
 {
     // The held lease is renewed at this fraction of its duration so a long reconcile/post never lets the
@@ -39,7 +31,6 @@ internal sealed partial class RedisVersionLock : IVersionLock
         _database = redis?.GetDatabase();
     }
 
-    /// <inheritdoc />
     public async Task<IVersionLockHandle?> TryAcquireAsync(
         string service,
         Guid versionId,

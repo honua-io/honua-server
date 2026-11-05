@@ -13,103 +13,76 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.ControlPlane;
 
-/// <summary>Operator settings for restore across a reader-incompatible migration. Bound from configuration, never from a proposal.</summary>
+// Restore settings are bound from configuration, never from a proposal.
 internal sealed class RestoreCellOptions
 {
-    /// <summary>Configuration section.</summary>
     public const string SectionName = "ControlPlane:Restore";
 
-    /// <summary>Name prefix of the cell's databases, snapshots, and connection secret.</summary>
     public string CellPrefix { get; set; } = string.Empty;
 
-    /// <summary>Append-only audit file. Success is refused when this is empty or the write fails.</summary>
     public string AuditPath { get; set; } = string.Empty;
 
-    /// <summary>Secrets Manager id whose connection string host is repointed after a cloud restore.</summary>
     public string ConnectionSecretId { get; set; } = string.Empty;
 
-    /// <summary>DB subnet group for the new instance. Must start with <see cref="CellPrefix"/>.</summary>
     public string DbSubnetGroupName { get; set; } = string.Empty;
 
-    /// <summary>Cell-authorized VPC security group IDs for a restored database.</summary>
     public List<string> RdsSecurityGroupIds { get; set; } = [];
 
-    /// <summary>Environment tag written on the new instance. Only <c>cert</c> or <c>demo</c>.</summary>
     public string EnvironmentTag { get; set; } = "cert";
 
-    /// <summary>Unix socket of the Compose sidecar. Empty on cloud cells.</summary>
     public string ComposeSocketPath { get; set; } = string.Empty;
 
-    /// <summary>Directory of Compose backup manifests. Empty when the sidecar is the only reader.</summary>
     public string ComposeBackupDirectory { get; set; } = string.Empty;
 
-    /// <summary>Compose project name. Matches the manifest project field.</summary>
     public string ComposeProject { get; set; } = string.Empty;
 
-    /// <summary>Customer URL that must return HTTP 200 and a non-empty body after the prior image is up.</summary>
+    // This URL must return HTTP 200 and a non-empty body after the prior image is up.
     public string CustomerProbeUrl { get; set; } = string.Empty;
 
-    /// <summary>How long to wait for a new RDS instance, in seconds.</summary>
     public int RdsWaitSeconds { get; set; } = 1200;
 
-    /// <summary>How long to wait for the prior image's workflow to succeed, in seconds.</summary>
     public int ImageWaitSeconds { get; set; } = DefaultImageWaitSeconds;
 
-    /// <summary>Default wait for a cloud rollout to reach a successful terminal state.</summary>
     public const int DefaultImageWaitSeconds = 600;
 
-    /// <summary>Prior image schema numbers, keyed by the exact revision string the proposal names.</summary>
     public List<RevisionSchemaOption> Revisions { get; set; } = [];
 }
 
-/// <summary>One revision the operator catalog says an image can read.</summary>
 internal sealed class RevisionSchemaOption
 {
-    /// <summary>Exact revision or image reference.</summary>
     public string Revision { get; set; } = string.Empty;
 
-    /// <summary>Highest migration that image ships.</summary>
     public int MaxSchema { get; set; }
 }
 
-/// <summary>Journal the product read. Unknown means rollback must not start a prior image.</summary>
+// An unknown journal means rollback must not start a prior image.
 internal sealed record SchemaJournalSnapshot(bool Known, IReadOnlyList<AppliedSchemaMigration> Applied)
 {
-    /// <summary>Journal could not be read.</summary>
     public static SchemaJournalSnapshot Unknown { get; } = new(false, []);
 }
 
-/// <summary>Reads applied migrations and their reader-compatibility declarations.</summary>
 internal interface ISchemaJournal
 {
-    /// <summary>Reads the journal. Failures return <see cref="SchemaJournalSnapshot.Unknown"/>.</summary>
     Task<SchemaJournalSnapshot> ReadAsync(CancellationToken cancellationToken);
 }
 
-/// <summary>Highest migration a revision ships, from operator configuration.</summary>
 internal interface IRevisionSchemaCatalog
 {
-    /// <summary>Returns the catalogued max schema, or null when this revision is not listed.</summary>
     int? MaxSchema(string revision);
 }
 
-/// <summary>Looks up and restores an RDS snapshot to a new instance.</summary>
 internal interface IRdsSnapshotRestore
 {
-    /// <summary>Describes one snapshot. Null when it does not exist.</summary>
     Task<RdsSnapshotEvidence?> DescribeAsync(string snapshotId, string cellPrefix, CancellationToken cancellationToken);
 
-    /// <summary>Restores a new instance. Never reports an endpoint the provider did not mark available.</summary>
+    // Restore never reports an endpoint the provider did not mark available.
     Task<RdsNewInstance> RestoreNewAsync(RdsRestoreRequest request, CancellationToken cancellationToken);
 
-    /// <summary>Starts one restore and returns the immutable provider identity without polling.</summary>
     Task<RdsRestoreSubmission> BeginAsync(RdsRestoreRequest request, CancellationToken cancellationToken);
 
-    /// <summary>Observes the same provider resource without creating a new instance.</summary>
     Task<RdsNewInstance> ObserveAsync(string instanceId, string resourceId, CancellationToken cancellationToken);
 }
 
-/// <summary>Request to restore one cell snapshot into a new instance.</summary>
 internal sealed record RdsRestoreRequest(
     string SnapshotId,
     string NewInstanceId,
@@ -119,36 +92,26 @@ internal sealed record RdsRestoreRequest(
     int WaitSeconds,
     IReadOnlyList<string> SecurityGroupIds);
 
-/// <summary>Identity returned by the provider after accepting a new restore.</summary>
 internal sealed record RdsRestoreSubmission(bool Accepted, string? ResourceId, string? Code);
 
-/// <summary>Provider result. <see cref="Endpoint"/> is set only when the new instance is available.</summary>
 internal sealed record RdsNewInstance(bool Available, string? Endpoint, string? Code);
 
-/// <summary>Repoints the serving connection secret at a new database host and reads the host back.</summary>
 internal interface IConnectionSecretRetarget
 {
-    /// <summary>Whether a secret id is configured.</summary>
     bool IsConfigured { get; }
 
-    /// <summary>Updates the host and confirms the value that was read back.</summary>
     Task<bool> PointAtAsync(string secretId, string host, CancellationToken cancellationToken);
 
-    /// <summary>Returns the current host without exposing the connection string.</summary>
     Task<string?> ReadHostAsync(string secretId, CancellationToken cancellationToken);
 }
 
-/// <summary>Compose sidecar that restores a dump and starts the prior image only after its own readback.</summary>
 internal interface IComposeRollbackTransport
 {
-    /// <summary>Whether the sidecar socket is configured.</summary>
     bool IsConfigured { get; }
 
-    /// <summary>Asks the sidecar to roll back. The server does not talk to Docker.</summary>
     Task<ComposeRollbackResult> RollbackAsync(string image, string? backupId, string? requestId, CancellationToken cancellationToken);
 }
 
-/// <summary>Sidecar response. Success still requires the server's own schema probe.</summary>
 internal sealed record ComposeRollbackResult(
     bool Ok,
     string? Code,
@@ -156,97 +119,67 @@ internal sealed record ComposeRollbackResult(
     int? SchemaVersion,
     bool ImageStarted);
 
-/// <summary>Reads the schema of a database the product just restored.</summary>
 internal interface IRestoredSchemaProbe
 {
-    /// <summary>Probes the app database when <paramref name="endpoint"/> is null, otherwise that host.</summary>
     Task<SchemaJournalSnapshot> ProbeAsync(string? endpoint, CancellationToken cancellationToken);
 }
 
-/// <summary>Customer readback after the prior image is serving.</summary>
 internal interface IServingCustomerProbe
 {
-    /// <summary>True only for HTTP 200 and a non-empty body.</summary>
     Task<bool> SucceededAsync(CancellationToken cancellationToken);
 }
 
-/// <summary>Append-only audit. False means the line was not durable.</summary>
 internal interface IPreMigrationRestoreAudit
 {
-    /// <summary>Appends one JSON line and flushes it.</summary>
     Task<bool> AppendAsync(PreMigrationRestoreAuditLine line, CancellationToken cancellationToken);
 
-    /// <summary>Reads the latest audit line for an operation id. Null when the file has none.</summary>
     Task<OperationBackendStatus?> FindAsync(string operationId, CancellationToken cancellationToken);
 }
 
-/// <summary>One audit line. No secrets, probe URLs, or customer bodies.</summary>
 internal sealed record PreMigrationRestoreAuditLine
 {
-    /// <summary>UTC time.</summary>
     public DateTimeOffset Time { get; init; }
 
-    /// <summary>Operation name.</summary>
     public string? Op { get; init; }
 
-    /// <summary>Caller correlation id.</summary>
     public string? RequestId { get; init; }
 
-    /// <summary>Revision the rollback named.</summary>
     public string? Image { get; init; }
 
-    /// <summary>Backup id, when one was involved.</summary>
     public string? BackupId { get; init; }
 
-    /// <summary>Whether this line records success.</summary>
     public bool Ok { get; init; }
 
-    /// <summary>Stable code when <see cref="Ok"/> is false.</summary>
     public string? Code { get; init; }
 
-    /// <summary>Schema observed, when known.</summary>
     public int? SchemaVersion { get; init; }
 
-    /// <summary>Cell prefix.</summary>
     public string? Cell { get; init; }
 
-    /// <summary>Whether readback completed.</summary>
     public bool ReadbackComplete { get; init; }
 
-    /// <summary>Durable id returned to the proposal when success is reported.</summary>
     public string? OperationId { get; init; }
 }
 
-/// <summary>Starts the prior image only after the restore gate allows it.</summary>
 internal interface IPriorImageStarter
 {
-    /// <summary>
-    /// Submits the existing deploy workflow and returns its id only after that workflow
-    /// reports success. A failed or unfinished rollout returns null so customer readback does not run.
-    /// </summary>
     Task<string?> StartAsync(OperationGatewayRequest request, string? executionPayload, CancellationToken cancellationToken);
 }
 
-/// <summary>Persists the restore checkpoint before submitting the prior-image workflow.</summary>
 internal interface IDurablePriorImageStarter : IPriorImageStarter
 {
-    /// <summary>Submits the prior image after recording its deterministic workflow id and verified schema.</summary>
     Task<string?> StartRestoredAsync(OperationGatewayRequest request, string payload, int expectedSchema, string restoredHostHash, CancellationToken cancellationToken);
 
-    /// <summary>Records intent before the provider call, then the provider identity after acceptance.</summary>
     Task<bool> CheckpointRdsAsync(string phase, string instanceId, string? resourceId, int expectedSchema, CancellationToken cancellationToken);
 }
 
-/// <summary>Assesses an approved rollback, then delegates its effects and durable readback.</summary>
 internal sealed class PreMigrationRestoreCoordinator(
     PreMigrationRestoreAssessmentService assessment,
     PreMigrationRestoreExecutionService execution)
 {
-    /// <summary>Assesses a rollback without restoring or starting an image.</summary>
     public async Task<RestoreDecision> AssessAsync(DeployExecutionPayload payload, CancellationToken cancellationToken)
         => (await assessment.DecideAsync(payload, cancellationToken).ConfigureAwait(false)).Decision;
 
-    /// <summary>Executes only the backup and target selected by the shared assessment.</summary>
     public async Task<RestoreCompletion> ExecuteAsync(
         DeployExecutionPayload payload,
         OperationGatewayRequest request,
@@ -257,13 +190,11 @@ internal sealed class PreMigrationRestoreCoordinator(
         return await execution.ExecuteAsync(payload, request, starter, decision, target, backup, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>Continues observation of the exact provider resource captured before restart.</summary>
     public Task<RestoreCompletion> ResumeCloudAsync(DeployExecutionPayload payload, OperationGatewayRequest request,
         IDurablePriorImageStarter starter, string instanceId, string resourceId, int expectedSchema, DateTimeOffset submittedAt, CancellationToken cancellationToken)
         => execution.ResumeCloudAsync(payload, request, starter, instanceId, resourceId, expectedSchema, submittedAt, cancellationToken);
 }
 
-/// <summary>Reads the configured target, journal and backup without applying a restore.</summary>
 internal sealed class PreMigrationRestoreAssessmentService(
     ISchemaJournal journal,
     IRevisionSchemaCatalog revisions,
@@ -272,7 +203,6 @@ internal sealed class PreMigrationRestoreAssessmentService(
     IOptionsMonitor<ControlPlaneOptions> controlPlane,
     IOptions<RestoreCellOptions> restoreOptions)
 {
-    /// <summary>Returns the policy decision and the exact target and verified backup it used.</summary>
     public async Task<(RestoreDecision Decision, DeployTargetOptions? Target, VerifiedPreMigrationBackup? Backup)> DecideAsync(
         DeployExecutionPayload payload,
         CancellationToken cancellationToken)
@@ -369,7 +299,6 @@ internal sealed class PreMigrationRestoreAssessmentService(
 
 }
 
-/// <summary>Applies the assessed restore and verifies schema, serving state and durable audit.</summary>
 internal sealed class PreMigrationRestoreExecutionService(
     IRevisionSchemaCatalog revisions,
     IRdsSnapshotRestore rds,
@@ -380,10 +309,6 @@ internal sealed class PreMigrationRestoreExecutionService(
     IPreMigrationRestoreAudit audit,
     IOptions<RestoreCellOptions> restoreOptions)
 {
-    /// <summary>
-    /// Restores when required, then starts the prior image only after schema readback.
-    /// Compose starts inside the sidecar; cloud starts through <paramref name="starter"/>.
-    /// </summary>
     public async Task<RestoreCompletion> ExecuteAsync(
         DeployExecutionPayload payload,
         OperationGatewayRequest request,
@@ -522,7 +447,6 @@ internal sealed class PreMigrationRestoreExecutionService(
         return await FinishCloudAsync(payload, request, starter, decision, restored.Endpoint, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>Polls the checkpointed RDS identity and resumes the verified cutover when available.</summary>
     public async Task<RestoreCompletion> ResumeCloudAsync(DeployExecutionPayload payload, OperationGatewayRequest request,
         IDurablePriorImageStarter starter, string instanceId, string resourceId, int expectedSchema, DateTimeOffset submittedAt, CancellationToken cancellationToken)
     {
@@ -689,10 +613,8 @@ internal sealed class PreMigrationRestoreExecutionService(
     }
 }
 
-/// <summary>Boundary shared by restore assessment and application.</summary>
 internal static class RestoreCellScope
 {
-    /// <summary>A trailing hyphen keeps the prefix from matching a sibling name such as <c>honua-certrun</c>.</summary>
     public static bool IsBoundedPrefix(string cellPrefix)
         => !string.IsNullOrWhiteSpace(cellPrefix)
            && cellPrefix.EndsWith('-')
@@ -701,10 +623,9 @@ internal static class RestoreCellScope
 
 }
 
-/// <summary>Reads one Compose manifest directory. The model cannot choose the directory or the dump name.</summary>
+// The model cannot choose the Compose directory or the dump name.
 internal static class ComposeBackupDirectory
 {
-    /// <summary>Loads one named backup, or the newest manifest that verifies for the image.</summary>
     public static ComposeBackupManifestEvidence? Read(string root, string project, string image, string? backupId)
     {
         if (!Directory.Exists(root))
@@ -741,7 +662,7 @@ internal static class ComposeBackupDirectory
         return newest;
     }
 
-    /// <summary>A later absolute segment must not discard <paramref name="root"/>.</summary>
+    // A later absolute path segment must not discard the base directory.
     private static bool TryChild(string root, string name, string file, out string path)
     {
         path = string.Empty;
@@ -817,31 +738,22 @@ internal static class ComposeBackupDirectory
     }
 }
 
-/// <summary>Manifest JSON the Compose sidecar writes beside <c>database.dump</c>.</summary>
 internal sealed record ComposeManifestFile
 {
-    /// <summary>Backup id.</summary>
     public string? BackupId { get; init; }
 
-    /// <summary>Compose project.</summary>
     public string? Project { get; init; }
 
-    /// <summary>Image id.</summary>
     public string? Image { get; init; }
 
-    /// <summary>Compose service name. Recorded by the sidecar and not used to choose a project.</summary>
     public string? Service { get; init; }
 
-    /// <summary>When the sidecar wrote the backup. Used to choose the newest manifest.</summary>
     public DateTimeOffset CreatedAt { get; init; }
 
-    /// <summary>Schema at backup time.</summary>
     public int SchemaVersion { get; init; }
 
-    /// <summary>Lowercase SHA-256 of the dump.</summary>
     public string? Sha256 { get; init; }
 
-    /// <summary>Dump file name.</summary>
     public string? DumpFile { get; init; }
 }
 
@@ -857,10 +769,7 @@ internal sealed partial class PreMigrationRestoreJsonContext : JsonSerializerCon
 {
 }
 
-/// <summary>
-/// Response reader that ignores members the sidecar adds, including a customer body.
-/// The audit line never receives those members.
-/// </summary>
+// The audit line never receives members the sidecar adds, including a customer body.
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
@@ -870,46 +779,33 @@ internal sealed partial class ComposeRollbackResponseJsonContext : JsonSerialize
 {
 }
 
-/// <summary>One rollback line sent to the Compose sidecar. There is no project or command field.</summary>
 internal sealed record ComposeRollbackWireRequest
 {
-    /// <summary>Always <c>rollback</c>.</summary>
     public string? Op { get; init; }
 
-    /// <summary>Prior image reference.</summary>
     public string? Image { get; init; }
 
-    /// <summary>Optional backup id.</summary>
     public string? BackupId { get; init; }
 
-    /// <summary>Correlation id.</summary>
     public string? RequestId { get; init; }
 }
 
-/// <summary>One sidecar response line.</summary>
 internal sealed record ComposeRollbackWireResponse
 {
-    /// <summary>Caller correlation id, when the sidecar echoes it.</summary>
     public string? RequestId { get; init; }
 
-    /// <summary>Whether the sidecar finished its own checks.</summary>
     public bool Ok { get; init; }
 
-    /// <summary>Stable code when <see cref="Ok"/> is false.</summary>
     public string? Code { get; init; }
 
-    /// <summary>Operator text. Never written to the audit line.</summary>
+    // Operator text is never written to the audit line.
     public string? Message { get; init; }
 
-    /// <summary>Image the sidecar observed.</summary>
     public string? RunningImage { get; init; }
 
-    /// <summary>Whether the sidecar's readback completed.</summary>
     public bool ReadbackComplete { get; init; }
 
-    /// <summary>Schema the sidecar observed.</summary>
     public int? SchemaVersion { get; init; }
 
-    /// <summary>Backup the sidecar consumed.</summary>
     public string? BackupId { get; init; }
 }

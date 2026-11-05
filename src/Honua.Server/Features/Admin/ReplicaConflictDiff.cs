@@ -6,23 +6,11 @@ using Honua.Server.Features.Admin.Models;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Computes the field-level and geometry-change comparison between the base, client, and server
-/// states of a durable disconnected-sync conflict (#1287). The states are opaque feature objects of
-/// the shape <c>{"attributes": { ... }, "geometry": ...}</c>; this derives the per-attribute deltas
-/// and a geometry-changed signal that the Console conflict reviewer renders, without the detail
-/// endpoint needing to understand the protocol wire shape beyond that envelope.
-/// </summary>
 internal static class ReplicaConflictDiff
 {
     private const string AttributesProperty = "attributes";
     private const string GeometryProperty = "geometry";
 
-    /// <summary>
-    /// Computes the geometry-changed flag and the set of diverging attribute fields across the three
-    /// states. Only fields that differ between at least two states are emitted; when no client or
-    /// server state is available the field list is empty and geometry-changed is null.
-    /// </summary>
     public static (bool? GeometryChanged, ReplicaConflictFieldChange[] FieldChanges) Compute(
         JsonElement? baseState,
         JsonElement? clientState,

@@ -5,20 +5,9 @@ using Honua.Core.Features.Alerts.Abstractions;
 
 namespace Honua.Server.Features.Alerts;
 
-/// <summary>
-/// Drains alert domain audit intents that the request path did not complete (#3865).
-/// </summary>
-/// <remarks>
-/// A lifecycle mutation and its audit intent commit together, so a fault or a
-/// process death between the mutation and the audit write leaves a committed
-/// mutation with a PENDING intent, never with nothing. This service is what makes
-/// that intent deterministic: on every startup, and then on a bounded interval, it
-/// records the outstanding domain audit events with their original actor, action,
-/// note, timestamp and correlation id and marks the intents complete.
-/// </remarks>
+// A lifecycle mutation and its audit intent commit together, so a fault between them leaves a pending intent, and this drain records that audit.
 internal sealed partial class AlertAuditOutboxReconciler : BackgroundService
 {
-    /// <summary>Intents drained per pass. Alert operator actions are low volume.</summary>
     internal const int BatchSize = 100;
 
     private readonly IServiceScopeFactory _scopeFactory;
@@ -80,11 +69,6 @@ internal sealed partial class AlertAuditOutboxReconciler : BackgroundService
         }
     }
 
-    /// <summary>
-    /// Completes every pending intent currently visible. Returns the number of
-    /// intents whose domain audit record now exists.
-    /// </summary>
-    /// <param name="cancellationToken">Cancellation token.</param>
     internal async Task<int> ReconcileOnceAsync(CancellationToken cancellationToken)
     {
         using var scope = _scopeFactory.CreateScope();

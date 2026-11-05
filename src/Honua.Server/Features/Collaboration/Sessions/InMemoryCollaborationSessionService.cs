@@ -7,17 +7,6 @@ using System.Security.Claims;
 
 namespace Honua.Server.Features.Collaboration.Sessions;
 
-/// <summary>
-/// Node-local saved-map collaboration session state: per-map presence channels, bounded
-/// per-participant outboxes, and the per-map strictly monotonic envelope sequence that stamps
-/// every emitted <see cref="CollaborationEventEnvelope"/> (honua-server#2999).
-/// </summary>
-/// <remarks>
-/// Multi-node scoping: the sequence counter is node-local and backplane broadcasts carry the
-/// origin node's sequence unchanged, so strict per-map envelope monotonicity requires
-/// single-writer-per-map routing (node affinity). See the remarks on
-/// <see cref="CollaborationEventEnvelope"/> for the degradation contract without affinity.
-/// </remarks>
 internal sealed class InMemoryCollaborationSessionService
 {
     // Per-participant outbox cap. Outboxes are only drained by the participant's own poll; a
@@ -25,19 +14,12 @@ internal sealed class InMemoryCollaborationSessionService
     // singleton service without bound, so the oldest events are dropped once the cap is reached.
     internal const int MaxOutboxDepth = 256;
 
-    /// <summary>Maximum stored display name length. Longer join names are rejected, not truncated.</summary>
     internal const int MaxDisplayNameLength = 128;
 
-    /// <summary>Maximum stored client-instance id length.</summary>
     internal const int MaxClientInstanceIdLength = 128;
 
-    /// <summary>
-    /// Sessions one principal may hold on a single map. Each join is otherwise a new participant,
-    /// and the join response plus fan-out both copy every display name.
-    /// </summary>
     internal const int MaxParticipantsPerPrincipal = 8;
 
-    /// <summary>Participants a single map channel will hold, across every principal.</summary>
     internal const int MaxParticipantsPerMap = 64;
 
     private readonly ConcurrentDictionary<string, MapChannel> _channels = new(StringComparer.Ordinal);
@@ -62,18 +44,7 @@ internal sealed class InMemoryCollaborationSessionService
         _capabilities = capabilities;
     }
 
-    /// <summary>
-    /// Capabilities advertised to every joining participant. Read paths must gate on the same
-    /// flags they advertise: a surface that answers a request it declared unavailable is worse
-    /// than one that refuses it, because the client cannot tell the answer is untrustworthy
-    /// (honua-server#2999 review).
-    /// </summary>
-    /// <remarks>
-    /// Read through the source on every access rather than captured at construction: this
-    /// service is resolved by the Redis backplane's own <c>StartAsync</c>, BEFORE that method
-    /// marks the backplane active, so a captured value pinned the pre-activation answer for the
-    /// life of the process (honua-server#2999 review).
-    /// </remarks>
+    // Read the flags on every access, because this service is constructed before the backplane marks itself active.
     public CollaborationCapabilities Capabilities => _capabilities?.Current ?? CollaborationCapabilities.Default;
 
     public async ValueTask<CollaborationJoinResult> JoinAsync(
@@ -210,11 +181,6 @@ internal sealed class InMemoryCollaborationSessionService
         }
     }
 
-    /// <summary>
-    /// Refreshes the participant's liveness timestamp. Heartbeats are intentionally not fanned
-    /// out: the SDK event union has no heartbeat event, and presence freshness is re-established
-    /// by snapshots.
-    /// </summary>
     public void Heartbeat(Guid sessionId)
     {
         if (!TryResolveSession(sessionId, out _, out var channel))
@@ -327,16 +293,7 @@ internal sealed class InMemoryCollaborationSessionService
             });
     }
 
-    /// <summary>
-    /// Removes a participant session. When <paramref name="requiredMapId"/> and/or
-    /// <paramref name="requiredOwner"/> are supplied (the REST leave path), the session must
-    /// belong to that map and to the same resolved user identity that joined it — participant
-    /// ids equal the session id, so possession of the id is visible to every participant via
-    /// snapshots and is NOT proof of ownership (honua-server#2999 review). A scope mismatch
-    /// returns <see langword="false"/>, deliberately indistinguishable from an unknown session
-    /// so probing cannot confirm a session exists. Server-internal callers (socket cleanup,
-    /// pruning) omit the constraints.
-    /// </summary>
+    // REST leave requires the map and the joining identity, because possession of the session id is not ownership, and a mismatch looks like an unknown session.
     public bool Leave(
         Guid sessionId,
         string? reason = null,
@@ -459,13 +416,6 @@ internal sealed class InMemoryCollaborationSessionService
         return removed;
     }
 
-    /// <summary>
-    /// Fans a committed op-log operation out to every participant of its map (including the
-    /// submitter — the socket echoes the committed op so all clients apply the same server order)
-    /// and broadcasts it to peer nodes. The op-log server cursor inside
-    /// <paramref name="operation"/> is the authoritative edit order; the envelope sequence orders
-    /// the local stream.
-    /// </summary>
     public CollaborationEventEnvelope PublishOperation(string mapId, CollaborationOperationWire operation)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(mapId);
@@ -507,11 +457,6 @@ internal sealed class InMemoryCollaborationSessionService
         return envelope;
     }
 
-    /// <summary>
-    /// Stamps a locally-delivered envelope (status/error/snapshot handshake frames) with the next
-    /// per-map sequence. Falls back to a zero-sequence envelope when the map has no channel (the
-    /// caller's session raced a prune); the reducer treats it as pre-snapshot and drops it.
-    /// </summary>
     public CollaborationEventEnvelope StampEnvelope(
         string mapId,
         Guid? sessionId,
@@ -566,12 +511,6 @@ internal sealed class InMemoryCollaborationSessionService
         }
     }
 
-    /// <summary>
-    /// Waits until the participant's outbox has pending events or the session ends. Returns
-    /// <see langword="false"/> when the participant is no longer present (left or pruned), which
-    /// the WebSocket writer treats as a terminal condition. Used by the streaming transport to
-    /// avoid busy-polling <see cref="DrainEvents"/>.
-    /// </summary>
     public async Task<bool> WaitForEventsAsync(Guid sessionId, CancellationToken cancellationToken)
     {
         if (!TryResolveSession(sessionId, out _, out var channel))
@@ -599,18 +538,7 @@ internal sealed class InMemoryCollaborationSessionService
         return TryResolveSession(sessionId, out _, out _);
     }
 
-    /// <summary>
-    /// Applies a collaboration event that originated on another node (delivered over the Redis
-    /// backplane) to the local participant outboxes for its map. Remote events are never
-    /// re-published, preventing fan-out loops between nodes. The actor's own session is excluded
-    /// so a participant does not receive an echo of its own action from a peer node. The envelope
-    /// is re-stamped with THIS node's next per-map sequence before fan-out: the origin sequence
-    /// is only monotonic on the origin node, and local clients — already past a higher local
-    /// sequence from their own join/status/snapshot frames — would drop a lower-sequenced remote
-    /// envelope per the v1 reducer contract, losing cross-replica operations (honua-server#2999).
-    /// The event payload (including the authoritative op-log cursor inside operation events) is
-    /// preserved unchanged.
-    /// </summary>
+    // Remote events are not re-published, and the envelope is re-stamped with this node's sequence before fan-out so a lower origin sequence is not dropped.
     public void ApplyRemoteEvent(CollaborationEventEnvelope ev)
     {
         ArgumentNullException.ThrowIfNull(ev);
@@ -855,10 +783,7 @@ internal sealed class InMemoryCollaborationSessionService
         };
     }
 
-    /// <summary>
-    /// Builds a v1 envelope stamped with the channel's next strictly monotonic sequence. Callers
-    /// must hold <c>channel.Sync</c> so sequence assignment and outbox delivery are atomic.
-    /// </summary>
+    // Callers must hold the channel lock so sequence assignment and outbox delivery are atomic.
     private static CollaborationEventEnvelope CreateEnvelopeLocked(
         MapChannel channel,
         Guid? sessionId,
@@ -892,10 +817,7 @@ internal sealed class InMemoryCollaborationSessionService
         }
     }
 
-    /// <summary>
-    /// Rejects join fields that would be stored and fanned out verbatim. Callers map a false
-    /// result to HTTP 400. Length is checked before trim so a multi-megabyte value is not copied.
-    /// </summary>
+    // Length is checked before trim so a multi-megabyte value is not copied.
     internal static bool TryValidateJoinFields(string? displayName, string? clientInstanceId, out string? detail)
     {
         if (displayName is { Length: > MaxDisplayNameLength })
@@ -940,19 +862,7 @@ internal sealed class InMemoryCollaborationSessionService
         return $"participant-{sessionId:N}"[..44];
     }
 
-    /// <summary>
-    /// Resolves the stable identity used to decide who owns a presence record, most-specific
-    /// first.
-    /// </summary>
-    /// <remarks>
-    /// <c>api_key_id</c> must be preferred over <see cref="ClaimTypes.Name"/>:
-    /// <c>ApiKeyAuthenticationHandler</c> gives EVERY full-admin API key the literal name
-    /// <c>"admin"</c> and no <see cref="ClaimTypes.NameIdentifier"/>/<c>sub</c>, so falling
-    /// through to the name collapses distinct admin collaborators onto one identity — and the
-    /// ownership check on leave would then let one of them act on another's presence record.
-    /// <c>api_key_id</c> is unique per key, so it separates them (honua-server#2999 review).
-    /// The name stays as a last resort for principals that carry nothing more specific.
-    /// </remarks>
+    // The API key id is preferred over the name, because every full-admin API key is named admin and the name would collapse distinct keys onto one identity.
     private static string? ResolveUserId(ClaimsPrincipal principal)
     {
         return NormalizeOptional(principal.FindFirstValue(ClaimTypes.NameIdentifier)) ??
@@ -979,17 +889,9 @@ internal sealed class InMemoryCollaborationSessionService
 
         public Dictionary<Guid, ParticipantState> Participants { get; } = new();
 
-        /// <summary>
-        /// Last stamped envelope sequence for this map on this node. Mutated only under
-        /// <see cref="Sync"/>, which makes every locally emitted envelope strictly monotonic
-        /// per map.
-        /// </summary>
         public long LastSequence { get; set; }
 
-        /// <summary>
-        /// Set under <see cref="Sync"/> when the channel has been unregistered from the channel
-        /// map so a racing join can detect the orphaned instance and retry.
-        /// </summary>
+        // The flag lets a racing join detect an unregistered channel and retry.
         public bool Removed { get; set; }
     }
 
@@ -1004,18 +906,9 @@ internal sealed class InMemoryCollaborationSessionService
 
         public Queue<CollaborationEventEnvelope> Outbox { get; } = new();
 
-        /// <summary>
-        /// Pulsed whenever an event is enqueued onto <see cref="Outbox"/> so a WebSocket
-        /// writer loop can wake without polling. The signal is set when events are pending
-        /// and reset by the writer when it drains them.
-        /// </summary>
         public AsyncManualResetSignal OutboxSignal { get; } = new();
     }
 
-    /// <summary>
-    /// Minimal manual-reset async signal used to wake a single WebSocket writer when its
-    /// participant outbox receives events. Multiple sets coalesce; a single wait observes them.
-    /// </summary>
     internal sealed class AsyncManualResetSignal
     {
         private volatile TaskCompletionSource<bool> _tcs =

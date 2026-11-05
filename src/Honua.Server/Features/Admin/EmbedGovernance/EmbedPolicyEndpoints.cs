@@ -13,29 +13,18 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin.EmbedGovernance;
 
-/// <summary>
-/// Public embed governance endpoints: the policy endpoint consumed by the
-/// <c>@honua-io/embed</c> remote governance adapter, and redacted analytics
-/// ingestion. Both authenticate via the embed key presented in the
-/// <c>X-Honua-Embed-Key</c> header (or <c>key</c> query parameter); the server
-/// is the authoritative origin/domain, scope, and rate-limit boundary.
-/// </summary>
+// Embed policy and analytics authenticate with the embed key, and this server is the authority for origin, scope, and rate limit.
 internal static partial class EmbedPolicyEndpoints
 {
     internal sealed class EmbedPolicyEndpointsLog;
 
     private const string EmbedKeyHeader = "X-Honua-Embed-Key";
 
-    /// <summary>Maximum events accepted in one analytics POST. One request must not be able to flush the shared buffer.</summary>
+    // One analytics POST must not be able to flush the shared buffer.
     private const int MaxAnalyticsEventsPerRequest = 100;
 
-    /// <summary>How far a client-supplied <c>occurredAt</c> may sit from ingest time before it is clamped.</summary>
     private static readonly TimeSpan AnalyticsClockSkew = TimeSpan.FromMinutes(5);
 
-    /// <summary>
-    /// Registers the public embed policy and analytics ingestion endpoints.
-    /// </summary>
-    /// <param name="endpoints">The route builder.</param>
     public static void MapEmbedPolicyEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/embed")

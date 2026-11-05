@@ -3,9 +3,6 @@
 
 namespace Honua.Server.Features.Admin.Federation;
 
-/// <summary>
-/// Source-generated structured logging for the federation admin surface (issue #341).
-/// </summary>
 internal static partial class FederationLog
 {
     [LoggerMessage(EventId = 4500, Level = LogLevel.Information,

@@ -7,23 +7,12 @@ using Honua.Core.Features.Collaboration.Operations;
 
 namespace Honua.Server.Features.Collaboration.Sessions;
 
-/// <summary>
-/// Wire constants for the saved-map collaboration envelope contract shared with the JS SDK
-/// (honua-sdk-js <c>src/collaboration/types.ts</c>, honua-server#2999). Every frame emitted on the
-/// session stream is a <see cref="CollaborationEventEnvelope"/> carrying exactly one event from
-/// the SDK's discriminated union, so <c>reduceSavedMapCollaborationSnapshot</c> can consume the
-/// transport without adaptation.
-/// </summary>
 internal static class CollaborationEnvelopeContract
 {
-    /// <summary>Envelope schema identifier expected by the SDK reducer.</summary>
     public const string Version = "honua.saved-map-collaboration.v1";
 }
 
-/// <summary>
-/// Event names for the SDK collaboration event union. These strings are wire contract — they must
-/// match honua-sdk-js <c>SavedMapCollaborationEvent["type"]</c> exactly.
-/// </summary>
+// These event-name strings must match the SDK union exactly.
 internal static class CollaborationSessionEventTypes
 {
     public const string Snapshot = "snapshot";
@@ -37,9 +26,6 @@ internal static class CollaborationSessionEventTypes
     public const string Error = "error";
 }
 
-/// <summary>
-/// Typed error codes for collaboration error events (SDK <c>SavedMapCollaborationErrorCode</c>).
-/// </summary>
 internal static class CollaborationErrorCodes
 {
     public const string PermissionDenied = "permission-denied";
@@ -58,26 +44,16 @@ internal sealed record CollaborationJoinRequest
     public string? ClientInstanceId { get; init; }
 }
 
-/// <summary>
-/// Request body for the explicit session-leave endpoint.
-/// </summary>
 internal sealed record CollaborationLeaveRequest
 {
     public Guid SessionId { get; init; }
 }
 
-/// <summary>
-/// Response for the explicit session-leave endpoint.
-/// </summary>
 internal sealed record CollaborationLeaveResponse
 {
     public required bool Left { get; init; }
 }
 
-/// <summary>
-/// Participant cursor in the SDK wire shape (<c>SavedMapCursor</c>): <c>x</c>/<c>y</c> are map
-/// coordinates in the composition's CRS (longitude/latitude for EPSG:4326 compositions).
-/// </summary>
 internal sealed record CollaborationCursor
 {
     public required double X { get; init; }
@@ -91,9 +67,6 @@ internal sealed record CollaborationCursor
     public DateTimeOffset? UpdatedAt { get; init; }
 }
 
-/// <summary>
-/// Participant selection in the SDK wire shape (<c>SavedMapSelection</c>).
-/// </summary>
 internal sealed record CollaborationSelection
 {
     public string[] Ids { get; init; } = [];
@@ -107,10 +80,6 @@ internal sealed record CollaborationSelection
     public DateTimeOffset? UpdatedAt { get; init; }
 }
 
-/// <summary>
-/// Follow state in the SDK wire shape (<c>SavedMapFollowTarget</c>). <see cref="Following"/> false
-/// with no target clears a follow.
-/// </summary>
 internal sealed record CollaborationFollowTarget
 {
     public string? TargetParticipantId { get; init; }
@@ -120,10 +89,6 @@ internal sealed record CollaborationFollowTarget
     public DateTimeOffset? UpdatedAt { get; init; }
 }
 
-/// <summary>
-/// Server-side presence state for one joined participant. This is the internal model; the wire
-/// projection is <see cref="CollaborationParticipantWire"/>.
-/// </summary>
 internal sealed record CollaborationParticipantPresence
 {
     public required Guid SessionId { get; init; }
@@ -147,9 +112,6 @@ internal sealed record CollaborationParticipantPresence
     public Guid? FollowingSessionId { get; init; }
 }
 
-/// <summary>
-/// Participant projection in the SDK wire shape (<c>SavedMapCollaborationParticipant</c>).
-/// </summary>
 internal sealed record CollaborationParticipantWire
 {
     public required string Id { get; init; }
@@ -172,12 +134,6 @@ internal sealed record CollaborationParticipantWire
     };
 }
 
-/// <summary>
-/// Session capability flags in the SDK wire shape (<c>SavedMapCollaborationCapabilities</c>).
-/// <c>FeatureLocks</c> is intentionally false: the saved-map feature-lock REST endpoints exist,
-/// but lock events are not bridged onto the session stream yet, so the stream contract does not
-/// advertise them.
-/// </summary>
 internal sealed record CollaborationCapabilities
 {
     public static CollaborationCapabilities Default { get; } = new();
@@ -194,21 +150,10 @@ internal sealed record CollaborationCapabilities
 
     public bool Replay { get; init; } = true;
 
-    /// <summary>
-    /// Whether the session can be checkpointed into an immutable Studio content version. False
-    /// when the operation log cannot prove it observed every accepted edit (a process-local log
-    /// loses acknowledged operations on restart), so clients learn from the handshake instead of
-    /// discovering it through a failed checkpoint (honua-server#2999 review).
-    /// </summary>
+    // Checkpointing is advertised false when the log cannot prove it saw every accepted edit, so the client learns at the handshake.
     public bool Checkpoints { get; init; } = true;
 }
 
-/// <summary>
-/// Committed saved-map operation in the SDK wire shape (<c>SavedMapCommittedOperation</c>). The
-/// operation-level <see cref="Sequence"/>/<see cref="Cursor"/>/<see cref="Revision"/> come from
-/// the op-log's monotonic server cursor — the op-log is the authoritative order for edits, while
-/// the envelope-level sequence orders the whole stream (presence included).
-/// </summary>
 internal sealed record CollaborationOperationWire
 {
     public required string Id { get; init; }
@@ -248,10 +193,6 @@ internal sealed record CollaborationOperationWire
         SubmittedAt = operation.AcceptedAt
     };
 
-    /// <summary>
-    /// Maps the server operation kind onto the SDK's open string kind vocabulary
-    /// (<c>SavedMapEditOperation["kind"]</c>).
-    /// </summary>
     public static string ToWireKind(SavedMapOperationKind kind) => kind switch
     {
         SavedMapOperationKind.SetMetadataField => "metadata",
@@ -264,12 +205,7 @@ internal sealed record CollaborationOperationWire
     };
 }
 
-/// <summary>
-/// Session snapshot in the SDK wire shape (<c>SavedMapCollaborationSnapshot</c>). The reducer
-/// rebuilds presence entirely from this snapshot and drops any envelope whose sequence is at or
-/// below <see cref="Sequence"/>, which is why reconnecting clients are re-snapshotted rather than
-/// resumed for presence (the bounded per-participant outbox cannot replay presence history).
-/// </summary>
+// Presence is rebuilt from the snapshot, and any envelope at or below that sequence is dropped, so reconnects are re-snapshotted.
 internal sealed record CollaborationSnapshot
 {
     public required string MapId { get; init; }
@@ -295,11 +231,6 @@ internal sealed record CollaborationSnapshot
     public string Status { get; init; } = "live";
 }
 
-/// <summary>
-/// One event from the SDK collaboration event union. <see cref="Type"/> discriminates; only the
-/// fields relevant to that type are populated (null fields are omitted on the wire), which makes
-/// this single record serialize exactly like the SDK's discriminated union members.
-/// </summary>
 internal sealed record CollaborationSessionEvent
 {
     public required string Type { get; init; }
@@ -333,20 +264,7 @@ internal sealed record CollaborationSessionEvent
     public bool? ResyncRequired { get; init; }
 }
 
-/// <summary>
-/// The v1 collaboration envelope (SDK <c>SavedMapCollaborationEnvelope</c>). <see cref="Sequence"/>
-/// is strictly monotonic per map on the emitting node; <see cref="Cursor"/> is an opaque string
-/// projection of the sequence.
-/// </summary>
-/// <remarks>
-/// Multi-node scoping (honua-server#2999): the per-map sequence counter lives in the node-local
-/// session service, and backplane broadcasts carry the origin node's sequence unchanged. Strict
-/// cross-node monotonicity therefore requires single-writer-per-map routing (node affinity for a
-/// given <c>mapId</c>). Without affinity, remote presence envelopes may arrive with sequences at
-/// or below a client's snapshot sequence and are dropped by the SDK reducer — degrading remote
-/// presence freshness, never corrupting state. Operation order is unaffected either way: it is
-/// carried by the op-log server cursor inside the operation payload, not the envelope sequence.
-/// </remarks>
+// Without single-writer affinity, remote presence sequences may be dropped; that degrades freshness and does not corrupt state, because operation order is the op-log cursor.
 internal sealed record CollaborationEventEnvelope
 {
     public string EnvelopeVersion { get; init; } = CollaborationEnvelopeContract.Version;
@@ -368,12 +286,6 @@ internal sealed record CollaborationEventEnvelope
     public required CollaborationSessionEvent Event { get; init; }
 }
 
-/// <summary>
-/// Join response for the REST join endpoint and the stream handshake, mirroring the SDK
-/// <c>SavedMapCollaborationJoinResult</c> (mapId/sessionId/participantId/capabilities/snapshot).
-/// The REST join snapshot carries presence only; operation tails are served by the replay
-/// endpoint or the stream handshake snapshot.
-/// </summary>
 internal sealed record CollaborationJoinResponse
 {
     public required string MapId { get; init; }
@@ -396,10 +308,6 @@ internal sealed record CollaborationFanOutResult
     public required int DeliveredCount { get; init; }
 }
 
-/// <summary>
-/// Cross-node collaboration broadcast envelope published over the Redis backplane. The
-/// originating instance id lets each node ignore its own echoes and prevents fan-out loops.
-/// </summary>
 internal sealed record CollaborationBackplaneMessage
 {
     public required string OriginInstanceId { get; init; }
@@ -407,11 +315,6 @@ internal sealed record CollaborationBackplaneMessage
     public required CollaborationEventEnvelope Event { get; init; }
 }
 
-/// <summary>
-/// WebSocket control frame sent by a collaboration client to update its presence/cursor/follow
-/// state over the live session stream. The frame <see cref="Type"/> mirrors the SDK event
-/// vocabulary (<c>cursor</c>, <c>selection</c>, <c>follow</c>) plus <c>heartbeat</c>/<c>ping</c>.
-/// </summary>
 internal sealed record CollaborationClientFrame
 {
     public string? Type { get; init; }
@@ -456,9 +359,6 @@ internal sealed record SavedMapCollaborationAuthorizationResult
         new(SavedMapCollaborationAuthorizationStatus.Forbidden, detail);
 }
 
-/// <summary>
-/// Why a join produced no session. Numeric values are the HTTP status the join endpoints emit.
-/// </summary>
 internal enum CollaborationJoinRefusal
 {
     None = 0,
@@ -472,10 +372,8 @@ internal sealed record CollaborationJoinResult
 
     public CollaborationJoinResponse? Response { get; init; }
 
-    /// <summary>Set when <see cref="Response"/> is null for a reason other than authorization.</summary>
     public CollaborationJoinRefusal Refusal { get; init; }
 
-    /// <summary>Client-safe detail for <see cref="Refusal"/>. Does not echo the submitted field.</summary>
     public string? Detail { get; init; }
 }
 

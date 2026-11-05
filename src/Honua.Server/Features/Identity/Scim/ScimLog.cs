@@ -3,10 +3,6 @@
 
 namespace Honua.Server.Features.Identity.Scim;
 
-/// <summary>
-/// Source-generated structured logging for the SCIM 2.0 provisioning endpoints (#510).
-/// User and group identifiers are stable, non-secret provisioning keys safe to log for audit.
-/// </summary>
 internal static partial class ScimLog
 {
     [LoggerMessage(EventId = 4600, Level = LogLevel.Information,

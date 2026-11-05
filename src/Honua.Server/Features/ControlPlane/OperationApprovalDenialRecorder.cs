@@ -14,7 +14,6 @@ internal enum OperationApprovalDenialReason
     CurrentAuthority
 }
 
-/// <summary>Records a minimized, durable receipt for a terminating approval refusal.</summary>
 internal static class OperationApprovalDenialRecorder
 {
     internal const string UnavailableMessage = "The approval decision audit is unavailable.";

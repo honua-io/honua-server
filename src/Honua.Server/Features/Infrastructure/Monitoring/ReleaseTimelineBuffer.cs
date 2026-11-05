@@ -5,17 +5,6 @@ using Honua.Core.Features.Observability.Domain;
 
 namespace Honua.Infrastructure.Monitoring;
 
-/// <summary>
-/// Bounded, in-memory ring buffer of recent <see cref="OperateEventKind.Release"/> events produced by
-/// deploy workflow transitions. It is the <see cref="LocalOperateEventFeed"/> source for release events,
-/// mirroring the in-process <c>RecentErrorBuffer</c> that backs the same Operate timeline for logs.
-/// </summary>
-/// <remarks>
-/// This buffer is per-instance and non-durable by design: the durable source of truth for deploy
-/// operations is the Redis workflow store (queryable via the deploy-operations list API), and cross-replica
-/// realtime fan-out is the realtime hub's concern (#2554). The timeline surfaces the most recent release
-/// activity observed by this instance so the Operate cockpit's <c>ReleaseId</c> filter returns data.
-/// </remarks>
 internal sealed class ReleaseTimelineBuffer
 {
     internal const int DefaultCapacity = 500;
@@ -35,9 +24,6 @@ internal sealed class ReleaseTimelineBuffer
         _events = new Queue<OperateEvent>(_capacity);
     }
 
-    /// <summary>
-    /// Appends a release event, evicting the oldest entry when the buffer is full.
-    /// </summary>
     public void Append(OperateEvent value)
     {
         ArgumentNullException.ThrowIfNull(value);
@@ -53,9 +39,6 @@ internal sealed class ReleaseTimelineBuffer
         }
     }
 
-    /// <summary>
-    /// Returns a newest-first snapshot of the buffered release events.
-    /// </summary>
     public IReadOnlyList<OperateEvent> Snapshot()
     {
         lock (_gate)

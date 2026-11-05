@@ -16,22 +16,13 @@ using Microsoft.Extensions.Caching.Memory;
 
 namespace Honua.Server.Features.Protocols.Cog;
 
-/// <summary>
-/// Log category for COG endpoints.
-/// </summary>
 internal sealed class CogEndpointsLog;
 
-/// <summary>
-/// Admin endpoints for COG registration and management.
-/// </summary>
 internal static class CogEndpoints
 {
     private const string DuplicateRegistrationMessage =
         "A cloud raster with the same layer, provider, bucket, and object key is already registered.";
 
-    /// <summary>
-    /// Maps COG admin endpoints.
-    /// </summary>
     public static void MapCogEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/cloud-rasters")
@@ -234,9 +225,6 @@ internal static class CogEndpoints
         }
     }
 
-    /// <summary>
-    /// Returns true only for a unique routable publication matching the service-local layer index.
-    /// </summary>
     private static async Task<bool> LayerPublicationExistsAsync(
         IMetadataV2GraphProvider graphProvider,
         int layerId,

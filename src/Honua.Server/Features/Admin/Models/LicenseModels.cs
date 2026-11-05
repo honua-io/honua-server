@@ -5,87 +5,38 @@ using Honua.Core.Features.Licensing.Domain;
 
 namespace Honua.Server.Features.Admin.Models;
 
-/// <summary>
-/// API response model for license status.
-/// </summary>
 public sealed class LicenseStatusResponse
 {
-    /// <summary>Deployment licensing mode: enabled or disabled.</summary>
     public string Mode { get; init; } = "enabled";
 
-    /// <summary>
-    /// The server edition (e.g., Community, Professional, Enterprise).
-    /// </summary>
     public required string Edition { get; init; }
 
-    /// <summary>
-    /// When the license expires, or null for perpetual/community licenses.
-    /// </summary>
     public DateTimeOffset? ExpiresAt { get; init; }
 
-    /// <summary>
-    /// Whether the license is currently valid.
-    /// </summary>
     public required bool IsValid { get; init; }
 
-    /// <summary>
-    /// Days until license expiry, null if no expiry.
-    /// </summary>
     public int? DaysUntilExpiry { get; init; }
 
-    /// <summary>
-    /// Whether the license is within the expiry warning threshold.
-    /// </summary>
     public bool ExpiryWarning { get; init; }
 
-    /// <summary>
-    /// Validation state description.
-    /// </summary>
     public required string ValidationState { get; init; }
 
-    /// <summary>
-    /// Organization the license is issued to.
-    /// </summary>
     public string? LicensedTo { get; init; }
 
-    /// <summary>
-    /// Stable identifier of the loaded license.
-    /// </summary>
     public string? LicenseId { get; init; }
 
-    /// <summary>
-    /// When the license was issued.
-    /// </summary>
     public DateTimeOffset? IssuedAt { get; init; }
 
-    /// <summary>
-    /// Entitlements granted by this license.
-    /// </summary>
     public IReadOnlyList<EntitlementResponse> Entitlements { get; init; } = [];
 
-    /// <summary>
-    /// Capacity-band terms and current meter state used by license admission.
-    /// </summary>
     public LicenseCapacityState? Capacity { get; init; }
 }
 
-/// <summary>
-/// API response model for a license entitlement.
-/// </summary>
 public sealed class EntitlementResponse
 {
-    /// <summary>
-    /// Entitlement key.
-    /// </summary>
     public required string Key { get; init; }
 
-    /// <summary>
-    /// Human-readable entitlement name.
-    /// </summary>
     public required string Name { get; init; }
 
-    /// <summary>
-    /// Whether this entitlement is currently active.
-    /// </summary>
     public bool IsActive { get; init; }
 }

@@ -9,16 +9,7 @@ using Microsoft.Extensions.Hosting;
 
 namespace Honua.Server.Features.Admin.Routing;
 
-/// <summary>
-/// Self-healing reconciliation for isolated shadow-topology rebuild attempts (#2720):
-/// finds attempts whose fencing lease has expired and either lets them become eligible for
-/// takeover (re-enqueuing the durable job when it is still active so a fresh worker claims
-/// it and calls <see cref="INetworkTopologyRebuildStore.TryAcquireOrTakeoverLeaseAsync"/>),
-/// or fails the attempt with a stable sanitized code and cleans its orphan shadow artifacts
-/// when the owning execution job has already reached a terminal failure state. Never
-/// touches the active generation or a rollback-eligible retired generation's artifacts —
-/// only attempt-scoped shadow tables for non-terminal or newly-failed attempts.
-/// </summary>
+// Reconciliation never touches the active generation or a retired generation that is still eligible for rollback.
 internal sealed partial class NetworkTopologyRebuildReconciler
 {
     private const string OrphanedFailureCode = "routing.topology.rebuild_orphaned";
@@ -29,9 +20,6 @@ internal sealed partial class NetworkTopologyRebuildReconciler
     private readonly IJobQueue? _jobQueue;
     private readonly ILogger<NetworkTopologyRebuildReconciler> _logger;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="NetworkTopologyRebuildReconciler"/> class.
-    /// </summary>
     public NetworkTopologyRebuildReconciler(
         INetworkTopologyRebuildStore rebuildStore,
         IExecutionJobStore jobStore,
@@ -44,10 +32,6 @@ internal sealed partial class NetworkTopologyRebuildReconciler
         _jobQueue = jobQueue;
     }
 
-    /// <summary>
-    /// Runs one reconciliation pass. Returns the number of attempts adopted (requeued for
-    /// takeover or failed-and-cleaned).
-    /// </summary>
     public async Task<int> ReconcileAsync(CancellationToken cancellationToken = default)
     {
         var expired = await _rebuildStore.ListExpiredLeasesAsync(DateTimeOffset.UtcNow, cancellationToken).ConfigureAwait(false);
@@ -133,10 +117,6 @@ internal sealed partial class NetworkTopologyRebuildReconciler
     }
 }
 
-/// <summary>
-/// Periodically runs <see cref="NetworkTopologyRebuildReconciler"/> so an expired rebuild
-/// lease is adopted without requiring an operator to notice and intervene manually (#2720).
-/// </summary>
 internal sealed partial class NetworkTopologyRebuildReconcilerBackgroundService : BackgroundService
 {
     private static readonly TimeSpan ReconcileInterval = TimeSpan.FromSeconds(30);
@@ -144,9 +124,6 @@ internal sealed partial class NetworkTopologyRebuildReconcilerBackgroundService 
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<NetworkTopologyRebuildReconcilerBackgroundService> _logger;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="NetworkTopologyRebuildReconcilerBackgroundService"/> class.
-    /// </summary>
     public NetworkTopologyRebuildReconcilerBackgroundService(
         IServiceScopeFactory scopeFactory,
         ILogger<NetworkTopologyRebuildReconcilerBackgroundService> logger)
@@ -155,7 +132,6 @@ internal sealed partial class NetworkTopologyRebuildReconcilerBackgroundService 
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <inheritdoc />
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         using var timer = new PeriodicTimer(ReconcileInterval);

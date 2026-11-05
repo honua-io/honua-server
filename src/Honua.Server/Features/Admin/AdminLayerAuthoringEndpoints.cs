@@ -13,13 +13,6 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Admin endpoints that author the parts of a layer's canonical metadata that have no other setter:
-/// relationships, a GeoServices popupInfo template, and an author-supplied drawingInfo renderer
-/// (simple/uniqueValue/classBreaks). All write directly into the Metadata v2 graph resource (relationships
-/// onto <see cref="MetadataV2Resource.Relationships"/>; popup/drawing into <c>resource.Extensions</c>), which
-/// the FeatureServer/OGC/OData emitters already read back.
-/// </summary>
 internal static partial class AdminLayerAuthoringEndpoints
 {
     private const string PopupInfoExtensionKey = "geoservices:popupInfo";

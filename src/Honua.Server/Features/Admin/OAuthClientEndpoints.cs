@@ -11,17 +11,10 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Admin endpoints for the first-class OAuth2 client registry and scope catalogue
-/// (ADR-0053 Increment 2, #1888). Distinct from the human API-key surface: these
-/// manage per-application <c>client_id</c>/<c>client_secret</c> identities and the
-/// scope→permission mapping that <c>client_credentials</c> tokens are minted from.
-/// </summary>
 internal static partial class OAuthClientEndpoints
 {
     internal sealed class OAuthClientEndpointsLog;
 
-    /// <summary>Registers OAuth2 client-registry and scope-catalogue admin endpoints.</summary>
     public static void MapOAuthClientEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var clients = endpoints.MapGroup("/api/v{version:apiVersion}/admin/oauth-clients")

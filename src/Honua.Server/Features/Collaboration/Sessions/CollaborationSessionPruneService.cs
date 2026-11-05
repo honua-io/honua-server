@@ -3,19 +3,10 @@
 
 namespace Honua.Server.Features.Collaboration.Sessions;
 
-/// <summary>
-/// Periodically prunes stale collaboration participants from the in-memory session transport.
-/// Participants accumulate in the singleton <see cref="InMemoryCollaborationSessionService"/> on
-/// every join, and a client can vanish without calling the leave endpoint or closing its socket
-/// cleanly, so without this sweep a participant that stops polling would hold its presence (and
-/// its event outbox) for the process lifetime.
-/// </summary>
 internal sealed partial class CollaborationSessionPruneService : BackgroundService
 {
-    /// <summary>How often stale participants are swept.</summary>
     internal static readonly TimeSpan SweepInterval = TimeSpan.FromMinutes(1);
 
-    /// <summary>Participants idle longer than this are considered stale and removed.</summary>
     internal static readonly TimeSpan MaxIdle = TimeSpan.FromMinutes(5);
 
     private readonly InMemoryCollaborationSessionService _sessions;

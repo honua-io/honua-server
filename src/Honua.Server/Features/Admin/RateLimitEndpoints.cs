@@ -13,14 +13,8 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Admin endpoints for rate limit policy configuration.
-/// </summary>
 internal static partial class RateLimitEndpoints
 {
-    /// <summary>
-    /// Log category for rate limit endpoints.
-    /// </summary>
     internal sealed class RateLimitEndpointsLog;
 
     internal static partial class RateLimitLog
@@ -38,9 +32,6 @@ internal static partial class RateLimitEndpoints
         public static partial void PolicyDeleted(ILogger logger, Guid policyId);
     }
 
-    /// <summary>
-    /// Configure rate limit policy admin endpoints.
-    /// </summary>
     public static void MapRateLimitEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/rate-limits")

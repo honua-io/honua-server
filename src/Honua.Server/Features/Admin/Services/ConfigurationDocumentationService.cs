@@ -12,9 +12,6 @@ using ConfigurationSection = Honua.Core.Configuration.ConfigurationSection;
 
 namespace Honua.Server.Features.Admin.Services;
 
-/// <summary>
-/// Service for building self-documenting configuration metadata.
-/// </summary>
 public sealed class ConfigurationDocumentationService
 {
     private readonly IConfiguration _configuration;
@@ -26,9 +23,6 @@ public sealed class ConfigurationDocumentationService
     private readonly IOptions<TracingOptions> _tracingOptions;
     private readonly IReadOnlyList<IConfigurationDocumentationContributor> _configurationDocumentationContributors;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="ConfigurationDocumentationService"/> class.
-    /// </summary>
     public ConfigurationDocumentationService(
         IConfiguration configuration,
         IWebHostEnvironment environment,
@@ -50,9 +44,6 @@ public sealed class ConfigurationDocumentationService
             ?? throw new ArgumentNullException(nameof(configurationDocumentationContributors));
     }
 
-    /// <summary>
-    /// Builds the complete configuration documentation.
-    /// </summary>
     public ConfigurationDocumentation BuildDocumentation()
     {
         var sections = new List<ConfigurationSection>
@@ -842,10 +833,6 @@ public sealed class ConfigurationDocumentationService
         return MaskCurrentValue(value, isSensitive) as string;
     }
 
-    /// <summary>
-    /// Masks sensitive and credential-bearing current values. Default values and
-    /// environment-variable examples are left unchanged.
-    /// </summary>
     private static void MaskCredentialBearingValues(IEnumerable<ConfigurationSection> sections)
     {
         foreach (var section in sections)

@@ -9,11 +9,6 @@ namespace Honua.Alerts;
 
 internal sealed partial class AlertDispatchBackgroundService : BackgroundService, IAlertDispatchHealth
 {
-    /// <summary>
-    /// How long a dispatch waits before re-checking a channel entitlement that is currently
-    /// inactive. Short enough that a licence renewal resumes delivery without operator action,
-    /// long enough that a genuinely downgraded edition does not spin the queue.
-    /// </summary>
     private static readonly TimeSpan UnentitledChannelRetryDelay = TimeSpan.FromMinutes(5);
 
     private readonly IServiceScopeFactory _scopeFactory;
@@ -50,13 +45,10 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
         _time = time ?? TimeProvider.System;
     }
 
-    /// <inheritdoc />
     public bool IsDispatcherRunning => _isRunning;
 
-    /// <inheritdoc />
     public bool IsDispatcherEnabled => _options.Enabled;
 
-    /// <inheritdoc />
     public DateTimeOffset? LastPollAt
     {
         get
@@ -66,19 +58,14 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
         }
     }
 
-    /// <inheritdoc />
     public AlertDispatchBacklog? LastBacklog => Volatile.Read(ref _lastBacklogObservation)?.Backlog;
 
-    /// <inheritdoc />
     public DateTimeOffset? BacklogObservedAt => Volatile.Read(ref _lastBacklogObservation)?.ObservedAt;
 
-    /// <inheritdoc />
     public AlertDispatchObservation? LastObservation => Volatile.Read(ref _lastBacklogObservation);
 
-    /// <inheritdoc />
     public bool IsStoragePollFailing => _storagePollFailing;
 
-    /// <inheritdoc />
     public async Task<AlertDispatchBacklog> RefreshBacklogAsync(CancellationToken cancellationToken = default)
     {
         await using var scope = _scopeFactory.CreateAsyncScope();

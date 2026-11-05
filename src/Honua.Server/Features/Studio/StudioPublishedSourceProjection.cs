@@ -15,7 +15,6 @@ using Honua.Protocols.GeoServices.Catalog;
 
 namespace Honua.Server.Features.Studio;
 
-/// <summary>Current-reader metadata for the sources a sealed composition actually references.</summary>
 internal static class StudioPublishedSourceProjection
 {
     private const string FeatureRenderingProtocol = "geoservices-feature-service";

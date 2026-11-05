@@ -20,9 +20,6 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Admin endpoints for publishing layers from PostGIS tables.
-/// </summary>
 internal static class LayerPublishingEndpoints
 {
     private const int MaxSafeLayerPublishingMessageLength = 240;

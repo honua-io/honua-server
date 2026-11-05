@@ -11,20 +11,10 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Console;
 
-/// <summary>
-/// Authenticated Console open-data publication endpoints: open-data page
-/// read/write, eligibility evaluation, DCAT/data.json export preview with
-/// validation status, and STAC publish/update/unpublish/status controls. All
-/// routes require admin authorization — open-data publication is a privileged
-/// management surface. These are thin adapters over the content/share/open-data
-/// stores and the pure projection helpers in <see cref="ConsoleOpenDataMapper"/>.
-/// </summary>
 internal static class ConsoleOpenDataEndpoints
 {
-    /// <summary>Log category for the authenticated Console open-data endpoints.</summary>
     internal sealed class ConsoleOpenDataEndpointsLogCategory;
 
-    /// <summary>Maps the authenticated Console open-data endpoints.</summary>
     public static void MapConsoleOpenDataEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/console/content/{id}/open-data")

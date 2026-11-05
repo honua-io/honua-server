@@ -17,24 +17,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Infrastructure.Monitoring;
 
-/// <summary>
-/// Server-local fan-out implementation of <see cref="IOperateEventFeed"/> that
-/// joins alert events, audit records, and job/operation progress into a single
-/// time-ordered timeline (#1168).
-/// </summary>
-/// <remarks>
-/// <para>
-/// Each upstream source is queried independently with its own bounded page size.
-/// If a single source throws, the remaining sources still contribute and the
-/// page is returned with <see cref="OperateEventPage.PartialResult"/> set so the
-/// caller can render a partial timeline rather than failing the whole request.
-/// </para>
-/// <para>
-/// This is intentionally a server-side composite; it lives in <c>Honua.Server</c>
-/// rather than <c>Honua.Core</c> because it depends on concrete stores wired in
-/// DI rather than on a domain abstraction.
-/// </para>
-/// </remarks>
 internal sealed class LocalOperateEventFeed : IOperateEventFeed
 {
     internal const int MaxPageSize = 200;

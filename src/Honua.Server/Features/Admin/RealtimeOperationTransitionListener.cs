@@ -6,16 +6,7 @@ using Honua.Core.Features.ControlPlane.Domain;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Second, independent consumer of the #2562 workflow-transition seam. Forwards every observed transition to
-/// the <see cref="AdminRealtimeBroadcaster"/>, which pushes it to the <c>deploy-operations</c> and
-/// <c>operate-events</c> hub groups over the Redis backplane (#2554). It does NOT build a producer of its own
-/// — it rides the same seam the operate-timeline listener uses, so a transition fans to both consumers.
-/// </summary>
-/// <remarks>
-/// The forward is a non-blocking enqueue and is exception-isolated inside the broadcaster, so this listener
-/// never slows or faults the authoritative store-write path (matching the seam's listener-isolation contract).
-/// </remarks>
+// This listener enqueues on the shared transition seam and does not build its own producer, so a hub fault cannot fail the store write.
 internal sealed class RealtimeOperationTransitionListener(AdminRealtimeBroadcaster broadcaster)
     : IWorkflowOperationTransitionListener
 {

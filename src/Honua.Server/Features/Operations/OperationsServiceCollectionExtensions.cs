@@ -18,10 +18,6 @@ using StackExchange.Redis;
 
 namespace Honua.Server.Features.Operations;
 
-/// <summary>
-/// Registers the Honua Operations Toolset: the grounding catalog (descriptor providers +
-/// aggregator), the executors, the policy decision point seam, and the dispatcher.
-/// </summary>
 internal static class OperationsServiceCollectionExtensions
 {
     public static IServiceCollection AddOperationsToolset(
@@ -305,18 +301,7 @@ internal static class OperationsServiceCollectionExtensions
         return services;
     }
 
-    /// <summary>
-    /// Operations a Redis-off host may execute directly, without the durable operation-instance
-    /// store, when the policy decision is Allow. Owner decision 3 (topology) and decision 20
-    /// (2026-10-10): a Redis-off cell is a serving + configure + style/render topology, so the
-    /// configure step (<c>service.publish</c>) and the style step (<c>style.apply-preset</c>, the
-    /// operation behind <c>honua_apply_style_preset</c>) involve no governed proposal when the
-    /// policy allows them and must not be refused for a missing Redis. Rendering is a read and
-    /// never enters the operation runtime. Governed / proposal-based paths (RequireApproval
-    /// decisions, Studio drafts and publication requests, geoprocessing, the
-    /// <c>honua_admin_*</c> catalogs) are not listed and keep the typed capability-unavailable
-    /// refusal.
-    /// </summary>
+    // A Redis-off host may run the listed configure and style operations, and governed paths stay refused.
     internal static readonly IReadOnlyList<string> RedisOffDirectOperationIds =
     [
         ServicePublishOperation.OperationId,
@@ -330,10 +315,6 @@ internal static class OperationsServiceCollectionExtensions
         "admin.ai.admission.resume",
     ];
 
-    /// <summary>
-    /// Wraps the fail-closed Redis-off instance store in a dispatcher-scoped non-durable store for
-    /// <see cref="RedisOffDirectOperationIds"/>; every other store is used as composed.
-    /// </summary>
     internal static IOperationInstanceStore ComposeDispatcherInstanceStore(IOperationInstanceStore store)
         => store is UnavailableOperationInstanceStore
             ? new NonDurableDirectOperationInstanceStore(store, RedisOffDirectOperationIds)
@@ -345,11 +326,6 @@ internal static class OperationsServiceCollectionExtensions
         => services.AddDeferredOperationExecutor(LegacyOperationIds.For(operationClass), sp =>
             new LegacyGatewayOperationAdapter(sp, operationClass));
 
-    /// <summary>
-    /// Registration sentinel proving the legacy gateway adapters were already added, so
-    /// repeated <see cref="AddOperationsToolset"/> calls stay idempotent without
-    /// <c>TryAddEnumerable</c> (which cannot hold factory descriptors).
-    /// </summary>
     internal sealed class AiAdmissionControlRegistrationMarker;
 
     internal sealed class LegacyAdapterRegistrationMarker;

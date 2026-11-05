@@ -11,13 +11,7 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.ControlPlane.Executors;
 
-/// <summary>
-/// Live post-action verifier for the only currently auto-safe action: bounded alert
-/// dead-letter redrive. It refreshes the dispatch health snapshot twice across a short
-/// observation window so the gateway cannot call execution alone a successful heal.
-/// Redrive is intentionally not compensatable: moving every pending row back to dead-letter
-/// would race normal delivery and could corrupt unrelated dispatches.
-/// </summary>
+// The verifier reads the dispatch snapshot twice, and redrive is not compensatable because moving pending rows back would race normal delivery.
 internal sealed class AlertDispatchAutonomousOperationConvergence(
     IAlertDispatchHealth dispatchHealth,
     IOptionsMonitor<OpsFindingsOptions> options,
