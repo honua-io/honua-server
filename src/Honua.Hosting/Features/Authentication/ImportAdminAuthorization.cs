@@ -7,16 +7,8 @@ using Honua.Core.Features.Operations.Domain;
 
 namespace Honua.Infrastructure.Authentication;
 
-/// <summary>
-/// Canonical caller-authorization decision for file-import mutations, shared by
-/// the REST upload and MCP inline-ingest transport adapters.
-/// </summary>
 public static class ImportAdminAuthorization
 {
-    /// <summary>
-    /// Returns whether the caller has REST-equivalent admin-write authority for
-    /// an import mutation. OAuth scopes only narrow that authority.
-    /// </summary>
     public static async Task<bool> IsAuthorizedAsync(
         HttpContext transportContext,
         ClaimsPrincipal principal,

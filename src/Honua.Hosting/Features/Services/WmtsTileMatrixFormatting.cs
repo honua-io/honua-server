@@ -6,20 +6,9 @@ using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Infrastructure.Services;
 
-/// <summary>
-/// Canonical WMTS coordinate formatting shared by every adapter that emits a tile matrix set.
-/// </summary>
 internal static class WmtsTileMatrixFormatting
 {
-    /// <summary>
-    /// Formats an internal XY top-left origin in the axis order declared by the advertised CRS.
-    /// </summary>
-    /// <remarks>
-    /// CRS84 is EastNorth (longitude, latitude), while geographic EPSG identifiers such as
-    /// EPSG:4326 are NorthEast (latitude, longitude). Geographic classification alone cannot
-    /// distinguish those contracts. Coordinates use the round-trip format so configured grid
-    /// origins do not lose precision in capabilities documents.
-    /// </remarks>
+    // CRS84 is longitude then latitude, while a geographic EPSG code such as EPSG:4326 is latitude then longitude, so axis order is not implied by being geographic.
     internal static string FormatTopLeftCorner(string crs, bool isGeographic, double x, double y)
     {
         var axisOrder = SpatialReferenceHelpers.TryParseCrsDefinition(crs, out var definition)

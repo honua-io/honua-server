@@ -3,11 +3,6 @@
 
 namespace Honua.Geoprocessing;
 
-/// <summary>
-/// Source-generated logs for the shared execution-admission lease.
-/// Event IDs 8027-8030. The other admission logs stay in
-/// <c>Honua.Geoprocessing.ExecutionAdmissionLog</c> (8020-8026, 8031-8032).
-/// </summary>
 internal static partial class ExecutionAdmissionLeaseLog
 {
     [LoggerMessage(8027, LogLevel.Warning,

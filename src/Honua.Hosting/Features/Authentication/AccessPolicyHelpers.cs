@@ -18,29 +18,17 @@ using AccessDecision = Honua.Core.Features.Security.Domain.AccessDecision;
 
 namespace Honua.Infrastructure.Authentication;
 
-/// <summary>
-/// Access policy evaluation helpers for per-layer and per-service authorization.
-/// </summary>
 internal static class AccessPolicyHelpers
 {
     internal const string AuthRequiredMessage = "Authentication is required to access this resource.";
     internal const string AccessForbiddenMessage = "Access to this resource is forbidden.";
 
-    /// <summary>
-    /// Internal denial reason recorded when a metadata entity is hidden from the
-    /// request's tenant (#1580). Never surfaced to clients —
-    /// <see cref="CreateAccessDeniedResult"/> maps every forbidden decision to the
-    /// generic <see cref="AccessForbiddenMessage"/> so tenant ownership does not leak.
-    /// </summary>
+    // The hidden-metadata denial stays internal so a forbidden response cannot reveal which tenant owns the resource.
     internal const string TenantScopeDeniedReason = "Resource is outside the request tenant scope.";
 
     private static readonly ClaimsPrincipal AnonymousPrincipal = new(new ClaimsIdentity());
     private static readonly object EffectivePermissionsTaskKey = new();
 
-    /// <summary>
-    /// Creates the appropriate error result for a denied access decision.
-    /// Returns null if the decision is allowed.
-    /// </summary>
     internal static IResult? CreateAccessDeniedResult(HttpContext context, AccessDecision decision)
     {
         if (decision.IsAllowed)
@@ -57,10 +45,6 @@ internal static class AccessPolicyHelpers
         return StandardErrorHelpers.CreateForbidden(context, AccessForbiddenMessage);
     }
 
-    /// <summary>
-    /// Adds the challenge for the credential family the caller attempted.
-    /// Protocol adapters still own their wire-format error body and status.
-    /// </summary>
     internal static void AppendAuthenticationChallenge(HttpContext context)
     {
         context.Response.Headers.Append(
@@ -129,19 +113,6 @@ internal static class AccessPolicyHelpers
         return CreateAccessDeniedResult(context, EvaluateResourceAccess(context, resource, service, scope));
     }
 
-    /// <summary>
-    /// Resource access check that first consults the canonical per-operation
-    /// permission resolver (#1375) over the principal's RBAC grants, then falls
-    /// back to the coarse <see cref="AccessPolicy"/> seam when no grant matches.
-    /// This is the live wiring of the resolver into an enforced read/write path;
-    /// services with no per-operation grants behave exactly as before.
-    /// </summary>
-    /// <param name="context">The request context.</param>
-    /// <param name="resource">The resource (layer) being accessed.</param>
-    /// <param name="service">The owning service, when known.</param>
-    /// <param name="scope">The requested access scope (read/write).</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>An error result when denied, otherwise <see langword="null"/>.</returns>
     public static Task<IResult?> RequireResourceAccessAsync(
         HttpContext context,
         MetadataV2Resource resource,
@@ -155,22 +126,6 @@ internal static class AccessPolicyHelpers
             service,
             cancellationToken);
 
-    /// <summary>
-    /// Operation-aware resource access check (#1376). Routes the request through
-    /// the canonical per-operation permission resolver for the supplied
-    /// <see cref="AuthorizationOperation"/>, then falls back to the coarse
-    /// <see cref="AccessPolicy"/> seam (using the scope implied by the operation)
-    /// when no grant matches. This is the shared seam every protocol adapter
-    /// re-wires to so a per-operation grant (e.g. allow <c>query</c> but deny
-    /// <c>update</c>) is honored consistently across surfaces while services with
-    /// no per-operation grants keep their current coarse behavior.
-    /// </summary>
-    /// <param name="context">The request context.</param>
-    /// <param name="resource">The resource (layer) being accessed.</param>
-    /// <param name="operation">The canonical operation being authorized.</param>
-    /// <param name="service">The owning service, when known.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>An error result when denied, otherwise <see langword="null"/>.</returns>
     public static async Task<IResult?> RequireResourceAccessAsync(
         HttpContext context,
         MetadataV2Resource resource,
@@ -194,17 +149,6 @@ internal static class AccessPolicyHelpers
         return CreateAccessDeniedResult(context, decision);
     }
 
-    /// <summary>
-    /// Service-level operation-aware access check (#1376). Mirrors
-    /// <see cref="RequireResourceAccessAsync(HttpContext, MetadataV2Resource, AuthorizationOperation, MetadataV2Service?, CancellationToken)"/>
-    /// for service-scoped operations (no specific layer), consulting the resolver
-    /// with a wildcard layer then falling back to the coarse service policy.
-    /// </summary>
-    /// <param name="context">The request context.</param>
-    /// <param name="service">The service being accessed.</param>
-    /// <param name="operation">The canonical operation being authorized.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>An error result when denied, otherwise <see langword="null"/>.</returns>
     public static async Task<IResult?> RequireServiceAccessAsync(
         HttpContext context,
         MetadataV2Service service,
@@ -251,19 +195,6 @@ internal static class AccessPolicyHelpers
             context.RequestServices, context.User, null, service, ScopeForOperation(operation), operation));
     }
 
-    /// <summary>
-    /// Operation-aware resource access evaluation that returns an
-    /// <see cref="AccessDecision"/> (rather than an <see cref="IResult"/>) for
-    /// non-HTTP adapters such as gRPC (#1376). Consults the resolver first and
-    /// reports the matched grant as an allowed decision; otherwise it falls back
-    /// to the coarse <see cref="AccessPolicy"/> evaluation for the implied scope.
-    /// </summary>
-    /// <param name="context">The request context.</param>
-    /// <param name="resource">The resource (layer) being accessed.</param>
-    /// <param name="service">The owning service, when known.</param>
-    /// <param name="operation">The canonical operation being authorized.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The access decision.</returns>
     public static Task<AccessDecision> EvaluateResourceAccessAsync(
         HttpContext context,
         MetadataV2Resource resource,
@@ -285,31 +216,7 @@ internal static class AccessPolicyHelpers
             requestCache: context.Items);
     }
 
-    /// <summary>
-    /// The single, request-context-free implementation of the resource access decision:
-    /// tenant scope, then the per-operation RBAC grant resolver, then the coarse
-    /// <see cref="AccessPolicy"/> fallback. A matching grant still has to pass an explicit
-    /// role list (#6358). Every HTTP helper above delegates here, and
-    /// so does the principal-based <see cref="LayerAccessAuthorizer"/> used by the
-    /// geoprocessing submit pipeline (honua-server#3046) — so the asynchronous job
-    /// surface and the synchronous query surfaces cannot drift apart.
-    /// </summary>
-    /// <param name="services">Service provider used to resolve the RBAC seams.</param>
-    /// <param name="principal">The principal the decision is evaluated against.</param>
-    /// <param name="tenantId">The tenant the request resolved to, when applicable.</param>
-    /// <param name="applyTenantScope">
-    /// Whether tenant visibility gates the decision. HTTP callers always pass
-    /// <see langword="true"/>. Server-internal callers with no request tenant rail pass
-    /// <see langword="false"/> so tenant-scoped resources are not universally denied.
-    /// </param>
-    /// <param name="resource">The resource (layer) being accessed.</param>
-    /// <param name="service">The owning service, when known.</param>
-    /// <param name="operation">The canonical operation being authorized.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <param name="requestCache">
-    /// Optional request/operation-local cache shared by repeated candidate evaluations.
-    /// </param>
-    /// <returns>The access decision.</returns>
+    // HTTP and geoprocessing submit share this decision. applyTenantScope false is the tenantless exception; leaving it true with no tenant denies every tenant-scoped resource.
     internal static async Task<AccessDecision> EvaluateResourceAccessCoreAsync(
         IServiceProvider services,
         ClaimsPrincipal principal,
@@ -372,26 +279,11 @@ internal static class AccessPolicyHelpers
             services, principal, resource.AccessPolicy, service, ScopeForOperation(operation), operation);
     }
 
-    /// <summary>
-    /// Maps an <see cref="AccessScope"/> to the canonical read/write operation it
-    /// implies. Read scope maps to <see cref="AuthorizationOperation.Query"/> and
-    /// write scope to <see cref="AuthorizationOperation.Update"/>; callers that
-    /// distinguish insert/delete/export/metadata should use the operation-aware
-    /// overloads directly.
-    /// </summary>
-    /// <param name="scope">The coarse access scope.</param>
-    /// <returns>The implied canonical operation.</returns>
     public static AuthorizationOperation DefaultOperationForScope(AccessScope scope)
         => scope == AccessScope.Write
             ? AuthorizationOperation.Update
             : AuthorizationOperation.Query;
 
-    /// <summary>
-    /// Maps a canonical operation back to the coarse <see cref="AccessScope"/>
-    /// used by the legacy <see cref="AccessPolicy"/> fallback. Mutating operations
-    /// (insert/update/delete/admin) require write scope; read-style operations
-    /// (query/read/metadata/export) require read scope.
-    /// </summary>
     private static AccessScope ScopeForOperation(AuthorizationOperation operation) => operation switch
     {
         AuthorizationOperation.Insert => AccessScope.Write,
@@ -423,11 +315,6 @@ internal static class AccessPolicyHelpers
             : AccessDecision.Forbidden("API key permission does not grant access to this resource.");
     }
 
-    /// <summary>
-    /// Consults the per-operation permission resolver for the supplied
-    /// <c>(service, layer, operation)</c> tuple, mapping the request principal's
-    /// claims to roles. Returns whether an explicit grant allows the request.
-    /// </summary>
     private static Task<GrantEvaluation> EvaluateGrantAsync(
         HttpContext context,
         string serviceName,
@@ -443,10 +330,6 @@ internal static class AccessPolicyHelpers
             cancellationToken,
             context.Items);
 
-    /// <summary>
-    /// Request-context-free grant evaluation shared by the HTTP helpers and the
-    /// principal-based <see cref="LayerAccessAuthorizer"/> (honua-server#3046).
-    /// </summary>
     private static async Task<GrantEvaluation> EvaluateGrantCoreAsync(
         IServiceProvider services,
         ClaimsPrincipal principal,
@@ -527,11 +410,7 @@ internal static class AccessPolicyHelpers
         public static GrantEvaluation Allowed(PermissionGrant? grant) => new(true, grant);
     }
 
-    /// <summary>
-    /// True when the grant is broad enough that a layer role list must still be
-    /// applied. Built-in viewer and editor grants are <c>*/*</c>. A grant that names
-    /// both the service and the layer is an explicit allow.
-    /// </summary>
+    // A broad built-in viewer or editor grant still has to satisfy the layer role list; a grant that names both service and layer is an explicit allow.
     private static bool NarrowsWithRoleList(PermissionGrant? grant)
         => grant is null
             || string.Equals(grant.Service, "*", StringComparison.Ordinal)
@@ -543,14 +422,6 @@ internal static class AccessPolicyHelpers
         AccessScope scope = AccessScope.Read)
         => CreateAccessDeniedResult(context, EvaluateServiceAccess(context, service, scope));
 
-    /// <summary>
-    /// Evaluates a resolved service, including tenant and scoped-key targets, while
-    /// leaving protocol-specific serialization of a denial to the caller.
-    /// </summary>
-    /// <param name="context">The current request.</param>
-    /// <param name="service">The resolved target service.</param>
-    /// <param name="scope">The requested read or write scope.</param>
-    /// <returns>The tenant- and target-aware access decision.</returns>
     public static AccessDecision EvaluateServiceAccess(
         HttpContext context,
         MetadataV2Service service,
@@ -573,20 +444,7 @@ internal static class AccessPolicyHelpers
         AccessScope scope = AccessScope.Read)
         => EvaluateResourceAccess(context, resource, service, scope).IsAllowed;
 
-    /// <summary>
-    /// Tenant-aware sibling of <see cref="EvaluateAccess"/> for callers that hold the
-    /// resolved <see cref="MetadataV2Resource"/>/<see cref="MetadataV2Service"/> pair
-    /// (#1580). Resources scoped to another tenant evaluate to a forbidden decision
-    /// before the coarse <see cref="AccessPolicy"/> seam runs, so enumeration surfaces
-    /// (collection lists, capability documents) hide foreign-tenant entries the same
-    /// way the per-item validators do. Prefer this over raw
-    /// <see cref="EvaluateAccess"/> whenever the metadata entities are available.
-    /// </summary>
-    /// <param name="context">The request context.</param>
-    /// <param name="resource">The resource (layer) being accessed.</param>
-    /// <param name="service">The owning service, when known.</param>
-    /// <param name="scope">The requested access scope.</param>
-    /// <returns>The access decision.</returns>
+    // A foreign-tenant resource is forbidden before the coarse seam so list surfaces hide it the same way an item check does.
     public static AccessDecision EvaluateResourceAccess(
         HttpContext context,
         MetadataV2Resource resource,
@@ -654,20 +512,6 @@ internal static class AccessPolicyHelpers
             : AccessDecision.Allowed();
     }
 
-    /// <summary>
-    /// Resolver-aware accessibility predicate (#1376). Consults the canonical
-    /// per-operation permission resolver for the supplied operation first; when no
-    /// grant matches it falls back to the coarse <see cref="AccessPolicy"/>
-    /// evaluation, so visibility filtering (e.g. WFS GetFeature published types)
-    /// honors per-operation grants that an explicit role list also admits, while ungranted
-    /// services behave as before.
-    /// </summary>
-    /// <param name="context">The request context.</param>
-    /// <param name="resource">The resource (layer) being accessed.</param>
-    /// <param name="service">The owning service, when known.</param>
-    /// <param name="operation">The canonical operation being authorized.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns><see langword="true"/> when the resource is accessible.</returns>
     public static async Task<bool> IsResourceAccessibleAsync(
         HttpContext context,
         MetadataV2Resource resource,
@@ -712,21 +556,6 @@ internal static class AccessPolicyHelpers
         return evaluator.Evaluate(AnonymousPrincipal, null, service.AccessPolicy, scope).IsAllowed;
     }
 
-    /// <summary>
-    /// Coarse pre-body mutating-operation gate for <c>applyEdits</c>-style endpoints
-    /// (BH2-012). Returns <see langword="null"/> when the principal holds any one of
-    /// <see cref="AuthorizationOperation.Update"/>,
-    /// <see cref="AuthorizationOperation.Insert"/>, or
-    /// <see cref="AuthorizationOperation.Delete"/> access on the resource, so a
-    /// Delete-only or Insert-only grant holder is not rejected by the default Update
-    /// check before the request body has been inspected for edit types. The per-type
-    /// checks that follow after body inspection remain in place.
-    /// </summary>
-    /// <param name="context">The request context.</param>
-    /// <param name="resource">The resource (layer) being accessed.</param>
-    /// <param name="service">The owning service, when known.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>An error result when all three mutating operations are denied, otherwise <see langword="null"/>.</returns>
     public static async Task<IResult?> RequireAnyMutatingOperationAccessAsync(
         HttpContext context,
         MetadataV2Resource resource,
@@ -757,11 +586,6 @@ internal static class AccessPolicyHelpers
         return updateError;
     }
 
-    /// <summary>
-    /// Projects visible resources using the canonical operation resolver and returns
-    /// the authentication/authorization error when every candidate is denied.
-    /// Evaluation and projection share one decision per resource.
-    /// </summary>
     public static async Task<(T[] Resources, IResult? Error)> FilterAccessibleResourcesAsync<T>(
         HttpContext context,
         IEnumerable<T> candidates,
@@ -793,16 +617,6 @@ internal static class AccessPolicyHelpers
             : null);
     }
 
-    /// <summary>
-    /// Resolves the canonical per-operation decision (#1376) once for each supplied resource so
-    /// synchronous layer selection shares it with the async handlers (#4783).
-    /// </summary>
-    /// <param name="context">The request context.</param>
-    /// <param name="resources">The resources the request may touch.</param>
-    /// <param name="service">The owning service, when known.</param>
-    /// <param name="operation">The canonical operation being authorized.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The per-resource decisions.</returns>
     public static Task<ResourceAccessSet> EvaluateResourceAccessSetAsync(
         HttpContext context,
         IEnumerable<MetadataV2Resource> resources,
@@ -811,18 +625,6 @@ internal static class AccessPolicyHelpers
         CancellationToken cancellationToken = default)
         => EvaluateResourceAccessSetAsync(context, resources, service, [operation], cancellationToken);
 
-    /// <summary>
-    /// Resolves one decision per resource that allows the resource when the canonical resolver or
-    /// the coarse policy admits ANY of <paramref name="operations"/> (for example, a replica write
-    /// admitted by an update, insert or delete grant). A denied resource keeps the decision for the
-    /// first operation, which also selects the coarse fallback scope.
-    /// </summary>
-    /// <param name="context">The request context.</param>
-    /// <param name="resources">The resources the request may touch.</param>
-    /// <param name="service">The owning service, when known.</param>
-    /// <param name="operations">The canonical operations, any of which authorizes a resource.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The per-resource decisions.</returns>
     public static async Task<ResourceAccessSet> EvaluateResourceAccessSetAsync(
         HttpContext context,
         IEnumerable<MetadataV2Resource> resources,
@@ -860,16 +662,6 @@ internal static class AccessPolicyHelpers
         return new ResourceAccessSet(context, service, ScopeForOperation(operations[0]), decisions);
     }
 
-    /// <summary>
-    /// Operation-aware counterpart of <see cref="RequireAnyResourceAccess"/>: allows the request
-    /// when the canonical resolver or the coarse policy admits any of the resources (#4783).
-    /// </summary>
-    /// <param name="context">The request context.</param>
-    /// <param name="resources">The candidate resources.</param>
-    /// <param name="service">The owning service, when known.</param>
-    /// <param name="operation">The canonical operation being authorized.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>An error result when every resource is denied, otherwise <see langword="null"/>.</returns>
     public static async Task<IResult?> RequireAnyResourceAccessAsync(
         HttpContext context,
         IEnumerable<MetadataV2Resource> resources,

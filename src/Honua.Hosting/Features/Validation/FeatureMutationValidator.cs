@@ -33,12 +33,6 @@ internal sealed class FeatureMutationValidator
         return resource.ValidateAttributesV2(attributes, mode, isUpdate);
     }
 
-    /// <summary>
-    /// Validates (and, in repair mode, repairs) a mutation geometry and enforces the layer's
-    /// declared geometry type on the <em>post-repair</em> geometry. This is the shared write
-    /// pipeline entry point for every protocol adapter (FeatureServer, OGC API Features,
-    /// WFS-T, OData), so the layer stays geometry-type homogeneous regardless of the edit surface.
-    /// </summary>
     public Task<GeometryMutationResult> ValidateGeometryAsync(
         MetadataV2Resource resource,
         byte[]? geometry,
@@ -53,12 +47,7 @@ internal sealed class FeatureMutationValidator
             cancellationToken);
     }
 
-    /// <summary>
-    /// Validates (and, in repair mode, repairs) a mutation geometry and enforces
-    /// <paramref name="layerGeometryType"/> on the post-repair geometry. Pass
-    /// <see cref="MetadataV2GeometryType.None"/> only when the geometry was not supplied by
-    /// the request (for example an existing geometry carried through a property-only update).
-    /// </summary>
+    // None does not constrain the submitted geometry's shape.
     public Task<GeometryMutationResult> ValidateGeometryAsync(
         byte[]? geometry,
         MetadataV2GeometryType layerGeometryType,
@@ -112,10 +101,6 @@ internal sealed class FeatureMutationValidator
             validationResult.GeometryTypeChanged);
     }
 
-    /// <summary>
-    /// Resolves the declared geometry type of a resource; resources without spatial metadata
-    /// are unconstrained.
-    /// </summary>
     public static MetadataV2GeometryType ResolveLayerGeometryType(MetadataV2Resource resource)
         => resource.Spatial?.GeometryType ?? MetadataV2GeometryType.None;
 
@@ -148,13 +133,6 @@ internal sealed class FeatureMutationValidator
     }
 }
 
-/// <summary>
-/// Enforces a layer's declared geometry type family on a (possibly repaired) WKB geometry.
-/// Single- and multi-part forms of the same family are interchangeable; None, Mixed and
-/// GeometryCollection layers are unconstrained. When repair changed the geometry type into a
-/// collection, the components of the layer's family are extracted only when that is
-/// unambiguous (no component of a higher dimension than the layer's family).
-/// </summary>
 internal static class GeometryTypeEnforcement
 {
     public static GeometryMutationResult Enforce(
@@ -379,9 +357,6 @@ internal sealed record GeometryMutationResult
         => new() { IsValid = false, ErrorMessage = errorMessage };
 }
 
-/// <summary>
-/// Metadata v2 attribute-validation extensions for mutation adapters.
-/// </summary>
 internal static class MetadataV2AttributeValidation
 {
     public static ValidationResult<ImmutableDictionary<string, object?>> ValidateAttributesV2(

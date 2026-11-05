@@ -6,21 +6,12 @@ using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Infrastructure.Stac;
 
-/// <summary>
-/// Resolves the storage field that carries a public STAC item id.
-/// A non-unique column merely named <c>id</c> is not an item identity.
-/// </summary>
 internal static class StacItemIdentity
 {
     internal static readonly string[] CanonicalNames = ["stac_id", "item_id", "id"];
 
     private static readonly string[] UniqueRoles = ["id.primary", "id.global", "id.unique"];
 
-    /// <summary>
-    /// The schema field that stores the public item id, when one is declared.
-    /// <see cref="StacItemIdSource.IsDeclaredIdentity"/> is false when the field is only
-    /// the primary key used after no unique canonical column exists.
-    /// </summary>
     internal readonly record struct StacItemIdSource(MetadataV2Field? Field, bool IsDeclaredIdentity);
 
     internal static StacItemIdSource Resolve(MetadataV2Resource? resource)

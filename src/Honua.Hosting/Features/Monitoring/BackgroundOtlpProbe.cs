@@ -8,74 +8,28 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Monitoring;
 
-/// <summary>
-/// Runtime reachability state observed by <see cref="BackgroundOtlpProbe"/>.
-/// </summary>
 internal enum OtlpProbeState
 {
-    /// <summary>
-    /// No probe has executed yet (typically before the first interval elapses).
-    /// </summary>
     Unknown = 0,
 
-    /// <summary>
-    /// Probe is disabled because no OTLP endpoint is configured.
-    /// </summary>
     Disabled = 1,
 
-    /// <summary>
-    /// OTLP endpoint responded with a non-auth, non-failure response — exporter is reachable.
-    /// </summary>
     Healthy = 2,
 
-    /// <summary>
-    /// OTLP endpoint did not respond (DNS failure, connection refused, timeout).
-    /// </summary>
     Unreachable = 3,
 
-    /// <summary>
-    /// OTLP endpoint returned 401 or 403.
-    /// </summary>
     AuthFailure = 4,
 }
 
-/// <summary>
-/// Snapshot of probe state, surfaced through the admin telemetry status endpoint.
-/// </summary>
 internal sealed record OtlpProbeSnapshot
 {
-    /// <summary>
-    /// Observed state at <see cref="ProbedAt"/>.
-    /// </summary>
     public required OtlpProbeState State { get; init; }
 
-    /// <summary>
-    /// When the probe last attempted contact.
-    /// </summary>
     public DateTimeOffset? ProbedAt { get; init; }
 
-    /// <summary>
-    /// Last sanitized error message, when state indicates a failure.
-    /// </summary>
     public string? LastError { get; init; }
 }
 
-/// <summary>
-/// Background probe that periodically validates OTLP endpoint reachability so
-/// the admin telemetry status endpoint can distinguish <c>unreachable</c> and
-/// <c>authFailure</c> from configured-but-unverified states (#1168).
-/// </summary>
-/// <remarks>
-/// <para>
-/// The probe stays off the request path — handlers read the cached snapshot
-/// only. Probe interval defaults to 60 seconds and never blocks startup.
-/// </para>
-/// <para>
-/// The probe is opt-in: when no OTLP endpoint is configured, the state stays
-/// <see cref="OtlpProbeState.Disabled"/> and no outbound traffic is generated.
-/// This is intentional so air-gapped deployments do not accumulate probe noise.
-/// </para>
-/// </remarks>
 internal sealed class BackgroundOtlpProbe : BackgroundService
 {
     internal static readonly TimeSpan DefaultInterval = TimeSpan.FromSeconds(60);
@@ -112,10 +66,6 @@ internal sealed class BackgroundOtlpProbe : BackgroundService
         _interval = interval > TimeSpan.Zero ? interval : DefaultInterval;
     }
 
-    /// <summary>
-    /// HTTP client name used for the probe so the configured handler / retry policy
-    /// can be customized in DI without touching this class.
-    /// </summary>
     public const string HttpClientName = "honua-otlp-probe";
 
     public OtlpProbeSnapshot Snapshot => Volatile.Read(ref _snapshot);

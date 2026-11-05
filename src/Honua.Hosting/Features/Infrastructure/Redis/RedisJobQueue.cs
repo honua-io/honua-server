@@ -7,9 +7,6 @@ using StackExchange.Redis;
 
 namespace Honua.Infrastructure.Redis;
 
-/// <summary>
-/// Redis-based distributed job queue with in-memory fallback support.
-/// </summary>
 internal sealed partial class RedisJobQueue : RedisServiceBase, IRedisJobQueue
 {
     private const int MaxFallbackQueueSize = 10000;
@@ -125,9 +122,6 @@ internal sealed partial class RedisJobQueue : RedisServiceBase, IRedisJobQueue
         return null;
     }
 
-    /// <summary>
-    /// Dequeues a job using default timeout (implements IRedisJobQueue interface).
-    /// </summary>
     public Task<string?> DequeueAsync(CancellationToken cancellationToken = default)
     {
         return DequeueAsync(TimeSpan.FromSeconds(30), cancellationToken);

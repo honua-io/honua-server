@@ -10,25 +10,8 @@ using Polly.CircuitBreaker;
 
 namespace Honua.Infrastructure.Models;
 
-/// <summary>
-/// Centralized exception-to-error mapper that normalizes exceptions to ServiceError
-/// with consistent status codes, safe messages, and optional debug details.
-/// </summary>
-/// <remarks>
-/// This mapper ensures:
-/// - Consistent HTTP status code mapping across all protocols
-/// - Message sanitization to prevent information leakage
-/// - Environment-aware debug detail exposure
-/// - Support for domain-specific exceptions with safe messages
-/// </remarks>
 internal static class ExceptionMapper
 {
-    /// <summary>
-    /// Maps an exception to a standardized error response.
-    /// </summary>
-    /// <param name="exception">The exception to map.</param>
-    /// <param name="includeDebugDetails">Whether to include debug details (typically only in Development).</param>
-    /// <returns>A tuple containing HTTP status code, title, safe detail message, and optional debug details.</returns>
     public static ExceptionMappingResult Map(Exception exception, bool includeDebugDetails = false)
     {
         var (statusCode, title, safeDetail, details) = MapExceptionCore(exception);
@@ -46,12 +29,6 @@ internal static class ExceptionMapper
         return new ExceptionMappingResult(statusCode, title, safeDetail, details, debugInfo);
     }
 
-    /// <summary>
-    /// Converts an exception to a ServiceError with appropriate sanitization.
-    /// </summary>
-    /// <param name="exception">The exception to convert.</param>
-    /// <param name="includeDebugDetails">Whether to include debug details.</param>
-    /// <returns>A ServiceError instance.</returns>
     public static ServiceError ToServiceError(Exception exception, bool includeDebugDetails = false)
     {
         var result = Map(exception, includeDebugDetails);
@@ -232,15 +209,7 @@ internal static class ExceptionMapper
         };
     }
 
-    /// <summary>
-    /// Detects exceptions raised when a request body or form value exceeds the configured
-    /// size limits. These are thrown by the ASP.NET Core form/body readers as
-    /// <see cref="BadHttpRequestException"/> (HTTP 413, "Request body too large") or
-    /// <see cref="InvalidDataException"/> ("Form key length limit ... or value length limit
-    /// ... exceeded.", "Form value count limit ... exceeded.", "Multipart body length limit
-    /// ... exceeded."). They are mapped to a clean 413 envelope without leaking the
-    /// internal limit values embedded in the framework message.
-    /// </summary>
+    // A framework body-limit exception is mapped to 413 without echoing the internal limit values in the framework message.
     private static bool IsOversizedRequestException(Exception exception)
     {
         // Request body limit (MaxRequestBodySize) surfaces as BadHttpRequestException with
@@ -265,9 +234,6 @@ internal static class ExceptionMapper
         return false;
     }
 
-    /// <summary>
-    /// Determines if an exception type has messages that are safe to expose.
-    /// </summary>
     private static bool IsSafeException(Exception exception)
     {
         return exception is ValidationException
@@ -276,10 +242,6 @@ internal static class ExceptionMapper
             || exception is ServiceUnavailableException;
     }
 
-    /// <summary>
-    /// Detects authentication failures surfaced by IdentityModel/OpenIdConnect as InvalidOperationException
-    /// (for example "IDX20803"), and maps them to 401 instead of generic server errors.
-    /// </summary>
     private static bool IsAuthenticationInvalidOperation(InvalidOperationException ex)
     {
         if (string.IsNullOrWhiteSpace(ex.Message))
@@ -290,10 +252,6 @@ internal static class ExceptionMapper
         return ex.Message.StartsWith("IDX", StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>
-    /// Checks if an ArgumentException is related to query parameters
-    /// and has a message that can be partially exposed.
-    /// </summary>
     private static bool IsQueryParameterException(ArgumentException ex)
     {
         // Check for common query parameter validation patterns
@@ -307,9 +265,6 @@ internal static class ExceptionMapper
             || message.Contains("datetime", StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>
-    /// Sanitizes query parameter error messages to expose only safe information.
-    /// </summary>
     private static string SanitizeQueryParameterMessage(string message)
     {
         // Extract just the error type without exposing internal details
@@ -375,14 +330,6 @@ internal static class ExceptionMapper
     }
 }
 
-/// <summary>
-/// Result of mapping an exception to an error response.
-/// </summary>
-/// <param name="StatusCode">HTTP status code.</param>
-/// <param name="Title">Error title (e.g., "Bad Request", "Not Found").</param>
-/// <param name="Detail">Safe detail message to expose to clients.</param>
-/// <param name="Details">Additional details that are safe to expose.</param>
-/// <param name="DebugInfo">Debug information only shown in development mode.</param>
 internal readonly record struct ExceptionMappingResult(
     int StatusCode,
     string Title,

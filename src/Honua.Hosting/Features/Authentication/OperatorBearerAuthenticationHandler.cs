@@ -10,18 +10,7 @@ using Microsoft.Net.Http.Headers;
 
 namespace Honua.Infrastructure.Authentication;
 
-/// <summary>
-/// Validates the console-consumable operator bearer (#2258, Option C) on the
-/// admin/control-plane request path and projects it into the same principal the
-/// cookie session produces, so RBAC resolves identically (see
-/// <see cref="AdminAuthClaimsProjector"/>).
-/// </summary>
-/// <remarks>
-/// Fail-closed: when the feature is disabled or the request carries no bearer the
-/// handler returns <see cref="AuthenticateResult.NoResult"/> (other schemes may run);
-/// when a bearer is present but fails signature/issuer/audience/lifetime validation
-/// the handler fails so the request is never treated as authenticated.
-/// </remarks>
+// A missing bearer or a disabled feature returns no result so other schemes can run; a bearer that fails validation fails the request.
 internal sealed class OperatorBearerAuthenticationHandler(
     IOptionsMonitor<AuthenticationSchemeOptions> options,
     ILoggerFactory logger,
@@ -74,14 +63,7 @@ internal sealed class OperatorBearerAuthenticationHandler(
         }
     }
 
-    /// <summary>
-    /// Sets the 401 challenge status without writing a body. The admin authorization
-    /// policy lists multiple authentication schemes (composite, client certificate,
-    /// operator bearer), and ASP.NET Core challenges each one in turn on an auth
-    /// failure. A preceding scheme (e.g. client certificate) may already have written
-    /// a problem-details response, so this guards <see cref="HttpResponse.HasStarted"/>
-    /// before touching the status code to avoid "the response has already started".
-    /// </summary>
+    // Challenge and forbidden handlers guard HasStarted because ASP.NET challenges each scheme in turn and a preceding scheme may already have written the response.
     protected override Task HandleChallengeAsync(AuthenticationProperties properties)
     {
         if (Response.HasStarted)
@@ -93,11 +75,6 @@ internal sealed class OperatorBearerAuthenticationHandler(
         return Task.CompletedTask;
     }
 
-    /// <summary>
-    /// Sets the 403 forbidden status without writing a body. See
-    /// <see cref="HandleChallengeAsync"/> for why <see cref="HttpResponse.HasStarted"/>
-    /// is guarded before the status code is set.
-    /// </summary>
     protected override Task HandleForbiddenAsync(AuthenticationProperties properties)
     {
         if (Response.HasStarted)

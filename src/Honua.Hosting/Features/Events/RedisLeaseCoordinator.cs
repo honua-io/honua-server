@@ -5,9 +5,6 @@ using StackExchange.Redis;
 
 namespace Honua.Infrastructure.Events;
 
-/// <summary>
-/// Best-effort Redis-backed lease coordinator for single-writer background dispatchers.
-/// </summary>
 internal sealed class RedisLeaseCoordinator(
     IConnectionMultiplexer? redis,
     string leaseKey,

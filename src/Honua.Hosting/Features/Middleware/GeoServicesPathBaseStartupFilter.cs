@@ -6,9 +6,6 @@ using Microsoft.AspNetCore.Hosting;
 
 namespace Honua.Infrastructure.Middleware;
 
-/// <summary>
-/// Accepts the conventional ArcGIS application prefix before implicit endpoint routing.
-/// </summary>
 internal sealed class GeoServicesPathBaseStartupFilter : IStartupFilter
 {
     public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next)

@@ -6,42 +6,7 @@ using Honua.Core.Features.AuditLog.Abstractions;
 
 namespace Honua.Infrastructure.Middleware;
 
-/// <summary>
-/// Default, data-driven implementation of <see cref="IAuditActionResolver"/>.
-/// Encodes the audit coverage matrix
-/// (<c>docs/internal/operator/audit-coverage-matrix.md</c>) so that audit emission stays
-/// middleware-driven instead of being scattered across endpoint handlers.
-/// </summary>
-/// <remarks>
-/// <para>
-/// Resolution proceeds in two stages so the matrix stays terse:
-/// </para>
-/// <list type="number">
-/// <item>
-/// <description>
-/// Exact, named routes for security-sensitive authentication operations
-/// (login, token refresh) are matched against an explicit table keyed by
-/// <c>"METHOD routePattern"</c>.
-/// </description>
-/// </item>
-/// <item>
-/// <description>
-/// Any remaining mutating request (<c>POST</c>/<c>PUT</c>/<c>PATCH</c>/<c>DELETE</c>)
-/// whose route falls under the admin control-plane prefix
-/// (<c>/api/v{version}/admin</c>) is classified as an administrative action,
-/// so the entire admin surface is covered without enumerating every endpoint.
-/// </description>
-/// </item>
-/// </list>
-/// <para>
-/// Destructive feature writes (single deletes and bulk/transactional edits) are
-/// deliberately <i>not</i> resolved here. Because protocols such as WFS-T and
-/// gRPC dispatch through a single endpoint where the route cannot reveal the
-/// operation, those events are emitted once at the shared edit-pipeline boundary
-/// (the <c>IFeatureWriter</c> audit decorator) so every protocol adapter is
-/// covered uniformly.
-/// </para>
-/// </remarks>
+// Named routes here are the code form of docs/internal/operator/audit-coverage-matrix.md, so a route change has to update that matrix.
 internal sealed class DefaultAuditActionResolver : IAuditActionResolver
 {
     private const string AdminRoutePrefix = "/api/v{version:apiversion}/admin";

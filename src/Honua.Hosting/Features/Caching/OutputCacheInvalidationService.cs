@@ -12,9 +12,6 @@ using Microsoft.AspNetCore.OutputCaching;
 
 namespace Honua.Infrastructure.Caching;
 
-/// <summary>
-/// Centralized output cache invalidation for data mutations.
-/// </summary>
 internal sealed partial class OutputCacheInvalidationService : IQueryResponseCacheInvalidator
 {
     private readonly IOutputCacheStore? _cacheStore;
@@ -117,9 +114,6 @@ internal sealed partial class OutputCacheInvalidationService : IQueryResponseCac
             EvictResponseCacheAsync(responsePatterns, cancellationToken)).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Bumps the FeatureServer, OGC, and OData query-response namespaces.
-    /// </summary>
     public Task InvalidateQueryResponsesAsync(CancellationToken cancellationToken = default)
         => EvictResponseCacheAsync(
             [
@@ -134,13 +128,6 @@ internal sealed partial class OutputCacheInvalidationService : IQueryResponseCac
         return EvictTagsAsync(["ogc-metadata", "ogc-tiles", "ogc-maps"], cancellationToken);
     }
 
-    /// <summary>
-    /// Evicts hosted scene serving entries from the output cache after a
-    /// scene-registry mutation (register/update/deactivate). Removes the
-    /// per-scene tag plus the broader <c>scene</c> tag so anonymous cached
-    /// tilesets and assets cannot survive an access-flag or deactivation
-    /// change.
-    /// </summary>
     public Task InvalidateSceneAsync(string? sceneId, CancellationToken cancellationToken)
     {
         var tags = new List<string> { "scene" };

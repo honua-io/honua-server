@@ -12,10 +12,6 @@ using Honua.Core.Features.Infrastructure.Validation;
 
 namespace Honua.Infrastructure.Events;
 
-/// <summary>
-/// Shared webhook delivery logic: HMAC signature, signed HTTP POST, and retry with exponential backoff.
-/// Used by both the feature-change and manifest-approval webhook dispatchers.
-/// </summary>
 internal static partial class WebhookDeliveryHelper
 {
     // A slow webhook consumer must not absorb every outbound socket; 64 covers burst delivery.
@@ -33,16 +29,9 @@ internal static partial class WebhookDeliveryHelper
         return new PinnedDnsConnector(resolver, PinnedConnectionFailures).CreateHandler(MaxConnectionsPerWebhookHost);
     }
 
-    /// <summary>
-    /// Computes an HMAC-SHA256 signature for webhook payloads using the <c>timestamp.payload</c> message format.
-    /// Delegates to <see cref="WebhookSignatureHelper"/> to avoid duplication.
-    /// </summary>
     internal static string ComputeSignature(string secret, string timestamp, string payload)
         => WebhookSignatureHelper.ComputeSignature(secret, timestamp, payload);
 
-    /// <summary>
-    /// Delivers a signed JSON payload to a webhook endpoint with retry and exponential backoff.
-    /// </summary>
     internal static async Task<bool> DeliverWithRetryAsync(
         WebhookDeliveryRequest request,
         IHttpClientFactory httpClientFactory,
@@ -188,58 +177,25 @@ internal static partial class WebhookDeliveryHelper
     private static partial void LogDeliveryException(ILogger logger, string eventId, int attempt, Exception exception);
 }
 
-/// <summary>
-/// Parameters for a webhook delivery attempt.
-/// </summary>
 internal readonly record struct WebhookDeliveryRequest
 {
-    /// <summary>
-    /// Pre-serialized JSON payload.
-    /// </summary>
     public required string Payload { get; init; }
 
-    /// <summary>
-    /// Event identifier used for headers and idempotency.
-    /// </summary>
     public required string EventId { get; init; }
 
-    /// <summary>
-    /// Event timestamp used for signature generation.
-    /// </summary>
     public required DateTimeOffset Timestamp { get; init; }
 
-    /// <summary>
-    /// Target webhook URI.
-    /// </summary>
     public required Uri WebhookUri { get; init; }
 
-    /// <summary>
-    /// HMAC shared secret.
-    /// </summary>
     public required string Secret { get; init; }
 
-    /// <summary>
-    /// Named HTTP client to use for delivery.
-    /// </summary>
     public required string HttpClientName { get; init; }
 
-    /// <summary>
-    /// Maximum delivery attempts.
-    /// </summary>
     public required int MaxAttempts { get; init; }
 
-    /// <summary>
-    /// Base retry delay in milliseconds.
-    /// </summary>
     public required int InitialBackoffMs { get; init; }
 
-    /// <summary>
-    /// Maximum retry delay in milliseconds.
-    /// </summary>
     public required int MaxBackoffMs { get; init; }
 
-    /// <summary>
-    /// Per-request timeout in seconds.
-    /// </summary>
     public required int RequestTimeoutSeconds { get; init; }
 }

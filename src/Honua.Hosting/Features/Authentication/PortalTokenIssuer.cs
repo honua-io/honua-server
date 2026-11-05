@@ -18,12 +18,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Infrastructure.Authentication;
 
-/// <summary>
-/// Distributed-cache backed <see cref="IPortalTokenIssuer"/> mirroring the
-/// <see cref="AdminAuthSessionStore"/> dual-tier storage pattern: an in-memory
-/// tier accelerates the redis round trip while the distributed tier remains
-/// authoritative for multi-node deployments.
-/// </summary>
 internal sealed partial class PortalTokenIssuer(
     IMemoryCache memoryCache,
     ILogger<PortalTokenIssuer> logger,
@@ -47,7 +41,6 @@ internal sealed partial class PortalTokenIssuer(
     private readonly IDistributedCache? _distributedCache = distributedCache;
     private readonly IServiceProvider? _serviceProvider = serviceProvider;
 
-    /// <inheritdoc />
     public async Task<PortalTokenIssuance> IssueAsync(
         PortalTokenIssueRequest request,
         CancellationToken cancellationToken)
@@ -96,7 +89,6 @@ internal sealed partial class PortalTokenIssuer(
         return new PortalTokenIssuance(token, expiresAt);
     }
 
-    /// <inheritdoc />
     public async Task<PortalTokenValidation?> ValidateAsync(
         string token,
         PortalTokenBinding binding,
@@ -112,7 +104,6 @@ internal sealed partial class PortalTokenIssuer(
         return new PortalTokenValidation(principal, record.ExpiresAt);
     }
 
-    /// <inheritdoc />
     public async Task<PortalTokenExchange?> ExchangeAsync(
         PortalTokenExchangeRequest request,
         CancellationToken cancellationToken)
@@ -180,7 +171,6 @@ internal sealed partial class PortalTokenIssuer(
             clientType);
     }
 
-    /// <inheritdoc />
     public async Task<PortalTokenIntrospection?> IntrospectAsync(
         string tokenReference,
         CancellationToken cancellationToken)
@@ -224,7 +214,6 @@ internal sealed partial class PortalTokenIssuer(
             record.ExpiresAt);
     }
 
-    /// <inheritdoc />
     public async Task RevokeAsync(string tokenReference, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(tokenReference))
@@ -243,11 +232,6 @@ internal sealed partial class PortalTokenIssuer(
             .ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Loads the stored record for <paramref name="token"/> when it may be honoured on a request
-    /// observed with <paramref name="binding"/>: active, bound to that request, its tenant still
-    /// entitled and its backing credential still live. Otherwise <see langword="null"/>.
-    /// </summary>
     private async Task<PortalTokenRecord?> RestoreBoundRecordAsync(
         string token,
         PortalTokenBinding binding,
@@ -373,18 +357,7 @@ internal sealed partial class PortalTokenIssuer(
         };
     }
 
-    /// <summary>
-    /// Whether the record's persisted roles may still be honoured.
-    /// </summary>
-    /// <remarks>
-    /// Roles produced under <c>identity.claims-mapping</c> — and roles whose provenance is
-    /// unknown because the record predates the field — are re-checked against the LIVE
-    /// entitlement on every restore. Without this, a portal token minted while the license was
-    /// valid kept satisfying role authorization — including a synthesized <c>admin</c> — for its
-    /// whole lifetime after the entitlement expired, because the restore path never re-runs the
-    /// claims transformation that applies the gate (honua-server#2997 review). Records with no
-    /// mapping provenance are unaffected.
-    /// </remarks>
+    // Roles produced under claims mapping, and roles whose provenance is unknown, are re-checked against the live entitlement on every restore.
     private string[] ResolveRoles(PortalTokenRecord record)
     {
         // false — this issuer stamped it and the roles owe nothing to claims mapping.
@@ -404,16 +377,7 @@ internal sealed partial class PortalTokenIssuer(
             : record.RolesWithoutClaimsMapping ?? [];
     }
 
-    /// <summary>
-    /// Whether the credential this token was minted from is still the live one (SEC-9).
-    /// </summary>
-    /// <remarks>
-    /// Fails closed in both directions. A record with no source predates this binding: its
-    /// provenance is UNKNOWN, so it is refused exactly as unknown claims-mapping provenance is,
-    /// and the client re-authenticates. A source that names a credential but cannot be re-checked
-    /// — no validator is reachable, the store is unavailable — is refused too, because honouring
-    /// it would be honouring the issuance-time snapshot the binding exists to replace.
-    /// </remarks>
+    // A token with no source, or a source that cannot be re-checked, is refused.
     private async ValueTask<bool> SourceCredentialStillValidAsync(
         PortalTokenRecord record,
         CancellationToken cancellationToken)
@@ -437,16 +401,6 @@ internal sealed partial class PortalTokenIssuer(
         return await validator.IsStillValidAsync(source, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Whether a mapping-derived tenant on <paramref name="record"/> is still backed by the live
-    /// <c>identity.claims-mapping</c> entitlement.
-    /// </summary>
-    /// <remarks>
-    /// A token with no tenant has nothing to revalidate. Otherwise the flag is read exactly like
-    /// the roles one: explicit <see langword="false"/> means the tenant came from the provider
-    /// directly and is entitlement-independent; <see langword="true"/> or absent (a record
-    /// written before the field existed) both require the live entitlement.
-    /// </remarks>
     private bool ClaimsMappingTenantAllowed(PortalTokenRecord record)
     {
         if (string.IsNullOrWhiteSpace(record.TenantId) ||
@@ -650,67 +604,27 @@ internal sealed class PortalTokenRecord
 
     public required string[] Roles { get; init; }
 
-    /// <summary>
-    /// Whether <see cref="Roles"/> were produced with <c>identity.claims-mapping</c> active.
-    /// Revalidated on every restore so an expired entitlement cannot keep honouring roles it
-    /// would no longer grant (honua-server#2997 review).
-    /// </summary>
-    /// <remarks>
-    /// NULLABLE on purpose. A record persisted before this field existed deserializes with the
-    /// member absent, and a non-nullable bool would read that as an explicit "these roles do
-    /// not depend on claims mapping" — exactly the claim it cannot support, letting
-    /// pre-upgrade custom-mapped roles (including <c>admin</c>) outlive a later entitlement
-    /// expiry. Absent means UNKNOWN, and unknown fails closed.
-    /// </remarks>
+    // This flag is nullable because a missing value means unknown provenance and fails closed; a default false would let mapped roles outlive the entitlement.
     public bool? RolesRequireClaimsMappingEntitlement { get; init; }
 
-    /// <summary>
-    /// Exact roles that remain valid without <c>identity.claims-mapping</c>. Null means unknown
-    /// legacy provenance and fails closed; an empty array is a known empty fallback.
-    /// </summary>
+    // Null fallback roles mean unknown and stay fail-closed; an empty array is a known empty fallback.
     public string[]? RolesWithoutClaimsMapping { get; init; }
 
-    /// <summary>
-    /// Whether <see cref="TenantId"/> was synthesized by a <c>CustomMappings</c> entry and so
-    /// also depends on <c>identity.claims-mapping</c>. Nullable for the same reason as
-    /// <see cref="RolesRequireClaimsMappingEntitlement"/>: absent means UNKNOWN, which fails
-    /// closed (honua-server#2997 review).
-    /// </summary>
     public bool? TenantRequiresClaimsMappingEntitlement { get; init; }
 
     public required PortalTokenClientType ClientType { get; init; }
 
     public required string BindingValue { get; init; }
 
-    /// <summary>
-    /// When true, a referer-bound token is accepted if the request omits
-    /// <c>Referer</c>. Set only for <c>generateToken</c>. Absent on older records,
-    /// which fails closed and still requires the header.
-    /// </summary>
     public bool AcceptMissingReferer { get; init; }
 
     public required DateTimeOffset ExpiresAt { get; init; }
 
-    /// <summary>
-    /// The credential this token was minted from (SEC-9), re-checked on every restore.
-    /// </summary>
-    /// <remarks>
-    /// NULLABLE on purpose, for the same reason as the claims-mapping provenance flags above:
-    /// a record persisted before this field existed deserializes with the member absent, and
-    /// absent means UNKNOWN provenance, not "no source". Unknown fails closed — such a token
-    /// is refused and its holder re-authenticates — because the alternative is honouring
-    /// exactly the unbounded issuance-time snapshot this field exists to replace. Every record
-    /// written by this build carries a source, including
-    /// <see cref="PortalCredentialSourceKind.None"/> for flows with no separately revocable
-    /// backing credential.
-    /// </remarks>
+    // A missing source means unknown provenance, not the absence of a credential, and unknown fails closed.
     public PortalTokenSourceRecord? Source { get; init; }
 }
 
-/// <summary>
-/// Persisted reference to the credential a token was minted from. Identifiers and
-/// non-reversible version markers only — never credential material.
-/// </summary>
+// The persisted source stores identifiers and non-reversible markers only, never credential material.
 internal sealed class PortalTokenSourceRecord
 {
     public required PortalCredentialSourceKind Kind { get; init; }

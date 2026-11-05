@@ -5,9 +5,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Authentication;
 
-/// <summary>
-/// Default approval evaluator with enriched policy rules for operator actions.
-/// </summary>
 internal sealed class DefaultOperatorApprovalEvaluator(
     IOptions<OperatorApprovalOptions> options,
     IOptions<RbacOptions> rbacOptions,

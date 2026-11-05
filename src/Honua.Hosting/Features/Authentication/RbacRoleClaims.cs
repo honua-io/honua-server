@@ -7,9 +7,6 @@ using Honua.Infrastructure.Licensing;
 
 namespace Honua.Infrastructure.Authentication;
 
-/// <summary>
-/// Resolves the normalized role claims shared by every RBAC authorization surface.
-/// </summary>
 internal static class RbacRoleClaims
 {
     public static List<string> Enumerate(

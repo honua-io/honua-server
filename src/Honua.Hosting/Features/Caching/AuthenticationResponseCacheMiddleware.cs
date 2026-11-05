@@ -3,9 +3,6 @@
 
 namespace Honua.Infrastructure.Caching;
 
-/// <summary>
-/// Applies client cache protection after authentication and response headers are finalized.
-/// </summary>
 internal sealed class AuthenticationResponseCacheMiddleware(RequestDelegate next)
 {
     public Task InvokeAsync(HttpContext context)

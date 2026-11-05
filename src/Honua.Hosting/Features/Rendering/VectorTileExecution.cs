@@ -34,11 +34,6 @@ internal static partial class VectorTileExecution
             TemporalFilter = temporalFilter
         };
 
-    /// <summary>
-    /// Executes vector tile rendering for a storage layer id resolved from metadata v2.
-    /// <c>ITileProvider.GetMvtTileAsync</c> consumes <c>int layerId</c> as its
-    /// storage abstraction, so no further V2 plumbing is needed here.
-    /// </summary>
     // Default tile matrix set for tile serve paths that do not carry an explicit
     // matrix set in their route (e.g. the GeoServices /tiles/{layerId} endpoint).
     private const string DefaultTileMatrixSetId = "WebMercatorQuad";
@@ -101,17 +96,7 @@ internal static partial class VectorTileExecution
         return Results.Bytes(tileData, MvtContentType);
     }
 
-    /// <summary>
-    /// Refuses a tile whose encoded MVT exceeds <c>Limits:Tiles:MaxTileSize</c>, recording the
-    /// measurement an operator needs to size the budget.
-    /// </summary>
-    /// <remarks>
-    /// The refusal is what remains after the PostGIS reader has already retried with stricter
-    /// generalization. It still costs the strictest <c>ST_AsMVT</c> encode, so it is logged.
-    /// Before honua-server#4918 a dense low-zoom tile was encoded and discarded with no log line
-    /// naming the limit. Cached refusals (see <c>TileOutcomeOutputCachePolicy</c>) bypass this
-    /// path, so the line is emitted once per tile per TTL rather than once per request.
-    /// </remarks>
+    // The over-budget refusal is logged because a cached refusal skips this path, so the line is once per tile per cache lifetime.
     private static IResult RefuseOversizedTile(
         HttpContext context,
         Activity? activity,

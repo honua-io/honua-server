@@ -7,26 +7,12 @@ using System.Text.RegularExpressions;
 
 namespace Honua.Infrastructure.Security;
 
-/// <summary>
-/// Security utilities for file upload validation and sanitization.
-/// Provides multi-layer defense against malicious file uploads.
-/// </summary>
 internal static class FileUploadSecurity
 {
-    /// <summary>
-    /// Default maximum file size allowed for validation (100MB).
-    /// </summary>
     public const long DefaultMaxFileSizeBytes = 100 * 1024 * 1024;
 
-    /// <summary>
-    /// Maximum file size for security scanning (10MB).
-    /// Files larger than this should be processed in chunks.
-    /// </summary>
     public const int MaxSecurityScanSize = 10 * 1024 * 1024;
 
-    /// <summary>
-    /// Known malicious file signatures (magic numbers).
-    /// </summary>
     private static readonly FrozenDictionary<string, byte[]> _maliciousSignatures = new Dictionary<string, byte[]>(
         StringComparer.Ordinal)
     {
@@ -39,9 +25,6 @@ internal static class FileUploadSecurity
         ["VBS"] = System.Text.Encoding.ASCII.GetBytes("Dim "),
     }.ToFrozenDictionary(StringComparer.Ordinal);
 
-    /// <summary>
-    /// Allowed MIME types for geospatial data files.
-    /// </summary>
     private static readonly FrozenSet<string> _allowedMimeTypes = new[]
         {
             // Geospatial formats
@@ -78,9 +61,6 @@ internal static class FileUploadSecurity
         }
         .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>
-    /// Allowed file extensions for geospatial data.
-    /// </summary>
     private static readonly FrozenSet<string> _allowedExtensions = new[]
         {
             ".shp", ".dbf", ".shx", ".prj", ".cpg", ".sbn", ".sbx", ".fbn", ".fbx", // Shapefile components
@@ -105,29 +85,17 @@ internal static class FileUploadSecurity
         }
         .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>
-    /// Dangerous file patterns that should be rejected.
-    /// </summary>
     private static readonly Regex _dangerousPatternRegex = new(
         @"\.(exe|com|bat|cmd|scr|pif|vbs|js|jar|app|dmg|deb|rpm|msi|pkg)(\.|$)",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly SearchValues<char> _pathSeparators = SearchValues.Create(new[] { '/', '\\' });
 
-    /// <summary>
-    /// Validates a file upload for security threats.
-    /// </summary>
     public static Task<FileValidationResult> ValidateFileAsync(IFormFile file, CancellationToken cancellationToken = default)
         => ValidateFileAsync(file, null, null, cancellationToken);
 
-    /// <summary>
-    /// Validates a file upload for security threats with a custom size limit.
-    /// </summary>
     public static async Task<FileValidationResult> ValidateFileAsync(IFormFile file, long? maxFileSizeBytes, CancellationToken cancellationToken = default)
         => await ValidateFileAsync(file, maxFileSizeBytes, null, cancellationToken);
 
-    /// <summary>
-    /// Validates a file upload for security threats with custom size and scan limits.
-    /// </summary>
     public static async Task<FileValidationResult> ValidateFileAsync(
         IFormFile file,
         long? maxFileSizeBytes,
@@ -142,9 +110,6 @@ internal static class FileUploadSecurity
             maxScanSizeBytes,
             cancellationToken);
 
-    /// <summary>
-    /// Validates a file source using metadata plus a stream factory.
-    /// </summary>
     public static async Task<FileValidationResult> ValidateFileAsync(
         string fileName,
         string? contentType,
@@ -205,9 +170,6 @@ internal static class FileUploadSecurity
         return FileValidationResult.Valid();
     }
 
-    /// <summary>
-    /// Validates the file name for dangerous patterns and characters.
-    /// </summary>
     public static FileValidationResult ValidateFileName(string fileName)
     {
         if (string.IsNullOrWhiteSpace(fileName))
@@ -252,9 +214,6 @@ internal static class FileUploadSecurity
         return FileValidationResult.Valid();
     }
 
-    /// <summary>
-    /// Validates the file extension against allowed types.
-    /// </summary>
     public static FileValidationResult ValidateFileExtension(string fileName)
     {
         var extension = Path.GetExtension(fileName);
@@ -271,9 +230,6 @@ internal static class FileUploadSecurity
         return FileValidationResult.Valid();
     }
 
-    /// <summary>
-    /// Validates the MIME type against allowed types.
-    /// </summary>
     public static FileValidationResult ValidateMimeType(string? contentType)
     {
         if (string.IsNullOrWhiteSpace(contentType))
@@ -292,9 +248,6 @@ internal static class FileUploadSecurity
         return FileValidationResult.Valid();
     }
 
-    /// <summary>
-    /// Validates the file size against configured limits.
-    /// </summary>
     public static FileValidationResult ValidateFileSize(long fileSize, long maxFileSizeBytes = DefaultMaxFileSizeBytes)
     {
         if (fileSize <= 0)
@@ -310,15 +263,9 @@ internal static class FileUploadSecurity
         return FileValidationResult.Valid();
     }
 
-    /// <summary>
-    /// Validates file content by checking magic numbers and scanning for malicious patterns.
-    /// </summary>
     public static async Task<FileValidationResult> ValidateFileContentAsync(IFormFile file, CancellationToken cancellationToken = default)
         => await ValidateFileContentAsync(file, null, cancellationToken);
 
-    /// <summary>
-    /// Validates file content with a maximum scan size.
-    /// </summary>
     public static async Task<FileValidationResult> ValidateFileContentAsync(
         IFormFile file,
         long? maxScanSizeBytes,
@@ -331,9 +278,6 @@ internal static class FileUploadSecurity
             maxScanSizeBytes,
             cancellationToken);
 
-    /// <summary>
-    /// Validates file content with a stream factory.
-    /// </summary>
     public static async Task<FileValidationResult> ValidateFileContentAsync(
         string fileName,
         string? contentType,
@@ -404,9 +348,6 @@ internal static class FileUploadSecurity
         }
     }
 
-    /// <summary>
-    /// Validates text file content for malicious scripts or code.
-    /// </summary>
     private static async Task<FileValidationResult> ValidateTextFileContentAsync(Stream stream, CancellationToken cancellationToken)
     {
         try
@@ -499,9 +440,6 @@ internal static class FileUploadSecurity
         return Math.Min(fileLength, limit);
     }
 
-    /// <summary>
-    /// Checks if a byte array starts with a specific pattern.
-    /// </summary>
     private static bool ByteArrayStartsWith(ReadOnlySpan<byte> array, ReadOnlySpan<byte> pattern)
     {
         if (array.Length < pattern.Length)
@@ -516,9 +454,6 @@ internal static class FileUploadSecurity
         return true;
     }
 
-    /// <summary>
-    /// Determines if a file extension indicates a text file.
-    /// </summary>
     private static bool IsTextFile(string extension)
     {
         // Script-substring scanning is only meaningful for types a browser would
@@ -543,9 +478,6 @@ internal static class FileUploadSecurity
         return lastSeparator >= 0 ? fileName[(lastSeparator + 1)..] : fileName;
     }
 
-    /// <summary>
-    /// Sanitizes a file name for safe storage.
-    /// </summary>
     public static string SanitizeFileName(string fileName)
     {
         if (string.IsNullOrWhiteSpace(fileName))
@@ -593,9 +525,6 @@ internal static class FileUploadSecurity
     }
 }
 
-/// <summary>
-/// Result of file validation operations.
-/// </summary>
 internal sealed class FileValidationResult
 {
     public bool IsValid { get; private set; }

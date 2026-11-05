@@ -6,9 +6,6 @@ using Honua.Core.Features.Tiles.PMTiles;
 
 namespace Honua.Infrastructure.Progress;
 
-/// <summary>
-/// Progress entry for asynchronous tile lifecycle operations.
-/// </summary>
 internal sealed record TileOperationProgress : IOperationProgress, ICancellableOperationProgress
 {
     public required string JobId { get; init; }

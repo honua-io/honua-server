@@ -8,20 +8,11 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Caching;
 
-/// <summary>
-/// Endpoint filter that adds ETag support to specific endpoints.
-/// This is more efficient than global middleware for endpoints that need ETags.
-/// </summary>
 internal sealed partial class ETagEndpointFilter : IEndpointFilter
 {
     private readonly ILogger<ETagEndpointFilter> _logger;
     private readonly JsonSerializerOptions _serializerOptions;
 
-    /// <summary>
-    /// Creates a new endpoint filter that computes ETags for JSON responses.
-    /// </summary>
-    /// <param name="logger">The logger instance</param>
-    /// <param name="jsonOptions">JSON serialization options used by the HTTP pipeline</param>
     public ETagEndpointFilter(
         ILogger<ETagEndpointFilter> logger,
         IOptions<JsonOptions> jsonOptions)
@@ -31,7 +22,6 @@ internal sealed partial class ETagEndpointFilter : IEndpointFilter
             ?? throw new ArgumentNullException(nameof(jsonOptions));
     }
 
-    /// <inheritdoc />
     public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
     {
         var httpContext = context.HttpContext;
@@ -204,9 +194,6 @@ internal sealed partial class ETagEndpointFilter : IEndpointFilter
         public static partial void ETagComputationFailed(ILogger logger, Exception exception);
     }
 
-    /// <summary>
-    /// Custom result that wraps a JSON result with ETag headers.
-    /// </summary>
     private sealed class ResultWithETag : IResult
     {
         private readonly IResult _originalResult;
@@ -229,9 +216,6 @@ internal sealed partial class ETagEndpointFilter : IEndpointFilter
         }
     }
 
-    /// <summary>
-    /// Custom result for 304 Not Modified responses with ETag.
-    /// </summary>
     private sealed class NotModifiedWithETagResult : IResult
     {
         private readonly string _etag;

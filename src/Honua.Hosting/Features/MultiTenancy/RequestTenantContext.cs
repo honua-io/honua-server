@@ -5,32 +5,18 @@ using Honua.Core.Features.MultiTenancy.Abstractions;
 
 namespace Honua.Infrastructure.MultiTenancy;
 
-/// <summary>
-/// Per-request implementation of <see cref="ITenantContext"/>. Populated by
-/// <c>TenantContextMiddleware</c>; resolved from the request scope by handlers.
-/// </summary>
 internal sealed class RequestTenantContext : ITenantContext
 {
-    /// <inheritdoc />
     public string? TenantId { get; private set; }
 
-    /// <inheritdoc />
     public TenantContextSource Source { get; private set; } = TenantContextSource.Anonymous;
 
-    /// <summary>
-    /// Assigns the resolved tenant id and source. Intended to be called exactly once per
-    /// request by <c>TenantContextMiddleware</c>; subsequent calls overwrite the value
-    /// (useful only for tests).
-    /// </summary>
-    /// <param name="tenantId">The resolved tenant identifier, or <see langword="null"/> if none.</param>
-    /// <param name="source">The resolution source.</param>
     public void Set(string? tenantId, TenantContextSource source)
     {
         TenantId = string.IsNullOrWhiteSpace(tenantId) ? null : tenantId;
         Source = source;
     }
 
-    /// <inheritdoc />
     public bool RequireTenantId(out string tenantId, out string? reason)
     {
         if (!string.IsNullOrWhiteSpace(TenantId))

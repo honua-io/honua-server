@@ -9,14 +9,8 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Services;
 
-/// <summary>
-/// Service for managing temporary file storage for image exports.
-/// </summary>
 public interface ITemporaryFileService
 {
-    /// <summary>
-    /// Stores temporary file data and returns a public URL.
-    /// </summary>
     Task<string> StoreTemporaryFileAsync(
         byte[] data,
         string contentType,
@@ -24,68 +18,35 @@ public interface ITemporaryFileService
         ClaimsPrincipal? principal = null,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Retrieves temporary file data by ID.
-    /// </summary>
     Task<(byte[] data, string contentType)?> GetTemporaryFileAsync(
         string fileId,
         ClaimsPrincipal? principal = null,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Cleans up expired temporary files.
-    /// </summary>
     Task CleanupExpiredFilesAsync(CancellationToken cancellationToken = default);
 }
 
-/// <summary>
-/// Configuration options for temporary file storage.
-/// </summary>
 public sealed class TemporaryFileOptions
 {
     public const string SectionName = "TemporaryFiles";
 
-    /// <summary>
-    /// Base directory for temporary file storage.
-    /// </summary>
     // Safe Path.Combine: both segments are compile-time/runtime-fixed (Path.GetTempPath()
     // and a literal), never user input, so the second segment can never be rooted.
     public string StorageDirectory { get; set; } = Path.Join(Path.GetTempPath(), "honua-temp");
 
-    /// <summary>
-    /// Default expiration time for temporary files.
-    /// </summary>
     public TimeSpan DefaultExpiration { get; set; } = TimeSpan.FromHours(1);
 
-    /// <summary>
-    /// Maximum file size in bytes.
-    /// </summary>
     public long MaxFileSizeBytes { get; set; } = 50 * 1024 * 1024; // 50 MB
 
-    /// <summary>
-    /// Maximum total temporary storage size in bytes across all active files.
-    /// </summary>
     public long MaxTotalStorageBytes { get; set; } = 500 * 1024 * 1024; // 500 MB
 
-    /// <summary>
-    /// Maximum number of active temporary files.
-    /// </summary>
     public int MaxFileCount { get; set; } = 5000;
 
-    /// <summary>
-    /// Suggested retry-after value (seconds) when temporary storage is saturated.
-    /// </summary>
     public int StorageFullRetryAfterSeconds { get; set; } = 60;
 
-    /// <summary>
-    /// Base URL for serving temporary files.
-    /// </summary>
     public string? BaseUrl { get; set; }
 }
 
-/// <summary>
-/// Thrown when temporary file storage limits are exceeded.
-/// </summary>
 internal sealed class TemporaryStorageLimitExceededException : InvalidOperationException
 {
     public TemporaryStorageLimitExceededException(string message, int? retryAfterSeconds = null)
@@ -97,9 +58,6 @@ internal sealed class TemporaryStorageLimitExceededException : InvalidOperationE
     public int? RetryAfterSeconds { get; }
 }
 
-/// <summary>
-/// File system-based implementation of temporary file service.
-/// </summary>
 internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileService, IDisposable
 {
     private static readonly ConcurrentDictionary<string, SemaphoreSlim> SharedWriteGates = new(StringComparer.Ordinal);
@@ -496,11 +454,6 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
         return Task.CompletedTask;
     }
 
-    /// <summary>
-    /// Verifies that a file identifier is a plain relative path segment (no directory
-    /// separators, not rooted) before it is interpolated into a <see cref="Path.Combine(string, string)"/>
-    /// call, since a rooted segment would silently discard <see cref="TemporaryFileOptions.StorageDirectory"/>.
-    /// </summary>
     private static bool IsSafeFileId(string fileId)
     {
         return !string.IsNullOrEmpty(fileId)

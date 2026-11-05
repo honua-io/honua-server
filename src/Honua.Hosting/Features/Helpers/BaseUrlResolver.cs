@@ -6,9 +6,6 @@ using Microsoft.Extensions.Primitives;
 
 namespace Honua.Infrastructure.Helpers;
 
-/// <summary>
-/// Resolves the public-facing base URL for link generation.
-/// </summary>
 internal static class BaseUrlResolver
 {
     private const string BaseUrlConfigKey = "Public:BaseUrl";
@@ -37,9 +34,6 @@ internal static class BaseUrlResolver
         return request.PathBase.HasValue ? request.PathBase.Value!.TrimEnd('/') : string.Empty;
     }
 
-    /// <summary>
-    /// Carries the request's URL credential onto an advertised operation URL.
-    /// </summary>
     public static string PreserveToken(HttpRequest request, string url)
     {
         ArgumentNullException.ThrowIfNull(request);

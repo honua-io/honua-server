@@ -6,34 +6,13 @@ using System.Text;
 
 namespace Honua.Infrastructure.Authentication;
 
-/// <summary>
-/// Builds <see cref="TokenValidationParameters"/> from
-/// <see cref="OidcAuthenticationOptions"/> so server-side OIDC token validation
-/// (the named-user portal credential verifier, #1370) uses the same issuer,
-/// audience, signing-key, and claims-mapping rules as the interactive JwtBearer
-/// scheme configured in <see cref="OidcAuthenticationExtensions"/>.
-/// </summary>
-/// <remarks>
-/// Authorities follow <see cref="OidcProviderCatalog"/> order (Azure AD, Google,
-/// Okta, Auth0, generic, then runtime providers), the same order the OAuth broker
-/// uses. Signing keys are resolved per authority by the caller. A per-issuer
-/// audience validator rejects a token whose audience belongs to a different provider.
-/// </remarks>
+// A per-issuer audience check rejects a token whose audience belongs to a different configured provider.
 internal static class OidcTokenValidationParametersFactory
 {
-    /// <summary>
-    /// Result of <see cref="Build"/>. Authorities stay in catalog order even when a
-    /// static symmetric signing key is set, so a selected provider can still be pinned.
-    /// </summary>
-    /// <param name="Parameters">Validation parameters, including the audience pairing.</param>
-    /// <param name="Authorities">Metadata authorities in catalog order, distinct and trimmed.</param>
     public readonly record struct BuildResult(
         TokenValidationParameters Parameters,
         IReadOnlyList<string> Authorities);
 
-    /// <summary>
-    /// Builds validation parameters and the metadata authorities in catalog order.
-    /// </summary>
     public static BuildResult Build(
         OidcAuthenticationOptions options,
         IOidcRuntimeProviderSource? runtimeProviders = null)
@@ -111,10 +90,7 @@ internal static class OidcTokenValidationParametersFactory
         return new BuildResult(parameters, authorities);
     }
 
-    /// <summary>
-    /// Restricts parameters to the provider that started a broker flow so a token from
-    /// another configured authority cannot be substituted.
-    /// </summary>
+    // Parameters are limited to the provider that started the broker flow so a token from another configured authority cannot be substituted.
     public static TokenValidationParameters NarrowToProvider(
         TokenValidationParameters parameters,
         OidcProviderRegistration provider,

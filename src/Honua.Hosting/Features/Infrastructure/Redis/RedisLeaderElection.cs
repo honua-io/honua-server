@@ -7,9 +7,6 @@ using StackExchange.Redis;
 
 namespace Honua.Infrastructure.Redis;
 
-/// <summary>
-/// Redis-based distributed leader election with automatic lease renewal and fallback handling.
-/// </summary>
 internal sealed partial class RedisLeaderElection : RedisServiceBase, IRedisLeaderElection, IDisposable
 {
     private static readonly TimeSpan DefaultLeaseDuration = TimeSpan.FromMinutes(1);

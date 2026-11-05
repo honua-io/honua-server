@@ -5,24 +5,12 @@ using Honua.Core.Features.Infrastructure.Redis;
 
 namespace Honua.Infrastructure.Redis;
 
-/// <summary>
-/// Standard implementations of Redis fallback strategies.
-/// </summary>
 internal static class RedisFallbackStrategy
 {
-    /// <summary>
-    /// Fail-fast strategy for critical distributed coordination.
-    /// </summary>
     public static IRedisFallbackStrategy FailFast => FailFastStrategy.Instance;
 
-    /// <summary>
-    /// In-memory fallback strategy for caching and non-critical operations.
-    /// </summary>
     public static IRedisFallbackStrategy InMemoryFallback => InMemoryFallbackStrategy.Instance;
 
-    /// <summary>
-    /// Allow local operations in development/test, fail in production.
-    /// </summary>
     public static IRedisFallbackStrategy AllowLocalInDev => AllowLocalInDevStrategy.Instance;
 
     private sealed class FailFastStrategy : IRedisFallbackStrategy

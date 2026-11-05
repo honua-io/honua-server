@@ -7,18 +7,6 @@ using NATS.Client.JetStream;
 
 namespace Honua.Infrastructure.Events;
 
-/// <summary>
-/// NATS.Net-backed <see cref="INatsEventProducer"/> that owns all JetStream
-/// connection and deduplication configuration (#357).
-/// </summary>
-/// <remarks>
-/// This is the only type that references the NATS client. It is constructed once
-/// as a singleton; the underlying <see cref="NatsConnection"/> is thread-safe and
-/// shared across all publishes. Messages are published through JetStream so the
-/// server persists and acknowledges them; supplying a <c>Nats-Msg-Id</c> header
-/// lets JetStream reject duplicates within the stream's dedup window, giving
-/// publish-side exactly-once delivery (no duplicate stored on retry).
-/// </remarks>
 internal sealed class NatsJetStreamEventProducer : INatsEventProducer
 {
     private const string MessageIdHeader = "Nats-Msg-Id";
@@ -75,7 +63,6 @@ internal sealed class NatsJetStreamEventProducer : INatsEventProducer
         return auth;
     }
 
-    /// <inheritdoc />
     public async Task PublishAsync(
         string subject,
         string messageId,
@@ -111,7 +98,6 @@ internal sealed class NatsJetStreamEventProducer : INatsEventProducer
         }
     }
 
-    /// <inheritdoc />
     public async ValueTask DisposeAsync()
     {
         await _connection.DisposeAsync().ConfigureAwait(false);

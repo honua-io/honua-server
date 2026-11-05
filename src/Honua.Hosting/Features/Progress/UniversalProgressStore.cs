@@ -28,10 +28,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Migration;
 
-/// <summary>
-/// Redis-based universal progress store with fallback to in-memory storage.
-/// Supports any operation type implementing IOperationProgress.
-/// </summary>
 internal sealed partial class UniversalProgressStore : IUniversalProgressStore, IProgressStoreRecovery
 {
     private readonly IDistributedCache? _cache;
@@ -520,11 +516,6 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
     private static bool IsTerminalStatus(OperationStatus status)
         => status is OperationStatus.Completed or OperationStatus.Failed or OperationStatus.Cancelled;
 
-    /// <summary>
-    /// Atomic compare-and-set against the in-memory fallback store: the status check and the swap are
-    /// linearized through <see cref="ConcurrentDictionary{TKey,TValue}.TryUpdate"/>, retrying when a
-    /// concurrent writer replaced the entry between the read and the swap.
-    /// </summary>
     private ProgressCompareAndSetResult TrySetProgressInFallback(
         string operationId,
         IOperationProgress progress,
@@ -565,11 +556,6 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
         }
     }
 
-    /// <summary>
-    /// Best-effort per-operation distributed lock (SET NX with TTL) used to serialize conditional writes
-    /// and terminal-status writes across nodes. Returns the lock token, or null when no Redis backplane is
-    /// available or the lock could not be acquired in time; callers proceed unguarded in that case.
-    /// </summary>
     private async Task<string?> TryAcquireConditionalWriteLockAsync(string operationId, CancellationToken cancellationToken)
     {
         if (_redis is null || _isUsingFallback)
@@ -931,15 +917,6 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
     }
 }
 
-/// <summary>
-/// Adapter that implements IDistributedProgressStore using IUniversalProgressStore.
-/// This allows existing code using typed progress stores to work with the unified system.
-/// </summary>
-/// <summary>
-/// Adapter that implements IDistributedProgressStore using IUniversalProgressStore.
-/// This allows existing code using typed progress stores to work with the unified system.
-/// Note: This only works for types that implement IOperationProgress.
-/// </summary>
 internal sealed class DistributedProgressStoreAdapter<TProgress> : IDistributedProgressStore<TProgress>, IProgressStoreRecovery
     where TProgress : class, IOperationProgress
 {
@@ -1006,9 +983,6 @@ internal sealed class DistributedProgressStoreAdapter<TProgress> : IDistributedP
     }
 }
 
-/// <summary>
-/// Wrapper for storing polymorphic progress data with type information.
-/// </summary>
 internal sealed record ProgressWrapper
 {
     public required OperationType Type { get; init; }
@@ -1016,9 +990,6 @@ internal sealed record ProgressWrapper
     public required JsonElement Data { get; init; }
 }
 
-/// <summary>
-/// JSON serialization context for universal progress storage.
-/// </summary>
 [JsonSourceGenerationOptions(JsonSerializerDefaults.General)]
 [JsonSerializable(typeof(ProgressWrapper))]
 [JsonSerializable(typeof(ImportProgress))]

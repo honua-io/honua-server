@@ -7,9 +7,6 @@ using Honua.Infrastructure.Models;
 
 namespace Honua.Infrastructure.Middleware;
 
-/// <summary>
-/// Middleware that applies a test schema header to the request-scoped schema context.
-/// </summary>
 internal sealed partial class TestSchemaMiddleware
 {
     private const string SchemaHeaderName = "X-Honua-Test-Schema";

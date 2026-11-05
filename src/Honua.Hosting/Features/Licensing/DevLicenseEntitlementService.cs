@@ -7,15 +7,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Infrastructure.Licensing;
 
-/// <summary>
-/// Test/dev-only <see cref="ILicenseEntitlementService"/> that grants every catalog entitlement up
-/// to a configured edition without a signed license. Activated only when
-/// <c>Licensing:DevGrantEdition</c> is set (default off). It exists so an out-of-process test/CI
-/// server can exercise edition-gated features — including FeatureServer editing
-/// (<c>editing.featureserver-edits</c>, honua-server#1591) — that in-process tests grant via
-/// <c>TestLicenseEntitlementService</c>.
-/// Never enable this in production.
-/// </summary>
+// This grant exists only for out-of-process tests and must never be enabled in production.
 internal sealed partial class DevLicenseEntitlementService : ILicenseEntitlementService
 {
     private readonly LicenseSnapshot _snapshot;
@@ -26,11 +18,6 @@ internal sealed partial class DevLicenseEntitlementService : ILicenseEntitlement
             "granted WITHOUT a signed license. This is a test/dev-only override and must never be used in production.")]
     private static partial void LogDevGrantActive(ILogger logger, HonuaEdition edition);
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="DevLicenseEntitlementService"/> class.
-    /// </summary>
-    /// <param name="grantEdition">The highest edition whose entitlements are granted.</param>
-    /// <param name="logger">Optional logger used to warn that the override is active.</param>
     public DevLicenseEntitlementService(
         HonuaEdition grantEdition,
         ILogger<DevLicenseEntitlementService>? logger = null)
@@ -43,10 +30,8 @@ internal sealed partial class DevLicenseEntitlementService : ILicenseEntitlement
         }
     }
 
-    /// <inheritdoc />
     public LicenseSnapshot GetSnapshot() => _snapshot;
 
-    /// <inheritdoc />
     public LicenseEntitlementDecision CheckEntitlement(string entitlementKey)
     {
         var feature = FeatureCatalog.All.FirstOrDefault(item =>

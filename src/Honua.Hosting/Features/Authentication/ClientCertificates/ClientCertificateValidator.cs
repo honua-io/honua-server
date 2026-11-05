@@ -12,16 +12,12 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Authentication.ClientCertificates;
 
-/// <summary>The trust verdict of a configured chain-trust check.</summary>
 internal enum ChainTrustOutcome
 {
-    /// <summary>The chain built to a configured trust anchor and passed revocation policy.</summary>
     Trusted = 0,
 
-    /// <summary>A certificate in the chain is revoked per the configured CRL/OCSP check.</summary>
     Revoked = 1,
 
-    /// <summary>The chain could not be trusted (untrusted root, broken signature, or a fatal revocation-status-unknown).</summary>
     Untrusted = 2,
 }
 
@@ -422,20 +418,7 @@ internal sealed class ClientCertificateValidator(
         }
     }
 
-    /// <summary>
-    /// Classifies the result of an <see cref="X509Chain.Build"/> into the trust outcome the
-    /// validator acts on. Extracted as a pure function so the CRL/OCSP revocation and
-    /// revocation-status-unknown edge cases are deterministically unit-testable without a live
-    /// responder.
-    /// </summary>
-    /// <param name="built">The boolean <see cref="X509Chain.Build"/> returned.</param>
-    /// <param name="statuses">The chain status flags the build produced.</param>
-    /// <param name="revocationStatusUnknownIsFatal">
-    /// When <c>true</c> (the secure default), a chain that only fails because revocation status
-    /// could not be determined (CRL/OCSP responder unreachable) is treated as untrusted
-    /// (fail-closed). When <c>false</c>, such a chain is accepted if it is otherwise valid
-    /// (best-effort revocation / fail-open) — an explicit operator opt-in.
-    /// </param>
+    // Unknown revocation status is classified here so the fail-closed and fail-open outcomes can be tested without a live responder.
     internal static ChainTrustOutcome EvaluateChainOutcome(
         bool built,
         IReadOnlyList<X509ChainStatus> statuses,

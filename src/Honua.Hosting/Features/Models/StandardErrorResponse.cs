@@ -5,10 +5,6 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Infrastructure.Models;
 
-/// <summary>
-/// Standard error response that can be formatted for different protocols.
-/// Contains all information needed to generate protocol-specific error responses.
-/// </summary>
 internal sealed record StandardErrorResponse(
     int StatusCode,
     string Title,
@@ -16,12 +12,6 @@ internal sealed record StandardErrorResponse(
     IReadOnlyList<string>? AdditionalDetails = null,
     string? DebugInfo = null)
 {
-    /// <summary>
-    /// Creates a StandardErrorResponse from an exception using the ExceptionMapper.
-    /// </summary>
-    /// <param name="exception">The exception to convert.</param>
-    /// <param name="includeDebugDetails">Whether to include debug details (typically only in Development).</param>
-    /// <returns>A StandardErrorResponse instance.</returns>
     public static StandardErrorResponse FromException(Exception exception, bool includeDebugDetails = false)
     {
         var result = ExceptionMapper.Map(exception, includeDebugDetails);
@@ -35,12 +25,6 @@ internal sealed record StandardErrorResponse(
         );
     }
 
-    /// <summary>
-    /// Creates a BadRequest StandardErrorResponse.
-    /// </summary>
-    /// <param name="detail">The error detail message.</param>
-    /// <param name="additionalDetails">Optional additional details.</param>
-    /// <returns>A BadRequest StandardErrorResponse.</returns>
     public static StandardErrorResponse BadRequest(string detail, IReadOnlyList<string>? additionalDetails = null)
     {
         return new StandardErrorResponse(
@@ -51,12 +35,6 @@ internal sealed record StandardErrorResponse(
         );
     }
 
-    /// <summary>
-    /// Creates an Unauthorized StandardErrorResponse.
-    /// </summary>
-    /// <param name="detail">The error detail message.</param>
-    /// <param name="additionalDetails">Optional additional details.</param>
-    /// <returns>An Unauthorized StandardErrorResponse.</returns>
     public static StandardErrorResponse Unauthorized(string detail, IReadOnlyList<string>? additionalDetails = null)
     {
         return new StandardErrorResponse(
@@ -67,12 +45,6 @@ internal sealed record StandardErrorResponse(
         );
     }
 
-    /// <summary>
-    /// Creates a Forbidden StandardErrorResponse.
-    /// </summary>
-    /// <param name="detail">The error detail message.</param>
-    /// <param name="additionalDetails">Optional additional details.</param>
-    /// <returns>A Forbidden StandardErrorResponse.</returns>
     public static StandardErrorResponse Forbidden(string detail, IReadOnlyList<string>? additionalDetails = null)
     {
         return new StandardErrorResponse(
@@ -83,12 +55,6 @@ internal sealed record StandardErrorResponse(
         );
     }
 
-    /// <summary>
-    /// Creates a PaymentRequired StandardErrorResponse.
-    /// </summary>
-    /// <param name="detail">The error detail message.</param>
-    /// <param name="additionalDetails">Optional additional details.</param>
-    /// <returns>A PaymentRequired StandardErrorResponse.</returns>
     public static StandardErrorResponse PaymentRequired(string detail, IReadOnlyList<string>? additionalDetails = null)
     {
         return new StandardErrorResponse(
@@ -99,12 +65,6 @@ internal sealed record StandardErrorResponse(
         );
     }
 
-    /// <summary>
-    /// Creates a NotFound StandardErrorResponse.
-    /// </summary>
-    /// <param name="detail">The error detail message.</param>
-    /// <param name="additionalDetails">Optional additional details.</param>
-    /// <returns>A NotFound StandardErrorResponse.</returns>
     public static StandardErrorResponse NotFound(string detail, IReadOnlyList<string>? additionalDetails = null)
     {
         return new StandardErrorResponse(
@@ -115,12 +75,6 @@ internal sealed record StandardErrorResponse(
         );
     }
 
-    /// <summary>
-    /// Creates a Conflict StandardErrorResponse.
-    /// </summary>
-    /// <param name="detail">The error detail message.</param>
-    /// <param name="additionalDetails">Optional additional details.</param>
-    /// <returns>A Conflict StandardErrorResponse.</returns>
     public static StandardErrorResponse Conflict(string detail, IReadOnlyList<string>? additionalDetails = null)
     {
         return new StandardErrorResponse(
@@ -131,12 +85,6 @@ internal sealed record StandardErrorResponse(
         );
     }
 
-    /// <summary>
-    /// Creates a PreconditionFailed StandardErrorResponse.
-    /// </summary>
-    /// <param name="detail">The error detail message.</param>
-    /// <param name="additionalDetails">Optional additional details.</param>
-    /// <returns>A PreconditionFailed StandardErrorResponse.</returns>
     public static StandardErrorResponse PreconditionFailed(string detail, IReadOnlyList<string>? additionalDetails = null)
     {
         return new StandardErrorResponse(
@@ -147,12 +95,6 @@ internal sealed record StandardErrorResponse(
         );
     }
 
-    /// <summary>
-    /// Creates an InternalServerError StandardErrorResponse.
-    /// </summary>
-    /// <param name="detail">The error detail message.</param>
-    /// <param name="additionalDetails">Optional additional details.</param>
-    /// <returns>An InternalServerError StandardErrorResponse.</returns>
     public static StandardErrorResponse InternalServerError(string detail, IReadOnlyList<string>? additionalDetails = null)
     {
         return new StandardErrorResponse(
@@ -163,13 +105,6 @@ internal sealed record StandardErrorResponse(
         );
     }
 
-    /// <summary>
-    /// Creates a ServiceUnavailable StandardErrorResponse.
-    /// </summary>
-    /// <param name="detail">The error detail message.</param>
-    /// <param name="retryAfterSeconds">Optional retry-after seconds.</param>
-    /// <param name="additionalDetails">Optional additional details.</param>
-    /// <returns>A ServiceUnavailable StandardErrorResponse.</returns>
     public static StandardErrorResponse ServiceUnavailable(string detail, int? retryAfterSeconds = null, IReadOnlyList<string>? additionalDetails = null)
     {
         var details = additionalDetails?.ToList() ?? [];
@@ -186,13 +121,6 @@ internal sealed record StandardErrorResponse(
         );
     }
 
-    /// <summary>
-    /// Creates a TooManyRequests (429) StandardErrorResponse for rate-limit/quota rejection.
-    /// </summary>
-    /// <param name="detail">The error detail message.</param>
-    /// <param name="retryAfterSeconds">Optional retry-after seconds.</param>
-    /// <param name="additionalDetails">Optional additional details.</param>
-    /// <returns>A TooManyRequests StandardErrorResponse.</returns>
     public static StandardErrorResponse TooManyRequests(string detail, int? retryAfterSeconds = null, IReadOnlyList<string>? additionalDetails = null)
     {
         var details = additionalDetails?.ToList() ?? [];
@@ -209,12 +137,6 @@ internal sealed record StandardErrorResponse(
         );
     }
 
-    /// <summary>
-    /// Creates a RequestTimeout StandardErrorResponse.
-    /// </summary>
-    /// <param name="detail">The error detail message.</param>
-    /// <param name="additionalDetails">Optional additional details.</param>
-    /// <returns>A RequestTimeout StandardErrorResponse.</returns>
     public static StandardErrorResponse RequestTimeout(string detail, IReadOnlyList<string>? additionalDetails = null)
     {
         return new StandardErrorResponse(
@@ -226,93 +148,37 @@ internal sealed record StandardErrorResponse(
     }
 }
 
-/// <summary>
-/// Response formatter options for protocol-specific error responses.
-/// </summary>
 internal sealed class ErrorResponseFormatterOptions
 {
-    /// <summary>
-    /// Whether to include additional details in the response.
-    /// </summary>
     public bool IncludeAdditionalDetails { get; init; } = true;
 
-    /// <summary>
-    /// Whether to include debug information (only in Development).
-    /// </summary>
     public bool IncludeDebugInfo { get; init; }
 
-    /// <summary>
-    /// Protocol-specific content type.
-    /// </summary>
     public string? ContentType { get; init; }
 
-    /// <summary>
-    /// Additional headers to include in the response.
-    /// </summary>
     public IReadOnlyDictionary<string, string>? AdditionalHeaders { get; init; }
 
-    /// <summary>
-    /// Explicit WFS exception code to emit instead of inferring one heuristically.
-    /// </summary>
     public string? WfsExceptionCode { get; init; }
 
-    /// <summary>
-    /// Optional WFS exception locator attribute.
-    /// </summary>
     public string? WfsExceptionLocator { get; init; }
 
-    /// <summary>
-    /// Explicit WCS service exception code to emit instead of inferring one from the HTTP status.
-    /// </summary>
     public string? WcsExceptionCode { get; init; }
 
-    /// <summary>
-    /// Explicit WMTS service exception code to emit instead of inferring one from the HTTP status.
-    /// </summary>
     public string? WmtsExceptionCode { get; init; }
 
-    /// <summary>
-    /// Explicit WMS service exception code to emit instead of inferring one from the HTTP status.
-    /// </summary>
     public string? WmsExceptionCode { get; init; }
 
-    /// <summary>
-    /// Explicit OData error code to emit instead of inferring one from the HTTP status code.
-    /// </summary>
     public string? ODataErrorCode { get; init; }
 
-    /// <summary>
-    /// Machine-readable code emitted by extension-capable protocol envelopes.
-    /// </summary>
     public string? MachineCode { get; init; }
 
-    /// <summary>
-    /// Explicit GeoServices body error code to emit. When set, overrides the code derived from
-    /// <see cref="StandardErrorResponse.StatusCode"/>. Use <see cref="GeoServicesErrorCodes.TokenRequired"/>
-    /// (499) for missing-token auth failures and <see cref="GeoServicesErrorCodes.InvalidToken"/> (498)
-    /// for expired/invalid token failures.
-    /// </summary>
     public int? GeoServicesBodyCode { get; init; }
 
-    /// <summary>
-    /// Emits the error's real HTTP status on GeoServices surfaces instead of the usual HTTP 200.
-    /// GeoServices errors are HTTP 200 by default and that is deliberate: Esri clients read the
-    /// body's <c>error.code</c>, and the 498/499 token flows depend on the 200. Set this only for a
-    /// rejection a client is known to read from the transport status alone (createReplica's
-    /// unsupported <c>dataFormat</c>, honua-server#5013), never for token challenges.
-    /// Mutating FeatureServer endpoints separately opt authorization denial into HTTP 403
-    /// with <see cref="GeoServicesForbiddenHttpStatusMetadata"/>; their 498/499 flows stay unchanged.
-    /// </summary>
+    // GeoServices errors stay HTTP 200 except a rejection the client reads from the transport status alone, and a token challenge stays on 200.
     public bool GeoServicesUseHttpStatus { get; init; }
 
-    /// <summary>
-    /// Indicates whether the client may retry after the transient condition clears.
-    /// </summary>
     public bool? Retryable { get; init; }
 
-    /// <summary>
-    /// Server-advised delay before retrying, in seconds, when known.
-    /// </summary>
     public int? RetryAfterSeconds { get; init; }
 
 }

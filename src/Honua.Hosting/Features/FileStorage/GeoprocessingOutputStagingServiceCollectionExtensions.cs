@@ -9,23 +9,8 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.FileStorage;
 
-/// <summary>
-/// Registers the opt-in geoprocessing output staging store (#3089). Called by both the
-/// serving host and the GDAL worker host so staged references written by one side
-/// resolve on the other. When staging is disabled no store is registered and callers
-/// keep the legacy bounded inline publication path.
-/// </summary>
 public static class GeoprocessingOutputStagingServiceCollectionExtensions
 {
-    /// <summary>
-    /// Binds <see cref="GeoprocessingOutputStagingOptions"/> and registers the
-    /// configured <see cref="IGeoprocessingOutputObjectStore"/>. An enabled but
-    /// unimplemented provider fails closed at startup with an actionable error rather
-    /// than silently falling back to inline publication.
-    /// </summary>
-    /// <param name="services">Service collection.</param>
-    /// <param name="configuration">Host configuration.</param>
-    /// <returns>The service collection.</returns>
     public static IServiceCollection AddGeoprocessingOutputStaging(
         this IServiceCollection services,
         IConfiguration configuration)

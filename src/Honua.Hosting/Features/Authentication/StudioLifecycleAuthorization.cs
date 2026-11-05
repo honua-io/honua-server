@@ -14,30 +14,11 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Authentication;
 
-/// <summary>
-/// Authorization requirement for the Studio package lifecycle surface (honua-server#3001).
-/// Admits the admin family, matching the pre-#3001 posture, or any authenticated principal
-/// once <see cref="StudioEndUserAuthorizationOptions.Enabled"/> is turned on. This policy only
-/// answers "may the caller reach the Studio lifecycle endpoint group at all" -- the
-/// fine-grained per-resource ownership check and the elevated-operation (publish-request,
-/// rollback) operator-grant check happen inside each endpoint handler via
-/// <see cref="Honua.Core.Features.Studio.Abstractions.IStudioAuthorizationService"/>, because
-/// they need the specific draft/content-item's recorded owner, which is not available at the
-/// ASP.NET route-group policy-evaluation point.
-/// </summary>
+// This policy only admits the caller to the route group; ownership and elevated operations are enforced in the handler, where the recorded owner is known.
 internal sealed class StudioLifecycleRequirement : IAuthorizationRequirement;
 
-/// <summary>
-/// Additional boundary for the Studio AI proxy. The general Studio lifecycle policy may admit
-/// scoped API keys so they can own drafts, but model-provider access is reserved for interactive
-/// OIDC/session users and administrators until a dedicated Studio AI permission exists.
-/// </summary>
 internal sealed class StudioAiProxyRequirement : IAuthorizationRequirement;
 
-/// <summary>
-/// Evaluates <see cref="StudioLifecycleRequirement"/> against the caller's admin role and the
-/// <c>Studio:EndUserAuthorization:Enabled</c> flag.
-/// </summary>
 internal sealed class StudioLifecycleAuthorizationHandler(
     IOptionsMonitor<StudioEndUserAuthorizationOptions> options,
     IOptionsMonitor<AdminRoleOptions> adminRoleOptions,
@@ -55,7 +36,6 @@ internal sealed class StudioLifecycleAuthorizationHandler(
     private readonly IHttpContextAccessor _httpContextAccessor = httpContextAccessor;
     private readonly ILogger<StudioLifecycleAuthorizationHandler> _logger = logger;
 
-    /// <inheritdoc />
     protected override Task HandleRequirementAsync(
         AuthorizationHandlerContext context,
         StudioLifecycleRequirement requirement)
@@ -106,12 +86,6 @@ internal sealed class StudioLifecycleAuthorizationHandler(
         return Task.CompletedTask;
     }
 
-    /// <summary>
-    /// Recognizes the admin family the pre-#3001 policies admitted: the literal <c>admin</c>
-    /// role plus the configured <c>Oidc:AdminRoles</c> aliases (see <see cref="AdminRoleOptions"/>,
-    /// the same set <c>StudioAuthorizationService.IsAdmin</c> resolves), so an OIDC admin via
-    /// an alias role keeps admin-tier Studio access rather than degrading to end-user scoping.
-    /// </summary>
     internal static bool IsRecognizedAdmin(ClaimsPrincipal principal, AdminRoleOptions options)
     {
         if (principal.IsInRole("admin") || principal.IsInRole(AdminApiKeyPermission.ScopedAdminRole))
@@ -136,10 +110,6 @@ internal sealed class StudioLifecycleAuthorizationHandler(
         => StudioAiInteractivePrincipal.IsInteractive(principal);
 }
 
-/// <summary>
-/// Keeps non-admin API keys out of the Studio AI proxy while preserving both interactive
-/// end-user access and the existing admin family.
-/// </summary>
 internal sealed class StudioAiProxyAuthorizationHandler(
     IOptionsMonitor<AdminRoleOptions> adminRoleOptions)
     : AuthorizationHandler<StudioAiProxyRequirement>
@@ -149,7 +119,6 @@ internal sealed class StudioAiProxyAuthorizationHandler(
 
     private readonly IOptionsMonitor<AdminRoleOptions> _adminRoleOptions = adminRoleOptions;
 
-    /// <inheritdoc />
     protected override Task HandleRequirementAsync(
         AuthorizationHandlerContext context,
         StudioAiProxyRequirement requirement)
@@ -168,10 +137,7 @@ internal sealed class StudioAiProxyAuthorizationHandler(
     }
 }
 
-/// <summary>
-/// Keeps the AI proxy's interactive admission list explicit. Non-admin mTLS and other machine
-/// identities must not be treated as browser/session users merely because they are not API keys.
-/// </summary>
+// A non-admin machine identity is not treated as an interactive user merely because it is not an API key.
 internal static class StudioAiInteractivePrincipal
 {
     internal const string InteractiveProvenanceClaimType = "honua_interactive_provenance";
@@ -226,12 +192,6 @@ internal static class StudioAiInteractivePrincipal
             string.Equals(c.Type, InteractiveProvenanceClaimType, StringComparison.OrdinalIgnoreCase) &&
             string.Equals(c.Value, InteractiveProvenanceClaimValue, StringComparison.OrdinalIgnoreCase));
 
-    /// <summary>
-    /// Removes every inbound copy of the reserved Studio bearer marker, then stamps one local
-    /// copy only when the validated token carries positive human-session evidence. Subject
-    /// resolution mirrors OIDC claims normalization, including the configured claim and the
-    /// built-in <c>NameIdentifier</c>/<c>sub</c>/<c>oid</c> fallbacks.
-    /// </summary>
     internal static void ReplaceWithServerDerivedProvenance(
         ClaimsPrincipal principal,
         string? configuredUserIdClaimType = null)

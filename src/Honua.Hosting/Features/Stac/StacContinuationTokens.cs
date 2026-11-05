@@ -5,10 +5,7 @@ using System.Globalization;
 
 namespace Honua.Infrastructure.Stac;
 
-/// <summary>
-/// STAC Item Search continuation cursors. The query name is <c>next</c> so a cursor
-/// is not read as an ArcGIS portal <c>token</c> credential.
-/// </summary>
+// The query name is next so a cursor is not read as a portal token.
 internal static class StacContinuationTokens
 {
     internal const string Prefix = "offset:";

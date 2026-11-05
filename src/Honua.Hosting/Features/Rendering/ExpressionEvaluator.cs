@@ -8,31 +8,11 @@ using SkiaSharp;
 
 namespace Honua.Infrastructure.Rendering;
 
-/// <summary>
-/// Evaluates MapLibre style expressions against feature properties and the zoom the render is
-/// being evaluated at.
-/// Supports common expression operators: get, zoom, case, match, interpolate, step, literal, has, !, ==, !=, &lt;, &gt;, etc.
-/// </summary>
-/// <remarks>
-/// Every entry point takes an explicit <see cref="RenderZoom"/> rather than defaulting to "no zoom",
-/// so a caller cannot reach the zoom-dependent operators by accident. A render that carries
-/// <see cref="RenderZoom.NotDerivable"/> and evaluates a <c>["zoom"]</c> expression raises
-/// <see cref="StyleExpressionEvaluationException"/> instead of substituting a placeholder level
-/// (honua-server#2873).
-/// </remarks>
+// Every entry point takes an explicit zoom so a zoom-dependent operator cannot run by accident.
 internal static class ExpressionEvaluator
 {
-    /// <summary>
-    /// Tolerance used in place of exact floating-point equality when evaluating
-    /// numeric MapLibre style expressions (division-by-zero guards, truthiness,
-    /// and HSL color math), since style values are frequently the product of
-    /// upstream arithmetic rather than exact literals.
-    /// </summary>
     private const double NumericEpsilon = 1e-9;
 
-    /// <summary>
-    /// Evaluates a MapLibre expression to a color value at the supplied <paramref name="zoom"/>.
-    /// </summary>
     public static SKColor EvaluateColor(
         MapLibreExpression expression,
         ImmutableDictionary<string, object?> properties,
@@ -42,9 +22,6 @@ internal static class ExpressionEvaluator
         return ParseColor(result);
     }
 
-    /// <summary>
-    /// Evaluates a MapLibre expression to a float value at the supplied <paramref name="zoom"/>.
-    /// </summary>
     public static float EvaluateFloat(
         MapLibreExpression expression,
         ImmutableDictionary<string, object?> properties,
@@ -55,9 +32,6 @@ internal static class ExpressionEvaluator
         return ConvertToFloat(result, defaultValue);
     }
 
-    /// <summary>
-    /// Evaluates a MapLibre expression to a string value at the supplied <paramref name="zoom"/>.
-    /// </summary>
     public static string? EvaluateString(
         MapLibreExpression expression,
         ImmutableDictionary<string, object?> properties,
@@ -67,12 +41,6 @@ internal static class ExpressionEvaluator
         return result?.ToString();
     }
 
-    /// <summary>
-    /// Core expression evaluator.
-    /// </summary>
-    /// <exception cref="StyleExpressionEvaluationException">
-    /// The expression evaluates <c>["zoom"]</c> but <paramref name="zoom"/> carries no derived level.
-    /// </exception>
     public static object? Evaluate(
         MapLibreExpression expression,
         ImmutableDictionary<string, object?> properties,
@@ -175,21 +143,7 @@ internal static class ExpressionEvaluator
         };
     }
 
-    /// <summary>
-    /// Evaluates the MapLibre <c>["zoom"]</c> input, which yields the zoom level the render is being
-    /// evaluated at. MapLibre GL JS reads this from the evaluation globals
-    /// (<c>expression/definitions/index.ts</c> binds <c>zoom</c> to <c>ctx.globals.zoom</c>) and
-    /// returns it as a plain number, so a fractional zoom stays fractional here too.
-    /// </summary>
-    /// <remarks>
-    /// When the render carries no derived zoom this raises rather than substituting a level. A
-    /// substituted zoom is not a degraded picture but a confidently wrong one: every zoom ramp would
-    /// silently collapse onto whichever stop the placeholder selects, with no throw, warning, or log
-    /// — the failure mode that made <c>interpolate</c> render black in honua-server#2867 and that let
-    /// <c>minzoom</c>/<c>maxzoom</c> be skipped in honua-server#2868. The
-    /// <see cref="RenderZoom.NotDerivableReason"/> recorded by the render path is carried into the
-    /// message so the cause is traceable from the failure alone.
-    /// </remarks>
+    // A missing zoom throws instead of substituting a level, because a placeholder would collapse every ramp onto one stop.
     private static double EvaluateZoom(RenderZoom zoom)
     {
         if (zoom.Level is { } level)
@@ -431,11 +385,6 @@ internal static class ExpressionEvaluator
         return prevOutput;
     }
 
-    /// <summary>
-    /// The interpolation curve declared as the second operand of a MapLibre
-    /// <c>interpolate</c> expression. Selects how the fractional position between two
-    /// consecutive stops is computed before the stop outputs are blended.
-    /// </summary>
     private enum InterpolationKind
     {
         Linear,
@@ -454,12 +403,6 @@ internal static class ExpressionEvaluator
         public static readonly InterpolationCurve Linear = new(InterpolationKind.Linear, 1.0, 0, 0, 0, 0);
     }
 
-    /// <summary>
-    /// Reads the <c>interpolate</c> curve operand (<c>["linear"]</c>,
-    /// <c>["exponential", base]</c>, or <c>["cubic-bezier", x1, y1, x2, y2]</c>). Anything
-    /// unrecognized falls back to <see cref="InterpolationKind.Linear"/>, matching the
-    /// evaluator's historical behavior of treating the operand as linear.
-    /// </summary>
     private static InterpolationCurve ParseInterpolation(MapLibreExpression operand)
     {
         if (operand.Kind != MapLibreExpressionKind.Array || operand.Items is not { Length: > 0 } items)
@@ -505,16 +448,7 @@ internal static class ExpressionEvaluator
         return InterpolationCurve.Linear;
     }
 
-    /// <summary>
-    /// Computes the interpolation factor <c>t</c> for <paramref name="input"/> between two
-    /// adjacent stop inputs, honoring the declared curve. Mirrors MapLibre GL JS's
-    /// <c>Interpolate.interpolationFactor</c> in
-    /// <c>maplibre-style-spec/src/expression/definitions/interpolate.ts</c>. The
-    /// <see cref="InterpolationKind.Linear"/> branch is deliberately the same
-    /// single-precision expression the evaluator has always used, so existing linear ramps
-    /// stay bit-for-bit unchanged; the non-linear curves compute in double precision to
-    /// match MapLibre's <c>Math.pow</c>/unit-bezier math.
-    /// </summary>
+    // The linear branch stays single precision so existing ramps stay bit-for-bit unchanged; the other curves use double precision to match MapLibre.
     private static float InterpolationFactor(in InterpolationCurve curve, float input, float lower, float upper) =>
         curve.Kind switch
         {
@@ -524,14 +458,6 @@ internal static class ExpressionEvaluator
             _ => (input - lower) / (upper - lower),
         };
 
-    /// <summary>
-    /// The ratio used to interpolate between two exponential-function stops, ported verbatim
-    /// from MapLibre's <c>exponentialInterpolation</c>. <c>base == 1</c> collapses to the
-    /// linear ratio <c>progress / difference</c> (MapLibre's own degenerate case), so an
-    /// <c>["exponential", 1]</c> curve is identical to <c>["linear"]</c>. The exponents are
-    /// the raw stop-relative progress and difference (not a pre-normalized 0..1 factor):
-    /// <c>(base^progress - 1) / (base^difference - 1)</c>.
-    /// </summary>
     private static double ExponentialInterpolation(double input, double @base, double lower, double upper)
     {
         var difference = upper - lower;
@@ -550,12 +476,6 @@ internal static class ExpressionEvaluator
         return (Math.Pow(@base, progress) - 1.0) / (Math.Pow(@base, difference) - 1.0);
     }
 
-    /// <summary>
-    /// Solves the unit cubic Bézier <c>y</c> for a given <c>x</c> using Newton-Raphson with a
-    /// bisection fallback, a verbatim port of MapLibre's <c>UnitBezier.solve</c>
-    /// (<c>@mapbox/unitbezier</c>). The cubic-bezier curve feeds the linear stop factor in as
-    /// <c>x</c> and returns the eased factor as <c>y</c>.
-    /// </summary>
     private static double SolveCubicBezier(in InterpolationCurve curve, double x)
     {
         const double epsilon = 1e-6;
@@ -643,15 +563,7 @@ internal static class ExpressionEvaluator
             + "the same interpolatable type (all numbers or all colors).");
     }
 
-    /// <summary>
-    /// Interpolates two colors the way MapLibre GL JS does for the default <c>rgb</c>
-    /// interpolation space: a straight (non-premultiplied) per-channel lerp over
-    /// gamma-encoded sRGB, including alpha. Mirrors <c>Color.interpolate</c> in
-    /// <c>maplibre-style-spec/src/expression/types/color.ts</c>, which reads the
-    /// un-premultiplied <c>rgb</c> getter and applies <c>interpolateNumber</c>
-    /// (<c>from + t * (to - from)</c>) to each channel. Deliberately not a linear-light
-    /// blend — MapLibre reserves perceptual spaces for 'interpolate-hcl'/'interpolate-lab'.
-    /// </summary>
+    // Color interpolation is straight sRGB, not linear-light, matching MapLibre's default rgb space.
     private static SKColor InterpolateColors(SKColor from, SKColor to, float t) =>
         new(
             InterpolateChannel(from.Red, to.Red, t),
@@ -659,15 +571,7 @@ internal static class ExpressionEvaluator
             InterpolateChannel(from.Blue, to.Blue, t),
             InterpolateChannel(from.Alpha, to.Alpha, t));
 
-    /// <summary>
-    /// Lerps a single 8-bit channel. The arithmetic runs in normalized 0..1 double
-    /// precision — rather than directly over the byte values — because MapLibre holds
-    /// channels as 0..1 float64 and only quantizes to 8 bits at raster time. The two
-    /// disagree by one step wherever byte-space math lands exactly on .5 but the
-    /// normalized math does not: interpolating 251 and 48 at t=0.5 is exactly 149.5
-    /// over bytes (rounding to 150), yet 149.4999... over 0..1 (rounding to 149, which
-    /// is what MapLibre emits).
-    /// </summary>
+    // The channel lerp runs in normalized double precision because byte-space rounding disagrees with MapLibre when the byte math lands on a half.
     private static byte InterpolateChannel(byte from, byte to, float t)
     {
         var fromN = from / 255.0;
@@ -711,10 +615,6 @@ internal static class ExpressionEvaluator
         return (double)ConvertToFloat(val, 0f);
     }
 
-    /// <summary>
-    /// Evaluates the MapLibre <c>typeof</c> expression, returning the runtime type name
-    /// of the evaluated value: "number", "string", "boolean", "object", or "null".
-    /// </summary>
     private static string EvaluateTypeof(MapLibreExpression[] array, ImmutableDictionary<string, object?> properties, RenderZoom zoom)
     {
         if (array.Length < 2)
@@ -862,10 +762,6 @@ internal static class ExpressionEvaluator
         return false;
     }
 
-    /// <summary>
-    /// Parses a color from various formats (hex, rgb, rgba, named colors),
-    /// falling back to transparent for absent values and black for unrecognized ones.
-    /// </summary>
     internal static SKColor ParseColor(object? value)
     {
         if (TryParseColor(value, out var color))
@@ -876,11 +772,7 @@ internal static class ExpressionEvaluator
         return string.IsNullOrEmpty(value?.ToString()) ? SKColors.Transparent : SKColors.Black;
     }
 
-    /// <summary>
-    /// Attempts to parse a color from various formats (hex, rgb, rgba, hsl, named colors),
-    /// reporting failure instead of substituting a fallback. Callers that must distinguish
-    /// "not a color" from "black" — such as interpolation stop typing — use this overload.
-    /// </summary>
+    // Failure is reported instead of substituting black, so a caller can tell a non-color from black.
     internal static bool TryParseColor(object? value, out SKColor color)
     {
         color = default;

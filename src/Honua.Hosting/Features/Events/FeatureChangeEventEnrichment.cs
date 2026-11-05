@@ -10,10 +10,6 @@ using NetTopologySuite.IO;
 
 namespace Honua.Infrastructure.Events;
 
-/// <summary>
-/// Extracts geometry envelope and attribute snapshot from a feature for CDC event enrichment.
-/// Called at publish sites so filter evaluation during broadcast requires no I/O.
-/// </summary>
 internal static class FeatureChangeEventEnrichment
 {
     // GeoJsonWriter must not be shared across threads; a thread-static instance reuses one writer
@@ -21,23 +17,13 @@ internal static class FeatureChangeEventEnrichment
     [ThreadStatic]
     private static GeoJsonWriter? _geoJsonWriter;
 
-    /// <summary>
-    /// Extracts enrichment data from a feature. Returns null envelope and properties for null features (deletes).
-    /// </summary>
     public static (double[]? GeometryEnvelope, string? PropertiesJson) FromFeature(Feature? feature)
     {
         var enrichment = FromFeatureSnapshot(feature);
         return (enrichment.GeometryEnvelope, enrichment.PropertiesJson);
     }
 
-    /// <summary>
-    /// Extracts all streamable enrichment data from a feature snapshot. The optional
-    /// <paramref name="fallbackSrid"/> is applied when the WKB itself carries no SRID
-    /// metadata (e.g., gRPC ApplyEdits and WFS Transaction publish features whose
-    /// WKB was written by a default <c>WKBWriter</c> with <c>handleSRID:false</c>).
-    /// Without this fallback the geodesy invariant would silently drop the GeoJSON
-    /// even when the layer CRS is known.
-    /// </summary>
+    // WKB written without an SRID still needs the layer CRS, or the GeoJSON is dropped even when that CRS is known.
     public static FeatureChangeEventEnrichmentResult FromFeatureSnapshot(Feature? feature, int? fallbackSrid = null)
     {
         if (feature is null)
@@ -113,11 +99,6 @@ internal readonly record struct FeatureChangeEventEnrichmentResult(
     string? GeometryJson,
     int? GeometrySrid);
 
-/// <summary>
-/// Source-generated JSON context for attribute snapshot serialization (AOT compatible).
-/// Registers all primitive types that <c>object?</c> values resolve to at runtime,
-/// following the same pattern as <c>FeatureAttributesJsonContext</c>.
-/// </summary>
 [System.Text.Json.Serialization.JsonSourceGenerationOptions(
     PropertyNamingPolicy = System.Text.Json.Serialization.JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]

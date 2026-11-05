@@ -7,10 +7,7 @@ using Microsoft.Extensions.Caching.Distributed;
 
 namespace Honua.Infrastructure.Caching;
 
-/// <summary>
-/// Tracks generic distributed-cache membership without extending expired payloads'
-/// index lifetime. IDistributedCache cannot enumerate scopes or expose remaining TTLs.
-/// </summary>
+// Index membership is not extended when a payload expires, because the distributed cache cannot report a remaining lifetime.
 internal sealed partial class DistributedCacheKeyIndex : IAsyncDisposable
 {
     internal static readonly TimeSpan MaintenanceInterval = TimeSpan.FromSeconds(5);

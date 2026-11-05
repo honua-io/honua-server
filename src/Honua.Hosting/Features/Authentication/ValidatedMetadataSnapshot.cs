@@ -6,12 +6,6 @@ using Microsoft.AspNetCore.Http;
 
 namespace Honua.Infrastructure.Authentication;
 
-/// <summary>
-/// Carries metadata already used for a successful authorization in this request.
-/// Only the identical canonical resource can reuse it; this contains no principal,
-/// evaluated predicate or policy set. Other resources and background reads resolve
-/// their own current metadata. A later validation replaces the request feature.
-/// </summary>
 internal sealed class ValidatedMetadataSnapshot(MetadataV2Resource resource, MetadataV2GraphSnapshot snapshot)
 {
     private readonly MetadataV2Resource _resource = resource;

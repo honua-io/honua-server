@@ -8,7 +8,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Security.Admission;
 
-/// <summary>Owns one charged invocation and its bounded authoritative cancellation/cleanup lifecycle.</summary>
 internal sealed partial class AiExecutionAdmissionCoordinator(
     IServiceScopeFactory scopes,
     IOptions<AiExecutionAdmissionOptions> options,

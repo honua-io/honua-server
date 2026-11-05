@@ -11,15 +11,6 @@ using StackExchange.Redis;
 
 namespace Honua.Infrastructure.Caching;
 
-/// <summary>
-/// Distributed cache refresh coordinator using Redis for cross-instance coordination.
-/// Falls back to local coordination when Redis is unavailable.
-/// </summary>
-/// <remarks>
-/// Uses Redis SET NX operations for atomic distributed deduplication and Redis pub/sub
-/// for cross-instance invalidation notifications. Maintains graceful fallback to local
-/// coordination when Redis is unavailable.
-/// </remarks>
 internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundService, Honua.Core.Features.Caching.Abstractions.IDistributedCacheRefreshCoordinator
 {
     private const string MetricsCacheType = "background-refresh";
@@ -101,22 +92,16 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
         // in the constructor dropped the handle and hid startup faults).
     }
 
-    /// <inheritdoc />
     public bool IsDistributed => _useRedis && _redisDb != null;
 
-    /// <inheritdoc />
     public int QueueDepth => IsDistributed ? GetDistributedQueueDepth() : _localPendingKeys.Count;
 
-    /// <inheritdoc />
     public long SuccessCount => Volatile.Read(ref _successCount);
 
-    /// <inheritdoc />
     public long FailureCount => Volatile.Read(ref _failureCount);
 
-    /// <inheritdoc />
     public long SkippedCount => Volatile.Read(ref _skippedCount);
 
-    /// <inheritdoc />
     public void NotifyInvalidation(string key)
     {
         _retryBackoff.Remove(key);
@@ -131,7 +116,6 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
         }
     }
 
-    /// <inheritdoc />
     public async Task NotifyInvalidationClusterWideAsync(string key, CancellationToken cancellationToken = default)
     {
         if (_redisSubscriber == null)
@@ -154,7 +138,6 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
         }
     }
 
-    /// <inheritdoc />
     public bool WasInvalidated(string key)
     {
         return IsDistributed
@@ -162,7 +145,6 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
             : _localPendingKeys.TryGetValue(key, out byte val) && val == 1;
     }
 
-    /// <inheritdoc />
     public async ValueTask<bool> WasInvalidatedAsync(string key, CancellationToken cancellationToken = default)
     {
         if (IsDistributed)
@@ -173,7 +155,6 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
         return _localPendingKeys.TryGetValue(key, out byte val) && val == 1;
     }
 
-    /// <inheritdoc />
     public bool TryClaimWriteBack(string key)
     {
         return IsDistributed
@@ -181,7 +162,6 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
             : _localPendingKeys.TryUpdate(key, 2, 0);
     }
 
-    /// <inheritdoc />
     public async ValueTask<bool> TryClaimWriteBackAsync(string key, CancellationToken cancellationToken = default)
     {
         if (IsDistributed)
@@ -192,7 +172,6 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
         return _localPendingKeys.TryUpdate(key, 2, 0);
     }
 
-    /// <inheritdoc />
     public bool TryEnqueueRefresh(string key, Func<CancellationToken, Task> refreshCallback)
     {
         if (_retryBackoff.IsActive(key))
@@ -227,7 +206,6 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
         return true;
     }
 
-    /// <inheritdoc />
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         if (!_options.BackgroundRefreshEnabled)
@@ -268,7 +246,6 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
         }
     }
 
-    /// <inheritdoc />
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
         // Drain any pending fire-and-forget Redis invalidation tasks so a clean shutdown
@@ -571,12 +548,7 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
         }
     }
 
-    /// <summary>
-    /// Wraps a fire-and-forget Redis task so exceptions are logged rather than unobserved,
-    /// and the resulting <see cref="Task"/> always completes successfully (never faults or
-    /// cancels) so <see cref="DrainPendingFireAndForgetTasksAsync"/> can safely <c>WhenAll</c>
-    /// it without masking the drain cancellation path.
-    /// </summary>
+    // The wrapped task always completes successfully so a joined wait cannot mask drain cancellation.
     private async Task ObserveRedisTaskAsync(Task redisTask, string operation, string key)
     {
         try
@@ -592,11 +564,6 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
         }
     }
 
-    /// <summary>
-    /// Adds a fire-and-forget task to the pending queue so <see cref="StopAsync"/> can
-    /// drain it before the process exits, and prunes already-completed tasks to bound
-    /// the queue size under sustained invalidation load.
-    /// </summary>
     private void EnqueueAndTrackFireAndForget(Task task)
     {
         _pendingFireAndForgetTasks.Enqueue(task);

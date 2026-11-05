@@ -7,16 +7,8 @@ using StackExchange.Redis;
 
 namespace Honua.Infrastructure.Redis;
 
-/// <summary>
-/// Service collection extensions for standardized Redis infrastructure.
-/// </summary>
 public static class RedisServiceCollectionExtensions
 {
-    /// <summary>
-    /// Adds standardized Redis infrastructure services to the service collection.
-    /// </summary>
-    /// <param name="services">The service collection</param>
-    /// <returns>The service collection for chaining</returns>
     public static IServiceCollection AddStandardizedRedisInfrastructure(this IServiceCollection services)
     {
         // Register Redis health monitor as singleton
@@ -30,14 +22,6 @@ public static class RedisServiceCollectionExtensions
         return services;
     }
 
-    /// <summary>
-    /// Adds a Redis-based leader election service to the service collection.
-    /// </summary>
-    /// <param name="services">The service collection</param>
-    /// <param name="leadershipKey">The Redis key to use for leadership coordination</param>
-    /// <param name="leaseDuration">Optional lease duration (defaults to 1 minute)</param>
-    /// <param name="nodeId">Optional node identifier (defaults to machine name + process ID)</param>
-    /// <returns>The service collection for chaining</returns>
     public static IServiceCollection AddRedisLeaderElection(
         this IServiceCollection services,
         string leadershipKey,
@@ -68,13 +52,6 @@ public static class RedisServiceCollectionExtensions
         return services;
     }
 
-    /// <summary>
-    /// Adds a Redis-based job queue service to the service collection.
-    /// </summary>
-    /// <param name="services">The service collection</param>
-    /// <param name="queueKey">The Redis key to use for the job queue</param>
-    /// <param name="fallbackStrategy">The fallback strategy to use when Redis is unavailable</param>
-    /// <returns>The service collection for chaining</returns>
     public static IServiceCollection AddRedisJobQueue(
         this IServiceCollection services,
         string queueKey,
@@ -111,12 +88,6 @@ public static class RedisServiceCollectionExtensions
         return services;
     }
 
-    /// <summary>
-    /// Adds multiple Redis job queues with different keys and strategies.
-    /// </summary>
-    /// <param name="services">The service collection</param>
-    /// <param name="queues">Dictionary of queue configurations (key -> fallback strategy)</param>
-    /// <returns>The service collection for chaining</returns>
     public static IServiceCollection AddRedisJobQueues(
         this IServiceCollection services,
         Dictionary<string, RedisFallbackMode> queues)
@@ -160,13 +131,6 @@ public static class RedisServiceCollectionExtensions
         return services;
     }
 
-    /// <summary>
-    /// Adds Redis health check to the service collection.
-    /// </summary>
-    /// <param name="services">The service collection</param>
-    /// <param name="name">Health check name</param>
-    /// <param name="tags">Optional tags for the health check</param>
-    /// <returns>The service collection for chaining</returns>
     public static IServiceCollection AddRedisHealthCheck(
         this IServiceCollection services,
         string name = "redis",

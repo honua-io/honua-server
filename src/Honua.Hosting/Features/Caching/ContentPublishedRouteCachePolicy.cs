@@ -5,13 +5,7 @@ using Microsoft.AspNetCore.OutputCaching;
 
 namespace Honua.Infrastructure.Caching;
 
-/// <summary>
-/// Output cache policy for public published-route reads. Tags responses for
-/// tag-based invalidation and disables caching for security-sensitive reads
-/// (public-link or embed reads) so only anonymous, link-free public reads are
-/// cached. The global anonymous-only base policy additionally prevents caching of
-/// authenticated requests, so cached entries never vary by principal.
-/// </summary>
+// A public-link or embed read is not cached; only an anonymous read with no link is.
 internal sealed class ContentPublishedRouteCachePolicy : IOutputCachePolicy
 {
     public ValueTask CacheRequestAsync(OutputCacheContext context, CancellationToken cancellationToken)

@@ -5,10 +5,6 @@ using Honua.Core.Features.Validation;
 
 namespace Honua.Infrastructure.Validation;
 
-/// <summary>
-/// Extension methods for common validation patterns used across endpoints.
-/// Provides fluent API for validation composition and reduces boilerplate code.
-/// </summary>
 public static class ValidationExtensions
 {
     internal const string WfsGmlIdentifierAttributeName = "__honua_wfs_gml_identifier";
@@ -16,9 +12,6 @@ public static class ValidationExtensions
     internal const string WfsGmlNameAttributeName = "__honua_wfs_gml_name";
     internal const string WfsGmlDescriptionAttributeName = "__honua_wfs_gml_description";
 
-    /// <summary>
-    /// Attribute validation behavior by protocol.
-    /// </summary>
     public enum AttributeValidationMode
     {
         Strict,
@@ -33,11 +26,6 @@ public static class ValidationExtensions
                attributeName.Equals(WfsGmlDescriptionAttributeName, StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// Validates spatial relationship parameter.
-    /// </summary>
-    /// <param name="spatialRel">Spatial relationship string</param>
-    /// <returns>Validation result with normalized spatial relationship</returns>
     public static ValidationResult<string> ValidateSpatialRelationship(string? spatialRel)
     {
         if (string.IsNullOrWhiteSpace(spatialRel))
@@ -69,12 +57,6 @@ public static class ValidationExtensions
         return ValidationResult<string>.Success(normalized);
     }
 
-    /// <summary>
-    /// Validates distance and units parameters for spatial queries.
-    /// </summary>
-    /// <param name="distance">Distance value</param>
-    /// <param name="units">Distance units</param>
-    /// <returns>Validation result for distance query parameters</returns>
     public static ValidationResult ValidateDistanceQuery(double? distance, string? units)
     {
         if (!distance.HasValue && string.IsNullOrWhiteSpace(units))
@@ -113,25 +95,11 @@ public static class ValidationExtensions
         return ValidationResult.Success();
     }
 
-    /// <summary>
-    /// Chains validation results, stopping at the first failure.
-    /// </summary>
-    /// <param name="validationResult">Initial validation result</param>
-    /// <param name="nextValidation">Function to produce next validation if current succeeds</param>
-    /// <returns>Combined validation result</returns>
     public static ValidationResult Then(this ValidationResult validationResult, Func<ValidationResult> nextValidation)
     {
         return validationResult.IsValid ? nextValidation() : validationResult;
     }
 
-    /// <summary>
-    /// Chains typed validation results, stopping at the first failure.
-    /// </summary>
-    /// <typeparam name="T">Type of first validation result</typeparam>
-    /// <typeparam name="TNext">Type of second validation result</typeparam>
-    /// <param name="validationResult">Initial validation result</param>
-    /// <param name="nextValidation">Function to produce next validation using first result's value</param>
-    /// <returns>Next validation result, or failure if first validation failed</returns>
     public static ValidationResult<TNext> Then<T, TNext>(
         this ValidationResult<T> validationResult,
         Func<T, ValidationResult<TNext>> nextValidation)

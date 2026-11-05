@@ -6,9 +6,6 @@ using Honua.Core.Features.Infrastructure.Domain;
 
 namespace Honua.FileStorage;
 
-/// <summary>
-/// Stream wrapper that tracks upload progress and reports it via IProgress callback.
-/// </summary>
 internal sealed class ProgressTrackingStream : Stream
 {
     private readonly Stream _innerStream;

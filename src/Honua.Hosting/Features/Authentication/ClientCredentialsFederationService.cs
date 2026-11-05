@@ -8,29 +8,7 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Authentication;
 
-/// <summary>
-/// Optional pluggable IdP/OIDC federation for the OAuth2 <c>client_credentials</c>
-/// grant (ADR-0053 Increment 3, #1889).
-/// </summary>
-/// <remarks>
-/// <para>
-/// Operators who centralise machine identity in an external IdP can delegate a
-/// <c>client_credentials</c> credential check to that IdP's token endpoint when the
-/// in-tree client registry and Admin API-key store both miss (#6166). This service
-/// forwards the presented <c>client_id</c>/<c>client_secret</c> to the configured
-/// token endpoint with <c>grant_type=client_credentials</c>; a successful exchange
-/// means the IdP has authenticated the machine identity. The caller must not invoke
-/// it for a secret a local store has already accepted.
-/// </para>
-/// <para>
-/// Per ADR-0049 Honua never holds a second token store: on success it discards the
-/// IdP token and the caller mints a Honua portal token carrying the locally
-/// configured roles. The roles are the operator's RBAC projection of "this
-/// federated client is trusted"; an empty role set grants nothing (never an
-/// escalation). Off by default and composes only under
-/// <c>EnableClientCredentials</c>.
-/// </para>
-/// </remarks>
+// Do not call this for a secret a local store already accepted; on success the IdP token is discarded and an empty role set grants nothing.
 internal sealed class ClientCredentialsFederationService(
     IHttpClientFactory httpClientFactory,
     IOptions<PortalTokenAuthenticationOptions> tokenOptions)
@@ -40,7 +18,6 @@ internal sealed class ClientCredentialsFederationService(
     private readonly IHttpClientFactory _httpClientFactory = httpClientFactory;
     private readonly PortalTokenAuthenticationOptions _tokenOptions = tokenOptions.Value;
 
-    /// <summary>Whether federation is enabled and correctly configured.</summary>
     public bool FederationEnabled
     {
         get
@@ -53,15 +30,7 @@ internal sealed class ClientCredentialsFederationService(
         }
     }
 
-    /// <summary>
-    /// Delegates a <c>client_credentials</c> exchange to the external IdP token
-    /// endpoint. Returns the roles to stamp on the minted Honua token when the IdP
-    /// accepts the credentials, otherwise <see langword="null"/>. The caller invokes
-    /// this only after the in-tree client registry and API-key store miss, and then
-    /// returns <c>invalid_client</c>. Never throws on an auth failure — a non-2xx
-    /// response, a non-JSON success body, or a transport error is a federation miss,
-    /// not a server error.
-    /// </summary>
+    // An authentication failure never throws: a non-success, a non-JSON body, or a transport error is a federation miss.
     public async Task<IReadOnlyList<string>?> TryAuthenticateAsync(
         string? clientId,
         string clientSecret,
@@ -140,10 +109,8 @@ internal sealed class ClientCredentialsFederationService(
     }
 }
 
-/// <summary>Minimal subset of an OAuth2 token endpoint response (RFC 6749 §5.1).</summary>
 internal sealed record FederatedTokenResponse
 {
-    /// <summary>The issued access token (presence confirms a successful exchange).</summary>
     [JsonPropertyName("access_token")]
     public string? AccessToken { get; init; }
 }

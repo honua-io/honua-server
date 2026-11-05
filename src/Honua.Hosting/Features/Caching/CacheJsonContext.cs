@@ -11,9 +11,6 @@ using Honua.Core.Features.Styling.Domain;
 
 namespace Honua.Infrastructure.Caching;
 
-/// <summary>
-/// JSON serialization context for cache-related types (AOT-compatible).
-/// </summary>
 [JsonSerializable(typeof(MetadataV2Field))]
 [JsonSerializable(typeof(MetadataV2Field[]))]
 [JsonSerializable(typeof(Honua.Core.Features.Shared.Models.SpatialReference), TypeInfoPropertyName = "CacheSpatialReference")]
@@ -39,12 +36,6 @@ internal sealed partial class CacheJsonContext : JsonSerializerContext
 {
 }
 
-/// <summary>
-/// Wrapper for cached existence checks.
-/// </summary>
 internal sealed record CachedExistenceResult(bool Exists);
 
-/// <summary>
-/// Wrapper for tracked cache-key indexes used to avoid full keyspace scans.
-/// </summary>
 internal sealed record CachedCacheKeyIndex(string[] Keys, Dictionary<string, long>? ExpiresAtUtcTicks = null);

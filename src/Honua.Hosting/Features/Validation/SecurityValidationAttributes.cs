@@ -9,10 +9,7 @@ using DataAnnotationsValidationResult = System.ComponentModel.DataAnnotations.Va
 
 namespace Honua.Infrastructure.Validation;
 
-/// <summary>
-/// Validation attribute that ensures a string contains only safe characters for SQL table/column names.
-/// Prevents SQL injection through identifiers.
-/// </summary>
+// The value is restricted to identifier characters because it is quoted into SQL as a name.
 [AttributeUsage(AttributeTargets.Property | AttributeTargets.Field | AttributeTargets.Parameter)]
 public sealed class SafeSqlIdentifierAttribute : ValidationAttribute
 {
@@ -75,9 +72,6 @@ public sealed class SafeSqlIdentifierAttribute : ValidationAttribute
     }
 }
 
-/// <summary>
-/// Validation attribute that ensures a geometry SRID is within valid ranges.
-/// </summary>
 [AttributeUsage(AttributeTargets.Property | AttributeTargets.Field | AttributeTargets.Parameter)]
 public sealed class ValidSridAttribute : ValidationAttribute
 {
@@ -109,9 +103,6 @@ public sealed class ValidSridAttribute : ValidationAttribute
     }
 }
 
-/// <summary>
-/// Validation attribute that ensures a file extension is in the allowed list.
-/// </summary>
 [AttributeUsage(AttributeTargets.Property | AttributeTargets.Field | AttributeTargets.Parameter)]
 public sealed class AllowedFileExtensionAttribute : ValidationAttribute
 {
@@ -149,9 +140,6 @@ public sealed class AllowedFileExtensionAttribute : ValidationAttribute
     }
 }
 
-/// <summary>
-/// Validation attribute that ensures coordinate values are within valid geographic bounds.
-/// </summary>
 [AttributeUsage(AttributeTargets.Property | AttributeTargets.Field | AttributeTargets.Parameter)]
 public sealed class ValidCoordinateAttribute : ValidationAttribute
 {
@@ -190,18 +178,12 @@ public sealed class ValidCoordinateAttribute : ValidationAttribute
     }
 }
 
-/// <summary>
-/// Types of coordinate validation.
-/// </summary>
 public enum CoordinateType
 {
     Longitude,
     Latitude
 }
 
-/// <summary>
-/// Validation attribute that ensures a string doesn't contain dangerous characters for XSS prevention.
-/// </summary>
 [AttributeUsage(AttributeTargets.Property | AttributeTargets.Field | AttributeTargets.Parameter)]
 public sealed class SafeStringAttribute : ValidationAttribute
 {
@@ -228,9 +210,6 @@ public sealed class SafeStringAttribute : ValidationAttribute
     }
 }
 
-/// <summary>
-/// Validation attribute for WHERE clause strings to prevent SQL injection.
-/// </summary>
 [AttributeUsage(AttributeTargets.Property | AttributeTargets.Field | AttributeTargets.Parameter)]
 public sealed class SafeWhereClauseAttribute : ValidationAttribute
 {
@@ -281,9 +260,6 @@ public sealed class SafeWhereClauseAttribute : ValidationAttribute
     }
 }
 
-/// <summary>
-/// Validation attribute for pagination parameters.
-/// </summary>
 [AttributeUsage(AttributeTargets.Property | AttributeTargets.Field | AttributeTargets.Parameter)]
 public sealed class ValidPaginationAttribute : ValidationAttribute
 {

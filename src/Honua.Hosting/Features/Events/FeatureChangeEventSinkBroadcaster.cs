@@ -6,19 +6,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Events;
 
-/// <summary>
-/// Fans a durably persisted feature-change event out to every registered
-/// <see cref="IFeatureChangeEventSink"/> with per-sink failure isolation (#357).
-/// </summary>
-/// <remarks>
-/// The canonical publish path calls <see cref="Dispatch"/> after it has appended
-/// the event to the store and broadcast it to live sessions. Sink delivery runs
-/// off the write hot path so a slow or failing transport never blocks the
-/// originating edit. Each sink is invoked independently; a sink that throws is
-/// logged and metered but does not affect durable storage, live streaming, or
-/// sibling sinks. When sinks are disabled or none are registered, dispatch is a
-/// cheap no-op.
-/// </remarks>
 internal sealed partial class FeatureChangeEventSinkBroadcaster
 {
     private readonly IReadOnlyList<IFeatureChangeEventSink> _sinks;
@@ -39,17 +26,8 @@ internal sealed partial class FeatureChangeEventSinkBroadcaster
         _sinks = _enabled ? [.. sinks] : [];
     }
 
-    /// <summary>
-    /// Gets a value indicating whether any sink will receive events. False when
-    /// sinks are disabled by configuration or none are registered.
-    /// </summary>
     public bool HasActiveSinks => _sinks.Count > 0;
 
-    /// <summary>
-    /// Hands the persisted event to each registered sink. Returns immediately;
-    /// sink delivery is observed in the background so the write path is never
-    /// blocked. Safe to call when no sinks are active.
-    /// </summary>
     public void Dispatch(FeatureChangeEvent featureEvent, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(featureEvent);
@@ -67,11 +45,6 @@ internal sealed partial class FeatureChangeEventSinkBroadcaster
         }
     }
 
-    /// <summary>
-    /// Awaits delivery to every registered sink. Exposed for the strict publish
-    /// path and tests that need deterministic completion. Per-sink failures are
-    /// isolated and never propagate.
-    /// </summary>
     public async Task DispatchAndWaitAsync(FeatureChangeEvent featureEvent, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(featureEvent);

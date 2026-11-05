@@ -5,64 +5,15 @@ using System.Security.Claims;
 
 namespace Honua.Infrastructure.Authentication;
 
-/// <summary>
-/// Grammar and helpers for layer-scoped write API keys (#1637) and the
-/// resource grants (<c>read:</c> / <c>write:</c>) carried by scoped API keys.
-/// </summary>
-/// <remarks>
-/// <para>
-/// A layer-scoped write key is a low-blast-radius credential intended for
-/// public-sandbox or demo-editing scenarios where shipping a full-admin key in
-/// page source is unacceptable. It authorizes write operations only on the
-/// specific service(s) and layer(s) named in its permission grants and confers
-/// no read, metadata, or administrative authority.
-/// </para>
-/// <para>
-/// Permission grammar (case-insensitive, leading/trailing whitespace trimmed):
-/// <list type="bullet">
-///   <item><c>write:{service}</c> — writes to any layer of the named service.</item>
-///   <item><c>write:{service}/{layer}</c> — writes to a single named layer.</item>
-/// </list>
-/// A key that carries one or more <c>write:</c> grants and does not carry a
-/// full-administration grant (<c>admin</c> or <c>*</c>) is treated as a scoped
-/// write key: it is authenticated as a non-admin principal and is enforced by
-/// the shared write-authorization pipeline rather than by caller discipline.
-/// </para>
-/// <para>
-/// Read grammar for scope-governed keys (same normalization):
-/// <list type="bullet">
-///   <item><c>read:{service}</c> or <c>read:{service}/*</c> — reads any layer of the named service.</item>
-///   <item><c>read:{service}/{layer}</c> — reads a single named layer.</item>
-///   <item><c>read:*</c> — reads any layer of any service.</item>
-/// </list>
-/// The wildcard forms exist only for <c>read:</c>; <c>write:</c> grants must
-/// always name their service. Wildcard reads still pass through the same field
-/// mask, row-level and tenant filters as a named <c>read:</c> grant.
-/// </para>
-/// <para>
-/// GPServer execution uses an additional exact grant: <c>execute:{service}/{canonical-process-id}</c>,
-/// for example <c>execute:test/geometry.area</c>. No wildcard, service-wide, read, or write grant
-/// implies execution. GP discovery still requires a separate <c>read:</c> grant. Execution grants
-/// apply only to the named GP task and its owned, service-bound jobs; they confer no generic
-/// operator, OGC Processes, WPS, or MCP authority.
-/// </para>
-/// </remarks>
+// A write grant cannot be a wildcard and confers no read or admin authority, and an execute grant is an exact service and process id with no generic operator, OGC, WPS, or MCP authority.
 internal static class LayerScopedWriteKey
 {
-    /// <summary>
-    /// Prefix that identifies a layer-scoped write permission grant.
-    /// </summary>
     public const string WritePermissionPrefix = "write:";
 
-    /// <summary>
-    /// Prefix that identifies a scoped read permission grant.
-    /// </summary>
     public const string ReadPermissionPrefix = "read:";
 
-    /// <summary>Exact GPServer service/canonical-process execution grant prefix.</summary>
     public const string ExecutePermissionPrefix = "execute:";
 
-    /// <summary>Checks an exact GP execution grant. Neither service-wide nor wildcard forms exist.</summary>
     public static bool AllowsGPExecution(ClaimsPrincipal principal, string service, string processId)
         => IsExactExecutionIdentifier(service) && IsExactExecutionIdentifier(processId)
             && principal.FindAll("permission").Any(claim =>
@@ -73,69 +24,23 @@ internal static class LayerScopedWriteKey
         => !string.IsNullOrWhiteSpace(value) && value == value.Trim()
             && !value.Any(character => character is '*' or '/' or ':' || char.IsWhiteSpace(character));
 
-    /// <summary>
-    /// Wildcard token accepted in <c>read:</c> grants: <c>read:*</c> (any service)
-    /// and <c>read:{service}/*</c> (any layer of the service).
-    /// </summary>
     public const string ReadWildcard = "*";
 
-    /// <summary>
-    /// Exact full-administration grants. A key carrying any of these is NOT scoped
-    /// and retains full admin authority (legacy behavior).
-    /// </summary>
     private static readonly string[] AdminGrants = ["admin", "*"];
 
-    /// <summary>
-    /// Prefix for administrative permission grants. Only the explicitly supported
-    /// full-admin sub-grants confer that role; narrower grants remain scoped.
-    /// </summary>
     private const string AdminGrantPrefix = "admin:";
 
-    /// <summary>
-    /// Claim type used to mark a principal as a layer-scoped write key. The value
-    /// is the literal <see cref="AuthType"/> so downstream code can branch on it.
-    /// </summary>
     public const string ScopeClaimType = "honua_scope";
 
-    /// <summary>
-    /// The <c>auth_type</c> claim value assigned to layer-scoped write keys.
-    /// </summary>
     public const string AuthType = "layer-write-key";
 
-    /// <summary>
-    /// Role assigned to a layer-scoped write key so it never satisfies the
-    /// <c>admin</c> role requirement guarding administrative endpoints.
-    /// </summary>
+    // The scoped write role is not admin, so it never satisfies an admin endpoint.
     public const string Role = "layer-write-key";
 
-    /// <summary>
-    /// Role assigned to a genuinely-scoped API key whose grants confer neither full
-    /// admin authority nor a layer-scoped <c>write:</c> grant (issue #1985). The role
-    /// is deliberately not <c>admin</c> so the key is denied any endpoint guarded by
-    /// the admin authorization policy; its scoped grants remain available as
-    /// <c>permission</c> claims for endpoint-level enforcement.
-    /// </summary>
+    // A scoped key that is not a write key is also not given the admin role.
     public const string ScopedKeyRole = "scoped-api-key";
 
-    /// <summary>
-    /// Determines whether the supplied permission grants confer full administrative
-    /// authority — i.e. the key is unscoped and must satisfy every admin endpoint
-    /// (legacy behavior). This is the case when no permissions are supplied (the
-    /// password-based bootstrap admin and the development bypass authenticate with
-    /// <see langword="null"/> permissions, and the key store normalizes an empty
-    /// grant set to <c>admin:*</c>) or when at least one grant is a full-admin grant
-    /// (<c>admin</c>, <c>*</c>, <c>admin:*</c>, <c>admin:write</c>, or
-    /// <c>admin:manage</c>).
-    /// </summary>
-    /// <remarks>
-    /// A key whose grants are genuinely scoped — neither a full-admin grant nor a
-    /// layer-scoped <c>write:</c> grant — confers no admin authority. Such a key is
-    /// authenticated as a non-admin principal (issue #1985) so it no longer silently
-    /// passes the admin authorization policy; its grants are surfaced as
-    /// <c>permission</c> claims for endpoint-level enforcement.
-    /// </remarks>
-    /// <param name="permissions">The key's permission grants.</param>
-    /// <returns><see langword="true"/> when the key confers full admin authority.</returns>
+    // Empty grants normalize to admin:* for bootstrap and the dev bypass; a genuinely scoped grant confers no admin authority.
     public static bool ConfersFullAdmin(IReadOnlyList<string>? permissions)
     {
         if (permissions is null || permissions.Count == 0)
@@ -167,12 +72,6 @@ internal static class LayerScopedWriteKey
         return !hasMeaningfulGrant;
     }
 
-    /// <summary>
-    /// Determines whether the supplied permission grants describe a layer-scoped
-    /// write key: at least one <c>write:</c> grant and no full-admin grant.
-    /// </summary>
-    /// <param name="permissions">The key's permission grants.</param>
-    /// <returns><see langword="true"/> when the key is layer-scoped.</returns>
     public static bool IsScopedWriteKey(IReadOnlyList<string>? permissions)
     {
         if (permissions is null || permissions.Count == 0)
@@ -205,37 +104,17 @@ internal static class LayerScopedWriteKey
         return hasWriteGrant;
     }
 
-    /// <summary>
-    /// Determines whether writes require explicit grants from a scoped key or job capability.
-    /// </summary>
-    /// <param name="principal">The request principal.</param>
-    /// <returns><see langword="true"/> when the principal is a scoped key or a frozen job capability.</returns>
     public static bool IsScopedWritePrincipal(ClaimsPrincipal? principal)
         => principal is not null &&
            (principal.HasClaim("auth_type", AuthType) ||
             principal.HasClaim("auth_type", ScopedJobTokenIssuer.AuthTypeClaimValue));
 
-    /// <summary>
-    /// Determines whether resource access for an API-key principal is governed by
-    /// its permission claims rather than by the coarse authenticated-user fallback.
-    /// </summary>
-    /// <remarks>
-    /// The API-key handler stamps these markers as <see cref="ClaimTypes.Role"/> claims, but a
-    /// principal restored from a durable job snapshot is built with the configured RBAC role
-    /// claim type (for example OIDC <c>roles</c>), so <see cref="ClaimsPrincipal.IsInRole"/>
-    /// alone would miss a marker held under <see cref="ClaimTypes.Role"/>. Either claim type
-    /// marks the principal as governed: the check only ever narrows access (honua-server#6101).
-    /// </remarks>
     public static bool IsScopeGovernedPrincipal(ClaimsPrincipal? principal)
         => principal is not null &&
            (IsScopedWritePrincipal(principal)
             || ScopeGovernanceRoles.Any(role =>
                 principal.IsInRole(role) || principal.HasClaim(ClaimTypes.Role, role)));
 
-    /// <summary>
-    /// Role markers the API-key handler stamps on credentials whose resource access is governed
-    /// by their <c>permission</c> grants rather than by the coarse authenticated-user fallback.
-    /// </summary>
     internal static readonly IReadOnlyList<string> ScopeGovernanceRoles =
     [
         ScopedKeyRole,
@@ -243,9 +122,6 @@ internal static class LayerScopedWriteKey
         AdminApiKeyPermission.ApprovedOperationRole,
     ];
 
-    /// <summary>
-    /// Determines whether a scoped API key has a read grant for a resource.
-    /// </summary>
     public static bool AllowsRead(ClaimsPrincipal principal, string? serviceName, string? layerName)
     {
         ArgumentNullException.ThrowIfNull(principal);
@@ -261,17 +137,7 @@ internal static class LayerScopedWriteKey
             .Any(claim => GrantMatchesResource(claim.Value, ReadPermissionPrefix, service, layer, allowWildcard: true));
     }
 
-    /// <summary>
-    /// Evaluates whether a scoped write principal is authorized to write to the
-    /// supplied <c>(service, layer)</c>. The principal must carry a matching
-    /// <c>write:{service}</c> or <c>write:{service}/{layer}</c> grant. A
-    /// service-wide grant authorizes any layer of that service; a layer-specific
-    /// grant authorizes only the named layer.
-    /// </summary>
-    /// <param name="principal">The scoped write principal.</param>
-    /// <param name="serviceName">The target service name.</param>
-    /// <param name="layerName">The target layer name, when known.</param>
-    /// <returns><see langword="true"/> when a grant authorizes the write.</returns>
+    // A service-wide write grant covers every layer of that service; a layer grant covers only the named layer.
     public static bool AllowsWrite(ClaimsPrincipal principal, string? serviceName, string? layerName)
     {
         ArgumentNullException.ThrowIfNull(principal);
@@ -291,15 +157,7 @@ internal static class LayerScopedWriteKey
     private static bool GrantAllowsWrite(string? grant, string service, string? layer)
         => GrantMatchesResource(grant, WritePermissionPrefix, service, layer, allowWildcard: false);
 
-    /// <summary>
-    /// Determines whether a <c>read:</c>, <c>write:</c>, or <c>execute:</c> grant fails to name a valid
-    /// target. Read grants accept <c>read:*</c> and <c>read:{service}/*</c>; write
-    /// grants accept no wildcard. Execute grants require exact service and canonical process identities.
-    /// Grants with other prefixes are not resource grants
-    /// and are never reported as malformed.
-    /// </summary>
-    /// <param name="grant">The permission grant.</param>
-    /// <returns><see langword="true"/> when the grant is a malformed resource grant.</returns>
+    // Write grants reject wildcards, execute grants need both ids, and any other prefix is not a resource grant and is not reported as malformed.
     public static bool IsMalformedResourceGrant(string? grant)
     {
         var trimmed = grant?.Trim();

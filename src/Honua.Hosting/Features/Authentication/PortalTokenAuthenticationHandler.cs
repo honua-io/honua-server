@@ -11,30 +11,7 @@ using Microsoft.Extensions.Primitives;
 
 namespace Honua.Infrastructure.Authentication;
 
-/// <summary>
-/// Authenticates requests that carry an ArcGIS-style opaque portal token.
-/// </summary>
-/// <remarks>
-/// ArcGIS clients deliver the token in one of four places: the <c>token</c> query
-/// string parameter (legacy/embedded clients), the <c>Authorization: Bearer</c>
-/// header, the <c>X-Esri-Authorization: Bearer</c> header used by newer Esri
-/// SDKs, or the <c>token</c> field in an <c>application/x-www-form-urlencoded</c>
-/// request body. The handler accepts any of these and delegates to
-/// <see cref="IPortalTokenIssuer.ValidateAsync"/> for verification.
-/// <para>
-/// GeoServices clients present an API key exactly as they present an access token, so
-/// a value that is not a portal token is then checked as an API key (#5492). A key
-/// accepted this way yields the principal the <c>X-API-Key</c> header yields: the key's
-/// own roles and permission claims, under the API-key credential kind.
-/// </para>
-/// <para>
-/// A query-string API key is accepted wherever a portal token is accepted, but the
-/// <c>token</c> query parameter leaks into browser history, proxy logs and <c>Referer</c>
-/// headers, so a key carrying any administrative authority (admin, scoped-admin or
-/// approved-operation role, any admin permission grant, or the bootstrap admin key) is
-/// refused there and must use a header transport. Header and form transports are unaffected.
-/// </para>
-/// </remarks>
+// A query-string API key is accepted where a portal token is, but a key with any administrative authority is refused on that transport because the URL is retained by clients and proxies.
 internal sealed class PortalTokenAuthenticationHandler(
     IOptionsMonitor<AuthenticationSchemeOptions> options,
     ILoggerFactory logger,
@@ -49,7 +26,6 @@ internal sealed class PortalTokenAuthenticationHandler(
 
     private readonly IPortalTokenIssuer _tokenIssuer = tokenIssuer ?? throw new ArgumentNullException(nameof(tokenIssuer));
 
-    /// <inheritdoc />
     protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
     {
         var (token, hasConflictingValues, fromQuery) = await ExtractTokenAsync().ConfigureAwait(false);
@@ -92,10 +68,7 @@ internal sealed class PortalTokenAuthenticationHandler(
         return AuthenticateResult.Fail(InvalidTokenMessage);
     }
 
-    /// <summary>
-    /// Records that the accepted credential travelled in the request URI, so the bridge
-    /// middleware can mark the response <c>Cache-Control: private</c> (RFC 6750 §2.3).
-    /// </summary>
+    // A credential that arrived in the request URI is recorded so the response can be marked private.
     private void MarkQueryCredential(bool fromQuery)
     {
         if (fromQuery)

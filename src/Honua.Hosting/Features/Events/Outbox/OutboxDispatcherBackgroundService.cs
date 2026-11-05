@@ -9,17 +9,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Events.Outbox;
 
-/// <summary>
-/// Background worker that claims rows from <c>honua.feature_change_outbox</c> and
-/// republishes them through the canonical <see cref="IFeatureChangeEventPublisher"/>
-/// path that already feeds replay storage, webhook delivery, and live streaming.
-/// </summary>
-/// <remarks>
-/// Multi-node safety relies on the repository's atomic claim primitive
-/// (<c>FOR UPDATE SKIP LOCKED</c> on Postgres). Each claimed row is stamped with
-/// the worker's node id and a TTL so a crashed worker does not orphan rows: the
-/// recovery loop resets expired leases back to <c>pending</c> for re-claim.
-/// </remarks>
 internal sealed partial class OutboxDispatcherBackgroundService : BackgroundService, IOutboxHealth
 {
     private readonly IServiceProvider _services;
@@ -137,11 +126,6 @@ internal sealed partial class OutboxDispatcherBackgroundService : BackgroundServ
         }
     }
 
-    /// <summary>
-    /// Executes one dispatch pass: recovers expired claims when due, claims a batch,
-    /// publishes each entry, and refreshes the backlog gauges. Exposed as internal
-    /// so integration tests can drive deterministic single passes.
-    /// </summary>
     internal async Task<int> ExecuteOnceAsync(CancellationToken cancellationToken)
     {
         await using var scope = _services.CreateAsyncScope();
@@ -281,21 +265,11 @@ internal sealed partial class OutboxDispatcherBackgroundService : BackgroundServ
         }
     }
 
-    /// <summary>
-    /// Outcome of a <see cref="IFeatureChangeOutboxRepository.MarkFailedAsync"/> call,
-    /// used by the dispatcher to decide which counter to increment so a stale-claim
-    /// no-op or a thrown <c>MarkFailedAsync</c> never inflates failure/dead-letter
-    /// counts beyond the rows that actually transitioned terminal state.
-    /// </summary>
     private enum MarkFailedOutcome
     {
-        /// <summary>Row transitioned to <c>failed</c>; retries remain.</summary>
         Failed,
-        /// <summary>Row transitioned to <c>dead_lettered</c> because the retry budget was exhausted.</summary>
         DeadLettered,
-        /// <summary>Repository returned <c>false</c>; the claim was reset/reclaimed before the terminal update could land.</summary>
         StaleClaim,
-        /// <summary>Repository threw; the row remains <c>claimed</c> and the next pass (or recovery) will retry.</summary>
         Errored,
     }
 

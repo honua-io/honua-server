@@ -8,9 +8,6 @@ using Microsoft.AspNetCore.Http;
 
 namespace Honua.Infrastructure.Helpers;
 
-/// <summary>
-/// Shared helpers for admin response payloads and problem details.
-/// </summary>
 internal static class AdminResponseWriter
 {
     public static Task WriteErrorAsync(HttpContext context, int statusCode, string message)
