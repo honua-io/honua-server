@@ -6,12 +6,6 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Ai.Protocols.Mcp.Grounding;
 
-/// <summary>
-/// AOT-compatible source-generated JSON context for the grounding MCP
-/// DTOs. Kept separate from the core MCP JSON context so the grounding feature
-/// slice owns its own serializer surface and does not force the protocol
-/// context to recompile whenever the grounding output shape evolves.
-/// </summary>
 [JsonSerializable(typeof(McpGroundCandidatesArgument))]
 [JsonSerializable(typeof(McpClarifyIntentArgument))]
 [JsonSerializable(typeof(McpCallerContextInput))]

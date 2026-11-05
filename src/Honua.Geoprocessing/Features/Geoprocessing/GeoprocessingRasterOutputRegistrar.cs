@@ -13,18 +13,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Geoprocessing;
 
-/// <summary>
-/// Performs the optional post-success registration of staged raster outputs into the
-/// COG catalog (#3089). Registration is an explicit, durable, idempotently reconciled
-/// cross-store step per ADR-0071: the staged object (already committed at an immutable
-/// attempt-scoped key) is the authoritative winner and the catalog row is reconciled
-/// to it. The <c>uq_cloud_raster_object</c> unique constraint on
-/// <c>(layer_id, provider, bucket, object_key)</c> makes a retried or replayed
-/// registration converge on one row instead of duplicating it. Callers gate result
-/// visibility on this step: a package for a job with registration intents is neither
-/// persisted nor returned until every intent is durably registered, so a successful
-/// result can never reference an unregistered output.
-/// </summary>
+// A package that declares registration is not returned until every intent is durable, so a result never points at an unregistered output.
 internal sealed partial class GeoprocessingRasterOutputRegistrar(
     IServiceScopeFactory serviceScopeFactory,
     ILogger<GeoprocessingRasterOutputRegistrar> logger,
@@ -33,21 +22,10 @@ internal sealed partial class GeoprocessingRasterOutputRegistrar(
     private const string CogCatalogTargetPrefix = "cog-catalog:";
     private const string PostgisTargetPrefix = "postgis:";
 
-    /// <summary>Whether the job spec declares any output registration intents.</summary>
     public static bool HasRegistrationIntents(ExecutionJobRecord job)
         => job.Spec.Parameters.Keys.Any(static key => key.StartsWith(
             ExecutionJobParameterKeys.GeoprocessingOutputRegistrationPrefix, StringComparison.Ordinal));
 
-    /// <summary>
-    /// Ensures every declared registration intent is durably satisfied and returns the
-    /// result package enriched with the registered catalog identities. Throws when an
-    /// intent cannot be satisfied so callers never expose a Completed package whose
-    /// requested registration did not happen.
-    /// </summary>
-    /// <param name="job">Terminal Succeeded job record.</param>
-    /// <param name="package">Result package built from the job.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The package with registration metadata applied.</returns>
     public async Task<AnalysisResultPackage> EnsureRegisteredAsync(
         ExecutionJobRecord job,
         AnalysisResultPackage package,
@@ -226,11 +204,6 @@ internal sealed partial class GeoprocessingRasterOutputRegistrar(
         return result;
     }
 
-    /// <summary>
-    /// Registers the staged object into the COG catalog, converging on the existing row
-    /// when a previous attempt, a retried callback, or a concurrent replay already
-    /// registered the same immutable (layer, provider, bucket, key) identity.
-    /// </summary>
     private static async Task<long> RegisterOrGetAsync(
         ICogStore cogStore,
         int layerId,

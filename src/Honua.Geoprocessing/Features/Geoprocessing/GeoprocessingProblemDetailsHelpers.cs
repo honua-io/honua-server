@@ -28,9 +28,6 @@ internal static class GeoprocessingProblemDetailsHelpers
                 ProblemDetailsHelpers.GetTitle(StatusCodes.Status503ServiceUnavailable),
                 exception.Message);
 
-    /// <summary>
-    /// Maps an idempotency-key collision to 409 and includes the winning job id.
-    /// </summary>
     public static IResult IdempotencyConflict(
         HttpContext context,
         GeoprocessingIdempotencyConflictException exception)
@@ -46,10 +43,6 @@ internal static class GeoprocessingProblemDetailsHelpers
         return Json(context, details, StatusCodes.Status409Conflict);
     }
 
-    /// <summary>
-    /// Maps admission control to 429 when the outcome is throttled and 503 otherwise,
-    /// with <c>Retry-After</c> taken from <see cref="GeoprocessingAdmissionException.RetryAfterSeconds"/>.
-    /// </summary>
     public static IResult Admission(
         HttpContext context,
         GeoprocessingAdmissionException exception)
@@ -71,9 +64,6 @@ internal static class GeoprocessingProblemDetailsHelpers
         return Json(context, details, status);
     }
 
-    /// <summary>
-    /// Maps an approval gate to 403 and includes the policy reference and proposal id.
-    /// </summary>
     public static IResult ApprovalRequired(
         HttpContext context,
         GeoprocessingApprovalRequiredException exception)

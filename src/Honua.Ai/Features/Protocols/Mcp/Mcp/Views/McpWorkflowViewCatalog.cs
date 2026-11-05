@@ -3,52 +3,20 @@
 
 namespace Honua.Ai.Protocols.Mcp.Views;
 
-/// <summary>
-/// The server-authored workflow-view catalog (honua-server#3428). <c>setup</c> is the
-/// bounded terminal path, including Studio 2D composition and lifecycle.
-/// <c>configure</c>, <c>operate</c>, and <c>analyze</c> are the 2026.1 views the curated
-/// prompts select.
-/// </summary>
-/// <remarks>
-/// <para>
-/// The catalog owns <em>selection</em> only. Every published descriptor —
-/// description, annotations, input schema, output schema — is taken verbatim from
-/// the canonical live catalog (<c>McpDataAccessSurface.GetAllToolsAsync</c>, the
-/// same roster <c>tools/list</c> serves and the ADR-0058 capability registry
-/// governs), so neither this server nor any client maintains a second
-/// name/schema inventory.
-/// </para>
-/// <para>
-/// Stages are matched first-match-wins in declaration order, and family prefix
-/// rules make the view self-updating: an eligible server operation added to (or
-/// removed from) a covered family joins or leaves the generated view with no edit
-/// here and no SDK/Studio source-list edit.
-/// </para>
-/// </remarks>
 internal static class McpWorkflowViewCatalog
 {
-    /// <summary>The bounded default discovery/workflow surface.</summary>
     public const string DefaultViewName = "default";
 
-    /// <summary>The bounded terminal-setup view name.</summary>
     public const string SetupViewName = "setup";
 
-    /// <summary>The 2026.1 configure view: closed admin roster, publish, style, and Studio.</summary>
     public const string ConfigureViewName = "configure";
 
-    /// <summary>The 2026.1 operate view: health, findings, and one finding proposal.</summary>
     public const string OperateViewName = "operate";
 
-    /// <summary>The 2026.1 analyze view: ground, plan, execute, and job control.</summary>
     public const string AnalyzeViewName = "analyze";
 
-    /// <summary>Read-only package review. Split from <c>setup</c> so that view stays inside the descriptor budget.</summary>
     public const string ReviewViewName = "review";
 
-    /// <summary>
-    /// The default meta/workflow surface. Long-tail operations are reached by
-    /// resolving/searching, describing, planning/proposing, then executing.
-    /// </summary>
     public static McpWorkflowViewDefinition Default { get; } = new()
     {
         Name = DefaultViewName,
@@ -90,11 +58,6 @@ internal static class McpWorkflowViewCatalog
         ],
     };
 
-    /// <summary>
-    /// The <c>setup</c> view: readiness → connect/import → publish → verify access
-    /// → style/render → bounded geoprocessing → Studio composition/lifecycle →
-    /// publication submit/status.
-    /// </summary>
     public static McpWorkflowViewDefinition Setup { get; } = new()
     {
         Name = SetupViewName,
@@ -242,10 +205,6 @@ internal static class McpWorkflowViewCatalog
         ],
     };
 
-    /// <summary>
-    /// The <c>configure</c> view. Prompts select this, not <c>setup</c>. Studio composition stays
-    /// here unless the descriptor budget forces a <c>compose</c> split.
-    /// </summary>
     public static McpWorkflowViewDefinition Configure { get; } = new()
     {
         Name = ConfigureViewName,
@@ -363,7 +322,6 @@ internal static class McpWorkflowViewCatalog
         ],
     };
 
-    /// <summary>The <c>operate</c> view: read operational evidence and propose one finding.</summary>
     public static McpWorkflowViewDefinition Operate { get; } = new()
     {
         Name = OperateViewName,
@@ -398,9 +356,6 @@ internal static class McpWorkflowViewCatalog
         ],
     };
 
-    /// <summary>
-    /// The <c>analyze</c> view named by the site, hazard, and permit prompts before publish.
-    /// </summary>
     public static McpWorkflowViewDefinition Analyze { get; } = new()
     {
         Name = AnalyzeViewName,
@@ -444,12 +399,7 @@ internal static class McpWorkflowViewCatalog
         ],
     };
 
-    /// <summary>
-    /// The <c>review</c> view. Package review is read-only and does not belong on
-    /// <c>configure</c> (that view carries the admin roster) or <c>analyze</c> (the
-    /// ground/plan/execute prompts). It is not on <c>setup</c> because the two
-    /// descriptors, about 2.5 KiB each, push that view past the 128 KiB aggregate ceiling.
-    /// </summary>
+    // Package review is not placed on setup because those descriptors push that view past the 128 KiB aggregate ceiling.
     public static McpWorkflowViewDefinition Review { get; } = new()
     {
         Name = ReviewViewName,
@@ -474,7 +424,6 @@ internal static class McpWorkflowViewCatalog
         ],
     };
 
-    /// <summary>Every view this server publishes, keyed by name (ordinal).</summary>
     public static IReadOnlyDictionary<string, McpWorkflowViewDefinition> All { get; } =
         new Dictionary<string, McpWorkflowViewDefinition>(StringComparer.Ordinal)
         {
@@ -486,11 +435,9 @@ internal static class McpWorkflowViewCatalog
             [Review.Name] = Review,
         };
 
-    /// <summary>The published view names, in stable ordinal order.</summary>
     public static IReadOnlyList<string> Names { get; } =
         All.Keys.OrderBy(static n => n, StringComparer.Ordinal).ToArray();
 
-    /// <summary>Finds a published view by name, or <c>null</c> when unknown.</summary>
     public static McpWorkflowViewDefinition? Find(string? name) =>
         name is null ? null : All.GetValueOrDefault(name);
 }

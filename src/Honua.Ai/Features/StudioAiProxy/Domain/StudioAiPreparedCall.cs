@@ -6,7 +6,6 @@ using Honua.Ai.StudioAiProxy.Abstractions;
 
 namespace Honua.Ai.StudioAiProxy.Domain;
 
-/// <summary>A server-prepared chat request bound to its trusted identity and one charged invocation permit.</summary>
 public sealed class StudioAiPreparedCall : IAsyncDisposable
 {
     private int _claimed;
@@ -27,6 +26,5 @@ public sealed class StudioAiPreparedCall : IAsyncDisposable
     internal IStudioAiPreparedHttpAdapter? HttpAdapter { get; }
     internal StudioAiHttpInvocation? HttpInvocation { get; }
     internal bool TryClaim() => Interlocked.CompareExchange(ref _claimed, 1, 0) == 0;
-    /// <summary>Releases the reservation independently of caller cancellation; the attempt remains charged.</summary>
     public ValueTask DisposeAsync() => Permit.DisposeAsync();
 }

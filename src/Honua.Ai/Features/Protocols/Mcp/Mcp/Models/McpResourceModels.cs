@@ -9,10 +9,6 @@ namespace Honua.Ai.Protocols.Mcp.Models;
 // Resource response shapes
 // -----------------------------------------------------------------------
 
-/// <summary>
-/// Response body for reads of <c>honua://proposals/{proposalId}</c>: a readable
-/// view of an operation proposal's status and plan summary for polling (#1696).
-/// </summary>
 internal sealed class McpProposalResource
 {
     [JsonPropertyName("proposalId")]
@@ -76,9 +72,6 @@ internal sealed class McpProposalResource
     public DateTimeOffset UpdatedAt { get; set; }
 }
 
-/// <summary>
-/// Response body for reads of <c>honua://jobs/{jobId}</c>.
-/// </summary>
 internal sealed class McpJobResource
 {
     [JsonPropertyName("jobId")]
@@ -112,11 +105,6 @@ internal sealed class McpJobResource
     public string? ResultsUri { get; set; }
 }
 
-/// <summary>
-/// Response body for reads of <c>honua://jobs/{jobId}/results</c>. Mirrors the
-/// canonical <see cref="Honua.Core.Features.Geoprocessing.Domain.AnalysisResultPackage"/>
-/// plus the addressing <c>jobId</c> carried in the MCP URI.
-/// </summary>
 internal sealed class McpJobResultsResource
 {
     [JsonPropertyName("jobId")]
@@ -134,19 +122,9 @@ internal sealed class McpJobResultsResource
     [JsonPropertyName("artifacts")]
     public IReadOnlyList<McpArtifactRef> Artifacts { get; set; } = [];
 
-    /// <summary>
-    /// Total number of artifacts in the underlying result package. When this
-    /// exceeds the number of entries in <see cref="Artifacts"/>, the list was
-    /// capped for agent consumption and <see cref="ArtifactsTruncated"/> is true.
-    /// </summary>
     [JsonPropertyName("totalArtifactCount")]
     public int TotalArtifactCount { get; set; }
 
-    /// <summary>
-    /// True when <see cref="Artifacts"/> was truncated to a bounded page so the
-    /// response stays within an agent-friendly token budget. Retrieve the full
-    /// artifact set from the job's workspace(s) rather than this resource.
-    /// </summary>
     [JsonPropertyName("artifactsTruncated")]
     public bool ArtifactsTruncated { get; set; }
 
@@ -274,9 +252,6 @@ internal sealed class McpGeoprocessingError
     public IReadOnlyList<McpValidationViolation>? Violations { get; set; }
 }
 
-/// <summary>
-/// Response body for reads of <c>honua://workspaces/{workspaceId}</c>.
-/// </summary>
 internal sealed class McpWorkspaceResource
 {
     [JsonPropertyName("workspaceId")]
@@ -307,9 +282,6 @@ internal sealed class McpWorkspaceResource
     public string? NotImplementedReason { get; set; }
 }
 
-/// <summary>
-/// Response body for reads of <c>honua://catalog/processes</c>.
-/// </summary>
 internal sealed class McpProcessCatalogResource
 {
     [JsonPropertyName("catalogVersion")]
@@ -345,32 +317,15 @@ internal sealed class McpProcessEntry
     [JsonPropertyName("parameters")]
     public IReadOnlyList<McpProcessParameter> Parameters { get; set; } = [];
 
-    /// <summary>
-    /// Artifact kinds this process is expected to produce, so an agent can
-    /// author a plan whose <c>outputs</c> match what the process actually emits.
-    /// Values are canonical <see cref="Honua.Core.Features.Geoprocessing.Domain.ArtifactKind"/> names.
-    /// </summary>
     [JsonPropertyName("outputArtifactKinds")]
     public IReadOnlyList<string> OutputArtifactKinds { get; set; } = [];
 
-    /// <summary>
-    /// Runtime profile the process executes under. <c>managed</c> runs in the lean
-    /// serving image; <c>native</c> requires the heavyweight GDAL worker to be
-    /// deployed, so an agent knows whether a plan referencing it will actually run
-    /// in the current deployment rather than only validate.
-    /// </summary>
     [JsonPropertyName("runtimeProfile")]
     public string RuntimeProfile { get; set; } = string.Empty;
 
     [JsonPropertyName("executionKind")]
     public string ExecutionKind { get; set; } = string.Empty;
 
-    /// <summary>
-    /// Entry points this operation is callable through — any of <c>job</c>,
-    /// <c>protocol</c> and <c>workflow</c>. GA is defined per entry point, so an agent
-    /// reads this to know whether it may submit the operation as a process job, must
-    /// call its owning protocol endpoint instead, or may only compose it in a workflow.
-    /// </summary>
     [JsonPropertyName("entryPoints")]
     public IReadOnlyList<string> EntryPoints { get; set; } = [];
 
@@ -404,12 +359,6 @@ internal sealed class McpProcessParameter
     [JsonPropertyName("defaultValue")]
     public string? DefaultValue { get; set; }
 
-    /// <summary>
-    /// Finite set of accepted values when the parameter is an enumeration, so an
-    /// agent gets a machine-readable choice list instead of parsing allowed
-    /// values out of the prose <see cref="Description"/>. Null when the parameter
-    /// is not constrained to a fixed set.
-    /// </summary>
     [JsonPropertyName("allowedValues")]
     public IReadOnlyList<string>? AllowedValues { get; set; }
 }
@@ -418,11 +367,6 @@ internal sealed class McpProcessParameter
 // Promotion-surface resources (published services, deployments, packages)
 // -----------------------------------------------------------------------
 
-/// <summary>
-/// Provenance edges carried by promotion-surface resources so agents can trace a hosted
-/// surface back to the workflow that produced it. Distinct from <see cref="McpProvenance"/>,
-/// which covers analysis-result provenance (sources, process definitions, clarifications).
-/// </summary>
 internal sealed class McpHostedProvenance
 {
     [JsonPropertyName("originatingIntentId")]
@@ -444,9 +388,6 @@ internal sealed class McpHostedProvenance
     public string? SupersededByDeploymentResourceUri { get; set; }
 }
 
-/// <summary>
-/// Response body for reads of <c>honua://published-services/{serviceId}</c>.
-/// </summary>
 internal sealed class McpPublishedServiceView
 {
     [JsonPropertyName("serviceId")]
@@ -513,9 +454,6 @@ internal sealed class McpPublishedServiceView
     public McpHostedProvenance Provenance { get; set; } = new();
 }
 
-/// <summary>
-/// Summary entry used in <c>honua://published-services</c> list envelopes.
-/// </summary>
 internal sealed class McpPublishedServiceSummary
 {
     [JsonPropertyName("serviceId")]
@@ -537,9 +475,6 @@ internal sealed class McpPublishedServiceSummary
     public string Etag { get; set; } = string.Empty;
 }
 
-/// <summary>
-/// Response body for reads of <c>honua://published-services</c>.
-/// </summary>
 internal sealed class McpPublishedServiceListView
 {
     [JsonPropertyName("resourceUri")]
@@ -555,9 +490,6 @@ internal sealed class McpPublishedServiceListView
     public IReadOnlyList<McpPublishedServiceSummary> Items { get; set; } = [];
 }
 
-/// <summary>
-/// Lifecycle transition exposed on <c>honua://deployments/{id}</c> reads.
-/// </summary>
 internal sealed class McpDeploymentTransitionView
 {
     [JsonPropertyName("from")]
@@ -576,9 +508,6 @@ internal sealed class McpDeploymentTransitionView
     public string? Reason { get; set; }
 }
 
-/// <summary>
-/// Response body for reads of <c>honua://deployments/{deploymentId}</c>.
-/// </summary>
 internal sealed class McpDeploymentView
 {
     [JsonPropertyName("deploymentId")]
@@ -672,9 +601,6 @@ internal sealed class McpDeploymentView
     public McpHostedProvenance Provenance { get; set; } = new();
 }
 
-/// <summary>
-/// Summary entry used in <c>honua://deployments</c> list envelopes.
-/// </summary>
 internal sealed class McpDeploymentSummary
 {
     [JsonPropertyName("deploymentId")]
@@ -702,9 +628,6 @@ internal sealed class McpDeploymentSummary
     public string Etag { get; set; } = string.Empty;
 }
 
-/// <summary>
-/// Response body for reads of <c>honua://deployments</c>.
-/// </summary>
 internal sealed class McpDeploymentListView
 {
     [JsonPropertyName("resourceUri")]
@@ -720,13 +643,6 @@ internal sealed class McpDeploymentListView
     public IReadOnlyList<McpDeploymentSummary> Items { get; set; } = [];
 }
 
-/// <summary>
-/// Response body for reads of <c>honua://map-packages/{packageId}</c> and
-/// <c>honua://app-packages/{packageId}</c>. Map and app packages do not have a
-/// standalone store; the resource derives its visibility from the deployments
-/// that reference the package, so <see cref="DeploymentResourceUris"/> is the
-/// canonical way to reach hosted surfaces that serve the package.
-/// </summary>
 internal sealed class McpPackageView
 {
     [JsonPropertyName("packageKind")]
@@ -738,11 +654,6 @@ internal sealed class McpPackageView
     [JsonPropertyName("resourceUri")]
     public string ResourceUri { get; set; } = string.Empty;
 
-    /// <summary>
-    /// Lifecycle state the package is visible in: <c>draft</c> for a created but
-    /// not yet deployed package held by the draft store, <c>published</c> for one
-    /// reached through a currently-serving deployment (honua-server#3262).
-    /// </summary>
     [JsonPropertyName("packageStatus")]
     public string PackageStatus { get; set; } = string.Empty;
 
@@ -756,10 +667,6 @@ internal sealed class McpPackageView
     public McpHostedProvenance Provenance { get; set; } = new();
 }
 
-/// <summary>
-/// Summary entry used in <c>honua://map-packages</c> and
-/// <c>honua://app-packages</c> list envelopes.
-/// </summary>
 internal sealed class McpPackageSummary
 {
     [JsonPropertyName("packageId")]
@@ -772,10 +679,6 @@ internal sealed class McpPackageSummary
     public int DeploymentCount { get; set; }
 }
 
-/// <summary>
-/// Response body for reads of <c>honua://map-packages</c> and
-/// <c>honua://app-packages</c>.
-/// </summary>
 internal sealed class McpPackageListView
 {
     [JsonPropertyName("resourceUri")]

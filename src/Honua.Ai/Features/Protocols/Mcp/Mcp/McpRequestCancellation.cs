@@ -33,10 +33,6 @@ internal sealed partial class McpSessionManager
         }
     }
 
-    /// <summary>
-    /// Admits one session-bound request. Stateless/no-session requests keep their
-    /// ordinary abort/deadline semantics without inventing cancellation authority.
-    /// </summary>
     internal async Task<(McpRequestLease? Lease, McpRequestState State)> StartRequestAsync(
         string sessionId, string principalKey, JsonElement id, CancellationToken cancellationToken)
     {
@@ -97,7 +93,6 @@ internal sealed partial class McpSessionManager
             RequestStore.UpdateRequestAsync(sessionId, principalKey, requestKey, generation, operation, token);
     }
 
-    /// <summary>Unknown, repeated, expired and stateless cancellations create no work.</summary>
     internal async Task CancelRequestAsync(
         string sessionId, string principalKey, JsonElement id, CancellationToken cancellationToken)
     {
@@ -112,7 +107,6 @@ internal sealed partial class McpSessionManager
             McpRequestOperation.Cancel, budget.Token).WaitAsync(budget.Token).ConfigureAwait(false);
     }
 
-    /// <summary>Separates string/integer ids without retaining attacker-sized identifiers in memory or Redis.</summary>
     internal static bool TryRequestKey(JsonElement id, out string key)
     {
         string value;
@@ -137,11 +131,6 @@ internal sealed partial class McpSessionManager
         return true;
     }
 
-    /// <summary>
-    /// Owns the linked handler token and bounded authoritative polling. Completion
-    /// atomically removes its generation before a response can claim success.
-    /// Pub/sub delivery is not required for correctness or session-expiry cleanup.
-    /// </summary>
     internal sealed class McpRequestLease : IAsyncDisposable
     {
         private readonly McpSessionManager _owner;

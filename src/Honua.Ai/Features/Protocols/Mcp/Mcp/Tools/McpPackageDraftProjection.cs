@@ -6,16 +6,8 @@ using Honua.Ai.Protocols.Mcp.Models;
 
 namespace Honua.Ai.Protocols.Mcp.Tools;
 
-/// <summary>
-/// Shared wire projection for the deterministic package-draft tools
-/// (<c>honua_create_map_package</c> and <c>honua_create_app_package</c>).
-/// Keeps the two adapters from duplicating finding rendering.
-/// </summary>
 internal static class McpPackageDraftProjection
 {
-    /// <summary>
-    /// Projects shared draft findings onto their MCP wire shape.
-    /// </summary>
     public static IReadOnlyList<McpPackageDraftFinding> MapFindings(IReadOnlyList<PackageDraftFinding> findings)
     {
         if (findings.Count == 0)
@@ -37,9 +29,6 @@ internal static class McpPackageDraftProjection
         return mapped;
     }
 
-    /// <summary>
-    /// Renders blocking findings into a single structured-error message.
-    /// </summary>
     public static string DescribeErrors(string summary, IReadOnlyList<PackageDraftFinding> errors) =>
         errors.Count == 0
             ? summary + "."

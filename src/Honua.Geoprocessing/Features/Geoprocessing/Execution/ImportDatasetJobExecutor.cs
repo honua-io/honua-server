@@ -20,52 +20,8 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// Production <see cref="IJobExecutor"/> for the <c>import.dataset</c> process (#1630).
-///
-/// Owns the full import pipeline as one durable, async GP job rather than the
-/// half-orchestrated remote-import endpoint that only wrote a generic
-/// <c>imported_&lt;table&gt;</c>. This executor ORCHESTRATES the existing
-/// per-step services — it does not re-implement any of them — in this order:
-///
-/// <list type="number">
-///   <item><description><b>fetch/stage</b> — resolves the catalog connection and validates the staged source path.</description></item>
-///   <item><description><b>validate + chunk</b> — delegated to <see cref="IFileImportService"/>, which runs the
-///     <c>ImportGeometrySizeGuard</c> vertex/ring guard per feature during streaming import (#1626).</description></item>
-///   <item><description><b>import</b> — <see cref="IFileImportService.ImportFileAsync(ImportRequest, IProgress{ImportProgress}?, CancellationToken)"/>
-///     streams the source into the generic <c>imported_&lt;table&gt;</c>.</description></item>
-///   <item><description><b>publish</b> — <see cref="ILayerPublishingService.PublishLayerAsync"/> introspects the imported
-///     table and publishes it as a layer. Promoted source attributes are top-level fields beside
-///     the JSON <c>properties</c> column (honua-server#6640). The same call rebuilds the MVT materialization (#1628).</description></item>
-///   <item><description><b>tile</b> — when a raster layer is supplied,
-///     <see cref="IRasterImportService.ImportAsync"/> loads the raster, computes statistics, and pre-generates tiles/overviews (#1625).</description></item>
-///   <item><description><b>extent + MVT refresh</b> — <see cref="ILayerPublishingService.RefreshLayerExtentsAsync(string,string,CancellationToken)"/>
-///     recomputes the layer and service extents from the published source.</description></item>
-///   <item><description><b>provenance</b> — a structured provenance record is appended to the execution log and
-///     published as a JSON data-URI artifact (source, table, layer, counts, timings).</description></item>
-/// </list>
-///
-/// Like <c>sink.external-postgis</c>, the executor resolves provider services
-/// (which live in the active data-provider assembly, not in Honua.Geoprocessing)
-/// at execution time through an <see cref="IServiceScopeFactory"/> scope. The job
-/// runs through the canonical durable substrate (ADR-0031), so progress polling,
-/// heartbeats, retry, cancellation, and the #1624 in-memory single-node fallback
-/// are inherited rather than reimplemented.
-///
-/// <para>
-/// Scope realism (#1630): this lands the durable job SKELETON that runs every
-/// step end-to-end in order with progress reporting and provenance. Full
-/// mid-step resume (re-entering a partially-completed import after a crash)
-/// re-runs from the staged source under <c>OverwriteExisting</c> idempotency
-/// rather than checkpointing each row; finer-grained resume is deferred.
-/// </para>
-/// </summary>
 internal sealed partial class ImportDatasetJobExecutor : IProcessExecutor
 {
-    /// <summary>
-    /// The single process id this executor handles. Matches the catalog entry
-    /// in <see cref="BuiltInProcessCatalog"/>.
-    /// </summary>
     internal const string HandledProcessId = "import.dataset";
 
     private const string ProvenanceDataUriPrefix = "data:application/json;base64,";
@@ -91,10 +47,6 @@ internal sealed partial class ImportDatasetJobExecutor : IProcessExecutor
         _executorOptions = executorOptions;
     }
 
-    /// <summary>
-    /// The single process id this executor handles, surfaced through
-    /// <see cref="IProcessExecutor"/> so the dispatcher auto-registers it (#2122).
-    /// </summary>
     public IReadOnlySet<string> ProcessIds { get; } =
         new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
 

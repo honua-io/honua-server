@@ -11,14 +11,6 @@ using NtsGeometry = NetTopologySuite.Geometries.Geometry;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// <c>transform.spatial-filter</c> executor. Passes through only features whose
-/// geometry satisfies a spatial predicate against a bounding box or an arbitrary
-/// WKT region, dropping the rest. Pure managed NetTopologySuite — no GEOS native
-/// dependency. Ported from the GeoETL baseline SpatialFilterTransform onto the
-/// #1185 process/executor contract. Streams: a per-feature filter; the region is
-/// parsed once before the stream is consumed.
-/// </summary>
 internal sealed class SpatialFilterTransformExecutor(
     IOptionsMonitor<GeoprocessingExecutorOptions> options)
     : FeatureCollectionTransformExecutor(options)

@@ -8,41 +8,10 @@ using Honua.Core.Features.Security;
 
 namespace Honua.Geoprocessing.Inference;
 
-/// <summary>
-/// Generic REST provider adapter for the delegated imagery/ML inference lane
-/// (#2241) — the end-to-end-supported backend family. Targets any hosted
-/// inference HTTP endpoint that speaks HONUA'S OWN JSON contract, documented
-/// below. This is deliberately NOT the OpenAI chat-completions wire format and
-/// not any vendor's native protocol: a deployment points <c>Endpoint</c> at a
-/// model server that implements this contract directly, or at a thin gateway
-/// that translates it to whatever the model actually speaks (a hosted-ONNX
-/// server, an Azure ML online endpoint, and so on). Auth is a bearer key or a
-/// custom header. SageMaker/Vertex SDK-signed invocation is intentionally NOT
-/// implemented here; those provider ids fail clearly in the executor until
-/// dedicated adapters land.
-/// </summary>
-/// <remarks>
-/// Request contract (JSON): <c>{ "model", "task", "image" (base64 GeoTIFF),
-/// "imageMediaType", "sourceCrs"?, "confidenceThreshold"? }</c>.
-/// Response contract (JSON): <c>{ "outputType": "raster"|"features",
-/// "raster": base64 GeoTIFF | "features": GeoJSON FeatureCollection }</c>.
-/// The backend must preserve the source georeferencing: raster outputs carry the
-/// source grid/CRS in the returned GeoTIFF. Feature outputs MUST be WGS 84
-/// (EPSG:4326) longitude/latitude as RFC 7946 requires — the source CRS is sent
-/// as <c>sourceCrs</c> so the backend can transform its detections — and the
-/// executor rejects coordinates outside WGS 84 bounds rather than publishing
-/// projected numbers that downstream GeoJSON consumers would read as lon/lat. The adapter passes raster bytes through byte-for-byte, so
-/// whatever georeferencing the backend emits is exactly what lands in the
-/// artifact.
-/// All thrown <see cref="ImageryInferenceException"/> messages are safe for job
-/// status: no endpoint URL, credentials, or raw response bodies.
-/// </remarks>
 internal sealed partial class HttpImageryInferenceClient : IImageryInferenceClient
 {
-    /// <summary>Named <see cref="HttpClient"/> registration used by this adapter.</summary>
     internal const string HttpClientName = "honua-imagery-inference";
 
-    /// <summary>Provider id served by this adapter.</summary>
     internal const string ProviderId = "http";
 
     private const string GeoTiffMediaType = "image/tiff; application=geotiff";
@@ -229,12 +198,6 @@ internal sealed partial class HttpImageryInferenceClient : IImageryInferenceClie
         }
     }
 
-    /// <summary>
-    /// Resolves the backend API key: secret reference via the registered
-    /// <see cref="ISecretProvider"/> first, then the literal configured value,
-    /// then the <see cref="ImageryInferenceOptions.ApiKeyEnvironmentVariable"/>
-    /// fallback.
-    /// </summary>
     private async Task<string> ResolveApiKeyAsync(
         ImageryInferenceOptions options,
         CancellationToken cancellationToken)
@@ -291,11 +254,7 @@ internal sealed partial class HttpImageryInferenceClient : IImageryInferenceClie
         return buffer.ToArray();
     }
 
-    /// <summary>
-    /// Buffers the response body with a hard cap derived from the artifact size
-    /// ceiling (base64 inflation + JSON envelope headroom), so a runaway backend
-    /// cannot exhaust worker memory before the executor's own artifact guard runs.
-    /// </summary>
+    // The response buffer is capped from the artifact ceiling so a runaway backend cannot exhaust memory before the executor's own guard.
     private static async Task<byte[]> ReadBoundedBodyAsync(
         HttpResponseMessage response,
         long maxArtifactBytes,
@@ -403,10 +362,6 @@ internal sealed partial class HttpImageryInferenceClient : IImageryInferenceClie
         }
     }
 
-    /// <summary>
-    /// Bounds a backend-supplied value before it reaches a log sink, so a hostile
-    /// or misconfigured endpoint cannot flood the logs either.
-    /// </summary>
     private static string Truncate(string? value)
     {
         const int MaxLength = 64;

@@ -6,21 +6,10 @@ using Honua.Core.Features.Geoprocessing.Abstractions;
 
 namespace Honua.Geoprocessing;
 
-/// <summary>
-/// Process-local, in-memory <see cref="IProcessUsageTelemetry"/> implementation
-/// (#2144). Backs the usage-ranked GP tool tiering view with a real, queryable
-/// store (not a stub): every <see cref="RecordInvocation"/> updates a concurrent
-/// per-process counter, and <see cref="GetRanking"/> projects a stably-ordered
-/// snapshot that reflects everything recorded before the read. Recording is a
-/// <see cref="ConcurrentDictionary{TKey,TValue}.GetOrAdd(TKey, Func{TKey, TValue})"/>
-/// plus a few <see cref="Interlocked"/> increments, so it adds no measurable
-/// hot-path overhead to job execution.
-/// </summary>
 internal sealed class InMemoryProcessUsageTelemetry(TimeProvider timeProvider) : IProcessUsageTelemetry
 {
     private readonly ConcurrentDictionary<string, Counter> _counters = new(StringComparer.Ordinal);
 
-    /// <inheritdoc />
     public void RecordInvocation(string processId, bool succeeded)
     {
         if (string.IsNullOrWhiteSpace(processId))
@@ -32,7 +21,6 @@ internal sealed class InMemoryProcessUsageTelemetry(TimeProvider timeProvider) :
         counter.Record(succeeded, timeProvider.GetUtcNow());
     }
 
-    /// <inheritdoc />
     public IReadOnlyList<ProcessUsageRanking> GetRanking(int? limit = null)
     {
         var ranked = _counters

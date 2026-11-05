@@ -11,14 +11,6 @@ using NetTopologySuite.IO;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// Production <see cref="IJobExecutor"/> for the <c>geometry.intersect</c>
-/// process. Slice 2 of #1031 — companion to <see cref="GeometryBufferJobExecutor"/>.
-///
-/// Computes the geometric intersection of a target geometry with an
-/// intersector geometry. Both geometries must share the supplied SRID;
-/// reprojection is handled by <see cref="GeometryProjectJobExecutor"/>.
-/// </summary>
 internal sealed partial class GeometryIntersectJobExecutor : IProcessExecutor
 {
     internal const string HandledProcessId = "geometry.intersect";
@@ -34,10 +26,6 @@ internal sealed partial class GeometryIntersectJobExecutor : IProcessExecutor
         _logger = logger;
     }
 
-    /// <summary>
-    /// The single process id this executor handles, surfaced through
-    /// <see cref="IProcessExecutor"/> so the dispatcher auto-registers it (#2122).
-    /// </summary>
     public IReadOnlySet<string> ProcessIds { get; } =
         new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
 

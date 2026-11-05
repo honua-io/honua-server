@@ -11,19 +11,6 @@ using NetTopologySuite.Geometries.Utilities;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// <c>transform.reproject</c> executor. Reprojects every feature's geometry between
-/// SRIDs on the lean, GDAL-free path, reusing the trunk in-memory
-/// <see cref="CoordinateTransformer"/> (identity, Web Mercator aliases, and
-/// WGS 84 (4326) ↔ Web Mercator). Datum-shift pairs that require ST_Transform / PROJ
-/// are deferred to the native worker profile and rejected here with a clear error,
-/// matching <c>geometry.project</c>. Attributes are carried through. Reconciled from
-/// the GeoETL baseline ReprojectTransform onto the #1185 process/executor contract;
-/// the managed math is replaced by the shared CoordinateTransformer so this transform
-/// and geometry.project stay bit-for-bit aligned. Streams: a per-feature map; SRIDs
-/// are validated once before the stream is consumed (the validation surfaces on the
-/// first pull as a classified <c>Invalid ... inputs</c> failure).
-/// </summary>
 internal sealed class ReprojectTransformExecutor(
     IOptionsMonitor<GeoprocessingExecutorOptions> options)
     : FeatureCollectionTransformExecutor(options)

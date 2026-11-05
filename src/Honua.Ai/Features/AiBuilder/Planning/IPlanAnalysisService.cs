@@ -6,28 +6,8 @@ using Honua.Ai.Protocols.Mcp.Models;
 
 namespace Honua.Ai.AiBuilder.Planning;
 
-/// <summary>
-/// Contract for the service backing the <c>honua_plan_analysis</c> MCP tool.
-/// Converts a natural-language intent into one of:
-/// <list type="bullet">
-///   <item>an executable <see cref="McpAnalysisPlanOutput"/> ready for
-///   <c>validate_plan</c>/<c>execute_plan</c>;</item>
-///   <item>a canonical <see cref="McpSpecDraftOutput"/> for app-builder
-///   workflows that own a spec/plan/apply pipeline of their own;</item>
-///   <item>a structured non-success state (clarification required, capability
-///   unsupported, oversized estimate, …).</item>
-/// </list>
-/// </summary>
 internal interface IPlanAnalysisService
 {
-    /// <summary>
-    /// Which planning engine backs this implementation: <c>"live"</c> when plans
-    /// are compiled from the intent by a provider-backed model, or
-    /// <c>"fixture"</c> when they are replayed from canned deterministic
-    /// templates because no live LLM provider is configured. Surfaced on the
-    /// <c>honua_plan_analysis</c> output's <c>engine</c> field so callers can tell
-    /// a real plan from a capability-demo template.
-    /// </summary>
     string Engine { get; }
 
     Task<McpPlanAnalysisOutput> PlanAsync(

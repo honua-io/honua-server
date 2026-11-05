@@ -10,41 +10,12 @@ using NtsGeometry = NetTopologySuite.Geometries.Geometry;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// Shared managed (NetTopologySuite) spatial-join computation used by the
-/// layer-aware <c>analytics.spatial-join</c> executor (#2322) and the
-/// <c>enrichment.enrich</c> job executor (#2283). For each target feature it
-/// summarizes every join feature satisfying a spatial predicate into a
-/// <c>JOIN_COUNT</c> plus carried-attribute arrays and numeric aggregates,
-/// preserving zero-match targets one-to-one. Predicates use NTS's managed
-/// relational operators; distances are evaluated in the CRS units of the supplied
-/// geometries — geodesic conversion is not performed, matching the other managed
-/// tool packs. Candidate join features are pruned through an in-memory
-/// <see cref="STRtree{T}"/> index before the exact predicate test.
-/// <para>
-/// Predicates are the canonical <see cref="SpatialJoinPredicate"/> members shared with
-/// the PostGIS pushdown (honua-server#3069), whose names spell out both operands, so a
-/// managed join cannot drift from the SQL one. Each caller owns the mapping from its own
-/// wire vocabulary onto them.
-/// </para>
-/// </summary>
 internal static class SpatialJoinSupport
 {
-    /// <summary>Attribute holding the count of matched join features on each target.</summary>
     internal const string JoinCountAttribute = "JOIN_COUNT";
 
-    /// <summary>
-    /// Default ceiling on carried match values across a whole join, shared by every caller of
-    /// <see cref="MatchBudget"/> (the <c>enrichment.enrich</c> executor and the
-    /// <c>analytics.spatial-join</c> executor, #4629) so the same runaway guard applies
-    /// regardless of which adapter dispatched the join.
-    /// </summary>
     internal const long DefaultMaxCarriedMatchValues = 20_000_000L;
 
-    /// <summary>
-    /// Builds an in-memory STRtree over the join features' envelopes, skipping
-    /// null/empty geometries.
-    /// </summary>
     internal static STRtree<IFeature> BuildIndex(
         IReadOnlyList<IFeature> joinFeatures,
         CancellationToken cancellationToken)
@@ -64,13 +35,6 @@ internal static class SpatialJoinSupport
         return index;
     }
 
-    /// <summary>
-    /// Joins a single target feature against the indexed join set: counts matches
-    /// into <see cref="JoinCountAttribute"/>, emits each <paramref name="carryFields"/>
-    /// column as an array of the matched join values (empty array on zero matches),
-    /// and computes the <paramref name="stats"/> aggregates over the matched join
-    /// rows through the shared <see cref="StatisticsSupport"/> accumulators.
-    /// </summary>
     internal static Feature Join(
         IFeature target,
         STRtree<IFeature> index,
@@ -157,18 +121,10 @@ internal static class SpatialJoinSupport
         return new Feature(target.Geometry, attributes);
     }
 
-    /// <summary>
-    /// <see cref="IItemDistance{Envelope, IFeature}"/> over indexed features, so an
-    /// <see cref="STRtree{T}"/> can answer exact nearest-neighbour queries on the
-    /// features' geometries (planar CRS-unit distance) instead of the callers
-    /// scanning every candidate.
-    /// </summary>
     internal sealed class FeatureDistance : IItemDistance<NtsEnvelope, IFeature>
     {
-        /// <summary>Shared stateless instance.</summary>
         internal static readonly FeatureDistance Instance = new();
 
-        /// <inheritdoc />
         public double Distance(IBoundable<NtsEnvelope, IFeature> item1, IBoundable<NtsEnvelope, IFeature> item2)
         {
             var first = item1.Item?.Geometry;
@@ -182,28 +138,9 @@ internal static class SpatialJoinSupport
         }
     }
 
-    /// <summary>
-    /// Cumulative budget over the work a whole join may do. The per-layer admission caps
-    /// bound each INPUT, but the join itself is a Cartesian product: highly overlapping
-    /// layers can materialize far more carried values — and evaluate far more candidate
-    /// pairs — than either input has features. Charging both against one shared budget
-    /// makes that growth fail fast with an actionable message.
-    /// </summary>
-    /// <remarks>
-    /// The two ceilings are separate because they bound different failure modes and neither
-    /// implies the other. Carried values bound MEMORY, and a join carrying no fields charges
-    /// nothing against them. Candidate evaluations bound CPU, and they accrue even when the
-    /// exact predicate rejects every pair — which is precisely the case the carried-value
-    /// ceiling cannot see (honua-server#3075).
-    /// </remarks>
+    // Candidate evaluations and carried values have separate ceilings because rejected pairs burn CPU without growing the carried-value count.
     internal sealed class MatchBudget
     {
-        /// <summary>
-        /// Default ceiling on exact-predicate evaluations across a whole join. This is a
-        /// runaway guard, not a tuning knob: it sits far above what the per-layer input caps
-        /// admit for any well-formed join, and exists only so two broadly-overlapping layers
-        /// cannot keep a worker busy indefinitely evaluating predicates that mostly fail.
-        /// </summary>
         internal const long DefaultCandidateEvaluations = 50_000_000L;
 
         private readonly long _limit;
@@ -211,28 +148,13 @@ internal static class SpatialJoinSupport
         private long _used;
         private long _candidatesEvaluated;
 
-        /// <summary>Creates a budget over the maximum number of carried match values.</summary>
-        /// <param name="limit">Maximum carried values across the entire join.</param>
-        /// <param name="candidateLimit">
-        /// Maximum exact-predicate evaluations across the entire join. Defaults to
-        /// <see cref="DefaultCandidateEvaluations"/>, deliberately INDEPENDENT of
-        /// <paramref name="limit"/>. The two count different things — carried values grow as
-        /// targets x matches x fields, candidate evaluations as targets x envelope overlaps —
-        /// so deriving one from the other means a caller who legitimately lowers
-        /// <c>maxCarriedMatchValues</c> (or carries no fields at all, making the value budget
-        /// zero) also crushes the candidate ceiling and fails a join that was never
-        /// pathological.
-        /// </param>
+        // The candidate ceiling does not derive from the carried-value ceiling, so lowering one does not crush a join that was not pathological.
         internal MatchBudget(long limit, long? candidateLimit = null)
         {
             _limit = limit;
             _candidateLimit = candidateLimit ?? DefaultCandidateEvaluations;
         }
 
-        /// <summary>
-        /// Charges one exact-predicate evaluation, throwing once the cumulative candidate
-        /// budget is exhausted.
-        /// </summary>
         internal void ChargeCandidate()
         {
             _candidatesEvaluated++;
@@ -246,11 +168,6 @@ internal static class SpatialJoinSupport
             }
         }
 
-        /// <summary>
-        /// Charges <paramref name="count"/> carried values, throwing once the cumulative
-        /// budget is exhausted.
-        /// </summary>
-        /// <param name="count">Number of carried values produced by one match.</param>
         internal void Charge(int count)
         {
             if (count <= 0)
@@ -269,7 +186,6 @@ internal static class SpatialJoinSupport
         }
     }
 
-    /// <summary>Reads a join feature's attribute value, or null when absent.</summary>
     internal static object? ReadValue(IFeature feature, string field)
         => feature.Attributes is not null && feature.Attributes.Exists(field)
             ? feature.Attributes.GetOptionalValue(field)

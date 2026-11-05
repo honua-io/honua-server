@@ -16,12 +16,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Ai.Grounding;
 
-/// <summary>
-/// Coordinates the grounding pipeline: engine-driven classification and
-/// ranking, authorization filtering, material-ambiguity evaluation,
-/// intent drafting, and provenance wiring. Owns no session state; callers
-/// carry intent + clarification state across turns.
-/// </summary>
 internal sealed class GroundingService : IGroundingService
 {
     private readonly IGroundingEngine _engine;

@@ -19,16 +19,6 @@ using Honua.Ai.Protocols.Mcp.Tools;
 
 namespace Honua.Ai.Protocols.Mcp.MapTools;
 
-/// <summary>
-/// MCP tool that queries features from a published layer and returns GeoJSON.
-/// Thin adapter over the canonical feature-query pipeline: it resolves the
-/// layer through the same Metadata v2 snapshot the FeatureServer uses, parses
-/// the optional attribute filter through the shared
-/// <see cref="IFilterExpressionService"/> (FeatureServer's <c>where</c> path),
-/// executes through <see cref="IFeatureReader"/>, and serializes geometry via
-/// the shared <see cref="IGeometryService"/> WKB→GeoJSON converter. No query,
-/// filter, or geometry logic is reimplemented here.
-/// </summary>
 internal sealed class QueryFeaturesTool : IMcpTool
 {
     public const string ToolName = "honua_query_features";
@@ -180,12 +170,6 @@ internal sealed class QueryFeaturesTool : IMcpTool
             SummarizeQueryResult);
     }
 
-    /// <summary>
-    /// One-line, information-bearing summary of a query result for the <c>text</c>
-    /// content block: feature count, layer address, offset, the paging next-step
-    /// hint, and whether geometry was included — never a duplicate of the GeoJSON
-    /// payload (which always rides in <c>structuredContent</c>).
-    /// </summary>
     private static string SummarizeQueryResult(McpQueryFeaturesOutput output)
     {
         if (output.Count is { } count)
@@ -223,12 +207,6 @@ internal sealed class QueryFeaturesTool : IMcpTool
         return AppendAdvisories(summary, output, zeroResults: output.ReturnedCount == 0);
     }
 
-    /// <summary>
-    /// Appends any bbox/CRS advisories to the one-line summary and, when the query matched
-    /// nothing while a CRS-mismatch advisory is present, the explicit
-    /// "0 features — bbox may be in the wrong CRS" hint so the empty result is not read as a
-    /// definitive "no such features" answer (#2808).
-    /// </summary>
     private static string AppendAdvisories(string summary, McpQueryFeaturesOutput output, bool zeroResults)
     {
         if (output.Warnings.Count == 0)
@@ -250,13 +228,6 @@ internal sealed class QueryFeaturesTool : IMcpTool
         return builder.ToString();
     }
 
-    /// <summary>
-    /// Builds bbox/CRS advisories: (1) ordinates outside the valid geographic range
-    /// (±180 lon / ±90 lat) under a geographic <paramref name="bboxSrid"/> — the classic
-    /// "projected bbox under the geographic default" mistake — and (2) a bbox that falls
-    /// entirely outside the layer's known extent when both are expressed in the same CRS.
-    /// Advisory only; never throws (validity errors are raised in <see cref="BuildBboxFilter"/>).
-    /// </summary>
     private static List<string> BuildBboxCrsWarnings(
         IReadOnlyList<double>? bbox,
         int? bboxSrid,
@@ -304,11 +275,6 @@ internal sealed class QueryFeaturesTool : IMcpTool
         return warnings;
     }
 
-    /// <summary>
-    /// Whether <paramref name="srid"/> is a geographic (lon/lat degree) CRS, so the
-    /// ±180/±90 ordinate-range advisory applies. Delegates to the shared
-    /// <see cref="SpatialReference"/> classifier (single source of truth for geographic EPSG codes).
-    /// </summary>
     private static bool IsGeographicSrid(int srid)
         => srid > 0 && SpatialReference.Create(srid).IsGeographic;
 
@@ -531,13 +497,6 @@ internal sealed class QueryFeaturesTool : IMcpTool
         return attributes;
     }
 
-    /// <summary>
-    /// Rounds every coordinate in a GeoJSON geometry node to
-    /// <paramref name="precision"/> decimal places in place. Walks the geometry
-    /// tree uniformly so Point/LineString/Polygon/Multi*/GeometryCollection
-    /// coordinates (and any <c>bbox</c>) are all quantized. A negative or
-    /// out-of-range precision leaves coordinates untouched (full precision).
-    /// </summary>
     private static void QuantizeCoordinates(JsonNode node, int precision)
     {
         if (precision < 0 || precision > MapToolSchemas.MaxGeometryPrecision)
@@ -572,11 +531,6 @@ internal sealed class QueryFeaturesTool : IMcpTool
         }
     }
 
-    /// <summary>
-    /// Maps a feature attribute to JSON. A JSON-typed column (for example the jsonb
-    /// <c>properties</c> column of an imported dataset) arrives as a <see cref="JsonElement"/>
-    /// and is emitted as that JSON value, as the GeoJSON writers do, never as its raw text.
-    /// </summary>
     private static JsonNode? ToJsonValue(object? value) => value switch
     {
         null => null,

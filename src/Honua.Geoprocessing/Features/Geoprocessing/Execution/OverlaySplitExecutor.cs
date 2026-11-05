@@ -7,29 +7,10 @@ using NetTopologySuite.Features;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// <c>overlay.split</c> executor (#2139). Partitions the <c>input</c> layer and tags
-/// every output feature with a <c>SPLIT_TARGET</c> attribute identifying the
-/// partition it belongs to, modelling Esri's <c>Split</c> in a single-artifact
-/// pipeline (Esri emits one output feature class per split value; here the
-/// partitions share one FeatureCollection keyed by <c>SPLIT_TARGET</c>).
-///
-/// Two modes:
-/// <list type="bullet">
-/// <item>Feature split — when a <c>split</c> polygon layer is supplied, each input
-/// feature is clipped to every overlapping split-zone and tagged with that zone's
-/// <c>splitField</c> value (or zone ordinal). This is the geometric partition.</item>
-/// <item>Field split — when no <c>split</c> layer is supplied, input features are
-/// grouped by the value of the input <c>splitField</c> attribute and tagged
-/// unchanged.</item>
-/// </list>
-/// Pure managed NetTopologySuite — no GDAL/GEOS native dependency.
-/// </summary>
 internal sealed class OverlaySplitExecutor(
     IOptionsMonitor<GeoprocessingExecutorOptions> options)
     : FeatureCollectionTransformExecutor(options)
 {
-    /// <summary>The canonical process id this executor handles.</summary>
     internal const string HandledProcessId = "overlay.split";
 
     private const string SplitTargetAttribute = "SPLIT_TARGET";

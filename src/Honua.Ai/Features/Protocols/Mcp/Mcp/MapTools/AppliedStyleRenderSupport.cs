@@ -6,31 +6,14 @@ using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Ai.Protocols.Mcp.MapTools;
 
-/// <summary>
-/// Classifies how <c>honua_render_map</c> renders a layer's applied style, so the
-/// tool reports a typed outcome instead of silently drawing something else. The
-/// shared Skia vector rasterizer (<c>StyleTranslator</c>) draws MapLibre
-/// <c>fill</c>, <c>line</c>, and <c>circle</c> layers honouring exactly the paint and
-/// layout properties listed here, plus <c>filter</c>, <c>minzoom</c>/<c>maxzoom</c> and
-/// data-driven expressions; every other construct is reported as an
-/// <see cref="UnsupportedStyleConstruct"/>, so <see cref="Applied"/> means every
-/// construct of the style was drawn.
-/// </summary>
-/// <remarks>Keep the property sets in step with <c>StyleTranslator.ResolveFillStyle</c>,
-/// <c>ResolveLineStyle</c>, <c>ResolveCircleStyle</c>, and <c>IsLayerVisible</c>.</remarks>
+// These property sets must track StyleTranslator fill, line, circle, and visibility handling, or Applied claims a rendering the rasterizer did not draw.
 internal static class AppliedStyleRenderSupport
 {
-    /// <summary>The layer rendered with its applied catalog style; every style layer was drawable.</summary>
     public const string Applied = "applied";
 
-    /// <summary>No catalog style is applied; the layer rendered with its stored default style.</summary>
     public const string Default = "default";
 
-    /// <summary>
-    /// The applied style contains constructs the server rasterizer cannot draw. The drawable
-    /// style layers render; the listed constructs do not, and the stored default is not
-    /// substituted for them.
-    /// </summary>
+    // Constructs the rasterizer cannot draw are reported and the stored default style is not substituted for them.
     public const string UnsupportedStyleConstruct = "unsupported-style-construct";
 
     private static readonly Dictionary<string, HashSet<string>> HonouredPaint = new(StringComparer.Ordinal)
@@ -55,11 +38,6 @@ internal static class AppliedStyleRenderSupport
     private static readonly string[] LineLayerTypes = ["line"];
     private static readonly string[] PolygonLayerTypes = ["fill", "line"];
 
-    /// <summary>
-    /// Returns the constructs of <paramref name="mapLibreStyleJson"/> that the server
-    /// rasterizer cannot draw for a layer of <paramref name="geometryType"/>. An empty
-    /// list means the whole style renders.
-    /// </summary>
     public static IReadOnlyList<string> FindUnsupportedConstructs(
         string? mapLibreStyleJson,
         MetadataV2GeometryType geometryType)

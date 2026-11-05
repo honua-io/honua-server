@@ -16,16 +16,6 @@ using NtsGeometry = NetTopologySuite.Geometries.Geometry;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// <c>analytics.buffer-aggregate</c> layer-aware executor (#2322, #4623). The
-/// job-executable counterpart of the layer-scoped PostGIS <c>SpatialAnalytics</c>
-/// buffer-aggregate: it streams a Honua catalog layer through
-/// <c>source.honua-layer</c>, buffers every feature by <c>distance</c> in the supplied
-/// unit against the layer's ACTUAL resolved storage CRS (#4623 — never assumes CRS
-/// units are meters), then optionally dissolves the buffers into one feature per
-/// <c>groupByFields</c> group via <see cref="CascadedPolygonUnion"/>. Each emitted
-/// feature carries a <c>COUNT</c> attribute.
-/// </summary>
 internal sealed class LayerBufferAggregateExecutor : LayerSourcedFeatureExecutor
 {
     internal const string HandledProcessId = "analytics.buffer-aggregate";
@@ -162,18 +152,6 @@ internal sealed class LayerBufferAggregateExecutor : LayerSourcedFeatureExecutor
         public Dictionary<string, StatisticsSupport.FieldAccumulator> Accumulators { get; } = new(StringComparer.Ordinal);
     }
 
-    /// <summary>
-    /// Buffers every non-empty source geometry through the shared, CRS-aware
-    /// <see cref="IGeometryOperationService"/> against the layer's ACTUAL resolved
-    /// storage SRID (#4623). <see cref="IGeometryOperationService.BufferAsync"/> already
-    /// carries the authoritative fix for both classes of bug this executor previously
-    /// had: a geographic (degree) storage CRS is buffered through Web Mercator with the
-    /// latitude-scale correction instead of treating the metric distance as degrees, and
-    /// a projected storage CRS converts the metric distance into its true native linear
-    /// unit (looked up from <c>spatial_ref_sys</c>) instead of assuming every projected
-    /// CRS is metric. Returns a parallel array (one entry per <paramref name="source"/>
-    /// feature, <see langword="null"/> for an empty/missing input geometry).
-    /// </summary>
     private static async Task<NtsGeometry?[]> BufferSourceFeaturesAsync(
         LayerOpContext context,
         StepInputReader inputs,
@@ -278,15 +256,7 @@ internal sealed class LayerBufferAggregateExecutor : LayerSourcedFeatureExecutor
         return string.Join(Separator, parts);
     }
 
-    /// <summary>
-    /// Escapes U+001E and U+001F within a single group-key component value so they cannot be
-    /// mistaken for structural characters in the composite key string. Encoding:
-    /// <list type="bullet">
-    ///   <item>U+001E in value -&gt; U+001E U+001E</item>
-    ///   <item>U+001F in value -&gt; U+001E U+001F</item>
-    /// </list>
-    /// A single unescaped U+001F therefore always means "field boundary".
-    /// </summary>
+    // U+001E and U+001F inside a component are escaped so a single unescaped U+001F always means a field boundary.
     private static string EscapeKeyComponent(string value)
     {
         if (value.IndexOfAny(['', '']) < 0)

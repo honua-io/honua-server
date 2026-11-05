@@ -11,50 +11,12 @@ using NetTopologySuite.Features;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// <c>analytics.spatial-join</c> layer-aware executor (#2322). The job-executable
-/// counterpart of the layer-scoped PostGIS <c>SpatialAnalytics</c> spatial join, and
-/// the two-layer sibling of the single-layer <see cref="LayerSourcedFeatureExecutor"/>
-/// ops: it resolves BOTH the target layer (<c>layerId</c>) AND the reference/join
-/// layer (<c>joinLayerId</c>) through the same <c>source.honua-layer</c> connector,
-/// then enriches every target feature with attributes and aggregates drawn from the
-/// join features that satisfy a spatial predicate — all in one dispatched job.
-///
-/// <para>
-/// The join computation itself is the shared <see cref="SpatialJoinSupport"/>
-/// (also consumed by the <c>enrichment.enrich</c> executor, #2283), which evaluates
-/// the canonical <see cref="SpatialJoinPredicate"/> members shared with the PostGIS
-/// pushdown (honua-server#3069) using NetTopologySuite's managed relational operators
-/// (no GEOS/GDAL native dependency): <c>intersects</c> (default), <c>contains</c>
-/// (<see cref="SpatialJoinPredicate.JoinContainsTarget"/> — the join geometry contains
-/// the target, the classic point-in-polygon case), <c>within</c>
-/// (<see cref="SpatialJoinPredicate.TargetContainsJoin"/> — the target contains the
-/// join geometry), and <c>dwithin</c> (the join geometry is within <c>distance</c> of
-/// the target). Distances are evaluated in the CRS units of
-/// the supplied geometries — geodesic conversion is not performed, matching the other
-/// managed layer-aware analytics executors. Candidate join features are pruned through
-/// an in-memory STRtree index before the exact predicate test.
-/// </para>
-///
-/// <para>
-/// Each target feature carries its original attributes plus a <c>JOIN_COUNT</c> of the
-/// matched join rows. For every column named in <c>carryFields</c> the matched join
-/// values are emitted as an array attribute of the same name (empty array on zero
-/// matches), and any <c>outStatistics</c> <c>field:stat</c> aggregates are computed
-/// over the matched join rows through the shared <see cref="StatisticsSupport"/>
-/// accumulators. Targets with no match are preserved one-to-one with a
-/// <c>JOIN_COUNT</c> of 0.
-/// </para>
-/// </summary>
 internal sealed class LayerSpatialJoinExecutor : LayerSourcedFeatureExecutor
 {
-    /// <summary>The dotted process id this executor handles.</summary>
     internal const string HandledProcessId = "analytics.spatial-join";
 
-    /// <summary>Attribute holding the count of matched join features on each target.</summary>
     internal const string JoinCountAttribute = SpatialJoinSupport.JoinCountAttribute;
 
-    /// <summary>Initializes a new instance of the <see cref="LayerSpatialJoinExecutor"/> class.</summary>
     public LayerSpatialJoinExecutor(
         IServiceScopeFactory serviceScopeFactory,
         IOptionsMonitor<GeoprocessingExecutorOptions> options,
@@ -64,14 +26,11 @@ internal sealed class LayerSpatialJoinExecutor : LayerSourcedFeatureExecutor
     {
     }
 
-    /// <inheritdoc />
     protected override string ProcessId => HandledProcessId;
 
-    /// <summary>outStatistics aggregate the matched JOIN-layer rows, so validate against that schema.</summary>
     private protected override int? ResolveStatisticsLayerId(StepInputReader inputs, DagSourceRequest request)
         => RequireLayerId(inputs, "joinLayerId");
 
-    /// <inheritdoc />
     private protected override async Task<List<IFeature>> ApplyCoreAsync(
         LayerOpContext context,
         StepInputReader inputs,

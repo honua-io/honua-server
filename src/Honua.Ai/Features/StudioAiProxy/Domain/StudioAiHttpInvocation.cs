@@ -5,7 +5,7 @@ using System.Text.Json;
 
 namespace Honua.Ai.StudioAiProxy.Domain;
 
-/// <summary>Private owned provider bytes and original provenance, never a loggable record or financial receipt.</summary>
+// These bytes are the provider payload and its provenance, not a log record or a receipt.
 internal sealed class StudioAiHttpInvocation
 {
     private readonly StudioAiProxyProviderOptions _options;

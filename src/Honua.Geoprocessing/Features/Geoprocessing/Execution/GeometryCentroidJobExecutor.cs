@@ -11,25 +11,8 @@ using NetTopologySuite.IO;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// Production <see cref="IJobExecutor"/> for the <c>geometry.centroid</c>
-/// process. Slice 4 of #1031 — extends the buffer / clip / intersect /
-/// project / area / union set with a per-feature centroid output.
-///
-/// Computes the centroid of the supplied geometry using NetTopologySuite's
-/// <see cref="Geometry.Centroid"/> primitive — a deterministic, robust
-/// centroid that handles point / line / polygon inputs uniformly — and
-/// publishes the result as a single GeoJSON Point Feature on the
-/// <c>outputFeatureLayer</c> slot. The output is always a point regardless
-/// of the input geometry type, matching the long-standing GeoServices and
-/// PostGIS <c>ST_Centroid</c> semantics.
-/// </summary>
 internal sealed partial class GeometryCentroidJobExecutor : IProcessExecutor
 {
-    /// <summary>
-    /// The single process id this executor handles. Matches the catalog
-    /// entry in <see cref="BuiltInProcessCatalog"/>.
-    /// </summary>
     internal const string HandledProcessId = "geometry.centroid";
 
     private readonly IOptionsMonitor<GeoprocessingExecutorOptions> _options;
@@ -43,10 +26,6 @@ internal sealed partial class GeometryCentroidJobExecutor : IProcessExecutor
         _logger = logger;
     }
 
-    /// <summary>
-    /// The single process id this executor handles, surfaced through
-    /// <see cref="IProcessExecutor"/> so the dispatcher auto-registers it (#2122).
-    /// </summary>
     public IReadOnlySet<string> ProcessIds { get; } =
         new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
 

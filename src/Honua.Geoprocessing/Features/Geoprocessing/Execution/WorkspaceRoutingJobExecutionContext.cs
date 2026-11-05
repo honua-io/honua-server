@@ -9,17 +9,6 @@ using Honua.ControlPlane;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// Decorates the durable <see cref="IJobExecutionContext"/> so that per-process
-/// executors need no workspace-awareness of their own: when the job spec carries
-/// a GP <c>env:workspace</c> request (<see cref="GeoprocessingProtocolMetadataKeys.GPServerWorkspace"/>),
-/// every artifact an executor publishes is additionally routed into that
-/// workspace through <see cref="IWorkspaceLifecycleService"/>, honoring
-/// <c>env:overwriteOutput</c> collision semantics (<see cref="GeoprocessingProtocolMetadataKeys.GPServerOverwriteOutput"/>).
-/// Installed by <see cref="GeoprocessingDispatchJobExecutor"/> — the single
-/// funnel every geometry/transform/source/sink executor's published artifact
-/// passes through — so this is the only place workspace routing needs to live.
-/// </summary>
 internal sealed class WorkspaceRoutingJobExecutionContext : IJobExecutionContext
 {
     private readonly IJobExecutionContext _inner;
@@ -66,16 +55,6 @@ internal sealed class WorkspaceRoutingJobExecutionContext : IJobExecutionContext
     public Task ThrowIfExecutionLeaseLostAsync(CancellationToken cancellationToken = default)
         => _inner.ThrowIfExecutionLeaseLostAsync(cancellationToken);
 
-    /// <summary>
-    /// Registers the artifact both on the durable job record (unchanged default
-    /// behavior) and, when <c>env:workspace</c> was requested, as a workspace
-    /// artifact keyed by the same stable output label GPServer/OGC Processes
-    /// publish under (<c>process.output.{index}</c> / <c>gpserver.output.{index}</c>).
-    /// A label collision throws <see cref="ArtifactAlreadyExistsException"/>
-    /// when overwrite was not requested; <see cref="GeoprocessingDispatchJobExecutor"/>
-    /// maps that into a curated <c>JobExecutionResult.Failed</c> so the caller sees
-    /// a clear error instead of a generic execution failure.
-    /// </summary>
     public async Task PublishArtifactAsync(string artifactReference, CancellationToken cancellationToken = default)
     {
         await TryPublishArtifactAsync(artifactReference, cancellationToken).ConfigureAwait(false);
@@ -110,9 +89,6 @@ internal sealed class WorkspaceRoutingJobExecutionContext : IJobExecutionContext
         return published is not null;
     }
 
-    /// <summary>
-    /// Declared output kinds carried on the durable spec by the submit path.
-    /// </summary>
     private static List<ArtifactKind> ResolveDeclaredKinds(ExecutionJobRecord job)
     {
         if (!job.Spec.Parameters.TryGetValue(

@@ -9,12 +9,6 @@ using Honua.Core.Features.Grounding.Domain;
 
 namespace Honua.Ai.Grounding;
 
-/// <summary>
-/// Default authorization filter. Delegates to
-/// <see cref="IOperatorAuthorizationEvaluator"/> so grounding respects the
-/// canonical authorization graph (honua-server-733) without inventing its own
-/// access check.
-/// </summary>
 internal sealed class OperatorGroundingAuthorizationFilter : IGroundingAuthorizationFilter
 {
     private readonly IOperatorAuthorizationEvaluator _evaluator;

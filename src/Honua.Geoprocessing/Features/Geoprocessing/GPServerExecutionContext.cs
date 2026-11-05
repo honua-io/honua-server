@@ -6,10 +6,9 @@ using Honua.Infrastructure.Authentication;
 
 namespace Honua.Geoprocessing;
 
-/// <summary>Server-resolved GP route and canonical catalog identity, never request parameters.</summary>
+// The route and catalog identity are resolved by the server and are never taken from request parameters.
 internal sealed record GPServerExecutionContext(string ServiceId, string TaskName, string ProcessId)
 {
-    /// <summary>Matches only an authenticated scoped API key's exact service/process execute grant.</summary>
     public bool IsGranted(ClaimsPrincipal principal)
     {
         if (principal.Identity?.IsAuthenticated != true

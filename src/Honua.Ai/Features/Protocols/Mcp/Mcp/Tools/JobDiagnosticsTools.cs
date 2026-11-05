@@ -8,13 +8,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Ai.Protocols.Mcp.Tools;
 
-/// <summary>
-/// <c>honua_diagnose_job</c>: read-only diagnosis of one geoprocessing job over the
-/// admin job diagnostics projection (honua-server#6219). The structured result keeps
-/// <c>observed</c> facts apart from <c>inferred</c> explanations and lists the
-/// evidence the server does not hold. A successful call means the evidence was
-/// read; it is never proof that the job's analysis succeeded.
-/// </summary>
 internal sealed class DiagnoseJobTool(ILogger<DiagnoseJobTool> logger) : IMcpTool
 {
     public const string ToolName = "honua_diagnose_job";
@@ -86,11 +79,6 @@ internal sealed class DiagnoseJobTool(ILogger<DiagnoseJobTool> logger) : IMcpToo
         httpContext.RequestServices.GetRequiredService<IMcpJobDiagnosticsReader>();
 }
 
-/// <summary>
-/// <c>honua_job_evidence</c>: bounded evidence retrieval for one job: sanitized
-/// steps, the most recent events and artifact availability, without the inferred
-/// layer. The event tail is capped server-side; <c>truncated</c> says when it was.
-/// </summary>
 internal sealed class JobEvidenceTool(ILogger<JobEvidenceTool> logger) : IMcpTool
 {
     public const string ToolName = "honua_job_evidence";

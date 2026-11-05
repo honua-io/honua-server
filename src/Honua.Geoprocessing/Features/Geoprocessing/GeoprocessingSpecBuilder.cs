@@ -8,25 +8,8 @@ using Honua.ControlPlane;
 
 namespace Honua.Geoprocessing;
 
-/// <summary>
-/// Single source of truth for projecting an <see cref="AnalysisPlan"/> onto the
-/// durable <see cref="ExecutionJobSpec.Parameters"/> bag the worker reads back.
-/// Both the production submit path (<c>GeoprocessingJobService.BuildSpec</c>) and
-/// the GP Devkit local runner (<c>GeoprocessingLocalRunner</c>) build their spec
-/// parameters through this one helper so the spec the local dry-run carries is the
-/// IDENTICAL spec a real submit would produce for the same plan — closing the
-/// "plan is a parallel representation" gap flagged by issue #2180.
-/// </summary>
 internal static class GeoprocessingSpecBuilder
 {
-    /// <summary>
-    /// Projects <paramref name="plan"/>'s id, process-definitions list, output-artifact
-    /// kinds, and per-step inputs into <paramref name="specParams"/> under the canonical
-    /// <c>ExecutionJobParameterKeys</c> keys. Mutates and returns the supplied bag so the
-    /// submit path can layer admission/partition/workload parameters around this core
-    /// projection. The local runner passes a fresh bag and gets exactly the durable
-    /// parameters a worker dispatches on.
-    /// </summary>
     public static Dictionary<string, string> ProjectPlanParameters(
         AnalysisPlan plan,
         Dictionary<string, string> specParams)
@@ -114,24 +97,6 @@ internal static class GeoprocessingSpecBuilder
         return specParams;
     }
 
-    /// <summary>
-    /// Builds the <see cref="ExecutionJobSpec"/> for the no-registered-workload case —
-    /// the shape both the production submit path (when no
-    /// <c>ExecutionJobDefinition</c> is registered for the geoprocessing kind, the
-    /// default) and the GP Devkit local runner produce. Centralizing it here makes the
-    /// local dry-run's spec IDENTICAL to a real submit's by construction: same Kind /
-    /// TargetKind / Backend / WorkloadName / RuntimeProfile, and the same parameter bag
-    /// from <see cref="ProjectPlanParameters"/>.
-    /// </summary>
-    /// <param name="plan">The analysis plan to project.</param>
-    /// <param name="specParams">
-    /// The parameter bag to project into (the submit path seeds protocol/admission
-    /// metadata first; the local runner passes a fresh bag).
-    /// </param>
-    /// <param name="requiredRuntimeProfile">
-    /// The data-driven runtime profile (<c>native</c> for a gdal.* step; <c>null</c>
-    /// leaves the job managed/default). Drives the claim fence to the right worker.
-    /// </param>
     public static ExecutionJobSpec BuildNoWorkloadSpec(
         AnalysisPlan plan,
         Dictionary<string, string> specParams,
@@ -158,10 +123,6 @@ internal static class GeoprocessingSpecBuilder
         };
     }
 
-    /// <summary>
-    /// Returns the minimum worker-contract version required by the plan while preserving
-    /// the caller's higher baseline requirement.
-    /// </summary>
     public static int ResolveRequiredContractVersion(AnalysisPlan plan, int baselineVersion = 1)
     {
         ArgumentNullException.ThrowIfNull(plan);
@@ -170,16 +131,6 @@ internal static class GeoprocessingSpecBuilder
             : baselineVersion;
     }
 
-    /// <summary>
-    /// Builds a single-step <see cref="AnalysisPlan"/> for a direct
-    /// <c>(processId, step-0 inputs)</c> invocation — the shape the GP Devkit local
-    /// runner / <c>honua gp run</c> drive. The plan is the canonical input the shared
-    /// projection and spec-shape consume, so the local dry-run produces the same spec
-    /// a single-step submit would.
-    /// </summary>
-    /// <param name="processId">Canonical dotted process id (e.g. <c>gdal.hillshade</c>).</param>
-    /// <param name="inputs">Step-0 input name/value pairs.</param>
-    /// <param name="planId">Stable plan id to stamp; the runner supplies its operation id.</param>
     public static AnalysisPlan SingleStepPlan(
         string processId,
         IReadOnlyDictionary<string, string> inputs,

@@ -8,14 +8,6 @@ using NetTopologySuite.Features;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// <c>transform.attribute-cast</c> executor. Coerces one attribute to a target CLR
-/// type (<c>int</c>, <c>long</c>, <c>double</c>, <c>bool</c>, or <c>string</c>).
-/// A value that cannot be coerced is a row-level data error: per the <c>onError</c>
-/// policy it is dropped (default), set to null, or kept. Ported from the GeoETL
-/// baseline AttributeCastTransform onto the #1185 process/executor contract. Streams:
-/// a per-feature map with no cross-feature state.
-/// </summary>
 internal sealed class AttributeCastTransformExecutor(
     IOptionsMonitor<GeoprocessingExecutorOptions> options)
     : FeatureCollectionTransformExecutor(options)

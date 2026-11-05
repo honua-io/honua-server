@@ -7,10 +7,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Ai.Protocols.Mcp.Resources;
 
-/// <summary>
-/// MCP resource for the fixed <c>honua://ops/health</c> operational-health
-/// snapshot.
-/// </summary>
 internal sealed class OpsHealthResource(ILogger<OpsHealthResource> logger) : IMcpResource
 {
     public const string Uri = McpResourceUris.OpsHealth;
@@ -52,10 +48,6 @@ internal sealed class OpsHealthResource(ILogger<OpsHealthResource> logger) : IMc
         httpContext.RequestServices.GetRequiredService<IMcpOpsObservabilityReader>();
 }
 
-/// <summary>
-/// MCP resource for the fixed <c>honua://ops/findings</c> deterministic
-/// findings list.
-/// </summary>
 internal sealed class OpsFindingsResource(ILogger<OpsFindingsResource> logger) : IMcpResource
 {
     public const string Uri = McpResourceUris.OpsFindings;

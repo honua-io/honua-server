@@ -13,16 +13,6 @@ using Honua.Ai.Protocols.Mcp.Tools;
 
 namespace Honua.Ai.Protocols.Mcp.MapTools;
 
-/// <summary>
-/// MCP tool that describes a single published layer: its field schema (name,
-/// type, nullability, alias), feature/row count, geometry type, spatial
-/// reference, and extent. Thin adapter over the same canonical
-/// <see cref="IMetadataV2GraphProvider"/> graph the GeoServices FeatureServer
-/// layer metadata reads (for the schema) and the shared
-/// <see cref="IFeatureReader"/> the query pipeline uses (for the row count), so
-/// it never grows its own catalog or counting path. Read-only; the caller still
-/// authenticates and passes the operator read grant.
-/// </summary>
 internal sealed class DescribeLayerTool : IMcpTool
 {
     public const string ToolName = "honua_describe_layer";

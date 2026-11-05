@@ -9,17 +9,6 @@ using Honua.Core.Features.Migration.Services;
 
 namespace Honua.Geoprocessing;
 
-/// <summary>
-/// Classifies built-in processes for migration evidence claims.
-/// </summary>
-/// <remarks>
-/// The capability/fidelity verdict (automation tier) is sourced from the shared
-/// <see cref="IEsriConstructCapabilityRegistry"/> (#1382): the classifier maps a
-/// process onto a GP construct family key and the registry supplies the verdict,
-/// keeping the GP lane aligned with the importer and Portal-facade lanes rather
-/// than maintaining a private tier table. Unrecognised keys fall back to the
-/// shared <c>manual-review</c> descriptor.
-/// </remarks>
 internal static class ProcessMigrationEvidenceClassifier
 {
     private static readonly FrozenSet<string> FirstSliceAutomatedVectorProcessIds =
@@ -60,11 +49,6 @@ internal static class ProcessMigrationEvidenceClassifier
     public static ProcessMigrationEvidenceClassification Classify(ProcessDefinition definition)
         => Classify(definition, Registry);
 
-    /// <summary>
-    /// Classifies <paramref name="definition"/> using the supplied capability
-    /// registry. The construct-family mapping stays local (it is the lane's
-    /// parsing job); the registry owns the per-family capability/fidelity verdict.
-    /// </summary>
     public static ProcessMigrationEvidenceClassification Classify(
         ProcessDefinition definition,
         IEsriConstructCapabilityRegistry registry)
@@ -88,12 +72,6 @@ internal static class ProcessMigrationEvidenceClassifier
             descriptor.Reason);
     }
 
-    /// <summary>
-    /// Maps a process to its GP construct family registry key. Every process maps
-    /// to a registered family (including the explicit <c>gp.unsupported</c> catch
-    /// for processes outside the first evidence slice), so the shared unknown
-    /// fallback only fires when the registry itself lacks the key.
-    /// </summary>
     private static string ResolveConstructKey(ProcessDefinition definition)
     {
         var processId = definition.ProcessId;

@@ -6,33 +6,8 @@ using Honua.Core.Features.Geoprocessing.Domain;
 
 namespace Honua.Geoprocessing;
 
-/// <summary>
-/// Surfaces the direct-submit execution reality of an analysis plan so the
-/// read-only pre-flight surfaces (<c>honua_validate_plan</c> / <c>honua_dry_run_plan</c>,
-/// gRPC and GPServer dry-run) report the same limitations the submit path enforces
-/// in <c>GeoprocessingJobService.EnsurePlanExecutable</c> and the per-process
-/// dispatcher applies at runtime.
-/// </summary>
-/// <remarks>
-/// A geoprocessing job runs exactly ONE process: the dispatcher resolves a single
-/// process id from the spec (<c>GeoprocessingDispatchHelper.ResolveProcessId</c> takes
-/// the first id) and the executors read their inputs from the canonical first-step
-/// (<c>0.</c>) prefix. So a plan authored as a multi-step DAG, or one whose only
-/// executable step is a non-<see cref="AnalysisPlanStepKind.Geoprocess"/> kind, or one
-/// referencing a process that is not job-dispatchable, is accepted by the parameter-shape
-/// catalog validator yet fails (or silently under-executes) at submit/runtime. This
-/// validator translates those realities into structured violations/warnings so the
-/// pre-flight is honest rather than optimistic (#2806).
-/// </remarks>
 internal static class DirectSubmitPlanValidator
 {
-    /// <summary>
-    /// Evaluates <paramref name="plan"/> against the direct-submit execution model and
-    /// returns any blocking violations plus non-fatal warnings. Violations here mirror
-    /// the submit-path guards (multi-step, sync-only, nothing-executable); warnings flag
-    /// steps that the runtime silently ignores so a caller understands what will and will
-    /// not run without having to submit and inspect the result.
-    /// </summary>
     public static (List<GeoprocessingValidationFailure> Violations, List<string> Warnings) Evaluate(
         AnalysisPlan plan,
         IProcessCatalog processCatalog)

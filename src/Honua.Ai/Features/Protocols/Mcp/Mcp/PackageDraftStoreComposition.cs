@@ -8,18 +8,8 @@ using StackExchange.Redis;
 
 namespace Honua.Ai.Protocols.Mcp;
 
-/// <summary>
-/// Selects the package-draft store from what the host actually composed.
-/// Redis when <see cref="IConnectionMultiplexer"/> is registered; otherwise the
-/// in-memory store. A store the host already supplied is left alone.
-/// </summary>
 internal static class PackageDraftStoreComposition
 {
-    /// <summary>
-    /// Replaces the default <see cref="InMemoryPackageDraftStore"/> registration
-    /// with a factory that resolves Redis or in-memory at first use.
-    /// </summary>
-    /// <param name="services">The service collection.</param>
     public static void PreferRedisWhenConfigured(IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);

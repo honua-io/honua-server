@@ -13,12 +13,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Ai.StudioAiProxy;
 
-/// <summary>
-/// DI registration for the Studio AI proxy (honua-server#3000). The orchestrating service and all
-/// three adapters are always registered so the feature composes cleanly regardless of which
-/// providers are configured; each adapter self-gates per provider via <c>IsConfigured</c>, and the
-/// service as a whole self-gates via <see cref="StudioAiProxyConfiguration.Enabled"/>.
-/// </summary>
 internal static class StudioAiProxyServiceCollectionExtensions
 {
     public static IServiceCollection AddStudioAiProxy(this IServiceCollection services, IConfiguration configuration)

@@ -5,49 +5,25 @@ using System.Text.Json;
 
 namespace Honua.Ai.Protocols.Mcp.MapTools;
 
-/// <summary>
-/// JSON-schema documents advertised in <c>tools/list</c> for the catalog,
-/// feature-query, and map-render tools. Schemas are immutable
-/// <see cref="JsonElement"/> values parsed at type-load time to keep the MCP
-/// surface AOT-safe (no runtime schema reflection). Mirrors
-/// <see cref="Honua.Ai.Protocols.Mcp.Location.LocationToolSchemas"/>.
-/// </summary>
 internal static class MapToolSchemas
 {
-    /// <summary>Default number of layers returned by <c>honua_list_layers</c>.</summary>
     public const int DefaultLayerLimit = 50;
 
-    /// <summary>Hard ceiling on layers returned by <c>honua_list_layers</c> per page.</summary>
     public const int MaxLayerLimit = 500;
 
-    /// <summary>Default feature count returned by <c>honua_query_features</c>.</summary>
     public const int DefaultFeatureLimit = 100;
 
-    /// <summary>Hard ceiling on features returned by <c>honua_query_features</c>.</summary>
     public const int MaxFeatureLimit = 1000;
 
-    /// <summary>Default render width/height when omitted.</summary>
     public const int DefaultRenderSize = 512;
 
-    /// <summary>Maximum render width/height per side (caps cost and payload).</summary>
     public const int MaxRenderSize = 1024;
 
-    /// <summary>Maximum layers accepted by <c>honua_render_map</c> in one call.</summary>
     public const int MaxRenderLayers = 16;
 
-    /// <summary>
-    /// Default number of decimal places returned <c>honua_query_features</c>
-    /// geometry coordinates are rounded to (~0.1&#160;m at the equator). Trims
-    /// full-precision coordinate noise that otherwise dominates the response
-    /// token budget.
-    /// </summary>
     public const int DefaultGeometryPrecision = 6;
 
-    /// <summary>
-    /// Maximum decimal places <c>geometryPrecision</c> can request. Values above
-    /// this (or below zero) skip quantization and return full-precision
-    /// coordinates; <see cref="System.Math.Round(double, int)"/> caps at 15.
-    /// </summary>
+    // System.Math.Round caps decimal digits at 15, so a geometryPrecision above this ceiling or below zero skips quantization and returns full-precision coordinates.
     public const int MaxGeometryPrecision = 15;
 
     private const string ListLayersArgumentSchemaJson = """
@@ -221,13 +197,10 @@ internal static class MapToolSchemas
         }
         """;
 
-    /// <summary>Schema for <see cref="McpListLayersArgument"/>.</summary>
     public static readonly JsonElement ListLayersArgumentSchema = Parse(ListLayersArgumentSchemaJson);
 
-    /// <summary>Schema for <see cref="McpQueryFeaturesArgument"/>.</summary>
     public static readonly JsonElement QueryFeaturesArgumentSchema = Parse(QueryFeaturesArgumentSchemaJson);
 
-    /// <summary>Schema for <see cref="McpRenderMapArgument"/>.</summary>
     public static readonly JsonElement RenderMapArgumentSchema = Parse(RenderMapArgumentSchemaJson);
 
     // No required fields: styleId, serviceId+layerId, and the empty (list) call
@@ -296,10 +269,8 @@ internal static class MapToolSchemas
         }
         """;
 
-    /// <summary>Schema for <see cref="McpGetStyleArgument"/>.</summary>
     public static readonly JsonElement GetStyleArgumentSchema = Parse(GetStyleArgumentSchemaJson);
 
-    /// <summary>Schema for <see cref="McpApplyStylePresetArgument"/>.</summary>
     public static readonly JsonElement ApplyStylePresetArgumentSchema = Parse(ApplyStylePresetArgumentSchemaJson);
 
     private static JsonElement Parse(string json)

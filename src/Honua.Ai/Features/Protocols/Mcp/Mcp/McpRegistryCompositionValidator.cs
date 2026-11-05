@@ -5,34 +5,9 @@ using Honua.Core.Features.Capabilities;
 
 namespace Honua.Ai.Protocols.Mcp;
 
-/// <summary>
-/// Composition conformance check for the unified capability registry
-/// (ADR-0058, Decision B / honua-server B2 #2334). It verifies the served
-/// <c>/mcp</c> catalog is bound to the registry: every advertised tool name and
-/// every advertised resource URI (concrete or template) must be described by a
-/// <see cref="CapabilityDescriptor"/> in the <see cref="ICapabilityRegistry"/> —
-/// no tool or resource is served without registry provenance. Tools projected from
-/// the canonical operation catalog (<c>Mcp:PublishOperations</c>) carry that
-/// provenance through their operation descriptor instead.
-/// </summary>
-/// <remarks>
-/// This is the "nothing served without a registry descriptor" direction, which
-/// holds for any host regardless of which optional tools it wired. The reverse —
-/// every registry descriptor is served — is environment dependent (geocoding,
-/// routing, Metadata v2, and the promotion resources are conditionally composed),
-/// so it is asserted against the full roster in the unit tests
-/// (<c>CapabilityRegistryConformanceTests</c>) rather than at runtime.
-/// </remarks>
+// Served tools, resources, and templates need a registry descriptor, except operation-catalog tools bound through their operation descriptor; reverse coverage is omitted because composition is optional.
 internal static class McpRegistryCompositionValidator
 {
-    /// <summary>
-    /// Returns the drift between the served <paramref name="surface"/> catalog and
-    /// the <paramref name="registry"/> roster: one human-readable message per
-    /// served tool/resource that has no registry descriptor. An empty list means
-    /// the served catalog is fully bound to the registry.
-    /// </summary>
-    /// <param name="surface">The live MCP operator surface (the served catalog).</param>
-    /// <param name="registry">The unified capability registry (source of truth).</param>
     public static IReadOnlyList<string> FindDrift(McpDataAccessSurface surface, ICapabilityRegistry registry)
     {
         ArgumentNullException.ThrowIfNull(surface);

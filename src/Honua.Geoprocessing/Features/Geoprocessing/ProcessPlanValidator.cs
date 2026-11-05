@@ -14,15 +14,6 @@ using Honua.Geoprocessing.Execution;
 
 namespace Honua.Geoprocessing;
 
-/// <summary>
-/// Validates analysis plan steps against the process catalog, checking that
-/// referenced process IDs exist, required parameters are supplied, values parse
-/// cleanly against their declared <see cref="ProcessParameterValueType"/>, and
-/// per-process semantic rules (enum values, conditional requiredness, numeric
-/// ranges including <see cref="AnalyticsLimits"/> upper bounds) match the live
-/// handler contracts so plans accepted here are also accepted downstream by
-/// <c>SpatialAnalyticsRequestHandlers</c>.
-/// </summary>
 internal static partial class ProcessPlanValidator
 {
     // Accepted enum values mirror the canonical spellings in the live handlers
@@ -123,23 +114,11 @@ internal static partial class ProcessPlanValidator
         "withinDistance", "beyondDistance"
     };
 
-    /// <summary>
-    /// Validates all <see cref="AnalysisPlanStepKind.Geoprocess"/> steps in the plan
-    /// against the catalog, returning any violations and warnings found. Uses the
-    /// default <see cref="AnalyticsLimits"/> values when no configured instance is
-    /// supplied — call the overload taking <see cref="AnalyticsLimits"/> to enforce
-    /// the runtime-configured upper bounds the live handlers use.
-    /// </summary>
     public static (List<GeoprocessingValidationFailure> Violations, List<string> Warnings) Validate(
         AnalysisPlan plan,
         IProcessCatalog catalog)
         => Validate(plan, catalog, new AnalyticsLimits());
 
-    /// <summary>
-    /// Validates the plan using the supplied <paramref name="analyticsLimits"/> so
-    /// upper-bound checks (eps, k, distance, cellSize, buffer cap) match the
-    /// bounds enforced by <c>SpatialAnalyticsRequestHandlers</c> at execution time.
-    /// </summary>
     public static (List<GeoprocessingValidationFailure> Violations, List<string> Warnings) Validate(
         AnalysisPlan plan,
         IProcessCatalog catalog,
@@ -290,13 +269,6 @@ internal static partial class ProcessPlanValidator
         return (violations, warnings);
     }
 
-    /// <summary>
-    /// Applies per-process semantic rules that the live request handlers enforce
-    /// (enum value sets, conditional requiredness, numeric ranges including the
-    /// upper bounds carried by <see cref="AnalyticsLimits"/>). Mirrors
-    /// <c>SpatialAnalyticsRequestHandlers</c> so catalog validation does not
-    /// admit plans the handlers will reject at execution time.
-    /// </summary>
     private static void ApplyProcessSemantics(
         AnalysisPlanStep step,
         AnalyticsLimits analyticsLimits,
@@ -917,10 +889,6 @@ internal static partial class ProcessPlanValidator
         }
     }
 
-    /// <summary>
-    /// Adds a violation for a source-layer windowing filter supplied alongside a staged
-    /// inline source, where the executor cannot apply it.
-    /// </summary>
     private static void RejectLayerOnlySourceFilter(
         AnalysisPlanStep step,
         string parameterName,
@@ -2456,11 +2424,6 @@ internal static partial class ProcessPlanValidator
         }
     }
 
-    /// <summary>
-    /// Marker phrase every closed-token-set rejection carries. Shared by both emitters
-    /// (<see cref="AddEnumViolation"/> for scalar tokens and <see cref="ValidateEnumList"/>
-    /// for token lists) so <see cref="IsClosedValueSetRejection"/> cannot drift from either.
-    /// </summary>
     private const string ClosedValueSetPhrase = "is not in the allowed set (";
 
     private static void AddEnumViolation(
@@ -2478,17 +2441,6 @@ internal static partial class ProcessPlanValidator
         });
     }
 
-    /// <summary>
-    /// True when <paramref name="failure"/> rejects a value because it falls outside a finite
-    /// token set this validator enforces, as opposed to a format, range or structural-text
-    /// complaint. Only a token set makes a parameter's legal values unenumerable when the
-    /// catalog declares no <c>AllowedValues</c>, so migration/translation tooling uses this to
-    /// tell an undeclared discriminator (<c>algorithm</c>, <c>op</c>) from a constrained
-    /// free-form input (<c>raster.map-algebra</c>'s <c>expression</c>), which rejects arbitrary
-    /// probe values without branching on them.
-    /// </summary>
-    /// <param name="failure">Validation failure raised by this validator.</param>
-    /// <returns><c>true</c> when the failure is a closed-token-set rejection.</returns>
     internal static bool IsClosedValueSetRejection(GeoprocessingValidationFailure failure)
     {
         ArgumentNullException.ThrowIfNull(failure);
@@ -2692,11 +2644,6 @@ internal static partial class ProcessPlanValidator
     // Range checks emit one violation per field, even when multiple bounds or
     // type checks would each report the same parameter. Keeps error payloads
     // small enough for user-facing surfaces without hiding any offending field.
-    /// <summary>
-    /// Reads an optional finite numeric input, returning <see langword="false"/> when the
-    /// caller omitted it or it is not a finite number — the range checks above already
-    /// report a malformed value, so cross-parameter rules simply skip it.
-    /// </summary>
     private static bool TryReadOptionalFinite(AnalysisPlanStep step, string parameter, out double value)
     {
         value = 0d;

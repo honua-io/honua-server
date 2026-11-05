@@ -13,22 +13,6 @@ using NtsGeometry = NetTopologySuite.Geometries.Geometry;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// <c>source.csv</c> executor. Parses an inline CSV document into a FeatureCollection,
-/// deriving geometry from either a WKT column or a longitude/latitude coordinate pair,
-/// and publishes the standard FeatureCollection artifact. Pure managed
-/// (System / NetTopologySuite WKT) — no native dependency. Reconciled from the GeoETL
-/// baseline CsvSourceConnector onto the #1185 process/executor contract; the column
-/// auto-detection mirrors CsvFormatReader's name conventions.
-/// </summary>
-/// <remarks>
-/// The baseline connector streamed from a file <c>path</c> via the internal
-/// CsvFormatReader (with delimiter sampling and RFC-4180 quoting). On the #1185 contract
-/// inputs are durable spec strings, so this executor accepts an <c>inline</c> CSV body
-/// with a single-character <c>delimiter</c> override (default comma). Heavyweight
-/// delimiter auto-detection and file-path streaming belong to a later streaming-source
-/// stream.
-/// </remarks>
 internal sealed class CsvSourceExecutor(IOptionsMonitor<GeoprocessingExecutorOptions> options) : IProcessExecutor
 {
     internal const string HandledProcessId = "source.csv";
@@ -45,10 +29,6 @@ internal sealed class CsvSourceExecutor(IOptionsMonitor<GeoprocessingExecutorOpt
 
     private readonly IOptionsMonitor<GeoprocessingExecutorOptions> _options = options;
 
-    /// <summary>
-    /// The single process id this executor handles, surfaced through
-    /// <see cref="IProcessExecutor"/> so the dispatcher auto-registers it (#2122).
-    /// </summary>
     public IReadOnlySet<string> ProcessIds { get; } =
         new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
 

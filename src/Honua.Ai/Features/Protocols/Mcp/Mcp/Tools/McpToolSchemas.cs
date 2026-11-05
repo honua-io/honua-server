@@ -8,36 +8,12 @@ using Honua.Geoprocessing;
 
 namespace Honua.Ai.Protocols.Mcp.Tools;
 
-/// <summary>
-/// JSON-schema documents published in <c>tools/list</c>. Plan schemas are
-/// assembled at type-load time from the canonical
-/// <see cref="AnalysisPlanStepKind"/> and <see cref="ArtifactKind"/> enums so
-/// the published contract cannot drift from the server-side parser in
-/// <see cref="McpToolHelpers"/>. Schemas remain immutable <see cref="JsonElement"/>
-/// values to keep the MCP surface AOT-safe.
-/// </summary>
 internal static class McpToolSchemas
 {
-    /// <summary>
-    /// Canonical step-kind names advertised to MCP clients. The live parser
-    /// accepts these values case-insensitively, but the published schema pins
-    /// the canonical PascalCase spelling to match the domain enum.
-    /// </summary>
     public static readonly IReadOnlyList<string> PlanStepKindNames = Enum.GetNames<AnalysisPlanStepKind>();
 
-    /// <summary>
-    /// Canonical artifact-kind names advertised to MCP clients.
-    /// </summary>
     public static readonly IReadOnlyList<string> ArtifactKindNames = Enum.GetNames<ArtifactKind>();
 
-    /// <summary>
-    /// Closed set of geoprocessing process ids valid for a <c>Geoprocess</c> plan
-    /// step, sourced from the same built-in process catalog the
-    /// <c>honua://catalog/processes</c> resource serves so the published contract
-    /// cannot drift from the executable registry. Published as the
-    /// <c>processId</c> examples so agents can hand-author plans without guessing
-    /// ids; the catalog resource carries each id's typed parameter documentation.
-    /// </summary>
     public static readonly IReadOnlyList<string> ProcessIdNames =
         new BuiltInProcessCatalog()
             .ListProcesses()
@@ -45,11 +21,6 @@ internal static class McpToolSchemas
             .OrderBy(processId => processId, StringComparer.Ordinal)
             .ToArray();
 
-    /// <summary>
-    /// Closed set of process ids that the MCP execute tool may submit to the
-    /// job runtime. Validation and dry-run schemas retain the complete catalog
-    /// so they can diagnose plans that use protocol- or workflow-only entries.
-    /// </summary>
     public static readonly IReadOnlyList<string> JobCallableProcessIdNames =
         new BuiltInProcessCatalog()
             .ListProcesses()
@@ -313,71 +284,22 @@ internal static class McpToolSchemas
         }
         """;
 
-    /// <summary>
-    /// Schema for the <c>honua_plan_analysis</c> tool input.
-    /// </summary>
     public static readonly JsonElement PlanAnalysisArgumentSchema = Parse(PlanAnalysisArgumentSchemaJson);
 
-    /// <summary>
-    /// Schema for the <c>honua_create_map_package</c> tool input. Marks no field
-    /// required to match the geospatial-mcp <c>create_map_package</c> standard
-    /// schema (the composition is built from any subset of selectors); the shared
-    /// draft factory reports structural defects as typed findings.
-    /// </summary>
     public static readonly JsonElement CreateMapPackageArgumentSchema = Parse(CreateMapPackageArgumentSchemaJson);
 
-    /// <summary>
-    /// Schema for the <c>honua_create_app_package</c> tool input. Marks no field
-    /// required to match the geospatial-mcp <c>create_app_package</c> standard
-    /// schema.
-    /// </summary>
     public static readonly JsonElement CreateAppPackageArgumentSchema = Parse(CreateAppPackageArgumentSchemaJson);
 
-    /// <summary>
-    /// Schema for the package-review tools. The schema intentionally does not
-    /// mark <c>packageFamily</c> as required or enum-limit it: the service
-    /// reviews missing and unknown families and reports them as structured
-    /// <c>missing_package_family</c>/<c>unsupported_package_family</c> findings,
-    /// so a stricter published schema would let schema-driven clients block the
-    /// very inputs these tools are meant to inspect. For the same reason
-    /// <c>requirements</c> and <c>resourceRefs</c> permit <c>null</c>: the
-    /// request model normalizes an explicit null to an empty set, so the
-    /// published schema must not reject a value the service accepts.
-    /// </summary>
+    // packageFamily is not marked required because the service reports a missing or unknown family as a finding the tool exists to inspect.
     public static readonly JsonElement PackageReviewArgumentSchema = Parse(PackageReviewArgumentSchemaJson);
 
-    /// <summary>
-    /// Schema for <see cref="Models.McpPlanArgument"/>, shared by validate_plan
-    /// and dry_run_plan. The validator intentionally reports missing
-    /// <c>planId</c> and empty <c>steps</c> as structured violations rather
-    /// than rejecting them at ingest, so the published schema does not mark
-    /// those fields as required — otherwise schema-driven clients would block
-    /// inputs the validator is meant to inspect.
-    /// </summary>
+    // planId and steps are not required on the validate schema because the validator reports those gaps as structured violations.
     public static readonly JsonElement PlanArgumentSchema = Parse(BuildPlanArgumentSchema(requireExecutableShape: false, includeIdempotencyKey: false));
 
-    /// <summary>
-    /// Schema for <see cref="Models.McpExecutePlanArgument"/>. Execute rejects
-    /// missing <c>planId</c> and empty <c>steps</c> at submission time, so the
-    /// published schema marks both as required and pins <c>steps</c> to
-    /// <c>minItems: 1</c> — this keeps the schema consistent with the
-    /// submission-path guard in <see cref="Geoprocessing.GeoprocessingJobService"/>.
-    /// </summary>
     public static readonly JsonElement ExecutePlanArgumentSchema = Parse(BuildPlanArgumentSchema(requireExecutableShape: true, includeIdempotencyKey: true));
 
-    /// <summary>
-    /// Schema for <see cref="Models.McpCancelJobArgument"/>.
-    /// </summary>
     public static readonly JsonElement CancelJobArgumentSchema = Parse(CancelJobArgumentSchemaJson);
 
-    /// <summary>
-    /// Schema for <see cref="Models.McpPublishServiceArgument"/>. <c>connectionId</c>,
-    /// <c>schema</c>, <c>table</c>, and <c>layerName</c> are marked required to
-    /// match the <c>service.publish</c> executor, which throws on a missing
-    /// connection id or required publish parameter at submit time — so a
-    /// schema-driven client should never send a payload the operation always
-    /// refuses.
-    /// </summary>
     public static readonly JsonElement PublishServiceArgumentSchema = Parse(PublishServiceArgumentSchemaJson);
 
     private const string IngestDatasetArgumentSchemaJson = """
@@ -423,11 +345,6 @@ internal static class McpToolSchemas
         }
         """;
 
-    /// <summary>
-    /// Schema for <see cref="Models.McpIngestDatasetArgument"/>. <c>format</c>,
-    /// <c>data</c>, and <c>datasetName</c> are required; the CSV column options
-    /// are validated for mutual consistency at invoke time.
-    /// </summary>
     public static readonly JsonElement IngestDatasetArgumentSchema = Parse(IngestDatasetArgumentSchemaJson);
 
     private const string IngestJobArtifactArgumentSchemaJson = """
@@ -466,20 +383,10 @@ internal static class McpToolSchemas
         }
         """;
 
-    /// <summary>Schema for <see cref="Models.McpIngestJobArtifactArgument"/>.</summary>
     public static readonly JsonElement IngestJobArtifactArgumentSchema = Parse(IngestJobArtifactArgumentSchemaJson);
 
-    /// <summary>
-    /// Schema for <see cref="Models.McpPublishResultArgument"/>. Mirrors the
-    /// geospatial-mcp <c>publish_result</c> schema (only <c>sourceId</c> required,
-    /// additionalProperties allowed) so a standard-conformant promotion call is
-    /// always accepted by the live surface.
-    /// </summary>
     public static readonly JsonElement PublishResultArgumentSchema = Parse(PublishResultArgumentSchemaJson);
 
-    /// <summary>
-    /// Schema used by stub tools that accept no arguments.
-    /// </summary>
     public static readonly JsonElement EmptyObjectSchema = Parse(EmptyObjectSchemaJson);
 
     private static string BuildPlanArgumentSchema(bool requireExecutableShape, bool includeIdempotencyKey)
