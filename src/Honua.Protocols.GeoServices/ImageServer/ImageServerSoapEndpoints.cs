@@ -25,11 +25,7 @@ using static Honua.Protocols.GeoServices.Soap.GeoServicesSoapProtocol;
 
 namespace Honua.Protocols.GeoServices.ImageServer;
 
-/// <summary>
-/// Bounded ArcGIS SOAP adapter for the read-only ImageServer operations used by
-/// ArcGIS Pro. Rendering delegates to the canonical REST ImageServer handler so
-/// the SOAP surface never becomes a second raster execution engine.
-/// </summary>
+// SOAP rendering delegates to the REST ImageServer handler so the SOAP surface does not become a second raster engine.
 internal static partial class ImageServerSoapEndpoints
 {
     private const string XmlSchemaNamespace = "http://www.w3.org/2001/XMLSchema";
@@ -880,12 +876,6 @@ internal static partial class ImageServerSoapEndpoints
         return outputBandCount > 0 && values.Length == outputBandCount && values.All(value => value == storedValue);
     }
 
-    /// <summary>
-    /// Converts the canonical encoded render into Esri GetImage binary layout: unsigned
-    /// 8-bit samples in band-interleaved-by-pixel order followed by a packed validity
-    /// mask. Mask bits are stored most-significant-bit first; one means valid and zero
-    /// means NoData, with no row padding.
-    /// </summary>
     private static bool TryBuildEsriPixelBlock(
         ReadOnlySpan<byte> encodedImage,
         int expectedWidth,
@@ -940,11 +930,6 @@ internal static partial class ImageServerSoapEndpoints
         return true;
     }
 
-    /// <summary>
-    /// Reads band ids from a direct <c>BandIDs</c>, <c>BandIds</c>, or <c>BandSelection</c>
-    /// child of <paramref name="description"/>. Nested integers under
-    /// <c>MosaicRule</c> (lock raster ids) are not band ids.
-    /// </summary>
     internal static string? ReadImageDescriptionBandIds(XElement description)
     {
         ArgumentNullException.ThrowIfNull(description);
@@ -973,10 +958,6 @@ internal static partial class ImageServerSoapEndpoints
         return serviceBandCount;
     }
 
-    /// <summary>
-    /// True when ArcGIS Pro asked for a LERC draw (ExportImage <c>esriImageLERC</c> or
-    /// GetImage <c>Compression</c> LERC).
-    /// </summary>
     internal static bool IsLercDraw(ExportImageRequest request)
         => string.Equals(request.Format, "lerc", StringComparison.OrdinalIgnoreCase)
            || string.Equals(request.Compression, "LERC", StringComparison.OrdinalIgnoreCase);
@@ -1287,13 +1268,6 @@ internal static partial class ImageServerSoapEndpoints
         return Encoding.UTF8.GetString(stream.ToArray());
     }
 
-    /// <summary>
-    /// SOAP catalog field names: the neutral catalog schema
-    /// (<see cref="ImageServerCatalogFields.Schema"/>) that REST metadata and query
-    /// also project, minus the caller's field masks, with the footprint <c>Shape</c>
-    /// geometry field after the OID, as Esri mosaic catalogs list it.
-    /// GetFields, AllowedFields and QueryRasterCatalog therefore describe one schema.
-    /// </summary>
     internal static IEnumerable<string> SoapCatalogFieldNames(ImmutableArray<string> maskedFields = default)
         => SoapCatalogFields(maskedFields).Select(static field => field.Name);
 

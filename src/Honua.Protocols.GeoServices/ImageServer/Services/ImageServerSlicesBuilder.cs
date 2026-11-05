@@ -5,21 +5,8 @@ using Honua.Protocols.GeoServices.ImageServer.Models;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Services;
 
-/// <summary>
-/// Derives the Esri ImageServer <c>slices</c> document from a
-/// <see cref="ImageServerMultidimensionalInfo"/>. A slice is one unique combination
-/// of dimension coordinate values for a variable. Slices can only be enumerated when
-/// every relevant dimension exposes explicit coordinate <c>values</c>; dimensions
-/// that only carry an extent (no enumerable values) cannot be sliced, so such
-/// variables contribute no slices (the spec-correct honest empty result).
-/// </summary>
 internal static class ImageServerSlicesBuilder
 {
-    /// <summary>
-    /// Builds the ordered set of slices for the supplied multidimensional info. The
-    /// result is empty when there are no variables or no dimension carries enumerable
-    /// coordinate values.
-    /// </summary>
     public static ImageServerSlice[] Build(ImageServerMultidimensionalInfo info)
     {
         ArgumentNullException.ThrowIfNull(info);
@@ -65,10 +52,6 @@ internal static class ImageServerSlicesBuilder
         return [.. slices];
     }
 
-    /// <summary>
-    /// Enumerates the Cartesian product of each dimension's coordinate values,
-    /// yielding one coordinate per dimension in the original dimension order.
-    /// </summary>
     private static IEnumerable<double[]> CartesianProduct(ImageServerMultidimensionalDimension[] dimensions)
     {
         IEnumerable<double[]> seed = [[]];

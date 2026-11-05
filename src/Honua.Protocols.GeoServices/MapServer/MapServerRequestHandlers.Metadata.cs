@@ -32,10 +32,6 @@ internal static partial class MapServerEndpoints
 {
     private const string DefaultMapServerCapabilities = "Map,Query,Data,Extract";
 
-    /// <summary>
-    /// Spatial reference of the WebMercatorQuad cache advertised by every MapServer.
-    /// Service <c>spatialReference</c>, extents, and omitted export SR parameters use it.
-    /// </summary>
     internal const int CachedMapSpatialReferenceId = 3857;
 
     internal sealed record MapServerMetadataLayerDescriptor(
@@ -45,9 +41,6 @@ internal static partial class MapServerEndpoints
         MetadataV2Publication Publication,
         MetadataV2Resource Resource);
 
-    /// <summary>
-    /// Handle MapServer service metadata requests.
-    /// </summary>
     private static async Task<IResult> HandleGetServiceMetadata(HttpContext context)
     {
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
@@ -147,9 +140,6 @@ internal static partial class MapServerEndpoints
         }
     }
 
-    /// <summary>
-    /// Handle MapServer layer metadata requests.
-    /// </summary>
     private static async Task<IResult> HandleGetLayerMetadata(HttpContext context)
     {
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
@@ -557,10 +547,6 @@ internal static partial class MapServerEndpoints
         };
     }
 
-    /// <summary>
-    /// Resolves one layer's optional time metadata without allowing malformed provider data
-    /// to fail the service or layer metadata document. Cancellation remains request-fatal.
-    /// </summary>
     private static async Task<FeatureServerTimeInfo?> BuildTimeInfoSafeAsync(
         MetadataV2Resource resource,
         MetadataV2Publication publication,
@@ -652,11 +638,7 @@ internal static partial class MapServerEndpoints
         return [.. formats.Select(static format => format.ToUpperInvariant()).Distinct(StringComparer.OrdinalIgnoreCase)];
     }
 
-    /// <summary>
-    /// Unions accessible resource bboxes and projects them into the advertised tile CRS.
-    /// A bbox that cannot be projected is left out. When none remain, the tile-scheme
-    /// world is used so the extent stays in the same spatial reference as <c>tileInfo</c>.
-    /// </summary>
+    // A bbox that cannot be projected into the tile CRS is left out, and when none remain the tile-scheme world is used so the extent matches tileInfo.
     private static async Task<GeoServicesExtent> ResolveCachedServiceExtentAsync(
         MetadataV2Service service,
         IReadOnlyList<MapServerMetadataLayerDescriptor> layers,

@@ -7,36 +7,11 @@ using Honua.Protocols.GeoServices.VectorTileServer.Models;
 
 namespace Honua.Protocols.GeoServices.VectorTileServer.Services;
 
-/// <summary>
-/// Resolves the VectorTileServer <c>fullExtent</c>/<c>initialExtent</c> in the spatial
-/// reference of the tiling scheme the service advertises in <c>tileInfo</c>.
-/// </summary>
-/// <remarks>
-/// The tiling scheme is always Web Mercator (<see cref="VectorTileServerTileInfoBuilder"/>),
-/// while each published resource declares its bbox in its own spatial reference. Clients
-/// such as ArcGIS Pro discard an extent whose spatial reference differs from the tiling
-/// scheme's, so every resource bbox is projected through the shared
-/// <see cref="ICoordinateTransformService"/> before the union is taken. A bbox that cannot be
-/// projected is left out rather than reported with a spatial reference its numbers are not in
-/// (honua-server#5015).
-/// </remarks>
+// Every resource bbox is projected into the Web Mercator tiling scheme, and a bbox that cannot be projected is left out, because ArcGIS Pro discards an extent in any other spatial reference.
 internal static class VectorTileServerExtentResolver
 {
     private const int DefaultSrid = 4326;
 
-    /// <summary>
-    /// Unions the resource bboxes, projected into <paramref name="tilingSpatialReference"/>.
-    /// </summary>
-    /// <param name="resources">The visible resources published by the service.</param>
-    /// <param name="serviceSpatialReference">
-    /// The service's declared spatial reference, used for a resource that declares a bbox but
-    /// no spatial reference of its own.
-    /// </param>
-    /// <param name="tilingSpatialReference">The tiling scheme's spatial reference.</param>
-    /// <param name="transformService">The shared coordinate transform service.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The extent in the tiling scheme's spatial reference, or <see langword="null"/>
-    /// when no resource bbox could be expressed in it.</returns>
     public static async Task<VectorTileExtent?> ResolveAsync(
         IEnumerable<MetadataV2Resource> resources,
         MetadataV2SpatialReference? serviceSpatialReference,

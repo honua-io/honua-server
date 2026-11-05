@@ -6,42 +6,17 @@ using System.Text.Json;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Services;
 
-/// <summary>
-/// A single dimension constraint parsed from an ImageServer request-side
-/// <c>multidimensionalDefinition</c> (e.g. getSamples). Pins one variable's dimension to a set
-/// of coordinate values that select a slice of a multidimensional cube.
-/// </summary>
-/// <param name="VariableName">The multidimensional variable (e.g. <c>temperature</c>); may be empty when the request omits it.</param>
-/// <param name="DimensionName">The dimension being pinned (e.g. <c>StdTime</c>, <c>StdZ</c>).</param>
-/// <param name="Values">The coordinate values selecting the slice along <paramref name="DimensionName"/>.</param>
-/// <param name="IsSlice">The Esri <c>isSlice</c> flag indicating whether <paramref name="Values"/> denote a single slice.</param>
 internal readonly record struct ImageServerDimensionConstraint(
     string VariableName,
     string DimensionName,
     double[] Values,
     bool IsSlice);
 
-/// <summary>
-/// Parses and validates the Esri request-side <c>multidimensionalDefinition</c> parameter — an
-/// array of <c>{ variableName, dimensionName, values:[...], isSlice }</c> objects that select a
-/// per-slice (time/StdZ coordinate) view of a registered multidimensional cube.
-/// </summary>
-/// <remarks>
-/// This validates request shape only. Resolving a parsed constraint to an actual pixel read is
-/// delegated to the canonical Zarr point-slice reader so ImageServer adapters do not duplicate
-/// storage, coordinate, or dimension-index behavior.
-/// </remarks>
 internal static class ImageServerMultidimensionalDefinition
 {
     private const int MaxDefinitionLength = 8192;
     private const int MaxConstraints = 8;
 
-    /// <summary>
-    /// Attempts to parse the raw <c>multidimensionalDefinition</c> value. Returns <c>true</c>
-    /// (with an empty <paramref name="constraints"/>) when the value is absent. Returns
-    /// <c>false</c> with a client-facing <paramref name="error"/> when the value is present but
-    /// malformed.
-    /// </summary>
     public static bool TryParse(string? raw, out IReadOnlyList<ImageServerDimensionConstraint> constraints, out string? error)
     {
         constraints = Array.Empty<ImageServerDimensionConstraint>();

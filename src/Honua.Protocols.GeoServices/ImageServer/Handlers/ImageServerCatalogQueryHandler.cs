@@ -22,10 +22,8 @@ namespace Honua.Protocols.GeoServices.ImageServer.Handlers;
 // Catalog query returns features in the FeatureServer query envelope.
 internal sealed class ImageServerCatalogQueryHandler
 {
-    /// <summary>Maximum number of records the catalog query will ever return per page.</summary>
     private const int MaxRecordCount = 1000;
 
-    /// <summary>Default page size when the caller does not specify <c>resultRecordCount</c>.</summary>
     private const int DefaultRecordCount = MaxRecordCount;
 
     private readonly IMetadataV2GraphProvider _graphProvider;
@@ -45,9 +43,6 @@ internal sealed class ImageServerCatalogQueryHandler
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <summary>
-    /// Queries the raster catalog for the specified layer using the supplied request values.
-    /// </summary>
     public async Task<IResult> QueryCatalogAsync(
         HttpContext context,
         int layerId,
@@ -139,9 +134,6 @@ internal sealed class ImageServerCatalogQueryHandler
         }
     }
 
-    /// <summary>
-    /// Returns one raster catalog item as an Esri feature resource.
-    /// </summary>
     public async Task<IResult> GetCatalogItemAsync(
         HttpContext context,
         int layerId,
@@ -312,18 +304,6 @@ internal sealed class ImageServerCatalogQueryHandler
         return true;
     }
 
-    /// <summary>
-    /// Parses the Esri spatial query parameters (<c>geometry</c>, <c>geometryType</c>,
-    /// <c>inSR</c>, <c>spatialRel</c>) into the canonical raster-catalog spatial filter. The
-    /// geometry's axis-aligned envelope is always retained as the index-eligible pre-filter box;
-    /// per the repository's spatial-semantics rule, <c>bbox</c>/envelope windowing
-    /// (<c>esriGeometryEnvelope</c> or <c>esriSpatialRelEnvelopeIntersects</c>) uses the
-    /// envelope-only test, while explicit relationships (<c>Intersects</c>/<c>Contains</c>/
-    /// <c>Within</c>/<c>Overlaps</c>) on a non-envelope geometry additionally carry the exact
-    /// geometry (WKB) so the provider evaluates the exact predicate. <c>inSR</c> sets the filter
-    /// SRID; when omitted, the geometry's embedded spatial reference (or the catalog's native SRID)
-    /// is assumed.
-    /// </summary>
     private static bool TryParseSpatialFilter(
         IReadOnlyDictionary<string, StringValues> values,
         int maxCurveVertices,
@@ -401,11 +381,6 @@ internal sealed class ImageServerCatalogQueryHandler
         return true;
     }
 
-    /// <summary>
-    /// Maps the Esri <c>spatialRel</c> token to the canonical raster-catalog relation. A null or
-    /// unspecified relationship defaults to <c>Intersects</c> (ArcGIS default); the value has already
-    /// been validated by <see cref="IsSupportedSpatialRelationship"/>.
-    /// </summary>
     private static RasterCatalogSpatialRelation MapSpatialRelation(string? spatialRel)
         => spatialRel?.ToLowerInvariant() switch
         {
@@ -416,10 +391,6 @@ internal sealed class ImageServerCatalogQueryHandler
             _ => RasterCatalogSpatialRelation.Intersects,
         };
 
-    /// <summary>
-    /// True when the supplied geometry JSON is an axis-aligned envelope (<c>xmin/ymin/xmax/ymax</c>),
-    /// whose exact predicate is identical to the bounding-box test, so it is kept envelope-only.
-    /// </summary>
     private static bool IsEnvelopeShaped(string geometryJson)
     {
         try
@@ -438,11 +409,6 @@ internal sealed class ImageServerCatalogQueryHandler
         }
     }
 
-    /// <summary>
-    /// Converts the normalized Esri geometry JSON into WKB via the shared GeoServices geometry
-    /// converter (the same path FeatureServer spatial filters use), so no geometry/geodesy logic is
-    /// reimplemented here. Returns a 400-mappable error string on malformed geometry.
-    /// </summary>
     private static bool TryConvertGeometryToWkb(
         string geometryJson,
         int? filterSrid,
@@ -482,10 +448,6 @@ internal sealed class ImageServerCatalogQueryHandler
         }
     }
 
-    /// <summary>
-    /// Accepts a bare <c>x,y</c>/<c>xmin,ymin,xmax,ymax</c> string for point/envelope
-    /// geometryTypes (the ArcGIS bbox shorthand) and otherwise passes the JSON through.
-    /// </summary>
     private static string NormalizeGeometryInput(string geometry, string? geometryType)
     {
         var trimmed = geometry.Trim();
@@ -517,11 +479,6 @@ internal sealed class ImageServerCatalogQueryHandler
            geometryType.Equals("esriGeometryMultipoint", StringComparison.OrdinalIgnoreCase) ||
            geometryType.Equals("esriGeometryPolyline", StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>
-    /// Validates <c>spatialRel</c>. At footprint-extent granularity the supported
-    /// relationships all reduce to an envelope-overlap test, so this guards against
-    /// callers expecting an unsupported exact predicate rather than silently mis-filtering.
-    /// </summary>
     private static bool IsSupportedSpatialRelationship(string? spatialRel, out string? error)
     {
         error = null;
@@ -544,10 +501,6 @@ internal sealed class ImageServerCatalogQueryHandler
         }
     }
 
-    /// <summary>
-    /// Parses the Esri <c>orderByFields</c> parameter: a comma-separated list of
-    /// <c>field [ASC|DESC]</c> terms. Unknown field names are rejected with a 400.
-    /// </summary>
     private static bool TryParseOrderByFields(
         string? raw,
         out IReadOnlyList<ImageServerCatalogOrderBy> orderBy,
@@ -595,11 +548,6 @@ internal sealed class ImageServerCatalogQueryHandler
         return true;
     }
 
-    /// <summary>
-    /// Parses the Esri <c>outFields</c> parameter into a canonical field set.
-    /// <c>*</c> (or omitted) selects all fields. <c>OBJECTID</c> is always
-    /// retained. Unknown field names are rejected with a 400.
-    /// </summary>
     private static bool TryParseOutFields(
         string? raw,
         out IReadOnlyList<string>? outFields,

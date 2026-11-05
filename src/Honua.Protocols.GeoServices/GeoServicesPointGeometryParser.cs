@@ -5,7 +5,6 @@ using System.Globalization;
 
 namespace Honua.Protocols.GeoServices;
 
-/// <summary>Strict two-coordinate literal syntax shared by GeoServices identify endpoints.</summary>
 internal static class GeoServicesPointGeometryParser
 {
     internal static bool TryParsePointLiteral(string value, out double x, out double y)

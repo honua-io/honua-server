@@ -12,16 +12,8 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Protocols.GeoServices.FeatureServer.Services;
 
-/// <summary>
-/// GeoServices FeatureServer adapter over the shared <see cref="GeoParquetFeatureWriter"/>.
-/// Resolves the GeoServices object-id field semantics and delegates all GeoParquet
-/// encoding to the shared writer so the wire format is not reimplemented per protocol.
-/// </summary>
 internal static class GeoParquetQueryFormatter
 {
-    /// <summary>
-    /// Formats query result as GeoParquet using Metadata v2 resource metadata.
-    /// </summary>
     public static (byte[] response, string contentType) FormatAsGeoParquet(
         QueryResult<Feature> result,
         MetadataV2Resource resource,

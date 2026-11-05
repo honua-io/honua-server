@@ -7,38 +7,20 @@ using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Protocols.GeoServices.MapServer.Models;
 
-/// <summary>
-/// Esri spatial extent information for MapServer responses.
-/// </summary>
 internal sealed class GeoServicesExtent
 {
-    /// <summary>
-    /// Minimum X coordinate.
-    /// </summary>
     [JsonPropertyName("xmin")]
     public required double Xmin { get; init; }
 
-    /// <summary>
-    /// Minimum Y coordinate.
-    /// </summary>
     [JsonPropertyName("ymin")]
     public required double Ymin { get; init; }
 
-    /// <summary>
-    /// Maximum X coordinate.
-    /// </summary>
     [JsonPropertyName("xmax")]
     public required double Xmax { get; init; }
 
-    /// <summary>
-    /// Maximum Y coordinate.
-    /// </summary>
     [JsonPropertyName("ymax")]
     public required double Ymax { get; init; }
 
-    /// <summary>
-    /// Spatial reference for the extent.
-    /// </summary>
     [JsonPropertyName("spatialReference")]
     public required SpatialReferenceJson SpatialReference { get; init; }
 

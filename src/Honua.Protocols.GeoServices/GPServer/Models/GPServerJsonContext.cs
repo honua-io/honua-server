@@ -5,9 +5,6 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Protocols.GeoServices.GPServer.Models;
 
-/// <summary>
-/// AOT-compatible JSON serialization context for GPServer wire-format models.
-/// </summary>
 [JsonSerializable(typeof(GPServiceInfoResponse))]
 [JsonSerializable(typeof(GPTaskInfoResponse))]
 [JsonSerializable(typeof(GPParameterInfo))]

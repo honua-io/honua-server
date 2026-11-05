@@ -14,14 +14,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Protocols.GeoServices.NAServer;
 
-/// <summary>
-/// Maps the GeoServices NAServer REST endpoints as a thin protocol adapter over the
-/// shared <see cref="IRoutingProvider"/> pipeline. Route / ServiceArea /
-/// ClosestFacility / ODCostMatrix / LocationAllocation solves parse Esri parameters,
-/// delegate to the canonical routing provider, and format the Esri JSON response.
-/// Unsupported provider capabilities return GeoServices 400 envelopes rather than
-/// fabricated solves.
-/// </summary>
 internal static class NAServerEndpoints
 {
     private const string RouteBase = "/rest/services/{serviceId}/NAServer";
@@ -34,9 +26,6 @@ internal static class NAServerEndpoints
         WriteIndented = true,
     };
 
-    /// <summary>
-    /// Maps NAServer endpoints.
-    /// </summary>
     public static IEndpointRouteBuilder MapNAServerEndpoints(this IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
@@ -253,10 +242,6 @@ internal static class NAServerEndpoints
             JsonContentType);
     }
 
-    /// <summary>
-    /// The active network dataset, falling back to the built-in default so the metadata
-    /// stays describable when the registry has no row for the configured id.
-    /// </summary>
     internal static async Task<NetworkDataset> ResolveDatasetAsync(
         INetworkDatasetResolver datasets,
         RoutingConfiguration configuration,
@@ -426,14 +411,6 @@ internal static class NAServerEndpoints
         }
     }
 
-    /// <summary>
-    /// Gates barrier and travel-mode inputs against the provider's advertised
-    /// capabilities. Returns a GeoServices 400 envelope when the request asks for a
-    /// barrier kind the provider does not honour, or a travel mode it does not
-    /// route — being honest about what actually works rather than silently
-    /// ignoring the input and returning an unrestricted/default solve. Returns
-    /// <c>null</c> when the request is within the provider's capabilities.
-    /// </summary>
     private static IResult? ValidateProviderCapabilities(
         HttpContext context,
         RoutingProviderCapabilities capabilities,
@@ -448,11 +425,6 @@ internal static class NAServerEndpoints
                 "NAServer input unsupported by provider");
     }
 
-    /// <summary>
-    /// Serializes the response, emitting indented JSON for <c>f=pjson</c> and compact
-    /// JSON otherwise. The pjson path reuses the source-generated resolver so AOT
-    /// metadata is preserved.
-    /// </summary>
     private static IResult WriteResponse<T>(
         HttpContext context,
         IReadOnlyDictionary<string, string> parameters,

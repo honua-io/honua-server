@@ -3,10 +3,6 @@
 
 namespace Honua.Protocols.GeoServices.Catalog;
 
-/// <summary>
-/// Built-in Utilities/PrintingTools GPServer catalog identity.
-/// The print handlers own execution; this type only publishes the service.
-/// </summary>
 internal static class PrintingToolsServiceCatalog
 {
     internal const string FolderName = "Utilities";
@@ -30,10 +26,6 @@ internal static class PrintingToolsServiceCatalog
             Url = $"{baseUrl}/rest/services/{EscapeCatalogName(QualifiedName)}/{ProtocolName}"
         };
 
-    /// <summary>
-    /// Escapes each path segment and keeps slashes. Names without a slash stay
-    /// byte-identical to <see cref="Uri.EscapeDataString(string)"/>.
-    /// </summary>
     internal static string EscapeCatalogName(string name)
         => string.Join('/', name.Split('/').Select(Uri.EscapeDataString));
 }

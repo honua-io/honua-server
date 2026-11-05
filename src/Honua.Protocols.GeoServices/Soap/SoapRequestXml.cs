@@ -6,10 +6,6 @@ using System.Xml.Schema;
 
 namespace Honua.Protocols.GeoServices.Soap;
 
-/// <summary>
-/// Reads the supported SOAP envelope contract without trusting request-supplied
-/// schemas, DTDs, or external resources. Adapters validate operation payloads.
-/// </summary>
 internal static class SoapRequestXml
 {
     private static readonly XmlSchemaSet _envelopeSchemas = CreateEnvelopeSchemas();

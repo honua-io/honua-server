@@ -14,12 +14,7 @@ using Microsoft.Extensions.Primitives;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Handlers;
 
-/// <summary>
-/// Internal helper that validates a raster function chain document and returns a
-/// normalised description of the chain. This is intentionally not exposed as a
-/// public ArcGIS ImageServer endpoint because <c>/computeClass</c> is not part of
-/// the ImageServer contract.
-/// </summary>
+// This chain check is not a public ImageServer endpoint, because computeClass is outside the ImageServer contract.
 internal sealed class ImageServerAnalyzeHandler
 {
     private readonly IMetadataV2GraphProvider _graphProvider;
@@ -36,10 +31,6 @@ internal sealed class ImageServerAnalyzeHandler
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <summary>
-    /// Validates the raster function chain supplied via <c>renderingRule</c>
-    /// (or <c>rasterFunction</c>) and returns the planned execution metadata.
-    /// </summary>
     public async Task<IResult> AnalyzeAsync(
         HttpContext context,
         int layerId,

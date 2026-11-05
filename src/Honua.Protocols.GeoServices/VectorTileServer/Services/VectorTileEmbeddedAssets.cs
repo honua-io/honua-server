@@ -15,34 +15,16 @@ using System.Text;
 
 namespace Honua.Protocols.GeoServices.VectorTileServer.Services;
 
-/// <summary>
-/// Sprite/glyph assets served by the VectorTileServer <c>resources/sprites/*</c> and
-/// <c>resources/fonts/*</c> routes. The sprite index is an empty JSON object and the sprite
-/// image is a 1×1 fully transparent PNG; glyph ranges come from the bundled glyph resources and
-/// are re-labelled with the requested fontstack.
-/// </summary>
 internal static class VectorTileEmbeddedAssets
 {
-    /// <summary>
-    /// Honua's own name for the bundled glyph face; always served alongside the substituted
-    /// family names in <see cref="SubstitutedFontFamilies"/>.
-    /// </summary>
     internal const string DefaultFontStackName = "Honua Default";
 
-    /// <summary>Content type for the sprite index JSON document.</summary>
     internal const string SpriteJsonContentType = "application/json";
 
-    /// <summary>Content type for the sprite PNG image.</summary>
     internal const string SpritePngContentType = "image/png";
 
-    /// <summary>Content type for the glyph protobuf payload (Mapbox glyphs encoding).</summary>
     internal const string GlyphPbfContentType = "application/x-protobuf";
 
-    /// <summary>
-    /// The empty sprite index document. An empty object is a valid Mapbox sprite index that
-    /// declares zero icons, so a client that requested a sprite still parses a well-formed
-    /// response.
-    /// </summary>
     internal const string SpriteIndexJson = "{}";
 
     // 1x1 fully transparent 8-bit RGBA PNG (sig + IHDR + IDAT + IEND).
@@ -70,11 +52,6 @@ internal static class VectorTileEmbeddedAssets
     private const byte RangeFieldKey = (2 << 3) | 2;
     private const int GlyphsFieldNumber = 3;
 
-    /// <summary>
-    /// Sans-serif families the bundled face substitutes for. A font in a requested fontstack
-    /// matches a family by its exact name or by the family name followed by a style suffix
-    /// (for example <c>Arial Regular</c>, <c>Open Sans Bold</c>).
-    /// </summary>
     private static readonly string[] SubstitutedFontFamilies =
     [
         DefaultFontStackName,
@@ -105,15 +82,8 @@ internal static class VectorTileEmbeddedAssets
                 static name => new Lazy<byte[]>(() => LoadGlyphRecords(name)),
                 StringComparer.Ordinal);
 
-    /// <summary>Returns the 1×1 transparent sprite PNG bytes.</summary>
     internal static byte[] GetSpritePng() => (byte[])TransparentPngBytes.Clone();
 
-    /// <summary>
-    /// Builds the glyph PBF for <paramref name="fontstack"/> and <paramref name="range"/>: one
-    /// fontstack named exactly as requested, carrying the bundled face's glyphs for the range.
-    /// Returns <see langword="false"/> when no font in the fontstack is served or the range is
-    /// not bundled, so the caller answers not-found instead of an empty glyph stack.
-    /// </summary>
     internal static bool TryGetGlyphPbf(
         string fontstack,
         string range,
@@ -130,10 +100,6 @@ internal static class VectorTileEmbeddedAssets
         return true;
     }
 
-    /// <summary>
-    /// Determines whether any font of the comma-separated <paramref name="fontstack"/> names a
-    /// family the bundled face substitutes for.
-    /// </summary>
     internal static bool IsServedFontStack(string fontstack)
     {
         if (string.IsNullOrWhiteSpace(fontstack))
@@ -180,11 +146,6 @@ internal static class VectorTileEmbeddedAssets
         return buffer;
     }
 
-    /// <summary>
-    /// Reads a bundled glyph range and returns its encoded <c>fontstack.glyphs</c> entries
-    /// (key, length and payload of each), dropping the bundled fontstack name and range so the
-    /// response can carry the requested ones.
-    /// </summary>
     private static byte[] LoadGlyphRecords(string resourceName)
     {
         using var stream = typeof(VectorTileEmbeddedAssets).Assembly.GetManifestResourceStream(resourceName)

@@ -11,15 +11,7 @@ namespace Honua.Protocols.GeoServices;
 
 internal static class GeoServicesObjectIdFieldResolver
 {
-    /// <summary>
-    /// Resolves the object-id field name from a Metadata v2 canonical resource. Prefers
-    /// fields tagged with the <c>id.primary</c> semantic role, then falls back to the
-    /// first integer/big-integer field named <c>objectid</c>, <c>id</c>, or <c>fid</c>
-    /// (case-insensitive) when no primary key is declared. A nonnumeric primary key may
-    /// use a dedicated numeric objectid surrogate, but never an unrelated id/fid attribute.
-    /// When none match, the default
-    /// <see cref="FieldNames.ObjectId"/> constant is returned.
-    /// </summary>
+    // A nonnumeric primary key may use a numeric objectid surrogate, but never an unrelated id or fid attribute.
     public static string ResolveObjectIdFieldName(MetadataV2Resource resource)
         => ResolveObjectIdField(resource)?.Name ?? FieldNames.ObjectId;
 

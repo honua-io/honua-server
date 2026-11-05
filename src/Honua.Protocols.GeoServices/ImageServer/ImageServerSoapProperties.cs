@@ -1003,11 +1003,7 @@ internal static partial class ImageServerSoapEndpoints
             extent is { Length: > 1 } ? extent[1] : null);
     }
 
-    /// <summary>
-    /// Resolves the caller's catalog field masks exactly as the catalog query does
-    /// (<see cref="ImageServerCatalogSecurity"/>), so SOAP metadata never advertises
-    /// a field the RecordSet would then drop.
-    /// </summary>
+    // SOAP metadata uses the same catalog field masks as the catalog query, so it never advertises a field the record set would drop.
     private static async Task<ImmutableArray<string>> ReadCatalogMasksAsync(
         HttpContext context,
         int layerId,

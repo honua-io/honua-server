@@ -14,10 +14,6 @@ internal interface IReplicaStore
 {
     Task SetAsync(ReplicaState replica, TimeSpan? ttl = null, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Durably registers a replica at the authoritative committed generation and returns the
-    /// stored state. Implementations without a durable change log retain the supplied cursor.
-    /// </summary>
     async Task<ReplicaState> RegisterAtCurrentGenerationAsync(
         ReplicaState replica,
         TimeSpan? ttl = null,
@@ -27,13 +23,6 @@ internal interface IReplicaStore
         return replica;
     }
 
-    /// <summary>
-    /// Conditionally persists a replica's sync state: the write only applies when the stored
-    /// <see cref="ReplicaState.LastSyncGeneration"/> and <see cref="ReplicaState.UploadBaseGeneration"/>
-    /// still match the expected values the caller read before the sync. Returns false when another
-    /// synchronization advanced the cursors concurrently (or the replica no longer exists), so the
-    /// caller can reject the sync instead of clobbering the winner's cursor.
-    /// </summary>
     Task<bool> TrySetSyncStateAsync(
         ReplicaState replica,
         long expectedLastSyncGeneration,
@@ -43,11 +32,6 @@ internal interface IReplicaStore
 
     Task<ReplicaState?> GetAsync(string replicaId, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Lists the registered replicas for a service from the live registry. The <c>/replicas</c>
-    /// enumeration is served from here so it reflects createReplica / unRegisterReplica immediately,
-    /// rather than from a lagging cached snapshot.
-    /// </summary>
     Task<IReadOnlyList<ReplicaState>> ListByServiceAsync(string serviceId, CancellationToken cancellationToken = default);
 
     Task<bool> RemoveAsync(string replicaId, CancellationToken cancellationToken = default);
@@ -346,15 +330,7 @@ internal sealed record ReplicaState(
 
     public long LastSyncGeneration { get; init; }
 
-    /// <summary>
-    /// Server generation produced by the most recent upload sync. Used as the download "since"
-    /// cursor so a replica does not receive its own just-applied edits back (#1272).
-    /// </summary>
     public long UploadBaseGeneration { get; init; }
 
-    /// <summary>
-    /// Serialized <see cref="Models.ReplicaScopeDefinition"/> captured at createReplica, or null for a
-    /// replica that covers its layers whole (#4018).
-    /// </summary>
     public string? ScopeDefinition { get; init; }
 }

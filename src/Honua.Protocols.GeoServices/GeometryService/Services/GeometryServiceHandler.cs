@@ -19,9 +19,6 @@ using NetTopologySuite.LinearReferencing;
 
 namespace Honua.Protocols.GeoServices.GeometryService.Services;
 
-/// <summary>
-/// Orchestrates geometry service operations: parse input, invoke PostGIS, format output.
-/// </summary>
 internal sealed class GeometryServiceHandler(
     IGeometryOperationService operationService,
     IGeometryConverter geometryConverter,
@@ -35,11 +32,6 @@ internal sealed class GeometryServiceHandler(
     private const int MaxRelationPairsPerRequest = 100_000;
     private const double MeanEarthRadiusMeters = 6_371_000d;
 
-    /// <summary>
-    /// Sample spacing for <c>calculationType=preserveShape</c>. Edges longer than this
-    /// are densified in the request CRS before the spheroidal measure. Smaller
-    /// geometries use a tighter spacing so a short edge is still subdivided.
-    /// </summary>
     private const double PreserveShapeSegmentMeters = 10_000d;
 
     // Densify generates ceil(segmentLength / maxSegmentLength) interpolated vertices per
@@ -310,12 +302,6 @@ internal sealed class GeometryServiceHandler(
         }
     }
 
-    /// <summary>
-    /// Chooses the datum selection GeometryServer project applies. An explicit
-    /// client transformation is kept even when an endpoint is projected; the SQL
-    /// chokepoint composes it with the CRS defining conversions. Implicit catalog
-    /// defaults stay on PROJ's SRID-only transform, except a geographic noop.
-    /// </summary>
     internal static DatumTransformationSelection? SelectProjectDatumTransformation(
         string? transformationValue,
         DatumTransformationSelection? datumSelection,
@@ -3951,26 +3937,6 @@ internal sealed class GeometryServiceHandler(
         };
     }
 
-    /// <summary>
-    /// Converts a result geometry WKB to a GeoServices JSON element, translating the two result
-    /// shapes the underlying converter reports as <see langword="null"/> into faithful Esri output
-    /// instead of a 400 (#2742):
-    /// <list type="bullet">
-    ///   <item><description>
-    ///   <b>Empty geometry</b> (PostGIS returns <c>GEOMETRYCOLLECTION EMPTY</c> for a disjoint
-    ///   intersect or a full difference) becomes an empty Esri geometry of the request's
-    ///   <paramref name="geometryType"/> (<c>{"rings":[]}</c>, <c>{"paths":[]}</c>,
-    ///   <c>{"points":[]}</c>, or an empty point <c>{"x":null,"y":null}</c>).
-    ///   </description></item>
-    ///   <item><description>
-    ///   <b>Mixed GeometryCollection</b> (e.g. an intersection that yields both an area and a
-    ///   boundary touch) is reduced to its highest-dimension components — filtered to the target
-    ///   <paramref name="geometryType"/> when one is supplied — matching Esri's behavior of
-    ///   returning a single geometry of the operator type.
-    ///   </description></item>
-    /// </list>
-    /// Genuinely invalid/unreadable WKB still surfaces as a 400 through the converter.
-    /// </summary>
     private JsonElement ConvertResultWkbToElement(byte[] wkb, int srid, string? geometryType)
     {
         Geometry? geometry = null;
@@ -4007,12 +3973,6 @@ internal sealed class GeometryServiceHandler(
         return _geometryConverter.ConvertWkbToGeoServicesGeometry(wkb, srid);
     }
 
-    /// <summary>
-    /// Reduces a heterogeneous <see cref="GeometryCollection"/> to a homogeneous geometry of the
-    /// target dimension: the dimension implied by <paramref name="geometryType"/> when supplied,
-    /// otherwise the highest dimension present. Returns <see langword="null"/> when no component
-    /// matches.
-    /// </summary>
     private static Geometry? ReduceMixedCollection(Geometry collection, string? geometryType)
     {
         var components = new List<Geometry>();
@@ -4079,10 +4039,6 @@ internal sealed class GeometryServiceHandler(
             _ => null
         };
 
-    /// <summary>
-    /// Builds an empty Esri geometry element matching the request's geometry type, defaulting to
-    /// an empty polygon (<c>{"rings":[]}</c>) when the type is unknown.
-    /// </summary>
     private static JsonElement CreateEmptyGeometryElement(string? geometryType, int srid)
     {
         var spatialReference = $"\"spatialReference\":{{\"wkid\":{srid.ToString(System.Globalization.CultureInfo.InvariantCulture)},\"latestWkid\":{srid.ToString(System.Globalization.CultureInfo.InvariantCulture)}}}";

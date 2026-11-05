@@ -6,209 +6,125 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Protocols.GeoServices.GPServer.Models;
 
-/// <summary>
-/// GPServer service root response listing available tasks.
-/// </summary>
 internal sealed class GPServiceInfoResponse
 {
     // No ArcGIS Server version (currentVersion/fullVersion) is advertised. Honua is an
     // independent GeoServices REST server and must not impersonate a specific ArcGIS Server
     // release. Do NOT add a currentVersion/fullVersion field (guarded by NoGeoServicesServerVersionTests).
 
-    /// <summary>Service description.</summary>
     public string? ServiceDescription { get; set; }
 
-    /// <summary>List of GP task names.</summary>
     public string[]? Tasks { get; set; }
 
-    /// <summary>Execution type for the service.</summary>
     public string? ExecutionType { get; set; }
 
-    /// <summary>Service capabilities.</summary>
     public string? Capabilities { get; set; }
 
-    /// <summary>Result map server name.</summary>
     public string? ResultMapServerName { get; set; }
 
-    /// <summary>Maximum number of records returned.</summary>
     public int MaximumRecords { get; set; } = 1000;
 }
 
-/// <summary>
-/// GP task metadata including parameters.
-/// </summary>
 internal sealed class GPTaskInfoResponse
 {
-    /// <summary>Task name.</summary>
     public string? Name { get; set; }
 
-    /// <summary>Task display name.</summary>
     public string? DisplayName { get; set; }
 
-    /// <summary>Task description.</summary>
     public string? Description { get; set; }
 
-    /// <summary>Category of the GP tool.</summary>
     public string? Category { get; set; }
 
-    /// <summary>Help URL.</summary>
     public string? HelpUrl { get; set; }
 
-    /// <summary>Execution type: esriExecutionTypeAsynchronous or esriExecutionTypeSynchronous.</summary>
     public string? ExecutionType { get; set; }
 
-    /// <summary>GP parameters.</summary>
     public GPParameterInfo[]? Parameters { get; set; }
 }
 
-/// <summary>
-/// Describes a GP task parameter.
-/// </summary>
 internal sealed class GPParameterInfo
 {
-    /// <summary>Parameter name.</summary>
     public string? Name { get; set; }
 
-    /// <summary>Data type (GPString, GPLong, GPDouble, GPBoolean, GPFeatureRecordSetLayer, etc.).</summary>
     public string? DataType { get; set; }
 
-    /// <summary>Display name.</summary>
     public string? DisplayName { get; set; }
 
-    /// <summary>Parameter description.</summary>
     public string? Description { get; set; }
 
-    /// <summary>Parameter direction (esriGPParameterDirectionInput or esriGPParameterDirectionOutput).</summary>
     public string? Direction { get; set; }
 
-    /// <summary>
-    /// Default value. Esri GP task metadata always carries a <c>defaultValue</c> key
-    /// (JSON <c>null</c> when the parameter has no default); arcgis.geoprocessing's
-    /// <c>import_toolbox()</c> raises <c>KeyError('defaultValue')</c> when it is absent,
-    /// so this property is always serialized even when null. Scalar values retain
-    /// their declared JSON type rather than the canonical catalog's text encoding.
-    /// </summary>
+    // arcgis.geoprocessing import_toolbox() raises KeyError('defaultValue') when the key is absent, so a null default is serialized.
     [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     public JsonElement? DefaultValue { get; set; }
 
-    /// <summary>Parameter type (esriGPParameterTypeRequired, esriGPParameterTypeOptional).</summary>
     public string? ParameterType { get; set; }
 
-    /// <summary>Choice list.</summary>
     public string[]? ChoiceList { get; set; }
 }
 
-/// <summary>
-/// Response for submitJob.
-/// </summary>
 internal sealed class GPSubmitJobResponse
 {
-    /// <summary>Job identifier.</summary>
     public string? JobId { get; set; }
 
-    /// <summary>Esri job status string.</summary>
     public string? JobStatus { get; set; }
 }
 
-/// <summary>
-/// Response for job status polling.
-/// </summary>
 internal sealed class GPJobStatusResponse
 {
-    /// <summary>Job identifier.</summary>
     public string? JobId { get; set; }
 
-    /// <summary>Esri job status string.</summary>
     public string? JobStatus { get; set; }
 
-    /// <summary>Result parameter references when job succeeded.</summary>
     public Dictionary<string, GPJobResultRef>? Results { get; set; }
 
-    /// <summary>Job messages (informational, warning, error).</summary>
     public GPJobMessage[]? Messages { get; set; }
 }
 
-/// <summary>
-/// Reference to a result parameter, included in job status on success.
-/// </summary>
 internal sealed class GPJobResultRef
 {
-    /// <summary>Relative URL to the result resource.</summary>
     public string? ParamUrl { get; set; }
 }
 
-/// <summary>
-/// Job message entry (informational, warning, error).
-/// </summary>
 internal sealed class GPJobMessage
 {
-    /// <summary>Message type (esriJobMessageTypeInformative, esriJobMessageTypeWarning, esriJobMessageTypeError).</summary>
     public string? Type { get; set; }
 
-    /// <summary>Message description.</summary>
     public string? Description { get; set; }
 }
 
-/// <summary>
-/// Per-output result response.
-/// </summary>
 internal sealed class GPResultResponse
 {
-    /// <summary>Output parameter name.</summary>
     public string? ParamName { get; set; }
 
-    /// <summary>Esri GP data type.</summary>
     public string? DataType { get; set; }
 
-    /// <summary>Result value.</summary>
     public object? Value { get; set; }
 }
 
-/// <summary>
-/// Jobs listing/history response for a GP task: the submitted/running/completed/
-/// failed jobs bound to the service and task, newest first, with an opaque paging
-/// cursor.
-/// </summary>
 internal sealed class GPJobsListResponse
 {
-    /// <summary>The jobs in this page, ordered newest first.</summary>
     public List<GPJobListItem> Jobs { get; set; } = [];
 
-    /// <summary>Opaque cursor for the next page, or null when no more jobs remain.</summary>
     public string? NextCursor { get; set; }
 }
 
-/// <summary>
-/// A single entry in a GP task jobs listing.
-/// </summary>
 internal sealed class GPJobListItem
 {
-    /// <summary>Job identifier.</summary>
     public string? JobId { get; set; }
 
-    /// <summary>Esri job status string (e.g. esriJobSucceeded).</summary>
     public string? JobStatus { get; set; }
 
-    /// <summary>Submission time in milliseconds since the Unix epoch.</summary>
     public long SubmissionTime { get; set; }
 
-    /// <summary>Last-updated (or completion) time in milliseconds since the Unix epoch.</summary>
     public long LastUpdatedTime { get; set; }
 }
 
-/// <summary>
-/// Synchronous execute response envelope.
-/// </summary>
 internal sealed class GPExecuteResponse
 {
-    /// <summary>Result parameters.</summary>
     public GPResultResponse[]? Results { get; set; }
 
-    /// <summary>Messages.</summary>
     public GPJobMessage[]? Messages { get; set; }
 
-    /// <summary>
-    /// Esri job status string for the synchronous run (e.g. esriJobSucceeded).
-    /// </summary>
     public string? JobStatus { get; set; }
 }

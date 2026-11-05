@@ -3,10 +3,6 @@
 
 namespace Honua.Protocols.GeoServices.GeometryService.Models;
 
-/// <summary>
-/// Parsed parameters for the buffer operation.
-/// Populated by <see cref="Services.GeometryServiceRequestParser"/>, not by ASP.NET model binding.
-/// </summary>
 internal sealed class BufferParameters
 {
     public required string[] GeometryJsonStrings { get; init; }
@@ -21,9 +17,6 @@ internal sealed class BufferParameters
     public bool Geodesic { get; init; }
 }
 
-/// <summary>
-/// Parsed parameters for the simplify operation (topological correction via ST_MakeValid).
-/// </summary>
 internal sealed class SimplifyParameters
 {
     public required string[] GeometryJsonStrings { get; init; }
@@ -31,9 +24,6 @@ internal sealed class SimplifyParameters
     public int SR { get; init; }
 }
 
-/// <summary>
-/// Parsed parameters for the project (reproject) operation.
-/// </summary>
 internal sealed class ProjectParameters
 {
     public required string[] GeometryJsonStrings { get; init; }
@@ -41,18 +31,9 @@ internal sealed class ProjectParameters
     public int InSR { get; init; }
     public int OutSR { get; init; }
 
-    /// <summary>
-    /// The resolved datum transformation (WKID -> PROJ pipeline) for the
-    /// <see cref="InSR"/> -> <see cref="OutSR"/> reprojection, or <see langword="null"/>
-    /// when no curated transformation applies (PROJ picks its default pipeline).
-    /// </summary>
     public Core.Features.Infrastructure.Crs.DatumTransformationSelection? DatumTransformation { get; init; }
 }
 
-/// <summary>
-/// Parsed parameters for binary geometry operations that apply a single geometry against many geometries.
-/// Used by intersect, clip, and difference.
-/// </summary>
 internal sealed class BinaryGeometryOperationParameters
 {
     public required string[] GeometryJsonStrings { get; init; }
@@ -61,9 +42,6 @@ internal sealed class BinaryGeometryOperationParameters
     public int SR { get; init; }
 }
 
-/// <summary>
-/// Parsed parameters for union operation.
-/// </summary>
 internal sealed class UnionParameters
 {
     public required string[] GeometryJsonStrings { get; init; }
@@ -71,9 +49,6 @@ internal sealed class UnionParameters
     public int SR { get; init; }
 }
 
-/// <summary>
-/// Parsed parameters for the distance operation (closest distance between two geometries).
-/// </summary>
 internal sealed class DistanceParameters
 {
     public required string Geometry1Json { get; init; }
@@ -83,9 +58,6 @@ internal sealed class DistanceParameters
     public bool Geodesic { get; init; }
 }
 
-/// <summary>
-/// Parsed parameters for the relation operation (pairwise spatial relation testing).
-/// </summary>
 internal sealed class RelationParameters
 {
     public required string[] Geometries1Json { get; init; }
@@ -95,31 +67,17 @@ internal sealed class RelationParameters
     public string? RelationParam { get; init; }
 }
 
-/// <summary>
-/// Parsed parameters for the densify operation (insert vertices along segments).
-/// </summary>
 internal sealed class DensifyParameters
 {
     public required string[] GeometryJsonStrings { get; init; }
     public string? GeometryType { get; init; }
     public int SR { get; init; }
 
-    /// <summary>
-    /// Maximum segment length. Ground meters when <see cref="Geodesic"/> is true;
-    /// spatial-reference units when it is false.
-    /// </summary>
     public double MaxSegmentLength { get; init; }
 
-    /// <summary>
-    /// When true, vertices are inserted along the WGS 84 spheroid and the result
-    /// is returned in <see cref="SR"/>. When false, densify stays planar in SR units.
-    /// </summary>
     public bool Geodesic { get; init; }
 }
 
-/// <summary>
-/// Parsed parameters for the convexHull operation.
-/// </summary>
 internal sealed class ConvexHullParameters
 {
     public required string[] GeometryJsonStrings { get; init; }
@@ -127,9 +85,6 @@ internal sealed class ConvexHullParameters
     public int SR { get; init; }
 }
 
-/// <summary>
-/// Parsed parameters for the generalize operation (Douglas-Peucker simplification).
-/// </summary>
 internal sealed class GeneralizeParameters
 {
     public required string[] GeometryJsonStrings { get; init; }
@@ -138,18 +93,12 @@ internal sealed class GeneralizeParameters
     public double MaxDeviation { get; init; }
 }
 
-/// <summary>
-/// Parsed parameters for the labelPoints operation (interior point of each polygon).
-/// </summary>
 internal sealed class LabelPointsParameters
 {
     public required string[] GeometryJsonStrings { get; init; }
     public int SR { get; init; }
 }
 
-/// <summary>
-/// Parsed parameters for the cut operation (split target geometries by a cutter polyline).
-/// </summary>
 internal sealed class CutParameters
 {
     public required string[] TargetJsonStrings { get; init; }
@@ -158,26 +107,15 @@ internal sealed class CutParameters
     public int SR { get; init; }
 }
 
-/// <summary>
-/// Parsed parameters for the trimExtend operation (trim or extend polylines against a trim polyline).
-/// </summary>
 internal sealed class TrimExtendParameters
 {
     public required string[] PolylineJsonStrings { get; init; }
     public required string TrimExtendToJson { get; init; }
     public int SR { get; init; }
 
-    /// <summary>
-    /// The Esri <c>extendHow</c> bit flag (e.g. keep end segment, keep relationships). It is
-    /// parsed and carried for request fidelity but is <b>not</b> yet honored: trimExtend always
-    /// applies the default extend behavior. Implementing the flag semantics is deferred (#2742).
-    /// </summary>
     public string? ExtendHow { get; init; }
 }
 
-/// <summary>
-/// Parsed parameters for the offset operation (offset polylines/polygons by a distance).
-/// </summary>
 internal sealed class OffsetParameters
 {
     public required string[] GeometryJsonStrings { get; init; }
@@ -189,9 +127,6 @@ internal sealed class OffsetParameters
     public double BevelRatio { get; init; }
 }
 
-/// <summary>
-/// Parsed parameters for the autoComplete operation (close polygons from boundary polylines).
-/// </summary>
 internal sealed class AutoCompleteParameters
 {
     public required string[] PolygonJsonStrings { get; init; }
@@ -199,9 +134,6 @@ internal sealed class AutoCompleteParameters
     public int SR { get; init; }
 }
 
-/// <summary>
-/// Parsed parameters for the reshape operation (reshape a polygon/polyline with a reshaper line).
-/// </summary>
 internal sealed class ReshapeParameters
 {
     public required string TargetJson { get; init; }
@@ -209,9 +141,6 @@ internal sealed class ReshapeParameters
     public int SR { get; init; }
 }
 
-/// <summary>
-/// Parsed parameters for the findTransformations operation (candidate datum transformations).
-/// </summary>
 internal sealed class FindTransformationsParameters
 {
     public int InSR { get; init; }
@@ -219,9 +148,6 @@ internal sealed class FindTransformationsParameters
     public int NumOfResults { get; init; } = 1;
 }
 
-/// <summary>
-/// Parsed parameters for the toGeoCoordinateString operation (coordinates -> MGRS/USNG strings).
-/// </summary>
 internal sealed class ToGeoCoordinateStringParameters
 {
     public required double[][] Coordinates { get; init; }
@@ -235,9 +161,6 @@ internal sealed class ToGeoCoordinateStringParameters
     public bool ZoneOneAt180 { get; init; }
 }
 
-/// <summary>
-/// Parsed parameters for the fromGeoCoordinateString operation (MGRS/USNG strings -> coordinates).
-/// </summary>
 internal sealed class FromGeoCoordinateStringParameters
 {
     public required string[] Strings { get; init; }
@@ -247,35 +170,17 @@ internal sealed class FromGeoCoordinateStringParameters
     public bool OldStyle { get; init; }
 }
 
-/// <summary>
-/// Parsed parameters for area and length operations.
-/// </summary>
 internal enum MeasurementCalculationType
 {
-    /// <summary>Planar (Cartesian) measurement in the geometry's own spatial reference.</summary>
     Planar,
 
-    /// <summary>Geodesic (ellipsoidal ground) measurement.</summary>
     Geodesic,
 
-    /// <summary>
-    /// Esri <c>preserveShape</c>. Edges are densified in the request CRS (about 10 km,
-    /// tighter when the geometry is smaller), the samples are transformed to geographic,
-    /// and length and area use the spheroidal path. <see cref="Geodesic"/> stays
-    /// vertex-only geography measurement, so a long projected edge is one geodesic.
-    /// </summary>
     PreserveShape,
 
-    /// <summary>
-    /// Ground length and area on the WGS 84 spheroid for the input as given.
-    /// <see cref="Planar"/> keeps the equatorial-radius compatibility scale.
-    /// </summary>
     Ground
 }
 
-/// <summary>
-/// Parsed parameters for area and length operations.
-/// </summary>
 internal sealed class MeasurementParameters
 {
     public required string[] GeometryJsonStrings { get; init; }

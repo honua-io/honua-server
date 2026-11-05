@@ -17,21 +17,8 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Protocols.GeoServices.FeatureServer.Services;
 
-/// <summary>
-/// Service responsible for processing related records queries for FeatureServer operations.
-/// Handles query building, execution, and result grouping for relationship-based queries.
-/// </summary>
 internal interface IRelatedRecordsService
 {
-    /// <summary>
-    /// Builds a RelatedQuery from query parameters.
-    /// </summary>
-    /// <param name="queryParams">Query parameters for related records</param>
-    /// <param name="objectIds">Object IDs to find related records for</param>
-    /// <param name="relationship">Relationship definition</param>
-    /// <param name="relatedStorageLayerId">Storage layer id of the related resource</param>
-    /// <param name="sqlFilter">Optional SQL filter fragment to apply</param>
-    /// <returns>Configured RelatedQuery</returns>
     RelatedQuery BuildRelatedQuery(
         QueryRelatedRecordsParameters queryParams,
         long[] objectIds,
@@ -39,45 +26,11 @@ internal interface IRelatedRecordsService
         int relatedStorageLayerId,
         SqlFragment? sqlFilter);
 
-    /// <summary>
-    /// Executes a related records query with validation error handling.
-    /// </summary>
-    /// <param name="layerId">Layer identifier</param>
-    /// <param name="query">Related query to execute</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Query result with related features</returns>
     Task<QueryResult<Feature>> ExecuteRelatedQueryAsync(
         int layerId,
         RelatedQuery query,
         CancellationToken cancellationToken);
 
-    /// <summary>
-    /// Groups related records by their origin object IDs for API response.
-    /// </summary>
-    /// <param name="result">Query result containing related features</param>
-    /// <param name="objectIds">Original object IDs</param>
-    /// <param name="relationship">Relationship definition</param>
-    /// <param name="objectIdFieldName">Field name used for object identifiers</param>
-    /// <param name="returnGeometry">Whether to include geometry in response</param>
-    /// <param name="outputSrid">Output spatial reference identifier</param>
-    /// <param name="returnZ">Whether to include Z values in output geometry</param>
-    /// <param name="returnM">Whether to include M values in output geometry</param>
-    /// <param name="geometryPrecision">Output geometry precision override</param>
-    /// <param name="maxAllowableOffset">Output geometry simplification tolerance override</param>
-    /// <param name="outFields">Fields to include in response</param>
-    /// <param name="relatedResource">Canonical metadata for the related layer used to populate field schema</param>
-    /// <param name="orderBy">
-    /// Optional in-memory ordering applied to each origin object's related records
-    /// (Esri <c>orderByFields</c>); null preserves the storage ordering.
-    /// </param>
-    /// <param name="returnCountOnly">
-    /// When <c>true</c>, each group carries only the related-record count (Esri
-    /// <c>returnCountOnly</c>) and the per-record attributes/geometry are omitted.
-    /// </param>
-    /// <returns>
-    /// Grouped related record results plus the shared field/geometry metadata that
-    /// the Esri queryRelatedRecords contract emits at the response top level.
-    /// </returns>
     GroupedRelatedRecords GroupRelatedRecords(
         QueryResult<Feature> result,
         long[] objectIds,
@@ -95,18 +48,6 @@ internal interface IRelatedRecordsService
         bool returnCountOnly = false);
 }
 
-/// <summary>
-/// Grouped related records together with the shared metadata (field schema,
-/// object-id field name, spatial reference) that the Esri queryRelatedRecords
-/// response carries once at the top level rather than per group.
-/// </summary>
-/// <param name="Groups">Related record groups, one per requested object id.</param>
-/// <param name="Fields">Field definitions for the returned attributes.</param>
-/// <param name="ObjectIdFieldName">Object id field name for the related records.</param>
-/// <param name="GeometryType">Esri geometry-type token for related records that include geometry; null for tables or geometry-suppressed responses.</param>
-/// <param name="SpatialReference">Spatial reference for returned geometries; null when no geometry is emitted.</param>
-/// <param name="HasZ">Whether any returned geometry carries Z values.</param>
-/// <param name="HasM">Whether any returned geometry carries M values.</param>
 internal readonly record struct GroupedRelatedRecords(
     RelatedRecordGroup[] Groups,
     GeoServicesFieldInfo[] Fields,
@@ -116,9 +57,6 @@ internal readonly record struct GroupedRelatedRecords(
     bool HasZ,
     bool HasM);
 
-/// <summary>
-/// Implementation of related records processing for FeatureServer operations.
-/// </summary>
 internal sealed class RelatedRecordsService : IRelatedRecordsService
 {
     private readonly IRelationshipStore _relationshipStore;
@@ -133,9 +71,6 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
         _maxRecordCount = maxRecordCount > 0 ? maxRecordCount : new QueryLimits().MaxRecordCount;
     }
 
-    /// <summary>
-    /// Builds a RelatedQuery from query parameters.
-    /// </summary>
     public RelatedQuery BuildRelatedQuery(
         QueryRelatedRecordsParameters queryParams,
         long[] objectIds,
@@ -180,9 +115,6 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
         return query;
     }
 
-    /// <summary>
-    /// Executes a related records query with validation error handling.
-    /// </summary>
     public async Task<QueryResult<Feature>> ExecuteRelatedQueryAsync(
         int layerId,
         RelatedQuery query,
@@ -202,9 +134,6 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
         }
     }
 
-    /// <summary>
-    /// Groups related records by their origin object IDs for API response.
-    /// </summary>
     public GroupedRelatedRecords GroupRelatedRecords(
         QueryResult<Feature> result,
         long[] objectIds,
@@ -417,12 +346,6 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
             hasM);
     }
 
-    /// <summary>
-    /// Mirrors the main query path's attribute visibility (QueryFormatter.FilterAttributes /
-    /// StreamingQueryFormatter.ShouldWriteStreamingAttribute): a declared field is served only
-    /// when it is not Hidden; attributes the schema does not declare (runtime fields such as
-    /// computed distance) remain visible.
-    /// </summary>
     private static bool IsVisibleRelatedAttribute(
         string fieldName,
         IReadOnlySet<string> allDeclaredAttributeFields,
@@ -441,11 +364,6 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
         bucket.Add(feature);
     }
 
-    /// <summary>
-    /// Reads the origin object id(s) the storage layer stamped onto a related row
-    /// (<see cref="RelatedQuery.OriginObjectIdsAttribute"/>). One foreign-key value can
-    /// resolve to multiple origin object ids, so the stamp is a collection.
-    /// </summary>
     private static bool TryReadStampedOriginObjectIds(Feature feature, out IReadOnlyList<long> originObjectIds)
     {
         if (feature.Attributes.TryGetValue(RelatedQuery.OriginObjectIdsAttribute, out var stamped) &&
@@ -472,12 +390,6 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
         return false;
     }
 
-    /// <summary>
-    /// Converts a Feature to GeoServicesFeature for API responses. Attribute visibility
-    /// follows the main query path: internal (__-prefixed) attributes and declared-but-
-    /// Hidden schema fields are suppressed, undeclared runtime attributes pass through,
-    /// and temporal values use timestamp epochs or ISO calendar dates as declared.
-    /// </summary>
     private static GeoServicesFeature ConvertToGeoServicesFeature(
         Feature feature,
         string objectIdFieldName,
@@ -521,11 +433,6 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
         };
     }
 
-    /// <summary>
-    /// Compares two related features against the requested orderByFields clauses.
-    /// Nulls sort last for ascending order (and first for descending), matching the
-    /// SQL NULLS-LAST convention the storage query uses elsewhere.
-    /// </summary>
     private static int CompareByOrderBy(
         Feature left,
         Feature right,

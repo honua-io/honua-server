@@ -19,31 +19,18 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Handlers;
 
-/// <summary>
-/// Handler for Image Server metadata operations.
-/// Provides service information and capabilities for raster layers.
-/// </summary>
 internal sealed class ImageServerMetadataHandler
 {
-    /// <summary>
-    /// Service-level minimum pixel size. Zero matches ArcGIS Server: no zoom-in limit.
-    /// A positive value is in the raster's units and hides a geographic layer at ordinary
-    /// map scales (#6563).
-    /// </summary>
+    // A minimum pixel size of zero matches ArcGIS Server and means no zoom-in limit; a positive value is in raster units and hides a geographic layer at ordinary map scales.
     private const double MinPixelSize = 0;
 
-    /// <summary>
-    /// Service-level maximum pixel size. Zero matches ArcGIS Server: no zoom-out limit.
-    /// </summary>
+    // A maximum pixel size of zero matches ArcGIS Server and means no zoom-out limit.
     private const double MaxPixelSize = 0;
 
-    /// <summary>Maximum image height in pixels for export requests.</summary>
     private const int MaxImageHeight = 4096;
 
-    /// <summary>Maximum image width in pixels for export requests.</summary>
     private const int MaxImageWidth = 4096;
 
-    /// <summary>Maximum number of records returned in catalog queries.</summary>
     private const int MaxRecordCount = 1000;
 
     private readonly IMetadataV2GraphProvider _graphProvider;
@@ -63,9 +50,6 @@ internal sealed class ImageServerMetadataHandler
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <summary>
-    /// Gets comprehensive service metadata for an Image Server.
-    /// </summary>
     public async Task<IResult> GetServiceInfoAsync(
         HttpContext context,
         int layerId,
@@ -340,11 +324,6 @@ internal sealed class ImageServerMetadataHandler
         };
     }
 
-    /// <summary>
-    /// Builds the Esri-conformant <c>timeInfo</c> block when the V2 resource declares
-    /// temporal fields that exist in the raster catalog, or when the catalog carries
-    /// acquisition timestamps. Hints naming absent fields are not advertised.
-    /// </summary>
     private static ImageServerTimeInfo? BuildTimeInfo(
         (string? StartTimeField, string? EndTimeField, string? TrackIdField) timeHints,
         IReadOnlyList<RasterInfo> rasters)

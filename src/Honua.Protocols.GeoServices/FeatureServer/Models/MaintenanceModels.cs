@@ -5,342 +5,179 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Protocols.GeoServices.FeatureServer.Models;
 
-/// <summary>
-/// Request model for the append endpoint.
-/// </summary>
 public sealed class AppendRequest
 {
-    /// <summary>
-    /// Features to append as a JSON array.
-    /// </summary>
     [JsonPropertyName("edits")]
     public string? Edits { get; set; }
 
-    /// <summary>
-    /// The upload format: json or csv.
-    /// </summary>
     [JsonPropertyName("sourceFormat")]
     public string? SourceFormat { get; set; }
 
-    /// <summary>
-    /// How to handle duplicate features: skip, update.
-    /// </summary>
     [JsonPropertyName("upsert")]
     public bool Upsert { get; set; }
 
-    /// <summary>
-    /// Layer identifier for service-level append.
-    /// </summary>
     [JsonPropertyName("layerId")]
     public int? LayerId { get; set; }
 
-    /// <summary>
-    /// Output format parameter.
-    /// </summary>
     [JsonPropertyName("f")]
     public string? F { get; set; }
 }
 
-/// <summary>
-/// Response model for the append endpoint.
-/// </summary>
 public sealed class AppendResponse
 {
-    /// <summary>
-    /// Indicates if the operation was successful.
-    /// </summary>
     [JsonPropertyName("success")]
     public bool Success { get; set; }
 
-    /// <summary>
-    /// Number of features appended.
-    /// </summary>
     [JsonPropertyName("numFeaturesAppended")]
     public int NumFeaturesAppended { get; set; }
 
-    /// <summary>
-    /// Number of features that failed.
-    /// </summary>
     [JsonPropertyName("numFeaturesFailed")]
     public int NumFeaturesFailed { get; set; }
 }
 
-/// <summary>
-/// Request model for the calculate endpoint.
-/// </summary>
 public sealed class CalculateRequest
 {
-    /// <summary>
-    /// WHERE clause to filter features for calculation.
-    /// </summary>
     [JsonPropertyName("where")]
     public string? Where { get; set; }
 
-    /// <summary>
-    /// Array of field calculation expressions.
-    /// </summary>
     [JsonPropertyName("calcExpression")]
     public string? CalcExpression { get; set; }
 
-    /// <summary>
-    /// SQL expression type: standard or field.
-    /// </summary>
     [JsonPropertyName("sqlFormat")]
     public string? SqlFormat { get; set; }
 
-    /// <summary>
-    /// Output format parameter.
-    /// </summary>
     [JsonPropertyName("f")]
     public string? F { get; set; }
 }
 
-/// <summary>
-/// Response model for the calculate endpoint.
-/// </summary>
 public sealed class CalculateResponse
 {
-    /// <summary>
-    /// Indicates if the operation was successful.
-    /// </summary>
     [JsonPropertyName("success")]
     public bool Success { get; set; }
 
-    /// <summary>
-    /// Number of features updated by the calculation.
-    /// </summary>
     [JsonPropertyName("updatedFeatureCount")]
     public int UpdatedFeatureCount { get; set; }
 }
 
-/// <summary>
-/// Response model for queryDomains endpoint.
-/// </summary>
 public sealed class QueryDomainsResponse
 {
-    /// <summary>
-    /// Array of domain definitions for the service.
-    /// </summary>
     [JsonPropertyName("domains")]
     public DomainInfo[]? Domains { get; set; }
 }
 
-/// <summary>
-/// Response model for relationships endpoint.
-/// </summary>
 public sealed class QueryRelationshipsResponse
 {
-    /// <summary>
-    /// Service-level relationships aggregated across layers.
-    /// </summary>
     [JsonPropertyName("relationships")]
     public ServiceRelationshipInfo[]? Relationships { get; set; }
 }
 
-/// <summary>
-/// Relationship class identifier advertised on the service resource.
-/// </summary>
 public sealed class ServiceRelationshipSummary
 {
-    /// <summary>
-    /// Relationship identifier.
-    /// </summary>
     [JsonPropertyName("id")]
     public int Id { get; set; }
 
-    /// <summary>
-    /// Relationship display name.
-    /// </summary>
     [JsonPropertyName("name")]
     public string? Name { get; set; }
 }
 
-/// <summary>
-/// Non-attributed relationship class metadata returned by the service relationships resource.
-/// </summary>
 public sealed class ServiceRelationshipInfo
 {
-    /// <summary>Unique relationship class identifier within the service.</summary>
     [JsonPropertyName("id")]
     public int Id { get; set; }
 
-    /// <summary>Relationship class name.</summary>
     [JsonPropertyName("name")]
     public string? Name { get; set; }
 
-    /// <summary>Label for navigation from destination to origin.</summary>
     [JsonPropertyName("backwardPathLabel")]
     public string? BackwardPathLabel { get; set; }
 
-    /// <summary>Label for navigation from origin to destination.</summary>
     [JsonPropertyName("forwardPathLabel")]
     public string? ForwardPathLabel { get; set; }
 
-    /// <summary>
-    /// Origin layer identifier.
-    /// </summary>
     [JsonPropertyName("originLayerId")]
     public int OriginLayerId { get; set; }
 
-    /// <summary>
-    /// Related table/layer identifier.
-    /// </summary>
     [JsonPropertyName("destinationLayerId")]
     public int DestinationLayerId { get; set; }
 
-    /// <summary>
-    /// Primary key on the origin resource.
-    /// </summary>
     [JsonPropertyName("originPrimaryKey")]
     public string? OriginPrimaryKey { get; set; }
 
-    /// <summary>
-    /// Foreign key on the destination resource that references the origin.
-    /// </summary>
     [JsonPropertyName("originForeignKey")]
     public string? OriginForeignKey { get; set; }
 
-    /// <summary>
-    /// Primary key on the destination resource.
-    /// </summary>
     [JsonPropertyName("destinationPrimaryKey")]
     public string? DestinationPrimaryKey { get; set; }
 
-    /// <summary>
-    /// Esri relationship cardinality.
-    /// </summary>
     [JsonPropertyName("cardinality")]
     public string? Cardinality { get; set; }
 
-    /// <summary>Whether an intermediate relationship table carries attributes.</summary>
     [JsonPropertyName("attributed")]
     public bool Attributed { get; set; }
 
-    /// <summary>Whether the canonical relationship declares composite ownership.</summary>
     [JsonPropertyName("composite")]
     public bool Composite { get; set; }
 
-    /// <summary>Relationship rules; the canonical graph currently declares none.</summary>
     [JsonPropertyName("rules")]
     public object[] Rules { get; set; } = [];
 
-    /// <summary>
-    /// Optional relationship description.
-    /// </summary>
     [JsonPropertyName("description")]
     public string? Description { get; set; }
 }
 
-/// <summary>
-/// Information about a coded-value domain.
-/// </summary>
 public sealed class DomainInfo
 {
-    /// <summary>
-    /// Domain type (codedValue, range, inherited).
-    /// </summary>
     [JsonPropertyName("type")]
     public string? Type { get; set; }
 
-    /// <summary>
-    /// Domain name.
-    /// </summary>
     [JsonPropertyName("name")]
     public string? Name { get; set; }
 
-    /// <summary>
-    /// Field name this domain applies to.
-    /// </summary>
     [JsonPropertyName("fieldName")]
     public string? FieldName { get; set; }
 
-    /// <summary>
-    /// GeoServices field type this domain applies to.
-    /// </summary>
     [JsonPropertyName("fieldType")]
     public string? FieldType { get; set; }
 
-    /// <summary>
-    /// Layer identifier this domain belongs to.
-    /// </summary>
     [JsonPropertyName("layerId")]
     public int LayerId { get; set; }
 
-    /// <summary>
-    /// Coded domain values when the domain type is codedValue.
-    /// </summary>
     [JsonPropertyName("codedValues")]
     public DomainCodedValueInfo[]? CodedValues { get; set; }
 
-    /// <summary>
-    /// Min/max range values when the domain type is range.
-    /// </summary>
     [JsonPropertyName("range")]
     public object[]? Range { get; set; }
 
-    /// <summary>
-    /// Merge policy for the domain, when defined.
-    /// </summary>
     [JsonPropertyName("mergePolicy")]
     public string? MergePolicy { get; set; }
 
-    /// <summary>
-    /// Split policy for the domain, when defined.
-    /// </summary>
     [JsonPropertyName("splitPolicy")]
     public string? SplitPolicy { get; set; }
 }
 
-/// <summary>
-/// A single coded-value entry for a field domain.
-/// </summary>
 public sealed class DomainCodedValueInfo
 {
-    /// <summary>
-    /// Human-friendly display label.
-    /// </summary>
     [JsonPropertyName("name")]
     public required string Name { get; set; }
 
-    /// <summary>
-    /// Raw coded value serialized using the schema-defined data type.
-    /// </summary>
     [JsonPropertyName("code")]
     public required object? Code { get; set; }
 }
 
-/// <summary>
-/// Request model for the validateSQL endpoint.
-/// </summary>
 public sealed class ValidateSqlRequest
 {
-    /// <summary>
-    /// SQL WHERE clause to validate.
-    /// </summary>
     [JsonPropertyName("where")]
     public string? Where { get; set; }
 
-    /// <summary>
-    /// Output format parameter.
-    /// </summary>
     [JsonPropertyName("f")]
     public string? F { get; set; }
 }
 
-/// <summary>
-/// Response model for the validateSQL endpoint.
-/// </summary>
 public sealed class ValidateSqlResponse
 {
-    /// <summary>
-    /// Indicates if the SQL expression is valid.
-    /// </summary>
     [JsonPropertyName("isValidSQL")]
     public bool IsValidSql { get; set; }
 
-    /// <summary>
-    /// Error message if the SQL expression is invalid.
-    /// </summary>
     [JsonPropertyName("validationError")]
     public string? ValidationError { get; set; }
 }

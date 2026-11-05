@@ -11,9 +11,6 @@ using Honua.Protocols.GeoServices.FeatureServer;
 
 namespace Honua.Protocols.GeoServices.FeatureServer.Services;
 
-/// <summary>
-/// Resolves a protocol-facing GeoServices object id to the stored feature row.
-/// </summary>
 internal static class GeoServicesFeatureObjectIdResolver
 {
     public static async Task<Feature?> ResolveAsync(
@@ -58,11 +55,7 @@ internal static class GeoServicesFeatureObjectIdResolver
             .SingleOrDefault();
     }
 
-    /// <summary>
-    /// Maps protocol object ids to storage row ids. The storage objectid fast path is an
-    /// identity map. A custom object-id field is resolved with one IN query per batch so
-    /// attachment and edit callers do not treat the public id as the storage id.
-    /// </summary>
+    // A custom object-id field is resolved with a query so attachment and edit callers do not treat the public id as the storage id.
     public static async Task<IReadOnlyDictionary<long, long>> ResolveStorageIdsAsync(
         IFeatureReader featureReader,
         IFilterExpressionService filterExpressionService,

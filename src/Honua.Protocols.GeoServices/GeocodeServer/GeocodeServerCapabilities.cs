@@ -7,7 +7,6 @@ using Honua.Geocoding.Features.Geocoding.Domain;
 
 namespace Honua.Protocols.GeoServices.GeocodeServer;
 
-/// <summary>Shared metadata and catalog projection for GeoServices locator capabilities.</summary>
 internal static class GeocodeServerCapabilities
 {
     public static GeocodeProviderCapabilities ApplyLicense(

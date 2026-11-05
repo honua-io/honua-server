@@ -7,11 +7,7 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Protocols.GeoServices.FeatureServer.Models;
 
-/// <summary>
-/// Esri JSON <c>points</c> (a list of vertices) with positional Z/M slots. A missing ordinate is NaN in
-/// memory and <c>null</c> on the wire, so a ZM vertex without a Z keeps its slot and its M is not read
-/// back as the elevation (#4027).
-/// </summary>
+// Z and M slots are positional: a ZM vertex without a Z keeps a NaN slot, serialized as null, so its M is not read back as the elevation.
 internal sealed class GeoServicesVertexListJsonConverter : JsonConverter<double[][]>
 {
     public override double[][]? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)

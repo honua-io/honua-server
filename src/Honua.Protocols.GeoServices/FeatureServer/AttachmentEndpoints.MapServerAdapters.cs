@@ -9,10 +9,6 @@ namespace Honua.Protocols.GeoServices.FeatureServer;
 
 internal static partial class AttachmentEndpoints
 {
-    /// <summary>
-    /// MapServer adapter entry point that reuses the FeatureServer
-    /// queryAttachments handler verbatim.
-    /// </summary>
     internal static Task HandleQueryAttachmentsForMapServer(HttpContext context)
         => HandleQueryAttachments(context);
 }

@@ -8,9 +8,6 @@ using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Protocols.GeoServices.FeatureServer.Services;
 
-/// <summary>
-/// Prepared GeoServices edit inputs ready for protocol-adapter conversion.
-/// </summary>
 internal readonly record struct GeoServicesEditRequest
 {
     public ImmutableArray<Feature> Creates { get; init; }
@@ -24,9 +21,6 @@ internal readonly record struct GeoServicesEditRequest
     public bool UseGlobalIds { get; init; }
 }
 
-/// <summary>
-/// Converts prepared GeoServices edits into the shared unified edit model.
-/// </summary>
 internal sealed class GeoServicesEditParameterAdapter(
     ILogger<GeoServicesEditParameterAdapter> logger) : IEditParameterAdapter<GeoServicesEditRequest>
 {
@@ -39,9 +33,6 @@ internal sealed class GeoServicesEditParameterAdapter(
 
     public TransactionSemantics TransactionSemantics => TransactionSemantics.GeoServices;
 
-    /// <summary>
-    /// Converts prepared edits against a Metadata v2 canonical resource.
-    /// </summary>
     public Task<EditAdapterResult> ConvertAsync(
         GeoServicesEditRequest protocolRequest,
         MetadataV2Resource resource,

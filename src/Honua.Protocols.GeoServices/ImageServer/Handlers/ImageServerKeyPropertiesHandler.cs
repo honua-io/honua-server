@@ -13,11 +13,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Handlers;
 
-/// <summary>
-/// Handler for the Image Server <c>keyProperties</c> operation. Returns raster key
-/// properties (band properties, data type, band count, NoData) sourced from the shared
-/// raster store metadata for the layer's primary raster.
-/// </summary>
 internal sealed class ImageServerKeyPropertiesHandler
 {
     private readonly IMetadataV2GraphProvider _graphProvider;
@@ -37,9 +32,6 @@ internal sealed class ImageServerKeyPropertiesHandler
         _multidimensionalInfoBuilder = multidimensionalInfoBuilder;
     }
 
-    /// <summary>
-    /// Returns key properties metadata for the layer's primary raster.
-    /// </summary>
     public async Task<IResult> GetKeyPropertiesAsync(
         HttpContext context,
         int layerId,
@@ -126,12 +118,6 @@ internal sealed class ImageServerKeyPropertiesHandler
         };
     }
 
-    /// <summary>
-    /// Derives the finest/coarsest cell size from the raster geotransform.
-    /// GeoTransform layout: [upperLeftX, scaleX, skewX, upperLeftY, skewY, scaleY];
-    /// pixel sizes are the lengths of the column (scaleX, skewY) and row (skewX, scaleY) vectors.
-    /// Returns <c>(null, null)</c> when no geotransform is available.
-    /// </summary>
     private static (double? Low, double? High) ComputeCellSizes(double[]? geoTransform)
     {
         if (geoTransform is not { Length: >= 6 })

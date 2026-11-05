@@ -44,9 +44,6 @@ internal static partial class MapServerEndpoints
         MetadataV2Resource Resource,
         string? DefinitionExpression);
 
-    /// <summary>
-    /// Handle MapServer generateKml requests.
-    /// </summary>
     private static async Task<IResult> HandleGenerateKml(HttpContext context)
     {
         var serviceError = RouteValidationHelpers.ValidateServiceId(context, out var serviceId);

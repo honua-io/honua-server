@@ -10,62 +10,23 @@ using Honua.Routing.Features.Routing.Domain;
 
 namespace Honua.Protocols.GeoServices.NAServer;
 
-/// <summary>
-/// Projects the configured routing capability onto the metadata resources Esri
-/// clients read before they will address a routing service: the NAServer service
-/// resource, its per-solver analysis layers, and the NetworkAnalysisUtilities tasks
-/// (<c>GetTravelModes</c>, <c>GetToolInfo</c>).
-/// </summary>
-/// <remarks>
-/// <para>
-/// ArcGIS Pro 3.7 and <c>arcpy.nax</c> bind a stand-alone routing service through a
-/// dictionary <c>{url: .../NAServer, utilityUrl: .../GPServer}</c> and, before any
-/// solve, execute <c>GetTravelModes</c> then <c>GetToolInfo</c> on the utility service;
-/// the Pro Catalog pane reads the service resource and the analysis layer resource.
-/// Until #5035 Honua served the solve operations only, so no Pro or arcpy routing
-/// client could reach them ("Task 'GetTravelModes' on service ... was not found").
-/// </para>
-/// <para>
-/// Everything here derives from what the provider actually advertises: one analysis
-/// layer per solver the <see cref="RoutingProviderCapabilities"/> support, one travel
-/// mode per entry in <see cref="RoutingProviderCapabilities.SupportedTravelModes"/>,
-/// and service limits from <see cref="RoutingConfiguration"/>. Nothing is stated that a
-/// solve would then refuse.
-/// </para>
-/// </remarks>
 internal static class NAServerMetadata
 {
-    /// <summary>
-    /// The synthetic NetworkAnalysisUtilities tasks every GPServer resolves by name. They
-    /// are not listed in the GP service resource: that listing is the callable-name set
-    /// SOAP <c>GetTaskNames</c> mirrors, and these tasks have no SOAP or job form.
-    /// </summary>
     public const string GetTravelModesTask = "GetTravelModes";
 
-    /// <inheritdoc cref="GetTravelModesTask"/>
     public const string GetToolInfoTask = "GetToolInfo";
 
-    /// <summary>
-    /// Esri's ready-to-use routing tool name. <c>arcpy.nax</c> does not call
-    /// <c>NAServer/Route/solve</c> directly: it resolves this tool on the utility
-    /// service and refuses the stand-alone binding when it is absent, with
-    /// "Portal ... is not configured with the 'Route' web tool" (#5192).
-    /// </summary>
     public const string FindRoutesTask = "FindRoutes";
 
-    /// <summary>The bounded synchronous projection of the canonical service-area solve.</summary>
     public const string GenerateServiceAreasTask = "GenerateServiceAreas";
 
-    /// <summary>Impedance attribute name advertised for every travel mode.</summary>
     public const string TimeAttributeName = "TravelTime";
 
-    /// <summary>Distance attribute name advertised for every travel mode.</summary>
     public const string DistanceAttributeName = "Kilometers";
 
     private static readonly JsonSerializerOptions CompactJson = new() { WriteIndented = false };
     private static readonly JsonSerializerOptions PrettyJson = new() { WriteIndented = true };
 
-    /// <summary>An analysis layer Honua can publish, gated on a provider capability.</summary>
     private sealed record AnalysisLayer(
         string Name,
         string LayerType,
@@ -90,10 +51,6 @@ internal static class NAServerMetadata
                || taskName.Equals(FindRoutesTask, StringComparison.OrdinalIgnoreCase)
                || taskName.Equals(GenerateServiceAreasTask, StringComparison.OrdinalIgnoreCase));
 
-    /// <summary>
-    /// Whether the name is one of Esri's ready-to-use routing tools, which are addressed
-    /// against the NAServer URL as though they were analysis layers.
-    /// </summary>
     public static bool IsRoutingWebTool(string? name)
         => name is not null
            && (name.Equals(FindRoutesTask, StringComparison.OrdinalIgnoreCase)
@@ -103,7 +60,6 @@ internal static class NAServerMetadata
     public static bool IsKnownLayer(string? layerName)
         => layerName is not null && Layers.Any(l => l.Name.Equals(layerName, StringComparison.OrdinalIgnoreCase));
 
-    /// <summary>Serializes a document as compact or indented JSON.</summary>
     public static string Serialize(JsonNode document, bool pretty)
         => document.ToJsonString(pretty ? PrettyJson : CompactJson);
 
@@ -111,7 +67,6 @@ internal static class NAServerMetadata
     // NAServer service and layer resources
     // -----------------------------------------------------------------------
 
-    /// <summary>The NAServer service resource: one entry per supported solver.</summary>
     public static JsonObject BuildServiceResource(string serviceId, RoutingProviderCapabilities capabilities)
     {
         var document = new JsonObject
@@ -137,10 +92,6 @@ internal static class NAServerMetadata
         return document;
     }
 
-    /// <summary>
-    /// The analysis layer resource, or <c>null</c> when the layer is unknown or the
-    /// provider does not support that solver.
-    /// </summary>
     public static JsonObject? BuildLayerResource(
         string layerName,
         RoutingProviderCapabilities capabilities,
@@ -265,7 +216,6 @@ internal static class NAServerMetadata
     // NetworkAnalysisUtilities tasks
     // -----------------------------------------------------------------------
 
-    /// <summary>The utility task resource (<c>GET .../GPServer/GetTravelModes</c>).</summary>
     public static JsonObject BuildUtilityTaskInfo(string taskName)
     {
         if (taskName.Equals(FindRoutesTask, StringComparison.OrdinalIgnoreCase))
@@ -316,7 +266,6 @@ internal static class NAServerMetadata
         };
     }
 
-    /// <summary>The <c>GetTravelModes/execute</c> result envelope.</summary>
     public static JsonObject BuildGetTravelModesResult(NetworkDataset dataset, RoutingProviderCapabilities capabilities)
     {
         var features = new JsonArray();
@@ -372,11 +321,6 @@ internal static class NAServerMetadata
         };
     }
 
-    /// <summary>
-    /// The <c>GetToolInfo/execute</c> result envelope. It always describes the network;
-    /// the <c>serviceLimits</c> section is tool-specific only when the named tool maps
-    /// to a solver the provider supports.
-    /// </summary>
     public static JsonObject BuildGetToolInfoResult(
         string? serviceName,
         string? toolName,
@@ -449,11 +393,6 @@ internal static class NAServerMetadata
                 || layer.Name.Equals(serviceName, StringComparison.OrdinalIgnoreCase)));
     }
 
-    /// <summary>
-    /// One travel mode document. GetTravelModes carries the 16-character <c>id</c>; the
-    /// analysis layer resource carries the ordinal <c>itemId</c> instead, as real
-    /// ArcGIS Server layers do.
-    /// </summary>
     private static JsonObject BuildTravelMode(string name, NetworkDataset dataset, string? itemId = null)
         => new()
         {
@@ -475,10 +414,7 @@ internal static class NAServerMetadata
             ["simplificationToleranceUnits"] = "esriMeters",
         };
 
-    /// <summary>
-    /// A stable 16-character identifier per profile name (Esri ids are 16 characters);
-    /// clients persist the id in saved layers, so it must not change between requests.
-    /// </summary>
+    // The profile id is a stable 16-character value because clients persist it in saved layers.
     internal static string TravelModeId(string name)
     {
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes("honua-travel-mode:" + name.ToLowerInvariant()));
@@ -520,7 +456,6 @@ internal static class NAServerMetadata
             ["networkSources"] = BuildNetworkSources(dataset),
         };
 
-    /// <summary>The edge and junction sources of the dataset.</summary>
     private static JsonArray BuildNetworkSources(NetworkDataset dataset)
     {
         static JsonObject Source(int id, string name, string elementType, string sourceType)
@@ -537,11 +472,6 @@ internal static class NAServerMetadata
             Source(2, dataset.VertexTable, "esriNETJunction", "esriNSTSystemJunction"));
     }
 
-    /// <summary>
-    /// The two cost attributes every travel mode references. The utility task speaks
-    /// the plain vocabulary Esri documents for <c>GetToolInfo</c> ("Double", "Minutes",
-    /// "Cost", "NONE"); the analysis layer resource speaks the esriNA* enumerations.
-    /// </summary>
     private static JsonArray BuildNetworkAttributes(bool esriVocabulary = false)
     {
         JsonObject Attribute(string name, string units, string esriUnits)
@@ -561,11 +491,6 @@ internal static class NAServerMetadata
             Attribute(DistanceAttributeName, "Kilometers", "esriNAUKilometers"));
     }
 
-    /// <summary>
-    /// The input network classes of an analysis layer in the shape ArcGIS Server
-    /// publishes: each class lists its fields as fieldName / defaultValue /
-    /// candidateFields (the names a client maps input columns from).
-    /// </summary>
     private static JsonArray BuildNetworkClasses(string layerName)
     {
         static JsonObject NaField(string name, JsonNode? defaultValue = null, params string[] candidates)
@@ -616,11 +541,7 @@ internal static class NAServerMetadata
         return new JsonArray([.. classes]);
     }
 
-    /// <summary>
-    /// The serviceLimits block of toolInfo, with the key names an ArcGIS Enterprise
-    /// utility service publishes for the solver in question; a null value means the
-    /// limit is not enforced, as on a real server.
-    /// </summary>
+    // A null service limit means that limit is not enforced.
     private static JsonObject BuildServiceLimits(RoutingConfiguration configuration, string layerName)
     {
         var limits = new JsonObject
@@ -673,18 +594,6 @@ internal static class NAServerMetadata
         return field;
     }
 
-    /// <summary>
-    /// The <c>FindRoutes</c> task resource, in the shape Esri's ready-to-use routing
-    /// tool advertises.
-    /// </summary>
-    /// <remarks>
-    /// This bounded synchronous subset uses the published parameter names - <c>Stops</c>,
-    /// <c>Measurement_Units</c>, <c>Travel_Mode</c>, <c>Output_Routes</c>,
-    /// <c>Solve_Succeeded</c>. It supports only Minutes and stops in input order;
-    /// full arcpy.nax binding remains unverified (#5192). This projects the synchronous
-    /// NAServer Route solve, so there is no job to poll and advertising an async execution type
-    /// would send the client to submitJob for a task with no job form.
-    /// </remarks>
     private static JsonObject BuildFindRoutesTaskInfo()
     {
         var parameters = new JsonArray

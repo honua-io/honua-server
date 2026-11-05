@@ -16,23 +16,11 @@ using NetTopologySuite.IO;
 
 namespace Honua.Protocols.GeoServices;
 
-/// <summary>
-/// Shared helpers for GeoServices geometry conversions.
-/// </summary>
 internal static partial class GeoServicesGeometryConverter
 {
-    /// <summary>
-    /// Curve-expansion budget used when a caller has no configured limit. Matches the
-    /// <see cref="GeometryLimits.MaxVerticesPerGeometry"/> property default.
-    /// </summary>
     internal const int DefaultMaxCurveVertices = 50_000;
 
-    /// <summary>
-    /// Highest curve-expansion budget conversion will allocate. This is the inclusive upper
-    /// bound of <see cref="GeometryLimits.MaxVerticesPerGeometry"/> (<c>[Range(1, 100000)]</c>).
-    /// A configured value inside that range is honored; a larger request is clamped here so a
-    /// caller cannot pass <see cref="int.MaxValue"/> and reintroduce unbounded densification.
-    /// </summary>
+    // A curve-expansion budget above the inclusive maximum is clamped so a caller cannot reintroduce unbounded densification.
     internal const int AbsoluteMaxCurveVertices = 100_000;
 
     private readonly record struct FastPointGeometry(
@@ -43,9 +31,6 @@ internal static partial class GeoServicesGeometryConverter
         bool HasZ,
         bool HasM);
 
-    /// <summary>
-    /// Converts WKB geometry to GeoServices format.
-    /// </summary>
     public static GeoServicesGeometry? ConvertWkbToGeoServicesGeometry(
         byte[]? wkbGeometry,
         int? srid = null,
@@ -164,12 +149,6 @@ internal static partial class GeoServicesGeometryConverter
         return true;
     }
 
-    /// <summary>
-    /// Curve-expansion budget for query filters, GeometryServer, GPServer, and ImageServer.
-    /// Uses <see cref="GeometryLimits.MaxVerticesPerGeometry"/>, the same knob query admission
-    /// passes to <see cref="GeoServicesQueryGeometryMetadata"/>. Null or non-positive configuration
-    /// stays at <see cref="DefaultMaxCurveVertices"/>.
-    /// </summary>
     internal static int ResolveCurveVertexBudget(int? configuredVertices)
     {
         if (configuredVertices is null or <= 0)
@@ -180,12 +159,6 @@ internal static partial class GeoServicesGeometryConverter
         return Math.Min(configuredVertices.Value, AbsoluteMaxCurveVertices);
     }
 
-    /// <summary>
-    /// Curve-expansion budget for stored edits. GeometryValidator rejects WKB above the
-    /// stricter of <see cref="GeometryLimits.MaxVerticesPerGeometry"/> and
-    /// <see cref="GeometryValidationOptions.MaxVertices"/>, so conversion stops at that same
-    /// minimum instead of allocating vertices the edit will discard.
-    /// </summary>
     internal static int ResolveEditCurveVertexBudget(int? geometryMaxVertices, int? validationMaxVertices)
     {
         var geometryBudget = ResolveCurveVertexBudget(geometryMaxVertices);
@@ -214,15 +187,6 @@ internal static partial class GeoServicesGeometryConverter
             limits.Validation.MaxVertices);
     }
 
-    /// <summary>
-    /// Converts GeoServices geometry to WKB. True curves are densified with
-    /// <paramref name="maxCurveVertices"/>, or <see cref="DefaultMaxCurveVertices"/> when that
-    /// argument is null. Values above <see cref="AbsoluteMaxCurveVertices"/> are clamped to that
-    /// supported maximum.
-    /// </summary>
-    /// <param name="geometry">GeoServices geometry to convert.</param>
-    /// <param name="srid">Optional SRID written into the WKB. Falls back to the geometry spatial reference.</param>
-    /// <param name="maxCurveVertices">Vertex budget for true-curve densification.</param>
     public static byte[] ConvertGeoServicesGeometryToWkb(
         GeoServicesGeometry geometry,
         int? srid = null,
@@ -1127,11 +1091,7 @@ internal static partial class GeoServicesGeometryConverter
     private const string UnsupportedGeometryMessage =
         "Invalid GeoServices JSON geometry format. Supported types: Point (x, y), Polygon (rings), LineString (paths), MultiPoint (points), Envelope (xmin, ymin, xmax, ymax)";
 
-    /// <summary>
-    /// Builds one Esri JSON vertex. The Z and M slots are positional and follow the geometry's
-    /// <c>hasZ</c>/<c>hasM</c> flags, not the vertex: a vertex without a Z in a ZM geometry keeps a NaN Z
-    /// slot (serialized as null) so its M is not read back as the elevation.
-    /// </summary>
+    // Z and M slots follow hasZ and hasM, so a ZM vertex whose Z is NaN keeps that slot and its M is not read back as the elevation.
     private static double[] BuildCoordinateArray(CoordinateSequence sequence, int index, bool hasZ, bool hasM)
     {
         var values = new double[2 + (hasZ ? 1 : 0) + (hasM ? 1 : 0)];
