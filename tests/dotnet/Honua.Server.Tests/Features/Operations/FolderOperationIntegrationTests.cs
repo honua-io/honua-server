@@ -146,7 +146,7 @@ public sealed class FolderOperationIntegrationTests(RedisFixture redis) : IAsync
         else
         {
             response.StatusCode.Should().Be(HttpStatusCode.OK);
-            body.RootElement.GetProperty("data").GetProperty("status").GetString().Should().Be("failed");
+            body.RootElement.GetProperty("data").GetProperty("status").GetString().Should().Be("Failed");
         }
         (await SnapshotAsync()).Etag.Should().Be(initial.Etag);
     }

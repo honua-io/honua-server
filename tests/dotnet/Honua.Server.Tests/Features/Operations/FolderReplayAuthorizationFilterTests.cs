@@ -28,6 +28,8 @@ public sealed class FolderReplayAuthorizationFilterTests
     [InlineData("expired", false)]
     [InlineData("wrong-operation", false)]
     [InlineData("wrong-tenant", false)]
+    [InlineData("wrong-resolved-tenant", false)]
+    [InlineData("wrong-instance", false)]
     [InlineData("wrong-credential", false)]
     [InlineData("ordinary", false)]
     [InlineData("completed", false)]
@@ -42,7 +44,7 @@ public sealed class FolderReplayAuthorizationFilterTests
         var store = Substitute.For<IOperationProposalStore>();
         store.GetAsync("proposal", Arg.Any<CancellationToken>()).Returns(proposal);
         var tenant = Substitute.For<ITenantContext>();
-        tenant.TenantId.Returns("public");
+        tenant.TenantId.Returns(scenario == "wrong-resolved-tenant" ? "another" : "public");
         using var services = new ServiceCollection().AddSingleton(store).AddSingleton(tenant)
             .AddSingleton<IOperationApprovalReplayVerifier, OperationApprovalReplayVerifier>().BuildServiceProvider();
         var context = Context(scenario);
@@ -103,7 +105,7 @@ public sealed class FolderReplayAuthorizationFilterTests
     {
         var clock = new ReplayClock();
         var lineage = new OperationLineageAttestationStore(clock);
-        var token = lineage.Issue(new OperationPolicyContext { ProposalId = "proposal", OperationInstanceId = "instance" });
+        var token = lineage.Issue(new OperationPolicyContext { ProposalId = "proposal", OperationInstanceId = scenario == "wrong-instance" ? "another" : "instance" });
         if (scenario == "replayed") lineage.TryConsume(token, out _);
         if (scenario == "expired") clock.Now = clock.Now.AddMinutes(6);
         context.Request.Headers[OperationLineageHeaders.Attestation] = scenario == "forged" ? "invalid" : token;
