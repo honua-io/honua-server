@@ -6,8 +6,9 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Server.Features.Operations;
+using Honua.Server.Features.Admin;
 
-namespace Honua.Server.Features.Admin;
+namespace Honua.Server.Features.Infrastructure.Authentication;
 
 internal static class FolderReplayRequest
 {
