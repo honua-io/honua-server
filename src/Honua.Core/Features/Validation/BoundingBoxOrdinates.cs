@@ -7,19 +7,15 @@ namespace Honua.Core.Features.Validation;
 
 public readonly struct BoundingBoxParse
 {
-    public bool Succeeded { get; }
+    public bool Succeeded => Ordinates.Length is 4 or 6;
 
     public double[] Ordinates { get; }
 
-    private BoundingBoxParse(bool succeeded, double[] ordinates)
-    {
-        Succeeded = succeeded;
-        Ordinates = ordinates;
-    }
+    private BoundingBoxParse(double[] ordinates) => Ordinates = ordinates;
 
-    public static BoundingBoxParse Success(double[] ordinates) => new(true, ordinates);
+    public static BoundingBoxParse Success(double[] ordinates) => new(ordinates);
 
-    public static BoundingBoxParse Failed() => new(false, []);
+    public static BoundingBoxParse Failed() => new([]);
 }
 
 // Four or six finite numbers in invariant culture. A six-value box is
