@@ -9,11 +9,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Core.Features.Metadata.Services;
 
-/// <summary>
-/// File-backed <see cref="IMetadataV2GraphProvider"/>. Loads a single graph JSON document
-/// on first access and caches the snapshot for subsequent reads. Intended for development,
-/// tests, and CI fixtures. Production should use a database-backed store.
-/// </summary>
 public sealed class FileMetadataV2GraphProvider : IMetadataV2GraphProvider, IDisposable
 {
     private readonly string _path;
@@ -23,18 +18,12 @@ public sealed class FileMetadataV2GraphProvider : IMetadataV2GraphProvider, IDis
     private MetadataV2GraphSnapshot? _snapshot;
     private int _generation;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="FileMetadataV2GraphProvider"/> class.
-    /// </summary>
-    /// <param name="path">The path to the graph JSON document.</param>
-    /// <param name="logger">The logger used to record load diagnostics.</param>
     public FileMetadataV2GraphProvider(string path, ILogger<FileMetadataV2GraphProvider> logger)
     {
         _path = path ?? throw new ArgumentNullException(nameof(path));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <inheritdoc />
     public async ValueTask<MetadataV2GraphSnapshot> GetCurrentAsync(CancellationToken cancellationToken = default)
     {
         lock (_snapshotLock)
@@ -76,16 +65,12 @@ public sealed class FileMetadataV2GraphProvider : IMetadataV2GraphProvider, IDis
         }
     }
 
-    /// <inheritdoc />
     public async ValueTask<MetadataV2GraphSnapshot?> GetByRevisionAsync(long revision, CancellationToken cancellationToken = default)
     {
         var current = await GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         return current.Graph.Revision == revision ? current : null;
     }
 
-    /// <summary>
-    /// Forces a reload from disk on the next call.
-    /// </summary>
     public void Invalidate()
     {
         lock (_snapshotLock)
@@ -146,7 +131,6 @@ public sealed class FileMetadataV2GraphProvider : IMetadataV2GraphProvider, IDis
         return $"\"{Convert.ToHexString(hash).ToLowerInvariant()}\"";
     }
 
-    /// <inheritdoc />
     public void Dispose()
     {
         _gate.Dispose();

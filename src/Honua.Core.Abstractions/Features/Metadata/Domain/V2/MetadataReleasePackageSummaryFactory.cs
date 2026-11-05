@@ -3,13 +3,8 @@
 
 namespace Honua.Core.Features.Metadata.Domain.V2;
 
-/// <summary>
-/// Projects a full <see cref="MetadataReleasePackage"/> into its secret-safe
-/// <see cref="MetadataReleasePackageSummary"/> for the release-package list surface.
-/// </summary>
 public static class MetadataReleasePackageSummaryFactory
 {
-    /// <summary>Projects a persisted package into a list summary.</summary>
     public static MetadataReleasePackageSummary From(MetadataReleasePackage package)
     {
         ArgumentNullException.ThrowIfNull(package);

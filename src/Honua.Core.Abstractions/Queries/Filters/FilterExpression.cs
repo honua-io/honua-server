@@ -3,118 +3,63 @@
 
 namespace Honua.Core.Queries.Filters;
 
-/// <summary>
-/// Base class for all filter expressions in the shared AST
-/// </summary>
 public abstract record FilterExpression;
 
-/// <summary>
-/// Binary operation: AND, OR, =, &lt;&gt;, &lt;, &gt;, &lt;=, &gt;=, LIKE, IN
-/// </summary>
 public sealed record BinaryExpression(
     FilterExpression Left,
     BinaryOperator Operator,
     FilterExpression Right) : FilterExpression;
 
-/// <summary>
-/// Unary operation: NOT, IS NULL, IS NOT NULL
-/// </summary>
 public sealed record UnaryExpression(
     UnaryOperator Operator,
     FilterExpression Operand) : FilterExpression;
 
-/// <summary>
-/// Reference to a feature property/field
-/// </summary>
 public sealed record PropertyReference(string PropertyName) : FilterExpression;
 
-/// <summary>
-/// Literal value: string, number, boolean, null
-/// </summary>
 public sealed record Literal(object? Value, LiteralType Type) : FilterExpression;
 
-/// <summary>
-/// Spatial predicate: INTERSECTS, CONTAINS, WITHIN, CROSSES, etc.
-/// </summary>
 public sealed record SpatialPredicate(
     SpatialOperator Operator,
     FilterExpression Left,
     FilterExpression Right) : FilterExpression
 {
-    /// <summary>
-    /// True when the originating protocol mandates geodesic (ellipsoidal) evaluation for
-    /// this predicate, e.g. OData <c>geo.intersects</c> over Edm.Geography values.
-    /// SQL translators may route supported operators through geodesic (geography)
-    /// evaluation when the layer context is geographic; protocols with planar-in-CRS
-    /// semantics (CQL2, FES/WFS, GeoServices SQL) leave this false so their
-    /// CITE-validated behavior is unchanged.
-    /// </summary>
     public bool Geodesic { get; init; }
 }
 
-/// <summary>
-/// Spatial predicate with a distance operand: DWithin, Beyond
-/// </summary>
 public sealed record SpatialDistancePredicate(
     SpatialOperator Operator,
     FilterExpression Left,
     FilterExpression Right,
     FilterExpression Distance) : FilterExpression
 {
-    /// <summary>
-    /// True when the parser normalised <see cref="Distance"/> to metres from an explicit unit of
-    /// measure (FES <c>uom</c>, NL query units). A planar translator over a projected CRS must
-    /// convert it to the CRS's native unit. False means the value is unitless and is read in the
-    /// layer's own unit on planar paths (metres on geodesic paths), the historical behavior.
-    /// </summary>
+    // An explicit unit must be converted into the projected CRS unit; a unitless value stays in the layer unit.
     public bool DistanceInMeters { get; init; }
 }
 
-/// <summary>
-/// Temporal predicate: AFTER, BEFORE, INTERSECTS, etc.
-/// </summary>
 public sealed record TemporalPredicate(
     TemporalOperator Operator,
     FilterExpression Left,
     FilterExpression Right) : FilterExpression;
 
-/// <summary>
-/// Array predicate: A_CONTAINS, A_EQUALS, etc.
-/// </summary>
 public sealed record ArrayPredicate(
     ArrayOperator Operator,
     FilterExpression Left,
     FilterExpression Right) : FilterExpression;
 
-/// <summary>
-/// Geometry literal in WKB format (normalized from WKT, GeoJSON, GeoServices JSON)
-/// </summary>
 public sealed record GeometryLiteral(
     byte[] Wkb,
     int Srid,
     string OriginalFormat) : FilterExpression;
 
-/// <summary>
-/// Interval literal represented by start and end instants
-/// </summary>
 public sealed record IntervalLiteral(
     Literal? Start,
     Literal? End) : FilterExpression;
 
-/// <summary>
-/// Function call: UPPER, LOWER, LENGTH, etc.
-/// </summary>
 public sealed record FunctionCall(
     string FunctionName,
     IReadOnlyList<FilterExpression> Arguments) : FilterExpression;
 
-/// <summary>
-/// Array literal value
-/// </summary>
 public sealed record ArrayLiteral(
     IReadOnlyList<FilterExpression> Elements) : FilterExpression;
 
-/// <summary>
-/// List of values for IN operator
-/// </summary>
 public sealed record ValueList(IReadOnlyList<FilterExpression> Values) : FilterExpression;

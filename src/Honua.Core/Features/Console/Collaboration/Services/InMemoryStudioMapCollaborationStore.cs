@@ -6,10 +6,6 @@ using Honua.Core.Features.Console.Collaboration.Domain;
 
 namespace Honua.Core.Features.Console.Collaboration.Services;
 
-/// <summary>
-/// In-memory Studio map collaboration store for tests and local fallback when no
-/// durable Postgres backing is configured. Thread-safe via a coarse lock.
-/// </summary>
 public sealed class InMemoryStudioMapCollaborationStore : IStudioMapCollaborationStore
 {
     // The activity feed is append-only on every thread create/reply/resolve and this store can be
@@ -22,11 +18,9 @@ public sealed class InMemoryStudioMapCollaborationStore : IStudioMapCollaboratio
     private readonly List<StudioMapActivityEvent> _activity = new();
     private readonly TimeProvider _timeProvider;
 
-    /// <summary>Creates the store with the supplied clock.</summary>
     public InMemoryStudioMapCollaborationStore(TimeProvider? timeProvider = null)
         => _timeProvider = timeProvider ?? TimeProvider.System;
 
-    /// <inheritdoc />
     public Task<IReadOnlyList<StudioMapCommentThread>> ListThreadsAsync(
         string mapId,
         CancellationToken cancellationToken = default)
@@ -42,7 +36,6 @@ public sealed class InMemoryStudioMapCollaborationStore : IStudioMapCollaboratio
         }
     }
 
-    /// <inheritdoc />
     public Task<StudioMapCommentThread?> GetThreadAsync(
         string mapId,
         Guid threadId,
@@ -55,7 +48,6 @@ public sealed class InMemoryStudioMapCollaborationStore : IStudioMapCollaboratio
         }
     }
 
-    /// <inheritdoc />
     public Task<StudioMapCommentThread> CreateThreadAsync(
         string mapId,
         string featureLabel,
@@ -104,7 +96,6 @@ public sealed class InMemoryStudioMapCollaborationStore : IStudioMapCollaboratio
         return Task.FromResult(thread);
     }
 
-    /// <inheritdoc />
     public Task<StudioMapCommentThread?> AddReplyAsync(
         string mapId,
         Guid threadId,
@@ -141,7 +132,6 @@ public sealed class InMemoryStudioMapCollaborationStore : IStudioMapCollaboratio
         }
     }
 
-    /// <inheritdoc />
     public Task<StudioMapCommentThread?> SetResolvedAsync(
         string mapId,
         Guid threadId,
@@ -170,7 +160,6 @@ public sealed class InMemoryStudioMapCollaborationStore : IStudioMapCollaboratio
         }
     }
 
-    /// <inheritdoc />
     public Task<IReadOnlyList<StudioMapActivityEvent>> ListActivityAsync(
         string mapId,
         int limit,

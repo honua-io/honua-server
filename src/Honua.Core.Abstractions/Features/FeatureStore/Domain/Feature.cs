@@ -6,79 +6,38 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Core.Features.FeatureStore.Domain;
 
-/// <summary>
-/// Represents a geographic feature with attributes and geometry
-/// </summary>
 public readonly record struct Feature
 {
-    /// <summary>
-    /// Unique identifier for the feature
-    /// </summary>
     public required long Id { get; init; }
 
-    /// <summary>
-    /// Backward-compatible alias for older feature identifier naming.
-    /// </summary>
     public long? ObjectId
     {
         readonly get => Id;
         init => Id = value ?? 0;
     }
 
-    /// <summary>
-    /// Feature geometry in Well-Known Binary (WKB) format
-    /// </summary>
     public required byte[]? Geometry { get; init; }
 
-    /// <summary>
-    /// Feature attributes as key-value pairs
-    /// </summary>
     public required ImmutableDictionary<string, object?> Attributes { get; init; }
 
-    /// <summary>
-    /// Provider-captured concurrency token for the original, unmasked read snapshot.
-    /// This internal edit metadata is never part of a serialized feature response.
-    /// </summary>
+    // The unmasked concurrency token is never part of a serialized feature response.
     [JsonIgnore]
     public string? ReadStateToken { get; init; }
 
-    /// <summary>
-    /// Whether this partial edit preserves omitted attributes hidden by field security.
-    /// Replacement edits leave this false regardless of conditional request headers.
-    /// </summary>
+    // A partial edit preserves omitted attributes that field security hid.
     [JsonIgnore]
     public bool PreserveOmittedMaskedAttributes { get; init; }
 
-    /// <summary>
-    /// Attribute names explicitly removed by a materialized partial update.
-    /// These fields must not be restored from the masked read snapshot.
-    /// </summary>
+    // Names in this set must not be restored from the masked read snapshot.
     [JsonIgnore]
     public ImmutableArray<string> ExplicitAttributeRemovals { get; init; }
 
-    /// <summary>
-    /// Whether this partial update omitted geometry, so the writer keeps the geometry of the
-    /// row it locks inside the write transaction instead of <see cref="Geometry"/> (#6094).
-    /// </summary>
     [JsonIgnore]
     public bool PreserveOmittedGeometry { get; init; }
 
-    /// <summary>
-    /// Creates a new feature with the specified properties
-    /// </summary>
-    /// <param name="id">Feature identifier</param>
-    /// <param name="geometry">Feature geometry in WKB format</param>
-    /// <param name="attributes">Feature attributes</param>
-    /// <returns>New feature instance</returns>
     public static Feature Create(long id, byte[]? geometry, ImmutableDictionary<string, object?> attributes)
         => new() { Id = id, Geometry = geometry, Attributes = attributes };
 
-    /// <summary>
-    /// Creates a new feature with empty attributes
-    /// </summary>
-    /// <param name="id">Feature identifier</param>
-    /// <param name="geometry">Feature geometry in WKB format</param>
-    /// <returns>New feature instance</returns>
     public static Feature Create(long id, byte[]? geometry)
         => new() { Id = id, Geometry = geometry, Attributes = ImmutableDictionary<string, object?>.Empty };
 }

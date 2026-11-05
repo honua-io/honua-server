@@ -7,25 +7,15 @@ using Honua.Core.Features.Temporal.Domain;
 
 namespace Honua.Core.Features.Temporal.Services;
 
-/// <summary>
-/// Default checkpoint resolver (slices 2-5 of honua-server#1166). Resolves the canonical generation
-/// cursor natively and delegates timestamp/transaction/release/job/edit-session/named checkpoints to the
-/// provider-backed <see cref="ITemporalHistoryStore"/>, which maps them onto the change log's recorded
-/// dimensions. Every checkpoint is collapsed to a concrete generation so all temporal surfaces share the
-/// slice-1 change-log foundation.
-/// </summary>
 public sealed class TemporalCheckpointResolver : ITemporalCheckpointResolver
 {
     private readonly ITemporalHistoryStore _historyStore;
 
-    /// <summary>Creates the resolver.</summary>
-    /// <param name="historyStore">Provider-backed history store used to resolve non-generation checkpoints.</param>
     public TemporalCheckpointResolver(ITemporalHistoryStore historyStore)
     {
         _historyStore = historyStore ?? throw new ArgumentNullException(nameof(historyStore));
     }
 
-    /// <inheritdoc />
     public async Task<ResolvedTemporalCheckpoint> ResolveAsync(
         int storageLayerId,
         TemporalCheckpoint checkpoint,

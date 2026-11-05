@@ -5,10 +5,8 @@ using System.Text.Json;
 
 namespace Honua.Core.Features.Geometry.Services;
 
-/// <summary>Shared structural validation of RFC 7946 geometry objects.</summary>
 public static class GeoJsonGeometryShapeValidator
 {
-    /// <summary>Validates the coordinate structure for the declared GeoJSON geometry type.</summary>
     public static GeometryShapeValidationResult GetValidationResult(JsonElement geometryElement, string type)
     {
         return type switch
@@ -24,7 +22,6 @@ public static class GeoJsonGeometryShapeValidator
         };
     }
 
-    /// <summary>Checks that a JSON value is a known, structurally valid geometry.</summary>
     public static bool IsKnownValidGeometry(JsonElement element)
     {
         if (element.ValueKind != JsonValueKind.Object ||
@@ -226,13 +223,9 @@ public static class GeoJsonGeometryShapeValidator
     }
 }
 
-/// <summary>The result of structural GeoJSON geometry validation.</summary>
 public enum GeometryShapeValidationResult
 {
-    /// <summary>The type is not a supported geometry type.</summary>
     UnknownType,
-    /// <summary>The geometry has invalid structure.</summary>
     Invalid,
-    /// <summary>The geometry has valid structure.</summary>
     Valid
 }

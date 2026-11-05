@@ -5,13 +5,8 @@ using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Core.Features.TileCachePackage.Services;
 
-/// <summary>One level-of-detail sample from root.json or conf.xml.</summary>
 internal readonly record struct TileCacheLodSample(int Level, double? Resolution, double? Scale);
 
-/// <summary>
-/// Accepts a package tiling scheme only when its WKID, origin, and level resolutions
-/// match WebMercatorQuad or WorldCRS84Quad. Anything else is rejected.
-/// </summary>
 internal static class TileCachePackageScheme
 {
     internal const string WebMercatorQuad = "WebMercatorQuad";

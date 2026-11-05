@@ -8,15 +8,8 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Core.Features.Temporal;
 
-/// <summary>
-/// Service registration for the slice-1 temporal history feature (honua-server#1166).
-/// </summary>
 public static class TemporalServiceCollectionExtensions
 {
-    /// <summary>
-    /// Registers the temporal history service. Scoped to match the lifetime of the change tracker
-    /// and feature reader it composes.
-    /// </summary>
     public static IServiceCollection AddTemporalHistory(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);

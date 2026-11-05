@@ -9,20 +9,6 @@ using Honua.Core.Features.Temporal.Domain;
 
 namespace Honua.Core.Features.Temporal.Services;
 
-/// <summary>
-/// Default governed-rollback runner (slice 5 of honua-server#1166). Submits the rollback as a NEW forward
-/// corrective operation through the job sink; the corrective work re-applies the target state via the
-/// canonical edit pipeline (<see cref="IFeatureWriter"/>), which records new change-log rows and advances
-/// the generation — producing a new checkpoint while preserving the immutable audit history. Nothing in
-/// this runner deletes change-log history.
-/// </summary>
-/// <remarks>
-/// The corrective operation undoes net inserts made since the target checkpoint by deleting those
-/// features (a forward delete edit). Net deletes since the target cannot be recreated from the change log
-/// because it retains no prior row image; the rollback plan flags this (snapshot-unavailable) and requires
-/// approval, and the corrective job restores what it can. This keeps the rollback honest about the
-/// foundation's limits while still running entirely through the canonical edit + job paths.
-/// </remarks>
 public sealed class TemporalRollbackRunner : ITemporalRollbackRunner
 {
     private readonly ITemporalHistoryStore _historyStore;
@@ -30,7 +16,6 @@ public sealed class TemporalRollbackRunner : ITemporalRollbackRunner
     private readonly IChangeTracker _changeTracker;
     private readonly ITemporalCorrectiveJobSink _jobSink;
 
-    /// <summary>Creates the rollback runner.</summary>
     public TemporalRollbackRunner(
         ITemporalHistoryStore historyStore,
         IFeatureWriter featureWriter,
@@ -43,7 +28,6 @@ public sealed class TemporalRollbackRunner : ITemporalRollbackRunner
         _jobSink = jobSink ?? throw new ArgumentNullException(nameof(jobSink));
     }
 
-    /// <inheritdoc />
     public async Task<TemporalRollbackJobHandle> SubmitRollbackAsync(
         string serviceId,
         int layerId,
