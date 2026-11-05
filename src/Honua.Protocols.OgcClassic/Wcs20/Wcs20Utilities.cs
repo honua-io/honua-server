@@ -36,12 +36,6 @@ internal static class Wcs20Utilities
     internal const string XLinkNamespace = "http://www.w3.org/1999/xlink";
     internal const string XsiNamespace = "http://www.w3.org/2001/XMLSchema-instance";
 
-    internal static readonly ImmutableHashSet<string> ImplementedOperations =
-        ImmutableHashSet.Create(StringComparer.OrdinalIgnoreCase,
-            Operations.GetCapabilities,
-            Operations.DescribeCoverage,
-            Operations.GetCoverage);
-
     internal static readonly ImmutableHashSet<string> XmlFormats =
         ImmutableHashSet.Create(StringComparer.OrdinalIgnoreCase,
             XmlContentType,

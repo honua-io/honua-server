@@ -126,7 +126,7 @@ internal sealed partial class Wcs20Handler
 
         try
         {
-            var commonError = ValidateCommonParameters(context, operation, isLegacy);
+            var commonError = ValidateCommonParameters(context);
             if (commonError is not null)
             {
                 return commonError;
@@ -1031,8 +1031,11 @@ internal sealed partial class Wcs20Handler
         return new WcsSupportedCrs(srids, uris);
     }
 
-    private static IResult? ValidateCommonParameters(HttpContext context, string operation, bool isLegacy)
+    private static IResult? ValidateCommonParameters(HttpContext context)
     {
+        var isLegacy = Wcs20Utilities.IsVersion10(
+            GetQueryValue(context.Request.Query, Wcs20Utilities.Parameters.Version),
+            GetQueryValue(context.Request.Query, Wcs20Utilities.Parameters.AcceptVersions));
         var service = GetQueryValue(context.Request.Query, Wcs20Utilities.Parameters.Service);
         if (!string.IsNullOrWhiteSpace(service) &&
             !string.Equals(service, Wcs20Utilities.ServiceType, StringComparison.OrdinalIgnoreCase))
@@ -1061,11 +1064,6 @@ internal sealed partial class Wcs20Handler
                     Wcs20Utilities.ExceptionCodes.VersionNegotiationFailed,
                     $"Unsupported version '{version}'. This service supports WCS {Wcs20Utilities.Version} and {Wcs20Utilities.Version10}.",
                     Wcs20Utilities.Parameters.Version);
-        }
-
-        if (!Wcs20Utilities.ImplementedOperations.Contains(operation))
-        {
-            return null;
         }
 
         return null;
