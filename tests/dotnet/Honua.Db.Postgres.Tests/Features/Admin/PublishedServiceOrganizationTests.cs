@@ -5,12 +5,13 @@ using FluentAssertions;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Db.Postgres.Features.Admin;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Db.Postgres.Tests.Features.Admin;
 
 public sealed class PublishedServiceOrganizationTests
 {
-    [Fact]
+    [UnitTest]
     public void Apply_NewService_UsesPublicLeafForDisplayDefaults()
     {
         var graph = Graph();
@@ -28,7 +29,7 @@ public sealed class PublishedServiceOrganizationTests
         service.EffectivePublicName.Should().Be("Parcels");
     }
 
-    [Fact]
+    [UnitTest]
     public void Apply_NewServiceWithAuthoredMetadata_PreservesDisplayTextAndProtocolRoute()
     {
         var authored = Service() with { Route = "/ogc/features" };
@@ -38,7 +39,7 @@ public sealed class PublishedServiceOrganizationTests
         published.Route.Should().Be(authored.Route);
     }
 
-    [Fact]
+    [UnitTest]
     public void Apply_ExistingServiceWithOmittedFolder_PreservesMembershipAndMetadata()
     {
         var existing = Service() with { FolderId = "folder", PublicName = "Parcels", Route = "/ogc/features" };
@@ -47,7 +48,7 @@ public sealed class PublishedServiceOrganizationTests
         applied.Should().Be(existing);
     }
 
-    [Fact]
+    [UnitTest]
     public void Apply_ExistingFolderServiceWithExplicitRoot_RejectsImplicitMove()
     {
         var existing = Service() with { FolderId = "folder", PublicName = "Parcels" };
@@ -56,7 +57,7 @@ public sealed class PublishedServiceOrganizationTests
         apply.Should().Throw<LayerPublishingException>().Which.ErrorKind.Should().Be(LayerPublishingErrorKind.Conflict);
     }
 
-    [Fact]
+    [UnitTest]
     public void Apply_NewServiceInOtherTenantFolder_Rejects()
     {
         var service = Service() with { Metadata = Service().Metadata with { Tenant = "other" } };
@@ -64,7 +65,7 @@ public sealed class PublishedServiceOrganizationTests
         apply.Should().Throw<LayerPublishingException>();
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData("")]
     [InlineData(" ")]
     [InlineData("FeatureServer")]
