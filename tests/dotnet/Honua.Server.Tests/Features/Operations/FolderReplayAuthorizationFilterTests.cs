@@ -7,6 +7,8 @@ using Honua.Core.Features.Operations.Policy;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Authorization;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
@@ -88,16 +90,20 @@ public sealed class FolderReplayAuthorizationFilterTests
     public async Task InvokeAsync_DelegatedAdminGrant_CannotAuthorizeDeniedService()
     {
         using var services = Services(Proposal(), "public");
-        var resolver = services.GetRequiredService<IPermissionResolver>();
-        resolver.AuthorizeAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), "restricted", null,
-            AuthorizationOperation.Admin, true, Arg.Any<CancellationToken>())
-            .Returns(call => call.Arg<IReadOnlyList<string>>().Contains(OperationPolicyBuiltInRules.FullAdministratorRole)
-                ? PermissionDecision.Allow(new PermissionGrant { Service = "restricted", Layer = "restricted", Operation = "Admin" })
-                : PermissionDecision.NoMatch());
+        var roles = services.GetRequiredService<IRoleStore>();
+        roles.GetEffectivePermissionsAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns(call => new EffectivePermissions
+            {
+                UserId = call.Arg<string>(),
+                Roles = call.Arg<IReadOnlyList<string>>(),
+                Permissions = call.Arg<IReadOnlyList<string>>().Contains(OperationPolicyBuiltInRules.FullAdministratorRole)
+                    ? [new PermissionGrant { Service = "restricted", Layer = "*", Operation = "Admin" }]
+                    : []
+            });
         var service = new MetadataV2Service
         {
             Metadata = new MetadataV2ObjectMetadata { Name = "restricted" },
-            AccessPolicy = new AccessPolicy { AllowedRoles = ["service-owner"] }
+            AccessPolicy = new AccessPolicy { AllowedRoles = [OperationPolicyBuiltInRules.FullAdministratorRole] }
         };
         var context = Context("valid");
         context.RequestServices = services;
@@ -121,7 +127,8 @@ public sealed class FolderReplayAuthorizationFilterTests
         tenant.TenantId.Returns(tenantId);
         return new ServiceCollection().AddSingleton(store).AddSingleton(tenant)
             .AddSingleton<IOperationApprovalReplayVerifier, OperationApprovalReplayVerifier>()
-            .AddSingleton(Substitute.For<IPermissionResolver>())
+            .AddSingleton(Substitute.For<IRoleStore>())
+            .AddSingleton<IPermissionResolver, PermissionResolver>()
             .AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>()
             .AddSingleton<IOptions<RbacOptions>>(Options.Create(new RbacOptions())).BuildServiceProvider();
     }
