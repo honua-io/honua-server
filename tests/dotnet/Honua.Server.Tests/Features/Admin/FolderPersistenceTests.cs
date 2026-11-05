@@ -45,6 +45,8 @@ public sealed class FolderPersistenceTests : IAsyncLifetime
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/folders")]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/folder")]
     public async Task FolderMove_AfterRestart_PreservesMembershipAndFlatReads()
     {
         var listing = await _client.GetAsync("/api/v1/admin/folders");

@@ -4,12 +4,13 @@
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Metadata.Domain.V2;
 
 public sealed class MetadataV2FolderTests
 {
-    [Fact]
+    [UnitTest]
     public void Move_WithMultipleFacets_PreservesIdentityRoutesAndRootPath()
     {
         var original = Graph();
@@ -21,7 +22,7 @@ public sealed class MetadataV2FolderTests
         Resolve(moved, "Arbitrary", "Parcels").Should().BeEmpty();
     }
 
-    [Fact]
+    [UnitTest]
     public void Rename_WithServices_RetainsActualPathsAndPreviousSlug()
     {
         var moved = MetadataV2FolderMutations.Move(Graph(), "Parcels", "folder");
@@ -32,7 +33,7 @@ public sealed class MetadataV2FolderTests
         Resolve(renamed, "Field", "Parcels").Should().HaveCount(2);
     }
 
-    [Fact]
+    [UnitTest]
     public void Reconcile_AfterServiceRemoval_RetiresAliasesAcrossSubsequentWrites()
     {
         var graph = MetadataV2FolderMutations.Move(Graph(), "Parcels", "folder");
@@ -45,7 +46,7 @@ public sealed class MetadataV2FolderTests
         recreate.Should().Throw<InvalidOperationException>();
     }
 
-    [Fact]
+    [UnitTest]
     public void Reconcile_StaleAliasRetirementFlags_PreservesTombstonesInNewRevision()
     {
         var original = MetadataV2FolderMutations.Move(Graph(), "Parcels", "folder");
@@ -61,7 +62,7 @@ public sealed class MetadataV2FolderTests
         restoreLivePaths.Should().Throw<InvalidOperationException>();
     }
 
-    [Fact]
+    [UnitTest]
     public void Activate_OlderGraphErasingReservations_RequiresReconciledRevert()
     {
         var original = Graph();
@@ -73,7 +74,7 @@ public sealed class MetadataV2FolderTests
         activateRecovered.Should().NotThrow();
     }
 
-    [Fact]
+    [UnitTest]
     public void Delete_EmptyFolder_PermanentlyReservesSlug()
     {
         var graph = Graph() with { Services = [] };
@@ -83,7 +84,7 @@ public sealed class MetadataV2FolderTests
         reused.Should().Throw<InvalidOperationException>();
     }
 
-    [Fact]
+    [UnitTest]
     public void Delete_NonemptyFolder_RefusesWithoutMovingServices()
     {
         var graph = MetadataV2FolderMutations.Move(Graph(), "Parcels", "folder");
@@ -91,7 +92,7 @@ public sealed class MetadataV2FolderTests
         delete.Should().Throw<InvalidOperationException>();
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData("Utilities")]
     [InlineData("FeatureServer")]
     [InlineData("a/b")]
@@ -104,7 +105,7 @@ public sealed class MetadataV2FolderTests
         create.Should().Throw<ArgumentException>();
     }
 
-    [Fact]
+    [UnitTest]
     public void Create_OverlappingTenantSlugs_RefusesAmbiguity()
     {
         var graph = Graph() with { Services = [] };
@@ -113,7 +114,7 @@ public sealed class MetadataV2FolderTests
         create.Should().Throw<InvalidOperationException>();
     }
 
-    [Fact]
+    [UnitTest]
     public void Validate_SameLeafInDifferentFolders_AcceptsDistinctLogicalNames()
     {
         var graph = Graph();
@@ -130,7 +131,7 @@ public sealed class MetadataV2FolderTests
         MetadataV2FolderValidation.Validate(collide).Should().NotBeEmpty();
     }
 
-    [Fact]
+    [UnitTest]
     public void Validate_CrossTenantMembership_Refuses()
     {
         var graph = Graph();
@@ -138,7 +139,7 @@ public sealed class MetadataV2FolderTests
         MetadataV2FolderValidation.Validate(graph).Should().NotBeEmpty();
     }
 
-    [Fact]
+    [UnitTest]
     public void Reconcile_PublicLeafChange_RefusesDisplayRenameStillWorks()
     {
         var graph = Graph();
@@ -150,7 +151,7 @@ public sealed class MetadataV2FolderTests
         title.Services.Should().OnlyContain(s => s.EffectivePublicName == "Parcels");
     }
 
-    [Fact]
+    [UnitTest]
     public void Json_Organization_RoundTripsWithoutSchemaChange()
     {
         var graph = MetadataV2FolderMutations.Move(Graph(), "Parcels", "folder");
@@ -162,7 +163,7 @@ public sealed class MetadataV2FolderTests
         restored.Services.Should().BeEquivalentTo(graph.Services);
     }
 
-    [Fact]
+    [UnitTest]
     public void Json_LegacySnapshot_DefaultsToRoot()
     {
         var graph = JsonSerializer.Deserialize("{\"services\":[{\"metadata\":{\"id\":\"a\",\"name\":\"Parcels\"}}]}", MetadataV2JsonContext.Default.MetadataV2Graph)!;
@@ -172,7 +173,7 @@ public sealed class MetadataV2FolderTests
         MetadataV2FolderValidation.Validate(graph).Should().BeEmpty();
     }
 
-    [Fact]
+    [UnitTest]
     public void Json_NullOrganizationCollections_DefaultToEmpty()
     {
         var graph = JsonSerializer.Deserialize("{\"folders\":null,\"servicePathAliases\":null,\"services\":[]}",
@@ -182,7 +183,7 @@ public sealed class MetadataV2FolderTests
         MetadataV2FolderValidation.Validate(graph).Should().BeEmpty();
     }
 
-    [Fact]
+    [UnitTest]
     public void FolderSelection_ExplicitRoot_RoundTripsDistinctFromOmitted()
     {
         var selection = new MetadataV2FolderSelection(null);
@@ -192,7 +193,7 @@ public sealed class MetadataV2FolderTests
         default(MetadataV2FolderSelection).IsSpecified.Should().BeFalse();
     }
 
-    [Fact]
+    [UnitTest]
     public void Move_MixedNullAndWhitespaceUnscopedFacets_PreservesOnePathIdentity()
     {
         var graph = Graph();
@@ -206,7 +207,7 @@ public sealed class MetadataV2FolderTests
         Resolve(moved, "Survey", "Parcels").Should().HaveCount(2);
     }
 
-    [Fact]
+    [UnitTest]
     public void Create_UnrelatedFolderWithLegacyCaseVariants_PreservesIdentitiesAndReportsPreflight()
     {
         var legacy = new MetadataV2Graph { Services = [Service("a", "Parcels"), Service("b", "parcels")] };
@@ -218,7 +219,7 @@ public sealed class MetadataV2FolderTests
         ambiguousMove.Should().Throw<InvalidOperationException>();
     }
 
-    [Fact]
+    [UnitTest]
     public void Reconcile_RevertingOriginalFolderDeletion_PreservesEveryNameReservation()
     {
         var original = MetadataV2FolderMutations.Create(new(), Folder("folder", "Survey"));
