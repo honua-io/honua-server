@@ -6,6 +6,7 @@ using Honua.Geoprocessing.Diagnostics;
 
 namespace Honua.Server.Features.Admin.Jobs;
 
+// Input bytes are included only when the caller passes them and the export authorizes that export; this projection does not fetch them from the job store.
 internal static class GpDiagnosticBundleExporter
 {
     public static GpDiagnosticBundleDocument Export(

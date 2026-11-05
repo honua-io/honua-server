@@ -90,6 +90,7 @@ internal sealed class ConfigurationExecutionJobDefinitionRegistry(IOptionsMonito
 
 internal static class ExecutionWorkloadGate
 {
+    // The parameter keys are literal contract strings so this gate does not reference the optionally excluded Honua.Aws assembly.
     private const string JobQueueArnKey = "batch.job_queue_arn";
     private const string JobDefinitionArnKey = "batch.job_definition_arn";
     private const string JobDefinitionArnTierPrefix = JobDefinitionArnKey + ".";

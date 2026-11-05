@@ -15,6 +15,7 @@ internal sealed record FeatureStreamEnvelope
     // The cursor is the store position, not a per-subscription sequence, because a filtered subscription skips values.
     public required long Cursor { get; init; }
 
+    // Null when the path has no subscription sequence; absence is not sequence zero.
     public long? Sequence { get; init; }
 
     public required DateTimeOffset Timestamp { get; init; }
@@ -48,8 +49,10 @@ internal sealed record FeatureStreamEnvelope
 
     public Dictionary<string, System.Text.Json.JsonElement>? Attributes { get; init; }
 
+    // Null when the originating protocol has no attribute-change tracking, or on a delete.
     public Dictionary<string, object?>? ChangedAttributes { get; init; }
 
+    // False when the originating protocol cannot tell, so it is not proof that geometry is unchanged.
     public bool GeometryChanged { get; init; }
 }
 
@@ -292,6 +295,7 @@ internal sealed record FeatureStreamCapabilitiesResponse
 
     public string? DeploymentRevisionSource { get; init; }
 
+    // ServerRevision duplicates DeploymentRevision because existing realtime evidence clients read that name.
     public string? ServerRevision { get; init; }
 
     // The contract is always present and carries no credential, so a caller can tell that it is not configured.

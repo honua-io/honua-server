@@ -362,7 +362,7 @@ internal sealed partial class DeployWorkflowReconciler(
         }
     }
 
-    // The exposure stamp is persisted with the operation and never moved, so a restart or a lease hand-off does not restart the bake window.
+    // The exposure stamp stays on the operation, and an operation already serving before exposure tracking keeps its CreatedAt anchor so an upgrade does not restart the bake window.
     private static DateTimeOffset? StampTrafficExposure(
         WorkflowOperationRecord operation,
         WorkflowOperationStatus observedStatus,

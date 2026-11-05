@@ -20,6 +20,7 @@ internal sealed class RedisDataProtectionKeyRepository(IConnectionMultiplexer re
             .Select(value => XElement.Parse(value.ToString(), LoadOptions.PreserveWhitespace))
             .ToArray();
 
+    // Configuring encryption does not rewrite existing entries, and a plaintext legacy key is refused because the provider can still select it.
     public void EnsureAllElementsAreProtected()
     {
         var unprotected = GetAllElements()

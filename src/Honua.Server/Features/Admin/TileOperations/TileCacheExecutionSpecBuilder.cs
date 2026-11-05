@@ -302,6 +302,7 @@ internal static class TileCacheExecutionSpecBuilder
         return normalized;
     }
 
+    // Resolved layer sets for one grid and style share a coarse partition and exclusive lease so a service delete cannot race a layer seed.
     public static string BuildPartitionKey(
         TileOperationStartRequest request,
         IReadOnlyList<int>? resolvedLayerIds = null)

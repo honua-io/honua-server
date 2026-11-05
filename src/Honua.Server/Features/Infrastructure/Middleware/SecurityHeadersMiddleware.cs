@@ -283,7 +283,7 @@ public sealed class SecurityHeadersOptions
     // Operators must own the apex domain and accept the lock-in before enabling HSTS preload.
     public bool HstsPreload { get; set; } = true;
 
-    // HSTS is emitted only on HTTPS requests.
+    // HSTS stays limited to HTTPS, and a TLS-terminating proxy should correct the perceived scheme instead of turning this off.
     public bool HstsHttpsOnly { get; set; } = true;
 
     public bool SkipHeadersForPreflight { get; set; } = true;

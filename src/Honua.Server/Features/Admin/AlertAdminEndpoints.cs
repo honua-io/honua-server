@@ -720,7 +720,6 @@ internal static class AlertAdminEndpoints
             $"Current edition is {decision.Edition}; install a license that includes '{entitlementKey}'.");
     }
 
-    // An invalid paid license's 402 names the required edition when its message does not already.
     private static string AppendExpiredEdition(
         LicenseEntitlementDecision decision,
         string entitlementKey,

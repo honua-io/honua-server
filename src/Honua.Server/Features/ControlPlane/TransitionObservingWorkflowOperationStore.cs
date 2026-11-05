@@ -76,6 +76,7 @@ internal sealed partial class TransitionObservingWorkflowOperationStore : IWorkf
             case WorkflowOperationStatus.Succeeded when operation.Deploy?.Protection?.Phase != DeployProtectionPhase.Expired:
                 kind = WorkflowOperationTransitionKind.Promoted;
                 return true;
+            // Activation stamps UpdatedAt and FirstExposureAt together, and later writes advance only UpdatedAt, so equality is the one-time promotion signal.
             case WorkflowOperationStatus.Reconciling
                 when operation.Deploy?.Protection is { Phase: DeployProtectionPhase.Observing } protection
                     && operation.UpdatedAt == protection.FirstExposureAt:

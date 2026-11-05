@@ -96,6 +96,7 @@ internal sealed class ServerInstanceIdentity : IServerInstanceIdentity
         return new(Guid.NewGuid().ToString("N"), ServerInstanceIdentitySources.Generated, startedAt);
     }
 
+    // An unrecognized ECS metadata segment is hashed because the raw segment addresses the task-local metadata endpoint.
     private static bool TryResolveEcs(string? metadataUri, out string instanceId, out string source)
     {
         instanceId = string.Empty;

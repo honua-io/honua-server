@@ -415,6 +415,7 @@ internal static partial class SpatialAnalyticsRequestHandlers
         return (inputTruncated, resultTruncated);
     }
 
+    // An empty aggregate has no _inputCount row, so a false truncation flag does not prove every input was examined.
     private static int ExtractInputCount(ref ImmutableArray<IReadOnlyDictionary<string, object?>> rows)
     {
         if (rows.IsDefaultOrEmpty)

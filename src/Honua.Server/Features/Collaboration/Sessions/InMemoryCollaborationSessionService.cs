@@ -181,6 +181,7 @@ internal sealed class InMemoryCollaborationSessionService
         }
     }
 
+    // Heartbeats update liveness without fan-out because the SDK event union has no heartbeat event, and presence is refreshed through snapshots.
     public void Heartbeat(Guid sessionId)
     {
         if (!TryResolveSession(sessionId, out _, out var channel))

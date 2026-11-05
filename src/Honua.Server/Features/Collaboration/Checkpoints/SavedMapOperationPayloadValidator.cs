@@ -9,6 +9,7 @@ using Honua.Core.Features.Studio.Services;
 namespace Honua.Server.Features.Collaboration.Checkpoints;
 
 // Malformed payloads are rejected at admission because the op-log cursor is permanent, and accepting one wedges every later checkpoint.
+// Admission checks payload shape only, because the checkpointed draft omits pending operations and cannot prove a referenced target exists.
 internal static class SavedMapOperationPayloadValidator
 {
     public static bool TryValidate(SavedMapOperationKind kind, JsonElement payload, out string error)

@@ -25,6 +25,7 @@ internal static partial class SceneDatasetEndpoints
     {
         ArgumentNullException.ThrowIfNull(endpoints);
 
+        // Registration is inspected through IServiceProviderIsService so the scoped service is not constructed from the root provider during mapping.
         var serviceInspector = endpoints.ServiceProvider.GetService<IServiceProviderIsService>();
         if (serviceInspector is not null && !serviceInspector.IsService(typeof(ISceneRegistrationService)))
         {

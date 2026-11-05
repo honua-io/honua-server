@@ -379,7 +379,7 @@ internal static class ContentPublicationEndpoints
         }
     }
 
-    // Validation failures carry the errors extension; other publication errors stay a flat problem.
+    // Validation failures carry field-addressable errors so the console can bind them onto report and dashboard inputs.
     private static IResult ToProblem(HttpContext context, ContentPublicationException exception)
         => exception is ContentPublicationValidationException validation
             ? ProblemDetailsHelpers.CreateValidationProblem(context, validation.StatusCode, validation.Errors, validation.Message)

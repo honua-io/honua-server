@@ -15,6 +15,7 @@ internal sealed record SavedMapOperationAppendApiRequest
     [StringLength(200, MinimumLength = 1)]
     public string? OperationId { get; init; }
 
+    // Ignored for attribution, which comes from the authenticated principal, and kept so a client that sends it is not rejected as unknown JSON.
     public string? ActorId { get; init; }
 
     public long BaseCursor { get; init; }

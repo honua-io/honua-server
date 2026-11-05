@@ -48,6 +48,7 @@ internal sealed record CogRegistrationResponse
 
     public string ObjectKey { get; init; } = string.Empty;
 
+    // Width and height are null until metadata is scanned, which is not a known empty dimension.
     public int? Width { get; init; }
 
     public int? Height { get; init; }

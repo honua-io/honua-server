@@ -84,6 +84,7 @@ internal sealed record CapabilityManifestServerInfo
 
     public string? DeploymentRevisionSource { get; init; }
 
+    // ServerRevision duplicates DeploymentRevision because existing evidence and realtime clients read that name.
     public string? ServerRevision { get; init; }
 }
 

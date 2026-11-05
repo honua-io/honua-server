@@ -137,6 +137,7 @@ internal sealed class FeatureStreamConformanceRunRegistry
 
     public int ActiveRunCount => _runs.Count;
 
+    // Anonymous capability discovery reads this registry so it does not resolve the workflow and fail on a provider with no writer.
     public FeatureStreamConformanceCapability DescribeCapability()
     {
         var options = _options.Value;

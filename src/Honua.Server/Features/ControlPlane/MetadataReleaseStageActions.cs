@@ -395,6 +395,7 @@ internal sealed class MetadataReleaseSmokeChecker(
         => !string.IsNullOrWhiteSpace(fieldName) &&
            resource.SchemaFields.Any(field => string.Equals(field.Name, fieldName, StringComparison.OrdinalIgnoreCase));
 
+    // References are compared with the baseline because some point at system columns that are never declared as schema fields.
     private static string? FindRegressedReference(
         MetadataV2GraphSnapshot baselineSnapshot,
         MetadataV2Resource baseline,

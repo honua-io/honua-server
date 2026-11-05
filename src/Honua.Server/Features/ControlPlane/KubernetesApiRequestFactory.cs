@@ -42,6 +42,7 @@ internal sealed class KubernetesApiRequestFactory(IOptionsMonitor<KubernetesExec
         return request;
     }
 
+    // The path is concatenated because a relative URL that starts with a slash would drop a gateway prefix on the base.
     internal static Uri CombineApiServerUri(Uri apiServer, string relativeUrl)
     {
         ArgumentNullException.ThrowIfNull(apiServer);

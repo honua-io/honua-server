@@ -40,6 +40,7 @@ internal static class MigrateOnlyMode
         };
     }
 
+    // Migrate-only refuses Lambda because an init that exits is retried by the runtime and does not serve the migration-function receipt.
     internal static bool IsAwsLambda(Func<string, string?> environment)
     {
         ArgumentNullException.ThrowIfNull(environment);

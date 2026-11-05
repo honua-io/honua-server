@@ -73,6 +73,7 @@ public sealed class S3SinkOptions
 
     public string KeyPrefix { get; set; } = "audit/";
 
+    // When this header is omitted the sink does not sign the request, so a sidecar, a proxy, or a presigned endpoint has to.
     public string? AuthHeaderValue { get; set; }
 
     public string? Region { get; set; }

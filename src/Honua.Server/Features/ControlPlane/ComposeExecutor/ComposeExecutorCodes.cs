@@ -5,7 +5,7 @@ using Honua.Core.Features.ControlPlane.Restore;
 
 namespace Honua.ControlPlane;
 
-// A response is never successful when its success flag is false.
+// An Ok response still fails unless live readback completed.
 internal static class ComposeExecutorCodes
 {
     public const string ScopeViolation = "compose-scope-violation";

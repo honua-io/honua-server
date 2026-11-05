@@ -111,6 +111,7 @@ internal sealed class CoordinatedContainerStepExecutor(
     private static CoordinatedStepOutcome MapOutcome(WorkflowOperationRecord deploy) => deploy.Status switch
     {
         WorkflowOperationStatus.Succeeded => CoordinatedStepOutcome.Succeeded,
+        // Reconciling with protection counts as success because the candidate is already active and coordinated rollback can still unwind it.
         WorkflowOperationStatus.Reconciling when deploy.Deploy?.Protection != null => CoordinatedStepOutcome.Succeeded,
         WorkflowOperationStatus.RolledBack => CoordinatedStepOutcome.RolledBack,
         WorkflowOperationStatus.Failed or WorkflowOperationStatus.ManualInterventionRequired => CoordinatedStepOutcome.Failed,

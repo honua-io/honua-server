@@ -425,6 +425,7 @@ internal static class FieldCollectionSyncEndpoints
             FieldCollectionSyncJsonContext.Default.FieldCollectionPushResponse);
     }
 
+    // API-key fallback principals share the admin name, so device-specific cursors require X-Honua-Client-Id.
     private static string ResolveClientId(HttpContext context)
     {
         if (context.Request.Headers.TryGetValue(ClientIdHeader, out var headerValues))

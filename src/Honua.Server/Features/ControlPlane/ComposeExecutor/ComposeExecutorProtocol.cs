@@ -79,6 +79,7 @@ internal sealed record ComposeBackupManifest
     public string? DumpFile { get; init; }
 }
 
+// The audit line carries no secrets, probe URLs, or customer body.
 internal sealed record ComposeAuditRecord
 {
     public DateTimeOffset Time { get; init; }

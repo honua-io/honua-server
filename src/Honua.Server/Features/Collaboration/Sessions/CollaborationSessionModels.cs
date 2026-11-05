@@ -144,6 +144,7 @@ internal sealed record CollaborationCapabilities
 
     public bool Follow { get; init; } = true;
 
+    // FeatureLocks stays false because lock events are not bridged onto the session stream, even though the feature-lock REST endpoints exist.
     public bool FeatureLocks { get; init; }
 
     public bool Operations { get; init; } = true;

@@ -985,6 +985,7 @@ internal static class DeployControlEndpoints
     internal static DeployOperationResponse MapOperationResponse(WorkflowOperationRecord operation)
         => MapOperationResponse(operation, redactRecoveryGrantIdentity: false);
 
+    // A principal without platform deploy authority must not receive a recovery grant's sealed identity, because that publishes another tenant's grant.
     internal static bool ShouldRedactRecoveryGrantIdentity(ClaimsPrincipal principal, TenantContextOptions? tenantOptions)
         => !PlatformDeployAuthority.IsAuthorized(principal, tenantOptions);
 

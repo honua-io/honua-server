@@ -23,6 +23,7 @@ using Microsoft.IdentityModel.Tokens;
 
 namespace Honua.Server.Features.Admin;
 
+// Provider connection details stay server-side; the anonymous client receives only provider labels.
 internal static class AdminAuthEndpoints
 {
     private const string AdminAuthHttpClient = "AdminAuthOidc";

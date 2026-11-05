@@ -12,6 +12,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Features.Operations;
 
+// The certificate has its own wrapper so a bare X509Certificate2 singleton does not collide with another certificate the host composes.
 internal sealed class RsaAesGcmKeyRingMaterial(X509Certificate2 certificate)
 {
     public X509Certificate2 Certificate { get; } = certificate;

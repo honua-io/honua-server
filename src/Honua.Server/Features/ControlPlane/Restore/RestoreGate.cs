@@ -615,6 +615,7 @@ internal sealed class PreMigrationRestoreExecutionService(
 
 internal static class RestoreCellScope
 {
+    // A trailing hyphen keeps the prefix from matching a sibling name.
     public static bool IsBoundedPrefix(string cellPrefix)
         => !string.IsNullOrWhiteSpace(cellPrefix)
            && cellPrefix.EndsWith('-')

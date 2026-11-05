@@ -9,7 +9,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Features.Admin.Routing;
 
-// Registration is a no-op when the rebuild store or the job store is absent, so a host that cannot claim work does not start the worker.
+// A missing rebuild store skips registration; a missing job store registers submission, which returns 503, and skips reconciliation.
 internal static class NetworkTopologyRebuildServiceCollectionExtensions
 {
     public static IServiceCollection AddNetworkTopologyRebuildJobs(this IServiceCollection services)

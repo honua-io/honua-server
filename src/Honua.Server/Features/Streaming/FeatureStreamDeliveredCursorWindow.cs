@@ -42,7 +42,7 @@ internal sealed class FeatureStreamDeliveredCursorWindow
         }
     }
 
-    // A cursor that is not positive is never treated as already handled.
+    // A non-positive cursor identifies a frame without a durable cursor, so it is not treated as already handled.
     public bool IsHandled(long cursor)
     {
         if (cursor <= 0)

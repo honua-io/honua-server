@@ -6,6 +6,7 @@ using Microsoft.Extensions.Primitives;
 
 namespace Honua.Infrastructure.Middleware;
 
+// The header is applied in OnStarting so a cleared response keeps it and a cached response is stamped with this replica.
 internal sealed class ServerInstanceHeaderMiddleware
 {
     private readonly RequestDelegate _next;

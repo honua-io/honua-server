@@ -199,7 +199,6 @@ internal static class AdminLayerFieldConfigurationEndpoints
         return null;
     }
 
-    // A field is locked as a public protocol contract when it is the primary geometry, the primary id, or the OBJECTID alias.
     private static bool IsRequiredProtocolField(MetadataV2Field field, string? primaryIdFieldName)
         => field.Type is MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography
            || (primaryIdFieldName is not null
@@ -287,6 +286,7 @@ internal static class AdminLayerFieldConfigurationEndpoints
         };
     }
 
+    // The graph is written before the field store so a graph failure does not leave alias, domain, and hidden rows committed.
     internal static async Task<AdminLayerFieldApplyResult> ApplyUpdatedFieldConfigurationsAsync(
         IMetadataV2GraphStore graphStore,
         ILayerFieldConfigurationStore fieldConfigurationStore,

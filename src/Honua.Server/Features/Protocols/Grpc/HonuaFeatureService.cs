@@ -738,7 +738,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         };
     }
 
-    // Omitted geometry keeps the stored geometry, and omitted attributes are merged from the locked row.
+    // Omitted geometry keeps the stored geometry because there is no protobuf signal for clearing it, and omitted attributes are merged from the locked row.
     private static Feature MergePartialUpdate(Feature update, Feature stored)
         => update with
         {

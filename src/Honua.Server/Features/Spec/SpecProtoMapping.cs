@@ -263,6 +263,7 @@ internal static class SpecProtoMapping
         _ => Proto.Severity.Unspecified
     };
 
+    // Proto3 scalars have no presence, so an unknown estimate serializes as zero rather than a measured zero.
     public static Proto.DryRunResult ToProto(SpecCostEstimate cost)
     {
         var proto = new Proto.DryRunResult();
@@ -284,6 +285,7 @@ internal static class SpecProtoMapping
         return proto;
     }
 
+    // Proto3 scalars have no presence, so an unknown actual serializes as zero rather than a measured zero.
     public static Proto.DryRunResult ToProto(SpecCostActual cost)
     {
         var proto = new Proto.DryRunResult
@@ -303,6 +305,7 @@ internal static class SpecProtoMapping
         return proto;
     }
 
+    // A non-string parameter is rejected because coercing it would let different documents share one content hash.
     private static Dictionary<string, string> FromProtoParameterMap(
         string nodeId,
         string fieldName,

@@ -129,7 +129,7 @@ internal static class SamlSignatureVerifier
             : VerificationResult.Fail("SAML SignedInfo signature is invalid.");
     }
 
-    // Exclusive canonicalization emits only visibly utilized prefixes, so unused declarations copied here do not change the digest.
+    // Exclusive canonicalization emits visibly utilized or explicitly inclusive prefixes, so other declarations copied here do not change the digest.
     private static void CopyInScopeNamespaceDeclarations(XElement source, XElement copy)
     {
         for (var ancestor = source.Parent; ancestor is not null; ancestor = ancestor.Parent)

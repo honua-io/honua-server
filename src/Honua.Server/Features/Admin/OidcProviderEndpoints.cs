@@ -82,6 +82,7 @@ internal static partial class OidcProviderEndpoints
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
     }
 
+    // The create route is marked in endpoint metadata because a trailing-slash test path still matches and a path-suffix check would classify it as a create.
     internal sealed class CreateProviderRoute
     {
         internal static readonly CreateProviderRoute Instance = new();

@@ -239,6 +239,7 @@ internal static class MultidimCoverageScanJob
         }
     }
 
+    // Derived Zarr metadata needs the source georeferencing manifest because conversion preserves array data and row order without that manifest.
     internal static ZarrStoreMetadata EnrichDerivedZarrMetadata(
         ZarrStoreMetadata zarrMetadata,
         MultidimensionalCoverageMetadata sourceMetadata)

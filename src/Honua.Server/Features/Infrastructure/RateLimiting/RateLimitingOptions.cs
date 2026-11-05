@@ -9,7 +9,7 @@ internal sealed class RateLimitingOptions
 {
     public const string SectionName = "RateLimiting";
 
-    // App-level limiting is off until an operator enables it.
+    // Application limiting is opt-in because the baseline posture enforces limits at the edge.
     public bool Enabled { get; set; }
 
     [Range(1, 100000, ErrorMessage = "GlobalRequestsPerMinute must be between 1 and 100000")]

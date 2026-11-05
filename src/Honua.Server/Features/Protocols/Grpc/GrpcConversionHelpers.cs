@@ -896,6 +896,7 @@ internal static class GrpcConversionHelpers
         };
     }
 
+    // Schema field types have to travel with the clause because an untyped managed JSONB attribute sorts a numeric value as text.
     public static ImmutableArray<OrderByClause> WithSchemaFieldTypes(
         ImmutableArray<OrderByClause> orderBy,
         IReadOnlyList<MetadataV2Field> schemaFields)

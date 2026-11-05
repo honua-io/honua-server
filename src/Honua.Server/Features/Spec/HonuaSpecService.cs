@@ -176,6 +176,7 @@ internal sealed class HonuaSpecService : Proto.SpecService.SpecServiceBase
         }
     }
 
+    // An unknown or already-terminal cancellation stays non-faulting and returns an unspecified state instead of asserting a state the server does not hold.
     public override Task<Proto.CancelJobResponse> CancelApply(
         Proto.CancelJobRequest request,
         ServerCallContext context)

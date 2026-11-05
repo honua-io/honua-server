@@ -45,6 +45,7 @@ internal sealed record MultidimensionalCoverageRegistrationResponse
 
     public IReadOnlyList<string> Variables { get; init; } = Array.Empty<string>();
 
+    // SRID and the variable count stay null until metadata is scanned, so they are unknown rather than a measured zero.
     public int? Srid { get; init; }
 
     public int? VariableCount { get; init; }
@@ -68,5 +69,6 @@ internal sealed record MultidimensionalCoverageScanJobResponse
 
     public IReadOnlyList<string> Warnings { get; init; } = [];
 
+    // Null until the scan succeeds and its metadata is materialized.
     public MultidimensionalCoverageRegistrationResponse? Coverage { get; init; }
 }

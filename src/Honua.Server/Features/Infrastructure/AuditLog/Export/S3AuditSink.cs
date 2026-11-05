@@ -8,6 +8,7 @@ using Honua.Core.Features.AuditLog.Export;
 
 namespace Honua.Server.Features.Infrastructure.AuditLog.Export;
 
+// This sink does not implement request signing, so an omitted authorization header needs a sidecar, a proxy, or a presigned endpoint.
 internal sealed class S3AuditSink : IAuditSink
 {
     private readonly IHttpClientFactory _httpClientFactory;

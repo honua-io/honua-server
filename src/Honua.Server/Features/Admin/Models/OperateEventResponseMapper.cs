@@ -5,6 +5,7 @@ using Honua.Core.Features.Observability.Domain;
 
 namespace Honua.Server.Features.Admin.Models;
 
+// Shared by the REST timeline and the realtime hub so a live event matches the event a reconnect reads back.
 internal static class OperateEventResponseMapper
 {
     public static OperateEventResponse Map(OperateEvent value)

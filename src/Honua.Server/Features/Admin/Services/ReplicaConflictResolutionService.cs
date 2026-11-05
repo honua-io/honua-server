@@ -461,7 +461,7 @@ internal sealed partial class ReplicaConflictResolutionService
         return IsDetectionIncomplete(conflict);
     }
 
-    // Both the client and server envelopes must be durable before a resolution runs, and an incomplete current record stays blocked after the settle window.
+    // Every envelope the classification requires must be durable before a resolution runs.
     private static bool IsDetectionIncomplete(ReplicaConflictRecord conflict)
     {
         if (conflict.ResolutionBaseGeneration is null)

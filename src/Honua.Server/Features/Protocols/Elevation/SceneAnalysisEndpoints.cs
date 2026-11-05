@@ -18,6 +18,7 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Protocols.Elevation;
 
+// Routes are anonymous so layer permissions can decide access; each handler checks layer authorization and the license before reading elevation.
 internal static partial class SceneAnalysisEndpoints
 {
     private const string JsonContentType = "application/json";

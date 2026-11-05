@@ -12,7 +12,7 @@ using StackExchange.Redis;
 
 namespace Honua.Server.Features.Protocols.Grpc;
 
-// A writer that cannot prove the reservation is cancelled before it can lapse, so a second replica never starts the same edit.
+// A write is cancelled before its reservation can lapse when ownership cannot be proved, so a second replica never starts the same edit.
 internal sealed partial class GrpcApplyEditsIdempotencyStore : IDisposable
 {
     internal static readonly TimeSpan DefaultResponseWindow = TimeSpan.FromHours(24);

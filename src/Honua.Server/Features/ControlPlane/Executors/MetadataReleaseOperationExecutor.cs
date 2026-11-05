@@ -11,7 +11,7 @@ using Honua.Core.Features.Operations.Domain;
 
 namespace Honua.ControlPlane.Executors;
 
-// This executor accepts only the additive create action; rollback and coordinated release stay on their own endpoints.
+// This executor accepts only the create action; rollback is not a new proposal, and coordinated releases already own their approval gates.
 internal sealed class MetadataReleaseOperationExecutor(MetadataReleaseControlService controlService) : IOperationExecutor
 {
     public const string CreateAction = "create";

@@ -3,6 +3,7 @@
 
 namespace Honua.ControlPlane;
 
+// Properties use setters because the configuration binding source generator rejects init-only properties.
 // The serving process reads the socket settings only; the sidecar is the only process with the Docker socket.
 internal sealed class ComposeExecutorOptions
 {
@@ -36,6 +37,7 @@ internal sealed class ComposeExecutorOptions
 
     public string DatabaseName { get; set; } = "honua";
 
+    // The local Postgres socket is trust, so the executor does not pass a password.
     public string DatabaseUser { get; set; } = "honua";
 
     public string BackupDirectory { get; set; } = string.Empty;

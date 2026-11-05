@@ -93,6 +93,7 @@ internal sealed class KubernetesExecutionOptions
 
     public string? BearerTokenPath { get; set; }
 
+    // A literal token is the fallback; BearerTokenPath is preferred so rotation is picked up without a restart.
     public string? BearerToken { get; set; }
 
     // A private CA bundle is required for an out-of-cluster API server that does not chain to the OS trust store, and it is ignored only when in-cluster detection uses the projected bundle.

@@ -236,6 +236,7 @@ internal sealed record DeployOperationRealtimeEvent(
 [JsonSerializable(typeof(ProposalRealtimeEvent))]
 internal sealed partial class AdminRealtimeJsonContext : JsonSerializerContext;
 
+// Kept separate from the status and proposal context so these payloads serialize like their REST counterparts.
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
