@@ -5,44 +5,23 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Core.Features.Metadata.Domain.V2;
 
-/// <summary>
-/// Connection secret references used by metadata v2 connection resources.
-/// </summary>
 public sealed record MetadataV2ConnectionSecrets
 {
-    /// <summary>
-    /// Reference to endpoint material such as host, port, and database name.
-    /// </summary>
     [JsonPropertyName("endpointRef")]
     public MetadataV2SecretReference? EndpointRef { get; init; }
 
-    /// <summary>
-    /// Reference to credential material such as username and password.
-    /// </summary>
     [JsonPropertyName("credentialRef")]
     public MetadataV2SecretReference? CredentialRef { get; init; }
 
-    /// <summary>
-    /// Reference to a complete connection secret.
-    /// </summary>
     [JsonPropertyName("connectionRef")]
     public MetadataV2SecretReference? ConnectionRef { get; init; }
 
-    /// <summary>
-    /// Explicit marker for inline development-only connection material.
-    /// </summary>
     [JsonPropertyName("inlineDevOnly")]
     public MetadataV2InlineDevelopmentSecretMarker? InlineDevOnly { get; init; }
 
-    /// <summary>
-    /// Indicates whether any external reference is present.
-    /// </summary>
     [JsonIgnore]
     public bool HasExternalReferences => EndpointRef is not null || CredentialRef is not null || ConnectionRef is not null;
 
-    /// <summary>
-    /// Returns a copy that is safe to expose in diagnostics and logs.
-    /// </summary>
     public MetadataV2ConnectionSecrets Redacted()
         => this with
         {
@@ -51,9 +30,6 @@ public sealed record MetadataV2ConnectionSecrets
             ConnectionRef = ConnectionRef?.Redacted()
         };
 
-    /// <summary>
-    /// Validates the shape of the reference set without resolving secrets.
-    /// </summary>
     public IReadOnlyList<MetadataV2SecretReferenceValidationIssue> Validate()
     {
         var issues = new List<MetadataV2SecretReferenceValidationIssue>();
@@ -103,32 +79,17 @@ public sealed record MetadataV2ConnectionSecrets
     }
 }
 
-/// <summary>
-/// Reference to secret material managed outside the metadata document.
-/// </summary>
 public sealed record MetadataV2SecretReference
 {
-    /// <summary>
-    /// Secret provider or registry name, for example <c>env</c>, <c>azure-key-vault</c>, or <c>connection-registry</c>.
-    /// </summary>
     [JsonPropertyName("provider")]
     public string Provider { get; init; } = string.Empty;
 
-    /// <summary>
-    /// Provider-local reference name or path.
-    /// </summary>
     [JsonPropertyName("ref")]
     public string Reference { get; init; } = string.Empty;
 
-    /// <summary>
-    /// Optional provider-local version, stage, or label.
-    /// </summary>
     [JsonPropertyName("version")]
     public string? Version { get; init; }
 
-    /// <summary>
-    /// Creates a secret reference value.
-    /// </summary>
     public static MetadataV2SecretReference Create(string provider, string reference, string? version = null)
         => new()
         {
@@ -137,9 +98,6 @@ public sealed record MetadataV2SecretReference
             Version = version
         };
 
-    /// <summary>
-    /// Returns a copy that preserves provider shape while hiding provider-local identifiers.
-    /// </summary>
     public MetadataV2SecretReference Redacted()
         => this with
         {
@@ -147,9 +105,6 @@ public sealed record MetadataV2SecretReference
             Version = Version is null ? null : "***"
         };
 
-    /// <summary>
-    /// Validates the reference shape without resolving it.
-    /// </summary>
     public IReadOnlyList<MetadataV2SecretReferenceValidationIssue> Validate(string path)
     {
         var issues = new List<MetadataV2SecretReferenceValidationIssue>();
@@ -174,7 +129,6 @@ public sealed record MetadataV2SecretReference
         return issues;
     }
 
-    /// <inheritdoc />
     public override string ToString() => $"{Provider}:{Redact(Reference)}";
 
     private static string Redact(string value)
@@ -196,31 +150,16 @@ public sealed record MetadataV2SecretReference
     }
 }
 
-/// <summary>
-/// Explicit marker for inline connection material that must remain development-only.
-/// </summary>
 public sealed record MetadataV2InlineDevelopmentSecretMarker
 {
-    /// <summary>
-    /// Indicates whether inline development-only material is present.
-    /// </summary>
     [JsonPropertyName("enabled")]
     public bool Enabled { get; init; }
 
-    /// <summary>
-    /// Human-readable explanation for allowing inline material in a development fixture.
-    /// </summary>
     [JsonPropertyName("reason")]
     public string? Reason { get; init; }
 
-    /// <summary>
-    /// Optional owner responsible for removing or externalizing the inline material.
-    /// </summary>
     [JsonPropertyName("owner")]
     public string? Owner { get; init; }
 }
 
-/// <summary>
-/// Shape validation issue for metadata v2 secret references.
-/// </summary>
 public sealed record MetadataV2SecretReferenceValidationIssue(string Path, string Message);

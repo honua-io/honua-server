@@ -8,9 +8,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Core.Features.Metadata.Services;
 
-/// <summary>
-/// Default service for Metadata v2 compatibility prevalidation.
-/// </summary>
 public sealed class MetadataCompatibilityPrevalidationService(
     IMetadataV2EnvironmentSnapshotReader snapshotReader,
     IMetadataReleasePackageStore packageStore,
@@ -23,7 +20,6 @@ public sealed class MetadataCompatibilityPrevalidationService(
 
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
 
-    /// <inheritdoc />
     public async Task<MetadataCompatibilityReport> PrevalidateAsync(
         MetadataCompatibilityPrevalidationRequest request,
         CancellationToken cancellationToken = default)

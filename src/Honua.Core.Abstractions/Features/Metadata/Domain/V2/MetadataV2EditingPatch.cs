@@ -5,40 +5,26 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Core.Features.Metadata.Domain.V2;
 
-/// <summary>Explicit, partial edits to imported resource bindings and publication edit policy.</summary>
 public sealed record MetadataV2EditingPatch
 {
-    /// <summary>Declared UUID field; null preserves the binding and an empty string clears it.</summary>
     [JsonPropertyName("globalIdField")]
     public string? GlobalIdField { get; init; }
 
-    /// <summary>Attachment support; null preserves the existing declaration.</summary>
     [JsonPropertyName("supportsAttachments")]
     public bool? SupportsAttachments { get; init; }
 
-    /// <summary>Creation policy for the selected publications; null preserves it.</summary>
     [JsonPropertyName("create")]
     public bool? Create { get; init; }
 
-    /// <summary>Update policy for the selected publications; null preserves it.</summary>
     [JsonPropertyName("update")]
     public bool? Update { get; init; }
 
-    /// <summary>Deletion policy for the selected publications; null preserves it.</summary>
     [JsonPropertyName("delete")]
     public bool? Delete { get; init; }
 }
 
-/// <summary>Applies editing configuration without moving data, changing identities or granting access.</summary>
 public static class MetadataV2EditingConfiguration
 {
-    /// <summary>Validates and applies a partial patch against one current graph snapshot.</summary>
-    /// <param name="graph">Current graph; the caller owns revision and optimistic concurrency.</param>
-    /// <param name="resourceId">Immutable resource identity selected by the caller.</param>
-    /// <param name="publicationIds">Publications whose edit operations may change.</param>
-    /// <param name="patch">Explicit binding and policy changes.</param>
-    /// <returns>A graph preserving all unrelated resources, publications and access policies.</returns>
-    /// <exception cref="ArgumentException">The binding is invalid or writes are unsupported.</exception>
     public static MetadataV2Graph Apply(
         MetadataV2Graph graph,
         string resourceId,

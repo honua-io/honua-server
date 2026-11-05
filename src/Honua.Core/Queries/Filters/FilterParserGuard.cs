@@ -3,15 +3,6 @@
 
 namespace Honua.Core.Queries.Filters;
 
-/// <summary>
-/// Shared guardrails for filter-parser hostile-input handling.
-/// </summary>
-/// <remarks>
-/// Geometry-shaped guard methods (WKT / GeoJSON parsing, coordinate caps,
-/// text-size caps applied to geometry payloads) live in
-/// <c>FilterParserGeometryGuard</c> inside <c>Honua.Geometry</c>; they pull
-/// NetTopologySuite, which <c>Honua.Core</c> no longer references directly.
-/// </remarks>
 internal static class FilterParserGuard
 {
     internal const int MaxExpressionDepth = FilterExpressionNormalizer.MaxExpressionDepth;

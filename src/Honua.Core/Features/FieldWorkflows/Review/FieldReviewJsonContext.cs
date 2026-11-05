@@ -6,9 +6,6 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Core.Features.FieldWorkflows.Review;
 
-/// <summary>
-/// Source-generated JSON context for back-office field review contracts.
-/// </summary>
 [JsonSourceGenerationOptions(
     JsonSerializerDefaults.General,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]

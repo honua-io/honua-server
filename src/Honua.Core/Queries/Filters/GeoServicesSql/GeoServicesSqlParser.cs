@@ -6,9 +6,6 @@ using System.Text;
 
 namespace Honua.Core.Queries.Filters.GeoServicesSql;
 
-/// <summary>
-/// Parses GeoServices SQL where clauses into the shared filter AST.
-/// </summary>
 public sealed class GeoServicesSqlParser
 {
     private readonly List<Token> _tokens = [];
@@ -88,9 +85,6 @@ public sealed class GeoServicesSqlParser
         "ST_DISTANCE", "ST_LENGTH", "ST_AREA", "ST_X", "ST_Y",
     };
 
-    /// <summary>
-    /// Parses a GeoServices SQL WHERE expression into a filter AST.
-    /// </summary>
     public FilterExpression Parse(string whereClause)
     {
         if (string.IsNullOrWhiteSpace(whereClause))

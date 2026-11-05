@@ -3,36 +3,13 @@
 
 namespace Honua.Core.Features.Identity.Abstractions;
 
-/// <summary>
-/// Resolves a principal's current role membership from the configured identity source.
-/// </summary>
-/// <remarks>
-/// Implementations return <see langword="null"/> when the source does not manage the
-/// principal or cannot answer membership queries for that identity-provider mode. Exceptions
-/// represent a source failure and must not be translated into snapshot fallback by callers.
-/// </remarks>
+// A source failure is an exception and must not be treated as an empty membership snapshot.
 public interface IPrincipalMembershipSource
 {
-    /// <summary>
-    /// Resolves current account state and roles for a stable principal identifier.
-    /// </summary>
-    /// <param name="principalId">Stable principal identifier captured at submission time.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>
-    /// Current membership, or <see langword="null"/> when this source cannot authoritatively
-    /// resolve the principal.
-    /// </returns>
     Task<PrincipalMembership?> ResolveMembershipAsync(
         string principalId,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Resolves current account state for an issuer-scoped authentication subject.
-    /// </summary>
-    /// <param name="principalId">Case-sensitive subject captured from the token.</param>
-    /// <param name="issuer">Validated token issuer, or <see langword="null"/> for a
-    /// non-OIDC/legacy principal.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
     Task<PrincipalMembership?> ResolveMembershipAsync(
         string principalId,
         string? issuer,
@@ -40,9 +17,4 @@ public interface IPrincipalMembershipSource
         => ResolveMembershipAsync(principalId, cancellationToken);
 }
 
-/// <summary>
-/// Current account state and role membership returned by an identity source.
-/// </summary>
-/// <param name="IsActive">Whether the identity remains active.</param>
-/// <param name="Roles">Current role names. Inactive identities should return an empty set.</param>
 public sealed record PrincipalMembership(bool IsActive, IReadOnlyList<string> Roles);

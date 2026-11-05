@@ -9,15 +9,8 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Core.Features.Metadata;
 
-/// <summary>
-/// Service collection extensions for registering Metadata v2 services.
-/// </summary>
 public static class MetadataServiceCollectionExtensions
 {
-    /// <summary>
-    /// Registers Metadata v2 release package services.
-    /// </summary>
-    /// <param name="services">The service collection to add services to.</param>
     public static IServiceCollection AddMetadataReleaseServices(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
@@ -30,15 +23,6 @@ public static class MetadataServiceCollectionExtensions
         return services;
     }
 
-    /// <summary>
-    /// Registers the shared, per-instance Metadata v2 graph snapshot cache and its invalidation
-    /// hook. Idempotent — safe to call from every provider registration path. The cache lets the
-    /// caching provider decorator reuse one materialized snapshot across request scopes instead of
-    /// re-reading the full catalog document on every catalog resolution. Staleness is bounded by
-    /// <c>Cache:MetadataGraphTtlSeconds</c>; catalog writes invalidate the writing node immediately,
-    /// and every node when the host composes the Redis broadcast invalidator.
-    /// </summary>
-    /// <param name="services">The service collection to add services to.</param>
     public static IServiceCollection AddMetadataV2GraphSnapshotCache(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
@@ -50,13 +34,6 @@ public static class MetadataServiceCollectionExtensions
         return services;
     }
 
-    /// <summary>
-    /// Registers the file-backed Metadata v2 graph provider. Loads a single JSON document
-    /// at the given path. Intended for tests, fixtures, and dev scenarios where Postgres
-    /// is not available; production should use the Postgres-backed store.
-    /// </summary>
-    /// <param name="services">The service collection to add services to.</param>
-    /// <param name="graphPath">Path to the Metadata v2 graph JSON document.</param>
     public static IServiceCollection AddFileMetadataV2Graph(this IServiceCollection services, string graphPath)
     {
         ArgumentNullException.ThrowIfNull(graphPath);

@@ -5,13 +5,9 @@ using Honua.Core.Features.FeatureStore.Domain;
 
 namespace Honua.Core.Queries.Filters;
 
-/// <summary>Composes a text search using the provider's column, parameter and substring syntax.</summary>
 public static class FeatureTextSearchSql
 {
-    /// <summary>
-    /// Builds a predicate without embedding caller text in SQL. The contains callback receives
-    /// SQL operands and must return a numeric substring position (zero for no match).
-    /// </summary>
+    // Caller text stays in a parameter; the callback only receives SQL operands.
     public static string Build(
         FeatureTextSearch search,
         Func<string, string> resolveField,

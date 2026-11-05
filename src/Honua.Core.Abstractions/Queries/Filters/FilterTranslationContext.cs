@@ -7,27 +7,8 @@ using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Core.Queries.Filters;
 
-/// <summary>
-/// Provider-neutral schema context consumed by <see cref="ISqlFilterTranslator"/>
-/// implementations. Lets translator implementations consume Metadata v2 resources
-/// without duplicating recursive translation logic.
-/// </summary>
-/// <remarks>
-/// The context exposes only the surface the translators actually need: field
-/// metadata (name / type / geometry flag / primary-key flag), the geometry column
-/// name and SRID, and the resource name used in error messages. SRID resolution
-/// falls back to <see cref="SpatialReference.WGS84"/> when the resource does not
-/// carry an explicit SRID.
-/// </remarks>
 public readonly struct FilterTranslationContext
 {
-    /// <summary>
-    /// A single field exposed by <see cref="FilterTranslationContext.Fields"/>.
-    /// </summary>
-    /// <param name="Name">Stable source field name.</param>
-    /// <param name="Type">Canonical <see cref="MetadataV2FieldType"/>.</param>
-    /// <param name="IsGeometry">True when the field carries the resource's geometry column.</param>
-    /// <param name="IsPrimaryKey">True when the field is the resource's primary key.</param>
     public readonly record struct ContextField(string Name, MetadataV2FieldType Type, bool IsGeometry, bool IsPrimaryKey);
 
     private FilterTranslationContext(
@@ -48,30 +29,20 @@ public readonly struct FilterTranslationContext
         ResourceName = resourceName;
     }
 
-    /// <summary>Ordered field set used for property/field resolution.</summary>
     public IReadOnlyList<ContextField> Fields { get; }
 
-    /// <summary>Name of the primary-key field, or null when the resource lacks one.</summary>
     public string? PrimaryKeyName { get; }
 
-    /// <summary>Name of the primary geometry column, or null for non-spatial resources.</summary>
     public string? GeometryColumnName { get; }
 
-    /// <summary>SRID of the resource's coordinate reference system.</summary>
     public int Wkid { get; }
 
-    /// <summary>True when the resource's SRS uses geographic (spherical) coordinates.</summary>
     public bool IsGeographic { get; }
 
-    /// <summary>Canonical geometry type for the resource (or <see cref="GeometryType.None"/>).</summary>
     public GeometryType GeometryType { get; }
 
-    /// <summary>Display name of the resource, used in diagnostic messages.</summary>
     public string ResourceName { get; }
 
-    /// <summary>
-    /// Builds a <see cref="FilterTranslationContext"/> from a Metadata v2 resource.
-    /// </summary>
     public static FilterTranslationContext FromResource(MetadataV2Resource resource)
     {
         ArgumentNullException.ThrowIfNull(resource);
@@ -101,25 +72,6 @@ public readonly struct FilterTranslationContext
             resource.Metadata.Name);
     }
 
-    /// <summary>
-    /// Builds a <see cref="FilterTranslationContext"/> from an explicit column set.
-    /// </summary>
-    /// <remarks>
-    /// Config-driven secondary providers (for example the read-only Databricks provider)
-    /// resolve their schema from per-layer configuration rather than the Metadata v2
-    /// graph, so they cannot supply a <see cref="MetadataV2Resource"/>. This overload lets
-    /// them reuse the shared <see cref="SqlFilterExpressionVisitorBase"/> translation path
-    /// by describing the layer's columns directly. Field types are unknown in this case and
-    /// default to <see cref="MetadataV2FieldType.String"/>, which is sufficient for
-    /// identifier resolution and parameterized literal binding.
-    /// </remarks>
-    /// <param name="fields">Ordered context fields describing the layer's columns.</param>
-    /// <param name="primaryKeyName">Primary-key column name, or null when absent.</param>
-    /// <param name="geometryColumnName">Geometry column name, or null for non-spatial layers.</param>
-    /// <param name="wkid">Spatial reference identifier of the layer geometry.</param>
-    /// <param name="geometryType">Canonical geometry type of the layer.</param>
-    /// <param name="resourceName">Display name used in diagnostic messages.</param>
-    /// <param name="isGeographic">True when the layer SRS is geographic.</param>
     public static FilterTranslationContext FromColumns(
         IReadOnlyList<ContextField> fields,
         string? primaryKeyName,
@@ -141,11 +93,6 @@ public readonly struct FilterTranslationContext
             resourceName);
     }
 
-    /// <summary>
-    /// Normalizes a schema field type for the translators: collapses the spatial
-    /// <see cref="MetadataV2FieldType.Geography"/> alias to <see cref="MetadataV2FieldType.Geometry"/>
-    /// and maps <see cref="MetadataV2FieldType.Unknown"/> to <see cref="MetadataV2FieldType.String"/>.
-    /// </summary>
     private static MetadataV2FieldType NormalizeFieldType(MetadataV2FieldType type) => type switch
     {
         MetadataV2FieldType.Geography => MetadataV2FieldType.Geometry,
@@ -166,9 +113,6 @@ public readonly struct FilterTranslationContext
         _ => GeometryType.None,
     };
 
-    /// <summary>
-    /// Tries to locate a field by name (case-insensitive). Returns null when missing.
-    /// </summary>
     public ContextField? TryGetField(string fieldName)
     {
         ArgumentNullException.ThrowIfNull(fieldName);

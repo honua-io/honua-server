@@ -8,26 +8,17 @@ using Honua.Core.Features.EmbedGovernance.Domain;
 
 namespace Honua.Core.Features.EmbedGovernance;
 
-/// <summary>
-/// In-memory <see cref="IEmbedKeyStore"/>. Suitable as the default issuance
-/// store; a durable provider can replace it when persistence is configured.
-/// </summary>
 public sealed class InMemoryEmbedKeyStore : IEmbedKeyStore
 {
     private readonly ConcurrentDictionary<Guid, EmbedKeyRecord> _keys = new();
     private readonly ConcurrentDictionary<Guid, RateWindow> _windows = new();
     private readonly TimeProvider _timeProvider;
 
-    /// <summary>
-    /// Creates the store.
-    /// </summary>
-    /// <param name="timeProvider">Clock abstraction; defaults to system time.</param>
     public InMemoryEmbedKeyStore(TimeProvider? timeProvider = null)
     {
         _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
-    /// <inheritdoc />
     public Task<IReadOnlyList<EmbedKeyRecord>> ListAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -38,7 +29,6 @@ public sealed class InMemoryEmbedKeyStore : IEmbedKeyStore
         return Task.FromResult(result);
     }
 
-    /// <inheritdoc />
     public Task<EmbedKeyCreateResult> CreateAsync(
         string name,
         EmbedKeyScope scope,
@@ -72,7 +62,6 @@ public sealed class InMemoryEmbedKeyStore : IEmbedKeyStore
         return Task.FromResult(new EmbedKeyCreateResult(record, generated));
     }
 
-    /// <inheritdoc />
     public Task<EmbedKeyRecord?> GetAsync(Guid id, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -80,7 +69,6 @@ public sealed class InMemoryEmbedKeyStore : IEmbedKeyStore
         return Task.FromResult(record);
     }
 
-    /// <inheritdoc />
     public Task<EmbedKeyCreateResult?> RotateAsync(Guid id, CancellationToken cancellationToken)
     {
         while (true)
@@ -113,7 +101,6 @@ public sealed class InMemoryEmbedKeyStore : IEmbedKeyStore
         }
     }
 
-    /// <inheritdoc />
     public Task<EmbedKeyRecord?> RevokeAsync(Guid id, CancellationToken cancellationToken)
     {
         while (true)
@@ -141,7 +128,6 @@ public sealed class InMemoryEmbedKeyStore : IEmbedKeyStore
         }
     }
 
-    /// <inheritdoc />
     public Task<EmbedKeyValidationResult?> ValidateAsync(string keyMaterial, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -182,7 +168,6 @@ public sealed class InMemoryEmbedKeyStore : IEmbedKeyStore
         return Task.FromResult<EmbedKeyValidationResult?>(null);
     }
 
-    /// <inheritdoc />
     public Task<int> RecordRequestAsync(Guid id, TimeSpan window, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();

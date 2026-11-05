@@ -5,9 +5,6 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Core.Features.Metadata.Domain.V2;
 
-/// <summary>
-/// JSON serialization context for Metadata v2 compatibility prevalidation contracts.
-/// </summary>
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,

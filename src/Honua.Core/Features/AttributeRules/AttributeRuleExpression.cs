@@ -5,102 +5,37 @@ using System.Globalization;
 
 namespace Honua.Core.Features.AttributeRules;
 
-/// <summary>
-/// Outcome of evaluating an attribute-rule expression.
-/// </summary>
-/// <param name="Status">Whether the expression produced a value, reported a constraint violation, or was unsupported.</param>
-/// <param name="Value">
-/// The computed value for a successful calculation expression. <c>null</c> for boolean
-/// constraint evaluations and for unsupported/skipped expressions.
-/// </param>
 public readonly record struct AttributeRuleExpressionResult(
     AttributeRuleExpressionStatus Status,
     object? Value)
 {
-    /// <summary>Creates a result for a successfully computed value (calculation).</summary>
-    /// <param name="value">The computed value.</param>
-    /// <returns>A success result carrying <paramref name="value"/>.</returns>
     public static AttributeRuleExpressionResult Computed(object? value)
         => new(AttributeRuleExpressionStatus.Computed, value);
 
-    /// <summary>Creates a result for a boolean constraint that passed.</summary>
     public static AttributeRuleExpressionResult Satisfied { get; } =
         new(AttributeRuleExpressionStatus.Satisfied, true);
 
-    /// <summary>Creates a result for a boolean constraint that was violated.</summary>
     public static AttributeRuleExpressionResult Violated { get; } =
         new(AttributeRuleExpressionStatus.Violated, false);
 
-    /// <summary>
-    /// Creates a result for an expression outside the supported safe subset. The caller
-    /// routes these out of scope (skips with a logged warning) rather than failing the edit.
-    /// </summary>
     public static AttributeRuleExpressionResult Unsupported { get; } =
         new(AttributeRuleExpressionStatus.Unsupported, null);
 }
 
-/// <summary>
-/// Status of an evaluated attribute-rule expression.
-/// </summary>
 public enum AttributeRuleExpressionStatus
 {
-    /// <summary>The calculation expression produced a value (carried in the result).</summary>
     Computed,
 
-    /// <summary>The boolean constraint expression evaluated to true (no violation).</summary>
     Satisfied,
 
-    /// <summary>The boolean constraint expression evaluated to false (violation).</summary>
     Violated,
 
-    /// <summary>
-    /// The expression is outside the supported safe subset and must be routed out of
-    /// scope (skipped) rather than enforced.
-    /// </summary>
     Unsupported
 }
 
-/// <summary>
-/// Evaluates the deliberately small, safe subset of Arcade that Honua enforces on the
-/// edit path for attribute rules. The evaluator is parameterized over a feature's
-/// attributes only; it performs no I/O, no reflection, no SQL, and no arbitrary code
-/// execution. Expressions outside the subset return
-/// <see cref="AttributeRuleExpressionStatus.Unsupported"/> so callers can route them to
-/// an out-of-scope path (AI resolver / skip-with-warning) without failing the edit.
-/// <para>
-/// Supported grammar (whitespace-insensitive):
-/// <list type="bullet">
-///   <item>Literals: numbers (<c>42</c>, <c>3.5</c>), single/double-quoted strings, <c>true</c>/<c>false</c>/<c>null</c>.</item>
-///   <item>Field references: <c>$feature.FieldName</c> or <c>$feature["Field Name"]</c>.</item>
-///   <item>Arithmetic over numbers: <c>+ - * /</c> (left-to-right, no precedence beyond grouping is required since callers use simple expressions; <c>*</c>/<c>/</c> bind tighter than <c>+</c>/<c>-</c>).</item>
-///   <item>Comparisons: <c>== != &lt; &lt;= &gt; &gt;=</c>.</item>
-///   <item>Boolean combination: <c>&amp;&amp;</c> and <c>||</c>.</item>
-///   <item>Parentheses for grouping.</item>
-///   <item>Optional trailing semicolon and a leading <c>return</c> keyword (Esri wraps calc scripts as <c>return &lt;expr&gt;;</c>).</item>
-///   <item>String concatenation via <c>+</c> when either operand is a string.</item>
-///   <item>
-///     A documented allow-list of pure Arcade functions (case-insensitive):
-///     <c>Upper</c>, <c>Lower</c>, <c>Trim</c>, <c>Text</c>, <c>Concatenate</c>,
-///     <c>Round</c>, <c>Floor</c>, <c>Ceil</c>, <c>Abs</c>, <c>IsEmpty</c>.
-///   </item>
-/// </list>
-/// Anything else — functions outside the allow-list, <c>if</c>/<c>var</c>/multi-statement
-/// scripts, member access beyond <c>$feature</c>, etc. — is treated as unsupported and the
-/// caller routes it out of scope rather than failing the edit.
-/// </para>
-/// </summary>
+// Expressions outside the allow-list do no I/O and are skipped rather than executed or failing the edit.
 public static class AttributeRuleExpression
 {
-    /// <summary>
-    /// Evaluates <paramref name="expression"/> against the supplied feature attributes.
-    /// </summary>
-    /// <param name="expression">The Arcade expression text.</param>
-    /// <param name="attributes">Case-insensitive feature attribute lookup.</param>
-    /// <param name="expectBoolean">
-    /// True for constraint/validation rules (the result is interpreted as a pass/fail
-    /// boolean); false for calculation rules (the result is the computed value).
-    /// </param>
-    /// <returns>The evaluation outcome.</returns>
     public static AttributeRuleExpressionResult Evaluate(
         string? expression,
         IReadOnlyDictionary<string, object?> attributes,

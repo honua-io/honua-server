@@ -5,18 +5,6 @@ using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Core.Features.Catalog.Domain;
 
-/// <summary>
-/// Provider-neutral runtime binding from a Honua layer to physical feature storage.
-/// </summary>
-/// <param name="TableName">Physical table or view name.</param>
-/// <param name="SchemaName">Optional schema qualifier.</param>
-/// <param name="CatalogName">Optional catalog qualifier for engines that expose catalogs.</param>
-/// <param name="DatabaseName">Optional database qualifier for engines that route across databases.</param>
-/// <param name="PrimaryKeyColumn">Primary key or stable object identifier column.</param>
-/// <param name="GeometryColumn">Geometry column, or null for non-spatial tables.</param>
-/// <param name="StorageSrid">SRID/CRS used by the stored geometry.</param>
-/// <param name="TemporalColumn">Optional temporal column used for time-aware layers.</param>
-/// <param name="ProviderOptions">Provider-specific extension values when a neutral field is not enough.</param>
 public sealed record LayerStorageMapping(
     string TableName,
     string? SchemaName = null,
@@ -28,28 +16,16 @@ public sealed record LayerStorageMapping(
     string? TemporalColumn = null,
     IReadOnlyDictionary<string, string>? ProviderOptions = null)
 {
-    /// <summary>
-    /// Provider option key indicating that reads should be routed back to the source table.
-    /// </summary>
     public const string SourceBackedOption = "sourceBacked";
 
-    /// <summary>
-    /// Provider-specific extension values, normalized to an empty dictionary when unset.
-    /// </summary>
     public IReadOnlyDictionary<string, string> ProviderOptions { get; init; } =
         ProviderOptions ?? new Dictionary<string, string>();
 
-    /// <summary>
-    /// Gets a value indicating whether the mapping should be read from the source provider.
-    /// </summary>
     public bool IsSourceBacked =>
         ProviderOptions.TryGetValue(SourceBackedOption, out var value)
         && bool.TryParse(value, out var sourceBacked)
         && sourceBacked;
 
-    /// <summary>
-    /// Gets the best available fully qualified storage name for diagnostics and capability reporting.
-    /// </summary>
     public string QualifiedName
     {
         get
@@ -66,10 +42,6 @@ public sealed record LayerStorageMapping(
         }
     }
 
-    /// <summary>
-    /// Validates the storage mapping.
-    /// </summary>
-    /// <returns>Validation error messages, empty when valid.</returns>
     public IReadOnlyList<string> Validate()
     {
         var errors = new List<string>();

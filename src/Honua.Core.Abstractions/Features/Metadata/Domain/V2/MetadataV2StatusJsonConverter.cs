@@ -6,18 +6,10 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Core.Features.Metadata.Domain.V2;
 
-/// <summary>
-/// Reads Metadata v2 status without turning an omitted lifecycle into
-/// <see cref="MetadataV2LifecycleStatus.Draft"/>. The source-generated
-/// serializer assigns <c>default(T)</c> for missing members, and that value is
-/// draft, which the serving gate then hides. Explicit <c>draft</c> is preserved.
-/// </summary>
 internal sealed class MetadataV2StatusJsonConverter : JsonConverter<MetadataV2Status>
 {
-    /// <inheritdoc />
     public override bool HandleNull => true;
 
-    /// <inheritdoc />
     public override MetadataV2Status Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
         if (reader.TokenType == JsonTokenType.Null)
@@ -77,7 +69,6 @@ internal sealed class MetadataV2StatusJsonConverter : JsonConverter<MetadataV2St
         };
     }
 
-    /// <inheritdoc />
     public override void Write(Utf8JsonWriter writer, MetadataV2Status value, JsonSerializerOptions options)
     {
         ArgumentNullException.ThrowIfNull(writer);

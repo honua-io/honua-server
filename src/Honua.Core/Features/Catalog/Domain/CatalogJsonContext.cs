@@ -6,9 +6,6 @@ using System.Text.Json;
 
 namespace Honua.Core.Features.Catalog.Domain;
 
-/// <summary>
-/// JSON serialization context for catalog domain payloads.
-/// </summary>
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(FieldDomainDefinition))]
 [JsonSerializable(typeof(DomainCodedValueDefinition))]

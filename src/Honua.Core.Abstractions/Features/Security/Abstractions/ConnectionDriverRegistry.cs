@@ -5,20 +5,10 @@ using Honua.Core.Features.FeatureStore.Domain;
 
 namespace Honua.Core.Features.Security.Abstractions;
 
-/// <summary>
-/// Default <see cref="IConnectionDriverRegistry"/> backed by every <see cref="IConnectionDriver"/> the server
-/// composes. Drivers are indexed by their normalized <see cref="IConnectionDriver.Provider"/>; lookups
-/// normalize the requested provider through <see cref="DataProviderNames.Normalize"/> so callers can pass the
-/// raw stored/requested value (e.g. "postgis", "mssql", "mariadb").
-/// </summary>
 public sealed class ConnectionDriverRegistry : IConnectionDriverRegistry
 {
     private readonly Dictionary<string, IConnectionDriver> _byProvider;
 
-    /// <summary>
-    /// Initializes the registry by indexing each supplied driver under its normalized provider key.
-    /// </summary>
-    /// <param name="drivers">The connection drivers composed by the host.</param>
     public ConnectionDriverRegistry(IEnumerable<IConnectionDriver> drivers)
     {
         ArgumentNullException.ThrowIfNull(drivers);
@@ -34,10 +24,8 @@ public sealed class ConnectionDriverRegistry : IConnectionDriverRegistry
         _byProvider = map;
     }
 
-    /// <inheritdoc />
     public bool Supports(string? provider) => Find(provider) is not null;
 
-    /// <inheritdoc />
     public IConnectionDriver? Find(string? provider)
     {
         if (string.IsNullOrWhiteSpace(provider))

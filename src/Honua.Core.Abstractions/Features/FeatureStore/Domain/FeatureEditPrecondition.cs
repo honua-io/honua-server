@@ -10,69 +10,26 @@ using System.Text.Json;
 
 namespace Honua.Core.Features.FeatureStore.Domain;
 
-/// <summary>
-/// Optimistic-concurrency precondition for a single feature targeted by an edit batch.
-/// Protocol adapters either compute <see cref="ExpectedStateToken"/> from the feature snapshot
-/// they validated the client precondition (If-Match / ETag) against, or set
-/// <see cref="ExpectedRowAbsent"/> when absence is the state that must still hold. Feature writers
-/// re-validate that expectation inside the write transaction so a concurrent writer cannot slip
-/// between the protocol-level check and the write (TOCTOU).
-/// </summary>
+// Writers re-validate the expectation inside the write transaction so a concurrent writer cannot land between the check and the write.
 public readonly record struct FeatureEditPrecondition
 {
-    /// <summary>
-    /// Object ID of the feature the precondition applies to. Update and delete
-    /// operations in the same batch that target this object ID must only be applied
-    /// when the stored row still matches this precondition.
-    /// </summary>
     public required long ObjectId { get; init; }
 
-    /// <summary>
-    /// Canonical state token computed via <see cref="FeatureStateToken.Compute"/> from
-    /// the snapshot the caller validated its protocol precondition against.
-    /// </summary>
     public string? ExpectedStateToken { get; init; }
 
-    /// <summary>
-    /// Whether the target row must still be absent when the writer evaluates this precondition.
-    /// This is used by idempotent delete resolutions: an absent row is a successful no-op, while
-    /// a row inserted under the same object ID causes a typed precondition failure.
-    /// </summary>
+    // An absent row is a successful idempotent delete, while a row inserted under the same id is a precondition failure.
     public bool ExpectedRowAbsent { get; init; }
 
-    /// <summary>
-    /// Request-scoped fields excluded from the read snapshot. The provider resolves this
-    /// policy before writing and preserves omitted masked attributes from the locked row.
-    /// Protocol adapters leave this empty; it is not a client-supplied projection.
-    /// </summary>
     public ImmutableArray<string> MaskedFields { get; init; }
 }
 
-/// <summary>
-/// Computes a deterministic, provider-neutral state token for a stored feature.
-/// The token is a SHA-256 hash over a canonical serialization of the feature's
-/// object ID, geometry (WKB), and attributes (ordinal-sorted keys, normalized
-/// values). Both the protocol adapter (over its read snapshot) and the feature
-/// writer (over the row re-read inside the write transaction) must observe the
-/// feature through the same provider read path so identical stored state yields
-/// an identical token.
-/// </summary>
+// Both the adapter and the writer must hash the same provider read, or identical stored state can yield different tokens.
 public static class FeatureStateToken
 {
-    /// <summary>
-    /// Gets the original provider read token, including attributes removed by field
-    /// security, or computes it when the snapshot has not been security-projected.
-    /// Use this on the read snapshot before merging an edit; writers independently
-    /// compute the token from the complete locked row.
-    /// </summary>
+    // Use the token from before field security removes attributes; the writer hashes the complete locked row.
     public static string FromReadSnapshot(Feature feature)
         => feature.ReadStateToken ?? Compute(feature);
 
-    /// <summary>
-    /// Computes the canonical state token for the supplied feature.
-    /// </summary>
-    /// <param name="feature">Feature snapshot to compute the token for.</param>
-    /// <returns>Lowercase hex SHA-256 token over the canonical feature state.</returns>
     public static string Compute(Feature feature)
     {
         var buffer = new ArrayBufferWriter<byte>();

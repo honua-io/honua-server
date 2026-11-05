@@ -5,27 +5,14 @@ using System.Globalization;
 
 namespace Honua.Core.Features.Console;
 
-/// <summary>
-/// Decides whether process-local Console stores may start. More than one
-/// configured replica with a non-durable store would serve different content,
-/// share tokens, and open-data pages depending on which process handled the request.
-/// </summary>
 public static class ConsoleStoreReplicaPolicy
 {
-    /// <summary>Configuration key <c>Console:ExpectedReplicaCount</c>.</summary>
     public const string ConsoleExpectedReplicaCountKey = "Console:ExpectedReplicaCount";
 
-    /// <summary>Configuration key <c>Deployment:ReplicaCount</c>.</summary>
     public const string DeploymentReplicaCountKey = "Deployment:ReplicaCount";
 
-    /// <summary>Environment variable <c>HONUA_SERVER_REPLICAS</c>.</summary>
     public const string ServerReplicasKey = "HONUA_SERVER_REPLICAS";
 
-    /// <summary>
-    /// Reads the first positive integer among the Console replica count, the
-    /// deployment replica count, and <c>HONUA_SERVER_REPLICAS</c>. Missing or
-    /// non-positive values are skipped. The default is one replica.
-    /// </summary>
     public static int ResolveExpectedReplicas(
         string? consoleExpectedReplicaCount,
         string? deploymentReplicaCount,
@@ -42,13 +29,7 @@ public static class ConsoleStoreReplicaPolicy
         return 1;
     }
 
-    /// <summary>
-    /// Throws when the stores are not durable and more than one replica is configured.
-    /// </summary>
-    /// <exception cref="InvalidOperationException">
-    /// Process-local Console content, share, and open-data stores cannot be shared
-    /// across the configured replica count.
-    /// </exception>
+    // Process-local stores are refused when more than one replica is configured.
     public static void EnsureSingleReplicaWhenNotDurable(bool durable, int expectedReplicas)
     {
         if (durable || expectedReplicas <= 1)
