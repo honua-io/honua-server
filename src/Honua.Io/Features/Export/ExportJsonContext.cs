@@ -8,9 +8,6 @@ using Honua.Infrastructure.Progress;
 
 namespace Honua.Io.Export;
 
-/// <summary>
-/// Source-generated JSON serialization context for data export types.
-/// </summary>
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
@@ -28,28 +25,13 @@ internal sealed partial class ExportJsonContext : JsonSerializerContext
 {
 }
 
-/// <summary>
-/// Response returned when a large export is accepted for async processing.
-/// </summary>
 internal sealed record ExportAcceptedResponse
 {
-    /// <summary>
-    /// Operation ID for tracking export progress.
-    /// </summary>
     public required string OperationId { get; init; }
 
-    /// <summary>
-    /// Status message.
-    /// </summary>
     public required string Message { get; init; }
 
-    /// <summary>
-    /// Total features to export.
-    /// </summary>
     public required long TotalFeatures { get; init; }
 
-    /// <summary>
-    /// URL to poll for progress.
-    /// </summary>
     public required string StatusUrl { get; init; }
 }

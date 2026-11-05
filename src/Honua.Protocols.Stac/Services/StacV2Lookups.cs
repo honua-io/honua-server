@@ -8,25 +8,8 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Protocols.Stac.Services;
 
-/// <summary>
-/// Metadata v2 lookup helpers scoped to the STAC protocol family. Collapses the
-/// "STAC-enabled publication walk + visible-layer filtering" that catalog, collection,
-/// item, and search endpoints share into a single typed call, projecting a
-/// <see cref="ResolvedStacPublication"/> triple that handlers consume directly.
-/// </summary>
 internal static class StacV2Lookups
 {
-    /// <summary>
-    /// Resolved STAC publication view: the canonical resource being published, the
-    /// matching <see cref="MetadataV2Publication"/>, the publishing service, and the
-    /// integer service-local layer index that identifies the collection.
-    /// </summary>
-    /// <remarks>
-    /// <see cref="LayerIndex"/> is required to be present on every STAC publication; the
-    /// resolver skips publications without one because collection ids are numeric. Feature
-    /// reads (<see cref="Honua.Core.Features.FeatureStore.Abstractions.IFeatureReader"/>)
-    /// use <see cref="StorageLayerId"/>, never the layer index.
-    /// </remarks>
     internal readonly record struct ResolvedStacPublication(
         MetadataV2Publication Publication,
         MetadataV2Resource Resource,
@@ -34,21 +17,9 @@ internal static class StacV2Lookups
         int LayerIndex,
         MetadataV2GraphSnapshot Snapshot)
     {
-        /// <summary>
-        /// The storage-layer handle feature reads for this collection use, resolved through
-        /// the shared resolver; <see langword="null"/> when the publication has none.
-        /// <see cref="LayerIndex"/> is the protocol-facing collection id and is not a
-        /// storage handle.
-        /// </summary>
         public int? StorageLayerId => Snapshot.ResolveStorageLayerId(Publication, Resource);
     }
 
-    /// <summary>
-    /// Enumerates the STAC publications visible to the caller. A publication is visible
-    /// when it lives on a service exposing the STAC protocol
-    /// and the access policy on the resource (and the service it is published through)
-    /// allows the current principal to read it.
-    /// </summary>
     public static async Task<ResolvedStacPublication[]> ResolveVisibleStacPublicationsAsync(
         HttpContext context,
         CancellationToken cancellationToken)
@@ -115,13 +86,6 @@ internal static class StacV2Lookups
         return resolved.ToArray();
     }
 
-    /// <summary>
-    /// Resolves a single STAC publication by its STAC collection id. The collection id
-    /// matches against the publication's service-local id, path, machine name, or graph
-    /// id (case-insensitive). When the collection id parses to an integer, that integer
-    /// is matched against <see cref="MetadataV2Publication.LayerIndex"/> as a fallback so
-    /// the v1 numeric-collection-id contract continues to resolve.
-    /// </summary>
     public static async Task<ResolvedStacPublication?> ResolveStacPublicationAsync(
         HttpContext context,
         string collectionId,
@@ -189,12 +153,6 @@ internal static class StacV2Lookups
         return null;
     }
 
-    /// <summary>
-    /// Returns <see langword="true"/> when the publication matches <paramref name="collectionId"/>
-    /// by any of the standard STAC collection identifier fields (ServiceLocalId, Path, Metadata.Name,
-    /// Metadata.Id, or the legacy numeric LayerIndex). Exposed as internal so the search path can
-    /// apply the same matching logic as the single-collection lookup path.
-    /// </summary>
     internal static bool MatchesCollectionId(MetadataV2Publication publication, string collectionId, int? numericId)
     {
         if (string.Equals(publication.ServiceLocalId, collectionId, StringComparison.OrdinalIgnoreCase) ||

@@ -12,9 +12,6 @@ using Honua.Core.Queries.Filters;
 
 namespace Honua.Protocols.Stac.Services;
 
-/// <summary>
-/// Executes bounded, provider-neutral candidate queries for storage-bound STAC items.
-/// </summary>
 internal static class StacBoundItemQueryExecutor
 {
     public static async Task<ImmutableArray<Feature>> QueryAsync(
@@ -122,12 +119,6 @@ internal static class StacBoundItemQueryExecutor
         return properties;
     }
 
-    /// <summary>
-    /// Projects one feature attribute onto a <see cref="JsonElement"/> using
-    /// <see cref="StacJsonContext"/>. The parameterless <c>SerializeToElement</c>
-    /// overload throws when reflection JSON is disabled, which is how the shipped
-    /// image runs, so an ids-plus-CQL2 search failed for every storage-bound item.
-    /// </summary>
     private static JsonElement SerializePropertyValue(object? value)
     {
         if (value is null or DBNull)

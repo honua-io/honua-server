@@ -7,14 +7,6 @@ namespace Honua.Db.Postgres.Features.Infrastructure;
 
 internal static class DatabaseConnectionProviderExtensions
 {
-    /// <summary>
-    /// Opens a database connection and returns a lease that keeps the original
-    /// <see cref="System.Data.Common.DbConnection"/> wrapper alive. The returned
-    /// lease implicitly converts to <see cref="Npgsql.NpgsqlConnection"/> so
-    /// Npgsql-specific call sites continue to work, while disposing the lease
-    /// runs any wrapper-level release callbacks (for example the query
-    /// concurrency gate slot release in <see cref="SemaphoreReleasingConnection"/>).
-    /// </summary>
     public static async Task<NpgsqlConnectionLease> OpenNpgsqlConnectionAsync(
         this IAdoNetDatabaseConnectionProvider connectionProvider,
         CancellationToken cancellationToken = default)

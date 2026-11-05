@@ -9,9 +9,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Alerts;
 
-/// <summary>
-/// Thin adapter around <see cref="IAmazonSQS"/> for testability.
-/// </summary>
 internal interface ISqsPublisher
 {
     Task<SqsPublishResult> SendMessageAsync(

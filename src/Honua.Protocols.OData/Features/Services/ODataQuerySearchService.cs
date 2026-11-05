@@ -8,19 +8,11 @@ using Honua.Protocols.OData.Models;
 
 namespace Honua.Protocols.OData.Services;
 
-/// <summary>
-/// Composite service that combines OData query and search functionality.
-/// Provides a single service interface for OData operations while maintaining
-/// architectural compliance by reducing handler dependencies.
-/// </summary>
 internal sealed class ODataQuerySearchService
 {
     private readonly ODataQueryService _queryService;
     private readonly ODataSearchService _searchService;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="ODataQuerySearchService"/> class.
-    /// </summary>
     public ODataQuerySearchService(
         ODataQueryService queryService,
         ODataSearchService searchService)
@@ -29,9 +21,6 @@ internal sealed class ODataQuerySearchService
         _searchService = searchService;
     }
 
-    /// <summary>
-    /// Builds a feature query from OData parameters using metadata-v2 resource schema.
-    /// </summary>
     public async Task<(FeatureQuery Query, string? Error)> BuildFeatureQueryAsync(
         string? filter,
         string? orderby,
@@ -61,9 +50,6 @@ internal sealed class ODataQuerySearchService
             cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Applies basic filtering to metadata-v2 OData layer payloads.
-    /// </summary>
     public IEnumerable<Dictionary<string, object?>> ApplyBasicFilter(
         IEnumerable<Dictionary<string, object?>> layerPayloads,
         string filter)
@@ -71,17 +57,11 @@ internal sealed class ODataQuerySearchService
         return _queryService.ApplyBasicFilter(layerPayloads, filter);
     }
 
-    /// <summary>
-    /// Applies field selection to result objects using an AOT-compatible approach.
-    /// </summary>
     public object[] ApplyFieldSelection(Dictionary<string, object?>[] data, string select)
     {
         return _queryService.ApplyFieldSelection(data, select);
     }
 
-    /// <summary>
-    /// Processes $expand using metadata-v2 relationship metadata.
-    /// </summary>
     public async Task<Dictionary<long, Dictionary<string, object?[]>>> ProcessExpandAsync(
         string expand,
         MetadataV2Resource resource,
@@ -99,9 +79,6 @@ internal sealed class ODataQuerySearchService
             cancellationToken);
     }
 
-    /// <summary>
-    /// Handles OData $search full-text search operations with PostgreSQL text search.
-    /// </summary>
     public async Task<ODataSearchResult> HandleSearchAsync(
         int layerId,
         string searchExpression,
@@ -129,9 +106,6 @@ internal sealed class ODataQuerySearchService
             cancellationToken)
             .ConfigureAwait(false);
 
-    /// <summary>
-    /// Handles OData $search full-text search operations with PostgreSQL text search.
-    /// </summary>
     public async Task<ODataSearchResult> HandleSearchAsync(
         int layerId,
         string searchExpression,
@@ -161,9 +135,6 @@ internal sealed class ODataQuerySearchService
             cancellationToken);
     }
 
-    /// <summary>
-    /// Handles OData $apply aggregation operations with support for various transformations.
-    /// </summary>
     public async Task<ODataAggregationResult> HandleApplyAsync(
         int layerId,
         string applyExpression,

@@ -6,7 +6,7 @@
 
 ## Problem Statement
 
-The Honua JS SDK has two layers: a Honua-native core (`HonuaClient`, surfaces, streaming pagination) and a large Esri compatibility facade (`@honua/sdk-esri-compat`). The compat layer is a durable, supported product surface (see [Compat Lifecycle Policy](ESRI_MIGRATION_PLATFORM_PLAN.md#compat-lifecycle-policy)) — it gets Esri shops migrated and stays available for as long as customers need it. Deprecation is not planned for the V1 horizon.
+The Honua JS SDK has two layers: a Honua-native core (`HonuaClient`, surfaces, streaming pagination) and a large Esri compatibility facade. The compat layer is a durable, supported product surface (see [Compat Lifecycle Policy](ESRI_MIGRATION_PLATFORM_PLAN.md#compat-lifecycle-policy)) — it gets Esri shops migrated and stays available for as long as customers need it. Deprecation is not planned for the V1 horizon.
 
 This document proposes design directions for the **native** SDK (`@honua/sdk`) that give customers reasons to adopt Honua-native APIs organically — not because the compat layer is going away, but because the native experience is genuinely better. New capability work lands in `@honua/sdk` first; the compat layer receives wrappers only for migration-critical patterns. The two surfaces coexist and interoperate.
 

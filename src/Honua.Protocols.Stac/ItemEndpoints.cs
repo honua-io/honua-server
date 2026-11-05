@@ -21,16 +21,10 @@ using Honua.Core.Abstractions.Features.Rasters.Abstractions;
 
 namespace Honua.Protocols.Stac;
 
-/// <summary>
-/// STAC item listing and detail endpoints for a collection.
-/// </summary>
 internal static class ItemEndpoints
 {
     private const int Wgs84Srid = 4326;
 
-    /// <summary>
-    /// Maps STAC item endpoints.
-    /// </summary>
     public static IEndpointRouteBuilder MapStacItemEndpoints(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapGet("/stac/collections/{collectionId}/items", HandleGetItems)

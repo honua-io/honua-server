@@ -11,13 +11,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Alerts;
 
-/// <summary>
-/// Registers the AWS-backed alert delivery sinks (SNS, SQS) and their thin
-/// publisher adapters. Carved out of Honua.Server per the cloud-SDK isolation
-/// contract so that the AWSSDK.* surface is confined to Honua.Aws.
-/// Falls back to <see cref="UnsupportedAlertDeliverySink"/> when the corresponding
-/// channel is not configured, preserving the Server's pre-split behavior.
-/// </summary>
 internal static class AwsAlertDeliveryServiceCollectionExtensions
 {
     public static IServiceCollection AddAwsAlertDeliveryChannels(this IServiceCollection services, IConfiguration configuration)

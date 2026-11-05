@@ -25,10 +25,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Protocols.OData;
 
-/// <summary>
-/// Handler for OData CRUD operations (Create, Read, Update, Delete) on features.
-/// Provides feature manipulation with validation, caching invalidation, and proper error handling.
-/// </summary>
 internal sealed class ODataCrudHandler(
     ODataCrudService crudService,
     ODataValidationService validationService,
@@ -48,9 +44,6 @@ internal sealed class ODataCrudHandler(
     // OData CRUD is an open-protocol edit surface and remains Community (#1591). Keep this
     // path on shared validation/authz/telemetry, but do not apply the FeatureServer Pro gate.
 
-    /// <summary>
-    /// Handles getting a single feature by ID
-    /// </summary>
     public async Task<IResult> HandleGetSingleFeatureAsync(
         HttpContext context,
         int layerId,
@@ -154,9 +147,6 @@ internal sealed class ODataCrudHandler(
         return ODataUtilityService.CreateResultFromCrudResult(context, result, format);
     }
 
-    /// <summary>
-    /// Handles getting a canonical OData entity reference for a feature.
-    /// </summary>
     public async Task<IResult> HandleGetFeatureReferenceAsync(
         HttpContext context,
         int layerId,
@@ -213,9 +203,6 @@ internal sealed class ODataCrudHandler(
             contentType: ODataUtilityService.GetODataContentType(context.Request, format: null));
     }
 
-    /// <summary>
-    /// Handles getting the raw value representation for a feature.
-    /// </summary>
     public async Task<IResult> HandleGetFeatureValueAsync(
         HttpContext context,
         int layerId,
@@ -252,9 +239,6 @@ internal sealed class ODataCrudHandler(
             StatusCodes.Status404NotFound);
     }
 
-    /// <summary>
-    /// Handles creating a new feature
-    /// </summary>
     public async Task<IResult> HandleCreateFeatureAsync(
         HttpContext context,
         int? layerId,
@@ -438,9 +422,6 @@ internal sealed class ODataCrudHandler(
         return ODataUtilityService.CreateResultFromCrudResult(context, result);
     }
 
-    /// <summary>
-    /// Handles updating an existing feature
-    /// </summary>
     public async Task<IResult> HandleUpdateFeatureAsync(
         HttpContext context,
         int layerId,
@@ -698,9 +679,6 @@ internal sealed class ODataCrudHandler(
         return ODataUtilityService.CreateResultFromCrudResult(context, result);
     }
 
-    /// <summary>
-    /// Handles deleting a feature
-    /// </summary>
     public async Task<IResult> HandleDeleteFeatureAsync(
         HttpContext context,
         int layerId,
@@ -956,19 +934,7 @@ internal sealed class ODataCrudHandler(
             operation,
             cancellationToken);
 
-    /// <summary>
-    /// Evaluates the collaborative-editing lease for a feature the caller can actually see,
-    /// returning the client-facing conflict description or <see langword="null"/> to proceed.
-    /// </summary>
-    /// <remarks>
-    /// The row-visibility read is the point. A lease is keyed on identifiers a caller can
-    /// guess, so answering "423, locked by Alice" for an id the caller may not read would
-    /// turn the lock surface into an existence oracle and leak the holder's identity —
-    /// row-level security hides those rows behind an indistinguishable 404, and this must
-    /// not undo that. Missing or hidden rows therefore fall through to the normal path,
-    /// which reports the same 404 it always did. The read only happens when a lease exists
-    /// somewhere, so the uncontended path is unchanged.
-    /// </remarks>
+    // A lease on a row the caller cannot see falls through to the normal 404, because a 423 would reveal that the hidden row exists and who holds it.
     private static async Task<string?> EvaluateVisibleFeatureLockAsync(
         HttpContext context,
         LayerValidationHelpers.MetadataV2ValidationResult layerValidation,
@@ -1004,13 +970,6 @@ internal sealed class ODataCrudHandler(
     private static int ResolveLayerSrid(LayerValidationHelpers.MetadataV2ValidationResult layerValidation)
         => layerValidation.Resource!.ReadSrid() ?? SpatialReference.WGS84.ToSrid();
 
-    /// <summary>
-    /// Translates a validated OData layer into the storage-layer handle the feature
-    /// reader/writer boundary is keyed on, through the shared snapshot resolver.
-    /// Returns the OData "not configured" error when the publication is not bound to
-    /// integer-keyed feature storage, so a write fails closed rather than falling back
-    /// to the service-local route id.
-    /// </summary>
     private static (int? StorageLayerId, IResult? Error) ResolveWriteStorageLayerId(
         HttpContext context,
         int layerId,

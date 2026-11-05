@@ -3,14 +3,8 @@
 
 namespace Honua.Protocols.Ogc.Classic.Wcs20;
 
-/// <summary>
-/// Maps OGC WCS 2.0.1 KVP endpoints.
-/// </summary>
 internal static class Wcs20Endpoints
 {
-    /// <summary>
-    /// Maps WCS 2.0.1 endpoints for layer-scoped ImageServer and service-scoped OGC aliases.
-    /// </summary>
     internal static IEndpointRouteBuilder MapWcs20Endpoints(this IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);

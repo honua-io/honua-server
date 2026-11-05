@@ -26,10 +26,6 @@ using NetTopologySuite.IO;
 
 namespace Honua.Protocols.Ogc.Classic.Wcs20;
 
-/// <summary>
-/// CITE conformance: 82/82 (WCS 2.0 `core` profile, 100% pass on trunk).
-/// Authoritative status: <see href="../../../../../../docs/cite-status.md">docs/cite-status.md</see>.
-/// </summary>
 internal sealed partial class Wcs20Handler
 {
     private static readonly XNamespace Wcs = Wcs20Utilities.WcsNamespace;
@@ -812,23 +808,7 @@ internal sealed partial class Wcs20Handler
         return false;
     }
 
-    /// <summary>
-    /// Finds the service that publishes <paramref name="resource"/> over a coverage
-    /// surface, so the layer-scoped WCS route can honour a service-level access policy
-    /// (honua-server#4388). The route is keyed by an integer storage-layer handle and
-    /// carries no service segment, so the owning service has to be recovered from the
-    /// publication graph.
-    /// </summary>
-    /// <remarks>
-    /// Only services that actually expose this route — those enabling ImageServer or
-    /// WCS — are considered. A resource can be published by several services, and
-    /// borrowing the policy of one that cannot serve coverages at all (a feature
-    /// service, say) would let an unrelated policy decide a coverage request in either
-    /// direction. A scope-governed key selects a visible owner its grant allows.
-    /// Other callers prefer a policy-bearing service, and a service with a null
-    /// policy is still retained so scoped keys have a real target. When coverage
-    /// publications exist but none is tenant-visible, fail closed.
-    /// </remarks>
+    // The owning coverage service is recovered from the publication graph, and a service that cannot serve coverages is not allowed to decide the request.
     private static bool TryFindOwningService(
         HttpContext context,
         MetadataV2GraphSnapshot snapshot,
@@ -868,14 +848,6 @@ internal sealed partial class Wcs20Handler
         return true;
     }
 
-    /// <summary>
-    /// Picks the coverage service a direct layer route is authorized against.
-    /// A scope-governed key is matched to a visible owner its grant allows, so graph
-    /// order cannot reject <c>read:second/resource</c> just because another
-    /// policy-bearing owner was published first. Callers that are not scope-governed
-    /// still prefer the first policy-bearing owner, which keeps an anonymous or
-    /// role-restricted publication from hiding behind an earlier unrestricted one.
-    /// </summary>
     private static (MetadataV2Resource Resource, MetadataV2Service Service) SelectCoverageOwner(
         HttpContext context,
         IReadOnlyList<(MetadataV2Resource Resource, MetadataV2Service Service)> visible)
@@ -982,12 +954,6 @@ internal sealed partial class Wcs20Handler
         return new ServiceResolutionResult(service, null);
     }
 
-    /// <summary>
-    /// Finds the routable service with this display name that enables
-    /// <paramref name="protocol"/>. Returns <c>null</c> when no same-named facet serves
-    /// it, so the caller can fall back to a plain name match and report the protocol as
-    /// disabled rather than the service as missing.
-    /// </summary>
     private static MetadataV2Service? FindServiceForProtocol(
         MetadataV2GraphSnapshot snapshot,
         string serviceName,
@@ -1026,15 +992,6 @@ internal sealed partial class Wcs20Handler
         return srid is > 0 ? srid : null;
     }
 
-    /// <summary>
-    /// Resolves the bounded set of transformable CRS values for the supplied coverage
-    /// native SRIDs. Seeds each native CRS plus the default identifiers (WGS84, WebMercator),
-    /// keeps only those the CRS registry can resolve (== transformable via ST_Transform),
-    /// and returns both the SRID set (for GetCoverage validation) and the ordered CRS-URI
-    /// list (for GetCapabilities advertisement) so the two always agree. The advertised
-    /// identifiers are the ones this service actually honours, so SRID 4326 is advertised
-    /// as CRS84 (see <see cref="CreateCrsUri"/>).
-    /// </summary>
     private async Task<WcsSupportedCrs> ResolveSupportedCrsAsync(
         IEnumerable<int?> nativeSrids,
         CancellationToken cancellationToken)
@@ -1114,11 +1071,6 @@ internal sealed partial class Wcs20Handler
         return null;
     }
 
-    /// <summary>
-    /// Maps a WCS REQUEST value onto the closed telemetry label
-    /// (<c>wcs.getcapabilities</c>, <c>wcs.describecoverage</c>, <c>wcs.getcoverage</c>,
-    /// or <c>wcs.unsupported</c>).
-    /// </summary>
     internal static string ResolveTelemetryOperation(string operation)
         => RequestTelemetryClassifier.ResolveBoundedOgcOperation("wcs", operation);
 
@@ -3129,15 +3081,7 @@ internal sealed partial class Wcs20Handler
     private static string CreateEpsgUri(int srid)
         => FormattableString.Invariant($"http://www.opengis.net/def/crs/EPSG/0/{srid}");
 
-    /// <summary>
-    /// Maps an SRID to the CRS identifier this service both advertises and honours.
-    /// SRID 4326 becomes CRS84 because every coverage envelope, offset vector, SUBSET
-    /// and BBOX here is expressed in longitude/latitude order (TryCreateEnvelope always
-    /// parses east-north); EPSG:4326 declares the opposite latitude/longitude order, so
-    /// advertising it would invite reversed subsets from conforming clients. EPSG:4326
-    /// spellings stay accepted on request for compatibility -- they resolve to the same
-    /// SRID -- but the longitude/latitude identifier is the one clients are offered.
-    /// </summary>
+    // SRID 4326 is advertised as CRS84 because these envelopes are longitude/latitude, and EPSG:4326 declares the opposite axis order.
     private static string CreateCrsUri(int srid)
         => srid == 4326 ? SpatialReferenceHelpers.Crs84Uri : CreateEpsgUri(srid);
 

@@ -5,18 +5,8 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Features.Infrastructure;
 
-/// <summary>
-/// PERFORMANCE OPTIMIZATION: Extensions for NpgsqlDataSource to optimize connection handling
-/// </summary>
 internal static class NpgsqlDataSourceExtensions
 {
-    /// <summary>
-    /// Pre-warms the connection pool for better startup performance
-    /// Creates and immediately returns connections to establish the minimum pool size
-    /// </summary>
-    /// <param name="dataSource">The data source to warm up</param>
-    /// <param name="minConnections">Minimum number of connections to pre-create (default: 5)</param>
-    /// <param name="cancellationToken">Cancellation token</param>
     public static async Task WarmupConnectionPoolAsync(this NpgsqlDataSource dataSource, int minConnections = 5, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(dataSource);

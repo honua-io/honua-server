@@ -7,18 +7,8 @@ using Honua.Protocols.SensorThings.Models;
 
 namespace Honua.Protocols.SensorThings.Services;
 
-/// <summary>
-/// Maps canonical SensorThings domain records to STA-conformance-shaped wire DTOs,
-/// emitting the <c>@iot.id</c>, <c>@iot.selfLink</c>, and <c>@iot.navigationLink</c>
-/// envelope rooted at the request base path (e.g. <c>https://host/sta/v1.1</c>).
-/// </summary>
 internal static class StaEntityMapper
 {
-    /// <summary>
-    /// Formats an instant as UTC ISO-8601 with a <c>Z</c> suffix.
-    /// Millisecond-aligned values keep three fractional digits. Finer values use seven digits.
-    /// The three-digit pattern rounds, so it is only used when the remainder is zero.
-    /// </summary>
     internal static string FormatInstant(DateTimeOffset value)
     {
         var utc = value.ToUniversalTime();

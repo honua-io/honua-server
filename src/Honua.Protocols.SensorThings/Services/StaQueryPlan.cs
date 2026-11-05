@@ -7,21 +7,6 @@ using Microsoft.AspNetCore.Http;
 
 namespace Honua.Protocols.SensorThings.Services;
 
-/// <summary>
-/// One parsed <c>$expand</c> item: the navigation property and the nested options that
-/// apply to it, already translated against the expanded entity's schema.
-/// </summary>
-/// <param name="Navigation">The navigation property name, e.g. <c>Observations</c>.</param>
-/// <param name="Skip">Nested <c>$skip</c>.</param>
-/// <param name="Top">Nested <c>$top</c>.</param>
-/// <param name="WhereSql">Nested <c>$filter</c> translated to SQL, or null.</param>
-/// <param name="WhereParameters">Parameters for <paramref name="WhereSql"/>.</param>
-/// <param name="OrderBySql">Nested <c>$orderby</c> translated to an ORDER BY body.</param>
-/// <param name="Select">Nested data-property projection.</param>
-/// <param name="Expand">Nested relationship expansion.</param>
-/// <param name="Count">Whether to emit the related collection count.</param>
-/// <param name="Filter">Original nested filter, retained for continuation links.</param>
-/// <param name="OrderBy">Original nested ordering, retained for continuation links.</param>
 internal sealed record StaExpansion(
     string Navigation,
     int Skip,
@@ -35,18 +20,6 @@ internal sealed record StaExpansion(
     string? Filter = null,
     string? OrderBy = null);
 
-/// <summary>
-/// A validated, translated request plan for one STA entity set: the paging options plus
-/// the SQL fragments for <c>$filter</c> and <c>$orderby</c>, the <c>$select</c> projection,
-/// and the <c>$expand</c> items.
-/// </summary>
-/// <remarks>
-/// Building the plan is the point where an unsupported or malformed option becomes an
-/// error instead of being dropped. Before #4201, <c>$filter</c>, <c>$select</c>,
-/// <c>$expand</c> and the <c>$orderby</c> property were parsed and then discarded, so
-/// <c>GET /Things?$filter=name eq 'nope'</c> answered 200 with every Thing and clients had
-/// no way to detect the miss.
-/// </remarks>
 internal sealed class StaQueryPlan
 {
     private StaQueryPlan(
@@ -69,34 +42,24 @@ internal sealed class StaQueryPlan
         Expansions = expansions;
     }
 
-    /// <summary>The entity set this plan targets.</summary>
     public StaEntitySchema Schema { get; }
 
-    /// <summary>The raw system query options, including paging.</summary>
     public StaQueryOptions Options { get; }
 
-    /// <summary>Translated <c>$filter</c>, or null when absent.</summary>
     public string? WhereSql { get; }
 
-    /// <summary>Parameters bound to <see cref="WhereSql"/>.</summary>
     public IReadOnlyList<object?> WhereParameters { get; }
 
-    /// <summary>Translated <c>$orderby</c> (always non-empty; the schema default when absent).</summary>
     public string OrderBySql { get; }
 
-    /// <summary>Selected data properties; empty when <c>$select</c> was not supplied.</summary>
     public IReadOnlyList<StaProperty> Select { get; }
 
-    /// <summary>Selected navigation properties; empty when <c>$select</c> was not supplied.</summary>
     public IReadOnlyList<string> SelectNavigations { get; }
 
-    /// <summary>Parsed <c>$expand</c> items.</summary>
     public IReadOnlyList<StaExpansion> Expansions { get; }
 
-    /// <summary>True when the request asked for a projection.</summary>
     public bool HasProjection => Options.Select is not null;
 
-    /// <summary>The JSON members a projected entity keeps, in request order.</summary>
     public IReadOnlyList<string> ProjectedMembers =>
     [
         .. Select.Select(property => property.EmittedMember),
@@ -104,23 +67,16 @@ internal sealed class StaQueryPlan
         .. Expansions.Select(expansion => expansion.Navigation),
     ];
 
-    /// <summary>The <c>$expand</c> item for <paramref name="navigation"/>, or null.</summary>
     public StaExpansion? Expansion(string navigation) =>
         Expansions.FirstOrDefault(item =>
             string.Equals(item.Navigation, navigation, StringComparison.OrdinalIgnoreCase));
 
-    /// <summary>The catalog query this plan issues, including the fetch-one-extra page size.</summary>
     public CatalogQuery CatalogQuery =>
         new(WhereSql, WhereParameters, OrderBySql, Options.Skip, Options.FetchTop);
 
-    /// <summary>The observation query this plan issues against <paramref name="datastreamId"/>.</summary>
     public ObservationQuery ObservationQuery(long? datastreamId) =>
         new(datastreamId, WhereSql, WhereParameters, OrderBySql, Options.Skip, Options.FetchTop);
 
-    /// <summary>
-    /// Parses and validates the request's system query options against
-    /// <paramref name="schema"/>.
-    /// </summary>
     public static StaQueryPlanResult Create(
         HttpRequest request,
         StaEntitySchema schema,
@@ -385,10 +341,6 @@ internal sealed class StaQueryPlan
             nestedSelect, nestedExpand, nestedCount, nestedFilter, nestedOrderBy);
     }
 
-    /// <summary>
-    /// Splits on <paramref name="separator"/> at parenthesis depth zero and outside quoted
-    /// literals, so <c>Observations($filter=name eq 'a,b')</c> stays one item.
-    /// </summary>
     internal static List<string> SplitTopLevel(string value, char separator)
     {
         var parts = new List<string>();
@@ -436,14 +388,8 @@ internal sealed class StaQueryPlan
     }
 }
 
-/// <summary>
-/// The outcome of building a <see cref="StaQueryPlan"/>: either the plan, or the status
-/// code and message the protocol adapter must answer with. A recognised-but-unsupported
-/// option is 501; a malformed one, or one naming an unknown property, is 400.
-/// </summary>
 internal readonly record struct StaQueryPlanResult(StaQueryPlan? Plan, int StatusCode, string? Error)
 {
-    /// <summary>True when a plan was produced.</summary>
     public bool IsSuccess => Plan is not null;
 
     public static StaQueryPlanResult Success(StaQueryPlan plan) => new(plan, 200, null);

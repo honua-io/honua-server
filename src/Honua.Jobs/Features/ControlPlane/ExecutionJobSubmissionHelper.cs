@@ -87,10 +87,6 @@ internal static partial class ExecutionJobSubmissionHelper
         => job.Status == ExecutionJobStatus.Failed
             && string.Equals(job.CurrentPhase, SubmissionFailurePhase, StringComparison.Ordinal);
 
-    /// <summary>
-    /// Submits an execution job to a remote batch compute backend with CAS guards
-    /// around the Provisioning and post-start state transitions.
-    /// </summary>
     public static async Task<ExecutionJobRecord> StartOnRemoteBackendAsync(
         ExecutionJobRecord job,
         IBatchComputeBackend backend,
@@ -183,10 +179,6 @@ internal static partial class ExecutionJobSubmissionHelper
         return updated;
     }
 
-    /// <summary>
-    /// Bridges geoprocessing progress when a backend submission returns a terminal status
-    /// synchronously, before the job drops out of the active index.
-    /// </summary>
     public static Task BridgeTerminalSubmissionProgressAsync(
         IUniversalProgressStore progressStore,
         ExecutionJobRecord job,
@@ -202,12 +194,6 @@ internal static partial class ExecutionJobSubmissionHelper
         return BridgeExecutionJobProgressAsync(progressStore, job, retention, logger, cancellationToken);
     }
 
-    /// <summary>
-    /// Bridges an execution-job record into the universal progress projection regardless
-    /// of terminal state. Use this after persisting any nonterminal observation (e.g., a
-    /// remote backend reporting "Cancellation pending") so admin progress clients can
-    /// observe the phase change without waiting for the reconciler.
-    /// </summary>
     public static async Task BridgeExecutionJobProgressAsync(
         IUniversalProgressStore progressStore,
         ExecutionJobRecord job,

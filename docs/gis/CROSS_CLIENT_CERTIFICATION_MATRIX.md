@@ -124,7 +124,7 @@ Planned lanes do not enter the active `lanes` array or `expected-pairs.json` unt
 
 | Lane | Canonical client | Protocols | Required tier | Owner |
 |---|---|---|---|---|
-| `desktop-arcgis` | ArcGIS Pro and arcpy | Esri REST plus applicable OGC services | Release, licensed | [honua-esri-compat#75](https://github.com/honua-io/honua-esri-compat/issues/75) |
+| `desktop-arcgis` | ArcGIS Pro and arcpy | Esri REST plus applicable OGC services | Release, licensed | [honua-server#3389](https://github.com/honua-io/honua-server/issues/3389) |
 | `bi-excel` | Microsoft Excel Power Query | OData | Release, licensed | [#3390](https://github.com/honua-io/honua-server/issues/3390) |
 | `bi-powerbi` | Power BI Desktop | OData | Release, licensed | [#3390](https://github.com/honua-io/honua-server/issues/3390) |
 | `bi-tableau` | Tableau Desktop | OData, OGC API Features | Release, licensed | [#3390](https://github.com/honua-io/honua-server/issues/3390) |
@@ -145,7 +145,7 @@ Planned lanes do not enter the active `lanes` array or `expected-pairs.json` unt
 | **JS — MapLibre** (Playwright) | Automated | CERT-CONN-01, CERT-RNDR-01 (browser render) | JS-EXT-01, JS-EXT-02 |
 | **JS — Esri Leaflet** (Playwright) | Automated §§ | FeatureServer + MapServer browser subset | EL-EXT-01 … EL-EXT-04 |
 | **JS — Cesium** (Playwright) | Automated ¶¶ | WMS, WMTS, OGC API Tiles, OGC API Maps imagery subset | JS-CES-IMG-01, JS-CES-TILE-01 |
-| **Desktop — ArcGIS Pro** | `geoservices-rest-stub` is REST-only. Desktop certification is evidence identifier `desktop-arcgis` in honua-esri-compat | REST common-core and Portal/Sharing facade discovery have historical stub baseline evidence; the `geoservices-rest-stub` lane now emits the `portal` protocol (CERT-PRTL-\*). FeatureServer and MapServer envelopes are `*-desktop-arcgis-featureserver.cert.json` and `*-desktop-arcgis-mapserver.cert.json`. No successful desktop run is linked | DSK-EXT-01, DSK-EXT-02, CERT-PRTL-\* |
+| **Desktop — ArcGIS Pro** | `geoservices-rest-stub` is REST-only. Desktop certification is not claimed in this repository. Lane id `desktop-arcgis` | REST common-core and Portal/Sharing facade discovery have historical stub baseline evidence; the `geoservices-rest-stub` lane now emits the `portal` protocol (CERT-PRTL-\*). FeatureServer and MapServer envelopes are `*-desktop-arcgis-featureserver.cert.json` and `*-desktop-arcgis-mapserver.cert.json`. No successful desktop run is linked | DSK-EXT-01, DSK-EXT-02, CERT-PRTL-\* |
 | **Desktop — QGIS** | Automated (PyQGIS) + manual per runbook | Core CERT-\* through RNDR-01/02/SYM/LIN/FIL; RNDR-LBL/SPR/URL remain manual | DSK-EXT-01, DSK-EXT-02 (manual) |
 | **CLI / SDK** (admin SDK, pytest, Microsoft.OData.Client) | Automated | All CERT-\* except CERT-RNDR (OData via Microsoft.OData.Client xUnit suite) | CLI-EXT-01, CLI-EXT-02 |
 | **BI — Power BI** | Manual per runbook | CERT-CONN, AUTH, DISC, SCHM, QFLT, PAGE, ERRH, RNDR † | BI-EXT-01, BI-EXT-02 |
@@ -225,7 +225,7 @@ Planned lanes do not enter the active `lanes` array or `expected-pairs.json` unt
 
 #### ArcGIS Portal Facade Lane (`geoservices-rest-stub` `portal` protocol)
 
-The Portal/Sharing facade (epic #1240) lets packaged Esri clients (ArcGIS Pro "Add Portal", Field Maps) bind through Portal items and ArcGIS tokens. The `geoservices-rest-stub` lane emits a `portal`-protocol envelope for the append-only IDs below. Real-client substantiation is evidence identifier `desktop-arcgis` in honua-esri-compat. No desktop receipt is linked (#1372, #1096). The seeded fixture is `tests/seed/portal-compat.yaml` (public/org/private tiers).
+The Portal/Sharing facade (epic #1240) lets packaged Esri clients (ArcGIS Pro "Add Portal", Field Maps) bind through Portal items and ArcGIS tokens. The `geoservices-rest-stub` lane emits a `portal`-protocol envelope for the append-only IDs below. This repository does not certify ArcGIS clients. Lane id `desktop-arcgis`. No desktop receipt is linked (#1372, #1096). The seeded fixture is `tests/seed/portal-compat.yaml` (public/org/private tiers).
 
 | Extension ID | Description | Protocol(s) | Evidence |
 |---|---|---|---|

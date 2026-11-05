@@ -31,10 +31,6 @@ internal sealed record ODataSearchDependencies(
     ODataFeatureProviderResolver ProviderResolver,
     IOptions<ODataOptions> Options);
 
-/// <summary>
-/// Service for handling OData search and aggregation operations.
-/// Supports $search full-text search and $apply aggregation transformations.
-/// </summary>
 internal sealed partial class ODataSearchService
 {
     private const string ODataProtocol = "OData";
@@ -53,9 +49,6 @@ internal sealed partial class ODataSearchService
     private readonly int _maxApplyInputRows;
     private readonly int _maxExpandedRows;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="ODataSearchService"/> class.
-    /// </summary>
     public ODataSearchService(ODataSearchDependencies dependencies, ODataQueryService queryService)
     {
         ArgumentNullException.ThrowIfNull(dependencies);
@@ -71,9 +64,6 @@ internal sealed partial class ODataSearchService
         _maxExpandedRows = dependencies.Options.Value.MaxPageSize;
     }
 
-    /// <summary>
-    /// Handles OData $search full-text search operations with PostgreSQL text search.
-    /// </summary>
     public async Task<ODataSearchResult> HandleSearchAsync(
         int layerId,
         string searchExpression,
@@ -101,9 +91,6 @@ internal sealed partial class ODataSearchService
             cancellationToken)
             .ConfigureAwait(false);
 
-    /// <summary>
-    /// Handles OData $search full-text search operations with PostgreSQL text search.
-    /// </summary>
     public async Task<ODataSearchResult> HandleSearchAsync(
         int layerId,
         string searchExpression,
@@ -277,9 +264,6 @@ internal sealed partial class ODataSearchService
         };
     }
 
-    /// <summary>
-    /// Handles OData $apply aggregation operations with support for various transformations.
-    /// </summary>
     public async Task<ODataAggregationResult> HandleApplyAsync(
         int layerId,
         string applyExpression,
@@ -359,10 +343,6 @@ internal sealed partial class ODataSearchService
         return resource.SchemaFields.Any(f => f.Name.Equals(field, StringComparison.OrdinalIgnoreCase));
     }
 
-    /// <summary>
-    /// Parses an OData $search expression into structured search terms.
-    /// Supports: simple terms, quoted phrases, AND, OR, NOT operators.
-    /// </summary>
     private static List<List<(string term, bool isNegated, bool isPhrase)>> ParseSearchExpression(string search)
     {
         var termGroups = new List<List<(string term, bool isNegated, bool isPhrase)>>();
@@ -423,10 +403,6 @@ internal sealed partial class ODataSearchService
         return termGroups;
     }
 
-    /// <summary>
-    /// Builds a parameterized PostgreSQL text search condition from parsed search terms.
-    /// Uses ILIKE with an explicit ESCAPE clause for safe pattern matching across text fields.
-    /// </summary>
     private static SqlFragment BuildTextSearchCondition(
         List<List<(string term, bool isNegated, bool isPhrase)>> terms,
         MetadataV2Resource resource)
@@ -674,10 +650,6 @@ internal sealed partial class ODataSearchService
         int PublicLayerId,
         int StorageLayerId);
 
-    /// <summary>
-    /// Processes $expand to fetch related entities for features using metadata-v2
-    /// relationship definitions.
-    /// </summary>
     public async Task<Dictionary<long, Dictionary<string, object?[]>>> ProcessExpandAsync(
         string expand,
         MetadataV2Resource resource,
@@ -693,10 +665,6 @@ internal sealed partial class ODataSearchService
             cancellationToken)
             .ConfigureAwait(false);
 
-    /// <summary>
-    /// Processes $expand to fetch related entities for features using metadata-v2
-    /// relationship definitions.
-    /// </summary>
     public async Task<Dictionary<long, Dictionary<string, object?[]>>> ProcessExpandAsync(
         string expand,
         MetadataV2Resource resource,
@@ -997,32 +965,17 @@ internal sealed partial class ODataSearchService
         return result;
     }
 
-    /// <summary>
-    /// Regex for parsing search tokens including quoted phrases and operators.
-    /// </summary>
     [GeneratedRegex(@"""[^""]+""|\S+", RegexOptions.CultureInvariant)]
     private static partial Regex SearchTokenRegex();
 
-    /// <summary>
-    /// Logging methods for OData search operations.
-    /// </summary>
     private static partial class Log
     {
-        /// <summary>
-        /// Logs when an OData $search operation fails.
-        /// </summary>
         [LoggerMessage(EventId = 3014, Level = LogLevel.Error, Message = "OData $search failed for layer {LayerId}.")]
         public static partial void SearchFailed(ILogger logger, int layerId, Exception exception);
 
-        /// <summary>
-        /// Logs when an invalid OData $apply expression is received.
-        /// </summary>
         [LoggerMessage(EventId = 3012, Level = LogLevel.Warning, Message = "Invalid OData $apply expression for layer {LayerId}.")]
         public static partial void InvalidApplyExpression(ILogger logger, int layerId, Exception exception);
 
-        /// <summary>
-        /// Logs when an OData $apply aggregation operation fails.
-        /// </summary>
         [LoggerMessage(EventId = 3013, Level = LogLevel.Error, Message = "OData $apply aggregation failed for layer {LayerId}.")]
         public static partial void ApplyFailed(ILogger logger, int layerId, Exception exception);
     }

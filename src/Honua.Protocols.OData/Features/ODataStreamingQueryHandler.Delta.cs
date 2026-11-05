@@ -205,11 +205,6 @@ internal sealed partial class ODataStreamingQueryHandler
         return Results.Bytes(response.ToArray(), ODataUtilityService.GetODataContentType(context.Request, query.Format));
     }
 
-    /// <summary>
-    /// Rows a snapshot pages. Deltas page <see cref="ODataQuerySnapshot.Changes"/>;
-    /// baselines page <see cref="ODataQuerySnapshot.Items"/>, including older receipts
-    /// that also copied items into Changes.
-    /// </summary>
     internal static JsonElement[] SnapshotRows(ODataQuerySnapshot snapshot)
         => snapshot.IsDelta ? snapshot.Changes : snapshot.Items;
 

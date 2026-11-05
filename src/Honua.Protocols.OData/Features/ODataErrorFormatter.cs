@@ -9,23 +9,6 @@ using Honua.Protocols.OData.Services;
 
 namespace Honua.Protocols.OData;
 
-/// <summary>
-/// Protocol-specific error formatter for OData v4 responses. Owns the
-/// OData-Version header, the OData JSON envelope (<see cref="ODataError"/>),
-/// and the OData details array. Registered as the
-/// <c>StandardErrorResponseFormatter.ODataErrorFormatterOverride</c> delegate
-/// during <c>ODataServiceCollectionExtensions.AddOData</c> so the
-/// Honua.Infrastructure.Models error router does not need to take a using-clause
-/// dependency on the OData protocol assembly.
-/// </summary>
-/// <remarks>
-/// Audit-A1 unblock: removing the
-/// <c>using Honua.Protocols.OData.Models</c> and
-/// <c>using Honua.Protocols.OData.Services</c> back-edge
-/// from <c>Honua.Infrastructure.Models.StandardErrorResponseFormatter</c>
-/// is what lets the Honua.Infrastructure.Models sub-area extract into a
-/// <c>Honua.Hosting.Models</c> assembly without ProjectReferencing OData.
-/// </remarks>
 internal static class ODataErrorFormatter
 {
     // OData v4.01 protocol §9.3: error responses MUST use Content-Type: application/json.
@@ -34,12 +17,6 @@ internal static class ODataErrorFormatter
     // (e.g. Microsoft OData client library, Azure Data Factory OData connector) may reject it.
     private const string ODataErrorContentType = "application/json";
 
-    /// <summary>
-    /// Formats a <see cref="StandardErrorResponse"/> as an OData v4 error
-    /// payload. Signature matches the
-    /// <c>StandardErrorResponseFormatter.ODataErrorFormatterOverride</c>
-    /// delegate so the formatter can be registered directly.
-    /// </summary>
     internal static IResult Format(
         HttpContext context,
         StandardErrorResponse errorResponse,

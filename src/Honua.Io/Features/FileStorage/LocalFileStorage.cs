@@ -12,9 +12,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.FileStorage;
 
-/// <summary>
-/// Local filesystem implementation of cloud file storage for development and testing
-/// </summary>
 internal sealed class LocalFileStorage : CloudFileStorageBase
 {
     private const int MutationLockStripeCount = 64;
@@ -26,12 +23,6 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
     private readonly string _basePath;
     private readonly string _metadataPath;
 
-    /// <summary>
-    /// Creates a new local file storage instance
-    /// </summary>
-    /// <param name="options">Local storage options</param>
-    /// <param name="logger">Logger instance</param>
-    /// <param name="progressStore">Upload progress store</param>
     public LocalFileStorage(
         IOptions<LocalStorageOptions> options,
         ILogger<LocalFileStorage> logger,
@@ -50,10 +41,8 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
         InitializeStorage();
     }
 
-    /// <inheritdoc />
     public override CloudStorageProvider Provider => CloudStorageProvider.Local;
 
-    /// <inheritdoc />
     public override Task<UploadResult> UploadAsync(
         FileUploadRequest request,
         CancellationToken cancellationToken = default)
@@ -329,11 +318,9 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
         }
     }
 
-    /// <inheritdoc />
     public override Task<Stream?> DownloadAsync(string fileId, CancellationToken cancellationToken = default)
         => OpenGenerationAsync(fileId, expectedETag: null, cancellationToken);
 
-    /// <inheritdoc />
     public override Task<Stream?> DownloadIfMatchAsync(string fileId, string expectedETag, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(expectedETag);
@@ -384,7 +371,6 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
         }
     }
 
-    /// <inheritdoc />
     public override async Task<bool> DeleteAsync(string fileId, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(fileId);
@@ -483,7 +469,6 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
         }
     }
 
-    /// <inheritdoc />
     public override Task<CloudFile?> GetMetadataAsync(string fileId, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(fileId);
@@ -492,7 +477,6 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
         return Task.FromResult(cloudFile);
     }
 
-    /// <inheritdoc />
     public override Task<bool> ExistsAsync(string fileId, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(fileId);
@@ -501,7 +485,6 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
         return Task.FromResult(exists);
     }
 
-    /// <inheritdoc />
     public override Task<IReadOnlyList<CloudFile>> ListFilesAsync(
         string? folder = null,
         int maxResults = 1000,
@@ -520,7 +503,6 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
         return Task.FromResult<IReadOnlyList<CloudFile>>(files);
     }
 
-    /// <inheritdoc />
     public override Task<string?> GetPresignedUrlAsync(
         string fileId,
         TimeSpan? expiresIn = null,
@@ -539,7 +521,6 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
         return Task.FromResult<string?>(ToAbsoluteFileUri(fullPath));
     }
 
-    /// <inheritdoc />
     public override Task<(string Url, string FileId)?> GetPresignedUploadUrlAsync(
         string fileName,
         string contentType,
@@ -566,7 +547,6 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
             (ToAbsoluteFileUri(fullPath), fileId));
     }
 
-    /// <inheritdoc />
     public override async Task<int> CleanupExpiredFilesAsync(CancellationToken cancellationToken = default)
     {
         var now = DateTimeOffset.UtcNow;
@@ -751,13 +731,6 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
         return Path.Join(folder, storageName);
     }
 
-    /// <summary>
-    /// Combines <paramref name="storagePath"/> with the base path and verifies the result is
-    /// contained within the base directory. This is defence-in-depth: the denylist in
-    /// <see cref="ValidateObjectKeyOverride"/> and <see cref="ValidateFolderPath"/> already
-    /// blocks explicit traversal segments, but a GetFullPath containment check also catches
-    /// symlinks and any platform-specific path encoding tricks.
-    /// </summary>
     private string GetSafeFullPath(string storagePath)
     {
         var combined = Path.GetFullPath(Path.Join(_basePath, storagePath));

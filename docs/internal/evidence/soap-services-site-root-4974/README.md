@@ -25,5 +25,5 @@ That body is byte-identical (SHA-256 `f5f58dafe4cb…`) to the WSDL the candidat
 serves for `?wsdl`, so the WSDL itself is unchanged.
 
 The pinned candidate cannot contain this fix. Whether ArcGIS Pro's site-root
-form connects is evidence identifier `desktop-arcgis` in honua-esri-compat and
+form connects is not certified in this repository. Lane id `desktop-arcgis`. It is
 is not confirmed here.

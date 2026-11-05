@@ -8,14 +8,6 @@ using Honua.Core.Queries.Filters.OData;
 
 namespace Honua.Protocols.SensorThings.Services;
 
-/// <summary>
-/// Outcome of translating a STA <c>$filter</c> expression into a parameterized
-/// SQL WHERE fragment over one entity set's columns.
-/// </summary>
-/// <param name="IsSuccess">Whether translation succeeded.</param>
-/// <param name="Sql">The SQL WHERE fragment (placeholders <c>@p0..@pN</c>), or null.</param>
-/// <param name="Parameters">Ordered parameter values for the placeholders.</param>
-/// <param name="Error">Error message when translation fails.</param>
 internal readonly record struct StaFilterTranslation(
     bool IsSuccess,
     string? Sql,
@@ -32,21 +24,7 @@ internal readonly record struct StaFilterTranslation(
         new(false, null, Array.Empty<object?>(), error);
 }
 
-/// <summary>
-/// Translates a STA <c>$filter</c> string into a SQL WHERE fragment by reusing the shared
-/// OData filter parser (<see cref="IFilterExpressionService"/> with
-/// <see cref="FilterLanguage.OData"/>) rather than hand-rolling a parser. The parsed
-/// <see cref="FilterExpression"/> AST is then walked into parameterized SQL against the
-/// requested entity set's <see cref="StaEntitySchema"/>. Also translates <c>$orderby</c>,
-/// which shares the same whitelist: only a property the schema declares can reach the SQL.
-/// </summary>
-/// <remarks>
-/// Every literal is checked against its column's <see cref="StaPropertyType"/> before it is
-/// bound. PostgreSQL has no implicit text -> double precision cast, so a filter such as
-/// <c>result eq 'abc'</c> used to reach the reader as an untyped text parameter and raise
-/// 42883 from inside the query — an unhandled exception and a 500 for what is a client
-/// input error. It is now a translation failure the handler renders as 400 (#4203).
-/// </remarks>
+// Filter literals are checked against the column type before binding, because PostgreSQL will not cast text to double precision and that mismatch surfaces as a server error.
 internal sealed class StaFilterTranslator
 {
     private readonly IFilterExpressionService _filterExpressionService;
@@ -59,10 +37,6 @@ internal sealed class StaFilterTranslator
         _entityStore = entityStore;
     }
 
-    /// <summary>
-    /// Translates <paramref name="filter"/> against <paramref name="schema"/>. A null/empty
-    /// filter yields <see cref="StaFilterTranslation.Empty"/> (no WHERE fragment).
-    /// </summary>
     public StaFilterTranslation Translate(StaEntitySchema schema, string? filter)
     {
         ArgumentNullException.ThrowIfNull(schema);
@@ -101,15 +75,6 @@ internal sealed class StaFilterTranslator
         return StaFilterTranslation.Success(sql.ToString(), parameters);
     }
 
-    /// <summary>
-    /// Translates <c>$orderby</c> into an ORDER BY clause over <paramref name="schema"/>'s
-    /// columns. The clause always ends in the entity's default ordering so paging over
-    /// equal sort keys stays stable across pages.
-    /// </summary>
-    /// <returns>
-    /// A translation whose <see cref="StaFilterTranslation.Sql"/> is the ORDER BY body
-    /// (without the <c>ORDER BY</c> keyword), or a failure the handler renders as 400.
-    /// </returns>
     public static StaFilterTranslation TranslateOrderBy(StaEntitySchema schema, string? orderBy)
     {
         ArgumentNullException.ThrowIfNull(schema);
@@ -158,7 +123,6 @@ internal sealed class StaFilterTranslator
         return StaFilterTranslation.Success(string.Join(", ", terms), Array.Empty<object?>());
     }
 
-    /// <summary>Translates primitive order expressions through the shared OData parser and provider visitor.</summary>
     public StaFilterTranslation TranslateOrderExpressions(StaEntitySchema schema, string? orderBy)
     {
         if (_entityStore is null || string.IsNullOrWhiteSpace(orderBy)) return TranslateOrderBy(schema, orderBy);
@@ -260,10 +224,6 @@ internal sealed class StaFilterTranslator
         parameters.Add(ConvertLiteral(property, literal));
     }
 
-    /// <summary>
-    /// Emits a SQL null test. The operand is a property on every shape the parser
-    /// produces; a literal operand is decided statically because its nullness is known.
-    /// </summary>
     private static void VisitNullTest(StaEntitySchema schema, FilterExpression operand, string test, StringBuilder sql)
     {
         switch (operand)
@@ -314,11 +274,6 @@ internal sealed class StaFilterTranslator
             $"Property '{propertyName}' is not filterable on {schema.EntitySet}. Allowed: {schema.PropertyList}.");
     }
 
-    /// <summary>
-    /// Converts a parsed literal to the CLR type the column binds as, or fails the
-    /// translation. The provider binds by CLR type, so this is the only place that decides
-    /// whether a comparison is well typed.
-    /// </summary>
     private static object? ConvertLiteral(StaProperty property, Literal literal) => property.Type switch
     {
         StaPropertyType.Integer => ConvertInteger(property, literal),

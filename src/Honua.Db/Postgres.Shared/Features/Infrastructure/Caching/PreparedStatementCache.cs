@@ -16,27 +16,6 @@ using Npgsql;
 namespace Honua.Db.Postgres.Features.Infrastructure.Caching;
 
 
-/// <summary>
-/// Manages prepared statement caching for PostgreSQL connections
-/// </summary>
-/// <remarks>
-/// <para>
-/// Provides intelligent caching of frequently-used SQL statements to improve
-/// database performance through query plan reuse and reduced parsing overhead.
-/// </para>
-/// <para>
-/// PERFORMANCE FEATURES:
-/// - Automatic statement preparation based on execution frequency
-/// - LRU eviction with configurable cache size limits
-/// - Connection-aware caching (prepared statements are per-connection)
-/// - Background cleanup of expired statements
-/// - Comprehensive performance metrics and logging
-/// </para>
-/// <para>
-/// SECURITY NOTICE: This cache only works with properly parameterized queries.
-/// It does not cache queries with inline values to prevent SQL injection risks.
-/// </para>
-/// </remarks>
 internal sealed class PreparedStatementCache : IPreparedStatementCacheStatisticsProvider, IDisposable
 {
     private readonly QueryCacheOptions _options;
@@ -50,9 +29,6 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
     private bool? _prepareSupported;
     private volatile bool _disposed;
 
-    /// <summary>
-    /// WEEK 5 FIX: Enhanced metrics for tracking statement execution patterns with performance analytics
-    /// </summary>
     public sealed class StatementMetrics
     {
         private int _executionCount;
@@ -86,9 +62,6 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
 
         public void IncrementExecutionCount() => Interlocked.Increment(ref _executionCount);
 
-        /// <summary>
-        /// WEEK 5 FIX: Record execution timing for performance analysis
-        /// </summary>
         public void RecordExecutionTime(long executionTimeMs)
         {
             Interlocked.Add(ref _totalExecutionTimeMs, executionTimeMs);
@@ -110,9 +83,6 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
         public DateTime LastUsed { get; set; } = DateTime.UtcNow;
     }
 
-    /// <summary>
-    /// WEEK 5 FIX: Parameter distribution tracking for query plan optimization
-    /// </summary>
     public sealed class ParameterDistribution
     {
         private const int MaxTrackedValues = 100;
@@ -148,9 +118,6 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
         }
     }
 
-    /// <summary>
-    /// WEEK 5 FIX: Query complexity scoring for intelligent caching decisions
-    /// </summary>
     public sealed class QueryComplexityScore
     {
         public int JoinCount { get; set; }
@@ -169,9 +136,6 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
         }
     }
 
-    /// <summary>
-    /// WEEK 5 FIX: Enhanced cached prepared statement with performance analytics
-    /// </summary>
     public sealed class CachedStatement : IDisposable
     {
         private int _hitCount;
@@ -204,17 +168,11 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
 
         public void IncrementHitCount() => Interlocked.Increment(ref _hitCount);
 
-        /// <summary>
-        /// WEEK 5 FIX: Record execution time for performance analysis
-        /// </summary>
         public void RecordExecutionTime(long executionTimeMs)
         {
             Interlocked.Add(ref _totalExecutionTimeMs, executionTimeMs);
         }
 
-        /// <summary>
-        /// WEEK 5 FIX: Calculate priority score for eviction decisions
-        /// </summary>
         public double GetPriorityScore()
         {
             var age = DateTime.UtcNow - CreatedAt;
@@ -243,13 +201,6 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
             TimeSpan.FromMinutes(_options.CleanupIntervalMinutes));
     }
 
-    /// <summary>
-    /// Attempts to get a prepared statement from cache, creating one if beneficial
-    /// </summary>
-    /// <param name="connection">The database connection</param>
-    /// <param name="sql">The SQL statement</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>A prepared command if caching is beneficial, null otherwise</returns>
     public Task<NpgsqlCommand?> GetOrCreatePreparedCommandAsync(
         NpgsqlConnection connection,
         string sql,
@@ -396,14 +347,6 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
         return null;
     }
 
-    /// <summary>
-    /// Manually prepares and caches a high-priority statement
-    /// </summary>
-    /// <param name="connection">The database connection</param>
-    /// <param name="sql">The SQL statement</param>
-    /// <param name="statementName">Unique name for the statement</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>The prepared command, or null if preparation is disabled or unsupported</returns>
     public Task<NpgsqlCommand?> PreparePriorityStatementAsync(
         NpgsqlConnection connection,
         string sql,
@@ -495,9 +438,6 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
             cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Gets current cache performance statistics
-    /// </summary>
     public PreparedStatementCacheStatistics GetStatistics()
     {
         var totalHits = _cache.Values.Sum(s => s.HitCount);
@@ -514,11 +454,6 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
         };
     }
 
-    /// <summary>
-    /// Clears all cached statements for a specific connection.
-    /// Can be called manually; also triggered automatically via StateChange subscription.
-    /// </summary>
-    /// <param name="connection">The connection to clear cache for</param>
     public void ClearConnectionCache(NpgsqlConnection connection)
     {
         ClearConnectionCache(GetConnectionId(connection));
@@ -675,11 +610,6 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
         return false;
     }
 
-    /// <summary>
-    /// Subscribes once per physical connection so that cached statements are cleared when
-    /// the connection is closed or broken, preventing stale NpgsqlCommand objects from being
-    /// served and avoiding confusion from Postgres backend PID reuse after a server restart.
-    /// </summary>
     private void SubscribeToConnectionClose(NpgsqlConnection connection, string connectionId)
     {
         if (!_subscribedConnections.TryAdd(connectionId, 0))
@@ -700,10 +630,6 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
         connection.StateChange += OnStateChange;
     }
 
-    /// <summary>
-    /// Clears all cached statements keyed to the given connection ID.
-    /// Called automatically when a subscribed connection closes or breaks.
-    /// </summary>
     private void ClearConnectionCache(string connectionId)
     {
         var keysToRemove = _cache.Keys.Where(k => k.ConnectionId == connectionId).ToList();
@@ -765,9 +691,6 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
         return Convert.ToHexString(hash);
     }
 
-    /// <summary>
-    /// WEEK 5 FIX: Intelligent query complexity analysis for caching decisions
-    /// </summary>
     private static QueryComplexityScore AnalyzeQueryComplexity(string sql)
     {
         var score = new QueryComplexityScore();
@@ -793,10 +716,6 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
         return score;
     }
 
-    /// <summary>
-    /// Records parameter value distributions from a command that has already been configured
-    /// by the caller's configureParameters delegate.  Avoids a redundant delegate invocation.
-    /// </summary>
     private static void RecordParameterDistributions(StatementMetrics metrics, NpgsqlCommand configured)
     {
         foreach (NpgsqlParameter param in configured.Parameters)
@@ -807,9 +726,6 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
         }
     }
 
-    /// <summary>
-    /// WEEK 5 FIX: Intelligent caching decision based on complexity and execution patterns
-    /// </summary>
     private bool ShouldCacheStatement(StatementMetrics metrics, string sql)
     {
         // Always cache if execution count threshold is met (traditional approach)
@@ -854,9 +770,6 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
         return false;
     }
 
-    /// <summary>
-    /// WEEK 5 FIX: Check if query has consistent performance characteristics
-    /// </summary>
     private static bool IsConsistentPerformance(StatementMetrics metrics)
     {
         if (metrics.ExecutionCount < 3)
@@ -871,9 +784,6 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
         return variance < 0.5; // Less than 50% variance
     }
 
-    /// <summary>
-    /// WEEK 5 FIX: Priority-based eviction using performance analytics
-    /// </summary>
     private void EvictLowestPriorityStatement(string connectionId)
     {
         var connectionEntries = _cache
@@ -897,9 +807,6 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
         }
     }
 
-    /// <summary>
-    /// WEEK 5 FIX: Legacy LRU eviction for backward compatibility
-    /// </summary>
     private void EvictLeastRecentlyUsed(string connectionId)
     {
         var connectionEntries = _cache
@@ -922,9 +829,6 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
         }
     }
 
-    /// <summary>
-    /// WEEK 5 FIX: Helper method to count string occurrences
-    /// </summary>
     private static int CountOccurrences(string text, string pattern)
     {
         var count = 0;

@@ -7,31 +7,10 @@ using Honua.Infrastructure.Rendering;
 
 namespace Honua.Protocols.Ogc.Common;
 
-/// <summary>
-/// Parses elevation/vertical selections from the WMTS <c>elevation=</c> KVP value and the
-/// OGC API Tiles <c>subset</c> KVP value into the protocol-neutral
-/// <see cref="VerticalSelection"/> value type. Shared so both the WMTS and OGC API Tiles
-/// adapters reuse one implementation (AGENTS.md DRY rule). AOT-safe: invariant-culture
-/// numeric parsing only, no reflection or dynamic dispatch.
-/// </summary>
 internal static class OgcVerticalSelectionParser
 {
-    /// <summary>
-    /// The OGC API Tiles subset axis labels that select the vertical/elevation dimension.
-    /// Matched case-insensitively.
-    /// </summary>
     private static readonly string[] VerticalAxisLabels = ["z", "elevation", "height"];
 
-    /// <summary>
-    /// Parses a single already-resolved WMTS <c>elevation</c> dimension value (e.g. <c>"200"</c>)
-    /// into a <see cref="VerticalSelection"/>. The WMTS dimension validator has already accepted
-    /// the value against the layer's advertised discrete elevation values; this resolver only
-    /// converts the validated token to a numeric selection so it can be recorded and threaded
-    /// through the render call.
-    /// </summary>
-    /// <param name="resolvedValue">The validated, resolved elevation token (never <c>default</c>/<c>current</c>).</param>
-    /// <param name="selection">The parsed selection on success; otherwise <c>null</c>.</param>
-    /// <returns><see langword="true"/> when the value is empty or parses as a number; otherwise <see langword="false"/>.</returns>
     public static bool TryParseWmtsElevationValue(string? resolvedValue, out VerticalSelection? selection)
     {
         selection = null;
@@ -51,28 +30,6 @@ internal static class OgcVerticalSelectionParser
         return true;
     }
 
-    /// <summary>
-    /// Attempts to interpret an OGC API Tiles <c>subset</c> KVP value as a vertical
-    /// (elevation) selection.
-    /// </summary>
-    /// <remarks>
-    /// <para>Accepted axes are <c>Z</c>, <c>elevation</c>, and <c>height</c> (case-insensitive).
-    /// Accepted value forms are a single value <c>Z(100)</c> or a closed interval
-    /// <c>Z(100:300)</c> using the OGC subset interval separator <c>:</c>.</para>
-    /// <para>The three outcomes are distinguished so the caller can preserve the CITE
-    /// contract that an <em>unknown / non-vertical</em> subset axis (e.g. <c>E(0:1)</c>) must
-    /// still be rejected with 400:</para>
-    /// <list type="bullet">
-    /// <item><description><paramref name="isVerticalAxis"/> <c>false</c>: the axis is not a
-    /// vertical axis (or the value is empty / not in <c>axis(value)</c> form). The caller should
-    /// fall back to its existing unsupported-subset handling.</description></item>
-    /// <item><description><paramref name="isVerticalAxis"/> <c>true</c> and the return value
-    /// <c>true</c>: a valid vertical selection parsed into <paramref name="selection"/>.</description></item>
-    /// <item><description><paramref name="isVerticalAxis"/> <c>true</c> and the return value
-    /// <c>false</c>: the axis is vertical but the value is malformed
-    /// (<paramref name="errorMessage"/> set) — the caller should reject with 400.</description></item>
-    /// </list>
-    /// </remarks>
     public static bool TryParseTilesSubset(
         string? subset,
         out VerticalSelection? selection,

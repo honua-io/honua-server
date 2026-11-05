@@ -7,13 +7,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.FileStorage;
 
-/// <summary>
-/// Adapts the cloud file-storage expired-file cleanup to the control-plane scheduled-tick dispatcher
-/// so EventBridge Scheduler can drive one cleanup under <c>TriggerMode=Event</c> without hosting the
-/// in-process timer. Deletes already-expired files via a fresh scope, so a single invocation is safe.
-/// <para>On AWS this tick can alternatively be replaced by an S3 lifecycle policy (cheaper, no
-/// compute); the tick is retained for on-prem/portability and other storage backends.</para>
-/// </summary>
 internal sealed class FileStorageCleanupScheduledTickHandler(FileStorageCleanupService service)
     : Honua.Core.Features.ControlPlane.Abstractions.IScheduledTickHandler
 {
@@ -24,21 +17,12 @@ internal sealed class FileStorageCleanupScheduledTickHandler(FileStorageCleanupS
         => service.RunCleanupAsync(cancellationToken);
 }
 
-/// <summary>
-/// Background service that periodically cleans up expired temporary files
-/// </summary>
 internal sealed class FileStorageCleanupService : BackgroundService
 {
     private readonly IServiceProvider _serviceProvider;
     private readonly CloudStorageOptions _options;
     private readonly ILogger<FileStorageCleanupService> _logger;
 
-    /// <summary>
-    /// Creates a new cleanup service instance
-    /// </summary>
-    /// <param name="serviceProvider">Service provider for resolving scoped services</param>
-    /// <param name="options">Cloud storage options</param>
-    /// <param name="logger">Logger instance</param>
     public FileStorageCleanupService(
         IServiceProvider serviceProvider,
         IOptions<CloudStorageOptions> options,
@@ -49,7 +33,6 @@ internal sealed class FileStorageCleanupService : BackgroundService
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <inheritdoc />
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         if (!_options.EnableAutomaticCleanup)

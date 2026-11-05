@@ -59,7 +59,7 @@ the candidate network directly. Its independent expected features come from the 
 it is diagnostic evidence, not an extra passing receipt. The raw raster responses are
 also supplemental diagnostics, captured during the earlier replay of the same image and
 fixture; they are not counted as client receipts. No licensed Esri runner is required by these 52 cells;
-ArcGIS certification remains delegated to honua-esri-compat.
+This repository does not certify ArcGIS clients.
 
 ## Acceptance disposition
 

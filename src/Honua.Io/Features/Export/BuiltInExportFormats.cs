@@ -12,7 +12,6 @@ internal enum BuiltInExportFormat
     GeoPackage
 }
 
-/// <summary>The dispatch keys shared by synchronous and durable file exports.</summary>
 internal static class BuiltInExportFormats
 {
     internal static readonly FrozenDictionary<string, BuiltInExportFormat> Dispatch =

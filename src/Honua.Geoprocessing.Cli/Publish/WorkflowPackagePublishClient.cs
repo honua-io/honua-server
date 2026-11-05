@@ -8,56 +8,27 @@ using Honua.Core.Features.WorkflowPackages.Domain;
 
 namespace Honua.Geoprocessing.Cli.Publish;
 
-/// <summary>
-/// Raised when a Console workflow-package REST call returns a non-success status.
-/// </summary>
 internal sealed class GpPublishHttpException(string message) : Exception(message);
 
-/// <summary>
-/// Aggregated result of the <c>save → version → validate → dry-run → (publish)</c> sequence
-/// the devkit drives against the Console workflow-package REST surface.
-/// </summary>
 internal sealed record GpPublishResult
 {
-    /// <summary>The saved (or replaced) package draft.</summary>
     public required WorkflowPackage Package { get; init; }
 
-    /// <summary>The immutable version created from the draft, when one was created.</summary>
     public WorkflowPackageVersion? Version { get; init; }
 
-    /// <summary>The validate result, when validate was requested.</summary>
     public WorkflowPackageValidationResult? Validation { get; init; }
 
-    /// <summary>The bounded dry-run result, when dry-run was requested.</summary>
     public WorkflowDryRunResult? DryRun { get; init; }
 
-    /// <summary>The publication, when the version was published to a target.</summary>
     public WorkflowPublication? Publication { get; init; }
 }
 
-/// <summary>
-/// Thin REST client that drives the Console workflow-package endpoints exactly as the Console UI
-/// does. It honors an admin API key (default) or a bearer token, and serializes with the same
-/// camelCase + string-enum policy the server uses.
-/// </summary>
-/// <remarks>
-/// The <see cref="HttpClient"/> is injected so offline unit tests can supply a faked
-/// <see cref="HttpMessageHandler"/> and assert the call sequence, payload mapping, and auth header
-/// without a live server.
-/// </remarks>
 internal sealed class WorkflowPackagePublishClient
 {
     private const string ApiKeyHeader = "X-API-Key";
 
     private readonly HttpClient _http;
 
-    /// <summary>
-    /// Creates a client over an already-configured <see cref="HttpClient"/> whose
-    /// <see cref="HttpClient.BaseAddress"/> is the server root (e.g. <c>http://localhost:8080</c>).
-    /// </summary>
-    /// <param name="http">The transport; the caller owns its lifetime.</param>
-    /// <param name="apiKey">Admin API key sent as <c>X-API-Key</c>. Mutually exclusive with a bearer token.</param>
-    /// <param name="bearerToken">Bearer token sent as <c>Authorization: Bearer</c>. Mutually exclusive with the API key.</param>
     public WorkflowPackagePublishClient(HttpClient http, string? apiKey = null, string? bearerToken = null)
     {
         _http = http ?? throw new ArgumentNullException(nameof(http));
@@ -73,19 +44,8 @@ internal sealed class WorkflowPackagePublishClient
         }
     }
 
-    /// <summary>Base path for the Console workflow-package surface (API version 1.0).</summary>
     internal const string BasePath = "/api/v1/console/workflow-packages";
 
-    /// <summary>
-    /// Saves the package draft (creating or replacing it), creates an immutable version, and then
-    /// optionally validates, dry-runs, and publishes. The sequence mirrors the Console authoring flow.
-    /// </summary>
-    /// <param name="request">The package save body carrying the graph payload.</param>
-    /// <param name="validate">Call the version validate endpoint.</param>
-    /// <param name="dryRun">Call the version dry-run endpoint.</param>
-    /// <param name="publish">Publish the created version to <paramref name="publishRequest"/>'s target.</param>
-    /// <param name="publishRequest">Publication target body; required when <paramref name="publish"/> is true.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
     public async Task<GpPublishResult> SaveVersionAndPublishAsync(
         SaveWorkflowPackageRequestDto request,
         bool validate,
@@ -135,11 +95,6 @@ internal sealed class WorkflowPackagePublishClient
         };
     }
 
-    /// <summary>
-    /// Validates and dry-runs a draft graph WITHOUT publishing: it still saves a draft and
-    /// creates an immutable version (the validate/dry-run endpoints operate on a version), then
-    /// reports validation + dry-run. No publication is created.
-    /// </summary>
     public async Task<GpPublishResult> DryRunOnlyAsync(
         SaveWorkflowPackageRequestDto request,
         CancellationToken cancellationToken = default)
@@ -282,10 +237,6 @@ internal sealed class WorkflowPackagePublishClient
         return collapsed.Length <= 400 ? collapsed : collapsed[..397] + "...";
     }
 
-    /// <summary>
-    /// Indicates whether a status is one the publish flow treats as an auth failure, for
-    /// clearer messaging in the command layer.
-    /// </summary>
     internal static bool IsAuthFailure(HttpStatusCode status)
         => status is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden;
 }

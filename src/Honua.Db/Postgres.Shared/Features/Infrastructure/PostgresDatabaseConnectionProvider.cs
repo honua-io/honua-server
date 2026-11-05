@@ -18,17 +18,6 @@ using Polly.CircuitBreaker;
 
 namespace Honua.Db.Postgres.Features.Infrastructure;
 
-/// <summary>
-/// PostgreSQL implementation of database connection provider with Polly resilience policies
-/// </summary>
-/// <remarks>
-/// Provides reliable database connections with:
-/// - Automatic retry for transient connection errors
-/// - Exponential backoff strategy
-/// - Structured logging for retry attempts
-/// - Proper error handling and resource management
-/// - OpenTelemetry tracing for connection acquisition
-/// </remarks>
 internal sealed class PostgresDatabaseConnectionProvider(
     NpgsqlDataSource dataSource,
     ILogger<PostgresDatabaseConnectionProvider> logger,
@@ -44,17 +33,11 @@ internal sealed class PostgresDatabaseConnectionProvider(
     private readonly ISchemaContext? _schemaContext = schemaContext;
     private readonly IActiveDbConnectionTracker? _activeDbConnectionTracker = activeDbConnectionTracker;
 
-    /// <inheritdoc />
     public string GetConnectionString()
     {
         return _dataSource.ConnectionString;
     }
 
-    /// <summary>
-    /// Opens a PostgreSQL connection with automatic retry for transient failures
-    /// </summary>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>An open PostgreSQL connection</returns>
     public async Task<DbConnection> OpenConnectionAsync(CancellationToken cancellationToken = default)
     {
         using var activity = _activitySource.StartActivity("honua.db.connection", ActivityKind.Client);
@@ -125,12 +108,6 @@ internal sealed class PostgresDatabaseConnectionProvider(
         return connection;
     }
 
-    /// <summary>
-    /// Opens a PostgreSQL connection and begins a transaction with the specified isolation level
-    /// </summary>
-    /// <param name="isolationLevel">The isolation level for the transaction</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>A tuple containing the open connection and active transaction</returns>
     public async Task<(DbConnection Connection, DbTransaction Transaction)> OpenTransactionAsync(
         IsolationLevel isolationLevel = IsolationLevel.RepeatableRead,
         CancellationToken cancellationToken = default)
@@ -162,13 +139,6 @@ internal sealed class PostgresDatabaseConnectionProvider(
         }
     }
 
-    /// <summary>
-    /// Executes a database operation with deadlock retry policy
-    /// </summary>
-    /// <typeparam name="T">Return type of the operation</typeparam>
-    /// <param name="operation">The database operation to execute</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Result of the database operation</returns>
     public async Task<T> ExecuteWithDeadlockRetryAsync<T>(
         Func<Task<T>> operation,
         CancellationToken cancellationToken = default)
@@ -187,12 +157,6 @@ internal sealed class PostgresDatabaseConnectionProvider(
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Executes a database operation with deadlock retry policy (no return value)
-    /// </summary>
-    /// <param name="operation">The database operation to execute</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Task representing the completion of the operation</returns>
     public async Task ExecuteWithDeadlockRetryAsync(
         Func<Task> operation,
         CancellationToken cancellationToken = default)
@@ -212,13 +176,7 @@ internal sealed class PostgresDatabaseConnectionProvider(
     }
 }
 
-/// <summary>
-/// Builds the span events recorded for connection and deadlock retries. The exception message goes
-/// through <see cref="TelemetryExceptionDetailPolicy"/> because event attributes are beyond the
-/// reach of the span sanitizer: with <c>Tracing:ExportExceptionDetails</c> off (the default) only
-/// the exception type and SQLSTATE are recorded, and when on the message is sanitized and bounded
-/// (honua-server#5475).
-/// </summary>
+// Retry span events pass the exception through the telemetry detail policy, because those attributes sit outside the span sanitizer.
 internal static class PostgresRetryActivityEvent
 {
     public static ActivityEvent Create(string name, Exception exception, TimeSpan delay, int attempt)
@@ -245,9 +203,6 @@ internal static class PostgresRetryActivityEvent
     }
 }
 
-/// <summary>
-/// Source-generated logging methods for PostgreSQL operations.
-/// </summary>
 internal static partial class PostgresLog
 {
     [LoggerMessage(

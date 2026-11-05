@@ -10,14 +10,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Plugins;
 
-/// <summary>
-/// Default <see cref="IFeatureOutputFormatRegistry"/>. Aggregates the registered plugin
-/// <see cref="IFeatureOutputFormat"/>s, keys them by their case-insensitive wire token, and gates
-/// resolution behind the Enterprise <c>plugin.sdk</c> entitlement plus the operator kill-switch —
-/// when unlicensed or disabled it advertises nothing and resolves nothing. Duplicate or built-in
-/// colliding tokens are rejected at construction so a misconfigured plugin fails fast rather than
-/// silently shadowing another format.
-/// </summary>
 internal sealed class FeatureOutputFormatRegistry : IFeatureOutputFormatRegistry
 {
     // Wire tokens owned by the built-in export writers; a plugin may not shadow these.
@@ -70,14 +62,11 @@ internal sealed class FeatureOutputFormatRegistry : IFeatureOutputFormatRegistry
             .ToArray();
     }
 
-    /// <inheritdoc />
     public bool HasFormats => _enabledByConfig && _formats.Count > 0 && IsLicensed;
 
-    /// <inheritdoc />
     public IReadOnlyCollection<PluginOutputFormatDescriptor> AdvertisedFormats
         => HasFormats ? _advertised : [];
 
-    /// <inheritdoc />
     public bool TryGetFormat(string formatId, out IFeatureOutputFormat? format)
     {
         format = null;

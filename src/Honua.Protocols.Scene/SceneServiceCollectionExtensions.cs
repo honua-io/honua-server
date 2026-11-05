@@ -8,17 +8,8 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Protocols.Scene;
 
-/// <summary>
-/// DI registration for the hosted 3D Tiles scene serving feature.
-/// </summary>
 internal static class SceneServiceCollectionExtensions
 {
-    /// <summary>
-    /// Registers the scene dataset registry and binds <see cref="SceneDatasetOptions"/>
-    /// from the <c>Scenes</c> configuration section. Also wires the
-    /// <see cref="ISceneAccessEnvelopeService"/> used by protected scenes to
-    /// authorize browser/WebView nested asset cascades.
-    /// </summary>
     public static IServiceCollection AddScene(this IServiceCollection services, IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(services);

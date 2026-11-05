@@ -5,9 +5,6 @@ using System.Text;
 
 namespace Honua.Db.Postgres.Features.Infrastructure;
 
-/// <summary>
-/// Minimal URL-safe base64 helpers used by Postgres cursor encoders.
-/// </summary>
 internal static class Base64Url
 {
     public static string Encode(string value)

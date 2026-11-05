@@ -11,9 +11,6 @@ using StackExchange.Redis;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Redis-backed durable store for run-to-completion execution jobs and reconciliation leases.
-/// </summary>
 internal sealed partial class RedisExecutionJobStore(
     IConnectionMultiplexer redis,
     ILogger<RedisExecutionJobStore> logger) : IExecutionJobStore
@@ -136,7 +133,6 @@ internal sealed partial class RedisExecutionJobStore(
         Log.ExecutionJobUpdated(logger, job.OperationId, versioned.Status.ToString());
     }
 
-    /// <inheritdoc />
     public async Task<bool> TrySetAsync(
         ExecutionJobRecord job,
         TimeSpan? ttl = null,
@@ -167,7 +163,6 @@ internal sealed partial class RedisExecutionJobStore(
         return true;
     }
 
-    /// <inheritdoc />
     public async Task<bool> TrySetIfLeaseOwnedAsync(
         ExecutionJobRecord job,
         string leaseOperationId,

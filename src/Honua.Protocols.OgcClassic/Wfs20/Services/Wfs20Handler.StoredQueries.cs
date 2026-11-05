@@ -37,9 +37,6 @@ using StackExchange.Redis;
 
 namespace Honua.Protocols.Ogc.Classic.Wfs20.Services;
 
-/// <summary>
-/// Core handler for WFS 2.0 operations backed by the shared catalog and feature stores.
-/// </summary>
 internal sealed partial class Wfs20Handler
 {
     // Hard cap on managed stored queries to prevent unbounded memory growth.
@@ -58,22 +55,12 @@ internal sealed partial class Wfs20Handler
     private static readonly ConcurrentDictionary<string, ConcurrentDictionary<string, StoredQueryDefinition>> ManagedStoredQueriesByScope =
         new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>
-    /// Resolves the service scope key for stored-query isolation. Returns the tenant id
-    /// when present, or <see cref="GlobalStoredQueryScope"/> for requests without a tenant
-    /// context (e.g. single-tenant admin deployments).
-    /// </summary>
     private static string ResolveStoredQueryScope(HttpContext context)
     {
         var tenantId = TenantScopeHelpers.ResolveRequestTenantId(context);
         return string.IsNullOrWhiteSpace(tenantId) ? GlobalStoredQueryScope : tenantId;
     }
 
-    /// <summary>
-    /// Returns the <see cref="ConcurrentDictionary{TKey, TValue}"/> of stored queries
-    /// scoped to the service (tenant) of the current request. Creates the per-scope bucket
-    /// on first access; subsequent calls for the same scope reuse the existing bucket.
-    /// </summary>
     private static async Task<ConcurrentDictionary<string, StoredQueryDefinition>> GetScopedStoredQueriesAsync(
         HttpContext context, CancellationToken cancellationToken)
     {
@@ -844,11 +831,7 @@ internal sealed partial class Wfs20Handler
 
 }
 
-/// <summary>
-/// PascalCase source-generated metadata for Redis stored-query payloads.
-/// The parameterless serializer wrote these property names; a camelCase context would
-/// strand definitions already stored by other replicas.
-/// </summary>
+// Preserve PascalCase for Redis stored-query payloads written by existing replicas.
 [JsonSourceGenerationOptions]
 [JsonSerializable(typeof(Wfs20Handler.StoredQueryDefinition))]
 [JsonSerializable(typeof(Wfs20Handler.StoredQueryParameter))]

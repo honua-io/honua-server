@@ -8,9 +8,6 @@ using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Protocols.OData.Services;
 
-/// <summary>
-/// Protocol request shape for OData edit operations after payload parsing.
-/// </summary>
 internal sealed record ODataEditRequest
 {
     public required ODataOperation Operation { get; init; }
@@ -25,19 +22,9 @@ internal sealed record ODataEditRequest
 
     public string? IfNoneMatch { get; init; }
 
-    /// <summary>
-    /// Canonical <see cref="Honua.Core.Features.FeatureStore.Domain.FeatureStateToken"/>
-    /// computed from the snapshot the caller validated If-Match against. When set, the
-    /// unified edit pipeline re-validates the stored row against this token inside the
-    /// writer's transaction so a concurrent commit between the ETag check and the write
-    /// surfaces as a typed precondition failure (412) instead of a lost update.
-    /// </summary>
     public string? ExpectedStateToken { get; init; }
 }
 
-/// <summary>
-/// Supported OData entity mutation operations.
-/// </summary>
 internal enum ODataOperation
 {
     Create,
@@ -46,9 +33,6 @@ internal enum ODataOperation
     Delete
 }
 
-/// <summary>
-/// Converts parsed OData mutation requests into the shared unified edit model.
-/// </summary>
 internal sealed class ODataEditParameterAdapter(
     ILogger<ODataEditParameterAdapter> logger) : IEditParameterAdapter<ODataEditRequest>
 {
@@ -61,11 +45,6 @@ internal sealed class ODataEditParameterAdapter(
 
     public TransactionSemantics TransactionSemantics => Core.Features.Edit.TransactionSemantics.OData;
 
-    /// <summary>
-    /// Converts the parsed OData edit request into the shared edit model. The OData
-    /// adapter does not need layer metadata to build the unified edit; field-level
-    /// validation happens in the v2 edit processor after conversion.
-    /// </summary>
     public Task<EditAdapterResult> ConvertAsync(
         ODataEditRequest protocolRequest,
         MetadataV2Resource resource,

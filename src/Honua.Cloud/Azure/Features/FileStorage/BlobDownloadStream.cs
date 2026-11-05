@@ -5,11 +5,7 @@ using Azure.Storage.Blobs.Models;
 
 namespace Honua.FileStorage;
 
-/// <summary>
-/// Wrapper stream that ensures the owning <see cref="BlobDownloadStreamingResult"/> is disposed
-/// when the stream is disposed. Disposing the content stream alone does NOT release the
-/// underlying HTTP response/network resources held by the result, so both must be disposed.
-/// </summary>
+// Disposing the content stream does not release the BlobDownloadStreamingResult, so this wrapper disposes both.
 internal sealed class BlobDownloadStream : Stream
 {
     private readonly BlobDownloadStreamingResult _result;

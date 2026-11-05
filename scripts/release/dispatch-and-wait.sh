@@ -90,7 +90,7 @@ fi
 # selector could also dispatch merge-train.yml. Keep this release-only list in
 # sync with dispatchable bundle-suites.json entries and reject everything else.
 case "$WORKFLOW" in
-  esri-sdk-certification.yml|cite-conformance.yml|console-nightly.yml|conformance.yml|integration.yml|live-server-integration.yml|publish-dotnet-sdk.yml|publish-js-sdk.yml|publish-python-sdk.yml|publish-dotnet-mobile.yml|publish-dotnet-protocol.yml) ;;
+  cite-conformance.yml|console-nightly.yml|conformance.yml|integration.yml|live-server-integration.yml|publish-dotnet-sdk.yml|publish-js-sdk.yml|publish-python-sdk.yml|publish-dotnet-mobile.yml|publish-dotnet-protocol.yml) ;;
   *) refuse "Unsupported release workflow: $WORKFLOW" ;;
 esac
 
@@ -122,9 +122,6 @@ payload="$(jq -nc --arg ref "$REF" --argjson inputs "$inputs" \
 # https://docs.github.com/en/rest/actions/workflows?apiVersion=2022-11-28#create-a-workflow-dispatch-event
 dispatch() {
   case "$WORKFLOW" in
-    esri-sdk-certification.yml)
-      gh api --method POST "repos/$REPO/actions/workflows/esri-sdk-certification.yml/dispatches" \
-        -H 'X-GitHub-Api-Version: 2022-11-28' --input - ;;
     cite-conformance.yml)
       gh api --method POST "repos/$REPO/actions/workflows/cite-conformance.yml/dispatches" \
         -H 'X-GitHub-Api-Version: 2022-11-28' --input - ;;

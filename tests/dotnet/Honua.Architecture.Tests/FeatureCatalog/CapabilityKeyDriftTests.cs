@@ -455,7 +455,6 @@ internal sealed class InteropCrosswalkRow
     public string Capability { get; init; } = string.Empty;
 }
 
-/// <summary>A single esri-compat matrix crosswalk row.</summary>
 internal sealed class GeoServicesCompatMatrixCrosswalkRow
 {
     /// <summary>The geoservices-rest-parity.json service id.</summary>

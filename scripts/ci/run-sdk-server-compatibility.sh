@@ -408,7 +408,7 @@ if (!Array.isArray(collections.collections) || collections.collections.length ==
 }
 
 if (portalCompatEnabled) {
-  const { PortalCompat } = await import("./dist/src/esri-compat-entry.js");
+  const { PortalCompat } = await import("./dist/src/client-compat-entry.js");
   const portal = new PortalCompat({ portalUrl: baseUrl });
 
   const info = await portal.getInfo();

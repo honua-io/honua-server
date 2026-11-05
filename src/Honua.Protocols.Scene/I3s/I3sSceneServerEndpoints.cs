@@ -18,43 +18,15 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Protocols.Scene.I3s;
 
-/// <summary>
-/// Read-only Esri I3S <c>SceneServer</c> REST endpoints that present a hosted
-/// Honua scene to ArcGIS / I3S clients as a 3D Object scene layer (#1202).
-/// </summary>
-/// <remarks>
-/// <para>
-/// The surface mirrors the I3S REST binding: a service root, the scene-layer
-/// descriptor at <c>/layers/0</c>, node pages, and persisted binary resources. It is
-/// Enterprise-gated — I3S serving is an enterprise migration/parity feature.
-/// </para>
-/// <para>
-/// Production descriptors and resources share a validated persisted revision.
-/// Unavailable or malformed source resources return an honest 404.
-/// </para>
-/// </remarks>
 internal static partial class I3sSceneServerEndpoints
 {
     private const string ScenesTag = "Scenes";
     private const string I3sContentType = "application/json";
     private const string I3sEntitlement = "serve.i3s-scene";
 
-    /// <summary>
-    /// Content type for the I3S Default geometry binary buffer
-    /// (<c>nodes/{id}/geometries/0</c>). The I3S spec leaves the binary geometry
-    /// media type unspecified; ArcGIS serves it as an opaque byte stream, so we
-    /// follow the same <c>application/octet-stream</c> convention the 3D Tiles
-    /// container payloads use (<see cref="Honua.Scene.Assets.SceneContentTypes"/>).
-    /// </summary>
+    // The I3S spec leaves the geometry buffer media type unspecified, so the server sends application/octet-stream the way ArcGIS does.
     private const string I3sGeometryContentType = "application/octet-stream";
 
-    /// <summary>
-    /// Content type for the I3S per-field attribute binary file
-    /// (<c>nodes/{id}/attributes/{fieldKey}/0</c>). Like the geometry buffer the
-    /// I3S spec leaves the attribute media type unspecified and ArcGIS serves it
-    /// as an opaque byte stream, so we follow the same
-    /// <c>application/octet-stream</c> convention.
-    /// </summary>
     private const string I3sAttributeContentType = "application/octet-stream";
 
     public static IEndpointRouteBuilder MapI3sSceneServerEndpoints(this IEndpointRouteBuilder endpoints)
@@ -680,12 +652,6 @@ internal static partial class I3sSceneServerEndpoints
         return Results.Bytes(bytes, contentType);
     }
 
-    /// <summary>
-    /// Shared gate for every I3S SceneServer resource: validates the scene id,
-    /// enforces the Enterprise entitlement, rejects any non-zero layer id, resolves
-    /// the scene, and enforces its access policy. Returns the resolved scene on
-    /// success or the failing <see cref="IResult"/> to short-circuit with.
-    /// </summary>
     private static async Task<SceneGateResult> ResolveSceneAsync(
         string sceneId,
         int? layerId,
@@ -737,13 +703,6 @@ internal static partial class I3sSceneServerEndpoints
 
     private readonly record struct SceneGateResult(SceneDataset? Scene, IResult? Failure);
 
-    /// <summary>
-    /// Resolves the dataset's I3S source kind for layerType mapping (#1812). The
-    /// lean <see cref="SceneDataset"/> read model carries no source kind, so the
-    /// type is read from the persisted <see cref="SceneDatasetRecord"/> when a
-    /// registration service is available; config-registry scenes fall back to the
-    /// default hosted-tiles (<c>3DObject</c>) kind.
-    /// </summary>
     private static async Task<SceneDatasetType> ResolveDatasetTypeAsync(
         HttpContext context,
         SceneDataset scene,
@@ -775,22 +734,7 @@ internal static partial class I3sSceneServerEndpoints
         return Results.Bytes(bytes, I3sContentType);
     }
 
-    /// <summary>
-    /// Resolves the served layer's extent for the I3S <c>fullExtent</c>: the
-    /// persisted horizontal envelope plus, when the tileset is loadable, the
-    /// vertical (z) range read from the tileset's root bounding volume.
-    /// </summary>
-    /// <remarks>
-    /// The horizontal envelope comes from the persisted
-    /// <see cref="SceneDatasetRecord"/> (a 2D <see cref="SceneExtent"/>); the
-    /// config-registry path carries no record and so no horizontal extent. The
-    /// vertical bounds are read honestly from the 3D Tiles root
-    /// <c>boundingVolume.region</c> (region[4]/region[5], min/max height in
-    /// metres) — the same authoritative source the gRPC <c>TileService</c> uses.
-    /// When neither a persisted extent nor a loadable tileset z-range is
-    /// available the vertical extent is omitted (per OGC 19-008) rather than
-    /// fabricating a 0..0 range.
-    /// </remarks>
+    // When neither a persisted extent nor a tileset z-range is known, the vertical extent is omitted rather than advertised as 0 to 0.
     private static async Task<SceneExtent?> ResolveExtentAsync(
         HttpContext context,
         SceneDataset scene,
@@ -821,14 +765,6 @@ internal static partial class I3sSceneServerEndpoints
         return horizontal with { ZMin = range.MinHeight, ZMax = range.MaxHeight };
     }
 
-    /// <summary>
-    /// Reads the scene tileset's root <c>boundingVolume.region</c> min/max
-    /// height (region[4]/region[5], metres) when the <c>tileset.json</c> is
-    /// loadable under the scene's asset root. Returns <see langword="null"/>
-    /// when the tileset is absent, unparsable, or carries no 6-element region —
-    /// so the descriptor advertises a vertical range only when it is honestly
-    /// known.
-    /// </summary>
     private static (double MinHeight, double MaxHeight)? TryReadTilesetVerticalRange(SceneDataset scene)
     {
         if (!SceneAssetResolver.TryResolve(scene, scene.TilesetFileName, out var resolved, out _))

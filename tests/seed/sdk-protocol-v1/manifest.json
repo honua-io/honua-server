@@ -2,7 +2,7 @@
   "schema": "honua.sdk-protocol-fixture/v1",
   "coreFixture": {
     "path": "docs/gis/data/client-certification-fixture.v1.json",
-    "sha256": "64da44c725636a05d5c5b7396ab8ba7e2549f582bbb6f758b8180644b990fe2a"
+    "sha256": "d3e3f70093ab2433ab2e12e679d91ba1d40c6b51a760b3bc3c3806db576cd8c3"
   },
   "inputs": [
     {

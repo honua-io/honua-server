@@ -12,13 +12,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Alerts;
 
-/// <summary>
-/// Registers the Azure-backed alert delivery sinks (Event Grid, Event Hub) and
-/// their thin publisher adapters. Carved out of Honua.Server per the cloud-SDK
-/// isolation contract so that the Azure.* surface is confined to Honua.Azure.
-/// Falls back to <see cref="UnsupportedAlertDeliverySink"/> when the corresponding
-/// channel is not configured, preserving the Server's pre-split behavior.
-/// </summary>
 internal static class AzureAlertDeliveryServiceCollectionExtensions
 {
     public static IServiceCollection AddAzureAlertDeliveryChannels(this IServiceCollection services, IConfiguration configuration)

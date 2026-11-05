@@ -12,9 +12,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Protocols.OData.Services;
 
-/// <summary>
-/// Protocol parameter shape for OData feature queries.
-/// </summary>
 internal readonly record struct ODataQueryParameters
 {
     public string? Filter { get; init; }
@@ -36,9 +33,6 @@ internal readonly record struct ODataQueryParameters
     public string? Format { get; init; }
 }
 
-/// <summary>
-/// Converts OData query parameters into the shared unified query model.
-/// </summary>
 internal sealed class ODataQueryParameterAdapter(
     IFilterExpressionService filterExpressionService,
     IOptions<ODataOptions> odataOptions,
@@ -54,13 +48,6 @@ internal sealed class ODataQueryParameterAdapter(
 
     public ProtocolLimits DefaultLimits => ProtocolLimits.OData;
 
-    /// <summary>
-    /// Parses the OData filter into a <see cref="FilterExpression"/> using the V2-aware
-    /// <see cref="IFilterExpressionService.ParseAndNormalize"/> overload, validates $select against
-    /// <see cref="MetadataV2Resource.SchemaFields"/>, and stores the filter as a
-    /// <see cref="QueryFilter"/>. SQL translation is deferred to the downstream processor's
-    /// SQL last-mile bridge (#1035): see ADR-0040, the Metadata v2 canonical graph.
-    /// </summary>
     public Task<QueryAdapterResult> ConvertAsync(
         ODataQueryParameters parameters,
         MetadataV2Resource resource,

@@ -11,7 +11,7 @@ This plan is organized around dependencies and phase gates, not fixed week count
 
 1. Keep two lanes:
 - `@honua/sdk` is the default Honua-first SDK.
-- `@honua/sdk-esri-compat` is migration-only and opt-in.
+- The optional JavaScript migration facade is migration-only and opt-in.
 
 2. Use one shared capability registry (Tier A/B/C) across importer, runtime, SDK, and migration CLI.
 
@@ -30,7 +30,7 @@ This plan is organized around dependencies and phase gates, not fixed week count
 2. `honua-import-esri-service` (service metadata/data import into Honua)
 3. `honua-import-publish-adapter` (normalizes import output into existing publish/catalog paths)
 4. `@honua/sdk` (MapLibre-native)
-5. `@honua/sdk-esri-compat` (optional migration facade)
+5. Optional JavaScript migration facade
 6. `honua-migrate` (scanner + codemods + migration report)
 
 ### Runtime Clarification
@@ -205,7 +205,7 @@ Produce a mapping matrix in migration report:
 1. `@honua/sdk`
 - Primary long-term API for Honua-first and migrated apps after stabilization.
 
-2. `@honua/sdk-esri-compat`
+2. Optional JavaScript migration facade
 - Bridge for migration acceleration; not a permanent feature-growth surface.
 
 ### Compat Lifecycle Policy
@@ -247,7 +247,7 @@ Gate to Phase 2:
 ### Phase 2: JS Migration Delivery
 
 1. Deliver `@honua/sdk` core subset.
-2. Deliver scoped `@honua/sdk-esri-compat`.
+2. Deliver the optional JavaScript migration facade.
 3. Deliver `honua-migrate` scanner + safe codemods + report.
 
 Gate to Phase 3:
@@ -275,7 +275,7 @@ Gate to Phase 4:
 | A | CSM extensions + capability registry | Phase 1 |
 | B | Esri service import + import-publish adapter | Phase 1 |
 | C | JS core SDK (`@honua/sdk`) | Phase 2 |
-| D | JS compat SDK (`@honua/sdk-esri-compat`) | Phase 2 |
+| D | Optional JavaScript migration facade | Phase 2 |
 | E | App migration CLI (`honua-migrate`) | Phase 2 |
 | F | Pilot migration + reconciliation harness + parity validation | Phase 3 |
 | G1 | Importer auth (token/OAuth/secret refs, outbound injection) | Phase 1 |

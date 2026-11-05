@@ -6,12 +6,6 @@ using Honua.Core.Features.Authorization.Domain;
 
 namespace Honua.Server.Features.Orchestration;
 
-/// <summary>
-/// Synthesizes <see cref="ClaimsPrincipal"/> instances for orchestration-initiated
-/// job submissions. The engine needs a principal to flow through the workflow job
-/// executor substrate; a run either forwards the original operator identity captured
-/// at creation time or falls back to a system identity for cron-driven runs.
-/// </summary>
 internal static class OrchestrationSystemPrincipal
 {
     public const string SystemIdentityName = "honua/orchestrator";

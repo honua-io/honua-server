@@ -7,7 +7,7 @@ Ruling B keeps #4614 open until a native ArcGIS Pro UI receipt exists. No
 desktop UI pass is claimed here. Every receipt records
 `desktop_ui_exercised: false`.
 
-Runner, licence, and session setup stay in private `honua-esri-compat`.
+Runner, licence, and session setup are not in this repository.
 
 | Identity | Value |
 |---|---|
@@ -30,12 +30,12 @@ not a desktop pass.
 
 An earlier draft of this page listed
 `candidate-d1fc139-arcpy-and-sdk-scalar-verified.json` as passing before that
-file existed. [Attempt 1](https://github.com/honua-io/honua-esri-compat/actions/runs/35151843737/attempts/1)
+file existed. Attempt 1
 failed on 2026-09-17 while importing ArcPy, with Windows fatal exception
 `0xe0000001`. It produced no uploaded receipt. The `2cc2213` receipts do not
 prove this image.
 
-[Attempt 2](https://github.com/honua-io/honua-esri-compat/actions/runs/35151843737/attempts/2)
+Attempt 2
 passed on 2026-09-19. The retained
 [SDK/ArcPy receipt](../../../../tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/Fixtures/EsriToolboxReplay/candidate-d1fc139-arcpy-and-sdk-scalar-verified.json)
 records four passing checks: ArcGIS API for Python 2.4.3 and ArcPy 3.7.1 each
@@ -47,7 +47,7 @@ The retained
 passes 24/24 over verified HTTPS: authorized area 12, 401 for anonymous, invalid
 key, and invalid bearer callers, and 400 for malformed authorized input.
 
-The [complex-value replay](https://github.com/honua-io/honua-esri-compat/actions/runs/35433375337)
+The complex-value replay
 passed on 2026-09-19. Its
 [receipt](../../../../tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/Fixtures/EsriToolboxReplay/candidate-d1fc139-arcpy-complex-values-verified.json)
 records six passing ArcPy checks. `desktop_ui_exercised` is false.

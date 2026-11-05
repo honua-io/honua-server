@@ -6,14 +6,8 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Protocols.Stac;
 
-/// <summary>
-/// Registers STAC API services in the dependency injection container.
-/// </summary>
 internal static class StacServiceCollectionExtensions
 {
-    /// <summary>
-    /// Adds STAC API services.
-    /// </summary>
     public static IServiceCollection AddStac(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);

@@ -3,34 +3,16 @@
 
 namespace Honua.Protocols.Stac.Models;
 
-/// <summary>
-/// Constants for the STAC API implementation.
-/// </summary>
 internal static class StacConstants
 {
-    /// <summary>
-    /// STAC specification version implemented.
-    /// </summary>
     public const string StacVersion = "1.0.0";
 
-    /// <summary>
-    /// Catalog identifier.
-    /// </summary>
     public const string CatalogId = "honua-stac-catalog";
 
-    /// <summary>
-    /// Default limit for search results.
-    /// </summary>
     public const int DefaultSearchLimit = 10;
 
-    /// <summary>
-    /// Maximum allowed limit for search results.
-    /// </summary>
     public const int MaxSearchLimit = 10_000;
 
-    /// <summary>
-    /// STAC API conformance URIs.
-    /// </summary>
     internal static class Conformance
     {
         public const string Core = "https://api.stacspec.org/v1.0.0/core";
@@ -53,9 +35,6 @@ internal static class StacConstants
         public const string Cql2Json = "http://www.opengis.net/spec/cql2/1.0/conf/cql2-json";
     }
 
-    /// <summary>
-    /// STAC-specific link relation types.
-    /// </summary>
     internal static class StacRelations
     {
         public const string Root = "root";
@@ -66,18 +45,12 @@ internal static class StacConstants
         public const string Search = "search";
     }
 
-    /// <summary>
-    /// STAC collection provider roles.
-    /// </summary>
     internal static class ProviderRoles
     {
         public const string Producer = "producer";
         public const string Host = "host";
     }
 
-    /// <summary>
-    /// Allowed query parameters by endpoint.
-    /// </summary>
     internal static class AllowedQueryParameters
     {
         public static readonly HashSet<string> Catalog = new(StringComparer.OrdinalIgnoreCase) { "f" };

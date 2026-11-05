@@ -10,27 +10,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Features.Infrastructure.Caching;
 
-/// <summary>
-/// Background service that pre-prepares known high-frequency queries
-/// </summary>
-/// <remarks>
-/// <para>
-/// This service identifies and pre-prepares SQL statements that are known to be
-/// executed frequently across the application. By preparing these statements
-/// early, we ensure optimal performance from the first execution rather than
-/// waiting for the automatic caching threshold to be reached.
-/// </para>
-/// <para>
-/// PERFORMANCE IMPACT:
-/// - Reduces initial query latency for common operations
-/// - Improves cache hit ratios by ensuring important queries are always prepared
-/// - Provides predictable performance characteristics for critical paths
-/// </para>
-/// <para>
-/// SAFETY: Only prepares parameterized queries that have been verified safe.
-/// All queries maintain existing security patterns and parameter binding.
-/// </para>
-/// </remarks>
 internal sealed class HighFrequencyQueryPreparationService : BackgroundService
 {
     private readonly NpgsqlDataSource _dataSource;
@@ -39,9 +18,6 @@ internal sealed class HighFrequencyQueryPreparationService : BackgroundService
     private readonly QueryCacheOptions _options;
     private readonly HighPriorityQuery[] _highPriorityQueries;
 
-    /// <summary>
-    /// High-priority queries that should be prepared immediately
-    /// </summary>
     private static HighPriorityQuery[] BuildHighPriorityQueries(
         string featuresTableName,
         string layersTableName,

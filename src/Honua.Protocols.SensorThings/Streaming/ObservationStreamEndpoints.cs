@@ -16,24 +16,13 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Protocols.SensorThings.Streaming;
 
-/// <summary>
-/// OGC SensorThings real-time observation streaming endpoint (Phase 3, #1747).
-/// A single route serves both Server-Sent Events (<c>Accept: text/event-stream</c>) and
-/// WebSocket (upgrade request) transports, reusing the bounded-channel session pattern of
-/// the server feature-change stream. Newly-ingested observations (Phase 2) are pushed to
-/// connected clients in near-real-time without an MQTT broker dependency.
-/// </summary>
 internal static class ObservationStreamEndpoints
 {
     private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromSeconds(25);
 
-    /// <summary>
-    /// The gap frame is best-effort. A client that has stopped reading must not pin the
-    /// handler past this budget; the transport is aborted when the write does not finish.
-    /// </summary>
+    // A client that has stopped reading must not pin the handler, so a gap-frame write that overruns its budget aborts the transport.
     private static readonly TimeSpan GapWriteBudget = TimeSpan.FromSeconds(2);
 
-    /// <summary>Maps the SensorThings observation-stream endpoint.</summary>
     public static IEndpointRouteBuilder MapSensorThingsStreamEndpoints(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapGet("/sta/v1.1/ObservationsStream", HandleStream)
@@ -296,11 +285,6 @@ internal static class ObservationStreamEndpoints
         }
     }
 
-    /// <summary>
-    /// Emits the terminal gap without using the cancelled session token.
-    /// The write is bounded: a client that stopped reading does not pin the handler,
-    /// and the transport is aborted when the budget expires.
-    /// </summary>
     private static async Task WriteSlowConsumerGapAsync(
         HttpContext context,
         ObservationStreamSession session,
@@ -353,7 +337,6 @@ internal static class ObservationStreamEndpoints
         }
     }
 
-    /// <summary>Drops a transport that did not accept the terminal gap within the budget.</summary>
     private static void AbortTransport(HttpContext context, WebSocket? socket)
     {
         if (socket is not null)

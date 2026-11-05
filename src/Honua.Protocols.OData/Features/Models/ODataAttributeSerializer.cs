@@ -6,9 +6,6 @@ using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Protocols.OData.Models;
 
-/// <summary>
-/// Shared helpers for serializing and normalizing OData attribute payloads.
-/// </summary>
 internal static class ODataAttributeSerializer
 {
     public static Dictionary<string, object?> Serialize(IReadOnlyDictionary<string, object?> attributes)

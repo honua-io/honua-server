@@ -3,21 +3,8 @@
 
 namespace Honua.Plugins;
 
-/// <summary>
-/// Validates declared inter-plugin dependencies and minimum-server-version constraints at startup,
-/// before any plugin code runs. Part of the manifest/security hardening (issue #1562): a missing
-/// or version-incompatible dependency, or a server too old for a plugin, fails fast with a clear
-/// message rather than surfacing as a runtime error later.
-/// </summary>
 internal static class PluginDependencyResolver
 {
-    /// <summary>
-    /// Verifies that every plugin's declared dependencies are present at a compatible version and
-    /// that the running server satisfies each plugin's minimum server version.
-    /// </summary>
-    /// <param name="registrations">All registered plugins.</param>
-    /// <param name="serverVersion">The running server's semantic version.</param>
-    /// <exception cref="InvalidOperationException">When a constraint is unsatisfied.</exception>
     public static void Validate(IReadOnlyList<PluginRegistration> registrations, Version serverVersion)
     {
         ArgumentNullException.ThrowIfNull(registrations);
