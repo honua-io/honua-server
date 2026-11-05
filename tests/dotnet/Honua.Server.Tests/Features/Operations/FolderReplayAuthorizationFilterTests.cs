@@ -80,11 +80,16 @@ public sealed class FolderReplayAuthorizationFilterTests
         var plan = new OperationProposalPlan { Summary = "create folder" };
         return new OperationProposal
         {
-            ProposalId = "proposal", OperationId = "folder.create", TenantId = "public",
-            Kind = OperationClass.AdminConfigChange, Status = OperationProposalStatus.Executing,
-            Plan = plan, SealedPlanHash = OperationApprovalPlanSeal.Compute(plan),
+            ProposalId = "proposal",
+            OperationId = "folder.create",
+            TenantId = "public",
+            Kind = OperationClass.AdminConfigChange,
+            Status = OperationProposalStatus.Executing,
+            Plan = plan,
+            SealedPlanHash = OperationApprovalPlanSeal.Compute(plan),
             Audit = new OperationAuditInfo { OperationInstanceId = "instance" },
-            CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow
         };
     }
 

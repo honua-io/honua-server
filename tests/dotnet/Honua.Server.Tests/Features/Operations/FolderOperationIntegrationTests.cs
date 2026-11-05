@@ -103,7 +103,9 @@ public sealed class FolderOperationIntegrationTests(RedisFixture redis) : IAsync
         var initial = await SnapshotAsync();
         var parameters = new Dictionary<string, string?>
         {
-            ["name"] = "Owned", ["If-Match"] = initial.Etag, ["tenantId"] = "caller-supplied-tenant"
+            ["name"] = "Owned",
+            ["If-Match"] = initial.Etag,
+            ["tenantId"] = "caller-supplied-tenant"
         };
         if (requestedNamespace is not null) parameters["namespace"] = requestedNamespace;
         await ApplyAsync("folder.create", parameters);
@@ -174,7 +176,8 @@ public sealed class FolderOperationIntegrationTests(RedisFixture redis) : IAsync
         var before = await SnapshotAsync();
         var proposal = await ProposeAsync("service.move", new()
         {
-            ["folderId"] = before.Graph.Folders.Single().Metadata.Id, ["If-Match"] = before.Etag
+            ["folderId"] = before.Graph.Folders.Single().Metadata.Id,
+            ["If-Match"] = before.Etag
         });
         _authorization.DeniedService = "test";
         await ApproveAsync(proposal);
