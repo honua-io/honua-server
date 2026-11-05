@@ -132,6 +132,20 @@
       "capability": "admin.control-plane"
     },
     {
+      "id": "delete-api-v1-admin-folders-id",
+      "route": "/api/v1/admin/folders/{id}",
+      "method": "DELETE",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.FolderEndpointsTests.FolderLifecycle_WithCurrentEtag_MovesAllFacetsAndPreservesAliases"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
+    },
+    {
       "id": "delete-api-v1-admin-import-formats",
       "route": "/api/v1/admin/import/formats",
       "method": "DELETE",
@@ -2127,6 +2141,22 @@
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
       "capability": "fieldops.forms"
+    },
+    {
+      "id": "get-api-v1-admin-folders",
+      "route": "/api/v1/admin/folders",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.FolderEndpointsTests.FolderLifecycle_WithCurrentEtag_MovesAllFacetsAndPreservesAliases",
+        "Honua.Server.Tests.Features.Admin.FolderEndpointsTests.FolderScope_OmittedOrSuppliedNamespace_UsesPublicationOwnership",
+        "Honua.Server.Tests.Features.Admin.ProviderOnlyServiceSettingsTests.Folders_WithoutGraphStore_ListReadsAndMutationReturnsUnavailable"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
     },
     {
       "id": "get-api-v1-admin-forms-packages",
@@ -15371,6 +15401,20 @@
       "capability": "admin.control-plane"
     },
     {
+      "id": "patch-api-v1-admin-folders-id",
+      "route": "/api/v1/admin/folders/{id}",
+      "method": "PATCH",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.FolderEndpointsTests.FolderLifecycle_WithCurrentEtag_MovesAllFacetsAndPreservesAliases"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
+    },
+    {
       "id": "patch-api-v1-admin-import-formats",
       "route": "/api/v1/admin/import/formats",
       "method": "PATCH",
@@ -16878,6 +16922,24 @@
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
       "capability": "fieldops.forms"
+    },
+    {
+      "id": "post-api-v1-admin-folders",
+      "route": "/api/v1/admin/folders",
+      "method": "POST",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.FolderEndpointsTests.CreateFolder_WithConcurrentSnapshotEtag_OnlyOneWriteCommits",
+        "Honua.Server.Tests.Features.Admin.FolderEndpointsTests.CreateFolder_WithoutPrecondition_Returns428",
+        "Honua.Server.Tests.Features.Admin.FolderEndpointsTests.FolderLifecycle_WithCurrentEtag_MovesAllFacetsAndPreservesAliases",
+        "Honua.Server.Tests.Features.Admin.FolderEndpointsTests.FolderScope_OmittedOrSuppliedNamespace_UsesPublicationOwnership",
+        "Honua.Server.Tests.Features.Admin.ProviderOnlyServiceSettingsTests.Folders_WithoutGraphStore_ListReadsAndMutationReturnsUnavailable"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
     },
     {
       "id": "post-api-v1-admin-forms-packages",
@@ -25621,6 +25683,21 @@
         "Honua.Server.Tests.Features.Admin.AdminDiscoveryMetadataEndpointsTests.UpdateDiscovery_NullTextAndEmptyKeywords_ClearsOnlyDiscovery",
         "Honua.Server.Tests.Features.Admin.AdminDiscoveryMetadataEndpointsTests.UpdateDiscovery_WithStaleEtag_RejectsOverwrite",
         "Honua.Server.Tests.Features.Admin.AdminDiscoveryMetadataEndpointsTests.UpdateService_UnrelatedProtocolEditPreservesDiscovery"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
+    },
+    {
+      "id": "put-api-v1-admin-services-servicename-folder",
+      "route": "/api/v1/admin/services/{serviceName}/folder",
+      "method": "PUT",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.FolderEndpointsTests.FolderLifecycle_WithCurrentEtag_MovesAllFacetsAndPreservesAliases",
+        "Honua.Server.Tests.Features.Admin.FolderEndpointsTests.MoveService_WhenLogicalServiceDenied_DoesNotSaveEvenForCurrentMembership"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",

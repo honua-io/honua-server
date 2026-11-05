@@ -1,8 +1,8 @@
 {
   "$schema": "./mcp-tool-roster.v1.schema.json",
   "schemaVersion": 1,
-  "serverSha": "daf56db25c208765f5440e484a7c24fbc5ba81ab",
-  "generatedAt": "2026-11-02T15:31:14Z",
+  "serverSha": "a054afcbf371e07a4bc4fe1749eebf543c6a4822",
+  "generatedAt": "2026-11-04T23:53:35Z",
   "regenerate": "bash scripts/generate-mcp-tool-roster.sh",
   "static": [
     "honua_alert_events",
@@ -143,7 +143,12 @@
     "honua_admin_user_effective_permissions",
     "honua_admin_user_get",
     "honua_admin_user_list",
-    "honua_admin_user_roles_update"
+    "honua_admin_user_roles_update",
+    "honua_op_folder_create",
+    "honua_op_folder_delete",
+    "honua_op_folder_list",
+    "honua_op_folder_update",
+    "honua_op_service_move"
   ],
   "requiresDurableControlPlane": [
     "honua_admin_connection_tables_list",
@@ -171,7 +176,12 @@
     "honua_admin_services_list",
     "honua_admin_services_protocols_set",
     "honua_admin_services_settings_get",
-    "honua_admin_services_timeinfo_set"
+    "honua_admin_services_timeinfo_set",
+    "honua_op_folder_create",
+    "honua_op_folder_delete",
+    "honua_op_folder_list",
+    "honua_op_folder_update",
+    "honua_op_service_move"
   ],
   "views": {
     "analyze": [
