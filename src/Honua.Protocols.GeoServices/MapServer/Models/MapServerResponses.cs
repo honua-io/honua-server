@@ -7,1260 +7,639 @@ using Honua.Protocols.GeoServices.Models;
 
 namespace Honua.Protocols.GeoServices.MapServer.Models;
 
-/// <summary>
-/// Response for the MapServer service metadata endpoint.
-/// </summary>
 internal sealed class MapServerResponse
 {
     // No ArcGIS Server version (currentVersion/fullVersion) is advertised. Honua is an
     // independent GeoServices REST server and must not impersonate a specific ArcGIS Server
     // release. Do NOT add a currentVersion/fullVersion field (guarded by NoGeoServicesServerVersionTests).
 
-    /// <summary>
-    /// Service description displayed by ArcGIS clients.
-    /// </summary>
     [JsonPropertyName("serviceDescription")]
     public string? ServiceDescription { get; init; }
 
-    /// <summary>
-    /// Service name.
-    /// </summary>
     [JsonPropertyName("mapName")]
     public string? MapName { get; init; }
 
-    /// <summary>
-    /// Service description.
-    /// </summary>
     [JsonPropertyName("description")]
     public string? Description { get; init; }
 
-    /// <summary>
-    /// Copyright text.
-    /// </summary>
     [JsonPropertyName("copyrightText")]
     public string? CopyrightText { get; init; }
 
-    /// <summary>SPDX license expression from canonical metadata.</summary>
     [JsonPropertyName("license")]
     public string? License { get; init; }
 
-    /// <summary>Data producer or source organization from canonical metadata.</summary>
     [JsonPropertyName("publisher")]
     public string? Publisher { get; init; }
 
-    /// <summary>Additive license/source documentation links.</summary>
     [JsonPropertyName("links")]
     public GeoServicesGovernanceLink[]? Links { get; init; }
 
-    /// <summary>
-    /// Spatial reference.
-    /// </summary>
     [JsonPropertyName("spatialReference")]
     public SpatialReferenceJson? SpatialReference { get; init; }
 
-    /// <summary>
-    /// Layers in the service.
-    /// </summary>
     [JsonPropertyName("layers")]
     public MapServerLayerInfo[]? Layers { get; init; }
 
-    /// <summary>
-    /// Non-spatial tables in the service.
-    /// </summary>
     [JsonPropertyName("tables")]
     public MapServerTableInfo[]? Tables { get; init; }
 
-    /// <summary>
-    /// Indicates whether dynamic layer rendering is supported.
-    /// </summary>
     [JsonPropertyName("supportsDynamicLayers")]
     public bool SupportsDynamicLayers { get; init; }
 
-    /// <summary>
-    /// Indicates whether cached map tiles are used.
-    /// </summary>
     [JsonPropertyName("singleFusedMapCache")]
     public bool SingleFusedMapCache { get; init; }
 
-    /// <summary>
-    /// Indicates whether clients may create offline tile packages from the cache.
-    /// </summary>
     [JsonPropertyName("exportTilesAllowed")]
     public bool ExportTilesAllowed { get; init; }
 
-    /// <summary>
-    /// Maximum number of tiles accepted by one export operation.
-    /// </summary>
     [JsonPropertyName("maxExportTilesCount")]
     public int MaxExportTilesCount { get; init; }
 
-    /// <summary>
-    /// Supported image format types.
-    /// </summary>
     [JsonPropertyName("supportedImageFormatTypes")]
     public string? SupportedImageFormatTypes { get; init; }
 
-    /// <summary>
-    /// Service capabilities.
-    /// </summary>
     [JsonPropertyName("capabilities")]
     public string? Capabilities { get; init; }
 
-    /// <summary>
-    /// Full extent of the service.
-    /// </summary>
     [JsonPropertyName("fullExtent")]
     public GeoServicesExtent? FullExtent { get; init; }
 
-    /// <summary>
-    /// Initial extent of the service.
-    /// </summary>
     [JsonPropertyName("initialExtent")]
     public GeoServicesExtent? InitialExtent { get; init; }
 
-    /// <summary>
-    /// Display units for map scale and measurements.
-    /// </summary>
     [JsonPropertyName("units")]
     public string Units { get; init; } = "esriMeters";
 
-    /// <summary>
-    /// Maximum image width.
-    /// </summary>
     [JsonPropertyName("maxImageWidth")]
     public int MaxImageWidth { get; init; } = 4096;
 
-    /// <summary>
-    /// Maximum image height.
-    /// </summary>
     [JsonPropertyName("maxImageHeight")]
     public int MaxImageHeight { get; init; } = 4096;
 
-    /// <summary>
-    /// Maximum number of records returned per query.
-    /// </summary>
     [JsonPropertyName("maxRecordCount")]
     public int MaxRecordCount { get; init; } = 1000;
 
-    /// <summary>
-    /// Supported query output formats.
-    /// </summary>
     [JsonPropertyName("supportedQueryFormats")]
     public string? SupportedQueryFormats { get; init; }
 
-    /// <summary>Companion feature and version-management extensions available to the caller.</summary>
     [JsonPropertyName("supportedExtensions")]
     public string SupportedExtensions { get; init; } = string.Empty;
 
-    /// <summary>
-    /// Minimum visible scale for the service.
-    /// </summary>
     [JsonPropertyName("minScale")]
     public double? MinScale { get; init; }
 
-    /// <summary>
-    /// Maximum visible scale for the service.
-    /// </summary>
     [JsonPropertyName("maxScale")]
     public double? MaxScale { get; init; }
 
-    /// <summary>
-    /// Document metadata for the service.
-    /// </summary>
     [JsonPropertyName("documentInfo")]
     public MapServerDocumentInfo? DocumentInfo { get; init; }
 
-    /// <summary>
-    /// Tile caching information for the service (WebMercatorQuad tile matrix set).
-    /// </summary>
     [JsonPropertyName("tileInfo")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public TileInfo? TileInfo { get; init; }
 
-    /// <summary>
-    /// Aggregate time information for time-aware map layers.
-    /// </summary>
     [JsonPropertyName("timeInfo")]
     public FeatureServerTimeInfo? TimeInfo { get; init; }
 }
 
-/// <summary>
-/// Size estimate for a storage-backed MapServer exportTiles archive.
-/// </summary>
 internal sealed class ExportTilesEstimateResponse
 {
-    /// <summary>
-    /// Number of WebMercatorQuad tiles selected by the request after limits.
-    /// </summary>
     [JsonPropertyName("tileCount")]
     public long TileCount { get; init; }
 
-    /// <summary>
-    /// Estimated archive size, in bytes.
-    /// </summary>
     [JsonPropertyName("size")]
     public long Size { get; init; }
 
-    /// <summary>
-    /// Unit used by <see cref="Size"/>.
-    /// </summary>
     [JsonPropertyName("sizeUnit")]
     public string SizeUnit { get; init; } = "bytes";
 
-    /// <summary>
-    /// Estimated archive size, in bytes.
-    /// </summary>
     [JsonPropertyName("estimatedSizeBytes")]
     public long EstimatedSizeBytes { get; init; }
 
-    /// <summary>
-    /// Minimum zoom level included.
-    /// </summary>
     [JsonPropertyName("minZoom")]
     public int MinZoom { get; init; }
 
-    /// <summary>
-    /// Maximum zoom level included.
-    /// </summary>
     [JsonPropertyName("maxZoom")]
     public int MaxZoom { get; init; }
 
-    /// <summary>
-    /// Whether the output is an Esri tile package (TPK exploded-cache layout).
-    /// False for the flat ZIP archive form.
-    /// </summary>
     [JsonPropertyName("tilePackage")]
     public bool TilePackage { get; init; }
 
-    /// <summary>
-    /// Storage archive format produced: <c>zip</c> for a flat archive or
-    /// <c>tpk</c> for an Esri exploded-cache tile package.
-    /// </summary>
     [JsonPropertyName("storageFormat")]
     public string StorageFormat { get; init; } = "zip";
 
-    /// <summary>
-    /// MIME type of the exported archive.
-    /// </summary>
     [JsonPropertyName("contentType")]
     public string ContentType { get; init; } = "application/zip";
 
-    /// <summary>
-    /// Indicates that the request selected more tiles than the configured operation limit.
-    /// </summary>
     [JsonPropertyName("exceededTransferLimit")]
     public bool ExceededTransferLimit { get; init; }
 }
 
-/// <summary>
-/// Response for a completed storage-backed MapServer exportTiles archive.
-/// </summary>
 internal sealed class ExportTilesResponse
 {
-    /// <summary>
-    /// ArcGIS-compatible job status string for the completed synchronous export.
-    /// </summary>
     [JsonPropertyName("jobStatus")]
     public string JobStatus { get; init; } = "esriJobSucceeded";
 
-    /// <summary>
-    /// Service identifier used for the export.
-    /// </summary>
     [JsonPropertyName("serviceId")]
     public string? ServiceId { get; init; }
 
-    /// <summary>
-    /// Number of tiles included in the archive.
-    /// </summary>
     [JsonPropertyName("tileCount")]
     public long TileCount { get; init; }
 
-    /// <summary>
-    /// Minimum zoom level included.
-    /// </summary>
     [JsonPropertyName("minZoom")]
     public int MinZoom { get; init; }
 
-    /// <summary>
-    /// Maximum zoom level included.
-    /// </summary>
     [JsonPropertyName("maxZoom")]
     public int MaxZoom { get; init; }
 
-    /// <summary>
-    /// Whether the output is an Esri tile package (TPK exploded-cache layout).
-    /// False for the flat ZIP archive form.
-    /// </summary>
     [JsonPropertyName("tilePackage")]
     public bool TilePackage { get; init; }
 
-    /// <summary>
-    /// Storage archive format produced: <c>zip</c> for a flat archive or
-    /// <c>tpk</c> for an Esri exploded-cache tile package.
-    /// </summary>
     [JsonPropertyName("storageFormat")]
     public string StorageFormat { get; init; } = "zip";
 
-    /// <summary>
-    /// MIME type of the exported archive.
-    /// </summary>
     [JsonPropertyName("contentType")]
     public string ContentType { get; init; } = "application/zip";
 
-    /// <summary>
-    /// Cloud file identifier for the archive.
-    /// </summary>
     [JsonPropertyName("archiveFileId")]
     public string? ArchiveFileId { get; init; }
 
-    /// <summary>
-    /// Cloud file identifier for the archive.
-    /// </summary>
     [JsonPropertyName("fileId")]
     public string? FileId { get; init; }
 
-    /// <summary>
-    /// Archive size in bytes.
-    /// </summary>
     [JsonPropertyName("size")]
     public long Size { get; init; }
 
-    /// <summary>
-    /// Archive size in bytes.
-    /// </summary>
     [JsonPropertyName("sizeBytes")]
     public long SizeBytes { get; init; }
 
-    /// <summary>
-    /// Presigned or provider-specific download URL when the storage provider can create one.
-    /// </summary>
     [JsonPropertyName("downloadUrl")]
     public string? DownloadUrl { get; init; }
 
-    /// <summary>
-    /// Time when the temporary archive expires.
-    /// </summary>
     [JsonPropertyName("expiresAt")]
     public DateTimeOffset? ExpiresAt { get; init; }
 
-    /// <summary>
-    /// WGS84 bounds used for the export: west, south, east, north.
-    /// </summary>
     [JsonPropertyName("bounds")]
     public double[]? Bounds { get; init; }
 
-    /// <summary>
-    /// Exported archive files.
-    /// </summary>
     [JsonPropertyName("files")]
     public ExportTilesFileInfo[] Files { get; init; } = [];
 
-    /// <summary>
-    /// ArcGIS-style results container for clients looking for output parameters.
-    /// </summary>
     [JsonPropertyName("results")]
     public ExportTilesResults? Results { get; init; }
 }
 
-/// <summary>
-/// File entry emitted by the MapServer exportTiles response.
-/// </summary>
 internal sealed class ExportTilesFileInfo
 {
-    /// <summary>
-    /// Archive filename.
-    /// </summary>
     [JsonPropertyName("name")]
     public string? Name { get; init; }
 
-    /// <summary>
-    /// Cloud file identifier.
-    /// </summary>
     [JsonPropertyName("fileId")]
     public string? FileId { get; init; }
 
-    /// <summary>
-    /// Download URL for the archive.
-    /// </summary>
     [JsonPropertyName("url")]
     public string? Url { get; init; }
 
-    /// <summary>
-    /// MIME type of the archive.
-    /// </summary>
     [JsonPropertyName("contentType")]
     public string? ContentType { get; init; }
 
-    /// <summary>
-    /// Size in bytes.
-    /// </summary>
     [JsonPropertyName("size")]
     public long Size { get; init; }
 }
 
-/// <summary>
-/// ArcGIS-style output parameter map for exportTiles.
-/// </summary>
 internal sealed class ExportTilesResults
 {
-    /// <summary>
-    /// Output service/archive URL parameter.
-    /// </summary>
     [JsonPropertyName("out_service_url")]
     public ExportTilesResultValue? OutServiceUrl { get; init; }
 }
 
-/// <summary>
-/// ArcGIS-style result parameter value.
-/// </summary>
 internal sealed class ExportTilesResultValue
 {
-    /// <summary>
-    /// URL to the output parameter resource.
-    /// </summary>
     [JsonPropertyName("paramUrl")]
     public string? ParamUrl { get; init; }
 
-    /// <summary>
-    /// Direct value for clients that do not follow parameter URLs.
-    /// </summary>
     [JsonPropertyName("value")]
     public string? Value { get; init; }
 }
 
-/// <summary>
-/// Document metadata for a MapServer service.
-/// </summary>
 internal sealed class MapServerDocumentInfo
 {
-    /// <summary>
-    /// Document title.
-    /// </summary>
     [JsonPropertyName("Title")]
     public string Title { get; init; } = "";
 
-    /// <summary>
-    /// Document author.
-    /// </summary>
     [JsonPropertyName("Author")]
     public string Author { get; init; } = "";
 
-    /// <summary>
-    /// Document comments.
-    /// </summary>
     [JsonPropertyName("Comments")]
     public string Comments { get; init; } = "";
 
-    /// <summary>
-    /// Document subject.
-    /// </summary>
     [JsonPropertyName("Subject")]
     public string Subject { get; init; } = "";
 
-    /// <summary>
-    /// Data attribution and credits.
-    /// </summary>
     [JsonPropertyName("Credits")]
     public string Credits { get; init; } = "";
 
-    /// <summary>
-    /// Document category.
-    /// </summary>
     [JsonPropertyName("Category")]
     public string Category { get; init; } = "";
 
-    /// <summary>
-    /// Document keywords.
-    /// </summary>
     [JsonPropertyName("Keywords")]
     public string Keywords { get; init; } = "";
 }
 
-/// <summary>
-/// Layer information in a MapServer service.
-/// </summary>
 internal sealed class MapServerLayerInfo
 {
-    /// <summary>
-    /// Layer identifier.
-    /// </summary>
     [JsonPropertyName("id")]
     public int Id { get; init; }
 
-    /// <summary>
-    /// Layer name.
-    /// </summary>
     [JsonPropertyName("name")]
     public string? Name { get; init; }
 
-    /// <summary>
-    /// Whether the layer is visible by default.
-    /// </summary>
     [JsonPropertyName("defaultVisibility")]
     public bool DefaultVisibility { get; init; }
 
-    /// <summary>
-    /// Minimum scale for visibility.
-    /// </summary>
     [JsonPropertyName("minScale")]
     public double? MinScale { get; init; }
 
-    /// <summary>
-    /// Maximum scale for visibility.
-    /// </summary>
     [JsonPropertyName("maxScale")]
     public double? MaxScale { get; init; }
 
-    /// <summary>
-    /// Parent layer identifier (-1 for root layers).
-    /// </summary>
     [JsonPropertyName("parentLayerId")]
     public int ParentLayerId { get; init; } = -1;
 
-    /// <summary>
-    /// Sub-layer identifiers (null for leaf layers).
-    /// </summary>
     [JsonPropertyName("subLayerIds")]
     public int[]? SubLayerIds { get; init; }
 }
 
-/// <summary>
-/// Table information in a MapServer service.
-/// </summary>
 internal sealed class MapServerTableInfo
 {
-    /// <summary>
-    /// Table identifier.
-    /// </summary>
     [JsonPropertyName("id")]
     public int Id { get; init; }
 
-    /// <summary>
-    /// Table name.
-    /// </summary>
     [JsonPropertyName("name")]
     public string? Name { get; init; }
 }
 
-/// <summary>
-/// Response for layer-specific MapServer metadata.
-/// </summary>
 internal sealed class MapServerLayerResponse
 {
     // No ArcGIS Server version (currentVersion/fullVersion) is advertised. Honua is an
     // independent GeoServices REST server and must not impersonate a specific ArcGIS Server
     // release. Do NOT add a currentVersion/fullVersion field (guarded by NoGeoServicesServerVersionTests).
 
-    /// <summary>
-    /// Layer identifier.
-    /// </summary>
     [JsonPropertyName("id")]
     public int Id { get; init; }
 
-    /// <summary>
-    /// Layer name.
-    /// </summary>
     [JsonPropertyName("name")]
     public string? Name { get; init; }
 
-    /// <summary>
-    /// Layer type text.
-    /// </summary>
     [JsonPropertyName("type")]
     public string Type { get; init; } = "Feature Layer";
 
-    /// <summary>
-    /// Human-readable description.
-    /// </summary>
     [JsonPropertyName("description")]
     public string? Description { get; init; }
 
-    /// <summary>Layer attribution in the standard GeoServices copyright field.</summary>
     [JsonPropertyName("copyrightText")]
     public string? CopyrightText { get; init; }
 
-    /// <summary>SPDX license expression from canonical metadata.</summary>
     [JsonPropertyName("license")]
     public string? License { get; init; }
 
-    /// <summary>Data producer or source organization from canonical metadata.</summary>
     [JsonPropertyName("publisher")]
     public string? Publisher { get; init; }
 
-    /// <summary>Additive license/source documentation links.</summary>
     [JsonPropertyName("links")]
     public GeoServicesGovernanceLink[]? Links { get; init; }
 
-    /// <summary>
-    /// Geometry type (for feature layers).
-    /// </summary>
     [JsonPropertyName("geometryType")]
     public string? GeometryType { get; init; }
 
-    /// <summary>
-    /// Layer extent.
-    /// </summary>
     [JsonPropertyName("extent")]
     public GeoServicesExtent? Extent { get; init; }
 
-    /// <summary>
-    /// Layer spatial reference.
-    /// </summary>
     [JsonPropertyName("spatialReference")]
     public SpatialReferenceJson? SpatialReference { get; init; }
 
-    /// <summary>
-    /// Spatial reference of the source dataset, which can differ from the map CRS.
-    /// </summary>
     [JsonPropertyName("sourceSpatialReference")]
     public SpatialReferenceJson? SourceSpatialReference { get; init; }
 
-    /// <summary>
-    /// Field name used by clients for display.
-    /// </summary>
     [JsonPropertyName("displayField")]
     public string? DisplayField { get; init; }
 
-    /// <summary>
-    /// Object ID field name.
-    /// </summary>
     [JsonPropertyName("objectIdField")]
     public string? ObjectIdField { get; init; }
 
-    /// <summary>
-    /// Layer field definitions.
-    /// </summary>
     [JsonPropertyName("fields")]
     public MapServerFieldInfo[]? Fields { get; init; }
 
-    /// <summary>
-    /// Layer capabilities.
-    /// </summary>
     [JsonPropertyName("capabilities")]
     public string? Capabilities { get; init; }
 
-    /// <summary>
-    /// Indicates if advanced query options are supported.
-    /// </summary>
     [JsonPropertyName("supportsAdvancedQueries")]
     public bool SupportsAdvancedQueries { get; init; }
 
-    /// <summary>
-    /// Indicates whether attachments are enabled for the layer.
-    /// </summary>
     [JsonPropertyName("hasAttachments")]
     public bool HasAttachments { get; init; }
 
-    /// <summary>
-    /// Layer-to-layer relationship metadata, mirrored from the underlying layer so the
-    /// MapServer sublayer surfaces the same relationships the FeatureServer layer advertises.
-    /// </summary>
     [JsonPropertyName("relationships")]
     public FeatureServer.Models.LayerRelationshipInfo[] Relationships { get; init; } = [];
 
-    /// <summary>
-    /// Min scale visibility threshold.
-    /// </summary>
     [JsonPropertyName("minScale")]
     public double? MinScale { get; init; }
 
-    /// <summary>
-    /// Max scale visibility threshold.
-    /// </summary>
     [JsonPropertyName("maxScale")]
     public double? MaxScale { get; init; }
 
-    /// <summary>
-    /// Default map visibility.
-    /// </summary>
     [JsonPropertyName("defaultVisibility")]
     public bool DefaultVisibility { get; init; } = true;
 
-    /// <summary>
-    /// Maximum records per query.
-    /// </summary>
     [JsonPropertyName("maxRecordCount")]
     public int MaxRecordCount { get; init; } = 1000;
 
-    /// <summary>
-    /// Drawing info for client-side symbology.
-    /// </summary>
     [JsonPropertyName("drawingInfo")]
     public object? DrawingInfo { get; init; }
 
-    /// <summary>
-    /// Request-scoped definition expression applied to a dynamic layer response.
-    /// </summary>
     [JsonPropertyName("definitionExpression")]
     public string? DefinitionExpression { get; init; }
 
-    /// <summary>
-    /// Supported query output formats (comma-separated string per ESRI spec).
-    /// </summary>
+    // Supported query formats are a comma-separated string because Esri clients split the value.
     [JsonPropertyName("supportedQueryFormats")]
     public string? SupportedQueryFormats { get; init; }
 
-    /// <summary>
-    /// Indicates whether statistics queries are supported.
-    /// </summary>
     [JsonPropertyName("supportsStatistics")]
     public bool SupportsStatistics { get; init; }
 
-    /// <summary>
-    /// Indicates whether ORDER BY is supported.
-    /// </summary>
     [JsonPropertyName("supportsOrderBy")]
     public bool SupportsOrderBy { get; init; }
 
-    /// <summary>
-    /// Indicates whether DISTINCT is supported.
-    /// </summary>
     [JsonPropertyName("supportsDistinct")]
     public bool SupportsDistinct { get; init; }
 
-    /// <summary>
-    /// Indicates whether result pagination is supported.
-    /// </summary>
     [JsonPropertyName("supportsPagination")]
     public bool SupportsPagination { get; init; }
 
-    /// <summary>
-    /// Detailed query capabilities consumed by ArcGIS clients.
-    /// </summary>
     [JsonPropertyName("advancedQueryCapabilities")]
     public AdvancedQueryCapabilities? AdvancedQueryCapabilities { get; init; }
 
-    /// <summary>
-    /// Time configuration and available extent for this layer.
-    /// </summary>
     [JsonPropertyName("timeInfo")]
     public FeatureServerTimeInfo? TimeInfo { get; init; }
 
-    /// <summary>
-    /// Parent layer identifier (-1 for root layers).
-    /// </summary>
     [JsonPropertyName("parentLayerId")]
     public int ParentLayerId { get; init; } = -1;
 
-    /// <summary>
-    /// Sub-layer identifiers (null for leaf layers).
-    /// </summary>
     [JsonPropertyName("subLayerIds")]
     public int[]? SubLayerIds { get; init; }
 }
 
-/// <summary>
-/// Field metadata for MapServer layer responses.
-/// </summary>
 internal sealed class MapServerFieldInfo
 {
-    /// <summary>
-    /// Field name.
-    /// </summary>
     [JsonPropertyName("name")]
     public string? Name { get; init; }
 
-    /// <summary>
-    /// ArcGIS field type.
-    /// </summary>
     [JsonPropertyName("type")]
     public string? Type { get; init; }
 
-    /// <summary>
-    /// Display alias.
-    /// </summary>
     [JsonPropertyName("alias")]
     public string? Alias { get; init; }
 
-    /// <summary>
-    /// Maximum character length for text fields.
-    /// </summary>
     [JsonPropertyName("length")]
     public int? Length { get; init; }
 
-    /// <summary>
-    /// Indicates whether null values are allowed.
-    /// </summary>
     [JsonPropertyName("nullable")]
     public bool Nullable { get; init; } = true;
 
-    /// <summary>
-    /// Indicates whether values are editable.
-    /// </summary>
     [JsonPropertyName("editable")]
     public bool Editable { get; init; } = true;
 
-    /// <summary>
-    /// Default value for the field.
-    /// </summary>
     [JsonPropertyName("defaultValue")]
     public object? DefaultValue { get; init; }
 }
 
-/// <summary>
-/// Response for the identify operation.
-/// </summary>
 internal sealed class IdentifyResponse
 {
-    /// <summary>
-    /// Identified results.
-    /// </summary>
     [JsonPropertyName("results")]
     public IdentifyResult[]? Results { get; init; }
 }
 
-/// <summary>
-/// Single identify result.
-/// </summary>
 internal sealed class IdentifyResult
 {
-    /// <summary>
-    /// Layer identifier.
-    /// </summary>
     [JsonPropertyName("layerId")]
     public int LayerId { get; init; }
 
-    /// <summary>
-    /// Layer name.
-    /// </summary>
     [JsonPropertyName("layerName")]
     public string? LayerName { get; init; }
 
-    /// <summary>
-    /// Name of the display field for this layer.
-    /// </summary>
     [JsonPropertyName("displayFieldName")]
     public string? DisplayFieldName { get; init; }
 
-    /// <summary>
-    /// Display field value.
-    /// </summary>
     [JsonPropertyName("value")]
     public string? Value { get; init; }
 
-    /// <summary>
-    /// Feature attributes.
-    /// </summary>
     [JsonPropertyName("attributes")]
     public Dictionary<string, object?>? Attributes { get; init; }
 
-    /// <summary>
-    /// Feature geometry type.
-    /// </summary>
     [JsonPropertyName("geometryType")]
     public string? GeometryType { get; init; }
 
-    /// <summary>
-    /// Feature geometry.
-    /// </summary>
     [JsonPropertyName("geometry")]
     public object? Geometry { get; init; }
 }
 
-/// <summary>
-/// Response for the MapServer Feature child resource
-/// (<c>.../MapServer/{layerId}/{featureId}</c>). Wraps a single feature with
-/// its attributes and geometry.
-/// </summary>
 internal sealed class FeatureResourceResponse
 {
-    /// <summary>
-    /// The single feature identified by the route's object id, rendered as an
-    /// Esri JSON feature (<c>{attributes, geometry}</c>).
-    /// </summary>
     [JsonPropertyName("feature")]
     public System.Text.Json.JsonElement Feature { get; init; }
 }
 
-/// <summary>
-/// Response for the allLayersAndTables operation. Mirrors the Esri MapServer
-/// resource that returns the full metadata for every layer and table in the
-/// service in a single document.
-/// </summary>
 internal sealed class AllLayersAndTablesResponse
 {
-    /// <summary>
-    /// Full metadata for every visible feature layer in the service.
-    /// </summary>
     [JsonPropertyName("layers")]
     public MapServerLayerResponse[]? Layers { get; init; }
 
-    /// <summary>
-    /// Full metadata for every visible non-spatial table in the service.
-    /// </summary>
     [JsonPropertyName("tables")]
     public MapServerLayerResponse[]? Tables { get; init; }
 }
 
-/// <summary>
-/// Response for the queryDomains operation. Contains the coded-value and range
-/// domains referenced by the requested layers.
-/// </summary>
 internal sealed class MapServerQueryDomainsResponse
 {
-    /// <summary>
-    /// Domains referenced by the requested layers.
-    /// </summary>
     [JsonPropertyName("domains")]
     public MapServerDomainInfo[]? Domains { get; init; }
 }
 
-/// <summary>
-/// Single domain entry for the queryDomains operation.
-/// </summary>
 internal sealed class MapServerDomainInfo
 {
-    /// <summary>
-    /// Domain type: <c>codedValue</c> or <c>range</c>.
-    /// </summary>
     [JsonPropertyName("type")]
     public string? Type { get; init; }
 
-    /// <summary>
-    /// Stable domain name.
-    /// </summary>
     [JsonPropertyName("name")]
     public string? Name { get; init; }
 
-    /// <summary>
-    /// Name of the field the domain is bound to.
-    /// </summary>
     [JsonPropertyName("fieldName")]
     public string? FieldName { get; init; }
 
-    /// <summary>
-    /// ArcGIS field type for the bound field.
-    /// </summary>
     [JsonPropertyName("fieldType")]
     public string? FieldType { get; init; }
 
-    /// <summary>
-    /// Coded value entries (present only for coded-value domains).
-    /// </summary>
     [JsonPropertyName("codedValues")]
     public MapServerDomainCodedValue[]? CodedValues { get; init; }
 
-    /// <summary>
-    /// Range endpoints ordered [min, max] (present only for range domains).
-    /// </summary>
     [JsonPropertyName("range")]
     public object[]? Range { get; init; }
 
-    /// <summary>
-    /// Optional merge policy metadata.
-    /// </summary>
     [JsonPropertyName("mergePolicy")]
     public string? MergePolicy { get; init; }
 
-    /// <summary>
-    /// Optional split policy metadata.
-    /// </summary>
     [JsonPropertyName("splitPolicy")]
     public string? SplitPolicy { get; init; }
 }
 
-/// <summary>
-/// Single coded-value entry for a coded-value domain.
-/// </summary>
 internal sealed class MapServerDomainCodedValue
 {
-    /// <summary>
-    /// Human-readable display name for the code.
-    /// </summary>
     [JsonPropertyName("name")]
     public string? Name { get; init; }
 
-    /// <summary>
-    /// Code value, JSON-typed to match the field's value type.
-    /// </summary>
     [JsonPropertyName("code")]
     public object? Code { get; init; }
 }
 
-/// <summary>
-/// Response for the legend operation.
-/// </summary>
 internal sealed class LegendResponse
 {
-    /// <summary>
-    /// Legend layers.
-    /// </summary>
     [JsonPropertyName("layers")]
     public LegendLayerInfo[]? Layers { get; init; }
 }
 
-/// <summary>
-/// Legend information for a layer.
-/// </summary>
 internal sealed class LegendLayerInfo
 {
-    /// <summary>
-    /// Layer identifier.
-    /// </summary>
     [JsonPropertyName("layerId")]
     public int LayerId { get; init; }
 
-    /// <summary>
-    /// Layer name.
-    /// </summary>
     [JsonPropertyName("layerName")]
     public string? LayerName { get; init; }
 
-    /// <summary>
-    /// Layer type.
-    /// </summary>
     [JsonPropertyName("layerType")]
     public string? LayerType { get; init; }
 
-    /// <summary>
-    /// Minimum scale for visibility.
-    /// </summary>
     [JsonPropertyName("minScale")]
     public double? MinScale { get; init; }
 
-    /// <summary>
-    /// Maximum scale for visibility.
-    /// </summary>
     [JsonPropertyName("maxScale")]
     public double? MaxScale { get; init; }
 
-    /// <summary>
-    /// Legend entries for this layer.
-    /// </summary>
     [JsonPropertyName("legend")]
     public LegendEntry[]? Legend { get; init; }
 }
 
-/// <summary>
-/// Single legend entry with swatch image and label.
-/// </summary>
 internal sealed class LegendEntry
 {
-    /// <summary>
-    /// Legend symbol label.
-    /// </summary>
     [JsonPropertyName("label")]
     public string? Label { get; init; }
 
-    /// <summary>
-    /// Renderer values represented by this legend class.
-    /// </summary>
     [JsonPropertyName("values")]
     public string[]? Values { get; init; }
 
-    /// <summary>
-    /// Base64-encoded legend image data.
-    /// </summary>
     [JsonPropertyName("imageData")]
     public string? ImageData { get; init; }
 
-    /// <summary>
-    /// Content type of the image (e.g., "image/png").
-    /// </summary>
     [JsonPropertyName("contentType")]
     public string ContentType { get; init; } = "image/png";
 
-    /// <summary>
-    /// Width of the legend image in pixels.
-    /// </summary>
     [JsonPropertyName("width")]
     public int Width { get; init; } = 20;
 
-    /// <summary>
-    /// Height of the legend image in pixels.
-    /// </summary>
     [JsonPropertyName("height")]
     public int Height { get; init; } = 20;
 }
 
-/// <summary>
-/// Export response when f=json.
-/// </summary>
 internal sealed class ExportImageResponse
 {
-    /// <summary>
-    /// URL to the generated image (not used in inline mode).
-    /// </summary>
     [JsonPropertyName("href")]
     public string? Href { get; init; }
 
-    /// <summary>
-    /// Width of the exported image.
-    /// </summary>
     [JsonPropertyName("width")]
     public int Width { get; init; }
 
-    /// <summary>
-    /// Height of the exported image.
-    /// </summary>
     [JsonPropertyName("height")]
     public int Height { get; init; }
 
-    /// <summary>
-    /// Extent of the exported image.
-    /// </summary>
     [JsonPropertyName("extent")]
     public GeoServicesExtent? Extent { get; init; }
 
-    /// <summary>
-    /// Map scale denominator.
-    /// </summary>
     [JsonPropertyName("scale")]
     public double? Scale { get; init; }
 }
 
-/// <summary>
-/// Response for the find operation.
-/// </summary>
 internal sealed class FindResponse
 {
-    /// <summary>
-    /// Find results.
-    /// </summary>
     [JsonPropertyName("results")]
     public FindResult[]? Results { get; init; }
 }
 
-/// <summary>
-/// Single find result.
-/// </summary>
 internal sealed class FindResult
 {
-    /// <summary>
-    /// Layer identifier.
-    /// </summary>
     [JsonPropertyName("layerId")]
     public int LayerId { get; init; }
 
-    /// <summary>
-    /// Layer name.
-    /// </summary>
     [JsonPropertyName("layerName")]
     public string? LayerName { get; init; }
 
-    /// <summary>
-    /// Display field name for the layer.
-    /// </summary>
     [JsonPropertyName("displayFieldName")]
     public string? DisplayFieldName { get; init; }
 
-    /// <summary>
-    /// Field name where the match was found.
-    /// </summary>
     [JsonPropertyName("foundFieldName")]
     public string? FoundFieldName { get; init; }
 
-    /// <summary>
-    /// Matched display value.
-    /// </summary>
     [JsonPropertyName("value")]
     public string? Value { get; init; }
 
-    /// <summary>
-    /// Feature attributes.
-    /// </summary>
     [JsonPropertyName("attributes")]
     public Dictionary<string, object?>? Attributes { get; init; }
 
-    /// <summary>
-    /// Feature geometry type.
-    /// </summary>
     [JsonPropertyName("geometryType")]
     public string? GeometryType { get; init; }
 
-    /// <summary>
-    /// Feature geometry.
-    /// </summary>
     [JsonPropertyName("geometry")]
     public object? Geometry { get; init; }
 }
 
-/// <summary>
-/// Tile caching information describing the tiling scheme.
-/// </summary>
 internal sealed class TileInfo
 {
-    /// <summary>
-    /// Number of pixel rows per tile.
-    /// </summary>
     [JsonPropertyName("rows")]
     public int Rows { get; init; } = 256;
 
-    /// <summary>
-    /// Number of pixel columns per tile.
-    /// </summary>
     [JsonPropertyName("cols")]
     public int Cols { get; init; } = 256;
 
-    /// <summary>
-    /// Dots per inch for tile rendering.
-    /// </summary>
     [JsonPropertyName("dpi")]
     public int Dpi { get; init; } = 96;
 
-    /// <summary>
-    /// Image format used for tiles.
-    /// </summary>
     [JsonPropertyName("format")]
     public string Format { get; init; } = "PNG";
 
-    /// <summary>
-    /// Tile origin point in map coordinates.
-    /// </summary>
     [JsonPropertyName("origin")]
     public TileOrigin? Origin { get; init; }
 
-    /// <summary>
-    /// Spatial reference of the tile scheme.
-    /// </summary>
     [JsonPropertyName("spatialReference")]
     public SpatialReferenceJson? SpatialReference { get; init; }
 
-    /// <summary>
-    /// Levels of detail (zoom levels) available for tile access.
-    /// </summary>
     [JsonPropertyName("lods")]
     public LevelOfDetail[]? Lods { get; init; }
 }
 
-/// <summary>
-/// Tile origin point coordinates.
-/// </summary>
 internal sealed class TileOrigin
 {
-    /// <summary>
-    /// X coordinate of the tile origin.
-    /// </summary>
     [JsonPropertyName("x")]
     public double X { get; init; }
 
-    /// <summary>
-    /// Y coordinate of the tile origin.
-    /// </summary>
     [JsonPropertyName("y")]
     public double Y { get; init; }
 }
 
-/// <summary>
-/// Describes a single level of detail (zoom level) in a tiling scheme.
-/// </summary>
 internal sealed class LevelOfDetail
 {
-    /// <summary>
-    /// Zoom level number.
-    /// </summary>
     [JsonPropertyName("level")]
     public int Level { get; init; }
 
-    /// <summary>
-    /// Map resolution in units per pixel at this zoom level.
-    /// </summary>
     [JsonPropertyName("resolution")]
     public double Resolution { get; init; }
 
-    /// <summary>
-    /// Scale denominator at this zoom level.
-    /// </summary>
     [JsonPropertyName("scale")]
     public double Scale { get; init; }
 }

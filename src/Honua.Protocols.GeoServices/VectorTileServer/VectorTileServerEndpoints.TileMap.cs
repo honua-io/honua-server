@@ -23,19 +23,9 @@ namespace Honua.Protocols.GeoServices.VectorTileServer;
 
 internal static partial class VectorTileServerEndpoints
 {
-    /// <summary>
-    /// Largest tile-block edge (in tiles) a single tileMap request may ask for. ArcGIS
-    /// clients probe small blocks (typically 8x8); bound the request so an absurd dimension
-    /// cannot allocate an unbounded availability buffer.
-    /// </summary>
+    // A tilemap request is bounded so an absurd block edge cannot allocate an unbounded availability buffer.
     private const int MaxTileMapDimension = 32;
 
-    /// <summary>
-    /// Maps the VectorTileServer tileMap routes (sparse tile-availability index). The service
-    /// descriptor advertises <c>tilemap</c> as its <c>tileMap</c> pointer. Implemented by
-    /// honua-server#1781: returns the Esri tileMap availability block computed from the
-    /// service tiling scheme (LOD range + WebMercatorQuad coordinate bounds).
-    /// </summary>
     private static void MapTileMapEndpoints(IEndpointRouteBuilder endpoints)
     {
         endpoints.MapGet("/rest/services/{serviceId}/VectorTileServer/tilemap/{z:int}/{y:int}/{x:int}/{dimension:int}/{dimension2:int}",
@@ -66,18 +56,9 @@ internal static partial class VectorTileServerEndpoints
             .Produces(404);
     }
 
-    /// <summary>
-    /// Handles the tileMap root resource (<c>tilemap</c>) by returning the level-0
-    /// availability block (a single tile that always exists).
-    /// </summary>
     private static Task<IResult> HandleGetTileMapRoot(HttpContext context)
         => HandleTileMapAsync(context, z: 0, y: 0, x: 0, width: 1, height: 1);
 
-    /// <summary>
-    /// Handles a tileMap block request (<c>tilemap/{z}/{y}/{x}/{dim}/{dim}</c>). The route
-    /// segments are <c>z</c> (LOD), <c>y</c>/<c>x</c> (top-left tile of the block), and two
-    /// dimensions (block width then height, in tiles, per the Esri tileMap convention).
-    /// </summary>
     private static Task<IResult> HandleGetTileMap(HttpContext context)
     {
         var z = GetRouteInt(context, "z");
@@ -166,13 +147,6 @@ internal static partial class VectorTileServerEndpoints
         }
     }
 
-    /// <summary>
-    /// Computes the dense tileMap availability block: <c>1</c> for every tile inside the
-    /// LOD/coordinate bounds of the WebMercatorQuad tiling scheme, <c>0</c> for tiles that
-    /// fall outside the level's coordinate grid. The block is row-major over
-    /// <paramref name="height"/> rows then <paramref name="width"/> columns, starting at the
-    /// top-left tile (<paramref name="x"/>, <paramref name="y"/>).
-    /// </summary>
     private static VectorTileMapResponse BuildTileMapResponse(int z, int y, int x, int height, int width, int maxLod)
     {
         var data = new int[height * width];

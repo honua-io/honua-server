@@ -6,9 +6,6 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Protocols.GeoServices.MapServer.Models;
 
-/// <summary>
-/// AOT-compatible JSON serialization context for MapServer models.
-/// </summary>
 [JsonSerializable(typeof(MapServerResponse))]
 [JsonSerializable(typeof(MapServerDocumentInfo))]
 [JsonSerializable(typeof(MapServerLayerInfo))]

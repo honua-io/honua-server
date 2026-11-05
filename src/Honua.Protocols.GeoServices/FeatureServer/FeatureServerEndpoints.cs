@@ -11,14 +11,8 @@ using Honua.Protocols.GeoServices.FeatureServer.Models;
 
 namespace Honua.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// Extension methods to register FeatureServer endpoints
-/// </summary>
 internal static partial class FeatureServerEndpoints
 {
-    /// <summary>
-    /// Maps FeatureServer REST API endpoints for layer metadata using AOT-compatible routing
-    /// </summary>
     public static IEndpointRouteBuilder MapFeatureServerEndpoints(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapGet("/rest/services/{serviceId}/FeatureServer", (Delegate)HandleGetServiceMetadata)

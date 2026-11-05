@@ -18,10 +18,6 @@ using Microsoft.Extensions.Primitives;
 
 namespace Honua.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// Replica data scoping and bounded change delivery shared by createReplica, extractChanges and
-/// synchronizeReplica (#4017, #4018, #4019).
-/// </summary>
 internal static partial class FeatureServerEndpoints
 {
     private const string ReplicaEmbeddedTransportType = "esriTransportTypeEmbedded";
@@ -30,52 +26,24 @@ internal static partial class FeatureServerEndpoints
     private const string ReplicaQueryOptionNone = "none";
     private const string ReplicaQueryOptionUseFilter = "useFilter";
 
-    /// <summary>
-    /// Change categories an extract returns (Esri <c>returnInserts</c>/<c>returnUpdates</c>/<c>returnDeletes</c>).
-    /// </summary>
     private readonly record struct ReplicaChangeSelection(bool Inserts, bool Updates, bool Deletes)
     {
         public static ReplicaChangeSelection All => new(true, true, true);
     }
 
-    /// <summary>
-    /// A layer's resolved replica scope: whether it carries data at all, the translated where clause,
-    /// the intersects filter, and the spatial reference geometries are delivered in.
-    /// </summary>
     private sealed record ReplicaLayerScope(bool IncludeData, SqlFragment? SqlFilter, SpatialFilter? SpatialFilter, int? OutputSrid)
     {
         public static ReplicaLayerScope Whole { get; } = new(true, null, null, null);
     }
 
-    /// <summary>One layer's delivered changes plus the insert/update ids behind them.</summary>
     private sealed record ReplicaLayerDelivery(LayerChanges Changes, long[] InsertIds, long[] UpdateIds);
 
-    /// <summary>
-    /// Changes delivered for a generation window. <see cref="ThroughGeneration"/> is the generation the
-    /// delivery actually reached; <see cref="ExceededTransferLimit"/> is true when it stopped short of
-    /// the requested bound because a layer exceeded <c>Limits:Replica:MaxChangesPerLayer</c>.
-    /// </summary>
     private sealed record ReplicaDelivery(ReplicaLayerDelivery[] Layers, long ThroughGeneration, bool ExceededTransferLimit)
     {
         public LayerChanges[] LegacyLayerChanges => [.. Layers.Select(static layer => layer.Changes)];
     }
 
-    /// <summary>
-    /// Rejects the Esri replica transport parameters this server cannot honor instead of silently
-    /// ignoring them (#4017, #4018): <c>async=true</c> (replicas are produced synchronously and
-    /// <c>syncCapabilities.supportsAsync</c> is false), any <c>dataFormat</c> other than JSON, an
-    /// unknown <c>transportType</c>, and <c>returnAttachments=true</c>. <c>esriTransportTypeUrl</c> is
-    /// accepted and answered with the embedded transport, which the response declares.
-    /// </summary>
-    /// <param name="context">The request being answered.</param>
-    /// <param name="values">The merged query and form values.</param>
-    /// <param name="unsupportedDataFormatUsesHttpStatus">
-    /// True for createReplica: an unsupported <c>dataFormat</c> is answered with a real HTTP 400
-    /// instead of the GeoServices HTTP 200 envelope. ArcGIS Pro's Download Map sends
-    /// <c>dataFormat=sqlite</c> and reads the transport status alone, so a 200 carrying the
-    /// rejection reads as success and the user is left with no offline copy and no error
-    /// (honua-server#5013). Every other rejection keeps the 200 envelope.
-    /// </param>
+    // async=true, a non-JSON dataFormat, an unknown transportType, and returnAttachments=true are rejected, a URL transport is answered as embedded, and createReplica uses HTTP 400 for an unsupported dataFormat because ArcGIS Pro's Download Map treats a 200 rejection as success.
     private static IResult? ValidateReplicaTransportParameters(
         HttpContext context,
         IReadOnlyDictionary<string, StringValues> values,
@@ -133,14 +101,7 @@ internal static partial class FeatureServerEndpoints
         return null;
     }
 
-    /// <summary>
-    /// Parses the Esri replica data-scope parameters shared by createReplica and extractChanges:
-    /// <c>geometry</c>/<c>geometryType</c>/<c>inSR</c> (an intersects filter), <c>layerQueries</c>
-    /// (per-layer <c>queryOption</c>, <c>where</c>, <c>useGeometry</c>, <c>includeRelated</c>) and, for
-    /// createReplica, <c>replicaSR</c>. Every value is resolved against each target layer here, so a
-    /// scope that cannot be applied is rejected instead of silently widening the replica to whole layers
-    /// (#4018). Returns a null scope when no scoping parameter is present.
-    /// </summary>
+    // A replica scope that cannot be applied is rejected instead of widening the replica to the whole layer.
     private static async Task<(ReplicaScopeDefinition? Scope, IResult? Error)> TryParseReplicaScopeAsync(
         HttpContext context,
         IReadOnlyDictionary<string, StringValues> values,
@@ -345,12 +306,6 @@ internal static partial class FeatureServerEndpoints
     private static string? SerializeReplicaScope(ReplicaScopeDefinition? scope)
         => scope is null ? null : JsonSerializer.Serialize(scope, FeatureServerJsonContext.Default.ReplicaScopeDefinition);
 
-    /// <summary>
-    /// Resolves one layer's scope using Esri <c>layerQueries</c> semantics: a layer without an entry is
-    /// filtered by the replica geometry; <c>none</c> carries no data; <c>all</c> carries every row;
-    /// <c>useFilter</c> applies the layer's where clause and, unless <c>useGeometry</c> is false, the
-    /// replica geometry.
-    /// </summary>
     private static bool TryResolveReplicaLayerScope(
         HttpContext context,
         ReplicaScopeDefinition? scope,
@@ -430,16 +385,7 @@ internal static partial class FeatureServerEndpoints
         return true;
     }
 
-    /// <summary>
-    /// Assembles the changes committed in (<paramref name="sinceGeneration"/>,
-    /// <paramref name="throughGeneration"/>] for the replica layers, restricted to the replica scope
-    /// and to what the caller may read. When a layer holds more than
-    /// <c>Limits:Replica:MaxChangesPerLayer</c> changes, the window is narrowed to an earlier generation
-    /// so the response stays bounded and the caller continues from the generation reached — a backlog
-    /// is never a permanent 400 (#4019). Feature payloads are read in pages of
-    /// <c>Limits:Query:MaxRecordCount</c>. A <paramref name="sinceGeneration"/> of 0 on a layer the
-    /// change log does not cover falls back to a scoped snapshot of the current rows.
-    /// </summary>
+    // A layer over the per-layer change cap narrows the generation window instead of answering a permanent 400, and a generation of 0 on a layer the change log does not cover falls back to a scoped snapshot.
     private static async Task<(ReplicaDelivery? Delivery, IResult? Error)> AssembleReplicaDeliveryAsync(
         HttpContext context,
         string? recipientReplicaId,
@@ -608,10 +554,6 @@ internal static partial class FeatureServerEndpoints
         return (new ReplicaDelivery([.. deliveries], through, through < requestedThrough), null);
     }
 
-    /// <summary>
-    /// Returns a narrower upper bound when a layer's deliverable change generations exceed
-    /// <paramref name="maxChangesPerLayer"/> and a narrower bound exists.
-    /// </summary>
     internal static bool TryFindNarrowerReplicaWindow(
         IEnumerable<long[]> deliverableGenerationsByLayer,
         int maxChangesPerLayer,
@@ -644,11 +586,6 @@ internal static partial class FeatureServerEndpoints
             Deletes = 0
         }, [], []);
 
-    /// <summary>
-    /// Projects storage object ids onto the protocol-facing ids clients hold (#4017): the change log's
-    /// <see cref="FeatureChange.PublicObjectId"/> where the layer's primary id differs from the storage
-    /// identity, otherwise the storage id itself.
-    /// </summary>
     internal static long[] ToPublicObjectIds(IReadOnlyList<FeatureChange>? changes, long[] storageIds)
     {
         if (storageIds.Length == 0 || changes is null)
@@ -671,17 +608,9 @@ internal static partial class FeatureServerEndpoints
             : [.. storageIds.Select(id => publicByStorage.GetValueOrDefault(id, id))];
     }
 
-    /// <summary>
-    /// The SRID replica features are delivered and labelled in: the replica's <c>replicaSR</c> when one
-    /// was requested (#4018), otherwise the layer's advertised SRID (#4027). An attribute-only table has none.
-    /// </summary>
     private static int? ResolveReplicaDeliverySrid(ReplicaLayerV2 layer, ReplicaLayerScope layerScope)
         => layer.Resource.HasGeometry() ? layerScope.OutputSrid ?? ResolveReplicaLayerSrid(layer.Resource) : null;
 
-    /// <summary>
-    /// Scoped read query for replica payloads: Z and M kept and coordinates in the delivery SRID (#4027),
-    /// with the replica's where clause and geometry applied (#4018).
-    /// </summary>
     private static FeatureQuery CreateReplicaFeatureQuery(ReplicaLayerV2 layer, ReplicaLayerScope layerScope)
     {
         var query = ReplicaGeometryQuery(
@@ -726,9 +655,6 @@ internal static partial class FeatureServerEndpoints
         return [.. features];
     }
 
-    /// <summary>
-    /// Projects a delivery into the Esri extractChanges <c>edits</c> envelope (#4017).
-    /// </summary>
     private static ExtractChangesLayerEdits[] BuildExtractChangesEdits(ReplicaLayerDelivery[] layers, bool returnIdsOnly)
         => [.. layers.Select(layer => returnIdsOnly
             ? new ExtractChangesLayerEdits
@@ -760,11 +686,6 @@ internal static partial class FeatureServerEndpoints
             ServerSibGen = generation
         })];
 
-    /// <summary>
-    /// Parses the Esri <c>returnInserts</c>/<c>returnUpdates</c>/<c>returnDeletes</c> selection. When none
-    /// of the three is sent, every category is returned (the historical behavior Honua SDK clients rely
-    /// on); once any is sent, an omitted category defaults to false as in the Esri contract (#4017).
-    /// </summary>
     private static bool TryParseReplicaChangeSelection(
         IReadOnlyDictionary<string, StringValues> values,
         out ReplicaChangeSelection selection,
@@ -791,10 +712,6 @@ internal static partial class FeatureServerEndpoints
         return true;
     }
 
-    /// <summary>
-    /// Parses Esri <c>layerServerGens</c> (<c>[{"id":0,"serverGen":123}, ...]</c>) into a per-layer
-    /// "extract since" generation. Returns a null map when the parameter is absent.
-    /// </summary>
     private static bool TryParseLayerServerGens(
         IReadOnlyDictionary<string, StringValues> values,
         out Dictionary<int, long>? layerServerGens,
@@ -874,12 +791,7 @@ internal static partial class FeatureServerEndpoints
         return false;
     }
 
-    /// <summary>
-    /// Resolves the per-layer extract window: <c>layerServerGens</c> sets a layer's lower bound;
-    /// <c>serverGen</c> or the first value of <c>serverGens</c> sets it for the other layers (falling back
-    /// to <paramref name="defaultSinceGeneration"/>); the second value of <c>serverGens</c> caps the
-    /// upper bound, which never exceeds <paramref name="currentGeneration"/> (#4017).
-    /// </summary>
+    // A per-layer extract window never exceeds the requested generation.
     private static bool TryResolveExtractWindow(
         IReadOnlyDictionary<string, StringValues> values,
         IReadOnlyDictionary<int, long>? layerServerGens,
@@ -929,10 +841,6 @@ internal static partial class FeatureServerEndpoints
         return true;
     }
 
-    /// <summary>
-    /// Parses <c>serverGen</c> / <c>serverGens</c>: a single integer, or a JSON array whose first value is
-    /// the exclusive lower bound and whose optional second value is the inclusive upper bound.
-    /// </summary>
     private static bool TryParseServerGenRange(
         IReadOnlyDictionary<string, StringValues> values,
         out long? minGeneration,
@@ -1007,10 +915,6 @@ internal static partial class FeatureServerEndpoints
 
     private static readonly string[] _replicaSyncModels = ["perReplica", "perLayer", ReplicaSyncModelNone];
 
-    /// <summary>
-    /// Normalizes the Esri <c>syncModel</c>; an absent value keeps the historical <c>perReplica</c>
-    /// default, and anything other than perReplica, perLayer or none is rejected (#4018).
-    /// </summary>
     private static bool TryNormalizeReplicaSyncModel(string? raw, out string syncModel)
     {
         syncModel = _replicaSyncModels[0];
@@ -1031,10 +935,6 @@ internal static partial class FeatureServerEndpoints
         return false;
     }
 
-    /// <summary>
-    /// Esri <c>replicaOptions</c> carries server-side replica behaviors this server does not implement.
-    /// An empty object is accepted; any option is rejected by name instead of being ignored (#4018).
-    /// </summary>
     private static IResult? ValidateReplicaOptions(
         HttpContext context,
         IReadOnlyDictionary<string, StringValues> values)
@@ -1069,10 +969,7 @@ internal static partial class FeatureServerEndpoints
                 [$"This server does not implement replicaOptions ({string.Join(", ", optionNames)}). Omit replicaOptions or pass an empty object."]);
     }
 
-    /// <summary>
-    /// Parses the extractChanges payload options: <c>returnIdsOnly</c>, the insert/update/delete
-    /// selection, and <c>returnExtentOnly</c>, which is rejected because no change extent is computed.
-    /// </summary>
+    // returnExtentOnly is rejected because no change extent is computed.
     private static bool TryParseExtractChangeOptions(
         HttpContext context,
         IReadOnlyDictionary<string, StringValues> values,
@@ -1112,17 +1009,12 @@ internal static partial class FeatureServerEndpoints
         return true;
     }
 
-    /// <summary>Changes extracted for layers that may start from different generations.</summary>
     private sealed record ReplicaExtractResult(
         ReplicaLayerDelivery[] Layers,
         IReadOnlyDictionary<int, long> ThroughByLayer,
         long MinSinceGeneration,
         bool ExceededTransferLimit);
 
-    /// <summary>
-    /// Delivers an extract whose layers may start from different generations (<c>layerServerGens</c>):
-    /// layers sharing a lower bound are assembled together, each group windowed independently.
-    /// </summary>
     private static async Task<(ReplicaExtractResult? Result, IResult? Error)> DeliverExtractWindowAsync(
         HttpContext context,
         string? replicaId,
@@ -1191,10 +1083,6 @@ internal static partial class FeatureServerEndpoints
         };
     }
 
-    /// <summary>
-    /// Describes each replica layer's stored scope in the replica info resource instead of the
-    /// hard-coded <c>queryOption=all</c>, <c>useGeometry=true</c>, <c>where=""</c> it used to report (#4018).
-    /// </summary>
     private static ReplicaInfoLayer[] BuildReplicaInfoLayers(ReplicaLayerV2[] layers, ReplicaScopeDefinition? scope)
         => [.. layers.Select(layer =>
         {

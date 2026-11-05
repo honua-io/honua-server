@@ -27,11 +27,6 @@ using NetTopologySuite.Geometries;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Handlers;
 
-/// <summary>
-/// Handler for Image Server export image operations.
-/// Provides raster image export with clipping and format conversion using the
-/// public contract that this service currently supports.
-/// </summary>
 internal sealed class ImageServerExportHandler
 {
     private const string InlineImageFormat = "image";
@@ -60,9 +55,6 @@ internal sealed class ImageServerExportHandler
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <summary>
-    /// Exports a rendered image from raster data.
-    /// </summary>
     public Task<IResult> ExportImageAsync(
         HttpContext context,
         int layerId,
@@ -71,9 +63,6 @@ internal sealed class ImageServerExportHandler
         => ExportImageCoreAsync(
             context, layerId, request, publicationId: null, AuthorizationOperation.Export, requireAllBandsValid: false, cancellationToken);
 
-    /// <summary>
-    /// Exports the exact publication already resolved by a service-scoped caller.
-    /// </summary>
     public Task<IResult> ExportImageAsync(
         HttpContext context,
         int layerId,

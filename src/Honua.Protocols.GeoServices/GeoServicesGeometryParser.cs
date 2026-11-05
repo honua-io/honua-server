@@ -8,9 +8,6 @@ using Honua.Infrastructure.Parsing;
 
 namespace Honua.Protocols.GeoServices;
 
-/// <summary>
-/// Parses GeoServices geometry parameters from query strings into structured geometry objects.
-/// </summary>
 internal static class GeoServicesGeometryParser
 {
     private static readonly char[] _coordinateSeparators = { ',', ' ' };

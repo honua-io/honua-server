@@ -8,35 +8,19 @@ using System.Text;
 
 namespace Honua.Protocols.GeoServices.FeatureServer.Services;
 
-/// <summary>
-/// Minimal protobuf wire-format writer for Esri PBF query responses.
-/// Zero-allocation hot path — writes directly to a pooled buffer.
-/// No external protobuf library dependency; fully AOT-compatible.
-/// </summary>
-/// <remarks>
-/// Reference: https://protobuf.dev/programming-guides/encoding/
-/// Wire types: 0=varint, 1=64-bit, 2=length-delimited, 5=32-bit
-/// </remarks>
 internal ref struct ProtobufWriter
 {
     private byte[] _buffer;
     private int _position;
 
-    /// <summary>
-    /// Creates a new writer with an initial buffer from the shared pool.
-    /// </summary>
     public ProtobufWriter(int initialCapacity = 4096)
     {
         _buffer = ArrayPool<byte>.Shared.Rent(initialCapacity);
         _position = 0;
     }
 
-    /// <summary>Current write position.</summary>
     public readonly int Position => _position;
 
-    /// <summary>
-    /// Returns the written bytes as a new array and returns the internal buffer to the pool.
-    /// </summary>
     public byte[] ToArrayAndDispose()
     {
         var result = _buffer.AsSpan(0, _position).ToArray();
@@ -46,14 +30,8 @@ internal ref struct ProtobufWriter
         return result;
     }
 
-    /// <summary>
-    /// Returns the written bytes as a ReadOnlyMemory. Caller must call Dispose() after use.
-    /// </summary>
     public readonly ReadOnlyMemory<byte> WrittenMemory => _buffer.AsMemory(0, _position);
 
-    /// <summary>
-    /// Returns the pooled buffer. Must be called if ToArrayAndDispose was not used.
-    /// </summary>
     public void Dispose()
     {
         if (_buffer.Length > 0)
@@ -65,7 +43,6 @@ internal ref struct ProtobufWriter
 
     // ── Tag writing ───────────────────────────────────────────
 
-    /// <summary>Writes a field tag (field number + wire type).</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void WriteTag(int fieldNumber, int wireType)
     {
@@ -74,7 +51,6 @@ internal ref struct ProtobufWriter
 
     // ── Varint encoding ───────────────────────────────────────
 
-    /// <summary>Writes an unsigned varint.</summary>
     public void WriteRawVarint(uint value)
     {
         EnsureCapacity(5);
@@ -86,7 +62,6 @@ internal ref struct ProtobufWriter
         _buffer[_position++] = (byte)value;
     }
 
-    /// <summary>Writes a 64-bit unsigned varint.</summary>
     public void WriteRawVarint(ulong value)
     {
         EnsureCapacity(10);
@@ -100,7 +75,6 @@ internal ref struct ProtobufWriter
 
     // ── Scalar field writers ──────────────────────────────────
 
-    /// <summary>Writes a uint32 field (wire type 0).</summary>
     public void WriteUInt32(int fieldNumber, uint value)
     {
         if (value == 0)
@@ -109,7 +83,6 @@ internal ref struct ProtobufWriter
         WriteRawVarint(value);
     }
 
-    /// <summary>Writes an int64 field (wire type 0).</summary>
     public void WriteInt64(int fieldNumber, long value)
     {
         if (value == 0)
@@ -118,7 +91,6 @@ internal ref struct ProtobufWriter
         WriteRawVarint((ulong)value);
     }
 
-    /// <summary>Writes a uint64 field (wire type 0).</summary>
     public void WriteUInt64(int fieldNumber, ulong value)
     {
         if (value == 0)
@@ -127,7 +99,6 @@ internal ref struct ProtobufWriter
         WriteRawVarint(value);
     }
 
-    /// <summary>Writes a sint32 field using zigzag encoding (wire type 0).</summary>
     public void WriteSInt32(int fieldNumber, int value)
     {
         if (value == 0)
@@ -136,7 +107,6 @@ internal ref struct ProtobufWriter
         WriteRawVarint(ZigZagEncode32(value));
     }
 
-    /// <summary>Writes a sint64 field using zigzag encoding (wire type 0).</summary>
     public void WriteSInt64(int fieldNumber, long value)
     {
         if (value == 0)
@@ -145,7 +115,6 @@ internal ref struct ProtobufWriter
         WriteRawVarint(ZigZagEncode64(value));
     }
 
-    /// <summary>Writes a bool field (wire type 0).</summary>
     public void WriteBool(int fieldNumber, bool value)
     {
         if (!value)
@@ -155,7 +124,6 @@ internal ref struct ProtobufWriter
         _buffer[_position++] = 1;
     }
 
-    /// <summary>Writes an enum field (wire type 0).</summary>
     public void WriteEnum(int fieldNumber, int value)
     {
         if (value == 0)
@@ -164,7 +132,6 @@ internal ref struct ProtobufWriter
         WriteRawVarint((uint)value);
     }
 
-    /// <summary>Writes a double field (wire type 1).</summary>
     public void WriteDouble(int fieldNumber, double value)
     {
         // Intentional exact comparison: proto3 wire format omits scalar fields equal to the
@@ -178,7 +145,6 @@ internal ref struct ProtobufWriter
         _position += 8;
     }
 
-    /// <summary>Writes a float field (wire type 5).</summary>
     public void WriteFloat(int fieldNumber, float value)
     {
         // Intentional exact comparison: proto3 wire format omits scalar fields equal to the
@@ -192,7 +158,6 @@ internal ref struct ProtobufWriter
         _position += 4;
     }
 
-    /// <summary>Writes a string field (wire type 2).</summary>
     public void WriteString(int fieldNumber, string? value)
     {
         if (string.IsNullOrEmpty(value))
@@ -205,7 +170,6 @@ internal ref struct ProtobufWriter
         _position += byteCount;
     }
 
-    /// <summary>Writes a bytes field (wire type 2).</summary>
     public void WriteBytes(int fieldNumber, ReadOnlySpan<byte> value)
     {
         if (value.IsEmpty)
@@ -225,35 +189,30 @@ internal ref struct ProtobufWriter
     // ordinary proto3 fields but would silently turn such values into "no member
     // set" (decoded as null). Use these variants for oneof members.
 
-    /// <summary>Writes a uint32 oneof member unconditionally (wire type 0).</summary>
     public void WriteUInt32Always(int fieldNumber, uint value)
     {
         WriteTag(fieldNumber, 0);
         WriteRawVarint(value);
     }
 
-    /// <summary>Writes an int64 oneof member unconditionally (wire type 0).</summary>
     public void WriteInt64Always(int fieldNumber, long value)
     {
         WriteTag(fieldNumber, 0);
         WriteRawVarint((ulong)value);
     }
 
-    /// <summary>Writes a uint64 oneof member unconditionally (wire type 0).</summary>
     public void WriteUInt64Always(int fieldNumber, ulong value)
     {
         WriteTag(fieldNumber, 0);
         WriteRawVarint(value);
     }
 
-    /// <summary>Writes a zigzag-encoded sint32 oneof member unconditionally (wire type 0).</summary>
     public void WriteSInt32Always(int fieldNumber, int value)
     {
         WriteTag(fieldNumber, 0);
         WriteRawVarint(ZigZagEncode32(value));
     }
 
-    /// <summary>Writes a bool oneof member unconditionally (wire type 0).</summary>
     public void WriteBoolAlways(int fieldNumber, bool value)
     {
         WriteTag(fieldNumber, 0);
@@ -261,7 +220,6 @@ internal ref struct ProtobufWriter
         _buffer[_position++] = value ? (byte)1 : (byte)0;
     }
 
-    /// <summary>Writes a double oneof member unconditionally (wire type 1).</summary>
     public void WriteDoubleAlways(int fieldNumber, double value)
     {
         WriteTag(fieldNumber, 1);
@@ -270,7 +228,6 @@ internal ref struct ProtobufWriter
         _position += 8;
     }
 
-    /// <summary>Writes a float oneof member unconditionally (wire type 5).</summary>
     public void WriteFloatAlways(int fieldNumber, float value)
     {
         WriteTag(fieldNumber, 5);
@@ -279,7 +236,6 @@ internal ref struct ProtobufWriter
         _position += 4;
     }
 
-    /// <summary>Writes a string oneof member unconditionally (wire type 2; null writes an empty string).</summary>
     public void WriteStringAlways(int fieldNumber, string? value)
     {
         WriteTag(fieldNumber, 2);
@@ -298,7 +254,6 @@ internal ref struct ProtobufWriter
 
     // ── Packed repeated fields ────────────────────────────────
 
-    /// <summary>Writes a packed repeated uint32 field.</summary>
     public void WritePackedUInt32(int fieldNumber, ReadOnlySpan<uint> values)
     {
         if (values.IsEmpty)
@@ -317,7 +272,6 @@ internal ref struct ProtobufWriter
         inner.Dispose();
     }
 
-    /// <summary>Writes a packed repeated uint64 field.</summary>
     public void WritePackedUInt64(int fieldNumber, ReadOnlySpan<ulong> values)
     {
         if (values.IsEmpty)
@@ -335,7 +289,6 @@ internal ref struct ProtobufWriter
         inner.Dispose();
     }
 
-    /// <summary>Writes a packed repeated sint64 field.</summary>
     public void WritePackedSInt64(int fieldNumber, ReadOnlySpan<long> values)
     {
         if (values.IsEmpty)
@@ -355,10 +308,6 @@ internal ref struct ProtobufWriter
 
     // ── Sub-message support ───────────────────────────────────
 
-    /// <summary>
-    /// Writes a length-delimited sub-message. The caller writes the
-    /// sub-message into a separate ProtobufWriter, then calls this.
-    /// </summary>
     public void WriteMessage(int fieldNumber, ref ProtobufWriter sub)
     {
         if (sub.Position == 0)

@@ -16,14 +16,6 @@ using Microsoft.Extensions.Primitives;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Handlers;
 
-/// <summary>
-/// Computes the ImageServer <c>computeClassStatistics</c> operation: per-class statistical
-/// signatures (pixel count, per-band mean vector, band-by-band covariance, and per-band summaries)
-/// over the training AOIs supplied in <c>classDescriptions</c>. Reads the AOI pixels through the
-/// shared <see cref="IRasterStore"/> analytics path (the same clip+merge primitive
-/// <c>computeStatisticsHistograms</c> uses) rather than a parallel raster reader, and folds them
-/// into signatures via the protocol-neutral <see cref="IRasterClassStatisticsAnalyzer"/>.
-/// </summary>
 internal sealed class ImageServerComputeClassStatisticsHandler
 {
     private readonly IMetadataV2GraphProvider _graphProvider;
@@ -46,10 +38,6 @@ internal sealed class ImageServerComputeClassStatisticsHandler
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <summary>
-    /// Computes class signatures for the layer. The caller has already validated GET/POST request
-    /// shape (<c>classDescriptions</c> present and well-formed) and merged query/body values.
-    /// </summary>
     public async Task<IResult> ComputeAsync(
         HttpContext context,
         int layerId,

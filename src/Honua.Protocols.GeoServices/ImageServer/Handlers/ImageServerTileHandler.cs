@@ -28,11 +28,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Handlers;
 
-/// <summary>
-/// Handler for Image Server tile operations.
-/// Provides pre-tiled image access for efficient web mapping.
-/// Falls back to cloud-hosted COG tile serving when PostGIS does not produce a tile for the requested coordinates (Pro edition).
-/// </summary>
 internal sealed class ImageServerTileHandler
 {
     private readonly IMetadataV2GraphProvider _graphProvider;
@@ -52,9 +47,6 @@ internal sealed class ImageServerTileHandler
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <summary>
-    /// Gets a pre-generated image tile for efficient web mapping display.
-    /// </summary>
     public async Task<IResult> GetImageTileAsync(
         HttpContext context,
         int layerId,
@@ -289,14 +281,6 @@ internal sealed class ImageServerTileHandler
         }
     }
 
-    /// <summary>
-    /// Gets an image tile aligned to an explicit tile matrix set (gridset) other than the default
-    /// WebMercatorQuad, driving all tile geometry from the one canonical
-    /// <see cref="GridGeometry"/> and rendering/reprojecting through the shared raster pipeline
-    /// (<see cref="IRasterStore.GetImageTileAsync(int, long, RasterTileWindow, RasterFormat, CancellationToken)"/>).
-    /// No protocol-local geodesy is performed here: the tile bounds come from
-    /// <see cref="GridGeometry.GetTileBounds(int, int, int)"/>.
-    /// </summary>
     public async Task<IResult> GetGridImageTileAsync(
         HttpContext context,
         int layerId,

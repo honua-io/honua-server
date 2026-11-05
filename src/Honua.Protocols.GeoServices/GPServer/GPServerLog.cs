@@ -3,10 +3,6 @@
 
 namespace Honua.Protocols.GeoServices.GPServer;
 
-/// <summary>
-/// Source-generated structured log methods for GPServer adapter operations.
-/// Event ID range 8100-8149, separated from GeoprocessingServiceLog (8000-8099).
-/// </summary>
 internal static partial class GPServerLog
 {
     [LoggerMessage(8149, LogLevel.Warning, "GPServer SOAP operation failed for service {ServiceId}: {Operation}")]

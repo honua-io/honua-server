@@ -15,11 +15,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Handlers;
 
-/// <summary>
-/// Handler for the Esri ImageServer <c>slices</c> operation. Enumerates the discrete
-/// multidimensional slices (variable + dimension coordinate combinations) of a
-/// multidimensional raster coverage so ArcGIS clients can iterate slices.
-/// </summary>
 internal sealed class ImageServerSlicesHandler
 {
     private readonly IMetadataV2GraphProvider _graphProvider;
@@ -36,12 +31,7 @@ internal sealed class ImageServerSlicesHandler
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <summary>
-    /// Returns the Esri <c>slices</c> document for a layer. When the backing layer is
-    /// not a multidimensional coverage, has no scanned metadata, or its dimension
-    /// coordinate values are not enumerable, a spec-correct empty document
-    /// (<c>{ "slices": [] }</c>) is returned rather than a 404.
-    /// </summary>
+    // A layer whose dimension values cannot be enumerated returns an empty slices document rather than 404.
     public async Task<IResult> GetSlicesAsync(
         HttpContext context,
         int layerId,

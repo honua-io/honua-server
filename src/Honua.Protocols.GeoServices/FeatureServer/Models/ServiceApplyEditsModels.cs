@@ -6,32 +6,17 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Protocols.GeoServices.FeatureServer.Models;
 
-/// <summary>
-/// Request model for a single layer's edits in a service-level applyEdits call
-/// </summary>
 public sealed class ServiceLayerEdits
 {
-    /// <summary>
-    /// Layer ID to apply edits to
-    /// </summary>
     [JsonPropertyName("id")]
     public int Id { get; set; }
 
-    /// <summary>
-    /// Features to add to the layer
-    /// </summary>
     [JsonPropertyName("adds")]
     public GeoServicesFeature[]? Adds { get; set; }
 
-    /// <summary>
-    /// Features to update in the layer
-    /// </summary>
     [JsonPropertyName("updates")]
     public GeoServicesFeature[]? Updates { get; set; }
 
-    /// <summary>
-    /// Feature IDs to delete from the layer
-    /// </summary>
     [JsonPropertyName("deletes")]
     public object[]? Deletes { get; set; }
 
@@ -52,52 +37,28 @@ public sealed class ServiceLayerEdits
     [JsonPropertyName("f")]
     public string? F { get; set; }
 
-    /// <summary>
-    /// Attachment edits are recognized so the service-level endpoint can reject them
-    /// explicitly instead of silently dropping them while fanning out layer edits.
-    /// </summary>
     [JsonPropertyName("attachments")]
     public JsonElement? Attachments { get; set; }
 
-    /// <summary>
-    /// Asset-map edits are recognized so they cannot be silently dropped either.
-    /// </summary>
+    // Asset-map edits are recognized so they are not silently dropped.
     [JsonPropertyName("assetMaps")]
     public JsonElement? AssetMaps { get; set; }
 }
 
-/// <summary>
-/// Edit results for a single layer in a service-level applyEdits response
-/// </summary>
 public sealed class ServiceLayerEditResult
 {
-    /// <summary>
-    /// Layer ID the results apply to
-    /// </summary>
     [JsonPropertyName("id")]
     public int Id { get; set; }
 
-    /// <summary>
-    /// Results of add operations
-    /// </summary>
     [JsonPropertyName("addResults")]
     public EditResult[]? AddResults { get; set; }
 
-    /// <summary>
-    /// Results of update operations
-    /// </summary>
     [JsonPropertyName("updateResults")]
     public EditResult[]? UpdateResults { get; set; }
 
-    /// <summary>
-    /// Results of delete operations
-    /// </summary>
     [JsonPropertyName("deleteResults")]
     public EditResult[]? DeleteResults { get; set; }
 
-    /// <summary>
-    /// When returnEditMoment=true, the time the layer's edits were applied, in epoch milliseconds (#4105).
-    /// </summary>
     [JsonPropertyName("editMoment")]
     public long? EditMoment { get; set; }
 }

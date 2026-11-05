@@ -294,11 +294,6 @@ internal static partial class FeatureServerEndpoints
             request);
     }
 
-    /// <summary>
-    /// Merges deleteFeatures filter parameters captured from the request body with those on the
-    /// query string. Query-string values win for any overlapping key, matching how the rest of
-    /// the FeatureServer surface treats query parameters as the canonical override.
-    /// </summary>
     private static Dictionary<string, StringValues> MergeDeleteFilterValues(
         IReadOnlyDictionary<string, StringValues>? bodyValues,
         IQueryCollection query)
@@ -510,23 +505,10 @@ internal static partial class FeatureServerEndpoints
         return StampEditMoment(context, request, result);
     }
 
-    /// <summary>
-    /// Checks the FeatureServer editing entitlement (#4640) using only <paramref name="context"/> —
-    /// no dependency on <see cref="FeatureServerEditsHandler"/> or any of the services its
-    /// constructor pulls in (<c>IResourceValidator</c>, and therefore
-    /// <c>IMetadataV2GraphProvider</c>, plus a dozen others). Every write entrypoint calls this
-    /// FIRST, before any resource validation/authorization or the handler resolve below, so a
-    /// license-denied request never constructs that dependency graph — and a transient DI hiccup
-    /// inside it can never leak a raw 500 through the graceful 402 GeoServices refusal.
-    /// </summary>
+    // The editing-entitlement check runs before resource validation and before the handler is resolved, so a license denial never builds that graph and a dependency failure cannot turn the 402 into a 500.
     private static IResult? RequireFeatureServerEditsEntitlement(HttpContext context)
         => LicenseGate.RequireEntitlement(context, FeatureCatalog.FeatureServerEditsKey, "FeatureServer editing");
 
-    /// <summary>
-    /// Resolves the shared edits handler. Callers must confirm
-    /// <see cref="RequireFeatureServerEditsEntitlement"/> first (#4640) — every entrypoint in this
-    /// file does, at its top, before any other work.
-    /// </summary>
     private static FeatureServerEditsHandler ResolveEditsHandler(HttpContext context)
         => context.RequestServices.GetRequiredService<FeatureServerEditsHandler>();
 
@@ -821,11 +803,6 @@ internal static partial class FeatureServerEndpoints
         => Results.Json(results, FeatureServerJsonContext.Default.ServiceLayerEditResultArray,
             statusCode: statusCode, contentType: "application/json");
 
-    /// <summary>
-    /// Builds per-slot add failure entries for a layer whose applyEdits call returned a
-    /// non-JSON protocol error after earlier layers had already committed. Adds have no
-    /// client-supplied objectId (the server assigns it), so the objectId stays null.
-    /// </summary>
     private static EditResult[]? BuildAddFailureResults(GeoServicesFeature[]? adds, string description)
     {
         if (adds is not { Length: > 0 })
@@ -842,12 +819,6 @@ internal static partial class FeatureServerEndpoints
         return failures;
     }
 
-    /// <summary>
-    /// Builds per-slot update failure entries, preserving the objectId the client sent in
-    /// each feature's attributes so clients matching results by objectId still work. The
-    /// objectId field name is not resolvable at the service level (no per-layer resource is
-    /// loaded here), so fall back to the canonical OBJECTID attribute key.
-    /// </summary>
     private static EditResult[]? BuildFeatureFailureResults(GeoServicesFeature[]? features, string description)
     {
         if (features is not { Length: > 0 })
@@ -864,10 +835,6 @@ internal static partial class FeatureServerEndpoints
         return failures;
     }
 
-    /// <summary>
-    /// Builds per-slot delete failure entries, preserving the submitted objectId (the deletes
-    /// array carries objectIds directly).
-    /// </summary>
     private static EditResult[]? BuildDeleteFailureResults(object[]? deletes, string description)
     {
         if (deletes is not { Length: > 0 })
@@ -982,11 +949,7 @@ internal static partial class FeatureServerEndpoints
             cancellationToken), null, null, null);
     }
 
-    /// <summary>
-    /// Sets default values for standalone edit endpoints (addFeatures, updateFeatures, deleteFeatures).
-    /// Per ArcGIS spec, standalone endpoints default rollbackOnFailure to true. Only applies
-    /// when not explicitly set in the request.
-    /// </summary>
+    // Standalone add, update, and delete default rollbackOnFailure to true only when the request omitted it.
     private static void ApplyStandaloneEditDefaults(ApplyEditsRequest request)
     {
         if (!request.RollbackOnFailureExplicitlySet)
@@ -1134,10 +1097,7 @@ internal static partial class FeatureServerEndpoints
         return StampEditMoment(context, request, result);
     }
 
-    /// <summary>
-    /// Rejects applyEdits controls the server cannot honor. Each is a 400 rather than an accepted
-    /// no-op because ignoring it would drop edits or change what the client was promised (#4105).
-    /// </summary>
+    // An applyEdits control this server cannot honor is a 400, not an accepted no-op, because ignoring it would drop edits or change the promised result.
     private static IResult? CreateUnsupportedEditControlError(HttpContext context, ApplyEditsRequest request)
     {
         if (request.UseGlobalIds)
@@ -1190,13 +1150,7 @@ internal static partial class FeatureServerEndpoints
         return null;
     }
 
-    /// <summary>
-    /// Emits <c>editMoment</c> (server clock, epoch milliseconds) on a JSON applyEdits response only when
-    /// the client asked for it with returnEditMoment=true (#4105). A committed edit carries the moment the
-    /// edits handler recorded with the response, so an Idempotency-Key replay (#2250) reports the original
-    /// moment; a response the handler did not stamp (no committed write) gets the current server time. The
-    /// handler's object may be the replay record, so any change goes on a copy, never on that object.
-    /// </summary>
+    // editMoment is emitted only when returnEditMoment=true, a replay reports the original moment, and the replay record itself is never mutated.
     private static IResult StampEditMoment(HttpContext context, ApplyEditsRequest request, IResult result)
     {
         if (result is not Microsoft.AspNetCore.Http.HttpResults.JsonHttpResult<ApplyEditsResponse> { Value: { } response } json)
@@ -1288,11 +1242,7 @@ internal static partial class FeatureServerEndpoints
         return TryParseUnsupportedEditControls(values, request, out error);
     }
 
-    /// <summary>
-    /// Reads the Esri applyEdits controls this server cannot honor (#4105) so that a non-default
-    /// value is rejected by <see cref="CreateUnsupportedEditControlError"/> instead of being
-    /// dropped. Empty strings, empty JSON arrays and <c>false</c> are the defaults and stay accepted.
-    /// </summary>
+    // An empty string, an empty JSON array, and false are the accepted defaults for unsupported applyEdits controls; any other value is rejected.
     private static bool TryParseUnsupportedEditControls(
         IReadOnlyDictionary<string, StringValues> values,
         ApplyEditsRequest request,
@@ -1321,11 +1271,6 @@ internal static partial class FeatureServerEndpoints
         return true;
     }
 
-    /// <summary>
-    /// True when an attachments/assetMaps payload carries no edits: blank, JSON <c>null</c>, or a JSON
-    /// array with no elements however it is formatted (<c>[ ]</c>, a multi-line empty array). Anything
-    /// else, including text that is not JSON, counts as edits and is rejected rather than dropped.
-    /// </summary>
     private static bool IsEmptyEditPayload(string payload)
     {
         if (string.IsNullOrWhiteSpace(payload))
@@ -1483,13 +1428,6 @@ internal static partial class FeatureServerEndpoints
         }
     }
 
-    /// <summary>
-    /// Filter parameters an ArcGIS deleteFeatures request may carry to select rows by
-    /// attribute (<c>where</c>) or spatial predicate (<c>geometry</c>) instead of explicit
-    /// objectIds. These can arrive in the request body (form or JSON) as well as the query
-    /// string, so they are captured during body parsing and merged with the query string when
-    /// resolving the objectIds to delete.
-    /// </summary>
     private static readonly string[] DeleteFilterParameterKeys =
     [
         "where",
@@ -1553,10 +1491,6 @@ internal static partial class FeatureServerEndpoints
         }
     }
 
-    /// <summary>
-    /// Pulls the recognized deleteFeatures filter parameters out of a form/body value map so
-    /// they can participate in objectId resolution even when supplied in the request body.
-    /// </summary>
     private static Dictionary<string, StringValues>? ExtractDeleteFilterParameters(
         IReadOnlyDictionary<string, StringValues> values)
     {
@@ -1578,9 +1512,6 @@ internal static partial class FeatureServerEndpoints
         return filter;
     }
 
-    /// <summary>
-    /// Pulls the recognized deleteFeatures filter parameters out of a JSON request body object.
-    /// </summary>
     private static Dictionary<string, StringValues>? ExtractDeleteFilterParametersFromJson(JsonElement root)
     {
         Dictionary<string, StringValues>? filter = null;

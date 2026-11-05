@@ -18,16 +18,8 @@ internal interface IFeatureServerQueryServices
         GeoServicesSpatialReference? geometrySpatialReference,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Parses a spatial-reference string to its raw (pre-normalization) SRID, without registry
-    /// validation. Used to recover a client-requested Web Mercator alias for response echo.
-    /// </summary>
     Task<int?> ParseSridAsync(string? srValue, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Resolves a projected CRS to the EPSG identifier of its geodetic base.
-    /// Geographic and unresolvable definitions retain <paramref name="srid"/>.
-    /// </summary>
     Task<int> ResolveGeodeticBaseSridAsync(int srid, CancellationToken cancellationToken = default);
 
     ValueTask<(object Response, string ContentType)> FormatQueryResultAsync(

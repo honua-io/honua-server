@@ -15,16 +15,6 @@ using NetTopologySuite.IO;
 
 namespace Honua.Protocols.GeoServices.FeatureServer.Services;
 
-/// <summary>
-/// Implements the FeatureCollectionPBuffer schema from github.com/Esri/arcgis-pbf.
-/// </summary>
-/// <remarks>
-/// Key encoding details:
-/// - Geometry coordinates are delta-encoded signed integers
-/// - A Transform message carries scale/translate for world coordinate recovery
-/// - Attribute values use interned field indices for compact storage
-/// - The wire format uses hand-rolled protobuf encoding (no library dependency)
-/// </remarks>
 internal sealed class PbfQueryFormatter
 {
     // Esri PBF schema version
@@ -35,9 +25,6 @@ internal sealed class PbfQueryFormatter
 
     private readonly GeometryLimits _geometryLimits;
 
-    /// <summary>
-    /// Initializes the PBF formatter with geometry processing limits.
-    /// </summary>
     public PbfQueryFormatter(IOptions<LimitsOptions> limitsOptions)
     {
         _geometryLimits = limitsOptions?.Value?.Geometry ?? new GeometryLimits();
@@ -364,9 +351,6 @@ internal sealed class PbfQueryFormatter
         }
     }
 
-    /// <summary>
-    /// Writes a single Feature message with attributes and geometry.
-    /// </summary>
     private static void WriteFeature(
         ref ProtobufWriter writer,
         Feature feature,
@@ -390,9 +374,6 @@ internal sealed class PbfQueryFormatter
         }
     }
 
-    /// <summary>
-    /// Writes attribute values as repeated Value messages (field 1 on Feature).
-    /// </summary>
     private static void WriteAttributes(
         ref ProtobufWriter writer,
         Feature feature,
@@ -448,12 +429,6 @@ internal sealed class PbfQueryFormatter
         }
     }
 
-    /// <summary>
-    /// Writes a single attribute value into the Value oneof. Oneof members carry
-    /// explicit presence, so the *Always writers are used: the default-skipping
-    /// writers would encode 0, 0.0, false, and "" as "no member set", which clients
-    /// decode as null.
-    /// </summary>
     private static void WriteAttributeValue(ref ProtobufWriter writer, object value)
     {
         switch (value)
@@ -506,9 +481,6 @@ internal sealed class PbfQueryFormatter
         }
     }
 
-    /// <summary>
-    /// Writes a Geometry message with delta-encoded integer coordinates.
-    /// </summary>
     private static void WriteGeometry(
         ref ProtobufWriter writer,
         byte[] wkb,
@@ -555,18 +527,6 @@ internal sealed class PbfQueryFormatter
         geoMsg.Dispose();
     }
 
-    /// <summary>
-    /// Delta-encodes geometry coordinates into integer arrays.
-    /// </summary>
-    /// <remarks>
-    /// Esri PBF quantization semantics (matching ArcGIS Server output and the
-    /// reference decoders in github.com/Esri/arcgis-pbf):
-    /// - Quantized ordinates are delta-encoded against the running accumulator;
-    ///   X and Y are emitted in map-space units scaled by the quantization scale.
-    /// - Each lengths[] segment (ring/path) restarts delta encoding: the first
-    ///   vertex of every segment is absolute and only subsequent vertices are
-    ///   deltas, so the running accumulator resets at each part boundary.
-    /// </remarks>
     private static (List<uint> lengths, List<long> coords) EncodeGeometryCoordinates(
         Geometry geometry,
         double scale,
@@ -669,11 +629,7 @@ internal sealed class PbfQueryFormatter
         }
     }
 
-    /// <summary>
-    /// Determines whether a ring must be emitted in reverse order to honor the Esri
-    /// winding convention (<paramref name="clockwise"/> = true for exterior rings,
-    /// false for holes), evaluated in map space.
-    /// </summary>
+    // Esri exterior rings are clockwise in map space and holes are the opposite, so a ring is reversed when its orientation disagrees.
     private static bool ShouldReverseRing(LineString ring, bool clockwise)
     {
         if (ring.NumPoints < 4)
@@ -764,11 +720,6 @@ internal sealed class PbfQueryFormatter
         }
     }
 
-    /// <summary>
-    /// Detects whether any feature's WKB geometry carries Z or M ordinates by
-    /// inspecting the WKB type header (EWKB dimension flags and ISO SQL/MM
-    /// 1000/2000/3000 type offsets), without fully parsing the geometries.
-    /// </summary>
     private static (bool HasZ, bool HasM) DetectZmOrdinates(ImmutableArray<Feature> features)
     {
         var hasZ = false;
@@ -802,9 +753,6 @@ internal sealed class PbfQueryFormatter
         return (hasZ, hasM);
     }
 
-    /// <summary>
-    /// Writes the Transform message with quantization scale/translate.
-    /// </summary>
     private static void WriteTransform(
         ref ProtobufWriter writer,
         bool hasZ,
@@ -883,9 +831,6 @@ internal sealed class PbfQueryFormatter
             _ => 127
         };
 
-    /// <summary>
-    /// Maps NTS Geometry to Esri PBF GeometryType enum values.
-    /// </summary>
     private static int MapNtsGeometryType(Geometry geometry)
     {
         return geometry switch
@@ -900,9 +845,6 @@ internal sealed class PbfQueryFormatter
         };
     }
 
-    /// <summary>
-    /// Maps GeoServices field type string to the Esri PBF field-type enum value.
-    /// </summary>
     private static int MapPbfFieldType(string? geoServicesType)
     {
         return geoServicesType switch

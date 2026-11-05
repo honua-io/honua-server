@@ -8,24 +8,14 @@ using Honua.Core.Features.Raster.Domain;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Services;
 
-/// <summary>
-/// Read-only abstraction over a raster catalog. Returns the per-item metadata
-/// rows that the Esri Image Server <c>query</c> endpoint exposes as features.
-/// </summary>
 internal interface IImageServerCatalogReader
 {
-    /// <summary>
-    /// Reads catalog items for a layer with the supplied filter and pagination.
-    /// </summary>
     Task<ImageServerCatalogPage> ReadAsync(
         int layerId,
         ImageServerCatalogQuery query,
         CancellationToken cancellationToken);
 }
 
-/// <summary>
-/// Page of catalog items returned by <see cref="IImageServerCatalogReader"/>.
-/// </summary>
 internal sealed class ImageServerCatalogPage
 {
     public required IReadOnlyList<ImageServerCatalogItem> Items { get; init; }
@@ -38,21 +28,13 @@ internal sealed class ImageServerCatalogPage
 
     public int? NativeSrid { get; init; }
 
-    /// <summary>
-    /// Rows the provider matched with the pushed predicate (the read bound). Surfaced as telemetry.
-    /// </summary>
     public long RowsScanned { get; init; }
 
-    /// <summary>Rows materialized into this page. Surfaced as telemetry.</summary>
     public long RowsReturned { get; init; }
 
-    /// <summary>Provider-side query duration. Surfaced as telemetry; never carries SQL.</summary>
     public TimeSpan ProviderDuration { get; init; }
 }
 
-/// <summary>
-/// Single catalog item row.
-/// </summary>
 internal sealed record ImageServerCatalogItem
 {
     public required long ObjectId { get; init; }
@@ -89,34 +71,16 @@ internal sealed record ImageServerCatalogItem
 
     public DateTimeOffset CreatedAt { get; init; }
 
-    /// <summary>
-    /// Footprint expressed as ring coordinates in the raster's native SRID. The MVP does
-    /// not reproject; clients that supply <c>outSR</c> must inspect the geometry's
-    /// <c>spatialReference</c> in the response to detect that no reprojection occurred.
-    /// First ring is the outer boundary; subsequent rings are interior holes.
-    /// </summary>
+    // Footprints stay in the raster SRID, so a client that passed outSR has to read the geometry's spatial reference to see that no reprojection happened.
     public double[][][]? FootprintRings { get; init; }
 
-    /// <summary>
-    /// SRID of the footprint coordinates. Equal to the source raster extent SRID.
-    /// </summary>
     public int? FootprintSrid { get; init; }
 
-    /// <summary>
-    /// Optional sensor/camera/orientation/RPC metadata hydrated from the
-    /// <c>raster_sensor_metadata</c> companion table. <c>null</c> for plain rasters with no
-    /// modeled sensor metadata (the common case). Used by orientation-ranked find (#1880),
-    /// height mensuration (#1879), and image-coordinate-system project warps (#1881).
-    /// </summary>
     public RasterSensorMetadata? SensorMetadata { get; init; }
 }
 
-/// <summary>
-/// Parameters used by <see cref="IImageServerCatalogReader"/>.
-/// </summary>
 internal sealed class ImageServerCatalogQuery
 {
-    /// <summary>Resolved request policy, enforced before any catalog predicate is evaluated.</summary>
     public ImmutableArray<string> EnforcedMaskedFields { get; set; }
 
     public string? Where { get; init; }
@@ -125,13 +89,7 @@ internal sealed class ImageServerCatalogQuery
 
     public int? OutputSrid { get; init; }
 
-    /// <summary>
-    /// Axis-aligned bounding box of the client <c>geometry</c> filter, already
-    /// normalised by the parser. <c>null</c> means no spatial filter was supplied.
-    /// The catalog reader applies an envelope-intersect test against each raster
-    /// footprint; the relationship is interpreted as envelope-intersects because
-    /// the catalog reader operates on footprint extents, not exact rings.
-    /// </summary>
+    // The catalog intersects footprint envelopes rather than exact rings.
     public ImageServerCatalogSpatialFilter? SpatialFilter { get; init; }
 
     public int Offset { get; init; }
@@ -140,23 +98,10 @@ internal sealed class ImageServerCatalogQuery
 
     public DateTimeOffset? Time { get; init; }
 
-    /// <summary>
-    /// Start of an Esri <c>start,end</c> time extent; <see cref="Time"/> then carries its end.
-    /// </summary>
     public DateTimeOffset? TimeStart { get; init; }
 
-    /// <summary>
-    /// Ordering specification applied after filtering and before pagination.
-    /// Each entry is a canonical catalog field name plus a descending flag.
-    /// Empty means the catalog's natural order is preserved.
-    /// </summary>
     public IReadOnlyList<ImageServerCatalogOrderBy> OrderBy { get; init; } = [];
 
-    /// <summary>
-    /// Canonical field names to include in feature attributes and the field
-    /// schema. <c>null</c> means all catalog fields are returned. <c>OBJECTID</c>
-    /// is always included so clients can correlate features.
-    /// </summary>
     public IReadOnlyList<string>? OutFields { get; init; }
 
     public bool ReturnGeometry { get; init; } = true;
@@ -168,21 +113,8 @@ internal sealed class ImageServerCatalogQuery
     public bool ReturnExtentOnly { get; init; }
 }
 
-/// <summary>
-/// A single <c>orderByFields</c> term: the canonical catalog field name and
-/// whether it sorts descending.
-/// </summary>
 internal sealed record ImageServerCatalogOrderBy(string Field, bool Descending);
 
-/// <summary>
-/// Spatial filter applied against raster footprints. The bounding box
-/// (<see cref="XMin"/>..<see cref="YMax"/>) is expressed in <see cref="Srid"/> and is always used as
-/// the index-eligible envelope pre-filter. When <see cref="Geometry"/> (WKB) is supplied together with
-/// a non-envelope <see cref="Relation"/>, the provider additionally applies the exact spatial
-/// predicate against the footprint geometry. When the footprint SRID differs the provider transforms
-/// the box and geometry into the footprint SRID before the test so the comparison stays in a single
-/// coordinate system.
-/// </summary>
 internal sealed record ImageServerCatalogSpatialFilter(
     double XMin,
     double YMin,
@@ -192,23 +124,9 @@ internal sealed record ImageServerCatalogSpatialFilter(
     byte[]? Geometry = null,
     RasterCatalogSpatialRelation Relation = RasterCatalogSpatialRelation.EnvelopeIntersects);
 
-/// <summary>
-/// Default <see cref="IImageServerCatalogReader"/> built on <see cref="IRasterStore"/>.
-/// Delegates the spatial (envelope-intersects), identity, and temporal predicates — and, on the
-/// common browse path, paging, count, and aggregate extent — to the provider via
-/// <see cref="IRasterStore.QueryCatalogAsync"/> so a large imagery catalog is filtered and paged in
-/// storage <b>before materialization</b> rather than fully read and filtered in memory (#2666).
-/// The Esri-only concerns the neutral contract deliberately omits — <c>where</c> evaluation and
-/// computed-field <c>orderByFields</c> ordering — are applied here, in memory, over the
-/// spatially-bounded set the provider returns (a bounded fallback for those query shapes).
-/// </summary>
+// Spatial, identity, and temporal predicates are pushed to the provider; Esri where clauses and computed-field ordering stay in memory over that bounded set.
 internal sealed class ImageServerCatalogReader : IImageServerCatalogReader
 {
-    /// <summary>
-    /// Esri Calculate Cell Size Ranges default. The item stays visible until the map cell
-    /// is this many times its native cell. <c>MinPS</c> stays 0 so zooming in past the
-    /// native cell still draws (#6563).
-    /// </summary>
     internal const double CellSizeRangeFactor = 10;
 
     private readonly IRasterStore _rasterStore;
@@ -305,11 +223,6 @@ internal sealed class ImageServerCatalogReader : IImageServerCatalogReader
                 .ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Fast path: the provider already applied the spatial/identity/temporal predicates, natural
-    /// ordering, paging, total count, and aggregate extent, so we trust its page and only project,
-    /// reproject to <c>outSR</c>, and carry the telemetry counters forward.
-    /// </summary>
     private async Task<ImageServerCatalogPage> BuildPushdownPageAsync(
         ImageServerCatalogQuery query,
         RasterCatalogPage page,
@@ -352,12 +265,7 @@ internal sealed class ImageServerCatalogReader : IImageServerCatalogReader
         };
     }
 
-    /// <summary>
-    /// Bounded fallback: the provider returned every spatially-filtered row (no paging) because the
-    /// query carries an Esri <c>where</c> clause or a computed-field ordering the neutral contract
-    /// cannot express. We finish <c>where</c>/<c>orderByFields</c>, aggregate extent, and paging in
-    /// memory over that bounded set, preserving the pre-pushdown semantics exactly.
-    /// </summary>
+    // A where clause or computed-field ordering cannot be pushed down, so paging and extent are finished in memory over the spatially filtered rows.
     private async Task<ImageServerCatalogPage> BuildInMemoryPageAsync(
         ImageServerCatalogQuery query,
         RasterCatalogPage page,
@@ -480,12 +388,6 @@ internal sealed class ImageServerCatalogReader : IImageServerCatalogReader
         ProviderDuration = page.ProviderDuration,
     };
 
-    /// <summary>
-    /// Applies the requested <c>orderByFields</c> terms in priority order. The
-    /// first term is the primary sort key; subsequent terms break ties. Values
-    /// are compared via <see cref="FieldValueComparer"/>, which orders numbers
-    /// and dates naturally and falls back to ordinal string comparison.
-    /// </summary>
     private static List<(ImageServerCatalogItem Item, RasterInfo Source)> ApplyOrdering(
         List<(ImageServerCatalogItem Item, RasterInfo Source)> projected,
         IReadOnlyList<ImageServerCatalogOrderBy> orderBy)
@@ -508,11 +410,6 @@ internal sealed class ImageServerCatalogReader : IImageServerCatalogReader
         return ordered is null ? projected : ordered.ToList();
     }
 
-    /// <summary>
-    /// Comparer used for <c>orderByFields</c>. Numbers and dates compare
-    /// naturally; everything else falls back to ordinal string comparison.
-    /// Nulls sort first.
-    /// </summary>
     private sealed class FieldValueComparer : IComparer<object?>
     {
         public static readonly FieldValueComparer Instance = new();
@@ -573,10 +470,6 @@ internal sealed class ImageServerCatalogReader : IImageServerCatalogReader
         }
     }
 
-    /// <summary>
-    /// Transforms a raster extent into the requested SRID via the shared CRS pipeline,
-    /// returning the original extent when no transform is needed or possible.
-    /// </summary>
     private async ValueTask<RasterExtent?> TransformExtentAsync(
         RasterExtent extent,
         int targetSrid,
@@ -603,12 +496,6 @@ internal sealed class ImageServerCatalogReader : IImageServerCatalogReader
             : extent;
     }
 
-    /// <summary>
-    /// Reprojects a catalog item's rectangular footprint into the requested SRID. The
-    /// footprint is rebuilt from the transformed extent corners and the item's
-    /// <see cref="ImageServerCatalogItem.FootprintSrid"/> is updated so the response
-    /// geometry SR matches the emitted ring coordinates.
-    /// </summary>
     private async ValueTask<ImageServerCatalogItem> ReprojectFootprintAsync(
         ImageServerCatalogItem item,
         int targetSrid,

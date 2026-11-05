@@ -6,11 +6,6 @@ using Honua.Core.Features.Raster.Multidimensional.Domain;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Services;
 
-/// <summary>
-/// Raster description of a scanned multidimensional coverage. Service info uses this
-/// instead of a co-registered base raster so the envelope, cell size, pixel type,
-/// NoData, and statistics match the grid the slices come from.
-/// </summary>
 internal sealed record ImageServerCoverageGrid
 {
     public required RasterExtent Extent { get; init; }
@@ -23,7 +18,6 @@ internal sealed record ImageServerCoverageGrid
 
     public required int Height { get; init; }
 
-    /// <summary>PostGIS sample type (<c>32BF</c>), or null when the variable type is unrecognized.</summary>
     public string? StoredPixelType { get; init; }
 
     public double? NoDataValue { get; init; }
@@ -39,10 +33,6 @@ internal sealed record ImageServerCoverageGrid
     public bool YAxisAscending { get; init; }
 }
 
-/// <summary>
-/// Projects scanned coverage metadata onto the raster facts ImageServer service
-/// info and key properties advertise.
-/// </summary>
 internal static class ImageServerCoverageRaster
 {
     public static ImageServerCoverageGrid? TryDescribe(MultidimensionalCoverageMetadata metadata)

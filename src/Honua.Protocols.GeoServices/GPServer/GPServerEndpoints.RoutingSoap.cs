@@ -14,7 +14,6 @@ namespace Honua.Protocols.GeoServices.GPServer;
 
 internal static partial class GPServerEndpoints
 {
-    /// <summary>Projects the provider-level Routing service without changing catalog GP services.</summary>
     internal static async Task<IResult?> TryHandleRoutingSoapAsync(
         HttpContext context, XElement operation, XNamespace soap, CancellationToken ct)
     {

@@ -6,36 +6,17 @@ using SkiaSharp;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Services;
 
-/// <summary>
-/// Builds the per-class swatches that the Esri Image Server <c>legend</c>
-/// endpoint returns. The MVP renders a constant-size PNG with a solid colour
-/// and a 1px black border because raster legend swatches are documented to be
-/// fixed dimensions across all classes.
-/// </summary>
 internal interface IImageServerLegendSwatchBuilder
 {
-    /// <summary>
-    /// Renders a single legend swatch.
-    /// </summary>
-    /// <param name="color">Fill colour for the swatch.</param>
-    /// <returns>Base64-encoded PNG bytes plus the swatch dimensions.</returns>
     LegendSwatch Render(SKColor color);
 }
 
-/// <summary>
-/// Result of <see cref="IImageServerLegendSwatchBuilder.Render"/>.
-/// </summary>
 internal readonly record struct LegendSwatch(string Base64Png, int Width, int Height);
 
-/// <summary>
-/// Default <see cref="IImageServerLegendSwatchBuilder"/> backed by SkiaSharp.
-/// </summary>
 internal sealed class ImageServerLegendSwatchBuilder : IImageServerLegendSwatchBuilder
 {
-    /// <summary>Esri-default swatch width (pixels).</summary>
     public const int SwatchWidth = 20;
 
-    /// <summary>Esri-default swatch height (pixels).</summary>
     public const int SwatchHeight = 20;
 
     public LegendSwatch Render(SKColor color)

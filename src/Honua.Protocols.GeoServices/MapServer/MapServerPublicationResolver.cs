@@ -5,12 +5,6 @@ using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Protocols.GeoServices.MapServer;
 
-/// <summary>
-/// Resolves the deterministic, per-numeric-ID publication set shared by every synchronous and
-/// durable MapServer execution path (legend, metadata, find, identify, KML, tile export). One
-/// winner is chosen per service-local layer ID — Esri map, then Esri feature, then any other
-/// adapter — so all MapServer surfaces describe the same layers the tile/render path draws.
-/// </summary>
 internal static class MapServerPublicationResolver
 {
     internal static MetadataV2Publication[] ResolveLayerPublications(

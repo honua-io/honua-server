@@ -10,43 +10,15 @@ using Honua.Geoprocessing;
 
 namespace Honua.Protocols.GeoServices.GPServer;
 
-/// <summary>
-/// Bidirectional translation between Esri GP parameter types and canonical
-/// opaque step inputs (<see cref="IReadOnlyDictionary{TKey,TValue}"/> of string).
-/// Per ADR-0029, parameter translation is the adapter's responsibility.
-/// </summary>
 internal static class GPServerParameterTranslation
 {
-    /// <summary>
-    /// Well-known metadata key on <see cref="ArtifactRef"/> that stores the
-    /// GPServer output parameter name for per-output result routing.
-    /// </summary>
     public const string OutputParameterMetadataKey = GeoprocessingProtocolMetadataKeys.GeoServicesOutputParameterMetadataKey;
 
-    /// <summary>
-    /// Translates incoming Esri GP parameters to canonical opaque string inputs
-    /// without spec-aware behavior. Equivalent to calling the overload with a
-    /// <c>null</c> definition: GPMultiValue inputs are not unpacked from
-    /// comma-delimited form and GPChoice <c>AllowedValues</c> are not enforced.
-    /// </summary>
+    // Without a task definition, GPMultiValue inputs stay comma-delimited and GPChoice values are not enforced.
     public static Dictionary<string, string> TranslateInbound(
         IReadOnlyDictionary<string, string> gpParameters)
         => TranslateInbound(gpParameters, definition: null);
 
-    /// <summary>
-    /// Translates incoming Esri GP parameters to canonical opaque string inputs.
-    /// Simple types pass through as string values. Complex GP types are normalized:
-    /// GPDataFile/GPRasterDataLayer URLs are extracted, GPLinearUnit/GPArealUnit
-    /// objects are normalized to "&lt;value&gt; &lt;unit&gt;" strings. When the
-    /// owning <paramref name="definition"/> is supplied, GPMultiValue parameters
-    /// declared as <see cref="ProcessParameterValueType.WkbArray"/> are unpacked
-    /// from a JSON array or comma-delimited form into the canonical JSON-array
-    /// string the runtime expects, and GPChoice values are validated against
-    /// <see cref="ProcessParameterSpec.AllowedValues"/> — matched
-    /// case-insensitively as Esri's GP framework does, then rewritten to the
-    /// catalog spelling so canonical validators and executors that compare
-    /// ordinally still accept them.
-    /// </summary>
     public static Dictionary<string, string> TranslateInbound(
         IReadOnlyDictionary<string, string> gpParameters,
         ProcessDefinition? definition)
@@ -81,11 +53,6 @@ internal static class GPServerParameterTranslation
         return lookup;
     }
 
-    /// <summary>
-    /// Normalizes a single GP parameter value. Spec-less callers preserve the
-    /// historical behavior; supply a <paramref name="spec"/> to opt into
-    /// GPMultiValue unpacking and other spec-aware translation.
-    /// </summary>
     internal static string NormalizeGPValue(string value, ProcessParameterSpec? spec = null)
     {
         if (string.IsNullOrEmpty(value))
@@ -150,13 +117,6 @@ internal static class GPServerParameterTranslation
         }
     }
 
-    /// <summary>
-    /// Re-emits a GPMultiValue input as the canonical JSON-array string the
-    /// runtime executors expect. JSON-array literals are validated and
-    /// re-serialised; comma-delimited strings are split and quoted. Returns
-    /// <c>false</c> when the input does not look like a multi-value payload, in
-    /// which case the caller falls back to scalar normalisation.
-    /// </summary>
     private static bool TryNormalizeMultiValue(string value, out string normalized)
     {
         normalized = value;
@@ -232,23 +192,6 @@ internal static class GPServerParameterTranslation
         return Encoding.UTF8.GetString(buffer.WrittenSpan);
     }
 
-    /// <summary>
-    /// Validates a value against a parameter's <see cref="ProcessParameterSpec.AllowedValues"/>
-    /// and returns the CATALOG spelling of the matched choice.
-    /// </summary>
-    /// <remarks>
-    /// Esri's GP framework matches value-list (choice) parameters
-    /// case-insensitively, so the adapter does too. Accepting a spelling here and
-    /// then handing it on verbatim, however, left it to be rejected downstream by
-    /// canonical validators and executors that compare ordinally — a GPServer
-    /// submission of <c>task=Detection</c> cleared the adapter and then failed
-    /// plan validation (honua-server#3053). Normalizing to the catalog spelling
-    /// fixes that for every process declaring <c>AllowedValues</c>, and keeps the
-    /// adapter and the canonical validator agreeing on comparison semantics.
-    /// A catalog that declared two choices differing only by case would make the
-    /// normalization target ambiguous, so that is refused explicitly rather than
-    /// resolved by declaration order.
-    /// </remarks>
     private static string NormalizeChoice(ProcessParameterSpec? spec, string value)
     {
         if (spec?.AllowedValues is not { Count: > 0 } allowed || string.IsNullOrEmpty(value))
@@ -280,9 +223,6 @@ internal static class GPServerParameterTranslation
                 : $"Parameter '{spec.Name}': '{value}' is not in the allowed values [{string.Join(", ", allowed)}].");
     }
 
-    /// <summary>
-    /// Converts canonical text defaults to the declared Esri scalar JSON type.
-    /// </summary>
     public static JsonElement? TranslateDefaultValue(ProcessParameterSpec parameter)
     {
         if (parameter.DefaultValue is null)
@@ -314,9 +254,6 @@ internal static class GPServerParameterTranslation
         return document.RootElement.Clone();
     }
 
-    /// <summary>
-    /// Maps a canonical <see cref="ArtifactKind"/> to the corresponding Esri GP data type string.
-    /// </summary>
     public static string ToEsriDataType(ArtifactKind kind) => kind switch
     {
         ArtifactKind.FeatureLayer => "GPFeatureRecordSetLayer",
@@ -328,9 +265,6 @@ internal static class GPServerParameterTranslation
         _ => "GPString"
     };
 
-    /// <summary>
-    /// Maps a process-catalog parameter value type to an Esri GP data type string.
-    /// </summary>
     public static string ToEsriDataType(ProcessParameterValueType valueType) => valueType switch
     {
         ProcessParameterValueType.Text => "GPString",
@@ -345,10 +279,6 @@ internal static class GPServerParameterTranslation
         _ => "GPString"
     };
 
-    /// <summary>
-    /// Reads request parameters from the HTTP context (query string for GET,
-    /// form-encoded body for POST).
-    /// </summary>
     public static async Task<IReadOnlyDictionary<string, string>> ReadRequestParametersAsync(
         HttpContext context,
         CancellationToken cancellationToken = default)
@@ -376,15 +306,7 @@ internal static class GPServerParameterTranslation
         return result;
     }
 
-    /// <summary>
-    /// Resolves the output parameter name for an artifact using the well-known
-    /// metadata key <see cref="OutputParameterMetadataKey"/>. Per ADR-0029
-    /// invariant #3, the route key must be a stable output identifier — not
-    /// <see cref="ArtifactRef.Label"/> (which is human-readable).
-    /// </summary>
-    /// <exception cref="InvalidOperationException">
-    /// Thrown when the artifact does not carry the required metadata binding.
-    /// </exception>
+    // The artifact route key is the stable output identifier, not the human-readable title.
     public static string ResolveOutputParameterName(ArtifactRef artifact)
     {
         if (artifact.Metadata.TryGetValue(OutputParameterMetadataKey, out var paramName)

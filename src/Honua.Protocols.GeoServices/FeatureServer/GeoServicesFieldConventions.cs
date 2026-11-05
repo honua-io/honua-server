@@ -7,45 +7,15 @@ using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// Shared Esri GeoServices field-metadata conventions used by the FeatureServer and
-/// MapServer field-info projections.
-/// </summary>
 internal static class GeoServicesFieldConventions
 {
-    /// <summary>
-    /// Esri-conventional default <c>length</c> emitted for <c>esriFieldTypeString</c>
-    /// fields whose backing column declares no explicit varchar length.
-    /// </summary>
-    /// <remarks>
-    /// A real Esri FeatureServer always reports a positive <c>length</c> for string
-    /// fields. arcpy maps a null/absent length to 0 and then rejects every insert/update
-    /// with "Field length exceeded", so the f=json metadata must never emit a null or
-    /// non-positive length for a string field.
-    /// </remarks>
+    // String fields never emit a null or non-positive length, because arcpy maps that to 0 and then rejects every insert as field length exceeded.
     internal const int DefaultStringFieldLength = 256;
 
-    /// <summary>
-    /// Resolves the <c>length</c> to report for a string field. Uses the column's
-    /// declared varchar length when it is a positive value; otherwise falls back to the
-    /// Esri-conventional <see cref="DefaultStringFieldLength"/>.
-    /// </summary>
-    /// <param name="declaredLength">The declared varchar length, when known.</param>
     internal static int ResolveStringFieldLength(int? declaredLength)
         => declaredLength is int length and > 0 ? length : DefaultStringFieldLength;
 
-    /// <summary>
-    /// The Esri <c>sqlType</c> enumeration member for a logical field type.
-    /// </summary>
-    /// <remarks>
-    /// Metadata v2 deliberately erases the provider's physical SQL type, so this emits
-    /// only portable Esri enumeration members that follow from the logical type, with
-    /// <c>sqlTypeOther</c> as the Esri-safe value where the relationship is ambiguous.
-    /// It lives here because the layer resource and the query response must answer the
-    /// same thing for the same field: they disagreed, the query response reporting
-    /// PostgreSQL names such as <c>INTEGER</c> and <c>JSONB</c> where the layer resource
-    /// reported <c>sqlTypeInteger</c> and <c>sqlTypeNVarchar</c> (honua-server#5197).
-    /// </remarks>
+    // sqlType is only the portable Esri member, using sqlTypeOther where the logical type is ambiguous, so the layer resource and the query response describe the same field.
     internal static string MapSqlType(MetadataV2FieldType type)
         => type switch
         {
@@ -66,13 +36,6 @@ internal static class GeoServicesFieldConventions
             _ => "sqlTypeOther"
         };
 
-    /// <summary>
-    /// Maps a canonical field type to the Esri field type advertised in FeatureServer,
-    /// MapServer and query-response field metadata. Every GeoServices projection uses this
-    /// one mapping so the advertised types stay consistent across surfaces and with the
-    /// client field-type contract (<c>tests/js/shared/esri-field-types.json</c>). Calendar
-    /// dates advertise <c>esriFieldTypeDateOnly</c>; timestamps keep <c>esriFieldTypeDate</c>.
-    /// </summary>
     internal static string MapFieldType(MetadataV2FieldType type)
         => type switch
         {
@@ -92,29 +55,14 @@ internal static class GeoServicesFieldConventions
             _ => "esriFieldTypeString"
         };
 
-    /// <summary>
-    /// Converts a <see cref="DateTime"/> to epoch milliseconds (UTC). Values with an
-    /// unspecified kind are treated as UTC.
-    /// </summary>
     internal static long ToEpochMilliseconds(DateTime value)
         => new DateTimeOffset(DateTime.SpecifyKind(
             value,
             value.Kind == DateTimeKind.Unspecified ? DateTimeKind.Utc : value.Kind)).ToUnixTimeMilliseconds();
 
-    /// <summary>
-    /// Converts a <see cref="DateOnly"/> to epoch milliseconds at midnight UTC.
-    /// </summary>
     internal static long ToEpochMilliseconds(DateOnly value)
         => new DateTimeOffset(value.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc)).ToUnixTimeMilliseconds();
 
-    /// <summary>
-    /// Coerces a value known to belong to an <c>esriFieldTypeDate</c> field into an
-    /// epoch-millisecond (UTC) integer. Handles <see cref="DateTime"/>,
-    /// <see cref="DateTimeOffset"/>, <see cref="DateOnly"/>, already-numeric epoch values,
-    /// <see cref="JsonElement"/>, and ISO-8601 / date-only strings. Date-only values are
-    /// treated as midnight UTC. Already-numeric epoch values pass through unchanged so the
-    /// conversion is idempotent.
-    /// </summary>
     internal static bool TryConvertToEpochMilliseconds(object value, out long epochMilliseconds)
     {
         switch (value)
@@ -144,10 +92,6 @@ internal static class GeoServicesFieldConventions
         return false;
     }
 
-    /// <summary>
-    /// Converts statistics attributes advertised as timestamps to epoch milliseconds.
-    /// Calendar-date fields are excluded by the caller and retain their date-only form.
-    /// </summary>
     internal static void CoerceDateAttributes(
         IDictionary<string, object?> attributes,
         IReadOnlyCollection<string> dateFieldNames)
@@ -212,18 +156,11 @@ internal static class GeoServicesFieldConventions
         return false;
     }
 
-    /// <summary>
-    /// Temporal field types used to distinguish timestamp epochs from calendar dates.
-    /// </summary>
     internal static Dictionary<string, MetadataV2FieldType> ResolveTemporalFieldTypes(MetadataV2Resource resource)
         => resource.SchemaFields
             .Where(static field => field.Type is MetadataV2FieldType.DateTime or MetadataV2FieldType.Date)
             .ToDictionary(static field => field.Name, static field => field.Type, StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>
-    /// Normalizes a declared temporal value to its GeoServices wire representation.
-    /// Calendar dates retain their calendar day without time-zone conversion.
-    /// </summary>
     internal static bool TryConvertTemporalValue(object value, MetadataV2FieldType fieldType, out object? converted)
     {
         converted = null;
@@ -310,11 +247,6 @@ internal static class GeoServicesFieldConventions
         return false;
     }
 
-    /// <summary>
-    /// Coerces temporal attributes consistently across query, identify, related records
-    /// and replication. Timestamps use epoch milliseconds; calendar dates use ISO dates.
-    /// Null and unconvertible values are left unchanged.
-    /// </summary>
     internal static void CoerceTemporalAttributes(
         IDictionary<string, object?> attributes,
         IReadOnlyDictionary<string, MetadataV2FieldType> temporalFieldTypes)

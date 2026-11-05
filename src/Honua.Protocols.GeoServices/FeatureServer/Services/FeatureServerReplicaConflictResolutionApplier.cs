@@ -15,29 +15,7 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Protocols.GeoServices.FeatureServer.Services;
 
-/// <summary>
-/// GeoServices-backed <see cref="IReplicaConflictResolutionApplier"/> that commits an operator-selected
-/// disconnected-sync conflict resolution through the shared FeatureServer applyEdits pipeline
-/// (<see cref="FeatureServerEditsHandler"/>), so a resolution reuses the same entitlement gate,
-/// per-layer data-editor authorization, validation, geometry conversion, telemetry, and transactional
-/// outbox behavior as any other edit (#2430).
-/// </summary>
-/// <remarks>
-/// The conflict record stores base/client/server feature states as the opaque envelope
-/// <c>{"attributes": {...}, "geometry": ...}</c>, with geometry already in GeoServices (Esri) JSON —
-/// the same shape as a wire <see cref="GeoServicesFeature"/>. The applier therefore only has to
-/// deserialize the resolved envelope and dispatch a single atomic applyEdits for the conflicting
-/// feature; it never touches the feature store directly. <c>rollbackOnFailure</c> is always true: a
-/// resolution is a single-feature decision and a partial commit would leave the recorded resolution
-/// disagreeing with the committed state.
-/// </remarks>
-/// <remarks>
-/// The update target is pinned to <see cref="ReplicaConflictResolutionCommand.ObjectId"/> rather than
-/// trusted from the envelope. The envelope's attribute keys come from the storage schema (or from the
-/// client's upload), so on a layer whose public object-id field is not literally <c>objectid</c> the
-/// shared update handler would fail to find an id, and an operator-supplied <c>fieldValues</c> entry
-/// could otherwise redirect one conflict's resolution onto a different feature.
-/// </remarks>
+// A conflict resolution always commits exactly one feature with rollbackOnFailure true, and the object id is pinned to the conflict record rather than trusted from the envelope, so an operator field cannot redirect the update onto another feature.
 internal sealed class FeatureServerReplicaConflictResolutionApplier : IReplicaConflictResolutionApplier
 {
     private const string FailureMessage = "The resolved conflict state could not be committed.";
@@ -161,7 +139,6 @@ internal sealed class FeatureServerReplicaConflictResolutionApplier : IReplicaCo
             PreconditionFailed: PreconditionFailed(effectResults));
     }
 
-    /// <inheritdoc />
     public async Task<ReplicaConflictRowSnapshot> CaptureStateTokenAsync(
         int storageLayerId,
         long objectId,
@@ -178,7 +155,6 @@ internal sealed class FeatureServerReplicaConflictResolutionApplier : IReplicaCo
             : new ReplicaConflictRowSnapshot(Exists: false, StateToken: null, StateJson: null);
     }
 
-    /// <inheritdoc />
     public async Task<ReplicaConflictRowSnapshot> CaptureStateTokenAsync(
         string serviceId,
         int publicLayerId,
@@ -208,23 +184,12 @@ internal sealed class FeatureServerReplicaConflictResolutionApplier : IReplicaCo
             : new ReplicaConflictRowSnapshot(Exists: false, StateToken: null, StateJson: null);
     }
 
-    /// <summary>
-    /// The layer's configured object-id field plus the names it actually declares, used to decide which
-    /// attributes carry identity and which are business data.
-    /// </summary>
     private readonly record struct LayerIdentity(
         string ObjectIdField,
         HashSet<string> SchemaFields,
         MetadataV2Resource Resource);
 
-    /// <summary>
-    /// Resolves the object-id field of the layer as published by this service, together with its
-    /// declared field names, or null when the pair cannot be resolved (the resolution is then reported
-    /// as an uncommitted failure rather than dispatched against a guessed field). The lookup is
-    /// service-scoped: service-local layer indexes such as <c>0</c> are reused across services, so
-    /// resolving the index alone can return another service's resource and pin the update under the
-    /// wrong attribute name.
-    /// </summary>
+    // The object-id field is resolved within this service, because a layer index such as 0 is reused across services and can pin the update under another service's attribute name.
     private async Task<LayerIdentity?> ResolveLayerAsync(
         string serviceId,
         int publicLayerId,
@@ -244,13 +209,6 @@ internal sealed class FeatureServerReplicaConflictResolutionApplier : IReplicaCo
             triple.Resource);
     }
 
-    /// <summary>
-    /// Rewrites the resolved feature so its identity is the conflict's own feature: every
-    /// object-id-shaped attribute carried by the captured envelope (or supplied by an operator field
-    /// merge) is dropped and replaced with the layer's configured object-id field set to the
-    /// conflict's object id. Without this the update would target whatever id the envelope happened to
-    /// carry, which the operator can influence through <c>fieldValues</c>.
-    /// </summary>
     private static GeoServicesFeature PinToConflictFeature(
         GeoServicesFeature feature,
         LayerIdentity identity,
@@ -288,18 +246,6 @@ internal sealed class FeatureServerReplicaConflictResolutionApplier : IReplicaCo
         };
     }
 
-    /// <summary>
-    /// Whether an attribute key names the feature's identity: the layer's configured object-id field,
-    /// or one of the conventional aliases a captured storage/client envelope may carry under a
-    /// different name than the layer's public field.
-    /// </summary>
-    /// <remarks>
-    /// An alias only counts as identity when the layer does not actually declare a field by that name.
-    /// A layer whose object-id field is a custom key can legitimately also have a business attribute
-    /// called <c>fid</c> or <c>objectid</c>; dropping it would silently discard the operator's value,
-    /// so a keep-server restoration or field merge targeting it would report success while leaving the
-    /// field unchanged (#2430).
-    /// </remarks>
     private static bool IsObjectIdKey(string key, LayerIdentity identity)
         => key.Equals(identity.ObjectIdField, StringComparison.OrdinalIgnoreCase)
             || ((key.Equals("objectid", StringComparison.OrdinalIgnoreCase)
@@ -331,19 +277,7 @@ internal sealed class FeatureServerReplicaConflictResolutionApplier : IReplicaCo
         }
     }
 
-    /// <summary>
-    /// Whether the result collection for the dispatched effect reports the single expected row as
-    /// committed. A resolution always dispatches exactly one edit, so an absent or empty collection
-    /// means the row was never touched and is a failure — but only the collection belonging to the
-    /// dispatched effect is consulted.
-    /// </summary>
-    /// <remarks>
-    /// A delete that reports <see cref="GeoServicesEditErrorCodes.DeleteNotFound"/> counts as
-    /// committed when no expected-absence guard was requested. That keeps recovery idempotent after an
-    /// interrupted delete already landed. When the caller captured absence, however, success must come
-    /// from the transactional guard; accepting the handler's pre-read result would let a concurrent
-    /// reinsert escape that guard and strand the conflict in the wrong final state (#2430).
-    /// </remarks>
+    // A delete that reports success counts as committed only when the caller did not capture an absence guard; accepting the pre-read result would let a concurrent reinsert escape that guard.
     private static bool Succeeded(
         EditResult[]? results,
         ReplicaConflictResolutionEffect effect,

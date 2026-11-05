@@ -8,10 +8,6 @@ using Microsoft.Extensions.Primitives;
 
 namespace Honua.Protocols.GeoServices.GeometryService.Services;
 
-/// <summary>
-/// Parses geometry service request parameters from GET query strings, POST form-data, or POST JSON bodies.
-/// Handles ArcGIS-format geometry wrapper objects and spatial reference parsing.
-/// </summary>
 internal static class GeometryServiceRequestParser
 {
     private const string UnsupportedMediaTypeErrorPrefix = "__unsupported_media_type__:";
@@ -58,9 +54,6 @@ internal static class GeometryServiceRequestParser
         ["9096"] = 0.9144,     // yards
     }.ToFrozenDictionary();
 
-    /// <summary>
-    /// Reads request parameters from the query string (GET) or body (POST form-data / JSON).
-    /// </summary>
     public static async Task<(IReadOnlyDictionary<string, StringValues>? Values, string? Error)> TryReadRequestValuesAsync(
         HttpRequest request,
         CancellationToken cancellationToken)
@@ -150,11 +143,6 @@ internal static class GeometryServiceRequestParser
                 mediaType.EndsWith("+json", StringComparison.OrdinalIgnoreCase));
     }
 
-    /// <summary>
-    /// Parses the ArcGIS geometry wrapper format: {"geometryType":"...","geometries":[...]}
-    /// Also supports legacy flat array: [{...},{...}] and Esri's documented
-    /// comma-separated point shorthand (<c>x,y</c>).
-    /// </summary>
     public static (string[] GeometryJsonStrings, string? GeometryType, string? Error) ParseGeometries(
         string? raw,
         int maxGeometryCount,
@@ -268,12 +256,6 @@ internal static class GeometryServiceRequestParser
         }
     }
 
-    /// <summary>
-    /// Parses a single geometry object from request parameters.
-    /// Accepts both a bare geometry object (<c>{"rings":...}</c> / <c>{"x":...}</c>) and the
-    /// Esri-wrapped form (<c>{"geometryType":"...","geometry":{...}}</c>) that ArcGIS clients
-    /// send, unwrapping the latter to its inner geometry.
-    /// </summary>
     public static (string? GeometryJson, string? Error) ParseSingleGeometry(
         string? raw,
         string parameterName = "geometry",
@@ -326,9 +308,6 @@ internal static class GeometryServiceRequestParser
         }
     }
 
-    /// <summary>
-    /// Parses a spatial reference: plain integer "4326" or JSON object {"wkid":4326}.
-    /// </summary>
     public static (int Srid, string? Error) ParseSpatialReference(string? raw)
     {
         if (string.IsNullOrWhiteSpace(raw))
@@ -362,15 +341,6 @@ internal static class GeometryServiceRequestParser
         }
     }
 
-    /// <summary>
-    /// Returns the unit multiplier for converting to meters.
-    /// Supports string names (esriMeters) and numeric codes (9001).
-    /// </summary>
-    /// <exception cref="ArgumentException">
-    /// Thrown when <paramref name="unit"/> is a non-empty token that is not a recognized linear
-    /// unit name or code. GeometryService operation handlers catch this and return a 400 rather
-    /// than silently defaulting an unknown token to a meters multiplier of 1.0 (#2742).
-    /// </exception>
     public static double GetUnitMultiplier(string? unit)
     {
         if (string.IsNullOrEmpty(unit))
@@ -386,9 +356,6 @@ internal static class GeometryServiceRequestParser
         throw new ArgumentException($"Unsupported unit '{unit}'.", nameof(unit));
     }
 
-    /// <summary>
-    /// Parses a comma-separated string of doubles.
-    /// </summary>
     public static (double[] Values, string? Error) ParseDoubleArray(string? raw, int maxValues = int.MaxValue)
     {
         if (maxValues < 1)
@@ -457,17 +424,11 @@ internal static class GeometryServiceRequestParser
         return (result, null);
     }
 
-    /// <summary>
-    /// Parses a boolean string value.
-    /// </summary>
     public static bool ParseBool(string? raw)
     {
         return string.Equals(raw, "true", StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>
-    /// Validates the f (format) parameter. Only JSON is supported.
-    /// </summary>
     public static string? ValidateFormat(string? format)
     {
         if (string.IsNullOrWhiteSpace(format))
@@ -508,9 +469,6 @@ internal static class GeometryServiceRequestParser
         return values.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase);
     }
 
-    /// <summary>
-    /// Gets a string value from the request values dictionary (case-insensitive).
-    /// </summary>
     public static string? GetValue(IReadOnlyDictionary<string, StringValues> values, string key)
     {
         return values.TryGetValue(key, out var raw) ? raw.ToString() : null;

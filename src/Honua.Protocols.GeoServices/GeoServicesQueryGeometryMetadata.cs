@@ -7,10 +7,6 @@ using Microsoft.Extensions.Primitives;
 
 namespace Honua.Protocols.GeoServices;
 
-/// <summary>
-/// Admits query geometry through the existing GeoServices parser and enforces
-/// a vertex budget before the query handler performs CRS and spatial validation.
-/// </summary>
 internal sealed class GeoServicesQueryGeometryMetadata : GeometryParameterMetadata
 {
     internal static GeoServicesQueryGeometryMetadata Instance { get; } = new();

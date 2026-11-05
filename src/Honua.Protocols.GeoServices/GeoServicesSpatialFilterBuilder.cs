@@ -147,26 +147,10 @@ internal static class GeoServicesSpatialFilterBuilder
         };
     }
 
-    /// <summary>
-    /// Esri <c>esriSRUnit_NauticalMile</c>: the international nautical mile, exactly 1852 m.
-    /// </summary>
     private const double MetersPerNauticalMile = 1852.0;
 
-    /// <summary>
-    /// Esri <c>esriSRUnit_USNauticalMile</c>: the US nautical mile, 1853.248 m.
-    /// </summary>
     private const double MetersPerUsNauticalMile = 1853.248;
 
-    /// <summary>
-    /// Normalizes the Esri <c>units</c> token and distance into the canonical
-    /// <see cref="DistanceUnit"/> the store understands. Nautical-mile units have no
-    /// canonical enum member, so they are converted to meters here at the protocol
-    /// adapter. Unrecognized unit tokens are rejected (a silent meters fallback would
-    /// return wrong answers — e.g. a nautical-mile radius shrunk 1852x).
-    /// When <paramref name="units"/> is omitted, <paramref name="linearMetersPerUnit"/>
-    /// is the linear unit of the query geometry's spatial reference (metres per native
-    /// unit). Geographic or unresolved references stay in metres.
-    /// </summary>
     private static (double Distance, DistanceUnit Unit) NormalizeDistance(
         double distance,
         string? units,

@@ -29,9 +29,6 @@ using Microsoft.OpenApi;
 
 namespace Honua.Protocols.GeoServices.Catalog;
 
-/// <summary>
-/// GeoServices catalog endpoints for service discovery.
-/// </summary>
 internal static class GeoservicesCatalogEndpoints
 {
     private const string JsonFormat = "json";
@@ -50,9 +47,6 @@ internal static class GeoservicesCatalogEndpoints
     private const string Soap12EnvelopeNamespace = "http://www.w3.org/2003/05/soap-envelope";
     private const int MaxSoapRequestCharacters = 1_048_576;
 
-    /// <summary>
-    /// Maps root catalog endpoints under /rest.
-    /// </summary>
     public static IEndpointRouteBuilder MapGeoservicesCatalogEndpoints(this IEndpointRouteBuilder endpoints)
     {
         // ArcGIS Server answers the site root, the /rest prefix, and the /arcgis web-adaptor
@@ -1020,18 +1014,7 @@ internal static class GeoservicesCatalogEndpoints
         return Results.Json(response, GeoservicesCatalogJsonContext.Default.ServicesDirectoryResponse, contentType: JsonContentType);
     }
 
-    /// <summary>
-    /// One service's node in the catalogue: the folder-shaped document an Esri client
-    /// reads when it resolves a service URL.
-    /// </summary>
-    /// <remarks>
-    /// Reuses <see cref="BuildServiceDirectoryProjectionAsync"/> rather than enumerating
-    /// separately, so this node can never disagree with the catalogue root about what is
-    /// published or about who may see it - the projection already applies per-resource
-    /// access filtering scoped to the requested name. Denied folders retain their access
-    /// error; an unknown name answers the GeoServices not-found envelope;
-    /// the defect in #5158 was giving that answer for a service that does.
-    /// </remarks>
+    // This node reuses the catalogue projection so a service that exists is not reported as not-found, while a denied folder keeps its access error and an unknown name stays not-found.
     private static async Task<IResult> HandleGetServiceFolder(
         HttpContext context,
         string folderName,
@@ -1117,12 +1100,6 @@ internal static class GeoservicesCatalogEndpoints
         return Results.Json(response, GeoservicesCatalogJsonContext.Default.RestInfoResponse, contentType: JsonContentType);
     }
 
-    /// <summary>
-    /// Advertises the conventional GeoServices instance path (<c>/arcgis</c>) on a base that is
-    /// an origin with an empty path. A base that already ends with <c>/arcgis</c> is unchanged,
-    /// and a base that already has any other path is unchanged: the alias only strips a leading
-    /// <c>/arcgis</c>, so a second prefix would not route.
-    /// </summary>
     private static string WithConventionalInstancePath(string baseUrl)
     {
         if (string.IsNullOrEmpty(baseUrl))
@@ -1148,11 +1125,6 @@ internal static class GeoservicesCatalogEndpoints
         return trimmed;
     }
 
-    /// <summary>
-    /// Whether the resolved public base URL is served over TLS. A configured absolute base URL
-    /// carries its own scheme and is authoritative; a relative or empty base means no public URL
-    /// was configured, so the request transport is the only signal available.
-    /// </summary>
     private static bool IsHttpsBaseUrl(string baseUrl, HttpContext context)
     {
         return Uri.TryCreate(baseUrl, UriKind.Absolute, out var absolute)
@@ -1160,15 +1132,6 @@ internal static class GeoservicesCatalogEndpoints
             : context.Request.IsHttps;
     }
 
-    /// <summary>
-    /// Maps every Esri-family protocol a service exposes to the directory-entry "type"
-    /// strings the GeoServices REST catalog advertises (FeatureServer, MapServer,
-    /// ImageServer, GPServer, VectorTileServer, SceneServer), preserving the service's declared
-    /// protocol order and de-duplicating. A service reachable under several Esri types
-    /// is listed once per type, matching ArcGIS Services Directory semantics (#1853).
-    /// Non-Esri protocols (OGC API Features, STAC, OData, etc.) are skipped because they
-    /// are surfaced through their own catalogs.
-    /// </summary>
     private static List<string> MapEsriDirectoryTypes(MetadataV2Service service)
     {
         return service.Protocols
@@ -1178,12 +1141,7 @@ internal static class GeoservicesCatalogEndpoints
             .ToList();
     }
 
-    /// <summary>
-    /// Maps an Esri-family protocol to the directory-entry "type" string the
-    /// GeoServices REST catalog exposes (FeatureServer, MapServer, ImageServer,
-    /// GPServer, VectorTileServer). Returns false for non-Esri protocols (OGC API Features, STAC, etc.)
-    /// which are surfaced through other catalogs.
-    /// </summary>
+    // Non-Esri protocols return no directory type because OGC API Features, STAC, and the other protocols have their own catalogs.
     private static bool TryMapServiceType(string? primaryProtocol, out string directoryType)
     {
         switch (primaryProtocol)
@@ -1217,21 +1175,6 @@ internal static class GeoservicesCatalogEndpoints
         }
     }
 
-    /// <summary>
-    /// Appends an Esri I3S <c>SceneServer</c> directory entry for every active
-    /// registered scene, addressed at the canonical
-    /// <c>/rest/services/{id}/SceneServer</c> GeoServices path (#1807). Returns
-    /// <see langword="true"/> when at least one entry was appended so the caller
-    /// can re-sort the directory.
-    /// </summary>
-    /// <remarks>
-    /// SceneServer is Enterprise-gated: for editions below
-    /// <see cref="HonuaEdition.Enterprise"/> this is a no-op, so open-core
-    /// catalogs omit SceneServer entirely (no 402, matching the serving
-    /// endpoints' 403). The scene registry seam is optional — when no
-    /// <see cref="ISceneRegistrationService"/> is registered (e.g. config-only
-    /// hosting) no scene entries are emitted.
-    /// </remarks>
     private static async Task<bool> AppendSceneServerEntriesAsync(
         HttpContext context,
         List<ServiceDirectoryEntry> entries,
@@ -1270,12 +1213,6 @@ internal static class GeoservicesCatalogEndpoints
         return true;
     }
 
-    /// <summary>
-    /// Finds the first publication on the given image service whose layer index
-    /// has at least one raster registered in the raster store. The catalog uses
-    /// the layer index (not the service name) as the route segment for
-    /// ImageServer entries.
-    /// </summary>
     private static async Task<ImageServerProbeResult> GetImageServerLayerIdAsync(
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Service service,
@@ -1369,9 +1306,6 @@ internal static partial class GeoservicesCatalogEndpointLogging
     public static partial void LogGeocodeProjectionFailed(ILogger logger, Exception exception);
 }
 
-/// <summary>
-/// Logger category for GeoServices catalog endpoints.
-/// </summary>
 internal sealed class GeoservicesCatalogLog
 {
 }

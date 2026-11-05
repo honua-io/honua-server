@@ -3,11 +3,7 @@
 
 namespace Honua.Protocols.GeoServices.ImageServer.Services;
 
-/// <summary>
-/// Vincenty inverse and direct on the WGS 84 ellipsoid. Used by ImageServer
-/// ground mensuration. Near-antipodal pairs that do not converge fall back to a
-/// mean-radius haversine so the result stays finite.
-/// </summary>
+// Near-antipodal pairs that do not converge fall back to a mean-radius haversine so the distance stays finite.
 internal static class Wgs84Vincenty
 {
     private const double SemiMajorAxis = 6_378_137.0;
@@ -38,10 +34,6 @@ internal static class Wgs84Vincenty
         return HaversineBearingDegrees(lon1Deg, lat1Deg, lon2Deg, lat2Deg);
     }
 
-    /// <summary>
-    /// Point at <paramref name="distanceMeters"/> from the start along the geodesic
-    /// whose initial bearing is <paramref name="bearingDegrees"/>.
-    /// </summary>
     public static (double Lon, double Lat) Direct(
         double lonDeg,
         double latDeg,

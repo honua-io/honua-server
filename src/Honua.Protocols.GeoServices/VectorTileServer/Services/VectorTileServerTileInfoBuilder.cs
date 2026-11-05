@@ -6,47 +6,20 @@ using SpatialConstants = Honua.Core.Features.Shared.Models.SpatialConstants;
 
 namespace Honua.Protocols.GeoServices.VectorTileServer.Services;
 
-/// <summary>
-/// Builds the static WebMercatorQuad <c>tileInfo</c> descriptor advertised by VectorTileServer
-/// service metadata. The level-of-detail table is fixed for the Web Mercator (EPSG:3857)
-/// vector tiling scheme. This mirrors <c>ImageServerTileInfoBuilder</c> but for the vector
-/// tiling scheme: 512-pixel logical tiles serving the <c>pbf</c> (Mapbox Vector Tile) format,
-/// where the level-0 scale follows Esri's 96 DPI convention for 512-pixel tiles
-/// (<c>295828763.7958</c>) and halves every level. This is pure metadata assembly — the
-/// metadata foundation does not host an Esri-format vector tile cache (#1777).
-/// </summary>
 internal static class VectorTileServerTileInfoBuilder
 {
-    /// <summary>Logical tile dimension, in pixels, for the vector WebMercatorQuad scheme.</summary>
     private const int TileSize = 512;
 
-    /// <summary>Esri advertises a logical 96 DPI for WebMercator caches.</summary>
     private const int Dpi = 96;
 
-    /// <summary>
-    /// Ground resolution (meters per pixel) at zoom level 0 for a 512-pixel
-    /// WebMercatorQuad tile: <c>(2 * WebMercatorExtent) / 512</c>.
-    /// </summary>
     private const double Resolution0 = (2.0 * SpatialConstants.WebMercatorExtent) / TileSize;
 
-    /// <summary>WebMercator spatial reference well-known id used by Esri tile caches.</summary>
     private const int WebMercatorWkid = 102100;
 
-    /// <summary>The EPSG-aligned latest well-known id for WebMercator (3857).</summary>
     private const int WebMercatorLatestWkid = 3857;
 
-    /// <summary>Maximum zoom level the WebMercatorQuad scheme supports.</summary>
     internal const int MaxLevel = 24;
 
-    /// <summary>
-    /// Builds the fixed WebMercatorQuad <see cref="VectorTileInfo"/> descriptor covering
-    /// levels <c>0..maxLevel</c> inclusive.
-    /// </summary>
-    /// <param name="maxLevel">
-    /// Highest zoom level to include in the LOD array (clamped to the Web Mercator range
-    /// 0–24 that the WebMercatorQuad scheme accepts).
-    /// </param>
-    /// <returns>A populated <see cref="VectorTileInfo"/> descriptor.</returns>
     public static VectorTileInfo Build(int maxLevel)
     {
         var clampedMax = Math.Clamp(maxLevel, 0, MaxLevel);

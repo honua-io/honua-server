@@ -21,10 +21,6 @@ using Honua.ServiceDefaults;
 
 namespace Honua.Protocols.GeoServices.GPServer;
 
-/// <summary>
-/// Maps GeoServices GPServer REST endpoints as a protocol adapter
-/// over the canonical process runtime.
-/// </summary>
 internal static partial class GPServerEndpoints
 {
     private const string RouteBase = "/rest/services/{serviceId}/GPServer";
@@ -36,9 +32,6 @@ internal static partial class GPServerEndpoints
         "multipart/form-data"
     };
 
-    /// <summary>
-    /// Maps GPServer endpoints.
-    /// </summary>
     public static IEndpointRouteBuilder MapGPServerEndpoints(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapGPServerSoapEndpoints();
@@ -652,12 +645,7 @@ internal static partial class GPServerEndpoints
         }
     }
 
-    /// <summary>
-    /// Best-effort cancellation of a synchronous-execute job whose client is no longer
-    /// waiting (request timeout or disconnect). Runs on a detached token — the request
-    /// token has already tripped — and never throws: the orphaned job consuming worker
-    /// capacity is a resource leak, not a correctness failure of the response.
-    /// </summary>
+    // Cancellation of a synchronous job whose client has gone runs on a detached token and never throws, because the request token has already tripped and the orphaned job is a capacity leak.
     private static void DispatchOrphanedExecuteJobCancellation(
         IGeoprocessingJobTerminalService terminalService,
         string? jobId,
@@ -680,14 +668,7 @@ internal static partial class GPServerEndpoints
             TimeSpan.FromSeconds(10));
     }
 
-    /// <summary>
-    /// Resolves the GP result value for an artifact. Staged output artifacts (#3089)
-    /// carry the canonical authenticated content route, so no provider location or
-    /// expiring URL leaks to clients. When
-    /// this host's output store cannot serve the artifact (split-host staging
-    /// misconfiguration) the value degrades to the label rather than advertising a
-    /// link that is guaranteed to fail.
-    /// </summary>
+    // A staged artifact result carries the authenticated content route, and when this host cannot serve it the value degrades to the label rather than a link that cannot succeed.
     private static string ResolveArtifactValue(
         ArtifactRef artifact,
         string jobId,
@@ -718,15 +699,6 @@ internal static partial class GPServerEndpoints
         return artifact.Label;
     }
 
-    /// <summary>
-    /// A failed or cancelled synchronous <c>execute</c> is an error, not a result (#4034).
-    /// Esri clients (ArcGIS Maps SDK, ArcGIS API for Python, Pro) decide success by the
-    /// absence of an <c>error</c> object, so the former <c>{ results: [], jobStatus }</c>
-    /// envelope read as an empty successful run. Emit the GeoServices error envelope
-    /// (<c>{ "error": { "code": 500, ... } }</c>, the same shape ArcGIS Server returns for
-    /// "Error executing tool") and keep the job id, terminal status, and the job's own
-    /// error message in <c>details</c> so the failed job stays traceable.
-    /// </summary>
     private static IResult BuildExecuteFailureResponse(HttpContext context, ExecutionJobRecord job, string esriStatus)
     {
         var cancelled = string.Equals(esriStatus, "esriJobCancelled", StringComparison.Ordinal);
@@ -1360,13 +1332,6 @@ internal static partial class GPServerEndpoints
             cancellationToken);
     }
 
-    /// <summary>
-    /// Validates that the route <paramref name="serviceId"/> and <paramref name="taskName"/>
-    /// match the protocol metadata stored with the job when it was submitted.
-    /// Returns a 404 result when the binding does not match or is absent; null when it matches.
-    /// Jobs without GPServer binding metadata (e.g. submitted via gRPC) are rejected
-    /// to prevent cross-protocol job access through arbitrary GPServer routes.
-    /// </summary>
     private static IResult? ValidateJobBinding(
         HttpContext context, ILogger logger, ExecutionJobRecord job,
         string serviceId, string taskName)
@@ -1398,30 +1363,9 @@ internal static partial class GPServerEndpoints
             "Job binding mismatch");
     }
 
-    /// <summary>
-    /// Parsed GP environment controls. <c>env:outSR</c>, <c>env:workspace</c>,
-    /// and <c>env:overwriteOutput</c> are honored. Nonempty <c>env:processSR</c>
-    /// overrides are rejected because the execution engine cannot apply them. Any
-    /// other <c>env:*</c> control is unsupported and surfaced for a 400 response.
-    /// <c>env:workspace</c> mirrors arcpy's <c>arcpy.env.workspace</c> (default
-    /// output location for tool results) and <c>env:overwriteOutput</c> mirrors
-    /// <c>arcpy.env.overwriteOutput</c> (default <c>False</c>). The Esri 10.6.1+
-    /// <c>context</c> JSON parameter feeds the same <c>OutSr</c>/<c>ProcessSr</c> slots
-    /// (see <see cref="TryApplyContextControls"/>).
-    /// </summary>
+    // A nonempty env:processSR is rejected because the execution engine cannot apply it, and any other unrecognized env control is a 400.
     internal readonly record struct EnvControls(int? OutSr, int? ProcessSr, string? Workspace, bool? OverwriteOutput);
 
-    /// <summary>
-    /// Parses GP environment controls. <c>env:outSR</c>, <c>env:processSR</c>,
-    /// <c>env:workspace</c>, and <c>env:overwriteOutput</c> are recognised and
-    /// validated; a processing-SR override or any other unsupported <c>env:*</c>
-    /// control yields a structured 400 before submission. SR
-    /// values may be a bare WKID or a spatial-reference JSON object
-    /// (<c>{ "wkid": 3857 }</c>). Shared by both the synchronous <c>execute</c>
-    /// route and the async <c>submitJob</c> route — both thread the same
-    /// recognized controls through <see cref="BuildProtocolMetadata"/> onto the
-    /// durable job spec. See #1228.
-    /// </summary>
     internal static IResult? TryParseEnvControls(
         HttpContext context,
         ILogger logger,
@@ -1523,17 +1467,6 @@ internal static partial class GPServerEndpoints
         return null;
     }
 
-    /// <summary>
-    /// Applies the Esri 10.6.1+ <c>context</c> parameter, the JSON successor to the
-    /// <c>env:*</c> controls (#4030). <c>context.outSR</c> and <c>context.processSR</c>
-    /// resolve to the same controls as <c>env:outSR</c> / <c>env:processSR</c>, so both
-    /// execution routes treat them exactly like the env form. An absent, <c>null</c>, or
-    /// empty <c>extent</c> constrains nothing and is accepted; every other property —
-    /// including a non-empty <c>extent</c> — is rejected with a 400 rather than silently
-    /// ignored, the same accept-and-honor-or-reject convention as <c>env:*</c>. A context
-    /// spatial reference that disagrees with the corresponding <c>env:*</c> control is
-    /// ambiguous and rejected.
-    /// </summary>
     private static IResult? TryApplyContextControls(
         HttpContext context,
         ILogger logger,
@@ -1653,12 +1586,6 @@ internal static partial class GPServerEndpoints
             ? $"env:{name}={fromEnv} conflicts with context.{name}={fromContext}; send one spatial reference."
             : null;
 
-    /// <summary>
-    /// Parses an Esri-style boolean parameter value: <c>bool.TryParse</c> first
-    /// (accepts <c>true</c>/<c>false</c> case-insensitively), falling back to
-    /// integer truthiness (<c>0</c>/<c>1</c>) to match the convention already
-    /// used for other GeoServices boolean parameters (e.g. <c>returnUrl</c>).
-    /// </summary>
     private static bool TryParseBooleanValue(string? value, out bool result)
     {
         result = false;
@@ -1764,18 +1691,7 @@ internal static partial class GPServerEndpoints
         return ValidateJsonFormat(context);
     }
 
-    /// <summary>
-    /// Builds the published task-name list for the service-info response: every
-    /// process's Python-safe encoded ID, plus its Esri-conventional alias when one exists. Both
-    /// forms resolve to the same process via <see cref="ResolveTaskDefinition"/>.
-    /// <para>
-    /// Collision policy (deterministic): a real catalog process ID always wins over an
-    /// alias. When any catalog process ID matches an alias (compared case-insensitively,
-    /// mirroring the alias lookup), the alias is suppressed and only the real process ID
-    /// is published under its encoded name, so the task list never contains the same name with two meanings and
-    /// never publishes duplicates.
-    /// </para>
-    /// </summary>
+    // A catalog process id suppresses an alias of the same name, compared case-insensitively, so the published task list never gives one name two meanings.
     internal static IEnumerable<string> BuildPublishedTaskNames(IProcessCatalog processCatalog)
     {
         var processes = processCatalog.ListProcesses();
@@ -1808,23 +1724,7 @@ internal static partial class GPServerEndpoints
         }
     }
 
-    /// <summary>
-    /// Resolves a task name to its <see cref="ProcessDefinition"/>. Tries the internal
-    /// process ID first (the existing, ESTABLISHED contract — e.g. <c>geometry.buffer</c>),
-    /// then tries the published encoded name and the Esri-conventional alias overlay (e.g. <c>Buffer</c>) so
-    /// unmodified ArcGIS clients addressing tasks by their familiar Esri name resolve to
-    /// the same canonical process. See <see cref="GPServerEsriTaskAliases"/>.
-    /// <para>
-    /// Collision policy (deterministic): an exact catalog process ID always wins over an
-    /// alias, and an alias only resolves when no catalog process owns that name. Because
-    /// alias lookups are case-insensitive, the shadow check is case-insensitive too: if
-    /// any catalog process ID matches the requested name ignoring case, the alias overlay
-    /// is bypassed entirely (the request either hits that process exactly or 404s), so a
-    /// catalog process named <c>Buffer</c> deterministically owns every casing of
-    /// "Buffer" and can never be hijacked by — or accidentally routed through — the alias
-    /// table. See <see cref="BuildPublishedTaskNames"/> for the matching publication rule.
-    /// </para>
-    /// </summary>
+    // An exact catalog process id wins over an alias, and a case-insensitive catalog match bypasses the alias table so a process named Buffer owns every casing of that name.
     internal static ProcessDefinition? ResolveTaskDefinition(IProcessCatalog processCatalog, string? taskName)
     {
         if (string.IsNullOrWhiteSpace(taskName))
@@ -1856,13 +1756,6 @@ internal static partial class GPServerEndpoints
             : processCatalog.GetProcess(processId);
     }
 
-    /// <summary>
-    /// Returns <see langword="true"/> when a catalog process ID matches the requested
-    /// task name case-insensitively, meaning the name belongs to a real process and the
-    /// Esri alias overlay must not resolve it (see <see cref="ResolveTaskDefinition"/>).
-    /// Only evaluated on the alias fallback path, so the linear scan stays off the
-    /// established internal-process-ID hot path.
-    /// </summary>
     private static bool IsAliasShadowedByCatalogProcess(IProcessCatalog processCatalog, string taskName)
     {
         return processCatalog.ListProcesses()
@@ -1941,12 +1834,6 @@ internal static partial class GPServerEndpoints
         };
     }
 
-    /// <summary>
-    /// Result of building a submission plan: either an executable
-    /// <see cref="AnalysisPlan"/> (with the working input SRID, when derivable
-    /// from an esriGeometry/FeatureSet) or a capability error explaining why the
-    /// supplied inputs cannot be translated to the canonical contract.
-    /// </summary>
     private readonly record struct SubmissionPlanResult(
         AnalysisPlan? Plan,
         string? CapabilityError,
@@ -2056,11 +1943,6 @@ internal static partial class GPServerEndpoints
             RoutingProcessDefinitions.Handles(definition.ProcessId) ? null : featureSchema);
     }
 
-    /// <summary>
-    /// Resolves the working SRID for output reprojection: the explicit canonical
-    /// <c>srid</c>/<c>toSrid</c>/<c>targetSrid</c> input if present, otherwise the
-    /// SRID derived from a translated esriGeometry/FeatureSet input.
-    /// </summary>
     private static int ResolveWorkingSrid(
         IReadOnlyDictionary<string, string> rawParameters,
         int? derivedSrid)
@@ -2098,21 +1980,7 @@ internal static partial class GPServerEndpoints
         return int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var srid) ? srid : 0;
     }
 
-    /// <summary>
-    /// Applies the <c>env:outSR</c> reprojection to a completed job's async result
-    /// value, mirroring the synchronous <c>execute</c> path
-    /// (<see cref="BuildExecuteSuccessResponse"/>). Reads the requested output
-    /// SRID and the submission-time working SRID back from the durable job metadata
-    /// and reprojects a reprojectable geometry output through the shared
-    /// <see cref="GPServerOutputReprojection"/> helper. Returns <c>null</c> on
-    /// success (with <paramref name="value"/> reprojected in place when applicable);
-    /// returns a <c>400</c> result when <c>env:outSR</c> was requested for a geometry
-    /// output that cannot be reprojected (unknown source SRID or unsupported
-    /// transform pair) so the async path rejects rather than accepting and silently
-    /// serving an unprojected geometry. <c>env:outSR</c> only affects reprojectable
-    /// geometry (<see cref="ArtifactKind.FeatureLayer"/>) outputs; other output
-    /// kinds are served unchanged, matching Esri <c>env:outSR</c> semantics.
-    /// </summary>
+    // When env:outSR was requested for a geometry the async result cannot reproject, the job returns 400 instead of serving the unprojected geometry.
     private static IResult? TryApplyAsyncOutSr(
         HttpContext context,
         ExecutionJobRecord job,
@@ -2242,15 +2110,7 @@ internal static partial class GPServerEndpoints
             || key.StartsWith("env:", StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>
-    /// Optional GeoServices-style request parameter carrying a client-supplied idempotency
-    /// key (server#4627). GPServer's wire convention is form/query parameters (mirrors
-    /// <c>idempotencyKey</c> on the ImageServer/MapServer durable export routes), not the
-    /// <c>Idempotency-Key</c> header used by JSON-native adapters (MCP, admin/webhook
-    /// endpoints). Registered in <see cref="IsProtocolControlParameter"/> so it is never
-    /// bound as a task input parameter. Absent ⇒ unchanged legacy behavior (a fresh job id
-    /// every submission).
-    /// </summary>
+    // The GP idempotency key is a form parameter, not the Idempotency-Key header, and an absent key still creates a fresh job id.
     private const string IdempotencyKeyParameterName = "idempotencyKey";
 
     private static string? ResolveIdempotencyKey(IReadOnlyDictionary<string, string> parameters)
@@ -2465,15 +2325,6 @@ internal static partial class GPServerEndpoints
         return result;
     }
 
-    /// <summary>
-    /// Projects the capability-unavailable receipt (honua-release#202) onto the GeoServices
-    /// error envelope. The Esri error shape has no extension members, but its
-    /// <c>error.details[]</c> array already carries stable <c>Key: value</c> lines
-    /// (<c>CorrelationId:</c>, <c>Timestamp:</c>), so the machine-readable code, missing
-    /// dependency, capability id, and remediation ride the same convention rather than being
-    /// buried in prose. Returns <see langword="null"/> when the exception carries no receipt
-    /// (adapters reuse it for other unavailable upstreams).
-    /// </summary>
     private static string[]? BuildCapabilityUnavailableDetails(
         GeoprocessingStoreUnavailableException exception)
     {
@@ -2499,11 +2350,6 @@ internal static partial class GPServerEndpoints
         return [.. details];
     }
 
-    /// <summary>
-    /// Tags the current <see cref="Activity"/> as errored and returns the result unchanged.
-    /// Used for non-exception error paths (400/404/501) so that spans carry
-    /// <c>error=true</c> and <c>ActivityStatusCode.Error</c> alongside the protocol/operation tags.
-    /// </summary>
     private static IResult SetSpanErrorAndReturn(IResult result, string? message = null)
     {
         var activity = Activity.Current;

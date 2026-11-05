@@ -12,9 +12,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Handlers;
 
-/// <summary>
-/// Thin ImageServer adapter for metadata children belonging to one canonical raster item.
-/// </summary>
 internal sealed class ImageServerRasterItemHandler
 {
     private const int DefaultBinCount = 256;

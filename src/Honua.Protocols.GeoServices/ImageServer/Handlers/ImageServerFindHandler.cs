@@ -17,9 +17,6 @@ using Microsoft.Extensions.Primitives;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Handlers;
 
-/// <summary>
-/// Handler for the ArcGIS ImageServer <c>find</c> operation.
-/// </summary>
 internal sealed class ImageServerFindHandler
 {
     private const int DefaultMaxCount = 100;
@@ -41,9 +38,6 @@ internal sealed class ImageServerFindHandler
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <summary>
-    /// Finds catalog images whose footprints contain the requested target geometry.
-    /// </summary>
     public async Task<IResult> FindAsync(
         HttpContext context,
         int layerId,
@@ -376,11 +370,6 @@ internal sealed class ImageServerFindHandler
         };
     }
 
-    /// <summary>
-    /// Orientation sort key: the image's off-nadir angle (degrees from straight-down). Smaller is
-    /// better (more nadir, less oblique distortion over the target). Images without an off-nadir
-    /// angle sort last so metadata-bearing candidates are preferred.
-    /// </summary>
     private static double OffNadirSortKey(ImageServerCatalogItem item)
         => ImageServerSensorModel.TryReadOffNadirAngle(item.SensorMetadata) ?? double.MaxValue;
 

@@ -38,9 +38,6 @@ internal static partial class MapServerEndpoints
         MetadataV2Resource Resource,
         string? DrawingInfoJson = null);
 
-    /// <summary>
-    /// Handle MapServer legend requests.
-    /// </summary>
     private static async Task<IResult> HandleLegend(HttpContext context)
     {
         var (values, readError) = await TryReadMapServerRequestValuesAsync(context).ConfigureAwait(false);

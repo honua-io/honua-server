@@ -24,10 +24,6 @@ namespace Honua.Protocols.GeoServices.MapServer;
 
 internal static partial class MapServerEndpoints
 {
-    /// <summary>
-    /// Handle the MapServer allLayersAndTables resource: returns the full layer
-    /// and table metadata for every accessible layer/table in a single document.
-    /// </summary>
     private static async Task<IResult> HandleAllLayersAndTables(HttpContext context)
     {
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
@@ -135,10 +131,6 @@ internal static partial class MapServerEndpoints
         }
     }
 
-    /// <summary>
-    /// Handle the MapServer queryDomains resource: returns the coded-value and
-    /// range domains referenced by the requested layers.
-    /// </summary>
     private static async Task<IResult> HandleQueryDomains(HttpContext context)
     {
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
@@ -244,12 +236,6 @@ internal static partial class MapServerEndpoints
         }
     }
 
-    /// <summary>
-    /// Handle the MapServer Feature child resource
-    /// (<c>.../MapServer/{layerId}/{featureId}</c>): returns the single feature
-    /// identified by its object id by delegating to the shared FeatureServer
-    /// query pipeline and reshaping the result into <c>{feature:{...}}</c>.
-    /// </summary>
     private static async Task<IResult> HandleFeatureResource(string serviceId, int layerId, long featureId, HttpContext context)
     {
         if (!TryValidateMetadataFormat(context.Request.Query, out var formatError))

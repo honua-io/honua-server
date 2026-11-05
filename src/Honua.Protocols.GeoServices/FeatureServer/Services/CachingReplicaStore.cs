@@ -8,11 +8,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Protocols.GeoServices.FeatureServer.Services;
 
-/// <summary>
-/// Write-through caching wrapper that persists replica state to Postgres first,
-/// then updates the distributed cache best-effort. Reads check the cache first
-/// and fall back to Postgres on cache miss, backfilling the cache on hit.
-/// </summary>
 internal sealed partial class CachingReplicaStore : IReplicaStore
 {
     private readonly DistributedReplicaStore _cache;

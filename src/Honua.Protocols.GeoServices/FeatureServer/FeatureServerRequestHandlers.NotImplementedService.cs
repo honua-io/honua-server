@@ -14,17 +14,7 @@ using Honua.ServiceDefaults;
 
 namespace Honua.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// Service-level FeatureServer operations that Honua exposes as thin, spec-shaped
-/// protocol adapters even though the underlying data model is not yet implemented
-/// (contingent values, shared editing templates, author-defined HTML pop-ups, and
-/// the service-level image resource). Each handler validates the service and access
-/// policy through the shared validation/access pipeline, then returns the
-/// specification's response shape with empty/honest content so Esri SDK clients
-/// (ArcGIS Pro, the ArcGIS Maps SDKs, ArcGIS API for Python/JS) parse the document
-/// and observe that no such configuration exists, rather than receiving a fabricated
-/// success or an opaque 404.
-/// </summary>
+// Contingent values, shared templates, HTML pop-ups, and the image resource return an empty spec-shaped document so Esri clients see that no such configuration exists.
 internal static partial class FeatureServerEndpoints
 {
     private static async Task<IResult> HandleQueryContingentValues(
@@ -220,12 +210,6 @@ internal static partial class FeatureServerEndpoints
             ["This server does not store author-attached feature images served by the FeatureServer image resource."]);
     }
 
-    /// <summary>
-    /// Resolves the service through the shared V2 validation pipeline and enforces read access
-    /// for <paramref name="operation"/>: <see cref="AuthorizationOperation.Metadata"/> for the
-    /// descriptive resources, <see cref="AuthorizationOperation.Query"/> for data reads. Returns an
-    /// error <see cref="IResult"/> on failure or <see langword="null"/> when the caller is permitted.
-    /// </summary>
     private static async Task<IResult?> RequireServiceReadAccessAsync(
         string serviceId,
         HttpContext context,
@@ -262,14 +246,6 @@ internal static partial class FeatureServerEndpoints
             cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Resolves the service through the shared V2 validation pipeline, enforces read access, and
-    /// returns the accessible layers as <c>(PublicLayerId, Resource)</c> pairs. The public layer id
-    /// is the publication's layer index (the same id the FeatureServer layer metadata advertises),
-    /// falling back to the resolved storage layer id. Returns an error <see cref="IResult"/> when the
-    /// service is unknown or the caller cannot read any layer; otherwise the layers and a
-    /// <see langword="null"/> error.
-    /// </summary>
     private static async Task<((int PublicLayerId, MetadataV2Resource Resource)[]? Layers, IResult? Error)>
         ResolveAccessibleServiceLayersAsync(string serviceId, HttpContext context)
     {
@@ -319,11 +295,6 @@ internal static partial class FeatureServerEndpoints
         return (layers, null);
     }
 
-    /// <summary>
-    /// Validates that the requested output format (the <c>f</c> query parameter) is a
-    /// JSON variant. Returns an error <see cref="IResult"/> for unsupported formats or
-    /// <see langword="null"/> when the format is acceptable.
-    /// </summary>
     private static IResult? ValidateJsonOnlyFormat(HttpContext context)
     {
         var requestedFormat = context.Request.Query.TryGetValue("f", out var formatValue)

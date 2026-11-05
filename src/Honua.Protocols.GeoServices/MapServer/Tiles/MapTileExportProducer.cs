@@ -13,13 +13,6 @@ using static Honua.Infrastructure.Rendering.RasterMapRenderingPipeline;
 
 namespace Honua.Protocols.GeoServices.MapServer.Tiles;
 
-/// <summary>
-/// Concrete map tile-source producer for the durable tile-export runtime. Renders MapServer tiles
-/// from the pinned plan descriptor and revision through the canonical streaming grid planner and
-/// package pipeline, so a queued worker reproduces the exact layer/style/geometry selection the
-/// submission captured. HTTP-independent: it resolves the scoped metadata graph and render pipeline
-/// from a per-job scope (the shared executor is a singleton), never from request-scoped state.
-/// </summary>
 internal sealed class MapTileExportProducer(IServiceScopeFactory scopeFactory) : ITileExportPackageProducer
 {
     public bool CanProduce(TileExportJobPlan plan)
@@ -92,11 +85,7 @@ internal sealed class MapTileExportProducer(IServiceScopeFactory scopeFactory) :
     }
 }
 
-/// <summary>
-/// Source fence for map tile exports: confirms the pinned metadata revision, service, and pinned
-/// layers are still resolvable before a queued job renders, so an export never silently renders
-/// newer or missing state under an old artifact identity.
-/// </summary>
+// The queued map export confirms the pinned revision, service, and layers are still resolvable, so it does not render newer or missing state under the old artifact identity.
 internal sealed class MapTileExportSourceFence(IServiceScopeFactory scopeFactory) : ITileExportSourceFence
 {
     public TileExportSourceKind SourceKind => TileExportSourceKind.Map;
@@ -118,12 +107,6 @@ internal sealed class MapTileExportSourceFence(IServiceScopeFactory scopeFactory
     }
 }
 
-/// <summary>
-/// Shared resolution of the pinned <see cref="TileExportMapLayerSelection"/> set against a metadata
-/// snapshot. Mirrors the synchronous MapServer exportTiles handler's layer/geometry/SRID resolution
-/// so the durable producer reproduces the same render inputs, and the fence guards on the same
-/// resolvability the producer requires.
-/// </summary>
 internal static class MapTileExportLayerResolver
 {
     internal static RenderLayerDescriptor[] BuildRenderLayers(

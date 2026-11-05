@@ -21,19 +21,8 @@ using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Protocols.GeoServices.VectorTileServer.Services;
 
-/// <summary>
-/// Rewrites a stored MapLibre/Mapbox style (or synthesizes a deterministic default) into the
-/// Mapbox GL v8 style document served by the VectorTileServer <c>resources/styles/root.json</c>
-/// endpoint. The sole vector source is pointed at this service's tile template; sprite/glyphs
-/// references are emitted (pointed at this service's scoped-minimal sprite/glyph routes) only
-/// when the composed style has at least one <c>symbol</c> layer (honua-server#1780).
-/// </summary>
 internal static class VectorTileStyleComposer
 {
-    /// <summary>
-    /// Source layer name emitted in the default style and used to bind layers to the vector
-    /// source. Matches the canonical Honua tile source-layer name.
-    /// </summary>
     internal const string DefaultSourceLayerName = "layer";
 
     private const string DefaultPointColor = "#2D69A5";
@@ -42,41 +31,6 @@ internal static class VectorTileStyleComposer
     private const string DefaultOutlineColor = "#1A4D80";
     private const string DefaultStrokeColor = "#FFFFFF";
 
-    /// <summary>
-    /// Composes the GL v8 style JSON for a service.
-    /// </summary>
-    /// <param name="storedMapLibreJson">
-    /// The canonical MapLibre/Mapbox style stored for the service's primary layer, or
-    /// <see langword="null"/>/whitespace when the layer has no stored style.
-    /// </param>
-    /// <param name="serviceName">The GeoServices service name (used for the style <c>name</c>).</param>
-    /// <param name="sourceId">The vector source identifier to emit (for example <c>esri</c>).</param>
-    /// <param name="tileUrl">
-    /// The absolute tile template, for example
-    /// <c>https://host/rest/services/{id}/VectorTileServer/tile/{z}/{y}/{x}.pbf</c>.
-    /// </param>
-    /// <param name="geometryType">
-    /// The primary layer's geometry type, used to pick deterministic default paint when no
-    /// style is stored.
-    /// </param>
-    /// <param name="spriteUrl">
-    /// The absolute sprite base reference for this service (for example
-    /// <c>https://host/rest/services/{id}/VectorTileServer/resources/sprites/sprite</c>), emitted
-    /// only when the composed style has a symbol layer. Pass <see langword="null"/> to always omit.
-    /// </param>
-    /// <param name="glyphsUrl">
-    /// The absolute glyphs template for this service (for example
-    /// <c>https://host/rest/services/{id}/VectorTileServer/resources/fonts/{fontstack}/{range}.pbf</c>),
-    /// emitted only when the composed style has a symbol layer. Pass <see langword="null"/> to
-    /// always omit.
-    /// </param>
-    /// <param name="serviceUrl">
-    /// The absolute service descriptor URL (for example
-    /// <c>https://host/rest/services/{id}/VectorTileServer</c>), emitted as every vector
-    /// source's <c>url</c> so clients discover the service extent and tile map from it (#5534).
-    /// Pass <see langword="null"/> to emit tiles-only sources.
-    /// </param>
-    /// <returns>A serialized Mapbox GL v8 style document.</returns>
     public static string Compose(
         string? storedMapLibreJson,
         string serviceName,
@@ -125,13 +79,7 @@ internal static class VectorTileStyleComposer
         }
     }
 
-    /// <summary>
-    /// Rewrites every <c>sources.&lt;id&gt;</c> entry so the served document only advertises
-    /// this service. The configured <paramref name="sourceId"/> is guaranteed to exist as a
-    /// vector source whose <c>tiles[]</c> is the absolute service tile template and whose
-    /// <c>url</c> is the service descriptor; any stored <c>url</c> is replaced (or dropped when
-    /// no <paramref name="serviceUrl"/> is supplied) so the document never names another service.
-    /// </summary>
+    // Every style source is rewritten to this service, and a stored URL that names another service is replaced or dropped.
     private static void RewriteSources(JsonObject root, string sourceId, string tileUrl, string? serviceUrl)
     {
         if (root["sources"] is not JsonObject sources)
@@ -173,12 +121,7 @@ internal static class VectorTileStyleComposer
         source["tiles"] = new JsonArray(tileUrl);
     }
 
-    /// <summary>
-    /// Applies the scoped-minimal sprite/glyphs rule: when the composed style has at least one
-    /// <c>symbol</c> layer and absolute references are supplied, point <c>sprite</c>/<c>glyphs</c>
-    /// at this service's resources routes; otherwise strip them so the served document never
-    /// advertises a sprite/glyph reference the client would fail to use.
-    /// </summary>
+    // Sprite and glyph references are added only when the style has a symbol layer and absolute references exist; otherwise they are stripped so the document does not advertise a resource the client would fail to fetch.
     private static void ApplySpriteAndGlyphs(JsonObject root, string? spriteUrl, string? glyphsUrl)
     {
         if (HasSymbolLayer(root)
@@ -194,10 +137,6 @@ internal static class VectorTileStyleComposer
         root.Remove("glyphs");
     }
 
-    /// <summary>
-    /// Returns <see langword="true"/> when any layer in the style has <c>type == "symbol"</c>,
-    /// the only Mapbox GL layer type that consumes a sprite sheet (icons) or glyph stack (text).
-    /// </summary>
     private static bool HasSymbolLayer(JsonObject root)
     {
         if (root["layers"] is not JsonArray layers)
@@ -220,11 +159,6 @@ internal static class VectorTileStyleComposer
         }
     }
 
-    /// <summary>
-    /// Builds a deterministic, geometry-aware default GL v8 style for a layer with no stored
-    /// style. The paint defaults mirror the canonical Honua per-layer defaults so the
-    /// VectorTileServer surface renders identically to the rest of the server.
-    /// </summary>
     private static JsonObject BuildDefaultStyle(
         string serviceName,
         string sourceId,

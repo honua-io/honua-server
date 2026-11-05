@@ -7,21 +7,10 @@ using Honua.Routing.Features.Routing.Domain;
 
 namespace Honua.Protocols.GeoServices.NAServer;
 
-/// <summary>
-/// Maps canonical <see cref="Honua.Routing"/> solve results into NAServer Esri JSON
-/// response DTOs. The canonical results carry geometry as GeoJSON strings; this helper
-/// performs the wire-format conversion to Esri <c>paths</c>/<c>rings</c> (a
-/// protocol-local concern). No routing logic lives here.
-/// </summary>
 internal static class NAServerResultMapping
 {
-    /// <summary>Name of the single route a Route solve returns; its direction set carries the same name.</summary>
     internal const string SingleRouteName = "Route 1";
 
-    /// <summary>
-    /// Maps a route solve result into the NAServer route response. <paramref name="includeDirections"/>
-    /// controls whether turn-by-turn directions are emitted.
-    /// </summary>
     public static NAServerRouteSolveResponse MapRoute(
         RouteSolveResult result,
         int outSrid,
@@ -97,9 +86,6 @@ internal static class NAServerResultMapping
         };
     }
 
-    /// <summary>
-    /// Maps a service-area solve result into the NAServer service-area response.
-    /// </summary>
     public static NAServerServiceAreaResponse MapServiceArea(ServiceAreaSolveResult result, int outSrid)
     {
         ArgumentNullException.ThrowIfNull(result);
@@ -155,10 +141,6 @@ internal static class NAServerResultMapping
         };
     }
 
-    /// <summary>
-    /// Maps a closest-facility solve result into the NAServer closest-facility
-    /// response: ranked incident→facility routes with geometry plus directions.
-    /// </summary>
     public static NAServerClosestFacilityResponse MapClosestFacility(
         ClosestFacilitySolveResult result,
         int outSrid,
@@ -233,10 +215,6 @@ internal static class NAServerResultMapping
         };
     }
 
-    /// <summary>
-    /// Maps an OD cost matrix solve result into the NAServer OD cost matrix response,
-    /// preserving the cost-only fast path or projecting canonical straight lines.
-    /// </summary>
     public static NAServerOdCostMatrixResponse MapOdCostMatrix(
         OdCostMatrixSolveResult result,
         OdLineOutputType outputType,
@@ -305,11 +283,6 @@ internal static class NAServerResultMapping
         };
     }
 
-    /// <summary>
-    /// Maps a location-allocation solve result into the NAServer location-allocation
-    /// response: chosen facilities (with allocated demand weight) and per-demand-point
-    /// allocations.
-    /// </summary>
     public static NAServerLocationAllocationResponse MapLocationAllocation(LocationAllocationSolveResult result)
     {
         ArgumentNullException.ThrowIfNull(result);
@@ -375,12 +348,6 @@ internal static class NAServerResultMapping
         };
     }
 
-    /// <summary>
-    /// Maps one route's turn-by-turn steps into the Esri direction set for that route:
-    /// <c>routeId</c>/<c>routeName</c> identify the route feature the steps belong to and
-    /// <c>summary</c> carries the route totals and geometry extent. Returns <see langword="null"/>
-    /// when the provider computed no steps for the route.
-    /// </summary>
     private static NAServerDirection? MapDirections(
         IReadOnlyList<RouteDirectionStep> steps,
         int routeId,
@@ -451,12 +418,6 @@ internal static class NAServerResultMapping
     private static string FormatBreak(double value)
         => value.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
 
-    /// <summary>
-    /// Minimal GeoJSON-coordinates → Esri paths/rings converter. The routing
-    /// providers emit simple GeoJSON <c>LineString</c> / <c>Polygon</c> /
-    /// <c>MultiLineString</c> / <c>MultiPolygon</c> geometries, so a coordinate-walk
-    /// is sufficient and avoids a NetTopologySuite round-trip.
-    /// </summary>
     private static class GeoJsonToEsri
     {
         public static double[][][] ToPaths(string? geoJson)
@@ -570,13 +531,7 @@ internal static class NAServerResultMapping
             return [.. rings];
         }
 
-        /// <summary>
-        /// Reads a GeoJSON polygon ring array ([ outerRing, hole, ... ]) and
-        /// normalizes winding for Esri: outer ring clockwise, holes
-        /// counter-clockwise. GeoJSON (RFC 7946) mandates the opposite convention
-        /// (CCW outer, CW holes), so each ring is reversed when its signed area does
-        /// not match the Esri orientation.
-        /// </summary>
+        // GeoJSON rings are reversed when their signed area disagrees with the Esri winding, which is clockwise for outer rings and the opposite of RFC 7946.
         private static double[][][] ReadPolygonRings(JsonElement polygon)
         {
             if (polygon.ValueKind != JsonValueKind.Array)
@@ -598,12 +553,6 @@ internal static class NAServerResultMapping
             return [.. rings];
         }
 
-        /// <summary>
-        /// Ensures a ring's vertex order matches the requested winding (clockwise
-        /// when <paramref name="wantClockwise"/> is true) using a signed-area test.
-        /// In the standard math/GeoJSON convention a positive signed area is
-        /// counter-clockwise, so a clockwise target wants a negative area.
-        /// </summary>
         private static double[][] NormalizeRingWinding(double[][] ring, bool wantClockwise)
         {
             if (ring.Length < 4)
@@ -624,9 +573,6 @@ internal static class NAServerResultMapping
             return ring;
         }
 
-        /// <summary>
-        /// Shoelace signed area of a ring (positive = counter-clockwise).
-        /// </summary>
         private static double SignedArea(double[][] ring)
         {
             var area = 0.0;

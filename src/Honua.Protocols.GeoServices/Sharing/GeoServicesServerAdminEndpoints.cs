@@ -20,48 +20,14 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Protocols.GeoServices.Sharing;
 
-/// <summary>
-/// A read-only projection of the ArcGIS Server Admin API service resource,
-/// <c>/admin/services/{serviceName}.{serviceType}</c> (#5036).
-/// </summary>
-/// <remarks>
-/// <para>
-/// arcpy's branch-versioning tools (CreateVersion, ReconcileVersions, DeleteVersion)
-/// accept a feature service URL as their workspace and validate it through this Admin
-/// API resource before they will treat the service as branch versioned; with the
-/// resource absent they fail "ERROR 000301: The workspace is of the wrong type"
-/// (ArcGIS Pro 3.7.1, 2026-09-19, fourteen GETs of the resource recorded before the
-/// error). <c>MakeWCSLayer</c> probes the same document with the coverage URL's integer
-/// layer id (<c>/rest/admin/0.MapServer</c>) and stops on a 404 envelope. The resource
-/// is the service definition an ArcGIS Server administrator sees; this projection
-/// publishes only what the public service root already states (protocols, capabilities,
-/// branch-versioning availability, a WCS extension when the service serves coverages)
-/// and nothing about hosting.
-/// </para>
-/// <para>
-/// Visibility is decided by the same portal item projector the Sharing facade uses, so
-/// a service the caller cannot see stays hidden (404, never 403) and the capabilities
-/// are computed only from the layers that caller may read. Reads are <b>not</b>
-/// additionally gated on being authenticated: arcpy composes this request itself, so a
-/// token on the workspace URL never reaches it, and Pro attaches a portal session token
-/// only to federated servers - so an authenticated-only resource is one arcpy can never
-/// read, which is what left #5036 failing after the resource existed. Serving it
-/// anonymously publishes no more than the public FeatureServer root already does.
-/// </para>
-/// </remarks>
+// arcpy reads this admin resource without the workspace token, so an unauthenticated read is allowed and a hidden service is 404 rather than 403, publishing no more than the public service root already does.
 public static class GeoServicesServerAdminEndpoints
 {
     private const string JsonContentType = "application/json";
     private const string RouteTemplate = "/admin/services/{serviceName}.{serviceType}";
 
-    /// <summary>
-    /// The spelling ArcGIS Pro 3.7.1 uses when the server connection has no site segment:
-    /// <c>/rest/admin/{service}.MapServer</c> (three reads per layer add, observed live).
-    /// With an <c>/arcgis</c> site segment it asks <c>/arcgis/admin/services/...</c> instead.
-    /// </summary>
     private const string SitelessRouteTemplate = "/rest/admin/{serviceName}.{serviceType}";
 
-    /// <summary>Maps the Admin API service resource.</summary>
     public static IEndpointRouteBuilder MapGeoServicesServerAdminEndpoints(this IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
@@ -260,14 +226,8 @@ public static class GeoServicesServerAdminEndpoints
             ["properties"] = properties,
         };
 
-    /// <summary>The Admin API spells booleans as strings.</summary>
     private static JsonValue Flag(bool value) => JsonValue.Create(value ? "true" : "false");
 
-    /// <summary>
-    /// Resolves the admin service key. A service name or id wins. An integer that matches
-    /// neither is the storage-layer id arcpy copies out of <c>/rest/services/{id}/ImageServer/WCS</c>
-    /// when it asks for <c>{id}.MapServer</c>.
-    /// </summary>
     private static MetadataV2Service? ResolveService(
         MetadataV2GraphSnapshot snapshot, string serviceName, string requestedType)
     {

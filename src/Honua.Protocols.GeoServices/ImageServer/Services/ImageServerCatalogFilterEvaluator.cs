@@ -7,27 +7,13 @@ using Honua.Core.Queries.Filters.GeoServicesSql;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Services;
 
-/// <summary>
-/// Evaluates an ArcGIS-SQL <c>where</c> string against an in-memory raster catalog page.
-/// The catalog is normally tiny per layer, so a SQL emitter is unnecessary; instead the
-/// shared <see cref="GeoServicesSqlParser"/> AST is reused and walked here.
-/// </summary>
 internal interface IImageServerCatalogFilterEvaluator
 {
-    /// <summary>
-    /// Filters the supplied catalog items by the supplied WHERE clause.
-    /// </summary>
-    /// <exception cref="ImageServerCatalogFilterException">
-    /// Thrown when the WHERE clause is malformed or references an unknown field.
-    /// </exception>
     IEnumerable<ImageServerCatalogItem> Apply(
         IEnumerable<ImageServerCatalogItem> items,
         string whereClause);
 }
 
-/// <summary>
-/// Default in-memory evaluator for raster catalog WHERE clauses.
-/// </summary>
 internal sealed class ImageServerCatalogFilterEvaluator : IImageServerCatalogFilterEvaluator
 {
     public IEnumerable<ImageServerCatalogItem> Apply(
@@ -299,9 +285,6 @@ internal sealed class ImageServerCatalogFilterEvaluator : IImageServerCatalogFil
     }
 }
 
-/// <summary>
-/// Surfaces a parser/evaluator failure to the calling endpoint as a 400.
-/// </summary>
 internal sealed class ImageServerCatalogFilterException : Exception
 {
     public ImageServerCatalogFilterException(string message)

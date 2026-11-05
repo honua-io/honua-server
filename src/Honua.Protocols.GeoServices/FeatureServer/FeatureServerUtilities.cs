@@ -13,9 +13,6 @@ using Microsoft.Extensions.Primitives;
 
 namespace Honua.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// Utility methods for FeatureServer endpoints
-/// </summary>
 internal static partial class FeatureServerEndpoints
 {
     private static readonly string[] _queryAcceptMediaTypes =
@@ -49,9 +46,6 @@ internal static partial class FeatureServerEndpoints
             ["application/vnd.apache.arrow.stream"] = "arrow"
         };
 
-    /// <summary>
-    /// Allowed query parameters for each endpoint
-    /// </summary>
     internal static class AllowedQueryParameters
     {
         // Standard Esri metadata-request parameters that ArcGIS clients (notably
@@ -270,9 +264,6 @@ internal static partial class FeatureServerEndpoints
             new[] { "json", "pjson", "pbf" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
     }
 
-    /// <summary>
-    /// Gets timeout-aware cancellation token
-    /// </summary>
     internal static CancellationToken GetTimeoutAwareCancellationToken(HttpContext context)
         => GeoServicesRequestValueHelpers.GetTimeoutAwareCancellationToken(context);
 
@@ -314,9 +305,6 @@ internal static partial class FeatureServerEndpoints
         };
     }
 
-    /// <summary>
-    /// Validates allowed parameters
-    /// </summary>
     internal static bool TryValidateAllowedParameters(
         IQueryCollection query,
         ICommonQueryValidator queryValidator,
@@ -409,11 +397,6 @@ internal static partial class FeatureServerEndpoints
         };
     }
 
-    /// <summary>
-    /// Normalizes the GeoServices <c>layers</c> parameter to its inner token list,
-    /// accepting both the comma-separated form (<c>0</c> / <c>0,1</c>) and the Esri
-    /// JSON-array form (<c>[0]</c> / <c>[0,1]</c>) the ArcGIS API for Python sends.
-    /// </summary>
     internal static string StripLayerListBrackets(string rawValue)
     {
         var normalized = rawValue.Trim();

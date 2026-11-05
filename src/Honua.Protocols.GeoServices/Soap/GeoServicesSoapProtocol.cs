@@ -8,7 +8,6 @@ using System.Xml.Linq;
 
 namespace Honua.Protocols.GeoServices.Soap;
 
-/// <summary>Shared bounded ArcGIS SOAP envelope validation and response formatting.</summary>
 internal static class GeoServicesSoapProtocol
 {
     private const string Soap11ContentType = "text/xml; charset=utf-8";
@@ -94,17 +93,6 @@ internal static class GeoServicesSoapProtocol
         }
     }
 
-    /// <summary>
-    /// Rebinds every element below a validated ArcGIS operation to its local name.
-    /// </summary>
-    /// <remarks>
-    /// The Esri WSDLs declare <c>elementFormDefault="unqualified"</c>, so ArcGIS Pro and
-    /// ArcPy send a namespace-qualified operation with unqualified arguments. Other
-    /// document/literal clients qualify the arguments with the operation prefix or
-    /// inherit a default namespace. All three are the same request: adapters bind
-    /// arguments by local name only, while the operation keeps its negotiated
-    /// namespace for the response.
-    /// </remarks>
     internal static XElement BindArgumentsByLocalName(XElement operation)
     {
         // codeql[cs/linq/missed-where]: renames namespaced arguments in place on the same element tree

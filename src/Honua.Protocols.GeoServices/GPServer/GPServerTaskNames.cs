@@ -6,10 +6,6 @@ using Honua.Core.Features.Geoprocessing.Domain;
 
 namespace Honua.Protocols.GeoServices.GPServer;
 
-/// <summary>
-/// Esri-facing names for canonical processes, shared by REST and SOAP discovery.
-/// The canonical IDs and existing routes remain unchanged.
-/// </summary>
 internal static class GPServerTaskNames
 {
     internal static string GetEncodingPrefix(IReadOnlyList<ProcessDefinition> processes)

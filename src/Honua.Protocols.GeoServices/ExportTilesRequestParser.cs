@@ -6,17 +6,8 @@ using Honua.Core.Configuration;
 
 namespace Honua.Protocols.GeoServices;
 
-/// <summary>
-/// Shared exportTiles level and package parsing for MapServer and ImageServer.
-/// </summary>
 internal static class ExportTilesRequestParser
 {
-    /// <summary>
-    /// Resolves whether the request asked for an Esri tile package (TPK).
-    /// Accepts <c>tilePackage=true</c> or <c>storageFormat=tpk</c> for the
-    /// exploded-cache package; <c>zip</c>/empty selects the flat ZIP archive.
-    /// The proprietary compact (TPKX) form is rejected with a 400.
-    /// </summary>
     internal static bool TryResolveExportTilesPackage(
         string? tilePackageValue,
         string? storageFormatValue,

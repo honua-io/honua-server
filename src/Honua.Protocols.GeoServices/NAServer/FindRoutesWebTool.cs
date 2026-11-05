@@ -14,10 +14,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Protocols.GeoServices;
 
-/// <summary>
-/// Shared synchronous FindRoutes adapter for the GPServer and NAServer URLs.
-/// Supports ordered stops and minutes only; broader ready-to-use routing remains #5192.
-/// </summary>
 internal static class FindRoutesWebTool
 {
     private static readonly HashSet<string> AllowedParameters = new(StringComparer.OrdinalIgnoreCase)

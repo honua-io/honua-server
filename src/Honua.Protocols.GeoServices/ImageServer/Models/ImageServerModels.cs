@@ -6,9 +6,6 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Models;
 
-/// <summary>
-/// Esri Image Server service metadata response.
-/// </summary>
 public sealed class ImageServerServiceInfo
 {
     // No ArcGIS Server version (currentVersion/fullVersion) is advertised. Honua is an
@@ -27,19 +24,10 @@ public sealed class ImageServerServiceInfo
     [JsonPropertyName("extent")]
     public required ImageServerExtent Extent { get; init; }
 
-    /// <summary>
-    /// Full geographic extent of the image service. The native .NET ArcGIS Runtime
-    /// <c>ImageServiceRaster.LoadAsync</c> reads <c>fullExtent</c> (not <c>extent</c>)
-    /// and fails configuration parsing when it is absent (#1456).
-    /// </summary>
     [JsonPropertyName("fullExtent")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public ImageServerExtent? FullExtent { get; init; }
 
-    /// <summary>
-    /// Initial display extent of the image service. Esri clients read this when
-    /// first loading the layer; mirror <see cref="FullExtent"/> when unspecified (#1456).
-    /// </summary>
     [JsonPropertyName("initialExtent")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public ImageServerExtent? InitialExtent { get; init; }
@@ -59,29 +47,19 @@ public sealed class ImageServerServiceInfo
     [JsonPropertyName("pixelType")]
     public required string PixelType { get; init; }
 
-    /// <summary>
-    /// Minimum pixel size at which the service draws, in the raster spatial-reference units.
-    /// Zero matches ArcGIS Server and means no zoom-in limit.
-    /// </summary>
+    // Zero matches ArcGIS Server and means no zoom-in limit; a positive minimum pixel size is in the raster's units.
     [JsonPropertyName("minPixelSize")]
     public required double MinPixelSize { get; init; }
 
-    /// <summary>
-    /// Maximum pixel size at which the service draws, in the raster spatial-reference units.
-    /// Zero matches ArcGIS Server and means no zoom-out limit.
-    /// </summary>
+    // Zero matches ArcGIS Server and means no zoom-out limit.
     [JsonPropertyName("maxPixelSize")]
     public required double MaxPixelSize { get; init; }
 
-    /// <summary>
-    /// Minimum scale denominator at which the service draws. Zero means no limit.
-    /// </summary>
+    // A scale denominator of zero means the service has no minimum scale.
     [JsonPropertyName("minScale")]
     public double MinScale { get; init; }
 
-    /// <summary>
-    /// Maximum scale denominator at which the service draws. Zero means no limit.
-    /// </summary>
+    // A scale denominator of zero means the service has no maximum scale.
     [JsonPropertyName("maxScale")]
     public double MaxScale { get; init; }
 
@@ -172,31 +150,15 @@ public sealed class ImageServerServiceInfo
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public TileInfo? TileInfo { get; init; }
 
-    /// <summary>
-    /// Pixel-block storage characteristics. The native .NET ArcGIS Runtime
-    /// <c>ImageServiceRaster.LoadAsync</c> requires <c>storageInfo</c> (with
-    /// <c>blockWidth</c>/<c>blockHeight</c>) to read configuration data; without it
-    /// the load fails with "Failed to read configuration data" (#1456).
-    /// </summary>
     [JsonPropertyName("storageInfo")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public ImageServerStorageInfo? StorageInfo { get; init; }
 
-    /// <summary>
-    /// Pixel-block width at the ImageServer metadata root. Esri's ImageServer root
-    /// surfaces <c>blockWidth</c> both at the top level AND inside <c>storageInfo</c>.
-    /// The ArcGIS Maps SDK for .NET <c>ImageServiceRaster</c> reads it from the root,
-    /// so it must be emitted there too, not only nested under <c>storageInfo</c> (#1456).
-    /// </summary>
+    // blockWidth is emitted at the service root as well as under storageInfo, because the ArcGIS Maps SDK for .NET reads it from the root.
     [JsonPropertyName("blockWidth")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public int? BlockWidth { get; init; }
 
-    /// <summary>
-    /// Pixel-block height at the ImageServer metadata root. Mirrors the value inside
-    /// <c>storageInfo</c> for the ArcGIS Maps SDK for .NET <c>ImageServiceRaster</c>,
-    /// which reads it from the root (#1456).
-    /// </summary>
     [JsonPropertyName("blockHeight")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public int? BlockHeight { get; init; }
@@ -230,25 +192,13 @@ public sealed class ImageServerServiceInfo
     [JsonPropertyName("spatialReferenceServiceUrl")]
     public string? SpatialReferenceServiceUrl { get; init; }
 
-    /// <summary>
-    /// Temporal metadata describing the layer's time-aware fields and extent.
-    /// Emitted only when the catalog metadata declares time information.
-    /// </summary>
     [JsonPropertyName("timeInfo")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public ImageServerTimeInfo? TimeInfo { get; init; }
 
-    /// <summary>
-    /// Indicates that the layer represents a multidimensional raster (cube).
-    /// Always emitted; defaults to <c>false</c> until cube ingestion ships.
-    /// </summary>
     [JsonPropertyName("hasMultidimensions")]
     public bool HasMultidimensions { get; init; } = false;
 
-    /// <summary>
-    /// Multidimensional metadata when the layer is a cube.
-    /// Emitted only when populated; remains null until cube ingestion lands.
-    /// </summary>
     [JsonPropertyName("multidimensionalInfo")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public ImageServerMultidimensionalInfo? MultidimensionalInfo { get; init; }
@@ -256,72 +206,40 @@ public sealed class ImageServerServiceInfo
 
 public sealed class ImageServerTimeInfo
 {
-    /// <summary>
-    /// Field carrying the start time for raster catalog items, when present.
-    /// </summary>
     [JsonPropertyName("startTimeField")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? StartTimeField { get; init; }
 
-    /// <summary>
-    /// Field carrying the end time for raster catalog items, when present.
-    /// </summary>
     [JsonPropertyName("endTimeField")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? EndTimeField { get; init; }
 
-    /// <summary>
-    /// Optional track identifier field used for temporal visualisation.
-    /// </summary>
     [JsonPropertyName("trackIdField")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? TrackIdField { get; init; }
 
-    /// <summary>
-    /// Inclusive [start, end] temporal extent in milliseconds since epoch when known.
-    /// Null entries are emitted when only one bound is known; the array itself is
-    /// omitted entirely when no extent is known so probing clients see a stable shape.
-    /// </summary>
     [JsonPropertyName("timeExtent")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public long?[]? TimeExtent { get; init; }
 
-    /// <summary>
-    /// Time reference (zone + DST handling) used by Esri clients.
-    /// </summary>
     [JsonPropertyName("timeReference")]
     public ImageServerTimeReference TimeReference { get; init; } = new();
 
-    /// <summary>
-    /// Default time interval used when the client does not specify one.
-    /// </summary>
     [JsonPropertyName("defaultTimeInterval")]
     public int DefaultTimeInterval { get; init; }
 
-    /// <summary>
-    /// Units for <see cref="DefaultTimeInterval"/>.
-    /// </summary>
     [JsonPropertyName("defaultTimeIntervalUnits")]
     public string DefaultTimeIntervalUnits { get; init; } = "esriTimeUnitsUnknown";
 
-    /// <summary>
-    /// Indicates whether the layer streams live observations.
-    /// </summary>
     [JsonPropertyName("hasLiveData")]
     public bool HasLiveData { get; init; }
 }
 
 public sealed class ImageServerTimeReference
 {
-    /// <summary>
-    /// IANA-compatible timezone identifier. Defaults to UTC.
-    /// </summary>
     [JsonPropertyName("timeZone")]
     public string TimeZone { get; init; } = "UTC";
 
-    /// <summary>
-    /// Whether the layer's timestamps observe daylight saving transitions.
-    /// </summary>
     [JsonPropertyName("respectsDaylightSaving")]
     public bool RespectsDaylightSaving { get; init; }
 }
@@ -329,174 +247,84 @@ public sealed class ImageServerTimeReference
 // Shape the ArcGIS Maps SDK reads from ImageryLayer.multidimensionalInfo.
 public sealed class ImageServerMultidimensionalInfo
 {
-    /// <summary>
-    /// Variables (data fields) declared by the cube, each carrying its own
-    /// dimensional axes. Empty when the layer is not multidimensional.
-    /// </summary>
     [JsonPropertyName("variables")]
     public ImageServerMultidimensionalVariable[] Variables { get; init; } = [];
 }
 
-/// <summary>
-/// Single variable inside an Image Server multidimensional info document.
-/// </summary>
 public sealed class ImageServerMultidimensionalVariable
 {
-    /// <summary>
-    /// Variable name (e.g. "temperature").
-    /// </summary>
     [JsonPropertyName("name")]
     public required string Name { get; init; }
 
-    /// <summary>
-    /// Optional description of the variable.
-    /// </summary>
     [JsonPropertyName("description")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Description { get; init; }
 
-    /// <summary>
-    /// Unit of measurement for the variable's values.
-    /// </summary>
     [JsonPropertyName("unit")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Unit { get; init; }
 
-    /// <summary>
-    /// Dimensional axes the variable is sampled over (e.g. StdTime, StdZ).
-    /// </summary>
     [JsonPropertyName("dimensions")]
     public ImageServerMultidimensionalDimension[] Dimensions { get; init; } = [];
 }
 
-/// <summary>
-/// Single dimensional axis (e.g. <c>StdTime</c>) of a multidimensional variable,
-/// following the Esri <c>multidimensionalInfo</c> dimension contract.
-/// </summary>
 public sealed class ImageServerMultidimensionalDimension
 {
-    /// <summary>
-    /// Dimension name (e.g. "StdTime", "StdZ").
-    /// </summary>
     [JsonPropertyName("name")]
     public required string Name { get; init; }
 
-    /// <summary>
-    /// Unit of the dimension's coordinate values (e.g. "ISO8601", "meters").
-    /// </summary>
     [JsonPropertyName("unit")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Unit { get; init; }
 
-    /// <summary>
-    /// Inclusive [min, max] extent of the dimension's coordinate values.
-    /// Time dimensions are expressed in milliseconds since the Unix epoch.
-    /// </summary>
     [JsonPropertyName("extent")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public double[]? Extent { get; init; }
 
-    /// <summary>
-    /// Explicit coordinate values along the dimension, when enumerable.
-    /// Omitted for large or irregular axes where only the extent is known.
-    /// </summary>
     [JsonPropertyName("values")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public double[]? Values { get; init; }
 
-    /// <summary>
-    /// Whether the dimension uses a regular (evenly spaced) interval.
-    /// </summary>
     [JsonPropertyName("hasRegularIntervals")]
     public bool HasRegularIntervals { get; init; }
 
-    /// <summary>
-    /// Number of discrete slices along the dimension.
-    /// </summary>
     [JsonPropertyName("dimensionSize")]
     public long DimensionSize { get; init; }
 }
 
-/// <summary>
-/// Top-level response for the ImageServer <c>multidimensionalInfo</c> operation.
-/// Wraps the <see cref="ImageServerMultidimensionalInfo"/> document under the
-/// <c>multidimensionalInfo</c> key, matching the ArcGIS REST contract.
-/// </summary>
 public sealed class MultidimensionalInfoResponse
 {
-    /// <summary>
-    /// The multidimensional info document. Always present; carries an empty
-    /// <c>variables</c> array when the layer is not multidimensional.
-    /// </summary>
     [JsonPropertyName("multidimensionalInfo")]
     public required ImageServerMultidimensionalInfo MultidimensionalInfo { get; init; }
 }
 
-/// <summary>
-/// Single dimension constraint within a slice's multidimensional definition,
-/// following the Esri <c>slices</c> contract. Pins a variable's dimension to one or
-/// more coordinate values that identify the slice.
-/// </summary>
 public sealed class ImageServerSliceDimension
 {
-    /// <summary>
-    /// Variable the slice belongs to (e.g. "temperature").
-    /// </summary>
     [JsonPropertyName("variableName")]
     public required string VariableName { get; init; }
 
-    /// <summary>
-    /// Dimension being pinned (e.g. "StdTime", "StdZ").
-    /// </summary>
     [JsonPropertyName("dimensionName")]
     public required string DimensionName { get; init; }
 
-    /// <summary>
-    /// Coordinate values that identify this slice along the dimension. Time
-    /// dimensions are expressed in milliseconds since the Unix epoch.
-    /// </summary>
     [JsonPropertyName("values")]
     public double[] Values { get; init; } = [];
 }
 
-/// <summary>
-/// Single slice of a multidimensional raster: a unique combination of variable and
-/// dimension coordinate values, following the Esri ImageServer <c>slices</c> contract.
-/// </summary>
 public sealed class ImageServerSlice
 {
-    /// <summary>
-    /// Stable, zero-based identifier of the slice within the response.
-    /// </summary>
     [JsonPropertyName("sliceId")]
     public long SliceId { get; init; }
 
-    /// <summary>
-    /// The dimension constraints that uniquely identify this slice.
-    /// </summary>
     [JsonPropertyName("multidimensionalDefinition")]
     public ImageServerSliceDimension[] MultidimensionalDefinition { get; init; } = [];
 }
 
-/// <summary>
-/// Top-level response for the ImageServer <c>slices</c> operation. Carries the
-/// enumerated multidimensional slices under the <c>slices</c> key, matching the
-/// ArcGIS REST contract. The array is empty when the layer is not multidimensional
-/// or its dimension coordinate values are not enumerable.
-/// </summary>
 public sealed class SlicesResponse
 {
-    /// <summary>
-    /// The enumerated multidimensional slices. Always present; empty when there are
-    /// no enumerable slices for the layer.
-    /// </summary>
     [JsonPropertyName("slices")]
     public ImageServerSlice[] Slices { get; init; } = [];
 }
 
-/// <summary>
-/// Spatial reference information.
-/// </summary>
 public sealed class SpatialReference
 {
     [JsonPropertyName("wkid")]
@@ -514,9 +342,6 @@ public sealed class SpatialReference
     public string? Wkt { get; init; }
 }
 
-/// <summary>
-/// Spatial extent for image services.
-/// </summary>
 public sealed class ImageServerExtent
 {
     [JsonPropertyName("xmin")]
@@ -535,41 +360,21 @@ public sealed class ImageServerExtent
     public required SpatialReference SpatialReference { get; init; }
 }
 
-/// <summary>
-/// Pixel-block storage information for an image service. Describes the tile/block
-/// dimensions the service uses when streaming pixels. Esri clients (including the
-/// native .NET <c>ImageServiceRaster</c>) read these to plan chunked pixel reads.
-/// </summary>
 public sealed class ImageServerStorageInfo
 {
-    /// <summary>
-    /// Width, in pixels, of a stored pixel block.
-    /// </summary>
     [JsonPropertyName("blockWidth")]
     public required int BlockWidth { get; init; }
 
-    /// <summary>
-    /// Height, in pixels, of a stored pixel block.
-    /// </summary>
     [JsonPropertyName("blockHeight")]
     public required int BlockHeight { get; init; }
 
-    /// <summary>
-    /// Resampling type used when building pyramids.
-    /// </summary>
     [JsonPropertyName("pyramidResamplingType")]
     public string PyramidResamplingType { get; init; } = "Bilinear";
 
-    /// <summary>
-    /// Pyramid scaling factor between successive resolution levels.
-    /// </summary>
     [JsonPropertyName("pyramidScalingFactor")]
     public int PyramidScalingFactor { get; init; } = 2;
 }
 
-/// <summary>
-/// Field definition for image services.
-/// </summary>
 public sealed class Field
 {
     [JsonPropertyName("name")]
@@ -597,9 +402,6 @@ public sealed class Field
     public string? ModelName { get; init; }
 }
 
-/// <summary>
-/// Tile information for cached services.
-/// </summary>
 public sealed class TileInfo
 {
     [JsonPropertyName("rows")]
@@ -627,9 +429,6 @@ public sealed class TileInfo
     public required LevelOfDetail[] Lods { get; init; }
 }
 
-/// <summary>
-/// Point coordinates.
-/// </summary>
 public sealed class Point
 {
     [JsonPropertyName("x")]
@@ -638,19 +437,12 @@ public sealed class Point
     [JsonPropertyName("y")]
     public required double Y { get; init; }
 
-    /// <summary>
-    /// Spatial reference of the coordinates. Esri identify locations carry it so clients do not
-    /// default a projected location to WGS84 (#4064); omitted when unset (for example a tile
-    /// scheme origin, whose reference is the enclosing tileInfo spatialReference).
-    /// </summary>
+    // Identify locations carry their spatial reference so a client does not default a projected point to WGS84, and the field is omitted when the enclosing tile info already names it.
     [JsonPropertyName("spatialReference")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public SpatialReference? SpatialReference { get; init; }
 }
 
-/// <summary>
-/// Level of detail for tiling.
-/// </summary>
 public sealed class LevelOfDetail
 {
     [JsonPropertyName("level")]
@@ -663,9 +455,6 @@ public sealed class LevelOfDetail
     public required double Scale { get; init; }
 }
 
-/// <summary>
-/// Raster function information.
-/// </summary>
 public sealed class RasterFunctionInfo
 {
     [JsonPropertyName("name")]
@@ -678,9 +467,6 @@ public sealed class RasterFunctionInfo
     public string? Help { get; init; }
 }
 
-/// <summary>
-/// Raster type information.
-/// </summary>
 public sealed class RasterTypeInfo
 {
     [JsonPropertyName("name")]
@@ -693,9 +479,6 @@ public sealed class RasterTypeInfo
     public string? Help { get; init; }
 }
 
-/// <summary>
-/// Export image response.
-/// </summary>
 public sealed class ExportImageResponse
 {
     [JsonPropertyName("href")]
@@ -718,9 +501,6 @@ public sealed class ExportImageResponse
     public double? Scale { get; init; }
 }
 
-/// <summary>
-/// Identify response with pixel values.
-/// </summary>
 public sealed class IdentifyResponse
 {
     [JsonPropertyName("objectId")]
@@ -741,17 +521,9 @@ public sealed class IdentifyResponse
     [JsonPropertyName("catalogItems")]
     public IdentifyCatalogItems? CatalogItems { get; init; }
 
-    /// <summary>
-    /// Percentage contribution of each catalog item, in <c>catalogItems</c> order. Esri always
-    /// emits the array and leaves it empty when no catalog items are returned.
-    /// </summary>
     [JsonPropertyName("catalogItemVisibilities")]
     public double[] CatalogItemVisibilities { get; init; } = [];
 
-    /// <summary>
-    /// Additive identify entries for native ArcGIS REST raster clients which read
-    /// the MapServer-style envelope. The standard pixel and location remain authoritative.
-    /// </summary>
     [JsonPropertyName("results")]
     public ImageServerIdentifyResult[] Results
     {
@@ -776,33 +548,24 @@ public sealed class IdentifyResponse
     }
 }
 
-/// <summary>Additive pixel-identify entry for stock ArcGIS REST raster clients.</summary>
 public sealed class ImageServerIdentifyResult
 {
-    /// <summary>Existing raster or mosaic display name.</summary>
     [JsonPropertyName("layerName")]
     public string? LayerName { get; init; }
 
-    /// <summary>Name of the pixel-value display attribute.</summary>
     [JsonPropertyName("displayFieldName")]
     public required string DisplayFieldName { get; init; }
 
-    /// <summary>Point geometry encoding for the sampled location.</summary>
     [JsonPropertyName("geometryType")]
     public required string GeometryType { get; init; }
 
-    /// <summary>The same authoritative location and optional CRS as the standard response.</summary>
     [JsonPropertyName("geometry")]
     public required Point Geometry { get; init; }
 
-    /// <summary>Existing pixel properties plus the standard formatted pixel value.</summary>
     [JsonPropertyName("attributes")]
     public required Dictionary<string, object?> Attributes { get; init; }
 }
 
-/// <summary>
-/// Raster catalog feature set returned by identify, matching the Esri wire contract.
-/// </summary>
 public sealed class IdentifyCatalogItems
 {
     [JsonPropertyName("objectIdFieldName")]
@@ -818,9 +581,6 @@ public sealed class IdentifyCatalogItems
     public CatalogQueryFeature[] Features { get; init; } = [];
 }
 
-/// <summary>
-/// Export image request parameters.
-/// </summary>
 public sealed record ExportImageRequest
 {
     [RegularExpression(@"^-?\d+(\.\d+)?,-?\d+(\.\d+)?,-?\d+(\.\d+)?,-?\d+(\.\d+)?$",
@@ -885,9 +645,6 @@ public sealed record ExportImageRequest
     [StringLength(1000, ErrorMessage = "RenderingRule is too long")]
     public string? RenderingRule { get; init; }
 
-    /// <summary>
-    /// Coordinate-valued dimension selections for a registered multidimensional coverage.
-    /// </summary>
     [StringLength(8192, ErrorMessage = "MultidimensionalDefinition is too long")]
     public string? MultidimensionalDefinition { get; init; }
 
@@ -898,9 +655,6 @@ public sealed record ExportImageRequest
     public string? F { get; init; } = "json";
 }
 
-/// <summary>
-/// Identify request parameters.
-/// </summary>
 public sealed class IdentifyRequest
 {
     [Required(ErrorMessage = "Geometry is required")]
@@ -919,9 +673,6 @@ public sealed class IdentifyRequest
     [StringLength(1000, ErrorMessage = "RenderingRule is too long")]
     public string? RenderingRule { get; init; }
 
-    /// <summary>
-    /// Coordinate-valued dimension selections for a registered multidimensional coverage.
-    /// </summary>
     [StringLength(8192, ErrorMessage = "MultidimensionalDefinition is too long")]
     public string? MultidimensionalDefinition { get; init; }
 

@@ -8,56 +8,23 @@ using StackExchange.Redis;
 
 namespace Honua.Protocols.GeoServices.FeatureServer.Services;
 
-/// <summary>
-/// Storage mechanics shared by the FeatureServer at-most-once stores: the <c>applyEdits</c>
-/// <c>Idempotency-Key</c> store (#2250) and the <c>synchronizeReplica</c> upload replay store (#4026).
-/// Callers own key construction and payload serialization; this type owns reservation, recording,
-/// expiry and release so both stores keep one set of race and failure semantics.
-/// </summary>
-/// <remarks>
-/// The distributed path uses Redis SET NX for atomic reservation (BH5-001): concurrent requests with
-/// the same key race on the reserve and the loser gets no token. Without Redis the in-process fallback
-/// uses <see cref="ConcurrentDictionary{TKey,TValue}.TryAdd"/>, which is atomic within a process. Store
-/// failures are reported through the caller's callback and never fail the request.
-/// </remarks>
+// Both at-most-once stores share this reservation mechanic: concurrent same-key requests race on set-if-absent, the loser gets no token, and a store failure is reported without failing the request.
 internal sealed class IdempotencyPayloadStore
 {
     private const int MaxFallbackEntries = 10_000;
 
-    /// <summary>
-    /// Leading byte of a pending-reservation payload. The rest of the payload is the reservation's
-    /// unique ownership token (#3052), so two owners of the same key are always distinguishable. The
-    /// 0xFF prefix is not valid UTF-8 JSON, so a pending payload can never be read back as a record.
-    /// </summary>
+    // The pending payload starts with 0xFF so it is not valid UTF-8 JSON and can never be read back as a recorded response.
     private const byte PendingPrefix = 0xFF;
 
-    /// <summary>
-    /// Default dedupe window. A retry within this window of the original request replays the stored
-    /// record; after it the key is forgotten and a re-submission is treated as a fresh request.
-    /// </summary>
     internal static readonly TimeSpan DedupeWindow = TimeSpan.FromHours(24);
 
-    /// <summary>
-    /// Default reservation window: how long a reservation is kept before it expires if the owning
-    /// request never completes. Callers whose requests can run longer pass a larger window to
-    /// <see cref="TryReserveAsync(string, TimeSpan, Action{Exception}, CancellationToken)"/>.
-    /// </summary>
     internal static readonly TimeSpan ReservationWindow = TimeSpan.FromSeconds(60);
 
-    /// <summary>
-    /// Compare-and-delete: removes the reservation key only while it still holds the exact
-    /// reservation payload supplied as <c>ARGV[1]</c>, leaving a recorded response — or a
-    /// reservation owned by a different request — untouched. Runs server-side so the read and the
-    /// delete cannot interleave with another request.
-    /// </summary>
+    // Compare-and-delete removes the key only while it still holds this reservation payload, so a recorded response or another request's reservation is left in place.
     private const string ReleaseIfOwnedScript =
         "if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end return 0";
 
-    /// <summary>
-    /// Set-if-absent-or-owned: writes the record <c>ARGV[2]</c> with a <c>ARGV[3]</c> millisecond expiry
-    /// only when the key is empty or still holds this request's reservation <c>ARGV[1]</c>, so a request
-    /// that outlived its reservation can never overwrite a newer owner's reservation or record.
-    /// </summary>
+    // The record is written only when the key is empty or still holds this request's reservation, so an expired owner cannot overwrite a newer reservation or receipt.
     private const string SetIfAbsentOrOwnedScript =
         "local current = redis.call('GET', KEYS[1]) " +
         "if (not current) or current == ARGV[1] then redis.call('SET', KEYS[1], ARGV[2], 'PX', ARGV[3]) return 1 end return 0";
@@ -74,11 +41,6 @@ internal sealed class IdempotencyPayloadStore
         _time = timeProvider ?? TimeProvider.System;
     }
 
-    /// <summary>
-    /// Returns the recorded payload for <paramref name="key"/> within the dedupe window, or
-    /// <see langword="null"/> when nothing was recorded, a concurrent request holds a pending
-    /// reservation, or the store is unavailable.
-    /// </summary>
     public async Task<byte[]?> TryGetAsync(
         string key,
         Action<Exception> onStoreUnavailable,
@@ -132,20 +94,12 @@ internal sealed class IdempotencyPayloadStore
         }
     }
 
-    /// <summary>
-    /// Atomically reserves <paramref name="key"/> for the default <see cref="ReservationWindow"/>.
-    /// </summary>
     public Task<string?> TryReserveAsync(
         string key,
         Action<Exception> onStoreUnavailable,
         CancellationToken cancellationToken)
         => TryReserveAsync(key, ReservationWindow, onStoreUnavailable, cancellationToken);
 
-    /// <summary>
-    /// Atomically reserves <paramref name="key"/> for <paramref name="reservationWindow"/>. Returns a
-    /// unique ownership token when the reservation is won, or <see langword="null"/> when another
-    /// request already holds the key.
-    /// </summary>
     public async Task<string?> TryReserveAsync(
         string key,
         TimeSpan reservationWindow,
@@ -205,10 +159,6 @@ internal sealed class IdempotencyPayloadStore
             : null;
     }
 
-    /// <summary>
-    /// Records <paramref name="payload"/> for <paramref name="key"/> for the dedupe window, replacing
-    /// any held reservation. Best-effort: a store failure is reported and swallowed.
-    /// </summary>
     public async Task SetAsync(
         string key,
         byte[] payload,
@@ -264,13 +214,6 @@ internal sealed class IdempotencyPayloadStore
         CleanupFallback(now);
     }
 
-    /// <summary>
-    /// Records <paramref name="payload"/> for the dedupe window only when <paramref name="key"/> is empty,
-    /// expired, or still holds the reservation proven by <paramref name="reservationToken"/>. Returns
-    /// <see langword="false"/> — writing nothing — when another request's reservation or record now
-    /// occupies the key, which happens only when this request outlived its own reservation. Best-effort:
-    /// a store failure is reported and reads as not recorded.
-    /// </summary>
     public async Task<bool> SetIfAbsentOrOwnedAsync(
         string key,
         string reservationToken,
@@ -331,12 +274,7 @@ internal sealed class IdempotencyPayloadStore
         return true;
     }
 
-    /// <summary>
-    /// Releases a reservation taken by <see cref="TryReserveAsync(string, TimeSpan, Action{Exception}, CancellationToken)"/>
-    /// with a compare-and-delete against <paramref name="reservationToken"/>, so a recorded payload or
-    /// another request's reservation is never removed. Takes no cancellation token so a cancelled owner
-    /// can still free its key.
-    /// </summary>
+    // Release compares and deletes this reservation and takes no cancellation token, so a cancelled owner can still free its key.
     public async Task ReleaseAsync(string key, string reservationToken, Action<Exception> onStoreUnavailable)
     {
         ArgumentException.ThrowIfNullOrEmpty(reservationToken);
@@ -383,12 +321,7 @@ internal sealed class IdempotencyPayloadStore
         }
     }
 
-    /// <summary>
-    /// In-process equivalent of <see cref="SetIfAbsentOrOwnedScript"/>: adds the record when the key is
-    /// empty, or swaps it in for an entry that is expired or is this request's reservation. Each step is
-    /// an atomic dictionary primitive conditioned on the entry just read, so a concurrent reservation or
-    /// record is never overwritten.
-    /// </summary>
+    // Each in-process step is an atomic dictionary update conditioned on the entry just read, so a concurrent reservation or record is not overwritten.
     private bool TrySetFallbackIfAbsentOrOwned(string key, byte[] ownedPayload, FallbackEntry record, DateTimeOffset now)
     {
         while (true)
@@ -415,10 +348,6 @@ internal sealed class IdempotencyPayloadStore
         }
     }
 
-    /// <summary>
-    /// Builds the stored value for a reservation: the pending prefix followed by the owner's
-    /// unique token, so a release can prove it owns what it is deleting (#3052).
-    /// </summary>
     private static byte[] BuildReservationPayload(string reservationToken)
     {
         var tokenBytes = Encoding.UTF8.GetBytes(reservationToken);
@@ -428,11 +357,6 @@ internal sealed class IdempotencyPayloadStore
         return payload;
     }
 
-    /// <summary>
-    /// True when the stored value is a reservation rather than a recorded payload. Matches a bare
-    /// prefix byte as well as a prefix+token payload so a node running the pre-token build during a
-    /// rolling upgrade is still recognised as holding the key.
-    /// </summary>
     private static bool IsPendingReservation(byte[] payload)
         => payload.Length >= 1 && payload[0] == PendingPrefix;
 

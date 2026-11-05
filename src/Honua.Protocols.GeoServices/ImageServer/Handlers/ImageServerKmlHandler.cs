@@ -15,17 +15,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Handlers;
 
-/// <summary>
-/// Handler for the Image Server <c>kml/image.kmz</c> resource.
-/// </summary>
-/// <remarks>
-/// Mirrors the ArcGIS ImageServer KML resource: it returns an OGC KML 2.2 KMZ
-/// carrying a single <c>GroundOverlay</c> whose <c>Icon</c> references the service's
-/// <c>exportImage</c> operation over the WGS84 service extent, with a
-/// <c>LatLonBox</c> set to that extent. The overlay image is produced on demand by
-/// the shared export pipeline when a KML client resolves the icon href, so this
-/// resource itself renders no pixels and only reads catalog extent metadata.
-/// </remarks>
 internal sealed class ImageServerKmlHandler
 {
     private const string KmzContentType = "application/vnd.google-earth.kmz";
@@ -33,10 +22,8 @@ internal sealed class ImageServerKmlHandler
     private const string KmzEntryName = "doc.kml";
     private const int Wgs84Srid = 4326;
 
-    /// <summary>Long-edge pixel budget for the referenced exportImage overlay.</summary>
     private const int OverlayLongEdgePixels = 1024;
 
-    /// <summary>Upper bound on either overlay edge to keep the referenced export bounded.</summary>
     private const int MaxOverlayEdgePixels = 2048;
 
     private readonly IMetadataV2GraphProvider _graphProvider;
@@ -56,9 +43,6 @@ internal sealed class ImageServerKmlHandler
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <summary>
-    /// Builds the Image Server <c>image.kmz</c> KMZ for the resolved layer.
-    /// </summary>
     public async Task<IResult> GetKmlAsync(
         HttpContext context,
         int layerId,
@@ -98,10 +82,6 @@ internal sealed class ImageServerKmlHandler
         return Results.Bytes(kmz, KmzContentType, fileDownloadName: "image.kmz");
     }
 
-    /// <summary>
-    /// Projects the aggregate extent into WGS84 lat/lon. Native geographic extents pass
-    /// through unchanged; other spatial references require the shared transform service.
-    /// </summary>
     private async ValueTask<GeographicBox?> ProjectToWgs84Async(
         RasterExtent extent,
         CancellationToken cancellationToken)
@@ -128,11 +108,6 @@ internal sealed class ImageServerKmlHandler
         return new GeographicBox(t.MinX, t.MinY, t.MaxX, t.MaxY);
     }
 
-    /// <summary>
-    /// Builds a self-referential absolute exportImage URL for the overlay icon,
-    /// preserving whichever service addressing form (numeric-layer or service-name)
-    /// the KML request used.
-    /// </summary>
     private static string BuildExportImageHref(HttpContext context, GeographicBox box)
     {
         var pathBase = context.Request.PathBase.HasValue ? context.Request.PathBase.Value! : string.Empty;
@@ -149,7 +124,6 @@ internal sealed class ImageServerKmlHandler
         return $"{context.Request.Scheme}://{host}{pathBase}{servicePath}/exportImage{query}";
     }
 
-    /// <summary>Sizes the overlay so its long edge is <see cref="OverlayLongEdgePixels"/>, aspect-preserved.</summary>
     private static (int Width, int Height) ComputeOverlaySize(GeographicBox box)
     {
         var spanX = Math.Abs(box.East - box.West);

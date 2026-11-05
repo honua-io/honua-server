@@ -6,23 +6,15 @@ using Honua.Protocols.GeoServices.ImageServer.Services;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Raster;
 
-/// <summary>Raw pixel-block layouts the exportImage <c>format</c> parameter can request.</summary>
 internal enum ImageServerPixelBlockLayout
 {
-    /// <summary>Band-sequential samples followed by a packed pixel mask (<c>bsq</c>, SOAP <c>esriImageBSQ</c>).</summary>
     Bsq,
 
-    /// <summary>Band-interleaved-by-pixel samples followed by a packed pixel mask (<c>bip</c>).</summary>
     Bip,
 
-    /// <summary>One lossless LERC2 blob per band, concatenated in band order (<c>lerc</c>).</summary>
     Lerc,
 }
 
-/// <summary>
-/// Frames canonical planar samples (<see cref="RasterFormat.Raw"/>) in the raw pixel-block layout
-/// a caller requested from exportImage.
-/// </summary>
 internal static class ImageServerPixelBlockEncoder
 {
     internal static bool TryParseLayout(string? format, out ImageServerPixelBlockLayout layout)

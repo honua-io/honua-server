@@ -9,22 +9,12 @@ using SkiaSharp;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Services;
 
-/// <summary>
-/// Re-encodes a rendered multidimensional (Zarr) slice — supplied by the canonical slice
-/// reader as a row-major RGBA pixel buffer — into the container formats the ImageServer
-/// <c>exportImage</c> contract advertises. PNG is emitted by the reader itself; this helper
-/// covers the JPEG and TIFF outputs the reader does not produce.
-/// </summary>
 internal static class ImageServerRasterSliceEncoder
 {
     private const string JpegContentType = "image/jpeg";
     private const string TiffContentType = "image/tiff";
     private const int DefaultJpegQuality = 75;
 
-    /// <summary>
-    /// Encodes an 8-bit RGBA buffer as a JPEG using the shared SkiaSharp raster stack.
-    /// JPEG has no alpha channel, so transparent (NoData) pixels are flattened to black.
-    /// </summary>
     public static (byte[] Data, string ContentType) EncodeJpeg(byte[] rgba, int width, int height, int? quality)
     {
         ArgumentNullException.ThrowIfNull(rgba);
@@ -38,11 +28,6 @@ internal static class ImageServerRasterSliceEncoder
         return (encoded.ToArray(), JpegContentType);
     }
 
-    /// <summary>
-    /// Encodes an 8-bit RGBA buffer as a baseline RGB TIFF (dropping the alpha channel).
-    /// A <see cref="TiffCompression.Deflate"/> request stores the single strip zlib-compressed
-    /// (TIFF Adobe Deflate); any other value is stored uncompressed.
-    /// </summary>
     public static (byte[] Data, string ContentType) EncodeTiff(
         byte[] rgba,
         int width,

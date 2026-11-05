@@ -17,29 +17,12 @@ using Microsoft.Extensions.Primitives;
 
 namespace Honua.Protocols.GeoServices.Sharing;
 
-/// <summary>
-/// ArcGIS-compatible Portal community-group and item-sharing endpoints (#1868):
-/// create/read/delete groups, add/remove group members, and share/unshare items to
-/// users/groups/the org/the public.
-/// </summary>
-/// <remarks>
-/// <para>
-/// These mutate the <see cref="IPortalGroupStore"/> and
-/// <see cref="IPortalItemSharingStore"/> selected by the server profile. The Postgres
-/// profile persists both across replicas. Authorization composes the existing identity/role model rather than a
-/// new one: every mutation requires an authenticated principal, and group/item
-/// mutations require the caller to be the owner or hold the <c>admin</c> role
-/// (resolved from the shared <see cref="ClaimsPrincipal"/>, exactly as the rest of
-/// the auth subsystem). The whole surface is gated behind the same off-switch and
-/// entitlement as the read surface, so it is never a silent surface.
-/// </para>
-/// </remarks>
+// Community mutations require the owner or an admin and sit behind the same off switch and entitlement as the read surface, so the surface is never silently available.
 internal static class SharingCommunityEndpoints
 {
     private const string JsonContentType = "application/json";
     private const string AdminRole = "admin";
 
-    /// <summary>Maps the community-group and item-sharing endpoints.</summary>
     public static IEndpointRouteBuilder MapSharingCommunityEndpoints(this IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
@@ -517,11 +500,6 @@ internal static class SharingCommunityEndpoints
         return Results.Json(response, SharingRestJsonContext.Default.ItemSharingResponse, contentType: JsonContentType);
     }
 
-    /// <summary>
-    /// Gates the whole community/sharing surface on the same off-switch + entitlement
-    /// as the read surface so it is never a silent surface. Returns an error result to
-    /// short-circuit, or <see langword="null"/> when the request may proceed.
-    /// </summary>
     private static IResult? GateSharingSurface(HttpContext context, ILogger<SharingRestLog> logger)
     {
         var configuration = context.RequestServices.GetRequiredService<IConfiguration>();

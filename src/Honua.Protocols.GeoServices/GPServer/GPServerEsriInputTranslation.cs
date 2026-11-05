@@ -11,9 +11,6 @@ namespace Honua.Protocols.GeoServices.GPServer;
 
 internal static class GPServerEsriInputTranslation
 {
-    /// <summary>
-    /// Outcome of attempting to translate Esri geometry/FeatureSet inputs.
-    /// </summary>
     internal readonly record struct GeoServicesInputTranslationResult(
         Dictionary<string, string> Inputs,
         bool RequiresFeatureCollectionExecution,
@@ -23,20 +20,6 @@ internal static class GPServerEsriInputTranslation
         public bool Translated { get; init; }
     }
 
-    /// <summary>
-    /// Walks every supplied input value and rewrites recognised Esri geometry
-    /// JSON / FeatureSet payloads into canonical base64-WKB strings.
-    /// </summary>
-    /// <param name="inputs">
-    /// The raw, protocol-control-stripped GP inputs (native names already in
-    /// place). Values may be simple strings, base64 WKB, GP unit objects, or
-    /// Esri geometry / FeatureSet JSON.
-    /// </param>
-    /// <param name="featureCollectionParameters">Catalog parameters consuming complete FeatureCollections.</param>
-    /// <param name="includeDerivedSrid">Whether the process declares a canonical srid parameter.</param>
-    /// <param name="maxCurveVertices">
-    /// True-curve densification budget. Null uses the converter default.
-    /// </param>
     public static GeoServicesInputTranslationResult Translate(
         IReadOnlyDictionary<string, string> inputs,
         IReadOnlySet<string>? featureCollectionParameters = null,
