@@ -8,7 +8,7 @@ using System.Text.Json;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Infrastructure.Authentication;
-using Honua.Server.Features.Admin;
+using Honua.Server.Features.Infrastructure.Authentication;
 
 namespace Honua.Server.Features.Operations;
 
@@ -205,8 +205,8 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor, IOperation
     private string[] CreateExecutionGrants(Uri uri, OperationPolicyContext context)
     {
         var grants = AdminApiKeyPermission.CreateApprovedOperationGrants(_definition.Method.Method, uri.AbsolutePath, context.TenantId);
-        return FolderReplayRequest.IsFolderMutation(OperationId)
-            ? [.. grants, FolderReplayRequest.ProposalGrant(context.ApprovedProposalId!)]
+        return FolderOperationCredential.IsFolderMutation(OperationId)
+            ? [.. grants, FolderOperationCredential.ProposalGrant(context.ApprovedProposalId!)]
             : grants;
     }
 

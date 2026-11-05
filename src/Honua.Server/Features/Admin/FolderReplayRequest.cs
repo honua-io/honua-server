@@ -11,11 +11,6 @@ namespace Honua.Server.Features.Admin;
 
 internal static class FolderReplayRequest
 {
-    internal static bool IsFolderMutation(string operationId)
-        => operationId is "folder.create" or "folder.update" or "folder.delete" or "service.move";
-
-    internal static string ProposalGrant(string proposalId) => $"admin:operation:proposal:{proposalId}";
-
     internal static bool Matches(EndpointFilterInvocationContext invocation, OperationProposal proposal)
     {
         if (proposal.Plan.ExecutionPayload is null) return false;

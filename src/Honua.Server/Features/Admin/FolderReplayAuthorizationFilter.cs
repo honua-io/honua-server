@@ -8,6 +8,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Infrastructure.Authentication;
+using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Operations;
 
 namespace Honua.Server.Features.Admin;
@@ -47,7 +48,7 @@ internal sealed class FolderReplayAuthorizationFilter : IEndpointFilter
             !context.User.IsInRole(AdminApiKeyPermission.ApprovedOperationRole) ||
             string.IsNullOrWhiteSpace(proposalId) ||
             OperationId(context.Request.Method) is not { } operationId ||
-            !context.User.HasClaim(AdminApiKeyPermission.PermissionClaimType, FolderReplayRequest.ProposalGrant(proposalId)) ||
+            !context.User.HasClaim(AdminApiKeyPermission.PermissionClaimType, FolderOperationCredential.ProposalGrant(proposalId)) ||
             !AdminApiKeyPermission.IsAuthorized(context.User, context.Request.Method, context.Request.Path.Value))
             return false;
         var proposal = await context.RequestServices.GetRequiredService<IOperationProposalStore>()

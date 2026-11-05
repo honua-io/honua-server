@@ -19,6 +19,7 @@ using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Infrastructure.Authentication;
+using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Admin;
 using Honua.Server.Features.Operations;
 using Honua.TestKit.Attributes;
@@ -185,7 +186,7 @@ public sealed class FolderReplayAuthorizationFilterTests
             new Claim(AdminApiKeyPermission.PermissionClaimType,
                 AdminApiKeyPermission.CreateApprovedOperationGrant(scenario == "wrong-credential" ? "DELETE" : "PATCH", context.Request.Path.Value!)),
             new Claim(AdminApiKeyPermission.PermissionClaimType,
-                FolderReplayRequest.ProposalGrant("proposal")),
+                FolderOperationCredential.ProposalGrant("proposal")),
             new Claim(AdminApiKeyPermission.ApprovedOperationTenantClaim, "public")], "ApiKey"));
         return context;
     }
