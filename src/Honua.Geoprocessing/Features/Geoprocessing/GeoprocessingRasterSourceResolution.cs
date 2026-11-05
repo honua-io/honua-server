@@ -9,34 +9,12 @@ using Honua.Core.Features.Geoprocessing.Raster;
 
 namespace Honua.Geoprocessing;
 
-/// <summary>
-/// Submit-side resolution of native raster/surface process inputs from a registered
-/// catalog raster (#2264/#3090). This helper binds a catalog <c>layerId</c>/<c>rasterId</c>
-/// selector to an immutable typed descriptor after authorization. Object bytes remain
-/// in storage and the selected worker opens the descriptor directly.
-///
-/// <para>
-/// A step is eligible only when its catalog process declares the native raster-source
-/// shape (both a <c>source</c> and a <c>rasterId</c> parameter, the
-/// <c>NativeRasterSourceParameters</c> group). Steps that already carry an inline
-/// <c>source</c> are left untouched (inline wins). When resolution is required but no
-/// resolver is configured, a <see cref="GeoprocessingValidationException"/> is thrown.
-/// Registered <c>rasterId</c> references are first bound to their owning layer and sent
-/// through the shared authorization gate; unknown or mismatched registrations therefore
-/// fail without exposing catalog existence or reading raster bytes.
-/// </para>
-/// </summary>
 internal static class GeoprocessingRasterSourceResolution
 {
     private const string SourceInput = "source";
     private const string LayerIdInput = "layerId";
     private const string RasterIdInput = "rasterId";
 
-    /// <summary>
-    /// Resolves raster-id selectors to their owning catalog layer and binds that layer onto the
-    /// plan before the shared layer gate runs. This phase performs catalog lookup only; provider
-    /// object metadata is not resolved until <see cref="ResolveAsync"/> runs after authorization.
-    /// </summary>
     public static async Task<AnalysisPlan> BindLayerIdsAsync(
         AnalysisPlan plan,
         IProcessCatalog catalog,
@@ -83,11 +61,6 @@ internal static class GeoprocessingRasterSourceResolution
         return rewritten is null ? plan : plan with { Steps = rewritten };
     }
 
-    /// <summary>
-    /// Returns a plan whose eligible native-raster steps have their <c>source</c> typed
-    /// binding populated from the resolved catalog raster. Returns the original plan
-    /// unchanged when no step requires resolution.
-    /// </summary>
     public static async Task<AnalysisPlan> ResolveAsync(
         AnalysisPlan plan,
         IProcessCatalog catalog,
@@ -139,11 +112,6 @@ internal static class GeoprocessingRasterSourceResolution
         return plan with { Steps = rewritten };
     }
 
-    /// <summary>
-    /// Determines whether <paramref name="step"/> must be resolved from a catalog
-    /// raster: its process declares the native raster-source shape, it has no inline
-    /// <c>source</c>, and it carries a parseable <c>layerId</c> or <c>rasterId</c>.
-    /// </summary>
     internal static bool TryGetReference(
         AnalysisPlanStep step,
         IProcessCatalog catalog,
@@ -195,12 +163,7 @@ internal static class GeoprocessingRasterSourceResolution
         return true;
     }
 
-    /// <summary>
-    /// Returns whether this native raster step will consume its inline source instead of
-    /// either catalog selector. The same precedence must govern both source resolution and
-    /// submit-time layer authorization so an unused stale selector cannot deny an otherwise
-    /// valid inline job (honua-server#3046 review).
-    /// </summary>
+    // An inline source wins over a catalog selector for both resolution and authorization, so a stale selector cannot deny a valid inline job.
     internal static bool UsesInlineSource(AnalysisPlanStep step, ProcessDefinition definition)
     {
         ArgumentNullException.ThrowIfNull(step);

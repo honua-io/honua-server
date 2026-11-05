@@ -6,15 +6,6 @@ using Honua.Ai.Protocols.Mcp.Models;
 
 namespace Honua.Ai.Protocols.Mcp.Resources;
 
-/// <summary>
-/// Shared builder for <see cref="McpPackageView"/> payloads returned by
-/// <see cref="MapPackageResource"/> and <see cref="AppPackageResource"/>. Both
-/// resources derive their view from the same deployment reverse-lookup, so the
-/// factory centralizes the published-deployments projection that governs
-/// package visibility, package list membership, and the
-/// <c>deploymentResourceUris</c> field returned on the published-service
-/// detail view.
-/// </summary>
 internal static class PackageViewFactory
 {
     // Packages (and the hosted-deployment list on a published service) are only
@@ -60,18 +51,10 @@ internal static class PackageViewFactory
     public static bool IsPublished(Deployment deployment) =>
         deployment.PublicationState == DeploymentPublicationState.Published;
 
-    /// <summary>Package lifecycle states surfaced on <c>packageStatus</c>.</summary>
     public const string DraftStatus = "draft";
 
-    /// <summary>Package lifecycle state for a package reached through a serving deployment.</summary>
     public const string PublishedStatus = "published";
 
-    /// <summary>
-    /// View for a created-but-not-yet-deployed package held by the draft store
-    /// (honua-server#3262). It carries no deployment edges by construction — that
-    /// is exactly what makes it a draft — so the deployment projection is empty
-    /// rather than absent, keeping one response shape for both lifecycle states.
-    /// </summary>
     public static McpPackageView BuildDraft(string packageKind, string packageId, string resourceUri) =>
         new()
         {

@@ -7,24 +7,6 @@ using System.Text;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// Bounded-memory "have I seen this key?" set for the streaming dedup transform. Each
-/// caller key (which can be a long normalized-WKT string) is reduced to a fixed 16-byte
-/// SHA-256 digest, so per-key memory is constant regardless of key length. The digests
-/// live in an in-memory <see cref="HashSet{T}"/> until they cross
-/// <see cref="_inMemoryDigestLimit"/>, at which point the set spills to a temp file and
-/// continues with a bounded recent-window cache plus on-disk membership checks — peak
-/// memory stays bounded by the window, not by the cardinality of the input.
-///
-/// <para>
-/// Collision note: a 128-bit digest makes an accidental false-positive (two distinct keys
-/// hashing equal, which would wrongly drop a feature) astronomically unlikely for any
-/// realistic ETL volume (~10^18 keys for a 1% chance). This is the documented bound: dedup
-/// is exact up to the 128-bit digest, not byte-for-byte, in exchange for constant per-key
-/// memory and a spill ceiling. Determinism is preserved: the same input always produces the
-/// same first-wins output.
-/// </para>
-/// </summary>
 internal sealed class SpillableKeySet : IDisposable
 {
     private readonly HashSet<Digest> _inMemory = new();
@@ -45,10 +27,6 @@ internal sealed class SpillableKeySet : IDisposable
         _windowLimit = windowLimit;
     }
 
-    /// <summary>
-    /// Returns <c>true</c> the first time a key is seen (caller should emit the feature),
-    /// <c>false</c> for a duplicate (caller should drop it).
-    /// </summary>
     public bool Add(string key)
     {
         var digest = Digest.From(key);

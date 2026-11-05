@@ -5,11 +5,6 @@ using Honua.Geoprocessing.Release;
 
 namespace Honua.Geoprocessing.ProcessRelease;
 
-/// <summary>
-/// Process-local release store: the default when no Postgres store is registered (devkit,
-/// tests, single-node development). Publishing and activation share one lock so activation
-/// is a true compare-and-set on the binding version within this process.
-/// </summary>
 public sealed class InMemoryGpProcessReleaseStore : IGpProcessReleaseStore
 {
     private readonly object _gate = new();
@@ -17,18 +12,14 @@ public sealed class InMemoryGpProcessReleaseStore : IGpProcessReleaseStore
     private readonly Dictionary<string, GpProcessBinding> _bindings = new(StringComparer.Ordinal);
     private readonly TimeProvider _time;
 
-    /// <summary>Creates the store.</summary>
-    /// <param name="time">Clock used for publication and activation times.</param>
     public InMemoryGpProcessReleaseStore(TimeProvider? time = null)
     {
         _time = time ?? TimeProvider.System;
     }
 
-    /// <inheritdoc />
     public async Task<GpProcessReleaseRecord> PublishAsync(GpProcessReleaseLock lockDocument, string publishedBy, CancellationToken cancellationToken = default)
         => (await PublishWithStatusAsync(lockDocument, publishedBy, cancellationToken).ConfigureAwait(false)).Record;
 
-    /// <inheritdoc />
     public Task<(GpProcessReleaseRecord Record, bool Created)> PublishWithStatusAsync(GpProcessReleaseLock lockDocument, string publishedBy, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(lockDocument);
@@ -54,7 +45,6 @@ public sealed class InMemoryGpProcessReleaseStore : IGpProcessReleaseStore
         }
     }
 
-    /// <inheritdoc />
     public Task<GpProcessReleaseRecord?> GetReleaseAsync(string digest, CancellationToken cancellationToken = default)
     {
         lock (_gate)
@@ -63,7 +53,6 @@ public sealed class InMemoryGpProcessReleaseStore : IGpProcessReleaseStore
         }
     }
 
-    /// <inheritdoc />
     public Task<IReadOnlyList<GpProcessReleaseRecord>> ListReleasesAsync(string? process, CancellationToken cancellationToken = default)
     {
         lock (_gate)
@@ -78,7 +67,6 @@ public sealed class InMemoryGpProcessReleaseStore : IGpProcessReleaseStore
         }
     }
 
-    /// <inheritdoc />
     public Task<GpProcessBinding?> GetBindingAsync(string process, CancellationToken cancellationToken = default)
     {
         lock (_gate)
@@ -87,7 +75,6 @@ public sealed class InMemoryGpProcessReleaseStore : IGpProcessReleaseStore
         }
     }
 
-    /// <inheritdoc />
     public Task<IReadOnlyList<GpProcessBinding>> ListBindingsAsync(CancellationToken cancellationToken = default)
     {
         lock (_gate)
@@ -100,7 +87,6 @@ public sealed class InMemoryGpProcessReleaseStore : IGpProcessReleaseStore
     private static GpProcessReleaseRecord CloneRelease(GpProcessReleaseRecord record)
         => record with { Lock = GpProcessReleaseLock.Parse(record.Lock.ToCanonicalJson()) };
 
-    /// <inheritdoc />
     public Task<GpProcessBindingDecision> ActivateAsync(GpProcessBindingActivation activation, GpProcessReleaseEnvironment environment, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(activation);

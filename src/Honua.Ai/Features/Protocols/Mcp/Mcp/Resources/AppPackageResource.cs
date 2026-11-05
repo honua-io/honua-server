@@ -10,18 +10,6 @@ using Honua.Ai.Protocols.Mcp.Models;
 
 namespace Honua.Ai.Protocols.Mcp.Resources;
 
-/// <summary>
-/// MCP resource for <c>honua://app-packages/{packageId}</c>. An app package is
-/// reachable in two lifecycle states, and the resource reads both: as a
-/// <b>published</b> package, whose server-side footprint is the set of
-/// currently-serving deployments that reference it (reverse-looked-up by
-/// <see cref="DeploymentSourceKind.AppPackage"/>), and as a <b>draft</b> just
-/// created by <c>honua_create_app_package</c>, which has no deployment yet but
-/// whose identifier ADR-0076 promises is addressable at this URI
-/// (honua-server#3262). Returns <see cref="GeoprocessingNotFoundException"/>
-/// when neither knows the package, so the server never fabricates a surface it
-/// cannot reach.
-/// </summary>
 internal sealed class AppPackageResource : IMcpResource
 {
     public const string Template = McpResourceUris.AppPackagesPrefix + "{packageId}";

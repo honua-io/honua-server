@@ -9,13 +9,6 @@ using Honua.Ai.Protocols.Mcp.Models;
 
 namespace Honua.Ai.Protocols.Mcp.Tools;
 
-/// <summary>
-/// MCP tool that compiles a natural-language intent into a structured analysis
-/// plan or canonical spec draft via <see cref="IPlanAnalysisService"/>. The
-/// service deliberately decouples the wire surface from the backing engine so
-/// fixture replay, deterministic compilation, and live planning can each plug
-/// in without the tool growing.
-/// </summary>
 internal sealed class PlanAnalysisTool : IMcpTool
 {
     public const string ToolName = "honua_plan_analysis";

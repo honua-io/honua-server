@@ -10,13 +10,6 @@ using Honua.Ai.Protocols.Mcp.Models;
 
 namespace Honua.Ai.Protocols.Mcp.Tools;
 
-/// <summary>
-/// MCP tool that resolves a clarification turn by re-running grounding with
-/// the caller's responses merged into the request. The service is stateless —
-/// the caller carries goal text, constraints, and explicit inputs across
-/// turns — so this tool adds the <c>intentId</c> and <c>response</c>
-/// requirements on top of <c>honua_ground_candidates</c>.
-/// </summary>
 internal sealed class ClarifyIntentTool : IMcpTool
 {
     public const string ToolName = "honua_clarify_intent";

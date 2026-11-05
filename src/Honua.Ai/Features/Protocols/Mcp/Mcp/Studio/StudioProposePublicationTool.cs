@@ -16,13 +16,8 @@ using Honua.Ai.Protocols.Mcp.Tools;
 
 namespace Honua.Ai.Protocols.Mcp.Studio;
 
-/// <summary>
-/// MCP bridge from an immutable Studio publication intent into the canonical
-/// typed operation/proposal/approval lifecycle.
-/// </summary>
 internal sealed class ProposeStudioPublicationTool : StudioDraftToolBase, IMcpTool
 {
-    /// <summary>The tool name published in <c>tools/list</c>.</summary>
     public const string ToolName = "honua_studio_propose_publication";
 
     private readonly ILogger<ProposeStudioPublicationTool> _typedLogger;
@@ -33,13 +28,10 @@ internal sealed class ProposeStudioPublicationTool : StudioDraftToolBase, IMcpTo
         _typedLogger = logger;
     }
 
-    /// <inheritdoc />
     public string Name => ToolName;
 
-    /// <inheritdoc />
     public string WorkflowFamily => McpTelemetry.WorkflowFamily.Lifecycle;
 
-    /// <inheritdoc />
     public McpToolDescriptor Describe() => new()
     {
         Name = ToolName,
@@ -53,7 +45,6 @@ internal sealed class ProposeStudioPublicationTool : StudioDraftToolBase, IMcpTo
         Annotations = McpToolAnnotationSets.Write("Propose Studio publication", destructive: false, idempotent: true)
     };
 
-    /// <inheritdoc />
     public async Task<McpToolsCallResult> InvokeAsync(
         HttpContext httpContext, JsonElement? arguments, CancellationToken cancellationToken)
     {

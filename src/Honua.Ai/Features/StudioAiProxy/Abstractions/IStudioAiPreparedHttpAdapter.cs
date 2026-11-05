@@ -6,7 +6,6 @@ using Honua.Core.Features.Security.Admission;
 
 namespace Honua.Ai.StudioAiProxy.Abstractions;
 
-/// <summary>Internal built-in HTTP preparation capability; the public/custom adapter contract stays unchanged.</summary>
 internal interface IStudioAiPreparedHttpAdapter
 {
     StudioAiHttpInvocation Prepare(StudioAiProxyProviderOptions options, StudioAiChatRequest request);

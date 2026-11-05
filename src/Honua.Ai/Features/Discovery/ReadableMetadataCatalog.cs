@@ -8,7 +8,6 @@ using Honua.Infrastructure.Authentication;
 
 namespace Honua.Ai.Discovery;
 
-/// <summary>Projects the published catalog through the shared metadata access evaluation.</summary>
 internal static class ReadableMetadataCatalog
 {
     public static async Task<IReadOnlyList<ReadableMetadataPublication>> GetPublicationsAsync(

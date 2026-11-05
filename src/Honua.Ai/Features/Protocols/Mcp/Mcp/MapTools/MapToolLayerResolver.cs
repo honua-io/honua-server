@@ -10,15 +10,6 @@ using Honua.Geoprocessing;
 
 namespace Honua.Ai.Protocols.Mcp.MapTools;
 
-/// <summary>
-/// Resolves a published <c>(serviceId, layerId)</c> tuple to the canonical
-/// Metadata v2 publication/resource and the integer storage-layer handle that
-/// <see cref="Honua.Core.Features.FeatureStore.Abstractions.IFeatureReader"/>
-/// and <see cref="Honua.Core.Features.Raster.Abstractions.IRasterMapRenderer"/>
-/// consume. The same snapshot extensions back the GeoServices FeatureServer and
-/// MapServer adapters, so the MCP tools resolve layers identically rather than
-/// growing their own catalog lookup.
-/// </summary>
 internal readonly record struct MapToolLayerContext(
     MetadataV2Service Service,
     MetadataV2Publication Publication,
@@ -52,14 +43,6 @@ internal static class MapToolLayerResolver
         return Task.FromResult(httpContext.RequestServices.GetRequiredService<IFeatureReader>());
     }
 
-    /// <summary>
-    /// Resolves the layer addressing tuple against the supplied metadata
-    /// snapshot. The service is matched by id first, then by name (mirroring the
-    /// GeoServices catalog which accepts either). Failures surface as
-    /// <see cref="GeoprocessingNotFoundException"/> /
-    /// <see cref="GeoprocessingValidationException"/> so they flow through the
-    /// shared MCP error mapper.
-    /// </summary>
     private static MapToolLayerContext Resolve(
         MetadataV2GraphSnapshot snapshot,
         string? serviceId,
@@ -106,7 +89,6 @@ internal static class MapToolLayerResolver
         return new MapToolLayerContext(service, publication, resource!, resolvedStorageLayerId);
     }
 
-    /// <summary>Resolves a readable layer through the same resource-access gate as REST.</summary>
     public static async Task<MapToolLayerContext> ResolveForReadAsync(
         HttpContext httpContext,
         MetadataV2GraphSnapshot snapshot,
@@ -120,7 +102,6 @@ internal static class MapToolLayerResolver
         return layer;
     }
 
-    /// <summary>Checks the selected resource operation through the shared REST gate.</summary>
     public static async Task EnsureAccessAsync(
         HttpContext httpContext,
         MapToolLayerContext layer,

@@ -13,21 +13,6 @@ using NetTopologySuite.Operation.Union;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// Production <see cref="IJobExecutor"/> for the <c>geometry.union</c>
-/// process. Slice 3 of #1031 — extends the buffer / clip / intersect /
-/// project / area set with a collection-aggregation operation.
-///
-/// The catalog declares <c>wkbs</c> as <c>ProcessParameterValueType.WkbArray</c>:
-/// a JSON array of base64-encoded WKB geometries. The OGC API Processes
-/// canonical-input encoder persists that array as the raw JSON-array string
-/// onto <see cref="ExecutionJobSpec.Parameters"/>; this executor parses the
-/// array, decodes each element, and produces a single merged
-/// <see cref="Geometry"/> using <see cref="UnaryUnionOp"/> — a robust
-/// fan-in union that handles polygon, line, and point inputs uniformly.
-/// All inputs must share the supplied SRID; reprojection is handled by
-/// <see cref="GeometryProjectJobExecutor"/>.
-/// </summary>
 internal sealed partial class GeometryUnionJobExecutor : IProcessExecutor
 {
     internal const string HandledProcessId = "geometry.union";
@@ -43,10 +28,6 @@ internal sealed partial class GeometryUnionJobExecutor : IProcessExecutor
         _logger = logger;
     }
 
-    /// <summary>
-    /// The single process id this executor handles, surfaced through
-    /// <see cref="IProcessExecutor"/> so the dispatcher auto-registers it (#2122).
-    /// </summary>
     public IReadOnlySet<string> ProcessIds { get; } =
         new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
 

@@ -7,20 +7,10 @@ using Honua.Ai.Protocols.Mcp.Models;
 
 namespace Honua.Ai.Protocols.Mcp.Resources;
 
-/// <summary>
-/// Shared helpers for MCP resource handlers. Centralizes JSON serialization so
-/// all resources emit <c>application/json</c> content blocks with identical
-/// formatting and AOT-safe source-generated serializers.
-/// </summary>
 internal static class McpResourceHelpers
 {
     public const string JsonMimeType = "application/json";
 
-    /// <summary>
-    /// Builds an <see cref="McpResourcesReadResult"/> containing a single
-    /// content block whose <c>text</c> is <paramref name="value"/> serialized
-    /// as JSON through <paramref name="typeInfo"/>.
-    /// </summary>
     public static McpResourcesReadResult SingleJsonContent<T>(
         string uri,
         T value,
@@ -41,10 +31,6 @@ internal static class McpResourceHelpers
         };
     }
 
-    /// <summary>
-    /// Builds an <see cref="McpResourcesReadResult"/> from an already serialized
-    /// JSON payload.
-    /// </summary>
     public static McpResourcesReadResult SingleJsonContent(string uri, JsonElement value) => new()
     {
         Contents =

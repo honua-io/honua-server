@@ -10,18 +10,11 @@ using Honua.Ai.Protocols.Mcp.Tools;
 
 namespace Honua.Ai.Protocols.Mcp.Views;
 
-/// <summary>
-/// Adds server-owned workflow classification to canonical live descriptors.
-/// The classification is projected at the catalog boundary so full and narrowed
-/// discovery surfaces expose the same descriptor and clients never own a second
-/// tool-family allowlist.
-/// </summary>
 internal static class McpWorkflowViewDescriptorClassifier
 {
     internal const string StudioMetadataKey = "honua.studio";
     internal const string StudioCompositionFamily = "honua.studio.composition";
 
-    /// <summary>Describes a tool and attaches any server-authored classification.</summary>
     public static McpToolDescriptor Describe(IMcpTool tool)
     {
         ArgumentNullException.ThrowIfNull(tool);

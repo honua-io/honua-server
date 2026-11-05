@@ -7,27 +7,12 @@ using Honua.Ai.Protocols.Mcp.Models;
 
 namespace Honua.Ai.Protocols.Mcp.Resources;
 
-/// <summary>
-/// MCP resource for <c>honua://jobs/{jobId}/results</c>. Delegates to
-/// <see cref="IGeoprocessingJobService.GetJobResultsAsync"/> so the MCP surface
-/// preserves the canonical result-package lifecycle: missing jobs return
-/// <c>not_found</c>, non-terminal jobs return
-/// <c>failed_precondition</c>, and successful package reads serialize the
-/// domain <see cref="AnalysisResultPackage"/> into the published MCP envelope.
-/// </summary>
 internal sealed class JobResultsResource : IMcpResource
 {
     public const string Template =
         McpResourceUris.JobsPrefix + "{jobId}" + McpResourceUris.JobResultsSuffix;
 
-    /// <summary>
-    /// Upper bound on the number of artifacts embedded in a single results read.
-    /// Per-artifact payloads are already capped upstream (<c>MaxArtifactBytes</c>);
-    /// this bounds the aggregate so a job producing hundreds of artifacts cannot
-    /// return an unbounded blob to an agent. Overflow is signalled via
-    /// <see cref="McpJobResultsResource.ArtifactsTruncated"/> and the caller can
-    /// enumerate the full set through the job's workspace(s).
-    /// </summary>
+    // The artifact count cap bounds the aggregate payload so one job cannot return an unbounded blob.
     internal const int MaxArtifacts = 50;
 
     private readonly IGeoprocessingJobService _jobService;
@@ -93,10 +78,6 @@ internal sealed class JobResultsResource : IMcpResource
         return result;
     }
 
-    /// <summary>
-    /// Projects a terminal result package into the published MCP envelope.
-    /// <c>honua_get_job_results</c> uses the same projection as this resource.
-    /// </summary>
     internal static McpJobResultsResource ToResource(string jobId, AnalysisResultPackage package) => new()
     {
         JobId = jobId,

@@ -12,11 +12,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Geoprocessing;
 
-/// <summary>
-/// Protocol-neutral authenticated content surface for staged geoprocessing outputs. Protocol
-/// adapters publish links to this route but do not own its authorization, validation, or storage
-/// lifecycle semantics.
-/// </summary>
 internal static class GeoprocessingOutputArtifactEndpoints
 {
     private const string Tag = "Geoprocessing";

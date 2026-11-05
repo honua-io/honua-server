@@ -14,12 +14,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Ai.StudioAiProxy.Adapters;
 
-/// <summary>
-/// Adapter for any OpenAI-compatible <c>POST {endpoint}/chat/completions</c> streaming endpoint —
-/// covers OpenAI itself, OpenRouter, LiteLLM, Ollama, vLLM, and LM Studio as operator config choices
-/// (they all speak this wire shape; only <see cref="StudioAiProxyProviderOptions.Endpoint"/> and
-/// whether an API key is required differ).
-/// </summary>
 internal sealed class OpenAiCompatibleStudioAiProxyAdapter : IStudioAiProxyAdapter, IStudioAiPreparedHttpAdapter
 {
     private const string ProviderLabel = "openai";
@@ -448,7 +442,6 @@ internal sealed class OpenAiCompatibleStudioAiProxyAdapter : IStudioAiProxyAdapt
         LatencyMs = latencyMs
     };
 
-    /// <summary>Accumulates one tool call's streamed argument fragments, keyed by delta index.</summary>
     private sealed class ToolCallAccumulator(string id, string name)
     {
         private readonly StringBuilder _arguments = new();

@@ -7,14 +7,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Ai.Protocols.Mcp;
 
-/// <summary>
-/// Startup composition conformance check (ADR-0058 B2, honua-server#2334): when
-/// <see cref="CapabilityRegistryBindingOptions.RegistryBinding"/> is enabled
-/// (the default, and on in CI), it asserts at host start that the served
-/// <c>/mcp</c> catalog is bound to the <see cref="ICapabilityRegistry"/> — no tool
-/// or resource is served without a registry descriptor — and fails fast otherwise
-/// so drift surfaces in CI rather than as a silent contract divergence.
-/// </summary>
 internal sealed class McpRegistryBindingStartupCheck : IHostedService
 {
     private readonly McpDataAccessSurface _surface;
@@ -32,7 +24,6 @@ internal sealed class McpRegistryBindingStartupCheck : IHostedService
         _options = options.Value;
     }
 
-    /// <inheritdoc />
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         if (!_options.RegistryBinding)
@@ -54,6 +45,5 @@ internal sealed class McpRegistryBindingStartupCheck : IHostedService
 
     }
 
-    /// <inheritdoc />
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 }

@@ -6,10 +6,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Ai.StudioAiProxy;
 
-/// <summary>
-/// Structured logging for the Studio AI proxy. Event ID range: 6750-6799. Telemetry activities use
-/// the <c>honua.studioai.*</c> shape.
-/// </summary>
 internal static partial class StudioAiProxyLog
 {
     [LoggerMessage(

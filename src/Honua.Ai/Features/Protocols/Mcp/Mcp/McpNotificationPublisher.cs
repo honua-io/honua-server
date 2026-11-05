@@ -6,48 +6,21 @@ using Honua.Ai.Protocols.Mcp.Models;
 
 namespace Honua.Ai.Protocols.Mcp;
 
-/// <summary>
-/// Builds server-to-client MCP JSON-RPC notifications and enqueues them onto the
-/// owning session's SSE stream (honua-server#1954). Centralizing the wire shape
-/// here keeps the <c>notifications/progress</c> and <c>*/list_changed</c> frames
-/// consistent and AOT-safe (source-generated serialization). A separate
-/// <see cref="McpJobProgressBridge"/> sources progress from the canonical job
-/// runtime and calls <see cref="PublishProgress"/>; the publish path calls the
-/// broadcast methods when the catalog mutates.
-/// </summary>
 public interface IMcpNotificationPublisher
 {
-    /// <summary>
-    /// Pushes a <c>notifications/progress</c> frame to a single session. The
-    /// <paramref name="progressToken"/> is the durable job id so a client can
-    /// correlate the stream with the job it started. Returns <c>false</c> when the
-    /// session is unknown/terminated (the frame is dropped).
-    /// </summary>
     bool PublishProgress(string sessionId, string progressToken, double progress, double? total, string? message);
 
-    /// <summary>
-    /// Broadcasts <c>notifications/tools/list_changed</c> to every active session.
-    /// Returns the number of sessions the frame was enqueued onto.
-    /// </summary>
     int BroadcastToolsListChanged();
 
-    /// <summary>
-    /// Broadcasts <c>notifications/resources/list_changed</c> to every active
-    /// session. Returns the number of sessions the frame was enqueued onto.
-    /// </summary>
     int BroadcastResourcesListChanged();
 }
 
-/// <inheritdoc />
 internal sealed class McpNotificationPublisher : IMcpNotificationPublisher
 {
-    /// <summary>JSON-RPC method for an MCP progress notification.</summary>
     public const string ProgressMethod = "notifications/progress";
 
-    /// <summary>JSON-RPC method broadcast when the tool catalog changes.</summary>
     public const string ToolsListChangedMethod = "notifications/tools/list_changed";
 
-    /// <summary>JSON-RPC method broadcast when the resource catalog changes.</summary>
     public const string ResourcesListChangedMethod = "notifications/resources/list_changed";
 
     private readonly McpSessionManager _sessions;
@@ -59,7 +32,6 @@ internal sealed class McpNotificationPublisher : IMcpNotificationPublisher
         _logger = logger;
     }
 
-    /// <inheritdoc />
     public bool PublishProgress(string sessionId, string progressToken, double progress, double? total, string? message)
     {
         var parameters = new McpProgressNotificationParams
@@ -82,10 +54,8 @@ internal sealed class McpNotificationPublisher : IMcpNotificationPublisher
         return enqueued;
     }
 
-    /// <inheritdoc />
     public int BroadcastToolsListChanged() => Broadcast(ToolsListChangedMethod);
 
-    /// <inheritdoc />
     public int BroadcastResourcesListChanged() => Broadcast(ResourcesListChangedMethod);
 
     private int Broadcast(string method)

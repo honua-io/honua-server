@@ -10,22 +10,6 @@ using NetTopologySuite.Features;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// <c>conversion.feature-project</c> layer-aware executor (#2325). The job-executable
-/// counterpart of the layer-scoped "Project Feature Layer" op: it reprojects every
-/// feature in a Honua catalog layer into <c>targetSrid</c>.
-///
-/// <para>
-/// Reprojection reuses the canonical query pipeline rather than re-implementing
-/// geodesy: the executor requests server-side reprojection to <c>targetSrid</c> from
-/// <c>source.honua-layer</c> via <see cref="DagSourceRequest.OutputSrid"/> (the same
-/// CRS handling every read path inherits), so the streamed features already carry the
-/// target CRS coordinates. The op body is therefore a pass-through that re-emits the
-/// reprojected layer as the canonical FeatureCollection artifact. This keeps a single
-/// source of truth for datum/projection math and avoids the first-slice in-memory
-/// transform limits of the single-geometry <c>geometry.project</c> executor.
-/// </para>
-/// </summary>
 internal sealed class LayerFeatureProjectExecutor : LayerSourcedFeatureExecutor
 {
     internal const string HandledProcessId = "conversion.feature-project";

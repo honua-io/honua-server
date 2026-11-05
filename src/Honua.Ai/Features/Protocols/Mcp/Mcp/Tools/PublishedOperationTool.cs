@@ -21,32 +21,10 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Ai.Protocols.Mcp.Tools;
 
-/// <summary>
-/// A validated operations-toolset descriptor (RFC #17) projected into a first-class,
-/// typed MCP tool (#2483, ADR-0056 Increment 4). One instance wraps one
-/// <see cref="OperationDescriptor"/>: <see cref="Describe"/> projects the descriptor's
-/// input schema, an output schema, and behavior annotations, and
-/// <see cref="InvokeAsync"/> routes the call through the canonical
-/// <see cref="IOperationInvoker"/> so the operation policy decision point governs every
-/// invocation exactly as the hand-authored publish tools do.
-/// </summary>
-/// <remarks>
-/// The tool does not execute the operation itself; it adapts arguments onto an
-/// <see cref="OperationRequest"/> and hands it to the dispatcher, which consults the
-/// policy decision point (allow / require-approval / dry-run-first / deny) before any
-/// executor runs. For a deterministic, read-only descriptor the result is param-keyed
-/// cached (<see cref="IPublishedOperationCache"/>): identical inputs from the
-/// identical principal context (principal id, tier, roles, scopes, connection, and
-/// service are part of the key) return an identical result without re-execution.
-/// A hit re-checks OAuth scope authority and the composed policy decision point.
-/// Non-deterministic or side-effecting descriptors are never cached.
-/// </remarks>
 internal sealed class PublishedOperationTool : IMcpTool
 {
-    /// <summary>Prefix for non-admin MCP tool names projected from operation ids.</summary>
     public const string NamePrefix = "honua_op_";
 
-    /// <summary>Prefix for MCP tool names projected from <c>admin.*</c> operation ids.</summary>
     public const string AdminNamePrefix = "honua_admin_";
 
     // Matches the full-catalog publication guard: a published tool accepts secret references,
@@ -87,7 +65,6 @@ internal sealed class PublishedOperationTool : IMcpTool
         _ => McpTelemetry.WorkflowFamily.Lifecycle,
     };
 
-    /// <summary>Whether the backing descriptor is deterministic (AI-free).</summary>
     public bool IsDeterministic =>
         _descriptor.Policy.Determinism == OperationDeterminism.Deterministic;
 
@@ -107,11 +84,6 @@ internal sealed class PublishedOperationTool : IMcpTool
         IsDeterministic
         && _descriptor.Policy.SideEffectClass == OperationSideEffectClass.ReadOnly;
 
-    /// <summary>
-    /// Projects an operation id (for example <c>service.publish</c>) into a valid MCP
-    /// tool name (for example <c>honua_op_service_publish</c>, or
-    /// <c>honua_admin_server_status</c> for an <c>admin.*</c> operation).
-    /// </summary>
     public static string ProjectName(string operationId)
     {
         if (operationId == McpConnectionDiscoveryProjection.TablesOperationId)

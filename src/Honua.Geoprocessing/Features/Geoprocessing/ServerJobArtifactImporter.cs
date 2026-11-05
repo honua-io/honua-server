@@ -15,7 +15,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Geoprocessing;
 
-/// <summary>Caller-supplied command. The server reads the artifact; the caller does not supply bytes or a path.</summary>
 internal sealed record ServerJobArtifactImportCommand(
     string IntentId,
     string TenantId,
@@ -26,7 +25,6 @@ internal sealed record ServerJobArtifactImportCommand(
     int TargetSrid,
     int? SourceSrid);
 
-/// <summary>In-process ledger. The key is the tenant, actor, and intent.</summary>
 internal sealed class MemoryServerJobArtifactImportLedger : IServerJobArtifactImportLedger
 {
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _gates = new(StringComparer.Ordinal);
@@ -87,10 +85,6 @@ internal sealed class MemoryServerJobArtifactImportLedger : IServerJobArtifactIm
     }
 }
 
-/// <summary>
-/// Imports a completed built-in job artifact through <see cref="IFileImportService"/>
-/// using the server-held artifact reference. A caller path, URL, or inline geometry is not a source.
-/// </summary>
 internal static class ServerJobArtifactImporter
 {
     internal const long MaximumInlineBytes = 16L * 1024 * 1024;

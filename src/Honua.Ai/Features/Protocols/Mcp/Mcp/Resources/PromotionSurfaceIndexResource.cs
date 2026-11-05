@@ -13,26 +13,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Ai.Protocols.Mcp.Resources;
 
-/// <summary>
-/// MCP resource handling the four list-root URIs that enumerate promotion
-/// surfaces without a trailing identifier:
-/// <c>honua://published-services</c>, <c>honua://deployments</c>,
-/// <c>honua://map-packages</c>, and <c>honua://app-packages</c>. Each returns
-/// a capped summary list drawn from canonical stores. Published services also
-/// include ordinary Metadata v2 layer publications when they are serving;
-/// their detail URI is backed by the same persisted graph. Services and
-/// deployments are narrowed past the store's broader "non-decommissioned" /
-/// "non-retired-non-superseded" semantics to the truly live subsets — services
-/// with <see cref="PublishedServiceStatus.Active"/> (or routable metadata
-/// publications) and deployments with
-/// <see cref="DeploymentPublicationState.Published"/> — so the advertised
-/// "active" descriptors match the wire contract. Package roots reuse the same
-/// published-deployment filter from <see cref="PackageViewFactory.IsPublished"/>
-/// so map/app packages only appear when at least one deployment is currently
-/// serving them. The cap (<see cref="DefaultPageSize"/>) is applied after
-/// filtering so agents never download unbounded catalogs; a <c>truncated</c>
-/// flag signals when results were clipped.
-/// </summary>
 internal sealed class PromotionSurfaceIndexResource : IMcpResource
 {
     public const int DefaultPageSize = 50;

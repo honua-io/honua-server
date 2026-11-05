@@ -7,15 +7,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Ai.Grounding;
 
-/// <summary>
-/// DI registration for the grounding feature slice. The engine and
-/// authorization filter are stateless and compiled against frozen catalogs,
-/// so they register as singletons. <see cref="IGroundingService"/> is also a
-/// singleton; it consumes the Metadata V2 graph provider per call through
-/// <see cref="IServiceScopeFactory"/> so each request binds to a fresh scoped
-/// graph reader (and its scoped database dependencies) without
-/// capturing one for the lifetime of the root provider.
-/// </summary>
 internal static class GroundingServiceCollectionExtensions
 {
     public static IServiceCollection AddGroundingServices(

@@ -5,17 +5,8 @@ using Honua.Core.Features.Grounding.Domain;
 
 namespace Honua.Ai.Grounding;
 
-/// <summary>
-/// Exception family for grounding-service failures. Kept separate from
-/// <see cref="Geoprocessing.GeoprocessingValidationException"/> because some
-/// grounding failures (catalog outage, unknown intent) are not validation
-/// errors, even though they surface through the same MCP error channel.
-/// </summary>
 internal sealed class GroundingException : Exception
 {
-    /// <summary>
-    /// Typed error kind for caller-side branching and telemetry.
-    /// </summary>
     public GroundingErrorKind Kind { get; }
 
     public GroundingException(GroundingErrorKind kind, string message)

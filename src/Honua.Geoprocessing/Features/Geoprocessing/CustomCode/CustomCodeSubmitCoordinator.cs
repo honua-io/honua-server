@@ -8,20 +8,6 @@ using Honua.Core.Features.Authorization.Domain;
 
 namespace Honua.Geoprocessing.CustomCode;
 
-/// <summary>
-/// Encapsulates the custom-code-specific submit work the geoprocessing job service
-/// delegates to: validating the <c>customcode.*</c> parameters, clamping the
-/// declared scope to ⊆ the submitter, pinning the owner snapshot, minting the
-/// scoped job-bound callback token, and injecting it (plus the API base URL and the
-/// server-set output prefix) into the durable spec parameters.
-/// </summary>
-/// <remarks>
-/// The token is the Phase-0 <see cref="IScopedJobTokenIssuer"/> credential: bound to
-/// the JobId, scoped to <c>declared_scope ∩ owner</c>, expiring at the job timeout
-/// plus a grace. It is injected through the existing <c>env.*</c> pass-through so
-/// batch backends surface it to the container as <c>HONUA_JOB_TOKEN</c> /
-/// <c>HONUA_BASE_URL</c>.
-/// </remarks>
 internal sealed class CustomCodeSubmitCoordinator(
     IScopedJobTokenIssuer tokenIssuer,
     ICustomCodeCommitSignatureVerifier? signatureVerifier = null)
@@ -35,26 +21,10 @@ internal sealed class CustomCodeSubmitCoordinator(
     private readonly ICustomCodeCommitSignatureVerifier _signatureVerifier =
         signatureVerifier ?? UnverifiableCommitSignatureVerifier.Instance;
 
-    /// <summary>Permission claim type the shared RBAC pipeline reads for scoped grants.</summary>
     private const string PermissionClaimType = "permission";
 
-    /// <summary>Tenant claim type mirrored from the portal-token grammar.</summary>
     private const string TenantClaimType = "tenant_id";
 
-    /// <summary>
-    /// Validates the custom-code submission and, on success, mints + injects the
-    /// scoped token. Mutates <paramref name="specParams"/> in place to set the
-    /// server-side output prefix and the injected <c>env.*</c> values, and returns
-    /// the pinned owner snapshot plus the minted token so the caller can persist the
-    /// snapshot and revoke the token on terminal.
-    /// </summary>
-    /// <param name="jobId">The job the token is bound to.</param>
-    /// <param name="principal">The live submitting principal (the owner reach source).</param>
-    /// <param name="specParams">The durable spec parameters to mutate.</param>
-    /// <param name="options">Custom-code policy/config.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The validated result carrying the owner snapshot and issued token.</returns>
-    /// <exception cref="CustomCodeSubmitRejectedException">Thrown when validation fails.</exception>
     public async Task<CustomCodeSubmitResult> ValidateMintAndInjectAsync(
         string jobId,
         ClaimsPrincipal principal,
@@ -158,13 +128,6 @@ internal sealed class CustomCodeSubmitCoordinator(
         return new CustomCodeSubmitResult(ownerScope, issuance.Token);
     }
 
-    /// <summary>
-    /// Runs the commit-signature verification seam for the signed-only posture and
-    /// throws <see cref="CustomCodeSubmitRejectedException"/> unless the pinned commit
-    /// carries a cryptographically valid signature whose signer is on the configured
-    /// <see cref="CustomCodeOptions.TrustedSignerKeys"/>. Fails closed on an absent,
-    /// invalid, untrusted, or unverifiable signature.
-    /// </summary>
     private async Task EnsureCommitTrustedAsync(
         Uri repoUri,
         string commitSha,
@@ -241,17 +204,6 @@ internal sealed class CustomCodeSubmitCoordinator(
             .ToList();
 }
 
-/// <summary>
-/// The outcome of a successful custom-code submit gate: the pinned owner snapshot to
-/// persist on the job and the minted scoped token to revoke on terminal.
-/// </summary>
-/// <param name="OwnerScope">The owner snapshot pinned at submit time.</param>
-/// <param name="Token">The minted scoped job-bound callback token (also injected as env.HONUA_JOB_TOKEN).</param>
 internal sealed record CustomCodeSubmitResult(CustomCodeOwnerScope OwnerScope, string Token);
 
-/// <summary>
-/// Raised when a custom-code submission fails validation or scope-clamp. The submit
-/// adapter maps this to the same validation error channel ordinary plan-validation
-/// failures use.
-/// </summary>
 internal sealed class CustomCodeSubmitRejectedException(string message) : Exception(message);

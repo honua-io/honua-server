@@ -7,11 +7,7 @@ using Honua.Core.Features.Geoprocessing.Domain;
 
 namespace Honua.Geoprocessing.Diagnostics;
 
-/// <summary>
-/// Secret redaction for the GP evidence attachment. Prose also loses absolute filesystem
-/// paths. Identity fields are not path-scrubbed: a worker image or repository contains
-/// slashes and must survive unless it actually carries a credential.
-/// </summary>
+// Identity fields are not path-scrubbed, because a repository or image reference contains slashes and must survive unless it carries a credential.
 internal static partial class GpDiagnosticRedactor
 {
     internal const string Redacted = "[REDACTED]";
@@ -43,10 +39,7 @@ internal static partial class GpDiagnosticRedactor
         }
     }
 
-    /// <summary>
-    /// Returns the identity unchanged, or <see cref="Redacted"/> when it contains a credential.
-    /// A mangled image reference or repository is not useful and must not keep the secret.
-    /// </summary>
+    // An identity that contains a credential is dropped whole, because a mangled reference would still keep the secret.
     internal static string? RedactIdentity(string? value, int maxLength = 512)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -101,11 +94,7 @@ internal static partial class GpDiagnosticRedactor
         return prefix + match.Groups["hex"].Value.ToLowerInvariant();
     }
 
-    /// <summary>
-    /// Redacts credentials inside input bytes that an authorizer chose to include.
-    /// Absolute paths are kept: they can be the dataset. Non-UTF-8 bytes are returned
-    /// unchanged only when a Latin-1 scan finds no credential.
-    /// </summary>
+    // Non-UTF-8 bytes are left unchanged only when a Latin-1 scan finds no credential, and absolute paths are kept because they can be the dataset.
     internal static (byte[] Bytes, bool RedactionApplied) RedactContent(byte[] content)
     {
         ArgumentNullException.ThrowIfNull(content);

@@ -6,12 +6,6 @@ using Honua.Core.Features.Geoprocessing.Domain;
 
 namespace Honua.Geoprocessing;
 
-/// <summary>
-/// Canonical implementation of <see cref="IProcessConditionalInputProbe"/> backed by
-/// <see cref="ProcessPlanValidator"/> — the same validator the geoprocessing submit path
-/// runs — so translation/migration tooling and submit-time execution agree on which input
-/// combinations are admissible.
-/// </summary>
 internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputProbe
 {
     private const string MissingRequiredParameterCode = "MISSING_REQUIRED_PARAMETER";
@@ -26,18 +20,8 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
 
     private const string AsyncExecutionUnsupportedCode = "ASYNC_EXECUTION_UNSUPPORTED";
 
-    /// <summary>Upper bound on probed value assignments, keeping the cross-product cheap.</summary>
     private const int MaxProbeCombinations = 32;
 
-    /// <summary>
-    /// Structurally different, individually legal-looking values used to tell a parameter the
-    /// validator constrains to a finite token set it does not declare (an undeclared
-    /// discriminator such as <c>algorithm</c> or <c>op</c>) from one it merely constrains by
-    /// format. An undeclared token domain rejects all three as outside its allowed set; a
-    /// format rule either accepts one of them (a GUID rule accepts the second, an identifier
-    /// rule the first, a numeric-list rule the third) or rejects them for a reason other than
-    /// set membership, and neither is reported — see <see cref="IsRejectedAsForeignToken"/>.
-    /// </summary>
     private static readonly string[] DomainProbeValues =
     [
         "honuaProbeSentinel",
@@ -47,16 +31,12 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
 
     private readonly IProcessCatalog _catalog;
 
-    /// <summary>
-    /// Initializes the probe with the canonical process catalog.
-    /// </summary>
     public ProcessConditionalInputProbe(IProcessCatalog catalog)
     {
         ArgumentNullException.ThrowIfNull(catalog);
         _catalog = catalog;
     }
 
-    /// <inheritdoc />
     public IReadOnlyList<ProcessAdmissibilityViolation> FindAdmissibilityViolations(
         string processId,
         IReadOnlyCollection<string> suppliedParameterNames)
@@ -142,7 +122,6 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
         return results;
     }
 
-    /// <inheritdoc />
     public IReadOnlyList<string> FindUnverifiableConditionalParameters(
         string processId,
         IReadOnlyCollection<string> suppliedParameterNames)
@@ -202,7 +181,6 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
         return [];
     }
 
-    /// <inheritdoc />
     public IReadOnlyList<ProcessBranchRequirement> FindConditionalBranchRequirements(
         string processId,
         IReadOnlyCollection<string> suppliedParameterNames)
@@ -279,22 +257,11 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
         ];
     }
 
-    /// <summary>
-    /// Renders a probed assignment as the branch label carried on a
-    /// <see cref="ProcessBranchRequirement"/>.
-    /// </summary>
     private static string DescribeBranch(IReadOnlyList<(string Name, string Value)> assignment)
         => assignment.Count == 0
             ? "(no discriminator)"
             : string.Join(", ", assignment.Select(pair => $"{pair.Name}={pair.Value}"));
 
-    /// <summary>
-    /// True when every branch a caller could select is reachable by enumerating declared value
-    /// domains, so per-branch answers are exact rather than pessimistic. False when a supplied
-    /// parameter carries an undeclared token domain, or when its declared domain had to be
-    /// dropped to stay inside <see cref="MaxProbeCombinations"/> — a dropped domain is pinned
-    /// to one value, which fabricates a single branch out of a set the probe did not visit.
-    /// </summary>
     private bool IsBranchSpaceEnumerable(
         ProcessDefinition definition,
         HashSet<string> supplied,
@@ -302,15 +269,6 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
         => !HasUnenumerableDiscriminator(definition, supplied, baseInputs)
             && !VariableDomains(definition, supplied).Truncated;
 
-    /// <summary>
-    /// Returns true when some supplied parameter's value domain is a finite token set the
-    /// canonical validator enforces but the catalog does not declare, so branch enumeration
-    /// is impossible. Declared <c>AllowedValues</c> and boolean flags are enumerated exactly
-    /// and never qualify; only free <c>Text</c> carries the undeclared token domains the
-    /// per-process rules branch on (<c>algorithm</c>, <c>op</c>). Numeric parameters are
-    /// range-constrained rather than token-constrained, and a numeric discriminator would
-    /// have to declare <c>AllowedValues</c> to be enumerable at all.
-    /// </summary>
     private bool HasUnenumerableDiscriminator(
         ProcessDefinition definition,
         HashSet<string> supplied,
@@ -329,33 +287,7 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
             && DomainProbeValues.All(probeValue =>
                 IsRejectedAsForeignToken(definition.ProcessId, baseInputs, parameter.Name, probeValue));
 
-    /// <summary>
-    /// Returns true when <paramref name="violation"/> is DEMONSTRATED to depend on the value the
-    /// probe fabricated for a discriminator, by re-validating with that discriminator moved to a
-    /// different value and observing the violation disappear.
-    /// </summary>
-    /// <remarks>
-    /// A requirement that survives every substitution holds in whatever branch the caller
-    /// selects, so it is a real reason the mapping cannot execute and must be reported. Only a
-    /// requirement that some other value removes is an artefact of the branch this probe
-    /// happened to pin — that is the case
-    /// <see cref="FindUnverifiableConditionalParameters"/> answers honestly as
-    /// branch-unverifiable.
-    /// <para>
-    /// The substituted values are the same sentinels the discriminator test uses. They are
-    /// rejected as foreign tokens by definition — that is what made the domain unenumerable —
-    /// but the canonical validator still evaluates every other rule, so a conditional
-    /// requirement keyed on the DEFAULT value is absent from that run while an unconditional one
-    /// persists. That difference is the whole signal, and it does not require guessing a legal
-    /// value from a domain the catalog never declared.
-    /// </para>
-    /// <para>
-    /// Replaces a coarser rule that discounted any violation on a non-<c>Required</c> parameter.
-    /// A member of an exactly-one-of source group is not declared <c>Required</c> either, so
-    /// that rule silently swallowed <c>surface.slope</c>'s unconditional missing-source failure
-    /// and certified a mapping that can never run (honua-server#2145 review).
-    /// </para>
-    /// </remarks>
+    // A requirement that survives every substitution is real, and one that disappears is an artefact of the probe's sentinel.
     private bool VariesWithFabricatedBranch(
         ProcessDefinition definition,
         Dictionary<string, string> baseInputs,
@@ -382,25 +314,7 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
         return false;
     }
 
-    /// <summary>
-    /// Returns true when some SUPPLIED parameter already satisfies whatever requirement
-    /// <paramref name="candidate"/> participates in, so no branch can be waiting on it.
-    /// </summary>
-    /// <remarks>
-    /// Detected by withdrawal rather than by declaration, because the catalog models no groups:
-    /// if removing a supplied parameter makes the canonical validator start demanding the
-    /// candidate, the two are alternatives for the same requirement and the supplied one covers
-    /// it. That is exactly an exactly-one-of source group — <c>surface.slope</c>'s
-    /// <c>source</c>/<c>layerId</c>/<c>rasterId</c> — and it holds regardless of which branch a
-    /// discriminator selects.
-    /// <para>
-    /// The inverse is deliberately NOT inferred. A candidate no withdrawal implicates stays in
-    /// the pessimistic set, because probing an unenumerable discriminator with foreign sentinels
-    /// cannot reach the branches a caller can: <c>transform.computed-field</c>'s <c>fields</c> is
-    /// required under some <c>op</c> the probe can never name, and its silence under the
-    /// sentinels is absence of evidence, not evidence of absence.
-    /// </para>
-    /// </remarks>
+    // Silence under a sentinel the caller cannot send is not evidence that the parameter is optional.
     private bool IsCoveredByASuppliedParameter(
         ProcessDefinition definition,
         HashSet<string> supplied,
@@ -440,14 +354,9 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
         return false;
     }
 
-    /// <summary>Rule identity for set comparison across probe runs: code plus field path.</summary>
     private static HashSet<string> FailureKeys(IEnumerable<GeoprocessingValidationFailure> failures)
         => [.. failures.Select(failure => $"{failure.Code}|{failure.FieldPath}")];
 
-    /// <summary>
-    /// A syntactically acceptable value for a parameter, matching what
-    /// <see cref="BuildProbeInputs"/> would have assigned it.
-    /// </summary>
     private static string ProbeValueFor(ProcessDefinition definition, string parameterName)
     {
         var declaredDefault = definition.Parameters
@@ -457,21 +366,13 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
         return string.IsNullOrWhiteSpace(declaredDefault) ? "1" : declaredDefault;
     }
 
-    /// <summary>
-    /// Identity for comparing a violation across probe runs: the same rule on the same field.
-    /// The message is deliberately not compared — several rules interpolate the offending value,
-    /// which changes with every substitution.
-    /// </summary>
+    // The message is not part of the identity because rules interpolate the offending value.
     private static bool IsSameViolation(
         GeoprocessingValidationFailure candidate,
         GeoprocessingValidationFailure violation)
         => string.Equals(candidate.Code, violation.Code, StringComparison.Ordinal)
             && string.Equals(candidate.FieldPath, violation.FieldPath, StringComparison.Ordinal);
 
-    /// <summary>
-    /// The supplied parameters whose value the probe had to fabricate because their domain is
-    /// an undeclared token set. Empty when the branch space is enumerable.
-    /// </summary>
     private List<string> FabricatedDiscriminators(
         ProcessDefinition definition,
         HashSet<string> supplied,
@@ -480,18 +381,6 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
             .Where(parameter => IsUnenumerableDiscriminator(definition, supplied, baseInputs, parameter))
             .Select(parameter => parameter.Name)];
 
-    /// <summary>
-    /// Substitutes <paramref name="probeValue"/> for <paramref name="parameterName"/> and reports
-    /// whether the canonical validator rejects it as outside a closed token set.
-    /// <para>
-    /// Only a token-set rejection counts. A structured-text parameter whose FORMAT the validator
-    /// checks — <c>raster.map-algebra</c>'s <c>expression</c> rejects everything that is not an
-    /// allow-listed band expression — also refuses all three sentinels, but it is not a
-    /// discriminator: no per-process rule branches on its value, so treating it as one would
-    /// return every optional omission as unverifiable and downgrade a mapping the submit path
-    /// accepts.
-    /// </para>
-    /// </summary>
     private bool IsRejectedAsForeignToken(
         string processId,
         Dictionary<string, string> baseInputs,
@@ -508,12 +397,6 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
             && ProcessPlanValidator.IsClosedValueSetRejection(failure));
     }
 
-    /// <summary>
-    /// Builds the probe's base input set: presence is what the conditional rules test, so every
-    /// supplied parameter gets a non-blank placeholder. Declared defaults are preferred where
-    /// available so any value-shaped check sees a legal value; value-format violations are
-    /// filtered out by the callers regardless, because callers supply names, not values.
-    /// </summary>
     private static Dictionary<string, string> BuildProbeInputs(
         ProcessDefinition definition,
         IReadOnlyCollection<string> suppliedParameterNames)
@@ -545,12 +428,6 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
         return inputs;
     }
 
-    /// <summary>
-    /// Returns the supplied parameters whose value domain the catalog enumerates, keeping the
-    /// cross-product bounded; parameters beyond the cap keep their base value and set
-    /// <c>Truncated</c>, because a pinned domain fabricates one branch out of a set that was
-    /// never visited and can no longer support an exact per-branch answer.
-    /// </summary>
     private static (List<(string Name, IReadOnlyList<string> Values)> Variable, bool Truncated) VariableDomains(
         ProcessDefinition definition,
         HashSet<string> supplied)
@@ -584,10 +461,6 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
         return (variable, truncated);
     }
 
-    /// <summary>
-    /// Validates every admissible assignment of the mapped parameters that have a finite
-    /// value domain and returns only the violations common to all of them.
-    /// </summary>
     private List<GeoprocessingValidationFailure> FindUniversalViolations(
         ProcessDefinition definition,
         Dictionary<string, string> baseInputs,
@@ -620,10 +493,6 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
         return universal ?? [];
     }
 
-    /// <summary>
-    /// Enumerates the cartesian product of the variable parameters' domains, yielding a
-    /// single empty assignment when nothing varies.
-    /// </summary>
     private static IEnumerable<IReadOnlyList<(string Name, string Value)>> Assignments(
         List<(string Name, IReadOnlyList<string> Values)> variable)
     {
@@ -639,10 +508,6 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
         return product;
     }
 
-    /// <summary>
-    /// Returns the finite set of values a parameter can take, or <c>null</c> when its domain
-    /// is open (so no enumeration is possible).
-    /// </summary>
     private static IReadOnlyList<string>? DomainOf(ProcessParameterSpec parameter)
     {
         if (parameter.AllowedValues is { Count: > 0 } allowed)
@@ -655,22 +520,6 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
             : null;
     }
 
-    /// <summary>
-    /// Returns true when a non-missing violation is caused by the set of parameters that are
-    /// present rather than by a value this probe fabricated. Presence shows up in two
-    /// directions and both are real submit-time rejections:
-    /// <list type="bullet">
-    /// <item>a conflict between supplied inputs — withdrawing one clears it (the
-    /// mutually-exclusive <c>connectionName</c>/<c>connectionId</c> pair);</item>
-    /// <item>an unsatisfied branch requirement — supplying one more clears it. The canonical
-    /// validator raises several of these as <c>INVALID_PARAMETER_VALUE</c> rather than
-    /// <c>MISSING_REQUIRED_PARAMETER</c>: <c>conversion.rasterize</c>'s "exactly one of
-    /// 'burnValue' or 'attribute'" and its cellSize-or-width+height grid rule, and
-    /// <c>raster.interpolate-idw</c>'s width/height pair. Considering only withdrawal would
-    /// discard those and certify a mapping the submit path rejects.</item>
-    /// </list>
-    /// A complaint about a substituted value survives both tests.
-    /// </summary>
     private bool IsPresenceDependent(
         ProcessDefinition definition,
         Dictionary<string, string> inputs,
@@ -678,10 +527,6 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
         => IsClearedByWithdrawal(definition.ProcessId, inputs, violation)
             || IsClearedByAddition(definition, inputs, violation);
 
-    /// <summary>
-    /// Withdraws each other supplied parameter in turn: if the violation disappears, the
-    /// supplied inputs conflict. If it survives every withdrawal, this test proves nothing.
-    /// </summary>
     private bool IsClearedByWithdrawal(
         string processId,
         Dictionary<string, string> inputs,
@@ -720,12 +565,6 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
         return false;
     }
 
-    /// <summary>
-    /// Supplies each unmapped parameter in turn: if that leaves the violation's field wholly
-    /// clean, the failure was caused by the parameter's ABSENCE — an unsatisfied branch
-    /// requirement the mapping can never satisfy, because an unmapped parameter is never
-    /// supplied at submit time.
-    /// </summary>
     private bool IsClearedByAddition(
         ProcessDefinition definition,
         Dictionary<string, string> inputs,
@@ -769,11 +608,6 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
         return false;
     }
 
-    /// <summary>
-    /// Value used when the probe supplies a parameter the mapping omits: the declared default,
-    /// else the first declared allowed value, else a non-blank placeholder that satisfies every
-    /// scalar type check.
-    /// </summary>
     private static string ProbeValueFor(ProcessParameterSpec parameter)
     {
         if (!string.IsNullOrWhiteSpace(parameter.DefaultValue))
@@ -823,9 +657,6 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
         return violations;
     }
 
-    /// <summary>
-    /// Extracts the parameter name from a <c>steps[id].inputs.name</c> field path.
-    /// </summary>
     private static string? ParameterNameOf(string? fieldPath)
     {
         if (string.IsNullOrEmpty(fieldPath))

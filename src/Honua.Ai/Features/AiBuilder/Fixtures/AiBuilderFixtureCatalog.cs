@@ -6,19 +6,6 @@ using System.Text.Json;
 
 namespace Honua.Ai.AiBuilder.Fixtures;
 
-/// <summary>
-/// Loads the deterministic AI-builder contract fixtures embedded into Honua.Server
-/// from <c>tests/fixtures/ai-builder/*.json</c>. Each fixture pairs a prompt with
-/// a draft, plan, and apply envelope; the catalog exposes the parsed scenarios so
-/// downstream services (NL planner, intent-to-spec planner, dashboard planner) can
-/// replay them without invoking a model.
-/// </summary>
-/// <remarks>
-/// Parsing is performed once at construction using <see cref="JsonDocument"/>; the
-/// resulting <see cref="JsonElement"/> values are cloned so callers can walk them
-/// independently. Everything here is AOT-safe because we never deserialize the
-/// scenarios into a typed model — callers extract the precise sub-trees they need.
-/// </remarks>
 internal sealed class AiBuilderFixtureCatalog
 {
     private const string SpatialQueryResource = "Honua.Ai.AiBuilder.Fixtures.spatial-query-contract-v1.json";
@@ -34,18 +21,8 @@ internal sealed class AiBuilderFixtureCatalog
         _scenarios = scenarios;
     }
 
-    /// <summary>
-    /// All loaded scenarios across both contract fixtures.
-    /// </summary>
     public IReadOnlyList<AiBuilderScenario> Scenarios => _scenarios;
 
-    /// <summary>
-    /// Finds the first scenario whose prompt matches the supplied utterance
-    /// after normalization (trim + lowercase). Optional scenario selectors let
-    /// fixture-replay callers reach duplicate-prompt cases such as cache hits.
-    /// Returns null when no scenario matches — callers should treat that as
-    /// "no fixture for this prompt" rather than an error.
-    /// </summary>
     public AiBuilderScenario? FindByPrompt(
         string? prompt,
         string? scenarioId = null,
@@ -120,12 +97,6 @@ internal enum AiBuilderFixtureKind
     OperationsDashboard
 }
 
-/// <summary>
-/// A single fixture scenario. <see cref="Root"/> is the full scenario JSON,
-/// cloned from the parsed document so callers can read draft/plan/apply
-/// envelopes without worrying about the source <see cref="JsonDocument"/>
-/// lifetime.
-/// </summary>
 internal sealed record AiBuilderScenario(
     AiBuilderFixtureKind Kind,
     string ContractVersion,

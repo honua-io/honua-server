@@ -6,7 +6,6 @@ using Honua.Core.Features.ControlPlane.Domain;
 
 namespace Honua.Geoprocessing.CustomCode;
 
-/// <summary>Cumulative storage ceilings, including journals and failed reservations across retries.</summary>
 internal static class CustomCodeArtifactQuota
 {
     internal const long MaximumArtifactBytes = 64L * 1024 * 1024;
@@ -15,7 +14,6 @@ internal static class CustomCodeArtifactQuota
     internal const int MaximumArtifacts = 32;
 }
 
-/// <summary>Retains charged broker receipts and refuses retries that cannot publish their mandatory journal.</summary>
 internal sealed class CustomCodeArtifactRetryGuard : IExecutionJobRetryGuard
 {
     public ExecutionJobRetryDecision? EvaluateRetry(ExecutionJobRecord job)

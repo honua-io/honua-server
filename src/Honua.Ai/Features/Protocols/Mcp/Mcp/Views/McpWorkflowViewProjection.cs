@@ -8,23 +8,7 @@ using Honua.Ai.Protocols.Mcp.Models;
 
 namespace Honua.Ai.Protocols.Mcp.Views;
 
-/// <summary>
-/// One member of a projected workflow view: the exact canonical descriptor the
-/// live catalog serves, plus the stage it was selected into and its measured
-/// canonical size/digest.
-/// </summary>
-/// <param name="ToolName">The advertised tool name.</param>
-/// <param name="StageId">The stage that selected this member.</param>
-/// <param name="StageIndex">The stage's ordinal position in the view.</param>
-/// <param name="IsDynamic">
-/// Whether the member came from a runtime <see cref="Tools.IMcpToolSource"/>
-/// rather than the static catalog. Dynamic members are ordered last so a
-/// mid-conversation publication appends to the tools array instead of re-sorting
-/// it, which would invalidate a host's prompt cache.
-/// </param>
-/// <param name="Descriptor">The verbatim live descriptor — never truncated.</param>
-/// <param name="CanonicalBytes">UTF-8 byte length of the canonical descriptor JSON.</param>
-/// <param name="Digest">SHA-256 digest of the canonical descriptor JSON.</param>
+// Dynamic tools are ordered last so a publication appends to the tools array instead of re-sorting it and invalidating a prompt cache.
 internal sealed record McpWorkflowViewMember(
     string ToolName,
     string StageId,
@@ -34,56 +18,29 @@ internal sealed record McpWorkflowViewMember(
     int CanonicalBytes,
     string Digest);
 
-/// <summary>
-/// A workflow view resolved against the canonical live catalog: the ordered
-/// members, the measured budget numbers, and the deterministic revision,
-/// membership, and descriptor digests.
-/// </summary>
 internal sealed record McpWorkflowViewProjection
 {
-    /// <summary>The server-authored definition this projection resolved.</summary>
     public required McpWorkflowViewDefinition Definition { get; init; }
 
-    /// <summary>The selected members, in wire order.</summary>
     public required IReadOnlyList<McpWorkflowViewMember> Members { get; init; }
 
-    /// <summary>
-    /// Stage ids that selected no live member. A stage is empty when the host did
-    /// not compose that capability (for example a server with no renderer), which
-    /// is honest absence, not truncation.
-    /// </summary>
     public required IReadOnlyList<string> EmptyStageIds { get; init; }
 
-    /// <summary>UTF-8 byte length of the canonical serialized descriptor array.</summary>
     public required int AggregateCanonicalBytes { get; init; }
 
-    /// <summary>Largest single-descriptor canonical byte length in the view.</summary>
     public required int LargestDescriptorBytes { get; init; }
 
-    /// <summary>
-    /// SHA-256 of the canonical definition text — changes whenever the stage set,
-    /// stage order, or membership rules change.
-    /// </summary>
     public required string RevisionDigest { get; init; }
 
-    /// <summary>SHA-256 of the ordered member-name list.</summary>
     public required string MembershipDigest { get; init; }
 
-    /// <summary>SHA-256 of the canonical serialized descriptor array actually served.</summary>
     public required string DescriptorDigest { get; init; }
 
-    /// <summary>The member descriptors, in wire order.</summary>
     public IReadOnlyList<McpToolDescriptor> Descriptors =>
         Members.Select(static m => m.Descriptor).ToArray();
 
-    /// <summary>Estimated model tokens for the aggregate descriptor payload.</summary>
     public int EstimatedTokens => McpWorkflowViewBudget.EstimateTokens(AggregateCanonicalBytes);
 
-    /// <summary>
-    /// Budget violations, one human-readable message each. Empty when the view is
-    /// within every ceiling. The runtime fails closed rather than returning an
-    /// unbounded view, while the test gate catches static-catalog regressions.
-    /// </summary>
     public IReadOnlyList<string> BudgetViolations
     {
         get
@@ -116,26 +73,8 @@ internal sealed record McpWorkflowViewProjection
     }
 }
 
-/// <summary>
-/// Derives a <see cref="McpWorkflowViewProjection"/> from a server-authored
-/// definition and the canonical live catalog (honua-server#3428).
-/// </summary>
-/// <remarks>
-/// This is the whole derivation seam: there is no hand-maintained membership list
-/// and no copied schema. The projector reads the live descriptors, applies the
-/// definition's stage rules, orders the result deterministically, and measures it.
-/// </remarks>
 internal static class McpWorkflowViewProjector
 {
-    /// <summary>
-    /// Projects <paramref name="definition"/> over the live catalog entries.
-    /// </summary>
-    /// <param name="definition">The server-authored view.</param>
-    /// <param name="catalog">
-    /// The canonical live catalog: each entry is a descriptor exactly as
-    /// <c>tools/list</c> would serve it, flagged with whether it came from a
-    /// runtime tool source.
-    /// </param>
     public static McpWorkflowViewProjection Project(
         McpWorkflowViewDefinition definition,
         IEnumerable<(McpToolDescriptor Descriptor, bool IsDynamic)> catalog)
@@ -209,14 +148,9 @@ internal static class McpWorkflowViewProjector
         };
     }
 
-    /// <summary>
-    /// Canonical serialization of a single descriptor — the exact wire form,
-    /// schemas included and never truncated.
-    /// </summary>
     private static string SerializeDescriptor(McpToolDescriptor descriptor) =>
         JsonSerializer.Serialize(descriptor, McpJsonContext.Default.McpToolDescriptor);
 
-    /// <summary>Lowercase hex SHA-256 digest, prefixed with the algorithm.</summary>
     private static string Digest(string value) =>
         "sha256:" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
 }

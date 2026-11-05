@@ -6,21 +6,10 @@ using NetTopologySuite.Features;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// <c>overlay.erase</c> executor (#2139, #2206). Layer-aware erase: subtracts the
-/// union of the <c>erase</c> layer from every <c>input</c> feature's geometry,
-/// keeping the input attributes verbatim. This is the layer-level Erase the
-/// vector overlay/proximity pack requires and the parity counterpart to Esri's
-/// <c>Erase_analysis</c>. Input features fully covered by the erase layer are
-/// dropped. Both layers are supplied inline as
-/// <c>data:application/geo+json;base64</c> data URIs. Pure managed
-/// NetTopologySuite overlay — no GDAL/GEOS native dependency.
-/// </summary>
 internal sealed class OverlayEraseExecutor(
     IOptionsMonitor<GeoprocessingExecutorOptions> options)
     : FeatureCollectionTransformExecutor(options)
 {
-    /// <summary>The canonical process id this executor handles.</summary>
     internal const string HandledProcessId = "overlay.erase";
 
     protected override string ProcessId => HandledProcessId;

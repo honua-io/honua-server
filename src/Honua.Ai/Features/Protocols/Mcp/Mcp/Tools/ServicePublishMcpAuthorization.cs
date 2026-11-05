@@ -10,10 +10,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Ai.Protocols.Mcp.Tools;
 
-/// <summary>
-/// REST-equivalent authorization and approval boundary shared by every
-/// hand-authored MCP projection of <c>service.publish</c>.
-/// </summary>
 internal static class ServicePublishMcpAuthorization
 {
     internal const OperationSideEffectClass SideEffectClass = OperationSideEffectClass.CreatesMetadata;

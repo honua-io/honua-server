@@ -3,9 +3,6 @@
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// Overflow-safe predicates for Euclidean distances represented by finite coordinates.
-/// </summary>
 internal static class ManagedDistance
 {
     public static bool IsWithin(double dx, double dy, double distance)

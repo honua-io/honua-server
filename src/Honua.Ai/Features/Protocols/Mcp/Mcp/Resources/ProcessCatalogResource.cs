@@ -9,11 +9,6 @@ using Honua.Ai.Protocols.Mcp.Models;
 
 namespace Honua.Ai.Protocols.Mcp.Resources;
 
-/// <summary>
-/// MCP resource for <c>honua://catalog/processes</c>. Projects the canonical
-/// built-in process catalog into the MCP inspection contract used by app
-/// builders and operators.
-/// </summary>
 internal sealed class ProcessCatalogResource : IMcpResource
 {
     public const string Uri = McpResourceUris.CatalogProcesses;

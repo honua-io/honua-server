@@ -5,7 +5,6 @@ using Honua.Ai.StudioAiProxy.Domain;
 
 namespace Honua.Ai.StudioAiProxy;
 
-/// <summary>Validates the provider-neutral event grammar before terminal success is released.</summary>
 internal sealed class StudioAiStreamGrammarValidator
 {
     internal const string InvalidStreamCode = "studio_ai/invalid_provider_stream";

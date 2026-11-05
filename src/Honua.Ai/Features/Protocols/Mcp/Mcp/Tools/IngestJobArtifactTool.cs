@@ -14,12 +14,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Ai.Protocols.Mcp.Tools;
 
-/// <summary>
-/// Imports a completed built-in job artifact by canonical reference.
-/// Inline prompt bytes, browser selections, local-run receipts, URIs, and
-/// filesystem paths are not sources. <c>honua_publish_result</c> still refuses
-/// an artifact that has no materialized table.
-/// </summary>
 internal sealed class IngestJobArtifactTool(ILogger<IngestJobArtifactTool> logger) : IMcpTool
 {
     public const string ToolName = "honua_ingest_job_artifact";
