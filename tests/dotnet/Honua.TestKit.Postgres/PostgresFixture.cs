@@ -100,7 +100,9 @@ public sealed class PostgresFixture : IAsyncLifetime
                         SharedState.SharedContainer = containerBuilder.Build();
                         SharedState.BoundedResources = _boundedResources;
                         await SharedState.SharedContainer.StartAsync();
-                        SharedState.SharedConnectionString = SharedState.SharedContainer.GetConnectionString();
+                        var publishedConnectionString = SharedState.SharedContainer.GetConnectionString();
+                        SharedState.SharedConnectionString = publishedConnectionString;
+                        await PostgresEndpointProbe.WaitUntilAcceptingAsync(publishedConnectionString).ConfigureAwait(false);
                     }
                     else
                     {
@@ -109,7 +111,6 @@ public sealed class PostgresFixture : IAsyncLifetime
 
                     var connectionString = SharedState.SharedConnectionString
                         ?? throw new InvalidOperationException("Postgres fixture has no connection string.");
-                    await PostgresEndpointProbe.WaitUntilAcceptingAsync(connectionString).ConfigureAwait(false);
                     SharedState.SharedDataSource = NpgsqlDataSource.Create(connectionString);
 
                     await ExecuteWithInitializationRetryAsync(async () =>
