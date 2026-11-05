@@ -380,6 +380,7 @@ public static partial class GeoParquetFeatureWriter
         return epoch;
     }
 
+    // SerializeGeometryTypes uses Utf8JsonWriter because the shipped server sets JsonSerializerIsReflectionEnabledByDefault false.
     public static string SerializeGeometryTypes(IEnumerable<string> geometryTypes)
     {
         ArgumentNullException.ThrowIfNull(geometryTypes);
@@ -515,6 +516,7 @@ public static partial class GeoParquetFeatureWriter
         return baseType is null ? null : returnZ ? $"{baseType} Z" : baseType;
     }
 
+    // Keep this schema-type switch in sync with the typed array builders that select a builder for the same SQL type strings.
     private static IArrowType MapToArrowType(MetadataV2Field field)
     {
         return ResolveSqlType(field).ToLowerInvariant() switch
@@ -884,6 +886,7 @@ public static partial class GeoParquetFeatureWriter
         return baseType is null ? null : hasZ ? $"{baseType} Z" : baseType;
     }
 
+    // Keep this array-builder switch in sync with the schema-type mapper that declares the Arrow type for the same SQL type strings.
     private static IArrowArray BuildAttributeArray(
         ImmutableArray<Feature> features,
         string fieldName,

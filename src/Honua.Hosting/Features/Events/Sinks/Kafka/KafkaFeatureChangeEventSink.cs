@@ -98,6 +98,7 @@ internal sealed partial class KafkaFeatureChangeEventSink : IFeatureChangeEventS
         }
     }
 
+    // Mutations of the same feature share a partition key so order is preserved.
     private static string BuildKey(FeatureChangeEvent featureEvent)
         => string.Create(
             CultureInfo.InvariantCulture,

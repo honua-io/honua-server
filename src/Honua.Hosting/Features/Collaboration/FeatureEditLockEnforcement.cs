@@ -21,6 +21,7 @@ public static class FeatureEditLockEnforcement
 
     public const FeatureEditConcurrencyPolicy EnforcedPolicy = FeatureEditConcurrencyPolicy.HonorActiveLock;
 
+    // Protocol-specific graph service ids differ, so a lease is keyed on the shared routed service name and binds a competing write from another protocol.
     public static string? ResolveServiceName(
         MetadataV2Service? service,
         MetadataV2Publication? publication)

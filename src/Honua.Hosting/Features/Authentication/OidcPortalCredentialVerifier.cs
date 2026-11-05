@@ -30,6 +30,7 @@ internal sealed class OidcConfigurationManagerCache
     }
 }
 
+// The compatibility password parameter carries an existing OIDC token, so the server does not use an IdP resource-owner password grant.
 internal sealed class OidcPortalCredentialVerifier : IPortalCredentialVerifier
 {
     private const string TenantIdClaimType = "tenant_id";

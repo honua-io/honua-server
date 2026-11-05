@@ -21,6 +21,7 @@ internal sealed class OutboxMetrics
     public OutboxMetrics(IMeterFactory meterFactory)
     {
         ArgumentNullException.ThrowIfNull(meterFactory);
+        // Instruments use the shared Honua meter because a differently named meter needs exporter registration.
         _meter = meterFactory.Create(HonuaTelemetry.ServiceName, HonuaTelemetry.ServiceVersion);
 
         // `unit: null` on the instruments below is deliberate, not an oversight. The OpenTelemetry

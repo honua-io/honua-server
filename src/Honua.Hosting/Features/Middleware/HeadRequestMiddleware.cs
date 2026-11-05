@@ -10,6 +10,7 @@ using Microsoft.Net.Http.Headers;
 
 namespace Honua.Infrastructure.Middleware;
 
+// Response metadata is not a reliable stream marker: some transports negotiate several representations on one route, and the MCP GET stream owns its response contract outside MVC and OpenAPI metadata.
 public sealed class LongLivedStreamEndpointMetadata
 {
     private LongLivedStreamEndpointMetadata()

@@ -20,6 +20,7 @@ public static class AuditInstrumentationServiceCollectionExtensions
         return services;
     }
 
+    // Call this after the provider has registered IFeatureWriter, or later writes miss this audit decorator.
     public static IServiceCollection AddAuditingFeatureWriter(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);

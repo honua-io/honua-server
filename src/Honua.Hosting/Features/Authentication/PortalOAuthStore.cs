@@ -466,6 +466,7 @@ internal sealed class PortalOAuthAuthorizationCode : PortalOAuthRecord
 
 internal sealed class PortalOAuthRefreshToken : PortalOAuthRecord
 {
+    // Null binding mode keeps old refresh records on the referer-bound path and must not upgrade them to bearer.
     public PortalTokenClientType? ClientType { get; init; }
 
     public string? BindingValue { get; init; }
@@ -494,12 +495,13 @@ internal sealed class PortalOAuthPrincipal
 
     public bool? RolesRequireClaimsMappingEntitlement { get; init; }
 
+    // Null fallback roles mean unknown and stay fail-closed; an empty array is a known empty fallback.
     public string[]? RolesWithoutClaimsMapping { get; init; }
 
     // A missing claims-mapping flag means unknown provenance and fails closed, so a cached code cannot carry a mapping-derived tenant through a refresh.
     public bool? TenantRequiresClaimsMappingEntitlement { get; init; }
 
-    // A present source clamps the minted token to that credential's expiry; a null source means the cached principal has no binding.
+    // A present source clamps the minted token to that credential's expiry. Null identifies cached principals written before source provenance was recorded.
     public PortalCredentialSource? Source { get; init; }
 
     public static PortalOAuthPrincipal From(PortalCredentialPrincipal principal)

@@ -5,6 +5,7 @@ namespace Honua.Infrastructure.Events;
 
 internal interface INatsEventProducer : IAsyncDisposable
 {
+    // A non-empty message id is deduplicated only inside the JetStream window; an empty id disables dedup.
     Task PublishAsync(
         string subject,
         string messageId,

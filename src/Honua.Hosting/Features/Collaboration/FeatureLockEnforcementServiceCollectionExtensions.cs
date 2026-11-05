@@ -12,6 +12,7 @@ namespace Honua.Infrastructure.Collaboration;
 
 public static class FeatureLockEnforcementServiceCollectionExtensions
 {
+    // Call this after the provider has registered IFeatureWriter, or the decorator is not installed and lock enforcement is omitted.
     public static IServiceCollection AddFeatureLockEnforcingFeatureWriter(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);

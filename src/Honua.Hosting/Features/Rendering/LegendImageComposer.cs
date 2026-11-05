@@ -139,6 +139,7 @@ internal static class LegendImageComposer
         }
         catch (Exception ex) when (ex is InvalidOperationException or TypeInitializationException or DllNotFoundException)
         {
+            // Missing Lambda font support drops the label and still renders the swatch, which is why this failure returns no font.
             return null;
         }
     }

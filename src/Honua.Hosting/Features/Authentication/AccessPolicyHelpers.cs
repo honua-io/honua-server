@@ -216,7 +216,7 @@ internal static class AccessPolicyHelpers
             requestCache: context.Items);
     }
 
-    // HTTP and geoprocessing submit share this decision, and a caller with no request tenant must pass one or every tenant-scoped resource is denied.
+    // HTTP and geoprocessing submit share this decision. applyTenantScope false is the tenantless exception; leaving it true with no tenant denies every tenant-scoped resource.
     internal static async Task<AccessDecision> EvaluateResourceAccessCoreAsync(
         IServiceProvider services,
         ClaimsPrincipal principal,

@@ -41,7 +41,6 @@ public sealed class PortalOAuth2Options
     // Refresh tokens rotate by default; leaving them stable is only for a client that cannot store the replacement.
     public bool RotateRefreshTokens { get; set; } = true;
 
-    // The client-credentials grant stays off unless enabled, so a deployment does not gain that path implicitly.
     public bool EnableClientCredentials { get; set; }
 
     public PortalOAuthJwtOptions Jwt { get; set; } = new();

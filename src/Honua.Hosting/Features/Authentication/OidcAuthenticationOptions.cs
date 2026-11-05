@@ -219,6 +219,7 @@ public sealed class Auth0ProviderOptions
         !string.IsNullOrEmpty(Domain) &&
         !string.IsNullOrEmpty(ClientId);
 
+    // Auth0 issuer validation requires the trailing slash.
     public string GetAuthority() =>
         $"https://{Domain}/";
 }

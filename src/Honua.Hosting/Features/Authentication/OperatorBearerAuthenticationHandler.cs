@@ -63,6 +63,7 @@ internal sealed class OperatorBearerAuthenticationHandler(
         }
     }
 
+    // Challenge and forbidden handlers guard HasStarted because ASP.NET challenges each scheme in turn and a preceding scheme may already have written the response.
     protected override Task HandleChallengeAsync(AuthenticationProperties properties)
     {
         if (Response.HasStarted)

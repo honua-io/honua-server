@@ -58,10 +58,13 @@ public sealed class QueryResultCacheOptions
 
     public TimeSpan DefaultExpiration { get; set; } = TimeSpan.FromMinutes(10);
 
+    // Not enforced when the manager uses the shared IMemoryCache, which is the default registration.
     public long MaxCacheSizeBytes { get; set; } = 100 * 1024 * 1024; // 100 MB
 
+    // Not enforced when the manager uses the shared IMemoryCache, which is the default registration.
     public int MaxCachedItems { get; set; } = 10000;
 
+    // EnableCompression and CompressionThresholdBytes do not compress; entries are stored as-is.
     public bool EnableCompression { get; set; } = true;
 
     public int CompressionThresholdBytes { get; set; } = 1024;

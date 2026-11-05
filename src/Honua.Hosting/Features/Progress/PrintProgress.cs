@@ -24,6 +24,7 @@ internal sealed record PrintProgress : IOperationProgress, ICancellableOperation
     public IReadOnlyList<string> Warnings { get; init; } = [];
     public string? CurrentPhase { get; init; }
 
+    // Null OwnerInstanceId means a record written before owner stamping, not an ownerless submission.
     public string? OwnerInstanceId { get; init; }
 
     public DateTimeOffset? HeartbeatAt { get; init; }

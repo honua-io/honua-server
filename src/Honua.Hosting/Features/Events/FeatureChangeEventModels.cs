@@ -25,6 +25,7 @@ internal sealed record FeatureChangeEvent
     public string? AuditId { get; init; }
     public string? ProposalId { get; init; }
 
+    // Null attributes can mean the protocol has no attribute-level tracking, including deletes. GeometryChanged false does not prove the geometry is unchanged.
     public Dictionary<string, object?>? ChangedAttributes { get; init; }
 
     public bool GeometryChanged { get; init; }
@@ -54,6 +55,7 @@ internal sealed record FeatureChangeEventRequest
     public string? ProposalId { get; init; }
     public DateTimeOffset? Timestamp { get; init; }
 
+    // Null attributes can mean the protocol has no attribute-level tracking, including deletes. GeometryChanged false does not prove the geometry is unchanged.
     public Dictionary<string, object?>? ChangedAttributes { get; init; }
 
     public bool GeometryChanged { get; init; }

@@ -14,7 +14,7 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Authentication;
 
-// Masking still applies when the caller requests the attribute; no request context means no masking, and an empty set means no masking.
+// Masking still applies when the caller requests the attribute. It is absent only when there is neither a request principal nor a job-security scope, and an empty policy set means no masking.
 internal sealed partial class FieldMaskSource : IFieldMaskSource
 {
     private readonly IServiceProvider? _backgroundServices;

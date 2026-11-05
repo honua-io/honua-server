@@ -44,6 +44,7 @@ internal sealed partial class RedisThawProbe
 
     internal bool HasTargets => _targets.Count > 0;
 
+    // The cache keeps its own multiplexer, so probing the infrastructure multiplexer is not enough; probe through IDistributedCache.
     internal static RedisThawProbe Create(IServiceProvider services)
     {
         ArgumentNullException.ThrowIfNull(services);

@@ -49,13 +49,11 @@ internal static partial class PortalTokenLog
                   "in HTTP-layer logs.")]
     public static partial void CredentialsFromQueryString(ILogger logger);
 
-    // This refusal is a licensing provenance failure, distinct from a referer or IP mismatch.
     [LoggerMessage(EventId = 7008, Level = LogLevel.Warning,
         Message = "Portal token {TokenHash} refused: its tenant was derived from claims mapping " +
                   "and the identity.claims-mapping entitlement is no longer active.")]
     public static partial void ClaimsMappingTenantNoLongerEntitled(ILogger logger, string tokenHash);
 
-    // This refusal is the source credential, distinct from referer binding and from the licence.
     [LoggerMessage(EventId = 7009, Level = LogLevel.Warning,
         Message = "Portal token {TokenHash} refused: the credential it was issued from is no " +
                   "longer valid, or its provenance could not be confirmed.")]

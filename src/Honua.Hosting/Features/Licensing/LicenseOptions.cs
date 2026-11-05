@@ -28,6 +28,7 @@ internal sealed class LicenseOptions
 
     public Honua.Core.Features.Licensing.Domain.HonuaEdition? Edition { get; set; }
 
+    // Both LicensePath and its .uploaded override must live on persistent storage.
     public string? LicensePath { get; set; }
 
     // Inline content wins over a file unless an uploaded override exists, and a secret reference keeps the envelope out of the image.

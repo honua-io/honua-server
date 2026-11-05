@@ -439,6 +439,7 @@ internal sealed class InMemoryFeatureChangeEventStore(
         return FeatureChangeRetentionWindow.Indeterminate(currentCursor);
     }
 
+    // The counter has no per-event TTL, so it stays the baseline after the last retained payload expires.
     private async Task<long> GetCurrentRedisCursorAsync()
     {
         var counter = await _redisDb!.StringGetAsync(CursorKey).ConfigureAwait(false);

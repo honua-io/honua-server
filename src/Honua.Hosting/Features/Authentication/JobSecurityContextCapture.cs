@@ -56,7 +56,7 @@ internal static class JobSecurityContextCapture
         JobSecurityContextClaimTypes.MembershipPrincipalId,
     };
 
-    // A principal with no claims is still snapshotted, because a missing snapshot is treated as less restrictive, and the snapshot tenant is the middleware-resolved tenant.
+    // A principal with no claims is still snapshotted, because a missing security context fails closed on row and field reads, and the snapshot tenant is the middleware-resolved tenant.
     public static JobSecurityContext Capture(
         ClaimsPrincipal principal,
         RbacOptions options,

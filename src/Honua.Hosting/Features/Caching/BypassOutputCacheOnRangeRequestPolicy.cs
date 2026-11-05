@@ -6,6 +6,7 @@ using Microsoft.Net.Http.Headers;
 
 namespace Honua.Infrastructure.Caching;
 
+// Output caching does not produce 206 or Content-Range; the static-file pipeline does, so range requests bypass cached full responses.
 internal sealed class BypassOutputCacheOnRangeRequestPolicy : IOutputCachePolicy
 {
     public ValueTask CacheRequestAsync(OutputCacheContext context, CancellationToken cancellationToken)

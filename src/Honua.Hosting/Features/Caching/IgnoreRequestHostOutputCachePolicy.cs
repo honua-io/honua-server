@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.OutputCaching;
 
 namespace Honua.Infrastructure.Caching;
 
+// Public scene assets share one cache entry across internal and advertised Host values on the same scheme.
 internal sealed class IgnoreRequestHostOutputCachePolicy : IOutputCachePolicy
 {
     public ValueTask CacheRequestAsync(OutputCacheContext context, CancellationToken cancellationToken)

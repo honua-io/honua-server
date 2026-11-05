@@ -152,6 +152,7 @@ internal sealed class AuditLogMiddleware(RequestDelegate next, IAuditActionResol
 
 public static class AuditLogMiddlewareExtensions
 {
+    // Register after correlation-id middleware, after routing, and after authentication so the audit event can stamp the correlation id, the route template, and the resolved principal.
     public static IApplicationBuilder UseHonuaAuditLog(this IApplicationBuilder app)
     {
         ArgumentNullException.ThrowIfNull(app);

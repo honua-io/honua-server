@@ -83,7 +83,7 @@ internal sealed class MultiAuthorityConfigurationManager : IConfigurationManager
             ResolveSigningKeys(securityToken?.Issuer);
     }
 
-    // An unknown issuer returns an empty key set, never null.
+    // An unknown issuer returns an empty key set, never null, because a null resolver result would fall back to the merged key union.
     internal IEnumerable<SecurityKey> ResolveSigningKeys(string? issuer)
     {
         if (string.IsNullOrWhiteSpace(issuer))

@@ -607,6 +607,7 @@ internal sealed class PortalTokenRecord
     // This flag is nullable because a missing value means unknown provenance and fails closed; a default false would let mapped roles outlive the entitlement.
     public bool? RolesRequireClaimsMappingEntitlement { get; init; }
 
+    // Null fallback roles mean unknown and stay fail-closed; an empty array is a known empty fallback.
     public string[]? RolesWithoutClaimsMapping { get; init; }
 
     public bool? TenantRequiresClaimsMappingEntitlement { get; init; }

@@ -104,6 +104,7 @@ public static partial class OidcAuthenticationExtensions
         }, cancellationToken).ConfigureAwait(false);
     }
 
+    // The replay store keeps only the continuation digest because the continuation id names a live session.
     internal static string BuildTokenReplayContinuationMarker(string continuationId) =>
         TokenReplayContinuationPrefix
         + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(continuationId)));

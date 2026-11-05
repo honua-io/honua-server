@@ -347,8 +347,7 @@ internal sealed class ApiKeyAuthenticationHandler(
 
     private static bool IsAllowedBypassEnvironment(string? environmentName)
     {
-        // Only "Test" is allowed - Development, Staging, QA, Production, and any
-        // other custom environment fall through to standard API-key auth.
+        // Only "Test" is allowed. Development is not honored so developers exercise the same API-key path as production.
         return string.Equals(environmentName, "Test", StringComparison.OrdinalIgnoreCase);
     }
 

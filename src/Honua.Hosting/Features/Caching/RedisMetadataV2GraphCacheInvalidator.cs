@@ -7,7 +7,7 @@ using StackExchange.Redis;
 
 namespace Honua.Infrastructure.Caching;
 
-// Publication is at-most-once, so the lifetime remains the correctness backstop, and the channel is prefix-scoped so installations that share one Redis do not invalidate each other.
+// Publication is at-most-once, so the lifetime remains the correctness backstop, and the channel is prefix-scoped so installations that share one Redis do not invalidate each other. The graph-cache channel stays separate from honua:cache:invalidations because that channel's payload is a cache key the coordinator records as pending refresh work.
 internal sealed partial class RedisMetadataV2GraphCacheInvalidator : IMetadataV2GraphCacheInvalidator, IHostedService
 {
     internal const string ChannelSuffix = "metadata:v2:graph:invalidations";

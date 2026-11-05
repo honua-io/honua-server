@@ -15,7 +15,7 @@ using SkiaSharp;
 
 namespace Honua.Infrastructure.Rendering;
 
-// A non-image request that would fall back to the vector path returns empty rather than mislabeled bytes.
+// A request for a format Skia cannot encode returns empty rather than mislabeled bytes.
 internal sealed class VectorAwareRasterMapRenderer : IRasterMapRenderer
 {
     private readonly IRasterMapRenderer _inner;
@@ -314,6 +314,7 @@ internal sealed class VectorAwareRasterMapRenderer : IRasterMapRenderer
 
     private const int DefaultSrid = 4326;
 
+    // Storage layer ids can collide, so resolution uses the canonical resource identity first and the storage index only as a fallback.
     private static MetadataV2Resource? ResolveResourceForLayer(
         MetadataV2GraphSnapshot snapshot,
         int layerId,

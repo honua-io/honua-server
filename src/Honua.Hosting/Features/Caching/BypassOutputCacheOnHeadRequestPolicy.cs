@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.OutputCaching;
 
 namespace Honua.Infrastructure.Caching;
 
+// The output cache stores a HEAD response with an empty body and stamps Content-Length from that length, so a cached HEAD advertises zero length and GDAL range clients reject the asset.
 internal sealed class BypassOutputCacheOnHeadRequestPolicy : IOutputCachePolicy
 {
     public ValueTask CacheRequestAsync(OutputCacheContext context, CancellationToken cancellationToken)

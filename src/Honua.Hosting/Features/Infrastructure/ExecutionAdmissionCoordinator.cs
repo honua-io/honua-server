@@ -148,6 +148,7 @@ internal sealed class ExecutionAdmissionCoordinator
 
         public bool IsShared => _token is not null;
 
+        // Re-validate the shared lease immediately before the job record is created; an expired lease throws because another node may be admitting against the same snapshot.
         public async Task EnsureHeldAsync()
         {
             if (_token is null)

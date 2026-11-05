@@ -81,6 +81,7 @@ public sealed class OutputCacheTtlOptions
 
     public TimeSpan SceneTilesetMetadata { get; set; } = TimeSpan.FromMinutes(10);
 
+    // Scene binary payloads are immutable once written, which is why that lifetime is long.
     public TimeSpan SceneTileAsset { get; set; } = TimeSpan.FromHours(1);
 
     public TimeSpan LayerStyle { get; set; } = TimeSpan.FromMinutes(10);
