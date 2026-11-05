@@ -7,21 +7,12 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Core.Features.Mobile.FieldCollection;
 
-/// <summary>
-/// Default <see cref="IFieldCollectionAutomationTrigger"/>: loads enabled actions
-/// for the applied change's layer, matches them, and enqueues each match onto the
-/// dispatcher (#2121). Best-effort by design — store or dispatch failures are
-/// logged and swallowed so the originating mobile push always succeeds.
-/// </summary>
 public sealed partial class FieldCollectionAutomationTrigger : IFieldCollectionAutomationTrigger
 {
     private readonly IFieldCollectionAutomationStore _store;
     private readonly IFieldCollectionActionDispatcher _dispatcher;
     private readonly ILogger<FieldCollectionAutomationTrigger> _logger;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="FieldCollectionAutomationTrigger"/> class.
-    /// </summary>
     public FieldCollectionAutomationTrigger(
         IFieldCollectionAutomationStore store,
         IFieldCollectionActionDispatcher dispatcher,
@@ -32,7 +23,6 @@ public sealed partial class FieldCollectionAutomationTrigger : IFieldCollectionA
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <inheritdoc />
     public async ValueTask OnChangeAppliedAsync(
         FieldCollectionAutomationEvent automationEvent,
         CancellationToken cancellationToken = default)

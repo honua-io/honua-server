@@ -6,35 +6,22 @@ using System.Text.Json;
 
 namespace Honua.Core.Features.Metadata.Domain.V2;
 
-/// <summary>
-/// Shared SPDX license-expression policy for canonical metadata and authored governance input.
-/// </summary>
 public static class SpdxLicensePolicy
 {
     private const string SpdxIdentifierResourceName =
         "Honua.Core.Features.Metadata.Domain.V2.spdx-identifiers.json";
     private static readonly SpdxIdentifierCatalog SpdxIdentifiers = LoadSpdxIdentifiers();
 
-    /// <summary>Maximum canonical SPDX expression length.</summary>
     public const int MaxExpressionLength = 256;
 
-    /// <summary>Determines whether a value is a cataloged standalone SPDX license identifier.</summary>
-    /// <param name="license">Candidate SPDX license identifier.</param>
-    /// <returns><see langword="true"/> only for a cataloged standalone identifier.</returns>
     public static bool IsLicenseIdentifier(string? license)
         => !string.IsNullOrWhiteSpace(license) && SpdxIdentifiers.Licenses.Contains(license);
 
-    /// <summary>Returns the canonical SPDX documentation URL for a standalone identifier.</summary>
-    /// <param name="license">Candidate SPDX license identifier.</param>
-    /// <returns>The canonical URL, or <see langword="null"/> for expressions and non-cataloged values.</returns>
     public static string? GetLicenseUrl(string? license)
         => IsLicenseIdentifier(license)
             ? $"https://spdx.org/licenses/{license}.html"
             : null;
 
-    /// <summary>Validates SPDX expression syntax and identifier membership.</summary>
-    /// <param name="expression">Candidate SPDX expression.</param>
-    /// <returns><see langword="true"/> when the expression is valid.</returns>
     public static bool IsValidExpression(string? expression)
     {
         if (string.IsNullOrWhiteSpace(expression) || expression.Length > MaxExpressionLength)
@@ -48,11 +35,6 @@ public static class SpdxLicensePolicy
             position == expression.Length;
     }
 
-    /// <summary>
-    /// Validates the normalized scalar form stored in canonical Metadata v2 object metadata.
-    /// </summary>
-    /// <param name="license">Canonical license scalar, or <see langword="null"/> when absent.</param>
-    /// <returns><see langword="true"/> when the scalar is absent or canonical and valid.</returns>
     public static bool IsValidCanonicalValue(string? license)
         => license is null ||
            (license.Length > 0 &&

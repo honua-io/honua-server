@@ -10,17 +10,11 @@ using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Core.Features.AutoDocs.Services;
 
-/// <summary>
-/// Deterministic, template-driven metadata document generator.
-/// Produces ISO 19115 XML, FGDC XML, and Markdown data dictionaries
-/// from layer schema and metadata without LLM dependency.
-/// </summary>
 internal sealed class MetadataDocumentGenerator : IMetadataDocumentGenerator
 {
     private const string Iso19115Namespace = "http://www.isotc211.org/2005/gmd";
     private const string GcoNamespace = "http://www.isotc211.org/2005/gco";
 
-    /// <inheritdoc />
     public MetadataDocumentResult Generate(MetadataDocumentRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);

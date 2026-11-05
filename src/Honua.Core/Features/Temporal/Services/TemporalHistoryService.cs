@@ -12,23 +12,6 @@ using Honua.Core.Features.Temporal.Domain;
 
 namespace Honua.Core.Features.Temporal.Services;
 
-/// <summary>
-/// Slice-1 temporal history service for honua-server#1166.
-/// </summary>
-/// <remarks>
-/// <para>
-/// Capability discovery rides the Metadata v2 graph and the existing temporal hint
-/// (<see cref="FeatureStorageMapping.TemporalColumn"/>). As-of reads are served from the existing
-/// change-tracking primitive (<see cref="IChangeTracker"/>) — the closest existing history primitive —
-/// rather than a parallel history store.
-/// </para>
-/// <para>
-/// History is considered supported only when the storage mapping declares a temporal column AND the
-/// resolved change tracker actually records changes (read-only providers register a no-op tracker, so
-/// they report history as unsupported). This interoperates with named-version editing (honua-server#371)
-/// without depending on it: a layer can expose temporal history with or without version branches.
-/// </para>
-/// </remarks>
 public sealed partial class TemporalHistoryService : ITemporalHistoryService
 {
     private const int DefaultLimit = 1000;
@@ -42,7 +25,6 @@ public sealed partial class TemporalHistoryService : ITemporalHistoryService
     private readonly ITemporalMaskingPolicy _maskingPolicy;
     private readonly ITemporalRollbackRunner _rollbackRunner;
 
-    /// <summary>Creates the temporal history service.</summary>
     public TemporalHistoryService(
         IMetadataV2GraphProvider graphProvider,
         IChangeTracker changeTracker,
@@ -61,7 +43,6 @@ public sealed partial class TemporalHistoryService : ITemporalHistoryService
         _rollbackRunner = rollbackRunner ?? throw new ArgumentNullException(nameof(rollbackRunner));
     }
 
-    /// <inheritdoc />
     public async Task<TemporalCapability> GetCapabilityAsync(
         string serviceId,
         int layerId,
@@ -100,7 +81,6 @@ public sealed partial class TemporalHistoryService : ITemporalHistoryService
                 SupportsRollback: historyCapable));
     }
 
-    /// <inheritdoc />
     public async Task<TemporalAsOfResult> ReadAsOfAsync(
         string serviceId,
         int layerId,

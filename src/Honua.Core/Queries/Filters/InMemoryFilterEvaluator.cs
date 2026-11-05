@@ -9,34 +9,16 @@ using System.Text.RegularExpressions;
 
 namespace Honua.Core.Queries.Filters;
 
-/// <summary>
-/// Evaluates a <see cref="FilterExpression"/> AST against an in-memory property dictionary.
-/// Used for subscription-time filtering of CDC events. Static, allocation-free on comparison
-/// paths, no reflection — safe for AOT and hot-path broadcast evaluation.
-/// </summary>
+// The evaluator does no reflection so it stays valid for AOT and for the broadcast path.
 public static class InMemoryFilterEvaluator
 {
-    /// <summary>
-    /// Maximum expression depth allowed for streaming filters (DoS protection).
-    /// </summary>
     public const int MaxStreamingDepth = 10;
 
-    /// <summary>
-    /// Evaluates a filter expression against a JSON-element property dictionary.
-    /// Returns true if the properties satisfy the filter.
-    /// </summary>
     public static bool Evaluate(FilterExpression expression, IReadOnlyDictionary<string, JsonElement> properties)
     {
         return EvaluateTruth(expression, properties, depth: 0) == TruthValue.True;
     }
 
-    /// <summary>
-    /// Validates that a filter expression only uses the subset of nodes and operators
-    /// supported by streaming subscriptions.
-    /// </summary>
-    /// <param name="expression">Expression to validate.</param>
-    /// <param name="error">Validation error when the expression is not stream-evaluable.</param>
-    /// <returns><see langword="true"/> when the expression can be evaluated in-memory for streaming.</returns>
     public static bool TryValidateStreamingExpression(FilterExpression expression, out string? error)
     {
         return TryValidateBooleanExpression(expression, out error);
@@ -598,9 +580,6 @@ public static class InMemoryFilterEvaluator
         return new Regex(regexPattern, compiled ? RegexOptions.Compiled : RegexOptions.None, TimeSpan.FromSeconds(1));
     }
 
-    /// <summary>
-    /// Validates that the expression depth does not exceed the streaming limit.
-    /// </summary>
     public static bool ExceedsMaxDepth(FilterExpression expression)
     {
         return MeasureDepth(expression, 0) > MaxStreamingDepth;

@@ -13,24 +13,6 @@ using Honua.Core.Features.TileCachePackage.Domain;
 
 namespace Honua.Core.Features.TileCachePackage.Services;
 
-/// <summary>
-/// Read-only reader for Esri tile/vector-tile cache packages (#1269).
-///
-/// Supported layouts (documented Esri cache structure only):
-///   * Compact Cache V2 (<c>.tpkx</c> raster, <c>.vtpk</c> vector): a ZIP archive
-///     described by <c>root.json</c> whose tiles live in
-///     <c>{bundlesPath}/L{zz}/R{rrrr}C{cccc}.bundle</c> files. Each bundle has a
-///     64-byte header followed by a 16384-entry (128x128) little-endian index; an
-///     index entry's low 40 bits are the tile byte offset and the high 24 bits the
-///     tile size. See https://github.com/Esri/raster-tiles-compactcache.
-///   * Exploded raster cache (older raster <c>.tpk</c>): loose tile files at
-///     <c>_alllayers/L{zz}/R{8hex}/C{8hex}.{png|jpg}</c>, described by
-///     <c>conf.xml</c>/<c>conf.cdi</c>.
-///
-/// Compact Cache V1 (<c>.bundlx</c>/<c>.bundle</c>) is intentionally not handled here;
-/// its layout is community-reverse-engineered rather than published, so it is left to
-/// a follow-up to stay within the documented-layout guardrail.
-/// </summary>
 public sealed class GeoServicesTileCachePackageReader : ITileCachePackageReader
 {
     // Compact Cache V2 constants (Esri spec).
@@ -40,16 +22,12 @@ public sealed class GeoServicesTileCachePackageReader : ITileCachePackageReader
     private const int CompactV2IndexSize = CompactV2IndexEntries * 8;                  // 131072
     private const long CompactV2OffsetMask = 0xFF_FFFF_FFFFL; // low 40 bits
 
-    /// <summary>Maximum uncompressed Compact Cache V2 bundle.</summary>
     internal const int MaxBundleBytes = 256 * 1024 * 1024;
 
-    /// <summary>Maximum uncompressed exploded tile.</summary>
     internal const int MaxExplodedTileBytes = 8 * 1024 * 1024;
 
-    /// <summary>Maximum uncompressed root.json or conf.xml.</summary>
     internal const int MaxDescriptorBytes = 4 * 1024 * 1024;
 
-    /// <summary>Running decompressed-byte budget for one descriptor or tile read.</summary>
     internal const long MaxDecompressedBytes = 2L * 1024 * 1024 * 1024;
 
     private sealed class DecompressionBudget
@@ -58,7 +36,6 @@ public sealed class GeoServicesTileCachePackageReader : ITileCachePackageReader
         public DecompressionBudget(long remaining) => Remaining = remaining;
     }
 
-    /// <inheritdoc />
     public bool CanRead(string fileName)
     {
         if (string.IsNullOrWhiteSpace(fileName))
@@ -72,7 +49,6 @@ public sealed class GeoServicesTileCachePackageReader : ITileCachePackageReader
             || ext.Equals(".vtpk", StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <inheritdoc />
     public Task<TileCachePackageDescriptor> ReadDescriptorAsync(
         Stream package,
         CancellationToken cancellationToken = default)
@@ -84,7 +60,6 @@ public sealed class GeoServicesTileCachePackageReader : ITileCachePackageReader
         return Task.FromResult(descriptor);
     }
 
-    /// <inheritdoc />
     public async IAsyncEnumerable<TileCachePackageTile> ReadTilesAsync(
         Stream package,
         TileCachePackageDescriptor descriptor,
@@ -495,11 +470,7 @@ public sealed class GeoServicesTileCachePackageReader : ITileCachePackageReader
         }
     }
 
-    /// <summary>
-    /// Overlapping index ranges alias the same bundle bytes into many tile rows.
-    /// Reject them, and charge every accepted tile against the package budget,
-    /// before any copy is allocated (#6176).
-    /// </summary>
+    // Reject overlapping ranges to prevent repeated copies of the same bundle bytes, and charge accepted ranges to the budget before copying.
     private static void RejectAliasedBundleEntries(
         List<CompactV2IndexEntry> entries,
         DecompressionBudget budget)
@@ -657,18 +628,7 @@ public sealed class GeoServicesTileCachePackageReader : ITileCachePackageReader
         return samples;
     }
 
-    /// <summary>
-    /// Copies a ZIP entry into memory only when its declared length and the bytes
-    /// actually inflated both stay inside the per-entry cap and the running budget.
-    /// A declared length of zero is still copied under the cap, so a length-less
-    /// deflate stream cannot expand without bound.
-    /// </summary>
-    /// <summary>
-    /// Reads the current element's text through a subtree so the caller's Read() loop lands on
-    /// the next sibling. ReadElementContentAsString already advances past the end tag, so a
-    /// following Read() would silently skip an adjacent element (Y after X, Resolution after
-    /// LevelID, LatestWKID after WKID).
-    /// </summary>
+    // ReadElementContentAsString already advances past the end tag, so the text is taken through a subtree and the caller's next Read still lands on the next sibling.
     private static string ReadElementText(XmlReader reader)
     {
         using var element = reader.ReadSubtree();
@@ -692,6 +652,7 @@ public sealed class GeoServicesTileCachePackageReader : ITileCachePackageReader
         return bytes;
     }
 
+    // A declared length of zero is still copied under the cap, so a length-less deflate stream cannot expand without bound.
     private static byte[] ReadBounded(
         Func<Stream> open,
         long declaredLength,
@@ -748,10 +709,6 @@ public sealed class GeoServicesTileCachePackageReader : ITileCachePackageReader
         return buffer.ToArray();
     }
 
-    /// <summary>
-    /// Resolve the bundle directory prefix relative to the archive root from the
-    /// descriptor location and root.json's tileBundlesPath (e.g. "./tile").
-    /// </summary>
     internal static string NormalizeBundlesPath(string rootEntryFullName, string tileBundlesPath)
     {
         var rootDir = rootEntryFullName.Contains('/')
@@ -774,11 +731,6 @@ public sealed class GeoServicesTileCachePackageReader : ITileCachePackageReader
         return relative.Length == 0 ? rootDir : $"{rootDir}/{relative}";
     }
 
-    /// <summary>
-    /// Parse a Compact Cache V2 bundle path
-    /// <c>.../L{zz}/R{rrrr}C{cccc}.bundle</c> into its level and the block base
-    /// (top-left) row/column. Hex row/col are the block base (multiples of 128).
-    /// </summary>
     internal static bool TryParseBundleName(string fullName, out int level, out int baseRow, out int baseCol)
     {
         level = 0;
@@ -829,10 +781,6 @@ public sealed class GeoServicesTileCachePackageReader : ITileCachePackageReader
             && int.TryParse(colHex, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out col);
     }
 
-    /// <summary>
-    /// Parse an exploded raster tile path
-    /// <c>.../_alllayers/L{zz}/R{8hex}/C{8hex}.{png|jpg}</c> into level, row, col.
-    /// </summary>
     internal static bool TryParseExplodedTilePath(string fullName, out int level, out int row, out int col)
     {
         level = 0;

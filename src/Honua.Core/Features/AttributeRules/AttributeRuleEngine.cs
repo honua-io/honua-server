@@ -5,103 +5,33 @@ using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Core.Features.AttributeRules;
 
-/// <summary>
-/// Editing event that can trigger an attribute rule. Mirrors the canonical Esri
-/// triggering-event vocabulary (<c>insert</c> / <c>update</c> / <c>delete</c>).
-/// </summary>
 public enum AttributeRuleEditEvent
 {
-    /// <summary>A feature is being inserted.</summary>
     Insert,
 
-    /// <summary>An existing feature is being updated.</summary>
     Update,
 
-    /// <summary>A feature is being deleted.</summary>
     Delete
 }
 
-/// <summary>
-/// Which set of rules a single <see cref="AttributeRuleEngine.Apply"/> invocation evaluates.
-/// Mirrors Esri's immediate-vs-batch evaluation modes.
-/// </summary>
 public enum AttributeRulePass
 {
-    /// <summary>
-    /// Run only <em>immediate</em> rules (<see cref="MetadataV2AttributeRule.Batch"/> is
-    /// <see langword="false"/>) inline on the triggering edit. Batch rules are skipped.
-    /// </summary>
     Immediate,
 
-    /// <summary>
-    /// Run only <em>batch</em> rules (<see cref="MetadataV2AttributeRule.Batch"/> is
-    /// <see langword="true"/>), as part of an explicit deferred batch pass. Immediate rules
-    /// are skipped.
-    /// </summary>
     Batch
 }
 
-/// <summary>
-/// A single constraint/validation violation produced while applying attribute rules to
-/// a feature on the edit path.
-/// </summary>
-/// <param name="RuleName">Name of the violated rule.</param>
-/// <param name="Message">Operator-facing message describing the violation.</param>
 public readonly record struct AttributeRuleViolation(string RuleName, string Message);
 
-/// <summary>
-/// Result of applying a resource's attribute rules to one feature's attributes for a
-/// given edit event.
-/// </summary>
-/// <param name="Attributes">
-/// The (possibly updated) attribute dictionary after calculation rules have populated
-/// their target fields. Always non-null; equals the input map when no calculation rule
-/// fired.
-/// </param>
-/// <param name="Violations">
-/// Constraint/validation violations. Empty when every applicable rule passed (or was
-/// routed out of scope as unsupported).
-/// </param>
 public readonly record struct AttributeRuleApplicationResult(
     IReadOnlyDictionary<string, object?> Attributes,
     IReadOnlyList<AttributeRuleViolation> Violations)
 {
-    /// <summary>True when no constraint/validation rule was violated.</summary>
     public bool IsValid => Violations.Count == 0;
 }
 
-/// <summary>
-/// Shared, provider-agnostic engine that applies a resource's
-/// <see cref="MetadataV2AttributeRule"/> set to a feature's attributes on the edit path.
-/// Calculation rules compute and write their target field before the write; constraint
-/// and validation rules evaluate a boolean expression and surface a violation when it is
-/// false. Expressions outside the supported safe subset (see
-/// <see cref="AttributeRuleExpression"/>) are routed out of scope via the supplied
-/// <see cref="IUnsupportedExpressionSink"/> rather than failing the edit, keeping full
-/// Arcade parity an explicit non-goal of this path.
-/// </summary>
 public static class AttributeRuleEngine
 {
-    /// <summary>
-    /// Applies the resource's enabled attribute rules for <paramref name="editEvent"/> to
-    /// <paramref name="attributes"/>.
-    /// </summary>
-    /// <param name="resource">The resource whose attribute rules apply.</param>
-    /// <param name="attributes">
-    /// Case-insensitive feature attributes. Calculation outputs are written into a copy;
-    /// the input map is never mutated.
-    /// </param>
-    /// <param name="editEvent">The triggering edit event.</param>
-    /// <param name="unsupported">
-    /// Optional sink notified when a rule's expression is outside the supported subset
-    /// (routed out of scope). May be <c>null</c> to silently skip.
-    /// </param>
-    /// <param name="pass">
-    /// Which rule set to evaluate. <see cref="AttributeRulePass.Immediate"/> (the default)
-    /// runs only immediate rules inline on the edit; <see cref="AttributeRulePass.Batch"/>
-    /// runs only the deferred batch rules and is invoked by an explicit batch pass.
-    /// </param>
-    /// <returns>The application result carrying updated attributes and any violations.</returns>
     public static AttributeRuleApplicationResult Apply(
         MetadataV2Resource resource,
         IReadOnlyDictionary<string, object?> attributes,
@@ -240,19 +170,7 @@ public static class AttributeRuleEngine
     }
 }
 
-/// <summary>
-/// Sink notified when an attribute-rule expression falls outside the supported safe
-/// subset and is routed out of scope (full Arcade parity is a non-goal of the edit
-/// path). Implementations typically log a structured warning identifying the resource
-/// and rule.
-/// </summary>
 public interface IUnsupportedExpressionSink
 {
-    /// <summary>
-    /// Invoked when <paramref name="rule"/> on <paramref name="resource"/> uses an
-    /// expression Honua does not evaluate on the edit path.
-    /// </summary>
-    /// <param name="resource">The resource owning the rule.</param>
-    /// <param name="rule">The rule whose expression was unsupported.</param>
     void OnUnsupported(MetadataV2Resource resource, MetadataV2AttributeRule rule);
 }

@@ -6,97 +6,46 @@ using Microsoft.Extensions.Hosting;
 
 namespace Honua.Core.Features.Configuration;
 
-/// <summary>
-/// Standard TTL categories used across the application.
-/// </summary>
 [SuppressMessage("Naming", "CA1720:Identifiers should not contain type names", Justification = "TTL categories are domain terms used throughout configuration and docs.")]
 public enum TtlCategory
 {
-    /// <summary>
-    /// TTL for highly volatile data.
-    /// </summary>
     VeryShort,
 
-    /// <summary>
-    /// TTL for semi-static data.
-    /// </summary>
     Short,
 
-    /// <summary>
-    /// TTL for stable data.
-    /// </summary>
     Medium,
 
-    /// <summary>
-    /// TTL for rarely changing data.
-    /// </summary>
     Long,
 
-    /// <summary>
-    /// TTL for effectively immutable data.
-    /// </summary>
     VeryLong
 }
 
-/// <summary>
-/// Provides standardized cache TTL values with environment-aware defaults.
-/// </summary>
 [SuppressMessage("Naming", "CA1720:Identifiers should not contain type names", Justification = "Public configuration property names intentionally mirror TTL category names.")]
 public sealed class StandardTtlOptions
 {
-    /// <summary>
-    /// The configuration section name.
-    /// </summary>
     public const string SectionName = "StandardTtl";
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="StandardTtlOptions"/> class.
-    /// </summary>
     public StandardTtlOptions()
     {
         ApplyDefaults(isDevelopment: false);
     }
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="StandardTtlOptions"/> class using the current environment.
-    /// </summary>
-    /// <param name="environment">The host environment.</param>
     public StandardTtlOptions(IHostEnvironment environment)
     {
         ArgumentNullException.ThrowIfNull(environment);
         ApplyDefaults(environment.IsDevelopment());
     }
 
-    /// <summary>
-    /// Gets or sets the very short TTL.
-    /// </summary>
     public TimeSpan VeryShort { get; set; }
 
-    /// <summary>
-    /// Gets or sets the short TTL.
-    /// </summary>
     public TimeSpan Short { get; set; }
 
-    /// <summary>
-    /// Gets or sets the medium TTL.
-    /// </summary>
     public TimeSpan Medium { get; set; }
 
-    /// <summary>
-    /// Gets or sets the long TTL.
-    /// </summary>
     public TimeSpan Long { get; set; }
 
-    /// <summary>
-    /// Gets or sets the very long TTL.
-    /// </summary>
     public TimeSpan VeryLong { get; set; }
 
-    /// <summary>
-    /// Returns the configured TTL for the requested category.
-    /// </summary>
-    /// <param name="category">The TTL category.</param>
-    /// <returns>The configured TTL.</returns>
     public TimeSpan GetTtl(TtlCategory category) => category switch
     {
         TtlCategory.VeryShort => VeryShort,
@@ -107,10 +56,6 @@ public sealed class StandardTtlOptions
         _ => Medium
     };
 
-    /// <summary>
-    /// Validates that all TTL values are positive and ordered from shortest to longest.
-    /// </summary>
-    /// <returns>True when the TTL values are valid.</returns>
     public bool ValidateTtlOrdering()
     {
         if (VeryShort <= TimeSpan.Zero ||
@@ -128,10 +73,6 @@ public sealed class StandardTtlOptions
                Long <= VeryLong;
     }
 
-    /// <summary>
-    /// Returns the configured TTL values keyed by category name.
-    /// </summary>
-    /// <returns>The configured TTL map.</returns>
     public IReadOnlyDictionary<string, TimeSpan> GetAllTtls() => new Dictionary<string, TimeSpan>(StringComparer.Ordinal)
     {
         [nameof(VeryShort)] = VeryShort,
@@ -161,16 +102,8 @@ public sealed class StandardTtlOptions
     }
 }
 
-/// <summary>
-/// Extension helpers for <see cref="TtlCategory"/>.
-/// </summary>
 public static class TtlCategoryExtensions
 {
-    /// <summary>
-    /// Gets a human-readable description for a TTL category.
-    /// </summary>
-    /// <param name="category">The TTL category.</param>
-    /// <returns>The category description.</returns>
     public static string GetDescription(this TtlCategory category) => category switch
     {
         TtlCategory.VeryShort => "Frequently changing data (user sessions, real-time metrics)",
@@ -181,11 +114,6 @@ public static class TtlCategoryExtensions
         _ => "Stable data (feature schemas, service capabilities)"
     };
 
-    /// <summary>
-    /// Recommends a TTL category for a conceptual data type.
-    /// </summary>
-    /// <param name="dataType">The data type hint.</param>
-    /// <returns>The recommended TTL category.</returns>
     public static TtlCategory GetRecommendedCategory(string? dataType)
     {
         if (string.IsNullOrWhiteSpace(dataType))

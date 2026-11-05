@@ -5,10 +5,6 @@ using System.Collections.Immutable;
 
 namespace Honua.Core.Features.Metadata.Domain.V2;
 
-/// <summary>
-/// O(1) lookup indexes built from a <see cref="MetadataV2Graph"/>.
-/// Snapshots are immutable; the index is safe for concurrent reads.
-/// </summary>
 public sealed class MetadataV2GraphIndex
 {
     private MetadataV2GraphIndex(
@@ -53,83 +49,44 @@ public sealed class MetadataV2GraphIndex
         ResourcesByStyleResourceId = resourcesByStyleResourceId;
     }
 
-    /// <summary>Catalogs keyed by their identifier.</summary>
     public IReadOnlyDictionary<string, MetadataV2Catalog> CatalogsById { get; }
 
-    /// <summary>Resources keyed by their identifier.</summary>
     public IReadOnlyDictionary<string, MetadataV2Resource> ResourcesById { get; }
 
-    /// <summary>Resources keyed by their name.</summary>
     public IReadOnlyDictionary<string, MetadataV2Resource> ResourcesByName { get; }
 
-    /// <summary>Connections keyed by their identifier.</summary>
     public IReadOnlyDictionary<string, MetadataV2Connection> ConnectionsById { get; }
 
-    /// <summary>Storage bindings keyed by their identifier.</summary>
     public IReadOnlyDictionary<string, MetadataV2StorageBinding> StorageBindingsById { get; }
 
-    /// <summary>Storage bindings grouped by the resource they bind.</summary>
     public ILookup<string, MetadataV2StorageBinding> StorageBindingsByResource { get; }
 
-    /// <summary>
-    /// Lookup from <see cref="MetadataV2StorageBinding.StorageLayerId"/> to the
-    /// owning storage binding. Bindings with a null StorageLayerId are excluded.
-    /// </summary>
     public IReadOnlyDictionary<int, MetadataV2StorageBinding> StorageBindingsByStorageLayerId { get; }
 
-    /// <summary>
-    /// Lookup from <see cref="MetadataV2StorageBinding.StorageLayerId"/> to the
-    /// owning canonical resource. This is the most frequent runtime lookup: the
-    /// storage backends (IFeatureReader, IFeatureWriter, ILayerStyleCatalog,
-    /// OutputCacheInvalidationService) all hand off integer layer ids, and the
-    /// V2 protocol handlers need the resource to do field / spatial / temporal
-    /// resolution. Bindings without a StorageLayerId or with a missing resource
-    /// reference are excluded.
-    /// </summary>
     public IReadOnlyDictionary<int, MetadataV2Resource> ResourcesByStorageLayerId { get; }
 
-    /// <summary>Services keyed by their identifier.</summary>
     public IReadOnlyDictionary<string, MetadataV2Service> ServicesById { get; }
 
-    /// <summary>Services keyed by their name.</summary>
     public IReadOnlyDictionary<string, MetadataV2Service> ServicesByName { get; }
 
-    /// <summary>Publications keyed by their identifier.</summary>
     public IReadOnlyDictionary<string, MetadataV2Publication> PublicationsById { get; }
 
-    /// <summary>Publications grouped by the service they belong to.</summary>
     public ILookup<string, MetadataV2Publication> PublicationsByService { get; }
 
-    /// <summary>Publications grouped by the resource they expose.</summary>
     public ILookup<string, MetadataV2Publication> PublicationsByResource { get; }
 
-    /// <summary>Case-insensitively distinct service names for each ordinal resource identifier.
-    /// Uses the same first-wins publication and service IDs as the canonical maps.
-    /// Includes every publication lifecycle, matching read-policy service scoping.
-    /// </summary>
     public IReadOnlyDictionary<string, ImmutableArray<string>> ServiceNamesByResource { get; }
 
-    /// <summary>Projection profiles keyed by their identifier.</summary>
     public IReadOnlyDictionary<string, MetadataV2ProjectionProfile> ProjectionProfilesById { get; }
 
-    /// <summary>Projection profiles grouped by their target.</summary>
     public ILookup<string, MetadataV2ProjectionProfile> ProjectionProfilesByTarget { get; }
 
-    /// <summary>Policies keyed by their identifier.</summary>
     public IReadOnlyDictionary<string, MetadataV2Policy> PoliciesById { get; }
 
-    /// <summary>Roles keyed by their identifier.</summary>
     public IReadOnlyDictionary<string, MetadataV2Role> RolesById { get; }
 
-    /// <summary>
-    /// Reverse lookup from a style resource id to every resource that
-    /// references it through <see cref="MetadataV2Resource.StyleResourceIds"/>.
-    /// </summary>
     public ILookup<string, MetadataV2Resource> ResourcesByStyleResourceId { get; }
 
-    /// <summary>
-    /// Builds an index from a graph document.
-    /// </summary>
     public static MetadataV2GraphIndex Build(MetadataV2Graph graph)
     {
         ArgumentNullException.ThrowIfNull(graph);
