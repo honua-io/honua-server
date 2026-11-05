@@ -71,7 +71,7 @@ internal static class ProcessValueDomains
 
     internal static readonly IReadOnlyList<string> GeometryFormat = ["wkt", "geojson", "wkb", "ewkt"];
 
-    // Not published as single-token AllowedValues, because the parameter is a comma-separated list and a choice list would reject every legal value, including the default.
+    // Not published as single-token AllowedValues, because a choice list would reject legal comma-separated combinations, including the default.
     internal static readonly IReadOnlyList<string> RasterZonalStatistic =
         ["count", "sum", "mean", "min", "max", "stddev", "variance"];
 
