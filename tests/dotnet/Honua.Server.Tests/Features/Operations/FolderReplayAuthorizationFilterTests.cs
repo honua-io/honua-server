@@ -40,7 +40,7 @@ public sealed class FolderReplayAuthorizationFilterTests
     [InlineData("wrong-credential", false)]
     [InlineData("ordinary", false)]
     [InlineData("wrong-folder-path", false)]
-    [InlineData("wrong-proposal-credential", false)]
+    [InlineData("wrong-proposal-lineage", false)]
     [InlineData("changed-body", false)]
     [InlineData("changed-etag", false)]
     [InlineData("changed-namespace", false)]
@@ -50,6 +50,7 @@ public sealed class FolderReplayAuthorizationFilterTests
     public async Task InvokeAsync_ReplayBoundary_DelegatesOnlySealedExecutingFolderOperation(string scenario, bool delegated)
     {
         var proposal = Proposal();
+        if (scenario == "wrong-proposal-lineage") proposal = proposal with { ProposalId = "another" };
         if (scenario == "wrong-operation") proposal = proposal with { OperationId = "folder.delete" };
         if (scenario == "wrong-tenant") proposal = proposal with { TenantId = "another" };
         if (scenario == "completed") proposal = proposal with { Status = OperationProposalStatus.Succeeded };
@@ -111,7 +112,7 @@ public sealed class FolderReplayAuthorizationFilterTests
     private static ServiceProvider Services(OperationProposal proposal, string tenantId)
     {
         var store = Substitute.For<IOperationProposalStore>();
-        store.GetAsync("proposal", Arg.Any<CancellationToken>()).Returns(proposal);
+        store.GetAsync(proposal.ProposalId, Arg.Any<CancellationToken>()).Returns(proposal);
         var tenant = Substitute.For<ITenantContext>();
         tenant.TenantId.Returns(tenantId);
         return new ServiceCollection().AddSingleton(store).AddSingleton(tenant)
@@ -161,7 +162,7 @@ public sealed class FolderReplayAuthorizationFilterTests
             new Claim(AdminApiKeyPermission.PermissionClaimType,
                 AdminApiKeyPermission.CreateApprovedOperationGrant(scenario == "wrong-credential" ? "DELETE" : "PATCH", context.Request.Path.Value!)),
             new Claim(AdminApiKeyPermission.PermissionClaimType,
-                FolderReplayRequest.ProposalGrant(scenario == "wrong-proposal-credential" ? "another" : "proposal")),
+                FolderReplayRequest.ProposalGrant("proposal")),
             new Claim(AdminApiKeyPermission.ApprovedOperationTenantClaim, "public")], "ApiKey"));
         return context;
     }
@@ -170,7 +171,7 @@ public sealed class FolderReplayAuthorizationFilterTests
     {
         var clock = new ReplayClock();
         var lineage = new OperationLineageAttestationStore(clock);
-        var token = lineage.Issue(new OperationPolicyContext { ProposalId = "proposal", OperationInstanceId = scenario == "wrong-instance" ? "another" : "instance" });
+        var token = lineage.Issue(new OperationPolicyContext { ProposalId = scenario == "wrong-proposal-lineage" ? "another" : "proposal", OperationInstanceId = scenario == "wrong-instance" ? "another" : "instance" });
         if (scenario == "replayed") lineage.TryConsume(token, out _);
         if (scenario == "expired") clock.Now = clock.Now.AddMinutes(6);
         context.Request.Headers[OperationLineageHeaders.Attestation] = scenario == "forged" ? "invalid" : token;
