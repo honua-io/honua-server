@@ -715,12 +715,13 @@ internal sealed class ImageServerExportTilesHandler
     private static bool TryParseBbox(string value, out SkiaMapRenderer.RenderExtent extent)
     {
         extent = default;
-        if (!BoundingBoxOrdinates.TryParse(value, out var ordinates) || ordinates.Length != 4)
+        var parsed = BoundingBoxOrdinates.Parse(value);
+        if (!parsed.Succeeded || parsed.Ordinates.Length != 4)
         {
             return false;
         }
 
-        var (xmin, ymin, xmax, ymax) = BoundingBoxOrdinates.Horizontal(ordinates);
+        var (xmin, ymin, xmax, ymax) = BoundingBoxOrdinates.Horizontal(parsed.Ordinates);
         if (ymin >= ymax || xmin >= xmax)
         {
             return false;

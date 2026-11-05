@@ -103,12 +103,14 @@ public sealed record ProvisionerArea
             return false;
         }
 
-        if (!BoundingBoxOrdinates.TryParse(parts, out var nums))
+        var parsed = BoundingBoxOrdinates.Parse(parts);
+        if (!parsed.Succeeded)
         {
             error = "bbox values must be finite numbers";
             return false;
         }
 
+        var nums = parsed.Ordinates;
         var (minLon, minLat, maxLon, maxLat) = (nums[0], nums[1], nums[2], nums[3]);
         if (minLon < -180 || maxLon > 180 || minLat < -90 || maxLat > 90)
         {

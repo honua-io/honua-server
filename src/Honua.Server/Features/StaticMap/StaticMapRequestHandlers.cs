@@ -461,12 +461,13 @@ internal static partial class StaticMapEndpoints
     private static bool TryParseBbox(string? value, out RenderExtent extent)
     {
         extent = default;
-        if (!BoundingBoxOrdinates.TryParse(value, out var ordinates) || ordinates.Length != 4)
+        var parsed = BoundingBoxOrdinates.Parse(value);
+        if (!parsed.Succeeded || parsed.Ordinates.Length != 4)
         {
             return false;
         }
 
-        var (xmin, ymin, xmax, ymax) = BoundingBoxOrdinates.Horizontal(ordinates);
+        var (xmin, ymin, xmax, ymax) = BoundingBoxOrdinates.Horizontal(parsed.Ordinates);
         if (xmin < -180.0 || xmin > 180.0 ||
             xmax < -180.0 || xmax > 180.0 ||
             ymin < -90.0 || ymin > 90.0 ||

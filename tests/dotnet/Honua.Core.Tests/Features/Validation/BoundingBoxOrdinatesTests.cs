@@ -13,10 +13,11 @@ public sealed class BoundingBoxOrdinatesTests
     [InlineData("1,2,3,4", new[] { 1d, 2, 3, 4 })]
     [InlineData(" -1.5 , 2e1 ,3,4 ", new[] { -1.5d, 20, 3, 4 })]
     [InlineData("1,2,0,3,4,10", new[] { 1d, 2, 0, 3, 4, 10 })]
-    public void TryParse_FourOrSixFiniteNumbers_ReturnsThem(string text, double[] expected)
+    public void Parse_FourOrSixFiniteNumbers_ReturnsThem(string text, double[] expected)
     {
-        BoundingBoxOrdinates.TryParse(text, out var ordinates).Should().BeTrue();
-        ordinates.Should().Equal(expected);
+        var parsed = BoundingBoxOrdinates.Parse(text);
+        parsed.Succeeded.Should().BeTrue();
+        parsed.Ordinates.Should().Equal(expected);
     }
 
     [UnitTheory]
@@ -32,8 +33,8 @@ public sealed class BoundingBoxOrdinatesTests
     [InlineData("1,2,Infinity,4")]
     [InlineData("-Infinity,2,3,4")]
     [InlineData("1,2,3,1e400")]
-    public void TryParse_AnythingElse_IsRejected(string? text)
-        => BoundingBoxOrdinates.TryParse(text, out _).Should().BeFalse();
+    public void Parse_AnythingElse_IsRejected(string? text)
+        => BoundingBoxOrdinates.Parse(text).Succeeded.Should().BeFalse();
 
     [UnitTest]
     public void Horizontal_SixOrdinates_SkipsTheZValues()

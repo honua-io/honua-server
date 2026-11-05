@@ -134,11 +134,14 @@ public sealed class CommonQueryValidator : ICommonQueryValidator
                 "Bounding box must contain exactly 4 comma-separated values: minx,miny,maxx,maxy");
         }
 
-        if (!BoundingBoxOrdinates.TryParse(tokens, out var coords))
+        var parsed = BoundingBoxOrdinates.Parse(tokens);
+        if (!parsed.Succeeded)
         {
             return ValidationResult<BoundingBox>.Failure(
                 "Bounding box coordinates must be valid numbers");
         }
+
+        var coords = parsed.Ordinates;
 
         if (coords.Length == 6)
         {

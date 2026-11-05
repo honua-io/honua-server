@@ -728,12 +728,13 @@ internal sealed partial class EdrHandler
     private static bool TryParseBbox(string bbox, out double minX, out double minY, out double maxX, out double maxY)
     {
         minX = minY = maxX = maxY = 0;
-        if (!BoundingBoxOrdinates.TryParse(bbox, out var ordinates) || ordinates.Length != 4)
+        var parsed = BoundingBoxOrdinates.Parse(bbox);
+        if (!parsed.Succeeded || parsed.Ordinates.Length != 4)
         {
             return false;
         }
 
-        (minX, minY, maxX, maxY) = BoundingBoxOrdinates.Horizontal(ordinates);
+        (minX, minY, maxX, maxY) = BoundingBoxOrdinates.Horizontal(parsed.Ordinates);
         return maxX > minX && maxY > minY;
     }
 

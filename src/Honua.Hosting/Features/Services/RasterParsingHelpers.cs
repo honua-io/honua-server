@@ -51,15 +51,18 @@ internal static class RasterParsingHelpers
     {
         minX = minY = maxX = maxY = 0;
 
-        if (bbox is null ||
-            bbox.Length > MaxBboxLength ||
-            !BoundingBoxOrdinates.TryParse(bbox, out var ordinates) ||
-            ordinates.Length != 4)
+        if (bbox is null || bbox.Length > MaxBboxLength)
         {
             return false;
         }
 
-        var (first, second, third, fourth) = BoundingBoxOrdinates.Horizontal(ordinates);
+        var parsed = BoundingBoxOrdinates.Parse(bbox);
+        if (!parsed.Succeeded || parsed.Ordinates.Length != 4)
+        {
+            return false;
+        }
+
+        var (first, second, third, fourth) = BoundingBoxOrdinates.Horizontal(parsed.Ordinates);
         if (axisOrder == AxisOrder.NorthEast)
         {
             minX = second;

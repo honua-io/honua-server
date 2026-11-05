@@ -5,20 +5,21 @@ using System.Globalization;
 
 namespace Honua.Core.Features.Validation;
 
+public readonly record struct BoundingBoxParse(bool Succeeded, double[] Ordinates);
+
 // Four or six finite numbers in invariant culture. A six-value box is
 // minx, miny, minz, maxx, maxy, maxz. Each caller applies its own range and CRS rules.
 public static class BoundingBoxOrdinates
 {
-    public static bool TryParse(string? text, out double[] ordinates)
-        => TryParse((text ?? string.Empty).Split(',', StringSplitOptions.TrimEntries), out ordinates);
+    public static BoundingBoxParse Parse(string? text) =>
+        Parse((text ?? string.Empty).Split(',', StringSplitOptions.TrimEntries));
 
-    public static bool TryParse(IReadOnlyList<string> tokens, out double[] ordinates)
+    public static BoundingBoxParse Parse(IReadOnlyList<string> tokens)
     {
         ArgumentNullException.ThrowIfNull(tokens);
-        ordinates = [];
         if (tokens.Count is not (4 or 6))
         {
-            return false;
+            return new BoundingBoxParse(false, []);
         }
 
         var parsed = new double[tokens.Count];
@@ -27,12 +28,11 @@ public static class BoundingBoxOrdinates
             if (!double.TryParse(tokens[i], NumberStyles.Float, CultureInfo.InvariantCulture, out parsed[i]) ||
                 !double.IsFinite(parsed[i]))
             {
-                return false;
+                return new BoundingBoxParse(false, []);
             }
         }
 
-        ordinates = parsed;
-        return true;
+        return new BoundingBoxParse(true, parsed);
     }
 
     public static (double MinX, double MinY, double MaxX, double MaxY) Horizontal(IReadOnlyList<double> ordinates)

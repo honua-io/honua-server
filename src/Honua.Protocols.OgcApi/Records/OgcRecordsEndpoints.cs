@@ -813,7 +813,8 @@ internal static class OgcRecordsEndpoints
             return true;
         }
 
-        if (!BoundingBoxOrdinates.TryParse(value, out var ordinates))
+        var parsed = BoundingBoxOrdinates.Parse(value);
+        if (!parsed.Succeeded)
         {
             error = "bbox must contain four (minx,miny,maxx,maxy) or six (minx,miny,minz,maxx,maxy,maxz) comma-separated numbers.";
             return false;
@@ -821,7 +822,7 @@ internal static class OgcRecordsEndpoints
 
         // minX > maxX is permitted: per RFC 7946 §5.2 and the OGC API bbox parameter,
         // west > east means the box crosses the antimeridian and must be honored.
-        var (minX, minY, maxX, maxY) = BoundingBoxOrdinates.Horizontal(ordinates);
+        var (minX, minY, maxX, maxY) = BoundingBoxOrdinates.Horizontal(parsed.Ordinates);
         if (minY > maxY)
         {
             error = "bbox values must be finite and ordered as minx,miny,maxx,maxy.";

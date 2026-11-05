@@ -1574,18 +1574,19 @@ internal static class SearchEndpoints
     private static bool TryParseBbox(string bbox, out ImmutableArray<double> values, out string? error)
     {
         values = default;
-        if (!BoundingBoxOrdinates.TryParse(bbox, out var parsed))
+        var parsed = BoundingBoxOrdinates.Parse(bbox);
+        if (!parsed.Succeeded)
         {
             error = "bbox must contain four or six finite numeric values.";
             return false;
         }
 
-        if (!StacFilterHelpers.TryExtractBbox2D(parsed, out _, out _, out _, out _, out error))
+        if (!StacFilterHelpers.TryExtractBbox2D(parsed.Ordinates, out _, out _, out _, out _, out error))
         {
             return false;
         }
 
-        values = ImmutableArray.Create(parsed);
+        values = ImmutableArray.Create(parsed.Ordinates);
         error = null;
         return true;
     }

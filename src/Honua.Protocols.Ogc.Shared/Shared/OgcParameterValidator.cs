@@ -59,11 +59,14 @@ internal static class OgcParameterValidator
             _ => 0,
         };
 
-        if (!BoundingBoxOrdinates.TryParse(parts[..numericCount], out var coords))
+        var parsed = BoundingBoxOrdinates.Parse(parts[..numericCount]);
+        if (!parsed.Succeeded)
         {
             error = "BBOX coordinates must be finite numeric values.";
             return false;
         }
+
+        var coords = parsed.Ordinates;
 
         string? crsToken = null;
         if (parts.Length == numericCount + 1)
