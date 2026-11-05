@@ -2,7 +2,6 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.IdentityModel.Tokens.Jwt;
-using System.Net;
 using System.Net.Http.Headers;
 using System.Security.Claims;
 using System.Text;
@@ -40,7 +39,6 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 [Protocol(TestProtocols.Mcp)]
 public sealed class StudioPublicationProposalOwnerPollTests : IAsyncLifetime
 {
-    private const string JsonMediaType = "application/json";
     private const string Issuer = "https://idp.example.com";
     private const string Audience = "honua-mcp-client-id";
     private const string SigningKey = "studio-proposal-owner-test-signing-key-at-least-32-characters";
@@ -101,13 +99,15 @@ public sealed class StudioPublicationProposalOwnerPollTests : IAsyncLifetime
     {
         using var owner = CreateBearerClient(CreateToken("studio-owner-alice"));
         using var stranger = CreateBearerClient(CreateToken("studio-stranger-bob"));
+        var ownerMcp = new StudioMcpHttpClient(owner);
+        var strangerMcp = new StudioMcpHttpClient(stranger);
 
-        var proposalId = await ProposeAsync(owner, "bearer");
+        var proposalId = await ProposeAsync(ownerMcp, "bearer");
 
-        var ownerRead = await RpcAsync(owner, ReadProposalRequest(proposalId));
+        var ownerRead = await ownerMcp.SendRpcAsync(ReadProposalRequest(proposalId));
         AssertProposalReadable(ownerRead, proposalId);
 
-        var strangerRead = await RpcAsync(stranger, ReadProposalRequest(proposalId));
+        var strangerRead = await strangerMcp.SendRpcAsync(ReadProposalRequest(proposalId));
         AssertOwnershipRefusal(strangerRead);
     }
 
@@ -126,13 +126,15 @@ public sealed class StudioPublicationProposalOwnerPollTests : IAsyncLifetime
             client => client.DefaultRequestHeaders.Add("X-API-Key", ownerKey.Key));
         using var stranger = _fixture.CreateClient(
             client => client.DefaultRequestHeaders.Add("X-API-Key", strangerKey.Key));
+        var ownerMcp = new StudioMcpHttpClient(owner);
+        var strangerMcp = new StudioMcpHttpClient(stranger);
 
-        var proposalId = await ProposeAsync(owner, "apikey");
+        var proposalId = await ProposeAsync(ownerMcp, "apikey");
 
-        var ownerRead = await RpcAsync(owner, ReadProposalRequest(proposalId));
+        var ownerRead = await ownerMcp.SendRpcAsync(ReadProposalRequest(proposalId));
         AssertProposalReadable(ownerRead, proposalId);
 
-        var strangerRead = await RpcAsync(stranger, ReadProposalRequest(proposalId));
+        var strangerRead = await strangerMcp.SendRpcAsync(ReadProposalRequest(proposalId));
         AssertOwnershipRefusal(strangerRead);
     }
 
@@ -140,24 +142,24 @@ public sealed class StudioPublicationProposalOwnerPollTests : IAsyncLifetime
     /// Composes, saves and proposes a publication as one principal, returning the proposal
     /// id the tool reports. Every step runs over MCP, as the SDK replay harness does.
     /// </summary>
-    private static async Task<string> ProposeAsync(HttpClient client, string label)
+    private static async Task<string> ProposeAsync(StudioMcpHttpClient mcp, string label)
     {
         var packageKey = $"proposal-owner-{label}-{Guid.NewGuid():N}";
-        var created = await CallToolAsync(client, "honua_studio_create_draft",
+        var created = await mcp.CallToolAsync("honua_studio_create_draft",
             $$"""{"packageKey":"{{packageKey}}","family":"dashboard","schemaVersion":"1.0"}""");
         var draftId = created.GetProperty("draftId").GetGuid();
 
-        var updated = await CallToolAsync(client, "honua_studio_update_draft",
+        var updated = await mcp.CallToolAsync("honua_studio_update_draft",
             $$$"""{"body":{"layers":[{"id":"roads"}],"view":{"center":[-158,22],"zoom":7}},"draftId":"{{{draftId:D}}}","generation":1,"packageKey":"{{{packageKey}}}","schemaVersion":"1.0"}""");
         var generation = updated.GetProperty("generation").GetInt64();
 
-        await CallToolAsync(client, "honua_studio_validate_draft", $$"""{"draftId":"{{draftId:D}}"}""");
+        await mcp.CallToolAsync("honua_studio_validate_draft", $$"""{"draftId":"{{draftId:D}}"}""");
 
-        var saved = await CallToolAsync(client, "honua_studio_save_version",
+        var saved = await mcp.CallToolAsync("honua_studio_save_version",
             $$"""{"draftId":"{{draftId:D}}","generation":{{generation}}}""");
         var version = saved.GetProperty("version");
 
-        var proposed = await CallToolAsync(client, "honua_studio_propose_publication",
+        var proposed = await mcp.CallToolAsync("honua_studio_propose_publication",
             $$"""{"itemId":"{{version.GetProperty("itemId").GetGuid():D}}","versionId":"{{version.GetProperty("versionId").GetGuid():D}}","contentHash":"{{version.GetProperty("contentHash").GetString()}}","route":"/studio/{{packageKey}}","visibility":"personal"}""");
         proposed.GetProperty("status").GetString().Should().Be("AwaitingApproval");
         var proposalId = proposed.GetProperty("proposalId").GetString();
@@ -195,36 +197,6 @@ public sealed class StudioPublicationProposalOwnerPollTests : IAsyncLifetime
         var client = _fixture.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
         return client;
-    }
-
-    private static async Task<JsonElement> CallToolAsync(HttpClient client, string toolName, string argumentsJson)
-    {
-        var response = await RpcAsync(
-            client,
-            $$$"""{"jsonrpc":"2.0","id":"{{{toolName}}}","method":"tools/call","params":{"name":"{{{toolName}}}","arguments":{{{argumentsJson}}}}}""");
-        var hasProtocolError = response.TryGetProperty("error", out var protocolError);
-        hasProtocolError.Should().BeFalse(
-            $"tool '{toolName}' should return a tool result: {(hasProtocolError ? protocolError.GetRawText() : "(none)")}");
-        var result = response.GetProperty("result");
-        if (result.TryGetProperty("isError", out var isError))
-        {
-            isError.GetBoolean().Should().BeFalse($"tool '{toolName}' failed: {result.GetRawText()}");
-        }
-
-        return result.GetProperty("structuredContent").Clone();
-    }
-
-    private static async Task<JsonElement> RpcAsync(HttpClient client, string body)
-    {
-        using var request = new HttpRequestMessage(HttpMethod.Post, "/mcp")
-        {
-            Content = new StringContent(body, Encoding.UTF8) { Headers = { ContentType = new MediaTypeHeaderValue(JsonMediaType) } },
-        };
-        using var response = await client.SendAsync(request);
-        var payload = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.OK, payload);
-        using var document = JsonDocument.Parse(payload);
-        return document.RootElement.Clone();
     }
 
     private static string CreateToken(string subject)

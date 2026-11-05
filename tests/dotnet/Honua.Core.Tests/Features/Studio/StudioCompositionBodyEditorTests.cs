@@ -266,6 +266,47 @@ public sealed class StudioCompositionBodyEditorTests
     }
 
     [UnitTest]
+    public void RemoveLayer_WhenOnlyASurvivingLayerIdMatchesTheControlSource_ThrowsConflict()
+    {
+        var body = StudioCompositionBody.Empty with
+        {
+            Layers =
+            [
+                new StudioCompositionLayer { Id = "presentation", SourceId = "dataset" },
+                new StudioCompositionLayer { Id = "dataset", SourceId = "different" },
+            ],
+            Controls =
+            [
+                new StudioCompositionControl { Id = "dataset-filter", Kind = "filterSelect", SourceId = "dataset" },
+            ],
+        };
+
+        var error = Assert.Throws<StudioCompositionConflictException>(
+            () => StudioCompositionBodyEditor.RemoveLayer(body, "presentation"));
+
+        Assert.Contains("dataset-filter", error.Message, StringComparison.Ordinal);
+    }
+
+    [UnitTest]
+    public void RemoveLayer_WhenOnlyASourceBindingMatchesTheRemovedLayerId_ThrowsConflict()
+    {
+        var body = StudioCompositionBody.Empty with
+        {
+            Layers = [new StudioCompositionLayer { Id = "roads", SourceId = "roads-source" }],
+            SourceBindingIds = new HashSet<string>(["roads"], StringComparer.Ordinal),
+            Controls =
+            [
+                new StudioCompositionControl { Id = "road-filter", Kind = "filterSelect", SourceId = "roads" },
+            ],
+        };
+
+        var error = Assert.Throws<StudioCompositionConflictException>(
+            () => StudioCompositionBodyEditor.RemoveLayer(body, "roads"));
+
+        Assert.Contains("road-filter", error.Message, StringComparison.Ordinal);
+    }
+
+    [UnitTest]
     public void SetLayerStyleRef_WithMissingId_ThrowsNotFound()
         => Assert.Throws<StudioCompositionNotFoundException>(
             () => StudioCompositionBodyEditor.SetLayerStyleRef(StudioCompositionBody.Empty, "no-such-layer", "style_x"));

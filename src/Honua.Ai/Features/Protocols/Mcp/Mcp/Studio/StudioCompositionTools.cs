@@ -85,12 +85,7 @@ internal sealed class AddStudioLayerTool : StudioCompositionToolBase, IMcpTool
         };
 
         var updated = await MutateCompositionAsync(
-            httpContext,
-            principal,
-            ToolName,
-            lifecycleService,
-            draftId,
-            generation,
+            new CompositionEdit(httpContext, principal, lifecycleService, ToolName, draftId, generation),
             body => StudioCompositionBodyEditor.AddLayer(body, layer, argument.BeforeId),
             cancellationToken).ConfigureAwait(false);
 
@@ -131,7 +126,7 @@ internal sealed class RemoveStudioLayerTool : StudioCompositionToolBase, IMcpToo
         Title = "Remove Studio layer",
         Description =
             "Remove a layer from a map/app/dashboard-family Studio draft's composition by id, with optimistic-generation checking. "
-            + "Fails with not_found if no layer with that id exists.",
+            + "Prunes the bindings, inline style and mapSpec entries only it used. Fails with not_found if no layer with that id exists.",
         InputSchema = StudioMcpSchemas.RemoveLayerArgumentSchema,
         OutputSchema = McpToolOutputSchemas.StudioDraftOutputSchema,
         // Destructive: it removes composed state. Undo is a fresh
@@ -159,14 +154,9 @@ internal sealed class RemoveStudioLayerTool : StudioCompositionToolBase, IMcpToo
             throw new GeoprocessingValidationException("'layerId' is required.");
         }
 
-        var updated = await MutateCompositionAsync(
-            httpContext,
-            principal,
-            ToolName,
-            lifecycleService,
-            draftId,
-            generation,
-            body => StudioCompositionBodyEditor.RemoveLayer(body, argument.LayerId!),
+        var updated = await MutateEnvelopeAsync(
+            new CompositionEdit(httpContext, principal, lifecycleService, ToolName, draftId, generation),
+            envelope => StudioCompositionDocumentEditor.RemoveLayer(envelope, argument.LayerId!),
             cancellationToken).ConfigureAwait(false);
 
         return McpToolHelpers.SuccessResult(updated, StudioJsonContext.Default.StudioPackageDraft);
@@ -203,7 +193,8 @@ internal sealed class SetStudioLayerStyleTool : StudioCompositionToolBase, IMcpT
         Title = "Set Studio layer style",
         Description =
             "Set (or, when styleRef is omitted/null, clear) a layer's bound style reference in a map/app/dashboard-family Studio draft's "
-            + "composition, with optimistic-generation checking. Fails with not_found if no layer with that id exists. "
+            + "composition, with optimistic-generation checking. styleBody instead stores the layer's inline style. "
+            + "Fails with not_found if no layer with that id exists. "
             + "This binds a style reference on the composed layer; it does not validate the reference against a style catalog.",
         InputSchema = StudioMcpSchemas.SetLayerStyleArgumentSchema,
         OutputSchema = McpToolOutputSchemas.StudioDraftOutputSchema,
@@ -232,17 +223,33 @@ internal sealed class SetStudioLayerStyleTool : StudioCompositionToolBase, IMcpT
             throw new GeoprocessingValidationException("'layerId' is required.");
         }
 
-        var updated = await MutateCompositionAsync(
-            httpContext,
-            principal,
-            ToolName,
-            lifecycleService,
-            draftId,
-            generation,
-            body => StudioCompositionBodyEditor.SetLayerStyleRef(body, argument.LayerId!, argument.StyleRef),
-            cancellationToken).ConfigureAwait(false);
+        var edit = new CompositionEdit(httpContext, principal, lifecycleService, ToolName, draftId, generation);
+        var updated = RequestsInlineStyle(argument)
+            ? await MutateEnvelopeAsync(
+                edit,
+                envelope => StudioCompositionDocumentEditor.SetLayerInlineStyle(envelope, argument.LayerId!, argument.StyleBody),
+                cancellationToken).ConfigureAwait(false)
+            : await MutateCompositionAsync(
+                edit,
+                body => StudioCompositionBodyEditor.SetLayerStyleRef(body, argument.LayerId!, argument.StyleRef),
+                cancellationToken).ConfigureAwait(false);
 
         return McpToolHelpers.SuccessResult(updated, StudioJsonContext.Default.StudioPackageDraft);
+    }
+
+    private static bool RequestsInlineStyle(McpStudioSetLayerStyleArgument argument)
+    {
+        if (argument.StyleBody.ValueKind is JsonValueKind.Undefined)
+        {
+            return false;
+        }
+
+        if (argument.StyleRef is not null)
+        {
+            throw new GeoprocessingValidationException("Inline styling cannot also select a shared style.");
+        }
+
+        return true;
     }
 }
 
@@ -321,12 +328,7 @@ internal sealed class SetStudioLayerVisibilityTool : StudioCompositionToolBase, 
             ?? throw new GeoprocessingValidationException("'visible' is required and must be a JSON boolean.");
 
         var updated = await MutateCompositionAsync(
-            httpContext,
-            principal,
-            ToolName,
-            lifecycleService,
-            draftId,
-            generation,
+            new CompositionEdit(httpContext, principal, lifecycleService, ToolName, draftId, generation),
             body => StudioCompositionBodyEditor.SetLayerVisibility(body, argument.LayerId!, visible),
             cancellationToken).ConfigureAwait(false);
 
@@ -334,11 +336,6 @@ internal sealed class SetStudioLayerVisibilityTool : StudioCompositionToolBase, 
     }
 }
 
-/// <summary>
-/// MCP tool that replaces a map/app/dashboard-family Studio draft's composition view
-/// (honua-server#3002, REQ-002). Mirrors the honua-sdk-js agent-tools
-/// <c>setViewport</c> shape (bbox, center, zoom, pitch, bearing, crs).
-/// </summary>
 internal sealed class SetStudioViewTool : StudioCompositionToolBase, IMcpTool
 {
     /// <summary>The tool name published in <c>tools/list</c>.</summary>
@@ -364,8 +361,9 @@ internal sealed class SetStudioViewTool : StudioCompositionToolBase, IMcpTool
         Name = ToolName,
         Title = "Set Studio view",
         Description =
-            "Replace a map/app/dashboard-family Studio draft's composition view (bbox, center, zoom, pitch, bearing, crs), "
-            + "with optimistic-generation checking.",
+            "Update a map/app/dashboard-family Studio draft's composition view (bbox, center, zoom, pitch, bearing, crs), "
+            + "with optimistic-generation checking. Omitted members keep their values; out-of-range zoom, pitch or bearing "
+            + "fails with invalid_argument (out-of-bounds).",
         InputSchema = StudioMcpSchemas.SetViewArgumentSchema,
         OutputSchema = McpToolOutputSchemas.StudioDraftOutputSchema,
         Annotations = McpToolAnnotationSets.Write("Set Studio view", destructive: false, idempotent: true)
@@ -399,13 +397,8 @@ internal sealed class SetStudioViewTool : StudioCompositionToolBase, IMcpTool
         };
 
         var updated = await MutateCompositionAsync(
-            httpContext,
-            principal,
-            ToolName,
-            lifecycleService,
-            draftId,
-            generation,
-            body => StudioCompositionBodyEditor.SetView(body, view),
+            new CompositionEdit(httpContext, principal, lifecycleService, ToolName, draftId, generation),
+            body => StudioCompositionViewEditor.MergeView(body, view),
             cancellationToken).ConfigureAwait(false);
 
         return McpToolHelpers.SuccessResult(updated, StudioJsonContext.Default.StudioPackageDraft);
@@ -484,12 +477,7 @@ internal sealed class AddStudioWidgetTool : StudioCompositionToolBase, IMcpTool
         };
 
         var updated = await MutateCompositionAsync(
-            httpContext,
-            principal,
-            ToolName,
-            lifecycleService,
-            draftId,
-            generation,
+            new CompositionEdit(httpContext, principal, lifecycleService, ToolName, draftId, generation),
             body => StudioCompositionBodyEditor.AddWidget(body, widget),
             cancellationToken).ConfigureAwait(false);
 
@@ -554,12 +542,7 @@ internal sealed class RemoveStudioWidgetTool : StudioCompositionToolBase, IMcpTo
         }
 
         var updated = await MutateCompositionAsync(
-            httpContext,
-            principal,
-            ToolName,
-            lifecycleService,
-            draftId,
-            generation,
+            new CompositionEdit(httpContext, principal, lifecycleService, ToolName, draftId, generation),
             body => StudioCompositionBodyEditor.RemoveWidget(body, argument.WidgetId!),
             cancellationToken).ConfigureAwait(false);
 
@@ -634,12 +617,7 @@ internal sealed class BindStudioInteractionTool : StudioCompositionToolBase, IMc
         var interaction = BuildInteraction(argument.Interaction);
 
         var updated = await MutateCompositionAsync(
-            httpContext,
-            principal,
-            ToolName,
-            lifecycleService,
-            draftId,
-            generation,
+            new CompositionEdit(httpContext, principal, lifecycleService, ToolName, draftId, generation),
             body => StudioCompositionBodyEditor.BindInteraction(body, interaction),
             cancellationToken).ConfigureAwait(false);
 
@@ -786,12 +764,7 @@ internal sealed class RemoveStudioInteractionTool : StudioCompositionToolBase, I
         }
 
         var updated = await MutateCompositionAsync(
-            httpContext,
-            principal,
-            ToolName,
-            lifecycleService,
-            draftId,
-            generation,
+            new CompositionEdit(httpContext, principal, lifecycleService, ToolName, draftId, generation),
             body => StudioCompositionBodyEditor.RemoveInteraction(body, argument.InteractionId!),
             cancellationToken).ConfigureAwait(false);
 
@@ -866,12 +839,7 @@ internal sealed class AddStudioControlTool : StudioCompositionToolBase, IMcpTool
         var control = BuildControl(argument.Control);
 
         var updated = await MutateCompositionAsync(
-            httpContext,
-            principal,
-            ToolName,
-            lifecycleService,
-            draftId,
-            generation,
+            new CompositionEdit(httpContext, principal, lifecycleService, ToolName, draftId, generation),
             body => StudioCompositionBodyEditor.AddControl(body, control),
             cancellationToken).ConfigureAwait(false);
 
@@ -1006,12 +974,7 @@ internal sealed class RemoveStudioControlTool : StudioCompositionToolBase, IMcpT
 
         var cascade = argument.CascadeInteractions ?? false;
         var updated = await MutateCompositionAsync(
-            httpContext,
-            principal,
-            ToolName,
-            lifecycleService,
-            draftId,
-            generation,
+            new CompositionEdit(httpContext, principal, lifecycleService, ToolName, draftId, generation),
             body => StudioCompositionBodyEditor.RemoveControl(body, argument.ControlId!, cascade),
             cancellationToken).ConfigureAwait(false);
 
