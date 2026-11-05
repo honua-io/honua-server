@@ -67,9 +67,32 @@ internal sealed partial class FileBackedLicenseService :
     public async Task StopAsync(CancellationToken cancellationToken)
     {
         await _stopping.CancelAsync().ConfigureAwait(false);
-        if (_revalidationTask is not null)
+        if (_revalidationTask is { } revalidation)
         {
-            await _revalidationTask.WaitAsync(cancellationToken).ConfigureAwait(false);
+            await FinishRevalidationAsync(revalidation, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private static async Task FinishRevalidationAsync(Task revalidation, CancellationToken hostShutdown)
+    {
+        try
+        {
+            await revalidation.WaitAsync(hostShutdown).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (CanceledByShutdown(revalidation, hostShutdown))
+        {
+            await SurfaceRevalidationFaultAsync(revalidation).ConfigureAwait(false);
+        }
+    }
+
+    private static bool CanceledByShutdown(Task revalidation, CancellationToken hostShutdown) =>
+        hostShutdown.IsCancellationRequested || revalidation.IsCanceled;
+
+    private static async Task SurfaceRevalidationFaultAsync(Task revalidation)
+    {
+        if (revalidation.IsFaulted)
+        {
+            await revalidation.ConfigureAwait(false);
         }
     }
 
