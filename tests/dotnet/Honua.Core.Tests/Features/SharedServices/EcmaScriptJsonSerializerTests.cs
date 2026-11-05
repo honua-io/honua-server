@@ -30,6 +30,17 @@ public sealed class EcmaScriptJsonSerializerTests
     }
 
     [UnitTest]
+    public void Stringify_RejectsAParsedLoneSurrogate()
+    {
+        var parsed = JsonNode.Parse("{\"label\":\"\\ud800\"}");
+
+        var thrown = Assert.Throws<UnpairedUtf16SurrogateException>(
+            () => EcmaScriptJsonSerializer.Stringify(parsed));
+
+        Assert.Equal(UnpairedUtf16SurrogateException.MessageText, thrown.Message);
+    }
+
+    [UnitTest]
     public void Stringify_KeepsASurrogatePairAndEscapesAReversedOne()
     {
         var value = "\ud83d\ude00\ude00\ud83d";

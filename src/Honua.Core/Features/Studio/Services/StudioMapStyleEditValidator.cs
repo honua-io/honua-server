@@ -35,9 +35,9 @@ internal static class StudioMapStyleEditValidator
             return "Expected a MapLibre v8 style document.";
         }
 
-        if (Encoding.UTF8.GetByteCount(EcmaScriptJsonSerializer.Stringify(style)) > MaxMapStyleBytes)
+        if (Utf8SizeViolation(style, MaxMapStyleBytes, "Map style exceeds the 1 MiB limit.") is { } mapSize)
         {
-            return "Map style exceeds the 1 MiB limit.";
+            return mapSize;
         }
 
         return FindProtectedMemberChange(anchor, style)
@@ -65,9 +65,26 @@ internal static class StudioMapStyleEditValidator
             }
         }
 
-        return EcmaScriptJsonSerializer.Stringify(overrides).Length <= MaxInlineStyleLength
-            ? null
-            : "Style overrides exceed the 256 KiB limit.";
+        return Utf16LengthViolation(overrides, MaxInlineStyleLength, "Style overrides exceed the 256 KiB limit.");
+    }
+
+    private static string? Utf8SizeViolation(JsonNode node, int limit, string tooLong) =>
+        MeasuredTextViolation(node, text => Encoding.UTF8.GetByteCount(text) <= limit ? null : tooLong);
+
+    private static string? Utf16LengthViolation(JsonNode node, int limit, string tooLong) =>
+        MeasuredTextViolation(node, text => text.Length <= limit ? null : tooLong);
+
+    private static string? MeasuredTextViolation(JsonNode node, Func<string, string?> measure)
+    {
+        try
+        {
+            return measure(EcmaScriptJsonSerializer.Stringify(node));
+        }
+        catch (Exception exception) when (exception is UnpairedUtf16SurrogateException
+            || (exception is InvalidOperationException && exception.Message.Contains("UTF-16", StringComparison.Ordinal)))
+        {
+            return UnpairedUtf16SurrogateException.MessageText;
+        }
     }
 
     internal static string OutlineLayerId(string layerId) => layerId + "__outline";

@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Honua.Core.Features.Shared.Services;
 using Honua.Core.Features.Studio.Domain;
 using Honua.Core.Features.Studio.Services;
 using Honua.TestKit.Attributes;
@@ -166,6 +167,20 @@ public sealed class StudioCompositionDocumentEditorTests
         Assert.Equal("Style overrides exceed the 256 KiB limit.", thrown.Message);
     }
 
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("""{"parcels":{"metadata":{"label":"\ud800"}}}""")]
+    [InlineData("""{"\ud800":{"paint":{}}}""")]
+    public void SetLayerInlineStyle_WithAParsedLoneSurrogate_ThrowsConflict(string styleBody)
+    {
+        var envelope = Envelope("""{"layers":[{"id":"parcels"}]}""");
+
+        var thrown = Assert.Throws<StudioCompositionConflictException>(
+            () => StudioCompositionDocumentEditor.SetLayerInlineStyle(envelope, "parcels", Element(styleBody)));
+
+        Assert.Equal(UnpairedUtf16SurrogateException.MessageText, thrown.Message);
+    }
+
     [UnitTest]
     public void SetLayerInlineStyle_WhenTheLayerIsMissing_ThrowsNotFound()
     {
@@ -226,6 +241,18 @@ public sealed class StudioCompositionDocumentEditorTests
             () => StudioCompositionDocumentEditor.SetMapStyle(StyledEnvelope(AuthorizedMapSpec), Element(mapSpec)));
 
         Assert.Equal(message, thrown.Message);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("""{"version":8,"name":"\ud800","sources":{"parcels":{"type":"geojson","data":{}}},"layers":[{"id":"parcels","type":"fill","source":"parcels"}]}""")]
+    [InlineData("""{"\ud800":1,"version":8,"sources":{"parcels":{"type":"geojson","data":{}}},"layers":[{"id":"parcels","type":"fill","source":"parcels"}]}""")]
+    public void SetMapStyle_WithAParsedLoneSurrogate_ThrowsConflict(string mapSpec)
+    {
+        var thrown = Assert.Throws<StudioCompositionConflictException>(
+            () => StudioCompositionDocumentEditor.SetMapStyle(StyledEnvelope(AuthorizedMapSpec), Element(mapSpec)));
+
+        Assert.Equal(UnpairedUtf16SurrogateException.MessageText, thrown.Message);
     }
 
     [UnitTest]

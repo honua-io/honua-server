@@ -4,6 +4,7 @@
 using System.Buffers;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Honua.Core.Features.Shared.Services;
 using Honua.Core.Features.Studio.Domain;
 
 namespace Honua.Core.Features.Studio.Services;
@@ -36,7 +37,32 @@ public static class StudioCompositionDocumentEditor
         });
     }
 
-    public static StudioPackageEnvelope SetLayerInlineStyle(StudioPackageEnvelope envelope, string layerId, JsonElement styleBody)
+    public static StudioPackageEnvelope SetLayerInlineStyle(StudioPackageEnvelope envelope, string layerId, JsonElement styleBody) =>
+        RefuseUnpairedSurrogate(() => BindInlineStyle(envelope, layerId, styleBody));
+
+    // An edited map style owns every layer's styling, so style definitions and layer style bindings are cleared.
+    public static StudioPackageEnvelope SetMapStyle(StudioPackageEnvelope envelope, JsonElement mapSpec) =>
+        RefuseUnpairedSurrogate(() => ReplaceMapStyle(envelope, mapSpec));
+
+    private static StudioPackageEnvelope RefuseUnpairedSurrogate(Func<StudioPackageEnvelope> edit)
+    {
+        try
+        {
+            return edit();
+        }
+        catch (UnpairedUtf16SurrogateException exception)
+        {
+            throw new StudioCompositionConflictException(exception.Message);
+        }
+        catch (InvalidOperationException exception) when (exception is not StudioCompositionConflictException
+            && exception.Message.Contains("UTF-16", StringComparison.Ordinal))
+        {
+            // The JSON reader fails a property name or a string value that holds an unpaired surrogate.
+            throw new StudioCompositionConflictException(UnpairedUtf16SurrogateException.MessageText);
+        }
+    }
+
+    private static StudioPackageEnvelope BindInlineStyle(StudioPackageEnvelope envelope, string layerId, JsonElement styleBody)
     {
         var styleNode = JsonNode.Parse(styleBody.GetRawText());
         if (StudioMapStyleEditValidator.FindInlineStyleViolation(layerId, styleNode) is { } violation)
@@ -61,8 +87,7 @@ public static class StudioCompositionDocumentEditor
         });
     }
 
-    // An edited map style owns every layer's styling, so style definitions and layer style bindings are cleared.
-    public static StudioPackageEnvelope SetMapStyle(StudioPackageEnvelope envelope, JsonElement mapSpec)
+    private static StudioPackageEnvelope ReplaceMapStyle(StudioPackageEnvelope envelope, JsonElement mapSpec)
     {
         var candidate = JsonNode.Parse(mapSpec.GetRawText());
         var unbound = StudioCompositionBodyEditor.EditBody(envelope, body => body with

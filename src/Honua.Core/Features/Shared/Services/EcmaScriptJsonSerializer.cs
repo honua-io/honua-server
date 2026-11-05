@@ -75,7 +75,7 @@ public static class EcmaScriptJsonSerializer
         switch (value.GetValueKind())
         {
             case JsonValueKind.String:
-                AppendString(text, value.GetValue<string>());
+                AppendString(text, ReadParsedString(value));
                 break;
             case JsonValueKind.Number:
                 text.Append(value.TryGetValue<double>(out var number) && double.IsFinite(number)
@@ -91,6 +91,19 @@ public static class EcmaScriptJsonSerializer
             default:
                 text.Append("null");
                 break;
+        }
+    }
+
+    private static string ReadParsedString(JsonValue value)
+    {
+        try
+        {
+            return value.GetValue<string>();
+        }
+        catch (InvalidOperationException)
+        {
+            // Parsed JSON keeps the escape until the string is read. An unpaired surrogate fails that read.
+            throw new UnpairedUtf16SurrogateException();
         }
     }
 
@@ -134,4 +147,14 @@ public static class EcmaScriptJsonSerializer
         < ' ' or (>= '\uD800' and <= '\uDFFF') => "\\u" + ((int)character).ToString("x4", CultureInfo.InvariantCulture),
         _ => null,
     };
+}
+
+internal sealed class UnpairedUtf16SurrogateException : Exception
+{
+    internal const string MessageText = "The JSON text contains an unpaired UTF-16 surrogate.";
+
+    internal UnpairedUtf16SurrogateException()
+        : base(MessageText)
+    {
+    }
 }

@@ -127,9 +127,24 @@ public sealed class StudioCompositionDocumentMcpToolTests
 
         error.GetProperty("code").GetString().Should().Be("invalid_argument");
         error.GetProperty("message").GetString().Should().Be("Style overrides must be an object.");
-        var after = await draft.ReadDraftAsync();
-        after.GetProperty("generation").GetInt64().Should().Be(before.GetProperty("generation").GetInt64());
-        after.GetProperty("envelope").GetRawText().Should().Be(before.GetProperty("envelope").GetRawText());
+        await AssertDraftUnchangedAsync(draft, before);
+    }
+
+    [UnitTest]
+    [Operation(Operations.StudioLifecycle)]
+    [Endpoint("POST /mcp tools/call honua_studio_set_layer_style")]
+    public async Task SetLayerStyle_WithAParsedLoneSurrogate_IsRefusedAndLeavesTheDraftUnchanged()
+    {
+        var draft = await StudioMcpDraftHarness.SeedMapDraftAsync(_jobService, SeededBody);
+        var before = await draft.ReadDraftAsync();
+
+        var error = await draft.CallExpectingErrorFromArgumentTextAsync(
+            new SetStudioLayerStyleTool(_jobService, NullLogger<SetStudioLayerStyleTool>.Instance),
+            """{"layerId":"parcels","styleBody":{"parcels":{"metadata":{"label":"\ud800"}}}}""");
+
+        error.GetProperty("code").GetString().Should().Be("invalid_argument");
+        error.GetProperty("message").GetString().Should().Be("The JSON text contains an unpaired UTF-16 surrogate.");
+        await AssertDraftUnchangedAsync(draft, before);
     }
 
     [UnitTest]
@@ -163,6 +178,30 @@ public sealed class StudioCompositionDocumentMcpToolTests
 
         error.GetProperty("message").GetString()
             .Should().Be("The editor cannot change protected style member 'sources'.");
+    }
+
+    [UnitTest]
+    [Operation(Operations.StudioLifecycle)]
+    [Endpoint("POST /mcp tools/call honua_studio_set_map_style")]
+    public async Task SetMapStyle_WithAParsedLoneSurrogate_IsRefusedAndLeavesTheDraftUnchanged()
+    {
+        var draft = await StudioMcpDraftHarness.SeedMapDraftAsync(_jobService, SeededBody);
+        var before = await draft.ReadDraftAsync();
+
+        var error = await draft.CallExpectingErrorFromArgumentTextAsync(
+            new SetStudioMapStyleTool(_jobService, NullLogger<SetStudioMapStyleTool>.Instance),
+            """{"mapSpec":{"version":8,"name":"\ud800","sources":{"parcels":{"type":"geojson","data":{}},"roads":{"type":"geojson","data":{}}},"layers":[{"id":"parcels","type":"fill","source":"parcels"},{"id":"roads","type":"line","source":"roads"}]}}""");
+
+        error.GetProperty("code").GetString().Should().Be("invalid_argument");
+        error.GetProperty("message").GetString().Should().Be("The JSON text contains an unpaired UTF-16 surrogate.");
+        await AssertDraftUnchangedAsync(draft, before);
+    }
+
+    private static async Task AssertDraftUnchangedAsync(StudioMcpDraftHarness draft, JsonElement before)
+    {
+        var after = await draft.ReadDraftAsync();
+        after.GetProperty("generation").GetInt64().Should().Be(before.GetProperty("generation").GetInt64());
+        after.GetProperty("envelope").GetRawText().Should().Be(before.GetProperty("envelope").GetRawText());
     }
 
     private static string? SourceIdOf(JsonElement binding) => binding.GetProperty("sourceId").GetString();

@@ -65,11 +65,26 @@ internal sealed class StudioMcpDraftHarness
         return result.StructuredContent!.Value.GetProperty("envelope").GetProperty("body");
     }
 
-    public async Task<JsonElement> CallExpectingErrorAsync(IMcpTool tool, string toolArgumentsJson)
+    public Task<JsonElement> CallExpectingErrorAsync(IMcpTool tool, string toolArgumentsJson) =>
+        CallExpectingErrorOnElementAsync(tool, DraftArguments(toolArgumentsJson));
+
+    public Task<JsonElement> CallExpectingErrorFromArgumentTextAsync(IMcpTool tool, string argumentObjectJson)
+    {
+        var members = argumentObjectJson.Trim();
+        if (members.Length < 2 || members[0] != '{')
+        {
+            throw new ArgumentException("Tool arguments must be a JSON object.", nameof(argumentObjectJson));
+        }
+
+        var json = "{\"draftId\":\"" + _draftId.ToString("D") + "\",\"generation\":" + SeededGeneration + "," + members[1..];
+        return CallExpectingErrorOnElementAsync(tool, McpTestFactory.ParseJson(json));
+    }
+
+    private async Task<JsonElement> CallExpectingErrorOnElementAsync(IMcpTool tool, JsonElement arguments)
     {
         try
         {
-            await tool.InvokeAsync(_httpContext, DraftArguments(toolArgumentsJson), CancellationToken.None);
+            await tool.InvokeAsync(_httpContext, arguments, CancellationToken.None);
         }
         catch (Exception exception) when (exception is GeoprocessingValidationException or GeoprocessingNotFoundException)
         {
