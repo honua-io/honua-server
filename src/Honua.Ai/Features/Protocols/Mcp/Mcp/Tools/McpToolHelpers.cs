@@ -9,8 +9,24 @@ using Honua.Ai.Protocols.Mcp.Models;
 
 namespace Honua.Ai.Protocols.Mcp.Tools;
 
+/// <summary>
+/// Shared conversion and serialization helpers for MCP tools.
+/// </summary>
 internal static class McpToolHelpers
 {
+    /// <summary>
+    /// Converts an MCP plan input into the canonical domain
+    /// <see cref="AnalysisPlan"/>. Enum parsing is strict: unsupported step
+    /// kinds or artifact kinds produce a
+    /// <see cref="GeoprocessingValidationException"/> so tools surface an
+    /// <c>invalid_argument</c> error rather than silently dropping fields.
+    /// Null entries inside <c>steps</c>, <c>outputs</c>, <c>warnings</c>, and
+    /// each step's <c>dependsOn</c>/<c>inputs</c> collections are rejected
+    /// with a validation error so malformed payloads like
+    /// <c>{"steps":[null]}</c> surface as <c>invalid_argument</c> instead of
+    /// turning into a server-side <c>NullReferenceException</c> that the
+    /// <c>tools/call</c> envelope would otherwise render as an internal error.
+    /// </summary>
     public static AnalysisPlan ToDomainPlan(McpPlanInput? input)
     {
         if (input is null)
@@ -138,6 +154,12 @@ internal static class McpToolHelpers
         };
     }
 
+    /// <summary>
+    /// Serializes <paramref name="value"/> to a JSON string, then into a
+    /// <see cref="JsonElement"/> so it can be embedded as
+    /// <see cref="McpToolsCallResult.StructuredContent"/> and printed as the
+    /// <c>text</c> content block alongside.
+    /// </summary>
     public static (JsonElement element, string text) SerializeStructured<T>(
         T value, JsonTypeInfo<T> typeInfo)
     {
@@ -146,9 +168,32 @@ internal static class McpToolHelpers
         return (document.RootElement.Clone(), json);
     }
 
+    /// <summary>
+    /// Serialized-text size (characters) at or above which a caller-supplied
+    /// summarizer is invoked and its one-line summary is emitted as an extra,
+    /// leading <c>text</c> block. Below this size the compact JSON speaks for
+    /// itself and no summary is added. The threshold never removes data: the
+    /// full serialized JSON is always present as a <c>text</c> block (see
+    /// <see cref="SuccessResult{T}"/>).
+    /// </summary>
     public const int InlineTextThresholdChars = 1024;
 
-    // The serialized JSON is always returned as text because some clients show only content and would hide structuredContent.
+    /// <summary>
+    /// Builds the <see cref="McpToolsCallResult"/> for a successful tool call.
+    /// The full payload travels in <see cref="McpToolsCallResult.StructuredContent"/>
+    /// (validated against the tool's <c>outputSchema</c>), and the same
+    /// serialized JSON is always returned as a <c>text</c> content block. The
+    /// MCP specification (2025-06-18, Tools, "Structured Content") says a tool
+    /// that returns structured content SHOULD also return the serialized JSON in
+    /// a TextContent block for backwards compatibility; some MCP clients surface
+    /// only <c>content</c> to the model, so eliding that block hides the result
+    /// from them. When the payload is at least
+    /// <see cref="InlineTextThresholdChars"/> and <paramref name="summarize"/> is
+    /// supplied, its information-bearing summary (counts, ids, next-step hints)
+    /// is emitted first as an additional <c>text</c> block; it never replaces
+    /// the serialized JSON. Size control belongs to each tool's own paging and
+    /// truncation arguments, not to this helper.
+    /// </summary>
     public static McpToolsCallResult SuccessResult<T>(
         T value,
         JsonTypeInfo<T> typeInfo,
@@ -159,6 +204,14 @@ internal static class McpToolHelpers
         return BuildStructuredSuccess(element, text, summary);
     }
 
+    /// <summary>
+    /// Builds a successful tool result from an already serialized JSON payload.
+    /// Used by adapter tools that project an existing server wire response
+    /// without owning the response DTO type. Follows the same content rule as
+    /// <see cref="SuccessResult{T}"/>: the serialized JSON is always returned
+    /// as a <c>text</c> block (MCP 2025-06-18, Tools, "Structured Content"),
+    /// optionally preceded by a summary for large payloads.
+    /// </summary>
     public static McpToolsCallResult SuccessJsonElement(
         JsonElement value,
         Func<JsonElement, string>? summarize = null)
@@ -169,6 +222,11 @@ internal static class McpToolHelpers
         return BuildStructuredSuccess(element, text, summary);
     }
 
+    /// <summary>
+    /// Assembles a successful structured result: optional leading summary block,
+    /// then the full serialized JSON block, with <paramref name="element"/> as
+    /// <c>structuredContent</c>.
+    /// </summary>
     private static McpToolsCallResult BuildStructuredSuccess(JsonElement element, string serializedJson, string? summary)
     {
         var jsonBlock = new McpContentBlock { Type = "text", Text = serializedJson };
@@ -184,6 +242,12 @@ internal static class McpToolHelpers
         };
     }
 
+    /// <summary>
+    /// Builds the <see cref="McpToolsCallResult"/> for a tool execution failure
+    /// with <c>isError: true</c> per MCP 2025-03-26. The canonical error envelope
+    /// is mirrored in <c>structuredContent</c> so clients can drive retry,
+    /// re-auth, and approval flows without parsing the human-readable text block.
+    /// </summary>
     public static McpToolsCallResult ErrorResult(Exception exception)
     {
         var jsonRpcError = McpErrorMapper.Map(exception);
@@ -267,6 +331,12 @@ internal static class McpToolHelpers
         _ => "ExecutionFailed"
     };
 
+    /// <summary>
+    /// Parses the raw <c>arguments</c> payload into a typed model using the
+    /// supplied type info. Throws <see cref="GeoprocessingValidationException"/>
+    /// so validation failures flow through
+    /// <see cref="McpErrorMapper"/> consistently with domain-level errors.
+    /// </summary>
     public static T ParseArguments<T>(JsonElement? arguments, JsonTypeInfo<T> typeInfo) where T : class
     {
         if (arguments is null || arguments.Value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
@@ -291,6 +361,11 @@ internal static class McpToolHelpers
         }
     }
 
+    /// <summary>
+    /// Parses optional object arguments. Missing, null, or undefined arguments
+    /// produce a default instance so read tools with all-optional filters accept
+    /// the MCP-standard empty call shape.
+    /// </summary>
     public static T ParseOptionalArguments<T>(JsonElement? arguments, JsonTypeInfo<T> typeInfo)
         where T : class, new()
     {
@@ -315,6 +390,10 @@ internal static class McpToolHelpers
         }
     }
 
+    /// <summary>
+    /// Validates a no-argument tool invocation, accepting the MCP-standard
+    /// missing/null argument bag and an empty JSON object.
+    /// </summary>
     public static void EnsureNoArguments(JsonElement? arguments)
     {
         if (arguments is null || arguments.Value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)

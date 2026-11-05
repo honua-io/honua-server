@@ -7,6 +7,16 @@ using Honua.Core.Features.Studio.Domain;
 
 namespace Honua.Ai.Protocols.Mcp.Studio;
 
+/// <summary>
+/// JSON-schema documents advertised in <c>tools/list</c> for the Studio draft
+/// lifecycle and composition-mutation tools (honua-server#3002). Schemas are
+/// immutable <see cref="JsonElement"/> values parsed at type-load time,
+/// mirroring <see cref="Honua.Ai.Protocols.Mcp.MapTools.MapToolSchemas"/>.
+/// Every mutating tool requires <c>draftId</c> + <c>generation</c> so the
+/// server can enforce optimistic concurrency (a stale-generation call surfaces
+/// a typed <c>failed_precondition</c> error rather than silently clobbering a
+/// concurrent edit).
+/// </summary>
 internal static class StudioMcpSchemas
 {
     public static readonly JsonElement SaveVersionArgumentSchema = Parse("""
@@ -25,13 +35,20 @@ internal static class StudioMcpSchemas
           "versionId":{"type":"string","format":"uuid","description":"Saved version id."}}}
         """);
 
+    /// <summary>Maximum accepted length for free-text fields (packageKey, ids, titles, notes).</summary>
     public const int MaxShortTextLength = 200;
 
+    /// <summary>Maximum accepted length for note/rationale free text.</summary>
     public const int MaxNoteLength = 2000;
 
     private const string FamilyEnumJson =
         """["query", "analysis", "map", "dashboard", "report", "form", "app", "workflow", "gp", "etl"]""";
 
+    /// <summary>
+    /// The ADR-0030 component-reference grammar as a JSON-schema pattern
+    /// (<c>map | layer:{id} | widget:{id} | control:{id}</c>), rendered from the shared
+    /// vocabulary's prefixes. Escaped for embedding in a JSON string literal.
+    /// </summary>
     private static readonly string ComponentRefPattern =
         $"^({StudioInteractionVocabulary.MapRef}"
         + $"|{StudioInteractionVocabulary.LayerRefPrefix}.+"
@@ -376,34 +393,49 @@ internal static class StudioMcpSchemas
         }
         """;
 
+    /// <summary>Schema for <see cref="McpStudioCreateDraftArgument"/>.</summary>
     public static readonly JsonElement CreateDraftArgumentSchema = Parse(CreateDraftArgumentSchemaJson);
 
+    /// <summary>Schema for <see cref="McpStudioDraftIdArgument"/> (get, validate, preview).</summary>
     public static readonly JsonElement DraftIdArgumentSchema = Parse(DraftIdArgumentSchemaJson);
 
+    /// <summary>Schema for <see cref="McpStudioUpdateDraftArgument"/>.</summary>
     public static readonly JsonElement UpdateDraftArgumentSchema = Parse(UpdateDraftArgumentSchemaJson);
 
+    /// <summary>Schema for <see cref="McpStudioAddLayerArgument"/>.</summary>
     public static readonly JsonElement AddLayerArgumentSchema = Parse(AddLayerArgumentSchemaJson);
 
+    /// <summary>Schema for <see cref="McpStudioRemoveLayerArgument"/>.</summary>
     public static readonly JsonElement RemoveLayerArgumentSchema = Parse(RemoveLayerArgumentSchemaJson);
 
+    /// <summary>Schema for <see cref="McpStudioSetLayerStyleArgument"/>.</summary>
     public static readonly JsonElement SetLayerStyleArgumentSchema = Parse(SetLayerStyleArgumentSchemaJson);
 
+    /// <summary>Schema for <see cref="McpStudioSetLayerVisibilityArgument"/>.</summary>
     public static readonly JsonElement SetLayerVisibilityArgumentSchema = Parse(SetLayerVisibilityArgumentSchemaJson);
 
+    /// <summary>Schema for <see cref="McpStudioSetViewArgument"/>.</summary>
     public static readonly JsonElement SetViewArgumentSchema = Parse(SetViewArgumentSchemaJson);
 
+    /// <summary>Schema for <see cref="McpStudioAddWidgetArgument"/>.</summary>
     public static readonly JsonElement AddWidgetArgumentSchema = Parse(AddWidgetArgumentSchemaJson);
 
+    /// <summary>Schema for <see cref="McpStudioRemoveWidgetArgument"/>.</summary>
     public static readonly JsonElement RemoveWidgetArgumentSchema = Parse(RemoveWidgetArgumentSchemaJson);
 
+    /// <summary>Schema for <see cref="McpStudioBindInteractionArgument"/>.</summary>
     public static readonly JsonElement BindInteractionArgumentSchema = Parse(BindInteractionArgumentSchemaJson);
 
+    /// <summary>Schema for <see cref="McpStudioRemoveInteractionArgument"/>.</summary>
     public static readonly JsonElement RemoveInteractionArgumentSchema = Parse(RemoveInteractionArgumentSchemaJson);
 
+    /// <summary>Schema for <see cref="McpStudioAddControlArgument"/>.</summary>
     public static readonly JsonElement AddControlArgumentSchema = Parse(AddControlArgumentSchemaJson);
 
+    /// <summary>Schema for <see cref="McpStudioRemoveControlArgument"/>.</summary>
     public static readonly JsonElement RemoveControlArgumentSchema = Parse(RemoveControlArgumentSchemaJson);
 
+    /// <summary>Schema for <see cref="McpStudioProposePublicationArgument"/>.</summary>
     public static readonly JsonElement ProposePublicationArgumentSchema = Parse(ProposePublicationArgumentSchemaJson);
 
     private static JsonElement Parse(string json)
@@ -412,9 +444,16 @@ internal static class StudioMcpSchemas
         return document.RootElement.Clone();
     }
 
-    // Numeric bounds are rendered culture-invariant so the schema is identical on every host locale.
+    /// <summary>
+    /// Renders a shared numeric bound as a culture-invariant JSON number literal, so the emitted
+    /// schema is identical on every host locale.
+    /// </summary>
     private static string Number(double value) => value.ToString(CultureInfo.InvariantCulture);
 
+    /// <summary>
+    /// Renders a shared closed vocabulary as a JSON string-array literal, so the advertised
+    /// enum is generated from the domain contract rather than restated in the schema text.
+    /// </summary>
     private static string EnumJson(IReadOnlyList<string> values) =>
         "[" + string.Join(", ", values.Select(value => "\"" + value + "\"")) + "]";
 }
