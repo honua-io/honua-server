@@ -7,18 +7,8 @@ using Honua.Geoprocessing;
 
 namespace Honua.Ai.Protocols.Mcp.Grounding;
 
-/// <summary>
-/// Converts between MCP wire shapes and canonical grounding-domain records.
-/// Validation failures are surfaced as
-/// <see cref="GeoprocessingValidationException"/> so they flow through the
-/// existing MCP error mapper.
-/// </summary>
 internal static class GroundingToolMapper
 {
-    /// <summary>
-    /// Maps <see cref="McpGroundCandidatesArgument"/> → canonical
-    /// <see cref="GroundingRequest"/>.
-    /// </summary>
     public static GroundingRequest ToDomain(McpGroundCandidatesArgument? argument)
     {
         if (argument is null)
@@ -48,12 +38,6 @@ internal static class GroundingToolMapper
         };
     }
 
-    /// <summary>
-    /// Maps <see cref="McpClarifyIntentArgument"/> → canonical
-    /// <see cref="GroundingRequest"/>. The clarifier tool requires both
-    /// <c>intentId</c> and a <c>response.answers</c> payload; either missing
-    /// surfaces as <c>invalid_argument</c>.
-    /// </summary>
     public static GroundingRequest ToDomain(McpClarifyIntentArgument? argument)
     {
         if (argument is null)
@@ -102,9 +86,6 @@ internal static class GroundingToolMapper
         };
     }
 
-    /// <summary>
-    /// Maps a domain <see cref="GroundingResult"/> to the MCP wire output.
-    /// </summary>
     public static McpGroundingOutput ToWire(GroundingResult result)
     {
         return new McpGroundingOutput

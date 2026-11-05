@@ -11,7 +11,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Geoprocessing.CustomCode;
 
-/// <summary>Bounded ingestion of immutable broker journals into canonical job events.</summary>
 internal sealed class CustomCodeArtifactIngestor(IServiceProvider services) : ICustomCodeArtifactIngestor
 {
     public async Task IngestAsync(ExecutionJobRecord job, CustomCodeArtifactDescriptor artifact, CancellationToken cancellationToken)

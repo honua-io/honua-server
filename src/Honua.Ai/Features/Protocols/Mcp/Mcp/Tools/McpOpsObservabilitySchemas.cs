@@ -5,10 +5,6 @@ using System.Text.Json;
 
 namespace Honua.Ai.Protocols.Mcp.Tools;
 
-/// <summary>
-/// JSON schemas for the platform-operations observability MCP tools and their
-/// resource-shaped structured results.
-/// </summary>
 internal static class McpOpsObservabilitySchemas
 {
     public static readonly JsonElement OpsHealthInputSchema = Parse(

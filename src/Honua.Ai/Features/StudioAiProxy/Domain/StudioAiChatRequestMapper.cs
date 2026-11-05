@@ -5,27 +5,12 @@ using System.Text.Json;
 
 namespace Honua.Ai.StudioAiProxy.Domain;
 
-/// <summary>
-/// Maps the wire-shaped <see cref="StudioAiChatHttpRequest"/> (lower-case string enums, as JSON
-/// clients naturally write them) onto the internal <see cref="StudioAiChatRequest"/> contract,
-/// rejecting unknown enum spellings with a caller-facing message rather than letting them silently
-/// default.
-/// </summary>
 public static class StudioAiChatRequestMapper
 {
     private const int MaxMessageCount = 256;
     private const int MaxToolCount = 128;
     private const int MaxToolCallCount = 256;
-    /// <summary>
-    /// Converts <paramref name="http"/> to a domain request, or returns a rejection reason.
-    /// When <paramref name="allowCallerOverrides"/> is false, caller-supplied model and output
-    /// token overrides are deliberately omitted so the proxy resolves operator-configured limits.
-    /// When <paramref name="certificationTenantId"/> is supplied it replaces the certification's
-    /// tenant binding: the tenant is resolved by the host from the authenticated request, never
-    /// taken from the wire. It is bound here, at the single place a <see cref="StudioAiChatRequest"/>
-    /// is constructed, so that <c>AcceptedRequestJson</c> — the exact bytes the transcript signature
-    /// binds — cannot be dropped by rebuilding the request downstream.
-    /// </summary>
+    // The tenant comes from the authenticated request, never the wire, and is bound here so rebuilding the request cannot drop the bytes the transcript signature covers.
     public static (StudioAiChatRequest? Request, string? Error) ToDomain(
         StudioAiChatHttpRequest http,
         bool allowCallerOverrides = true,

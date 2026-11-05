@@ -8,29 +8,15 @@ using Honua.Core.Features.Security.Domain;
 
 namespace Honua.Geoprocessing;
 
-/// <summary>
-/// Permissive <see cref="ILayerAccessAuthorizer"/> used ONLY by the collaborator-level
-/// <see cref="GeoprocessingJobService"/> constructor, which hand-wires individual
-/// dependencies for tests and the Redis-free dev CLI (honua-server#3046).
-/// </summary>
-/// <remarks>
-/// It is deliberately NOT registered in DI: the production
-/// <see cref="GeoprocessingJobAuthorizer"/> takes a required
-/// <see cref="ILayerAccessAuthorizer"/>, so a host that failed to register the real
-/// implementation fails loudly at container resolution rather than silently degrading
-/// to allow-all. Keeping the null object here preserves the pre-#3046 behavior of the
-/// hand-constructed test doubles that never exercised layer authorization.
-/// </remarks>
+// This allow-all authorizer is not registered in DI, so a missing production authorizer fails at startup instead of allowing every layer.
 internal sealed class NullLayerAccessAuthorizer : ILayerAccessAuthorizer
 {
-    /// <summary>Shared singleton instance.</summary>
     public static NullLayerAccessAuthorizer Instance { get; } = new();
 
     private NullLayerAccessAuthorizer()
     {
     }
 
-    /// <inheritdoc />
     public Task<AccessDecision> AuthorizeLayerAsync(
         ClaimsPrincipal principal,
         int layerId,
@@ -38,7 +24,6 @@ internal sealed class NullLayerAccessAuthorizer : ILayerAccessAuthorizer
         CancellationToken cancellationToken = default)
         => Task.FromResult(AccessDecision.Allowed());
 
-    /// <inheritdoc />
     public Task<AccessDecision> AuthorizePublicationAsync(
         ClaimsPrincipal principal,
         Honua.Core.Features.Metadata.Domain.V2.MetadataV2Publication publication,

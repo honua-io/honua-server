@@ -3,7 +3,6 @@
 
 namespace Honua.Ai.Protocols.Mcp;
 
-/// <summary>Single-host equivalent of the shared atomic request registry.</summary>
 internal sealed class McpMemoryRequestStore(
     Func<string, string, bool> authorize, TimeProvider timeProvider) : IMcpRequestStore
 {

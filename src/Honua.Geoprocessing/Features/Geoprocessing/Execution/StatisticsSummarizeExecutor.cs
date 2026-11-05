@@ -6,23 +6,10 @@ using NetTopologySuite.Features;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// <c>statistics.summarize</c> executor (#2140). Computes per-group summary
-/// statistics over one or more <c>caseFields</c>, matching Esri's
-/// <c>Summary Statistics</c>. Emits a TABLE (null-geometry FeatureCollection) with
-/// one row per distinct case-field combination, carrying the case-field values, a
-/// <c>FREQUENCY</c> row count, and every requested <c>statistics</c> aggregate
-/// (<c>SUM_/MEAN_/MIN_/MAX_/STDDEV_&lt;field&gt;</c>). Null/non-numeric values are
-/// skipped from numeric aggregates; a null case value forms its own group. When no
-/// case fields are supplied, a single all-rows summary row is produced. The
-/// <c>input</c> layer is supplied inline as a <c>data:application/geo+json;base64</c>
-/// data URI. Pure managed — no GDAL/GEOS native dependency.
-/// </summary>
 internal sealed class StatisticsSummarizeExecutor(
     IOptionsMonitor<GeoprocessingExecutorOptions> options)
     : FeatureCollectionTransformExecutor(options)
 {
-    /// <summary>The canonical process id this executor handles.</summary>
     internal const string HandledProcessId = "statistics.summarize";
 
     protected override string ProcessId => HandledProcessId;

@@ -11,14 +11,6 @@ using Newtonsoft.Json;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// <c>sink.quarantine</c> dead-letter executor. Writes every input feature to a companion
-/// GeoJSON artifact at the supplied <c>path</c>, tagging each with the run batch id and an
-/// optional rejection reason, and never throws on a malformed row — a single bad feature
-/// is captured rather than failing the job. The sink half of the row-level-error contract:
-/// rejected rows route here instead of aborting the run. Reconciled from the GeoETL
-/// baseline QuarantineSinkConnector onto the #1185 process/executor contract.
-/// </summary>
 internal sealed partial class QuarantineSinkExecutor : IProcessExecutor
 {
     internal const string HandledProcessId = "sink.quarantine";
@@ -42,10 +34,6 @@ internal sealed partial class QuarantineSinkExecutor : IProcessExecutor
     {
     }
 
-    /// <summary>
-    /// The single process id this executor handles, surfaced through
-    /// <see cref="IProcessExecutor"/> so the dispatcher auto-registers it (#2122).
-    /// </summary>
     public IReadOnlySet<string> ProcessIds { get; } =
         new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
 

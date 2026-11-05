@@ -12,32 +12,11 @@ using Honua.Ai.Protocols.Mcp.Models;
 
 namespace Honua.Ai.Protocols.Mcp.Tools;
 
-/// <summary>
-/// MCP tool that forward-geocodes a batch of freeform addresses in one call,
-/// returning one result per input in input order. Thin adapter over the same
-/// canonical <see cref="IGeocodeCoordinatorService"/> pipeline as
-/// <see cref="GeocodeTool"/>; each address is resolved independently so a
-/// failed address surfaces as a per-item error instead of failing the batch
-/// (the coordinator's native <c>BatchGeocodeAsync</c> collapses errors to batch
-/// granularity, which would lose that per-item contract).
-/// </summary>
-/// <remarks>
-/// Edition gating follows the #1592 model: the tool is always advertised in
-/// <c>tools/list</c>, but invoking it requires the Enterprise
-/// <c>geocoding.batch</c> entitlement from
-/// <see cref="Honua.Core.Features.Licensing.Domain.FeatureCatalog"/> ("geocode
-/// multiple addresses in a single request") — deliberately not the Pro
-/// <c>geocoding.forward</c> key the single-address tool uses, so the batch
-/// capability stays aligned with the licensing catalog.
-/// </remarks>
+// Each address is resolved on its own because the coordinator batch API collapses errors and would drop the per-item contract.
 internal sealed class GeocodeAddressesTool : IMcpTool
 {
     public const string ToolName = "honua_geocode_addresses";
 
-    /// <summary>
-    /// Entitlement key gating invocation; must exist in
-    /// <see cref="Honua.Core.Features.Licensing.Domain.FeatureCatalog.All"/>.
-    /// </summary>
     public const string EntitlementKey = "geocoding.batch";
 
     private readonly IGeoprocessingJobService _jobService;

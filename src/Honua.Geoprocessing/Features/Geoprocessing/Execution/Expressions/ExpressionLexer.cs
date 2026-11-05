@@ -6,7 +6,6 @@ using System.Text;
 
 namespace Honua.Geoprocessing.Execution.Expressions;
 
-/// <summary>The lexical token kinds the expression grammar recognizes.</summary>
 internal enum ExpressionTokenKind
 {
     Number,
@@ -37,18 +36,10 @@ internal enum ExpressionTokenKind
     End,
 }
 
-/// <summary>An immutable lexical token with its source value for literals/identifiers.</summary>
 internal readonly record struct ExpressionToken(ExpressionTokenKind Kind, string Text, double Number = 0d);
 
-/// <summary>
-/// Hand-written lexer for the computed-field expression grammar. It accepts only a
-/// fixed character/operator alphabet; any other character is rejected immediately,
-/// so the parser never sees an unexpected token. No reflection, fully AOT-safe.
-/// </summary>
 internal static class ExpressionLexer
 {
-    /// <summary>Tokenizes <paramref name="source"/> into a terminated token list.</summary>
-    /// <exception cref="ExpressionParseException">For any disallowed character or malformed literal.</exception>
     public static IReadOnlyList<ExpressionToken> Tokenize(string source)
     {
         var tokens = new List<ExpressionToken>();

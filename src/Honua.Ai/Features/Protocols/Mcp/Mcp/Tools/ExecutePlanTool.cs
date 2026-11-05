@@ -13,24 +13,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Ai.Protocols.Mcp.Tools;
 
-/// <summary>
-/// MCP tool that submits an analysis plan for asynchronous execution. Delegates
-/// to <see cref="IGeoprocessingJobService.SubmitJobAsync"/> and returns the job
-/// identifier along with the <c>honua://jobs/{jobId}</c> resource URI so clients
-/// can poll lifecycle state via <c>resources/read</c>.
-/// </summary>
-/// <remarks>
-/// This is a mutating agent operation, so it crosses the AI-operations guardrail
-/// ladder (#1631) through the shared, protocol-neutral
-/// <see cref="IAgentGuardrailPolicy"/>:
-/// <list type="bullet">
-///   <item>Community — direct execution, no enforced guardrails.</item>
-///   <item>Pro — requires the <c>ai.agent-operations</c> validation-layer
-///   entitlement; denials surface as a <c>failed_precondition</c> tool error.</item>
-///   <item>Enterprise — additionally requires the <c>ai.approval-workflows</c>
-///   entitlement so approval/policy/audit guardrails are provisioned.</item>
-/// </list>
-/// </remarks>
 internal sealed class ExecutePlanTool : IMcpTool
 {
     public const string ToolName = "honua_execute_plan";

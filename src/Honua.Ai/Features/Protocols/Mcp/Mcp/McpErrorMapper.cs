@@ -10,33 +10,13 @@ using Honua.Ai.Protocols.Mcp.Models;
 
 namespace Honua.Ai.Protocols.Mcp;
 
-/// <summary>
-/// Maps geoprocessing domain exceptions to MCP JSON-RPC error envelopes.
-/// Mirrors the translation that <see cref="HonuaProcessService"/> performs
-/// for gRPC so every transport surfaces the same recoverable signals
-/// (approval required, idempotency conflict, authentication) without parsing
-/// message strings. Numeric codes follow JSON-RPC 2.0 / MCP 2025-03-26: -32700
-/// parse error, -32600 invalid request, -32601 method not found, -32602 invalid
-/// params, -32002 resource not found, and -32000 for generic server errors.
-/// </summary>
 internal static class McpErrorMapper
 {
-    /// <summary>
-    /// Canonical string error codes used in <see cref="McpErrorData.Code"/>.
-    /// Values match the gRPC status vocabulary so clients can reuse one mapping.
-    /// </summary>
     public static class Codes
     {
         public const string Unauthenticated = "unauthenticated";
         public const string PermissionDenied = "permission_denied";
 
-        /// <summary>
-        /// A validated bearer token's OAuth scopes did not permit the operation
-        /// (honua-server#2851). Distinct from <see cref="PermissionDenied"/> — which means the
-        /// principal's operator grants were insufficient — so an operator can tell an
-        /// under-scoped agent token apart from an under-privileged principal. Mirrors RFC 6750
-        /// <c>insufficient_scope</c>.
-        /// </summary>
         public const string InsufficientScope = "insufficient_scope";
         public const string FailedPrecondition = "failed_precondition";
         public const string NotFound = "not_found";
@@ -46,7 +26,7 @@ internal static class McpErrorMapper
         public const string Internal = "internal";
     }
 
-    /// <summary>A cancelled transport request never claims tool completion or durable job cancellation.</summary>
+    // A cancelled transport request never claims tool completion or durable job cancellation.
     public static McpJsonRpcError RequestCancelled() => new()
     {
         Code = -32800,
@@ -54,7 +34,6 @@ internal static class McpErrorMapper
         Data = new McpErrorData { Code = "cancelled" }
     };
 
-    /// <summary>Refuses new session-bound work when cancellation authority cannot be established.</summary>
     public static McpJsonRpcError RequestRegistryUnavailable() => new()
     {
         Code = JsonRpcServerError,
@@ -62,29 +41,18 @@ internal static class McpErrorMapper
         Data = new McpErrorData { Code = Codes.Unavailable, Retryable = true }
     };
 
-    /// <summary>JSON-RPC 2.0 parse error for malformed JSON payloads.</summary>
     public const int JsonRpcParseError = -32700;
 
-    /// <summary>JSON-RPC 2.0 invalid request for payloads that are valid JSON but not a valid JSON-RPC envelope.</summary>
     public const int JsonRpcInvalidRequest = -32600;
 
-    /// <summary>JSON-RPC 2.0 method-not-found error for unknown MCP methods.</summary>
     public const int JsonRpcMethodNotFound = -32601;
 
-    /// <summary>JSON-RPC 2.0 invalid-params error for unknown tool names or malformed method params.</summary>
     public const int JsonRpcInvalidParams = -32602;
 
-    /// <summary>MCP reserves -32000..-32099 for implementation-defined server errors.</summary>
     public const int JsonRpcServerError = -32000;
 
-    /// <summary>MCP 2025-03-26 reserves -32002 for <c>resources/read</c> calls whose URI is unknown.</summary>
     public const int JsonRpcResourceNotFound = -32002;
 
-    /// <summary>
-    /// Translates the supplied domain exception into a JSON-RPC error object.
-    /// Used by <c>resources/read</c> (which has no result-level <c>isError</c>
-    /// hook) and by <c>tools/call</c> when building the tool-level error envelope.
-    /// </summary>
     public static McpJsonRpcError Map(Exception ex) => ex switch
     {
         GeoprocessingAuthorizationException authEx when authEx.RequiresAuthentication => new McpJsonRpcError
@@ -277,9 +245,6 @@ internal static class McpErrorMapper
         }
     };
 
-    /// <summary>
-    /// Creates a JSON-RPC parse-error envelope for payloads that are not valid JSON.
-    /// </summary>
     public static McpJsonRpcError ParseError(string message) => new()
     {
         Code = JsonRpcParseError,
@@ -287,11 +252,6 @@ internal static class McpErrorMapper
         Data = new McpErrorData { Code = Codes.InvalidArgument }
     };
 
-    /// <summary>
-    /// Creates a JSON-RPC invalid-request envelope for payloads that are JSON but
-    /// not a valid JSON-RPC 2.0 envelope (missing body, bad <c>jsonrpc</c> version,
-    /// missing or null/non-scalar <c>id</c> on a request).
-    /// </summary>
     public static McpJsonRpcError InvalidRequest(string message) => new()
     {
         Code = JsonRpcInvalidRequest,
@@ -299,9 +259,6 @@ internal static class McpErrorMapper
         Data = new McpErrorData { Code = Codes.InvalidArgument }
     };
 
-    /// <summary>
-    /// Creates a JSON-RPC method-not-found envelope for unknown MCP methods.
-    /// </summary>
     public static McpJsonRpcError MethodNotFound(string message) => new()
     {
         Code = JsonRpcMethodNotFound,
@@ -309,10 +266,6 @@ internal static class McpErrorMapper
         Data = new McpErrorData { Code = Codes.NotFound }
     };
 
-    /// <summary>
-    /// Creates an invalid-params error for protocol-level param validation failures
-    /// (missing tool name, unknown tool, malformed <c>params</c> shape).
-    /// </summary>
     public static McpJsonRpcError InvalidArgument(string message) => new()
     {
         Code = JsonRpcInvalidParams,
@@ -320,10 +273,6 @@ internal static class McpErrorMapper
         Data = new McpErrorData { Code = Codes.InvalidArgument }
     };
 
-    /// <summary>
-    /// Creates a resource-not-found envelope for <c>resources/read</c> calls whose
-    /// URI is unknown to the server.
-    /// </summary>
     public static McpJsonRpcError ResourceNotFound(string message) => new()
     {
         Code = JsonRpcResourceNotFound,
@@ -331,10 +280,6 @@ internal static class McpErrorMapper
         Data = new McpErrorData { Code = Codes.NotFound }
     };
 
-    /// <summary>
-    /// Creates an unauthenticated error (e.g. when the caller has no
-    /// <see cref="System.Security.Claims.ClaimsPrincipal"/>).
-    /// </summary>
     public static McpJsonRpcError Unauthenticated() => new()
     {
         Code = JsonRpcServerError,
@@ -346,16 +291,6 @@ internal static class McpErrorMapper
         }
     };
 
-    /// <summary>
-    /// Creates the structured error returned when a request presents an
-    /// <c>Authorization: Bearer</c> credential that fails OAuth 2.1 resource-server
-    /// validation — a bad signature, an expired token, a wrong issuer, or an
-    /// audience minted for another resource (honua-server#2850). Carries the same
-    /// <c>unauthenticated</c> code and re-authentication signal as
-    /// <see cref="Unauthenticated"/> so a client reacts identically whether a token
-    /// was rejected or never presented; the transport pairs this envelope with an
-    /// HTTP 401 and the RFC 9728 <c>WWW-Authenticate</c> challenge.
-    /// </summary>
     public static McpJsonRpcError InvalidToken() => new()
     {
         Code = JsonRpcServerError,
@@ -367,13 +302,6 @@ internal static class McpErrorMapper
         }
     };
 
-    /// <summary>
-    /// Creates the structured error returned when a request presents a valid
-    /// <c>Mcp-Session-Id</c> that is bound to a different principal than the caller
-    /// (A3 session binding; honua-server#2537). Signals
-    /// <see cref="McpErrorData.RequiresReauthentication"/> so the client discards
-    /// the session and re-initializes to obtain one bound to its own identity.
-    /// </summary>
     public static McpJsonRpcError SessionPrincipalMismatch() => new()
     {
         Code = JsonRpcServerError,
@@ -385,10 +313,6 @@ internal static class McpErrorMapper
         }
     };
 
-    /// <summary>
-    /// Creates the fail-closed response for an authenticated caller whose validated
-    /// principal has no durable actor identifier suitable for session ownership.
-    /// </summary>
     public static McpJsonRpcError SessionActorRequired() => new()
     {
         Code = JsonRpcServerError,
@@ -400,12 +324,6 @@ internal static class McpErrorMapper
         }
     };
 
-    /// <summary>
-    /// Creates the structured, retryable error returned when a new
-    /// <c>initialize</c> is refused because the session cap is reached and the
-    /// configured policy is to reject rather than evict (A3 session hardening;
-    /// honua-server#2537).
-    /// </summary>
     public static McpJsonRpcError SessionCapacityReached(int retryAfterSeconds, string correlationId) => new()
     {
         Code = JsonRpcServerError,

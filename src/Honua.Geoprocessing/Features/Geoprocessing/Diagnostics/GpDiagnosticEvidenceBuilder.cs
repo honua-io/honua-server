@@ -6,7 +6,6 @@ using System.Text.RegularExpressions;
 
 namespace Honua.Geoprocessing.Diagnostics;
 
-/// <summary>Builds a sanitized <see cref="GpDiagnosticEvidence"/> and re-checks loaded ones.</summary>
 internal static partial class GpDiagnosticEvidenceBuilder
 {
     private const int MaxInputs = 64;
@@ -88,10 +87,6 @@ internal static partial class GpDiagnosticEvidenceBuilder
         return Accept(evidence);
     }
 
-    /// <summary>
-    /// Re-applies redaction to an attachment read from a bundle. Input bytes without an
-    /// authorizing identity are refused before the attachment is returned.
-    /// </summary>
     internal static GpDiagnosticEvidence Accept(GpDiagnosticEvidence evidence)
     {
         ArgumentNullException.ThrowIfNull(evidence);

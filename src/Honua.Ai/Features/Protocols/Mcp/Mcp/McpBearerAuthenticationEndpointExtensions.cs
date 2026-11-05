@@ -12,53 +12,13 @@ using System.Security.Claims;
 
 namespace Honua.Ai.Protocols.Mcp;
 
-/// <summary>
-/// OAuth 2.1 resource-server acceptance of <c>Authorization: Bearer</c> tokens on the
-/// <c>/mcp</c> transport (honua-server#2850). Applied as an endpoint filter so a bearer
-/// token is routed either to the independently configured OperatorBearer validator or
-/// to the host's external OIDC authorities. On success it is projected onto
-/// <see cref="HttpContext.User"/> before the JSON-RPC handler runs — the per-tool
-/// <c>EnsureCallerAuthorizedAsync</c> grant model then decides authorization on the
-/// resulting principal exactly as it does for the X-API-Key path.
-/// </summary>
-/// <remarks>
-/// <para>
-/// The behaviour is strictly additive. It engages only when a request actually carries a
-/// bearer credential; a request with no <c>Authorization</c> header (the anonymous
-/// <c>initialize</c>/<c>tools/list</c> handshake) and a request already authenticated by
-/// another scheme (X-API-Key) both flow through untouched. Coexistence policy between the
-/// two credential families is a sibling concern (honua-server#2852) and is not decided
-/// here.
-/// </para>
-/// <para>
-/// External bearer validation reuses the multi-authority OIDC stack through
-/// <see cref="OidcAuthenticationExtensions.CompositeScheme"/>, enforcing issuer, audience,
-/// signature, and lifetime against every configured authority while normalizing claims
-/// through the shared <c>OidcClaimsTransformation</c>. External acceptance is gated on the
-/// same signal that drives the RFC 9728 metadata (honua-server#2849): when no authorization
-/// server is configured, a non-operator bearer remains anonymous. OperatorBearer candidates
-/// instead route directly to their independently registered concrete scheme and fail closed
-/// when signature, issuer, audience, or lifetime validation fails.
-/// </para>
-/// <para>
-/// A token selected for validation that fails — bad signature, expired, wrong issuer,
-/// or an audience minted for another resource — is a resource-server rejection (RFC 6750
-/// <c>invalid_token</c>): the filter short-circuits with HTTP 401 and an MCP-structured
-/// error envelope. The 401 is paired with the RFC 9728 <c>WWW-Authenticate</c> challenge by
-/// <see cref="McpProtectedResourceMetadataEndpointExtensions.StampChallengeOnUnauthorized"/>,
-/// which the transport arms on every MCP route.
-/// </para>
-/// </remarks>
 internal static class McpBearerAuthenticationEndpointExtensions
 {
     private const string BearerPrefix = "Bearer ";
     private static readonly object AuthenticationFailureKey = new();
     private static readonly object ValidatedPrincipalKey = new();
 
-    /// <summary>
-    /// Validates MCP bearer credentials before tenant resolution. Endpoint filters
-    /// remain as a defense-in-depth check, but cannot be the authority boundary.
-    /// </summary>
+    // The endpoint filter is defense in depth and is not the authority boundary.
     public static IApplicationBuilder UseMcpBearerAuthentication(this IApplicationBuilder app)
     {
         ArgumentNullException.ThrowIfNull(app);
@@ -102,10 +62,6 @@ internal static class McpBearerAuthenticationEndpointExtensions
         });
     }
 
-    /// <summary>
-    /// Writes the fail-closed MCP invalid-token response after shared audit/rate
-    /// middleware has entered, but before tenant resolution or endpoint execution.
-    /// </summary>
     public static IApplicationBuilder UseMcpBearerAuthenticationRejection(this IApplicationBuilder app)
     {
         ArgumentNullException.ThrowIfNull(app);
@@ -123,17 +79,12 @@ internal static class McpBearerAuthenticationEndpointExtensions
         });
     }
 
-    /// <summary>Whether early MCP bearer validation failed for this request.</summary>
     public static bool HasAuthenticationFailure(HttpContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
         return context.Items.TryGetValue(AuthenticationFailureKey, out var value) && value is true;
     }
 
-    /// <summary>
-    /// Endpoint filter that validates a presented operator or external OIDC bearer against
-    /// its selected concrete scheme, or rejects an invalid selected token with a 401.
-    /// </summary>
     public static async ValueTask<object?> AuthenticateBearerAsync(
         EndpointFilterInvocationContext context,
         EndpointFilterDelegate next)

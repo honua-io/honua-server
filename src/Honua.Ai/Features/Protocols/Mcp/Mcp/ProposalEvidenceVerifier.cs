@@ -15,18 +15,12 @@ using Org.BouncyCastle.Crypto.Signers;
 
 namespace Honua.Ai.Protocols.Mcp;
 
-/// <summary>
-/// Independently verifies that a model-selected mutation is the exact catalog-owned
-/// proposal call signed by the production Studio proxy. The verified values are then
-/// persisted with the proposal and revalidated by the approval boundary.
-/// </summary>
 internal sealed class ProposalEvidenceVerifier(
     StudioAiTranscriptSigner signer,
     TimeProvider timeProvider)
 {
     internal const string HttpContextItemKey = "honua.mcp.proposal-evidence.verified";
 
-    /// <summary>Invoking tool name for the current tools/call. Cleared with the evidence item.</summary>
     internal const string InvokingToolItemKey = "honua.mcp.proposal-evidence.invoking-tool";
 
     internal const string MetaProperty = "honua.io/proposal-evidence";

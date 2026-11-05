@@ -5,9 +5,6 @@ using System.Text.Json;
 
 namespace Honua.Ai.Protocols.Mcp.Tools;
 
-/// <summary>
-/// JSON schemas for platform-release and deploy-operation MCP tools.
-/// </summary>
 internal static class McpPlatformOpsSchemas
 {
     public static readonly JsonElement PlatformReleaseStatusInputSchema = Parse(

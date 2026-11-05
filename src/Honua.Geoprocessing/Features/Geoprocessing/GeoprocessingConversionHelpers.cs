@@ -11,25 +11,14 @@ using DomainPlanStep = Honua.Core.Features.Geoprocessing.Domain.AnalysisPlanStep
 
 namespace Honua.Geoprocessing;
 
-/// <summary>
-/// Stateless conversion helpers between geoprocessing domain types and proto messages.
-/// </summary>
 internal static class GeoprocessingConversionHelpers
 {
-    /// <summary>
-    /// <c>ErrorDetail.details</c> key that carries the symbolic error name. Geospatial.Grpc
-    /// 0.2.0-alpha.1 replaced the <c>string error_code</c> field with <c>int32 code</c>, so the
-    /// symbolic name is preserved here rather than dropped.
-    /// </summary>
     internal const string ErrorCodeDetailKey = "error_code";
 
     // -----------------------------------------------------------------------
     // Proto → Domain
     // -----------------------------------------------------------------------
 
-    /// <summary>
-    /// Converts a proto ExecutionPlan to the domain representation.
-    /// </summary>
     public static DomainPlan ToDomainPlan(Proto.ExecutionPlan proto)
     {
         var steps = proto.Steps.Count == 0
@@ -72,9 +61,6 @@ internal static class GeoprocessingConversionHelpers
     // Domain → Proto
     // -----------------------------------------------------------------------
 
-    /// <summary>
-    /// Converts a domain PlanValidationResult to the proto response.
-    /// </summary>
     public static Proto.ValidateResponse ToProtoValidateResponse(PlanValidationResult result)
     {
         var response = new Proto.ValidateResponse
@@ -99,9 +85,6 @@ internal static class GeoprocessingConversionHelpers
         return response;
     }
 
-    /// <summary>
-    /// Converts a domain DryRunResult to the proto response.
-    /// </summary>
     public static Proto.DryRunResponse ToProtoDryRunResponse(DryRunResult result)
     {
         var response = new Proto.DryRunResponse
@@ -129,9 +112,6 @@ internal static class GeoprocessingConversionHelpers
         return response;
     }
 
-    /// <summary>
-    /// Converts a non-executable validation result to the proto dry-run response.
-    /// </summary>
     public static Proto.DryRunResponse ToProtoDryRunResponse(PlanValidationResult result)
     {
         var response = new Proto.DryRunResponse
@@ -156,9 +136,6 @@ internal static class GeoprocessingConversionHelpers
         return response;
     }
 
-    /// <summary>
-    /// Converts an ExecutionJobRecord to the proto submit response.
-    /// </summary>
     public static Proto.SubmitJobResponse ToProtoSubmitJobResponse(ExecutionJobRecord job)
         => new()
         {
@@ -166,9 +143,6 @@ internal static class GeoprocessingConversionHelpers
             State = ToProtoJobState(job.Status)
         };
 
-    /// <summary>
-    /// Converts an ExecutionJobRecord to the proto get response.
-    /// </summary>
     public static Proto.GetJobResponse ToProtoGetJobResponse(ExecutionJobRecord job)
         => new()
         {
@@ -177,9 +151,6 @@ internal static class GeoprocessingConversionHelpers
             Progress = ToProtoJobProgress(job)
         };
 
-    /// <summary>
-    /// Converts a domain AnalysisResultPackage to the proto job-result response.
-    /// </summary>
     public static Proto.GetJobResultResponse ToProtoGetJobResultResponse(string jobId, AnalysisResultPackage package)
     {
         var response = new Proto.GetJobResultResponse { JobId = jobId };
@@ -372,12 +343,6 @@ internal static class GeoprocessingConversionHelpers
         _ => Proto.ArtifactClass.Unspecified
     };
 
-    /// <summary>
-    /// Maps a canonical durable job status to its proto job state. Internal (not private) so
-    /// adapters projecting a canonical <see cref="ExecutionJobRecord"/> outcome directly — for
-    /// example a cancellation response — reuse this mapping rather than fabricating their own
-    /// adapter-local state (#4630).
-    /// </summary>
     internal static Proto.JobState ToProtoJobState(ExecutionJobStatus status) => status switch
     {
         ExecutionJobStatus.Queued => Proto.JobState.Validated,
@@ -427,13 +392,7 @@ internal static class GeoprocessingConversionHelpers
         _ => Proto.Retryability.PermanentFailure
     };
 
-    /// <summary>
-    /// Numeric <c>ErrorDetail.code</c> for a domain error kind. Geospatial.Grpc 0.2.0-alpha.1
-    /// narrowed <c>ErrorDetail.code</c> to <c>int32</c>, so the symbolic name that used to
-    /// travel in the removed <c>error_code</c> string is carried in
-    /// <c>details["<see cref="ErrorCodeDetailKey"/>"]</c> instead. These numbers are a stable
-    /// wire contract: never renumber an assigned value.
-    /// </summary>
+    // These numeric codes are a stable wire contract and must not be renumbered.
     private static int ToProtoErrorCode(GeoprocessingErrorKind kind) => kind switch
     {
         GeoprocessingErrorKind.ValidationFailed => 1000,
@@ -447,9 +406,6 @@ internal static class GeoprocessingConversionHelpers
         _ => 0
     };
 
-    /// <summary>
-    /// Symbolic error name preserved from the pre-0.2.0 <c>ErrorDetail.error_code</c> string field.
-    /// </summary>
     private static string ToProtoErrorCodeSymbol(GeoprocessingErrorKind kind) => kind switch
     {
         GeoprocessingErrorKind.ValidationFailed => "VALIDATION_FAILED",

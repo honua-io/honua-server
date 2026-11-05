@@ -7,9 +7,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Ai.Protocols.Mcp.Tools;
 
-/// <summary>
-/// MCP tool that returns the deterministic operational-health snapshot.
-/// </summary>
 internal sealed class OpsHealthTool(ILogger<OpsHealthTool> logger) : IMcpTool
 {
     public const string ToolName = "honua_ops_health";
@@ -53,9 +50,6 @@ internal sealed class OpsHealthTool(ILogger<OpsHealthTool> logger) : IMcpTool
         httpContext.RequestServices.GetRequiredService<IMcpOpsObservabilityReader>();
 }
 
-/// <summary>
-/// MCP tool that lists or fetches deterministic operational findings.
-/// </summary>
 internal sealed class OpsFindingsTool(ILogger<OpsFindingsTool> logger) : IMcpTool
 {
     public const string ToolName = "honua_ops_findings";
@@ -102,9 +96,6 @@ internal sealed class OpsFindingsTool(ILogger<OpsFindingsTool> logger) : IMcpToo
         httpContext.RequestServices.GetRequiredService<IMcpOpsObservabilityReader>();
 }
 
-/// <summary>
-/// MCP tool that queries cursor-paged alert events.
-/// </summary>
 internal sealed class AlertEventsTool(ILogger<AlertEventsTool> logger) : IMcpTool
 {
     public const string ToolName = "honua_alert_events";
@@ -150,9 +141,6 @@ internal sealed class AlertEventsTool(ILogger<AlertEventsTool> logger) : IMcpToo
         httpContext.RequestServices.GetRequiredService<IMcpOpsObservabilityReader>();
 }
 
-/// <summary>
-/// MCP tool that queries the fused Operate event timeline.
-/// </summary>
 internal sealed class OperateEventsTool(ILogger<OperateEventsTool> logger) : IMcpTool
 {
     public const string ToolName = "honua_operate_events";

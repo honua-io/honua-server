@@ -15,9 +15,6 @@ internal interface IEvidenceBoundProposalTool
     string TargetProperty { get; }
 }
 
-/// <summary>
-/// MCP tool that returns desired platform-release state and live managed serving revisions.
-/// </summary>
 internal sealed class PlatformReleaseStatusTool(ILogger<PlatformReleaseStatusTool> logger) : IMcpTool
 {
     public const string ToolName = "honua_platform_release_status";
@@ -61,9 +58,6 @@ internal sealed class PlatformReleaseStatusTool(ILogger<PlatformReleaseStatusToo
         httpContext.RequestServices.GetRequiredService<IMcpPlatformOpsReader>();
 }
 
-/// <summary>
-/// MCP tool that lists deploy operations or fetches one deploy operation by id.
-/// </summary>
 internal sealed class DeployOperationsTool(ILogger<DeployOperationsTool> logger) : IMcpTool
 {
     public const string ToolName = "honua_deploy_operations";
@@ -109,9 +103,6 @@ internal sealed class DeployOperationsTool(ILogger<DeployOperationsTool> logger)
         httpContext.RequestServices.GetRequiredService<IMcpPlatformOpsReader>();
 }
 
-/// <summary>
-/// MCP tool that reports operation kinds backed by the live executor catalog.
-/// </summary>
 internal sealed class SupportedOperationKindsTool(ILogger<SupportedOperationKindsTool> logger) : IMcpTool
 {
     public const string ToolName = "honua_supported_operation_kinds";
@@ -153,9 +144,6 @@ internal sealed class SupportedOperationKindsTool(ILogger<SupportedOperationKind
     }
 }
 
-/// <summary>
-/// MCP tool that proposes a rollback as a new forward Deploy operation to a prior revision.
-/// </summary>
 internal sealed class ProposeRollbackTool(ILogger<ProposeRollbackTool> logger) : IMcpTool
 {
     public const string ToolName = "honua_propose_rollback";

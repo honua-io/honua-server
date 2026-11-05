@@ -10,12 +10,6 @@ using Honua.Ai.Protocols.Mcp.Models;
 
 namespace Honua.Ai.Protocols.Mcp.Tools;
 
-/// <summary>
-/// MCP tool that runs a single grounding pass over a natural-language operator
-/// goal. Delegates to <see cref="IGroundingService.GroundAsync"/> so the MCP
-/// surface shares its classification, ranking, and clarification logic with
-/// any future gRPC adapters.
-/// </summary>
 internal sealed class GroundCandidatesTool : IMcpTool
 {
     public const string ToolName = "honua_ground_candidates";

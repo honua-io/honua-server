@@ -6,7 +6,6 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Ai.StudioAiProxy.Adapters.Models;
 
-/// <summary>OpenAI-compatible <c>/chat/completions</c> request with <c>stream: true</c>.</summary>
 internal sealed class OpenAiProxyRequest
 {
     [JsonPropertyName("model")]
@@ -27,11 +26,6 @@ internal sealed class OpenAiProxyRequest
     [JsonPropertyName("tools")]
     public OpenAiProxyTool[]? Tools { get; set; }
 
-    /// <summary>
-    /// One of <c>"auto"</c>, <c>"none"</c>, <c>"required"</c>, or a
-    /// <c>{"type":"function","function":{"name":...}}</c> object. Modeled as <see cref="JsonElement"/>
-    /// because the shape varies by tool-choice mode; the adapter writes the right one directly.
-    /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     [JsonPropertyName("tool_choice")]
     public JsonElement? ToolChoice { get; set; }
@@ -52,11 +46,7 @@ internal sealed class OpenAiProxyMessage
     [JsonPropertyName("content")]
     public string Content { get; set; } = string.Empty;
 
-    /// <summary>
-    /// Required on a <c>"tool"</c>-role message so the provider can correlate this result with the
-    /// tool call it answers; the tool loop otherwise cannot proceed past the first call. Omitted
-    /// for every other role.
-    /// </summary>
+    // A tool-role message must carry the tool-call id or the provider cannot correlate the result and the loop stalls.
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     [JsonPropertyName("tool_call_id")]
     public string? ToolCallId { get; set; }
@@ -109,12 +99,7 @@ internal sealed class OpenAiProxyFunction
     public JsonElement Parameters { get; set; }
 }
 
-/// <summary>
-/// The <c>{"type":"function","function":{"name":...}}</c> shape of <c>tool_choice</c> when a
-/// request forces a specific tool. A typed DTO (rather than an anonymous type passed to
-/// <c>JsonSerializer.SerializeToElement</c>) because anonymous types can never have source-generated
-/// metadata, and the published server image runs with reflection-based JSON serialization disabled.
-/// </summary>
+// A typed DTO is required because anonymous types have no source-generated metadata and reflection JSON is disabled.
 internal sealed class OpenAiProxyToolChoiceSpecific
 {
     [JsonPropertyName("type")]
@@ -132,15 +117,10 @@ internal sealed class OpenAiProxyToolChoiceFunctionRef
 
 internal sealed class OpenAiProxyStreamOptions
 {
-    /// <summary>
-    /// Requests a final usage-only chunk before <c>[DONE]</c> (OpenAI, OpenRouter, and most
-    /// LiteLLM-fronted backends honor this; a backend that does not recognize the field ignores it).
-    /// </summary>
     [JsonPropertyName("include_usage")]
     public bool IncludeUsage { get; set; } = true;
 }
 
-/// <summary>One decoded OpenAI-compatible streaming chunk (a <c>data:</c> line's JSON body, excluding the literal <c>[DONE]</c> sentinel).</summary>
 internal sealed class OpenAiStreamChunk
 {
     [JsonPropertyName("model")]

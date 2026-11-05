@@ -7,12 +7,6 @@ using Honua.Ai.Protocols.Mcp.Models;
 
 namespace Honua.Ai.Protocols.Mcp.Resources;
 
-/// <summary>
-/// MCP resource for <c>honua://jobs/{jobId}/report</c>. Delegates to
-/// <see cref="IAnalysisReportService"/> so the resource preserves the same
-/// authorization and not-found semantics as the underlying job-results
-/// resource.
-/// </summary>
 internal sealed class AnalysisReportResource : IMcpResource
 {
     public const string Template =

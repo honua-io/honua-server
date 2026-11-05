@@ -5,12 +5,6 @@ using System.Text.Json;
 
 namespace Honua.Ai.Protocols.Mcp.Tools;
 
-/// <summary>
-/// JSON schemas for the job diagnosis MCP tools (honua-server#6219). The output
-/// schemas name the top-level sections and the fields an agent must read before
-/// acting; nested objects mirror the admin diagnostics projection and are left
-/// open so additive projection fields never break the tool contract.
-/// </summary>
 internal static class McpJobDiagnosticsSchemas
 {
     public const int DefaultEvents = 50;

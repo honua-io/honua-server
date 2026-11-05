@@ -5,35 +5,9 @@ using Honua.Core.Features.Geoprocessing.Domain;
 
 namespace Honua.Geoprocessing;
 
-/// <summary>
-/// Structural (dependency-graph) validation for an <see cref="AnalysisPlan"/>.
-/// Enforces that every step has a unique, non-empty identifier, that each
-/// declared dependency refers to a real step (no dangling references and no
-/// self-dependencies), and that the resulting dependency graph is acyclic.
-///
-/// <para>
-/// The executor assumes a topological ordering of steps, so a cycle or a
-/// dangling reference would deadlock (or misorder) the run; this validator is
-/// the single fail-fast gate that rejects such plans before submission. It is
-/// shared by the durable submit/validate/dry-run paths
-/// (<see cref="GeoprocessingJobService"/>) and the headless GP Devkit
-/// <c>honua gp plan</c> dry-run path so both reject the exact same malformed
-/// graphs with the exact same message.
-/// </para>
-/// </summary>
+// The executor assumes a topological order, so a cycle or a dangling reference would deadlock or misorder the run.
 internal static class AnalysisPlanGraphValidator
 {
-    /// <summary>
-    /// Validates the plan's step dependency graph, throwing
-    /// <see cref="GeoprocessingValidationException"/> on the first structural
-    /// defect (empty/duplicate stepId, dangling or self dependency, or a cycle).
-    /// An empty plan is treated as structurally valid here; callers enforce the
-    /// "at least one step" rule separately where it applies.
-    /// </summary>
-    /// <param name="plan">The plan whose step graph is validated.</param>
-    /// <exception cref="GeoprocessingValidationException">
-    /// Thrown when the step graph is malformed.
-    /// </exception>
     public static void Validate(AnalysisPlan plan)
     {
         ArgumentNullException.ThrowIfNull(plan);
@@ -120,15 +94,6 @@ internal static class AnalysisPlanGraphValidator
         }
     }
 
-    /// <summary>
-    /// Returns the steps of <paramref name="plan"/> in a deterministic topological
-    /// order (dependencies before dependents). Ties are broken by ordinal stepId so
-    /// the same plan always yields the same execution order in the plan preview.
-    /// Assumes <see cref="Validate(AnalysisPlan)"/> has already accepted the plan;
-    /// callers that have not validated should call it first.
-    /// </summary>
-    /// <param name="plan">The (already structurally valid) plan to order.</param>
-    /// <returns>The plan's steps in topological execution order.</returns>
     public static IReadOnlyList<AnalysisPlanStep> TopologicalOrder(AnalysisPlan plan)
     {
         ArgumentNullException.ThrowIfNull(plan);

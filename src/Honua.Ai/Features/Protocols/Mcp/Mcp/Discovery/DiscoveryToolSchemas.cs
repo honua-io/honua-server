@@ -5,19 +5,10 @@ using System.Text.Json;
 
 namespace Honua.Ai.Protocols.Mcp.Discovery;
 
-/// <summary>
-/// JSON-schema documents advertised in <c>tools/list</c> for the discovery tools
-/// (<c>honua_resolve_entity</c>, <c>honua_list_capabilities</c>). Schemas are
-/// immutable <see cref="JsonElement"/> values parsed at type-load time to keep the
-/// MCP surface AOT-safe (no runtime schema reflection). Mirrors
-/// <see cref="Honua.Ai.Protocols.Mcp.MapTools.MapToolSchemas"/>.
-/// </summary>
 internal static class DiscoveryToolSchemas
 {
-    /// <summary>Default number of ranked matches returned by <c>honua_resolve_entity</c>.</summary>
     public const int DefaultResolveLimit = 10;
 
-    /// <summary>Hard ceiling on ranked matches returned by <c>honua_resolve_entity</c>.</summary>
     public const int MaxResolveLimit = 50;
 
     private const string ResolveEntityArgumentSchemaJson = """
@@ -171,16 +162,12 @@ internal static class DiscoveryToolSchemas
         }
         """;
 
-    /// <summary>Input schema for <see cref="McpResolveEntityArgument"/>.</summary>
     public static readonly JsonElement ResolveEntityArgumentSchema = Parse(ResolveEntityArgumentSchemaJson);
 
-    /// <summary>Input schema for <see cref="McpListCapabilitiesArgument"/>.</summary>
     public static readonly JsonElement ListCapabilitiesArgumentSchema = Parse(ListCapabilitiesArgumentSchemaJson);
 
-    /// <summary>Output schema for <see cref="McpResolveEntityOutput"/>.</summary>
     public static readonly JsonElement ResolveEntityOutputSchema = Parse(ResolveEntityOutputSchemaJson);
 
-    /// <summary>Output schema for <see cref="McpListCapabilitiesOutput"/>.</summary>
     public static readonly JsonElement ListCapabilitiesOutputSchema = Parse(ListCapabilitiesOutputSchemaJson);
 
     private static JsonElement Parse(string json)

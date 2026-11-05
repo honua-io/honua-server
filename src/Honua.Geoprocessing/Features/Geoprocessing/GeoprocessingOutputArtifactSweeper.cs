@@ -12,11 +12,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Geoprocessing;
 
-/// <summary>
-/// Dispatches the staged-output orphan sweep as a scheduled control-plane tick so
-/// event-triggered (serverless) deployments reclaim staged outputs without hosting
-/// the in-process timer (mirrors <see cref="WorkspaceCleanupScheduledTickHandler"/>).
-/// </summary>
 internal sealed class GeoprocessingOutputArtifactSweeperScheduledTickHandler(
     GeoprocessingOutputArtifactSweeper service)
     : Honua.Core.Features.ControlPlane.Abstractions.IScheduledTickHandler
@@ -28,16 +23,7 @@ internal sealed class GeoprocessingOutputArtifactSweeperScheduledTickHandler(
         => service.SweepOnceAsync(cancellationToken);
 }
 
-/// <summary>
-/// Reconciles orphaned staged geoprocessing output objects (#3089): losing-attempt
-/// staging left behind by retries, staged-but-never-published objects from crashed
-/// attempts, and expired outputs whose job record no longer exists. It never deletes
-/// an object that may still be publishing (the current attempt of a live job, or any
-/// object younger than the sweep grace), that is being read (an unexpired read
-/// lease), or that carries a durable retention hold (a COG-catalog registration
-/// outliving the job record). Keys outside the canonical attempt-scoped scheme are
-/// never touched.
-/// </summary>
+// The sweep never deletes an object that may still be publishing, leased, retained, or outside the attempt-scoped key scheme.
 internal sealed partial class GeoprocessingOutputArtifactSweeper(
     IGeoprocessingOutputObjectStore store,
     IExecutionJobStore jobStore,
@@ -71,7 +57,6 @@ internal sealed partial class GeoprocessingOutputArtifactSweeper(
         }
     }
 
-    /// <summary>Runs one sweep pass. Exposed for deterministic integration testing.</summary>
     internal async Task<SweepResult> SweepOnceAsync(CancellationToken cancellationToken)
     {
         var current = options.CurrentValue;
@@ -220,10 +205,6 @@ internal sealed partial class GeoprocessingOutputArtifactSweeper(
             .Any(staged => string.Equals(staged.ObjectKey, objectKey, StringComparison.Ordinal));
     }
 
-    /// <summary>Outcome of one sweep pass.</summary>
-    /// <param name="Scanned">Objects considered.</param>
-    /// <param name="Deleted">Objects deleted.</param>
-    /// <param name="Failed">Objects whose deletion failed.</param>
     internal readonly record struct SweepResult(int Scanned, int Deleted, int Failed);
 
     private static partial class Log

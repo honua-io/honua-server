@@ -5,7 +5,6 @@ using Honua.Geoprocessing;
 
 namespace Honua.Ai.Protocols.Mcp.Studio;
 
-/// <summary>A generation conflict on an owner-authorized draft snapshot.</summary>
 internal sealed class StudioDraftGenerationConflictException(long currentGeneration)
     : GeoprocessingPreconditionFailedException("Stale draft generation; refresh and retry.")
 {

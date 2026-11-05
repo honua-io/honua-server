@@ -11,15 +11,6 @@ using NetTopologySuite.IO;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// <c>sink.geojson-file</c> executor. Writes the input FeatureCollection to a GeoJSON
-/// FeatureCollection file at the supplied <c>path</c> and publishes a small result
-/// descriptor artifact (path + written/rejected counts). Managed NetTopologySuite
-/// writer — no native dependency. Reconciled from the GeoETL baseline
-/// GeoJsonFileSinkConnector onto the #1185 process/executor contract. Features with
-/// null geometry are written (GeoJSON permits a null geometry member) but counted as
-/// rejected so the result reflects them.
-/// </summary>
 internal sealed partial class GeoJsonFileSinkExecutor : IProcessExecutor
 {
     internal const string HandledProcessId = "sink.geojson-file";
@@ -41,10 +32,6 @@ internal sealed partial class GeoJsonFileSinkExecutor : IProcessExecutor
     {
     }
 
-    /// <summary>
-    /// The single process id this executor handles, surfaced through
-    /// <see cref="IProcessExecutor"/> so the dispatcher auto-registers it (#2122).
-    /// </summary>
     public IReadOnlySet<string> ProcessIds { get; } =
         new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
 
@@ -203,11 +190,6 @@ internal sealed partial class GeoJsonFileSinkExecutor : IProcessExecutor
     }
 }
 
-/// <summary>
-/// Shared encoder for sink result-descriptor artifacts. Sinks terminate a workflow by
-/// writing to an external target, so they publish a small JSON descriptor (the target
-/// location and row counts) rather than a FeatureCollection.
-/// </summary>
 internal static class SinkResultArtifact
 {
     public const string DataUriPrefix = "data:application/json;base64,";

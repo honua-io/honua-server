@@ -757,13 +757,6 @@ internal sealed partial class AnalysisContentService(
                 return failure;
             }).ConfigureAwait(false);
 
-    /// <summary>
-    /// Runs a job/log diagnostic read and maps backing job- or log-store outages to
-    /// <see cref="AnalysisContentStoreUnavailableException"/> so an unavailable Redis-backed store
-    /// surfaces as the documented retryable 503 instead of a generic 500. Job-read authorization
-    /// and not-found results are raised by the read itself and pass through unchanged, as does
-    /// cancellation.
-    /// </summary>
     private static async Task<T> TranslateDiagnosticStoreFailuresAsync<T>(Func<Task<T>> read)
     {
         try

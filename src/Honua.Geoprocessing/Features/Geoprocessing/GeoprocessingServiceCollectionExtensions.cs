@@ -20,16 +20,8 @@ using StackExchange.Redis;
 
 namespace Honua.Geoprocessing;
 
-/// <summary>
-/// Registers geoprocessing workspace lifecycle and service dependencies.
-/// </summary>
 internal static class GeoprocessingServiceCollectionExtensions
 {
-    /// <summary>
-    /// Source process ids served by a per-process <see cref="RemoteSourceExecutor"/>.
-    /// Must match the catalog ProcessDefinitions and the registered
-    /// <c>IDagFeatureSource.SourceId</c> values.
-    /// </summary>
     private static readonly string[] RemoteSourceProcessIds =
     [
         "source.honua-layer",
@@ -39,10 +31,6 @@ internal static class GeoprocessingServiceCollectionExtensions
         "source.postgis",
     ];
 
-    /// <summary>
-    /// Registers geoprocessing service dependencies including workspace lifecycle,
-    /// the execution job store, and built-in process catalog.
-    /// </summary>
     public static IServiceCollection AddGeoprocessing(
         this IServiceCollection services,
         IConfiguration configuration)
@@ -333,19 +321,6 @@ internal static class GeoprocessingServiceCollectionExtensions
         return services;
     }
 
-    /// <summary>
-    /// Auto-registers every built-in <see cref="IProcessExecutor"/> (GP Devkit
-    /// authoring contract #2122). Each executor is registered as its concrete type
-    /// (so call sites that resolve a specific executor keep working) and is also
-    /// surfaced into the enumerable <see cref="IProcessExecutor"/> set the
-    /// <see cref="GeoprocessingDispatchJobExecutor"/> enumerates — both bound to the
-    /// SAME singleton instance via a resolving factory, so there is exactly one of
-    /// each. No reflection scan is used; combined with the
-    /// <c>[DynamicallyAccessedMembers(PublicConstructors)]</c> annotation on
-    /// <c>Register</c>'s type parameter (which roots each executor's constructor for
-    /// the trimmer), the registration is Native-AOT-safe. Adding a new managed process
-    /// is a one-line <c>Register&lt;T&gt;</c> call here plus its catalog entry.
-    /// </summary>
     private static void AddProcessExecutors(IServiceCollection services)
     {
         Register<GeometryBufferJobExecutor>(services);

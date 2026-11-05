@@ -3,190 +3,54 @@
 
 namespace Honua.Ai.Protocols.Mcp;
 
-/// <summary>
-/// Policy applied when a new MCP session would exceed
-/// <see cref="McpOptions.MaxSessions"/>.
-/// </summary>
 internal enum McpSessionEvictionPolicy
 {
-    /// <summary>
-    /// Evict the least-recently-used session to make room for the new one. This
-    /// keeps a public <c>initialize</c> endpoint responsive under load while the
-    /// idle TTL and the cap together bound host memory. An abandoned or idle
-    /// session is the most likely eviction target because active sessions keep
-    /// refreshing their last-access timestamp.
-    /// </summary>
     EvictLeastRecentlyUsed,
 
-    /// <summary>
-    /// Reject the new <c>initialize</c> with a retryable
-    /// <c>unavailable</c> error and leave existing sessions untouched. Prevents a
-    /// burst of anonymous initializes from evicting live sessions, at the cost of
-    /// briefly refusing new sessions when the table is full.
-    /// </summary>
     RejectNew
 }
 
-/// <summary>
-/// Host-tunable options for the MCP Streamable-HTTP surface: whether the optional
-/// server-initiated <c>GET /mcp</c> SSE stream is offered, and the session
-/// lifecycle bounds (idle TTL, capacity, and the eviction policy) that keep an
-/// anonymous-capable <c>initialize</c> endpoint from growing host memory without
-/// limit (A3 session hardening; honua-server#2537).
-/// </summary>
-/// <remarks>
-/// Bound from the <c>Mcp</c> configuration section. Defaults are chosen for the
-/// baseline deployment reality (serverless / non-streaming ingress such as
-/// CloudFront → API Gateway HTTP API → Lambda): server-initiated streaming is
-/// <em>off</em> so <c>GET /mcp</c> answers <c>405 Method Not Allowed</c> per the
-/// Streamable-HTTP spec and spec-compliant SDK clients skip the optional stream
-/// instead of hanging it at a non-streaming origin.
-/// </remarks>
 internal sealed class McpOptions
 {
-    /// <summary>Configuration section name.</summary>
     public const string SectionName = "Mcp";
 
-    /// <summary>
-    /// When <see langword="true"/> the server offers the optional server-initiated
-    /// <c>GET /mcp</c> SSE stream (progress / <c>*/list_changed</c> notifications);
-    /// when <see langword="false"/> (the default) <c>GET /mcp</c> returns
-    /// <c>405 Method Not Allowed</c> with <c>Allow: POST, DELETE</c>. Enable this
-    /// only behind ingress that can hold a streaming response open (e.g. nginx with
-    /// buffering disabled, an ALB, or a direct connection) — not behind a buffering
-    /// serverless gateway, where the SDK's standalone GET stream would hang and
-    /// churn (honua-server#2537).
-    /// </summary>
+    // Streaming defaults off because a buffering serverless gateway would hang the SDK's standalone GET stream.
     public bool ServerInitiatedStreamEnabled { get; set; }
 
-    /// <summary>
-    /// Development convenience. When <see langword="true"/> a <c>POST /mcp</c>
-    /// request that presents a well-formed <c>Mcp-Session-Id</c> no instance holds
-    /// is served as if it were session-less instead of being rejected with
-    /// HTTP 404 (honua-server#3027). That silently drops whatever the client
-    /// negotiated at <c>initialize</c> (the workflow view, so <c>tools/list</c>
-    /// changes mid-session, and the elicitation capability), which is why it is
-    /// <em>off</em> by default everywhere except the Development environment: a
-    /// session negotiated on any instance is honoured by every instance (through
-    /// the shared Redis session store when Redis is connected) or refused with
-    /// HTTP 404 so a conforming client re-initializes, never silently downgraded.
-    /// An explicit <c>Mcp:StatelessSessionFallback</c> setting overrides the
-    /// environment default. Malformed ids (non visible-ASCII or overlong) always
-    /// 404 regardless of this setting.
-    /// </summary>
+    // Defaults off outside Development, because serving an unknown session as session-less drops the view negotiated at initialize; an explicit setting overrides that default.
     public bool StatelessSessionFallback { get; set; }
 
-    /// <summary>
-    /// Environment default for <see cref="StatelessSessionFallback"/>: on only in
-    /// Development. Applied before configuration binding, so an explicit setting wins.
-    /// </summary>
     internal static bool DefaultStatelessSessionFallback(IHostEnvironment? environment) =>
         environment?.IsDevelopment() == true;
 
-    /// <summary>
-    /// How sessions are kept when no shared session store (Redis) is composed
-    /// (<see cref="McpSessionModeSetting"/>). With a store sessions are always
-    /// shared. <see cref="McpSessionModeSetting.Auto"/> (the default) selects
-    /// stateless signed session ids on a host that runs as several instances that
-    /// cannot share memory (AWS Lambda, Azure Functions, Cloud Run, or
-    /// <c>Deployment:Mode=MultiNode</c>) and in-memory sessions otherwise.
-    /// </summary>
     public McpSessionModeSetting SessionMode { get; set; } = McpSessionModeSetting.Auto;
 
-    /// <summary>
-    /// Secret every instance of the deployment shares, used to key stateless
-    /// session ids (<see cref="McpSessionMode.Stateless"/>). When unset the
-    /// database connection string (<c>ConnectionStrings:DefaultConnection</c>),
-    /// which every instance already shares, is used as the key input. Without
-    /// either, stateless mode is unavailable and sessions stay in memory.
-    /// </summary>
+    // When no signing key is configured, the shared database connection string is the HKDF input.
     public string? SessionSigningKey { get; set; }
 
-    /// <summary>Default for <see cref="StatelessSessionLifetime"/>: 8 hours.</summary>
     internal static readonly TimeSpan DefaultStatelessSessionLifetime = TimeSpan.FromHours(8);
 
-    /// <summary>
-    /// Absolute lifetime of a stateless session id, counted from <c>initialize</c>.
-    /// A stateless session cannot slide an idle window across instances, so it
-    /// expires this long after it was minted and the client re-initializes.
-    /// Default 8 hours.
-    /// </summary>
     public TimeSpan StatelessSessionLifetime { get; set; } = DefaultStatelessSessionLifetime;
 
-    /// <summary>
-    /// Maximum number of concurrently tracked sessions. When reached, a new
-    /// <c>initialize</c> is handled per <see cref="SessionEvictionPolicy"/>. Bounds
-    /// host memory on a public endpoint. Default 10,000.
-    /// </summary>
     public int MaxSessions { get; set; } = 10_000;
 
-    /// <summary>
-    /// Sliding idle timeout after which an untouched session expires and is swept.
-    /// Every accepted request (or an opened GET stream) on a session refreshes the
-    /// window. Default 30 minutes. Expired sessions surface the same HTTP 404 the
-    /// transport already uses for unknown sessions, so clients re-initialize
-    /// cleanly. Bind as a <c>TimeSpan</c> string (e.g. <c>00:30:00</c>).
-    /// </summary>
     public TimeSpan SessionIdleTimeout { get; set; } = TimeSpan.FromMinutes(30);
 
-    /// <summary>
-    /// Policy applied when <see cref="MaxSessions"/> is reached. Defaults to
-    /// <see cref="McpSessionEvictionPolicy.EvictLeastRecentlyUsed"/>.
-    /// </summary>
     public McpSessionEvictionPolicy SessionEvictionPolicy { get; set; }
         = McpSessionEvictionPolicy.EvictLeastRecentlyUsed;
 
-    /// <summary>
-    /// Delay advised when reject-new session capacity backpressure is returned. Default 5 seconds.
-    /// </summary>
     public int SessionCapacityRetryAfterSeconds { get; set; } = 5;
 
-    /// <summary>
-    /// Maximum number of concurrently tracked anonymous sessions (SEC-18). Anonymous
-    /// sessions form their own pool inside <see cref="MaxSessions"/>: admitting one
-    /// only ever evicts another anonymous session, never an authenticated one, and an
-    /// authenticated <c>initialize</c> at capacity evicts anonymous sessions before
-    /// it refuses the new session. Clamped to <see cref="MaxSessions"/>. Default 1,000.
-    /// </summary>
     public int MaxAnonymousSessions { get; set; } = 1_000;
 
-    /// <summary>Default for <see cref="MaxSessionsPerPrincipal"/>.</summary>
     public const int DefaultMaxSessionsPerPrincipal = 32;
 
-    /// <summary>
-    /// Maximum sessions one authenticated principal key may hold (honua-server#5629,
-    /// SRV-AI-003). The key is the session binding, which already includes the
-    /// effective tenant, so one caller cannot spend another identity's or tenant's
-    /// sessions. At this quota, <see cref="SessionEvictionPolicy"/> evicts that
-    /// principal's own least-recently-used session or rejects the new
-    /// <c>initialize</c>. A principal under quota never evicts another principal;
-    /// global pressure evicts anonymous sessions only, then refuses. Values at or
-    /// above <see cref="MaxSessions"/> are clamped to one less than the global cap
-    /// (or 1 when the cap is 1) so one principal cannot occupy every slot.
-    /// Default <see cref="DefaultMaxSessionsPerPrincipal"/>.
-    /// </summary>
     public int MaxSessionsPerPrincipal { get; set; } = DefaultMaxSessionsPerPrincipal;
 
-    /// <summary>
-    /// Maximum number of elements in one JSON-RPC batch on <c>POST /mcp</c> (SEC-18).
-    /// A longer batch is answered with a single <c>invalid_request</c> error and none
-    /// of its elements is dispatched. Default 50.
-    /// </summary>
     public int MaxBatchSize { get; set; } = 50;
 
-    /// <summary>
-    /// Maximum number of elements in one JSON-RPC batch from an anonymous caller on
-    /// <c>POST /mcp</c> (SEC-18). The effective anonymous bound is the smaller of this
-    /// value and <see cref="MaxBatchSize"/>; authenticated callers use
-    /// <see cref="MaxBatchSize"/>. Default 5.
-    /// </summary>
     public int MaxAnonymousBatchSize { get; set; } = 5;
 
-    /// <summary>
-    /// Maximum <c>POST /mcp</c> request body size in bytes (SEC-18). A larger body is
-    /// refused with HTTP 413 before it is parsed. The default, 10 MiB, leaves room for
-    /// the 4 MiB inline dataset accepted by <c>honua_ingest_dataset</c> after JSON
-    /// string escaping.
-    /// </summary>
+    // The 10 MiB default leaves room for the 4 MiB inline dataset after JSON string escaping.
     public long MaxRequestBodyBytes { get; set; } = 10L * 1024 * 1024;
 }

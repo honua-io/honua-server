@@ -6,22 +6,10 @@ using NetTopologySuite.Features;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// <c>statistics.calculate</c> executor (#2140). Computes the documented descriptive
-/// statistics (<c>COUNT</c>, <c>MIN</c>, <c>MAX</c>, <c>MEAN</c>, <c>SUM</c>,
-/// <c>STDDEV</c>) for each requested field across the whole <c>input</c> dataset.
-/// Emits a TABLE (null-geometry FeatureCollection) with one row per field, keyed by
-/// a <c>FIELD</c> column. Null/non-numeric values are excluded from the numeric
-/// aggregates; <c>STDDEV</c> is the sample (n-1) standard deviation and is null for
-/// fewer than two numeric values. The <c>input</c> layer is supplied inline as a
-/// <c>data:application/geo+json;base64</c> data URI. Pure managed — no GDAL/GEOS
-/// native dependency.
-/// </summary>
 internal sealed class StatisticsCalculateExecutor(
     IOptionsMonitor<GeoprocessingExecutorOptions> options)
     : FeatureCollectionTransformExecutor(options)
 {
-    /// <summary>The canonical process id this executor handles.</summary>
     internal const string HandledProcessId = "statistics.calculate";
 
     protected override string ProcessId => HandledProcessId;

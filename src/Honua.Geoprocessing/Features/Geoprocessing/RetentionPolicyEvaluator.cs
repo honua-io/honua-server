@@ -7,9 +7,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Geoprocessing;
 
-/// <summary>
-/// Evaluates retention policies using configured overrides and built-in defaults.
-/// </summary>
 internal sealed class RetentionPolicyEvaluator : IRetentionPolicyEvaluator
 {
     private readonly Dictionary<WorkspaceKind, RetentionPolicy> _policies;

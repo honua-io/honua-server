@@ -8,35 +8,6 @@ using NetTopologySuite.Features;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// <c>transform.attribute-join</c> executor. Performs a non-spatial (attribute)
-/// hash join between the streaming <c>input</c> FeatureCollection and a second
-/// <c>right</c> FeatureCollection supplied as a data URI (a second DAG input, a
-/// Honua layer materialized to GeoJSON, or a lookup table). For each input feature
-/// the join key is built from one or more <c>leftKeys</c> attributes and matched
-/// against the right side keyed by <c>rightKeys</c>; selected right-side
-/// <c>fields</c> are brought onto the output feature.
-/// </summary>
-/// <remarks>
-/// <para>
-/// Bounded memory: the RIGHT (build) side is fully materialized into an in-memory
-/// hash table keyed by the composite join key, so peak memory is proportional to
-/// the right dataset, which is bounded by
-/// <see cref="GeoprocessingExecutorOptions.MaxArtifactBytes"/> (the same ceiling
-/// every transform's input data URI is checked against). The LEFT (probe) side
-/// streams feature-by-feature and only its already-decoded FeatureCollection is
-/// held — there is no Cartesian buffering. There is no spill-to-disk; a right side
-/// larger than the artifact ceiling is rejected at parse time. Callers joining a
-/// very large reference set should pre-aggregate or chunk it.
-/// </para>
-/// <para>
-/// Join types: <c>inner</c> emits only input features that match at least one right
-/// row; <c>left</c> emits every input feature, leaving the carried fields null when
-/// there is no match. When an input row matches multiple right rows the join fans
-/// out one output feature per match (standard relational multiplicity), reusing the
-/// input geometry. Pure managed — no geometry operations, no native dependency.
-/// </para>
-/// </remarks>
 internal sealed class AttributeJoinTransformExecutor(
     IOptionsMonitor<GeoprocessingExecutorOptions> options)
     : FeatureCollectionTransformExecutor(options)
@@ -219,16 +190,7 @@ internal sealed class AttributeJoinTransformExecutor(
         return true;
     }
 
-    /// <summary>
-    /// Escapes the U+001E (escape prefix) and U+001F (unit-separator delimiter) characters
-    /// within a single key component value so they cannot be mistaken for structural
-    /// delimiters in the composite key string. Encoding:
-    /// <list type="bullet">
-    ///   <item>U+001E in value -&gt; U+001E U+001E</item>
-    ///   <item>U+001F in value -&gt; U+001E U+001F</item>
-    /// </list>
-    /// A single unescaped U+001F therefore always means "column boundary".
-    /// </summary>
+    // U+001E and U+001F inside a component are escaped so a single unescaped U+001F always means a column boundary.
     private static string? EscapeKeyComponent(string? value)
     {
         if (value is null)

@@ -9,9 +9,6 @@ using StackExchange.Redis;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Redis-backed store for terminal geoprocessing result packages.
-/// </summary>
 internal sealed partial class RedisGeoprocessingResultPackageStore(
     IConnectionMultiplexer redis,
     IOptionsMonitor<GeoprocessingExecutorOptions> executorOptions,

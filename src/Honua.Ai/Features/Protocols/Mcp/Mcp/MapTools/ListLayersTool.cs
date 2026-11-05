@@ -12,15 +12,6 @@ using Honua.Ai.Protocols.Mcp.Tools;
 
 namespace Honua.Ai.Protocols.Mcp.MapTools;
 
-/// <summary>
-/// MCP tool that lists the published services and layers an AI client can act
-/// on. Thin adapter over the canonical
-/// <see cref="IMetadataV2GraphProvider"/> graph — the same metadata snapshot
-/// that backs the GeoServices <c>/rest/services</c> directory and FeatureServer
-/// layer metadata — so the discovery surface never grows its own catalog model.
-/// Discovery is free (no Pro entitlement); the caller still authenticates and
-/// passes the operator read grant.
-/// </summary>
 internal sealed class ListLayersTool : IMcpTool
 {
     public const string ToolName = "honua_list_layers";

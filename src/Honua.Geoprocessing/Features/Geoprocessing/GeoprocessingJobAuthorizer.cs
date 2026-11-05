@@ -12,15 +12,6 @@ using Honua.Infrastructure.Authentication;
 
 namespace Honua.Geoprocessing;
 
-/// <summary>
-/// Authorization and approval policy gate for <see cref="GeoprocessingJobService"/>.
-/// Owns the operator <see cref="IOperatorAuthorizationEvaluator"/> and
-/// <see cref="IOperatorApprovalEvaluator"/> collaborators so the job service delegates
-/// every access decision through one shared seam rather than re-deriving them per call.
-/// Behavior, logging, and the surfaced exceptions are identical to the inline checks the
-/// service previously performed; the logger category is preserved by binding to
-/// <see cref="GeoprocessingJobService"/>.
-/// </summary>
 internal sealed class GeoprocessingJobAuthorizer
 {
     private readonly IOperatorAuthorizationEvaluator _authEvaluator;
@@ -32,14 +23,6 @@ internal sealed class GeoprocessingJobAuthorizer
     private readonly IPrincipalMembershipSource? _principalMembershipSource;
     private readonly ILogger<GeoprocessingJobService> _logger;
 
-    /// <summary>
-    /// Creates the authorization gate over the operator authorization and approval evaluators,
-    /// plus the OAuth scope authorizer that narrows a bearer token's authority to its scopes
-    /// (honua-server#2851), the generic per-layer access authorizer (#3046), and the enrichment
-    /// layer-binding guard (#2283/#3043). The optional managed-membership source (honua-server#3081)
-    /// backs the deferred-submitter revalidation this gate owns; it stays behind this collaborator so
-    /// the job service does not carry it as a separate cross-cutting dependency.
-    /// </summary>
     public GeoprocessingJobAuthorizer(
         IOperatorAuthorizationEvaluator authEvaluator,
         IOperatorApprovalEvaluator approvalEvaluator,
@@ -60,11 +43,6 @@ internal sealed class GeoprocessingJobAuthorizer
         _logger = logger;
     }
 
-    /// <summary>
-    /// Captures the submitter identity together with the effective tenant selected by request
-    /// middleware. Keeping this behind the authorization collaborator avoids adding another
-    /// cross-cutting dependency to the job lifecycle service.
-    /// </summary>
     public JobSecurityContext CaptureSecurityContext(
         ClaimsPrincipal principal,
         RbacOptions options,
@@ -75,41 +53,7 @@ internal sealed class GeoprocessingJobAuthorizer
         return JobSecurityContextCapture.Capture(principal, options, tenantContext, membershipManaged);
     }
 
-    /// <summary>
-    /// Resolves the submitter snapshot to pin on the job, distinguishing the two cases a bare
-    /// <c>??=</c> conflated (#3068 review follow-up). Owned here, behind the authorization gate,
-    /// because it is a submitter-identity/role-membership decision — the same seam that captures the
-    /// context and revalidates deferred role membership against the managed-membership source — so
-    /// the job service does not carry that source as a separate cross-cutting dependency.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// When <paramref name="inherits"/> is <see langword="false"/> the caller IS the submitter
-    /// (every ordinary adapter: GPServer, OGC Processes, MCP, AnalysisContent run/rerun), so
-    /// capturing live from <paramref name="principal"/> is exactly right.
-    /// </para>
-    /// <para>
-    /// When <paramref name="inherits"/> is <see langword="true"/> the snapshot must come from a
-    /// durable record written at the ORIGINAL submission — a workflow run's
-    /// <c>Audit.SubmitterSecurityContext</c>, or an approval proposal's persisted payload — and
-    /// <paramref name="principal"/> is a synthetic stand-in that must never be captured from.
-    /// Falling back to capture here is a privilege escalation, not a convenience: the workflow
-    /// principal is the orchestrator identity carrying <c>role=admin</c> (every step job would
-    /// read with ADMIN row/field visibility), and the approval-resume principal carries only a
-    /// name (zero role claims match zero RLS policies, and the row-level security filter source
-    /// returns no filter when no policy matches — an UNRESTRICTED read). Both produce a
-    /// non-null snapshot that sails past the missing-snapshot
-    /// guards at the read seam, so the refusal has to happen here.
-    /// </para>
-    /// <para>
-    /// This is reachable only for records persisted BEFORE the snapshot field existed. Those
-    /// workflow runs and approval proposals must be resubmitted; the PR's release-impact section
-    /// documents it.
-    /// </para>
-    /// </remarks>
-    /// <exception cref="GeoprocessingAuthorizationException">
-    /// Thrown when an inherited snapshot is required but absent.
-    /// </exception>
+    // The snapshot is never taken from the orchestrator or the approval-resume principal, because one carries admin and the other matches no row policy.
     public async Task<JobSecurityContextMembershipResult> ResolveSubmitterSecurityContextAsync(
         ClaimsPrincipal principal,
         JobSecurityContext? inherited,
@@ -184,28 +128,12 @@ internal sealed class GeoprocessingJobAuthorizer
         return result;
     }
 
-    /// <summary>
-    /// Enforces read access, for the submitting principal, on every catalog layer the plan's
-    /// gated steps will read, and returns the plan with the authorized dataset-layer identity
-    /// bound to each gated step. Delegates to <see cref="GeoprocessingLayerAccessGuard"/>, which
-    /// is composed here rather than injected alongside this type so that all of the submit-time
-    /// authorization concerns reach the job service through a single collaborator.
-    /// </summary>
-    /// <param name="plan">The submitted analysis plan.</param>
-    /// <param name="principal">The submitting principal.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The plan to submit, carrying the authorized dataset-layer bindings.</returns>
     public Task<AnalysisPlan> EnsureLayerReadAccessAsync(
         AnalysisPlan plan,
         ClaimsPrincipal principal,
         CancellationToken cancellationToken)
         => _layerAccessGuard.EnsureLayerReadAccessAsync(plan, principal, cancellationToken);
 
-    /// <summary>
-    /// Evaluates the caller's authorization for the specified resource/operation and throws
-    /// <see cref="GeoprocessingAuthorizationException"/> (after logging the denial) when the
-    /// decision is not allowed.
-    /// </summary>
     public Task EnsureGPServerExecutionAuthorizedAsync(
         ClaimsPrincipal principal,
         GPServerExecutionContext execution,
@@ -270,31 +198,7 @@ internal sealed class GeoprocessingJobAuthorizer
         }
     }
 
-    /// <summary>
-    /// Enforces per-layer READ authorization for every catalog layer the submitted plan will
-    /// touch, evaluated against the SUBMITTING principal before any job record is created
-    /// (honua-server#3046).
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// The layer set is derived generically from the process catalog
-    /// (<see cref="PlanLayerReferences.Derive"/>), so this covers the layer-sourced executor
-    /// family (<c>analytics.*</c>, <c>generalization.*</c>, <c>conversion.feature-project</c>,
-    /// the <c>source.honua-layer</c> DAG connector), the submit-time raster-source resolution
-    /// that materializes a catalog raster's bytes onto the job spec, and any future process
-    /// that declares a <see cref="ProcessParameterValueType.LayerId"/> parameter.
-    /// </para>
-    /// <para>
-    /// A denial produces one generic <see cref="GeoprocessingAuthorizationException"/> whether
-    /// the layer is forbidden, retired, hidden from the caller's tenant, or does not exist, so
-    /// the submit path is not an oracle for which layer ids exist. Adapters map it onto their
-    /// protocol's 401/403 exactly as they already do for the process-execute gates.
-    /// </para>
-    /// </remarks>
-    /// <param name="principal">The submitting principal.</param>
-    /// <param name="plan">The plan being submitted.</param>
-    /// <param name="catalog">The process catalog declaring each process's parameters.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
+    // A layer denial is the same error whether the layer is forbidden, retired, hidden, or missing, so submit is not an existence oracle.
     public async Task EnsurePlanLayerAccessAsync(
         ClaimsPrincipal principal,
         AnalysisPlan plan,
@@ -374,10 +278,6 @@ internal sealed class GeoprocessingJobAuthorizer
         }
     }
 
-    /// <summary>
-    /// Maps a declared layer access onto the canonical authorization operation it requires.
-    /// One-to-one by construction, so a member added to either enum forces a decision here.
-    /// </summary>
     private static AuthorizationOperation ToAuthorizationOperation(ProcessLayerAccess access)
         => access switch
         {
@@ -390,7 +290,6 @@ internal sealed class GeoprocessingJobAuthorizer
             _ => AuthorizationOperation.Query,
         };
 
-    /// <summary>Caller-facing verb for a denial, matching the operation that was refused.</summary>
     private static string DescribeAccess(ProcessLayerAccess access)
         => access switch
         {
@@ -400,11 +299,6 @@ internal sealed class GeoprocessingJobAuthorizer
             _ => "read",
         };
 
-    /// <summary>
-    /// Evaluates the approval requirement for the supplied request. Callers own the
-    /// contextual logging and exception flow (submit/cancel/validate) so the surfaced
-    /// behavior stays identical to the previous inline evaluation.
-    /// </summary>
     public ApprovalRequirement EvaluateApproval(ClaimsPrincipal principal, OperatorAuthorizationRequest request)
         => _approvalEvaluator.Evaluate(principal, request);
 }

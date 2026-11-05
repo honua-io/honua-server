@@ -5,12 +5,6 @@ using Honua.Core.Features.Infrastructure.ServiceRegistration;
 
 namespace Honua.Ai.Grounding;
 
-/// <summary>
-/// Validates <see cref="GroundingOptions"/> at startup so misconfigured
-/// thresholds fail fast instead of silently corrupting banding, capping, or
-/// ambiguity evaluation. Pairs with <c>.ValidateOnStart()</c> on the options
-/// registration.
-/// </summary>
 internal sealed class GroundingOptionsValidator : ConfigurationValidator<GroundingOptions>
 {
     protected override void PerformFeatureSpecificValidation(GroundingOptions options, List<string> errors)

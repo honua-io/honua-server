@@ -10,11 +10,6 @@ using Honua.Ai.Protocols.Mcp.Models;
 
 namespace Honua.Ai.Protocols.Mcp.Resources;
 
-/// <summary>
-/// MCP resource for <c>honua://workspaces/{workspaceId}</c>. Projects
-/// workspace lifecycle metadata when a workspace store is registered and
-/// otherwise returns a degraded, stable envelope.
-/// </summary>
 internal sealed class WorkspaceResource : IMcpResource
 {
     public const string Template = McpResourceUris.WorkspacesPrefix + "{workspaceId}";

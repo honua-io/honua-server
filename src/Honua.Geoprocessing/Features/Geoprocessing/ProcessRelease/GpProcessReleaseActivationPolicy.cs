@@ -6,29 +6,12 @@ using Honua.Geoprocessing.Release;
 
 namespace Honua.Geoprocessing.ProcessRelease;
 
-/// <summary>
-/// The pure admissibility rules for activating a release (plan v2 section 4, mirrored by
-/// honua-release's <c>gp_process_release.py preflight</c>): the lock must exist and belong to
-/// the process, the caller's binding version must be the live one, the server contract must be
-/// inside the lock's window, every declared target must be executable here and carry its
-/// provider identity, and a rollback must name exactly the previous release. Stores call this
-/// under their concurrency guard; it never touches storage itself.
-/// </summary>
 public static partial class GpProcessReleaseActivationPolicy
 {
-    /// <summary>The target kind name for Kubernetes Jobs.</summary>
     public const string KubernetesJobTarget = "kubernetes-job";
 
-    /// <summary>The target kind name for AWS Batch.</summary>
     public const string AwsBatchTarget = "aws-batch";
 
-    /// <summary>Evaluates an activation and, when admissible, returns the binding to write.</summary>
-    /// <param name="activation">The request.</param>
-    /// <param name="release">The published lock for the requested digest, or null.</param>
-    /// <param name="current">The live binding, or null when the process was never bound.</param>
-    /// <param name="environment">What this server can execute.</param>
-    /// <param name="now">The activation time.</param>
-    /// <returns>The decision; <see cref="GpProcessBindingDecision.Binding"/> is the new binding when activated.</returns>
     public static GpProcessBindingDecision Evaluate(
         GpProcessBindingActivation activation,
         GpProcessReleaseRecord? release,
@@ -172,11 +155,6 @@ public static partial class GpProcessReleaseActivationPolicy
         };
     }
 
-    /// <summary>
-    /// The image a target runs: the lock's runtime image repository pinned at the target's worker
-    /// digest. When the target digest equals the runtime image digest this is the runtime image
-    /// reference itself.
-    /// </summary>
     public static string ImageForTarget(GpProcessReleaseLock lockDocument, string workerImageDigest)
     {
         ArgumentNullException.ThrowIfNull(lockDocument);

@@ -15,11 +15,6 @@ using Honua.Core.Features.MultiTenancy.Abstractions;
 
 namespace Honua.Ai.Protocols.Mcp.Resources;
 
-/// <summary>
-/// MCP resource for <c>honua://proposals/{proposalId}</c>. Exposes a readable view
-/// of an operation proposal's status and plan summary so agents can poll until a
-/// human resolves it (#1696).
-/// </summary>
 internal sealed class ProposalStatusResource : IMcpResource
 {
     public const string Template = McpResourceUris.ProposalsPrefix + "{proposalId}";

@@ -3,11 +3,6 @@
 
 namespace Honua.Ai.Protocols.Mcp;
 
-/// <summary>
-/// Canonical URI strings and prefixes for MCP resources advertised by the
-/// operator surface. Centralized so the resource registry, taxonomy-alignment
-/// tests, and tool outputs reference the same values.
-/// </summary>
 internal static class McpResourceUris
 {
     public const string Scheme = "honua";
@@ -32,32 +27,24 @@ internal static class McpResourceUris
     public const string AppPackagesRoot = "honua://app-packages";
     public const string AppPackagesPrefix = "honua://app-packages/";
 
-    /// <summary>Builds the <c>honua://jobs/{jobId}</c> URI.</summary>
     public static string JobUri(string jobId) => $"{JobsPrefix}{jobId}";
 
-    /// <summary>Builds the <c>honua://jobs/{jobId}/results</c> URI.</summary>
     public static string JobResultsUri(string jobId) => $"{JobsPrefix}{jobId}{JobResultsSuffix}";
 
-    /// <summary>Builds the <c>honua://results/{resultPackageId}</c> URI.</summary>
     public static string ResultPackageUri(string resultPackageId) => $"{ResultsPrefix}{resultPackageId}";
 
-    /// <summary>Builds the <c>honua://jobs/{jobId}/report</c> URI.</summary>
     public static string JobReportUri(string jobId) => $"{JobsPrefix}{jobId}{JobReportSuffix}";
 
-    /// <summary>Builds the <c>honua://proposals/{proposalId}</c> URI.</summary>
     public static string ProposalUri(string proposalId) => $"{ProposalsPrefix}{proposalId}";
 
-    /// <summary>Builds the <c>honua://workspaces/{workspaceId}</c> URI.</summary>
     public static string WorkspaceUri(string workspaceId) => $"{WorkspacesPrefix}{workspaceId}";
 
-    /// <summary>Builds the <c>honua://published-services/{serviceId}</c> URI.</summary>
     public static string PublishedServiceUri(string serviceId)
     {
         ArgumentException.ThrowIfNullOrEmpty(serviceId);
         return PublishedServicesPrefix + Uri.EscapeDataString(serviceId);
     }
 
-    /// <summary>Parses one canonically encoded service identity without decoding it twice.</summary>
     public static bool TryParsePublishedServiceUri(string uri, out string serviceId)
     {
         serviceId = string.Empty;
@@ -82,12 +69,9 @@ internal static class McpResourceUris
         return true;
     }
 
-    /// <summary>Builds the <c>honua://deployments/{deploymentId}</c> URI.</summary>
     public static string DeploymentUri(string deploymentId) => $"{DeploymentsPrefix}{deploymentId}";
 
-    /// <summary>Builds the <c>honua://map-packages/{packageId}</c> URI.</summary>
     public static string MapPackageUri(string packageId) => $"{MapPackagesPrefix}{packageId}";
 
-    /// <summary>Builds the <c>honua://app-packages/{packageId}</c> URI.</summary>
     public static string AppPackageUri(string packageId) => $"{AppPackagesPrefix}{packageId}";
 }

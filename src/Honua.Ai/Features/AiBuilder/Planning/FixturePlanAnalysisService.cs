@@ -9,19 +9,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Ai.AiBuilder.Planning;
 
-/// <summary>
-/// Fixture-replay implementation of <see cref="IPlanAnalysisService"/>. Matches
-/// the incoming intent string against the AI-builder contract fixtures and
-/// translates the matched scenario into the canonical
-/// <see cref="McpPlanAnalysisOutput"/> shape. Lets the SDK exercise the full
-/// prompt → plan → apply contract deterministically without invoking a model.
-/// </summary>
-/// <remarks>
-/// The service does not call grounding, the live planner, or any LLM. Live
-/// planning is intentionally out of scope here — that ships behind a separate
-/// implementation that the host can register as the resolved
-/// <see cref="IPlanAnalysisService"/> when the planner service is available.
-/// </remarks>
 internal sealed class FixturePlanAnalysisService : IPlanAnalysisService
 {
     private readonly AiBuilderFixtureCatalog _catalog;
@@ -35,10 +22,8 @@ internal sealed class FixturePlanAnalysisService : IPlanAnalysisService
         _logger = logger;
     }
 
-    /// <inheritdoc />
     public string Engine => "fixture";
 
-    /// <inheritdoc />
     public Task<McpPlanAnalysisOutput> PlanAsync(
         string intent,
         JsonElement? context,

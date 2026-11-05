@@ -21,40 +21,12 @@ using NetTopologySuite.Features;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// Production <see cref="IJobExecutor"/> for the <c>imagery.classify</c> process
-/// (#2241) — the imagery/ML GP lane that DELEGATES inference to a configured
-/// cloud endpoint instead of bundling a model runtime. The executor reads the
-/// source GeoTIFF (inline, or conditionally materialized at execution time from a
-/// pinned <c>layerId</c>/<c>rasterId</c> catalog reference), submits it with the caller's
-/// model reference to the configured <see cref="IImageryInferenceClient"/>
-/// provider adapter, validates the returned classification raster or detected
-/// features, and publishes the result as a standard GP data-URI artifact.
-/// </summary>
-/// <remarks>
-/// Deployment honesty contract: when no backend is configured
-/// (<c>Geoprocessing:ImageryInference:Provider</c> unset) the process stays
-/// advertised in the catalog but every execution FAILS with a clear
-/// "no cloud inference backend is configured" message — no silent stub, no fake
-/// result (mirrors the <c>raster.interpolate-kriging</c> posture). Recognized
-/// provider ids without a registered adapter (<c>sagemaker</c>, <c>vertex</c>,
-/// <c>azureml</c>) also fail clearly, pointing at the generic <c>http</c>
-/// adapter. Raster outputs are passed through byte-for-byte, so the
-/// backend-preserved georeferencing (extent/CRS) lands intact in the artifact.
-/// </remarks>
 internal sealed partial class ImageryInferenceJobExecutor : IProcessExecutor
 {
-    /// <summary>The single process id this executor handles.</summary>
     internal const string HandledProcessId = "imagery.classify";
 
-    /// <summary>Data-URI prefix used for GeoTIFF raster artifacts (matches the GDAL worker's).</summary>
     internal const string GeoTiffDataUriPrefix = "data:image/tiff; application=geotiff;base64,";
 
-    /// <summary>
-    /// Provider ids that are recognized configuration values but have no adapter
-    /// in this build; they fail with a clear message instead of a generic
-    /// "unknown provider" error.
-    /// </summary>
     internal static readonly string[] RecognizedUnsupportedProviders = ["sagemaker", "vertex", "azureml"];
 
     private static readonly FrozenSet<string> AllowedTasks =
@@ -92,10 +64,6 @@ internal sealed partial class ImageryInferenceJobExecutor : IProcessExecutor
         _rangeReaders = rangeReaders?.ToArray() ?? [];
     }
 
-    /// <summary>
-    /// The single process id this executor handles, surfaced through
-    /// <see cref="IProcessExecutor"/> so the dispatcher auto-registers it (#2122).
-    /// </summary>
     public IReadOnlySet<string> ProcessIds { get; } =
         new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
 
@@ -637,11 +605,6 @@ internal sealed partial class ImageryInferenceJobExecutor : IProcessExecutor
         return true;
     }
 
-    /// <summary>
-    /// Cheap honesty check on raster payloads: classic TIFF (II*\0 / MM\0*) or
-    /// BigTIFF (II+\0 / MM\0+) magic. A backend that answers with PNG/JPEG (no
-    /// georeferencing) is rejected instead of being landed as a "GeoTIFF" artifact.
-    /// </summary>
     private static bool LooksLikeTiff(ReadOnlySpan<byte> bytes)
     {
         if (bytes.Length < 4)
@@ -654,15 +617,7 @@ internal sealed partial class ImageryInferenceJobExecutor : IProcessExecutor
         return littleEndian || bigEndian;
     }
 
-    /// <summary>
-    /// Rejects a legacy GeoJSON <c>crs</c> member that names anything other than
-    /// WGS 84. RFC 7946 dropped the member entirely and fixes the CRS at WGS 84,
-    /// so an explicit WGS 84 spelling is tolerated for compatibility while any
-    /// other declaration is refused. Recognition runs through the shared
-    /// <see cref="CrsIdentifier"/> matcher so every legitimate spelling of
-    /// EPSG:4326 is accepted and everything else — including identifiers that
-    /// merely contain <c>4326</c> — is refused.
-    /// </summary>
+    // An explicit WGS 84 crs member is tolerated, and any other declaration is refused, including an identifier that merely contains 4326.
     private static bool TryValidateDeclaredCrs(byte[] featureJson, out string error)
     {
         error = "";
@@ -717,32 +672,12 @@ internal sealed partial class ImageryInferenceJobExecutor : IProcessExecutor
         }
     }
 
-    /// <summary>Bounds a backend-supplied value before it reaches a message or log.</summary>
     private static string Truncate(string value)
     {
         const int MaxLength = 48;
         return value.Length <= MaxLength ? value : value[..MaxLength] + "...";
     }
 
-    /// <summary>
-    /// Verifies detected geometries are plausibly WHERE THE SCENE IS, not merely
-    /// numerically lon/lat. Global +/-180/+/-90 bounds are weak evidence: pixel
-    /// coordinates from a small image (say <c>[10, 20]</c>) satisfy them while
-    /// sitting on another continent from a UTM scene.
-    /// </summary>
-    /// <remarks>
-    /// The strength of the check depends on whether the source CRS can be mapped
-    /// to WGS 84 in this image. The lean serving image carries no PROJ (see
-    /// <c>ManagedReprojectFastPath</c>: only identity and WGS 84 &lt;-&gt; Web
-    /// Mercator are in-process), so:
-    /// <list type="bullet">
-    ///   <item>WGS 84 / Web Mercator sources get an EXACT scene footprint;</item>
-    ///   <item>UTM sources get their zone's area of use, which is coarse but still
-    ///   catches wrong-continent placement;</item>
-    ///   <item>any other CRS falls back to global lon/lat bounds, the best that is
-    ///   possible without a PROJ-backed transform.</item>
-    /// </list>
-    /// </remarks>
     private static bool TryValidateDetectionPlacement(
         GeoTiffGeoreferencing source,
         FeatureCollection features,
@@ -784,14 +719,7 @@ internal sealed partial class ImageryInferenceJobExecutor : IProcessExecutor
         return true;
     }
 
-    /// <summary>
-    /// Longitude overlap test that understands the antimeridian. A scene at
-    /// longitude 179 with a 2-degree extent has a footprint running to 181, while
-    /// RFC 7946 requires the backend to report the same ground as -179 — so a
-    /// naive numeric comparison rejects a perfectly valid detection. The footprint
-    /// range is therefore normalized into [-180, 180] and, when it wraps, treated
-    /// as the two intervals it really is.
-    /// </summary>
+    // A footprint that crosses the antimeridian is two intervals, so a numeric comparison would reject a valid detection.
     private static bool LongitudesOverlap(
         double envelopeMinLon,
         double envelopeMaxLon,
@@ -817,7 +745,6 @@ internal sealed partial class ImageryInferenceJobExecutor : IProcessExecutor
             || (envelopeMaxLon >= -180d && envelopeMinLon <= max);
     }
 
-    /// <summary>Wraps a longitude into the closed range [-180, 180].</summary>
     private static double NormalizeLongitude(double longitude)
     {
         if (longitude is >= -180d and <= 180d)
@@ -839,12 +766,6 @@ internal sealed partial class ImageryInferenceJobExecutor : IProcessExecutor
         };
     }
 
-    /// <summary>
-    /// Computes a WGS 84 bounding box the detections must fall within, using only
-    /// transforms available in the lean image. Returns false when the source CRS
-    /// cannot be mapped without PROJ, in which case the caller falls back to
-    /// global lon/lat bounds.
-    /// </summary>
     private static bool TryGetWgs84Footprint(
         GeoTiffGeoreferencing source,
         out double minLon,

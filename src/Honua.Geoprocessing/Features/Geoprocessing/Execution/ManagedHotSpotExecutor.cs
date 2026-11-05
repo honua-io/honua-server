@@ -9,55 +9,6 @@ using NetTopologySuite.Index.Strtree;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// <c>analytics.hotspot-managed</c> executor. A job-dispatchable, managed
-/// (NetTopologySuite) Hot Spot Analysis that computes the Getis-Ord Gi*
-/// statistic for every input feature over an inline FeatureCollection. Like the
-/// other managed analytics executors (<see cref="ManagedClusterExecutor"/>,
-/// <see cref="ManagedDensityExecutor"/>) it is the workflow/codemod-reachable
-/// counterpart that runs against an INLINE FeatureCollection so the lean
-/// dispatcher can construct it unconditionally without a Postgres dependency.
-///
-/// <para>
-/// Conceptualization of spatial relationships: a <b>fixed distance band</b>. Two
-/// features are neighbours when the Euclidean distance between their point
-/// representatives (centroid for non-point inputs) is &lt;= <c>distanceBand</c>
-/// CRS units. As this is the Gi* (with-star) statistic, each feature is always
-/// its own neighbour. Distances are evaluated in the CRS units of the supplied
-/// feature geometries — geodesic conversion is not performed (the same
-/// convention used by the managed <c>geometry.buffer</c> and clustering
-/// executors).
-/// </para>
-///
-/// <para>
-/// For feature <c>i</c> with analysis value <c>x</c>, global mean
-/// <c>X̄</c>, global population standard deviation <c>S</c>, total feature
-/// count <c>n</c>, and binary fixed-distance weights <c>w_ij ∈ {0,1}</c> (so
-/// <c>Σ w_ij = Σ w_ij² = W_i</c>, the neighbour count including self):
-/// <code>
-/// Gi* = (Σ_j w_ij x_j - X̄·W_i) / (S · sqrt((n·W_i - W_i²) / (n - 1)))
-/// </code>
-/// The Gi* statistic is a z-score; the two-tailed p-value is
-/// <c>2·(1 - Φ(|z|))</c> where <c>Φ</c> is the standard-normal CDF. Each output
-/// feature preserves its input geometry and attributes and carries:
-/// <list type="bullet">
-///   <item><c>GI_ZSCORE</c>: the Gi* z-score.</item>
-///   <item><c>GI_PVALUE</c>: the two-tailed p-value.</item>
-///   <item><c>GI_BIN</c>: the Esri-style confidence bin in [-3, 3] — sign from
-///   the z-score (hot = positive, cold = negative) and magnitude from the
-///   significance level (3 = 99%, 2 = 95%, 1 = 90%, 0 = not significant).</item>
-/// </list>
-/// </para>
-///
-/// <para>
-/// Degenerate inputs are rejected with a clear error: fewer than two located
-/// features (Gi* is undefined for a single point) and a zero-variance analysis
-/// field (all-identical values). Features with null/empty geometry are dropped
-/// before analysis and are not emitted. A feature whose neighbourhood spans the
-/// entire dataset (<c>W_i == n</c>) has an undefined local variance term and is
-/// emitted with a neutral z-score of 0, p-value 1, and bin 0.
-/// </para>
-/// </summary>
 internal sealed class ManagedHotSpotExecutor(
     IOptionsMonitor<GeoprocessingExecutorOptions> options)
     : FeatureCollectionTransformExecutor(options)
@@ -127,11 +78,6 @@ internal sealed class ManagedHotSpotExecutor(
         return output;
     }
 
-    /// <summary>
-    /// Computes the Getis-Ord Gi* z-score, two-tailed p-value, and confidence
-    /// bin for a single feature given the sum of analysis values over its
-    /// fixed-distance neighbourhood (including itself) and the neighbour count.
-    /// </summary>
     private static (double ZScore, double PValue, int Bin) ComputeStatistic(
         double neighbourValueSum,
         int neighbourCount,
@@ -160,22 +106,12 @@ internal sealed class ManagedHotSpotExecutor(
         return (zScore, pValue, bin);
     }
 
-    /// <summary>
-    /// Two-tailed standard-normal p-value <c>2·(1 - Φ(|z|)) = erfc(|z|/√2)</c>,
-    /// clamped to [0, 1].
-    /// </summary>
     private static double TwoTailedPValue(double zScore)
     {
         var p = Erfc(Math.Abs(zScore) / Math.Sqrt(2.0));
         return Math.Clamp(p, 0d, 1d);
     }
 
-    /// <summary>
-    /// Esri-style Gi_Bin: sign from the z-score (positive = hot, negative =
-    /// cold), magnitude from the two-tailed significance level — 3 at 99%
-    /// (p &lt;= 0.01), 2 at 95% (p &lt;= 0.05), 1 at 90% (p &lt;= 0.10), 0 when
-    /// not statistically significant.
-    /// </summary>
     private static int ConfidenceBin(double zScore, double pValue)
     {
         var magnitude = pValue switch
@@ -194,11 +130,7 @@ internal sealed class ManagedHotSpotExecutor(
         return zScore >= 0 ? magnitude : -magnitude;
     }
 
-    /// <summary>
-    /// Complementary error function via the Numerical Recipes rational
-    /// approximation (fractional error &lt; 1.2e-7 across the whole range),
-    /// avoiding a dependency on a non-AOT math package for the normal CDF.
-    /// </summary>
+    // The rational approximation avoids a non-AOT math package for the normal CDF.
     private static double Erfc(double x)
     {
         var z = Math.Abs(x);

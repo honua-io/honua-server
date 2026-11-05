@@ -12,25 +12,8 @@ using NetTopologySuite.IO;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// Production <see cref="IJobExecutor"/> for the <c>geometry.buffer</c> process.
-///
-/// This is the first concrete geoprocessing executor wired into the worker host
-/// after #1031's discovery that submitted jobs were uniformly abandoned with
-/// <c>NoExecutorForKind</c>. It reads the canonical step inputs projected onto
-/// <see cref="ExecutionJobSpec.Parameters"/> by <see cref="GeoprocessingJobService"/>,
-/// runs <see cref="Geometry.Buffer(double)"/> against the supplied WKB geometry,
-/// and publishes the result as a single GeoJSON Feature data URI. Other process
-/// ids surfaced through <see cref="ExecutionJobKind.Geoprocessing"/> fail
-/// terminally with a clean classification — the dispatcher is intentionally
-/// narrow until additional executors land.
-/// </summary>
 internal sealed partial class GeometryBufferJobExecutor : IProcessExecutor
 {
-    /// <summary>
-    /// The single process id this executor handles. Matches the catalog entry in
-    /// <see cref="BuiltInProcessCatalog"/>.
-    /// </summary>
     internal const string HandledProcessId = "geometry.buffer";
 
     private readonly IOptionsMonitor<GeoprocessingExecutorOptions> _options;
@@ -44,10 +27,6 @@ internal sealed partial class GeometryBufferJobExecutor : IProcessExecutor
         _logger = logger;
     }
 
-    /// <summary>
-    /// The single process id this executor handles, surfaced through
-    /// <see cref="IProcessExecutor"/> so the dispatcher auto-registers it (#2122).
-    /// </summary>
     public IReadOnlySet<string> ProcessIds { get; } =
         new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
 

@@ -9,11 +9,6 @@ namespace Honua.Ai.Protocols.Mcp.Grounding;
 // Tool argument shapes (tools/call params.arguments)
 // -----------------------------------------------------------------------
 
-/// <summary>
-/// Arguments for <c>honua_ground_candidates</c>. Mirrors
-/// <see cref="Honua.Core.Features.Grounding.Domain.GroundingRequest"/>
-/// with a stringly-typed workflow-family hint for schema friendliness.
-/// </summary>
 internal sealed class McpGroundCandidatesArgument
 {
     [JsonPropertyName("goal")]
@@ -38,11 +33,6 @@ internal sealed class McpGroundCandidatesArgument
     public string? IntentId { get; set; }
 }
 
-/// <summary>
-/// Arguments for <c>honua_clarify_intent</c>. Adds a required
-/// <see cref="Response"/> payload; the rest of the fields are optional so the
-/// caller can carry forward constraints pinned during earlier turns.
-/// </summary>
 internal sealed class McpClarifyIntentArgument
 {
     [JsonPropertyName("intentId")]
@@ -70,10 +60,6 @@ internal sealed class McpClarifyIntentArgument
     public McpClarificationResponseInput? Response { get; set; }
 }
 
-/// <summary>
-/// Caller-context fields accepted on the MCP wire. Null fields flow through
-/// to the canonical <see cref="Honua.Core.Features.Grounding.Domain.CallerContext"/>.
-/// </summary>
 internal sealed class McpCallerContextInput
 {
     [JsonPropertyName("workspaceId")]
@@ -86,9 +72,6 @@ internal sealed class McpCallerContextInput
     public string? PromotionScope { get; set; }
 }
 
-/// <summary>
-/// Intent-constraints shape accepted on the MCP wire.
-/// </summary>
 internal sealed class McpIntentConstraintsInput
 {
     [JsonPropertyName("areaOfInterest")]
@@ -107,9 +90,6 @@ internal sealed class McpIntentConstraintsInput
     public string? Units { get; set; }
 }
 
-/// <summary>
-/// Clarification-response envelope accepted by <c>honua_clarify_intent</c>.
-/// </summary>
 internal sealed class McpClarificationResponseInput
 {
     [JsonPropertyName("answers")]
@@ -120,11 +100,6 @@ internal sealed class McpClarificationResponseInput
 // Tool output shapes (serialized into structuredContent of the call result)
 // -----------------------------------------------------------------------
 
-/// <summary>
-/// Envelope returned by both grounding tools. Carries the workflow-family
-/// classification, a canonical draft intent, ranked candidates, an optional
-/// clarification envelope, and the engine tag used by the eval harness.
-/// </summary>
 internal sealed class McpGroundingOutput
 {
     [JsonPropertyName("workflowFamily")]
@@ -139,15 +114,6 @@ internal sealed class McpGroundingOutput
     [JsonPropertyName("clarification")]
     public McpClarificationEnvelope? Clarification { get; set; }
 
-    /// <summary>
-    /// MCP-native elicitation request (honua-server#2484) emitted in place of the
-    /// proprietary <see cref="Clarification"/> envelope when the calling session
-    /// advertised the elicitation capability and the envelope is representable in
-    /// the elicitation schema subset. Mutually exclusive with
-    /// <see cref="Clarification"/>: exactly one is populated on a clarification
-    /// turn. Null when no clarification is needed or the client did not advertise
-    /// elicitation (graceful fallback to the envelope).
-    /// </summary>
     [JsonPropertyName("elicitation")]
     public McpElicitationRequest? Elicitation { get; set; }
 

@@ -8,21 +8,10 @@ using Honua.Core.Features.Grounding.Domain;
 
 namespace Honua.Ai.Grounding;
 
-/// <summary>
-/// Default deterministic grounding engine. Ranks candidates using a weighted
-/// bag-of-lemma overlap against catalog text, and classifies workflow family
-/// via a small hand-coded verb lexicon. Purely CPU, no external calls, safe
-/// for Native AOT.
-/// </summary>
 internal sealed class DeterministicGroundingEngine : IGroundingEngine
 {
     public string Name => "deterministic";
 
-    /// <summary>
-    /// Verb → family mapping. Picking this over a confidence score table
-    /// keeps the classifier trivially auditable; adding a token to one of
-    /// these sets is a conscious taxonomy decision.
-    /// </summary>
     private static readonly FrozenDictionary<string, WorkflowFamily> FamilyVerbs =
         new Dictionary<string, WorkflowFamily>(StringComparer.Ordinal)
         {
@@ -229,12 +218,7 @@ internal sealed class DeterministicGroundingEngine : IGroundingEngine
         return KeepBestPerId(results);
     }
 
-    /// <summary>
-    /// A candidate ID is the reference a draft intent binds to, so a ranking must not list
-    /// it twice. Several readable resources (for example a feature dataset and the imagery
-    /// dataset over the same storage layer) can resolve to one storage layer ID; keep the
-    /// first, which is the best-ranked by the deterministic comparer.
-    /// </summary>
+    // A candidate id is what a draft binds to, so a ranking must not list it twice when several resources resolve to one storage layer.
     private static List<GroundingCandidate> KeepBestPerId(List<GroundingCandidate> sorted)
         => sorted.DistinctBy(candidate => candidate.Id, StringComparer.Ordinal).ToList();
 

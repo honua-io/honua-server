@@ -5,22 +5,6 @@ using System.Globalization;
 
 namespace Honua.Geoprocessing.Execution.Expressions;
 
-/// <summary>
-/// The whitelisted function set the expression grammar exposes. Every function is a
-/// hand-coded switch arm — there is NO reflection, NO method binding, and NO way to
-/// reach an arbitrary CLR member from an expression. A function the whitelist does
-/// not contain is rejected at parse time, so unsafe identifiers never evaluate.
-/// </summary>
-/// <remarks>
-/// Categories:
-/// <list type="bullet">
-/// <item>String: <c>concat</c>, <c>substr</c>, <c>upper</c>, <c>lower</c>, <c>trim</c>, <c>replace</c>, <c>length</c></item>
-/// <item>Conditional: <c>if</c>, <c>coalesce</c></item>
-/// <item>Math: <c>abs</c>, <c>round</c>, <c>floor</c>, <c>ceil</c>, <c>sqrt</c>, <c>pow</c>, <c>min</c>, <c>max</c></item>
-/// <item>Cast/parse: <c>cast</c>, <c>number</c>, <c>string</c></item>
-/// <item>Date: <c>now</c>, <c>year</c>, <c>month</c>, <c>day</c>, <c>parsedate</c></item>
-/// </list>
-/// </remarks>
 internal static class ExpressionFunctions
 {
     // Min/max arity per function (inclusive). -1 max means variadic.
@@ -54,19 +38,15 @@ internal static class ExpressionFunctions
             ["parsedate"] = (1, 1),
         };
 
-    /// <summary>A human-readable list of allowed function names for error messages.</summary>
     public static string AllowedFunctionList { get; } =
         string.Join(", ", Arities.Keys.OrderBy(k => k, StringComparer.Ordinal));
 
-    /// <summary>Returns <c>true</c> when <paramref name="name"/> (case-insensitive) is a whitelisted function.</summary>
     public static bool IsKnown(string name, out string lowered)
     {
         lowered = name.ToLowerInvariant();
         return Arities.ContainsKey(lowered);
     }
 
-    /// <summary>Validates the supplied argument count against the function's arity.</summary>
-    /// <exception cref="ExpressionParseException">When the count is out of range.</exception>
     public static void ValidateArity(string loweredName, int count)
     {
         var (min, max) = Arities[loweredName];
@@ -78,7 +58,6 @@ internal static class ExpressionFunctions
         }
     }
 
-    /// <summary>Evaluates a whitelisted function over its already-parsed argument nodes.</summary>
     public static object? Invoke(string loweredName, IReadOnlyList<ExpressionNode> args, IExpressionContext context)
     {
         switch (loweredName)

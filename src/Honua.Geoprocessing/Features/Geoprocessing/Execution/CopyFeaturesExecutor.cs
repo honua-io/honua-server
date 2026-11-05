@@ -12,7 +12,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>Creates a new schema-preserving layer through the canonical provider copy capability.</summary>
 internal sealed partial class CopyFeaturesExecutor(
     IServiceScopeFactory scopeFactory,
     IOptionsMonitor<GeoprocessingExecutorOptions> options,

@@ -13,15 +13,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Ai.Protocols.Mcp.Resources;
 
-/// <summary>
-/// MCP resource for <c>honua://published-services/{serviceId}</c>. Reads a
-/// <see cref="PublishedServiceRecord"/> through the canonical promotion store,
-/// or an ordinary layer publication through the persisted Metadata v2 graph.
-/// Promotion provenance is surfaced only when a promotion record exists.
-/// Authorization starts with the
-/// <see cref="OperatorResourceType.PublishedService"/> grant evaluated by
-/// <see cref="IGeoprocessingJobService.EnsureCallerAuthorizedAsync(System.Security.Claims.ClaimsPrincipal, OperatorResourceType, OperatorOperation, System.Threading.CancellationToken)"/>.
-/// </summary>
 internal sealed class PublishedServiceResource : IMcpResource
 {
     public const string Template = McpResourceUris.PublishedServicesPrefix + "{serviceId}";
