@@ -4,13 +4,14 @@
 using System.Reflection;
 using FluentAssertions;
 using Honua.TestKit;
+using Honua.TestKit.Attributes;
 using Xunit;
 
 namespace Honua.Ai.Tests;
 
 public sealed class DatabaseCollectionContractTests
 {
-    [Fact]
+    [UnitTest]
     public void DatabaseCollection_OwnsOnePostgresFixtureAndDoesNotRunBesideOtherCollections()
     {
         var definition = typeof(DatabaseCollection).GetCustomAttribute<CollectionDefinitionAttribute>();

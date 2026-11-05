@@ -5,6 +5,7 @@ using System.Net;
 using System.Net.Sockets;
 using FluentAssertions;
 using Honua.TestKit;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Infrastructure;
 
@@ -70,7 +71,7 @@ public class PostgresFixtureTests
         attempts.Should().Be(1);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task WaitUntilAcceptingAsync_WhenPortListens_Returns()
     {
         using var listener = new TcpListener(IPAddress.Loopback, 0);
@@ -80,7 +81,7 @@ public class PostgresFixtureTests
         await PostgresEndpointProbe.WaitUntilAcceptingAsync("127.0.0.1", port, TimeSpan.FromSeconds(2));
     }
 
-    [Fact]
+    [UnitTest]
     public async Task WaitUntilAcceptingAsync_WhenPortRefusesPastTheTimeout_Throws()
     {
         using var listener = new TcpListener(IPAddress.Loopback, 0);
