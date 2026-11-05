@@ -12,16 +12,10 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Mobile.Diagnostics;
 
-/// <summary>
-/// Mobile runtime diagnostics ingestion endpoints.
-/// </summary>
 internal static class MobileExceptionIngestionEndpoints
 {
     private const string ProtocolTag = "mobile-diagnostics";
 
-    /// <summary>
-    /// Maps the mobile exception upload endpoint consumed by honua-mobile.
-    /// </summary>
     public static void MapMobileExceptionIngestionEndpoints(this IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);

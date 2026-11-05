@@ -5,11 +5,7 @@ using Honua.Core.Features.Console.Domain;
 
 namespace Honua.Server.Features.Console;
 
-/// <summary>
-/// Structured logging hooks for the Console Share access endpoints. Failure-path
-/// resolution events deliberately omit item identifiers so the anonymous public
-/// surface cannot be turned into a log-driven enumeration oracle.
-/// </summary>
+// Denial logs omit item identifiers so the public surface is not an enumeration oracle.
 internal static partial class ConsoleShareEndpointsLog
 {
     [LoggerMessage(EventId = 4820, Level = LogLevel.Information,

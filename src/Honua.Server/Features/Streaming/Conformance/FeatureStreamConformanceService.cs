@@ -18,51 +18,13 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Streaming.Conformance;
 
-/// <summary>
-/// Controlled-conformance mutation workflow (honua-server#3038, REQ-005/REQ-006/NFR-001).
-/// </summary>
-/// <remarks>
-/// <para>Scheduled SDK conformance has to prove that a live deployment really does deliver a
-/// baseline followed by a correlated mutation on every transport it advertises. Proving it
-/// requires writing to that deployment, which is exactly the thing a scheduled job must never
-/// do casually. This workflow is the narrow, bounded, reversible way to do it:</para>
-/// <list type="bullet">
-/// <item><b>Dedicated source.</b> Every write targets the single service/layer named by
-/// configuration. There is no request parameter that can redirect a mutation elsewhere, so no
-/// combination of inputs reaches an ordinary demo or user record (NFR-001).</item>
-/// <item><b>Ownership, not trust.</b> Every controlled record carries a self-describing marker
-/// in a configured attribute. Update, touch, delete, and cleanup re-read that marker from the
-/// stored row and refuse anything the calling run does not own, so two concurrent runs cannot
-/// claim or destroy each other's records even holding the same credential.</item>
-/// <item><b>Canonical pipeline.</b> Mutations go through the standard
-/// <see cref="IFeatureWriter"/> + <see cref="FeatureMutationEventService"/> plumbing — the same
-/// write path, the same transactional-outbox scope, and the same outbox/inline publish decision
-/// every protocol adapter uses. A conformance mutation is therefore observable on the feature
-/// stream for the same reason a real edit is, not because of a test-only side channel. The
-/// protocol-edit adapter and edit processor are not involved because there is no protocol
-/// request to translate: the workflow builds the canonical edit batch directly.</item>
-/// <item><b>Fail closed.</b> Disabled deployment, unresolvable source, missing deployment
-/// revision, mismatched expected revision or source, exhausted lease, unknown run, foreign
-/// record — each refuses the request. None of them fall back to a weaker guarantee.</item>
-/// </list>
-/// <para><b>Bounds.</b> Reads of the conformance source are capped by
-/// <see cref="FeatureStreamConformanceOptions.MaxSweepRecords"/> and filter the ownership
-/// marker in process rather than composing a predicate from a stored value. The source is
-/// dedicated and small by construction, so a bounded full read is both cheap and the option
-/// with the least surface area.</para>
-/// </remarks>
+// Every write targets the configured source, ownership is re-read from the row, and a refusal never uses a weaker guarantee.
 internal sealed class FeatureStreamConformanceService
 {
     private const string ConformanceProtocol = "Conformance";
 
-    /// <summary>
-    /// ASCII unit separator used between digest fields. Explicit delimiters keep the hash
-    /// unambiguous: without them, differently split key/value pairs could serialize to the
-    /// same byte sequence and two distinct baselines would share a digest.
-    /// </summary>
     private static ReadOnlySpan<byte> FieldSeparator => [0x1F];
 
-    /// <summary>ASCII record separator used between digest records.</summary>
     private static ReadOnlySpan<byte> RecordSeparator => [0x1E];
 
     private readonly IOptions<FeatureStreamConformanceOptions> _options;
@@ -95,15 +57,8 @@ internal sealed class FeatureStreamConformanceService
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <summary>
-    /// Projects the anonymous-safe capability advertisement.
-    /// </summary>
     public FeatureStreamConformanceCapability DescribeCapability() => _registry.DescribeCapability();
 
-    /// <summary>
-    /// Acquires a conformance run lease, binding it to this deployment's immutable revision
-    /// and to the configured source.
-    /// </summary>
     public async Task<FeatureStreamConformanceResult<FeatureStreamConformanceRunResponse>> LeaseRunAsync(
         FeatureStreamConformanceRunRequest request,
         CancellationToken cancellationToken)
@@ -180,9 +135,6 @@ internal sealed class FeatureStreamConformanceService
             });
     }
 
-    /// <summary>
-    /// Performs one controlled mutation on behalf of a leased run.
-    /// </summary>
     public async Task<FeatureStreamConformanceResult<FeatureStreamConformanceMutationResponse>> MutateAsync(
         HttpContext context,
         Guid runId,
@@ -267,11 +219,6 @@ internal sealed class FeatureStreamConformanceService
         }
     }
 
-    /// <summary>
-    /// Releases a run and deletes every record it owns. Idempotent, so a client can call it
-    /// from a <c>finally</c> block without having to know whether an earlier call already
-    /// succeeded (REQ-005).
-    /// </summary>
     public async Task<FeatureStreamConformanceResult<FeatureStreamConformanceCleanupResponse>> CleanupRunAsync(
         HttpContext context,
         Guid runId,
@@ -320,10 +267,6 @@ internal sealed class FeatureStreamConformanceService
             });
     }
 
-    /// <summary>
-    /// Operator lever: drops every lease and deletes every controlled record, returning the
-    /// conformance source to its immutable baseline regardless of who owned what.
-    /// </summary>
     public async Task<FeatureStreamConformanceResult<FeatureStreamConformanceResetResponse>> ResetAsync(
         HttpContext context,
         CancellationToken cancellationToken)
@@ -358,12 +301,6 @@ internal sealed class FeatureStreamConformanceService
             });
     }
 
-    /// <summary>
-    /// One TTL sweep: reclaims expired leases and deletes every controlled record whose
-    /// marker has expired. This is the bound that covers runner process death — the marker
-    /// carries its own deadline, so the sweep needs nothing the dead process was holding
-    /// (NFR-001).
-    /// </summary>
     public async Task<int> SweepAsync(HttpContext context, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -400,11 +337,7 @@ internal sealed class FeatureStreamConformanceService
 
     // ── source resolution ───────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Resolves the configured conformance source through the shared catalog. Returns null
-    /// when the service or layer cannot be resolved or the layer is not writable — the
-    /// fail-closed answer, never a substitute source.
-    /// </summary>
+    // An unresolvable or non-writable layer is refused and is never replaced with another source.
     private async Task<ConformanceSource?> ResolveSourceAsync(CancellationToken cancellationToken)
     {
         var options = _options.Value;
@@ -554,11 +487,6 @@ internal sealed class FeatureStreamConformanceService
         return FeatureStreamConformanceResult<long>.Success(objectId);
     }
 
-    /// <summary>
-    /// Deletes controlled records, optionally narrowed to a set of owning runs. Ownership is
-    /// always read from the stored marker, so a record this server did not write — or one
-    /// owned by a run outside <paramref name="runIds"/> — is left alone.
-    /// </summary>
     private async Task<int> DeleteOwnedRecordsAsync(
         HttpContext context,
         ConformanceSource source,
@@ -599,11 +527,6 @@ internal sealed class FeatureStreamConformanceService
         return result.DeletedCount;
     }
 
-    /// <summary>
-    /// Applies an edit batch through the canonical write path, with the transactional-outbox
-    /// scope resolved first so a provider that records change events in the outbox writes
-    /// them inside the same transaction as the row mutation.
-    /// </summary>
     private async Task<FeatureEditResult> ApplyAsync(
         HttpContext context,
         ConformanceSource source,
@@ -627,11 +550,6 @@ internal sealed class FeatureStreamConformanceService
             .ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Publishes the change event for a committed conformance mutation. No-ops when the
-    /// active provider records events through the transactional outbox, exactly like every
-    /// protocol adapter's post-commit publish.
-    /// </summary>
     private async Task PublishAsync(
         HttpContext context,
         ConformanceSource source,
@@ -676,9 +594,6 @@ internal sealed class FeatureStreamConformanceService
 
     // ── reads ───────────────────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Bounded read of the conformance source with the ownership marker parsed in process.
-    /// </summary>
     private async Task<IReadOnlyList<ConformanceRecord>> ReadControlledRecordsAsync(
         ConformanceSource source,
         CancellationToken cancellationToken)
@@ -733,12 +648,6 @@ internal sealed class FeatureStreamConformanceService
             feature);
     }
 
-    /// <summary>
-    /// Content digest of the source's immutable baseline: every record no run owns, hashed
-    /// in object-id order over the identifier and the canonicalized attribute set. Two runs
-    /// that see the same digest saw the same baseline, and a run whose cleanup digest matches
-    /// its lease digest demonstrably put the source back the way it found it.
-    /// </summary>
     private static BaselineDigest ComputeBaselineDigest(IReadOnlyList<ConformanceRecord> records)
     {
         var baseline = records
@@ -768,10 +677,7 @@ internal sealed class FeatureStreamConformanceService
             baseline.Length);
     }
 
-    /// <summary>
-    /// Stand-in for a null attribute in the digest. Distinct from an empty string so a null
-    /// and an empty value do not hash identically.
-    /// </summary>
+    // The null stand-in is distinct from an empty string so the two do not hash the same.
     private const string NullAttributeSentinel = "<null>";
 
     private static string FormatAttribute(object? value)
@@ -804,11 +710,7 @@ internal sealed class FeatureStreamConformanceService
         return builder.ToImmutable();
     }
 
-    /// <summary>
-    /// Places controlled records on a deterministic point derived from the run id, so a run's
-    /// records never collide with the baseline geometry and two runs never write the same
-    /// coordinate. The point stays inside the WGS84 domain regardless of the run id.
-    /// </summary>
+    // A run's points are derived from the run id so they do not collide with the baseline or with another run.
     private byte[]? BuildGeometry(ConformanceSource source, FeatureStreamConformanceRun run, int ordinal)
     {
         var seed = (uint)run.RunId.GetHashCode();
@@ -834,9 +736,6 @@ internal sealed class FeatureStreamConformanceService
         return requested > options.MaxRunTtl ? options.MaxRunTtl : requested;
     }
 
-    /// <summary>
-    /// Bounds and strips a caller-supplied label before it reaches storage or a log.
-    /// </summary>
     private static string? Sanitize(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -886,11 +785,6 @@ internal sealed class FeatureStreamConformanceService
         MetadataV2Resource Resource);
 }
 
-/// <summary>
-/// Storage collaborators the controlled-conformance workflow needs, bundled so the workflow
-/// itself stays inside the injected-collaborator ceiling (the pattern
-/// <c>FeatureStreamDependencies</c> uses for the stream endpoints).
-/// </summary>
 internal sealed class FeatureStreamConformanceStore
 {
     public FeatureStreamConformanceStore(
@@ -905,15 +799,11 @@ internal sealed class FeatureStreamConformanceStore
         GeometryService = geometryService ?? throw new ArgumentNullException(nameof(geometryService));
     }
 
-    /// <summary>Catalog snapshot provider used to resolve the dedicated conformance source.</summary>
     public IMetadataV2GraphProvider GraphProvider { get; }
 
-    /// <summary>Shared reader used for ownership checks, sweeps, and baseline digests.</summary>
     public IFeatureReader FeatureReader { get; }
 
-    /// <summary>Canonical writer every controlled mutation goes through.</summary>
     public IFeatureWriter FeatureWriter { get; }
 
-    /// <summary>Shared geometry service used to build controlled-record geometry.</summary>
     public IGeometryService GeometryService { get; }
 }

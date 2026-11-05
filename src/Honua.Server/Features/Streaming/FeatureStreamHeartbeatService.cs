@@ -5,10 +5,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Streaming;
 
-/// <summary>
-/// Background service that periodically sends heartbeat frames to all connected
-/// feature-stream sessions. Heartbeat interval is shared across WebSocket and SSE transports.
-/// </summary>
 internal sealed class FeatureStreamHeartbeatService : BackgroundService
 {
     private readonly FeatureStreamSessionManager _sessionManager;
@@ -58,10 +54,7 @@ internal sealed class FeatureStreamHeartbeatService : BackgroundService
         FeatureStreamLog.HeartbeatServiceStopped(_logger);
     }
 
-    /// <summary>
-    /// Re-resolves open subscribers' access, row-level security and field masks on a fixed
-    /// tick so policy changes reach already-connected clients (honua-server#6105).
-    /// </summary>
+    // Open subscribers re-resolve access on a tick so a policy change reaches a client that is already connected.
     private async Task RunSubscriberPolicyRefreshAsync(CancellationToken stoppingToken)
     {
         using var timer = new PeriodicTimer(_options.Value.SubscriberPolicyRefreshInterval);

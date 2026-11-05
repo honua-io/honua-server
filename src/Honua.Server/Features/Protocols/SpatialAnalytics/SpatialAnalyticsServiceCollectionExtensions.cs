@@ -10,14 +10,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Features.Protocols.SpatialAnalytics;
 
-/// <summary>
-/// Service collection extensions for the Pro-tier spatial analytics slice.
-/// Registration of <see cref="Core.Features.SpatialAnalytics.Abstractions.ISpatialAnalyticsReader"/>
-/// happens in the Postgres project's <c>ServiceCollectionExtensions.AddPostgresFeatureStore</c>
-/// alongside the other feature-store readers. This method exists so the
-/// composition root registers analytics alongside the rest of the feature slice
-/// even when no additional server-side services are required.
-/// </summary>
 internal static class SpatialAnalyticsServiceCollectionExtensions
 {
     public static IServiceCollection AddSpatialAnalytics(this IServiceCollection services)

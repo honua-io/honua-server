@@ -14,17 +14,8 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Admin endpoints for the consolidated ops-health snapshot and the deterministic ops-findings
-/// engine (ADR-0060 WS4 / epic #2457). Findings' recommended fixes are proposed through the existing
-/// operation-gateway approval flow; no model calls happen server-side (ADR-0028).
-/// </summary>
 internal static class OpsObservabilityEndpoints
 {
-    /// <summary>
-    /// Maps the admin observability endpoints (ops-health snapshot + ops findings).
-    /// </summary>
-    /// <param name="endpoints">The endpoint route builder.</param>
     public static void MapOpsObservabilityEndpoints(this IEndpointRouteBuilder endpoints)
     {
         // Read-only ops-reader authorization (A12): the GET reads (ops-health, findings) additionally
@@ -104,13 +95,6 @@ internal static class OpsObservabilityEndpoints
         return Results.Json(snapshot, OpsObservabilityJsonContext.Default.OpsHealthSnapshotResponse);
     }
 
-    /// <summary>
-    /// Handles the ops-health history read: an admin-authed, cluster-aggregated time series of serving
-    /// latency and ops vitals at the requested <c>resolution</c> over the requested <c>window</c>, with an
-    /// optional per-replica breakdown (<c>perReplica=true</c>). This endpoint is the reconnect gap-fill
-    /// contract for realtime <c>ops-health</c> hub clients (#2554) — clients backfill a dropped interval by
-    /// requesting the window rather than replaying per-event cursors.
-    /// </summary>
     private static async Task<IResult> HandleGetOpsHealthHistory(
         [FromServices] IOpsHealthHistoryService service,
         HttpContext context,

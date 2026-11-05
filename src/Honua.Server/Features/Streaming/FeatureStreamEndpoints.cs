@@ -17,19 +17,6 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Streaming;
 
-/// <summary>
-/// Feature-change streaming endpoints supporting WebSocket and SSE transports
-/// on a single logical route. Admin endpoints expose session visibility.
-/// </summary>
-/// <remarks>
-/// This file owns the public surface — endpoint mapping, transport dispatch,
-/// capabilities, admin endpoints, and shared small helpers. Larger pieces are
-/// split across partial-class files in this directory:
-///   - FeatureStreamEndpoints.SubscriptionFilter.cs: query-string parsing and validation
-///   - FeatureStreamEndpoints.WebSocket.cs: WebSocket transport and control frames
-///   - FeatureStreamEndpoints.Sse.cs: SSE transport
-///   - FeatureStreamEndpoints.Replay.cs: durable-store replay helpers
-/// </remarks>
 internal static partial class FeatureStreamEndpoints
 {
     private const int SubscriptionBboxSrid = 4326;
@@ -343,7 +330,4 @@ internal static partial class FeatureStreamEndpoints
                 $"Feature stream session limit of {maxConcurrentSessions} concurrent sessions reached.");
 }
 
-/// <summary>
-/// Log category for feature stream endpoints.
-/// </summary>
 internal sealed class FeatureStreamEndpointsLog;

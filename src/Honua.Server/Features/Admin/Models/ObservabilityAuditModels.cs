@@ -3,122 +3,78 @@
 
 namespace Honua.Server.Features.Admin.Models;
 
-/// <summary>
-/// Wire shape for an audit event row (#1168).
-/// </summary>
 internal sealed class ObservabilityAuditRecordResponse
 {
-    /// <summary>Sink-assigned audit row identifier.</summary>
     public required long AuditId { get; init; }
 
-    /// <summary>Original event timestamp.</summary>
     public required DateTimeOffset Timestamp { get; init; }
 
-    /// <summary>Event type category.</summary>
     public required string EventType { get; init; }
 
-    /// <summary>Actor identifier.</summary>
     public required string Actor { get; init; }
 
-    /// <summary>Actor classification.</summary>
     public required string ActorType { get; init; }
 
-    /// <summary>Resource type, "-" when not applicable.</summary>
     public required string ResourceType { get; init; }
 
-    /// <summary>Optional resource identifier.</summary>
     public string? ResourceId { get; init; }
 
-    /// <summary>Dotted action name.</summary>
     public required string Action { get; init; }
 
-    /// <summary>Outcome classification.</summary>
     public required string Outcome { get; init; }
 
-    /// <summary>Correlation id captured at emit time.</summary>
     public required string CorrelationId { get; init; }
 
-    /// <summary>Remote IP address when capture is enabled.</summary>
     public string? RemoteIp { get; init; }
 
-    /// <summary>User-Agent header when capture is enabled.</summary>
     public string? UserAgent { get; init; }
 
-    /// <summary>Pre-sanitized structured detail (JSON text or short marker).</summary>
     public string Details { get; init; } = string.Empty;
 }
 
-/// <summary>
-/// Page of audit records.
-/// </summary>
 internal sealed class ObservabilityAuditPageResponse
 {
-    /// <summary>Items returned in this page (newest first).</summary>
     public required IReadOnlyList<ObservabilityAuditRecordResponse> Items { get; init; }
 
-    /// <summary>Cursor for the next page or null when none.</summary>
     public string? NextCursor { get; init; }
 }
 
-/// <summary>
-/// Result of an audit hash-chain integrity verification pass (#350).
-/// </summary>
 internal sealed class ObservabilityAuditIntegrityResponse
 {
-    /// <summary>True when the tamper-evident chain verified end-to-end.</summary>
     public required bool Verified { get; init; }
 
-    /// <summary>Number of rows examined.</summary>
     public required long RowsChecked { get; init; }
 
-    /// <summary>Leading rows with no hash (written before migration 069).</summary>
     public required long UnhashedRows { get; init; }
 
-    /// <summary>Unhashed rows inside a keyed downgrade-gap attestation.</summary>
     public long AttestedGapRows { get; init; }
 
-    /// <summary>The audit_id of the first row that failed verification, if any.</summary>
     public long? FirstBrokenAuditId { get; init; }
 
-    /// <summary>Human-readable failure description, if any.</summary>
     public string? FailureReason { get; init; }
 }
 
-/// <summary>
-/// Body for attesting a downgrade gap in the audit hash chain.
-/// </summary>
 internal sealed class ObservabilityAuditGapAttestationRequest
 {
-    /// <summary>The first unhashed row of the gap; must be the verifier's first broken audit_id.</summary>
+    // The gap starts at the verifier's first broken audit id.
     public long? GapFirstAuditId { get; init; }
 
-    /// <summary>Why the gap exists, for example the rollback that caused it.</summary>
     public string? Reason { get; init; }
 }
 
-/// <summary>
-/// A written downgrade-gap attestation and the verification report after it.
-/// </summary>
 internal sealed class ObservabilityAuditGapAttestationResponse
 {
-    /// <summary>The audit_id of the attestation row.</summary>
     public required long AttestationAuditId { get; init; }
 
-    /// <summary>The last hashed row before the gap.</summary>
     public required long AnchorAuditId { get; init; }
 
-    /// <summary>The first unhashed row of the gap.</summary>
     public required long GapFirstAuditId { get; init; }
 
-    /// <summary>The last unhashed row of the gap.</summary>
     public required long GapLastAuditId { get; init; }
 
-    /// <summary>The number of rows in the gap.</summary>
     public required long GapRowCount { get; init; }
 
-    /// <summary>The first hashed row after the gap.</summary>
     public required long ResumeAuditId { get; init; }
 
-    /// <summary>The verification report after the attestation was written.</summary>
     public required ObservabilityAuditIntegrityResponse Verification { get; init; }
 }

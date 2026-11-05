@@ -6,17 +6,6 @@ using Honua.Core.Features.Console.Domain;
 
 namespace Honua.Server.Features.Console.Services;
 
-/// <summary>
-/// Default <see cref="IConsoleDependencyClosureValidator"/>. Walks an item's
-/// provenance graph breadth-first and reports dependencies that are not
-/// shareable by the requested target audience.
-/// </summary>
-/// <remarks>
-/// The walk is capped at the supplied depth (callers pass a hard cap of 10). A
-/// provenance edge that does not resolve to a Console content item — an external
-/// catalog resource or a published service — is not a closure blocker and is
-/// skipped: only Console-owned dependencies carry a share tier to validate.
-/// </remarks>
 internal sealed class ConsoleDependencyClosureValidator(
     IConsoleContentStore contentStore,
     IConsoleShareStore shareStore,

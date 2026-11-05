@@ -8,54 +8,23 @@ using System.Text.Json;
 
 namespace Honua.Server.Features.Operations;
 
-/// <summary>
-/// Resolves the operator-supplied certificate that encrypts the persisted data-protection key
-/// ring at rest.
-/// </summary>
-/// <remarks>
-/// The key ring shares the Redis authority that already holds operation proposals, handles and
-/// the protected credential envelopes, so the ring alone is not a boundary against a reader of
-/// that authority: a snapshot would carry both the ciphertext and the keys. Supplying a
-/// certificate here moves the decryption material outside Redis and restores that boundary. The
-/// certificate is mandatory whenever this durable channel is composed: ciphertext without
-/// separately protected key material is not a durable-store boundary.
-/// </remarks>
+// The certificate is mandatory whenever the durable channel is composed, because ciphertext in the same store as the keys is not a boundary.
 internal static class OperationSecretKeyRingProtection
 {
     internal const string CertificatePathKey = "Operations:SecretChannel:KeyRingCertificatePath";
     internal const string CertificatePasswordKey = "Operations:SecretChannel:KeyRingCertificatePassword";
 
-    /// <summary>Uid of the published image (<c>USER 1001:1001</c>).</summary>
     internal const uint PublishedContainerUserId = 1001;
 
-    /// <summary>Gid of the published image (<c>USER 1001:1001</c>).</summary>
     internal const uint PublishedContainerGroupId = 1001;
 
-    /// <summary>
-    /// Root-owned mode 0640: owner read/write, group read, no other bits. The published
-    /// image can read this when the file's group is <see cref="PublishedContainerGroupId"/>.
-    /// Other-read is not required.
-    /// </summary>
     internal const UnixFileMode RootOwnedGroupReadMode =
         UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead;
 
-    /// <summary>
-    /// PKCS#12 material for hosts that cannot mount a file. The value is either standard base64
-    /// or a JSON object <c>{"pkcs12":"&lt;base64&gt;","password":"..."}</c>. An
-    /// <c>aws:secretsmanager:</c> reference is resolved before this runs.
-    /// </summary>
     internal const string CertificateMaterialKey = "Operations:SecretChannel:KeyRingCertificatePkcs12";
 
-    /// <summary>PKCS#12 bytes written for <see cref="Resolve"/>, plus a password carried inside the bundle.</summary>
-    /// <param name="Path">Filesystem path of the written certificate.</param>
-    /// <param name="Password">Password from a JSON bundle, or <see langword="null"/> when the bundle had none.</param>
     internal readonly record struct MaterializedKeyRing(string Path, string? Password);
 
-    /// <summary>
-    /// Writes PKCS#12 material to a private file under the temp directory.
-    /// </summary>
-    /// <param name="material">Base64 PKCS#12, or a JSON bundle containing <c>pkcs12</c> and an optional <c>password</c>.</param>
-    /// <returns>The written path and any password embedded in the bundle.</returns>
     public static MaterializedKeyRing WritePkcs12Material(string material)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(material);
@@ -129,28 +98,10 @@ internal static class OperationSecretKeyRingProtection
         return new MaterializedKeyRing(path, password);
     }
 
-    /// <summary>
-    /// Development and Test may start without a key-ring certificate. Every other
-    /// environment that has connected to Redis composes the durable channel and requires one.
-    /// </summary>
-    /// <param name="isDevelopment">True when the host environment is Development.</param>
-    /// <param name="isTest">True when the host environment is Test.</param>
-    /// <param name="redisConnected">True when a Redis multiplexer was established.</param>
-    /// <returns>True when startup must load the key-ring certificate.</returns>
+    // Development and Test may start without a key-ring certificate; every other environment that connected to Redis requires one.
     public static bool RequiresDurableChannelCertificate(bool isDevelopment, bool isTest, bool redisConnected)
         => redisConnected && !isDevelopment && !isTest;
 
-    /// <summary>
-    /// POSIX read check. A root-owned mode <c>0640</c> file is readable by the published
-    /// container user when <paramref name="group"/> is that user's group. Other-read is
-    /// sufficient but not required.
-    /// </summary>
-    /// <param name="owner">File owner uid.</param>
-    /// <param name="group">File group gid.</param>
-    /// <param name="mode">File mode.</param>
-    /// <param name="userId">Process effective uid.</param>
-    /// <param name="groupId">Process effective gid.</param>
-    /// <returns>True when the process can read the file.</returns>
     internal static bool IsReadable(uint owner, uint group, UnixFileMode mode, uint userId, uint groupId)
     {
         if (owner == userId && (mode & UnixFileMode.UserRead) != 0)
@@ -166,20 +117,9 @@ internal static class OperationSecretKeyRingProtection
         return (mode & UnixFileMode.OtherRead) != 0;
     }
 
-    /// <summary>
-    /// True for a root-owned mode 0640 file whose group is <paramref name="processGroup"/>.
-    /// </summary>
-    /// <param name="owner">File owner uid.</param>
-    /// <param name="group">File group gid.</param>
-    /// <param name="mode">File mode.</param>
-    /// <param name="processGroup">Group the server process runs as.</param>
-    /// <returns>True when the mount is the supported non-world-readable shape.</returns>
     internal static bool IsRootOwnedMode0640(uint owner, uint group, UnixFileMode mode, uint processGroup)
         => owner == 0 && group == processGroup && mode == RootOwnedGroupReadMode;
 
-    /// <summary>Loads the configured key-ring certificate.</summary>
-    /// <param name="configuration">The server configuration.</param>
-    /// <returns>The certificate with its private key.</returns>
     public static X509Certificate2 Resolve(IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(configuration);

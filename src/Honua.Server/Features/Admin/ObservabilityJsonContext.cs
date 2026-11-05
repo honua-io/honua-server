@@ -8,11 +8,6 @@ using Honua.Infrastructure.Monitoring;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Source-generated JSON serialization for the Console Operate observability
-/// endpoints (#1168). All DTOs declared here so AOT trimming preserves their
-/// metadata.
-/// </summary>
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,

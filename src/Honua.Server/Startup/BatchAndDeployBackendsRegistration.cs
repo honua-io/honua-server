@@ -9,12 +9,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Startup;
 
-/// <summary>
-/// Registers control-plane deploy backends (Kubernetes/AWS/Azure GitOps + revision adapters)
-/// and batch-compute backends (Azure Batch, AWS Batch, Local, Kubernetes Job). The relative
-/// order between deploy backends is preserved because consumers iterate <c>IEnumerable&lt;IDeployBackend&gt;</c>
-/// and pick the first match by name; the same applies to <c>IBatchComputeBackend</c>.
-/// </summary>
 internal static class BatchAndDeployBackendsRegistration
 {
     public static IServiceCollection AddHonuaBatchAndDeployBackends(this IServiceCollection services)

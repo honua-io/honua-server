@@ -8,7 +8,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>Protects the instance-wide Preview alert stores from tenant-scoped access.</summary>
 internal sealed class AlertAdminIsolationFilter : IEndpointFilter
 {
     public ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext invocation, EndpointFilterDelegate next)

@@ -5,11 +5,6 @@ using System.Xml.Linq;
 
 namespace Honua.Server.Features.Styling.Sld;
 
-/// <summary>
-/// Parses an OGC Filter element subtree into the internal <see cref="SldFilter"/> AST.
-/// Only the subset that maps cleanly to MapLibre is recognized; anything else is
-/// surfaced as <see cref="SldFilterUnsupported"/> with a diagnostic.
-/// </summary>
 internal static class SldFilterParser
 {
     public static SldFilter? ParseFilter(

@@ -8,30 +8,21 @@ using Honua.ControlPlane;
 
 namespace Honua.Server.Hosting.ComposeExecutor;
 
-/// <summary>How <see cref="ComposeExecutorMode.SwitchKey"/> was set.</summary>
 internal enum ComposeExecutorSwitch
 {
-    /// <summary>Unset or false. The process serves HTTP.</summary>
     NotRequested = 0,
 
-    /// <summary>True. Serve the allowlisted Compose socket and do not build the web host.</summary>
+    // The socket server does not build the web host.
     Requested = 1,
 
-    /// <summary>A value that is neither true nor false.</summary>
     Invalid = 2
 }
 
-/// <summary>
-/// Resolves <c>HONUA_COMPOSE_EXECUTOR</c>. A serving process never takes this path unless the
-/// switch is set. Migrate-only is a different switch and wins when both are set, because that
-/// path returns first.
-/// </summary>
+// Migrate-only wins when both switches are set, because that path returns first.
 internal static class ComposeExecutorMode
 {
-    /// <summary>Configuration key and environment variable that selects executor mode.</summary>
     internal const string SwitchKey = "HONUA_COMPOSE_EXECUTOR";
 
-    /// <summary>Reads the switch. Empty means <see cref="ComposeExecutorSwitch.NotRequested"/>.</summary>
     internal static ComposeExecutorSwitch Resolve(IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(configuration);
@@ -52,13 +43,8 @@ internal static class ComposeExecutorMode
     }
 }
 
-/// <summary>
-/// Sidecar entry point. Binds a mode <c>0660</c> unix socket and serves one JSON request per
-/// connection. Invalid configuration exits 2 with one JSON line and does not listen.
-/// </summary>
 internal static class ComposeExecutorCommand
 {
-    /// <summary>Called from <c>Program.cs</c> before the web host is built.</summary>
     internal static async Task<int> RunFromEntryPointAsync(IConfiguration configuration)
     {
         var mode = ComposeExecutorMode.Resolve(configuration);
@@ -93,7 +79,6 @@ internal static class ComposeExecutorCommand
         }
     }
 
-    /// <summary>Binds the socket and serves until <paramref name="cancellationToken"/> is cancelled.</summary>
     internal static async Task<int> ServeAsync(ComposeExecutorOptions options, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(options);

@@ -7,20 +7,7 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 namespace Honua.Server.Features.Infrastructure.AuditLog;
 
-/// <summary>
-/// Surfaces the scheduled audit hash-chain verification result (#2810) through the
-/// <see cref="HealthCheckService"/> roll-up (and the ops-health snapshot's <c>overallStatus</c>) so a
-/// broken/tampered chain is a paged signal rather than something caught only on a manual
-/// <c>/verify</c>. Reports <b>Unhealthy</b> once a completed verification found a broken link;
-/// otherwise Healthy (including before the first pass, when there is nothing yet to report). It reads
-/// the cached <see cref="IAuditChainIntegritySignal"/> snapshot, so it never runs a chain replay on a
-/// probe.
-/// </summary>
-/// <remarks>
-/// This is intentionally on the health-check roll-up rather than the depooling readiness probe:
-/// audit tampering must page loudly, but it does not make the node unable to serve traffic, so
-/// depooling would be the wrong response.
-/// </remarks>
+// A broken chain pages and does not remove the node from service, and the check reads the cached snapshot.
 internal sealed class AuditChainIntegrityHealthCheck : IHealthCheck
 {
     private readonly IAuditChainIntegritySignal _signal;

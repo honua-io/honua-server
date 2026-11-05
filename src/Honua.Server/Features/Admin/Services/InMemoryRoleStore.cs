@@ -7,10 +7,6 @@ using Honua.Core.Features.Authorization.Domain;
 
 namespace Honua.Server.Features.Admin.Services;
 
-/// <summary>
-/// In-memory role store for the admin API surface.
-/// Will be replaced by a persistent implementation when #498 lands.
-/// </summary>
 internal sealed class InMemoryRoleStore : IRoleStore
 {
     private readonly object _mutationGate = new();

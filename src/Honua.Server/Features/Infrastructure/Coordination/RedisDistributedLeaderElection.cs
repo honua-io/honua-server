@@ -8,9 +8,6 @@ using StackExchange.Redis;
 
 namespace Honua.Infrastructure.Coordination;
 
-/// <summary>
-/// Redis-based distributed leader election with automatic lease renewal.
-/// </summary>
 internal sealed partial class RedisDistributedLeaderElection : IDistributedLeaderElection, IDisposable
 {
     private static readonly TimeSpan DefaultLeaseDuration = TimeSpan.FromMinutes(2);
@@ -90,13 +87,10 @@ internal sealed partial class RedisDistributedLeaderElection : IDistributedLeade
         _renewalTimer = new Timer(RenewLeaseAsync, null, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
     }
 
-    /// <inheritdoc />
     public bool IsLeader => _isLeader;
 
-    /// <inheritdoc />
     public string InstanceId => _instanceId;
 
-    /// <inheritdoc />
     public async Task<bool> TryAcquireLeadershipAsync(CancellationToken cancellationToken = default)
     {
         if (_disposed)
@@ -153,7 +147,6 @@ internal sealed partial class RedisDistributedLeaderElection : IDistributedLeade
         }
     }
 
-    /// <inheritdoc />
     public async Task<bool> HeartbeatAsync(CancellationToken cancellationToken = default)
     {
         if (_disposed || !_isLeader)
@@ -215,7 +208,6 @@ internal sealed partial class RedisDistributedLeaderElection : IDistributedLeade
         }
     }
 
-    /// <inheritdoc />
     public async Task ReleaseLeadershipAsync(CancellationToken cancellationToken = default)
     {
         if (!_isLeader)

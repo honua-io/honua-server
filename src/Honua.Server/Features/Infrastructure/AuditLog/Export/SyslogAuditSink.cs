@@ -9,11 +9,6 @@ using Honua.Core.Features.AuditLog.Export;
 
 namespace Honua.Server.Features.Infrastructure.AuditLog.Export;
 
-/// <summary>
-/// Audit sink that emits each event as an RFC 5424-style syslog line carrying a
-/// CEF payload (via <see cref="AuditCefFormatter"/>) over UDP (default) or TCP
-/// (#2157).
-/// </summary>
 internal sealed class SyslogAuditSink : IAuditSink
 {
     private const string AppName = "honua-server";
@@ -24,14 +19,6 @@ internal sealed class SyslogAuditSink : IAuditSink
     private readonly ISyslogTransport _transport;
     private readonly string _hostName;
 
-    /// <summary>
-    /// Initializes a new syslog sink.
-    /// </summary>
-    /// <param name="options">Syslog configuration.</param>
-    /// <param name="transport">
-    /// Transport seam; when null a default UDP or TCP transport is built from
-    /// <paramref name="options"/>.
-    /// </param>
     public SyslogAuditSink(SyslogSinkOptions options, ISyslogTransport? transport = null)
     {
         ArgumentNullException.ThrowIfNull(options);
@@ -40,13 +27,10 @@ internal sealed class SyslogAuditSink : IAuditSink
         _hostName = Environment.MachineName;
     }
 
-    /// <inheritdoc />
     public string SinkType => "syslog";
 
-    /// <inheritdoc />
     public string? Region => _options.Region;
 
-    /// <inheritdoc />
     public async Task<AuditSinkResult> SendAsync(IReadOnlyList<AuditEvent> events, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(events);

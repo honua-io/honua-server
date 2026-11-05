@@ -8,24 +8,7 @@ using Honua.Infrastructure.Security;
 
 namespace Honua.Server.Features.Collaboration.Sessions;
 
-/// <summary>
-/// Studio-lifecycle-backed saved-map collaboration authorizer (honua-server#2999, REQ-001/AC-3).
-/// Resolves the collaboration <c>mapId</c> to a Studio package draft and delegates the decision
-/// to the same <see cref="IStudioAuthorizationService"/> policy layer the Studio lifecycle
-/// endpoints use — admins pass unconditionally, and with end-user authorization enabled the
-/// resource owner passes — with denials audited through the shared
-/// <see cref="StudioEndpointAuthorization"/> seam. A <c>mapId</c> that does not resolve to a
-/// Studio package draft (including content-item ids, which the checkpoint surface cannot yet
-/// normalize to a draft) is denied fail-closed, preserving the pre-#2999 posture for unknown
-/// map identifiers.
-/// </summary>
-/// <remarks>
-/// Registered as a singleton (the session service that consumes it is a singleton) while the
-/// Studio lifecycle/authorization services are scoped, so the scoped services are resolved from
-/// the ambient request's <see cref="HttpContext.RequestServices"/> per call. Collaboration joins
-/// only ever originate from HTTP requests (REST join, op-log append/replay, WebSocket upgrade,
-/// checkpoint); a call without an ambient request is denied.
-/// </remarks>
+// An unresolved map id is denied, scoped Studio services come from the ambient request, and a call with no ambient request is denied.
 internal sealed class StudioSavedMapCollaborationAuthorizer : ISavedMapCollaborationAuthorizer
 {
     private readonly IHttpContextAccessor _httpContextAccessor;

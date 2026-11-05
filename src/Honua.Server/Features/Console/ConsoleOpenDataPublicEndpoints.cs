@@ -11,25 +11,14 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Console;
 
-/// <summary>
-/// Anonymous open-data read surface: DCAT/data.json, the STAC
-/// catalog/collection/item projections, and the Schema.org Dataset JSON-LD
-/// projection. These routes are intentionally public but enforce strict policy:
-/// a dataset is only readable when the item is open-data <em>eligible</em>
-/// (public-indexed distributable type) and, for STAC, currently
-/// <em>published</em>. Private, protected, ineligible, missing, and not-published
-/// resources all return an identical 404 that never discloses item identity or
-/// titles.
-/// </summary>
+// Unknown, ineligible, unpublished, and missing resources all return the same 404 and never disclose identity or titles.
 internal static class ConsoleOpenDataPublicEndpoints
 {
     private const string OpenDataDeniedMessage = "Open-data dataset not found.";
     private const string StacBasePath = "/api/v1/open-data/stac";
 
-    /// <summary>Log category for the anonymous Console open-data endpoints.</summary>
     internal sealed class ConsoleOpenDataPublicEndpointsLogCategory;
 
-    /// <summary>Maps the anonymous Console open-data endpoints.</summary>
     public static void MapConsoleOpenDataPublicEndpoints(this IEndpointRouteBuilder endpoints)
     {
         // AllowAnonymous is deliberate: open-data reads are public, but every
@@ -287,11 +276,6 @@ internal static class ConsoleOpenDataPublicEndpoints
         }
     }
 
-    /// <summary>
-    /// Resolves an item for anonymous open-data reads: returns the eligible page +
-    /// publication state, or null when the item is missing or not open-data
-    /// eligible (private/protected/ineligible). Callers apply uniform denial.
-    /// </summary>
     private static async Task<(ConsoleOpenDataPage Page, ConsoleStacPublicationState Publication)?> ResolveEligibleAsync(
         string id,
         IConsoleContentStore contentStore,
@@ -318,10 +302,6 @@ internal static class ConsoleOpenDataPublicEndpoints
         return (page, publication);
     }
 
-    /// <summary>
-    /// Resolves a STAC collection id to its eligible, currently-published item.
-    /// The collection id is the store-assigned id; this maps it back to the item.
-    /// </summary>
     private static async Task<(ConsoleOpenDataPage Page, ConsoleStacPublicationState Publication)?> ResolvePublishedCollectionAsync(
         string collectionId,
         IConsoleContentStore contentStore,

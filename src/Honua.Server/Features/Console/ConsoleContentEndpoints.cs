@@ -12,28 +12,15 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Console;
 
-/// <summary>
-/// Console content item CRUD/list/search endpoints.
-/// </summary>
 internal static class ConsoleContentEndpoints
 {
     private const int DefaultProvenanceDepth = 5;
 
-    /// <summary>
-    /// Defence-in-depth ceiling on the list/search page size. Mirrors the
-    /// field-collection pull cap (<c>MaxPullLimit = 1_000</c>) so an admin
-    /// caller cannot request an unbounded <c>.Take(limit)</c> page.
-    /// </summary>
+    // The page size is capped so an admin request cannot take an unbounded page.
     private const int MaxListLimit = 1_000;
 
-    /// <summary>
-    /// Log category for Console content endpoints.
-    /// </summary>
     internal sealed class ConsoleContentEndpointsLog;
 
-    /// <summary>
-    /// Maps the Console content endpoints into the supplied builder.
-    /// </summary>
     public static void MapConsoleContentEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/console/content")
@@ -473,13 +460,7 @@ internal static class ConsoleContentEndpoints
         return false;
     }
 
-    /// <summary>
-    /// Rejects requests whose enum-valued body fields carry undefined numeric
-    /// values (e.g. <c>itemType: 999</c>). The default
-    /// <c>JsonStringEnumConverter</c> accepts integer values, so contract
-    /// guarantees from the closed string set in <see cref="ConsoleContentItemType"/>
-    /// etc. must be enforced explicitly at the boundary.
-    /// </summary>
+    // Numeric values of string enums are rejected because the default converter accepts integers.
     private static bool TryValidateContractEnums(
         ConsoleContentItemType itemType,
         ConsoleVisibility? visibility,
@@ -511,12 +492,6 @@ internal static class ConsoleContentEndpoints
         return true;
     }
 
-    /// <summary>
-    /// Rejects create/PUT requests that select team visibility without supplying
-    /// the team scope id that the RBAC evaluator needs to gate access. Without
-    /// this guard, the item would be unreachable by non-owners despite the
-    /// documented contract.
-    /// </summary>
     private static bool TryValidateTeamScope(ConsoleVisibility? visibility, string? teamScopeId, out string error)
     {
         if (visibility == ConsoleVisibility.Team && string.IsNullOrWhiteSpace(teamScopeId))
@@ -528,12 +503,7 @@ internal static class ConsoleContentEndpoints
         return true;
     }
 
-    /// <summary>
-    /// Rejects create/PUT requests whose provenance entries are null or carry
-    /// null/whitespace required fields. Without this guard a malformed payload
-    /// would persist and later NRE during traversal in
-    /// <c>GET /content/{id}/provenance</c>.
-    /// </summary>
+    // Provenance entries with null or blank required fields are rejected so a later read does not throw.
     private static bool TryValidateProvenance(IReadOnlyList<ConsoleProvenanceRef>? provenance, out string error)
     {
         if (provenance is null || provenance.Count == 0)

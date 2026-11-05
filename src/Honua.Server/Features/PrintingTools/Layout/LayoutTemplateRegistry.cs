@@ -5,10 +5,6 @@ using Honua.Server.Features.PrintingTools.Models;
 
 namespace Honua.Server.Features.PrintingTools.Layout;
 
-/// <summary>
-/// Registry of built-in print layout templates.
-/// Page dimensions use points (1 pt = 1/72 inch).
-/// </summary>
 internal static class LayoutTemplateRegistry
 {
     // Page sizes in points (72 points per inch)
@@ -31,9 +27,6 @@ internal static class LayoutTemplateRegistry
     // Sum of inter-element vertical gaps within the body area
     private const float BodyVerticalGaps = 24f;
 
-    /// <summary>
-    /// Map-only template (no layout elements, just the rendered map).
-    /// </summary>
     public static PrintLayoutTemplate MapOnly { get; } = new()
     {
         Name = "MAP_ONLY",
@@ -43,45 +36,24 @@ internal static class LayoutTemplateRegistry
         MapFrame = new LayoutSlot { X = 0, Y = 0, Width = LetterWidth, Height = LetterHeight }
     };
 
-    /// <summary>
-    /// Letter (ANSI A) portrait layout with legend, title, scale bar, and north arrow.
-    /// </summary>
     public static PrintLayoutTemplate LetterAnsiAPortrait { get; } =
         CreateFullLayout("Letter ANSI A Portrait", LetterWidth, LetterHeight);
 
-    /// <summary>
-    /// Letter (ANSI A) landscape layout with legend, title, scale bar, and north arrow.
-    /// </summary>
     public static PrintLayoutTemplate LetterAnsiALandscape { get; } =
         CreateFullLayout("Letter ANSI A Landscape", LetterHeight, LetterWidth);
 
-    /// <summary>
-    /// A4 portrait layout with legend, title, scale bar, and north arrow.
-    /// </summary>
     public static PrintLayoutTemplate A4Portrait { get; } =
         CreateFullLayout("A4 Portrait", A4Width, A4Height);
 
-    /// <summary>
-    /// A4 landscape layout with legend, title, scale bar, and north arrow.
-    /// </summary>
     public static PrintLayoutTemplate A4Landscape { get; } =
         CreateFullLayout("A4 Landscape", A4Height, A4Width);
 
-    /// <summary>
-    /// A3 portrait layout with legend, title, scale bar, and north arrow.
-    /// </summary>
     public static PrintLayoutTemplate A3Portrait { get; } =
         CreateFullLayout("A3 Portrait", A3Width, A3Height);
 
-    /// <summary>
-    /// A3 landscape layout with legend, title, scale bar, and north arrow.
-    /// </summary>
     public static PrintLayoutTemplate A3Landscape { get; } =
         CreateFullLayout("A3 Landscape", A3Height, A3Width);
 
-    /// <summary>
-    /// All registered templates indexed by name (case-insensitive).
-    /// </summary>
     private static readonly Dictionary<string, PrintLayoutTemplate> _templates = new(StringComparer.OrdinalIgnoreCase)
     {
         [MapOnly.Name] = MapOnly,
@@ -93,9 +65,6 @@ internal static class LayoutTemplateRegistry
         [A3Landscape.Name] = A3Landscape,
     };
 
-    /// <summary>
-    /// Tries to resolve a template by name.
-    /// </summary>
     public static bool TryGetTemplate(string? name, out PrintLayoutTemplate template)
     {
         if (string.IsNullOrWhiteSpace(name))
@@ -107,20 +76,10 @@ internal static class LayoutTemplateRegistry
         return _templates.TryGetValue(name, out template!);
     }
 
-    /// <summary>
-    /// Gets all registered template names.
-    /// </summary>
     public static IReadOnlyList<string> GetTemplateNames() => [.. _templates.Keys];
 
-    /// <summary>
-    /// Gets all registered templates.
-    /// </summary>
     public static IReadOnlyList<PrintLayoutTemplate> GetTemplates() => [.. _templates.Values];
 
-    /// <summary>
-    /// Creates a full-layout template with title, map frame, legend, scale bar,
-    /// north arrow, and attribution positioned from page dimensions.
-    /// </summary>
     private static PrintLayoutTemplate CreateFullLayout(string name, float pageWidth, float pageHeight)
     {
         var bodyHeight = pageHeight - 2 * Margin - TitleHeight - ScaleBarHeight - AttributionHeight - BodyVerticalGaps;

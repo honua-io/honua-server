@@ -18,11 +18,7 @@ internal static class FeatureLockServices
     }
 }
 
-/// <summary>
-/// Placeholder feature edit capability gate. Until saved-map and service-layer
-/// edit ACLs land, feature locks deny writes by default so callers must wire a
-/// real policy before production mutation paths can acquire leases.
-/// </summary>
+// Until real edit ACLs exist, feature locks deny writes so a placeholder cannot acquire a production lease.
 internal sealed class FailClosedFeatureLockAuthorizer : IFeatureLockAuthorizer
 {
     public ValueTask<FeatureLockAuthorizationResult> AuthorizeAsync(

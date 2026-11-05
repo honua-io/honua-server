@@ -15,7 +15,6 @@ using Honua.Infrastructure.Authentication;
 
 namespace Honua.ControlPlane;
 
-/// <summary>Fail-closed approval-time revalidation for model-originated proposals.</summary>
 internal sealed class OperationProposalEvidenceValidator(
     ProposalEvidenceVerifier verifier,
     IServiceProvider services,

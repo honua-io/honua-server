@@ -13,16 +13,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Admin editing surface for batched, transactional network-topology edge and
-/// turn-restriction content edits against a non-active generation (#2716). Complements
-/// <see cref="NetworkDatasetAdminEndpoints"/> (registry mapping/metadata CRUD) and the
-/// #2715 versioned generation lifecycle: this surface allocates <c>draft</c> generations
-/// and applies bounded, idempotent, optimistically-concurrent batch edits that atomically
-/// transition a generation to <c>dirty</c>. It never changes a dataset's active generation
-/// pointer, and topology rebuild/promotion/rollback remain out of scope (#2718/#2719/#2720).
-/// The NAServer/GeoServices protocol adapter never calls this surface and stays read-only.
-/// </summary>
+// These edits never move the active generation pointer, and the network protocol adapter does not call this surface.
 internal static partial class NetworkTopologyEditAdminEndpoints
 {
     private const string TagAdmin = "Admin";
@@ -31,14 +22,6 @@ internal static partial class NetworkTopologyEditAdminEndpoints
     private const string IfMatchHeader = "If-Match";
     private const int MaxIdempotencyKeyLength = 200;
 
-    /// <summary>
-    /// Maps the network-topology edit admin endpoints into the request pipeline.
-    /// </summary>
-    /// <remarks>
-    /// No-op when <see cref="INetworkTopologyEditStore"/> or
-    /// <see cref="INetworkTopologyGenerationStore"/> are not registered (non-Postgres data
-    /// providers), mirroring <see cref="NetworkDatasetAdminEndpoints"/>.
-    /// </remarks>
     public static IEndpointRouteBuilder MapNetworkTopologyEditAdminEndpoints(this IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
@@ -536,17 +519,9 @@ internal static partial class NetworkTopologyEditAdminEndpoints
     private static string ResolveActor(HttpContext context)
         => context.User.Identity?.Name is { Length: > 0 } name ? name : "admin";
 
-    /// <summary>
-    /// Log category marker used by <see cref="ILogger{TCategoryName}"/> bindings.
-    /// </summary>
     internal sealed class NetworkTopologyEditAdminLogCategory;
 
-    /// <summary>
-    /// Source-generated logger messages for the network-topology edit admin endpoints.
-    /// Structured audit fields deliberately exclude geometry, attribute values, and
-    /// profile costs (#2716 audit/telemetry requirement) — only dataset, generation,
-    /// operation, counts, actor, correlation id, and outcome are recorded.
-    /// </summary>
+    // Audit fields record counts and identity only, never geometry, attributes, or profile costs.
     internal static partial class NetworkTopologyEditAdminLog
     {
         [LoggerMessage(EventId = 4700, Level = LogLevel.Information,

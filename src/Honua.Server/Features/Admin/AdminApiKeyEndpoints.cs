@@ -11,16 +11,10 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Admin endpoints for server-managed API key lifecycle operations.
-/// </summary>
 internal static partial class AdminApiKeyEndpoints
 {
     internal sealed class AdminApiKeyEndpointsLog;
 
-    /// <summary>
-    /// Registers admin API key lifecycle endpoints.
-    /// </summary>
     public static void MapAdminApiKeyEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/api-keys")

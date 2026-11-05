@@ -13,12 +13,6 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Admin endpoints exposing the compliance dashboard, residency evaluator, key
-/// rotation, and report exporter. The endpoints are intentionally thin — every
-/// non-trivial decision happens in <c>Honua.Core.Features.Compliance</c> so the
-/// same logic powers MCP / SDK callers when those land.
-/// </summary>
 internal static partial class ComplianceAdminEndpoints
 {
     private const string CsvContentType = "text/csv; charset=utf-8";

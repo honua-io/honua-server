@@ -16,22 +16,14 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Console.Publications;
 
-/// <summary>
-/// Public route resolution endpoint. Resolves a server-owned route slug to a
-/// client-safe published artifact view, enforcing visibility/access, public-link, and
-/// embed policy on the read. Anonymous-capable; backend reads enforce policy and audit
-/// denied public-link/embed attempts.
-/// </summary>
 internal static class PublishedRouteEndpoints
 {
     private const string OriginHeaderName = "Origin";
     private const string RefererHeaderName = "Referer";
     private const string NullOrigin = "null";
 
-    /// <summary>Log category for published route reads.</summary>
     internal sealed class PublishedRouteLog;
 
-    /// <summary>Maps the public published-route read endpoint.</summary>
     public static void MapPublishedRouteEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/published")

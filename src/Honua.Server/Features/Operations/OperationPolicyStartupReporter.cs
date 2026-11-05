@@ -6,11 +6,6 @@ using Honua.Core.Features.Operations.Services;
 
 namespace Honua.Server.Features.Operations;
 
-/// <summary>
-/// Logs the effective typed operation policy once at startup, for example
-/// <c>Operation policy: 0 operator rules + 2 built-in rules, default Deny</c>, so an operator can
-/// see whether the built-in Production administrator rules are in force without reading code.
-/// </summary>
 internal sealed partial class OperationPolicyStartupReporter(
     IServiceProvider services,
     ILogger<OperationPolicyStartupReporter> logger) : IHostedService

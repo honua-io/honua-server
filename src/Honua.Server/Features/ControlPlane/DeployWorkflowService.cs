@@ -17,9 +17,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Server-side control-plane service for durable deploy workflow operations.
-/// </summary>
 internal sealed partial class DeployWorkflowService
 {
     private const string RollbackSubmissionPendingPhase = "Rollback request accepted; submitting to deploy backend.";
@@ -27,11 +24,7 @@ internal sealed partial class DeployWorkflowService
     private const string MaxStalenessParameterKey = "telemetry.max_staleness_seconds";
     private const string ErrorCountParameterKey = "telemetry.error_count.query";
 
-    /// <summary>
-    /// Built-in providers that query a fixed window and never read a sample's observation time, so they
-    /// cannot honor <see cref="MaxStalenessParameterKey"/> (#4617). Host-registered providers are not
-    /// assumed to share that limitation.
-    /// </summary>
+    // These built-in providers query a fixed window and never read a sample's observation time, so they cannot honor a staleness limit.
     private static readonly HashSet<string> FixedWindowTelemetryProviders = new(StringComparer.OrdinalIgnoreCase)
     {
         "cloudwatch",
@@ -72,7 +65,6 @@ internal sealed partial class DeployWorkflowService
 
     public bool HasDurableStore => _workflowStore != null;
 
-    /// <summary>Retains the verified installed Compose revision before the first managed convergence.</summary>
     internal async Task RecordInstalledRevisionAsync(string targetId, string revision, WorkflowOperationRecord convergence, CancellationToken cancellationToken)
     {
         EnsureDurableStoreConfigured();
@@ -203,13 +195,7 @@ internal sealed partial class DeployWorkflowService
         return new DeployWorkflowPlanResult(target, spec, plan, capabilities, canonicalApproval);
     }
 
-    /// <summary>
-    /// Refuses a synthetic health-probe or golden-query URL that the runtime probe would refuse
-    /// (honua-server#4988). Otherwise the rollout is admitted, the gate reports itself misconfigured
-    /// on every cycle, and a correct candidate is failed at its exposure deadline. A URL whose host
-    /// cannot be resolved right now is only a warning: that condition is transient, and the runtime
-    /// probe re-validates it on every cycle.
-    /// </summary>
+    // A probe URL the runtime would refuse is refused at plan time; an unresolvable host is only a warning because that failure is transient.
     private static async Task<DeployPlan> ApplyProbeUrlValidationAsync(
         DeployPlan plan,
         DeployOperationSpec spec,
@@ -324,11 +310,7 @@ internal sealed partial class DeployWorkflowService
         return null;
     }
 
-    /// <summary>
-    /// Records when the candidate first became exposed to traffic (#4617). Backends that cut over
-    /// synchronously inside <c>StartAsync</c> report <see cref="WorkflowOperationStatus.Reconciling"/>
-    /// or <see cref="WorkflowOperationStatus.Succeeded"/> immediately; an existing stamp is never moved.
-    /// </summary>
+    // The exposure stamp records the first moment the candidate served traffic, and an existing stamp is never moved.
     internal static DateTimeOffset? StampTrafficExposure(DateTimeOffset? existing, WorkflowOperationStatus status)
         => existing ?? (status is WorkflowOperationStatus.Reconciling or WorkflowOperationStatus.Succeeded
             ? DateTimeOffset.UtcNow
@@ -340,10 +322,6 @@ internal sealed partial class DeployWorkflowService
         return await _workflowStore!.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Lists durable deploy workflow operations newest-first with optional status and kind filters. Draws
-    /// from both the active-set and terminal-operations indexes maintained by the durable store.
-    /// </summary>
     public async Task<WorkflowOperationPage> ListDeployOperationsAsync(
         WorkflowOperationStatus? status,
         WorkflowOperationKind? kind,
@@ -364,10 +342,6 @@ internal sealed partial class DeployWorkflowService
             .ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Returns the most recent terminal-<see cref="WorkflowOperationStatus.Succeeded"/> deploy operation
-    /// for a target, or null when none exists. Backs the platform-release converge API lookup (#2564).
-    /// </summary>
     public async Task<WorkflowOperationRecord?> GetMostRecentSucceededDeployAsync(
         string targetId,
         CancellationToken cancellationToken = default)
@@ -738,36 +712,20 @@ internal sealed partial class DeployWorkflowService
         }
     }
 
-    /// <summary>
-    /// Distinct outcomes of a manual promotion attempt so the admin endpoint can return a structured
-    /// error when preconditions are not met, without conflating "not found" with "wrong state".
-    /// </summary>
     internal enum DeployPromotionOutcome
     {
-        /// <summary>The operation id did not resolve to a deploy operation.</summary>
         NotFound,
 
-        /// <summary>The operation is in a state from which it cannot be promoted (structured 409).</summary>
         PreconditionFailed,
 
-        /// <summary>The promotion was driven to the backend and the record updated.</summary>
         Promoted
     }
 
-    /// <summary>Result of a manual promotion attempt.</summary>
     internal sealed record DeployPromotionResult(
         DeployPromotionOutcome Outcome,
         WorkflowOperationRecord? Operation,
         string? PreconditionDetail);
 
-    /// <summary>
-    /// Manual promotion escape hatch (#2543): forces the cutover on a deploy operation that is parked
-    /// awaiting promotion — for example an on-prem rolling deploy whose standby replica is healthy but
-    /// which has no telemetry gate to auto-clear. Drives <see cref="IDeployBackend.PromoteAsync"/>
-    /// directly (a full cutover, not a canary ramp step) and records the operator on the audit trail.
-    /// Returns a structured precondition failure when the operation is terminal, not yet submitted, or
-    /// mid-rollback rather than throwing, so the endpoint can surface a clear reason.
-    /// </summary>
     public async Task<DeployPromotionResult> PromoteAsync(
         string operationId,
         string? requestedBy,
@@ -923,15 +881,7 @@ internal sealed partial class DeployWorkflowService
         return new DeployPromotionResult(DeployPromotionOutcome.Promoted, updated, null);
     }
 
-    /// <summary>
-    /// Returns a human-readable reason when an operation cannot be manually promoted from its current
-    /// status, or <see langword="null"/> when promotion may proceed. Promotion is valid only while the
-    /// rollout is in flight (<see cref="WorkflowOperationStatus.Submitted"/> /
-    /// <see cref="WorkflowOperationStatus.Reconciling"/>) and has not already activated a candidate — a
-    /// <see cref="WorkflowOperationStatus.Reconciling"/> operation with <c>Deploy.Protection</c> set
-    /// (honua-server#4618) is already past cutover and observing, so it is treated the same as
-    /// <see cref="WorkflowOperationStatus.Succeeded"/> here.
-    /// </summary>
+    // Promotion is valid only while the rollout is in flight and has not already activated a candidate.
     internal static bool IsCheckpointReadyForManualCutover(WorkflowOperationRecord operation)
         => !string.IsNullOrWhiteSpace(operation.ProviderOperationId) &&
            !string.IsNullOrWhiteSpace(operation.Deploy?.CurrentRevision) &&
@@ -1470,12 +1420,7 @@ internal sealed partial class DeployWorkflowService
         };
     }
 
-    /// <summary>
-    /// Parses an optional progressive canary ramp from deploy parameters. Returns null when no
-    /// ramp parameters are present so the deploy keeps the default single-step bake-then-promote
-    /// behavior. Invalid ramp configuration is surfaced through the spec's validation so the plan
-    /// can block submission, rather than being silently discarded.
-    /// </summary>
+    // An invalid canary ramp fails validation instead of being discarded, and absent ramp parameters keep the single-step bake.
     private static CanaryRampSpec? ParseCanaryRamp(Dictionary<string, string> parameters)
     {
         if (!parameters.TryGetValue("deployment.canary_ramp.step_weights", out var rawWeights) ||
@@ -1545,7 +1490,6 @@ internal sealed partial class DeployWorkflowService
 
 internal sealed record DeployRequestFingerprintPayload
 {
-    /// <summary>Sealed backup selection. Omission preserves fingerprints of existing forward deploys.</summary>
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public string? PreMigrationBackupId { get; init; }
 
@@ -1565,9 +1509,6 @@ internal sealed record DeployRequestFingerprintParameter
     public required string Value { get; init; }
 }
 
-/// <summary>
-/// Result of resolving a deploy target and planning a workflow operation.
-/// </summary>
 internal sealed record DeployWorkflowPlanResult(
     DeployTargetDefinition Target,
     DeployOperationSpec Spec,

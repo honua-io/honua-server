@@ -6,14 +6,8 @@ using Honua.Core.Features.Operations.Services;
 
 namespace Honua.Server.Features.Operations;
 
-/// <summary>
-/// The audited Admin MCP projection (honua-server#3363): the Admin API and access catalog
-/// operations committed to <c>docs/gis/data/admin-mcp-projection-manifest.json</c>, minus the
-/// audited exclusions. Other <c>admin.*</c> providers publish only with the full-catalog opt-in.
-/// </summary>
 internal sealed class AdminAuditedMcpProjection : IAuditedAdminMcpProjection
 {
-    /// <inheritdoc />
     public IReadOnlyCollection<string> OperationIds { get; } = AdminApiOperationCatalog.Descriptors
         .Concat(AdminAccessOperationCatalog.Descriptors)
         .Select(descriptor => descriptor.OperationId)

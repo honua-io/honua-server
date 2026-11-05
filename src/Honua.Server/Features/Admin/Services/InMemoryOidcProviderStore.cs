@@ -9,11 +9,6 @@ using Honua.Infrastructure.Authentication;
 
 namespace Honua.Server.Features.Admin.Services;
 
-/// <summary>
-/// In-memory OIDC provider store for the admin API surface.
-/// Records live for the process and are published into the authentication catalog.
-/// A durable store is tracked separately (#496).
-/// </summary>
 internal sealed class InMemoryOidcProviderStore : IOidcProviderStore
 {
     private const string IdentityTestHttpClient = "IdentityProviderTest";
@@ -22,11 +17,6 @@ internal sealed class InMemoryOidcProviderStore : IOidcProviderStore
     private readonly IHttpClientFactory? _httpClientFactory;
     private readonly OidcRuntimeProviderRegistry? _registry;
 
-    /// <summary>
-    /// Initializes a new instance. Both dependencies are optional so hosts and tests that
-    /// construct the store directly keep compiling; without a factory the connectivity test
-    /// reports that it could not probe.
-    /// </summary>
     public InMemoryOidcProviderStore(
         IHttpClientFactory? httpClientFactory = null,
         OidcRuntimeProviderRegistry? registry = null)

@@ -15,24 +15,7 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Admin.TileOperations;
 
-/// <summary>
-/// Worker-side <see cref="IJobExecutor"/> for <see cref="ExecutionJobKind.TileCache"/>
-/// jobs (issue #1697). Decodes the tile-cache parameters that
-/// <see cref="TileCacheJobService"/> stamped onto the execution-job spec, runs the
-/// requested seed/warm/invalidate/purge/archive/publish operation through the shared
-/// <see cref="TileOperationExecutionCore"/>, and bridges the resulting
-/// <see cref="TileOperationProgress"/> into both the canonical execution-job progress
-/// channel (<see cref="IJobExecutionContext"/>) and the
-/// <see cref="IUniversalProgressStore"/> the existing admin job-status API reads, so a
-/// batch-dispatched job is observable through the same endpoints as an in-process job.
-/// <para>
-/// On the local backend this runs in-process via <c>JobExecutionService</c>; on AWS
-/// Batch / Kubernetes the same executor runs inside the GDAL/tippecanoe worker image.
-/// The 5,000-tile cap that protects the serving pod is lifted here to
-/// <see cref="TileCacheBatchOptions.MaxTiles"/> because the work runs on dedicated
-/// compute bounded by backend timeout/resources.
-/// </para>
-/// </summary>
+// The serving-process tile cap is lifted here because the work runs on dedicated compute.
 internal sealed partial class TileCacheJobExecutor : IJobExecutor
 {
     private readonly IUniversalProgressStore _progressStore;

@@ -9,21 +9,7 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Infrastructure.AuditLog;
 
-/// <summary>
-/// Scheduled verifier for the tamper-evident audit hash chain (#2810). The audit trail is
-/// append-only and hash-chained, but verification was pull-only (<c>/verify</c>): nothing scheduled a
-/// check and nothing raised a signal on a broken chain, so tail-tampering by a superuser who can drop
-/// the append-only rules stayed invisible until someone manually verified. This service replays the
-/// chain on a fixed interval, publishes the outcome through <see cref="IAuditChainIntegritySignal"/>,
-/// and on the first broken link logs a critical event and drives the
-/// <c>honua.audit.chain_broken</c> gauge to 1 — so the broken chain raises a paged signal
-/// (health-check fault / ops finding) instead of waiting for a manual check.
-/// </summary>
-/// <remarks>
-/// Failures of the verification pass itself (e.g. a transient database error) are logged and
-/// swallowed so a hiccup never crashes the host; the previous good/broken signal is retained and the
-/// next tick retries. A full replay is O(rows), hence the deliberately infrequent default interval.
-/// </remarks>
+// A failed verification pass is logged and swallowed so it cannot crash the host, and the previous signal is kept.
 internal sealed partial class AuditChainVerificationBackgroundService : BackgroundService, IAuditChainIntegritySignal
 {
     private static long _chainBrokenGauge;
@@ -54,10 +40,8 @@ internal sealed partial class AuditChainVerificationBackgroundService : Backgrou
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <inheritdoc />
     public bool HasVerified => Interlocked.Read(ref _lastVerifiedAtTicks) != 0;
 
-    /// <inheritdoc />
     public DateTimeOffset? LastVerifiedAt
     {
         get
@@ -67,10 +51,8 @@ internal sealed partial class AuditChainVerificationBackgroundService : Backgrou
         }
     }
 
-    /// <inheritdoc />
     public bool IsChainBroken => _lastReport is { Verified: false };
 
-    /// <inheritdoc />
     public AuditIntegrityReport? LastReport => _lastReport;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -129,10 +111,6 @@ internal sealed partial class AuditChainVerificationBackgroundService : Backgrou
         }
     }
 
-    /// <summary>
-    /// Publishes a completed verification report to the signal and, when the chain is broken, logs a
-    /// critical event and raises the gauge. Exposed for direct-unit coverage of the broken-chain path.
-    /// </summary>
     internal void Publish(AuditIntegrityReport report)
     {
         ArgumentNullException.ThrowIfNull(report);

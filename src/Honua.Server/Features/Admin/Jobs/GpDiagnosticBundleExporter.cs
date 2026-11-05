@@ -6,12 +6,7 @@ using Honua.Geoprocessing.Diagnostics;
 
 namespace Honua.Server.Features.Admin.Jobs;
 
-/// <summary>
-/// Attaches versioned GP evidence to a diagnostic-bundle v1 envelope using the job
-/// diagnostics projection (honua-server#6219). This does not execute a job, read input
-/// bytes from the job store, or change the admin diagnostics response. Bytes are included
-/// only when the caller passes them and the export request authorizes that export.
-/// </summary>
+// Input bytes are included only when the caller passes them and the export authorizes that export; this projection does not fetch them from the job store.
 internal static class GpDiagnosticBundleExporter
 {
     public static GpDiagnosticBundleDocument Export(

@@ -7,11 +7,7 @@ using Honua.Infrastructure.Events;
 
 namespace Honua.Server.Features.Streaming;
 
-/// <summary>
-/// Decorates <see cref="IFeatureChangeEventPublisher"/> to fan out events to live
-/// streaming sessions after durable append. This ensures clients never miss events
-/// between replay completion and live delivery.
-/// </summary>
+// Live fan-out follows the durable append so clients do not miss the gap after replay.
 internal sealed partial class FeatureStreamPublisher(
     IFeatureChangeEventStore store,
     FeatureStreamSessionManager sessionManager,

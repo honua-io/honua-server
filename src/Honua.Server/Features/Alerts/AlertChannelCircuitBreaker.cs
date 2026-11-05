@@ -7,29 +7,7 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Alerts;
 
-/// <summary>
-/// Process-local, per-channel delivery circuit breaker that bounds dead-letter volume when a
-/// notification channel is persistently failing (for example a dead ops webhook whose host no
-/// longer resolves). Without it, a channel that fails every attempt dead-letters once per
-/// recurring event — deploy/job ops notifications recur, so the dead-letter path is spammed.
-/// </summary>
-/// <remarks>
-/// <para>
-/// The dispatcher records a success (<see cref="RecordSuccess"/>) or a dead-letter
-/// (<see cref="RecordDeadLetter"/>) per channel. After <see cref="AlertDispatchOptions.CircuitBreakerThreshold"/>
-/// consecutive dead-letters the breaker opens for <see cref="AlertDispatchOptions.CircuitBreakerCooldown"/>.
-/// While open, <see cref="ShouldAttemptDelivery"/> returns <c>false</c> so the dispatcher defers
-/// (reschedules) claimed rows instead of driving them through the full retry→dead-letter cycle,
-/// and <see cref="Honua.Alerts.Ops.OpsNotificationService"/> skips the channel when composing new
-/// notifications so no
-/// fresh dead-letter rows accrue. Once the cooldown elapses a single half-open probe is admitted; a
-/// success closes the breaker, another failure re-opens it.
-/// </para>
-/// <para>
-/// State is per replica (in-memory), mirroring the per-replica notification rate cap. This bounds
-/// dead-letter volume for a dead channel to roughly one dead-letter per cooldown window per replica.
-/// </para>
-/// </remarks>
+// After consecutive dead-letters the channel is skipped and claimed rows are rescheduled instead of dead-lettered again, and the breaker state is per replica.
 internal sealed class AlertChannelCircuitBreaker
 {
     private readonly ConcurrentDictionary<AlertChannelType, ChannelState> _states = new();
@@ -43,11 +21,6 @@ internal sealed class AlertChannelCircuitBreaker
 
     private AlertDispatchOptions Dispatch => _dispatch;
 
-    /// <summary>
-    /// Whether a delivery attempt should proceed on the channel now. Returns <c>true</c> when the
-    /// breaker is closed, disabled, or when the cooldown has elapsed and this call takes the single
-    /// half-open probe. Returns <c>false</c> while the breaker is open and cooling.
-    /// </summary>
     public bool ShouldAttemptDelivery(AlertChannelType channel, DateTimeOffset now)
     {
         if (Dispatch.CircuitBreakerThreshold <= 0)
@@ -78,10 +51,6 @@ internal sealed class AlertChannelCircuitBreaker
         }
     }
 
-    /// <summary>
-    /// Whether the channel is currently tripped open (used by ops-notification composition to skip a
-    /// dead channel without minting new dispatch rows). Does not consume a half-open probe.
-    /// </summary>
     public bool IsOpen(AlertChannelType channel, DateTimeOffset now)
     {
         if (Dispatch.CircuitBreakerThreshold <= 0)
@@ -100,7 +69,6 @@ internal sealed class AlertChannelCircuitBreaker
         }
     }
 
-    /// <summary>The instant a deferred (open) channel becomes eligible for its next probe.</summary>
     public DateTimeOffset NextProbeAt(AlertChannelType channel, DateTimeOffset now)
     {
         if (_states.TryGetValue(channel, out var state))
@@ -117,7 +85,6 @@ internal sealed class AlertChannelCircuitBreaker
         return now + Dispatch.CircuitBreakerCooldown;
     }
 
-    /// <summary>Records a successful delivery: resets the failure streak and closes the breaker.</summary>
     public void RecordSuccess(AlertChannelType channel)
     {
         if (_states.TryGetValue(channel, out var state))
@@ -130,10 +97,6 @@ internal sealed class AlertChannelCircuitBreaker
         }
     }
 
-    /// <summary>
-    /// Records a dead-lettered delivery. Trips the breaker open once the consecutive count reaches
-    /// the configured threshold. Returns <c>true</c> when this call opened (or re-opened) the breaker.
-    /// </summary>
     public bool RecordDeadLetter(AlertChannelType channel, DateTimeOffset now)
     {
         var threshold = Dispatch.CircuitBreakerThreshold;

@@ -3,11 +3,6 @@
 
 namespace Honua.Server.Features.Reporting.Prompts;
 
-/// <summary>
-/// System prompt for the LLM narrative provider. Guards strictly against
-/// hallucination by anchoring on the deterministic baseline text and the
-/// supplied numeric context.
-/// </summary>
 internal static class NarrativeSystemPrompt
 {
     public const string Default =

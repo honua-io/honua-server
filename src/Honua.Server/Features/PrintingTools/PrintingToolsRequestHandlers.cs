@@ -27,9 +27,6 @@ using SkiaSharp;
 
 namespace Honua.Server.Features.PrintingTools;
 
-/// <summary>
-/// Handles print service requests including synchronous execute and async job submission.
-/// </summary>
 internal static class PrintingToolsRequestHandlers
 {
     private const int DefaultDpi = 96;
@@ -41,15 +38,8 @@ internal static class PrintingToolsRequestHandlers
     private const int MaxOutputDimension = 4096;
     private const int MaxFeaturesPerLayer = 10_000;
 
-    /// <summary>
-    /// TTL for progress entries and temporary output files.
-    /// </summary>
     internal static readonly TimeSpan ResultTtl = TimeSpan.FromHours(24);
 
-    /// <summary>
-    /// Processes a synchronous print execute request.
-    /// Returns the composed output as bytes with content type.
-    /// </summary>
     internal static async Task<(byte[] OutputBytes, string ContentType, string FileName)?> ExecuteAsync(
         WebMapDefinition webMap,
         string format,
@@ -183,9 +173,6 @@ internal static class PrintingToolsRequestHandlers
         }
     }
 
-    /// <summary>
-    /// Renders the map frame image from pre-resolved operational layers.
-    /// </summary>
     private static async Task<byte[]?> RenderMapFrameAsync(
         WebMapDefinition webMap,
         PrintLayoutTemplate template,
@@ -275,9 +262,6 @@ internal static class PrintingToolsRequestHandlers
         return data.ToArray();
     }
 
-    /// <summary>
-    /// Builds legend swatch entries from pre-resolved operational layers.
-    /// </summary>
     private static List<LegendSwatchEntry> BuildLegendEntries(
         IReadOnlyList<ResolvedLayer> resolvedLayers)
     {
@@ -319,11 +303,6 @@ internal static class PrintingToolsRequestHandlers
         return entries;
     }
 
-    /// <summary>
-    /// Materializes the visible layers into a list so they can be shared between
-    /// map-frame rendering and legend building without duplicate service validation
-    /// or style catalog lookups.
-    /// </summary>
     private static async Task<IReadOnlyList<ResolvedLayer>> MaterializeVisibleLayersAsync(
         WebMapDefinition webMap,
         IResourceValidator resourceValidator,
@@ -353,10 +332,6 @@ internal static class PrintingToolsRequestHandlers
         return layers;
     }
 
-    /// <summary>
-    /// Resolves visible operational layers to their service publications and resources,
-    /// handling URL parsing, service validation, storage-layer resolution, and access policy.
-    /// </summary>
     private static async IAsyncEnumerable<ResolvedLayer> ResolveVisibleLayersAsync(
         WebMapDefinition webMap,
         IResourceValidator resourceValidator,
@@ -436,10 +411,6 @@ internal static class PrintingToolsRequestHandlers
             ?? resource.ReadSrid()
             ?? 4326;
 
-    /// <summary>
-    /// A resolved operational layer with its parent service, target publication/resource,
-    /// and pre-fetched style layers to avoid duplicate catalog lookups.
-    /// </summary>
     private readonly record struct ResolvedLayer(
         WebMapOperationalLayer OperationalLayer,
         MetadataV2Service Service,
@@ -449,9 +420,6 @@ internal static class PrintingToolsRequestHandlers
         MetadataV2GeometryType GeometryType,
         MapLibreStyleLayer[] StyleLayers);
 
-    /// <summary>
-    /// Renders the composed layout to PDF using SkiaSharp's SKDocument.
-    /// </summary>
     private static byte[] RenderPdf(
         PrintLayoutTemplate template,
         int resolvedWidthPx,
@@ -497,9 +465,6 @@ internal static class PrintingToolsRequestHandlers
         return stream.ToArray();
     }
 
-    /// <summary>
-    /// Encodes a surface to the requested raster format.
-    /// </summary>
     private static byte[] EncodeRaster(SKSurface surface, string format)
     {
         return SkiaMapRenderer.EncodeSurface(surface, format.ToUpperInvariant() switch
@@ -509,9 +474,6 @@ internal static class PrintingToolsRequestHandlers
         });
     }
 
-    /// <summary>
-    /// Extracts service ID and layer ID from an operational layer URL.
-    /// </summary>
     internal static void ResolveLayerFromUrl(WebMapOperationalLayer layer)
     {
         if (string.IsNullOrWhiteSpace(layer.Url)) return;
@@ -547,9 +509,6 @@ internal static class PrintingToolsRequestHandlers
         }
     }
 
-    /// <summary>
-    /// Parses the web map JSON into a strongly typed definition.
-    /// </summary>
     internal static WebMapDefinition? ParseWebMapJson(string? webMapJson)
     {
         if (string.IsNullOrWhiteSpace(webMapJson)) return null;
@@ -564,24 +523,15 @@ internal static class PrintingToolsRequestHandlers
         }
     }
 
-    /// <summary>
-    /// Resolves the output format from the request.
-    /// </summary>
     internal static string ResolveFormat(string? format) =>
         string.IsNullOrWhiteSpace(format) ? PrintOutputFormat.Png32 : format.Trim();
 
-    /// <summary>
-    /// Resolves the DPI from the web map definition.
-    /// </summary>
     internal static int ResolveDpi(WebMapDefinition? webMap)
     {
         var dpi = webMap?.ExportOptions?.Dpi ?? DefaultDpi;
         return Math.Clamp(dpi, 72, MaxDpi);
     }
 
-    /// <summary>
-    /// Computes effective output pixel dimensions, honoring OutputSize for MAP_ONLY templates.
-    /// </summary>
     private static (int Width, int Height) ResolveOutputDimensions(WebMapDefinition webMap, PrintLayoutTemplate template, int dpi)
     {
         var outputSize = webMap.ExportOptions?.OutputSize;
@@ -639,12 +589,7 @@ internal static class PrintingToolsRequestHandlers
         return CoordinateTransformer.CalculateScaleDenominator(renderExtent, imageWidth, dpi, srid, linearUnitFactor);
     }
 
-    /// <summary>
-    /// Resolves the canonical EPSG SRID from an ArcGIS spatial reference,
-    /// preferring latestWkid (EPSG) over wkid (which may be an Esri alias).
-    /// Falls back to <paramref name="mapLevelSr"/> when the extent-level SR has no WKID,
-    /// per the ExportWebMap spec.
-    /// </summary>
+    // The latest EPSG code is preferred over an Esri well-known id.
     internal static int ResolveExtentSrid(WebMapSpatialReference? spatialReference, WebMapSpatialReference? mapLevelSr = null)
     {
         var srid = spatialReference?.LatestWkid ?? spatialReference?.Wkid;
@@ -654,10 +599,6 @@ internal static class PrintingToolsRequestHandlers
         return fallback ?? 4326;
     }
 
-    /// <summary>
-    /// Validates that the web map definition includes a renderable extent with a
-    /// resolvable spatial reference. Returns an error message if invalid, null if valid.
-    /// </summary>
     internal static string? ValidateWebMapExtent(WebMapDefinition webMap)
     {
         var extent = webMap.MapOptions?.Extent;
@@ -684,11 +625,7 @@ internal static class PrintingToolsRequestHandlers
         return null;
     }
 
-    /// <summary>
-    /// Validates that MAP_ONLY requests include the required exportOptions.outputSize.
-    /// Per the ExportWebMap spec, outputSize must be defined when layout_template is MAP_ONLY.
-    /// Returns an error message if invalid, null if valid.
-    /// </summary>
+    // A map-only export requires outputSize.
     internal static string? ValidateMapOnlyOutputSize(WebMapDefinition webMap, string templateName)
     {
         if (!LayoutTemplateRegistry.TryGetTemplate(templateName, out var template))
@@ -715,12 +652,6 @@ internal static class PrintingToolsRequestHandlers
         return "exportOptions.outputSize is required when Layout_Template is MAP_ONLY.";
     }
 
-    /// <summary>
-    /// Validates that the current edition allows the requested template and format.
-    /// Returns the blocked reason if gated, or null if allowed.
-    /// The caller must resolve the template first; this method skips the check
-    /// if <paramref name="resolvedTemplate"/> is null.
-    /// </summary>
     internal static string? ValidateEdition(
         PrintLayoutTemplate? resolvedTemplate,
         string format,
@@ -749,10 +680,6 @@ internal static class PrintingToolsRequestHandlers
         return null;
     }
 
-    /// <summary>
-    /// Collects informational warning messages for unsupported web map features
-    /// (e.g. baseMap presence) so they can be included in GP task responses.
-    /// </summary>
     internal static PrintJobMessage[] CollectWarnings(WebMapDefinition webMap, ILogger logger)
     {
         var warnings = new List<PrintJobMessage>();

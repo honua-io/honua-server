@@ -6,38 +6,15 @@ using Honua.Core.Features.ControlPlane.Domain;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Provider-neutral deploy telemetry policy parsed from a deploy operation's parameters.
-/// </summary>
-/// <remarks>
-/// The policy describes <em>what</em> to evaluate (error-rate / latency / sample-count
-/// thresholds plus the per-signal query strings) independently of <em>which</em> metrics
-/// backend executes the queries. Prometheus connections interpret the query strings as
-/// PromQL; CloudWatch connections interpret the error-rate/latency/sample-count query
-/// strings as CloudWatch metric-math expressions. Presets only synthesize PromQL, so a
-/// non-Prometheus provider requires explicit query overrides.
-/// </remarks>
 internal sealed record DeployTelemetryPolicy
 {
     private const string TelemetryParameterPrefix = "telemetry.";
     private const string DefaultPrometheusJob = "honua";
     private const string DefaultCanaryPrometheusJob = "honua-canary";
 
-    /// <summary>
-    /// Telemetry-policy preset name for a serverless geoprocessing (AWS Batch) substrate deploy
-    /// (honua-server#2165). GP per-job metrics are burstier and sparser than steady HTTP traffic, so
-    /// this preset bakes longer and tolerates a lower sample floor, and pairs with the GP-aware
-    /// anti-flap default in <see cref="DeployTelemetrySignalEvaluator"/> so a single noisy scrape
-    /// does not trigger a production rollback.
-    /// </summary>
     public const string GpBatchPolicyName = "gp-batch";
 
-    /// <summary>
-    /// Explicit probe-only profile (honua-server#4617): the gate is the synthetic readiness probe
-    /// and/or the golden-query correctness probe, with no metrics connection. It must be selected
-    /// explicitly (<c>telemetry.policy = health-only</c>) and cannot carry metric parameters, so a
-    /// metric-required profile can never silently degrade into it.
-    /// </summary>
+    // The probe-only profile must be selected explicitly and cannot carry metric parameters, so a metric-required profile cannot degrade into it.
     public const string HealthOnlyPolicyName = "health-only";
 
     internal static readonly TimeSpan DefaultEvidenceGrace = TimeSpan.FromMinutes(15);
@@ -52,10 +29,6 @@ internal sealed record DeployTelemetryPolicy
     private const int MaximumProbeTimeoutSeconds = 300;
     private const int MaximumConsecutiveBreaches = 100;
 
-    /// <summary>
-    /// Every operator-facing <c>telemetry.*</c> parameter the gate understands. Any other key under
-    /// the prefix is rejected rather than silently ignored (honua-server#4617).
-    /// </summary>
     private static readonly HashSet<string> RecognizedParameterKeys = new(StringComparer.Ordinal)
     {
         "telemetry.connection",
@@ -106,15 +79,8 @@ internal sealed record DeployTelemetryPolicy
 
     public string? ErrorRateQuery { get; init; }
 
-    /// <summary>
-    /// Explicit error-count numerator (<c>telemetry.error_count.query</c>, honua-server#6474). The gate
-    /// divides it by the sample count read for the same window and compares the ratio against
-    /// <see cref="ErrorRateThreshold"/>. Mutually exclusive with <see cref="ErrorRateQuery"/>; no preset
-    /// synthesizes it.
-    /// </summary>
     public string? ErrorCountQuery { get; init; }
 
-    /// <summary>Whether an error signal (a rate query or a count numerator) is configured.</summary>
     public bool HasErrorSignal =>
         !string.IsNullOrWhiteSpace(ErrorRateQuery) || !string.IsNullOrWhiteSpace(ErrorCountQuery);
 
@@ -130,98 +96,47 @@ internal sealed record DeployTelemetryPolicy
 
     public TimeSpan WarmupDuration { get; init; } = TimeSpan.FromMinutes(2);
 
-    /// <summary>
-    /// How long missing/invalid telemetry evidence (provider outage, unconfigured connection,
-    /// unsupported provider, ambiguous or stale samples, an unreachable health/golden-query probe)
-    /// is tolerated after warmup before the gate escalates to a rollback recommendation
-    /// (honua-server#4617). This is the declared bounded recovery policy after traffic exposure.
-    /// Defaults to 15 minutes; <c>telemetry.evidence_grace_seconds</c> accepts (0, 3600].
-    /// </summary>
     public TimeSpan EvidenceGraceDuration { get; init; } = DefaultEvidenceGrace;
 
-    /// <summary>
-    /// Maximum age of a queried telemetry sample (honua-server#4617). A provider-reported sample
-    /// whose observation timestamp is further than this from now (or missing) is treated as absent
-    /// and never satisfies a configured health requirement. Defaults to 5 minutes;
-    /// <c>telemetry.max_staleness_seconds</c> accepts (0, 3600].
-    /// </summary>
+    // A sample older than this, or with no timestamp, is treated as absent and never satisfies a health requirement.
     public TimeSpan MaximumEvidenceStaleness { get; init; } = DefaultMaximumEvidenceStaleness;
 
-    /// <summary>
-    /// How long a submitted deploy may wait for the candidate to start receiving traffic before the
-    /// gate fails it without activation (honua-server#4617). Before exposure no telemetry evidence
-    /// is meaningful, so this bounds the pre-exposure hold. Defaults to 30 minutes;
-    /// <c>telemetry.exposure_deadline_seconds</c> accepts (0, 7200].
-    /// </summary>
     public TimeSpan ExposureDeadline { get; init; } = DefaultExposureDeadline;
 
-    /// <summary>Indicates the explicit probe-only <see cref="HealthOnlyPolicyName"/> profile.</summary>
     public bool IsHealthOnly { get; init; }
 
-    /// <summary>
-    /// Indicates a preset whose synthesized queries select only the candidate (canary) revision's
-    /// traffic, so its evidence identifies the candidate while traffic is split (honua-server#4617).
-    /// </summary>
     public bool IsCandidateScoped { get; init; }
 
-    /// <summary>
-    /// Optional synthetic health-probe URL (typically <c>/healthz/ready</c>). When set, a failing
-    /// probe during the bake window is a first-class rollback trigger inherited by every deploy
-    /// backend and change class, independent of the metrics provider.
-    /// </summary>
     public string? HealthProbeUrl { get; init; }
 
-    /// <summary>Number of failing synthetic health checks (within a single scrape) that triggers rollback.</summary>
     public int HealthProbeFailureThreshold { get; init; } = 1;
 
-    /// <summary>Number of sequential synthetic health checks issued per scrape.</summary>
     public int HealthProbeSamples { get; init; } = 3;
 
-    /// <summary>HTTP status code a healthy synthetic health check returns.</summary>
     public int HealthProbeExpectedStatusCode { get; init; } = 200;
 
-    /// <summary>Per-request timeout (seconds) for each synthetic health check.</summary>
     public int HealthProbeTimeoutSeconds { get; init; } = 5;
 
-    /// <summary>Indicates a synthetic health-probe signal is configured.</summary>
     public bool HasHealthProbe => !string.IsNullOrWhiteSpace(HealthProbeUrl);
 
-    /// <summary>
-    /// Optional golden-query correctness endpoint. When set (with at least one expectation) a release whose
-    /// status/5xx/p95 metrics are all healthy but whose golden-query response body is wrong or garbled is
-    /// blocked from auto-promotion — the correctness gate beyond status/5xx/p95 (honua-server#2811). Opt-in
-    /// and default off, so existing deploys are unaffected.
-    /// </summary>
     public string? GoldenQueryUrl { get; init; }
 
-    /// <summary>Expected lowercase hex SHA-256 of the golden-query response body.</summary>
     public string? GoldenQueryExpectedSha256 { get; init; }
 
-    /// <summary>A substring the golden-query response body must contain.</summary>
     public string? GoldenQueryExpectedContains { get; init; }
 
-    /// <summary>
-    /// A wrong-result marker the golden-query response body must NOT contain (honua-server#4617), for
-    /// example a sentinel the service emits when it serves a fallback or empty result.
-    /// </summary>
+    // The golden-query body must not contain this wrong-result marker.
     public string? GoldenQueryForbiddenContains { get; init; }
 
-    /// <summary>HTTP status code the golden-query endpoint returns when servable.</summary>
     public int GoldenQueryExpectedStatusCode { get; init; } = 200;
 
-    /// <summary>Per-request timeout (seconds) for the golden-query probe.</summary>
     public int GoldenQueryTimeoutSeconds { get; init; } = 5;
 
-    /// <summary>
-    /// Indicates a golden-query correctness gate is configured: a URL plus at least one body expectation
-    /// (checksum or required substring). A URL with no expectation is a configuration error surfaced via
-    /// <see cref="ValidationError"/> rather than a silently-ignored gate.
-    /// </summary>
+    // A golden-query URL with no body expectation is a configuration error, not a gate that is ignored.
     public bool HasGoldenQuery =>
         !string.IsNullOrWhiteSpace(GoldenQueryUrl) &&
         (!string.IsNullOrWhiteSpace(GoldenQueryExpectedSha256) || !string.IsNullOrWhiteSpace(GoldenQueryExpectedContains));
 
-    /// <summary>Indicates at least one queryable metric signal (error-rate / latency / sample-count) is configured.</summary>
     public bool HasMetricSignals =>
         HasErrorSignal ||
         !string.IsNullOrWhiteSpace(LatencyP95Query) ||
@@ -231,16 +146,9 @@ internal sealed record DeployTelemetryPolicy
 
     public bool IsValid => string.IsNullOrWhiteSpace(ValidationError);
 
-    /// <summary>
-    /// Indicates the operator supplied at least one explicit query override rather than relying
-    /// on a Prometheus preset. Non-Prometheus providers require this because presets emit PromQL.
-    /// </summary>
+    // Non-Prometheus providers require an explicit query because presets emit PromQL.
     public bool HasExplicitQueryOverride { get; init; }
 
-    /// <summary>
-    /// Projects this internal policy onto the provider-neutral descriptor passed to
-    /// <see cref="IDeployTelemetryProviderEvaluator"/> implementations.
-    /// </summary>
     public DeployTelemetryPolicyDescriptor ToDescriptor()
         => new()
         {
@@ -256,14 +164,6 @@ internal sealed record DeployTelemetryPolicy
             MaximumEvidenceStaleness = MaximumEvidenceStaleness
         };
 
-    /// <summary>
-    /// Parses the telemetry gate from the deploy parameters. Returns <see langword="null"/> only when
-    /// no <c>telemetry.*</c> parameter is configured at all. Any configured-but-unusable input
-    /// (unknown key, malformed or out-of-range value, unsupported preset, missing connection, metric
-    /// signals without a sample floor, a probe-only gate that was not declared health-only) yields a
-    /// policy whose <see cref="ValidationError"/> names every problem, so the deploy is rejected at
-    /// plan time instead of running with part of its configuration silently ignored (#4617).
-    /// </summary>
     public static DeployTelemetryPolicy? Parse(DeployOperationSpec spec)
     {
         var parameters = spec.Parameters;
@@ -726,12 +626,7 @@ internal sealed record DeployTelemetryPolicy
             ? value.Trim()
             : null;
 
-    /// <summary>
-    /// Reads an optional finite number in <c>(0, maximum]</c> (or <c>[0, maximum]</c> when
-    /// <paramref name="allowZero"/>; no upper bound when <paramref name="maximum"/> is null). A
-    /// present-but-unusable value is recorded in <paramref name="errors"/> and returns
-    /// <see langword="null"/>; it is never replaced by a default.
-    /// </summary>
+    // A present but unusable number is recorded as an error and is never replaced by a default.
     private static double? ParseNumber(
         IReadOnlyDictionary<string, string> parameters,
         string key,
@@ -761,10 +656,6 @@ internal sealed record DeployTelemetryPolicy
         return null;
     }
 
-    /// <summary>
-    /// Reads an optional integer in <c>[minimum, maximum]</c>. A present-but-unusable value is
-    /// recorded in <paramref name="errors"/> and returns <see langword="null"/>.
-    /// </summary>
     private static int? ParseInteger(
         IReadOnlyDictionary<string, string> parameters,
         string key,

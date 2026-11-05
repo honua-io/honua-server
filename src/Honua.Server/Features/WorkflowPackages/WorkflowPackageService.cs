@@ -29,17 +29,8 @@ internal sealed class WorkflowPackageService(
     IMetadataReleaseService? metadataReleaseService = null,
     WorkflowAuthorSecurityContextCapturer? authorSecurityContextCapturer = null)
 {
-    /// <summary>
-    /// Default source environment recorded on the metadata release package emitted when a
-    /// workflow version is published. Workflow packages are environment-agnostic at authoring
-    /// time; the GitOps changeset builder promotes the artifact into concrete environments.
-    /// </summary>
     private const string WorkflowReleaseSourceEnvironment = "console";
 
-    /// <summary>
-    /// Default target environment for the emitted release package. Promotion to additional
-    /// environments is governed downstream by the GitOps release/approval path.
-    /// </summary>
     private const string WorkflowReleaseTargetEnvironment = "production";
 
     public Task<IReadOnlyList<WorkflowPackage>> ListPackagesAsync(CancellationToken cancellationToken)
@@ -401,15 +392,7 @@ internal sealed class WorkflowPackageService(
         return saved;
     }
 
-    /// <summary>
-    /// Bridges a published workflow version into the metadata-release lifecycle by recording a
-    /// Workflow-kind release-package entry. This is the publish→metadata-release→GitOps bridge:
-    /// the emitted package becomes a real release-package entry that the release lifecycle and the
-    /// downstream GitOps changeset builder can promote. The emission is best-effort — a workflow
-    /// publication is already durably saved, so a metadata-release failure must not fail the publish
-    /// (the artifact can be re-emitted), and the dependency is optional so existing wiring/tests that
-    /// do not supply <see cref="IMetadataReleaseService"/> keep working.
-    /// </summary>
+    // A metadata-release failure must not fail a publication that is already saved.
     private async Task EmitMetadataReleaseArtifactAsync(
         WorkflowPublication publication,
         ClaimsPrincipal principal,
@@ -463,10 +446,7 @@ internal sealed class WorkflowPackageService(
         CancellationToken cancellationToken)
         => store.ListPublicationsAsync(packageId, cancellationToken);
 
-    /// <summary>
-    /// Deletes a publication and, for a schedule publication, removes the owning workflow
-    /// definition so the scheduler cannot keep firing it.
-    /// </summary>
+    // Deleting a schedule publication removes its definition so the scheduler cannot keep firing it.
     public async Task<WorkflowPublication?> DeletePublicationAsync(
         string publicationId,
         CancellationToken cancellationToken)
@@ -481,10 +461,6 @@ internal sealed class WorkflowPackageService(
         return await store.DeletePublicationAsync(publicationId, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Sets a publication's status and, for a schedule publication, enables or disables the
-    /// owning workflow definition's trigger to match.
-    /// </summary>
     public async Task<WorkflowPublication?> SetPublicationStatusAsync(
         string publicationId,
         WorkflowPublicationStatus status,
@@ -641,17 +617,7 @@ internal sealed class WorkflowPackageService(
         };
     }
 
-    /// <summary>
-    /// Builds the provenance stamped onto a publication run: the publication's own provenance
-    /// plus the run request's parameters, each carried under
-    /// <see cref="WorkflowPackageMetadataKeys.RunParameterPrefix"/>.
-    /// </summary>
-    /// <remarks>
-    /// The provenance becomes job protocol metadata (and so job spec parameters) for job-backed
-    /// runs. Run parameters annotate the run for traceability only, so they are never carried
-    /// under their bare names: every key in the result is inside the adapter-owned
-    /// <c>workflow.</c> namespace, whatever the run request called its parameters.
-    /// </remarks>
+    // Run parameters are nested under the workflow namespace and never stored under their bare names.
     internal static Dictionary<string, string> BuildRunProvenance(
         IReadOnlyDictionary<string, string> publicationProvenance,
         IReadOnlyDictionary<string, string>? requestParameters)
@@ -737,19 +703,7 @@ internal sealed class WorkflowPackageService(
            && violation.FieldPath != null
            && dataBoundInputFieldPaths.Contains(violation.FieldPath);
 
-    /// <summary>
-    /// A workflow-package graph is compiled into a single multi-step <see cref="AnalysisPlan"/>
-    /// so <see cref="IGeoprocessingJobService.ValidatePlan"/> can run its catalog/parameter checks.
-    /// Package validation and schedule publications with an available orchestration engine execute
-    /// each node through the trusted workflow boundary, so their workflow-only diagnostic is
-    /// suppressed. A schedule on a host without orchestration falls back to ordinary job submission
-    /// and must retain the diagnostic. Job and process-endpoint
-    /// publications later submit the compiled plan as an ordinary job, so that diagnostic remains
-    /// blocking for those direct targets. The other structural direct-submit diagnostics describe
-    /// limitations of the compiled validation plan rather than the workflow graph and remain
-    /// suppressed. Protocol-only and unavailable processes always block because neither has a
-    /// workflow job executor (#2806/#2808/#3267).
-    /// </summary>
+    // A schedule without an orchestration engine must keep the direct-submit diagnostic, and a protocol-only process always blocks.
     internal static bool IsDirectSubmitOnlyValidation(
         GeoprocessingValidationFailure violation,
         WorkflowPublicationTarget? target,
@@ -972,29 +926,7 @@ internal sealed class WorkflowPackageService(
         };
     }
 
-    /// <summary>
-    /// Authorizes every compiled step plan against the PUBLISHING principal and returns the
-    /// definition carrying the bindings that authorization produced.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// Publication is the last point at which a real human faces the per-layer read gate for a
-    /// scheduled workflow: cron, event, and manual runs of this definition are all reconciled
-    /// by a background tick that submits each step under a synthesized orchestrator principal
-    /// carrying the wildcard-granted <c>admin</c> role. If the requester's layer binding did
-    /// not travel with the stored definition, that tick would re-authorize the step against an
-    /// effectively omnipotent identity — so an admin who re-points a managed enrichment
-    /// dataset after publication could make the workflow read a layer the publisher was never
-    /// allowed to read (#3043 review).
-    /// </para>
-    /// <para>
-    /// Persisting the bound plans pins the binding instead: the submit-time gate enforces it
-    /// on every later dispatch and fails the step when the dataset no longer resolves to the
-    /// pinned layer. This authorizes the plans that will ACTUALLY execute, which is strictly
-    /// narrower than the whole-graph compiled plan the caller also checks; both run, and the
-    /// evaluation is idempotent.
-    /// </para>
-    /// </remarks>
+    // The publisher's layer binding is stored on the definition, because later ticks run under an admin identity.
     private async Task<WorkflowDefinition> BindRequesterLayerAuthorizationAsync(
         WorkflowDefinition definition,
         ClaimsPrincipal principal,
@@ -1130,11 +1062,7 @@ internal sealed class WorkflowPackageService(
         return definition with { Trigger = definition.Trigger with { Enabled = enabled } };
     }
 
-    /// <summary>
-    /// Splits a pre-upgrade shared definition into one definition per publication.
-    /// The shared trigger is disarmed first, and it is deleted only after no row
-    /// still references it, so disabling one publication cannot stop or orphan the other.
-    /// </summary>
+    // The shared trigger is deleted only after no publication still references it.
     private async Task<WorkflowPublication> MigrateLegacySharedScheduleAsync(
         WorkflowPublication publication,
         CancellationToken cancellationToken)
@@ -1217,10 +1145,7 @@ internal sealed class WorkflowPackageService(
             };
     }
 
-    /// <summary>
-    /// Definition id used before publications owned their own triggers. Rows that still
-    /// store this value share one cron and must be split before disable or delete.
-    /// </summary>
+    // Rows that still store the shared definition id must be split before disable or delete.
     internal static string LegacyScheduleWorkflowDefinitionId(string packageId, int version)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(packageId);
@@ -1233,10 +1158,7 @@ internal sealed class WorkflowPackageService(
             LegacyScheduleWorkflowDefinitionId(packageId, version),
             StringComparison.Ordinal);
 
-    /// <summary>
-    /// Scheduler definition id owned by one publication. Package id and version alone
-    /// are not unique: two schedule publications of the same version must not share a trigger.
-    /// </summary>
+    // Two schedule publications of the same version must not share a trigger.
     internal static string ScheduleWorkflowDefinitionId(string packageId, int version, string publicationId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(packageId);
@@ -1327,30 +1249,12 @@ internal sealed class WorkflowPackageValidationException(WorkflowPackageValidati
     public WorkflowPackageValidationResult Result { get; } = result;
 }
 
-/// <summary>
-/// Raised when a publish request reuses an existing publication id. Derives from
-/// <see cref="InvalidOperationException"/> so the Console endpoint maps it to 409 Conflict.
-/// </summary>
 internal sealed class WorkflowPublicationConflictException(string publicationId)
     : InvalidOperationException($"Workflow publication '{publicationId}' already exists.")
 {
     public string PublicationId { get; } = publicationId;
 }
 
-/// <summary>
-/// Raised when a publication target needs a durable store this deployment never composed, so the
-/// publish is refused instead of reported as successful without a durable record
-/// (honua-server#3585). Deliberately does NOT derive from <see cref="InvalidOperationException"/>:
-/// the Console endpoint maps that base type to <c>409 Conflict</c>, and this is a <c>503</c>
-/// capability-unavailable refusal carrying the honua-release#202 receipt.
-/// </summary>
-/// <remarks>
-/// The exception says <em>what</em> could not be satisfied; it deliberately carries no receipt.
-/// <em>Why</em> the substrate is missing — no Redis connection string versus a present-but-
-/// unentitled Redis — is a deployment fact held by <c>DurableJobSubstrateOptions</c>, and the two
-/// causes need different remediation. The Console endpoint classifies it there, exactly as
-/// <c>ProposalEndpoints.ControlPlaneUnavailable</c> does, so this service stays free of licensing
-/// and connection-string knowledge.
-/// </remarks>
+// Publish is refused when the durable store was never composed, and this exception carries no licence receipt.
 internal sealed class WorkflowPublicationDependencyUnavailableException()
     : Exception(CapabilityUnavailableCodes.DurableWorkflowPublicationDetail);

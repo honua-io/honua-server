@@ -8,9 +8,6 @@ using Honua.Core.Features.AuditLog.Abstractions;
 
 namespace Honua.Infrastructure.Monitoring;
 
-/// <summary>
-/// Projects opaque audit detail into the bounded allow-listed metadata exposed by Operate.
-/// </summary>
 internal static class AuditDetailsProjection
 {
     private const int MaxInputCharacters = 16 * 1024;
@@ -45,7 +42,6 @@ internal static class AuditDetailsProjection
         "provider error",
     ];
 
-    /// <summary>Returns sanitized JSON, or null when the source is absent, malformed, or unsafe.</summary>
     public static string? Project(AuditEventRecord record)
     {
         ArgumentNullException.ThrowIfNull(record);

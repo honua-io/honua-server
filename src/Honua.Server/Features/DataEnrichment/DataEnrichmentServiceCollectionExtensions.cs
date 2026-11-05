@@ -11,16 +11,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Features.DataEnrichment;
 
-/// <summary>
-/// Service collection extensions for the data-enrichment slice (#374; #2280/#2282).
-/// Binds the operator-curated configuration catalog, registers the managed
-/// Postgres-backed enrichment-dataset registry store (when the active provider is
-/// Postgres), and the composing <see cref="EnrichmentDatasetCatalogService"/>
-/// consumed by the discovery and compute endpoints. The underlying spatial join is
-/// executed by the shared <see cref="Core.Features.SpatialAnalytics.Abstractions.ISpatialAnalyticsReader"/>
-/// (registered by the Postgres feature-store wiring), so this slice owns no data
-/// access of its own beyond the catalog registry.
-/// </summary>
 internal static class DataEnrichmentServiceCollectionExtensions
 {
     public static IServiceCollection AddDataEnrichment(this IServiceCollection services, IConfiguration configuration)

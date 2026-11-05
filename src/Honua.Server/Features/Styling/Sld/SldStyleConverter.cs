@@ -7,12 +7,6 @@ using Honua.Infrastructure.Rendering;
 
 namespace Honua.Server.Features.Styling.Sld;
 
-/// <summary>
-/// <see cref="ISldStyleConverter"/> implementation that delegates to the internal
-/// SLD parser and converter. Used by cross-project consumers (e.g. the GeoServer
-/// import service in <c>Honua.Postgres</c>) that cannot reference the Honua.Server
-/// internal types directly.
-/// </summary>
 internal sealed class SldStyleConverter : ISldStyleConverter
 {
     private static readonly string[] EmptyDocumentErrors = ["SLD document was empty."];

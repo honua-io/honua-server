@@ -5,9 +5,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Source-generated log messages for style suggestion operations.
-/// </summary>
 internal static partial class AdminStyleSuggestionLog
 {
     [LoggerMessage(

@@ -3,11 +3,6 @@
 
 namespace Honua.ControlPlane.Executors;
 
-/// <summary>
-/// Product executor for governed ECS and Lambda workload actions. Credentials are the
-/// process chain of the deployment that hosts this server. A missing registration fails
-/// closed before any provider call.
-/// </summary>
 internal interface IGovernedWorkloadExecutor
 {
     Task RestartEcsAsync(
@@ -31,7 +26,6 @@ internal interface IGovernedWorkloadExecutor
         CancellationToken cancellationToken = default);
 }
 
-/// <summary>Stable refusal codes for governed workload actions. The exception message is the code.</summary>
 internal static class WorkloadExecutorCodes
 {
     public const string Unconfigured = "workload-executor-unconfigured";

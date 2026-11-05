@@ -6,62 +6,33 @@ using Honua.Core.Features.WorkflowPackages.Domain;
 
 namespace Honua.Server.Features.WorkflowPackages;
 
-/// <summary>
-/// Grounds the AI workflow author's <em>authoring/publishing</em> palette: publish, style,
-/// map, dashboard, and STAC node types. The built-in geoprocessing process catalog
-/// (<see cref="ProcessCatalogWorkflowNodeProvider"/>) only surfaces analysis/transform
-/// processes, so prompts such as "publish maui-parcels as a FeatureServer + OGC Features"
-/// or "build a web map of parcels/zoning/flood with a legend" previously found no matching
-/// node type and the model correctly refused (honua-server#1759). This provider exposes those
-/// cartography/publishing capabilities as first-class registry nodes so the grounded palette,
-/// the constrained generation schema, and the structural validator all accept them.
-/// </summary>
-/// <remarks>
-/// These nodes are marked <see cref="WorkflowNodeCapabilityFlags.Executable"/> so the AI
-/// generation hard gate (<see cref="WorkflowPackageGraphValidator"/>) accepts proposals that
-/// use them. They compile to authoring operations, not to the geoprocessing job substrate;
-/// the package-to-execution-plan compiler currently understands only <c>process:</c> nodes,
-/// so a saved authoring graph still requires the authoring compile path to land separately.
-/// The grounding/generation surface — the subject of #1759 — is complete here.
-/// </remarks>
+// These nodes compile to authoring operations, not to the geoprocessing job substrate.
 internal sealed class AuthoringWorkflowNodeProvider : IWorkflowNodeProvider
 {
-    /// <summary>Stable provider identifier.</summary>
     public const string Provider = "authoring.publishing-catalog";
 
-    /// <summary>Node-type id prefix for every authoring node (<c>authoring:publish.feature-service</c>).</summary>
     public const string NodeTypePrefix = "authoring:";
 
-    /// <summary>Provider version; bump when the authoring node surface changes.</summary>
     public const string CatalogVersion = "honua.authoring_catalog.builtin.v1";
 
-    /// <inheritdoc />
     public string ProviderId => Provider;
 
-    /// <inheritdoc />
     public string Version => CatalogVersion;
 
-    /// <inheritdoc />
     public Task<IReadOnlyList<WorkflowNodeDefinition>> ListNodesAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         return Task.FromResult<IReadOnlyList<WorkflowNodeDefinition>>(Nodes);
     }
 
-    /// <inheritdoc />
     public Task<IReadOnlyList<string>> GetWarningsAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         return Task.FromResult<IReadOnlyList<string>>(Array.Empty<string>());
     }
 
-    /// <summary>Builds the prefixed authoring node-type id for the supplied capability key.</summary>
     public static string ToNodeTypeId(string capabilityKey) => NodeTypePrefix + capabilityKey;
 
-    /// <summary>
-    /// Extracts the authoring capability key from a node-type id, returning <c>false</c> for
-    /// ids that are not owned by this provider.
-    /// </summary>
     public static bool TryGetCapabilityKey(string nodeTypeId, out string capabilityKey)
     {
         if (nodeTypeId.StartsWith(NodeTypePrefix, StringComparison.Ordinal))

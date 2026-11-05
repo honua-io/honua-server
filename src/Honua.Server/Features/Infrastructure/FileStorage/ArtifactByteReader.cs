@@ -8,7 +8,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Infrastructure.FileStorage;
 
-/// <summary>Bounded artifact byte acquisition pinned to the authorized metadata generation.</summary>
 internal sealed class ArtifactByteReader
 {
     private const long MaxRangeLength = 64 * 1024 * 1024; // 64 MiB cap per range request
@@ -156,13 +155,6 @@ internal sealed class ArtifactByteReader
         return ArtifactRangeResult.Partial(start, end, totalSize, payload);
     }
 
-    /// <summary>
-    /// Fans <paramref name="exception"/> through every registered
-    /// <see cref="ICloudNotFoundClassifier"/> so the proxy can surface a missing
-    /// underlying object as 404 without taking a direct dependency on AWS / Azure
-    /// SDK exception types. Provider-specific classifiers live in Honua.Aws /
-    /// Honua.Azure.
-    /// </summary>
     internal static bool IsProviderNotFound(Exception exception, IReadOnlyList<ICloudNotFoundClassifier> classifiers)
     {
         for (var i = 0; i < classifiers.Count; i++)
@@ -290,11 +282,6 @@ internal sealed class ArtifactByteReader
         return DownloadFallbackResult.Read(payload);
     }
 
-    /// <summary>
-    /// Result of the download-fallback range read: either the materialized payload,
-    /// a missing underlying object (null payload), or a refusal because reaching the
-    /// range start would exceed <see cref="MaxDownloadFallbackSkip"/>.
-    /// </summary>
     private readonly record struct DownloadFallbackResult(byte[]? Payload, bool SkipBudgetExceeded)
     {
         public static DownloadFallbackResult Missing => new(null, false);

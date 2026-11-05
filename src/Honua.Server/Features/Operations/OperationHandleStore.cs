@@ -6,12 +6,6 @@ using Honua.Core.Features.Operations.Domain;
 
 namespace Honua.Server.Features.Operations;
 
-/// <summary>
-/// Minimal in-memory store of operation handles so the status endpoint
-/// (<c>GET /api/v1/operations/handles/{handleId}</c>) can look a submitted handle back up.
-/// This is a de-risking-spike scaffold: a durable handle/job store lands with the job-based
-/// execution kinds in a later phase.
-/// </summary>
 internal sealed class OperationHandleStore
 {
     private readonly ConcurrentDictionary<string, OperationHandle> _handles = new(StringComparer.Ordinal);

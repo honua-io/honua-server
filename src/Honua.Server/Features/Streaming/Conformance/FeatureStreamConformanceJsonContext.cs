@@ -6,10 +6,6 @@ using Honua.Infrastructure.Models;
 
 namespace Honua.Server.Features.Streaming.Conformance;
 
-/// <summary>
-/// Source-generated JSON serialization context for the controlled-conformance surface
-/// (AOT compatible).
-/// </summary>
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,

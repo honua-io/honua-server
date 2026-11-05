@@ -12,19 +12,10 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Console;
 
-/// <summary>
-/// Console session bootstrap endpoint.
-/// </summary>
 internal static class ConsoleSessionEndpoints
 {
-    /// <summary>
-    /// Log category for the Console session endpoint.
-    /// </summary>
     internal sealed class ConsoleSessionEndpointLog;
 
-    /// <summary>
-    /// Maps the Console session bootstrap endpoint into the supplied builder.
-    /// </summary>
     public static void MapConsoleSessionEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/console")

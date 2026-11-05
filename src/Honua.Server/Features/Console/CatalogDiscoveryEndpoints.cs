@@ -10,20 +10,10 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Console;
 
-/// <summary>
-/// Console catalog discovery-endpoints registry read API (honua-server#1279).
-/// Workspace-scoped admin reads describing which discovery dialects (Esri
-/// catalog, OGC API Records, OData, STAC, DCAT) the server publishes to
-/// consumers, each endpoint's on/off and auto-default-vs-opt-in state, its
-/// feeders, and the per-endpoint/per-item drill-down. Distinct from the
-/// singular content catalog (<c>/api/v1/console/content</c>, #1162).
-/// </summary>
 internal static class CatalogDiscoveryEndpoints
 {
-    /// <summary>Log category for catalog discovery endpoints.</summary>
     internal sealed class CatalogDiscoveryEndpointsLog;
 
-    /// <summary>Maps the catalog discovery-endpoints registry read endpoints.</summary>
     public static void MapCatalogDiscoveryEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/console/catalog-endpoints")

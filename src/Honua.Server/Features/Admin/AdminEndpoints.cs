@@ -17,9 +17,6 @@ using Honua.Protocols.Ogc.Common;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Admin endpoints for table discovery and connection management
-/// </summary>
 internal static class AdminEndpoints
 {
     private static readonly FrozenSet<string> _openApiAllowedQueryParameters =
@@ -32,9 +29,6 @@ internal static class AdminEndpoints
         HttpMethods.Patch
     ];
 
-    /// <summary>
-    /// Configure admin endpoints using AOT-compatible routing with formal API versioning
-    /// </summary>
     public static void MapAdminEndpoints(this IEndpointRouteBuilder endpoints)
     {
         // Create admin group with authorization requirement and formal versioning
@@ -83,10 +77,6 @@ internal static class AdminEndpoints
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
     }
 
-    /// <summary>
-    /// Handle GET /api/v1/admin/config - Self-documenting configuration endpoint.
-    /// Returns all available configuration options, their current values, and environment variable mappings.
-    /// </summary>
     private static async Task HandleGetConfiguration(HttpContext context)
     {
         var configService = context.RequestServices.GetRequiredService<ConfigurationDocumentationService>();
@@ -101,9 +91,6 @@ internal static class AdminEndpoints
             context.RequestAborted);
     }
 
-    /// <summary>
-    /// Handle catch-all cases for connections endpoints
-    /// </summary>
     private static async Task HandleGetConnectionTablesWithCatchAll(HttpContext context)
     {
         string path = context.GetRouteValue("path")?.ToString() ?? "";
@@ -129,10 +116,6 @@ internal static class AdminEndpoints
             .ExecuteAsync(context);
     }
 
-    /// <summary>
-    /// Handle admin connection tables request
-    /// Implements the API from Issue #57: GET /api/v1/admin/connections/{id}/tables
-    /// </summary>
     private static async Task HandleGetConnectionTables(HttpContext context)
     {
         // Extract connection ID from route

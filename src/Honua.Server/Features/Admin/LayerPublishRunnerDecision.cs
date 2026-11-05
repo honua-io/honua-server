@@ -10,29 +10,20 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>Where this host runs a layer publish that exceeded the row threshold (honua-server#5948).</summary>
 internal enum LayerPublishRunnerMode
 {
-    /// <summary>Long-lived host without a durable job substrate. The publish runs on a background task.</summary>
     InProcess,
 
-    /// <summary>Redis-backed execution job drained by <c>JobExecutionService</c> on this host.</summary>
     DurableLocal,
 
-    /// <summary>A remote managed execution worker drains the durable job.</summary>
     DurableRemote,
 
-    /// <summary>A host frozen between requests without a remote runner. A large publish is refused.</summary>
     Unavailable,
 }
 
-/// <summary>
-/// Uses the shared durable substrate and managed execution workloads. A frozen host cannot
-/// drain a local queue after responding and therefore requires a remote worker.
-/// </summary>
+// A frozen host cannot drain a local queue after it has responded, so the publish requires a remote worker.
 internal sealed class LayerPublishRunnerDecision
 {
-    /// <summary>Missing-dependency id on the typed 503. Redis may be present; the runner is not.</summary>
     internal const string RunnerDependency = "layer-publish-runner";
 
     internal LayerPublishRunnerDecision(LayerPublishRunnerMode mode, ExecutionJobDefinition? workload = null)

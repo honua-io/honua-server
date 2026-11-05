@@ -18,15 +18,9 @@ namespace Honua.Server.Features.HealthCheck;
 
 using Honua.Core.Features.Infrastructure.Health;
 
-/// <summary>
-/// Service for orchestrating readiness health checks
-/// </summary>
 internal sealed class ReadinessCheckService : IReadinessCheckService
 {
-    /// <summary>
-    /// Upper bound on the recovery attempt a degraded AWS Lambda readiness probe runs inline; it
-    /// stays well inside the API Gateway integration timeout (29 s).
-    /// </summary>
+    // The inline recovery attempt stays inside the API Gateway integration timeout.
     internal static readonly TimeSpan InlineRecoveryBudget = TimeSpan.FromSeconds(10);
 
     private readonly IDatabaseHealthChecker _databaseHealthChecker;
@@ -67,11 +61,6 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
         _durableJobSubstrate = durableJobSubstrateOptions?.Value ?? new DurableJobSubstrateOptions();
     }
 
-    /// <summary>
-    /// Performs all readiness checks and returns the overall result
-    /// </summary>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Readiness check result</returns>
     public async Task<ReadinessResult> CheckReadinessAsync(CancellationToken cancellationToken = default)
     {
         var currentCheckName = "Database";
@@ -255,11 +244,6 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
         }
     }
 
-    /// <summary>
-    /// True when the alert dispatcher is enabled and its poll heartbeat has aged past the staleness
-    /// threshold (the loop is wedged while still reporting "running"). A dispatcher that has not yet
-    /// polled (fresh start, <c>LastPollAt</c> null) is not stalled.
-    /// </summary>
     private bool IsAlertDispatchStalled(DateTimeOffset now, out string reason)
     {
         reason = string.Empty;
@@ -278,13 +262,7 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
         return false;
     }
 
-    /// <summary>
-    /// True when the alert evaluation loop is enabled and running but either no node can acquire the
-    /// evaluation lease (a fleet-wide no-leader stall) or this node holds leadership with a stale
-    /// productive-pass heartbeat (a hung leader). A healthy follower and fresh-start states do not
-    /// trip this. Not-running is intentionally left to the health-check roll-up to avoid a
-    /// depool during the brief startup window before the loop begins.
-    /// </summary>
+    // Only a fleet that cannot acquire the lease, or a leader with a stale heartbeat, trips this check; a healthy follower does not.
     private bool IsAlertEvaluationStalled(DateTimeOffset now, out string reason)
     {
         reason = string.Empty;

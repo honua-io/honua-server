@@ -9,21 +9,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Features.Provisioner;
 
-/// <summary>
-/// Registers the per-area geocoder/router build job submission service and its
-/// config-driven backend options. Mirrors the batch-dispatched tile-cache registration:
-/// the submission service depends on the durable execution-job store/queue, which are only
-/// present when an attested Redis substrate is configured, so registration is gated on the durable
-/// job store to keep <c>GetService&lt;IProvisionerBuildJobService&gt;()</c> from throwing on a missing
-/// dependency in stores-less dev/test profiles. The build jobs ride the same GP-on-Batch
-/// dispatch path (durable record → reconciler → IBatchComputeBackend) that tiling uses.
-/// </summary>
-/// <remarks>
-/// Provisioner is a service/job-only vertical slice with no HTTP endpoint surface, so this
-/// in-folder service-registration extension is the slice's composition root (mirroring the
-/// ControlPlane slice's <c>JobOrchestrationServiceCollectionExtensions</c>). Keeping it under
-/// <c>Features/Provisioner</c> satisfies the vertical-slice architecture fitness test.
-/// </remarks>
 internal static class ProvisionerServiceCollectionExtensions
 {
     public static IServiceCollection AddHonuaProvisionerBuildJobs(

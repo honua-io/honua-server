@@ -264,9 +264,6 @@ internal sealed record AdminConnectImportApprovalPayload
         };
     }
 
-    /// <summary>
-    /// True when any parameter key equal to <c>password</c>, regardless of case, carries a value.
-    /// </summary>
     internal static bool HasInlinePassword(IEnumerable<KeyValuePair<string, string?>> parameters) =>
         parameters.Any(pair =>
             string.Equals(pair.Key, "password", StringComparison.OrdinalIgnoreCase)

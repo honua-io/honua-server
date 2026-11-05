@@ -9,48 +9,17 @@ using Microsoft.Extensions.Configuration.EnvironmentVariables;
 
 namespace Honua.Server.Startup;
 
-/// <summary>
-/// Loads the optional <em>settings document</em>: one JSON object of configuration keys stored in
-/// AWS Secrets Manager and named by a single environment variable, so a Lambda deployment can keep
-/// most of its settings out of the 4 KB function environment.
-/// </summary>
-/// <remarks>
-/// <para>
-/// <c>HONUA_SETTINGS_DOCUMENT</c> (or <c>Settings__Document</c>) holds
-/// <c>aws:secretsmanager:&lt;name-or-arn&gt;</c>. The secret value is a JSON object whose nested
-/// objects map to <c>Section:Key</c> exactly like <c>appsettings.json</c>, whose arrays map to
-/// <c>Section:0</c>, <c>Section:1</c>, ... (the ASP.NET convention), and whose property names may
-/// also be flat environment-style keys (<c>Cors__AllowedOrigins__0</c>).
-/// </para>
-/// <para>
-/// Precedence, lowest to highest: <c>appsettings*.json</c> &lt; settings document &lt; environment
-/// variables &lt; command line. Values in the document may themselves be
-/// <c>aws:secretsmanager:</c> references; the existing per-setting bootstrap resolution resolves
-/// them exactly as if they had come from the environment.
-/// </para>
-/// <para>
-/// Every failure refuses startup with a <see cref="SettingsDocumentException"/> that names the
-/// document reference and never echoes the document's content.
-/// </para>
-/// </remarks>
+// A failure names the document reference and never echoes the document content.
 internal static partial class SettingsDocumentConfiguration
 {
-    /// <summary>Environment variable that names the settings document.</summary>
     public const string EnvironmentVariableName = "HONUA_SETTINGS_DOCUMENT";
 
-    /// <summary>Configuration key (environment form <c>Settings__Document</c>) that names the settings document.</summary>
     public const string ConfigurationKey = "Settings:Document";
 
-    /// <summary>Largest accepted document, in UTF-8 bytes.</summary>
     public const int MaxDocumentBytes = 64 * 1024;
 
     private const string AwsSecretsManagerScheme = "aws:secretsmanager:";
 
-    /// <summary>
-    /// Resolves the configured settings document, if any, and inserts it into
-    /// <paramref name="configuration"/> below the environment-variable source.
-    /// </summary>
-    /// <returns>The number of keys loaded, or <see langword="null"/> when no document is configured.</returns>
     public static async Task<int?> AddSettingsDocumentAsync(
         ConfigurationManager configuration,
         CancellationToken cancellationToken = default)
@@ -71,7 +40,6 @@ internal static partial class SettingsDocumentConfiguration
             .ConfigureAwait(false);
     }
 
-    /// <summary>Resolver-injectable form of <see cref="AddSettingsDocumentAsync(ConfigurationManager, CancellationToken)"/>.</summary>
     internal static async Task<int?> AddSettingsDocumentAsync(
         ConfigurationManager configuration,
         IConnectionSecretResolver resolver,
@@ -95,11 +63,7 @@ internal static partial class SettingsDocumentConfiguration
         return data.Count;
     }
 
-    /// <summary>
-    /// Returns the configured document reference, or <see langword="null"/> when none is set.
-    /// Refuses when both spellings are set to different values, so an operator never has to guess
-    /// which document the server loaded.
-    /// </summary>
+    // Both names set to different values refuse startup, so the loaded document is unambiguous.
     internal static string? GetDocumentReference(IConfiguration configuration)
     {
         var fromVariable = Normalize(configuration[EnvironmentVariableName]);
@@ -168,11 +132,6 @@ internal static partial class SettingsDocumentConfiguration
         return content;
     }
 
-    /// <summary>
-    /// Parses a settings document into configuration keys. Nested objects become
-    /// <c>Section:Key</c>, array elements become <c>Section:0</c>, and <c>__</c> in a property name
-    /// is read as the <c>:</c> separator, matching the environment-variable provider.
-    /// </summary>
     internal static Dictionary<string, string?> Parse(string reference, string content)
     {
         ArgumentNullException.ThrowIfNull(reference);
@@ -307,11 +266,6 @@ internal static partial class SettingsDocumentConfiguration
         }
     }
 
-    /// <summary>
-    /// Inserts the document source directly below the unprefixed environment-variable source so
-    /// environment variables and the command line still override it, while it overrides every
-    /// <c>appsettings*.json</c> file.
-    /// </summary>
     internal static void Insert(ConfigurationManager configuration, IConfigurationSource source)
     {
         IList<IConfigurationSource> sources = ((IConfigurationBuilder)configuration).Sources;
@@ -355,38 +309,26 @@ internal static partial class SettingsDocumentConfiguration
     private static partial void LogLoaded(ILogger logger, int keyCount, string documentReference);
 }
 
-/// <summary>Why a settings document refused startup.</summary>
 internal enum SettingsDocumentFailure
 {
-    /// <summary>The reference uses a scheme this release does not support.</summary>
     UnsupportedReference,
 
-    /// <summary><c>HONUA_SETTINGS_DOCUMENT</c> and <c>Settings__Document</c> disagree.</summary>
     AmbiguousReference,
 
-    /// <summary>The secret could not be resolved, read, or was empty.</summary>
     Unreadable,
 
-    /// <summary>The document exceeds <see cref="SettingsDocumentConfiguration.MaxDocumentBytes"/>.</summary>
     TooLarge,
 
-    /// <summary>The document is not valid JSON.</summary>
     NotJson,
 
-    /// <summary>The document root is not a JSON object.</summary>
     NotObject,
 
-    /// <summary>The document sets the same key twice.</summary>
     DuplicateKey,
 
-    /// <summary>The document tries to name another settings document.</summary>
     ForbiddenKey,
 }
 
-/// <summary>
-/// Typed startup refusal for the settings document. The message names the document reference and,
-/// where useful, a configuration key, and never contains a configuration value.
-/// </summary>
+// The message names the reference and never contains a configuration value.
 internal sealed class SettingsDocumentException : InvalidOperationException
 {
     public SettingsDocumentException(
@@ -400,38 +342,28 @@ internal sealed class SettingsDocumentException : InvalidOperationException
         DocumentReference = documentReference;
     }
 
-    /// <summary>The failure category.</summary>
     public SettingsDocumentFailure Failure { get; }
 
-    /// <summary>The configured document reference (a secret name or ARN, never its value).</summary>
     public string DocumentReference { get; }
 }
 
-/// <summary>Configuration source over an already-fetched, already-parsed settings document.</summary>
 internal sealed class SettingsDocumentConfigurationSource(
     string documentReference,
     IReadOnlyDictionary<string, string?> data) : IConfigurationSource
 {
-    /// <summary>The document reference this source was loaded from.</summary>
     public string DocumentReference { get; } = documentReference;
 
-    /// <inheritdoc />
     public IConfigurationProvider Build(IConfigurationBuilder builder)
         => new SettingsDocumentConfigurationProvider(DocumentReference, data);
 }
 
-/// <summary>
-/// Serves the settings document's keys. <see cref="ToString"/> names only the document reference,
-/// so configuration debug views never print a document-level label carrying content.
-/// </summary>
+// Debug views name only the document reference.
 internal sealed class SettingsDocumentConfigurationProvider(
     string documentReference,
     IReadOnlyDictionary<string, string?> data) : ConfigurationProvider
 {
-    /// <inheritdoc />
     public override void Load()
         => Data = new Dictionary<string, string?>(data, StringComparer.OrdinalIgnoreCase);
 
-    /// <inheritdoc />
     public override string ToString() => $"SettingsDocument({documentReference})";
 }

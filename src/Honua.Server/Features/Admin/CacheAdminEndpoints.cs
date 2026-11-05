@@ -13,9 +13,6 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Admin endpoints for cache health monitoring and invalidation.
-/// </summary>
 internal static class CacheAdminEndpoints
 {
     private const string CacheInvalidationFailedMessage = "Cache invalidation failed.";

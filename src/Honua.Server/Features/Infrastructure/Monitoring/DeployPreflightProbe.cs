@@ -213,9 +213,6 @@ internal sealed class DeployPreflightProbe(
     }
 }
 
-/// <summary>
-/// Source-generated logging for <see cref="DeployPreflightProbe"/>.
-/// </summary>
 internal static partial class DeployPreflightProbeLog
 {
     [LoggerMessage(
@@ -261,29 +258,15 @@ internal sealed class DeployPreflightMigrationSnapshot
 
     public bool UpgradeRequired { get; init; }
 
-    /// <summary>
-    /// Whether any pending script is a contract-phase (potentially backward-incompatible) change.
-    /// Contract migrations must run in the contract phase (expand → deploy → migrate → contract)
-    /// and must not ride along a rolling deploy, so their presence blocks coordinated-deploy
-    /// readiness (ADR-0060 expand/contract discipline).
-    /// </summary>
+    // A pending contract-phase script blocks coordinated-deploy readiness, because that change must not ride a rolling deploy.
     public bool HasPendingContractScripts { get; init; }
 
-    /// <summary>
-    /// Whether any pending contract-phase script lacks the compatibility-review marker.
-    /// </summary>
     public bool HasUnannotatedContractScripts { get; init; }
 
     public IReadOnlyList<string> PendingScripts { get; init; } = Array.Empty<string>();
 
-    /// <summary>
-    /// Names of the pending contract-phase (breaking) scripts, whether or not annotated.
-    /// </summary>
     public IReadOnlyList<string> PendingContractScripts { get; init; } = Array.Empty<string>();
 
-    /// <summary>
-    /// Runtime classifier output for every pending script, including the exact matched rule names.
-    /// </summary>
     public IReadOnlyList<MigrationScriptClassification> PendingScriptClassifications { get; init; }
         = Array.Empty<MigrationScriptClassification>();
 

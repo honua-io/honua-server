@@ -7,18 +7,8 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Features.Import;
 
-/// <summary>Composition for durable background file imports (honua-server#5916).</summary>
 internal static class DurableImportServiceCollectionExtensions
 {
-    /// <summary>
-    /// Routes background file imports to the durable job runner when one is configured
-    /// (honua-server#5916). The file-import executor is registered unconditionally so any worker
-    /// (the server's <c>JobExecutionService</c> loop or a batch-launched execution worker) can run
-    /// <see cref="Honua.Core.Features.ControlPlane.Domain.ExecutionJobKind.FileImport"/> jobs. The
-    /// provider's <see cref="IImportJobService"/> (the in-process runner) is wrapped by
-    /// <see cref="DurableImportJobService"/>, which applies the runner
-    /// decision resolved once per process.
-    /// </summary>
     internal static IServiceCollection AddDurableBackgroundImports(this IServiceCollection services)
     {
         if (services.Any(static d => d.ServiceType == typeof(BackgroundImportRunnerDecision)))

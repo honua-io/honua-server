@@ -7,13 +7,6 @@ using Honua.Core.Features.RateLimiting.Domain;
 
 namespace Honua.Server.Features.Admin.Services;
 
-/// <summary>
-/// In-memory rate limit policy store backing the admin API surface (issue #355).
-/// The activated slice is intentionally thin: policies are held per-node in memory so
-/// operators can model tenant/user/API-key quotas without standing up durable quota
-/// infrastructure. A persistent, cluster-shared implementation can replace this when
-/// concrete enterprise demand justifies distributed policy storage.
-/// </summary>
 internal sealed class InMemoryRateLimitPolicyStore : IRateLimitPolicyStore
 {
     private readonly ConcurrentDictionary<Guid, RateLimitPolicy> _policies = new();

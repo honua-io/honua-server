@@ -9,15 +9,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Alerts.Ops;
 
-/// <summary>
-/// Composes operations notifications (deploy/job terminal events) into ops alert
-/// events and enqueues them through the SAME delivery outbox the geofence pipeline
-/// uses (<see cref="AlertDispatchWriter"/> -&gt; <c>alert_dispatch</c> -&gt;
-/// <c>AlertDispatchBackgroundService</c> -&gt; <see cref="IAlertDeliverySink"/>). This
-/// is the second consumer that proves the outbox layer is consumer-agnostic: ops
-/// events carry <see cref="AlertEventSources.Ops"/> and a NULL rule link, and reuse
-/// the identical channel sinks, retry, dedupe, and rate-cap machinery.
-/// </summary>
 internal sealed partial class OpsNotificationService
 {
     private readonly AlertDispatchWriter _dispatchWriter;
@@ -43,13 +34,7 @@ internal sealed partial class OpsNotificationService
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <summary>
-    /// Composes and enqueues one ops notification. No-ops when ops notifications are
-    /// disabled or the severity is below the configured minimum. When no configured
-    /// channel is currently deliverable, the event is still persisted without a
-    /// dispatch row so operator evidence survives channel circuit breaking and
-    /// edition gating. Idempotent per terminal event via the outbox dedupe key.
-    /// </summary>
+    // When no channel is deliverable the event is still stored without a dispatch row so the evidence survives circuit breaking.
     public async Task NotifyAsync(OpsNotification notification, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(notification);

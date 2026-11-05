@@ -7,7 +7,6 @@ using Honua.Core.Features.ControlPlane.Domain;
 
 namespace Honua.ControlPlane;
 
-/// <summary>Serializes deploy admission with durable restore ownership.</summary>
 internal sealed class RestoreDeployAdmission : IAsyncDisposable
 {
     internal const string CellOwnerId = "restore-cell-exclusive-owner";

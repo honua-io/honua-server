@@ -6,23 +6,6 @@ using Honua.ServiceDefaults;
 
 namespace Honua.Server.Features.Streaming;
 
-/// <summary>
-/// OpenTelemetry instruments for the real-time feature-stream pipeline: session
-/// lifecycle by transport, slow-consumer backpressure disconnects, heartbeat fan-out,
-/// durable-replay delivery on reconnect, and cross-node broadcast backlog loss. Added
-/// as part of the GA promotion (#2428) so operators can observe streaming backpressure
-/// and reconnect/replay load.
-///
-/// <para>
-/// Instruments are created from the injected <see cref="IMeterFactory"/> on a meter named
-/// <see cref="HonuaTelemetry.ServiceName"/> ("Honua"), which is already on the exporter
-/// allow-list, so no meter-registration change is required. The type is a DI singleton that
-/// owns its instruments and gauge state on the instance (not process-global statics), so tests
-/// can construct an isolated instance with its own <see cref="IMeterFactory"/> and observe it
-/// without cross-test interference (#2802). Observable gauges read a snapshot the session
-/// manager refreshes rather than walking the session table on every scrape.
-/// </para>
-/// </summary>
 internal sealed class FeatureStreamMetrics
 {
     private const string TransportTag = "transport";
@@ -40,11 +23,6 @@ internal sealed class FeatureStreamMetrics
     private long _activeSessions;
     private long _clusterBroadcastBacklog;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="FeatureStreamMetrics"/> class, creating its
-    /// instruments on a "Honua" meter obtained from <paramref name="meterFactory"/>.
-    /// </summary>
-    /// <param name="meterFactory">The DI meter factory used to create the shared "Honua" meter.</param>
     public FeatureStreamMetrics(IMeterFactory meterFactory)
     {
         ArgumentNullException.ThrowIfNull(meterFactory);
@@ -110,32 +88,23 @@ internal sealed class FeatureStreamMetrics
             description: "Cross-node broadcast payloads buffered awaiting a Redis publish retry.");
     }
 
-    /// <summary>
-    /// The "Honua" meter that owns this instance's instruments. Exposed so unit tests can filter a
-    /// <see cref="MeterListener"/> to this exact meter instance for full parallel isolation.
-    /// </summary>
     public Meter Meter => _meter;
 
-    /// <summary>Records one accepted session for the given transport.</summary>
     public void RecordSessionOpened(string transport)
         => _sessionsOpenedCounter.Add(1, new KeyValuePair<string, object?>(TransportTag, transport));
 
-    /// <summary>Records one closed session for the given transport and reason.</summary>
     public void RecordSessionClosed(string transport, FeatureStreamDisconnectReason reason)
         => _sessionsClosedCounter.Add(
             1,
             new KeyValuePair<string, object?>(TransportTag, transport),
             new KeyValuePair<string, object?>(ReasonTag, reason.ToString()));
 
-    /// <summary>Records one slow-consumer backpressure disconnect for the given transport.</summary>
     public void RecordSlowConsumerDrop(string transport)
         => _slowConsumerDropsCounter.Add(1, new KeyValuePair<string, object?>(TransportTag, transport));
 
-    /// <summary>Records one connection rejected because the concurrent-session cap was reached.</summary>
     public void RecordSessionRejected()
         => _sessionsRejectedCounter.Add(1);
 
-    /// <summary>Records heartbeat frames queued to sessions.</summary>
     public void RecordHeartbeatsSent(long count)
     {
         if (count > 0)
@@ -144,7 +113,6 @@ internal sealed class FeatureStreamMetrics
         }
     }
 
-    /// <summary>Records events replayed from the durable store to a reconnecting client.</summary>
     public void RecordReplayEventsDelivered(string transport, long count)
     {
         if (count > 0)
@@ -153,11 +121,9 @@ internal sealed class FeatureStreamMetrics
         }
     }
 
-    /// <summary>Records one dropped cross-node broadcast payload (backlog overflow).</summary>
     public void RecordClusterBroadcastDropped()
         => _clusterBroadcastDroppedCounter.Add(1);
 
-    /// <summary>Refreshes the cached snapshot the observable gauges read.</summary>
     public void RecordGaugeSnapshot(long activeSessions, long clusterBroadcastBacklog)
     {
         Interlocked.Exchange(ref _activeSessions, activeSessions);

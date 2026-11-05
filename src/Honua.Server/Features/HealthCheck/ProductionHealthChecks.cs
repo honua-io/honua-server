@@ -17,9 +17,6 @@ using Honua.Plugins;
 
 namespace Honua.Server.Features.HealthCheck;
 
-/// <summary>
-/// Comprehensive health checks for production dependencies.
-/// </summary>
 internal static class ProductionHealthChecks
 {
     private static readonly string[] DatabaseTags = ["db", "sql", "postgres"];
@@ -32,12 +29,6 @@ internal static class ProductionHealthChecks
     private static readonly string[] PluginTags = ["plugins", "extensibility"];
     private static readonly string[] AuditTags = ["audit", "security"];
 
-    /// <summary>
-    /// Adds production health checks to the service collection.
-    /// </summary>
-    /// <param name="services">The service collection.</param>
-    /// <param name="configuration">Configuration for health check settings.</param>
-    /// <returns>The service collection for chaining.</returns>
     public static IServiceCollection AddProductionHealthChecks(
         this IServiceCollection services,
         IConfiguration configuration)
@@ -148,9 +139,6 @@ internal static class ProductionHealthChecks
         => value.ToString("0.00%", CultureInfo.InvariantCulture);
 }
 
-/// <summary>
-/// Health check for database connectivity and connection pool status.
-/// </summary>
 internal sealed class DatabaseHealthCheck : IHealthCheck
 {
     private readonly NpgsqlDataSource? _dataSource;
@@ -158,13 +146,6 @@ internal sealed class DatabaseHealthCheck : IHealthCheck
     private readonly IActiveDbConnectionTracker _connectionTracker;
     private readonly ILogger<DatabaseHealthCheck> _logger;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="DatabaseHealthCheck"/> class.
-    /// </summary>
-    /// <param name="dataSource">Npgsql data source.</param>
-    /// <param name="connectionPoolMetrics">Connection pool metrics.</param>
-    /// <param name="connectionTracker">Connection tracker.</param>
-    /// <param name="logger">Logger instance.</param>
     public DatabaseHealthCheck(
         ConnectionPoolMetrics connectionPoolMetrics,
         IActiveDbConnectionTracker connectionTracker,
@@ -177,7 +158,6 @@ internal sealed class DatabaseHealthCheck : IHealthCheck
         _dataSource = dataSource;
     }
 
-    /// <inheritdoc/>
     public async Task<HealthCheckResult> CheckHealthAsync(
         HealthCheckContext context,
         CancellationToken cancellationToken = default)
@@ -258,9 +238,6 @@ internal sealed class DatabaseHealthCheck : IHealthCheck
     }
 }
 
-/// <summary>
-/// Health check for Redis cache connectivity and performance.
-/// </summary>
 internal sealed class RedisHealthCheck : IHealthCheck
 {
     private readonly IConnectionMultiplexer? _redis;
@@ -268,13 +245,6 @@ internal sealed class RedisHealthCheck : IHealthCheck
     private readonly ILogger<RedisHealthCheck> _logger;
     private readonly DurableJobSubstrateOptions _durableJobSubstrate;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="RedisHealthCheck"/> class.
-    /// </summary>
-    /// <param name="redis">Redis connection multiplexer.</param>
-    /// <param name="distributedCache">Distributed cache.</param>
-    /// <param name="logger">Logger instance.</param>
-    /// <param name="durableJobSubstrate">Startup Redis durability attestation state.</param>
     public RedisHealthCheck(
         IConnectionMultiplexer? redis,
         IDistributedCache distributedCache,
@@ -287,7 +257,6 @@ internal sealed class RedisHealthCheck : IHealthCheck
         _durableJobSubstrate = durableJobSubstrate?.Value ?? new DurableJobSubstrateOptions();
     }
 
-    /// <inheritdoc/>
     public async Task<HealthCheckResult> CheckHealthAsync(
         HealthCheckContext context,
         CancellationToken cancellationToken = default)
@@ -399,19 +368,11 @@ internal sealed class RedisHealthCheck : IHealthCheck
     }
 }
 
-/// <summary>
-/// Health check for file upload service and queue status.
-/// </summary>
 internal sealed class FileUploadHealthCheck : IHealthCheck
 {
     private readonly IUploadQueueMetricsProvider _uploadQueueMetricsProvider;
     private readonly ILogger<FileUploadHealthCheck> _logger;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="FileUploadHealthCheck"/> class.
-    /// </summary>
-    /// <param name="uploadQueueMetricsProvider">Upload queue metrics provider.</param>
-    /// <param name="logger">Logger instance.</param>
     public FileUploadHealthCheck(
         IUploadQueueMetricsProvider uploadQueueMetricsProvider,
         ILogger<FileUploadHealthCheck> logger)
@@ -420,7 +381,6 @@ internal sealed class FileUploadHealthCheck : IHealthCheck
         _logger = logger;
     }
 
-    /// <inheritdoc/>
     public async Task<HealthCheckResult> CheckHealthAsync(
         HealthCheckContext context,
         CancellationToken cancellationToken = default)
@@ -492,19 +452,11 @@ internal sealed class FileUploadHealthCheck : IHealthCheck
 // against, so removing the stub (rather than inventing new probing logic) is the lower-risk fix;
 // a follow-up issue should define what external dependencies, if any, need a real health probe.
 
-/// <summary>
-/// Health check for production metrics collection.
-/// </summary>
 internal sealed class ProductionMetricsHealthCheck : IHealthCheck
 {
     private readonly ProductionMetricsCollector _metricsCollector;
     private readonly ILogger<ProductionMetricsHealthCheck> _logger;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="ProductionMetricsHealthCheck"/> class.
-    /// </summary>
-    /// <param name="metricsCollector">Production metrics collector.</param>
-    /// <param name="logger">Logger instance.</param>
     public ProductionMetricsHealthCheck(
         ProductionMetricsCollector metricsCollector,
         ILogger<ProductionMetricsHealthCheck> logger)
@@ -513,7 +465,6 @@ internal sealed class ProductionMetricsHealthCheck : IHealthCheck
         _logger = logger;
     }
 
-    /// <inheritdoc/>
     public async Task<HealthCheckResult> CheckHealthAsync(
         HealthCheckContext context,
         CancellationToken cancellationToken = default)
@@ -560,27 +511,17 @@ internal sealed class ProductionMetricsHealthCheck : IHealthCheck
     }
 }
 
-/// <summary>
-/// Health check for the plugin/extension SDK (#347). Reports the registered plugins and whether
-/// the Enterprise <c>plugin.sdk</c> entitlement is active. Always healthy: plugins are optional.
-/// </summary>
 internal sealed class PluginHealthCheck : IHealthCheck
 {
     private readonly PluginCatalog _catalog;
     private readonly ILicenseEntitlementService _licensing;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="PluginHealthCheck"/> class.
-    /// </summary>
-    /// <param name="catalog">The registered plugin manifest catalog.</param>
-    /// <param name="licensing">The runtime license entitlement service.</param>
     public PluginHealthCheck(PluginCatalog catalog, ILicenseEntitlementService licensing)
     {
         _catalog = catalog;
         _licensing = licensing;
     }
 
-    /// <inheritdoc/>
     public Task<HealthCheckResult> CheckHealthAsync(
         HealthCheckContext context,
         CancellationToken cancellationToken = default)

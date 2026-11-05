@@ -9,9 +9,6 @@ using StackExchange.Redis;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Redis-backed durable store for deploy workflow operations and reconciliation leases.
-/// </summary>
 internal sealed partial class RedisWorkflowOperationStore(
     IConnectionMultiplexer redis,
     ILogger<RedisWorkflowOperationStore> logger,

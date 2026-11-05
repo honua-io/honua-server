@@ -9,12 +9,7 @@ using StackExchange.Redis;
 
 namespace Honua.Server.Features.Operations;
 
-/// <summary>
-/// Redis-backed consume-once secret channel. Redis contains only an envelope protected by
-/// the shared ASP.NET data-protection key ring; the plaintext value is never a Redis value.
-/// Production replay nodes must use the same persisted data-protection key ring and application
-/// name so a node can resolve an envelope created by another node during key rotation.
-/// </summary>
+// Redis stores only a protected envelope, and the plaintext is never a Redis value.
 public sealed class RedisOperationSecretStore : IOperationSecretStore
 {
     private static readonly TimeSpan DefaultTtl = TimeSpan.FromMinutes(15);

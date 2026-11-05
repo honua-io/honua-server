@@ -6,7 +6,7 @@ using Honua.Infrastructure.Authentication;
 
 namespace Honua.ControlPlane;
 
-/// <summary>Current stored API-key authority; approval never revives a revoked proposer.</summary>
+// Approval never revives a revoked proposer key.
 internal sealed class OperationProposerApiKeyAuthority(TimeProvider timeProvider, IAdminApiKeyStore? apiKeys = null)
 {
     internal const string Refusal = "The proposer API-key authority is unavailable or no longer authorized.";

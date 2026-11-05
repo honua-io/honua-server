@@ -13,9 +13,6 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Admin endpoints for monitoring and managing streaming subscribers.
-/// </summary>
 internal static class StreamingOperationsEndpoints
 {
     public static void MapStreamingOperationsEndpoints(this IEndpointRouteBuilder endpoints)
@@ -208,7 +205,4 @@ internal static class StreamingOperationsEndpoints
     }
 }
 
-/// <summary>
-/// Log category for streaming operations endpoints.
-/// </summary>
 internal sealed class StreamingOperationsEndpointsLog;

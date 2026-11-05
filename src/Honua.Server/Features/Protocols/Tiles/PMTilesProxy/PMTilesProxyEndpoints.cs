@@ -12,12 +12,7 @@ using Microsoft.Net.Http.Headers;
 
 namespace Honua.Server.Features.Protocols.Tiles.PMTilesProxy;
 
-/// <summary>
-/// Range-proxy endpoint that streams byte ranges of a published PMTiles artifact
-/// through the server for clients that cannot read object storage directly.
-/// Each read checks the source layer's current export policy, matching the COG
-/// range proxy, and a retired or rebound source is not found.
-/// </summary>
+// A retired or rebound source is not found.
 internal static partial class PMTilesProxyEndpoints
 {
     private const string PMTilesContentType = "application/vnd.pmtiles";

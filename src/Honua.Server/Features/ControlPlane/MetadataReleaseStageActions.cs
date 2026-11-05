@@ -17,18 +17,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Default preflight gate. Reuses the shared compatibility prevalidation analyzer when a persisted
-/// release package is addressable, and otherwise classifies the additive plan directly: a plan whose
-/// forward operations are all nullable column adds is script-reversible. The reconciler refuses
-/// snapshot-required classifications (the deferred Item 2 path).
-///
-/// The metadata-release reconciler that consumes this gate is a singleton, but the canonical
-/// <see cref="IMetadataCompatibilityPrevalidationService"/> (and the graph/package services it
-/// depends on) is registered scoped. Resolving it per evaluation through an
-/// <see cref="IServiceScopeFactory"/> avoids capturing scoped services from the root provider and
-/// keeps the gate compatible with DI scope validation.
-/// </summary>
 internal sealed class MetadataReleasePreflightGate(
     IServiceScopeFactory scopeFactory) : IMetadataReleasePreflightGate
 {
@@ -106,14 +94,6 @@ internal sealed class MetadataReleasePreflightGate(
         }];
 }
 
-/// <summary>
-/// Default data-job dispatcher. Submits the optional ETL/data-populate workload through the
-/// canonical execution-job store so the execution-job reconciler (and its background worker)
-/// actually starts and drives the job, then polls the durable record for a terminal state.
-/// Dispatching the local backend's <c>StartAsync</c> directly would only mark the job
-/// <c>Running</c> without enqueuing it for any worker, leaving the release to time out and
-/// require manual intervention. Returns false when no workload is declared.
-/// </summary>
 internal sealed class MetadataReleaseDataJobDispatcher(
     IExecutionJobStore jobStore,
     IEnumerable<IBatchComputeBackend> backends) : IMetadataReleaseDataJobDispatcher
@@ -192,12 +172,6 @@ internal sealed class MetadataReleaseDataJobDispatcher(
         => status is ExecutionJobStatus.Succeeded or ExecutionJobStatus.Failed or ExecutionJobStatus.Cancelled;
 }
 
-/// <summary>
-/// Default metadata-release activator over the canonical Metadata v2 graph store. Reads go to the
-/// persisted store (never the cached read provider) so every optimistic-concurrency precondition is
-/// exact. Resolves scoped graph services per call through a scope factory because the reconciler is
-/// a singleton.
-/// </summary>
 internal sealed class MetadataReleaseActivator(IServiceScopeFactory scopeFactory) : IMetadataReleaseActivator
 {
     internal const string StagingUnsupported = "metadata-release-staging-unsupported";
@@ -288,15 +262,6 @@ internal sealed class MetadataReleaseActivator(IServiceScopeFactory scopeFactory
         => new() { Outcome = outcome, CurrentRevision = current.Revision, CurrentEtag = current.Etag };
 }
 
-/// <summary>
-/// Default smoke checker. Exercises one explicit retained revision — the staged candidate before
-/// activation, the live revision after activation, or the recovered revision after rollback — and
-/// never "whatever is current". It checks the schema expectation, that the resource is still
-/// published and bound to queryable storage, that rendering/schema references resolving in the
-/// baseline still resolve, that the shared access-policy evaluator reaches the same decisions as for
-/// the baseline, and finally queries the resource through the canonical provider router bound to the
-/// exercised snapshot (<see cref="FeatureProviderQueryRouter.ResolveReaderAsync"/>).
-/// </summary>
 internal sealed class MetadataReleaseSmokeChecker(
     IServiceScopeFactory scopeFactory,
     IOptions<MetadataReleaseOperationOptions> options) : IMetadataReleaseSmokeChecker
@@ -430,11 +395,7 @@ internal sealed class MetadataReleaseSmokeChecker(
         => !string.IsNullOrWhiteSpace(fieldName) &&
            resource.SchemaFields.Any(field => string.Equals(field.Name, fieldName, StringComparison.OrdinalIgnoreCase));
 
-    /// <summary>
-    /// A rendering or schema reference that resolves in the baseline but not in the exercised
-    /// revision. Comparing against the baseline keeps the check honest for graphs whose references
-    /// point at system columns that are never declared as schema fields.
-    /// </summary>
+    // References are compared with the baseline because some point at system columns that are never declared as schema fields.
     private static string? FindRegressedReference(
         MetadataV2GraphSnapshot baselineSnapshot,
         MetadataV2Resource baseline,
@@ -471,11 +432,6 @@ internal sealed class MetadataReleaseSmokeChecker(
         return null;
     }
 
-    /// <summary>
-    /// Evaluates the shared access-policy evaluator for the exercised and baseline policies across
-    /// anonymous, authenticated and every referenced role, for read and write, and reports the first
-    /// principal whose decision changed.
-    /// </summary>
     private static string? FindAuthorizationDrift(
         IAccessPolicyEvaluator evaluator,
         (AccessPolicy? Layer, AccessPolicy? Service) baseline,

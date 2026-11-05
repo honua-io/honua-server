@@ -11,15 +11,6 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Collaboration.Operations;
 
-/// <summary>
-/// HTTP adapter over the saved-map collaborative edit operation log (#972): a durable op-log
-/// append with monotonic server cursors plus idempotent dedupe, and a replay/catchup read from a
-/// known cursor. Conflicts and out-of-window cursors surface as typed responses rather than silent
-/// overwrites. Authorization reuses the shared saved-map collaboration authorizer (the
-/// Studio-lifecycle-backed authorizer by default, #2999) so join and op-log writes share one
-/// identity/RBAC seam. Accepted appends are echoed onto the live session stream as
-/// server-ordered <c>operation-appended</c> envelopes.
-/// </summary>
 internal static class SavedMapOperationEndpoints
 {
     internal sealed class SavedMapOperationLogCategory;

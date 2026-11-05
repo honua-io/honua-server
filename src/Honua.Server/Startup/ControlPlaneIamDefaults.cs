@@ -12,18 +12,8 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Startup;
 
-/// <summary>
-/// Registers the in-memory control-plane IAM stores as defaults. A durable provider
-/// implementation registered earlier (e.g. <c>PostgresRoleStore</c>) is preserved, because
-/// these use <c>TryAdd</c> rather than an unconditional <c>Add</c> (see #1575).
-/// </summary>
 internal static class ControlPlaneIamDefaults
 {
-    /// <summary>
-    /// Adds in-memory <see cref="IOidcProviderStore"/>, <see cref="IUserStore"/>, and
-    /// <see cref="IRoleStore"/> defaults using <c>TryAdd</c> so durable provider
-    /// implementations registered earlier take precedence.
-    /// </summary>
     public static IServiceCollection AddInMemoryControlPlaneIamDefaults(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);

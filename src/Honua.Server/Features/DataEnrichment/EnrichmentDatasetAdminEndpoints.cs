@@ -11,28 +11,11 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Features.DataEnrichment;
 
-/// <summary>
-/// Admin registration surface for the managed enrichment-dataset catalog (#2280).
-/// Designates an existing managed layer as a reusable enrichment dataset
-/// (register / update / deregister), gated by the admin authorization policy.
-/// Discovery (<c>GET /api/enrich/datasets</c>) is mapped separately and is
-/// edition-filtered rather than admin-gated.
-/// </summary>
-/// <remarks>
-/// No-op when <see cref="IEnrichmentDatasetCatalogStore"/> is not registered (the
-/// registry table is Postgres-only); on non-Postgres profiles the catalog falls
-/// back to configuration-driven datasets and the admin CRUD surface is suppressed.
-/// </remarks>
 internal static partial class EnrichmentDatasetAdminEndpoints
 {
     private const string TagAdmin = "Admin";
     private const string TagEnrichment = "Data Enrichment";
 
-    /// <summary>
-    /// Maps the enrichment-dataset admin endpoints into the request pipeline.
-    /// </summary>
-    /// <param name="endpoints">The endpoint route builder.</param>
-    /// <returns>The endpoint route builder for chaining.</returns>
     public static IEndpointRouteBuilder MapEnrichmentDatasetAdminEndpoints(this IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
@@ -337,10 +320,8 @@ internal static partial class EnrichmentDatasetAdminEndpoints
     private static string ResolveActor(HttpContext context)
         => context.User.Identity?.Name is { Length: > 0 } name ? name : "admin";
 
-    /// <summary>Log category marker for the enrichment-dataset admin endpoints.</summary>
     internal sealed class EnrichmentDatasetAdminLogCategory;
 
-    /// <summary>Source-generated logger messages for the enrichment-dataset admin endpoints.</summary>
     internal static partial class EnrichmentDatasetAdminLog
     {
         [LoggerMessage(EventId = 4700, Level = LogLevel.Information,

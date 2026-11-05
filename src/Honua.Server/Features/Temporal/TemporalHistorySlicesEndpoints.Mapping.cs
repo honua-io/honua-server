@@ -6,9 +6,6 @@ using Honua.Core.Features.Temporal.Domain;
 
 namespace Honua.Server.Features.Temporal;
 
-/// <summary>
-/// Domain-to-DTO mapping for the temporal history slice 2-5 endpoints (honua-server#1166).
-/// </summary>
 internal static partial class TemporalHistorySlicesEndpoints
 {
     private const string TimestampFormat = "yyyy-MM-ddTHH:mm:ss.fffZ";

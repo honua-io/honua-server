@@ -9,24 +9,13 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Evaluates live deploy telemetry signals against a queryable backend.
-/// </summary>
 internal interface IDeployTelemetrySignalEvaluator
 {
     Task<DeployTelemetryDecision?> EvaluateAsync(
         WorkflowOperationRecord operation,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Evaluates a candidate that its backend has staged without live traffic, before promotion cuts
-    /// over to it (honua-server#4617). Only checks that do not depend on candidate traffic apply; the
-    /// full gate runs from cutover inside the post-activation observation window. Returns
-    /// <see langword="null"/> when the deploy carries no telemetry policy.
-    /// </summary>
-    /// <param name="operation">The staged deploy operation.</param>
-    /// <param name="candidateReady">Whether the backend's own health gate recommends promotion.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
+    // Before cutover only checks that do not depend on candidate traffic apply, and a deploy with no telemetry policy returns without a gate.
     Task<DeployTelemetryDecision?> EvaluateStagedCandidateAsync(
         WorkflowOperationRecord operation,
         bool candidateReady,
@@ -42,22 +31,10 @@ internal sealed record DeployTelemetryDecision
 
     public string Message { get; init; } = string.Empty;
 
-    /// <summary>
-    /// When set, the deploy spec parameters the reconciler should persist alongside the decision.
-    /// Used by the anti-flap debounce to carry the consecutive-breach streak between reconcile
-    /// cycles without a separate store. Null leaves the existing parameters untouched.
-    /// </summary>
+    // The anti-flap debounce carries the consecutive-breach streak in the deploy parameters, and null leaves the existing parameters untouched.
     public IReadOnlyDictionary<string, string>? UpdatedDeployParameters { get; init; }
 }
 
-/// <summary>
-/// Multi-provider deploy telemetry gate. Parses the provider-neutral
-/// <see cref="DeployTelemetryPolicy"/>, applies warmup, resolves the named telemetry connection,
-/// then dispatches the metric reads to the <see cref="IDeployTelemetryProviderEvaluator"/> whose
-/// <see cref="IDeployTelemetryProviderEvaluator.Provider"/> matches the connection's
-/// <c>Provider</c>. An unknown/unconfigured provider surfaces an explicit, logged
-/// "unsupported provider" wait rather than stalling silently forever.
-/// </summary>
 internal sealed class DeployTelemetrySignalEvaluator(
     IOptionsMonitor<ControlPlaneOptions> optionsMonitor,
     IEnumerable<IDeployTelemetryProviderEvaluator> providerEvaluators,
@@ -212,7 +189,6 @@ internal sealed class DeployTelemetrySignalEvaluator(
         }
     }
 
-    /// <inheritdoc />
     public async Task<DeployTelemetryDecision?> EvaluateStagedCandidateAsync(
         WorkflowOperationRecord operation,
         bool candidateReady,
@@ -325,11 +301,6 @@ internal sealed class DeployTelemetrySignalEvaluator(
         };
     }
 
-    /// <summary>
-    /// Holds a candidate that is not yet exposed to traffic until the policy's exposure deadline
-    /// (measured from operation creation), then recommends rolling the rollout back without the
-    /// candidate ever being activated (#4617).
-    /// </summary>
     private static DeployTelemetryDecision HoldUntilExposureDeadline(
         WorkflowOperationRecord operation,
         DeployTelemetryPolicy policy,
@@ -354,31 +325,18 @@ internal sealed class DeployTelemetrySignalEvaluator(
         };
     }
 
-    /// <summary>
-    /// The point past which missing or unusable evidence stops holding a rollout and escalates to a
-    /// rollback recommendation, with the operator-facing name of that bound (honua-server#4617).
-    /// </summary>
     private readonly record struct EvidenceDeadline(DateTimeOffset At, string Name)
     {
-        /// <summary>After exposure: warmup plus the evidence grace window, anchored on exposure.</summary>
         public static EvidenceDeadline AfterExposure(DateTimeOffset exposureAnchor, DeployTelemetryPolicy policy)
             => new(exposureAnchor + policy.WarmupDuration + policy.EvidenceGraceDuration, "configured evidence grace window");
 
-        /// <summary>Before a staged candidate is exposed: the exposure deadline, anchored on operation creation.</summary>
         public static EvidenceDeadline BeforeExposure(DateTimeOffset createdAt, DeployTelemetryPolicy policy)
             => new(
                 createdAt + policy.ExposureDeadline,
                 $"{policy.ExposureDeadline.TotalSeconds.ToString("0", CultureInfo.InvariantCulture)}-second exposure deadline");
     }
 
-    /// <summary>
-    /// Bounds a "missing/invalid evidence" wait decision to <see cref="DeployTelemetryPolicy.EvidenceGraceDuration"/>
-    /// past the end of warmup (honua-server#4617): once warmup has elapsed, evidence that never
-    /// arrives (provider outage, unconfigured connection, unsupported provider, a probe with no
-    /// backing service) must not park a deploy in Reconciling forever. Before the deadline this
-    /// returns the same wait decision (message annotated with the remaining grace); at/after the
-    /// deadline it escalates to a rollback recommendation. There is no missing-data success path.
-    /// </summary>
+    // Once warmup has elapsed, evidence that never arrives must not park a deploy, and there is no missing-data success path.
     private static DeployTelemetryDecision BoundEvidenceWait(
         DateTimeOffset exposureAnchor,
         DeployTelemetryPolicy policy,
@@ -405,13 +363,7 @@ internal sealed class DeployTelemetrySignalEvaluator(
         };
     }
 
-    /// <summary>
-    /// Runs the synthetic health probe and maps the outcome onto a deploy decision. Returns
-    /// <see langword="null"/> when the probe is healthy (so the caller can fall through to the metrics
-    /// gate); otherwise returns a rollback recommendation (subject to the anti-flap debounce) or a
-    /// bounded wait when the probe could not run (no probe service, misconfigured URL, or transport
-    /// failure) so a misconfiguration never silently promotes past an unverified health gate.
-    /// </summary>
+    // A probe that could not run waits instead of promoting, so a misconfiguration cannot pass an unverified health gate.
     private async Task<DeployTelemetryDecision?> EvaluateHealthProbeAsync(
         WorkflowOperationRecord operation,
         DeployTelemetryPolicy policy,
@@ -472,13 +424,7 @@ internal sealed class DeployTelemetrySignalEvaluator(
         return null;
     }
 
-    /// <summary>
-    /// Runs the golden-query correctness probe and maps the outcome onto a deploy decision. Returns
-    /// <see langword="null"/> when the response body matched (so the caller falls through to the metrics
-    /// gate); otherwise returns a rollback recommendation (subject to the anti-flap debounce) on a
-    /// content mismatch, or a bounded wait when the probe could not run (no probe service, misconfigured
-    /// URL, or transport failure) so a corrupt-but-200 release never silently promotes.
-    /// </summary>
+    // A content mismatch recommends rollback, and a probe that could not run waits, so a success status with a wrong body cannot promote.
     private async Task<DeployTelemetryDecision?> EvaluateGoldenQueryAsync(
         WorkflowOperationRecord operation,
         DeployTelemetryPolicy policy,
@@ -539,10 +485,6 @@ internal sealed class DeployTelemetrySignalEvaluator(
         return null;
     }
 
-    /// <summary>
-    /// Provider-neutral evaluation of telemetry readings against the policy thresholds. Keeps
-    /// promote/rollback/wait semantics identical regardless of which metrics backend produced them.
-    /// </summary>
     internal static DeployTelemetryDecision Evaluate(DeployTelemetryPolicy policy, DeployTelemetryReadings readings)
     {
         readings = WithoutInvalidReadings(readings);
@@ -631,17 +573,6 @@ internal sealed class DeployTelemetrySignalEvaluator(
         };
     }
 
-    /// <summary>
-    /// The error rate the gate compares against its threshold. With <c>telemetry.error_rate.query</c> it
-    /// is the provider's reading. With <c>telemetry.error_count.query</c> (honua-server#6474) it is the
-    /// error count divided by the sample count read for the same window, and exactly one substitution
-    /// is allowed: when the provider reports that the count query completed but matched no series
-    /// (AWS publishes no <c>HTTPCode_Target_5XX_Count</c> / <c>Errors</c> datapoint for an error-free
-    /// period) and the sample count meets the configured floor, the count is read as zero. Every other
-    /// absence (a failed, partial or ambiguous read, a missing or below-floor sample count) stays
-    /// missing evidence. <paramref name="evidence"/> names the derivation so the decision message
-    /// records the substitution.
-    /// </summary>
     private static double? ResolveErrorRate(
         DeployTelemetryPolicy policy,
         DeployTelemetryReadings readings,
@@ -682,13 +613,7 @@ internal sealed class DeployTelemetrySignalEvaluator(
         return null;
     }
 
-    /// <summary>
-    /// Provider-neutral evidence validity guard (#4617): a non-finite (NaN/±Infinity) or negative
-    /// sample count, error rate or latency is not a measurement — metric math over an undefined ratio
-    /// or a counter reset produces them — so it is treated as absent. Absent evidence never satisfies
-    /// a configured requirement and is bounded by the evidence grace window, whichever provider
-    /// produced it.
-    /// </summary>
+    // A non-finite or negative sample is treated as absent and never satisfies a configured requirement.
     private static DeployTelemetryReadings WithoutInvalidReadings(DeployTelemetryReadings readings)
         => readings with
         {
@@ -701,24 +626,12 @@ internal sealed class DeployTelemetrySignalEvaluator(
     private static double? UsableReading(double? value)
         => value is { } reading && double.IsFinite(reading) && reading >= 0 ? reading : null;
 
-    /// <summary>
-    /// Reserved deploy-spec parameter key that an operator sets to require N consecutive breaching
-    /// scrapes before a telemetry-driven rollback fires. Defaults to single-scrape behavior (1) when
-    /// unset or invalid, preserving the historical instantaneous gate.
-    /// </summary>
+    // The debounce count defaults to one scrape when unset or invalid.
     internal const string BreachDebounceThresholdParameterKey = "telemetry.rollback.consecutive_breaches";
 
-    /// <summary>
-    /// Reserved deploy-spec parameter key the evaluator uses to carry the current consecutive-breach
-    /// streak between reconcile cycles. The reconciler persists the updated parameters returned on the
-    /// decision, so the streak survives without a separate store.
-    /// </summary>
+    // The breach streak is carried in the deploy parameters so it survives without a separate store.
     internal const string BreachStreakParameterKey = "telemetry.rollback.breach_streak";
 
-    /// <summary>
-    /// Reserved deploy-spec parameter key bounding how long an invalid telemetry policy is tolerated
-    /// before the gate escalates to a rollback recommendation. Defaults to 15 minutes.
-    /// </summary>
     internal const string InvalidPolicyGraceSecondsParameterKey = "telemetry.invalid_policy_grace_seconds";
 
     private static readonly TimeSpan DefaultInvalidPolicyGrace = TimeSpan.FromMinutes(15);
@@ -740,13 +653,7 @@ internal sealed class DeployTelemetrySignalEvaluator(
         return DefaultInvalidPolicyGrace;
     }
 
-    /// <summary>
-    /// Opt-in N-consecutive-breach anti-flap. A single noisy scrape (GP metrics are burstier) must not
-    /// trigger a production rollback. When the operator configures a debounce threshold &gt; 1, a
-    /// breach is only escalated to a rollback once that many consecutive scrapes breach; any healthy
-    /// scrape resets the streak. When the threshold is 1 (the default) this is a no-op and the
-    /// instantaneous decision is returned unchanged.
-    /// </summary>
+    // A single noisy scrape must not roll back production; a healthy scrape resets the streak, and a threshold of one leaves the decision unchanged.
     private static DeployTelemetryDecision ApplyBreachDebounce(
         WorkflowOperationRecord operation,
         DeployTelemetryDecision instantaneous)
@@ -793,13 +700,6 @@ internal sealed class DeployTelemetrySignalEvaluator(
         };
     }
 
-    /// <summary>
-    /// GP-aware anti-flap default. A serverless geoprocessing (AWS Batch) substrate deploy
-    /// (<c>telemetry.policy = gp-batch</c>) carries burstier per-job metrics, so when the operator
-    /// has not pinned an explicit consecutive-breach threshold it defaults to requiring several
-    /// breaching scrapes rather than the single-scrape default, so one noisy GP burst does not
-    /// trigger a production rollback (honua-server#2165, building on the #2161 anti-flap gate).
-    /// </summary>
     internal const int GpBatchDefaultBreachDebounceThreshold = 3;
 
     private static int ResolveBreachDebounceThreshold(DeployOperationSpec spec)
@@ -866,10 +766,6 @@ internal sealed class DeployTelemetrySignalEvaluator(
     }
 }
 
-/// <summary>
-/// Prometheus-compatible telemetry provider used to gate deploy success and trigger rollback.
-/// Reference implementation for the multi-provider gate.
-/// </summary>
 internal sealed class PrometheusDeployTelemetryProviderEvaluator(
     IHttpClientFactory httpClientFactory) : IDeployTelemetryProviderEvaluator
 {

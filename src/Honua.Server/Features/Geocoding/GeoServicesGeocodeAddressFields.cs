@@ -5,10 +5,6 @@ using Honua.Geocoding.Features.Geocoding.Domain;
 
 namespace Honua.Server.Features.Geocoding;
 
-/// <summary>
-/// Projects a provider result onto the Esri GeocodeServer address fields arcpy maps.
-/// Provider-native keys are kept; missing Esri fields are filled from the structured address.
-/// </summary>
 internal static class GeoServicesGeocodeAddressFields
 {
     internal static IReadOnlyDictionary<string, string?> Apply(

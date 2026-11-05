@@ -151,11 +151,7 @@ internal sealed class WebhookAlertDeliverySink : IAlertDeliverySink
         }
     }
 
-    /// <summary>
-    /// Literal signing secrets stay inline. A secret reference is resolved through the production
-    /// provider so a warm process keeps the cached value until <see cref="Honua.Core.Features.Configuration.SecretProviderOptions.CacheDuration"/>
-    /// and never signs with the reference text.
-    /// </summary>
+    // A secret reference is resolved and cached, and the signer never uses the reference text.
     private async Task<SigningSecretResolution> ResolveSigningSecretAsync(CancellationToken cancellationToken)
     {
         var configured = _options.Dispatch.DefaultWebhookSecret;

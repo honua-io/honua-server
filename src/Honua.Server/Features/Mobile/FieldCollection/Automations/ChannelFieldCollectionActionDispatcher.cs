@@ -8,12 +8,7 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Mobile.FieldCollection.Automations;
 
-/// <summary>
-/// In-process, bounded-channel <see cref="IFieldCollectionActionDispatcher"/>
-/// (#2121). Enqueue hands the invocation to a background reader so the mobile push
-/// response is never blocked on online action delivery. When the channel is full
-/// the invocation is dropped and logged instead of waiting for capacity.
-/// </summary>
+// A full channel drops the invocation instead of blocking the mobile response.
 internal sealed partial class ChannelFieldCollectionActionDispatcher : IFieldCollectionActionDispatcher
 {
     private readonly Channel<FieldCollectionActionInvocation> _channel;
@@ -34,7 +29,6 @@ internal sealed partial class ChannelFieldCollectionActionDispatcher : IFieldCol
         });
     }
 
-    /// <summary>Gets the reader drained by the background dispatch service.</summary>
     public ChannelReader<FieldCollectionActionInvocation> Reader => _channel.Reader;
 
     public ValueTask EnqueueAsync(

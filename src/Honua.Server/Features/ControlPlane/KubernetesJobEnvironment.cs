@@ -6,123 +6,55 @@ using Honua.Core.Features.ControlPlane.Domain;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Kind of Kubernetes object an environment source points at.
-/// </summary>
 internal enum KubernetesEnvSourceKind
 {
-    /// <summary>A core/v1 <c>Secret</c>.</summary>
     Secret,
 
-    /// <summary>A core/v1 <c>ConfigMap</c>.</summary>
     ConfigMap
 }
 
-/// <summary>
-/// One container <c>envFrom</c> entry: every key of a Secret or ConfigMap becomes an environment
-/// variable, optionally prefixed. Only the object's name is known to the server; its contents are
-/// resolved by the kubelet when the pod starts.
-/// </summary>
-/// <param name="Kind">Secret or ConfigMap.</param>
-/// <param name="Name">The Secret/ConfigMap name in the Job's namespace.</param>
-/// <param name="Prefix">Optional prefix prepended to every imported key.</param>
 internal sealed record KubernetesEnvFromSource(KubernetesEnvSourceKind Kind, string Name, string? Prefix = null);
 
-/// <summary>
-/// A single environment variable sourced from one key of a Secret (<c>secretKeyRef</c>) or
-/// ConfigMap (<c>configMapKeyRef</c>). Only the reference is known to the server.
-/// </summary>
-/// <param name="Kind">Secret or ConfigMap.</param>
-/// <param name="Name">The Secret/ConfigMap name in the Job's namespace.</param>
-/// <param name="Key">The data key inside that object.</param>
 internal sealed record KubernetesEnvKeyReference(KubernetesEnvSourceKind Kind, string Name, string Key);
 
-/// <summary>
-/// Why a Kubernetes environment-source parameter was refused.
-/// </summary>
 internal enum KubernetesJobParameterError
 {
-    /// <summary>A <c>k8s.envFrom.*</c> key is not <c>k8s.envFrom.secret.&lt;n&gt;</c> or <c>k8s.envFrom.configMap.&lt;n&gt;</c>.</summary>
     InvalidEnvFromKey,
 
-    /// <summary>The referenced Secret/ConfigMap name is not a valid DNS-1123 subdomain.</summary>
     InvalidObjectName,
 
-    /// <summary>An <c>envFrom</c> prefix is not a valid environment variable name fragment.</summary>
     InvalidEnvFromPrefix,
 
-    /// <summary>A key reference is not of the shape <c>&lt;name&gt;:&lt;key&gt;</c> with a valid data key.</summary>
     InvalidKeyReference,
 
-    /// <summary>The environment variable name is empty or not a valid Kubernetes environment variable name.</summary>
     InvalidEnvironmentVariableName,
 
-    /// <summary>The key-reference suffix is misspelled (only <c>secretKeyRef</c> and <c>configMapKeyRef</c> exist).</summary>
     UnknownValueSource,
 
-    /// <summary>The variable is a reserved execution-worker launch variable.</summary>
     ReservedEnvironmentVariable,
 
-    /// <summary>The same variable is defined both literally and by reference, or by two references.</summary>
     ConflictingEnvironmentVariable
 }
 
-/// <summary>
-/// Raised when a workload/job parameter that wires Kubernetes Secrets or ConfigMaps into a worker
-/// pod is malformed. The message names the offending parameter key and the reason, never a literal
-/// parameter value.
-/// </summary>
+// The error names the parameter key and the reason, never a literal parameter value.
 internal sealed class KubernetesJobParameterException(
     string parameterKey,
     KubernetesJobParameterError error,
     string message) : Exception(message)
 {
-    /// <summary>The offending parameter (or configuration) key.</summary>
     public string ParameterKey { get; } = parameterKey;
 
-    /// <summary>The typed refusal reason.</summary>
     public KubernetesJobParameterError Error { get; } = error;
 }
 
-/// <summary>
-/// The container environment the Kubernetes Job backend renders for one worker pod.
-/// </summary>
-/// <param name="Literals">Literal <c>env[].value</c> entries (workload passthrough plus launch variables).</param>
-/// <param name="References">
-/// <c>env[].valueFrom</c> entries by variable name. Only Secret/ConfigMap names and keys.
-/// </param>
-/// <param name="EnvFrom">Container <c>envFrom</c> entries, in precedence order (later wins).</param>
 internal sealed record KubernetesJobEnvironment(
     IReadOnlyDictionary<string, string> Literals,
     IReadOnlyDictionary<string, KubernetesEnvKeyReference> References,
     IReadOnlyList<KubernetesEnvFromSource> EnvFrom);
 
-/// <summary>
-/// Builds and validates the worker container environment for the Kubernetes Job backend.
-/// </summary>
-/// <remarks>
-/// <para>
-/// Three sources are merged: literal <c>env.*</c> / <c>k8s.env.*</c> passthrough, single-variable
-/// Secret/ConfigMap references (<c>k8s.env.&lt;NAME&gt;.secretKeyRef=&lt;secret&gt;:&lt;key&gt;</c>,
-/// <c>k8s.env.&lt;NAME&gt;.configMapKeyRef=&lt;configMap&gt;:&lt;key&gt;</c>), and whole-object
-/// imports (<c>k8s.envFrom.secret.&lt;n&gt;=&lt;secret&gt;[:&lt;prefix&gt;]</c>,
-/// <c>k8s.envFrom.configMap.&lt;n&gt;=&lt;configMap&gt;[:&lt;prefix&gt;]</c>) plus the configured
-/// <c>ControlPlane:Kubernetes:DefaultEnvFromSecrets</c>/<c>DefaultEnvFromConfigMaps</c>.
-/// </para>
-/// <para>
-/// The server only ever handles reference names: Secret contents are resolved by the kubelet, so they
-/// never reach the Job object, the durable job record or the server's logs. The execution-worker
-/// launch variables (<see cref="ExecutionWorkerLaunchEnvironment"/>) stay literal, are stamped last,
-/// cannot be targeted by a reference, and — because Kubernetes gives explicit <c>env</c> precedence over
-/// <c>envFrom</c> — cannot be shadowed by an imported Secret either.
-/// </para>
-/// </remarks>
+// The server handles Secret names only, and launch variables stay literal, are stamped last, and cannot be shadowed by an imported Secret.
 internal static class KubernetesJobEnvironmentBuilder
 {
-    /// <summary>
-    /// Builds the environment for <paramref name="job"/>.
-    /// </summary>
-    /// <exception cref="KubernetesJobParameterException">A reference parameter or default is malformed.</exception>
     public static KubernetesJobEnvironment Build(
         ExecutionJobRecord job,
         IReadOnlyDictionary<string, string> parameters,
@@ -155,9 +87,6 @@ internal static class KubernetesJobEnvironmentBuilder
         return new KubernetesJobEnvironment(literals, references, envFrom);
     }
 
-    /// <summary>
-    /// Validates workload parameters without building an environment (used at startup).
-    /// </summary>
     public static IReadOnlyList<KubernetesJobParameterException> ValidateParameters(
         IReadOnlyDictionary<string, string> parameters)
     {
@@ -172,9 +101,6 @@ internal static class KubernetesJobEnvironmentBuilder
         return failures;
     }
 
-    /// <summary>
-    /// Validates the configured default <c>envFrom</c> sources (used at startup).
-    /// </summary>
     public static IReadOnlyList<KubernetesJobParameterException> ValidateDefaults(KubernetesExecutionOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);

@@ -5,9 +5,6 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Infrastructure.Security;
 
-/// <summary>
-/// JSON serialization context for CSP violation reports with AOT support.
-/// </summary>
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.KebabCaseLower,
     PropertyNameCaseInsensitive = true)]
