@@ -16936,6 +16936,7 @@
         "Honua.Server.Tests.Features.Admin.FolderEndpointsTests.CreateFolder_WithoutPrecondition_Returns428",
         "Honua.Server.Tests.Features.Admin.FolderEndpointsTests.FolderLifecycle_WithCurrentEtag_MovesAllFacetsAndPreservesAliases",
         "Honua.Server.Tests.Features.Admin.FolderEndpointsTests.FolderScope_OmittedOrSuppliedNamespace_UsesPublicationOwnership",
+        "Honua.Server.Tests.Features.Admin.FolderPersistenceTests.FolderMove_AfterRestart_PreservesMembershipAndFlatReads",
         "Honua.Server.Tests.Features.Admin.ProviderOnlyServiceSettingsTests.Folders_WithoutGraphStore_ListReadsAndMutationReturnsUnavailable"
       ],
       "proof_ledger_surface": "control-plane-admin",
@@ -25700,7 +25701,8 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.FolderEndpointsTests.FolderLifecycle_WithCurrentEtag_MovesAllFacetsAndPreservesAliases",
-        "Honua.Server.Tests.Features.Admin.FolderEndpointsTests.MoveService_WhenLogicalServiceDenied_DoesNotSaveEvenForCurrentMembership"
+        "Honua.Server.Tests.Features.Admin.FolderEndpointsTests.MoveService_WhenLogicalServiceDenied_DoesNotSaveEvenForCurrentMembership",
+        "Honua.Server.Tests.Features.Admin.FolderPersistenceTests.FolderMove_AfterRestart_PreservesMembershipAndFlatReads"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
