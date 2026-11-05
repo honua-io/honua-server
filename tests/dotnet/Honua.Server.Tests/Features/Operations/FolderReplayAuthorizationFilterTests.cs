@@ -41,12 +41,7 @@ public sealed class FolderReplayAuthorizationFilterTests
         if (scenario == "wrong-tenant") proposal = proposal with { TenantId = "another" };
         if (scenario == "completed") proposal = proposal with { Status = OperationProposalStatus.Succeeded };
         if (scenario == "changed-plan") proposal = proposal with { SealedPlanHash = "invalid" };
-        var store = Substitute.For<IOperationProposalStore>();
-        store.GetAsync("proposal", Arg.Any<CancellationToken>()).Returns(proposal);
-        var tenant = Substitute.For<ITenantContext>();
-        tenant.TenantId.Returns(scenario == "wrong-resolved-tenant" ? "another" : "public");
-        using var services = new ServiceCollection().AddSingleton(store).AddSingleton(tenant)
-            .AddSingleton<IOperationApprovalReplayVerifier, OperationApprovalReplayVerifier>().BuildServiceProvider();
+        using var services = Services(proposal, scenario == "wrong-resolved-tenant" ? "another" : "public");
         var context = Context(scenario);
         context.RequestServices = services;
         var original = context.User;
@@ -61,18 +56,23 @@ public sealed class FolderReplayAuthorizationFilterTests
     [UnitTest]
     public async Task InvokeAsync_HandlerThrows_RestoresTransportPrincipal()
     {
-        var proposalStore = Substitute.For<IOperationProposalStore>();
-        proposalStore.GetAsync("proposal", Arg.Any<CancellationToken>()).Returns(Proposal());
-        var tenant = Substitute.For<ITenantContext>();
-        tenant.TenantId.Returns("public");
-        using var services = new ServiceCollection().AddSingleton(proposalStore).AddSingleton(tenant)
-            .AddSingleton<IOperationApprovalReplayVerifier, OperationApprovalReplayVerifier>().BuildServiceProvider();
+        using var services = Services(Proposal(), "public");
         var context = Context("valid");
         context.RequestServices = services;
         var original = context.User;
         var invoke = () => InvokeWithLineageAsync(context, "valid", _ => throw new InvalidOperationException("handler"));
         await invoke.Should().ThrowAsync<InvalidOperationException>();
         context.User.Should().BeSameAs(original);
+    }
+
+    private static ServiceProvider Services(OperationProposal proposal, string tenantId)
+    {
+        var store = Substitute.For<IOperationProposalStore>();
+        store.GetAsync("proposal", Arg.Any<CancellationToken>()).Returns(proposal);
+        var tenant = Substitute.For<ITenantContext>();
+        tenant.TenantId.Returns(tenantId);
+        return new ServiceCollection().AddSingleton(store).AddSingleton(tenant)
+            .AddSingleton<IOperationApprovalReplayVerifier, OperationApprovalReplayVerifier>().BuildServiceProvider();
     }
 
     private static OperationProposal Proposal()
