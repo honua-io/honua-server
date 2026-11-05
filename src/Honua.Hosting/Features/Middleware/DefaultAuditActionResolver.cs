@@ -6,6 +6,7 @@ using Honua.Core.Features.AuditLog.Abstractions;
 
 namespace Honua.Infrastructure.Middleware;
 
+// Named routes here are the code form of docs/internal/operator/audit-coverage-matrix.md, so a route change has to update that matrix.
 internal sealed class DefaultAuditActionResolver : IAuditActionResolver
 {
     private const string AdminRoutePrefix = "/api/v{version:apiversion}/admin";
