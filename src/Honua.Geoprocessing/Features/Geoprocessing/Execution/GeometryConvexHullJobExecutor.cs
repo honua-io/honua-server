@@ -11,28 +11,8 @@ using NetTopologySuite.IO;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// Production <see cref="IJobExecutor"/> for the <c>geometry.convex-hull</c>
-/// process. Slice 4 of #1031 — completes the per-feature geometry-output
-/// trio alongside <see cref="GeometryCentroidJobExecutor"/> and
-/// <see cref="GeometryLengthJobExecutor"/>.
-///
-/// Computes the convex hull of the supplied geometry using
-/// <see cref="Geometry.ConvexHull"/> — NetTopologySuite's Graham-scan based
-/// implementation — and publishes the result as a single GeoJSON Feature on
-/// the <c>outputFeatureLayer</c> slot. For a single point the hull is the
-/// point; for two distinct points it is the connecting line; for three or
-/// more non-collinear points it is the bounding polygon. Geometry
-/// collections / multi-geometries are accepted: NTS treats the hull as the
-/// hull over all member vertices, which is the canonical "hull of the
-/// union" behavior used by PostGIS <c>ST_ConvexHull</c>.
-/// </summary>
 internal sealed partial class GeometryConvexHullJobExecutor : IProcessExecutor
 {
-    /// <summary>
-    /// The single process id this executor handles. Matches the catalog
-    /// entry in <see cref="BuiltInProcessCatalog"/>.
-    /// </summary>
     internal const string HandledProcessId = "geometry.convex-hull";
 
     private readonly IOptionsMonitor<GeoprocessingExecutorOptions> _options;
@@ -46,10 +26,6 @@ internal sealed partial class GeometryConvexHullJobExecutor : IProcessExecutor
         _logger = logger;
     }
 
-    /// <summary>
-    /// The single process id this executor handles, surfaced through
-    /// <see cref="IProcessExecutor"/> so the dispatcher auto-registers it (#2122).
-    /// </summary>
     public IReadOnlySet<string> ProcessIds { get; } =
         new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
 

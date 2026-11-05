@@ -13,28 +13,11 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Ai.Protocols.Mcp.Tools;
 
-/// <summary>
-/// MCP tool that publishes a source table as a hosted layer/service through the
-/// canonical <c>service.publish</c> operation (#1951). It does NOT reimplement
-/// publishing: it adapts the tool arguments onto an
-/// <see cref="OperationRequest"/> and routes them through the shared
-/// <see cref="IOperationInvoker"/>, which runs the operator-gate policy decision
-/// point before reaching <c>ServicePublishExecutor</c> →
-/// <c>ILayerPublishingService.PublishLayerAsync</c>. The returned
-/// <see cref="OperationHandle"/> is projected into a structured result so the
-/// agent can branch on Completed (service URI + metadata revision available),
-/// Queued (poll the job), or RequiresApproval (wait on the approval lane).
-/// </summary>
 internal sealed class PublishServiceTool : IMcpTool
 {
     public const string ToolName = "honua_publish_service";
 
-    /// <summary>
-    /// Canonical operations-toolset operation id this tool routes through. Mirrors
-    /// <c>Honua.Server.Features.Operations.ServicePublishOperation.OperationId</c>;
-    /// duplicated as a literal here because <c>Honua.Ai</c> cannot reference the
-    /// server assembly (dependency direction).
-    /// </summary>
+    // The operation id is a literal because this assembly cannot reference the server assembly.
     public const string PublishOperationId = "service.publish";
 
     private readonly ILogger<PublishServiceTool> _logger;

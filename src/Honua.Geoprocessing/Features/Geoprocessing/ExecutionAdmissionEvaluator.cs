@@ -14,33 +14,13 @@ using StackExchange.Redis;
 
 namespace Honua.Geoprocessing;
 
-/// <summary>
-/// Default implementation of <see cref="IExecutionAdmissionEvaluator"/>.
-/// Gates admission on backpressure, concurrency, rate, and cost controls.
-/// Evaluation order short-circuits on the first failing dimension. Backpressure
-/// is checked first to avoid unnecessary partition-scoped work when the system
-/// is globally overloaded.
-/// </summary>
 internal sealed class ExecutionAdmissionEvaluator : IExecutionAdmissionEvaluator
 {
-    /// <summary>
-    /// Key used in <see cref="ExecutionJobSpec.Parameters"/> to persist the cost
-    /// weight at admission time. Observed by the evaluator when summing
-    /// active cost weight for subsequent requests.
-    /// </summary>
     public const string CostWeightParameterKey = "admission.costWeight";
 
-    /// <summary>
-    /// Key used in <see cref="ExecutionJobSpec.Parameters"/> to persist the
-    /// partition key at admission time so active-cost summation stays scoped.
-    /// </summary>
     public const string PartitionKeyParameterKey = "admission.partitionKey";
 
-    /// <summary>
-    /// Total attempts spent on the active-job snapshot read before the submission is refused.
-    /// One retry: a StackExchange.Redis command timeout has already burned its own deadline, so
-    /// the elapsed timeout is the backoff and a second immediate attempt adds no extra delay.
-    /// </summary>
+    // There is one retry because a Redis command timeout has already spent its deadline, and a second immediate attempt adds none.
     private const int ActiveJobReadAttempts = 2;
 
     private const string GlobalPartitionSentinel = "__global__";
@@ -369,18 +349,6 @@ internal sealed class ExecutionAdmissionEvaluator : IExecutionAdmissionEvaluator
         return 1.0;
     }
 
-    /// <summary>
-    /// Reads the active-job snapshot, retrying once when the store faults transiently.
-    /// Returns <c>null</c> when both attempts fail.
-    /// </summary>
-    /// <remarks>
-    /// The read is a side-effect-free count of the shared active set, so re-issuing it is safe.
-    /// A Redis command that times out is not a connection failure, so the multiplexer's own
-    /// <c>ConnectRetry</c>/<c>ReconnectRetryPolicy</c> never covers it: before this retry a single
-    /// timed-out SMEMBERS escaped <see cref="EvaluateAsync"/> as an unhandled exception and failed
-    /// the whole submission, which is how a CPU-contended CI runner turned one 5.6 s stall into a
-    /// red GPServer submitJob (honua-server trunk run 35039723809).
-    /// </remarks>
     private async Task<IReadOnlyList<ExecutionJobRecord>?> ReadActiveJobsAsync(CancellationToken cancellationToken)
     {
         for (var attempt = 1; ; attempt++)
@@ -477,12 +445,7 @@ internal sealed class ExecutionAdmissionEvaluator : IExecutionAdmissionEvaluator
     private static string BuildRateKey(ExecutionAdmissionRequest request)
         => $"{request.PrincipalId ?? AnonymousPrincipalSentinel}:{request.JobKind}";
 
-    /// <summary>
-    /// Sliding-window counter. Tracks timestamps of recent submissions and admits
-    /// up to <c>limit</c> claims within the window. Used only when no Redis multiplexer is
-    /// composed (a single node); with Redis the shared sorted-set claim is authoritative and an
-    /// unreachable Redis fails closed rather than falling back here (#3853).
-    /// </summary>
+    // When Redis is composed, an unreachable store fails closed instead of using this in-process window.
     private sealed class RateBucket
     {
         private readonly object _sync = new();
@@ -514,11 +477,6 @@ internal sealed class ExecutionAdmissionEvaluator : IExecutionAdmissionEvaluator
             }
         }
 
-        /// <summary>
-        /// Returns <c>true</c> when there are no timestamps within the current
-        /// window, meaning this bucket carries no active rate state and can be
-        /// safely evicted from the parent dictionary.
-        /// </summary>
         public bool IsIdle(DateTimeOffset now, TimeSpan window)
         {
             lock (_sync)

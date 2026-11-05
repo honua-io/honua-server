@@ -13,30 +13,10 @@ using NetTopologySuite.Operation.Union;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// Production <see cref="IJobExecutor"/> for the <c>geometry.dissolve</c>
-/// process. Slice 5 of #1031 — extends the prior aggregate-output set
-/// (geometry.union) with a group-aware dissolve that collapses adjacent
-/// same-attribute geometries into one feature per group.
-///
-/// Where <see cref="GeometryUnionJobExecutor"/> always emits a single
-/// merged Feature, dissolve preserves grouping: callers supply a parallel
-/// <c>groupKeys</c> array (one key per input WKB) and the executor unions
-/// the geometries within each group, publishing a GeoJSON
-/// <c>FeatureCollection</c> with one Feature per distinct key. When
-/// <c>groupKeys</c> is omitted, every input collapses into a single
-/// group ("__all__") — the same behavior as a plain union but routed
-/// through the dissolve artifact shape so downstream consumers can rely
-/// on the FeatureCollection envelope.
-/// </summary>
 internal sealed partial class GeometryDissolveJobExecutor : IProcessExecutor
 {
     private const string DefaultGroupKey = "__all__";
 
-    /// <summary>
-    /// The single process id this executor handles. Matches the catalog
-    /// entry in <see cref="BuiltInProcessCatalog"/>.
-    /// </summary>
     internal const string HandledProcessId = "geometry.dissolve";
 
     private readonly IOptionsMonitor<GeoprocessingExecutorOptions> _options;
@@ -50,10 +30,6 @@ internal sealed partial class GeometryDissolveJobExecutor : IProcessExecutor
         _logger = logger;
     }
 
-    /// <summary>
-    /// The single process id this executor handles, surfaced through
-    /// <see cref="IProcessExecutor"/> so the dispatcher auto-registers it (#2122).
-    /// </summary>
     public IReadOnlySet<string> ProcessIds { get; } =
         new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
 

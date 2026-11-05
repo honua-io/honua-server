@@ -7,21 +7,8 @@ using Honua.Core.Features.Publishing.Domain;
 
 namespace Honua.Ai.Grounding;
 
-/// <summary>
-/// Builds a <see cref="DraftIntent"/> from engine output. Separated from the
-/// service so unit tests can verify envelope shape for every workflow family
-/// without spinning up the full ranking pipeline.
-/// </summary>
 internal static class IntentDrafter
 {
-    /// <summary>
-    /// Produces the draft intent for the classified workflow family. For
-    /// families whose domain records have not shipped yet (BuildApp,
-    /// AutomateDeploy), emits a schema-stable envelope with only the common
-    /// fields populated — the clarification reason list on the caller side
-    /// carries the <see cref="ClarificationReasonCode.PolicyBoundary"/>
-    /// pointer.
-    /// </summary>
     public static DraftIntent Draft(
         GroundingRequest request,
         string intentId,

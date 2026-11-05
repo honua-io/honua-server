@@ -6,24 +6,6 @@ using Honua.Ai.Protocols.Mcp.Models;
 
 namespace Honua.Ai.Protocols.Mcp.Prompts;
 
-/// <summary>
-/// The curated catalog of reusable geospatial workflow prompts advertised on the
-/// MCP <c>prompts/list</c> / <c>prompts/get</c> surface (#1953). Each prompt is a
-/// templated, multi-step entrypoint that steers a client LLM through one of the
-/// canonical Honua workflows — site selection, hazard assessment, permit review,
-/// and dashboard scaffolding — by naming the honua_* tools and honua:// resources
-/// it should drive. The roster mirrors the prompt families in
-/// <c>AI_OPERATOR_CONTRACT.md §Prompts</c>.
-/// </summary>
-/// <remarks>
-/// The catalog is static and process-wide: prompt templates carry no runtime
-/// state, so the surface advertises <c>prompts.listChanged: false</c> and renders
-/// purely by substituting client-supplied arguments. Argument substitution uses
-/// <c>{argumentName}</c> placeholders; required arguments are validated before
-/// rendering so a missing input surfaces a structured
-/// <see cref="GeoprocessingValidationException"/> rather than a half-rendered
-/// prompt.
-/// </remarks>
 internal static class McpPromptCatalog
 {
     private static readonly IReadOnlyList<McpPromptDefinition> Definitions =
@@ -227,10 +209,6 @@ internal static class McpPromptCatalog
     private static readonly Dictionary<string, McpPromptDefinition> ByName =
         Definitions.ToDictionary(p => p.Name, StringComparer.Ordinal);
 
-    /// <summary>
-    /// Describes every catalog prompt for <c>prompts/list</c>, ordered by name so
-    /// the advertised surface is deterministic.
-    /// </summary>
     public static McpPromptsListResult List() => new()
     {
         Prompts = Definitions
@@ -239,13 +217,6 @@ internal static class McpPromptCatalog
             .ToList(),
     };
 
-    /// <summary>
-    /// Renders the named prompt for <c>prompts/get</c>, substituting the
-    /// client-supplied <paramref name="arguments"/> into the template.
-    /// </summary>
-    /// <exception cref="GeoprocessingValidationException">
-    /// The prompt name is unknown, or a required argument was omitted or blank.
-    /// </exception>
     public static McpPromptGetResult Get(string name, IReadOnlyDictionary<string, string>? arguments)
     {
         if (!ByName.TryGetValue(name, out var definition))

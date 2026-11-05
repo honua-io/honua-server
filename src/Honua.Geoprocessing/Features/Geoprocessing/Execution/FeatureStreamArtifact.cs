@@ -11,95 +11,19 @@ using NetTopologySuite.IO;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// Streaming in/out contract for the GeoETL transform, source, and sink executors.
-/// Replaces the whole-collection base64 data-URI (<see cref="FeatureCollectionArtifact"/>)
-/// for large feature sets: a step reads features incrementally from an upstream
-/// artifact and writes them incrementally to a spillable backing store, so the full
-/// set is never materialized in memory and the hard 50 MiB artifact-cap failure no
-/// longer applies to streamable transforms.
-///
-/// <para>
-/// Two artifact shapes flow through the DAG, both opaque strings that the workflow
-/// runtime stores verbatim and projects into the downstream step's <c>input</c>:
-/// </para>
-/// <list type="bullet">
-///   <item><description>
-///     <b>Inline (back-compat fast path)</b> — a
-///     <c>data:application/geo+json;base64,&lt;...&gt;</c> data URI carrying the whole
-///     FeatureCollection. Emitted for small outputs so tiny pipelines keep their
-///     existing artifact bytes and downstream consumers (OGC API Processes surfaces)
-///     see the same document.
-///   </description></item>
-///   <item><description>
-///     <b>Spill (streamed)</b> — a <c>honua-feature-stream:v1;ndjson;path=&lt;abs&gt;;count=&lt;n&gt;;bytes=&lt;n&gt;</c>
-///     reference pointing at a newline-delimited GeoJSON (NDJSON) file under the
-///     executor output root. One GeoJSON <c>Feature</c> per line, read and written a
-///     line at a time so memory stays bounded regardless of feature count.
-///   </description></item>
-/// </list>
-///
-/// <para>
-/// Reads accept either shape so a streaming step can consume the output of a
-/// pre-existing inline producer and vice versa. Uses the managed NetTopologySuite
-/// GeoJSON reader/writer per feature — no native dependency, AOT-safe.
-/// </para>
-/// </summary>
 internal static class FeatureStreamArtifact
 {
-    /// <summary>
-    /// Reference scheme prefix for a spilled NDJSON feature stream. The remainder is a
-    /// <c>;</c>-delimited key/value list (<c>ndjson;path=...;count=...;bytes=...</c>).
-    /// </summary>
     public const string StreamReferencePrefix = "honua-feature-stream:v1;";
 
-    /// <summary>
-    /// Foreign-member key used to carry a feature's geometry SRID through the NDJSON line.
-    /// GeoJSON has no native SRID, and the NTS reader/writer resets it to the factory default
-    /// on round-trip, so reprojected geometries would otherwise lose their target SRID across
-    /// the spill boundary. We stash it as a reserved property on write and restore it (then
-    /// strip the property) on read, so streaming preserves SRID fidelity end-to-end.
-    /// </summary>
     private const string SridMemberKey = "__honua_srid";
 
-    /// <summary>
-    /// Default ceiling, in decoded bytes, under which an output is published inline as
-    /// a base64 FeatureCollection data URI (back-compat) instead of spilling to a file.
-    /// Outputs at or above this size spill, so small pipelines keep their existing
-    /// artifact shape while large ones stream. 1 MiB keeps inline artifacts comfortably
-    /// under the legacy 50 MiB cap with headroom for base64 expansion.
-    /// </summary>
     public const long DefaultInlineThresholdBytes = 1L * 1024L * 1024L;
 
-    /// <summary>
-    /// Returns <c>true</c> when <paramref name="reference"/> is a spilled NDJSON stream
-    /// reference rather than an inline data URI.
-    /// </summary>
     public static bool IsStreamReference(string? reference)
         => reference is not null && (reference.StartsWith(StreamReferencePrefix, StringComparison.Ordinal)
             || reference.StartsWith(DurableFeatureStream.Prefix, StringComparison.Ordinal));
 
-    /// <summary>
-    /// Opens an incremental feature stream over an upstream artifact reference. Accepts
-    /// both the spilled NDJSON reference and the inline base64 FeatureCollection data
-    /// URI, so a streaming step transparently consumes either producer. The returned
-    /// sequence is lazy: features are decoded one at a time as the consumer pulls them.
-    /// </summary>
-    /// <param name="reference">The upstream artifact reference (stream ref or data URI).</param>
-    /// <param name="error">A classified error when the reference cannot be opened.</param>
-    /// <param name="stream">The lazy feature sequence on success.</param>
-    /// <param name="maxInlineDecodedBytes">
-    /// Ceiling applied only to inline data-URI inputs (mirrors
-    /// <see cref="FeatureCollectionArtifact.TryParseDataUri"/>). Durable stream reads
-    /// enforce their separately bounded immutable byte receipt.
-    /// </param>
-    /// <param name="outputRootDirectory">
-    /// When non-null, the path carried by any spilled NDJSON stream reference must fall
-    /// within this directory. Pass the configured executor output root to prevent an
-    /// authenticated caller from injecting an arbitrary file-system path into the reference
-    /// and reading files outside the geoprocessing sandbox.
-    /// </param>
-    /// <param name="executionContext">Dispatch-owned identity and shared storage for managed streams.</param>
+    // A spilled path must stay under the executor output root so a caller cannot point the reference at an arbitrary file.
     public static bool TryOpenRead(
         string? reference,
         out string error,
@@ -187,9 +111,6 @@ internal static class FeatureStreamArtifact
         return true;
     }
 
-    /// <summary>
-    /// Parses a spilled NDJSON stream reference into its descriptor fields.
-    /// </summary>
     public static bool TryParseStreamReference(
         string reference,
         out StreamDescriptor descriptor,
@@ -256,10 +177,6 @@ internal static class FeatureStreamArtifact
         return true;
     }
 
-    /// <summary>
-    /// Builds a spilled NDJSON stream reference for a backing file. The path is URI-escaped
-    /// so it survives the <c>;</c>-delimited reference grammar even on Windows.
-    /// </summary>
     public static string BuildStreamReference(string path, long count, long bytes)
     {
         ArgumentNullException.ThrowIfNull(path);
@@ -267,10 +184,6 @@ internal static class FeatureStreamArtifact
         return $"{StreamReferencePrefix}ndjson;path={escaped};count={count.ToString(CultureInfo.InvariantCulture)};bytes={bytes.ToString(CultureInfo.InvariantCulture)}";
     }
 
-    /// <summary>
-    /// Allocates a fresh, collision-free backing file path under the executor output
-    /// root for a spilled stream. The caller owns the file lifetime.
-    /// </summary>
     public static string AllocateSpillPath(string outputRootDirectory, string operationId, string processId)
     {
         ArgumentNullException.ThrowIfNull(outputRootDirectory);
@@ -290,11 +203,6 @@ internal static class FeatureStreamArtifact
         return Path.Join(streamRoot, $"{safeOperation}.{safeProcess}.{unique}.ndjson");
     }
 
-    /// <summary>
-    /// Streams a sequence of features to an NDJSON backing file one line at a time, then
-    /// returns a spill reference describing it. Memory stays bounded: a single feature is
-    /// serialized at a time and the writer flushes as the buffer fills.
-    /// </summary>
     public static async Task<string> WriteStreamAsync(
         string path,
         IAsyncEnumerable<IFeature> features,
@@ -324,14 +232,6 @@ internal static class FeatureStreamArtifact
         return BuildStreamReference(path, count, bytes);
     }
 
-    /// <summary>
-    /// Encodes an NDJSON line plus its trailing <c>'\n'</c> terminator to UTF-8 exactly
-    /// once and writes the bytes directly to <paramref name="fileStream"/>, returning the
-    /// byte count written. Shared by <see cref="WriteStreamAsync"/> and the publisher's
-    /// incremental spill writer so both avoid encoding each line twice — once via
-    /// <c>Encoding.UTF8.GetByteCount</c> purely to track spill-file size, and again inside
-    /// a <see cref="StreamWriter"/> to actually write it.
-    /// </summary>
     internal static async Task<int> WriteNdjsonLineAsync(FileStream fileStream, string line, CancellationToken cancellationToken)
     {
         var maxByteCount = Encoding.UTF8.GetMaxByteCount(line.Length) + 1;
@@ -349,11 +249,6 @@ internal static class FeatureStreamArtifact
         }
     }
 
-    /// <summary>
-    /// Serializes one feature to an NDJSON line, stamping its geometry SRID as a reserved
-    /// foreign member so the spill round-trip preserves SRID fidelity (GeoJSON otherwise
-    /// drops it). Shared by the bulk writer and the publisher's incremental spill writer.
-    /// </summary>
     public static string SerializeLine(GeoJsonWriter writer, IFeature feature)
     {
         ArgumentNullException.ThrowIfNull(writer);
@@ -379,11 +274,7 @@ internal static class FeatureStreamArtifact
         return writer.Write(new Feature(feature.Geometry, attributes));
     }
 
-    /// <summary>
-    /// Parses one NDJSON line back to a feature, restoring the geometry SRID stashed by
-    /// <see cref="SerializeLine"/> and stripping the reserved member so it never leaks
-    /// downstream.
-    /// </summary>
+    // The reserved SRID member is stripped after the geometry is restored so it does not leak downstream.
     public static IFeature? DeserializeLine(GeoJsonReader reader, string line)
         => DeserializeLine(reader, line, out _);
 
@@ -426,10 +317,6 @@ internal static class FeatureStreamArtifact
         return new Feature(feature.Geometry, rebuilt);
     }
 
-    /// <summary>
-    /// Reads an NDJSON backing file as a lazy feature sequence, one line (one feature) at
-    /// a time. Memory stays bounded by the largest single feature, never the whole file.
-    /// </summary>
     public static async IAsyncEnumerable<IFeature> ReadNdjsonFileAsync(
         string path,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
@@ -485,17 +372,9 @@ internal static class FeatureStreamArtifact
         return builder.ToString();
     }
 
-    /// <summary>
-    /// Describes a spilled NDJSON feature stream: the backing file path and the
-    /// feature/byte counts recorded when it was written.
-    /// </summary>
     internal readonly record struct StreamDescriptor(string Path, long Count, long Bytes);
 }
 
-/// <summary>
-/// Minimal async-enumerable helpers so the streaming artifact contract does not pull in
-/// System.Linq.Async. Keeps the dependency surface AOT-friendly.
-/// </summary>
 internal static class AsyncEnumerable
 {
     public static IAsyncEnumerable<T> Empty<T>() => EmptyAsyncEnumerable<T>.Instance;

@@ -13,26 +13,8 @@ using NetTopologySuite.IO;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// Production <see cref="IJobExecutor"/> for the <c>geometry.area</c> process.
-/// Slice 3 of #1031 — extends the buffer / clip / intersect / project set
-/// with a per-feature measure operation.
-///
-/// Computes the planar (Cartesian) area of the supplied geometry in the square
-/// of the input CRS's coordinate units and publishes a single value-result
-/// artifact. The published document is the canonical measure-result JSON shape:
-/// a single object with the process id, input SRID, geometry type, and a
-/// numeric <c>value</c>. There is no geodesic option: the catalog advertises
-/// planar area only, so a geographic (degree) input yields area in squared
-/// degrees, not square meters. Ellipsoidal (geodesic) area is a tracked
-/// follow-on that would require a GeographicLib-style dependency.
-/// </summary>
 internal sealed partial class GeometryAreaJobExecutor : IProcessExecutor
 {
-    /// <summary>
-    /// The single process id this executor handles. Matches the catalog entry
-    /// in <see cref="BuiltInProcessCatalog"/>.
-    /// </summary>
     internal const string HandledProcessId = "geometry.area";
 
     private const string ScalarDataUriPrefix = "data:application/json;base64,";
@@ -48,10 +30,6 @@ internal sealed partial class GeometryAreaJobExecutor : IProcessExecutor
         _logger = logger;
     }
 
-    /// <summary>
-    /// The single process id this executor handles, surfaced through
-    /// <see cref="IProcessExecutor"/> so the dispatcher auto-registers it (#2122).
-    /// </summary>
     public IReadOnlySet<string> ProcessIds { get; } =
         new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
 

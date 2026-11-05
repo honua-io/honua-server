@@ -13,16 +13,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Geoprocessing;
 
-/// <summary>
-/// Materializes geoprocessing job artifacts for <see cref="GeoprocessingJobService"/>:
-/// resolving native raster <em>input</em> sources from the catalog at submit time and
-/// reading or synthesizing the result-package <em>output</em> at completion. Owns the
-/// optional <see cref="IGeoprocessingRasterSourceResolver"/> and
-/// <see cref="IGeoprocessingResultPackageStore"/> collaborators (both default-off when the
-/// supporting infrastructure is absent) plus the shared <see cref="IProcessCatalog"/> used
-/// by both flows. Behavior, logging, and the retention TTL are identical to the inline
-/// logic the service previously performed.
-/// </summary>
 internal sealed class GeoprocessingJobArtifactService
 {
     internal const string TypedRasterExecutionNotSupportedCode = "RASTER_SOURCE_REFERENCE_REQUIRES_RESOLUTION";
@@ -40,10 +30,6 @@ internal sealed class GeoprocessingJobArtifactService
     private readonly TimeProvider _timeProvider;
     private readonly IJobTerminalCallback[] _terminalCallbacks;
 
-    /// <summary>
-    /// Creates the artifact coordinator over the catalog, the optional result-package store,
-    /// the optional raster-source resolver, and the optional output registrar (#3089).
-    /// </summary>
     public GeoprocessingJobArtifactService(
         ILogger<GeoprocessingJobService> logger,
         IOptionsMonitor<GeoprocessingExecutorOptions> executorOptions,
@@ -66,17 +52,7 @@ internal sealed class GeoprocessingJobArtifactService
         _terminalCallbacks = terminalCallbacks?.ToArray() ?? [];
     }
 
-    /// <summary>
-    /// Replays terminal callbacks against the job as stored, before a result package is read,
-    /// so a job whose first transition never ran them (for example one finalized by another
-    /// process) is healed. The replay is skipped when the job's result package is already
-    /// stored: that package is only written after its artifacts persisted, so there is nothing
-    /// to heal and a status poll must not re-persist anything (#6107).
-    /// Callbacks use <see cref="CancellationToken.None"/> so a cancelled result read cannot
-    /// leave a replay half-done. The replay is non-destructive: replay-aware callbacks never
-    /// rewrite the terminal job, and a failed repair is rethrown as a retryable
-    /// <see cref="GeoprocessingStoreUnavailableException"/> after every callback has run.
-    /// </summary>
+    // Replay is skipped once the result package is stored, and callbacks ignore the caller's token so a cancelled read cannot leave a replay half-done.
     internal async Task ReplayTerminalCallbacksAsync(ExecutionJobRecord job)
     {
         if (_terminalCallbacks.Length == 0
@@ -144,10 +120,6 @@ internal sealed class GeoprocessingJobArtifactService
 
     private TimeSpan ProgressRetention => _executorOptions.CurrentValue.ResultRetention;
 
-    /// <summary>
-    /// Validates typed raster descriptors and parameter bindings before an approval proposal
-    /// or job record can be persisted.
-    /// </summary>
     public void ValidateRasterSources(AnalysisPlan plan, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(plan);
@@ -160,10 +132,6 @@ internal sealed class GeoprocessingJobArtifactService
         }
     }
 
-    /// <summary>
-    /// Returns the configured typed-raster contract and parameter-binding failures used by
-    /// submission so read-only plan preflight can report the same field-specific diagnostics.
-    /// </summary>
     public IReadOnlyList<GeoprocessingValidationFailure> GetRasterSourceValidationFailures(
         AnalysisPlan plan,
         CancellationToken cancellationToken = default)
@@ -252,11 +220,6 @@ internal sealed class GeoprocessingJobArtifactService
         MaxSerializedBytesPerPlan = _executorOptions.CurrentValue.MaxRasterSourceSerializedBytesPerPlan,
     };
 
-    /// <summary>
-    /// Refuses client-supplied durable descriptors before they can run under worker credentials.
-    /// Authenticated catalog selectors are resolved to descriptors later in the submit pipeline;
-    /// bounded typed inline sources contain no ambient object-store authority and remain valid.
-    /// </summary>
     public static void EnsureTypedRasterExecutionSupported(AnalysisPlan plan)
     {
         var violation = GetTypedRasterExecutionViolation(plan);
@@ -266,7 +229,6 @@ internal sealed class GeoprocessingJobArtifactService
         }
     }
 
-    /// <summary>Returns a structured violation for a client-supplied durable raster descriptor.</summary>
     public static GeoprocessingValidationFailure? GetTypedRasterExecutionViolation(AnalysisPlan plan)
     {
         ArgumentNullException.ThrowIfNull(plan);
@@ -287,22 +249,13 @@ internal sealed class GeoprocessingJobArtifactService
         return null;
     }
 
-    /// <summary>
-    /// Binds raster-id selectors to their owning layer before the shared submit-time layer gate.
-    /// This is metadata-only and therefore cannot read or expose raster bytes before access is
-    /// authorized.
-    /// </summary>
+    // Raster selectors are bound before the layer gate, and that bind does not read raster bytes.
     public Task<AnalysisPlan> BindRasterSourceLayerIdsAsync(
         AnalysisPlan plan,
         CancellationToken cancellationToken)
         => GeoprocessingRasterSourceResolution.BindLayerIdsAsync(
             plan, _processCatalog, _rasterSourceResolver, cancellationToken);
 
-    /// <summary>
-    /// Resolves any native raster/surface step that references a registered catalog raster
-    /// by layerId/rasterId to an immutable descriptor. The serving process performs no full
-    /// object read and never places raster bytes in the durable job record (#2264/#3090).
-    /// </summary>
     public Task<AnalysisPlan> ResolveRasterSourcesAsync(
         AnalysisPlan plan,
         JobSecurityContext submitterSecurityContext,
@@ -319,11 +272,7 @@ internal sealed class GeoprocessingJobArtifactService
             },
             cancellationToken);
 
-    /// <summary>
-    /// Produces a stable descriptor-safe reference without placing an unrestricted tenant id
-    /// onto the worker contract. Tenant lifecycle identifiers may contain spaces, Unicode, or
-    /// punctuation that the deliberately narrow raster descriptor alphabet rejects.
-    /// </summary>
+    // The tenant id is not copied onto the worker contract because lifecycle identifiers can contain characters the raster descriptor alphabet rejects.
     internal static string CreateOpaqueTenantReference(string? tenantId)
     {
         var source = tenantId is null ? "tenant:none" : $"tenant:named:{tenantId}";
@@ -331,20 +280,6 @@ internal sealed class GeoprocessingJobArtifactService
         return $"tenant:{Convert.ToHexString(hash).ToLowerInvariant()}";
     }
 
-    /// <summary>
-    /// Returns the result package for a terminal job: the durable stored package when it
-    /// matches the expected identifier, otherwise a freshly synthesized package (persisted
-    /// best-effort for subsequent reads). Store read/write failures are logged and
-    /// swallowed so retrieval succeeds from terminal job state while the results are
-    /// still retained.
-    /// </summary>
-    /// <exception cref="GeoprocessingNotFoundException">
-    /// <see cref="GeoprocessingExecutorOptions.ResultRetention"/> has elapsed since the job
-    /// reached its terminal state. The job record can outlive the results (the job store
-    /// keeps its own, longer retention), so availability is bounded here, from the job's
-    /// completion time, rather than by whether a package is still cached: otherwise an
-    /// expired package would be re-synthesized from the lingering record on every read.
-    /// </exception>
     public async Task<AnalysisResultPackage> GetOrSynthesizeResultPackageAsync(
         ExecutionJobRecord job,
         CancellationToken cancellationToken)
@@ -413,11 +348,6 @@ internal sealed class GeoprocessingJobArtifactService
         return ProjectStagedArtifactAvailability(synthesizedPackage, jobId, _outputStore);
     }
 
-    /// <summary>
-    /// Fails closed once the configured result retention has elapsed since the job
-    /// finished. <see cref="ExecutionJobRecord.CompletedAt"/> is the retention anchor;
-    /// a terminal record without it falls back to its last update.
-    /// </summary>
     private void EnsureResultsRetained(ExecutionJobRecord job)
     {
         var finishedAt = job.CompletedAt ?? job.UpdatedAt;
@@ -431,12 +361,6 @@ internal sealed class GeoprocessingJobArtifactService
             $"Results for job '{job.OperationId}' are no longer available; the result retention period has elapsed.");
     }
 
-    /// <summary>
-    /// Projects canonical staged-content routes only when this serving host has the
-    /// matching output store. Every protocol consumes this package, so performing the
-    /// availability check here prevents gRPC, MCP, and workflow consumers from
-    /// advertising a route that is guaranteed to return 503 in a split-host topology.
-    /// </summary>
     internal static AnalysisResultPackage ProjectStagedArtifactAvailability(
         AnalysisResultPackage package,
         string jobId,

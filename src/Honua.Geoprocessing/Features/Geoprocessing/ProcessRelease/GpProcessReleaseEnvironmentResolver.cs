@@ -7,22 +7,15 @@ using Honua.Geoprocessing.CustomCode;
 
 namespace Honua.Geoprocessing.ProcessRelease;
 
-/// <summary>
-/// Reads what this server can execute, for activation checks and the binding API's
-/// environment projection: the execution contract version it runs and the target kinds that
-/// have an activatable execution workload registered.
-/// </summary>
 public sealed class GpProcessReleaseEnvironmentResolver
 {
     private readonly IExecutionJobDefinitionRegistry? _workloads;
 
-    /// <summary>Creates the resolver; without a workload registry no remote target is supported.</summary>
     public GpProcessReleaseEnvironmentResolver(IExecutionJobDefinitionRegistry? workloads = null)
     {
         _workloads = workloads;
     }
 
-    /// <summary>Resolves the environment facts.</summary>
     public async Task<GpProcessReleaseEnvironment> ResolveAsync(CancellationToken cancellationToken = default)
     {
         var kinds = new List<string>();

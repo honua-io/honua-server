@@ -8,18 +8,6 @@ using NetTopologySuite.Features;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// <c>generalization.dissolve</c> layer-aware executor (#2325). The job-executable
-/// counterpart of the layer-scoped "Dissolve" op: it streams a Honua catalog layer
-/// through <c>source.honua-layer</c> and dissolves (unions) features by an optional
-/// attribute group, producing one feature per group with a <c>COUNT</c> of the
-/// dissolved rows plus any aggregates requested through <c>outStatistics</c>. Unlike
-/// <c>analytics.buffer-aggregate</c> no buffer is applied before the union. The
-/// geometry union reuses the shared <see cref="OverlayExecutorSupport"/> primitive
-/// (cascaded polygon union for polygonal input, dimension-preserving unary union
-/// otherwise) and the statistics reuse the shared <see cref="StatisticsSupport"/>
-/// accumulators.
-/// </summary>
 internal sealed class LayerDissolveExecutor : LayerSourcedFeatureExecutor
 {
     internal const string HandledProcessId = "generalization.dissolve";

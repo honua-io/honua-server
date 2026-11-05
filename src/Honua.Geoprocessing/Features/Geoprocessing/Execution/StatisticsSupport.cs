@@ -7,60 +7,29 @@ using NetTopologySuite.Features;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// Shared aggregation primitives for the managed statistics/summarization tool pack
-/// <c>statistics.summarize</c>, <c>statistics.frequency</c> and
-/// <c>statistics.calculate</c> (#2140). Provides numeric-field accumulation
-/// (SUM/MEAN/MIN/MAX/COUNT and sample STDDEV), case-field group keys, and parsing
-/// of the shared <c>field:stat</c> statistics descriptor. Null and non-numeric
-/// values are skipped from numeric aggregates (matching Esri Summary Statistics);
-/// the COUNT/FREQUENCY of a group counts every contributing row regardless.
-/// </summary>
 internal static class StatisticsSupport
 {
-    /// <summary>A single requested aggregate over a field.</summary>
     public readonly record struct StatSpec(StatKind Kind, string Field, string OutputName);
 
-    /// <summary>Supported aggregate kinds.</summary>
     public enum StatKind
     {
-        /// <summary>Count of contributing rows.</summary>
         Count,
 
-        /// <summary>Sum of numeric values.</summary>
         Sum,
 
-        /// <summary>Arithmetic mean of numeric values.</summary>
         Mean,
 
-        /// <summary>Minimum numeric value.</summary>
         Min,
 
-        /// <summary>Maximum numeric value.</summary>
         Max,
 
-        /// <summary>Sample (n-1) standard deviation of numeric values.</summary>
         StdDev,
 
-        /// <summary>Sample (n-1) variance of numeric values (GeoServices <c>var</c>).</summary>
         Variance,
 
-        /// <summary>
-        /// Count of non-null values of a field (GeoServices <c>count</c> on
-        /// <c>onStatisticField</c>, i.e. SQL <c>COUNT(field)</c>), as opposed to
-        /// <see cref="Count"/>, which counts contributing rows.
-        /// </summary>
         CountValues,
     }
 
-    /// <summary>
-    /// Parses a layer operation's <c>outStatistics</c> input (#4624). The catalog advertises it
-    /// as a GeoServices statistics payload and <c>ProcessPlanValidator</c> admits exactly that
-    /// JSON shape (an array of <c>{statisticType, onStatisticField, outStatisticFieldName}</c>,
-    /// or a single such object), so the executors must honor it, including the requested output
-    /// names; the legacy <c>field:stat</c> descriptor stays accepted for direct callers. Output
-    /// names must be distinct, otherwise one aggregate would silently overwrite another.
-    /// </summary>
     public static List<StatSpec> ParseOutStatistics(string? raw)
     {
         if (string.IsNullOrWhiteSpace(raw))
@@ -83,10 +52,6 @@ internal static class StatisticsSupport
         return specs;
     }
 
-    /// <summary>
-    /// Rejects aggregates whose output name would overwrite a column the operation already
-    /// emits (group-by or carried fields, the operation's own count column).
-    /// </summary>
     public static void EnsureNoOutputCollisions(IReadOnlyList<StatSpec> stats, IReadOnlyCollection<string> reservedNames)
     {
         var reserved = new HashSet<string>(reservedNames, StringComparer.OrdinalIgnoreCase);
@@ -167,11 +132,6 @@ internal static class StatisticsSupport
         return !string.IsNullOrWhiteSpace(value);
     }
 
-    /// <summary>
-    /// Parses a semicolon-separated <c>field:stat</c> descriptor into stat specs.
-    /// Throws <see cref="TransformInputException"/> for an unknown statistic or a
-    /// non-count statistic missing its field.
-    /// </summary>
     public static List<StatSpec> ParseStatistics(string? raw)
     {
         var specs = new List<StatSpec>();
@@ -212,7 +172,6 @@ internal static class StatisticsSupport
         return specs;
     }
 
-    /// <summary>Canonical output column name for an aggregate.</summary>
     public static string OutputName(StatKind kind, string field) => kind switch
     {
         StatKind.Count => "FREQUENCY",
@@ -224,7 +183,6 @@ internal static class StatisticsSupport
         _ => field,
     };
 
-    /// <summary>Splits a comma-separated field list, dropping blanks.</summary>
     public static List<string> ParseFieldList(string? raw)
     {
         var fields = new List<string>();
@@ -241,7 +199,6 @@ internal static class StatisticsSupport
         return fields;
     }
 
-    /// <summary>Builds a composite group key from a feature's case-field values.</summary>
     public static string GroupKey(IFeature feature, IReadOnlyList<string> caseFields)
     {
         if (caseFields.Count == 0)
@@ -253,7 +210,6 @@ internal static class StatisticsSupport
         return string.Join('', caseFields.Select(f => ReadKeyComponent(feature, f)));
     }
 
-    /// <summary>Reads a feature's case-field value as a key component (null -> sentinel).</summary>
     public static string ReadKeyComponent(IFeature feature, string field)
     {
         if (feature.Attributes is null || !feature.Attributes.Exists(field))
@@ -265,15 +221,7 @@ internal static class StatisticsSupport
         return value is null ? "\0NULL" : Convert.ToString(value, CultureInfo.InvariantCulture) ?? "\0NULL";
     }
 
-    /// <summary>
-    /// Accumulates one feature's numeric field values into <paramref name="accumulators"/>,
-    /// touching each DISTINCT field referenced by <paramref name="stats"/> exactly once even
-    /// when multiple stats target the same field (e.g. <c>"pop:sum;pop:mean"</c>) — adding
-    /// per-spec instead of per-field would add the sample once per stat sharing that field,
-    /// silently multiplying SUM/COUNT-derived aggregates by the number of co-requested stats
-    /// (#4624 — caught while adding <c>outStatistics</c> to <c>analytics.buffer-aggregate</c>,
-    /// which shares this accumulation shape with <c>generalization.dissolve</c>).
-    /// </summary>
+    // Each field is accumulated once even when several stats name it, or a sum would be multiplied by the number of co-requested stats.
     public static void Accumulate(
         IFeature feature,
         IReadOnlyList<StatSpec> stats,
@@ -304,7 +252,6 @@ internal static class StatisticsSupport
         }
     }
 
-    /// <summary>Reads a numeric field value, returning false for null/non-numeric.</summary>
     public static bool TryReadNumeric(IFeature feature, string field, out double value)
     {
         value = 0d;
@@ -345,7 +292,6 @@ internal static class StatisticsSupport
         }
     }
 
-    /// <summary>Accumulates numeric statistics for a single field within a group.</summary>
     public sealed class FieldAccumulator
     {
         private long _count;
@@ -355,7 +301,6 @@ internal static class StatisticsSupport
         private double _min = double.PositiveInfinity;
         private double _max = double.NegativeInfinity;
 
-        /// <summary>Adds a numeric sample.</summary>
         public void Add(double value)
         {
             _count++;
@@ -372,10 +317,8 @@ internal static class StatisticsSupport
             }
         }
 
-        /// <summary>Records a non-null value of any type (for <see cref="StatKind.CountValues"/>).</summary>
         public void AddPresent() => _presentCount++;
 
-        /// <summary>Resolves an aggregate value (null when undefined for the sample).</summary>
         public object? Resolve(StatKind kind)
         {
             switch (kind)

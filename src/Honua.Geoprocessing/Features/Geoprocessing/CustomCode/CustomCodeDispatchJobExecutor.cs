@@ -7,25 +7,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Geoprocessing.CustomCode;
 
-/// <summary>
-/// The thin server-side dispatch executor for the <c>custom-code</c> runtime
-/// profile. It exists primarily as the worker-side half of the runtime-profile
-/// claim fence: by accepting <em>only</em> the <c>custom-code</c> profile it keeps
-/// the lean managed <c>GeoprocessingDispatchJobExecutor</c> and the native GDAL
-/// worker from ever claiming a custom-code job (mirroring the GDAL worker's
-/// <c>GdalDispatchJobExecutor</c> fence).
-/// </summary>
-/// <remarks>
-/// The heavy work — cloning the pinned commit, installing dependencies, and running
-/// the user entrypoint — happens IN the custom-code Batch container (the harness,
-/// built separately), reached by the param-driven remote-backend submission at
-/// submit time (analogous to how the GP Batch workload is submitted through
-/// <c>AwsBatchComputeBackend</c>). A custom-code job therefore never executes user
-/// code in-process here. If a job carrying this profile is ever claimed locally
-/// (i.e. the deployment failed to configure a custom-code Batch workload so the job
-/// was not routed to a remote backend), this executor fails it loudly rather than
-/// silently no-op'ing or running untrusted code in the server process.
-/// </remarks>
+// A custom-code job claimed on this process fails instead of running untrusted code in the server.
 internal sealed partial class CustomCodeDispatchJobExecutor : IJobExecutor
 {
     private static readonly IReadOnlySet<string> CustomCodeProfileSet =
@@ -33,20 +15,16 @@ internal sealed partial class CustomCodeDispatchJobExecutor : IJobExecutor
 
     private readonly ILogger<CustomCodeDispatchJobExecutor> _logger;
 
-    /// <summary>Creates the custom-code dispatch executor.</summary>
     public CustomCodeDispatchJobExecutor(ILogger<CustomCodeDispatchJobExecutor> logger)
     {
         ArgumentNullException.ThrowIfNull(logger);
         _logger = logger;
     }
 
-    /// <inheritdoc />
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 
-    /// <inheritdoc />
     public IReadOnlySet<string> AcceptedRuntimeProfiles => CustomCodeProfileSet;
 
-    /// <inheritdoc />
     public Task<JobExecutionResult> ExecuteAsync(
         ExecutionJobRecord job,
         IJobExecutionContext context,

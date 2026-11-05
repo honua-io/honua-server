@@ -8,11 +8,6 @@ using Honua.Ai.StudioAiProxy.Domain;
 
 namespace Honua.Ai.StudioAiProxy;
 
-/// <summary>
-/// Source-generated JSON serialization context for the Studio AI proxy: endpoint request/response
-/// wire types, the streamed event shape, and the provider wire payloads used internally by the
-/// Anthropic and OpenAI-compatible adapters.
-/// </summary>
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,

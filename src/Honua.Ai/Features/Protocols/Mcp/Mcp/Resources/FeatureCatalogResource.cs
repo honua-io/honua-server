@@ -8,27 +8,8 @@ using Honua.Ai.Protocols.Mcp.Models;
 
 namespace Honua.Ai.Protocols.Mcp.Resources;
 
-/// <summary>
-/// MCP resource for <c>honua://catalog/features</c>. Serves the evidence-based
-/// feature catalog (#1946, ADR-0054): a generated, drift-gated projection of the
-/// shipped HTTP API surface where every entry is backed by a registry route, at
-/// least one <c>[Endpoint]</c>-attributed proving test, and a proof-ledger
-/// surface.
-/// </summary>
-/// <remarks>
-/// The committed, drift-gated artifact (<c>docs/gis/data/feature-catalog.json</c>)
-/// is embedded into this assembly (logical name
-/// <c>Honua.Ai.Catalog.feature-catalog.json</c>) so the resource serves it from a
-/// deployed server that has no repo checkout. The artifact is generated, never
-/// authored — <c>FeatureCatalogDriftTests</c> in <c>Honua.Architecture.Tests</c>
-/// fails the build if the committed file drifts from the live API surface, so
-/// what this resource serves can never be a hand-edited or stale claim. Reading
-/// the embedded text verbatim (rather than re-projecting at runtime) keeps the
-/// resource AOT-safe and guarantees it serves exactly what CI gated.
-/// </remarks>
 internal sealed class FeatureCatalogResource : IMcpResource
 {
-    /// <summary>Canonical URI this resource handles.</summary>
     public const string Uri = McpResourceUris.CatalogFeatures;
 
     private const string EmbeddedResourceName = "Honua.Ai.Catalog.feature-catalog.json";
@@ -38,7 +19,6 @@ internal sealed class FeatureCatalogResource : IMcpResource
     private readonly IGeoprocessingJobService _jobService;
     private readonly ILogger<FeatureCatalogResource> _logger;
 
-    /// <summary>Initializes a new instance of the <see cref="FeatureCatalogResource"/> class.</summary>
     public FeatureCatalogResource(
         IGeoprocessingJobService jobService,
         ILogger<FeatureCatalogResource> logger)
@@ -47,10 +27,8 @@ internal sealed class FeatureCatalogResource : IMcpResource
         _logger = logger;
     }
 
-    /// <summary>Telemetry family tag for catalog resources.</summary>
     public string Family => McpTelemetry.ResourceFamily.Catalog;
 
-    /// <summary>Advertises the fixed feature-catalog URI via <c>resources/list</c>.</summary>
     public IReadOnlyList<McpResourceDescriptor> Describe() => new[]
     {
         new McpResourceDescriptor
@@ -64,13 +42,10 @@ internal sealed class FeatureCatalogResource : IMcpResource
         }
     };
 
-    /// <summary>This resource has a fixed URI, so it advertises no templates.</summary>
     public IReadOnlyList<McpResourceTemplateDescriptor> DescribeTemplates() => [];
 
-    /// <summary>Returns <c>true</c> only for the exact feature-catalog URI.</summary>
     public bool CanHandle(string uri) => string.Equals(uri, Uri, StringComparison.Ordinal);
 
-    /// <summary>Authorizes the caller and serves the embedded, drift-gated catalog.</summary>
     public async Task<McpResourcesReadResult> ReadAsync(
         HttpContext httpContext,
         string uri,

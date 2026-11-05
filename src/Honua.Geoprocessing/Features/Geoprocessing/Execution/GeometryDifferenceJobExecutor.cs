@@ -11,26 +11,8 @@ using NetTopologySuite.IO;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// Production <see cref="IJobExecutor"/> for the <c>geometry.difference</c>
-/// process. Closes a catalog-honesty gap on trunk: the process was advertised
-/// in <see cref="BuiltInProcessCatalog"/> (and flagged synchronous by
-/// <c>GPServerExecutionPolicy</c> / first-slice automated by
-/// <c>ProcessMigrationEvidenceClassifier</c>) but had no job executor, so a
-/// workflow/codemod submitting it as a job could never reach it.
-///
-/// Subtracts an eraser geometry from a target geometry, returning the remaining
-/// portion (<see cref="Geometry.Difference(Geometry)"/>) — the managed
-/// NetTopologySuite analogue of PostGIS <c>ST_Difference</c>. Companion to
-/// <see cref="GeometryIntersectJobExecutor"/>: both geometries must share the
-/// supplied SRID; reprojection is handled by <see cref="GeometryProjectJobExecutor"/>.
-/// </summary>
 internal sealed partial class GeometryDifferenceJobExecutor : IProcessExecutor
 {
-    /// <summary>
-    /// The single process id this executor handles. Matches the catalog
-    /// entry in <see cref="BuiltInProcessCatalog"/>.
-    /// </summary>
     internal const string HandledProcessId = "geometry.difference";
 
     private readonly IOptionsMonitor<GeoprocessingExecutorOptions> _options;
@@ -44,10 +26,6 @@ internal sealed partial class GeometryDifferenceJobExecutor : IProcessExecutor
         _logger = logger;
     }
 
-    /// <summary>
-    /// The single process id this executor handles, surfaced through
-    /// <see cref="IProcessExecutor"/> so the dispatcher auto-registers it (#2122).
-    /// </summary>
     public IReadOnlySet<string> ProcessIds { get; } =
         new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
 

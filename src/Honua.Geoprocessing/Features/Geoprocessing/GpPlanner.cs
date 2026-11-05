@@ -8,38 +8,8 @@ using Honua.Core.Features.Geoprocessing.Domain;
 
 namespace Honua.Geoprocessing;
 
-/// <summary>
-/// Builds the dry-run <see cref="GpPlan"/> for <c>honua gp plan</c> (GP Devkit
-/// P5, issue #2126): resolves caller params against a process's typed schema,
-/// runs the SAME catalog parameter validation (<see cref="ProcessPlanValidator"/>)
-/// and structural DAG validation (<see cref="AnalysisPlanGraphValidator"/>) the
-/// durable submit/validate path runs — WITHOUT executing anything — and attaches
-/// a best-effort output-size / cost estimate judged against the configured
-/// <see cref="GeoprocessingExecutorOptions.MaxArtifactBytes"/> cap.
-///
-/// <para>
-/// The estimate is the resource hint a future devops-agent serverless-sizing
-/// step would size Batch from, so the plan deliberately surfaces the input /
-/// output magnitude and a long-running flag alongside the validation result.
-/// </para>
-/// </summary>
 internal static class GpPlanner
 {
-    /// <summary>
-    /// Produces the plan for <paramref name="processId"/> against the resolved
-    /// <paramref name="resolvedInputs"/> (already-merged <c>--param</c> +
-    /// bound <c>--input</c> values). Returns <c>null</c> when the process id is
-    /// unknown so the caller can emit a usage error listing valid ids.
-    /// </summary>
-    /// <param name="processId">Canonical dotted process id.</param>
-    /// <param name="resolvedInputs">Resolved step-0 input name/value pairs.</param>
-    /// <param name="catalog">The process catalog to validate against.</param>
-    /// <param name="maxArtifactBytes">The configured per-artifact byte cap.</param>
-    /// <param name="callerInputBytes">
-    /// Total raw bytes the caller actually supplied as a file-like input (the
-    /// decoded length of <c>--input</c>), used to anchor the size estimate.
-    /// </param>
-    /// <returns>The dry-run plan, or <c>null</c> when the process is not registered.</returns>
     public static GpPlan? Build(
         string processId,
         IReadOnlyDictionary<string, string> resolvedInputs,
@@ -196,10 +166,6 @@ internal static class GpPlanner
         }
     }
 
-    /// <summary>
-    /// Abbreviates a display value so large base64/WKB blobs do not flood the
-    /// plan preview; short scalar values are shown verbatim.
-    /// </summary>
     private static string Abbreviate(string value, ProcessParameterValueType valueType)
     {
         var isBinary = valueType is ProcessParameterValueType.Wkb or ProcessParameterValueType.WkbArray;

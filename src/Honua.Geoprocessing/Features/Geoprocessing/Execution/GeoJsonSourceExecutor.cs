@@ -8,30 +8,12 @@ using NetTopologySuite.Features;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// <c>source.geojson</c> executor. Parses an inline GeoJSON FeatureCollection (or one
-/// supplied as the canonical FeatureCollection data URI) and publishes it as the
-/// standard FeatureCollection artifact so downstream transform/sink nodes consume a
-/// uniform envelope. Uses the managed NetTopologySuite GeoJSON reader — no native
-/// dependency. Reconciled from the GeoETL baseline GeoJsonSourceConnector onto the
-/// #1185 process/executor contract.
-/// </summary>
-/// <remarks>
-/// The baseline connector streamed from a file <c>path</c> via the internal
-/// StreamingGeoJsonReader. On the #1185 contract inputs are durable spec strings, so
-/// this executor accepts an <c>inline</c> GeoJSON document or an <c>input</c> data URI.
-/// File-path streaming for very large inputs belongs to a later streaming-source stream.
-/// </remarks>
 internal sealed class GeoJsonSourceExecutor(IOptionsMonitor<GeoprocessingExecutorOptions> options) : IProcessExecutor
 {
     internal const string HandledProcessId = "source.geojson";
 
     private readonly IOptionsMonitor<GeoprocessingExecutorOptions> _options = options;
 
-    /// <summary>
-    /// The single process id this executor handles, surfaced through
-    /// <see cref="IProcessExecutor"/> so the dispatcher auto-registers it (#2122).
-    /// </summary>
     public IReadOnlySet<string> ProcessIds { get; } =
         new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
 

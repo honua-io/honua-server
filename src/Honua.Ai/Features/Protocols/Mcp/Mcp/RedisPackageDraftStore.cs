@@ -9,20 +9,10 @@ using StackExchange.Redis;
 
 namespace Honua.Ai.Protocols.Mcp;
 
-/// <summary>
-/// <see cref="IPackageDraftStore"/> whose records live in Redis. Two instances
-/// that share a multiplexer read what the other wrote. Expiry is the key TTL
-/// passed to <c>SET</c>, not an in-process sweep. Per-kind capacity still evicts
-/// the oldest live draft (honua-server#3312).
-/// </summary>
 internal sealed class RedisPackageDraftStore : IPackageDraftStore
 {
     private readonly PackageDraftLedger _ledger;
 
-    /// <summary>Initializes a new instance of the <see cref="RedisPackageDraftStore"/> class.</summary>
-    /// <param name="redis">Shared connection. The database is resolved per call.</param>
-    /// <param name="retention">TTL applied as the Redis key expiry, and the per-kind capacity.</param>
-    /// <param name="timeProvider">Clock stamped onto each write.</param>
     public RedisPackageDraftStore(
         IConnectionMultiplexer redis,
         PackageDraftRetentionOptions retention,
@@ -32,22 +22,18 @@ internal sealed class RedisPackageDraftStore : IPackageDraftStore
         _ledger = new PackageDraftLedger(new RedisPackageDraftBacking(redis), retention, timeProvider);
     }
 
-    /// <inheritdoc />
     public Task SaveMapDraftAsync(MapPackage package, string ownerId, CancellationToken cancellationToken = default) =>
         _ledger.SaveMapDraftAsync(package, ownerId, cancellationToken);
 
-    /// <inheritdoc />
     public Task SaveAppDraftAsync(AppPackage package, string ownerId, CancellationToken cancellationToken = default) =>
         _ledger.SaveAppDraftAsync(package, ownerId, cancellationToken);
 
-    /// <inheritdoc />
     public Task<MapPackage?> GetMapDraftAsync(
         string mapPackageId,
         string ownerId,
         CancellationToken cancellationToken = default) =>
         _ledger.GetMapDraftAsync(mapPackageId, ownerId, cancellationToken);
 
-    /// <inheritdoc />
     public Task<AppPackage?> GetAppDraftAsync(
         string appPackageId,
         string ownerId,
@@ -55,11 +41,7 @@ internal sealed class RedisPackageDraftStore : IPackageDraftStore
         _ledger.GetAppDraftAsync(appPackageId, ownerId, cancellationToken);
 }
 
-/// <summary>
-/// Redis <see cref="IPackageDraftBacking"/>. Data keys carry the JSON record and
-/// a native TTL. A sorted set per kind orders live ids for capacity eviction.
-/// The index key is not a data key, so an identifier cannot overwrite it.
-/// </summary>
+// The index key is not a data key, so a package identifier cannot overwrite it.
 internal sealed class RedisPackageDraftBacking : IPackageDraftBacking
 {
     private const string Prefix = "honua:package-draft:v1:";
@@ -72,7 +54,6 @@ internal sealed class RedisPackageDraftBacking : IPackageDraftBacking
         _redis = redis;
     }
 
-    /// <inheritdoc />
     public async Task UpsertAsync(
         PackageDraftKind kind,
         string id,
@@ -94,7 +75,6 @@ internal sealed class RedisPackageDraftBacking : IPackageDraftBacking
             .ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public async Task<PackageDraftRecord?> TryGetAsync(
         PackageDraftKind kind,
         string id,
@@ -125,7 +105,6 @@ internal sealed class RedisPackageDraftBacking : IPackageDraftBacking
         return record;
     }
 
-    /// <inheritdoc />
     public async Task<IReadOnlyList<PackageDraftLiveEntry>> ListLiveOldestFirstAsync(
         PackageDraftKind kind,
         TimeSpan ttl,
@@ -185,7 +164,6 @@ internal sealed class RedisPackageDraftBacking : IPackageDraftBacking
         return live;
     }
 
-    /// <inheritdoc />
     public async Task RemoveAsync(PackageDraftKind kind, string id, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -194,7 +172,6 @@ internal sealed class RedisPackageDraftBacking : IPackageDraftBacking
         await database.SortedSetRemoveAsync(IndexKey(kind), id).ConfigureAwait(false);
     }
 
-    /// <summary>Serializes a record. Used by tests to pin the wire shape without a Redis connection.</summary>
     internal static string Encode(PackageDraftKind kind, PackageDraftRecord record)
     {
         ArgumentNullException.ThrowIfNull(record);
@@ -208,10 +185,6 @@ internal sealed class RedisPackageDraftBacking : IPackageDraftBacking
         return JsonSerializer.Serialize(wire, PackageDraftRedisJsonContext.Default.PackageDraftWire);
     }
 
-    /// <summary>
-    /// Deserializes a record. Returns null for a missing, foreign-version, or
-    /// unreadable payload. Does not throw for corrupt JSON.
-    /// </summary>
     internal static PackageDraftRecord? Decode(PackageDraftKind kind, string? payload)
     {
         if (string.IsNullOrWhiteSpace(payload))
@@ -284,18 +257,11 @@ internal sealed class RedisPackageDraftBacking : IPackageDraftBacking
     };
 }
 
-/// <summary>JSON envelope stored at a package-draft data key.</summary>
-/// <param name="Version">Schema version. Unknown versions read as not found.</param>
-/// <param name="OwnerId">Caller subject allowed to read the draft.</param>
-/// <param name="WrittenAt">Utc instant of the write that started the TTL.</param>
-/// <param name="PackageJson">Package body serialized with <see cref="PackagingJsonContext"/>.</param>
 internal sealed record PackageDraftWire(int Version, string OwnerId, DateTimeOffset WrittenAt, string PackageJson)
 {
-    /// <summary>Schema version written by this build.</summary>
     public const int CurrentVersion = 1;
 }
 
-/// <summary>Source-generated serializer for <see cref="PackageDraftWire"/>.</summary>
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(PackageDraftWire))]
 internal sealed partial class PackageDraftRedisJsonContext : JsonSerializerContext;

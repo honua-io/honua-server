@@ -7,7 +7,6 @@ using Honua.Infrastructure.Models;
 
 namespace Honua.Server.Features.Studio.Ai;
 
-/// <summary>Source-generated JSON context for the Studio AI proxy endpoints' <see cref="ApiResponse{T}"/> envelope.</summary>
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,

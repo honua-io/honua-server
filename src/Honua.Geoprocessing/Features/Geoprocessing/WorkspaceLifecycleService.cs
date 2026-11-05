@@ -11,9 +11,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Geoprocessing;
 
-/// <summary>
-/// Orchestrates workspace and artifact lifecycle operations.
-/// </summary>
 internal sealed class WorkspaceLifecycleService : IWorkspaceLifecycleService
 {
     private readonly IWorkspaceStore _workspaceStore;

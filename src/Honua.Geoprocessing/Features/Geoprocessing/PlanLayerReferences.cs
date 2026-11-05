@@ -8,16 +8,6 @@ using Honua.Core.Features.Raster.Domain;
 
 namespace Honua.Geoprocessing;
 
-/// <summary>
-/// A catalog layer a submitted plan will touch, together with the step and parameter
-/// that named it. Carried so a denial can name the offending step without the caller
-/// having to guess which of several layer inputs was refused.
-/// </summary>
-/// <param name="StepId">The plan step that references the layer.</param>
-/// <param name="ProcessId">The catalog process the step executes.</param>
-/// <param name="ParameterName">The declared parameter whose value is the layer id.</param>
-/// <param name="LayerId">The referenced catalog layer id.</param>
-/// <param name="Access">Whether the process reads the layer or writes into it.</param>
 internal readonly record struct PlanLayerReference(
     string StepId,
     string ProcessId,
@@ -25,45 +15,9 @@ internal readonly record struct PlanLayerReference(
     int LayerId,
     ProcessLayerAccess Access);
 
-/// <summary>
-/// Derives the catalog layers an <see cref="AnalysisPlan"/> will read, GENERICALLY, from
-/// the process catalog rather than from a hard-coded list of layer-sourced processes
-/// (honua-server#3046).
-/// </summary>
-/// <remarks>
-/// <para>
-/// A parameter counts as a layer reference when the process definition declares it as
-/// <see cref="ProcessParameterValueType.LayerId"/>. Any process added later that declares a
-/// layer parameter is therefore covered by the submit-time authorization gate the moment it
-/// is added to the catalog — no per-executor opt-in and nothing to forget.
-/// </para>
-/// <para>
-/// The parameter also declares HOW the process uses the layer
-/// (<see cref="ProcessParameterSpec.LayerAccess"/>), which is carried on the reference so the
-/// gate can require a read grant on sources and a write grant on destinations. Deriving the
-/// operation from the value type alone made every layer parameter a read, refusing an import
-/// whose caller held the mutating grant but was deliberately denied read on the destination
-/// layer (honua-server#3046 review).
-/// </para>
-/// <para>
-/// The value is read with a case-insensitive key match even though the worker-side
-/// <c>StepInputReader</c> resolves the durable spec key with ordinal comparison. Matching more
-/// keys than the executor reads can only ever authorize MORE layers than are actually read, so
-/// a differently-cased input can never smuggle a read past the gate.
-/// </para>
-/// </remarks>
+// The parameter declares read or write; treating every layer parameter as a read refused imports the caller was allowed to write.
 internal static class PlanLayerReferences
 {
-    /// <summary>
-    /// Returns one entry per DISTINCT layer id the plan references, in plan order.
-    /// Steps whose process is not in the catalog, parameters that are absent, and values
-    /// that are not integers are skipped: none of them results in a catalog layer read
-    /// (unknown processes and malformed inputs are rejected by plan validation and by the
-    /// executors themselves).
-    /// </summary>
-    /// <param name="plan">The plan being submitted.</param>
-    /// <param name="catalog">The process catalog that declares parameter value types.</param>
-    /// <returns>The distinct layer references, in the order they appear in the plan.</returns>
     public static IReadOnlyList<PlanLayerReference> Derive(AnalysisPlan plan, IProcessCatalog catalog)
     {
         ArgumentNullException.ThrowIfNull(plan);
@@ -144,11 +98,6 @@ internal static class PlanLayerReferences
         return references is null ? [] : references;
     }
 
-    /// <summary>
-    /// Returns whether a declared layer parameter reaches its executor's layer access path.
-    /// Most layer parameters are unconditional. The optional import raster target is active
-    /// only for the same positive id and supported filename combination the executor imports.
-    /// </summary>
     private static bool IsActiveLayerReference(
         AnalysisPlanStep step,
         ProcessParameterSpec parameter,

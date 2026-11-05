@@ -11,24 +11,8 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Ai.Protocols.Mcp.Discovery;
 
-/// <summary>
-/// MCP tool that returns a self-describing manifest of the tools, resources, and
-/// grounding resources the live <c>/mcp</c> surface exposes (#1949), so a client
-/// LLM with no Honua-specific knowledge can discover a bounded page and plan a
-/// workflow. An explicit admin-only export returns the full inventory. It projects
-/// the same in-process catalog the dispatcher
-/// serves over both the HTTP-SSE and stdio transports (#1950), so the manifest is
-/// transport-symmetric by construction.
-/// </summary>
-/// <remarks>
-/// This is a Honua extension over the bare geospatial-mcp taxonomy (which models
-/// capability discovery as a CapabilityCatalog read); the reference implementation
-/// exposes it as a first-class tool. A vendored conformance schema is shipped under
-/// <c>ConformanceSchemas/geospatial-mcp/tools/list_capabilities.schema.json</c>.
-/// </remarks>
 internal sealed class ListCapabilitiesTool : IMcpTool
 {
-    /// <summary>The tool name published in <c>tools/list</c>.</summary>
     public const string ToolName = "honua_list_capabilities";
 
     private readonly IGeoprocessingJobService _jobService;
@@ -40,13 +24,10 @@ internal sealed class ListCapabilitiesTool : IMcpTool
         _logger = logger;
     }
 
-    /// <inheritdoc />
     public string Name => ToolName;
 
-    /// <inheritdoc />
     public string WorkflowFamily => McpTelemetry.WorkflowFamily.Results;
 
-    /// <inheritdoc />
     public McpToolDescriptor Describe() => new()
     {
         Name = ToolName,
@@ -57,7 +38,6 @@ internal sealed class ListCapabilitiesTool : IMcpTool
         Annotations = McpToolAnnotationSets.ReadOnly("List capabilities")
     };
 
-    /// <inheritdoc />
     public async Task<McpToolsCallResult> InvokeAsync(
         HttpContext httpContext,
         JsonElement? arguments,
@@ -179,12 +159,6 @@ internal sealed class ListCapabilitiesTool : IMcpTool
         return configured.Any(principal.IsInRole);
     }
 
-    /// <summary>
-    /// Projects every published workflow view over the live catalog and returns
-    /// its summary (honua-server#3428). Deriving the summaries here — rather than
-    /// storing them — is what guarantees the advertised member counts, digests,
-    /// and byte measurements describe the surface this host actually serves.
-    /// </summary>
     private static async Task<List<Views.McpWorkflowViewSummary>> BuildWorkflowViewSummariesAsync(
         McpDataAccessSurface surface,
         CancellationToken cancellationToken)

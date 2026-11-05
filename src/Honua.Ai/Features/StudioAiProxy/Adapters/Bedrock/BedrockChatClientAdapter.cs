@@ -13,18 +13,6 @@ using Microsoft.Extensions.AI;
 
 namespace Honua.Ai.StudioAiProxy.Adapters.Bedrock;
 
-/// <summary>
-/// An <see cref="IChatClient"/> backed by Amazon Bedrock's Converse API
-/// (<c>ConverseAsync</c> / <c>ConverseStreamAsync</c>). The Converse API is used
-/// (rather than the raw <c>InvokeModel</c> API) because it exposes a model-agnostic
-/// <see cref="ToolConfiguration"/> / <see cref="ToolUseBlock"/> / <see cref="ToolResultBlock"/>
-/// contract that we map to/from Microsoft.Extensions.AI's
-/// <see cref="FunctionCallContent"/> / <see cref="FunctionResultContent"/>, which is what the
-/// Studio AI proxy's provider-neutral tool-call surface needs.
-///
-/// Ported from honua-devops <c>Honua.DevOps.Agent/Providers/BedrockChatClientAdapter.cs</c> so the
-/// Studio AI proxy can run on cloud AI (AWS Bedrock / Claude) without a local Ollama/Qwen model.
-/// </summary>
 internal sealed class BedrockChatClientAdapter : IChatClient
 {
     private readonly IAmazonBedrockRuntime _runtime;
@@ -41,12 +29,6 @@ internal sealed class BedrockChatClientAdapter : IChatClient
         _ownsRuntime = ownsRuntime;
     }
 
-    /// <summary>
-    /// Builds an adapter targeting the supplied <paramref name="modelId"/> in the supplied AWS
-    /// <paramref name="region"/>. Authentication prefers the standard AWS credential chain (env
-    /// vars, shared profile, IAM role, container/Lambda ambient credentials). A Bedrock API key
-    /// (long-lived bearer token) is used when supplied via <paramref name="apiKey"/>.
-    /// </summary>
     internal static BedrockChatClientAdapter Create(string modelId, string region, string? apiKey)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(modelId);

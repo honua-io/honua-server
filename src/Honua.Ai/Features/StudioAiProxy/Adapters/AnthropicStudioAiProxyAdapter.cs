@@ -14,11 +14,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Ai.StudioAiProxy.Adapters;
 
-/// <summary>
-/// Adapter for the Anthropic Messages API (<c>POST {endpoint}/v1/messages</c>, streaming). Maps
-/// Anthropic's SSE frame vocabulary (<c>message_start</c>/<c>content_block_*</c>/<c>message_delta</c>/
-/// <c>message_stop</c>) onto the provider-neutral <see cref="StudioAiChatEvent"/> sequence.
-/// </summary>
 internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, IStudioAiPreparedHttpAdapter
 {
     private const string AnthropicVersion = "2023-06-01";
@@ -459,19 +454,7 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
         return document.RootElement.Clone();
     }
 
-    /// <summary>
-    /// Builds the Anthropic top-level <c>system</c> string. Anthropic's Messages API has no
-    /// <c>system</c>-role message — system content is a single top-level field, not a
-    /// <c>messages[]</c> entry — so a <see cref="StudioAiRole.System"/> message would otherwise be
-    /// silently dropped by the <c>Where(m =&gt; m.Role != StudioAiRole.System)</c> filter above (they
-    /// cannot be sent to Anthropic as chat turns; the API rejects a <c>"system"</c> role in
-    /// <c>messages[]</c>). To keep behavior aligned with the OpenAI-compatible adapter — which
-    /// forwards <see cref="StudioAiChatRequest.System"/> and every <see cref="StudioAiRole.System"/>
-    /// message as OpenAI <c>system</c>-role chat messages, in request order, with no restriction on
-    /// position — this concatenates the same content (the top-level <c>System</c> field first, then
-    /// each <see cref="StudioAiRole.System"/> message's content in order) into Anthropic's single
-    /// <c>system</c> string, joined with a blank line between parts.
-    /// </summary>
+    // Anthropic rejects a system role inside messages, so system content is concatenated into the single top-level system field.
     private static string? BuildSystemPrompt(StudioAiChatRequest request)
     {
         var parts = new List<string>();

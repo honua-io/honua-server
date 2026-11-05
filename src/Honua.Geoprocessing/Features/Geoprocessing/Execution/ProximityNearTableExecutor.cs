@@ -6,21 +6,10 @@ using NetTopologySuite.Features;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// <c>proximity.near-table</c> executor (#2139). Produces a TABLE of nearest-feature
-/// rows — one null-geometry row per input feature that has a neighbour within the
-/// optional <c>searchRadius</c> — carrying <c>IN_FID</c>, <c>NEAR_FID</c> and
-/// <c>NEAR_DIST</c>, matching Esri's <c>GenerateNearTable</c>. Table rows are
-/// emitted as null-geometry features so they flow through the shared
-/// FeatureCollection artifact envelope. Distances are planar in CRS units. Both
-/// layers are supplied inline as <c>data:application/geo+json;base64</c> data URIs.
-/// Pure managed NetTopologySuite — no GDAL/GEOS native dependency.
-/// </summary>
 internal sealed class ProximityNearTableExecutor(
     IOptionsMonitor<GeoprocessingExecutorOptions> options)
     : FeatureCollectionTransformExecutor(options)
 {
-    /// <summary>The canonical process id this executor handles.</summary>
     internal const string HandledProcessId = "proximity.near-table";
 
     protected override string ProcessId => HandledProcessId;

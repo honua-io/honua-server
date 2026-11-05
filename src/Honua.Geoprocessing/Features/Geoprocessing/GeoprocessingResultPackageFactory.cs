@@ -12,9 +12,6 @@ using Honua.ControlPlane;
 
 namespace Honua.Geoprocessing;
 
-/// <summary>
-/// Builds durable <see cref="AnalysisResultPackage"/> envelopes from terminal execution jobs.
-/// </summary>
 internal static class GeoprocessingResultPackageFactory
 {
     public static AnalysisResultPackage Create(ExecutionJobRecord job, IProcessCatalog processCatalog)
@@ -349,10 +346,6 @@ internal static class GeoprocessingResultPackageFactory
            && string.Equals(descriptor.JobId, job.OperationId, StringComparison.Ordinal)
            && descriptor.AttemptNumber == job.AttemptCount;
 
-    /// <summary>
-    /// Projects the descriptor's content identity, grid summary, producing engine, and
-    /// lineage onto artifact metadata as stable identities (#3089).
-    /// </summary>
     private static void AppendDescriptorMetadata(
         Dictionary<string, string> metadata,
         RasterOutputDescriptor descriptor)

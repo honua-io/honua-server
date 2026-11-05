@@ -16,19 +16,8 @@ using Honua.Core.Features.Studio.Drafts;
 
 namespace Honua.Ai.Protocols.Mcp;
 
-/// <summary>
-/// DI registration for the MCP operator surface. Tool and resource handlers are
-/// stateless singletons; handlers that need scoped state resolve it through an
-/// <see cref="IServiceScopeFactory"/> during the request. That keeps the
-/// <c>SurfaceInitialized</c> startup log fired exactly once across the process
-/// lifetime and avoids re-building the tool and resource catalogs on every
-/// <c>POST /mcp</c> request.
-/// </summary>
 internal static class McpServiceCollectionExtensions
 {
-    /// <summary>
-    /// Registers the Streamable-HTTP session registry (honua-server#1954).
-    /// </summary>
     internal static IServiceCollection AddMcpSessionManager(this IServiceCollection services)
     {
         // Streamable-HTTP session registry (honua-server#1954). A process-wide
@@ -91,12 +80,6 @@ internal static class McpServiceCollectionExtensions
         return services;
     }
 
-    /// <summary>
-    /// Binds <see cref="McpOptions"/> from the <c>Mcp</c> section. The
-    /// stateless-session fallback defaults by environment (on only in
-    /// Development); that default is applied before binding, so an explicit
-    /// <c>Mcp:StatelessSessionFallback</c> setting still wins.
-    /// </summary>
     internal static IServiceCollection AddMcpOptions(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddOptions<McpOptions>()
@@ -107,18 +90,6 @@ internal static class McpServiceCollectionExtensions
         return services;
     }
 
-    /// <summary>
-    /// Registers MCP tools, core resources (jobs, workspaces, catalog), and the
-    /// JSON-RPC dispatcher. The hosted-promotion surface (published services,
-    /// deployments, map/app packages) is intentionally not registered here —
-    /// those handlers depend on canonical <see cref="Honua.Core.Features.Publishing.Abstractions.IPublishedServiceStore"/>
-    /// and <see cref="Honua.Core.Features.Deployment.Abstractions.IDeploymentStore"/> persistence,
-    /// Hosts that have registered canonical persistence call
-    /// <see cref="AddMcpPromotionSurface"/> to advertise those resources; the
-    /// Postgres server profile does this through the server composition gate.
-    /// Metadata-backed ordinary publications use <see cref="AddMcpCatalogPublicationSurface"/>
-    /// when the promotion stores are absent.
-    /// </summary>
     public static IServiceCollection AddMcpDataAccessSurface(
         this IServiceCollection services,
         IConfiguration configuration)
@@ -506,16 +477,6 @@ internal static class McpServiceCollectionExtensions
         return services;
     }
 
-    /// <summary>
-    /// Publishes validated operations-toolset descriptors as first-class MCP tools
-    /// (#2483, ADR-0056 Increment 4). The audited Admin projection publishes by default
-    /// (#3363; <c>Mcp:PublishOperations:AdminProjection=false</c> withholds it) and the full
-    /// catalog stays opt-in via <c>Mcp:PublishOperations:Enabled</c>. Must be called
-    /// AFTER the operations toolset is composed (<c>AddOperationsToolset</c>), because
-    /// the tool source resolves the canonical <see cref="Honua.Core.Features.Operations.Abstractions.IOperationCatalog"/>
-    /// — call it from a host that has the operations toolset wired, not from a bare
-    /// <see cref="AddMcpDataAccessSurface"/> composition.
-    /// </summary>
     public static IServiceCollection AddMcpPublishedOperationTools(
         this IServiceCollection services,
         IConfiguration configuration)
@@ -536,10 +497,6 @@ internal static class McpServiceCollectionExtensions
         return services;
     }
 
-    /// <summary>
-    /// Registers persisted catalog publication readback without manufacturing
-    /// promotion or deployment stores. Deployment/package resources stay absent.
-    /// </summary>
     public static IServiceCollection AddMcpCatalogPublicationSurface(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
@@ -558,15 +515,7 @@ internal static class McpServiceCollectionExtensions
         return services;
     }
 
-    /// <summary>
-    /// Registers the hosted-promotion MCP resource handlers (published services,
-    /// deployments, map/app packages, and the promotion list index). Callers
-    /// must register canonical <see cref="Honua.Core.Features.Publishing.Abstractions.IPublishedServiceStore"/>
-    /// and <see cref="Honua.Core.Features.Deployment.Abstractions.IDeploymentStore"/> persistence
-    /// before invoking this extension; this method deliberately does not wire
-    /// any fallback stores so the default server composition cannot advertise
-    /// promotion resources backed by process-local, always-empty state.
-    /// </summary>
+    // No fallback stores are registered, so promotion resources cannot advertise process-local empty state.
     public static IServiceCollection AddMcpPromotionSurface(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);

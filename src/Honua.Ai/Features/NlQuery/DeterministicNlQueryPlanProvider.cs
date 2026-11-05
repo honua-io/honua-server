@@ -11,20 +11,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Ai.NlQuery;
 
-/// <summary>
-/// Fixture-replay NL query plan provider. Matches the incoming prompt against
-/// the deterministic AI-builder contract fixtures and returns the canned
-/// <see cref="FilterPlan"/> the fixture promises for that prompt. Used to keep
-/// platform-contract tests and demo flows reproducible without making live
-/// model calls.
-/// </summary>
-/// <remarks>
-/// Only scenarios that expose <c>draft.filterPlan</c> resolve to a successful
-/// plan. Ambiguity, unsupported-capability, auth-denied, oversized, and
-/// apply-failure scenarios surface as <see cref="NlQueryPlanResult.Failure"/>
-/// with a structured reason — those non-success states belong to the grounding
-/// and plan-validation layers, not the NL planner.
-/// </remarks>
 internal sealed class DeterministicNlQueryPlanProvider : INlQueryPlanProvider
 {
     private readonly Dictionary<string, FilterPlan> _plansByPrompt;
@@ -62,7 +48,6 @@ internal sealed class DeterministicNlQueryPlanProvider : INlQueryPlanProvider
         _nonSuccessByPrompt = nonSuccess;
     }
 
-    /// <inheritdoc />
     public Task<NlQueryPlanResult> GeneratePlanAsync(
         NlQueryPlanRequest request,
         CancellationToken cancellationToken = default)

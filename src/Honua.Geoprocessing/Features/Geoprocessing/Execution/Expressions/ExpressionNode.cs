@@ -5,21 +5,11 @@ using System.Globalization;
 
 namespace Honua.Geoprocessing.Execution.Expressions;
 
-/// <summary>
-/// Base of the immutable expression AST. Every node is a hand-written, sealed
-/// evaluator — there is no reflection, no dynamic dispatch beyond the virtual
-/// <see cref="Evaluate"/>, and no code generation, so the tree is fully AOT-safe.
-/// Values flow as <see cref="object"/> boxes constrained to the runtime value set
-/// produced by the grammar: <c>double</c>, <c>string</c>, <c>bool</c>,
-/// <c>DateTimeOffset</c>, or <c>null</c>.
-/// </summary>
 internal abstract class ExpressionNode
 {
-    /// <summary>Evaluates this node against the supplied field-reference context.</summary>
     public abstract object? Evaluate(IExpressionContext context);
 }
 
-/// <summary>A literal constant (number, string, bool, or null).</summary>
 internal sealed class LiteralNode(object? value) : ExpressionNode
 {
     public object? Value { get; } = value;
@@ -27,7 +17,6 @@ internal sealed class LiteralNode(object? value) : ExpressionNode
     public override object? Evaluate(IExpressionContext context) => Value;
 }
 
-/// <summary>A bare identifier resolved as a field reference; missing fields are <c>null</c>.</summary>
 internal sealed class FieldNode(string name) : ExpressionNode
 {
     public string Name { get; } = name;
@@ -36,7 +25,6 @@ internal sealed class FieldNode(string name) : ExpressionNode
         => context.TryGetField(Name, out var value) ? value : null;
 }
 
-/// <summary>A prefix unary operation: numeric negation or logical not.</summary>
 internal sealed class UnaryNode(ExpressionTokenKind op, ExpressionNode operand) : ExpressionNode
 {
     public override object? Evaluate(IExpressionContext context)
@@ -51,7 +39,6 @@ internal sealed class UnaryNode(ExpressionTokenKind op, ExpressionNode operand) 
     }
 }
 
-/// <summary>A binary arithmetic / comparison / logical operation.</summary>
 internal sealed class BinaryNode(ExpressionTokenKind op, ExpressionNode left, ExpressionNode right) : ExpressionNode
 {
     public override object? Evaluate(IExpressionContext context)
@@ -121,7 +108,6 @@ internal sealed class BinaryNode(ExpressionTokenKind op, ExpressionNode left, Ex
     }
 }
 
-/// <summary>A ternary conditional <c>cond ? whenTrue : whenFalse</c>.</summary>
 internal sealed class ConditionalNode(ExpressionNode condition, ExpressionNode whenTrue, ExpressionNode whenFalse) : ExpressionNode
 {
     public override object? Evaluate(IExpressionContext context)
@@ -130,7 +116,6 @@ internal sealed class ConditionalNode(ExpressionNode condition, ExpressionNode w
             : whenFalse.Evaluate(context);
 }
 
-/// <summary>A call to a whitelisted function with already-parsed argument nodes.</summary>
 internal sealed class FunctionNode(string name, IReadOnlyList<ExpressionNode> arguments) : ExpressionNode
 {
     public string Name { get; } = name;
@@ -141,24 +126,10 @@ internal sealed class FunctionNode(string name, IReadOnlyList<ExpressionNode> ar
         => ExpressionFunctions.Invoke(Name, Arguments, context);
 }
 
-/// <summary>
-/// Shared value coercion helpers used by the evaluator nodes. Centralizes the
-/// limited, well-defined coercion rules so behavior is consistent across operators
-/// and functions.
-/// </summary>
 internal static class ExpressionValues
 {
-    /// <summary>
-    /// Tolerance used wherever a computed <c>double</c> is compared against the literal
-    /// zero sentinel (divide/modulo-by-zero guards, truthy coercion). A value derived
-    /// through a chain of arithmetic that mathematically cancels to zero can round to a
-    /// tiny non-zero residue instead of exact <c>0.0</c>; comparing with exact equality
-    /// would let that residue silently produce a huge/garbage result (division) or the
-    /// wrong branch (truthiness) instead of the intended zero-sentinel behavior.
-    /// </summary>
     internal const double ZeroTolerance = 1e-9;
 
-    /// <summary>Coerces a value to a <c>double</c>, throwing for non-numeric input.</summary>
     public static double ToNumber(object? value)
     {
         if (TryToNumber(value, out var number))
@@ -174,11 +145,6 @@ internal static class ExpressionValues
         };
     }
 
-    /// <summary>
-    /// Attempts numeric coercion without throwing. Handles every boxed numeric the
-    /// feature attribute table can hold (NetTopologySuite stores integers as boxed
-    /// <c>int</c>/<c>long</c>), plus bool, parseable strings, and dates.
-    /// </summary>
     public static bool TryToNumber(object? value, out double result)
     {
         switch (value)
@@ -199,7 +165,6 @@ internal static class ExpressionValues
         }
     }
 
-    /// <summary>Coerces a value to a truth value (null and 0 are false; empty string is false).</summary>
     public static bool ToBool(object? value) => value switch
     {
         null => false,
@@ -209,7 +174,6 @@ internal static class ExpressionValues
         _ => true,
     };
 
-    /// <summary>Equality with numeric promotion; otherwise invariant string comparison.</summary>
     public static bool AreEqual(object? left, object? right)
     {
         if (left is null && right is null)
@@ -239,7 +203,6 @@ internal static class ExpressionValues
             StringComparison.Ordinal);
     }
 
-    /// <summary>Ordering comparison: numeric when both coerce, otherwise ordinal string compare.</summary>
     public static int Compare(object? left, object? right)
     {
         if (TryToNumber(left, out var ln) && TryToNumber(right, out var rn))

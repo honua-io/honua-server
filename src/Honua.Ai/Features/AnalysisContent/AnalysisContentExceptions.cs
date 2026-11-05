@@ -3,11 +3,6 @@
 
 namespace Honua.Ai.AnalysisContent;
 
-/// <summary>
-/// Thrown when an analysis content request body fails validation. Carries a stable machine-readable
-/// <see cref="Code"/> and an optional <see cref="Path"/> (JSON Pointer / dotted field path) so the endpoint
-/// can surface a field-addressable RFC-7807 ProblemDetails <c>errors[]</c> rather than a flat message.
-/// </summary>
 internal sealed class AnalysisContentValidationException : Exception
 {
     public AnalysisContentValidationException(string message, string code, string? path = null)
@@ -17,10 +12,8 @@ internal sealed class AnalysisContentValidationException : Exception
         Path = path;
     }
 
-    /// <summary>Stable machine-readable error code (e.g. <c>analysis.content.name.required</c>).</summary>
     public string Code { get; }
 
-    /// <summary>Optional JSON Pointer / dotted field path of the offending value (e.g. <c>/inputs/0/layerId</c>).</summary>
     public string? Path { get; }
 }
 

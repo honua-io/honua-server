@@ -5,10 +5,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Ai.NlQuery;
 
-/// <summary>
-/// Structured logging for NL spatial query operations.
-/// Event ID range: 6600-6649.
-/// </summary>
 internal static partial class NlQueryLog
 {
     [LoggerMessage(

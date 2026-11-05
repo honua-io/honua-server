@@ -6,17 +6,6 @@ using System.Text.RegularExpressions;
 
 namespace Honua.Ai.Grounding;
 
-/// <summary>
-/// Deterministic, dependency-free tokenizer for grounding input text.
-/// Lowercases, strips punctuation, drops a built-in English stopword list,
-/// applies a tiny set of hand-coded stem rules, and de-duplicates tokens.
-///
-/// Kept intentionally small — the eval harness (honua-server-734) pins the
-/// token set, so any change here needs paired fixture updates. A bag-of-lemma
-/// representation is enough for the 20-process catalog and a few-hundred
-/// layers; when catalog size grows beyond that, swap in an embeddings
-/// reranker behind <c>IGroundingEngine</c>.
-/// </summary>
 internal static partial class GroundingTokenizer
 {
     private static readonly FrozenSet<string> Stopwords =
@@ -36,11 +25,6 @@ internal static partial class GroundingTokenizer
     [GeneratedRegex(@"[a-z0-9]+", RegexOptions.CultureInvariant)]
     private static partial Regex TokenPattern();
 
-    /// <summary>
-    /// Returns the deterministic bag of lemma tokens for <paramref name="text"/>.
-    /// Duplicates are collapsed, stopwords are dropped, and the order follows
-    /// first-occurrence in the original text.
-    /// </summary>
     public static IReadOnlyList<string> Tokenize(string? text)
     {
         if (string.IsNullOrWhiteSpace(text))
@@ -82,10 +66,6 @@ internal static partial class GroundingTokenizer
         return result;
     }
 
-    /// <summary>
-    /// Tokenizes text and returns the set of tokens (unordered). Convenience
-    /// for join-style overlap counts where order is irrelevant.
-    /// </summary>
     public static FrozenSet<string> TokenizeToSet(string? text)
     {
         var tokens = Tokenize(text);

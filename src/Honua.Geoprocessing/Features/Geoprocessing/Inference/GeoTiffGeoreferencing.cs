@@ -6,24 +6,6 @@ using System.Globalization;
 
 namespace Honua.Geoprocessing.Inference;
 
-/// <summary>
-/// Minimal, dependency-free GeoTIFF header reader used to PROVE that a delegated
-/// inference output is actually georeferenced (#2241). TIFF magic alone is not
-/// evidence: a plain unreferenced TIFF, or a truncated header, also starts with
-/// <c>II*\0</c>. Publishing such a payload as a "GeoTIFF" would silently place a
-/// classification at the wrong location while the process advertises
-/// georeferencing preservation, so the executor parses the IFD and requires real
-/// positioning + CRS metadata before the artifact is published.
-/// </summary>
-/// <remarks>
-/// Reads only what the contract needs — image size (tags 256/257), the GeoTIFF
-/// model tags (33550 ModelPixelScale, 33922 ModelTiepoint, 34264
-/// ModelTransformation) and the GeoKeyDirectory (34735) CRS keys — so it stays a
-/// pure span parse with no GDAL/native dependency and no allocation beyond the
-/// parsed values. Both classic TIFF and BigTIFF, little- and big-endian, are
-/// handled. Anything malformed simply fails to parse, which the caller surfaces
-/// as a clear job failure.
-/// </remarks>
 internal readonly record struct GeoTiffGeoreferencing
 {
     private const ushort TagImageWidth = 256;
@@ -37,33 +19,18 @@ internal readonly record struct GeoTiffGeoreferencing
     private const ushort TagModelTransformation = 34264;
     private const ushort TagGeoKeyDirectory = 34735;
 
-    /// <summary>
-    /// Largest share of the source extent a single output pixel may span before
-    /// the extent comparison stops being meaningful (a result must be at least
-    /// ~10 cells across). Caps the resampling rounding allowance so a very coarse
-    /// result cannot pass the extent check by virtue of its own pixel size.
-    /// </summary>
     private const double MaxRoundingFractionOfExtent = 0.1;
 
-    /// <summary>
-    /// GeoKey value meaning "the CRS is user-defined and spelled out in the
-    /// remaining GeoKeys / parameter tags" rather than named by an EPSG code.
-    /// </summary>
-    /// <summary>TIFF field type SHORT (16-bit unsigned).</summary>
     private const ushort TiffTypeShort = 3;
 
-    /// <summary>TIFF field type LONG (32-bit unsigned).</summary>
     private const ushort TiffTypeLong = 4;
 
-    /// <summary>TIFF field type DOUBLE (64-bit IEEE).</summary>
     private const ushort TiffTypeDouble = 12;
 
-    /// <summary>TIFF field type LONG8 (64-bit unsigned, BigTIFF).</summary>
     private const ushort TiffTypeLong8 = 16;
 
     private const ushort GeoKeyUserDefined = 32767;
 
-    /// <summary>Sentinel <see cref="CrsCode"/> for a user-defined CRS.</summary>
     internal const int UserDefinedCrsCode = -1;
 
     private const ushort GeoKeyRasterType = 1025;
@@ -72,59 +39,29 @@ internal readonly record struct GeoTiffGeoreferencing
     private const ushort GeoKeyGeographicType = 2048;
     private const ushort GeoKeyProjectedCsType = 3072;
 
-    /// <summary>Raster width in pixels.</summary>
     public double Width { get; init; }
 
-    /// <summary>Raster height in pixels.</summary>
     public double Height { get; init; }
 
-    /// <summary>Georeferenced X of the upper-left corner.</summary>
     public double OriginX { get; init; }
 
-    /// <summary>Georeferenced Y of the upper-left corner.</summary>
     public double OriginY { get; init; }
 
-    /// <summary>Georeferenced pixel size along X (always positive).</summary>
     public double PixelSizeX { get; init; }
 
-    /// <summary>Georeferenced pixel size along Y (always positive).</summary>
     public double PixelSizeY { get; init; }
 
-    /// <summary>
-    /// CRS code from the GeoKeyDirectory (ProjectedCSTypeGeoKey, else
-    /// GeographicTypeGeoKey), or 0 when the directory declares neither.
-    /// </summary>
     public int CrsCode { get; init; }
 
-    /// <summary>
-    /// True when the file declares actual pixel storage — strip offsets +
-    /// byte counts, or their tiled equivalents — with a positive byte count.
-    /// A header-only TIFF carrying size/transform/CRS tags but no raster data
-    /// is structurally parseable yet useless as a classification artifact, so
-    /// the executor refuses to publish one.
-    /// </summary>
     public bool HasRasterData { get; init; }
 
-    /// <summary>
-    /// Non-null when the file carries a model transform this comparison cannot
-    /// honestly verify — a rotated/sheared grid, or an axis orientation other
-    /// than the standard north-up (X increasing east, Y decreasing south).
-    /// Origin/extent comparison assumes an axis-aligned north-up grid, so rather
-    /// than silently comparing only the diagonal magnitudes (which would let a
-    /// flipped or rotated raster match) such a transform is rejected outright.
-    /// </summary>
+    // A rotated or non-north-up grid is rejected because comparing origins would accept a flipped raster.
     public string? UnsupportedTransformReason { get; init; }
 
-    /// <summary>Georeferenced extent width (<see cref="Width"/> * <see cref="PixelSizeX"/>).</summary>
     public double ExtentWidth => Width * PixelSizeX;
 
-    /// <summary>Georeferenced extent height (<see cref="Height"/> * <see cref="PixelSizeY"/>).</summary>
     public double ExtentHeight => Height * PixelSizeY;
 
-    /// <summary>
-    /// True when the header carries both a usable model transform (origin +
-    /// non-degenerate pixel size) and a CRS declaration.
-    /// </summary>
     public bool IsGeoreferenced =>
         HasRasterData
         && UnsupportedTransformReason is null
@@ -143,10 +80,6 @@ internal readonly record struct GeoTiffGeoreferencing
         && double.IsFinite(ExtentHeight) && ExtentHeight > 0
         && CrsCode != 0;
 
-    /// <summary>
-    /// Attempts to read the georeferencing block from a TIFF/BigTIFF payload.
-    /// Returns false for non-TIFF, truncated, or unparseable input.
-    /// </summary>
     public static bool TryRead(ReadOnlySpan<byte> bytes, out GeoTiffGeoreferencing georeferencing)
     {
         georeferencing = default;
@@ -306,13 +239,6 @@ internal readonly record struct GeoTiffGeoreferencing
         return builder.TryBuild(bytes, littleEndian, out georeferencing);
     }
 
-    /// <summary>
-    /// Compares this georeferencing block against <paramref name="source"/> and
-    /// reports the first material mismatch, or null when the two agree. A
-    /// backend may legitimately resample (different pixel size / raster size), so
-    /// only the CRS and the covered extent are enforced — those are what place the
-    /// classification on the map.
-    /// </summary>
     public string? DescribeMismatchAgainst(GeoTiffGeoreferencing source)
     {
         // Keep this method total even when called outside the executor's normal
@@ -384,27 +310,10 @@ internal readonly record struct GeoTiffGeoreferencing
         return null;
     }
 
-    /// <summary>
-    /// Floating-point-noise tolerance scaled to the magnitude of the coordinates
-    /// involved, so a projected CRS (metre values in the millions) does not trip
-    /// on representation error while a geographic CRS stays tight.
-    /// </summary>
     private static double OriginTolerance(double origin, double extent)
         => Math.Max(Math.Max(Math.Abs(origin), Math.Abs(extent)) * 1e-9, 1e-6);
 
-    /// <summary>
-    /// Converts a file offset into a span index, rejecting anything that does not
-    /// address <paramref name="needed"/> readable bytes inside the payload.
-    /// </summary>
-    /// <remarks>
-    /// The comparison is deliberately written as <c>offset &gt; length - needed</c>
-    /// rather than <c>offset + needed &gt; length</c>: a BigTIFF offset near
-    /// <see cref="ulong.MaxValue"/> makes the addition WRAP, sail through the
-    /// bounds check, and then produce a negative span index when narrowed to
-    /// <see cref="int"/> — throwing out of the parser instead of returning a clean
-    /// "this input is not usable" result. Offsets beyond <see cref="int.MaxValue"/>
-    /// are refused outright since they can never index a .NET buffer.
-    /// </remarks>
+    // The bounds check is offset greater than length minus needed, because adding the two wraps near the top of the unsigned range.
     private static bool TryResolveOffset(ulong offset, ulong needed, int bufferLength, out int start)
     {
         start = 0;
@@ -454,7 +363,6 @@ internal readonly record struct GeoTiffGeoreferencing
                 ? BinaryPrimitives.ReadUInt64LittleEndian(bytes[offset..])
                 : BinaryPrimitives.ReadUInt64BigEndian(bytes[offset..])));
 
-    /// <summary>Accumulates the tags of interest while the IFD is walked.</summary>
     private struct Builder
     {
         private double _width;
@@ -673,14 +581,6 @@ internal readonly record struct GeoTiffGeoreferencing
             return true;
         }
 
-        /// <summary>
-        /// Declared strip/tile regions only count as raster data when EVERY one of
-        /// them actually lies inside the payload. A truncated or malformed TIFF can
-        /// retain its offset/byte-count tags while some or all of the pixels they
-        /// point at are gone, which would otherwise be published as a corrupt
-        /// artifact. Requires matching offset/count array lengths and at least one
-        /// non-empty segment.
-        /// </summary>
         private readonly bool HasInBoundsStorage(ReadOnlySpan<byte> bytes, bool littleEndian, long payloadLength)
         {
             const uint MaxSegments = 1u << 20;
@@ -742,9 +642,6 @@ internal readonly record struct GeoTiffGeoreferencing
             rasterType = ReadGeoKeyValue(bytes, count, dataOffset, littleEndian, GeoKeyRasterType);
         }
 
-        /// <summary>
-        /// Reads one in-line GeoKey value from the directory, or 0 when absent.
-        /// </summary>
         private static int ReadGeoKeyValue(
             ReadOnlySpan<byte> bytes,
             uint count,
@@ -776,10 +673,6 @@ internal readonly record struct GeoTiffGeoreferencing
             return 0;
         }
 
-        /// <summary>
-        /// TIFF field types that legitimately carry an unsigned integer value
-        /// (SHORT, LONG, or BigTIFF's LONG8).
-        /// </summary>
         private static bool IsIntegerFieldType(ushort type)
             => type is TiffTypeShort or TiffTypeLong or TiffTypeLong8;
 

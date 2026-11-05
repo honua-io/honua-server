@@ -19,20 +19,11 @@ using NpgsqlTypes;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// <c>sink.external-postgis</c> executor. Writes the input FeatureCollection to a PostGIS
-/// database identified by a registered secure connection that is NOT the Honua catalog —
-/// the "load into a customer's own PostGIS" sink. Managed Npgsql + WKB, no GDAL.
-/// Reconciled from the GeoETL baseline ExternalPostgisSinkConnector onto the #1185
-/// process/executor contract. Identifiers are validated against a strict pattern before
-/// interpolation since they cannot be parameterized in DDL/DML. Every row's attributes JSONB
-/// carries a reserved <c>__pipeline_batch_id</c> key for soft-delete rollback.
-/// </summary>
+// Identifiers are checked against a strict pattern before interpolation because DDL cannot parameterize them.
 internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
 {
     internal const string HandledProcessId = "sink.external-postgis";
 
-    /// <summary>Reserved attribute key tagging every row with its run batch id.</summary>
     public const string BatchIdPropertyKey = "__pipeline_batch_id";
 
     private const int DefaultBatchSize = 1000;
@@ -66,10 +57,6 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
         _secureConnectionResolver = secureConnectionResolver;
     }
 
-    /// <summary>
-    /// The single process id this executor handles, surfaced through
-    /// <see cref="IProcessExecutor"/> so the dispatcher auto-registers it (#2122).
-    /// </summary>
     public IReadOnlySet<string> ProcessIds { get; } =
         new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
 

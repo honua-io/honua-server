@@ -9,24 +9,7 @@ using NetTopologySuite.Features;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// <c>transform.dedup</c> executor. Emits the first feature for each distinct key
-/// and drops later duplicates. The key is built from one or more attribute fields,
-/// the geometry (normalized WKT), or both. Pure managed — no native dependency.
-/// Ported from the GeoETL baseline DedupTransform onto the #1185 process/executor
-/// contract.
-///
-/// <para>
-/// <b>Streaming (stateful).</b> Dedup is the one stateful transform: it must remember
-/// which keys it has already emitted. It streams the input and output one feature at a
-/// time, but keeps a "seen keys" set whose memory would otherwise grow with cardinality.
-/// To stay bounded it uses a <see cref="SpillableKeySet"/>, which reduces each key to a
-/// fixed 128-bit digest and spills to a temp file once the in-memory digest count crosses
-/// a cap. Output stays first-wins and deterministic; the documented bound is digest-level
-/// exactness rather than byte-for-byte (collision probability is negligible at any realistic
-/// volume — see <see cref="SpillableKeySet"/>).
-/// </para>
-/// </summary>
+// Seen keys are 128-bit digests once the set spills, so equality is digest-level rather than byte-for-byte.
 internal sealed class DedupTransformExecutor(
     IOptionsMonitor<GeoprocessingExecutorOptions> options)
     : FeatureCollectionTransformExecutor(options)
@@ -99,16 +82,7 @@ internal sealed class DedupTransformExecutor(
         return builder.ToString();
     }
 
-    /// <summary>
-    /// Escapes the U+001E (escape prefix) and U+001F (unit-separator delimiter) characters
-    /// within a single key component value so they cannot be mistaken for structural
-    /// delimiters in the composite key string. Encoding:
-    /// <list type="bullet">
-    ///   <item>U+001E in value -&gt; U+001E U+001E</item>
-    ///   <item>U+001F in value -&gt; U+001E U+001F</item>
-    /// </list>
-    /// A single unescaped U+001F therefore always means "field boundary".
-    /// </summary>
+    // U+001E and U+001F inside a component are escaped so a single unescaped U+001F always means a field boundary.
     private static string EscapeKeyComponent(string value)
     {
         if (value.IndexOfAny(['\u001E', '\u001F']) < 0)

@@ -8,12 +8,6 @@ using Honua.Ai.Protocols.Mcp.Models;
 
 namespace Honua.Ai.Protocols.Mcp.Tools;
 
-/// <summary>
-/// MCP server-extension tool that estimates cost, artifacts, and side effects
-/// for a plan without executing it. Delegates to
-/// <see cref="IGeoprocessingJobService.DryRunPlan"/> so it stays consistent with
-/// gRPC and GPServer dry-run semantics.
-/// </summary>
 internal sealed class DryRunPlanTool : IMcpTool
 {
     public const string ToolName = "honua_dry_run_plan";

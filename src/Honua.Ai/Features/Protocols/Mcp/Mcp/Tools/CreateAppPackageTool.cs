@@ -10,22 +10,8 @@ using Honua.Ai.Protocols.Mcp.Models;
 
 namespace Honua.Ai.Protocols.Mcp.Tools;
 
-/// <summary>
-/// MCP tool that creates an <c>AppPackage</c> draft deterministically from the
-/// structured geospatial-mcp <c>create_app_package</c> fields (ADR-0076,
-/// honua-server#3255).
-/// </summary>
-/// <remarks>
-/// The app-side counterpart to <see cref="CreateMapPackageTool"/>: it performs no
-/// model inference, requires no prompt, and delegates every validation and
-/// composition rule to the shared <see cref="IAppPackageDraftFactory"/> in
-/// <c>Honua.Core</c>. It starts honoring <c>runtimeConfig</c>, which the standard
-/// publishes and the previous implementation never parsed, and it inherits the
-/// factory's closed-by-default sharing posture.
-/// </remarks>
 internal sealed class CreateAppPackageTool : IMcpTool
 {
-    /// <summary>The tool name published in <c>tools/list</c>.</summary>
     public const string ToolName = "honua_create_app_package";
 
     private readonly IGeoprocessingJobService _jobService;
@@ -33,7 +19,6 @@ internal sealed class CreateAppPackageTool : IMcpTool
     private readonly IPackageDraftStore _draftStore;
     private readonly ILogger<CreateAppPackageTool> _logger;
 
-    /// <summary>Initializes a new instance of the <see cref="CreateAppPackageTool"/> class.</summary>
     public CreateAppPackageTool(
         IGeoprocessingJobService jobService,
         IAppPackageDraftFactory drafts,
@@ -46,13 +31,10 @@ internal sealed class CreateAppPackageTool : IMcpTool
         _logger = logger;
     }
 
-    /// <inheritdoc />
     public string Name => ToolName;
 
-    /// <inheritdoc />
     public string WorkflowFamily => McpTelemetry.WorkflowFamily.Execution;
 
-    /// <inheritdoc />
     public McpToolDescriptor Describe() => new()
     {
         Name = ToolName,
@@ -66,7 +48,6 @@ internal sealed class CreateAppPackageTool : IMcpTool
         Annotations = McpToolAnnotationSets.Write("Create app package", destructive: false, idempotent: false)
     };
 
-    /// <inheritdoc />
     public async Task<McpToolsCallResult> InvokeAsync(
         HttpContext httpContext,
         JsonElement? arguments,

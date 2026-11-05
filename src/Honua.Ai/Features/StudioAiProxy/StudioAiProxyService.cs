@@ -13,13 +13,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Ai.StudioAiProxy;
 
-/// <summary>
-/// Orchestrates the Studio AI proxy: resolves the named (or default) configured provider, dispatches
-/// to the adapter registered for its <see cref="StudioAiProxyProviderOptions.Kind"/>, and — as a
-/// defense-in-depth backstop over the adapter contract — guarantees the event sequence always ends
-/// with exactly one terminal event even if an adapter misbehaves (throws instead of yielding an
-/// <see cref="StudioAiChatEventType.Error"/>).
-/// </summary>
 internal sealed class StudioAiProxyService : IStudioAiProxyService
 {
     private const int MaxToolCount = 128;

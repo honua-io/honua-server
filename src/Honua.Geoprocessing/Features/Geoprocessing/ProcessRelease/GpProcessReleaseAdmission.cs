@@ -7,71 +7,37 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Geoprocessing.ProcessRelease;
 
-/// <summary>
-/// Admission-time release pinning (honua-server#6221). A custom-code submission that names a
-/// logical process (<c>customcode.process</c>) is resolved against the process's live binding
-/// once, here, and the resolved identity is stamped into the durable spec parameters: the
-/// source commit, entrypoint and runtime from the lock, the pinned AWS Batch worker identity,
-/// and the release identity under <c>honua.release.*</c>. Python uses the lock's requirements
-/// file; .NET resolves its build project from the matching registered workload. Existing job
-/// retries and requeues read the persisted spec. Workflow-run pinning requires a separate
-/// orchestration integration; this admission resolver does not establish it.
-/// </summary>
 public sealed partial class GpProcessReleaseAdmission
 {
-    /// <summary>Request key naming the logical process whose live binding admits the job.</summary>
     public const string ProcessParam = "customcode.process";
 
-    /// <summary>Stamped: the logical process name.</summary>
     public const string ReleaseProcessParam = "honua.release.process";
 
-    /// <summary>Stamped: the release's semantic version.</summary>
     public const string ReleaseVersionParam = "honua.release.version";
 
-    /// <summary>Stamped: the lock digest the job executes.</summary>
     public const string ReleaseLockDigestParam = "honua.release.lock_digest";
 
-    /// <summary>Stamped: the binding version that admitted the job.</summary>
     public const string ReleaseBindingVersionParam = "honua.release.binding_version";
 
-    /// <summary>Stamped: the pinned worker image for Kubernetes Jobs (read by that backend).</summary>
     public const string KubernetesImageParam = "k8s.image";
 
-    /// <summary>Stamped: the pinned job definition revision for AWS Batch (read by that backend).</summary>
     public const string AwsBatchJobDefinitionParam = "batch.job_definition_arn";
 
-    /// <summary>Stamped: the immutable worker image selected by the release.</summary>
     public const string WorkerImageParam = "honua.release.worker_image";
 
-    /// <summary>Stamped: dependency lock digest.</summary>
     public const string DependencyDigestParam = "honua.release.dependency_digest";
 
-    /// <summary>Stamped: workflow version declared by the release.</summary>
     public const string WorkflowVersionParam = "honua.release.workflow_version";
 
     private readonly IGpProcessReleaseStore _store;
     private readonly ILogger<GpProcessReleaseAdmission> _logger;
 
-    /// <summary>Creates the admission resolver.</summary>
     public GpProcessReleaseAdmission(IGpProcessReleaseStore store, ILogger<GpProcessReleaseAdmission> logger)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <summary>
-    /// Resolves the binding named by <see cref="ProcessParam"/> and stamps the release identity
-    /// into <paramref name="specParams"/>. A submission without the key is left untouched.
-    /// Provider identities are stamped for every target the binding carries; each backend reads
-    /// only its own key, so the job runs the pinned release on whichever target it routes to.
-    /// </summary>
-    /// <param name="specParams">The durable parameter bag being built for the job.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The binding that admitted the job, or null when no process was named.</returns>
-    /// <exception cref="GeoprocessingValidationException">
-    /// The process has no live binding, the bound lock is not published, or the caller's
-    /// explicit custom-code values contradict the release.
-    /// </exception>
     public async Task<GpProcessBinding?> ApplyAsync(Dictionary<string, string> specParams, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(specParams);
@@ -163,7 +129,6 @@ public sealed partial class GpProcessReleaseAdmission
         Stamp(specParams, CustomCodeJobContract.DepsManifestParam, project.Trim(), specParams[ProcessParam]);
     }
 
-    /// <summary>The HTTPS clone URL for an <c>owner/name</c> repository.</summary>
     public static string RepositoryUrl(string repository) => "https://github.com/" + repository;
 
     private static void Stamp(Dictionary<string, string> specParams, string key, string value, string process)
@@ -178,7 +143,6 @@ public sealed partial class GpProcessReleaseAdmission
         specParams[key] = value;
     }
 
-    /// <summary>Prevents workload defaults from replacing a server-resolved release identity.</summary>
     internal static bool IsPinnedParameter(string key, IReadOnlyDictionary<string, string> parameters)
         => parameters.ContainsKey(ReleaseLockDigestParam)
             && (key.StartsWith("honua.release.", StringComparison.Ordinal)

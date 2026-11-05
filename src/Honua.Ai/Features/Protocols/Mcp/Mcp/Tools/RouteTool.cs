@@ -12,31 +12,10 @@ using Honua.Ai.Protocols.Mcp.Models;
 
 namespace Honua.Ai.Protocols.Mcp.Tools;
 
-/// <summary>
-/// MCP tool that solves a multi-stop route between ordered stops. Thin
-/// adapter over the canonical <see cref="IRoutingProvider"/> pipeline (the
-/// same engine the GeoServices NAServer adapter uses), so the MCP surface
-/// never grows its own routing logic.
-/// </summary>
-/// <remarks>
-/// Edition gating follows the #1592 model: the tool is always advertised in
-/// <c>tools/list</c> (discovery is free), but invoking it requires the Pro
-/// <c>routing.solve</c> entitlement from
-/// <see cref="Honua.Core.Features.Licensing.Domain.FeatureCatalog"/>. Denials
-/// surface as a <c>failed_precondition</c> tool error carrying the upgrade
-/// message. When the configured routing provider advertises no route
-/// capability (e.g. a non-Postgres data provider without pgRouting), the tool
-/// fails with the same <c>failed_precondition</c> channel instead of running
-/// SQL that cannot succeed.
-/// </remarks>
 internal sealed class RouteTool : IMcpTool
 {
     public const string ToolName = "honua_solve_route";
 
-    /// <summary>
-    /// Entitlement key gating invocation; must exist in
-    /// <see cref="Honua.Core.Features.Licensing.Domain.FeatureCatalog.All"/>.
-    /// </summary>
     public const string EntitlementKey = "routing.solve";
 
     private readonly IGeoprocessingJobService _jobService;

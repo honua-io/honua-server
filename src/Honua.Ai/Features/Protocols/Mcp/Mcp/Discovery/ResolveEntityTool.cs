@@ -13,26 +13,8 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Ai.Protocols.Mcp.Discovery;
 
-/// <summary>
-/// MCP tool that resolves a natural-language name or phrase to concrete catalog
-/// entity references (services and layers) so a client LLM can ground an entity
-/// it heard from the user before composing a workflow (#1949). It is a thin,
-/// deterministic adapter over the canonical
-/// <see cref="IMetadataV2GraphProvider"/> graph — the same metadata snapshot that
-/// backs <c>/rest/services</c>, <c>honua_list_layers</c>, FeatureServer, and the
-/// feature catalog — so resolution grounds only on capabilities that exist (no
-/// hallucinated layers). The returned <c>serviceId</c>/<c>layerId</c> pairs feed
-/// directly into <c>honua_query_features</c> and <c>honua_render_map</c>.
-/// </summary>
-/// <remarks>
-/// This is a Honua extension over the bare geospatial-mcp taxonomy: the standard
-/// models entity resolution as a CapabilityCatalog/grounding read; the reference
-/// implementation exposes it as a first-class tool. A vendored conformance schema
-/// is shipped under <c>ConformanceSchemas/geospatial-mcp/tools/resolve_entity.schema.json</c>.
-/// </remarks>
 internal sealed class ResolveEntityTool : IMcpTool
 {
-    /// <summary>The tool name published in <c>tools/list</c>.</summary>
     public const string ToolName = "honua_resolve_entity";
 
     private const string EntityTypeAny = "any";
@@ -48,13 +30,10 @@ internal sealed class ResolveEntityTool : IMcpTool
         _logger = logger;
     }
 
-    /// <inheritdoc />
     public string Name => ToolName;
 
-    /// <inheritdoc />
     public string WorkflowFamily => McpTelemetry.WorkflowFamily.Results;
 
-    /// <inheritdoc />
     public McpToolDescriptor Describe() => new()
     {
         Name = ToolName,
@@ -65,7 +44,6 @@ internal sealed class ResolveEntityTool : IMcpTool
         Annotations = McpToolAnnotationSets.ReadOnly("Resolve entity")
     };
 
-    /// <inheritdoc />
     public async Task<McpToolsCallResult> InvokeAsync(
         HttpContext httpContext,
         JsonElement? arguments,
@@ -190,11 +168,6 @@ internal sealed class ResolveEntityTool : IMcpTool
         }
     }
 
-    /// <summary>
-    /// Deterministic lexical match score in (0, 1]. Exact (case-insensitive) name
-    /// match scores highest, then prefix, then substring, then token overlap.
-    /// Returns 0 when no candidate field matches so the entity is excluded.
-    /// </summary>
     private static double Score(string query, params string?[] candidates)
     {
         var best = 0d;

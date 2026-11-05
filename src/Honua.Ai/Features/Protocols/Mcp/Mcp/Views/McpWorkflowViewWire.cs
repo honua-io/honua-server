@@ -3,17 +3,8 @@
 
 namespace Honua.Ai.Protocols.Mcp.Views;
 
-/// <summary>
-/// Projects a resolved <see cref="McpWorkflowViewProjection"/> onto the MCP wire
-/// shapes: the narrowed <c>tools/list</c> result and the discovery summary
-/// <c>honua_list_capabilities</c> advertises.
-/// </summary>
 internal static class McpWorkflowViewWire
 {
-    /// <summary>
-    /// Builds the narrowed <c>tools/list</c> result. The descriptors are the exact
-    /// live ones — never re-described, re-schematized, or truncated.
-    /// </summary>
     public static McpWorkflowViewToolsListResult BuildToolsListResult(McpWorkflowViewProjection projection)
     {
         ArgumentNullException.ThrowIfNull(projection);
@@ -26,7 +17,6 @@ internal static class McpWorkflowViewWire
         };
     }
 
-    /// <summary>Builds the <c>_meta</c> block describing the served view.</summary>
     public static McpWorkflowViewMeta BuildMeta(McpWorkflowViewProjection projection)
     {
         ArgumentNullException.ThrowIfNull(projection);
@@ -61,10 +51,6 @@ internal static class McpWorkflowViewWire
         };
     }
 
-    /// <summary>
-    /// Builds the discovery summary a client reads to learn which views exist,
-    /// so no client keeps its own view or tool inventory.
-    /// </summary>
     public static McpWorkflowViewSummary BuildSummary(McpWorkflowViewProjection projection)
     {
         ArgumentNullException.ThrowIfNull(projection);

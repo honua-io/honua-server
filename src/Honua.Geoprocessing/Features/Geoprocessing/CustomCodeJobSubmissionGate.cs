@@ -14,16 +14,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Geoprocessing;
 
-/// <summary>
-/// Consolidates the custom-code submit gate for <see cref="GeoprocessingJobService"/>:
-/// the scoped job-bound token issuance + injection (via <see cref="CustomCodeSubmitCoordinator"/>),
-/// the commit-signature verifier, and the custom-code policy options. Owns the
-/// <see cref="IScopedJobTokenIssuer"/> and <see cref="ICustomCodeCommitSignatureVerifier"/>
-/// collaborators so the job service no longer threads them (and the coordinator it builds
-/// from them) through its own constructor. Behavior, logging, and the surfaced
-/// <see cref="GeoprocessingValidationException"/> mapping are identical to the inline logic
-/// the service previously performed.
-/// </summary>
 internal sealed class CustomCodeJobSubmissionGate
 {
     private readonly ILogger<GeoprocessingJobService> _logger;
@@ -34,10 +24,6 @@ internal sealed class CustomCodeJobSubmissionGate
     private readonly IExecutionJobDefinitionRegistry? _workloads;
     private readonly ICloudFileStorage? _artifactStorage;
 
-    /// <summary>
-    /// Creates the custom-code submit gate. When no scoped-job token issuer is configured the
-    /// gate is dormant and every custom-code submission fails closed with a validation error.
-    /// </summary>
     public CustomCodeJobSubmissionGate(
         ILogger<GeoprocessingJobService> logger,
         IScopedJobTokenIssuer? scopedJobTokenIssuer = null,
@@ -58,13 +44,6 @@ internal sealed class CustomCodeJobSubmissionGate
             : new CustomCodeSubmitCoordinator(scopedJobTokenIssuer, customCodeSignatureVerifier);
     }
 
-    /// <summary>
-    /// Runs the custom-code submit gate: validates the <c>customcode.*</c> parameters, clamps
-    /// the declared scope to ⊆ the submitter, mints the scoped job-bound token, and injects it
-    /// (plus the API base URL and the server-set output prefix) into <paramref name="specParams"/>.
-    /// Throws <see cref="GeoprocessingValidationException"/> on rejection so the adapter maps it
-    /// onto the same validation channel ordinary plan failures use.
-    /// </summary>
     public async Task<(CustomCodeOwnerScope OwnerScope, string Token, ExecutionJobDefinition? Workload)> ValidateMintAndInjectAsync(
         string jobId,
         ClaimsPrincipal principal,
@@ -144,11 +123,7 @@ internal sealed class CustomCodeJobSubmissionGate
         }
     }
 
-    /// <summary>
-    /// Best-effort revocation of a scoped callback token so a credential is never left valid
-    /// for a job whose submission rolled back (the token must not outlive the job — Phase-0
-    /// invariant #5). No-ops when the token is absent or the issuer is not configured.
-    /// </summary>
+    // The callback token is revoked when submission rolls back so the credential does not outlive the job.
     public async Task TryRevokeTokenAsync(string? token)
     {
         if (string.IsNullOrEmpty(token) || _scopedJobTokenIssuer is null)

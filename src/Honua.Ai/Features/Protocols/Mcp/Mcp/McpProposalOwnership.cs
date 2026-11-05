@@ -9,35 +9,11 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Ai.Protocols.Mcp;
 
-/// <summary>
-/// Decides whether the caller of an MCP request is the principal that proposed a
-/// durable operation. Every candidate identity is derived by the framework from the
-/// authenticated principal, never read from the request body or a header, so a match
-/// can only ever mean "this proposal records an id that names this caller".
-/// </summary>
-/// <remarks>
-/// Two write paths record a proposer id, and they resolve it with different rules
-/// (honua-server#4910). Canonical-actor call sites -- MCP <c>save_version</c>,
-/// <c>reopen_version</c>, the publish tools -- record
-/// <see cref="CanonicalSecurityActor"/>'s scheme-qualified actor id. The Studio
-/// mutation surfaces (MCP <c>propose_publication</c>, <c>create_draft</c>,
-/// <c>update_draft</c> and their REST twins) record the Studio owner key from
-/// <see cref="IStudioAuthorizationService.ResolveCallerId"/>, which for an
-/// issuer-bearing subject is <c>subject:{iss}:{sub}@tenant:{tenant}</c> and for an
-/// API key is the bare key id. For every principal that carries an issuer or an API
-/// key the two encodings differ, so comparing a Studio-recorded proposer against the
-/// canonical id alone refused the proposal's own owner. Both encodings of the SAME
-/// principal are accepted here; the Studio owner key is only consulted for Studio
-/// operations, which are the only operations that record it.
-/// </remarks>
+// Studio and canonical encodings of the same principal differ, so both are accepted or the owner is refused.
 internal static class McpProposalOwnership
 {
     private const string StudioOperationPrefix = "studio.";
 
-    /// <summary>
-    /// Returns whether <paramref name="principal"/> is the recorded proposer of
-    /// <paramref name="proposal"/>.
-    /// </summary>
     public static bool IsProposer(HttpContext context, ClaimsPrincipal principal, OperationProposal proposal)
     {
         ArgumentNullException.ThrowIfNull(context);

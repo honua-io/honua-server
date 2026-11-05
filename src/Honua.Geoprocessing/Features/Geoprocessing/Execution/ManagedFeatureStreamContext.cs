@@ -9,7 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>Dispatch-owned storage and identity for managed streams; never selected by plan parameters.</summary>
+// Stream storage is owned by the dispatcher and is never selected by plan parameters.
 internal sealed class ManagedFeatureStreamContext(
     IJobExecutionContext inner,
     ExecutionJobRecord job,

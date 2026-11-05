@@ -17,45 +17,19 @@ using Honua.Ai.Protocols.Mcp.Models;
 
 namespace Honua.Ai.Protocols.Mcp.Tools;
 
-/// <summary>
-/// MCP tool that loads a small inline CSV or GeoJSON dataset into the catalog
-/// database as a table that <see cref="PublishServiceTool"/> can publish. Thin
-/// adapter over the canonical <see cref="IFileImportService"/> import pipeline
-/// (the same streaming importer the REST admin import surface uses) — the MCP
-/// surface never grows its own format readers. CSV geometry options
-/// (explicit longitude/latitude columns or a server-geocoded address column)
-/// ride through <see cref="CsvImportOptions"/> on the shared pipeline; address
-/// geocoding routes through the canonical
-/// <see cref="IGeocodeCoordinatorService"/>.
-/// </summary>
 internal sealed partial class IngestDatasetTool : IMcpTool
 {
     public const string ToolName = "honua_ingest_dataset";
 
-    /// <summary>
-    /// Inline payload cap. Larger datasets must use the REST import upload
-    /// surface, which streams multipart bodies instead of buffering JSON-RPC
-    /// arguments in memory.
-    /// </summary>
+    // Payloads above this cap must use the REST upload, which streams instead of buffering JSON-RPC arguments.
     public const int MaxInlineDataBytes = 4 * 1024 * 1024;
 
-    /// <summary>
-    /// Entitlement key required when <c>addressColumn</c> is used (the ingest
-    /// then performs batch geocoding); mirrors <see cref="GeocodeAddressesTool.EntitlementKey"/>.
-    /// </summary>
     public const string GeocodeEntitlementKey = GeocodeAddressesTool.EntitlementKey;
 
-    /// <summary>
-    /// Geometry column of the imported staging table (fixed shape:
-    /// <c>id SERIAL PRIMARY KEY, geometry, properties JSONB</c>) — pass to
-    /// <c>honua_publish_service</c> as <c>geometryColumn</c>.
-    /// </summary>
     public const string ImportedGeometryColumn = "geometry";
 
-    /// <summary>Primary key column of the imported staging table.</summary>
     public const string ImportedPrimaryKey = "id";
 
-    /// <summary>Stored coordinate reference shared by the import request and publication hint.</summary>
     private const int ImportedTargetSrid = 4326;
 
     private const string CsvFormat = "csv";
@@ -229,12 +203,6 @@ internal sealed partial class IngestDatasetTool : IMcpTool
             addressColumn);
     }
 
-    /// <summary>
-    /// Builds the <see cref="CsvImportOptions"/> for the shared import pipeline.
-    /// When an address column is requested, wires the canonical geocoding
-    /// coordinator in as the pipeline's address resolver (entitlement-gated the
-    /// same way as <see cref="GeocodeAddressesTool"/>).
-    /// </summary>
     private static CsvImportOptions? BuildCsvOptions(HttpContext httpContext, ValidatedIngestArguments validated)
     {
         if (validated.Format is not CsvFormat)
@@ -365,15 +333,7 @@ internal sealed partial class IngestDatasetTool : IMcpTool
         };
     }
 
-    /// <summary>
-    /// Best-effort resolution of the registered secure connection that points at
-    /// the catalog database the import wrote to, so the agent can chain the
-    /// result straight into <c>honua_publish_service</c> (whose executor requires
-    /// a registered connection name or GUID). The import pipeline always writes
-    /// through the server's default catalog connection, so this matches the
-    /// registered connections against the configured default connection string.
-    /// Never fails the ingest: returns null when no match can be determined.
-    /// </summary>
+    // Connection lookup never fails the ingest; a miss returns null and the caller can still publish later.
     private static async Task<CatalogConnectionMatch> TryResolveCatalogConnectionIdAsync(
         IServiceProvider services,
         CancellationToken cancellationToken)

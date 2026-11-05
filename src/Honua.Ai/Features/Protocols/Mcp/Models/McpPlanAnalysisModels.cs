@@ -6,13 +6,6 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Ai.Protocols.Mcp.Models;
 
-/// <summary>
-/// Arguments for the <c>honua_plan_analysis</c> tool. Accepts a natural-language
-/// intent and an optional caller-supplied context blob; the planner echoes the
-/// context back unchanged so traceability/correlation hints can flow through.
-/// Fixture replay also honors <c>fixtureScenarioId</c> or <c>fixtureCase</c>
-/// values inside the context when duplicate prompts need deterministic selection.
-/// </summary>
 internal sealed class McpPlanAnalysisArgument
 {
     [JsonPropertyName("intent")]
@@ -22,29 +15,12 @@ internal sealed class McpPlanAnalysisArgument
     public JsonElement? Context { get; set; }
 }
 
-/// <summary>
-/// Output for the <c>honua_plan_analysis</c> tool. At most one of
-/// <see cref="Plan"/> and <see cref="SpecDraft"/> is populated per call — the
-/// planner picks whichever output is appropriate for the matched workflow
-/// family, and surfaces non-success states via <see cref="Status"/>.
-/// </summary>
 internal sealed class McpPlanAnalysisOutput
 {
-    /// <summary>
-    /// One of <c>planned</c>, <c>rejected</c>, <c>clarification_required</c>,
-    /// <c>unsupported</c>. Mirrors the fixture envelope shape so the SDK can
-    /// branch on a single discriminator instead of structural sniffing.
-    /// </summary>
     [JsonPropertyName("status")]
     public string Status { get; set; } = string.Empty;
 
-    /// <summary>
-    /// Which planning engine produced this response: <c>"live"</c> when the plan
-    /// was compiled from the intent by a provider-backed model, or
-    /// <c>"fixture"</c> when it was replayed from a canned deterministic template
-    /// because no live LLM provider is configured. An <c>engine:"fixture"</c>
-    /// plan is a capability demo, not compiled from the caller's intent.
-    /// </summary>
+    // An engine value of fixture is a canned demo, not a compilation of the caller's intent.
     [JsonPropertyName("engine")]
     public string Engine { get; set; } = string.Empty;
 
@@ -66,63 +42,28 @@ internal sealed class McpPlanAnalysisOutput
     [JsonPropertyName("clarification")]
     public McpPlanAnalysisClarification? Clarification { get; set; }
 
-    /// <summary>
-    /// Estimate envelope present when the planner rejected the prompt because
-    /// the predicted feature count exceeds the apply limit.
-    /// </summary>
     [JsonPropertyName("estimate")]
     public McpPlanAnalysisEstimate? Estimate { get; set; }
 
-    /// <summary>
-    /// Fixture case name (<c>success</c>, <c>ambiguity</c>, …) that produced
-    /// this response. Empty when the planner ran a non-fixture path.
-    /// </summary>
     [JsonPropertyName("fixtureCase")]
     public string? FixtureCase { get; set; }
 
-    /// <summary>
-    /// Contract version of the matched fixture (e.g.
-    /// <c>honua.ai_builder.spatial_query.v1</c>) for traceability.
-    /// </summary>
     [JsonPropertyName("contractVersion")]
     public string? ContractVersion { get; set; }
 
-    /// <summary>
-    /// Human-readable reason populated for non-<c>planned</c> statuses.
-    /// </summary>
     [JsonPropertyName("reason")]
     public string? Reason { get; set; }
 
-    /// <summary>
-    /// Actionable next-step hint so a caller is never dead-ended. Populated in fixture
-    /// (demo) mode to point at hand-authoring a plan from the process catalog
-    /// (<c>honua://catalog/processes</c>) and validating it with <c>honua_validate_plan</c>,
-    /// since a fixture plan is a capability demo rather than a compilation of the caller's
-    /// intent (#2815). Absent when a live planner compiled the intent.
-    /// </summary>
     [JsonPropertyName("nextSteps")]
     public string? NextSteps { get; set; }
 
-    /// <summary>
-    /// App-package preview emitted by app-builder workflow families (e.g.
-    /// operations-dashboard). Carries the widget composition, data bindings,
-    /// and manifest preview the SDK needs to render the draft before apply.
-    /// </summary>
     [JsonPropertyName("appPackage")]
     public McpPlanAnalysisAppPackage? AppPackage { get; set; }
 
-    /// <summary>
-    /// Pass-through of the caller's <c>context</c> field, when supplied.
-    /// </summary>
     [JsonPropertyName("context")]
     public JsonElement? Context { get; set; }
 }
 
-/// <summary>
-/// App-package preview shape returned by app-builder planners. Mirrors the
-/// honua_app_package.v1 contract so the SDK can show the planned widgets,
-/// data bindings, and runtime config before execute.
-/// </summary>
 internal sealed class McpPlanAnalysisAppPackage
 {
     [JsonPropertyName("appPackageId")]
@@ -167,11 +108,6 @@ internal sealed class McpPlanAnalysisAppPackage
         new Dictionary<string, string>(StringComparer.Ordinal);
 }
 
-/// <summary>
-/// Wire shape for an <see cref="Honua.Core.Features.Geoprocessing.Domain.AnalysisPlan"/>.
-/// Mirrors <c>McpPlanInput</c> intentionally so validate/dry-run/execute
-/// can consume the planner's output without re-shaping.
-/// </summary>
 internal sealed class McpAnalysisPlanOutput
 {
     [JsonPropertyName("planId")]
@@ -209,11 +145,6 @@ internal sealed class McpAnalysisPlanStepOutput
         new Dictionary<string, string>(StringComparer.Ordinal);
 }
 
-/// <summary>
-/// Wire shape for a <see cref="Honua.Core.Features.Spec.Domain.CanonicalSpecDocument"/>.
-/// Used by the operations-dashboard app-builder family where the planner emits
-/// a canonical spec rather than (or alongside) an <see cref="McpAnalysisPlanOutput"/>.
-/// </summary>
 internal sealed class McpSpecDraftOutput
 {
     [JsonPropertyName("reviewStatus")]

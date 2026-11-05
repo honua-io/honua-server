@@ -9,10 +9,6 @@ using Honua.Infrastructure.Authentication;
 
 namespace Honua.Ai.Protocols.Mcp.Resources;
 
-/// <summary>
-/// Projects ordinary layer publications from the persisted Metadata v2 graph. A
-/// promotion record has different provenance and remains owned by its own store.
-/// </summary>
 internal static class PublishedMetadataCatalogProjection
 {
     internal sealed record ServiceView(

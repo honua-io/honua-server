@@ -6,14 +6,9 @@ using NetTopologySuite.Features;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>Conservative admission for managed operations that cannot observe cancellation inside a topology call.</summary>
 internal static class LayerComputationBudget
 {
-    /// <summary>
-    /// A deterministic input, resource-limit or deadline refusal. Retrying the same job repeats the same
-    /// admission and the same bounded work, which multiplies the worker time the limit exists to cap and
-    /// delays the actionable outcome behind retry backoff (#4629). The caller resubmits a narrower job.
-    /// </summary>
+    // The same admission repeats the bounded work the limit exists to cap, so the caller resubmits a narrower job instead of retrying.
     internal static JobExecutionResult Refusal(string message)
         => JobExecutionResult.Failed(message) with { IsRetryable = false };
 

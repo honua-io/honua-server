@@ -14,44 +14,13 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Ai.Protocols.Mcp.Tools;
 
-/// <summary>
-/// MCP tool that promotes a completed analysis job's materialized feature/table
-/// artifact into a hosted service + layer (geospatial-mcp <c>publish_result</c>,
-/// honua-server#2482). This is the missing link in the analyze → render chain:
-/// analysis results live at <c>honua://jobs/{id}/results</c> and, until now,
-/// could not become a queryable/renderable layer.
-///
-/// <para>
-/// The tool does NOT reimplement publishing. It resolves the job's result
-/// package through the canonical <see cref="IGeoprocessingJobService"/> (the same
-/// service that backs <c>honua://jobs/{id}/results</c>), reads the selected
-/// artifact's materialized-table coordinates, then routes them through the very
-/// same <c>service.publish</c> operation (<see cref="IOperationInvoker"/>) that
-/// <see cref="PublishServiceTool"/> uses — so the operator-approval gate,
-/// metadata revision, and multi-outcome (Completed / Queued / RequiresApproval /
-/// Denied) contract are shared verbatim. Materialization of the artifact into a
-/// table is the analysis job runtime's responsibility; this tool promotes the
-/// already-materialized table.
-/// </para>
-/// </summary>
 internal sealed class PublishResultTool : IMcpTool
 {
     public const string ToolName = "honua_publish_result";
 
-    /// <summary>
-    /// Canonical operation this tool routes through. Mirrors
-    /// <c>ServicePublishOperation.OperationId</c>; duplicated as a literal because
-    /// <c>Honua.Ai</c> cannot reference the server assembly (dependency direction),
-    /// the same reason <see cref="PublishServiceTool.PublishOperationId"/> exists.
-    /// </summary>
+    // The operation id is a literal because this assembly cannot reference the server assembly.
     public const string PublishOperationId = PublishServiceTool.PublishOperationId;
 
-    /// <summary>
-    /// <c>ArtifactRef.Metadata</c> keys the analysis / import runtime records when
-    /// it materializes a FeatureLayer/Table artifact into an operational table.
-    /// They map 1:1 onto the <c>service.publish</c> parameters, so promotion is a
-    /// pure hand-off — the tool invents no materialization path of its own.
-    /// </summary>
     private static class MetadataKeys
     {
         public const string ConnectionId = "connectionId";
@@ -182,11 +151,6 @@ internal sealed class PublishResultTool : IMcpTool
             McpJsonContext.Default.McpPublishResultOutput);
     }
 
-    /// <summary>
-    /// Selects the artifact to promote: the caller-named <c>artifactId</c> when
-    /// provided, otherwise the job's single publishable (FeatureLayer/Table)
-    /// artifact. Ambiguity and unsupported kinds surface structured errors.
-    /// </summary>
     private static ArtifactRef SelectArtifact(AnalysisResultPackage package, string? artifactId)
     {
         if (!string.IsNullOrWhiteSpace(artifactId))
@@ -229,11 +193,6 @@ internal sealed class PublishResultTool : IMcpTool
         }
     }
 
-    /// <summary>
-    /// Reads the materialized-table coordinates the analysis/import runtime
-    /// recorded on the artifact. Their absence means the artifact was never
-    /// materialized into an operational table and cannot be promoted.
-    /// </summary>
     private static (string ConnectionId, string Schema, string Table) RequireMaterializedTable(ArtifactRef artifact)
     {
         RequirePublishableKind(artifact);

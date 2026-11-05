@@ -6,12 +6,6 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Ai.Protocols.Mcp.Location;
 
-/// <summary>
-/// AOT-compatible source-generated JSON context for the geocode/route MCP
-/// DTOs. Kept separate from the core MCP JSON context so the location feature
-/// slice owns its own serializer surface - mirrors the grounding slice's
-/// <c>GroundingJsonContext</c>.
-/// </summary>
 [JsonSerializable(typeof(McpGeocodeArgument))]
 [JsonSerializable(typeof(McpGeocodeOutput))]
 [JsonSerializable(typeof(McpGeocodeCandidate))]

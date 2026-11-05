@@ -10,23 +10,12 @@ using Honua.Ai.Protocols.Mcp.Models;
 
 namespace Honua.Ai.Protocols.Mcp.Tools;
 
-/// <summary>
-/// MCP tool that enumerates the caller's geoprocessing jobs (newest first), with
-/// an optional status filter and cursor paging. Thin adapter over the canonical
-/// <see cref="IGeoprocessingJobService.ListJobsAsync"/> — the same caller-scoped,
-/// ownership-filtered listing the GPServer and OGC API Processes job surfaces
-/// use — so an agent can find a queued or stuck job to feed
-/// <c>honua_cancel_job</c> without inventing its own job store. Read-only; the
-/// service enforces the operator job-read grant and per-job ownership.
-/// </summary>
 internal sealed class ListJobsTool : IMcpTool
 {
     public const string ToolName = "honua_list_jobs";
 
-    /// <summary>Default page size when the caller omits <c>limit</c>.</summary>
     public const int DefaultLimit = 50;
 
-    /// <summary>Hard ceiling on the page size (matches the service clamp).</summary>
     public const int MaxLimit = 200;
 
     private const string InputSchemaJson = """
@@ -203,7 +192,6 @@ internal sealed class ListJobsTool : IMcpTool
     }
 }
 
-/// <summary>Arguments for <c>honua_list_jobs</c>.</summary>
 internal sealed class McpListJobsArgument
 {
     [JsonPropertyName("status")]
@@ -216,7 +204,6 @@ internal sealed class McpListJobsArgument
     public string? Cursor { get; set; }
 }
 
-/// <summary>Output for <c>honua_list_jobs</c>: a caller-scoped page of jobs.</summary>
 internal sealed class McpListJobsOutput
 {
     [JsonPropertyName("jobCount")]
@@ -229,7 +216,6 @@ internal sealed class McpListJobsOutput
     public IReadOnlyList<McpJobSummary> Jobs { get; set; } = [];
 }
 
-/// <summary>One job entry in a <c>honua_list_jobs</c> page.</summary>
 internal sealed class McpJobSummary
 {
     [JsonPropertyName("jobId")]
@@ -251,10 +237,6 @@ internal sealed class McpJobSummary
     public string UpdatedAt { get; set; } = string.Empty;
 }
 
-/// <summary>
-/// AOT-compatible source-generated JSON context for the <c>honua_list_jobs</c>
-/// DTOs. Kept local to the tool so its serializer surface is self-contained.
-/// </summary>
 [JsonSerializable(typeof(McpListJobsArgument))]
 [JsonSerializable(typeof(McpListJobsOutput))]
 [JsonSerializable(typeof(McpJobSummary))]

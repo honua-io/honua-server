@@ -10,29 +10,6 @@ using NtsGeometry = NetTopologySuite.Geometries.Geometry;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// <c>analytics.buffer-aggregate-managed</c> executor. A job-dispatchable,
-/// managed (NetTopologySuite) buffer-and-dissolve counterpart to trunk's
-/// <c>analytics.buffer-aggregate</c>, which runs only synchronously through the
-/// layer-scoped PostGIS <c>SpatialAnalytics</c> protocol. Like
-/// <see cref="ManagedSpatialJoinExecutor"/>, this is the
-/// workflow/codemod-reachable counterpart that runs against an INLINE
-/// FeatureCollection so the lean dispatcher can construct it unconditionally
-/// without a Postgres dependency.
-///
-/// Buffers every input feature by <c>distance</c> in the supplied unit, then
-/// optionally dissolves the result into one feature per <c>groupByFields</c>
-/// group via <see cref="CascadedPolygonUnion"/>. Each emitted feature carries
-/// a <c>COUNT</c> attribute holding the number of input geometries that
-/// contributed to it. When <c>dissolve=false</c>, one buffered feature is
-/// emitted per input with the input's attributes carried through verbatim.
-///
-/// Distance is normalised to CRS units after applying the unit factor
-/// (meters/kilometers/feet/miles). Geodesic conversion is not performed —
-/// callers operating on a geographic CRS must supply a distance already in
-/// the layer's coordinate units. This matches the convention of the managed
-/// <c>geometry.buffer</c> executor.
-/// </summary>
 internal sealed class ManagedBufferAggregateExecutor(
     IOptionsMonitor<GeoprocessingExecutorOptions> options)
     : FeatureCollectionTransformExecutor(options)
@@ -170,13 +147,7 @@ internal sealed class ManagedBufferAggregateExecutor(
         return value;
     }
 
-    /// <summary>
-    /// Rejects a non-zero linear buffer when the caller declares (via <c>sourceCrs</c>) that
-    /// the input geometries are in a geographic (lon/lat degree) CRS. The supported units
-    /// (meters/kilometers/feet/miles) are all linear, so buffering degrees by any of them is a
-    /// silent-wrong-answer; the caller must project to a metric CRS first. When <c>sourceCrs</c>
-    /// is absent the behaviour is unchanged (coordinates are treated as CRS units).
-    /// </summary>
+    // A linear unit on a geographic CRS is rejected because buffering degrees by meters is a silent wrong answer.
     private static void RejectLinearBufferOnGeographicCrs(StepInputReader inputs, double distance)
     {
         if (distance <= 0d || !inputs.TryGet("sourceCrs", out var rawCrs) || string.IsNullOrWhiteSpace(rawCrs))

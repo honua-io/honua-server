@@ -10,34 +10,6 @@ using NtsGeometry = NetTopologySuite.Geometries.Geometry;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// <c>analytics.spatial-join-managed</c> executor. A job-dispatchable, managed
-/// (NetTopologySuite) spatial join that the workflow/codemod path can reach.
-///
-/// This is deliberately a DISTINCT process id from trunk's
-/// <c>analytics.spatial-join</c>, which executes ONLY synchronously through the
-/// layer-scoped PostGIS <c>SpatialAnalytics</c> protocol (Pro-gated, not routed
-/// through the geoprocessing job dispatcher). Rather than collide with that
-/// protocol id, this id exposes the same aggregating one-to-one summarizing
-/// shape over two inline FeatureCollections so a workflow node / codemod can run
-/// it as a job with no Postgres dependency.
-///
-/// Logic ported from the <c>SpatialJoinTransform</c> aggregate mode on
-/// <c>feat/gp-layer-execution</c>: for each target feature it queries the join
-/// set through an in-memory <see cref="STRtree{T}"/> spatial index and summarizes
-/// EVERY matched join feature into per-target statistics — <c>JOIN_COUNT</c> plus
-/// optional numeric <c>SUM_/MEAN_/MIN_/MAX_</c> aggregates. Targets with zero
-/// matches are preserved with a <c>JOIN_COUNT</c> of 0 and null aggregates. Pure
-/// managed overlay — no GEOS native dependency.
-///
-/// Both feature sets are supplied INLINE as <c>data:application/geo+json;base64</c>
-/// data URIs (the <c>input</c> target set and the <c>join</c> reference set),
-/// mirroring the GeoETL transform input model. Resolving a join set by catalog
-/// layer id is deferred for the same reason as <c>sink.honua-layer</c>: it needs
-/// the catalog NpgsqlDataSource, which would break the dispatcher's unconditional
-/// handler construction in lean deploys without Postgres — a conditional-
-/// registration follow-on.
-/// </summary>
 internal sealed class ManagedSpatialJoinExecutor(
     IOptionsMonitor<GeoprocessingExecutorOptions> options)
     : FeatureCollectionTransformExecutor(options)

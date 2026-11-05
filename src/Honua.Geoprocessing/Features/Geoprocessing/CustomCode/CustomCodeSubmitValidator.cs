@@ -7,18 +7,7 @@ using Honua.Core.Features.Authorization.Domain;
 
 namespace Honua.Geoprocessing.CustomCode;
 
-/// <summary>
-/// Pure submit-time validation for a <c>custom-code</c> geoprocessing job. Validates
-/// the <c>customcode.*</c> parameters the caller supplied — runtime, repository URL
-/// (HTTPS + allowlist policy), the git ref (full 40-hex SHA only, never a branch or
-/// tag), the entrypoint shape, and the declared resource scope (parsed from JSON).
-/// </summary>
-/// <remarks>
-/// This type carries no I/O. The <em>scope ⊆ owner</em> check is performed by the
-/// caller through <see cref="ScopedJobAttenuation.IsWithinOwner"/> against the live
-/// submitting principal; this validator only parses and structurally validates the
-/// declared scope so the same JSON contract is enforced in one place.
-/// </remarks>
+// The git ref must be a full 40-hex SHA, never a branch or a tag.
 internal static partial class CustomCodeSubmitValidator
 {
     [GeneratedRegex("^[0-9a-f]{40}$", RegexOptions.CultureInvariant)]
@@ -39,41 +28,12 @@ internal static partial class CustomCodeSubmitValidator
     [GeneratedRegex(@"^[A-Za-z_][A-Za-z0-9_]*::[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$", RegexOptions.CultureInvariant)]
     private static partial Regex DotnetEntrypointRegex();
 
-    /// <summary>
-    /// Returns <see langword="true"/> when the submission carries the custom-code
-    /// runtime marker or a logical release process name. Both paths require the same
-    /// custom-code authorization and validation before a durable job is created.
-    /// </summary>
     public static bool IsCustomCodeSubmission(IReadOnlyDictionary<string, string>? parameters)
         => parameters is not null
            && ((parameters.TryGetValue(CustomCodeJobContract.RuntimeParam, out var runtime)
                 && !string.IsNullOrWhiteSpace(runtime))
                || parameters.ContainsKey(ProcessRelease.GpProcessReleaseAdmission.ProcessParam));
 
-    /// <summary>
-    /// Validates the caller-supplied custom-code parameters and parses the declared
-    /// scope. Returns the parsed declared scope on success; on failure sets
-    /// <paramref name="rejection"/> and returns <see langword="null"/>.
-    /// </summary>
-    /// <remarks>
-    /// This is the <em>pure</em>, I/O-free half of the submit gate: runtime, SHA-pin,
-    /// repo URL + org/per-tenant allowlist, entrypoint, manifest, and declared scope.
-    /// The <see cref="CustomCodeRepoPolicy.SignedOnly"/> posture additionally requires
-    /// an out-of-band commit-signature check; that check is asynchronous (it may call
-    /// the git provider) and is performed by the caller against
-    /// <see cref="ICustomCodeCommitSignatureVerifier"/>. <paramref name="requiresSignatureVerification"/>
-    /// reports whether the caller must run it; the validated URL and SHA are returned
-    /// so the caller need not re-parse them.
-    /// </remarks>
-    /// <param name="parameters">The submission parameters (the <c>customcode.*</c> keys).</param>
-    /// <param name="options">The configured repository-allowlist/signing policy.</param>
-    /// <param name="tenantId">The submitting principal's tenant id, for the per-tenant allowlist (may be null).</param>
-    /// <param name="declaredScope">The parsed declared scope when validation succeeds.</param>
-    /// <param name="repoUri">The validated repository URI when validation succeeds.</param>
-    /// <param name="commitSha">The validated full commit SHA when validation succeeds.</param>
-    /// <param name="requiresSignatureVerification"><see langword="true"/> when the caller must run the commit-signature verifier (signed-only).</param>
-    /// <param name="rejection">A human-readable rejection reason when validation fails.</param>
-    /// <returns><see langword="true"/> when every custom-code parameter is valid.</returns>
     public static bool TryValidate(
         IReadOnlyDictionary<string, string> parameters,
         CustomCodeOptions options,
@@ -230,11 +190,6 @@ internal static partial class CustomCodeSubmitValidator
         }
     }
 
-    /// <summary>
-    /// Enforces the org-wide allowlist and, when the tenant has a per-tenant list, that
-    /// list <em>in addition</em> (both must pass). A tenant absent from the per-tenant
-    /// map is constrained by the org list alone.
-    /// </summary>
     private static bool TryEnforceAllowlists(Uri uri, CustomCodeOptions options, string? tenantId, out string? rejection)
     {
         rejection = null;

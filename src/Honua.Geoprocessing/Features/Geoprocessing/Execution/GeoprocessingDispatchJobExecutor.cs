@@ -16,28 +16,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// Production <see cref="IJobExecutor"/> for <see cref="ExecutionJobKind.Geoprocessing"/>
-/// jobs. Acts as a per-process-id dispatcher over the registered geometry
-/// executors so the worker host can register a single executor per
-/// <see cref="ExecutionJobKind"/> while still surfacing per-process behavior.
-///
-/// Slice 1 (#1031) introduced <see cref="GeometryBufferJobExecutor"/> as the
-/// only registered executor; submitting any other process id surfaced the
-/// "first-slice geoprocessing runtime" error from inside that class. Slice 2
-/// added <c>geometry.clip</c>, <c>geometry.intersect</c>, and
-/// <c>geometry.project</c> as additional per-process executors. Slice 3
-/// added <c>geometry.area</c> (per-feature measure) and <c>geometry.union</c>
-/// (collection aggregation). Slice 4 added <c>geometry.centroid</c>,
-/// <c>geometry.length</c>, and <c>geometry.convex-hull</c> — finishing the
-/// deterministic single-feature vector set. Slice 5 rounds out the
-/// migration-priority vector ops with <c>geometry.dissolve</c>
-/// (group-aware aggregate), <c>geometry.simplify</c> (Douglas-Peucker),
-/// and <c>geometry.snap</c> (vertex conditioning to a reference
-/// geometry). This dispatcher routes between them and emits a single,
-/// consistent "unsupported process id" error for everything outside the
-/// current supported set.
-/// </summary>
 internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
 {
     private readonly FrozenDictionary<string, IProcessExecutor> _handlers;
@@ -48,23 +26,7 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
     private readonly IExecutionJobStore? _jobStore;
     private readonly IOptionsMonitor<GeoprocessingOutputStagingOptions>? _stagingOptions;
 
-    /// <summary>
-    /// Composes the dispatcher over the auto-registered per-process executors
-    /// (issue #2122). Each <see cref="IProcessExecutor"/> self-declares the process
-    /// ids it handles through <see cref="IProcessExecutor.ProcessIds"/>, so the
-    /// routing table is built from a single DI scan instead of a hand-maintained
-    /// constructor naming every executor. Duplicate or empty ids fail fast at
-    /// composition time via <see cref="ProcessExecutorRouteTable.Build"/>.
-    /// <paramref name="serviceScopeFactory"/> resolves the scoped
-    /// <see cref="IWorkspaceLifecycleService"/> per dispatch for GP
-    /// <c>env:workspace</c>/<c>env:overwriteOutput</c> — the dispatcher itself is
-    /// a singleton, so the scoped service cannot be constructor-injected
-    /// directly. Optional so existing test call sites that construct the
-    /// dispatcher without DI keep compiling; when omitted (or when no workspace
-    /// storage provider is registered), <c>env:workspace</c> jobs fail fast with
-    /// a clear "no workspace provider configured" message instead of silently
-    /// ignoring the request.
-    /// </summary>
+    // The dispatcher is a singleton, so the scoped workspace service is resolved per dispatch and cannot be constructor-injected.
     public GeoprocessingDispatchJobExecutor(
         IEnumerable<IProcessExecutor> executors,
         ILogger<GeoprocessingDispatchJobExecutor> logger,
@@ -91,10 +53,6 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
 
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 
-    /// <summary>
-    /// Set of process ids the dispatcher currently routes. Surfaced so error
-    /// messages can list the supported set without hard-coding it twice.
-    /// </summary>
     internal IReadOnlyCollection<string> SupportedProcessIds => _handlers.Keys;
 
     public async Task<JobExecutionResult> ExecuteAsync(
@@ -189,26 +147,7 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
         return result;
     }
 
-    /// <summary>
-    /// Resolves GP <c>env:workspace</c> routing for this dispatch, if requested.
-    /// The caller-supplied <c>env:workspace</c> value is a stable label, not a
-    /// durable workspace id — it is resolved (get-or-create) through
-    /// <see cref="IWorkspaceLifecycleService.GetOrCreateNamedWorkspaceAsync"/>
-    /// scoped to the submitting caller, and the RESOLVED
-    /// <see cref="Workspace.WorkspaceId"/> is what downstream artifact writes
-    /// use — <see cref="IWorkspaceLifecycleService.AddArtifactAsync"/> /
-    /// <see cref="IWorkspaceLifecycleService.AddOrReplaceArtifactAsync"/> both
-    /// require an already-existing workspace and throw otherwise, so passing
-    /// the raw label straight through would fail every request.
-    /// Returns the <see cref="IServiceScope"/> the caller must dispose after the
-    /// executor runs (or <c>null</c> when no scope was opened), and reports
-    /// either the wrapped context to use or a clear error when a workspace was
-    /// requested but could not be resolved (no storage provider configured, or
-    /// the get-or-create call itself failed). Isolated to a single method so
-    /// every one of the ~30 per-process executors gets workspace routing "for
-    /// free" through the context they already call <c>PublishArtifactAsync</c>
-    /// on — no executor needs its own workspace logic.
-    /// </summary>
+    // env:workspace is a label, not a workspace id, and artifact writes require the resolved id.
     private async Task<(IDisposable? Scope, IJobExecutionContext EffectiveContext, string? Error, bool IsRetryable)>
         TryResolveWorkspaceRoutingAsync(
             ExecutionJobRecord job,
@@ -292,11 +231,6 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
     }
 }
 
-/// <summary>
-/// Shared helper used by the dispatcher and the per-process executors to
-/// extract the canonical process id from the durable spec parameter bag.
-/// Keeps lookup semantics identical across the slice 2 executors.
-/// </summary>
 internal static class GeoprocessingDispatchHelper
 {
     public static string? ResolveProcessId(IReadOnlyDictionary<string, string> parameters)

@@ -11,35 +11,8 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Ai.Protocols.Mcp.Tools;
 
-/// <summary>
-/// Projects validated operations-toolset descriptors from the <see cref="IOperationCatalog"/>
-/// into first-class, typed, policy-governed MCP tools (#2483, ADR-0056 Increment 4).
-/// A descriptor present in the catalog is "published"; this source turns each one into a
-/// <see cref="PublishedOperationTool"/> that the <see cref="McpDataAccessSurface"/> merges into
-/// <c>tools/list</c> and <c>tools/call</c>.
-/// </summary>
-/// <remarks>
-/// By default the audited Admin projection publishes (#3363), including the closed operator roster:
-/// operations named by a registered <see cref="IAuditedAdminMcpProjection"/>
-/// (<c>Mcp:PublishOperations:AdminProjection</c>). The full catalog publishes only when
-/// <c>Mcp:PublishOperations:Enabled</c> is set. Audited
-/// <see cref="AdminMcpOperationExclusions"/> never publish. In "deterministic mode" (<c>DeterministicOnly</c>) only AI-free
-/// descriptors are published — the audit/inspect toolset. Descriptors already exposed by a
-/// hand-authored tool are skipped so the same operation is not advertised twice.
-/// The projection is cached per catalog version (SEC-18): it is rebuilt only when
-/// <see cref="OperationCatalogSnapshot.CatalogVersion"/> or the descriptor instances
-/// it was built from change, so repeated <c>tools/list</c> calls neither resolve
-/// executors nor rebuild tool schemas.
-/// </remarks>
 internal sealed class PublishedOperationToolSource : IMcpToolSource
 {
-    /// <summary>
-    /// Operation ids already surfaced by a hand-authored MCP tool, so they are not
-    /// double-published here. <c>service.publish</c> is <c>honua_publish_service</c> /
-    /// <c>honua_publish_result</c>; <c>studio.content.create-publication-request</c> is
-    /// <c>honua_studio_propose_publication</c>, which enforces the Studio owner authorization the
-    /// generic projection does not.
-    /// </summary>
     private static readonly HashSet<string> ExcludedOperationIds =
         new(StringComparer.Ordinal)
         {
@@ -76,7 +49,6 @@ internal sealed class PublishedOperationToolSource : IMcpToolSource
             .ToHashSet(StringComparer.Ordinal);
     }
 
-    /// <inheritdoc />
     public async ValueTask<IReadOnlyList<IMcpTool>> GetToolsAsync(CancellationToken cancellationToken)
     {
         var options = _options.Value;
@@ -156,12 +128,6 @@ internal sealed class PublishedOperationToolSource : IMcpToolSource
         return tools.AsReadOnly();
     }
 
-    /// <summary>
-    /// A built projection and the inputs it was built from. The catalog version hashes
-    /// only operation and provider ids, so the descriptor instances are compared too:
-    /// a descriptor whose schema or policy changed under an unchanged id set still
-    /// rebuilds the projection.
-    /// </summary>
     private sealed record CachedProjection(
         string CatalogVersion,
         IReadOnlyList<OperationDescriptor> Operations,

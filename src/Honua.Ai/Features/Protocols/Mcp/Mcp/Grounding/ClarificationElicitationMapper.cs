@@ -22,29 +22,15 @@ namespace Honua.Ai.Protocols.Mcp.Grounding;
 // the proprietary clarification envelope unchanged.
 // -----------------------------------------------------------------------
 
-/// <summary>
-/// An MCP <c>elicitation/create</c> request payload (the <c>params</c> object).
-/// Carries a human-readable <see cref="Message"/> and a
-/// <see cref="RequestedSchema"/> the client renders into an input form.
-/// </summary>
 internal sealed class McpElicitationRequest
 {
-    /// <summary>Human-readable prompt describing what is being requested and why.</summary>
     [JsonPropertyName("message")]
     public string Message { get; set; } = string.Empty;
 
-    /// <summary>
-    /// The restricted JSON Schema (flat object of primitive properties) describing
-    /// the expected response, per the MCP elicitation schema subset.
-    /// </summary>
     [JsonPropertyName("requestedSchema")]
     public McpElicitationSchema RequestedSchema { get; set; } = new();
 }
 
-/// <summary>
-/// The <c>requestedSchema</c> of an elicitation request: a flat <c>object</c>
-/// whose properties are primitive schemas keyed by clarification questionId.
-/// </summary>
 internal sealed class McpElicitationSchema
 {
     [JsonPropertyName("type")]
@@ -58,13 +44,7 @@ internal sealed class McpElicitationSchema
     public IReadOnlyList<string> Required { get; set; } = [];
 }
 
-/// <summary>
-/// A single primitive property of an elicitation <c>requestedSchema</c>. Only the
-/// MCP-permitted primitive shapes are expressed: <c>string</c> (optionally an
-/// enum via <see cref="Enum"/>/<see cref="EnumNames"/>) and <c>boolean</c>.
-/// Arrays and nested objects are intentionally never emitted — the MCP
-/// elicitation subset forbids them.
-/// </summary>
+// Arrays and nested objects are never emitted because the MCP elicitation schema subset forbids them.
 internal sealed class McpElicitationProperty
 {
     [JsonPropertyName("type")]
@@ -80,25 +60,11 @@ internal sealed class McpElicitationProperty
     public IReadOnlyList<string>? EnumNames { get; set; }
 }
 
-/// <summary>
-/// Maps Honua's canonical clarification envelope onto an MCP-native elicitation
-/// request and gates the projection on the calling session having advertised the
-/// elicitation capability (honua-server#2484).
-/// </summary>
 internal static class ClarificationElicitationMapper
 {
     private const string StringType = "string";
     private const string BooleanType = "boolean";
 
-    /// <summary>
-    /// Projects a clarification envelope onto <paramref name="output"/> as an MCP
-    /// elicitation request when <paramref name="clientSupportsElicitation"/> is
-    /// <c>true</c> and every question is representable in the elicitation schema
-    /// subset. On a successful projection the proprietary
-    /// <see cref="McpGroundingOutput.Clarification"/> envelope is cleared so the
-    /// client drives the native elicitation path; otherwise the envelope is left
-    /// intact (graceful fallback) and no elicitation is emitted.
-    /// </summary>
     public static void ProjectOntoOutput(
         McpGroundingOutput output,
         ClarificationRequest? clarification,
@@ -124,12 +90,6 @@ internal static class ClarificationElicitationMapper
         output.Clarification = null;
     }
 
-    /// <summary>
-    /// Maps a clarification envelope to an MCP elicitation request, or returns
-    /// <c>null</c> when any question cannot be expressed in the elicitation schema
-    /// subset (multi-select, blank/duplicate ids). Exposed for direct unit tests
-    /// of the mapping in isolation from the tool/session plumbing.
-    /// </summary>
     public static McpElicitationRequest? TryMap(ClarificationRequest clarification)
     {
         ArgumentNullException.ThrowIfNull(clarification);
@@ -227,14 +187,6 @@ internal static class ClarificationElicitationMapper
         return $"{lead} (reasons: {reasons})";
     }
 
-    /// <summary>
-    /// Returns <c>true</c> when the session identified by the request's
-    /// <c>Mcp-Session-Id</c> header advertised the MCP elicitation capability at
-    /// <c>initialize</c>. Resolves the process-wide
-    /// <see cref="McpSessionManager"/> from the request services; a request with
-    /// no session (stateless client) or a host without the manager registered
-    /// (isolated unit tests) reports <c>false</c>, i.e. graceful fallback.
-    /// </summary>
     public static bool ClientSupportsElicitation(HttpContext httpContext)
     {
         ArgumentNullException.ThrowIfNull(httpContext);

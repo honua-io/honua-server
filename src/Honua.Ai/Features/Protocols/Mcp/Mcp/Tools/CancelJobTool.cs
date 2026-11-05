@@ -7,11 +7,6 @@ using Honua.Ai.Protocols.Mcp.Models;
 
 namespace Honua.Ai.Protocols.Mcp.Tools;
 
-/// <summary>
-/// MCP server-extension tool that requests cancellation of an in-flight
-/// execution job. The authorization and provider-specific cancellation logic
-/// lives in <see cref="IGeoprocessingJobService.CancelJobAsync"/>.
-/// </summary>
 internal sealed class CancelJobTool : IMcpTool
 {
     public const string ToolName = "honua_cancel_job";

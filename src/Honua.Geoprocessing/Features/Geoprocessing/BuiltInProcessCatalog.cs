@@ -10,18 +10,10 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Geoprocessing;
 
-/// <summary>
-/// Immutable, thread-safe catalog of built-in geoprocessing operations seeded
-/// from the server's existing geometry and spatial analytics capabilities.
-/// </summary>
 internal sealed class BuiltInProcessCatalog : IProcessCatalog
 {
     public const string CatalogVersion = "honua.process_catalog.builtin.v1";
 
-    /// <summary>
-    /// Compatibility view of processes classified as <see cref="ProcessExecutionKind.Unavailable"/>,
-    /// keyed by process id with the canonical operator-facing reason.
-    /// </summary>
     internal static readonly FrozenDictionary<string, string> AdvertisedButNotExecutableProcesses =
         ProcessExecutionCapabilityCatalog.UnavailableReasons;
 

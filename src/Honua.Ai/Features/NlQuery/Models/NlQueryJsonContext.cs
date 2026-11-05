@@ -7,10 +7,6 @@ using Honua.Core.Features.NlQuery.Domain;
 
 namespace Honua.Ai.NlQuery.Models;
 
-/// <summary>
-/// Source-generated JSON serialization context for NL query types.
-/// Ensures AOT compatibility with no reflection-based serialization.
-/// </summary>
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]

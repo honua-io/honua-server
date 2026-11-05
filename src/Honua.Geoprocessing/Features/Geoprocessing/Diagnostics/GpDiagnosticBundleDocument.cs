@@ -6,18 +6,10 @@ using System.Text.Json.Nodes;
 
 namespace Honua.Geoprocessing.Diagnostics;
 
-/// <summary>
-/// A diagnostic-bundle v1 envelope plus an optional
-/// <see cref="GpDiagnosticEvidence"/> on <see cref="EvidencePropertyName"/>.
-/// Bundles written before the attachment still load: the property is absent and
-/// <see cref="Evidence"/> is null. <see cref="SchemaVersion"/> stays <c>1.0</c>.
-/// </summary>
 internal sealed class GpDiagnosticBundleDocument
 {
-    /// <summary>Envelope contract this reader accepts. Additive GP evidence does not bump it.</summary>
     public const string SchemaVersionValue = "1.0";
 
-    /// <summary>Optional property that carries <see cref="GpDiagnosticEvidence"/>.</summary>
     public const string EvidencePropertyName = "gpEvidence";
 
     private const int MaxDocumentChars = 48 * 1024 * 1024;
@@ -45,7 +37,6 @@ internal sealed class GpDiagnosticBundleDocument
 
     public GpDiagnosticEvidence? Evidence { get; }
 
-    /// <summary>Loads a diagnostic-bundle v1 document. Unknown envelope properties are kept.</summary>
     public static GpDiagnosticBundleDocument Parse(string json)
     {
         ArgumentNullException.ThrowIfNull(json);
@@ -79,10 +70,6 @@ internal sealed class GpDiagnosticBundleDocument
         return new GpDiagnosticBundleDocument(envelope, evidence);
     }
 
-    /// <summary>
-    /// Returns a document with the same envelope and a sanitized GP attachment.
-    /// Does not mutate this document. Refuses an input export that has no authorization.
-    /// </summary>
     public GpDiagnosticBundleDocument WithEvidence(GpDiagnosticEvidenceDraft draft, GpDiagnosticInputExportRequest? export)
     {
         ArgumentNullException.ThrowIfNull(draft);

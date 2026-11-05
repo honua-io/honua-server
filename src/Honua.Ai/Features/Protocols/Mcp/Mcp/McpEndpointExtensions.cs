@@ -14,65 +14,19 @@ using Microsoft.Net.Http.Headers;
 
 namespace Honua.Ai.Protocols.Mcp;
 
-/// <summary>
-/// Maps the JSON-RPC endpoint that hosts the MCP operator surface using the
-/// Streamable-HTTP transport (MCP 2025-03-26). Accepts both individual requests
-/// and JSON-RPC 2.0 batches on <c>POST /mcp</c>, enforces the MCP request-id
-/// rules (string or integer only), and manages <c>Mcp-Session-Id</c> sessions:
-/// a session id is issued on <c>initialize</c> and validated on every subsequent
-/// request. When a shared session store is composed (Redis connected) a session
-/// minted on any instance is honoured by every instance; an id no instance holds
-/// answers the strict spec HTTP 404 so the client re-initializes. Serving a
-/// well-formed unknown id session-less instead is an explicit development
-/// convenience (<see cref="McpOptions.StatelessSessionFallback"/>, on by default
-/// only in Development); malformed ids always 404. The transport negotiates the
-/// response content type from the client's <c>Accept</c> header — emitting a
-/// single Server-Sent-Events <c>message</c> frame when the client accepts
-/// <c>text/event-stream</c>, and plain JSON otherwise. <c>GET /mcp</c> opens an
-/// SSE stream the server can push notifications over, and <c>DELETE /mcp</c>
-/// terminates a session.
-/// Note that <c>initialize</c> is single-request-only per MCP 2025-03-26
-/// lifecycle — any batch containing an <c>initialize</c> element is rejected
-/// wholesale because the server cannot negotiate a protocol version mid-batch.
-/// The body size and batch length are bounded (<see cref="McpOptions.MaxRequestBodyBytes"/>,
-/// <see cref="McpOptions.MaxBatchSize"/>; SEC-18) before any element is dispatched.
-/// </summary>
 internal static class McpEndpointExtensions
 {
-    /// <summary>
-    /// Route for the MCP operator surface.
-    /// </summary>
     public const string RoutePath = "/mcp";
 
     private const string JsonMimeType = "application/json";
     private const string EventStreamMimeType = "text/event-stream";
 
-    /// <summary>
-    /// HTTP status code returned for accepted JSON-RPC notifications. The MCP
-    /// HTTP transport spec requires a 202 Accepted with no body when the input
-    /// is a notification or response (no <c>id</c>) and the server accepted it.
-    /// </summary>
+    // The transport answers an accepted notification with 202 and an empty body.
     private const int NotificationAcceptedStatusCode = StatusCodes.Status202Accepted;
 
-    /// <summary>
-    /// Explicit JSON <c>null</c> element used as the response <c>id</c> when the
-    /// request could not be parsed or is malformed. JSON-RPC 2.0 requires the id
-    /// field on error responses even when the server cannot determine the
-    /// client's original id, in which case it MUST be <c>null</c>. Assigning this
-    /// element to <see cref="McpJsonRpcResponse.Id"/> prevents the
-    /// <c>WhenWritingNull</c> ignore condition from dropping the property.
-    /// Exposed <c>internal</c> so <see cref="McpDataAccessSurface"/> can emit
-    /// invalid_request error envelopes for malformed requests that reach the
-    /// dispatcher without a valid id.
-    /// </summary>
+    // JSON-RPC requires id to be null when the client's id cannot be echoed, and WhenWritingNull would drop that property.
     internal static readonly JsonElement JsonNullId = CreateJsonNullElement();
 
-    /// <summary>
-    /// Maps <c>POST /mcp</c> for JSON-RPC dispatch, <c>GET /mcp</c> for the
-    /// server-to-client SSE stream, and <c>DELETE /mcp</c> for session
-    /// termination, alongside the RFC 9728 protected-resource metadata that
-    /// describes the surface.
-    /// </summary>
     public static IEndpointRouteBuilder MapMcpDataAccessSurface(this IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
@@ -113,12 +67,6 @@ internal static class McpEndpointExtensions
         return endpoints;
     }
 
-    /// <summary>
-    /// Arms the RFC 9728 <c>WWW-Authenticate</c> challenge on every MCP transport route so
-    /// that any 401 the surface returns points the client at the protected-resource
-    /// metadata. Applied as a filter rather than inline in the handlers because the
-    /// challenge depends only on the final status code, not on which transport verb ran.
-    /// </summary>
     private static ValueTask<object?> ProtectedResourceChallengeFilter(
         EndpointFilterInvocationContext context,
         EndpointFilterDelegate next)
@@ -127,17 +75,8 @@ internal static class McpEndpointExtensions
         return next(context);
     }
 
-    /// <summary>
-    /// Token-replay continuation id for an MCP session (honua-server#4909).
-    /// </summary>
     internal static string TokenReplayContinuationId(string sessionId) => $"mcp-session:{sessionId}";
 
-    /// <summary>
-    /// Binds the bearer token admitted on this request to <paramref name="sessionId"/> so
-    /// token replay protection admits that token's reuse on this session and nowhere else
-    /// (honua-server#4909). A no-op for API-key and anonymous callers, when replay
-    /// protection is disabled, and for a token already bound to another session.
-    /// </summary>
     private static Task<bool> BindTokenReplayContinuationAsync(HttpContext context, string sessionId) =>
         OidcAuthenticationExtensions.TryBindTokenReplayContinuationAsync(context, TokenReplayContinuationId(sessionId));
 
@@ -346,15 +285,6 @@ internal static class McpEndpointExtensions
         }
     }
 
-    /// <summary>
-    /// Handles <c>GET /mcp</c>: opens the server-to-client SSE stream defined by
-    /// the Streamable-HTTP transport. A valid <c>Mcp-Session-Id</c> is required;
-    /// the client must also accept <c>text/event-stream</c>. The handler drains the
-    /// session's notification channel (honua-server#1954), writing each queued
-    /// <c>notifications/progress</c> / <c>*/list_changed</c> frame as an SSE
-    /// <c>message</c> event until the session is terminated or the client
-    /// disconnects.
-    /// </summary>
     private static async Task HandleGetAsync(HttpContext context, CancellationToken cancellationToken)
     {
         var sessions = context.RequestServices.GetRequiredService<McpSessionManager>();
@@ -434,12 +364,6 @@ internal static class McpEndpointExtensions
         }
     }
 
-    /// <summary>
-    /// Drains a session's notification channel onto an output stream, writing each
-    /// queued JSON-RPC notification as one SSE <c>message</c> frame. Returns when
-    /// the channel completes (session terminated) or the token cancels. Extracted
-    /// so the SSE pump is unit-testable without an HTTP host.
-    /// </summary>
     internal static async Task PumpSessionStreamAsync(
         Stream output,
         System.Threading.Channels.ChannelReader<string> reader,
@@ -451,11 +375,6 @@ internal static class McpEndpointExtensions
         }
     }
 
-    /// <summary>
-    /// Handles <c>DELETE /mcp</c>: terminates the session named by the
-    /// <c>Mcp-Session-Id</c> header. Returns 204 when a session was removed and
-    /// 404 when the id is unknown, per the Streamable-HTTP transport.
-    /// </summary>
     private static async Task HandleDeleteAsync(HttpContext context, CancellationToken cancellationToken)
     {
         var sessions = context.RequestServices.GetRequiredService<McpSessionManager>();
@@ -515,24 +434,13 @@ internal static class McpEndpointExtensions
         };
     }
 
-    /// <summary>
-    /// Answers a rejected <c>GET /mcp</c> with <c>405 Method Not Allowed</c> and
-    /// the <c>Allow: POST, DELETE</c> header the Streamable-HTTP spec requires when
-    /// the server does not offer the optional server-initiated SSE stream.
-    /// </summary>
+    // A rejected GET answers 405 with Allow: POST, DELETE because the optional SSE stream is not offered.
     private static void RejectGetMethodNotAllowed(HttpContext context)
     {
         context.Response.Headers[HeaderNames.Allow] = "POST, DELETE";
         context.Response.StatusCode = StatusCodes.Status405MethodNotAllowed;
     }
 
-    /// <summary>
-    /// Reads the request body into memory, refusing it once it exceeds
-    /// <paramref name="maxBytes"/>. Returns <see langword="null"/> when a declared
-    /// <c>Content-Length</c> or the bytes actually read exceed the limit, so chunked
-    /// bodies are bounded as well; reading stops at the first byte past the limit. A
-    /// leading UTF-8 byte-order mark is skipped, as the stream parser did.
-    /// </summary>
     internal static async Task<ReadOnlyMemory<byte>?> ReadBoundedBodyAsync(
         HttpRequest request,
         long maxBytes,
@@ -575,10 +483,6 @@ internal static class McpEndpointExtensions
         return body.Span.StartsWith(Utf8ByteOrderMark) ? body[Utf8ByteOrderMark.Length..] : body;
     }
 
-    /// <summary>
-    /// Initial buffer size for <see cref="ReadBoundedBodyAsync"/>. Ignores
-    /// Content-Length so a declared 10 MB body does not allocate up front.
-    /// </summary>
     internal static int BoundedBodyInitialCapacity(long maxBytes)
     {
         const int smallCapacity = 16 * 1024;
@@ -685,11 +589,6 @@ internal static class McpEndpointExtensions
         await WriteBatchAsync(context, responses, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Validates a single JSON-RPC envelope, classifies its id, and dispatches
-    /// it through the operator surface. Returns <c>null</c> when the element is
-    /// a notification and no response must be emitted.
-    /// </summary>
     private static async Task<McpJsonRpcResponse?> ProcessMessageAsync(
         HttpContext context,
         McpDataAccessSurface surface,
@@ -847,11 +746,6 @@ internal static class McpEndpointExtensions
             .ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Returns <c>true</c> when the request's <c>Accept</c> header advertises
-    /// <c>text/event-stream</c> (exactly or via a <c>*/*</c> / <c>text/*</c>
-    /// wildcard), meaning the server may answer with a Server-Sent-Events stream.
-    /// </summary>
     private static bool AcceptsEventStream(HttpContext context)
     {
         var accept = context.Request.Headers.Accept;
@@ -887,11 +781,6 @@ internal static class McpEndpointExtensions
         context.Response.Headers[HeaderNames.Connection] = "keep-alive";
     }
 
-    /// <summary>
-    /// Writes a single SSE <c>message</c> event whose <c>data:</c> field carries
-    /// the JSON-RPC payload, terminated by the blank line the SSE wire format
-    /// requires, then flushes so the client receives the frame promptly.
-    /// </summary>
     private static Task WriteEventAsync(HttpContext context, string json, CancellationToken cancellationToken) =>
         WriteEventToStreamAsync(context.Response.Body, json, cancellationToken);
 
@@ -915,13 +804,6 @@ internal static class McpEndpointExtensions
         Error = error
     };
 
-    /// <summary>
-    /// Copies the workflow discovery view bound to the presented session onto
-    /// <see cref="HttpContext.Items"/> (honua-server#3428), so
-    /// <c>McpDataAccessSurface</c> can resolve the session leg of the view
-    /// negotiation contract without reaching into the transport. A request with no
-    /// session, or a session that negotiated no view, records nothing.
-    /// </summary>
     private static void HydrateSessionWorkflowView(HttpContext context, McpSessionManager sessions)
     {
         if (!context.Request.Headers.TryGetValue(McpSessionManager.SessionHeaderName, out var presented))
@@ -942,65 +824,27 @@ internal static class McpEndpointExtensions
         }
     }
 
-    /// <summary>
-    /// Maximum length accepted for a presented <c>Mcp-Session-Id</c> before the
-    /// stateless fallback refuses to treat it as well-formed. Server-minted ids
-    /// are 64 lowercase-hex characters, or a signed stateless token of at most
-    /// 172 characters (<see cref="McpStatelessSessionTokens"/>); 256 leaves
-    /// headroom while bounding what a hostile client can push through the
-    /// fallback path.
-    /// </summary>
     private const int MaxWellFormedSessionIdLength = 256;
 
-    /// <summary>
-    /// Returns <c>true</c> when a presented session id satisfies the
-    /// Streamable-HTTP well-formedness rule — visible ASCII only (0x21–0x7E) —
-    /// and a sane length bound. Used by the stateless fallback
-    /// (honua-server#3027) so only ids that could plausibly have been minted by
-    /// a spec-compliant server are served statelessly; garbage keeps the strict
-    /// 404.
-    /// </summary>
     internal static bool IsWellFormedSessionId(string sessionId) =>
         sessionId.Length > 0
         && sessionId.Length <= MaxWellFormedSessionIdLength
         && sessionId.All(static c => c is >= '!' and <= '~');
 
-    /// <summary>
-    /// Returns a short non-identifying prefix of a session id for structured
-    /// logging. Session ids are bearer-adjacent (they name a live session), so
-    /// they are never logged in full outside the trusted mint/terminate paths.
-    /// </summary>
+    // Session ids are bearer-adjacent, so logs keep only a short prefix.
     private static string SessionIdPrefix(string sessionId) =>
         sessionId.Length <= 8 ? sessionId : sessionId[..8];
 
-    /// <summary>
-    /// Returns <c>true</c> when the supplied JSON element is a single JSON-RPC
-    /// object whose <c>method</c> is <c>initialize</c>. Used by the transport to
-    /// decide whether to bypass session validation and whether to issue a new
-    /// session id on success.
-    /// </summary>
     private static bool IsInitialize(JsonElement message) =>
         message.ValueKind == JsonValueKind.Object
         && message.TryGetProperty("method", out var methodElement)
         && methodElement.ValueKind == JsonValueKind.String
         && string.Equals(methodElement.GetString(), "initialize", StringComparison.Ordinal);
 
-    /// <summary>
-    /// Returns <c>true</c> when any element of the batch carries the
-    /// <c>initialize</c> method. MCP 2025-03-26 forbids batching
-    /// <c>initialize</c> because the server cannot negotiate a protocol
-    /// version mid-batch, so the whole batch must be rejected before any
-    /// element is dispatched.
-    /// </summary>
+    // Initialize cannot be batched because the protocol version cannot be negotiated mid-batch.
     private static bool BatchContainsInitialize(JsonElement batch)
         => batch.EnumerateArray().Any(IsInitialize);
 
-    /// <summary>
-    /// Classifies the <c>id</c> property of a JSON-RPC message per MCP
-    /// 2025-03-26 rules: absent = notification, string or integer = valid,
-    /// everything else (null, boolean, fractional number, array, object) is
-    /// invalid and must be rejected with an <c>invalid_request</c> error.
-    /// </summary>
     private static RequestIdState ClassifyRequestId(JsonElement message)
     {
         if (!message.TryGetProperty("id", out var idElement))
@@ -1029,11 +873,7 @@ internal static class McpEndpointExtensions
         }
     }
 
-    /// <summary>
-    /// Preserves a valid request id when transport-level validation rejects a
-    /// request before normal JSON-RPC dispatch. Without the original id, clients
-    /// cannot correlate the error to their pending request and may wait forever.
-    /// </summary>
+    // The original request id is kept so the client can correlate a transport rejection instead of waiting on it.
     internal static JsonElement ResponseIdForEarlyError(JsonElement message)
     {
         if (message.ValueKind == JsonValueKind.Object)
@@ -1048,13 +888,6 @@ internal static class McpEndpointExtensions
         return JsonNullId;
     }
 
-    /// <summary>
-    /// Returns <c>true</c> when the supplied numeric JSON element is a plain
-    /// integer literal (no fractional or exponent part). Used to accept any
-    /// JSON-integer id — including values outside <see cref="long"/> range —
-    /// without coercing to a CLR numeric type, since the id is preserved and
-    /// echoed back as the original <see cref="JsonElement"/>.
-    /// </summary>
     internal static bool IsIntegerNumberToken(JsonElement element)
     {
         var raw = element.GetRawText().AsSpan();
