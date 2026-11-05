@@ -14,9 +14,10 @@ internal sealed class McpOptions
 {
     public const string SectionName = "Mcp";
 
+    // Streaming defaults off because a buffering serverless gateway would hang the SDK's standalone GET stream.
     public bool ServerInitiatedStreamEnabled { get; set; }
 
-    // An unknown session id is not served as session-less outside Development, because that drops the view negotiated at initialize.
+    // Defaults off outside Development, because serving an unknown session as session-less drops the view negotiated at initialize; an explicit setting overrides that default.
     public bool StatelessSessionFallback { get; set; }
 
     internal static bool DefaultStatelessSessionFallback(IHostEnvironment? environment) =>
@@ -50,5 +51,6 @@ internal sealed class McpOptions
 
     public int MaxAnonymousBatchSize { get; set; } = 5;
 
+    // The 10 MiB default leaves room for the 4 MiB inline dataset after JSON string escaping.
     public long MaxRequestBodyBytes { get; set; } = 10L * 1024 * 1024;
 }

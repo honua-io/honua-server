@@ -13,6 +13,7 @@ namespace Honua.Ai.Protocols.Mcp.Tools;
 
 internal sealed class PublishedOperationToolSource : IMcpToolSource
 {
+    // studio.content.create-publication-request is excluded because honua_studio_propose_publication enforces Studio owner authorization the generic projection does not.
     private static readonly HashSet<string> ExcludedOperationIds =
         new(StringComparer.Ordinal)
         {
@@ -128,6 +129,7 @@ internal sealed class PublishedOperationToolSource : IMcpToolSource
         return tools.AsReadOnly();
     }
 
+    // Descriptor instances are compared as well as the catalog version, because that version hashes only operation and provider ids and would miss a schema or policy change.
     private sealed record CachedProjection(
         string CatalogVersion,
         IReadOnlyList<OperationDescriptor> Operations,

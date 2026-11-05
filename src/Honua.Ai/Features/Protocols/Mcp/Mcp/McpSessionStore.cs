@@ -7,6 +7,7 @@ using StackExchange.Redis;
 
 namespace Honua.Ai.Protocols.Mcp;
 
+// Notification channels, lifetime tokens, and job indexes stay off this record because they back an SSE stream held open on one node.
 internal sealed record McpSessionRecord(
     string SessionId,
     string PrincipalKey,

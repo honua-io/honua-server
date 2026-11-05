@@ -17,6 +17,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Ai.Protocols.Mcp.Studio;
 
+// Tools are singletons and resolve scoped lifecycle services from RequestServices, because a singleton constructor would capture those scoped dependencies.
 internal abstract class StudioDraftToolBase
 {
     // The dispatcher hides tool names from anonymous callers, but a known Studio call is still audited.
@@ -227,6 +228,7 @@ internal abstract class StudioDraftToolBase
             policyCode: decision.Code);
     }
 
+    // The authorized snapshot's generation is checked as well as the store compare-and-swap, so a caller cannot supply a future generation from a concurrently rebound resource.
     protected static void RequireAuthorizedGeneration(StudioPackageDraft draft, long expectedGeneration)
     {
         ArgumentNullException.ThrowIfNull(draft);

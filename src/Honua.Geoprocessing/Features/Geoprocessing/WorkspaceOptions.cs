@@ -12,6 +12,7 @@ public sealed class WorkspaceOptions
 
     public TimeSpan CleanupInterval { get; set; } = TimeSpan.FromMinutes(15);
 
+    // The grace period lets artifacts be promoted out of a workspace that has just expired.
     public TimeSpan CleanupGracePeriod { get; set; } = TimeSpan.FromHours(1);
 
     public bool EnableAutomaticCleanup { get; set; } = true;

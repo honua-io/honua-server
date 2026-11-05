@@ -15,6 +15,7 @@ internal static class FeatureStreamArtifact
 {
     public const string StreamReferencePrefix = "honua-feature-stream:v1;";
 
+    // GeoJSON has no SRID, and the NetTopologySuite reader resets it to the factory default on round-trip, so the SRID travels in this reserved member.
     private const string SridMemberKey = "__honua_srid";
 
     public const long DefaultInlineThresholdBytes = 1L * 1024L * 1024L;

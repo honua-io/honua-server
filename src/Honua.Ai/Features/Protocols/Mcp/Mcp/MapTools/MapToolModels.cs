@@ -250,6 +250,7 @@ internal sealed class McpQueryFeaturesOutput
     public IReadOnlyList<string> Warnings { get; set; } = [];
 }
 
+// Feature geometry and attributes stay raw JSON nodes so the source-generated serializer can emit them without reflecting over arbitrary attribute types.
 internal sealed class McpGeoJsonFeatureCollection
 {
     [JsonPropertyName("type")]
@@ -473,7 +474,7 @@ internal sealed class McpApplyStylePresetOutput
     [JsonPropertyName("handleId")]
     public string HandleId { get; set; } = string.Empty;
 
-    // The handle is omitted when the operation record was not durable, so it cannot be read back through the status surfaces.
+    // durable=false means the handle cannot be read back through the status surfaces; the field is omitted once the record is persisted.
     [JsonPropertyName("durable")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? Durable { get; set; }

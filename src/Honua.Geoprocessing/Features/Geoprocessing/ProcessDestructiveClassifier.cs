@@ -7,6 +7,7 @@ using Honua.Core.Features.Geoprocessing.Domain;
 
 namespace Honua.Geoprocessing;
 
+// Destruction policy stays here rather than on ProcessDefinition so Honua.Core remains transport-neutral.
 internal static class ProcessDestructiveClassifier
 {
     // Known-safe MUTATING processes: they carry the Mutating execution tier (so the

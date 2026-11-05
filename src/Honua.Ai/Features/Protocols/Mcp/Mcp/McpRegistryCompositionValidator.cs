@@ -5,6 +5,7 @@ using Honua.Core.Features.Capabilities;
 
 namespace Honua.Ai.Protocols.Mcp;
 
+// Runtime validation checks only that every served tool has a registry descriptor, because whether every registry descriptor is served depends on which optional tools the host composed.
 internal static class McpRegistryCompositionValidator
 {
     public static IReadOnlyList<string> FindDrift(McpDataAccessSurface surface, ICapabilityRegistry registry)

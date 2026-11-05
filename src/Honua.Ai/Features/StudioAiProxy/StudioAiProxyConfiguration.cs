@@ -24,6 +24,7 @@ public sealed class StudioAiProxyConfiguration
 
     public string DefaultProvider { get; set; } = string.Empty;
 
+    // The default leaves headroom for about 17 KB of Studio tool definitions plus a growing transcript.
     public int MaxPromptCharacters { get; set; } = 128_000;
 
     public int MaxRequestBytes { get; set; } = 1_048_576;
@@ -85,6 +86,7 @@ public sealed class StudioAiProxyProviderOptions
 
     public int MaxTokens { get; set; } = 4096;
 
+    // SupportsTools records whether the configured model tool-calls reliably, even though every adapter can send tools.
     public bool SupportsTools { get; set; } = true;
 }
 

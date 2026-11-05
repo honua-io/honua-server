@@ -8,6 +8,7 @@ using Honua.Ai.Protocols.Mcp.Models;
 
 namespace Honua.Ai.Protocols.Mcp.Resources;
 
+// The embedded catalog is served verbatim so a deployment without a checkout returns exactly the artifact CI gated.
 internal sealed class FeatureCatalogResource : IMcpResource
 {
     public const string Uri = McpResourceUris.CatalogFeatures;

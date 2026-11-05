@@ -333,7 +333,7 @@ internal sealed partial class IngestDatasetTool : IMcpTool
         };
     }
 
-    // Connection lookup never fails the ingest; a miss returns null and the caller can still publish later.
+    // Lookup failures return a CatalogConnectionMatch with a null connection id so the ingest can still succeed, but cancellation is not swallowed.
     private static async Task<CatalogConnectionMatch> TryResolveCatalogConnectionIdAsync(
         IServiceProvider services,
         CancellationToken cancellationToken)

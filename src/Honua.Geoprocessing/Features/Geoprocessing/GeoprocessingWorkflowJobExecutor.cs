@@ -19,6 +19,7 @@ internal sealed class GeoprocessingWorkflowJobExecutor : IWorkflowJobExecutor
         _jobService = jobService;
     }
 
+    // The authorized plan is returned because a ForEach step's concrete layer id exists only after expansion at run creation, so publication-time pins cannot cover it.
     public Task<AnalysisPlan> EnsurePlanExecutionAuthorizedAsync(
         AnalysisPlan plan,
         ClaimsPrincipal principal,

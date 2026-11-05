@@ -77,6 +77,7 @@ internal static class McpToolOutputSchemas
             }
         """;
 
+    // MCP clients validate structuredContent against outputSchema for failed calls too, so every advertised schema must accept the shared error envelope.
     internal static JsonElement IncludeErrorEnvelope(JsonElement successSchema)
     {
         if (AcceptsErrorEnvelope(successSchema))
@@ -406,6 +407,7 @@ internal static class McpToolOutputSchemas
         }
         """);
 
+    // Nested planning objects stay open so the published contract remains stable as the planning engine evolves.
     public static readonly JsonElement PlanAnalysisOutputSchema = Parse(
         """
         {
@@ -774,6 +776,7 @@ internal static class McpToolOutputSchemas
         }
         """);
 
+    // The package sub-object stays open because the canonical MapPackage shape is owned by the domain model, not by this schema.
     public static readonly JsonElement CreateMapPackageOutputSchema = Parse(
         """
         {

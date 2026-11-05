@@ -228,7 +228,6 @@ internal sealed class QueryFeaturesTool : IMcpTool
         return builder.ToString();
     }
 
-    // Out-of-range and out-of-extent bbox notes are advisory and never throw.
     private static List<string> BuildBboxCrsWarnings(
         IReadOnlyList<double>? bbox,
         int? bboxSrid,

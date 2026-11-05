@@ -69,6 +69,7 @@ internal sealed class AnthropicProxyToolChoice
     public string? Name { get; set; }
 }
 
+// Only data lines are parsed because the payload type field already carries the same discriminator as the event line.
 internal sealed class AnthropicStreamFrame
 {
     [JsonPropertyName("type")]

@@ -262,7 +262,6 @@ internal sealed partial class HonuaProcessService : Proto.ProcessService.Process
         }
     }
 
-    // The response uses the job's actual status and never a fabricated terminal state.
     private static Proto.CancelJobResponse ToProtoCancelJobResponse(
         string jobId, ExecutionJobRecord? job, ServerCallContext context)
     {

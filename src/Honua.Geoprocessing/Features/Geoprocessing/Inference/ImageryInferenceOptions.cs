@@ -3,6 +3,7 @@
 
 namespace Honua.Geoprocessing.Inference;
 
+// An empty provider leaves the lane dormant: nothing validates it at startup and nothing probes the endpoint.
 internal sealed class ImageryInferenceOptions
 {
     public Honua.Core.Features.Security.AiDisclosurePolicyOptions Disclosure { get; set; } = new();

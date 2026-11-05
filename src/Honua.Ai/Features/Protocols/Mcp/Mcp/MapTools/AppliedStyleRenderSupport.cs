@@ -6,6 +6,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Ai.Protocols.Mcp.MapTools;
 
+// These property sets must track StyleTranslator fill, line, circle, and visibility handling, or Applied claims a rendering the rasterizer did not draw.
 internal static class AppliedStyleRenderSupport
 {
     public const string Applied = "applied";

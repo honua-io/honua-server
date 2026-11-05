@@ -24,6 +24,7 @@ internal sealed record GpResourceProfile
     // Ephemeral storage selects a job-definition tier because the submit call cannot override it.
     public int? EphemeralGib { get; init; }
 
+    // Architecture is a job-definition property, not a submit override, and the current backend selects tiers by ephemeral storage instead.
     public string? Arch { get; init; }
 
     public bool IsEmpty =>
@@ -45,8 +46,7 @@ internal sealed record GpResourceProfile
     internal const string EphemeralGibRequestKey = "gp.resource.ephemeral_gib";
     internal const string ArchRequestKey = "gp.resource.arch";
 
-    // AWS Batch parameter contract keys (literal — see remarks). These mirror AwsBatchParameterKeys
-    // in the Honua.Aws assembly, which the backend reads back.
+    // The batch keys are literals so this type does not reference the optionally excluded Honua.Aws assembly.
     internal const string BatchVcpusKey = "batch.vcpus";
     internal const string BatchMemoryMibKey = "batch.memory_mib";
     internal const string BatchGpuCountKey = "batch.gpu_count";

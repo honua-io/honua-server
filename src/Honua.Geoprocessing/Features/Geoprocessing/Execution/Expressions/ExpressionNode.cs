@@ -128,6 +128,7 @@ internal sealed class FunctionNode(string name, IReadOnlyList<ExpressionNode> ar
 
 internal static class ExpressionValues
 {
+    // Arithmetic that cancels to zero can leave a floating-point residue, so exact equality would miss the zero sentinel and produce a garbage quotient or the wrong branch.
     internal const double ZeroTolerance = 1e-9;
 
     public static double ToNumber(object? value)

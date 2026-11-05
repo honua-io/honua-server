@@ -146,6 +146,7 @@ internal sealed partial class McpSessionManager
         out string sessionId) =>
         TryCreateSessionCore(principalKey, elicitationSupported, workflowView, out sessionId);
 
+    // With a shared store, capacity eviction drops only this replica's cache entries, because local least-recently-used order is this replica's traffic and must not end a session that is active elsewhere.
     public async Task<string?> TryCreateSessionAsync(
         string? principalKey,
         bool elicitationSupported,

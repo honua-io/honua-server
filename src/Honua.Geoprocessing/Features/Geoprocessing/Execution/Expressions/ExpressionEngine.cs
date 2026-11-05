@@ -55,7 +55,6 @@ internal sealed class ExpressionParseException(string message) : Exception(messa
     public string PublicMessage { get; } = message;
 }
 
-// The message is sanitized before it is shown to callers.
 internal sealed class ExpressionEvaluationException(string message) : Exception(message)
 {
     public string PublicMessage { get; } = message;

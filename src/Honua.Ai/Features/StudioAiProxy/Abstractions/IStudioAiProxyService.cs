@@ -12,6 +12,7 @@ public interface IStudioAiProxyService
 
     Task<StudioAiCapabilitiesResponse> GetCapabilitiesAsync(CancellationToken cancellationToken = default);
 
+    // Validation is separate from streaming because SSE cannot change the HTTP status after the first byte is written.
     string? ValidateRequest(StudioAiChatRequest request);
 
     Task<StudioAiPreparedCall> PrepareChatAsync(StudioAiChatRequest request, AiExecutionContext? executionContext,

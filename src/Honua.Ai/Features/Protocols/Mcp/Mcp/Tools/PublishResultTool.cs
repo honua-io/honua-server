@@ -18,7 +18,6 @@ internal sealed class PublishResultTool : IMcpTool
 {
     public const string ToolName = "honua_publish_result";
 
-    // The operation id is a literal because this assembly cannot reference the server assembly.
     public const string PublishOperationId = PublishServiceTool.PublishOperationId;
 
     private static class MetadataKeys

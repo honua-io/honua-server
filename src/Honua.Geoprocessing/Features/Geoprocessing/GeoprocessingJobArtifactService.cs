@@ -280,6 +280,7 @@ internal sealed class GeoprocessingJobArtifactService
         return $"tenant:{Convert.ToHexString(hash).ToLowerInvariant()}";
     }
 
+    // Retention is checked from completion time before a cached or synthesized package is returned, so an expired package is not rebuilt from a job record that outlives it.
     public async Task<AnalysisResultPackage> GetOrSynthesizeResultPackageAsync(
         ExecutionJobRecord job,
         CancellationToken cancellationToken)
@@ -361,6 +362,7 @@ internal sealed class GeoprocessingJobArtifactService
             $"Results for job '{job.OperationId}' are no longer available; the result retention period has elapsed.");
     }
 
+    // Staged routes are advertised only when this host has the output store, so a split-host topology does not publish a route that always returns 503.
     internal static AnalysisResultPackage ProjectStagedArtifactAvailability(
         AnalysisResultPackage package,
         string jobId,

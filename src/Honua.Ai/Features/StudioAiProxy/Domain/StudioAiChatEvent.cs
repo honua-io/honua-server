@@ -40,6 +40,7 @@ public enum StudioAiStopReason
     Error
 }
 
+// The event is one flat shape so the SSE writer and the AOT JSON source generator share a single JsonTypeInfo.
 public sealed class StudioAiChatEvent
 {
     public required StudioAiChatEventType Type { get; init; }

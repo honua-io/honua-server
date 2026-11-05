@@ -9,7 +9,7 @@ using NetTopologySuite.Features;
 
 namespace Honua.Geoprocessing.Execution;
 
-// Seen keys are 128-bit digests once the set spills, so equality is digest-level rather than byte-for-byte.
+// Seen keys are 128-bit digests for both the in-memory set and the spill file, so equality is digest-level rather than byte-for-byte.
 internal sealed class DedupTransformExecutor(
     IOptionsMonitor<GeoprocessingExecutorOptions> options)
     : FeatureCollectionTransformExecutor(options)

@@ -7,7 +7,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Geoprocessing.CustomCode;
 
-// A custom-code job claimed on this process fails instead of running untrusted code in the server.
 internal sealed partial class CustomCodeDispatchJobExecutor : IJobExecutor
 {
     private static readonly IReadOnlySet<string> CustomCodeProfileSet =

@@ -15,7 +15,7 @@ internal readonly record struct PlanLayerReference(
     int LayerId,
     ProcessLayerAccess Access);
 
-// The parameter declares read or write; treating every layer parameter as a read refused imports the caller was allowed to write.
+// Declared write access permits a write-only caller without also requiring a read grant on the destination.
 internal static class PlanLayerReferences
 {
     public static IReadOnlyList<PlanLayerReference> Derive(AnalysisPlan plan, IProcessCatalog catalog)

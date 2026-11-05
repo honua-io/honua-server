@@ -22,6 +22,7 @@ internal sealed class GeoprocessingExecutorOptions
     [Range(1, 1_000_000_000)]
     public long MaxTopologyWork { get; set; } = 4_000_000;
 
+    // The ceiling stays small so neither the web heap nor the durable job store becomes part of the raster data plane.
     [Range(1024, 64 * 1024, ErrorMessage = "MaxInlineRasterSourceBytes must be between 1 KiB and 64 KiB")]
     public int MaxInlineRasterSourceBytes { get; set; } = 64 * 1024;
 
@@ -48,6 +49,7 @@ internal sealed class GeoprocessingExecutorOptions
     [Range(typeof(TimeSpan), "00:01:00", "30.00:00:00", ErrorMessage = "ResultRetention must be between 1 minute and 30 days")]
     public TimeSpan ResultRetention { get; set; } = TimeSpan.FromDays(7);
 
+    // A spilled stream is read incrementally but still loaded in one transactional batch, so the feature count needs its own cap.
     [Range(1, int.MaxValue, ErrorMessage = "MaxSinkFeatureCount must be a positive integer")]
     public int MaxSinkFeatureCount { get; set; } = 2_000_000;
 }

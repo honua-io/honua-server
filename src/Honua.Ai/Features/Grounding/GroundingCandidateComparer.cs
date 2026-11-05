@@ -5,6 +5,7 @@ using Honua.Core.Features.Grounding.Domain;
 
 namespace Honua.Ai.Grounding;
 
+// Scores round to three decimals, so an ordinal tie-break keeps equal scores from reordering clarification options, provenance, and the top candidate.
 internal static class GroundingCandidateComparer
 {
     public static readonly Comparison<GroundingCandidate> ByScoreDescending = Compare;

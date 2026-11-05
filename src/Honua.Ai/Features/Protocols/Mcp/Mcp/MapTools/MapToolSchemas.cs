@@ -23,7 +23,7 @@ internal static class MapToolSchemas
 
     public const int DefaultGeometryPrecision = 6;
 
-    // A geometryPrecision above this ceiling or below zero skips quantization and returns full-precision coordinates.
+    // System.Math.Round caps decimal digits at 15, so a geometryPrecision above this ceiling or below zero skips quantization and returns full-precision coordinates.
     public const int MaxGeometryPrecision = 15;
 
     private const string ListLayersArgumentSchemaJson = """

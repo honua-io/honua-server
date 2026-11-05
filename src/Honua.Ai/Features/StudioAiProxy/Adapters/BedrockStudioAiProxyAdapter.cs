@@ -13,6 +13,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Ai.StudioAiProxy.Adapters;
 
+// Bedrock returns one complete tool-call payload, and the adapter still emits ToolCallStart, ToolCallDelta, and ToolCallStop so the neutral contract matches the other providers.
 internal sealed class BedrockStudioAiProxyAdapter : IStudioAiProxyAdapter
 {
     private const string ProviderLabel = "bedrock";

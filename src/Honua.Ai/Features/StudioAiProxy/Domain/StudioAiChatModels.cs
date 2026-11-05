@@ -53,6 +53,7 @@ public sealed class StudioAiToolDefinition
 
     public JsonElement? OutputSchema { get; init; }
 
+    // Annotations and output schemas are appended to the model-visible description because provider tool APIs do not expose them as their own fields.
     internal string? BuildProviderDescription()
     {
         if (Annotations is null && OutputSchema is null)

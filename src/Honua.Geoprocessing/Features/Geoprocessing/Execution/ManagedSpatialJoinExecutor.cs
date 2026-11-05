@@ -10,6 +10,7 @@ using NtsGeometry = NetTopologySuite.Geometries.Geometry;
 
 namespace Honua.Geoprocessing.Execution;
 
+// Inline feature collections are the inputs so the dispatcher can construct this handler in a deploy that has no Postgres.
 internal sealed class ManagedSpatialJoinExecutor(
     IOptionsMonitor<GeoprocessingExecutorOptions> options)
     : FeatureCollectionTransformExecutor(options)

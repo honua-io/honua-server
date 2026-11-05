@@ -18,6 +18,7 @@ internal static class AiBuilderServiceCollectionExtensions
         return services;
     }
 
+    // Registration is unconditional because the deterministic replay is the only planner.
     public static IServiceCollection AddAiBuilderPlanAnalysis(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);

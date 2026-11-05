@@ -7,7 +7,6 @@ using Honua.Core.Features.Authorization.Domain;
 
 namespace Honua.Geoprocessing.CustomCode;
 
-// The git ref must be a full 40-hex SHA, never a branch or a tag.
 internal static partial class CustomCodeSubmitValidator
 {
     [GeneratedRegex("^[0-9a-f]{40}$", RegexOptions.CultureInvariant)]

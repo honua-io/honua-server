@@ -13,6 +13,7 @@ using Microsoft.Extensions.AI;
 
 namespace Honua.Ai.StudioAiProxy.Adapters.Bedrock;
 
+// Converse is used instead of InvokeModel because it exposes a model-agnostic tool-configuration contract.
 internal sealed class BedrockChatClientAdapter : IChatClient
 {
     private readonly IAmazonBedrockRuntime _runtime;

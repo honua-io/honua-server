@@ -61,7 +61,7 @@ internal static class McpAuthorizationHelper
             ? AnonymousPrincipalScheme
             : identity.AuthenticationType;
 
-    // Issuer, subject, tenant, and scope are taken from the validated token, never from request headers or parameters.
+    // The binding uses the framework-authenticated actor, the policy-resolved tenant, and the scope ceiling, including API-key identities, never request headers or parameters.
     public static string? ResolveSessionBindingKey(HttpContext context)
     {
         ArgumentNullException.ThrowIfNull(context);

@@ -6,6 +6,7 @@ using Newtonsoft.Json;
 
 namespace Honua.Geoprocessing.Execution;
 
+// Both codecs use dimension 3 because the default NetTopologySuite reader and writer are 2D-only and silently drop Z.
 internal static class GeoJsonArtifactCodec
 {
     public static GeoJsonReader CreateReader()
