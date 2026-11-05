@@ -470,7 +470,7 @@ public sealed class GeoServicesTileCachePackageReader : ITileCachePackageReader
         }
     }
 
-    // Overlapping index ranges would copy the same bundle bytes into many tiles, so each range is rejected and charged to the budget before any copy.
+    // Reject overlapping ranges to prevent repeated copies of the same bundle bytes, and charge accepted ranges to the budget before copying.
     private static void RejectAliasedBundleEntries(
         List<CompactV2IndexEntry> entries,
         DecompressionBudget budget)
