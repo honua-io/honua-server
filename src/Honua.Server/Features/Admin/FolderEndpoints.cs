@@ -172,11 +172,25 @@ internal static class FolderEndpoints
         if (denied is not null) return denied;
         foreach (var service in services)
         {
-            denied = await AccessPolicyHelpers.RequireServiceAccessAsync(context, service, AuthorizationOperation.Admin,
-                context.RequestAborted).ConfigureAwait(false);
+            denied = await RequireServiceAccessAsync(context, service).ConfigureAwait(false);
             if (denied is not null) return denied;
         }
         return null;
+    }
+
+    internal static async Task<IResult?> RequireServiceAccessAsync(HttpContext context, MetadataV2Service service)
+    {
+        var operatorPrincipal = context.User;
+        context.User = context.Features.Get<FolderReplayServicePrincipal>()?.Principal ?? operatorPrincipal;
+        try
+        {
+            return await AccessPolicyHelpers.RequireServiceAccessAsync(context, service, AuthorizationOperation.Admin,
+                context.RequestAborted).ConfigureAwait(false);
+        }
+        finally
+        {
+            context.User = operatorPrincipal;
+        }
     }
 
     private static MetadataV2Folder FindFolder(MetadataV2Graph graph, string id, string? tenant)

@@ -8,6 +8,7 @@ using System.Text.Json;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Infrastructure.Authentication;
+using Honua.Server.Features.Admin;
 
 namespace Honua.Server.Features.Operations;
 
@@ -89,7 +90,7 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor, IOperation
         {
             var issued = await _adminApiKeyStore.CreateAsync(
                 $"approved-operation:{context.ApprovedProposalId}",
-                AdminApiKeyPermission.CreateApprovedOperationGrants(_definition.Method.Method, uri.AbsolutePath, context.TenantId),
+                CreateExecutionGrants(uri, context),
                 _clock.GetUtcNow().AddMinutes(5),
                 context.PrincipalId,
                 cancellationToken).ConfigureAwait(false);
@@ -201,9 +202,22 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor, IOperation
         return new OperationResultSummary { Summary = $"{_definition.Title} completed.", Details = details };
     }
 
+    private string[] CreateExecutionGrants(Uri uri, OperationPolicyContext context)
+    {
+        var grants = AdminApiKeyPermission.CreateApprovedOperationGrants(_definition.Method.Method, uri.AbsolutePath, context.TenantId);
+        return FolderReplayRequest.IsFolderMutation(OperationId)
+            ? [.. grants, FolderReplayRequest.ProposalGrant(context.ApprovedProposalId!)]
+            : grants;
+    }
+
     private string BindPath(OperationRequest request, string? pathOverride)
     {
-        var path = pathOverride ?? _definition.Path;
+        return BindPath(_definition with { Path = pathOverride ?? _definition.Path }, request);
+    }
+
+    internal static string BindPath(AdminApiOperationCatalog.Definition definition, OperationRequest request)
+    {
+        var path = definition.Path;
         foreach (var name in RouteNames(path))
         {
             var value = name switch { "connectionId" => request.ConnectionId, "serviceName" => request.ServiceName, _ => request.Parameters.GetValueOrDefault(name) };
