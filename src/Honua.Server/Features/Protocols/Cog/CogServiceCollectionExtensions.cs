@@ -9,17 +9,8 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Features.Protocols.Cog;
 
-/// <summary>
-/// Service collection extensions for COG feature registration.
-/// </summary>
 internal static class CogServiceCollectionExtensions
 {
-    /// <summary>
-    /// Registers COG services: range readers, metadata parser, and tile resolver.
-    /// Provider-specific range readers (AWS S3 / Azure Blob) are delegated to the
-    /// per-cloud extensions in Honua.Aws / Honua.Azure to keep the AWSSDK.* /
-    /// Azure.* surface confined to those assemblies.
-    /// </summary>
     public static IServiceCollection AddCogServices(this IServiceCollection services, IConfiguration configuration)
     {
         // Register the AOT-safe COG metadata reader

@@ -7,20 +7,12 @@ using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Server.Features.Protocols.Tiles.PMTilesProxy;
 
-/// <summary>
-/// The publication a PMTiles archive was built from, re-resolved against the
-/// current metadata graph so a retired or rebound source cannot be read.
-/// </summary>
+// The publication is re-resolved so a retired or rebound source cannot be read.
 internal sealed record PMTilesPublishedSource(
     MetadataV2Resource Resource,
     MetadataV2Service Service,
     MetadataV2Publication Publication);
 
-/// <summary>
-/// Binds a published PMTiles object to the service and layer it was generated
-/// from. Object metadata written at publish time is authoritative; artifacts
-/// that predate those keys fall back to the layer id alone.
-/// </summary>
 internal static class PMTilesProxySourceResolver
 {
     internal const string LayerIdMetadataKey = "layerId";
@@ -102,12 +94,6 @@ internal static class PMTilesProxySourceResolver
         return ResolveLegacy(snapshot, serviceKey, layerId);
     }
 
-    /// <summary>
-    /// Binds an unstamped archive. A service key limits the candidates to that
-    /// service id or name. The stored layer id may be the storage handle or the
-    /// service-local publication index. Either match is kept only when every
-    /// match names the same service and the same resource.
-    /// </summary>
     private static PMTilesPublishedSource? ResolveLegacy(
         MetadataV2GraphSnapshot snapshot,
         string? serviceKey,
@@ -172,12 +158,6 @@ internal static class PMTilesProxySourceResolver
         return matches[0];
     }
 
-    /// <summary>
-    /// True when the object metadata names no source at all: none of the
-    /// binding keys the publish job writes is present. Such an archive was
-    /// placed in the bucket by an operator, not produced by a publish job.
-    /// Duplicate key spellings are not unbound, so they fail closed.
-    /// </summary>
     internal static bool IsUnbound(IEnumerable<KeyValuePair<string, string>> metadata)
     {
         ArgumentNullException.ThrowIfNull(metadata);

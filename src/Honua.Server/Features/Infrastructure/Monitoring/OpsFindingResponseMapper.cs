@@ -5,20 +5,10 @@ using Honua.Core.Features.Observability.Domain;
 
 namespace Honua.Infrastructure.Monitoring;
 
-/// <summary>
-/// Maps deterministic ops findings onto the admin/MCP wire response shape.
-/// </summary>
 internal static class OpsFindingResponseMapper
 {
     public static OpsFindingView Map(OpsFinding finding) => Map(finding, posture: null);
 
-    /// <summary>
-    /// Maps a finding, resolving its required source ids and the observation window those sources
-    /// actually covered from the posture of the evaluation that produced it.
-    /// </summary>
-    /// <param name="finding">The finding to project.</param>
-    /// <param name="posture">The evidence posture of the evaluation, when available.</param>
-    /// <returns>The wire view.</returns>
     public static OpsFindingView Map(OpsFinding finding, EvidencePosture? posture)
     {
         ArgumentNullException.ThrowIfNull(finding);
@@ -57,12 +47,7 @@ internal static class OpsFindingResponseMapper
         };
     }
 
-    /// <summary>
-    /// Derives the inclusive interval the finding's required sources observed. It is built only
-    /// from measured source timestamps: when the posture is absent, or a required source published
-    /// no observation time, the window stays null rather than being approximated from
-    /// <c>detectedAt</c>.
-    /// </summary>
+    // The window is built only from measured timestamps, and it stays empty when a required source has no observation time.
     private static EvidenceSourceCoverage? BuildObservationWindow(
         IReadOnlyList<string> requiredSourceIds,
         EvidencePosture? posture)

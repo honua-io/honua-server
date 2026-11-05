@@ -5,10 +5,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Server.Features.Protocols.SpatialAnalytics;
 
-/// <summary>
-/// Source-generated log messages for the spatial analytics endpoints.
-/// EventId range: 8200-8249 (SpatialAnalytics).
-/// </summary>
 internal static partial class SpatialAnalyticsLog
 {
     [LoggerMessage(

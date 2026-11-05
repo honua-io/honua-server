@@ -9,10 +9,7 @@ using Microsoft.Net.Http.Headers;
 
 namespace Honua.Server.Features.Infrastructure.FileStorage;
 
-/// <summary>
-/// HTTP preconditions for an already resolved and authorized artifact representation.
-/// Storage reads must separately pin the metadata revision used by this policy.
-/// </summary>
+// Storage reads must pin the metadata revision this policy used.
 internal static class ArtifactHttpConditions
 {
     internal static ArtifactHttpDecision Evaluate(HttpContext context, CloudFile metadata)

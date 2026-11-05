@@ -10,9 +10,6 @@ using Honua.Core.Features.Operations.Domain;
 
 namespace Honua.Server.Features.Operations;
 
-/// <summary>
-/// Seals the rollback target and accepted safety classifications for durable replay.
-/// </summary>
 internal sealed class WorkflowRollbackApprovalRequestMapper(string operationId) : IOperationApprovalRequestMapper
 {
     public string OperationId { get; } = operationId is WorkflowRollbackOperations.Deploy

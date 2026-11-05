@@ -7,22 +7,6 @@ using Microsoft.Extensions.Hosting;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Conducts a coordinated platform-upgrade release (Demo C). Composes the existing container
-/// deploy/rollout lifecycle and the existing additive metadata-release lifecycle (which itself owns
-/// the DB ScriptMigration + metadata-v2 activation) into one ordered, gated, rollback-able operation:
-///
-///   Preflight → Backup → ContainerRollout (gated) → MetadataAndSchema (gated) → Smoke → Promote → Complete
-///
-/// A fault at any step flips the operation into RollingBack, where the conductor unwinds the completed
-/// reversible steps in reverse order — metadata/schema first (reactivate prior revision + inverse
-/// script), then the container rollout (deploy rollback) — reusing each composed lifecycle's existing
-/// rollback rather than a parallel implementation.
-///
-/// Mirrors <see cref="DeployWorkflowReconciler"/> / <see cref="MetadataReleaseReconciler"/>: leased,
-/// idempotent, single advance per cycle so the background loop re-enters and resumes from the
-/// persisted step.
-/// </summary>
 internal sealed partial class CoordinatedReleaseReconciler(
     IWorkflowOperationStore workflowStore,
     ICoordinatedContainerStepExecutor containerStep,
@@ -99,9 +83,6 @@ internal sealed partial class CoordinatedReleaseReconciler(
         }
     }
 
-    /// <summary>
-    /// Advances the coordinated forward order by exactly one step. Each transition is idempotent.
-    /// </summary>
     private async Task<WorkflowOperationRecord> AdvanceForwardAsync(
         WorkflowOperationRecord operation,
         CancellationToken cancellationToken)
@@ -222,11 +203,6 @@ internal sealed partial class CoordinatedReleaseReconciler(
         };
     }
 
-    /// <summary>
-    /// Unwinds the coordinated release. Reverses the completed reversible steps: metadata/schema first
-    /// (reactivate the prior revision + execute the inverse script), then the container rollout (deploy
-    /// rollback). Each composed rollback is delegated to its own lifecycle and is idempotent.
-    /// </summary>
     private async Task<WorkflowOperationRecord> UnwindAsync(
         WorkflowOperationRecord operation,
         CancellationToken cancellationToken)
@@ -619,9 +595,6 @@ internal sealed partial class CoordinatedReleaseReconciler(
     }
 }
 
-/// <summary>
-/// Orders coordinated-release steps in their canonical execution order for stable ledger rendering.
-/// </summary>
 internal static class CoordinatedReleaseStepOrdering
 {
     private static readonly Dictionary<CoordinatedReleaseStep, int> CanonicalOrder = new()
@@ -640,12 +613,6 @@ internal static class CoordinatedReleaseStepOrdering
             .ToList();
 }
 
-/// <summary>
-/// Background worker that continuously reconciles active coordinated-release workflow operations.
-/// Sibling to <see cref="DeployWorkflowReconcilerBackgroundService"/> and
-/// <see cref="MetadataReleaseReconcilerBackgroundService"/>; processes only
-/// <see cref="WorkflowOperationKind.CoordinatedRelease"/> operations.
-/// </summary>
 internal sealed class CoordinatedReleaseReconcilerBackgroundService(
     IWorkflowOperationStore workflowStore,
     ICoordinatedReleaseReconciler reconciler,

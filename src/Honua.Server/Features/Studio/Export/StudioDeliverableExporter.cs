@@ -9,11 +9,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Server.Features.Studio.Export;
 
-/// <summary>
-/// Default <see cref="IStudioDeliverableExporter"/> that loads a Studio content version through the
-/// canonical lifecycle service, composes it with <see cref="StudioDeliverableComposer"/>, and
-/// optionally persists the artifact via cloud storage.
-/// </summary>
 internal sealed class StudioDeliverableExporter : IStudioDeliverableExporter
 {
     private const string ShareFolder = "studio-deliverables";
@@ -32,7 +27,6 @@ internal sealed class StudioDeliverableExporter : IStudioDeliverableExporter
     {
     }
 
-    /// <summary>Test seam allowing a fake compose delegate; production always uses the primary constructor.</summary>
     internal StudioDeliverableExporter(
         IStudioPackageLifecycleService lifecycle,
         ICloudFileStorage storage,
@@ -146,9 +140,6 @@ internal sealed class StudioDeliverableExporter : IStudioDeliverableExporter
     }
 }
 
-/// <summary>
-/// Source-generated log messages for Studio deliverable export.
-/// </summary>
 internal static partial class StudioDeliverableExportLog
 {
     [LoggerMessage(

@@ -7,9 +7,6 @@ using Honua.Infrastructure.Models;
 
 namespace Honua.Server.Features.Admin.Models;
 
-/// <summary>
-/// JSON source generation context for style suggestion admin APIs.
-/// </summary>
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,

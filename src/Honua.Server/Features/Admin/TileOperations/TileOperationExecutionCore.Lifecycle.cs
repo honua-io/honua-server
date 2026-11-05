@@ -16,14 +16,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Features.Admin.TileOperations;
 
-/// <summary>
-/// Bounded generated tile-cache lifecycle operations (issue #2661): <c>expire</c> marks a bounded
-/// key window stale without deleting bytes, while <c>delete</c> removes the bytes outright. Both act
-/// only on the generated (loose <c>{z}/{x}/{y}</c>) tile objects the live
-/// <see cref="ITileCacheKeyIndex"/> tracks, deriving the target key window from the SAME
-/// <c>(service, gridset, z-range, extent, style, format)</c> inputs the seed/serve path uses so the
-/// window can never over- or under-reach the intended tiles.
-/// </summary>
+// The expire and delete window is derived from the same inputs as seeding, so it cannot miss the intended tiles or reach past them.
 internal sealed partial class TileOperationExecutionCore
 {
     private async Task<TileOperationProgress> ExecuteExpireOrDeleteAsync(
@@ -482,14 +475,6 @@ internal sealed partial class TileOperationExecutionCore
         return warnings.ToArray();
     }
 
-    /// <summary>
-    /// The bounded target window for a generated-tile-cache expire/delete run. Encapsulates the
-    /// single object-key convention the generated tile cache uses so the delete window is derived in
-    /// exactly one place: a key is matched when its parsed <c>(publicationScope, layerId, gridset,
-    /// style, format, z, x, y)</c> falls inside the requested <c>(service→publications, gridset,
-    /// style, format, z-range, extent)</c> bound. Keys that do not parse as generated tiles never
-    /// match.
-    /// </summary>
     private readonly struct TileCacheKeyWindow
     {
         private readonly HashSet<int> _layers;

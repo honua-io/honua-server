@@ -17,12 +17,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Reporting;
 
-/// <summary>
-/// Orchestrates analysis report retrieval. Authorizes the caller through
-/// <see cref="IGeoprocessingJobService"/>, builds the report once per
-/// (jobId, contractVersion, resultPackageId), and caches rendered Markdown /
-/// HTML output for the configured TTL.
-/// </summary>
 internal sealed class AnalysisReportService : IAnalysisReportService
 {
     public static readonly ActivitySource ActivitySource = new("Honua.Server.Reporting");
@@ -81,7 +75,6 @@ internal sealed class AnalysisReportService : IAnalysisReportService
         _renderers = renderers.ToDictionary(r => r.Format);
     }
 
-    /// <inheritdoc />
     public async Task<AnalysisReport> GetReportAsync(
         string jobId,
         ClaimsPrincipal principal,
@@ -140,7 +133,6 @@ internal sealed class AnalysisReportService : IAnalysisReportService
         return report;
     }
 
-    /// <inheritdoc />
     public async Task<RenderedAnalysisReport> GetRenderedAsync(
         string jobId,
         AnalysisReportFormat format,

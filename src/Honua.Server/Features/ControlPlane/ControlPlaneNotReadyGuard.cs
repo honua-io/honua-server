@@ -6,26 +6,11 @@ using Honua.Infrastructure.Monitoring;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Refuses control-plane event work while the host is in a degraded start (honua-server#5916): the
-/// database could not be reached at boot, or the schema is behind this build because the migration
-/// task has not run yet. The event endpoints (the Lambda web-adapter <c>/events</c> route, the
-/// batch-event and backstop routes, and the scheduled-tick route) answer a typed 503 so the
-/// invocation fails and EventBridge or Scheduler retries it, instead of running a handler against a
-/// database it cannot use.
-/// </summary>
+// Event work is refused while the database was unreachable at boot or the schema is behind this build, so the invocation fails and can be retried.
 internal static class ControlPlaneNotReadyGuard
 {
-    /// <summary>Stable problem code of the not-ready answer.</summary>
     internal const string ProblemCode = "control_plane_not_ready";
 
-    /// <summary>
-    /// Returns the typed 503 to answer with while the host is degraded, or <see langword="null"/>
-    /// when the host is ready to run control-plane work.
-    /// </summary>
-    /// <param name="context">The current request.</param>
-    /// <param name="degradedStartup">The degraded-start state, when composed.</param>
-    /// <returns>The not-ready result, or <see langword="null"/>.</returns>
     public static IResult? TryRefuse(HttpContext context, DegradedStartupContext? degradedStartup)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -45,9 +30,6 @@ internal static class ControlPlaneNotReadyGuard
             contentType: "application/problem+json");
     }
 
-    /// <summary>Resolves the degraded-start state from the request services.</summary>
-    /// <param name="context">The current request.</param>
-    /// <returns>The not-ready result, or <see langword="null"/>.</returns>
     public static IResult? TryRefuse(HttpContext context)
         => TryRefuse(context, context.RequestServices.GetService<DegradedStartupContext>());
 }

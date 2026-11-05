@@ -6,10 +6,6 @@ using Honua.Server.Features.Admin.Models;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Source-generated JSON serialization for the Console Operate investigation
-/// endpoints (#1168).
-/// </summary>
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,

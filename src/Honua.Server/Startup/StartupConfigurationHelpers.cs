@@ -21,15 +21,8 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Startup;
 
-/// <summary>
-/// Low-level configuration helpers invoked early in <c>Program.cs</c> (before service
-/// registration begins): forwarded-headers wiring, environment-secret reference resolution,
-/// security-configuration source ordering, the IValidateOptions catalogue, and the bootstrap
-/// Redis-cache entitlement probe.
-/// </summary>
 internal static class StartupConfigurationHelpers
 {
-    /// <summary>Configure forwarded-headers middleware. Returns whether the middleware should be enabled.</summary>
     public static bool ConfigureForwardedHeaders(IServiceCollection services, IConfiguration configuration)
     {
         var enabled = configuration.GetValue<bool>("ForwardedHeaders:Enabled");
@@ -60,10 +53,6 @@ internal static class StartupConfigurationHelpers
         return true;
     }
 
-    /// <summary>
-    /// Pre-resolve secret-reference syntax (e.g. <c>env:VAR_NAME</c>) for connection strings
-    /// that the host reads before DI is built.
-    /// </summary>
     public static void ResolveEnvironmentSecretReferences(ConfigurationManager configuration)
     {
         ResolveEnvironmentSecretReference(configuration, "ConnectionStrings:DefaultConnection");
@@ -75,18 +64,11 @@ internal static class StartupConfigurationHelpers
         ResolveEnvironmentSecretReference(configuration, OidcSigningKeyConfigurationKey);
     }
 
-    /// <summary>
-    /// The audit hash-chain MAC key. Its consumers decode it once at service registration
-    /// (<c>AuditChainKeySnapshot</c>), so a secret reference must be resolved before then.
-    /// </summary>
+    // The audit-chain key must be resolved before its consumers snapshot it.
     internal const string AuditChainKeyConfigurationKey = "AuditLog:ChainVerification:Key";
 
     internal const string OidcSigningKeyConfigurationKey = "Oidc:TokenValidation:SymmetricSigningKey";
 
-    /// <summary>
-    /// Security values the AWS serverless module may inject as <c>aws:secretsmanager:</c>
-    /// references, because Lambda cannot resolve Secrets Manager into environment variables.
-    /// </summary>
     internal static readonly IReadOnlyList<string> SecuritySecretReferenceKeys =
     [
         "HONUA_ADMIN_PASSWORD",
@@ -95,14 +77,7 @@ internal static class StartupConfigurationHelpers
         OidcSigningKeyConfigurationKey
     ];
 
-    /// <summary>
-    /// Validates or resolves security values that are consumed directly from configuration. The AWS
-    /// serverless module deliberately injects the admin password, connection-encryption master key
-    /// and audit-chain key as Secrets Manager references. Authentication retains its reference for
-    /// per-request refresh, while connection encryption and the audit chain require a stable
-    /// process-lifetime key snapshot. Static OIDC signing keys must also resolve before bearer
-    /// options are bound; a secret reference must never become literal HMAC key material.
-    /// </summary>
+    // A secret reference must never become literal key material.
     public static async Task ResolveSecuritySecretReferencesAsync(
         ConfigurationManager configuration,
         bool isProduction,
@@ -234,27 +209,7 @@ internal static class StartupConfigurationHelpers
         configuration.AddInMemoryCollection(new Dictionary<string, string?> { [key] = value });
     }
 
-    /// <summary>
-    /// Resolves AWS Secrets Manager-backed secret references (<c>aws:secretsmanager:&lt;arn-or-name&gt;</c>)
-    /// for the Redis connection-string settings Program.cs reads before <c>WebApplicationBuilder.Build()</c>
-    /// runs, so the raw reference is never handed to <c>StackExchange.Redis.ConfigurationOptions.Parse</c>
-    /// (honua-server#3011). The honua-iac AWS serverless module wires <c>ConnectionStrings__redis</c> as an
-    /// <c>aws:secretsmanager:&lt;arn&gt;</c> reference — the same style already resolved for the Postgres
-    /// <c>DefaultConnection</c> string post-Build, through the DI-registered <c>IConnectionSecretResolver</c>
-    /// composite (<see cref="Honua.Infrastructure.Helpers.ConnectionStringResolutionHelper.ResolveDefaultConnectionStringAsync"/>)
-    /// — but the Redis <c>ConnectionMultiplexer</c> is built directly against <c>builder.Configuration</c>
-    /// ahead of service registration, before that composite exists. This resolves the identical reference
-    /// style through the exact same mechanism
-    /// (<see cref="Honua.Infrastructure.Helpers.ConnectionStringResolutionHelper.ResolveConnectionStringValueAsync"/>),
-    /// using a bootstrap-only instance of the SAME AOT-safe <c>AwsSecretsManagerResolver</c> (raw HTTP +
-    /// SigV4, no AWSSDK dependency) the Postgres path uses — mirroring the bootstrap-resolver pattern
-    /// <see cref="CreateBootstrapLicenseSecretResolvers"/> already establishes for the license snapshot.
-    /// <c>env:</c> references are handled first, unconditionally, by that same helper (mirroring
-    /// <see cref="ResolveEnvironmentSecretReferences"/> above). Resolved values are written back into
-    /// <paramref name="configuration"/> in place so every other in-process reader of these keys
-    /// (output-cache wiring, the admin SignalR backplane, deployment-mode config validation) observes the
-    /// resolved value without resolving it again itself.
-    /// </summary>
+    // The Redis reference is resolved before the client parses it, so the raw reference is never handed to the multiplexer.
     public static async Task ResolveRedisConnectionSecretReferencesAsync(
         ConfigurationManager configuration,
         CancellationToken cancellationToken = default)
@@ -270,13 +225,7 @@ internal static class StartupConfigurationHelpers
             .ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Materializes <see cref="Honua.Server.Features.Operations.OperationSecretKeyRingProtection.CertificateMaterialKey"/>
-    /// into a private PKCS#12 file and points
-    /// <see cref="Honua.Server.Features.Operations.OperationSecretKeyRingProtection.CertificatePathKey"/>
-    /// at it. A path that already names a file is left alone, so a mounted certificate still wins.
-    /// Lambda cannot mount a file; it carries an <c>aws:secretsmanager:</c> reference instead.
-    /// </summary>
+    // A path that already names a file is left alone, so a mounted certificate wins.
     public static async Task EnsureKeyRingCertificateMaterializedAsync(
         ConfigurationManager configuration,
         CancellationToken cancellationToken = default)
@@ -384,19 +333,7 @@ internal static class StartupConfigurationHelpers
         }
     }
 
-    /// <summary>
-    /// Inspect a bootstrap license snapshot to determine whether the running host is
-    /// entitled to use Redis as the distributed cache backend.
-    /// </summary>
-    /// <remarks>
-    /// Outside Production the snapshot honors the test/dev-only <c>Licensing:DevGrantEdition</c>
-    /// override, identically to the runtime <c>DevLicenseEntitlementService</c> entitlement path.
-    /// Without this, a Development + <c>DevGrantEdition=Pro</c> stack with Redis reachable would
-    /// fail the gate, the <c>IConnectionMultiplexer</c> would never be wired, and the durable job
-    /// store would not register — so authenticated GPServer <c>/execute</c> and <c>/submitJob</c>
-    /// returned 503 despite the dev grant entitling Redis (honua-server#1787). DevGrant is never
-    /// honored in Production (the host-level guard fails the process closed there).
-    /// </remarks>
+    // The development grant is never honored in Production.
     public static async Task<bool> IsRedisCacheEntitledAsync(
         IConfiguration configuration,
         IHostEnvironment environment)
@@ -419,14 +356,7 @@ internal static class StartupConfigurationHelpers
     // serving cached responses after a Pro license expired at runtime and would ignore a license
     // applied through ILicenseManager.ApplyLicenseAsync.
 
-    /// <summary>
-    /// Resolves the bootstrap license snapshot the boot-time entitlement gates share. Uses the
-    /// SAME license-content secret resolvers that <c>AddHonuaLicensing</c> wires for the
-    /// per-request service — without them a Secrets-Manager-only Pro license
-    /// (<c>Licensing:LicenseContentSecretRef</c>) resolves as Community at bootstrap
-    /// (honua-server#1755) — and honors the dev-only <c>Licensing:DevGrantEdition</c> override
-    /// outside Production (honua-server#1787).
-    /// </summary>
+    // Bootstrap uses the same licence resolvers as the request path, so a secret-only licence is not read as the community edition.
     internal static async Task<LicenseSnapshot> LoadBootstrapLicenseSnapshotAsync(
         IConfiguration configuration,
         IHostEnvironment environment)
@@ -442,16 +372,6 @@ internal static class StartupConfigurationHelpers
             .ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Constructs the provider-specific <see cref="ILicenseContentSecretResolver"/> set for the
-    /// bootstrap entitlement probe, mirroring the resolvers <c>AddHonuaLicensing</c> registers in
-    /// DI. The AWSSDK / Azure SDK surfaces stay confined to <c>Honua.Aws</c> / <c>Honua.Azure</c>
-    /// behind the same <c>HONUA_EXCLUDE_AWS</c> / <c>HONUA_EXCLUDE_AZURE</c> guards the runtime
-    /// wiring uses; when a cloud SDK is excluded that resolver is simply omitted and the probe falls
-    /// back to file / inline / Community resolution exactly as before. Constructing the resolvers
-    /// here is cheap — each only touches the network when a matching secret reference is configured
-    /// and resolved (their cloud clients are created lazily).
-    /// </summary>
     private static List<ILicenseContentSecretResolver> CreateBootstrapLicenseSecretResolvers(
         ILoggerFactory loggerFactory)
     {
@@ -470,10 +390,6 @@ internal static class StartupConfigurationHelpers
         return resolvers;
     }
 
-    /// <summary>
-    /// Load the optional <c>appsettings.Security.json</c> file and re-order it in the
-    /// configuration source chain so that environment-specific overrides win.
-    /// </summary>
     public static void AddSecurityConfiguration(ConfigurationManager configuration, IHostEnvironment environment)
     {
         const string securitySettingsFile = "appsettings.Security.json";
@@ -532,10 +448,6 @@ internal static class StartupConfigurationHelpers
         sources.Insert(insertIndex, securitySource);
     }
 
-    /// <summary>
-    /// Registers IValidateOptions&lt;T&gt; implementations for the configuration classes that
-    /// can fail-fast the host on invalid settings.
-    /// </summary>
     public static void RegisterConfigurationValidators(IServiceCollection services)
     {
         services.AddSingleton<IValidateOptions<LimitsOptions>>(new LimitsOptionsValidator());
@@ -547,54 +459,13 @@ internal static class StartupConfigurationHelpers
         services.AddSingleton<IValidateOptions<FileUploadSecurityOptions>>(new FileUploadSecurityOptionsValidator());
     }
 
-    /// <summary>
-    /// Loads the ASP.NET static web assets for the hosted Blazor demo shells (currently the
-    /// optional STAC ops demo at <c>/samples/stac-ops</c>) after hardening the load against a
-    /// missing compressed-asset content root.
-    /// </summary>
-    /// <remarks>
-    /// The static-web-assets runtime manifest lists content-root directories that the loader
-    /// eagerly opens as <c>PhysicalFileProvider</c> instances during host construction. In
-    /// sharded Release builds one of those roots — <c>obj/&lt;Config&gt;/&lt;tfm&gt;/compressed/</c>,
-    /// the Blazor precompressed-assets output — is sometimes referenced by the manifest but not
-    /// materialized on disk, and <c>PhysicalFileProvider</c> throws
-    /// <see cref="DirectoryNotFoundException"/> for a missing root. That aborted host
-    /// construction and failed every test in the affected shard before any test logic ran
-    /// (honua-server#2904). Pre-creating any missing referenced roots lets the loader open them;
-    /// an empty <c>compressed/</c> root simply means content negotiation falls back to the
-    /// uncompressed asset, which is the behavior the hosted-demo integration tests assert.
-    /// </remarks>
     public static void LoadHostedBlazorStaticWebAssets(WebApplicationBuilder builder)
     {
         EnsureStaticWebAssetContentRootsExist();
         builder.WebHost.UseStaticWebAssets();
     }
 
-    /// <summary>
-    /// Pre-creates every content-root directory referenced by a static-web-assets runtime
-    /// manifest next to the entry assembly, so that any loader which later opens those roots
-    /// cannot abort host construction with <see cref="DirectoryNotFoundException"/>.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// This must run before <c>WebApplication.CreateBuilder</c>. In the <c>Development</c>
-    /// environment ASP.NET Core loads the static-web-assets manifest <i>implicitly</i> — the
-    /// framework's own <c>ConfigureWebDefaults</c> calls <c>StaticWebAssetsLoader</c> during
-    /// builder construction — so the explicit, already-hardened
-    /// <see cref="LoadHostedBlazorStaticWebAssets"/> path never gets a chance to guard it. The
-    /// loader opens each declared content root as a <c>PhysicalFileProvider</c>, which throws
-    /// for a root that is not materialized on disk.
-    /// </para>
-    /// <para>
-    /// That is not hypothetical: the sharded CI test runners do not materialize every content
-    /// root the manifest names — both the Blazor <c>obj/&lt;Config&gt;/&lt;tfm&gt;/compressed/</c>
-    /// output of honua-server#2904 and package-sourced roots under
-    /// <c>~/.nuget/packages/&lt;package&gt;/&lt;version&gt;/staticwebassets/</c> — so every test
-    /// that boots a host with <c>UseEnvironment("Development")</c> died in host
-    /// construction before its own assertions ran. Creating the missing roots empty is safe:
-    /// an absent asset is exactly what an empty root serves, and the alternative is no host.
-    /// </para>
-    /// </remarks>
+    // Missing content roots are created before the host builder, because the development loader throws when a declared root is absent.
     public static void EnsureStaticWebAssetContentRootsExist()
     {
         try

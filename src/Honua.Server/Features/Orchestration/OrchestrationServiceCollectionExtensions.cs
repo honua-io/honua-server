@@ -11,9 +11,6 @@ using StackExchange.Redis;
 
 namespace Honua.Server.Features.Orchestration;
 
-/// <summary>
-/// Registers orchestration feature services.
-/// </summary>
 internal static class OrchestrationServiceCollectionExtensions
 {
     public static IServiceCollection AddOrchestration(this IServiceCollection services)

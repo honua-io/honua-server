@@ -11,25 +11,8 @@ using StackExchange.Redis;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Registers durable job orchestration services, separated into API-side and
-/// worker-side concerns to preserve a lean serving runtime. The API image
-/// registers only <see cref="AddJobOrchestration"/>; the worker image
-/// additionally registers <see cref="AddJobWorker(IServiceCollection, IConfiguration)"/>.
-/// </summary>
 internal static class JobOrchestrationServiceCollectionExtensions
 {
-    /// <summary>
-    /// Registers API-side job orchestration dependencies: the durable job store,
-    /// job queue, and execution log store. These are shared between the API
-    /// serving path and background workers.
-    /// </summary>
-    /// <remarks>
-    /// This method is safe to call from the default serving image. It does not
-    /// register heavyweight execution or reconciliation services. It does register
-    /// the Share export terminal-reconciliation callback, which the serving image
-    /// needs because operator cancel (a terminal transition) is served API-side.
-    /// </remarks>
     public static IServiceCollection AddJobOrchestration(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
@@ -73,26 +56,7 @@ internal static class JobOrchestrationServiceCollectionExtensions
         return services;
     }
 
-    /// <summary>
-    /// Registers worker-side job execution services: the execution host that
-    /// claims and runs jobs, and the reconciliation service that detects expired
-    /// heartbeats and applies retry policies.
-    /// </summary>
-    /// <remarks>
-    /// This method registers <see cref="BackgroundService"/> implementations that
-    /// should only be activated in a worker or combined-mode host. Calling this
-    /// from a lean API-only image would introduce execution overhead. The Share
-    /// export terminal callback is registered by <see cref="AddJobOrchestration"/>
-    /// instead, because the API image also drives terminal transitions (operator
-    /// cancel); the geoprocessing terminal callback stays here because of its
-    /// Redis-gated dependency.
-    /// </remarks>
-    /// <summary>
-    /// Poll-mode convenience overload (no configuration): hosts the in-process timers, matching the
-    /// pre-Phase-3 behavior. Used by composition tests that drive the worker loop directly. The
-    /// production composition root calls the <see cref="IConfiguration"/> overload so it can honor
-    /// <c>TriggerMode=Event</c>.
-    /// </summary>
+    // The Share export callback is registered on the API image because operator cancel is served there, and event mode does not host the in-process timers.
     public static IServiceCollection AddJobWorker(this IServiceCollection services)
         => services.AddJobWorker(new ConfigurationBuilder().Build());
 

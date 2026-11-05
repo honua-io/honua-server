@@ -17,12 +17,8 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Admin endpoints for tenant lifecycle/provisioning and per-tenant billing usage (issue #2156).
-/// </summary>
 internal static partial class TenantAdminEndpoints
 {
-    /// <summary>Log category for tenant admin endpoints.</summary>
     internal sealed class TenantAdminLog;
 
     internal static partial class Log
@@ -36,8 +32,6 @@ internal static partial class TenantAdminEndpoints
         public static partial void TenantOperationFailed(ILogger logger, string operation, Exception exception);
     }
 
-    /// <summary>Configure tenant lifecycle admin endpoints.</summary>
-    /// <param name="endpoints">The route builder.</param>
     public static void MapTenantAdminEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/tenants")

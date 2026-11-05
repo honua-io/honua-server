@@ -3,10 +3,6 @@
 
 namespace Honua.Server.Features.Mobile.FieldCollection;
 
-/// <summary>
-/// Source-generated logger for FieldCollection mobile sync endpoints (#894).
-/// Keeps observability AOT-compatible and allocation-free.
-/// </summary>
 internal static partial class FieldCollectionSyncLog
 {
     [LoggerMessage(

@@ -7,17 +7,7 @@ using Honua.Core.Features.WorkflowPackages.Domain;
 
 namespace Honua.Server.Features.WorkflowPackages;
 
-/// <summary>
-/// Process-local <see cref="IWorkflowPackageStore"/> for tests and for hosts that
-/// do not compose PostGIS (the ephemeral profile). Packages, versions, and
-/// publications in this store do not survive a restart and are not visible to a
-/// peer process. A schedule publication's compiled <c>WorkflowDefinition</c> still
-/// lives in the durable definition store, so after a restart the scheduler can
-/// keep firing a definition whose owning publication is gone. That warning applies
-/// only to this ephemeral profile. PostGIS hosts use
-/// <c>PostgresWorkflowPackageStore</c>, and deleting or disabling the publication
-/// removes or disables that definition while this process is still up.
-/// </summary>
+// This store does not survive a restart, and a schedule definition can keep firing after its publication is gone.
 internal sealed class InMemoryWorkflowPackageStore : IWorkflowPackageStore
 {
     private readonly ConcurrentDictionary<string, WorkflowPackage> _packages = new(StringComparer.Ordinal);

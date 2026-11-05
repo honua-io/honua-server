@@ -6,17 +6,6 @@ using Honua.Core.Features.Orchestration.Domain;
 
 namespace Honua.Server.Features.Orchestration;
 
-/// <summary>
-/// Poll-based baseline <see cref="IObjectStoreTriggerProbe"/> backed by local/mounted file
-/// system roots. Each configured <see cref="ObjectStoreTriggerConfig.StoreId"/> maps to a root
-/// directory; the probe lists files under the watched prefix and reports the newest one (by the
-/// monotonic last-modified + key marker). An object-store/S3 push implementation can later return
-/// the same <see cref="ObjectStoreProbeResult"/> without changing the scheduler dispatch.
-/// </summary>
-/// <remarks>
-/// The file-system root is the natural baseline for "drop a file → pipeline runs" on a mounted
-/// volume (NFS/EFS/local), and keeps the baseline dependency-free and AOT-safe.
-/// </remarks>
 internal sealed class FileSystemObjectStoreTriggerProbe : IObjectStoreTriggerProbe
 {
     private readonly Dictionary<string, string> _roots;

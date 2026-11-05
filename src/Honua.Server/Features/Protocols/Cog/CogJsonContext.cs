@@ -6,10 +6,6 @@ using Honua.Server.Features.Protocols.Cog.Models;
 
 namespace Honua.Server.Features.Protocols.Cog;
 
-/// <summary>
-/// JSON serialization context for COG models.
-/// Enables AOT-compatible JSON serialization for COG endpoints.
-/// </summary>
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(RegisterCogRequest))]
 [JsonSerializable(typeof(CogRegistrationResponse))]

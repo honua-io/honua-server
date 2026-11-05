@@ -14,22 +14,11 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Monitoring;
 
-/// <summary>
-/// Composes the consolidated admin ops-health snapshot from the shared health/monitoring seams.
-/// Introduced so the endpoint handler stays a thin adapter (one dependency) while this service holds
-/// the several collaborators the snapshot fuses.
-/// </summary>
 internal interface IOpsHealthSnapshotService
 {
-    /// <summary>
-    /// Builds the consolidated ops-health snapshot.
-    /// </summary>
-    /// <param name="cancellationToken">A token to cancel the operation.</param>
-    /// <returns>The composed ops-health snapshot response.</returns>
     Task<OpsHealthSnapshotResponse> GetAsync(CancellationToken cancellationToken = default);
 }
 
-/// <inheritdoc />
 internal sealed class OpsHealthSnapshotService : IOpsHealthSnapshotService
 {
     private readonly HealthCheckService _healthCheckService;
@@ -163,17 +152,9 @@ internal sealed class OpsHealthSnapshotService : IOpsHealthSnapshotService
         };
     }
 
-    /// <summary>
-    /// Server-owned maximum observation age for the live in-process/durable sections. Clients read
-    /// this instead of inferring freshness from the response timestamp.
-    /// </summary>
     private static readonly TimeSpan SectionValidity = TimeSpan.FromMinutes(2);
 
-    /// <summary>
-    /// Projects the serving-latency section. A cluster rollup that failed to read leaves this
-    /// replica reporting only its own samples, which is incomplete cluster coverage — never a
-    /// whole-cluster "complete" posture.
-    /// </summary>
+    // A failed cluster read leaves this replica reporting only its own samples, never a complete cluster posture.
     private static EvidenceSourceEnvelope BuildServingLatencySource(
         ServingLatencyReadResult result,
         DateTimeOffset generatedAt)
@@ -202,11 +183,7 @@ internal sealed class OpsHealthSnapshotService : IOpsHealthSnapshotService
                 coverage);
     }
 
-    /// <summary>
-    /// Projects the alert-dispatch section. An enabled dispatcher that has never completed a poll
-    /// has no heartbeat to report, so its observation time stays missing rather than being filled
-    /// in with the response time.
-    /// </summary>
+    // A dispatcher that has not completed a poll leaves its observation time missing.
     private static EvidenceSourceEnvelope BuildAlertDispatchSource(OpsAlertDispatchView alertDispatch)
     {
         if (!alertDispatch.DispatcherEnabled)
@@ -244,7 +221,6 @@ internal sealed class OpsHealthSnapshotService : IOpsHealthSnapshotService
                 maximumAge: SectionValidity);
     }
 
-    /// <summary>Serving-latency projection plus whether the cluster rollup read degraded.</summary>
     private readonly record struct ServingLatencyReadResult(OpsServingLatencyView View, bool RollupDegraded);
 
     private static OpsHealthChecksView BuildHealthView(HealthReport report)

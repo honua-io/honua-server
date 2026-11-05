@@ -7,10 +7,6 @@ using Honua.Core.Features.ControlPlane.Domain;
 
 namespace Honua.Server.Features.Operations;
 
-/// <summary>
-/// Leased startup and periodic janitor that compensates stale non-actionable Planned
-/// proposals to Failed with a joined durable audit receipt.
-/// </summary>
 internal sealed partial class PlannedProposalReconciler(
     IOperationProposalStore proposalStore,
     IServiceScopeFactory scopeFactory,

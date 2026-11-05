@@ -12,18 +12,12 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Mobile.Auth;
 
-/// <summary>
-/// Mobile runtime auth refresh endpoints consumed by honua-mobile live image tests.
-/// </summary>
 internal static class MobileAuthEndpoints
 {
     private const string DevelopmentRefreshToken = "refresh-token";
     private const string DevelopmentAccessToken = "live-image-test-bearer-token";
     private const int DefaultExpiresInSeconds = 3600;
 
-    /// <summary>
-    /// Maps mobile runtime auth refresh endpoints.
-    /// </summary>
     public static void MapMobileAuthEndpoints(this IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);

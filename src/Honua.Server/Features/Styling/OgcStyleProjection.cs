@@ -15,14 +15,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Features.Styling;
 
-/// <summary>
-/// <see cref="IOgcStyleProjection"/> implementation that projects Honua's per-layer
-/// style storage as OGC API - Styles resources (ADR-0048, Phase 1). It composes the
-/// internal <see cref="ILayerStyleService"/>, the canonical MapLibre store
-/// (<see cref="ILayerStyleCatalog"/>), the SLD exporter, and the metadata-v2 graph so
-/// the protocol slice in <c>Honua.Protocols.OgcApi</c> never needs to reach those
-/// internal types directly.
-/// </summary>
 internal sealed class OgcStyleProjection : IOgcStyleProjection
 {
     private readonly IMetadataV2GraphProvider _graphProvider;
@@ -51,7 +43,6 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
         _styleGraphSync = styleGraphSync;
     }
 
-    /// <inheritdoc />
     public async Task<IReadOnlyList<OgcStyleSummary>> ListStylesAsync(CancellationToken cancellationToken = default)
     {
         var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
@@ -139,14 +130,12 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
         return summaries;
     }
 
-    /// <inheritdoc />
     public Task<OgcStylesheet?> GetStylesheetAsync(
         string styleId,
         OgcStyleEncoding encoding,
         CancellationToken cancellationToken = default)
         => ResolveStylesheetAsync(styleId, encoding, includeLayerDefault: false, cancellationToken);
 
-    /// <inheritdoc />
     public Task<OgcStylesheet?> GetPublishedStylesheetAsync(
         string styleId,
         OgcStyleEncoding encoding,
@@ -182,7 +171,6 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
             : catalogStylesheet;
     }
 
-    /// <inheritdoc />
     public async Task<OgcStylesheet?> GetAssociatedStylesheetAsync(
         string resourceId,
         string styleId,
@@ -262,12 +250,6 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
         return sld;
     }
 
-    /// <summary>
-    /// Whether a storage-bound resource publishes its layer default as an OGC style when no
-    /// MapLibre style is stored. Only feature collections do: they are what OGC API Features
-    /// advertises <c>rel=stylesheet</c> for, and the vector default is meaningless for rasters
-    /// and tables.
-    /// </summary>
     internal static bool PublishesLayerDefault(MetadataV2Resource resource)
         => resource.Type == MetadataV2ResourceType.FeatureDataset;
 
@@ -333,7 +315,6 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
         return DeriveSldFromMapLibre(style.MapLibreStyleJson, style.StyleId, encoding);
     }
 
-    /// <inheritdoc />
     public async Task<OgcStyleMetadata?> GetStyleMetadataAsync(
         string styleId,
         CancellationToken cancellationToken = default)
@@ -402,7 +383,6 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
             version);
     }
 
-    /// <inheritdoc />
     public async Task<OgcStyleUpdateResult> UpdateStyleAsync(
         string styleId,
         string mapLibreStyleJson,
@@ -449,7 +429,6 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
         };
     }
 
-    /// <inheritdoc />
     public async Task<OgcStyleUpdateResult> UpdateStyleFromDrawingInfoAsync(
         string styleId,
         string drawingInfoJson,
@@ -841,7 +820,6 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
         return true;
     }
 
-    /// <inheritdoc />
     public async Task<OgcStyleCreateResult> CreateStyleAsync(
         string? styleId,
         string mapLibreStyleJson,
@@ -899,7 +877,6 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
         return new OgcStyleCreateResult(OgcStyleCreateStatus.Created, created.StyleId, null);
     }
 
-    /// <inheritdoc />
     public async Task<OgcStyleDeleteResult> DeleteStyleAsync(
         string styleId,
         CancellationToken cancellationToken = default)
@@ -1143,10 +1120,6 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
             ?? (string.IsNullOrWhiteSpace(resource.Metadata.Name) ? "Style" : resource.Metadata.Name);
 }
 
-/// <summary>
-/// Media type constants for OGC API - Styles stylesheet encodings, kept in
-/// <c>Honua.Server</c> alongside the projection that produces them.
-/// </summary>
 internal static class OgcStyleMediaTypes
 {
     public const string MapboxStyle = "application/vnd.mapbox.style+json";

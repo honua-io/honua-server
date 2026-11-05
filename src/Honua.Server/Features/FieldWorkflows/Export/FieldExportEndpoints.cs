@@ -7,12 +7,6 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.FieldWorkflows.Export;
 
-/// <summary>
-/// Admin REST surface for back-office field export packages (#1160). Every route
-/// requires admin authorization and adapts to the shared
-/// <see cref="FieldExportService"/>; every export is audited and respects the same
-/// tenancy/RBAC posture as the review surface.
-/// </summary>
 internal static class FieldExportEndpoints
 {
     public static IEndpointRouteBuilder MapFieldExportEndpoints(this IEndpointRouteBuilder endpoints)

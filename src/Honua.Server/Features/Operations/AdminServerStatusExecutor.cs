@@ -10,7 +10,6 @@ using Honua.ServiceDefaults;
 
 namespace Honua.Server.Features.Operations;
 
-/// <summary>Executes the live, read-only <c>admin.server.status</c> operation.</summary>
 internal sealed class AdminServerStatusExecutor : IOperationExecutor
 {
     public const string OperationName = "admin.server.status";

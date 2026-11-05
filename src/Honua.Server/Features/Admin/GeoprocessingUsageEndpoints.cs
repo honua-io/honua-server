@@ -10,11 +10,6 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Admin endpoints that expose the usage-ranked geoprocessing (GP) tool tiering
-/// view (#2144). Reads the real <see cref="IProcessUsageTelemetry"/> store the
-/// dispatcher records into and returns GP tools ranked by invocation count.
-/// </summary>
 internal static class GeoprocessingUsageEndpoints
 {
     internal sealed class GeoprocessingUsageEndpointsLog;

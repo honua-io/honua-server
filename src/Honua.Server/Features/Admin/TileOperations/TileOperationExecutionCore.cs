@@ -22,15 +22,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Admin.TileOperations;
 
-/// <summary>
-/// Shared tile-operation execution engine for seed/warm/invalidate/purge/archive/publish.
-/// Extracted from <see cref="TileOperationJobService"/> so the legacy in-process channel
-/// worker and the durable <see cref="TileCacheJobExecutor"/> (issue #1697) run identical
-/// query/filter/geodesy/PMTiles/upload behavior, progress reporting, and telemetry — the
-/// only difference is the maximum tile count: the in-process path caps at 5,000 to protect
-/// the serving pod, while the batch-dispatched path raises the ceiling because the work runs
-/// on dedicated compute bounded by backend timeout/resources.
-/// </summary>
 internal sealed partial class TileOperationExecutionCore
 {
     private readonly IUniversalProgressStore _progressStore;
@@ -61,11 +52,6 @@ internal sealed partial class TileOperationExecutionCore
         _checkpointStore = checkpointStore;
     }
 
-    /// <summary>
-    /// Runs the requested tile operation against the supplied request scope using the
-    /// metadata/tile/cloud-storage services resolved from <paramref name="serviceProvider"/>.
-    /// Returns the terminal <see cref="TileOperationProgress"/> for the job.
-    /// </summary>
     public async Task<TileOperationProgress> ExecuteAsync(
         TileOperationProgress started,
         TileOperationStartRequest request,

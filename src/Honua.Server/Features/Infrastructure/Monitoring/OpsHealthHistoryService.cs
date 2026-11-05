@@ -7,37 +7,19 @@ using Honua.Core.Features.Observability.Domain;
 
 namespace Honua.Infrastructure.Monitoring;
 
-/// <summary>
-/// Builds the cluster-aggregated ops-health history response from the persisted rollup store (#2553).
-/// </summary>
 internal interface IOpsHealthHistoryService
 {
-    /// <summary>Reads a history window and shapes it into the API response.</summary>
-    /// <param name="query">The parsed window/resolution/breakdown query.</param>
-    /// <param name="cancellationToken">A token to cancel the operation.</param>
-    /// <returns>The history response (empty series when no store is registered or a read fails).</returns>
     Task<OpsHealthHistoryResponse> GetAsync(OpsHealthHistoryQuery query, CancellationToken cancellationToken = default);
 }
 
-/// <summary>Parsed, validated query for the ops-health history endpoint.</summary>
 internal sealed record OpsHealthHistoryQuery
 {
-    /// <summary>Gets the resolution tier.</summary>
     public required OpsHealthRollupTier Tier { get; init; }
 
-    /// <summary>Gets the look-back window.</summary>
     public required TimeSpan Window { get; init; }
 
-    /// <summary>Gets a value indicating whether to return a per-replica breakdown instead of a cluster merge.</summary>
     public required bool PerReplica { get; init; }
 
-    /// <summary>Parses raw query parameters, clamping the window to the tier's retention cap.</summary>
-    /// <param name="window">The window string (e.g. <c>1h</c>, <c>24h</c>, <c>7d</c>, <c>90m</c>), or <c>null</c> for the tier default.</param>
-    /// <param name="resolution">The resolution string (<c>1m</c>/<c>5m</c>/<c>1h</c>), or <c>null</c> for <c>1m</c>.</param>
-    /// <param name="perReplica">Whether to break the series down per replica.</param>
-    /// <param name="error">Set to a message when a parameter is invalid.</param>
-    /// <param name="query">The parsed query when successful.</param>
-    /// <returns><see langword="true"/> when parsing succeeds.</returns>
     public static bool TryParse(string? window, string? resolution, bool perReplica, out string? error, out OpsHealthHistoryQuery query)
     {
         error = null;
@@ -134,7 +116,6 @@ internal sealed record OpsHealthHistoryQuery
     }
 }
 
-/// <inheritdoc />
 internal sealed class OpsHealthHistoryService : IOpsHealthHistoryService
 {
     private readonly IOpsHealthRollupStore? _store;

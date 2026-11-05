@@ -17,9 +17,6 @@ internal static class RequestLogConfiguration
             .Enrich.With(new RequestLogRedaction());
 }
 
-/// <summary>
-/// Removes request credentials at the logging boundary without mutating the live request.
-/// </summary>
 internal sealed partial class RequestLogRedaction : ILogEventEnricher
 {
     private const string Redacted = "[REDACTED]";

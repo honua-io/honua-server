@@ -13,29 +13,8 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Server.Features.Styling;
 
-/// <summary>
-/// Public read endpoint for the canonical MapLibre style of a layer.
-/// </summary>
-/// <remarks>
-/// <para>
-/// The route <c>GET /api/styles/{layerId}.json</c> is a <b>deprecated</b>
-/// layerId-keyed alias. The canonical style identifier is <c>styleId</c> via
-/// <c>GET /ogc/styles/{styleId}</c> (ADR-0048), which serves MapLibre and
-/// derived SLD encodings through content negotiation.
-/// </para>
-/// <para>
-/// The alias is kept working for back-compat and emits advisory
-/// <c>Deprecation</c>/<c>Sunset</c> response headers. Per ADR-0048 it is
-/// retired only after the cross-repo styleId rollout (Phase 3) completes.
-/// </para>
-/// </remarks>
 internal static class StyleEndpoints
 {
-    /// <summary>
-    /// Query parameter name for theme selection.  Bound when present on style GETs and
-    /// used by the cache policy as a vary-by-query key so themed responses do not
-    /// collide with the canonical style cache entry.
-    /// </summary>
     public const string ThemeQueryParameter = "theme";
 
     public static IEndpointRouteBuilder MapStyleEndpoints(this IEndpointRouteBuilder endpoints)

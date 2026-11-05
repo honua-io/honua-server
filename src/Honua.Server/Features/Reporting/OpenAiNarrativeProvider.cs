@@ -18,13 +18,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Reporting;
 
-/// <summary>
-/// LLM narrative provider that calls an OpenAI-compatible chat-completions
-/// endpoint. Hash-keys responses by the deterministic baseline payload so
-/// repeated renders of an unchanged draft do not burn tokens. Failures are
-/// surfaced as exceptions; the builder catches them and falls back to the
-/// deterministic baseline.
-/// </summary>
 internal sealed class OpenAiNarrativeProvider : INarrativeProvider
 {
     private const string HttpClientName = "reporting-narrative";
@@ -49,10 +42,8 @@ internal sealed class OpenAiNarrativeProvider : INarrativeProvider
         _logger = logger;
     }
 
-    /// <inheritdoc />
     public bool IsDeterministic => false;
 
-    /// <inheritdoc />
     public async Task<NarrativeFill> GenerateAsync(AnalysisReportDraft draft, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(draft);

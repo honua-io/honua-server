@@ -9,15 +9,8 @@ using Honua.Infrastructure.Models;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Admin endpoints for configuration discovery and management.
-/// </summary>
 internal static class ConfigurationDiscoveryEndpoints
 {
-    /// <summary>
-    /// Maps configuration discovery endpoints.
-    /// </summary>
-    /// <param name="endpoints">The endpoint route builder.</param>
     public static void MapConfigurationDiscoveryEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/configuration")
@@ -226,69 +219,30 @@ internal static class ConfigurationDiscoveryEndpoints
     }
 }
 
-/// <summary>
-/// Configuration summary for dashboard display.
-/// </summary>
 internal sealed class ConfigurationSummary
 {
-    /// <summary>
-    /// Total number of configuration types discovered.
-    /// </summary>
     public int TotalTypes { get; set; }
 
-    /// <summary>
-    /// Number of types registered in dependency injection.
-    /// </summary>
     public int RegisteredTypes { get; set; }
 
-    /// <summary>
-    /// Total number of properties across all types.
-    /// </summary>
     public int TotalProperties { get; set; }
 
-    /// <summary>
-    /// Number of properties containing secret data.
-    /// </summary>
     public int SecretProperties { get; set; }
 
-    /// <summary>
-    /// Number of required properties.
-    /// </summary>
     public int RequiredProperties { get; set; }
 
-    /// <summary>
-    /// Number of types with validation rules.
-    /// </summary>
     public int TypesWithValidation { get; set; }
 
-    /// <summary>
-    /// Total number of secrets found.
-    /// </summary>
     public int TotalSecrets { get; set; }
 
-    /// <summary>
-    /// Number of valid secrets.
-    /// </summary>
     public int ValidSecrets { get; set; }
 
-    /// <summary>
-    /// Number of invalid secrets.
-    /// </summary>
     public int InvalidSecrets { get; set; }
 
-    /// <summary>
-    /// Current environment.
-    /// </summary>
     public string Environment { get; set; } = string.Empty;
 
-    /// <summary>
-    /// Discovery operation duration in milliseconds.
-    /// </summary>
     public long DiscoveryDurationMs { get; set; }
 
-    /// <summary>
-    /// When the discovery was last performed.
-    /// </summary>
     public DateTimeOffset LastDiscovery { get; set; }
 }
 

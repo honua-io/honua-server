@@ -9,26 +9,13 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Internal, token-guarded endpoint that drives one PERIODIC control-plane tick on demand. Under
-/// <c>TriggerMode=Event</c> EventBridge Scheduler (via the control-plane Lambda) POSTs here with the
-/// tick kind so each bucket-(b) maintenance tick runs without an always-on in-process timer.
-/// <para>
-/// Mirrors the token-guard shape of the CloudDemo reset endpoint: a shared-secret header (or
-/// <c>Bearer</c>) compared in fixed time, 401 when absent, 403 when present-but-wrong, 503 when the
-/// server has no token configured. The route is mapped ONLY in Event mode; under Poll (default,
-/// on-prem) it does not exist at all, so the in-process timers remain the sole driver.
-/// </para>
-/// </summary>
+// The route exists only in event mode, and a missing token refuses every request.
 internal static class ScheduledTickEndpoints
 {
     internal const string RoutePath = "/internal/control-plane/scheduled-tick";
     internal const string TokenHeader = "X-Honua-Control-Plane-Token";
 
-    /// <summary>
-    /// Maps the scheduled-tick endpoint when, and only when, the control plane is in Event mode.
-    /// In Poll mode this is a no-op, so the surface is never exposed on on-prem deployments.
-    /// </summary>
+    // The route is not mapped in poll mode, so on-prem deployments never expose it.
     public static IEndpointRouteBuilder MapScheduledTickEndpoints(
         this IEndpointRouteBuilder endpoints,
         IConfiguration configuration)
@@ -142,28 +129,18 @@ internal static class ScheduledTickEndpoints
         => Honua.Server.Features.CloudDemo.CloudDemoCredentials.HasPresentedToken(request, TokenHeader);
 }
 
-/// <summary>Request body for the scheduled-tick endpoint: the kind of tick to run once.</summary>
-/// <param name="Kind">The <see cref="ScheduledTickKind"/> name (case-insensitive).</param>
 internal sealed record ScheduledTickRequest(
     [property: JsonPropertyName("kind")] string? Kind);
 
-/// <summary>Success response from the scheduled-tick endpoint.</summary>
-/// <param name="Status">Always <c>ran</c> on success.</param>
-/// <param name="Kind">The tick kind that was run.</param>
-/// <param name="RanAt">When the tick completed.</param>
 internal sealed record ScheduledTickResponse(
     [property: JsonPropertyName("status")] string Status,
     [property: JsonPropertyName("kind")] string Kind,
     [property: JsonPropertyName("ranAt")] DateTimeOffset RanAt);
 
-/// <summary>Problem response from the scheduled-tick endpoint.</summary>
-/// <param name="Code">Stable machine-readable error code.</param>
-/// <param name="Message">Human-readable message.</param>
 internal sealed record ScheduledTickProblem(
     [property: JsonPropertyName("code")] string Code,
     [property: JsonPropertyName("message")] string Message);
 
-/// <summary>Source-generated JSON context for the scheduled-tick endpoint payloads (AOT-safe).</summary>
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(ScheduledTickRequest))]
 [JsonSerializable(typeof(ScheduledTickResponse))]

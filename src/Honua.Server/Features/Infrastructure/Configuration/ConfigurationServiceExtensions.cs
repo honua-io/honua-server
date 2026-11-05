@@ -19,17 +19,8 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Configuration;
 
-/// <summary>
-/// Service collection extensions for registering centralized secret management and configuration validation.
-/// </summary>
 public static class ConfigurationServiceExtensions
 {
-    /// <summary>
-    /// Adds centralized configuration management with environment-aware defaults.
-    /// </summary>
-    /// <param name="services">The service collection.</param>
-    /// <param name="configuration">The application configuration.</param>
-    /// <returns>The service collection for chaining.</returns>
     public static IServiceCollection AddConfigurationManagement(
         this IServiceCollection services,
         IConfiguration configuration)
@@ -48,13 +39,6 @@ public static class ConfigurationServiceExtensions
         return services.AddStandardConfiguration(configuration, isDevelopment);
     }
 
-    /// <summary>
-    /// Adds centralized secret management services to the dependency injection container.
-    /// </summary>
-    /// <param name="services">The service collection</param>
-    /// <param name="configuration">The configuration instance</param>
-    /// <param name="isDevelopment">Whether running in development environment</param>
-    /// <returns>The service collection for chaining</returns>
     public static IServiceCollection AddSecretManagement(
         this IServiceCollection services,
         IConfiguration configuration,
@@ -130,12 +114,6 @@ public static class ConfigurationServiceExtensions
         return services;
     }
 
-    /// <summary>
-    /// Adds comprehensive configuration validation services to the dependency injection container.
-    /// </summary>
-    /// <param name="services">The service collection</param>
-    /// <param name="configuration">The configuration instance</param>
-    /// <returns>The service collection for chaining</returns>
     public static IServiceCollection AddConfigurationValidation(
         this IServiceCollection services,
         IConfiguration configuration)
@@ -153,16 +131,6 @@ public static class ConfigurationServiceExtensions
         return services;
     }
 
-    /// <summary>
-    /// Registers a configuration options type for validation and automatic secret resolution.
-    /// </summary>
-    /// <typeparam name="TOptions">The configuration options type</typeparam>
-    /// <param name="services">The service collection</param>
-    /// <param name="configuration">The configuration instance</param>
-    /// <param name="sectionName">The configuration section name</param>
-    /// <param name="isRequired">Whether this configuration is required for startup</param>
-    /// <param name="enableSecretResolution">Whether to enable automatic secret resolution</param>
-    /// <returns>The service collection for chaining</returns>
     [UnconditionalSuppressMessage(
         "AOT",
         "SYSLIB1104",
@@ -198,13 +166,6 @@ public static class ConfigurationServiceExtensions
             });
     }
 
-    /// <summary>
-    /// Adds all standard configuration types with validation and secret resolution.
-    /// </summary>
-    /// <param name="services">The service collection</param>
-    /// <param name="configuration">The configuration instance</param>
-    /// <param name="isDevelopment">Whether running in development environment</param>
-    /// <returns>The service collection for chaining</returns>
     public static IServiceCollection AddStandardConfiguration(
         this IServiceCollection services,
         IConfiguration configuration,
@@ -280,9 +241,6 @@ public static class ConfigurationServiceExtensions
     }
 }
 
-/// <summary>
-/// Post-configuration service that resolves secrets in options after binding.
-/// </summary>
 internal sealed class SecretResolutionPostConfigureOptions<
     [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)] TOptions> : IPostConfigureOptions<TOptions>
     where TOptions : class
@@ -365,9 +323,6 @@ internal sealed class SecretResolutionPostConfigureOptions<
     }
 }
 
-/// <summary>
-/// Startup service that validates all configuration at application start.
-/// </summary>
 internal sealed class ConfigurationValidationStartupService : IHostedService
 {
     private readonly IConfigurationValidator _validator;
@@ -434,9 +389,6 @@ internal sealed class ConfigurationValidationStartupService : IHostedService
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 }
 
-/// <summary>
-/// Data annotation validate options that integrates with the configuration validator.
-/// </summary>
 internal sealed class DataAnnotationValidateOptions<
     [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)] TOptions> : IValidateOptions<TOptions>
     where TOptions : class

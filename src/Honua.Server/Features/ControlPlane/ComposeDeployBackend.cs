@@ -7,11 +7,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Deploy backend for one installed Compose project (honua-server#6811). The server process does
-/// not receive the Docker socket. It asks the sidecar, and only after a different principal has
-/// approved the operation. Cutover has downtime: the candidate is not staged beside live traffic.
-/// </summary>
 internal sealed partial class ComposeDeployBackend(
     IComposeExecutorClient client,
     IOptions<ComposeExecutorOptions> options,
@@ -21,13 +16,10 @@ internal sealed partial class ComposeDeployBackend(
 
     private readonly ComposeExecutorOptions _options = options.Value;
 
-    /// <inheritdoc />
     public string BackendName => AdapterBackendName;
 
-    /// <inheritdoc />
     public DeployTargetKind TargetKind => DeployTargetKind.LocalCompose;
 
-    /// <inheritdoc />
     public Task<DeployBackendCapabilities> GetCapabilitiesAsync(CancellationToken cancellationToken = default)
         => Task.FromResult(new DeployBackendCapabilities
         {
@@ -42,7 +34,6 @@ internal sealed partial class ComposeDeployBackend(
             StagesCandidateWithoutTraffic = false
         });
 
-    /// <inheritdoc />
     public async Task<DeployPlan> PlanAsync(DeployOperationSpec spec, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(spec);
@@ -88,7 +79,6 @@ internal sealed partial class ComposeDeployBackend(
         };
     }
 
-    /// <inheritdoc />
     public async Task<DeploySubmissionResult> StartAsync(
         WorkflowOperationRecord operation,
         CancellationToken cancellationToken = default)
@@ -165,19 +155,16 @@ internal sealed partial class ComposeDeployBackend(
         }
     }
 
-    /// <inheritdoc />
     public Task<DeployObservation> ObserveAsync(
         WorkflowOperationRecord operation,
         CancellationToken cancellationToken = default)
         => ObserveCoreAsync(operation, cancellationToken);
 
-    /// <inheritdoc />
     public Task<DeployObservation> PromoteAsync(
         WorkflowOperationRecord operation,
         CancellationToken cancellationToken = default)
         => ObserveAsync(operation, cancellationToken);
 
-    /// <inheritdoc />
     public async Task<DeployObservation> RollbackAsync(
         WorkflowOperationRecord operation,
         CancellationToken cancellationToken = default)

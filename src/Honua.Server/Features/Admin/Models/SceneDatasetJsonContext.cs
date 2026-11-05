@@ -5,9 +5,6 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Server.Features.Admin.Models;
 
-/// <summary>
-/// Source-generated JSON context for scene dataset admin API models.
-/// </summary>
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,

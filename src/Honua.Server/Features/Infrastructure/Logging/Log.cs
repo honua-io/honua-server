@@ -3,17 +3,6 @@
 
 namespace Honua.Infrastructure.Logging;
 
-/// <summary>
-/// Source-generated logging methods for AOT compatibility
-/// </summary>
-/// <remarks>
-/// Event ID ranges:
-/// - 1000-1999: Query operations
-/// - 2000-2999: Edit operations
-/// - 3000-3999: Performance warnings
-/// - 4000-4999: Infrastructure operations
-/// - 5000-5999: Errors
-/// </remarks>
 internal static partial class Log
 {
     #region Query Operations (1000-1999)
@@ -57,48 +46,24 @@ internal static partial class Log
     public static partial void ApplyEditsPartialFailure(
         ILogger logger, string layerId, int successCount, int failureCount);
 
-    /// <summary>
-    /// Logs when a database transaction is started.
-    /// </summary>
-    /// <param name="logger">The logger instance.</param>
-    /// <param name="transactionId">The transaction identifier.</param>
-    /// <param name="layerId">The layer identifier associated with the transaction.</param>
     [LoggerMessage(
         EventId = 2010,
         Level = LogLevel.Debug,
         Message = "Transaction {TransactionId} started for layer {LayerId}")]
     public static partial void TransactionStarted(ILogger logger, string transactionId, string layerId);
 
-    /// <summary>
-    /// Logs when a database transaction is successfully committed.
-    /// </summary>
-    /// <param name="logger">The logger instance.</param>
-    /// <param name="transactionId">The transaction identifier.</param>
-    /// <param name="operationCount">The number of operations that were committed.</param>
     [LoggerMessage(
         EventId = 2011,
         Level = LogLevel.Debug,
         Message = "Transaction {TransactionId} committed: {OperationCount} operations")]
     public static partial void TransactionCommitted(ILogger logger, string transactionId, int operationCount);
 
-    /// <summary>
-    /// Logs when a database transaction is rolled back.
-    /// </summary>
-    /// <param name="logger">The logger instance.</param>
-    /// <param name="transactionId">The transaction identifier.</param>
-    /// <param name="reason">The reason for the rollback.</param>
     [LoggerMessage(
         EventId = 2012,
         Level = LogLevel.Warning,
         Message = "Transaction {TransactionId} rolled back: {Reason}")]
     public static partial void TransactionRolledBack(ILogger logger, string transactionId, string reason);
 
-    /// <summary>
-    /// Logs when a transaction retry attempt is made.
-    /// </summary>
-    /// <param name="logger">The logger instance.</param>
-    /// <param name="attempt">The retry attempt number.</param>
-    /// <param name="errorMessage">The error message that caused the retry.</param>
     [LoggerMessage(
         EventId = 2013,
         Level = LogLevel.Warning,
@@ -141,93 +106,54 @@ internal static partial class Log
     public static partial void ApplicationStarting(
         ILogger logger, string version, string environment);
 
-    /// <summary>
-    /// Logs when the application is gracefully stopping.
-    /// </summary>
-    /// <param name="logger">The logger instance.</param>
     [LoggerMessage(
         EventId = 4002,
         Level = LogLevel.Information,
         Message = "Application stopping gracefully")]
     public static partial void ApplicationStopping(ILogger logger);
 
-    /// <summary>
-    /// Logs when database migrations are starting.
-    /// </summary>
-    /// <param name="logger">The logger instance.</param>
     [LoggerMessage(
         EventId = 4010,
         Level = LogLevel.Information,
         Message = "Database migrations starting")]
     public static partial void DatabaseMigrationsStarting(ILogger logger);
 
-    /// <summary>
-    /// Logs when database migrations have completed successfully.
-    /// </summary>
-    /// <param name="logger">The logger instance.</param>
-    /// <param name="scriptCount">The number of migration scripts that were applied.</param>
     [LoggerMessage(
         EventId = 4011,
         Level = LogLevel.Information,
         Message = "Database migrations completed: {ScriptCount} scripts applied")]
     public static partial void DatabaseMigrationsCompleted(ILogger logger, int scriptCount);
 
-    /// <summary>
-    /// Logs when no database migrations are available to apply.
-    /// </summary>
-    /// <param name="logger">The logger instance.</param>
     [LoggerMessage(
         EventId = 4012,
         Level = LogLevel.Information,
         Message = "No database migrations to apply")]
     public static partial void NoDatabaseMigrationsToApply(ILogger logger);
 
-    /// <summary>
-    /// Logs when the database connection string is not configured, causing migrations to be skipped.
-    /// </summary>
-    /// <param name="logger">The logger instance.</param>
     [LoggerMessage(
         EventId = 4013,
         Level = LogLevel.Information,
         Message = "Database connection string 'DefaultConnection' not configured - skipping migrations")]
     public static partial void DatabaseConnectionStringNotConfigured(ILogger logger);
 
-    /// <summary>
-    /// Logs an error when no database connection string is configured in production.
-    /// </summary>
-    /// <param name="logger">The logger instance.</param>
     [LoggerMessage(
         EventId = 4016,
         Level = LogLevel.Error,
         Message = "No database connection string configured. The application will not be able to serve data requests.")]
     public static partial void DatabaseConnectionStringMissingInProduction(ILogger logger);
 
-    /// <summary>
-    /// Logs when database migrations are deliberately skipped.
-    /// </summary>
-    /// <param name="logger">The logger instance.</param>
     [LoggerMessage(
         EventId = 4015,
         Level = LogLevel.Information,
         Message = "Database migrations skipped")]
     public static partial void DatabaseMigrationsSkipped(ILogger logger);
 
-    /// <summary>
-    /// Logs that a pre-existing raster provider baseline was journaled as adopted, not executed.
-    /// </summary>
-    /// <param name="logger">The logger instance.</param>
-    /// <param name="scriptName">Journal script name recorded as adopted.</param>
     [LoggerMessage(
         EventId = 4031,
         Level = LogLevel.Information,
         Message = "Adopted raster provider baseline {ScriptName} into public.schema_versions without executing the migration")]
     public static partial void RasterProviderBaselineAdopted(ILogger logger, string scriptName);
 
-    /// <summary>
-    /// Logs when an individual migration script has been successfully applied.
-    /// </summary>
-    /// <param name="logger">The logger instance.</param>
-    /// <param name="scriptName">The name of the migration script that was applied.</param>
     [LoggerMessage(
         EventId = 4014,
         Level = LogLevel.Debug,
@@ -241,16 +167,6 @@ internal static partial class Log
     public static partial void HealthCheckExecuted(
         ILogger logger, string checkName, string status, double elapsedMs);
 
-    /// <summary>
-    /// Records the Redis durability attestation outcome that readiness observed
-    /// (honua-server#4502). Information only (owner ruling 2026-10-10): the governed control
-    /// plane and the durable job runner stay available, and the capability manifest publishes the
-    /// outcome as <c>limits.job.redisDurability</c>. Debug level because it repeats per probe;
-    /// the startup log line is the operator-facing record. Typed so the cause is a structured
-    /// field rather than an interpolated string.
-    /// </summary>
-    /// <param name="logger">The logger instance.</param>
-    /// <param name="cause">The attestation outcome cause.</param>
     [LoggerMessage(
         EventId = 4021,
         Level = LogLevel.Debug,
@@ -292,56 +208,30 @@ internal static partial class Log
         ILogger logger, string path, string exceptionType, string errorMessage, Exception exception)
         => Honua.Infrastructure.Logging.ProtocolRequestLog.RequestProcessingError(logger, path, exceptionType, errorMessage, exception);
 
-    /// <summary>
-    /// Logs when the PostGIS preflight compatibility check is starting.
-    /// </summary>
-    /// <param name="logger">The logger instance.</param>
     [LoggerMessage(
         EventId = 4055,
         Level = LogLevel.Information,
         Message = "PostGIS preflight check starting")]
     public static partial void PostGisPreflightCheckStarting(ILogger logger);
 
-    /// <summary>
-    /// Logs when the PostGIS preflight check passes successfully.
-    /// </summary>
-    /// <param name="logger">The logger instance.</param>
-    /// <param name="engineVersion">The database engine version detected.</param>
-    /// <param name="postGisVersion">The PostGIS extension version detected.</param>
     [LoggerMessage(
         EventId = 4056,
         Level = LogLevel.Information,
         Message = "PostGIS preflight check passed: engine={EngineVersion}, PostGIS={PostGisVersion}")]
     public static partial void PostGisPreflightCheckPassed(ILogger logger, string engineVersion, string postGisVersion);
 
-    /// <summary>
-    /// Logs when the PostGIS preflight check fails but the application continues in Development mode.
-    /// </summary>
-    /// <param name="logger">The logger instance.</param>
-    /// <param name="errorMessage">The error message describing the failure.</param>
     [LoggerMessage(
         EventId = 4057,
         Level = LogLevel.Warning,
         Message = "PostGIS preflight check failed: {ErrorMessage}. Continuing in Development mode.")]
     public static partial void PostGisPreflightCheckFailedDevelopment(ILogger logger, string errorMessage);
 
-    /// <summary>
-    /// Logs when the PostGIS preflight check is skipped because no compatibility checker is registered.
-    /// </summary>
-    /// <param name="logger">The logger instance.</param>
     [LoggerMessage(
         EventId = 4058,
         Level = LogLevel.Information,
         Message = "PostGIS preflight check skipped: no database compatibility checker is registered.")]
     public static partial void PostGisPreflightCheckSkipped(ILogger logger);
 
-    /// <summary>
-    /// Logs the per-instance identity this process stamps on every response (<c>Honua-Instance</c>).
-    /// </summary>
-    /// <param name="logger">The logger instance.</param>
-    /// <param name="instanceId">The resolved instance id.</param>
-    /// <param name="instanceIdSource">Which source produced the instance id.</param>
-    /// <param name="instanceStartedAt">When the identity was resolved.</param>
     [LoggerMessage(
         EventId = 4059,
         Level = LogLevel.Information,
@@ -445,25 +335,12 @@ internal static partial class Log
     public static partial void ApplicationStartupFailed(
         ILogger logger, string errorMessage, Exception exception);
 
-    /// <summary>
-    /// Logs when the PostGIS preflight check fails and the application is aborting startup.
-    /// </summary>
-    /// <param name="logger">The logger instance.</param>
-    /// <param name="causeClass">The preflight cause class (<c>incompatible-database</c> for a fatal failure).</param>
-    /// <param name="errorMessage">The error message describing the failure.</param>
     [LoggerMessage(
         EventId = 5011,
         Level = LogLevel.Critical,
         Message = "PostGIS preflight check failed ({CauseClass}): {ErrorMessage}. Startup aborted.")]
     public static partial void PostGisPreflightCheckFailedCritical(ILogger logger, string causeClass, string errorMessage);
 
-    /// <summary>
-    /// Logs (loudly, at Warning) when startup enters degraded mode because the database was
-    /// unavailable but degraded-start is enabled (#1632). The process keeps running and recovers
-    /// connectivity in the background instead of crashing.
-    /// </summary>
-    /// <param name="logger">The logger instance.</param>
-    /// <param name="message">The degraded-start warning describing the transient failure.</param>
     [LoggerMessage(
         EventId = 5012,
         Level = LogLevel.Warning,

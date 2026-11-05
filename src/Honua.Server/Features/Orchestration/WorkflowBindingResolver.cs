@@ -9,10 +9,6 @@ using System.Globalization;
 
 namespace Honua.Server.Features.Orchestration;
 
-/// <summary>
-/// Resolves declarative step input bindings into concrete analysis-plan input values
-/// using the captured output artifacts of upstream steps.
-/// </summary>
 internal static class WorkflowBindingResolver
 {
     private const string ArtifactSelectorPrefix = "artifact:";

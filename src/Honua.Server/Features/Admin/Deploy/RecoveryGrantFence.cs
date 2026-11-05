@@ -7,82 +7,36 @@ using Honua.Server.Features.Admin.Models;
 
 namespace Honua.Server.Features.Admin.Deploy;
 
-/// <summary>
-/// Admission-time fence for the deploy rollback surface (honua-server#4958).
-/// </summary>
-/// <remarks>
-/// 2026.1 promises that an approved protected deployment declares, at approval time, exactly one
-/// permitted compensation — bound to an actor, a tenant, a target, a prior/candidate revision pair, a
-/// safety-policy digest and an expiry — and that nothing else can actuate it. <c>PlatformDeployAuthority</c>
-/// (honua-server#4943) answers "may this principal reach the deploy surface at all"; it cannot answer
-/// "is this the one recovery that was preauthorized". This type answers the second question, and it is
-/// evaluated <b>before</b> the operation is submitted to the invoker so a refusal leaves no durable
-/// transition behind — admission is the only layer where that can be true.
-/// <para>
-/// A caller that supplies no fence term keeps the pre-#4958 behaviour. A caller that supplies one is
-/// asserting a grant, and every supplied term is enforced: an unsatisfied term is a refusal, never a
-/// no-op, and never a silent drop.
-/// </para>
-/// <para>
-/// Neither a platform role nor silence widens a sealed grant (honua-server#4987). The sealed actor and
-/// tenant bind every caller, and a declared actor or tenant must equal the sealed value as well as the
-/// caller's, so quoting another principal's grant under one's own identity is refused.
-/// </para>
-/// </remarks>
+// A supplied recovery fence is enforced before the rollback is submitted, and an unsatisfied term refuses the call rather than widening the grant.
 internal static class RecoveryGrantFence
 {
-    /// <summary>
-    /// The rollback body carried a property this server does not recognise, so the caller's idea of the
-    /// fence and the server's do not agree. Raised by the endpoint's own body read (the request type is
-    /// <c>JsonUnmappedMemberHandling.Disallow</c>), not by this evaluator.
-    /// </summary>
+    // An unrecognised rollback property is a refusal because the caller's fence and the server's fence would otherwise disagree.
     internal const string UnknownPropertyCode = "recovery_fence_unknown_property";
 
-    /// <summary>The authenticated principal is not the actor the protected activation recorded.</summary>
     internal const string ActorMismatchCode = "recovery_fence_actor_mismatch";
 
-    /// <summary>The caller's tenant is not the tenant the protected activation recorded.</summary>
     internal const string TenantMismatchCode = "recovery_fence_tenant_mismatch";
 
-    /// <summary>The grant's own expiry has passed on the server clock.</summary>
     internal const string ExpiredCode = "recovery_fence_expired";
 
-    /// <summary>The declared target is not the target this operation deploys to.</summary>
     internal const string TargetMismatchCode = "recovery_fence_target_mismatch";
 
-    /// <summary>The rollback quotes protection terms but the operation has no protection window.</summary>
     internal const string ProtectionWindowAbsentCode = "recovery_fence_protection_window_absent";
 
-    /// <summary>The declared protection phase is not a phase this server can produce.</summary>
     internal const string ProtectionPhaseUnrecognizedCode = "recovery_fence_protection_phase_unrecognized";
 
-    /// <summary>The declared protection phase is not the phase the operation is actually in.</summary>
     internal const string ProtectionPhaseMismatchCode = "recovery_fence_protection_phase_mismatch";
 
-    /// <summary>The declared candidate revision is not the revision currently activated.</summary>
     internal const string CandidateRevisionMismatchCode = "recovery_fence_candidate_revision_mismatch";
 
-    /// <summary>The declared previous revision is not the revision the compensation restores.</summary>
     internal const string PreviousRevisionMismatchCode = "recovery_fence_previous_revision_mismatch";
 
-    /// <summary>The declared grant identity is not the grant this activation sealed.</summary>
     internal const string GrantMismatchCode = "recovery_fence_grant_mismatch";
 
-    /// <summary>The declared safety-policy digest is not the digest the activation was approved under.</summary>
     internal const string PolicyDigestMismatchCode = "recovery_fence_policy_digest_mismatch";
 
-    /// <summary>The requested compensation is broader than the one this activation preauthorized.</summary>
     internal const string CompensationNotPermittedCode = "recovery_fence_compensation_not_permitted";
 
-    /// <summary>
-    /// Evaluates the fence. Returns <see langword="null"/> when the rollback may proceed, or the
-    /// refusal to surface as a problem response.
-    /// </summary>
-    /// <param name="operation">The durable operation the rollback targets.</param>
-    /// <param name="request">The rollback body, possibly absent.</param>
-    /// <param name="authenticatedActor">Principal resolved from the validated identity, never from a header.</param>
-    /// <param name="callerTenantId">Tenant resolved from the validated identity, or null when unbound.</param>
-    /// <param name="now">Server clock used for expiry.</param>
     public static RecoveryFenceRefusal? Evaluate(
         WorkflowOperationRecord operation,
         RollbackDeployOperationRequest? request,
@@ -301,8 +255,4 @@ internal static class RecoveryGrantFence
             string.Equals(declared?.Trim(), actual.Trim(), StringComparison.OrdinalIgnoreCase);
 }
 
-/// <summary>
-/// A refused rollback: the HTTP status to return, the stable machine-readable code clients branch on,
-/// and an operator-facing detail that never echoes a secret (honua-server#4958).
-/// </summary>
 internal sealed record RecoveryFenceRefusal(int StatusCode, string Code, string Detail);

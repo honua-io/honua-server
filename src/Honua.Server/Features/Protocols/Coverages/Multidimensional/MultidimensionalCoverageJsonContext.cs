@@ -6,10 +6,6 @@ using Honua.Server.Features.Protocols.Coverages.Multidimensional.Models;
 
 namespace Honua.Server.Features.Protocols.Coverages.Multidimensional;
 
-/// <summary>
-/// AOT-safe JSON serialization context for the multidimensional coverage
-/// admin surface.
-/// </summary>
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(RegisterMultidimensionalCoverageRequest))]
 [JsonSerializable(typeof(MultidimensionalCoverageRegistrationResponse))]

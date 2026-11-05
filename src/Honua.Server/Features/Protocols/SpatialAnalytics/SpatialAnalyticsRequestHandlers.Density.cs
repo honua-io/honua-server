@@ -19,11 +19,6 @@ using Microsoft.Extensions.Primitives;
 
 namespace Honua.Server.Features.Protocols.SpatialAnalytics;
 
-/// <summary>
-/// Density binning handler. REST entry:
-/// <c>POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryDensity</c>.
-/// OGC mirror: <c>POST /ogc/features/collections/{collectionId}/density</c>.
-/// </summary>
 internal static partial class SpatialAnalyticsRequestHandlers
 {
     private const string DensityOperation = "density";

@@ -6,34 +6,7 @@ using Honua.Server.Features.Collaboration.Sessions;
 
 namespace Honua.Server.Features.Collaboration.Operations;
 
-/// <summary>
-/// Serialization point that keeps op-log cursor ASSIGNMENT and live FAN-OUT in the same order
-/// (honua-server#2999 review). Appending and publishing were previously independent steps, so two
-/// concurrent requests could be assigned cursors 1 and 2 by the log and then resume in the
-/// opposite order, broadcasting cursor 2 before cursor 1 — live clients would apply same-aspect
-/// edits in the reverse of the order replay and checkpointing use.
-/// </summary>
-/// <remarks>
-/// <para>
-/// Ordering is enforced by taking a per-map gate around "assign cursor, then publish", so no
-/// operation for a map can be broadcast while another operation for the same map is between
-/// those two steps. Gates are striped over a fixed array rather than kept per map id, so a
-/// long-lived server does not accumulate one lock per saved map ever edited; two maps sharing a
-/// stripe only contend, never interleave incorrectly.
-/// </para>
-/// <para>
-/// This is an IN-PROCESS ordering point. In a declared multi-replica deployment the append
-/// surface therefore fails closed unless the operation log is replica-shared and the backplane
-/// explicitly advertises a distributed ordering point (for example, publication from the same
-/// transaction or stream that assigns the cursor). Pub/sub fan-out alone cannot order appends
-/// accepted on different nodes.
-/// </para>
-/// <para>
-/// The stripe gates are owned for the coordinator's lifetime, so the type is
-/// <see cref="IDisposable"/> and is registered as a singleton — the DI container disposes it with
-/// the host, releasing every <see cref="SemaphoreSlim"/> exactly once.
-/// </para>
-/// </remarks>
+// Cursor assignment and fan-out share one per-map gate so a broadcast cannot invert the replay order, and a multi-replica deployment fails closed unless ordering is distributed.
 internal sealed class SavedMapOperationAppendCoordinator : IDisposable
 {
     private const int StripeCount = 64;
@@ -63,20 +36,11 @@ internal sealed class SavedMapOperationAppendCoordinator : IDisposable
         }
     }
 
-    /// <summary>
-    /// Whether this deployment can assign authoritative operation cursors. False when the
-    /// deployment is declared multi-replica but either the op log is process-local or live
-    /// publication does not share a distributed ordering point with cursor assignment.
-    /// </summary>
     public bool CanAcceptEdits => !_topology.IsMultiReplica ||
         _repository.SupportsReplicaSharedReplay &&
         _backplane.SupportsCrossReplicaDelivery &&
         _backplane.SupportsOrderedOperationDelivery;
 
-    /// <summary>
-    /// Appends an operation and, when it is newly accepted, publishes it to the live session
-    /// fan-out before any later operation for the same map can be assigned a cursor.
-    /// </summary>
     public async Task<SavedMapOperationAppendResult> AppendAndPublishAsync(
         string canonicalMapId,
         SavedMapOperationAppendRequest request,
@@ -113,10 +77,6 @@ internal sealed class SavedMapOperationAppendCoordinator : IDisposable
         }
     }
 
-    /// <summary>
-    /// Releases the per-map stripe gates. Idempotent, so a double dispose by the container (or a
-    /// test that disposes explicitly and then disposes its provider) is safe.
-    /// </summary>
     public void Dispose()
     {
         if (_disposed)

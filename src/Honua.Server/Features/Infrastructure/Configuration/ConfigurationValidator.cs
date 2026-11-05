@@ -10,9 +10,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Infrastructure.Configuration;
 
-/// <summary>
-/// Configuration validator that uses data annotations and provides comprehensive validation reporting.
-/// </summary>
 internal sealed class ConfigurationValidator : IConfigurationValidator, IConfigurationDiscovery
 {
     private readonly IServiceProvider _serviceProvider;
@@ -20,9 +17,6 @@ internal sealed class ConfigurationValidator : IConfigurationValidator, IConfigu
     private readonly ILogger<ConfigurationValidator> _logger;
     private readonly ConcurrentDictionary<Type, IConfigurationOptionsRegistration> _registeredOptions = new();
 
-    /// <summary>
-    /// Initializes a new instance of the ConfigurationValidator.
-    /// </summary>
     public ConfigurationValidator(
         IServiceProvider serviceProvider,
         IConfiguration configuration,
@@ -39,19 +33,14 @@ internal sealed class ConfigurationValidator : IConfigurationValidator, IConfigu
         }
     }
 
-    /// <inheritdoc />
     public string ConfigurationSection => string.Empty;
 
-    /// <inheritdoc />
     public IEnumerable<string> ValidateConfiguration(IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(configuration);
         return ValidateRegisteredOptions(isDevelopment: false, isTest: false).AllErrors;
     }
 
-    /// <summary>
-    /// Validates a configuration options instance using data annotations.
-    /// </summary>
     public ConfigurationValidationResult ValidateOptions<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)] TOptions>(
         TOptions options,
@@ -65,9 +54,6 @@ internal sealed class ConfigurationValidator : IConfigurationValidator, IConfigu
         return ValidateOptionsInstance(options, sectionName, isDevelopment, ConfigurationOptionsMetadataFactory.CreatePropertyAccessors<TOptions>());
     }
 
-    /// <summary>
-    /// Validates all registered configuration options at startup.
-    /// </summary>
     public Task<ConfigurationValidationSummary> ValidateAllAsync(bool isDevelopment = false, bool isTest = false)
         => Task.FromResult(ValidateRegisteredOptions(isDevelopment, isTest));
 
@@ -107,9 +93,6 @@ internal sealed class ConfigurationValidator : IConfigurationValidator, IConfigu
         return summary;
     }
 
-    /// <summary>
-    /// Registers a configuration options type for validation.
-    /// </summary>
     public void RegisterOptionsType<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)] TOptions>(
         string sectionName,
@@ -122,15 +105,9 @@ internal sealed class ConfigurationValidator : IConfigurationValidator, IConfigu
         ConfigurationValidatorLog.OptionsTypeRegistered(_logger, typeof(TOptions).Name, sectionName);
     }
 
-    /// <summary>
-    /// Gets all registered configuration options types.
-    /// </summary>
     public IEnumerable<ConfigurationOptionsMetadata> GetAllOptions() =>
         _registeredOptions.Values.Select(static registration => registration.Metadata).ToList();
 
-    /// <summary>
-    /// Gets configuration metadata for a specific options type.
-    /// </summary>
     public ConfigurationOptionsMetadata GetOptionsMetadata<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)] TOptions>()
         where TOptions : class

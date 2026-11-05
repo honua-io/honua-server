@@ -24,32 +24,7 @@ internal sealed class RateLimitAdmission
 {
 }
 
-/// <summary>
-/// Middleware for enforcing rate limits on incoming requests.
-/// </summary>
-/// <remarks>
-/// <para>
-/// Requests are partitioned independently per tenant, per authenticated user/API key,
-/// and per source IP for anonymous traffic (issue #355).
-/// </para>
-/// <para>
-/// Every request is metered against the subject's shared tier/global counter — the ceiling that
-/// bounds total traffic for the subject across all endpoints. When an endpoint additionally
-/// declares an explicit per-endpoint limit (<see cref="RateLimitAttribute"/>), the request is
-/// metered against <em>both</em> the shared subject counter and a second counter partitioned by
-/// that endpoint's policy scope (issue #2779). The request is allowed only if both counters are
-/// under their limits, and both counters are incremented. This keeps a per-endpoint limit metering
-/// only that endpoint's traffic (so ordinary Console traffic can't drain the OIDC authorize-url
-/// 5/min budget) while still counting attributed-endpoint traffic toward the subject's global
-/// ceiling. On a block, the advised <c>Retry-After</c> is the larger of the failing counters'
-/// windows.
-/// </para>
-/// <para>
-/// Limits are off by default and must be enabled and tuned through the <c>RateLimiting</c>
-/// configuration section; the MVP posture remains edge enforcement (ADR-0004) unless an operator
-/// opts in.
-/// </para>
-/// </remarks>
+// The request is allowed only when both the subject counter and the endpoint counter are under their limits.
 internal sealed partial class RateLimitingMiddleware
 {
     private const string TenantKeyFamily = "tenant";
@@ -57,20 +32,11 @@ internal sealed partial class RateLimitingMiddleware
     private const string IpKeyFamily = "ip";
     private const string UnknownKeyFamily = "unknown";
 
-    /// <summary>
-    /// Hard cap on process-local counter entries. At capacity the least-recently-used
-    /// entry is evicted so a flood of new keys cannot deny unrelated subjects.
-    /// </summary>
+    // At capacity the least-recently-used entry is evicted so a flood of new keys cannot deny unrelated subjects.
     private const int MaxMemoryCounterEntries = 10_000;
 
-    /// <summary>Minimum gap between capacity-eviction warnings.</summary>
     private static readonly long MemoryCapacityLogIntervalTicks = TimeSpan.TicksPerMinute;
 
-    /// <summary>
-    /// Process-local fixed-window counters used when Redis is unavailable. Counters
-    /// are admitted, incremented, and expired under one lock so the capacity and
-    /// existing budgets remain correct during concurrent high-cardinality traffic.
-    /// </summary>
     private static readonly ConcurrentDictionary<string, FixedWindowCounter> _memoryCounters = new();
     private static readonly object _memoryCountersLock = new();
     private static DateTimeOffset _nextMemoryCounterPrune = DateTimeOffset.MinValue;
@@ -84,21 +50,6 @@ internal sealed partial class RateLimitingMiddleware
     private readonly ILogger<RateLimitingMiddleware> _logger;
     private readonly TimeProvider _timeProvider;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="RateLimitingMiddleware"/> class.
-    /// </summary>
-    /// <param name="next">The next middleware in the pipeline.</param>
-    /// <param name="policyStore">Rate limit policy store.</param>
-    /// <param name="options">Rate limiting options.</param>
-    /// <param name="logger">Logger instance.</param>
-    /// <param name="redis">
-    /// Optional Redis connection for distributed (cross-node) rate limiting. Registered only
-    /// when durable coordination is configured, so it is passed in optionally by
-    /// <see cref="RateLimitingMiddlewareExtensions.UseRateLimiting"/> rather than required via
-    /// injection; when <see langword="null"/> the middleware falls back to process-local
-    /// fixed-window counters.
-    /// </param>
-    /// <param name="timeProvider">Clock for quota windows and retry headers; defaults to system UTC.</param>
     public RateLimitingMiddleware(
         RequestDelegate next,
         IRateLimitPolicyStore policyStore,
@@ -115,11 +66,6 @@ internal sealed partial class RateLimitingMiddleware
         _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
-    /// <summary>
-    /// Invokes the middleware.
-    /// </summary>
-    /// <param name="context">The HTTP context.</param>
-    /// <returns>A task representing the async operation.</returns>
     public async Task InvokeAsync(HttpContext context)
     {
         if (!_options.Enabled)
@@ -166,13 +112,6 @@ internal sealed partial class RateLimitingMiddleware
         }
     }
 
-    /// <summary>
-    /// Determines the rate limit key for the request. The key is partitioned by tenant
-    /// (when one is resolved) and then by authenticated user/API key identity, falling
-    /// back to the source IP for anonymous traffic (issue #355).
-    /// </summary>
-    /// <param name="context">The HTTP context.</param>
-    /// <returns>Rate limit key or null if no rate limiting should be applied.</returns>
     private static string? DetermineRateLimitKey(HttpContext context)
     {
         // Skip rate limiting for health checks and metrics endpoints
@@ -259,12 +198,6 @@ internal sealed partial class RateLimitingMiddleware
     private static string EncodeKeyComponent(string value)
         => Convert.ToBase64String(Encoding.UTF8.GetBytes(value));
 
-    /// <summary>
-    /// Checks if the request is within rate limits.
-    /// </summary>
-    /// <param name="rateLimitKey">The rate limit key.</param>
-    /// <param name="context">The HTTP context.</param>
-    /// <returns>Rate limit check result.</returns>
     private async Task<RateLimitResult> CheckRateLimitAsync(string rateLimitKey, HttpContext context)
     {
         try
@@ -310,11 +243,6 @@ internal sealed partial class RateLimitingMiddleware
         }
     }
 
-    /// <summary>
-    /// Meters a single counter (identified by <paramref name="counterKey"/>) against
-    /// <paramref name="resolved"/>, using the Redis sliding window when available and falling back
-    /// to a process-local fixed window otherwise. Every call increments the counter.
-    /// </summary>
     private async Task<(RateLimitResult Result, bool UsedMemory)> CheckCounterAsync(
         string counterKey, ResolvedRateLimit resolved, bool useRedis = true)
     {
@@ -334,12 +262,6 @@ internal sealed partial class RateLimitingMiddleware
         return (CheckRateLimitMemory(counterKey, resolved), true);
     }
 
-    /// <summary>
-    /// Combines the shared subject-ceiling result with a per-endpoint counter result. The request
-    /// is allowed only when both counters are under limit. When allowed, the tighter remaining
-    /// budget is surfaced so clients see the real ceiling; when blocked, the failing counter with
-    /// the longer window drives the 429 response and <c>Retry-After</c>.
-    /// </summary>
     private static RateLimitResult CombineResults(RateLimitResult subject, RateLimitResult endpoint)
     {
         if (subject.IsAllowed && endpoint.IsAllowed)
@@ -356,12 +278,6 @@ internal sealed partial class RateLimitingMiddleware
         return subject.IsAllowed ? endpoint : subject;
     }
 
-    /// <summary>
-    /// Checks rate limit using Redis sliding window algorithm.
-    /// </summary>
-    /// <param name="counterKey">The counter key (subject identity plus any per-endpoint policy scope).</param>
-    /// <param name="resolved">The resolved limit and window for this request.</param>
-    /// <returns>Rate limit check result.</returns>
     private async Task<RateLimitResult> CheckRateLimitRedisAsync(string counterKey, ResolvedRateLimit resolved)
     {
         var database = _redis!.GetDatabase();
@@ -413,14 +329,7 @@ internal sealed partial class RateLimitingMiddleware
         };
     }
 
-    /// <summary>
-    /// Checks rate limit using process-local counters with a fixed window algorithm.
-    /// Admission, expiry, and increments share a lock so concurrent requests cannot
-    /// exceed the hard capacity, lose increments, or reset a live counter by eviction.
-    /// </summary>
-    /// <param name="counterKey">The counter key (subject identity plus any per-endpoint policy scope).</param>
-    /// <param name="resolved">The resolved limit and window for this request.</param>
-    /// <returns>Rate limit check result.</returns>
+    // Admission, expiry, and increments share a lock so concurrent requests cannot exceed the cap or reset a live counter.
     private RateLimitResult CheckRateLimitMemory(string counterKey, ResolvedRateLimit resolved)
     {
         var now = _timeProvider.GetUtcNow();
@@ -492,10 +401,6 @@ internal sealed partial class RateLimitingMiddleware
         }
     }
 
-    /// <summary>
-    /// Drops the least-recently-used counter. Live counters that remain keep their
-    /// counts; eviction does not reset a budget that is still in the table.
-    /// </summary>
     private static bool TryEvictLeastRecentlyUsedMemoryCounter()
     {
         string? oldestKey = null;
@@ -523,10 +428,6 @@ internal sealed partial class RateLimitingMiddleware
         RateLimitingLog.MemoryCounterCapacityEvicted(_logger, MaxMemoryCounterEntries);
     }
 
-    /// <summary>
-    /// Reclaims only expired windows while holding the admission lock. The earliest
-    /// expiry avoids scanning all counters for every rejected high-cardinality request.
-    /// </summary>
     private static void PruneExpiredMemoryCounters(DateTimeOffset now)
     {
         if (now < _nextMemoryCounterPrune)
@@ -548,30 +449,16 @@ internal sealed partial class RateLimitingMiddleware
         }
     }
 
-    /// <summary>
-    /// Mutable fixed-window state protected by the process-local admission lock.
-    /// </summary>
     private sealed class FixedWindowCounter
     {
         public DateTimeOffset WindowStart;
         public DateTimeOffset WindowEnd;
         public int Count;
 
-        /// <summary>
-        /// Monotonic touch stamp assigned under the admission lock. Not wall-clock
-        /// ticks: equal <see cref="DateTimeOffset.UtcNow"/> values must still order.
-        /// </summary>
+        // The touch stamp is monotonic rather than wall-clock, because equal values must still order.
         public long LastSeenTicks;
     }
 
-    /// <summary>
-    /// Resolves the per-endpoint override for the current request, when one is declared. A
-    /// <see cref="RateLimitAttribute"/> is the most explicit operator intent; its counter is scoped
-    /// to the endpoint (method + route) so it meters only that endpoint's traffic (issue #2779).
-    /// Returns <see langword="null"/> when the matched endpoint declares no explicit limit.
-    /// </summary>
-    /// <param name="context">The HTTP context.</param>
-    /// <returns>The scoped endpoint limit, or <see langword="null"/> when none is declared.</returns>
     private static ResolvedRateLimit? ResolveEndpointLimit(HttpContext context)
     {
         var endpoint = context.GetEndpoint();
@@ -587,16 +474,6 @@ internal sealed partial class RateLimitingMiddleware
             GetEndpointScope(endpoint, context));
     }
 
-    /// <summary>
-    /// Resolves the subject-wide (unscoped) limit that bounds the subject's total traffic across
-    /// all endpoints: the most specific matching tier policy (api-key &gt; tenant &gt; plan) from
-    /// the policy store, else the global default. This is always metered, including for endpoints
-    /// that also declare their own <see cref="RateLimitAttribute"/> override. Tier policies carry
-    /// their own <see cref="RateLimitPolicy.WindowDuration"/>; the global fallback uses a one-minute
-    /// window.
-    /// </summary>
-    /// <param name="context">The HTTP context.</param>
-    /// <returns>The resolved subject-wide limit and window.</returns>
     private async Task<ResolvedRateLimit> ResolveSubjectLimitAsync(HttpContext context)
     {
         // Subject-tier policies (per-plan / per-tenant / per-api-key) drive the ceiling when one
@@ -618,17 +495,6 @@ internal sealed partial class RateLimitingMiddleware
         return new ResolvedRateLimit(_options.GlobalRequestsPerMinute, TimeSpan.FromMinutes(1), string.Empty);
     }
 
-    /// <summary>
-    /// Derives a stable per-endpoint policy scope used to partition the rate-limit counter so that
-    /// an endpoint's explicit limit meters only that endpoint's traffic. The scope combines the
-    /// HTTP method with the route template (stable across hosts and request values) — e.g.
-    /// <c>POST /rest/.../authorize-url</c> — so the same route reached by different verbs is metered
-    /// separately. Falls back to the endpoint display name, and finally to a method-prefixed
-    /// constant when neither a route template nor a display name is available.
-    /// </summary>
-    /// <param name="endpoint">The matched endpoint carrying the <see cref="RateLimitAttribute"/>.</param>
-    /// <param name="context">The HTTP context (source of the request verb when metadata is absent).</param>
-    /// <returns>A non-empty scope identifier for the endpoint.</returns>
     private static string GetEndpointScope(Endpoint? endpoint, HttpContext context)
     {
         // Prefer the routed method metadata (may enumerate several verbs); fall back to the actual
@@ -651,11 +517,7 @@ internal sealed partial class RateLimitingMiddleware
         return $"{method} {target}";
     }
 
-    /// <summary>
-    /// Builds the subject-tier descriptor (api-key identity, tenant, plan) for the current request
-    /// so the policy resolver can select the applicable tier. Values are stable opaque identifiers,
-    /// never raw secrets.
-    /// </summary>
+    // The tier descriptor uses opaque identifiers, never raw secrets.
     private static RateLimitRequestDescriptor BuildRequestDescriptor(HttpContext context)
     {
         // Only an API-key principal carries an api-key tier, and the tier key is the stable
@@ -687,11 +549,6 @@ internal sealed partial class RateLimitingMiddleware
         };
     }
 
-    /// <summary>
-    /// Adds rate limiting headers to the response.
-    /// </summary>
-    /// <param name="context">The HTTP context.</param>
-    /// <param name="result">Rate limit result.</param>
     private static void AddRateLimitHeaders(HttpContext context, RateLimitResult result)
     {
         context.Response.Headers.TryAdd("X-RateLimit-Limit", result.Limit.ToString(System.Globalization.CultureInfo.InvariantCulture));
@@ -699,12 +556,6 @@ internal sealed partial class RateLimitingMiddleware
         context.Response.Headers.TryAdd("X-RateLimit-Reset", result.WindowReset.ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture));
     }
 
-    /// <summary>
-    /// Handles rate limit exceeded scenario.
-    /// </summary>
-    /// <param name="context">The HTTP context.</param>
-    /// <param name="result">Rate limit result.</param>
-    /// <returns>A task representing the async operation.</returns>
     private async Task HandleRateLimitExceededAsync(HttpContext context, RateLimitResult result)
     {
         var (keyFamily, keyHash) = SplitRateLimitKey(DetermineRateLimitKey(context));
@@ -722,11 +573,6 @@ internal sealed partial class RateLimitingMiddleware
             context.RequestAborted).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Gets the client IP address from the request.
-    /// </summary>
-    /// <param name="context">The HTTP context.</param>
-    /// <returns>Client IP address.</returns>
     private static string? GetClientIpAddress(HttpContext context)
     {
         // Trust the connection IP only. If forwarded headers are enabled, the
@@ -757,12 +603,7 @@ internal sealed partial class RateLimitingMiddleware
         return remoteIp.ToString();
     }
 
-    /// <summary>
-    /// Splits a rate-limit key into a fixed family label and a short correlation hash so
-    /// neither the tenant id, principal name, nor raw IP appears in log output. Keys may
-    /// be tenant-prefixed (<c>tenant:&lt;id&gt;|user:&lt;name&gt;</c>); the most specific
-    /// (rightmost) family is reported and the whole key is hashed for correlation.
-    /// </summary>
+    // Logs report a family label and a hash, so the tenant, principal, and address do not appear.
     private static (string Family, string Hash) SplitRateLimitKey(string? rateLimitKey)
     {
         if (string.IsNullOrEmpty(rateLimitKey))
@@ -796,46 +637,17 @@ internal sealed partial class RateLimitingMiddleware
     }
 }
 
-/// <summary>
-/// The limit and window resolved for a request after applying endpoint, tier, and global
-/// precedence.
-/// </summary>
-/// <param name="Limit">Maximum requests permitted within <paramref name="Window"/>.</param>
-/// <param name="Window">The rolling/fixed window the limit applies over.</param>
-/// <param name="Scope">
-/// The policy scope that partitions the counter. Empty for subject-wide (tier/global) limits;
-/// a per-endpoint identifier when an endpoint declares its own limit so that limit meters only
-/// that endpoint's traffic (issue #2779).
-/// </param>
 internal readonly record struct ResolvedRateLimit(int Limit, TimeSpan Window, string Scope);
 
-/// <summary>
-/// Result of a rate limit check.
-/// </summary>
 internal sealed class RateLimitResult
 {
-    /// <summary>
-    /// Gets or sets a value indicating whether the request is allowed.
-    /// </summary>
     public required bool IsAllowed { get; set; }
 
-    /// <summary>
-    /// Gets or sets the number of requests remaining in the current window.
-    /// </summary>
     public required int RequestsRemaining { get; set; }
 
-    /// <summary>
-    /// Gets or sets when the current rate limiting window resets.
-    /// </summary>
     public required DateTimeOffset WindowReset { get; set; }
 
-    /// <summary>
-    /// Gets or sets the current request count in the window.
-    /// </summary>
     public int RequestCount { get; set; }
 
-    /// <summary>
-    /// Gets or sets the rate limit value.
-    /// </summary>
     public int Limit { get; set; }
 }

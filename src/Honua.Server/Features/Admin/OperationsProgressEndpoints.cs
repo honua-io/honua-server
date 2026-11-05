@@ -29,21 +29,10 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Unified operation progress endpoints for tracking any tracked operation type.
-/// Replaces legacy progress endpoints with a single, consistent API.
-/// </summary>
 internal static partial class OperationsProgressEndpoints
 {
-    /// <summary>
-    /// Upper bound on compare-and-set retries when applying a cancellation while the operation's status
-    /// is transitioning concurrently (for example Queued -> Processing).
-    /// </summary>
     private const int MaxCancelCompareAndSetAttempts = 3;
 
-    /// <summary>
-    /// Map unified operation progress endpoints.
-    /// </summary>
     public static void MapOperationsProgressEndpoints(this WebApplication app)
     {
         var group = app.MapGroup("/api/v{version:apiVersion}/admin/operations")
@@ -78,9 +67,6 @@ internal static partial class OperationsProgressEndpoints
             .WithDescription("Returns all operations (active and completed) of the specified type");
     }
 
-    /// <summary>
-    /// Get the status of any operation by its ID.
-    /// </summary>
     private static async Task<IResult> HandleGetOperationStatus(
         string operationId,
         [FromServices] IUniversalProgressStore progressStore,
@@ -429,9 +415,6 @@ internal static partial class OperationsProgressEndpoints
         operation[propertyName] = value;
     }
 
-    /// <summary>
-    /// Cancel a running operation.
-    /// </summary>
     private static async Task<IResult> HandleCancelOperation(
         string operationId,
         [FromServices] IUniversalProgressStore progressStore,
@@ -859,9 +842,6 @@ internal static partial class OperationsProgressEndpoints
             $"Operation '{operationId}' status changed concurrently while cancellation was being applied; retry the cancel request");
     }
 
-    /// <summary>
-    /// List all active operations, optionally filtered by type.
-    /// </summary>
     internal static async Task<IResult> HandleListActiveOperations(
         [FromServices] IUniversalProgressStore progressStore,
         string? type = null,
@@ -904,9 +884,6 @@ internal static partial class OperationsProgressEndpoints
         return Results.Json(response, OperationsProgressJsonContext.Default.ActiveOperationsResponse);
     }
 
-    /// <summary>
-    /// Get all operations of a specific type.
-    /// </summary>
     internal static async Task<IResult> HandleGetOperationsByType(
         string operationType,
         [FromServices] IUniversalProgressStore progressStore,
@@ -943,74 +920,33 @@ internal static partial class OperationsProgressEndpoints
     }
 }
 
-/// <summary>
-/// Response for operation cancellation.
-/// </summary>
 internal sealed record CancelOperationResponse
 {
-    /// <summary>
-    /// The operation ID that was cancelled.
-    /// </summary>
     public required string OperationId { get; init; }
 
-    /// <summary>
-    /// Confirmation message.
-    /// </summary>
     public required string Message { get; init; }
 
-    /// <summary>
-    /// Type of operation that was cancelled.
-    /// </summary>
     public required OperationType Type { get; init; }
 }
 
-/// <summary>
-/// Response containing list of active operations.
-/// </summary>
 internal sealed record ActiveOperationsResponse
 {
-    /// <summary>
-    /// List of active operations, each serialized with its concrete progress type
-    /// plus stable operationId/type fields for generic clients.
-    /// </summary>
     public required JsonElement[] Operations { get; init; }
 
-    /// <summary>
-    /// Total count of active operations.
-    /// </summary>
     public required int TotalCount { get; init; }
 
-    /// <summary>
-    /// Operation type filter that was applied (if any).
-    /// </summary>
     public OperationType? FilteredByType { get; init; }
 }
 
-/// <summary>
-/// Response containing operations of a specific type.
-/// </summary>
 internal sealed record OperationsByTypeResponse
 {
-    /// <summary>
-    /// The operation type.
-    /// </summary>
     public required OperationType OperationType { get; init; }
 
-    /// <summary>
-    /// List of operations of this type, each serialized with its concrete progress type
-    /// plus stable operationId/type fields for generic clients.
-    /// </summary>
     public required JsonElement[] Operations { get; init; }
 
-    /// <summary>
-    /// Total count of operations.
-    /// </summary>
     public required int TotalCount { get; init; }
 }
 
-/// <summary>
-/// JSON serialization context for operations progress endpoints.
-/// </summary>
 [System.Text.Json.Serialization.JsonSourceGenerationOptions(System.Text.Json.JsonSerializerDefaults.General)]
 [System.Text.Json.Serialization.JsonSerializable(typeof(IOperationProgress))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(UploadProgress))]

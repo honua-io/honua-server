@@ -6,7 +6,7 @@ using Honua.Core.Features.Operations.Domain;
 
 namespace Honua.Server.Features.Operations;
 
-/// <summary>Fail-closed secret channel used when the durable Redis authority is unavailable.</summary>
+// The secret channel fails closed when the durable authority is unavailable.
 internal sealed class UnavailableOperationSecretStore : IOperationSecretStore
 {
     public bool IsAvailable => false;

@@ -10,9 +10,6 @@ using Honua.Infrastructure.Models;
 
 namespace Honua.PackageReview;
 
-/// <summary>
-/// Source-generated JSON context for package-review HTTP and MCP adapters.
-/// </summary>
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,

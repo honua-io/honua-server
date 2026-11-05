@@ -11,11 +11,6 @@ using Honua.Plugins.Abstractions;
 
 namespace Honua.Server.Features.Capabilities;
 
-/// <summary>
-/// Materializes the runtime providers consumed by the capability manifest behind one
-/// domain-specific collaborator. This keeps provider discovery separate from document
-/// composition and prevents the manifest service from growing with every backend family.
-/// </summary>
 internal sealed class CapabilityManifestRuntimeInventory(
     IEnumerable<IBatchComputeBackend> batchBackends,
     IEnumerable<IDeployBackend> deployBackends,
@@ -29,10 +24,6 @@ internal sealed class CapabilityManifestRuntimeInventory(
     IFeatureOutputFormatRegistry outputFormats,
     ManifestRoutedCapabilityIndex routedCapabilities)
 {
-    /// <summary>
-    /// Manifest id to deployment-profile route key. Held here so the manifest service
-    /// does not take another collaborator for profile availability.
-    /// </summary>
     public ManifestRoutedCapabilityIndex RoutedCapabilities { get; } = routedCapabilities;
 
     public IReadOnlyList<IBatchComputeBackend> BatchBackends { get; } = batchBackends.ToArray();
@@ -45,13 +36,6 @@ internal sealed class CapabilityManifestRuntimeInventory(
 
     public bool HasFieldCollectionSyncStore { get; } = fieldCollectionSyncStores.Any();
 
-    /// <summary>
-    /// Whether this deployment can actually grant a collaborative-editing lease (#4402).
-    /// Feature-lock enforcement always ships, but the authorizer Honua ships
-    /// (<c>FailClosedFeatureLockAuthorizer</c>) denies every claim, so out of the box no
-    /// lease is ever handed out. Reporting the capability as available on the strength of
-    /// the endpoints being routable would tell a client to try a claim that can only 403.
-    /// </summary>
     public bool FeatureLockAuthorizerConfigured { get; } = featureLockAuthorizers
         .Any(static authorizer => authorizer is not Collaboration.FeatureLocks.FailClosedFeatureLockAuthorizer);
 

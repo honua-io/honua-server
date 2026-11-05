@@ -8,27 +8,7 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Low-frequency backstop sweep for the workflow-store-backed reconcilers: deploy, metadata-release,
-/// and coordinated-release. Phase 2 sibling of <see cref="ExecutionJobBackstopSweepService"/>; ships
-/// in BOTH trigger modes so a dropped or missed event (deploy provider event, or a staged
-/// self-continue signal) self-heals.
-/// <para>
-/// Sweeping all three non-terminal workflow kinds matters most for the staged releases: each
-/// reconcile advances exactly one stage, so a lost continue signal would otherwise wedge a release
-/// mid-flight under event mode. The sweep re-drives any active operation whose <c>UpdatedAt</c> has
-/// gone stale past the threshold, which both completes a missed deploy observation and walks a staged
-/// release forward one stage per cycle until it terminates.
-/// </para>
-/// <para>
-/// Because every reconcile funnels through the dispatcher into the leased + CAS-guarded reconciler, a
-/// backstop reconcile that races a real event (or the poll loop) is a safe no-op: whichever path
-/// already advanced the operation wins, and the late path observes a terminal/unchanged record. The
-/// cadence is deliberately coarse (minutes, not seconds) so it costs almost nothing in the healthy
-/// case yet bounds worst-case latency when events are lost. Works on-prem unchanged and can equally
-/// be invoked by EventBridge Scheduler in the cloud.
-/// </para>
-/// </summary>
+// A lost continue signal would leave a staged release mid-flight, so the backstop re-drives a stale operation, and a race with a real event is a no-op under the lease.
 internal sealed partial class WorkflowOperationBackstopSweepService(
     IWorkflowOperationStore workflowStore,
     IOperationReconcileDispatcher dispatcher,
@@ -85,12 +65,6 @@ internal sealed partial class WorkflowOperationBackstopSweepService(
         }
     }
 
-    /// <summary>
-    /// Reconciles every active, non-terminal deploy/metadata/coordinated operation whose
-    /// <c>UpdatedAt</c> is older than <paramref name="staleThreshold"/>. Fresh operations are skipped
-    /// so the sweep is a no-op when events (or the poll loop) are keeping records current. Exposed
-    /// internally so tests can drive a single sweep deterministically without the timer loop.
-    /// </summary>
     internal async Task SweepOnceAsync(TimeSpan staleThreshold, CancellationToken cancellationToken)
     {
         var cutoff = DateTimeOffset.UtcNow - staleThreshold;

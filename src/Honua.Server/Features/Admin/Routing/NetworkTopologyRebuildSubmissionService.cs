@@ -9,48 +9,17 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Features.Admin.Routing;
 
-/// <summary>
-/// Result of submitting a shadow-topology rebuild (#2718).
-/// </summary>
-/// <param name="OperationId">Durable execution-job id. Status/cancel/retry ride the shared <c>/api/v1/admin/jobs</c> surface.</param>
-/// <param name="Generation">Generation being rebuilt.</param>
-/// <param name="Attempt">Newly created rebuild attempt number.</param>
 internal sealed record NetworkTopologyRebuildSubmissionResult(string OperationId, long Generation, long Attempt);
 
-/// <summary>
-/// Thrown when a rebuild is submitted but the shared durable job infrastructure (Redis-backed
-/// <see cref="IExecutionJobStore"/>) is not configured in this deployment profile. Callers map
-/// this to HTTP 503 rather than letting a raw DI-resolution failure reach the client.
-/// </summary>
 internal sealed class NetworkTopologyRebuildUnavailableException(string message) : Exception(message);
 
-/// <summary>
-/// Submits an isolated shadow-topology rebuild as a durable
-/// <see cref="ExecutionJobKind.NetworkTopologyRebuild"/> execution job (#2718). Creates the
-/// rebuild attempt (atomically transitioning the generation <c>dirty</c> -&gt; <c>building</c>)
-/// before creating the execution-job record. If that job record is never created, the
-/// unclaimed attempt is abandoned (<c>building</c> → <c>failed</c> → <c>dirty</c>) so the
-/// generation can be submitted again. A job that was created is left for the worker or the
-/// reconciler.
-/// </summary>
-/// <remarks>
-/// Depends on <see cref="IServiceProvider"/> rather than <see cref="IExecutionJobStore"/>
-/// directly and resolves it lazily inside <see cref="SubmitAsync"/> (mirrors
-/// <c>ConsoleJobService.RequireJobStore</c>). <see cref="IExecutionJobStore"/> is only
-/// registered when Redis-backed job orchestration is configured (<c>AddJobOrchestration</c>);
-/// a hard constructor dependency would fail ASP.NET Core's <c>ValidateOnBuild</c> service-
-/// provider validation on every Redis-less startup, breaking the app for an unrelated reason
-/// (secondary-provider-dormant-startup pitfall) instead of staying dormant until invoked.
-/// </remarks>
+// If the execution-job record is never created the unclaimed attempt is abandoned so the generation can be submitted again, and the job store is resolved lazily so a Redis-less host still starts.
 internal sealed partial class NetworkTopologyRebuildSubmissionService
 {
     private readonly INetworkTopologyRebuildStore _rebuildStore;
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<NetworkTopologyRebuildSubmissionService> _logger;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="NetworkTopologyRebuildSubmissionService"/> class.
-    /// </summary>
     public NetworkTopologyRebuildSubmissionService(
         INetworkTopologyRebuildStore rebuildStore,
         IServiceProvider serviceProvider,
@@ -61,12 +30,6 @@ internal sealed partial class NetworkTopologyRebuildSubmissionService
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <summary>
-    /// Submits a rebuild for <paramref name="generation"/>, fenced by the caller's expected
-    /// row version and source revision. Throws <see cref="NetworkTopologyRebuildConflictException"/>
-    /// when the generation is not <c>dirty</c>, the fence is stale, or an attempt is already
-    /// active.
-    /// </summary>
     public async Task<NetworkTopologyRebuildSubmissionResult> SubmitAsync(
         string datasetId,
         long generation,

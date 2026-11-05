@@ -6,10 +6,7 @@ using Honua.Infrastructure.Models;
 
 namespace Honua.Server.Features.Admin.Models;
 
-/// <summary>
-/// AOT-friendly JSON source-generation context for the compliance admin surface.
-/// Keep registrations in sync with the model class to avoid runtime reflection paths.
-/// </summary>
+// Registrations stay in sync with the model classes so serialization does not fall through to runtime reflection.
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,

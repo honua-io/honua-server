@@ -8,40 +8,15 @@ using Honua.Core.Features.Studio.Services;
 
 namespace Honua.Server.Features.Collaboration.Checkpoints;
 
-/// <summary>
-/// Applies committed saved-map operation-log operations onto a Studio package envelope's
-/// composition body (honua-server#2999, REQ-003). Every supported operation family is
-/// absolute-state (set-view, set-visibility, reorder, style-ref, whole-document replace), so
-/// re-applying an already-checkpointed prefix of the log is idempotent — the checkpoint endpoint
-/// can safely replay from the start of the retained window. Mutations go through
-/// <see cref="StudioCompositionBodyEditor"/> where an editor operation exists so lifecycle
-/// semantics stay owned by the shared Studio seam.
-/// </summary>
 internal static class SavedMapOperationDraftApplier
 {
-    /// <summary>
-    /// Applies <paramref name="operations"/> in server-cursor order to
-    /// <paramref name="envelope"/> and returns the mutated envelope.
-    /// </summary>
-    /// <exception cref="SavedMapCheckpointUnsupportedOperationException">
-    /// An operation kind cannot be expressed on the composition body (currently
-    /// <see cref="SavedMapOperationKind.SetMetadataField"/>). Checkpointing fails closed instead
-    /// of silently dropping edits.
-    /// </exception>
-    /// <exception cref="SavedMapCheckpointPayloadException">An operation payload is malformed.</exception>
-    /// <exception cref="SavedMapCheckpointStateConflictException">A targeted layer does not exist.</exception>
+    // An operation kind the composition body cannot express fails the checkpoint closed instead of dropping the edit.
     public static StudioPackageEnvelope Apply(
         StudioPackageEnvelope envelope,
         IReadOnlyList<SavedMapOperationEnvelope> operations) =>
         ApplyForCheckpoint(envelope, operations, supersedeConflictingOperationCursor: null).Envelope;
 
-    /// <summary>
-    /// Applies a checkpoint replay and optionally supersedes one explicitly acknowledged
-    /// operation when, and only when, that operation still fails because its composition target
-    /// is missing. The returned supersession is persisted by the checkpoint endpoint alongside
-    /// the immutable version; an arbitrary valid operation can never be skipped by supplying its
-    /// cursor.
-    /// </summary>
+    // A cursor supersedes an operation only while that operation still fails because its target is missing.
     public static SavedMapCheckpointApplyResult ApplyForCheckpoint(
         StudioPackageEnvelope envelope,
         IReadOnlyList<SavedMapOperationEnvelope> operations,
@@ -100,16 +75,7 @@ internal static class SavedMapOperationDraftApplier
             _ => throw new SavedMapCheckpointUnsupportedOperationException(operation)
         };
 
-    /// <summary>
-    /// Whether <paramref name="kind"/> can be applied to a Studio composition body by
-    /// <see cref="Apply"/>. The op-log append endpoint gates on this so the log only ever holds
-    /// operations a checkpoint can actually persist.
-    /// </summary>
-    /// <remarks>
-    /// <see cref="SavedMapOperationKind.SetMetadataField"/> is deliberately excluded: the Studio
-    /// composition body carries no metadata bag, so there is no non-speculative transform for it.
-    /// Saved-map metadata is edited through the Studio draft surface, not the live op log.
-    /// </remarks>
+    // The append endpoint admits only operations a checkpoint can persist, and the metadata-bag kind is excluded.
     public static bool IsCheckpointable(SavedMapOperationKind kind) => kind switch
     {
         SavedMapOperationKind.SetViewport => true,
@@ -247,31 +213,7 @@ internal static class SavedMapOperationDraftApplier
         return StudioCompositionBodyEditor.SetLayerStyleRef(body, layerId, styleRef);
     }
 
-    /// <summary>
-    /// Applies a whole-document replacement as a replacement of the COMPOSITION projection
-    /// (<c>layers</c>, <c>view</c>, <c>widgets</c>) through the shared
-    /// <see cref="StudioCompositionBodyEditor"/>, not as a wholesale overwrite of the envelope
-    /// body.
-    /// </summary>
-    /// <remarks>
-    /// Cloning the payload over <see cref="StudioPackageEnvelope.Body"/> installed the operation
-    /// payload as the ENTIRE body, so a replacement such as <c>{"layers":[]}</c> deleted
-    /// <c>mapPackageId</c>, <c>format</c>, <c>status</c>, <c>createdAt</c>, <c>sourceBindings</c>
-    /// and <c>initialView</c> — all required by the canonical <c>MapPackage</c>/<c>AppPackage</c>
-    /// contract that <c>StudioPackageValidator.ValidateFamilyBody</c> enforces. The lifecycle
-    /// records that validation failure but still creates the immutable version, so an accepted
-    /// replacement corrupted both the draft and its checkpoint (honua-server#2999 review).
-    /// <para>
-    /// Routing through the editor makes this kind lossless exactly like every other kind in this
-    /// applier (this was the only one bypassing the shared seam): the projected keys — including
-    /// a <c>view</c> the replacement omits — are replaced wholesale and every unmodelled member
-    /// of the stored document survives, so no collaboration
-    /// operation can delete or corrupt package-lifecycle metadata the op log has no authority
-    /// over. It also keeps the applier in exact lockstep with
-    /// <see cref="SavedMapOperationPayloadValidator"/>, which admits the payload by deserializing
-    /// it as this same projection.
-    /// </para>
-    /// </remarks>
+    // A document replacement replaces only the composition projection through the shared editor, so it cannot delete package-lifecycle fields.
     private static StudioPackageEnvelope ApplyReplaceDocument(
         StudioPackageEnvelope envelope,
         SavedMapOperationEnvelope operation)
@@ -327,16 +269,7 @@ internal static class SavedMapOperationDraftApplier
         return StudioCompositionBodyEditor.ReplaceComposition(envelope, normalizedReplacement);
     }
 
-    /// <summary>
-    /// Reads a required identifier from the operation payload. Whitespace-only values are rejected
-    /// in lockstep with <see cref="SavedMapOperationPayloadValidator"/>: the shared Studio
-    /// composition editor guards its layer-id arguments with
-    /// <c>ArgumentException.ThrowIfNullOrWhiteSpace</c>, and that exception is not mapped by the
-    /// checkpoint surface — an operation carrying <c>{"layerId":" "}</c> would surface as a 500
-    /// instead of a typed 422 for every checkpoint while it is retained (honua-server#2999 review).
-    /// Admission validation rejects such payloads first; this keeps an operation that predates the
-    /// validator (or arrives from another writer) on the typed error path.
-    /// </summary>
+    // Whitespace-only identifiers take the typed 422 path, matching the editor's whitespace rejection, so a retained operation does not become a 500.
     private static string ReadRequiredString(SavedMapOperationEnvelope operation, string property)
     {
         if (operation.Payload.ValueKind == JsonValueKind.Object &&
@@ -352,10 +285,6 @@ internal static class SavedMapOperationDraftApplier
     }
 }
 
-/// <summary>
-/// Raised when a checkpoint contains an operation kind that cannot be expressed on the Studio
-/// composition body yet.
-/// </summary>
 internal sealed class SavedMapCheckpointUnsupportedOperationException : Exception
 {
     public SavedMapCheckpointUnsupportedOperationException(SavedMapOperationEnvelope operation)
@@ -364,9 +293,6 @@ internal sealed class SavedMapCheckpointUnsupportedOperationException : Exceptio
     }
 }
 
-/// <summary>
-/// Raised when a checkpointed operation carries a payload the applier cannot interpret.
-/// </summary>
 internal sealed class SavedMapCheckpointPayloadException : Exception
 {
     public SavedMapCheckpointPayloadException(SavedMapOperationEnvelope operation, string message, Exception? inner = null)
@@ -375,21 +301,15 @@ internal sealed class SavedMapCheckpointPayloadException : Exception
     }
 }
 
-/// <summary>Result of applying a checkpoint replay, including an explicit supersession.</summary>
 internal sealed record SavedMapCheckpointApplyResult(
     StudioPackageEnvelope Envelope,
     SavedMapCheckpointSupersededOperation? SupersededOperation);
 
-/// <summary>An accepted operation explicitly superseded during checkpoint reconciliation.</summary>
 internal sealed record SavedMapCheckpointSupersededOperation(
     SavedMapOperationEnvelope Operation,
     string Reason);
 
-/// <summary>
-/// Raised when an accepted operation targets composition state that does not exist at its replay
-/// position. Carries the exact operation identity and cursor a client must acknowledge to resolve
-/// the conflict without silently dropping an unrelated edit.
-/// </summary>
+// The conflict carries the exact operation and cursor the client must acknowledge so an unrelated edit is not dropped.
 internal sealed class SavedMapCheckpointStateConflictException : Exception
 {
     public SavedMapCheckpointStateConflictException(
@@ -407,7 +327,6 @@ internal sealed class SavedMapCheckpointStateConflictException : Exception
     public SavedMapOperationEnvelope Operation { get; }
 }
 
-/// <summary>Raised when a requested checkpoint reconciliation does not match a live conflict.</summary>
 internal sealed class SavedMapCheckpointReconciliationException : Exception
 {
     public SavedMapCheckpointReconciliationException(string message)

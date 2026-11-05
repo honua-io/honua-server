@@ -11,15 +11,8 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Console;
 
-/// <summary>
-/// Console batch action-check endpoint for route-level entitlement gates and
-/// item-action evaluation when the item is not yet loaded by the client.
-/// </summary>
 internal static class ConsoleActionEndpoints
 {
-    /// <summary>
-    /// Log category for the action-check endpoint.
-    /// </summary>
     internal sealed class ConsoleActionEndpointsLog;
 
     private static readonly IReadOnlyList<ConsoleContentAction> AllActions =
@@ -33,9 +26,6 @@ internal static class ConsoleActionEndpoints
         ConsoleContentAction.Administer,
     ];
 
-    /// <summary>
-    /// Maps the action-check endpoint into the supplied builder.
-    /// </summary>
     public static void MapConsoleActionEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/console/actions")

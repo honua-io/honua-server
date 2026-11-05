@@ -14,25 +14,13 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Console;
 
-/// <summary>
-/// Authenticated Console Share access endpoints: share projection read, access
-/// tier changes, dependency-closure preview, and public-link/embed token
-/// lifecycle. All routes require admin authorization (the share facet is a
-/// privileged management surface).
-/// </summary>
 internal static class ConsoleShareEndpoints
 {
     private const int MaxClosureDepth = 10;
     private const int DefaultEmbedTtlSeconds = 3600;
 
-    /// <summary>
-    /// Log category for the Console Share access endpoints.
-    /// </summary>
     internal sealed class ConsoleShareEndpointsLogCategory;
 
-    /// <summary>
-    /// Maps the authenticated Console Share endpoints into the supplied builder.
-    /// </summary>
     public static void MapConsoleShareEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/console/content/{id}/share")

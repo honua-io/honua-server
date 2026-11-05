@@ -6,17 +6,8 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Operations.Status;
 
-/// <summary>
-/// HTTP surface for the server-authoritative aggregated operational status (A12). One endpoint
-/// returns a server-computed verdict plus per-domain rollups and an explicitly sourced SLO posture, so a
-/// copilot no longer stitches ~8 endpoints and invents its own health verdict. Guarded by the
-/// read-only ops-reader policy: an <c>ops:read</c> key (or any admin key) can read it, but a mutating
-/// ops operation still requires full admin write.
-/// </summary>
 internal static class OperateStatusEndpoints
 {
-    /// <summary>Maps the aggregated operate-status endpoint.</summary>
-    /// <param name="endpoints">The endpoint route builder.</param>
     public static void MapOperateStatusEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/operate")

@@ -9,12 +9,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Server.Features.Styling;
 
-/// <summary>
-/// Pure deterministic transforms applied to a canonical MapLibre Style Spec v8
-/// document after generation.  No I/O; transforms operate on already-serialized
-/// JSON and return new JSON.  Same input + same theme always produces the same
-/// output, so the result is safe to cache by query key.
-/// </summary>
 internal static class StyleThemeTransformer
 {
     private const string DarkBackgroundColor = "#1a1a1a";
@@ -44,13 +38,6 @@ internal static class StyleThemeTransformer
         "background-opacity"
     ];
 
-    /// <summary>
-    /// Applies the given theme to a canonical MapLibre style document.  Returns
-    /// the input unchanged for <see cref="ThemeProfile.Default"/> or when the
-    /// payload cannot be parsed.  When a logger is supplied, malformed color
-    /// literals encountered during the transform emit event 6403 with the
-    /// originating layer id.
-    /// </summary>
     public static string ApplyTheme(
         string mapLibreStyleJson,
         ThemeProfile theme,
@@ -240,26 +227,7 @@ internal static class StyleThemeTransformer
         }
     }
 
-    /// <summary>
-    /// Walks a MapLibre expression array and rewrites embedded color literals at
-    /// output positions through <paramref name="transform"/>.  The walker
-    /// follows an allow-list: only operators whose contract specifies one or
-    /// more color-output positions are visited (<c>match</c>, <c>step</c>,
-    /// <c>case</c>, <c>interpolate</c>, <c>coalesce</c>).  Every other operator
-    /// in the bounded surface that
-    /// <see cref="MapLibreStyleNormalizer"/> accepts (<c>get</c>, <c>has</c>,
-    /// <c>literal</c>, <c>concat</c>, <c>typeof</c>, <c>to-number</c>,
-    /// <c>to-string</c>, comparators, <c>all</c>, <c>any</c>, <c>!</c>,
-    /// arithmetic) plus <c>feature-state</c> and any unknown operator is skipped
-    /// entirely: their operands are field names, predicates, identifiers, or
-    /// string-construction inputs that must not be rewritten as themed hex
-    /// literals just because a feature value or string operand happens to parse
-    /// as a CSS named color.  Without this allow-list, expressions such as
-    /// <c>["concat", "red", "fish"]</c> or <c>["==", ["get", "color"], "red"]</c>
-    /// would have their accepted operands rewritten under
-    /// <c>?theme=dark</c> / <c>?theme=colorblind-safe</c>, corrupting the stored
-    /// style intent.
-    /// </summary>
+    // Only color-output positions are rewritten, so a string operand that parses as a color is left alone.
     private static void TransformExpressionColors(
         JsonArray expression,
         string property,
@@ -307,11 +275,6 @@ internal static class StyleThemeTransformer
         }
     }
 
-    /// <summary>
-    /// `["match", input, label1, output1, ..., labelN, outputN, fallback?]`.  Skips
-    /// the input expression and every label entirely; transforms each output and
-    /// the trailing fallback.
-    /// </summary>
     private static void TransformMatchExpression(
         JsonArray expression,
         string property,
@@ -338,10 +301,6 @@ internal static class StyleThemeTransformer
         }
     }
 
-    /// <summary>
-    /// `["step", input, output0, stop1, output1, stop2, output2, ...]`.  Skips
-    /// the input expression and every numeric stop; transforms each output.
-    /// </summary>
     private static void TransformStepExpression(
         JsonArray expression,
         string property,
@@ -361,11 +320,6 @@ internal static class StyleThemeTransformer
         }
     }
 
-    /// <summary>
-    /// `["case", cond1, output1, ..., fallback]`.  Skips every predicate entirely
-    /// (predicates may compare against color-like feature values); transforms
-    /// each branch output and the mandatory trailing fallback.
-    /// </summary>
     private static void TransformCaseExpression(
         JsonArray expression,
         string property,
@@ -387,11 +341,6 @@ internal static class StyleThemeTransformer
         TransformOutputElement(expression, fallbackIndex, property, diagnostics, transform);
     }
 
-    /// <summary>
-    /// Recurses into a single expression element treated as a color-bearing
-    /// output: nested arrays are walked operator-aware, scalar string values
-    /// that parse as colors are rewritten in place.
-    /// </summary>
     private static void TransformOutputElement(
         JsonArray expression,
         int index,
@@ -426,12 +375,6 @@ internal static class StyleThemeTransformer
         expression[index] = ColorToHex(transformed);
     }
 
-    /// <summary>
-    /// `["interpolate", interpolation-spec, input, stop1, output1, stop2, output2, ...]`.
-    /// Skips the interpolation spec and input expression entirely; transforms
-    /// each output at the even indices 4, 6, 8, ….  Numeric stops at odd
-    /// indices ≥ 3 are not strings and would not parse as colors anyway.
-    /// </summary>
     private static void TransformInterpolateExpression(
         JsonArray expression,
         string property,
@@ -449,14 +392,6 @@ internal static class StyleThemeTransformer
         }
     }
 
-    /// <summary>
-    /// `["coalesce", value1, value2, …, valueN]`.  Returns the first non-null
-    /// operand, so in a color paint context every operand is a possible color
-    /// output and is transformed.  Nested expressions go through the
-    /// operator-aware walker via <see cref="TransformOutputElement"/>, so a
-    /// fallback such as <c>["get", "color"]</c> still has its field name
-    /// preserved while a sibling <c>"#ff0000"</c> literal is themed.
-    /// </summary>
     private static void TransformCoalesceExpression(
         JsonArray expression,
         string property,
@@ -469,11 +404,6 @@ internal static class StyleThemeTransformer
         }
     }
 
-    /// <summary>
-    /// Carries the optional logger plus contextual layer id used to emit
-    /// <see cref="LayerStyleLog.ThemeColorParseFailure"/> (event 6403) without
-    /// threading individual ILogger references through every transform helper.
-    /// </summary>
     private readonly record struct ThemeDiagnostics(ILogger? Logger, int LayerId)
     {
         public void RecordMalformedColor(string property, string color)

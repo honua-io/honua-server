@@ -6,13 +6,7 @@ using Honua.Infrastructure.Models;
 
 namespace Honua.Server.Features.Admin.Models;
 
-/// <summary>
-/// JSON source generation context for secure connection admin API models.
-/// </summary>
-/// <remarks>
-/// Provides AOT-compatible JSON serialization for all secure connection management
-/// API models while ensuring sensitive information is never serialized.
-/// </remarks>
+// Serialization of these models never includes secret fields.
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,

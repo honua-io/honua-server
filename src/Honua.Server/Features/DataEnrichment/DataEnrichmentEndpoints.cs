@@ -6,28 +6,6 @@ using Microsoft.AspNetCore.Http.HttpResults;
 
 namespace Honua.Server.Features.DataEnrichment;
 
-/// <summary>
-/// Data-enrichment API (#374). A thin protocol adapter that lets callers enrich a
-/// registered source layer with attributes drawn from a registered enrichment
-/// dataset (administrative boundary, POI, or demographic reference layer) keyed by
-/// a stable <c>datasetKey</c> instead of an internal layer id.
-/// </summary>
-/// <remarks>
-/// <para>
-/// The actual spatial join is delegated to the shared
-/// <see cref="Core.Features.SpatialAnalytics.Abstractions.ISpatialAnalyticsReader"/>
-/// pipeline (PostGIS <c>ST_Intersects</c>/<c>ST_Within</c>/<c>ST_Contains</c>/
-/// <c>ST_DWithin</c>) so behavior, error mapping, and safety caps stay identical to
-/// the FeatureServer/OGC <c>spatialJoin</c> surface. This slice only adds the
-/// catalog indirection and a clean <c>/api/enrich</c> request shape.
-/// </para>
-/// <para>
-/// MVP deferrals (documented in <c>docs/operator/data-enrichment.md</c>): no
-/// bundled third-party demographic datasets, no inline-GeoJSON source feature
-/// sets, and no async/batch or CDC-triggered enrichment. Enrichment operates over
-/// registered layers only.
-/// </para>
-/// </remarks>
 internal static class DataEnrichmentEndpoints
 {
     private const string EnrichmentTag = "Data Enrichment";

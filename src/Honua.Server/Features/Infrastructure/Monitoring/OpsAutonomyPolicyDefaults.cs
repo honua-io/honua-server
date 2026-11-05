@@ -5,21 +5,13 @@ using Honua.Core.Features.Observability.Domain;
 
 namespace Honua.Infrastructure.Monitoring;
 
-/// <summary>
-/// Shared route-time and operator-projection resolver for configuration-backed autonomy policy.
-/// </summary>
 internal static class OpsAutonomyPolicyDefaults
 {
-    /// <summary>
-    /// Built-in rules whose deterministic action is registered as auto-safe. These rules remain
-    /// visible to operators even before the condition is active or a durable override is written.
-    /// </summary>
     public static IReadOnlySet<string> BuiltInAutoSafeRules { get; } = new HashSet<string>(StringComparer.Ordinal)
     {
         OpsFindingsService.RuleAlertDispatchBacklog,
     };
 
-    /// <summary>Resolves the exact effective policy enforced at route time.</summary>
     public static OpsAutonomyPolicy Resolve(
         string rule,
         OpsAutonomyOptions options,
@@ -55,13 +47,11 @@ internal static class OpsAutonomyPolicyDefaults
         });
     }
 
-    /// <summary>Returns whether a rule identifier is safe and canonical for policy lookup.</summary>
     public static bool IsValidRule(string? rule)
         => !string.IsNullOrWhiteSpace(rule)
             && rule.Length <= 128
             && rule.All(static ch => char.IsAsciiLetterOrDigit(ch) || ch is '-' or '_' or '.');
 
-    /// <summary>Returns whether an opaque finding/proposal identifier is bounded and printable.</summary>
     public static bool IsValidStableId(string? value)
         => !string.IsNullOrWhiteSpace(value)
             && value.Length <= 256

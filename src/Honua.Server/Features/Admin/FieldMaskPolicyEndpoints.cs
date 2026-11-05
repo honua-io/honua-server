@@ -14,12 +14,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Admin endpoints for field-level security (column masking) policy management (#1940).
-/// Mirrors <see cref="RlsPolicyEndpoints"/> (#502); field-mask policies attach a masked
-/// attribute to a (role, service, layer) scope and are dropped from query output for the
-/// matching role at the shared projection seam.
-/// </summary>
+// A field-mask policy hides the named attributes from query output for the matching role.
 internal static partial class FieldMaskPolicyEndpoints
 {
     internal sealed class FieldMaskPolicyEndpointsLog;
@@ -40,9 +35,6 @@ internal static partial class FieldMaskPolicyEndpoints
         public static partial void OperationFailed(ILogger logger, Exception exception);
     }
 
-    /// <summary>
-    /// Configure field-mask policy management admin endpoints.
-    /// </summary>
     public static void MapFieldMaskPolicyEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/field-mask-policies")

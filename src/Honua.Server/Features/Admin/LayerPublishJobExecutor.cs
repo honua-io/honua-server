@@ -7,9 +7,6 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Worker for <see cref="ExecutionJobKind.LayerPublish"/> on the shared job loop (honua-server#5948).
-/// </summary>
 internal sealed class LayerPublishJobExecutor(
     IServiceScopeFactory scopeFactory,
     IUniversalProgressStore progressStore,

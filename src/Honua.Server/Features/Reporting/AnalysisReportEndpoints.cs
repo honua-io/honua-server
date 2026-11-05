@@ -14,18 +14,10 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Reporting;
 
-/// <summary>
-/// Minimal API endpoints for the analysis-reporting feature. Exposes the JSON
-/// envelope and the rendered Markdown / HTML bodies. Authorization inherits
-/// from the result-package surface via <see cref="IAnalysisReportService"/>.
-/// </summary>
 internal static class AnalysisReportEndpoints
 {
     private static readonly ActivitySource _activitySource = AnalysisReportService.ActivitySource;
 
-    /// <summary>
-    /// Maps the report endpoints under <c>/api/v{version}/analysis/reports</c>.
-    /// </summary>
     public static IEndpointRouteBuilder MapAnalysisReportEndpoints(this IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);

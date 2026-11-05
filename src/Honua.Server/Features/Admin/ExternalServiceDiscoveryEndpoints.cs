@@ -10,9 +10,6 @@ using Honua.Infrastructure.Models;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Admin endpoints for external service discovery.
-/// </summary>
 internal static class ExternalServiceDiscoveryEndpoints
 {
     public static void MapExternalServiceDiscoveryEndpoints(this IEndpointRouteBuilder endpoints)

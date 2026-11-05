@@ -9,13 +9,6 @@ using NpgsqlTypes;
 
 namespace Honua.Server.Features.Admin.Services;
 
-/// <summary>
-/// Admin API keys in the metadata schema, shared by every server instance that uses the same
-/// database. It is the registry for multi-instance hosts that have no Redis (AWS Lambda,
-/// <c>Deployment:Mode=MultiNode</c>), where a per-process dictionary would leave a key minted on
-/// one instance unknown to the others (honua-server#6487). Only the SHA-256 of the key material
-/// is stored.
-/// </summary>
 internal sealed class PostgresAdminApiKeyStore(
     NpgsqlDataSource dataSource,
     TimeProvider? timeProvider = null,

@@ -7,11 +7,6 @@ using Honua.Core.Features.Guardrails.Domain;
 
 namespace Honua.ControlPlane.Executors;
 
-/// <summary>
-/// Gateway executor for admin configuration changes. Applies the change through
-/// the shared <see cref="IAdminConfigChangeApplier"/> so direct-execute and
-/// post-approval apply run the same path (#1693).
-/// </summary>
 internal sealed class AdminConfigOperationExecutor(IAdminConfigChangeApplier applier) : IOperationExecutor
 {
     public OperationClass OperationClass => OperationClass.AdminConfigChange;

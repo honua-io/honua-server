@@ -20,9 +20,6 @@ using NetTopologySuite.IO;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Admin endpoints for managing geofence zones and alert rules.
-/// </summary>
 internal static class AlertAdminEndpoints
 {
     private static readonly WKBReader _wkbReader = new();
@@ -642,26 +639,7 @@ internal static class AlertAdminEndpoints
         return true;
     }
 
-    /// <summary>
-    /// #2998: license-entitlement gate for alert-rule mutations. Collects every
-    /// <c>alerts.*</c>/<c>channels.*</c> entitlement the rule requires but the active license does
-    /// not carry, and returns the standard 402 payment-required response naming each missing key
-    /// (one <c>entitlement: {key}</c> detail per key) and that key's required edition in the same
-    /// upgrade sentence <c>LicenseGate</c> / <c>FileBackedLicenseService</c> use
-    /// (<c>requires an active {edition} entitlement</c>). An expired or otherwise invalid paid
-    /// license keeps <c>RequiredEdition</c> while <see cref="LicenseGate.CheckEntitlement"/>
-    /// replaces the catalog upgrade sentence, so that 402 also names the required edition.
-    /// Returns null when nothing is missing.
-    /// </summary>
-    /// <remarks>
-    /// Only <see cref="AlertEditionDenialReason.MissingEntitlement"/> produces the 402. A denial
-    /// caused by the downward-only <c>Alerts:Edition</c> cap
-    /// (<see cref="AlertEditionDenialReason.EditionCap"/>) is a configuration problem on a license
-    /// that already grants the feature, so naming the key here would tell an operator to buy or
-    /// reinstall a license they already own; those denials fall through to the draft validation's
-    /// configured-edition 400 instead. Channels without a catalog key of their own (WebSocket)
-    /// likewise fall through to that 400.
-    /// </remarks>
+    // A missing alerts entitlement returns 402 naming the key and edition; an edition cap on a license that already grants alerts returns 400, so the operator is not told to buy a license they hold.
     private static IResult? RequireRuleEntitlements(
         HttpContext context,
         AlertRuleDefinition rule,
@@ -723,13 +701,6 @@ internal static class AlertAdminEndpoints
             deniedKeys.Select(key => $"entitlement: {key}").ToArray());
     }
 
-    /// <summary>
-    /// Upgrade sentence for one denied alert or channel key. Prefers the live
-    /// <see cref="LicenseGate"/> decision so the wording stays identical to every other
-    /// entitlement 402, and falls back to the catalog edition when that decision has no message.
-    /// An invalid paid license keeps <see cref="LicenseEntitlementDecision.RequiredEdition"/>
-    /// while the renewal sentence omits it, so that edition is appended.
-    /// </summary>
     private static string DescribeMissingEntitlement(HttpContext context, string entitlementKey)
     {
         var decision = LicenseGate.CheckEntitlement(context.RequestServices, entitlementKey);
@@ -749,10 +720,6 @@ internal static class AlertAdminEndpoints
             $"Current edition is {decision.Edition}; install a license that includes '{entitlementKey}'.");
     }
 
-    /// <summary>
-    /// Adds the required-edition sentence when an invalid paid license's message does not
-    /// already name it. Valid licenses and Community keep the message unchanged.
-    /// </summary>
     private static string AppendExpiredEdition(
         LicenseEntitlementDecision decision,
         string entitlementKey,
@@ -778,12 +745,6 @@ internal static class AlertAdminEndpoints
         return string.IsNullOrWhiteSpace(message) ? sentence : $"{message} {sentence}";
     }
 
-    /// <summary>
-    /// #2998: describes why <see cref="IAlertEditionPolicy.IsRuleAllowed"/> rejected a rule,
-    /// keeping an <c>Alerts:Edition</c> cap denial distinguishable from a missing entitlement in
-    /// the validation error an operator reads. <c>POST /rules/test</c> reaches this without the
-    /// 402 gate ever running, so this message carries both cases.
-    /// </summary>
     private static string DescribeRuleDenial(AlertRuleDefinition rule, IAlertEditionPolicy editionPolicy)
     {
         var evaluation = editionPolicy.GetEntitlementDenialReason(FeatureCatalog.AlertsEvaluationKey);

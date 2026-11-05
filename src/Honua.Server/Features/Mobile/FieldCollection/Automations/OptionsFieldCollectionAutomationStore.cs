@@ -8,13 +8,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Mobile.FieldCollection.Automations;
 
-/// <summary>
-/// Configuration-backed <see cref="IFieldCollectionAutomationStore"/> (#2121).
-/// Projects <see cref="FieldCollectionAutomationOptions"/> definitions to immutable
-/// domain actions and returns the enabled ones relevant to a layer. A persisted,
-/// admin-managed store is a follow-up; this keeps the companion functional from
-/// configuration today.
-/// </summary>
 internal sealed class OptionsFieldCollectionAutomationStore : IFieldCollectionAutomationStore
 {
     private readonly IOptionsMonitor<FieldCollectionAutomationOptions> _options;

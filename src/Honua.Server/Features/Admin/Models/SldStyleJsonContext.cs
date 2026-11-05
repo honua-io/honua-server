@@ -8,9 +8,6 @@ using Honua.Server.Features.Styling.Sld;
 
 namespace Honua.Server.Features.Admin.Models;
 
-/// <summary>
-/// AOT-friendly JSON serialization context for SLD admin import/export endpoints.
-/// </summary>
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,

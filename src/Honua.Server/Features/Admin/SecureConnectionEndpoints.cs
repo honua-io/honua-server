@@ -14,31 +14,13 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Admin endpoints for secure database connection management.
-/// </summary>
-/// <remarks>
-/// Provides administrative functionality for:
-/// - Creating, updating, and deleting secure database connections
-/// - Testing connection health and validity
-/// - Key rotation and encryption management
-///
-/// All endpoints require admin authorization.
-/// Connection strings are never exposed in API responses for security.
-/// </remarks>
 internal static partial class SecureConnectionEndpoints
 {
     private const string InvalidSecureConnectionRequestMessage = "Secure connection request is invalid.";
     private const string EncryptionRotationNotSupportedMessage = "Encryption key rotation is not supported in this deployment.";
 
-    /// <summary>
-    /// Log category for secure connection endpoints.
-    /// </summary>
     internal sealed class SecureConnectionEndpointsLog;
 
-    /// <summary>
-    /// Source-generated logging methods for secure connection endpoints.
-    /// </summary>
     internal static partial class SecureConnectionLog
     {
         [LoggerMessage(EventId = 4400, Level = LogLevel.Information,
@@ -61,9 +43,6 @@ internal static partial class SecureConnectionEndpoints
             Message = "Deleted secure connection {ConnectionId}")]
         public static partial void SecureConnectionDeleted(ILogger logger, Guid connectionId);
     }
-    /// <summary>
-    /// Configure secure connection admin endpoints with formal API versioning.
-    /// </summary>
     public static void MapSecureConnectionEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/connections")
@@ -112,9 +91,6 @@ internal static partial class SecureConnectionEndpoints
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
     }
 
-    /// <summary>
-    /// POST /api/v1/admin/connections/test - Test a draft connection before saving.
-    /// </summary>
     private static async Task<Results<Ok<ApiResponse<ConnectionTestResult>>, BadRequest<ApiResponse<object>>, ProblemHttpResult>>
         HandleTestDraftConnection(
             CreateSecureConnectionRequest request,
@@ -294,9 +270,6 @@ internal static partial class SecureConnectionEndpoints
         }
     }
 
-    /// <summary>
-    /// GET /api/v1/admin/connections - List all secure connections (metadata only).
-    /// </summary>
     private static async Task<Results<Ok<ApiResponse<IReadOnlyList<SecureConnectionSummary>>>, ProblemHttpResult>>
         HandleGetConnections(
             [FromServices] ISecureConnectionRegistry registry,
@@ -341,9 +314,6 @@ internal static partial class SecureConnectionEndpoints
         }
     }
 
-    /// <summary>
-    /// GET /api/v1/admin/connections/{id} - Get specific connection details.
-    /// </summary>
     private static async Task<Results<Ok<ApiResponse<SecureConnectionDetail>>, NotFound<ApiResponse<object>>, ProblemHttpResult>>
         HandleGetConnection(
             Guid id,
@@ -395,9 +365,6 @@ internal static partial class SecureConnectionEndpoints
         }
     }
 
-    /// <summary>
-    /// POST /api/v1/admin/connections - Create new secure connection.
-    /// </summary>
     private static async Task<Results<Created<ApiResponse<SecureConnectionSummary>>, BadRequest<ApiResponse<object>>, ProblemHttpResult>>
         HandleCreateConnection(
             CreateSecureConnectionRequest request,
@@ -624,9 +591,6 @@ internal static partial class SecureConnectionEndpoints
                exception.Message.Contains("SSL mode must require encrypted transport when SslRequired is true", StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>
-    /// POST /api/v1/admin/connections/{id}/test - Test connection health.
-    /// </summary>
     private static async Task<Results<Ok<ApiResponse<ConnectionTestResult>>, NotFound<ApiResponse<object>>, ProblemHttpResult>>
         HandleTestConnection(
             Guid id,
@@ -685,9 +649,6 @@ internal static partial class SecureConnectionEndpoints
         }
     }
 
-    /// <summary>
-    /// POST /api/v1/admin/connections/encryption/validate - Validate encryption service.
-    /// </summary>
     private static async Task<Results<Ok<ApiResponse<EncryptionValidationResult>>, ProblemHttpResult>>
         HandleValidateEncryption(
             [FromServices] IConnectionEncryptionService encryptionService,

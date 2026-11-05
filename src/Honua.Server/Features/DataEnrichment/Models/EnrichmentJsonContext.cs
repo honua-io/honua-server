@@ -5,12 +5,6 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Server.Features.DataEnrichment.Models;
 
-/// <summary>
-/// AOT-compatible JSON serialization context for the data-enrichment endpoints (#374).
-/// The enriched FeatureCollection response reuses the spatial-analytics feature
-/// models, which carry their own source-generated context; this context only owns
-/// the catalog listing and request DTO wire shapes.
-/// </summary>
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]

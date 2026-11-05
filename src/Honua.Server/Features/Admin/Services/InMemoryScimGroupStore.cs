@@ -7,13 +7,6 @@ using Honua.Core.Features.Identity.Domain;
 
 namespace Honua.Server.Features.Admin.Services;
 
-/// <summary>
-/// In-memory SCIM 2.0 group store (#510). Each group maps to a Honua role named after the
-/// group's display name; adding or removing a member synchronizes that role onto the member's
-/// <see cref="ManagedUser"/> record via the shared <see cref="InMemoryUserStore"/> so SCIM
-/// group changes immediately drive RBAC role assignment.
-/// Will be replaced by a persistent implementation alongside the durable user store (#498).
-/// </summary>
 internal sealed class InMemoryScimGroupStore(InMemoryUserStore userStore) : IScimGroupStore
 {
     private readonly ConcurrentDictionary<string, ScimGroup> _groups = new(StringComparer.OrdinalIgnoreCase);

@@ -7,9 +7,6 @@ using ConfigurationSection = Honua.Core.Configuration.ConfigurationSection;
 
 namespace Honua.Server.Features.Admin.Models;
 
-/// <summary>
-/// JSON serialization context for configuration documentation (AOT compatible).
-/// </summary>
 [JsonSerializable(typeof(ConfigurationDocumentation))]
 [JsonSerializable(typeof(ConfigurationSection))]
 [JsonSerializable(typeof(ConfigurationProperty))]

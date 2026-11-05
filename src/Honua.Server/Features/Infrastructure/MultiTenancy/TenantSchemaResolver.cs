@@ -8,10 +8,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.MultiTenancy;
 
-/// <summary>
-/// Resolves exact tenant identifiers without lossy normalization or PostgreSQL truncation.
-/// Explicit mappings reserve their schema names against all other tenants.
-/// </summary>
 internal sealed class TenantSchemaResolver : ITenantSchemaResolver
 {
     private readonly TenantSchemaOptions _options;
@@ -49,7 +45,6 @@ internal sealed class TenantSchemaResolver : ITenantSchemaResolver
         }
     }
 
-    /// <inheritdoc />
     public bool TryResolveSchema(string tenantId, out string schemaName)
     {
         schemaName = string.Empty;

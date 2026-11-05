@@ -6,7 +6,6 @@ using Honua.Core.Features.ControlPlane.Domain;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>Committed publication result, independent of the best-effort progress projection.</summary>
 internal static class LayerPublishCompletionReceipt
 {
     private const string Prefix = "layer-publish:";

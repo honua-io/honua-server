@@ -7,10 +7,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Server.Features.Console.Publications;
 
-/// <summary>
-/// Source-generated logging for content publication endpoints. Identifiers are stable
-/// for joining logs/traces (publicationId, routeSlug, revision, operation).
-/// </summary>
 internal static partial class ContentPublicationEndpointsLog
 {
     [LoggerMessage(EventId = 5310, Level = LogLevel.Information,
@@ -46,10 +42,6 @@ internal static partial class ContentPublicationEndpointsLog
     public static partial void EndpointFailed(ILogger logger, string operation, Exception exception);
 }
 
-/// <summary>
-/// Telemetry activity names for content publication flows. Lowercase dotted to match
-/// the <c>honua.*</c> convention.
-/// </summary>
 internal static class ContentPublicationTelemetry
 {
     public const string Publish = "honua.publication.publish";
@@ -67,10 +59,6 @@ internal static class ContentPublicationTelemetry
     public const string TagDependencyCount = "honua.publication.dependency_count";
 }
 
-/// <summary>
-/// Writes content publication audit events through the shared <see cref="IAuditLog"/>.
-/// Resource type is <c>content-publication</c>; details are caller-sanitized.
-/// </summary>
 internal static class ContentPublicationAudit
 {
     public const string ResourceType = "content-publication";

@@ -8,13 +8,7 @@ using StackExchange.Redis;
 
 namespace Honua.Server.Features.Orchestration;
 
-/// <summary>
-/// Redis-backed durable store for per-pipeline+source high-water marks. Advancing a
-/// timestamp-based watermark is monotonic: a competing replica or an out-of-order completion
-/// can never rewind the mark past a value already persisted, so a later run cannot re-pull
-/// records an earlier run already extracted. The mark is stored as a single string value so an
-/// optimistic compare-and-set guards concurrent advances without per-field null ambiguity.
-/// </summary>
+// A competing replica cannot rewind a watermark that is already persisted.
 internal sealed class RedisSourceWatermarkStore(IConnectionMultiplexer redis) : ISourceWatermarkStore
 {
     private const string WatermarkKeyPrefix = "orchestration:watermark:";

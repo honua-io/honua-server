@@ -7,32 +7,12 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Admin.TileOperations;
 
-/// <summary>
-/// The result of a single tile-cache eviction sweep (#1917).
-/// </summary>
-/// <param name="Scanned">The number of cache entries the index held at the start of the sweep.</param>
-/// <param name="Evicted">The number of tiles deleted from the cache store and index.</param>
-/// <param name="Enabled">Whether eviction is configured on with a live index implementation.</param>
-/// <param name="IndexAvailable">
-/// Whether the backing index could actually be read. A disabled evictor and an unreadable index
-/// both evict nothing, but only the second is a fault, so they are reported separately instead of
-/// collapsing a Redis outage into "eviction is disabled".
-/// </param>
 public readonly record struct TileCacheEvictionResult(
     int Scanned,
     int Evicted,
     bool Enabled,
     bool IndexAvailable = true);
 
-/// <summary>
-/// Drives a single size-quota / LRU eviction pass over the live Redis tile-key index (#1917).
-/// It snapshots the index, asks <see cref="TileCacheQuotaPolicy" /> which least-recently-used keys to
-/// drop to satisfy the configured <see cref="TileCacheEvictionOptions" />, then deletes each victim
-/// from the cloud tile store and from the index. This is the live binding that replaces relying
-/// solely on the Redis server <c>maxmemory-policy</c>; the policy here honors Honua's per-deployment
-/// entry-count and byte-size quotas. The class is registered as a singleton so both the scheduled
-/// <see cref="TileCacheEvictionHostedService" /> and the on-demand admin endpoint reuse it.
-/// </summary>
 internal sealed partial class TileCacheEvictionService(
     ITileCacheKeyIndex keyIndex,
     IOptions<Honua.Core.Features.Tiles.TileOptions> tileOptions,
@@ -48,13 +28,8 @@ internal sealed partial class TileCacheEvictionService(
     private readonly ICloudFileStorage? _storage = storage;
     private readonly ITileCacheMutationCoordinator? _mutationCoordinator = keyIndex as ITileCacheMutationCoordinator;
 
-    /// <summary>Whether eviction is enabled and a live index is available.</summary>
     public bool IsEnabled => _options.Enabled && _keyIndex.IsEnabled;
 
-    /// <summary>
-    /// Runs one eviction sweep. Returns the entry count scanned and the number evicted. When eviction
-    /// is disabled or no live index is present the sweep is a no-op with <c>Enabled = false</c>.
-    /// </summary>
     public async Task<TileCacheEvictionResult> SweepAsync(CancellationToken cancellationToken)
     {
         if (!IsEnabled)
@@ -184,11 +159,6 @@ internal sealed partial class TileCacheEvictionService(
     }
 }
 
-/// <summary>
-/// Storage-first tile deletion that treats a false delete result as success only after the
-/// provider independently confirms the object is absent. This keeps transient backend failures
-/// indexed and retryable.
-/// </summary>
 internal static class TileCacheStorageDeletion
 {
     public static async Task<bool> DeleteCurrentOrConfirmMissingAsync(

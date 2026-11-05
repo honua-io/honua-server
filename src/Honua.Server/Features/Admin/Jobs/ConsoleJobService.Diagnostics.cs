@@ -16,15 +16,7 @@ using Honua.Geoprocessing.ProcessRelease;
 
 namespace Honua.Server.Features.Admin.Jobs;
 
-/// <summary>
-/// The job diagnostics projection (honua-server#6219). It composes the detail, steps,
-/// events and artifacts the other admin job routes already expose into one answer and
-/// adds what they leave implicit: canonical lifecycle phase, worker liveness judged by
-/// the job's own heartbeat policy, release provenance with every absent field named,
-/// the failed step's structured error, and an explicit retry disposition. Nothing is
-/// inferred silently: measured and inferred timings are labelled, truncation and
-/// missing evidence are listed, and historical jobs without provenance say so.
-/// </summary>
+// Diagnostics label measured and inferred timings separately and list missing evidence instead of filling it in.
 internal sealed partial class ConsoleJobService
 {
     public const int DefaultDiagnosticEventLimit = 50;
@@ -520,12 +512,7 @@ internal sealed partial class ConsoleJobService
         return ClassifyFailure(job);
     }
 
-    /// <summary>
-    /// The step phase a reader should open. A recorded step phase is kept. Generic
-    /// terminal labels (<c>Failed</c>, submission, timeout, heartbeat) are replaced
-    /// from the stored reason so invalid input, startup, upload, and expiry do not
-    /// all look like an unnamed failure.
-    /// </summary>
+    // Generic terminal step labels are replaced from the stored reason so invalid input, startup, upload, and expiry do not share one unnamed failure.
     private static string? ResolveFailurePhase(
         ExecutionJobRecord job,
         ExecutionLogEntry? errorEntry,

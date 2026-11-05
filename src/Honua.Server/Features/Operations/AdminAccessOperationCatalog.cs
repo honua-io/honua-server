@@ -9,7 +9,6 @@ using Honua.Core.Features.Operations.Domain;
 
 namespace Honua.Server.Features.Operations;
 
-/// <summary>Access-family operations projected from the shipped Admin OpenAPI contract.</summary>
 internal static class AdminAccessOperationCatalog
 {
     internal sealed record Definition(

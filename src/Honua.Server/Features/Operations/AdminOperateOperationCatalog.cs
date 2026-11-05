@@ -28,7 +28,6 @@ internal interface IAdminHttpOperationDefinition
     OperationClass OperationClass { get; }
 }
 
-/// <summary>Release and operate descriptors projected from the shipped Admin OpenAPI contract.</summary>
 internal static class AdminOperateOperationCatalog
 {
     internal sealed record Definition(

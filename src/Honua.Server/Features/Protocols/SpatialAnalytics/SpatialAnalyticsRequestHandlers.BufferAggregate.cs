@@ -20,11 +20,6 @@ using Microsoft.Extensions.Primitives;
 
 namespace Honua.Server.Features.Protocols.SpatialAnalytics;
 
-/// <summary>
-/// Buffer aggregate handler. REST entry:
-/// <c>POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryBufferAggregate</c>.
-/// OGC mirror: <c>POST /ogc/features/collections/{collectionId}/buffer-aggregate</c>.
-/// </summary>
 internal static partial class SpatialAnalyticsRequestHandlers
 {
     private const string BufferAggregateOperation = "buffer-aggregate";
@@ -320,10 +315,6 @@ internal static partial class SpatialAnalyticsRequestHandlers
         return WriteAnalyticsResponse(response);
     }
 
-    /// <summary>
-    /// Converts distance to meters using the shared distance conversion utility.
-    /// Ensures buffer area cap check stays consistent with what the SQL builder uses.
-    /// </summary>
     private static double ConvertDistanceToMeters(double distance, DistanceUnit unit) =>
         DistanceConversions.ToMeters(distance, unit);
 }

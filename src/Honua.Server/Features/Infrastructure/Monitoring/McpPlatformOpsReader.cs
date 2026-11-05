@@ -33,10 +33,6 @@ using Microsoft.AspNetCore.Http;
 
 namespace Honua.Infrastructure.Monitoring;
 
-/// <summary>
-/// Server adapter that backs the platform-release and deploy-operation MCP
-/// tools with the same admin DTOs and control-plane gateway used by REST.
-/// </summary>
 internal sealed class McpPlatformOpsReader(
     IOptionsMonitor<ControlPlaneOptions> controlPlaneOptions,
     DeployWorkflowService deployWorkflowService,
@@ -225,14 +221,7 @@ internal sealed class McpPlatformOpsReader(
             }).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Refusal text for a <c>candidateId</c> that is not the finding's action target. Only targeted
-    /// actions (Compose service restart, Deploy) are bound, and their target is the finding's
-    /// <c>subject.targetId</c>; targetless actions (dead-letter redrive, channel pause, admission
-    /// tuning) do not bind <c>candidateId</c> to an action target (a certified Studio transcript still
-    /// binds it to the certified candidate). It names the field to read instead of echoing the
-    /// value; the caller can already read the finding.
-    /// </summary>
+    // The refusal names the field to read and does not echo the candidate value.
     internal const string FindingCandidateMismatchMessage =
         "Finding action target does not match the certified candidate: for this finding, candidateId must be the finding's subject.targetId (the deploy target its recommended action acts on).";
 

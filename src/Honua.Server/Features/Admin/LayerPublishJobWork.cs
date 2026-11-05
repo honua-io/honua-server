@@ -21,10 +21,6 @@ using Honua.Server.Features.Operations;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Runs an accepted large-table publish to completion on its own budget. Used by the in-process
-/// task and by <see cref="LayerPublishJobExecutor"/>.
-/// </summary>
 internal static partial class LayerPublishJobWork
 {
     internal const string SafeFailureMessage = "Layer publish failed.";

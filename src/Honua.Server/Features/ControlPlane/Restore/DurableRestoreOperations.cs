@@ -13,10 +13,8 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.ControlPlane;
 
-/// <summary>Persists approved restore work in the shared workflow store before any mutation.</summary>
 internal sealed class DurableRestoreQueue(IWorkflowOperationStore store, IOperationProposalStore proposals)
 {
-    /// <summary>Creates or returns the same durable work item for an identical approved replay.</summary>
     public async Task<string> EnqueueAsync(OperationGatewayRequest request, string payload, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(request.RequestedBy) || string.IsNullOrWhiteSpace(request.ApprovedBy)
@@ -89,10 +87,8 @@ internal sealed class DurableRestoreQueue(IWorkflowOperationStore store, IOperat
         return id;
     }
 
-    /// <summary>Allocates a fresh checkpoint identity to persist in an approval claim before enqueue.</summary>
     internal static string CreateId() => $"restore-{Guid.NewGuid():N}";
 
-    /// <summary>Returns the durable restore state, or null for another kind of operation.</summary>
     public async Task<OperationBackendStatus?> GetStatusAsync(string id, CancellationToken cancellationToken)
     {
         var operation = await store.GetAsync(id, cancellationToken).ConfigureAwait(false);
@@ -117,7 +113,6 @@ internal interface IPreMigrationRestoreReconciler
     Task ReconcileAsync(string id, CancellationToken cancellationToken);
 }
 
-/// <summary>Runs leased restore work and resumes observation after a serving host is replaced.</summary>
 internal sealed partial class DurableRestoreWorker(
     IWorkflowOperationStore store,
     IOperationProposalStore proposals,
@@ -134,7 +129,6 @@ internal sealed partial class DurableRestoreWorker(
     private static readonly TimeSpan OwnerRetention = TimeSpan.FromDays(365);
     private readonly string _owner = $"restore:{Environment.MachineName}:{Guid.NewGuid():N}";
 
-    /// <summary>Reconciles one checkpoint. Only the lease owner may advance it.</summary>
     public async Task ReconcileAsync(string id, CancellationToken cancellationToken)
     {
         if (!await store.TryAcquireLeaseAsync(id, _owner, Lease, cancellationToken).ConfigureAwait(false)) return;
@@ -558,7 +552,6 @@ internal sealed partial class DurableRestoreWorker(
         }
     }
 
-    /// <inheritdoc />
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         while (!stoppingToken.IsCancellationRequested)
@@ -656,7 +649,6 @@ internal sealed partial class DurableRestoreWorker(
     }
 }
 
-/// <summary>Verifies the restored schema and customer readback before recording success.</summary>
 internal sealed class DurableRestoreCompletionVerifier(
     IRestoredSchemaProbe schemaProbe,
     IRevisionSchemaCatalog revisions,
@@ -665,7 +657,6 @@ internal sealed class DurableRestoreCompletionVerifier(
     IConnectionSecretRetarget secrets,
     IOptions<RestoreCellOptions> options)
 {
-    /// <summary>Returns null only after the checks and durable audit succeed.</summary>
     public async Task<string?> VerifyAsync(WorkflowOperationRecord record, DeployExecutionPayload payload, int expectedSchema, CancellationToken cancellationToken)
     {
         var expectedHostHash = record.PreMigrationRestore?.RestoredHostHash;
@@ -696,7 +687,6 @@ internal sealed class DurableRestoreCompletionVerifier(
         return written ? null : PreMigrationRestoreCodes.AuditFailed;
     }
 
-    /// <summary>Checks customer readback and records an already-compatible rollback.</summary>
     public async Task<string?> VerifyCompatibleAsync(WorkflowOperationRecord record, DeployExecutionPayload payload, CancellationToken cancellationToken)
     {
         var expected = record.PreMigrationRestore?.RestoredHostHash;
@@ -719,7 +709,6 @@ internal sealed class DurableRestoreCompletionVerifier(
         return written ? null : PreMigrationRestoreCodes.AuditFailed;
     }
 
-    /// <summary>Captures the current database binding without persisting its host name.</summary>
     public async Task<string?> CaptureHostHashAsync(CancellationToken cancellationToken)
     {
         var host = await secrets.ReadHostAsync(options.Value.ConnectionSecretId, cancellationToken).ConfigureAwait(false);

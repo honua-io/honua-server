@@ -26,12 +26,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Compatibility adapter from <see cref="IOperationGateway"/> onto the canonical typed
-/// operation runtime. Ordinary routes and approved replay delegate policy and actuation to
-/// <see cref="ICanonicalOperationInvoker"/>; durable proposal state and autonomy convergence
-/// remain here until their protocol adapters are converted.
-/// </summary>
 internal sealed partial class OperationGateway : IOperationGateway
 {
     private readonly IGuardrailLadder _ladder;
@@ -922,13 +916,7 @@ internal sealed partial class OperationGateway : IOperationGateway
             $"Failed to persist resolution for proposal '{proposal.ProposalId}' after repeated version conflicts.");
     }
 
-    /// <summary>
-    /// Atomically transitions a proposal from <see cref="OperationProposalStatus.AwaitingApproval"/>
-    /// to <see cref="OperationProposalStatus.Executing"/> via a CAS write.
-    /// Returns the updated proposal (with its incremented version token) on success.
-    /// Throws when another caller already claimed or resolved the proposal, or when the
-    /// claim cannot be won after retries due to persistent version conflicts.
-    /// </summary>
+    // The claim is a compare-and-swap, and a lost claim throws instead of double-applying the proposal.
     private async Task<OperationProposal> ClaimForExecutionAsync(
         OperationProposal proposal,
         string approvedBy,

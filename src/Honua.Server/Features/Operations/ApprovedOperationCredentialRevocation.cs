@@ -5,7 +5,6 @@ using Honua.Infrastructure.Authentication;
 
 namespace Honua.Server.Features.Operations;
 
-/// <summary>Revokes a server-minted approved-operation credential and verifies the result.</summary>
 internal static class ApprovedOperationCredentialRevocation
 {
     public static async Task RevokeAsync(IAdminApiKeyStore store, Guid credentialId)

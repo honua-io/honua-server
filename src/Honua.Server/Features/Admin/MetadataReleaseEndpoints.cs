@@ -10,14 +10,8 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Admin endpoints for Metadata v2 semantic inventory, environment bindings, and release packages.
-/// </summary>
 internal static class MetadataReleaseEndpoints
 {
-    /// <summary>
-    /// Maps Metadata v2 release package endpoints.
-    /// </summary>
     public static void MapMetadataReleaseEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/metadata")

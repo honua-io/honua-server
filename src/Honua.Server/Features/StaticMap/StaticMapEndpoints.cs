@@ -3,15 +3,8 @@
 
 namespace Honua.Server.Features.StaticMap;
 
-/// <summary>
-/// Maps static map image endpoints for URL-addressable image rendering.
-/// Supports center+zoom and bbox-based image generation in png, jpeg, or webp.
-/// </summary>
 internal static partial class StaticMapEndpoints
 {
-    /// <summary>
-    /// Maps static map image endpoints using AOT-compatible routing.
-    /// </summary>
     public static IEndpointRouteBuilder MapStaticMapEndpoints(this IEndpointRouteBuilder endpoints)
     {
         // Center + zoom: GET /static/{serviceId}/{lon},{lat},{zoom}/{width}x{height}.{format}

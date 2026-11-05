@@ -18,32 +18,13 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Protocols.Cog;
 
-/// <summary>
-/// Resolves geoprocessing raster-source references (<c>layerId</c>/<c>rasterId</c>) to
-/// immutable metadata-only descriptors from the registered COG catalog (#2264/#3090), reusing
-/// the same <see cref="ICogStore"/> registry and per-provider <see cref="ICloudRangeReader"/>
-/// readers the COG tile path uses. Registered as a singleton (the GP submit service is
-/// a singleton); the scoped <see cref="ICogStore"/> is resolved through a per-call
-/// service scope so there is no captive-dependency violation. When no COG store is
-/// configured the resolver returns a clear failure rather than throwing.
-///
-/// <para>
-/// The serving process never reads the object payload: identity comes from a provider
-/// HEAD/properties request and dimensions come from a capped, ETag-pinned
-/// <see cref="CogRasterHeaderProbe"/> read of the base-image header/IFD fields only. The
-/// projected <em>decoded</em> grid (<c>width * height * bands * ceil(bits/8)</c>) is bounded by
-/// <see cref="CatalogRasterSourceOptions.MaxDecodedRasterBytes"/> before a descriptor is minted,
-/// so a tiny compressed TIFF declaring an enormous decoded grid (a decompression bomb) fails
-/// closed at submission, before any worker invokes GDAL (RAST-005 / #3090).
-/// </para>
-/// </summary>
+// The serving process never reads the object payload, and a decoded grid over the cap fails closed before a worker runs.
 internal sealed class CatalogRasterSourceResolver(
     IServiceScopeFactory scopeFactory,
     IOptions<CatalogRasterSourceOptions> options,
     ILogger<CatalogRasterSourceResolver>? logger = null)
     : IGeoprocessingRasterSourceResolver
 {
-    /// <inheritdoc />
     public async Task<RasterSourceLayerResolution> ResolveLayerIdAsync(
         RasterSourceReference reference,
         CancellationToken cancellationToken = default)
@@ -72,7 +53,6 @@ internal sealed class CatalogRasterSourceResolver(
             : RasterSourceLayerResolution.Success(resolved.StorageLayerId);
     }
 
-    /// <inheritdoc />
     public async Task<RasterSourceResolution> ResolveAsync(
         RasterSourceReference reference,
         CancellationToken cancellationToken = default)
@@ -302,12 +282,7 @@ internal sealed class CatalogRasterSourceResolver(
         return null;
     }
 
-    /// <summary>
-    /// Translates the service-local layer index persisted by the COG registration into the
-    /// backing storage-layer id consumed by the authorization and feature-store seams. The
-    /// registration schema carries no service id, so a numeric collision between routable
-    /// publications is ambiguous and must fail closed.
-    /// </summary>
+    // A numeric collision between publications is ambiguous and fails closed.
     private static int? ResolveStorageLayerId(MetadataV2GraphSnapshot snapshot, int publicationLayerId)
     {
         var publication = CogPublicationBinding.Resolve(snapshot, publicationLayerId);

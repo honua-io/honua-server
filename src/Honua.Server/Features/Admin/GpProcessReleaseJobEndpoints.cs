@@ -13,10 +13,9 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>HTTP adapter for the canonical release-bound custom-code submission path.</summary>
 public static class GpProcessReleaseJobEndpoints
 {
-    /// <summary>Maps submission without exposing server-owned execution or credential fields.</summary>
+    // Submission mapping leaves out server-owned execution and credential fields.
     public static void MapGpProcessReleaseJobEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/gp/process-releases")

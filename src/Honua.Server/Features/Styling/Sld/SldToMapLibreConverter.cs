@@ -6,30 +6,13 @@ using Honua.Infrastructure.Rendering;
 
 namespace Honua.Server.Features.Styling.Sld;
 
-/// <summary>
-/// Converts a parsed <see cref="SldDocument"/> into MapLibre style layer objects.
-/// Each SLD Rule produces one MapLibre layer per supported symbolizer; unsupported
-/// constructs surface as <see cref="SldConversionDiagnostic"/> entries instead of
-/// being silently dropped.
-/// </summary>
 internal static class SldToMapLibreConverter
 {
-    /// <summary>
-    /// Web Mercator zoom-from-scale-denominator constant. zoom = log2(reference / scale).
-    /// Approximates MapLibre's zoom levels at the equator.
-    /// </summary>
     private const double WebMercatorScaleReference = 559_082_264.028d;
 
     private const int MaxZoom = 24;
     private const int MinZoom = 0;
 
-    /// <summary>
-    /// Upper bound on sanitized SLD identifier length. The endpoint accepts up to a
-    /// 1 MiB body, so an unbounded stackalloc keyed on the SLD <c>Name</c> length
-    /// would let untrusted input drive multi-megabyte stack frames and risk a
-    /// StackOverflow. 64 characters is comfortably above typical rule-name lengths
-    /// while keeping the buffer trivially safe.
-    /// </summary>
     private const int MaxSanitizedIdentifierLength = 64;
 
     public static SldConversionResult Convert(SldDocument document)

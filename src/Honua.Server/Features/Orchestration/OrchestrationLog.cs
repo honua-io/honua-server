@@ -3,10 +3,6 @@
 
 namespace Honua.Server.Features.Orchestration;
 
-/// <summary>
-/// Source-generated logging entries for the orchestration feature slice.
-/// Event IDs reserved in the 8100-8199 range.
-/// </summary>
 internal static partial class OrchestrationLog
 {
     [LoggerMessage(8100, LogLevel.Information, "Created workflow run {RunId} for workflow {WorkflowId} ({TriggerKind})")]

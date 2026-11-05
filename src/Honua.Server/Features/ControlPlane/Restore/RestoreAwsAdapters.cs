@@ -12,12 +12,10 @@ using Honua.Db.Postgres.Features.Security.ConnectionSecretResolvers;
 
 namespace Honua.ControlPlane;
 
-/// <summary>RDS describe and restore through the AWS SDK. A provider error is a typed failure, not a thrown message.</summary>
 internal sealed class AwsRdsSnapshotRestoreAdapter : IRdsSnapshotRestore, IDisposable
 {
     private readonly AwsRdsCellRestoreClient _client = new();
 
-    /// <inheritdoc />
     public async Task<RdsSnapshotEvidence?> DescribeAsync(string snapshotId, string cellPrefix, CancellationToken cancellationToken)
     {
         var view = await _client.DescribeAsync(snapshotId, cellPrefix, cancellationToken).ConfigureAwait(false);
@@ -36,7 +34,6 @@ internal sealed class AwsRdsSnapshotRestoreAdapter : IRdsSnapshotRestore, IDispo
         };
     }
 
-    /// <inheritdoc />
     public async Task<RdsNewInstance> RestoreNewAsync(RdsRestoreRequest request, CancellationToken cancellationToken)
     {
         if (!BackupEvidenceVerifier.InstanceInCell(request.NewInstanceId, request.CellPrefix))
@@ -60,7 +57,6 @@ internal sealed class AwsRdsSnapshotRestoreAdapter : IRdsSnapshotRestore, IDispo
             : new RdsNewInstance(false, null, PreMigrationRestoreCodes.ProviderFailed);
     }
 
-    /// <inheritdoc />
     public async Task<RdsRestoreSubmission> BeginAsync(RdsRestoreRequest request, CancellationToken cancellationToken)
     {
         if (!BackupEvidenceVerifier.InstanceInCell(request.NewInstanceId, request.CellPrefix))
@@ -71,7 +67,6 @@ internal sealed class AwsRdsSnapshotRestoreAdapter : IRdsSnapshotRestore, IDispo
             string.IsNullOrWhiteSpace(resourceId) ? PreMigrationRestoreCodes.ProviderFailed : null);
     }
 
-    /// <inheritdoc />
     public async Task<RdsNewInstance> ObserveAsync(string instanceId, string resourceId, CancellationToken cancellationToken)
     {
         var result = await _client.ObserveAsync(instanceId, resourceId, cancellationToken).ConfigureAwait(false);
@@ -80,19 +75,15 @@ internal sealed class AwsRdsSnapshotRestoreAdapter : IRdsSnapshotRestore, IDispo
             : new RdsNewInstance(false, null, "restore-pending");
     }
 
-    /// <inheritdoc />
     public void Dispose() => _client.Dispose();
 }
 
-/// <summary>Repoints the cell connection secret at a restored host and reads that host back.</summary>
 internal sealed class AwsSecretHostRetarget(IOptions<RestoreCellOptions> options) : IConnectionSecretRetarget, IDisposable
 {
     private readonly AwsSecretStringClient _secrets = new();
 
-    /// <inheritdoc />
     public bool IsConfigured => !string.IsNullOrWhiteSpace(options.Value.ConnectionSecretId);
 
-    /// <inheritdoc />
     public async Task<bool> PointAtAsync(string secretId, string host, CancellationToken cancellationToken)
     {
         var current = await _secrets.GetAsync(secretId, cancellationToken).ConfigureAwait(false);
@@ -111,23 +102,19 @@ internal sealed class AwsSecretHostRetarget(IOptions<RestoreCellOptions> options
             && string.Equals(ConnectionStringHostSwap.ReadHost(readBack), host, StringComparison.Ordinal);
     }
 
-    /// <inheritdoc />
     public async Task<string?> ReadHostAsync(string secretId, CancellationToken cancellationToken)
     {
         var value = await _secrets.GetAsync(secretId, cancellationToken).ConfigureAwait(false);
         return value is null ? null : ConnectionStringHostSwap.ReadHost(value);
     }
 
-    /// <inheritdoc />
     public void Dispose() => _secrets.Dispose();
 }
 
-/// <summary>Opens the app database, or a restored host using the password already stored in the cell secret.</summary>
 internal sealed class AwsRestoredConnectionOpener(IServiceProvider services, IOptions<RestoreCellOptions> options) : IRestoredConnectionOpener, IDisposable
 {
     private readonly AwsSecretStringClient _secrets = new();
 
-    /// <inheritdoc />
     public async Task<DbConnection?> OpenAsync(string? endpoint, CancellationToken cancellationToken)
     {
         if (endpoint is null)
@@ -162,7 +149,6 @@ internal sealed class AwsRestoredConnectionOpener(IServiceProvider services, IOp
         return connection;
     }
 
-    /// <inheritdoc />
     public void Dispose() => _secrets.Dispose();
 }
 #endif

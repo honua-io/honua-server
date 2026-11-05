@@ -13,21 +13,9 @@ using CoreFeature = Honua.Core.Features.FeatureStore.Domain.Feature;
 
 namespace Honua.Server.Features.Admin.Federation.Connectors;
 
-/// <summary>
-/// Base <see cref="IFederatedSourceConnector"/> for HTTP transports whose query response is a
-/// GeoJSON <c>FeatureCollection</c> (Esri ArcGIS REST with <c>f=geojson</c>, OGC API - Features
-/// / WFS items). It performs the only remote I/O in the federation layer: it builds the
-/// pushed-down remote request URI, issues a single GET through the named federation HTTP
-/// client, parses the GeoJSON response, and maps each remote feature to a canonical
-/// <see cref="CoreFeature"/> (WKB geometry + attribute table). Transport and HTTP-status
-/// failures surface as exceptions so the federation executor counts them toward the per-source
-/// timeout and circuit breaker (issue #341).
-/// </summary>
+// Transport and HTTP failures propagate so the executor counts them toward the per-source timeout and circuit breaker.
 internal abstract class HttpGeoJsonFederatedSourceConnector : IFederatedSourceConnector
 {
-    /// <summary>
-    /// Logical name of the named <see cref="HttpClient"/> the federation connectors resolve.
-    /// </summary>
     public const string HttpClientName = "honua-federation";
 
     // Common attribute keys that carry a stable remote identifier, in priority order. Remote
@@ -41,11 +29,6 @@ internal abstract class HttpGeoJsonFederatedSourceConnector : IFederatedSourceCo
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger _logger;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="HttpGeoJsonFederatedSourceConnector"/> class.
-    /// </summary>
-    /// <param name="httpClientFactory">Factory for the named federation HTTP client.</param>
-    /// <param name="logger">Logger for transport diagnostics.</param>
     protected HttpGeoJsonFederatedSourceConnector(IHttpClientFactory httpClientFactory, ILogger logger)
     {
         ArgumentNullException.ThrowIfNull(httpClientFactory);
@@ -55,18 +38,10 @@ internal abstract class HttpGeoJsonFederatedSourceConnector : IFederatedSourceCo
         _logger = logger;
     }
 
-    /// <inheritdoc />
     public abstract FederatedSourceKind Kind { get; }
 
-    /// <summary>
-    /// Builds the remote query URI for the fetch request, applying only the predicates the
-    /// plan marked as pushed down for this transport.
-    /// </summary>
-    /// <param name="request">The federated fetch request.</param>
-    /// <returns>The absolute remote query URI.</returns>
     protected abstract Uri BuildRequestUri(FederatedFetchRequest request);
 
-    /// <inheritdoc />
     public async Task<ImmutableArray<CoreFeature>> FetchAsync(
         FederatedFetchRequest request,
         CancellationToken cancellationToken)
@@ -87,13 +62,6 @@ internal abstract class HttpGeoJsonFederatedSourceConnector : IFederatedSourceCo
         return MapFeatures(json);
     }
 
-    /// <summary>
-    /// Appends an envelope (bbox) push-down parameter set to a query builder when the plan
-    /// pushes the spatial filter down and the filter exposes a simple axis-aligned envelope.
-    /// </summary>
-    /// <param name="request">The fetch request.</param>
-    /// <param name="envelope">The resolved envelope, when available.</param>
-    /// <returns><see langword="true"/> when an envelope is available to push down.</returns>
     protected static bool TryGetPushedDownEnvelope(
         in FederatedFetchRequest request,
         out (double MinX, double MinY, double MaxX, double MaxY, int? Srid) envelope)
@@ -114,12 +82,7 @@ internal abstract class HttpGeoJsonFederatedSourceConnector : IFederatedSourceCo
         return true;
     }
 
-    /// <summary>
-    /// Formats a double using the invariant culture so the remote request never carries a
-    /// locale-specific decimal separator.
-    /// </summary>
-    /// <param name="value">The value to format.</param>
-    /// <returns>The invariant-culture string.</returns>
+    // Remote request numbers use the invariant culture so a locale cannot change the decimal separator.
     protected static string Invariant(double value) =>
         value.ToString("R", CultureInfo.InvariantCulture);
 

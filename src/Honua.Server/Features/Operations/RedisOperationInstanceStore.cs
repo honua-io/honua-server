@@ -8,7 +8,6 @@ using StackExchange.Redis;
 
 namespace Honua.Server.Features.Operations;
 
-/// <summary>Redis-backed durable store for canonical operation-instance envelopes.</summary>
 internal sealed class RedisOperationInstanceStore(IConnectionMultiplexer redis) : IOperationInstanceStore
 {
     private static readonly TimeSpan Retention = TimeSpan.FromDays(30);

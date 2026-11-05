@@ -19,36 +19,12 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Hosting.MigrateOnly;
 
-/// <summary>
-/// Applies database migrations out of band and exits (honua-server#6470). It is the supported
-/// counterpart of serving with <c>HONUA_SKIP_MIGRATIONS=true</c>: a Kubernetes pre-upgrade Job, an
-/// ECS one-shot task or a CI step runs the server image with <c>HONUA_MIGRATE_ONLY=true</c>, and the
-/// serving replicas then start against a current journal.
-/// </summary>
-/// <remarks>
-/// The run resolves <c>ConnectionStrings:DefaultConnection</c> through the same secret resolver chain
-/// as serving startup, runs the same PostGIS preflight and calls the same
-/// <see cref="IDatabaseMigrationRunner"/>, so every <c>Database:MigrationSafety:*</c> gate applies
-/// unchanged: the unannotated-contract refusal (<c>Enforce</c>), the contract-apply gate and its
-/// one-shot <c>HONUA_APPROVE_CONTRACT_MIGRATIONS</c> nonce, and the pre-migration backup hook. It
-/// writes exactly one JSON summary line (<see cref="SummaryFormat"/>) to standard output; logs go to
-/// standard error. The exit code is <see cref="MigrateOnlyOutcome.ExitCode"/>.
-/// </remarks>
 internal static class MigrateOnlyCommand
 {
-    /// <summary>Format identifier of the standard-output summary.</summary>
     internal const string SummaryFormat = "honua.migrate-only/v1";
 
     private const string ProviderName = "postgres";
 
-    /// <summary>
-    /// The process entry point for migrate-only mode. Standard output is reserved for the summary:
-    /// <see cref="Console.Out"/> (which DbUp's upgrade log writes to) is redirected to standard error
-    /// for the run. SIGTERM and SIGINT stop the run at its next database step instead of killing the
-    /// process mid-script, and an unexpected failure still produces a summary and a typed exit code.
-    /// </summary>
-    /// <param name="configuration">The process configuration.</param>
-    /// <returns>The process exit code.</returns>
     internal static async Task<int> RunFromEntryPointAsync(IConfiguration configuration)
     {
         var summaryWriter = Console.Out;
@@ -89,15 +65,6 @@ internal static class MigrateOnlyCommand
         }
     }
 
-    /// <summary>
-    /// Runs the migrate-only flow and returns the process exit code.
-    /// </summary>
-    /// <param name="configuration">The process configuration (environment, command line, settings document).</param>
-    /// <param name="summaryWriter">Receives the single JSON summary line.</param>
-    /// <param name="environment">Environment variable accessor, for host detection.</param>
-    /// <param name="migrationsAssembly">The assembly whose embedded scripts are applied; the server's by default.</param>
-    /// <param name="cancellationToken">Stops the run before the next database step.</param>
-    /// <returns>The exit code of the resolved <see cref="MigrateOnlyOutcome"/>.</returns>
     internal static async Task<int> RunAsync(
         IConfiguration configuration,
         TextWriter summaryWriter,
@@ -274,12 +241,6 @@ internal static class MigrateOnlyCommand
         summary.Finish(MigrateOnlyOutcome.Completed, null);
     }
 
-    /// <summary>
-    /// Maps a planning or migration failure to its typed outcome. The runner reports gate refusals
-    /// as <see cref="InvalidOperationException"/>s, so the gate is recognised by the stable refusal
-    /// prefix it shares with <see cref="GatedBootShutdown"/>, and the unannotated-contract and
-    /// backup-hook refusals by the plan and the setting that produced them.
-    /// </summary>
     internal static MigrateOnlyOutcome Classify(Exception error, DatabaseMigrationPlan? plan, MigrationSafetyOptions? safety)
     {
         ArgumentNullException.ThrowIfNull(error);
@@ -355,10 +316,6 @@ internal static class MigrateOnlyCommand
         return string.IsNullOrWhiteSpace(configured) ? "honua" : configured.Trim();
     }
 
-    /// <summary>
-    /// The highest leading script number among <paramref name="migrationsAssembly"/>'s embedded
-    /// <c>.sql</c> scripts: the schema number a current journal has for this binary.
-    /// </summary>
     internal static int? ResolveSchemaNumber(Assembly migrationsAssembly)
     {
         int? highest = null;
@@ -388,7 +345,6 @@ internal static class MigrateOnlyCommand
         return highest;
     }
 
-    /// <summary>The run's accumulated result, rendered as the standard-output summary.</summary>
     private sealed class MigrateOnlySummary
     {
         public MigrateOnlyOutcome Outcome { get; private set; } = MigrateOnlyOutcome.MigrationFailed;
@@ -514,7 +470,6 @@ internal static class MigrateOnlyCommand
     }
 }
 
-/// <summary>Source-generated log messages for migrate-only runs.</summary>
 internal static partial class MigrateOnlyLog
 {
     [LoggerMessage(EventId = 6470, Level = LogLevel.Information,

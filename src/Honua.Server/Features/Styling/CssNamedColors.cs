@@ -3,14 +3,6 @@
 
 namespace Honua.Server.Features.Styling;
 
-/// <summary>
-/// Lookup table for the canonical CSS / X11 named color set that MapLibre
-/// accepts for color paint properties. The same set is consulted by the
-/// admin write-time validator (<see cref="MapLibreStyleNormalizer"/>) and the
-/// public theme transformer (<see cref="StyleThemeTransformer"/>) so a
-/// stored named color literal stays themable instead of being treated as a
-/// malformed scalar.
-/// </summary>
 internal static class CssNamedColors
 {
     private static readonly Dictionary<string, StyleColor> Map = new(StringComparer.OrdinalIgnoreCase)

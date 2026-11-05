@@ -8,17 +8,7 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Alerts;
 
-/// <summary>
-/// Surfaces alert delivery-outbox backlog and dead-letter accumulation through the
-/// <see cref="HealthCheckService"/> roll-up (and the ops-health snapshot's
-/// <c>overallStatus</c>) so operators see delivery stalls before they become silent
-/// notification loss. Note this runs via the IHealthCheck registry, not the
-/// <c>/healthz/ready</c> readiness probe (which uses <c>ReadinessCheckService</c> and
-/// never executes registered health checks). Reads the cached snapshot the dispatcher
-/// publishes after each pass (no per-probe database query). Modeled on the
-/// feature-change outbox health check. Reports Healthy (with a note) when the pipeline
-/// is disabled — a disabled dispatcher is an operating choice, not a fault.
-/// </summary>
+// This check is not the readiness probe; a disabled pipeline is healthy, and the check reads the dispatcher's cached snapshot.
 internal sealed class AlertDispatchHealthCheck : IHealthCheck
 {
     private readonly IAlertDispatchHealth _dispatcherHealth;

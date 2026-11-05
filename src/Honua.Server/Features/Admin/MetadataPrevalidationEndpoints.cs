@@ -11,14 +11,8 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Admin endpoint for Metadata v2 release-package compatibility prevalidation.
-/// </summary>
 internal static class MetadataPrevalidationEndpoints
 {
-    /// <summary>
-    /// Maps Metadata v2 compatibility prevalidation endpoints.
-    /// </summary>
     public static void MapMetadataPrevalidationEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/metadata")

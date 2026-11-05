@@ -7,16 +7,10 @@ using StackExchange.Redis;
 
 namespace Honua.Server.Features.Operations;
 
-/// <summary>Durable Redis key-ring repository shared by operation replay nodes.</summary>
 internal sealed class RedisDataProtectionKeyRepository(IConnectionMultiplexer redis) : IXmlRepository
 {
     private const string Key = "controlplane:operation-secret:data-protection-keys";
 
-    /// <summary>
-    /// Namespace of the <c>encryptedSecret</c> element <c>XmlKeyManager</c> decrypts.
-    /// An un-namespaced marker is also accepted so the structural fixtures stay valid.
-    /// Any other namespace is an unrelated marker and does not protect the key.
-    /// </summary>
     private static readonly XNamespace DataProtectionNamespace = "http://schemas.asp.net/2015/03/dataProtection";
 
     private readonly IDatabase _database = redis.GetDatabase();
@@ -26,11 +20,7 @@ internal sealed class RedisDataProtectionKeyRepository(IConnectionMultiplexer re
             .Select(value => XElement.Parse(value.ToString(), LoadOptions.PreserveWhitespace))
             .ToArray();
 
-    /// <summary>
-    /// Rejects a legacy ring that contains any key whose descriptor was persisted without XML
-    /// encryption. Existing entries are not rewritten by ProtectKeysWithCertificate, and the
-    /// data-protection provider could otherwise continue selecting one of them after startup.
-    /// </summary>
+    // Configuring encryption does not rewrite existing entries, and a plaintext legacy key is refused because the provider can still select it.
     public void EnsureAllElementsAreProtected()
     {
         var unprotected = GetAllElements()

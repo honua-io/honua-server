@@ -6,10 +6,6 @@ using Honua.ControlPlane;
 
 namespace Honua.ControlPlane.Executors;
 
-/// <summary>
-/// Compares the ECS service fingerprint around a single governed write. A task-definition
-/// change, or a desired-count change on restart, fails closed.
-/// </summary>
 internal sealed class AwsGovernedWorkloadExecutor(IEcsWorkloadControl ecs, ILambdaAliasRecycle lambda) : IGovernedWorkloadExecutor
 {
     public async Task RestartEcsAsync(

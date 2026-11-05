@@ -8,12 +8,7 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Admin.Federation;
 
-/// <summary>
-/// Configuration-backed <see cref="IFederationSourceRegistry"/>. Materializes the bound
-/// <see cref="FederationSourceOptions"/> into validated <see cref="FederatedSourceDescriptor"/>
-/// instances. Entries with a missing identifier or an unparsable endpoint URL are skipped so
-/// a single malformed config entry cannot take the federation surface offline.
-/// </summary>
+// A federation source with a missing identifier or an unparsable URL is skipped so one malformed entry cannot take the surface offline.
 internal sealed class ConfiguredFederationSourceRegistry : IFederationSourceRegistry
 {
     private readonly ImmutableArray<FederatedSourceDescriptor> _sources;

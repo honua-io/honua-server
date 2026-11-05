@@ -13,17 +13,10 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin.EmbedGovernance;
 
-/// <summary>
-/// Admin endpoints for embed API key lifecycle and embed usage reporting.
-/// </summary>
 internal static partial class EmbedGovernanceEndpoints
 {
     internal sealed class EmbedGovernanceEndpointsLog;
 
-    /// <summary>
-    /// Registers embed governance admin endpoints.
-    /// </summary>
-    /// <param name="endpoints">The route builder.</param>
     public static void MapEmbedGovernanceEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var keys = endpoints.MapGroup("/api/v{version:apiVersion}/admin/embed/keys")
