@@ -5,6 +5,7 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Core.Features.Scene.Domain;
 
+// Collections stay ordered lists in authoring order so identical input serializes to the same bytes.
 public sealed class TileStyleSpec
 {
     [JsonPropertyName("encoding")]

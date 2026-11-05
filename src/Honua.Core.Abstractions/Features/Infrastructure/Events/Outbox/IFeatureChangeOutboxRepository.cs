@@ -3,6 +3,7 @@
 
 namespace Honua.Core.Features.Infrastructure.Events.Outbox;
 
+// Atomic insertion of an outbox row stays inside the provider because it needs an ambient ADO.NET connection and transaction.
 public interface IFeatureChangeOutboxRepository
 {
     // The claim must be one statement that skips rows another node already holds.
@@ -12,7 +13,7 @@ public interface IFeatureChangeOutboxRepository
         TimeSpan claimTtl,
         CancellationToken cancellationToken);
 
-    // A false return means another node owns the row, so this caller must not overwrite that state.
+    // False means this caller does not hold the active claim, so it must leave the row unchanged.
     Task<bool> MarkDispatchedAsync(Guid outboxId, string ownerNodeId, CancellationToken cancellationToken);
 
     Task<bool> MarkFailedAsync(

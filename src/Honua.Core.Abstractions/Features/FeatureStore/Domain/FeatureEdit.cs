@@ -272,7 +272,7 @@ public readonly record struct EditOperationResult
     [JsonIgnore]
     public Feature? PreconditionFailureFeature { get; init; }
 
-    // An unknown commit outcome means the idempotency reservation stays until ownership is proved.
+    // Callers must keep the idempotency reservation while the commit outcome is unknown, because the database may have committed.
     public bool IsCommitOutcomeUnknown { get; init; }
 
     public EditOperationResult()

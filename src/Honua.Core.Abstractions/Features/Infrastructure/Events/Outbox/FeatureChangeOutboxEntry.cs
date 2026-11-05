@@ -32,6 +32,7 @@ public sealed record FeatureChangeOutboxEntry
 
     public string? ProposalId { get; init; }
 
+    // The payload stores the feature as it was at mutation time, because a later read can see a different feature or none.
     public required string EventPayload { get; init; }
 
     public required string Status { get; init; }

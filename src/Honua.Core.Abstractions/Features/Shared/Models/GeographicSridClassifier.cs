@@ -58,6 +58,7 @@ public static class GeographicSridClassifier
     public static bool IsGeographicSrid(int srid)
         => GeographicSridSet.Contains(srid);
 
+    // The 4000–4999 range is an offline mensuration fallback, not an authoritative geographic classification, and must not decide axis order or geodesic-distance routing.
     public static bool IsGeographicOrUnlistedGeographicRangeSrid(int srid)
         => IsGeographicSrid(srid)
            || (srid is >= 4000 and <= 4999 && !GeocentricSridsInGeographicBlock.Contains(srid));

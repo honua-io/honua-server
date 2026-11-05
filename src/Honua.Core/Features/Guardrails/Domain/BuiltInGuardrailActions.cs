@@ -7,7 +7,7 @@ public static class BuiltInGuardrailActions
 {
     public const string StudioPublicationProposal = "studio.publication_proposal";
 
-    // A publication that moves the published pointer does not take the direct tier that draft composition receives.
+    // This publication keeps the edition tier and never takes the Licensing:Mode=Disabled direct tier that Studio draft composition receives.
     public const string StudioPublicationRequest = "studio.publication_request";
 
     public const string StudioRollback = "studio.rollback";

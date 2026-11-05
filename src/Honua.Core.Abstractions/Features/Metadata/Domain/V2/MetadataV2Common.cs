@@ -235,6 +235,7 @@ public sealed record MetadataV2Field
     [JsonPropertyName("alias")]
     public string? Alias { get; init; }
 
+    // Nullable storage preserves the true editable default when the JSON member is omitted, because source-generated deserialization materializes an absent value type as its CLR default.
     [JsonPropertyName("editable")]
     public bool? EditableValue { get; init; }
 

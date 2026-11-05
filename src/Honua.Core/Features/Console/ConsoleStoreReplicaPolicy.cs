@@ -29,7 +29,7 @@ public static class ConsoleStoreReplicaPolicy
         return 1;
     }
 
-    // Process-local stores are refused when more than one replica is configured.
+    // More than one replica with a process-local store would serve different content, share tokens, and open-data pages.
     public static void EnsureSingleReplicaWhenNotDurable(bool durable, int expectedReplicas)
     {
         if (durable || expectedReplicas <= 1)

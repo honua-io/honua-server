@@ -10,6 +10,7 @@ public interface IPointCloudDecompressorFactory
     IPointCloudDecompressor Create(ClaimsPrincipal principal);
 }
 
+// Native decompression and reprojection run in the external worker so the scene tiler stays managed and free of the job runtime.
 public interface IPointCloudDecompressor
 {
     Task<byte[]> DecompressAsync(byte[] source, string? sourceSrs, CancellationToken cancellationToken);

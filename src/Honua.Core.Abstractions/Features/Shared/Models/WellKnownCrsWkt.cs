@@ -3,7 +3,7 @@
 
 namespace Honua.Core.Features.Shared.Models;
 
-// The built-in 4326 and 3857 answers include WKT so exporters are not given an empty definition for those SRIDs.
+// These authority-bearing WKT1 strings stay separate from the shorter SpatialReference WKT already sent on protocol surfaces, and they give exporters a definition for the built-in 4326 and 3857 answers.
 public static class WellKnownCrsWkt
 {
     public const string Epsg4326 =

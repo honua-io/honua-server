@@ -3,6 +3,7 @@
 
 namespace Honua.Core.Features.Infrastructure.Crs;
 
+// The pipeline is chosen explicitly because PROJ's default ST_Transform does not match Esri's published geotransformation.
 public sealed record DatumTransformationSelection
 {
     public int? Wkid { get; init; }
@@ -15,6 +16,7 @@ public sealed record DatumTransformationSelection
 
     public int? EpsgOperationCode { get; init; }
 
+    // An operation pipeline must go to ST_TransformPipeline because the text overload of ST_Transform accepts a CRS definition.
     public string? ProjPipeline { get; init; }
 
     public bool TransformForward { get; init; } = true;

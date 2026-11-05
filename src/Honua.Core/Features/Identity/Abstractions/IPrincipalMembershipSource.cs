@@ -3,7 +3,7 @@
 
 namespace Honua.Core.Features.Identity.Abstractions;
 
-// A source failure is an exception and must not be treated as an empty membership snapshot.
+// A source failure throws and must not fall back to any membership snapshot, including a stale captured role set.
 public interface IPrincipalMembershipSource
 {
     Task<PrincipalMembership?> ResolveMembershipAsync(

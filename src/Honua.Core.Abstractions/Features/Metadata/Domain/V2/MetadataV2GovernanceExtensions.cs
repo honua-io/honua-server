@@ -15,6 +15,7 @@ public static class MetadataV2GovernanceExtensions
             return resourceMetadata;
         }
 
+        // Publisher is resource-scoped provenance and is never inferred from the service operator.
         return resourceMetadata with
         {
             License = ResolveLicense(resourceMetadata, serviceMetadata),

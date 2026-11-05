@@ -470,6 +470,7 @@ public sealed class GeoServicesTileCachePackageReader : ITileCachePackageReader
         }
     }
 
+    // Overlapping index ranges would copy the same bundle bytes into many tiles, so each range is rejected and charged to the budget before any copy.
     private static void RejectAliasedBundleEntries(
         List<CompactV2IndexEntry> entries,
         DecompressionBudget budget)
@@ -627,7 +628,7 @@ public sealed class GeoServicesTileCachePackageReader : ITileCachePackageReader
         return samples;
     }
 
-    // A declared length of zero is still capped while inflated, and the element text is consumed without an extra read that would skip the next sibling.
+    // ReadElementContentAsString already advances past the end tag, so the text is taken through a subtree and the caller's next Read still lands on the next sibling.
     private static string ReadElementText(XmlReader reader)
     {
         using var element = reader.ReadSubtree();
@@ -651,6 +652,7 @@ public sealed class GeoServicesTileCachePackageReader : ITileCachePackageReader
         return bytes;
     }
 
+    // A declared length of zero is still copied under the cap, so a length-less deflate stream cannot expand without bound.
     private static byte[] ReadBounded(
         Func<Stream> open,
         long declaredLength,

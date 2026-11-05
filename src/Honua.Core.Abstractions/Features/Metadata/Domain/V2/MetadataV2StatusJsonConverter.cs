@@ -6,6 +6,7 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Core.Features.Metadata.Domain.V2;
 
+// The source-generated serializer assigns default for a missing member, and that value is draft, which the serving gate then hides.
 internal sealed class MetadataV2StatusJsonConverter : JsonConverter<MetadataV2Status>
 {
     public override bool HandleNull => true;

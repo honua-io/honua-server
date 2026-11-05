@@ -3,7 +3,7 @@
 
 namespace Honua.Core.Queries.Filters;
 
-// The visitor is single-use because its parameter list is mutable.
+// Concurrent translations must not share this visitor because its parameter state is mutable.
 public abstract class SqlFilterExpressionVisitorBase
 {
     // The depth cap is duplicated because this assembly cannot reference Core, and it stops a deep filter from overflowing the stack.
