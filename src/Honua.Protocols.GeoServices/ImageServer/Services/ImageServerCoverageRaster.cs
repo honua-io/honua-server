@@ -6,6 +6,7 @@ using Honua.Core.Features.Raster.Multidimensional.Domain;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Services;
 
+// Service info uses this coverage grid instead of a co-registered base raster so the envelope, cell size, pixel type, NoData, and statistics match the grid the slices come from.
 internal sealed record ImageServerCoverageGrid
 {
     public required RasterExtent Extent { get; init; }

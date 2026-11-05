@@ -7,6 +7,7 @@ using Honua.Protocols.GeoServices.ImageServer.Models;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Services;
 
+// A temporal hint that names a column absent from the raster catalog is dropped, because Esri clients that trust StartTimeFieldName fail to open the catalog.
 internal static class ImageServerCatalogTime
 {
     public static ImageServerCatalogTimeFields? Resolve(

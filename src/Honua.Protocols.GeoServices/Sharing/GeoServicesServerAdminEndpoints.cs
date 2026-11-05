@@ -226,8 +226,10 @@ public static class GeoServicesServerAdminEndpoints
             ["properties"] = properties,
         };
 
+    // The Admin API spells booleans as strings.
     private static JsonValue Flag(bool value) => JsonValue.Create(value ? "true" : "false");
 
+    // A name that matches neither a service name nor a service id is the storage-layer id arcpy copies from an ImageServer or WCS URL when it asks for that id as MapServer.
     private static MetadataV2Service? ResolveService(
         MetadataV2GraphSnapshot snapshot, string serviceName, string requestedType)
     {

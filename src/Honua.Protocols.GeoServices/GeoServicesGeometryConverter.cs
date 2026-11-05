@@ -1091,6 +1091,7 @@ internal static partial class GeoServicesGeometryConverter
     private const string UnsupportedGeometryMessage =
         "Invalid GeoServices JSON geometry format. Supported types: Point (x, y), Polygon (rings), LineString (paths), MultiPoint (points), Envelope (xmin, ymin, xmax, ymax)";
 
+    // Z and M slots follow hasZ and hasM, so a ZM vertex whose Z is NaN keeps that slot and its M is not read back as the elevation.
     private static double[] BuildCoordinateArray(CoordinateSequence sequence, int index, bool hasZ, bool hasM)
     {
         var values = new double[2 + (hasZ ? 1 : 0) + (hasM ? 1 : 0)];

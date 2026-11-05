@@ -66,6 +66,7 @@ internal static class GeoServicesStatisticsOrderBy
         return true;
     }
 
+    // Statistic aliases are resolved before group-by fields, matching the aggregate select list where the alias shadows the source column.
     private static string? ResolveDeclaredName(
         string field,
         ImmutableArray<StatisticDefinition> statistics,

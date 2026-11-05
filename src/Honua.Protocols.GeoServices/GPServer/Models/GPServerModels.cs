@@ -54,6 +54,7 @@ internal sealed class GPParameterInfo
 
     public string? Direction { get; set; }
 
+    // arcgis.geoprocessing import_toolbox() raises KeyError('defaultValue') when the key is absent, so a null default is serialized.
     [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     public JsonElement? DefaultValue { get; set; }
 

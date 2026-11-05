@@ -13,6 +13,7 @@ public sealed class QueryResponse : ICollectionResponse<GeoServicesFeature>
 
     public GeoServicesSpatialReference? SpatialReference { get; init; }
 
+    // Transform is declared ahead of Features so a client reading the featureSet front to back dequantizes each geometry with it; a transform after the features draws nothing.
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public GeoServicesTransform? Transform { get; init; }
 

@@ -246,6 +246,7 @@ internal sealed class FeatureServerReplicaConflictResolutionApplier : IReplicaCo
         };
     }
 
+    // A conventional fid or objectid name is an identity alias only when the schema does not declare it, because a custom object-id layer can store that name as a business attribute.
     private static bool IsObjectIdKey(string key, LayerIdentity identity)
         => key.Equals(identity.ObjectIdField, StringComparison.OrdinalIgnoreCase)
             || ((key.Equals("objectid", StringComparison.OrdinalIgnoreCase)
@@ -277,7 +278,7 @@ internal sealed class FeatureServerReplicaConflictResolutionApplier : IReplicaCo
         }
     }
 
-    // A delete that reports success counts as committed only when the caller did not capture an absence guard; accepting the pre-read result would let a concurrent reinsert escape that guard.
+    // DeleteNotFound counts as committed only when the caller did not capture an absence guard; accepting it under that guard would let a concurrent reinsert escape.
     private static bool Succeeded(
         EditResult[]? results,
         ReplicaConflictResolutionEffect effect,

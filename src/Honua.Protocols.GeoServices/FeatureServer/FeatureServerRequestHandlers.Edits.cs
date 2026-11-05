@@ -949,7 +949,6 @@ internal static partial class FeatureServerEndpoints
             cancellationToken), null, null, null);
     }
 
-    // Standalone add, update, and delete default rollbackOnFailure to true only when the request omitted it.
     private static void ApplyStandaloneEditDefaults(ApplyEditsRequest request)
     {
         if (!request.RollbackOnFailureExplicitlySet)

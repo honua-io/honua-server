@@ -93,6 +93,7 @@ internal static class GeoServicesSoapProtocol
         }
     }
 
+    // Esri WSDLs set elementFormDefault to unqualified, so qualified, unqualified, and default-namespace arguments are the same request and bind by local name while the operation keeps its negotiated namespace.
     internal static XElement BindArgumentsByLocalName(XElement operation)
     {
         // codeql[cs/linq/missed-where]: renames namespaced arguments in place on the same element tree

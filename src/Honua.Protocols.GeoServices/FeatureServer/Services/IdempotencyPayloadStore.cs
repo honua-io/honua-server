@@ -357,6 +357,7 @@ internal sealed class IdempotencyPayloadStore
         return payload;
     }
 
+    // A payload that is only the prefix byte is still a reservation, so a mixed-version deployment recognises a holder that stored the key without a token.
     private static bool IsPendingReservation(byte[] payload)
         => payload.Length >= 1 && payload[0] == PendingPrefix;
 

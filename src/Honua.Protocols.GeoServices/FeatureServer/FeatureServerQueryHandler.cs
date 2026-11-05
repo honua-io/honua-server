@@ -1845,6 +1845,7 @@ internal sealed partial class FeatureServerQueryHandler(
         return true;
     }
 
+    // An explicit datum transformation is catalogued on the geographic pair, so projected SRIDs use their geodetic bases, while an omitted transformation keeps the raw SRIDs for PROJ's SRID-only pipeline.
     internal static (int FromSrid, int? ToSrid) SelectDatumResolutionSrids(
         int layerSrid,
         int? outputSrid,
@@ -2821,6 +2822,7 @@ internal sealed partial class FeatureServerQueryHandler(
         return false;
     }
 
+    // Accepting sqlFormat=native never enables provider-native SQL: standard, native, and none all parse the where clause in the standardized ArcGIS-SQL dialect, and only an unrecognized token is rejected.
     private static bool TryValidateSqlFormat(QueryParameters queryParams, out string? errorMessage)
     {
         errorMessage = null;

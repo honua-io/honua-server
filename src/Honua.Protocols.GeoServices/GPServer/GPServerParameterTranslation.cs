@@ -192,6 +192,7 @@ internal static class GPServerParameterTranslation
         return Encoding.UTF8.GetString(buffer.WrittenSpan);
     }
 
+    // Esri matches choice values case-insensitively, while canonical validators compare ordinally, so a unique match is returned in the catalog spelling.
     private static string NormalizeChoice(ProcessParameterSpec? spec, string value)
     {
         if (spec?.AllowedValues is not { Count: > 0 } allowed || string.IsNullOrEmpty(value))

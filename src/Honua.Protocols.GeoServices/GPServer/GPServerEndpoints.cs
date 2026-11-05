@@ -699,6 +699,7 @@ internal static partial class GPServerEndpoints
         return artifact.Label;
     }
 
+    // Esri clients treat a response with no error object as success, so a failed or cancelled synchronous job returns an error envelope rather than an empty result that only carries a failed jobStatus.
     private static IResult BuildExecuteFailureResponse(HttpContext context, ExecutionJobRecord job, string esriStatus)
     {
         var cancelled = string.Equals(esriStatus, "esriJobCancelled", StringComparison.Ordinal);

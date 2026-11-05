@@ -6,6 +6,7 @@ using SkiaSharp;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Services;
 
+// Raster legend swatches are a fixed size across every class.
 internal interface IImageServerLegendSwatchBuilder
 {
     LegendSwatch Render(SKColor color);

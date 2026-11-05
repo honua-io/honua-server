@@ -105,7 +105,6 @@ public sealed class LayerResponse
     // The layer root emits supportsQueryAttachments as true when the layer has attachments, because the ArcGIS Maps SDK for JavaScript refuses the operation when the root flag is absent or false.
     public bool SupportsQueryAttachments { get; init; }
 
-    // The keyword filter flag is emitted because the attachment query honors the keywords parameter.
     public bool SupportsAttachmentKeywords { get; init; }
 
     public bool SupportsAttachmentsByUploadId { get; init; }

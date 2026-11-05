@@ -7,6 +7,7 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Protocols.GeoServices.FeatureServer.Models;
 
+// Z and M slots are positional: a ZM vertex without a Z keeps a NaN slot, serialized as null, so its M is not read back as the elevation.
 internal sealed class GeoServicesVertexListJsonConverter : JsonConverter<double[][]>
 {
     public override double[][]? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)

@@ -13,6 +13,7 @@ internal sealed record SharingInfoResponse
     // Portal/Server release. Do NOT add a currentVersion/fullVersion field
     // (guarded by NoGeoServicesServerVersionTests).
 
+    // OwningSystemUrl is the public portal root, including its application mount, so native clients do not treat the token service's /sharing segment as that root.
     [JsonPropertyName("owningSystemUrl")]
     public required string OwningSystemUrl { get; init; }
 

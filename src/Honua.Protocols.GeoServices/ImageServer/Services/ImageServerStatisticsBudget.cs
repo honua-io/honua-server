@@ -19,6 +19,7 @@ internal static class ImageServerStatisticsBudget
             new(StringComparer.Ordinal);
     }
 
+    // The wait stays below the outer request deadline so this response returns before that deadline races the caller.
     internal static readonly TimeSpan Timeout = TimeSpan.FromSeconds(20);
 
     // The incomplete fallback is replaced by the background backfill moments later, so no cache may keep it.

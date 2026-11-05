@@ -2184,7 +2184,7 @@ internal sealed class FeatureServerEditsHandler(
         }
     }
 
-    // Point and multipoint inputs are accepted on a point layer, and a multi-part layer accepts its single-part equivalent; any other shape fails that feature instead of being stored.
+    // An ArcGIS layer stores one geometry family, so a classified shape from another family fails that feature.
     private static bool IsGeometryTypeCompatible(
         GeoServicesGeometry geometry,
         MetadataV2GeometryType layerGeometryType,

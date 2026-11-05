@@ -13,6 +13,7 @@ public sealed class VersionManagementServiceInfo
 
     public string DefaultVersionName { get; init; } = "sde.DEFAULT";
 
+    // Clients open the versioned workspace by reading this version and starting a read session on it before any named version is used.
     public required string DefaultVersionGuid { get; init; }
 
     public VersionManagementCapabilities Capabilities { get; init; } = new();
@@ -130,10 +131,13 @@ public sealed class VersionConflictInfo
 
     public required string ConflictType { get; init; }
 
+    // Common-ancestor attribute image, or null when the ancestor is unknown.
     public string? BaseAttributes { get; init; }
 
+    // DEFAULT attribute image, or null when that row was deleted.
     public string? DefaultAttributes { get; init; }
 
+    // Branch attribute image, or null when that row was deleted.
     public string? VersionAttributes { get; init; }
 
     public string? BaseGeometry { get; init; }

@@ -24,6 +24,7 @@ public sealed class ImageServerServiceInfo
     [JsonPropertyName("extent")]
     public required ImageServerExtent Extent { get; init; }
 
+    // ImageServiceRaster.LoadAsync reads fullExtent rather than extent and fails configuration parsing when fullExtent is absent.
     [JsonPropertyName("fullExtent")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public ImageServerExtent? FullExtent { get; init; }
@@ -150,6 +151,7 @@ public sealed class ImageServerServiceInfo
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public TileInfo? TileInfo { get; init; }
 
+    // ImageServiceRaster.LoadAsync requires nested storageInfo with both block dimensions and fails with "Failed to read configuration data" when it is absent.
     [JsonPropertyName("storageInfo")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public ImageServerStorageInfo? StorageInfo { get; init; }

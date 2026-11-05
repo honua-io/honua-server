@@ -101,7 +101,6 @@ internal static partial class FeatureServerLog
         Message = "GeoParquet conversion failed for field '{FieldName}' (value type: {ValueType}), value treated as null")]
     public static partial void GeoParquetConversionFailed(ILogger logger, string fieldName, string valueType, Exception exception);
 
-    // Unparseable geometry WKB is logged and exported as null rather than failing the GeoParquet row.
     [LoggerMessage(
         EventId = 2208,
         Level = LogLevel.Debug,

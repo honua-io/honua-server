@@ -1100,6 +1100,7 @@ internal static class GeoservicesCatalogEndpoints
         return Results.Json(response, GeoservicesCatalogJsonContext.Default.RestInfoResponse, contentType: JsonContentType);
     }
 
+    // An empty path advertises /arcgis, a base that already ends with /arcgis is unchanged, and any other path stays unchanged because the alias only strips a leading /arcgis.
     private static string WithConventionalInstancePath(string baseUrl)
     {
         if (string.IsNullOrEmpty(baseUrl))

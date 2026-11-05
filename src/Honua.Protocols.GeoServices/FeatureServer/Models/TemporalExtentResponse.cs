@@ -3,6 +3,7 @@
 
 namespace Honua.Protocols.GeoServices.FeatureServer.Models;
 
+// Min and max are null when the layer is time-enabled but no rows have been ingested.
 public sealed class TemporalExtentResponse
 {
     public int LayerId { get; init; }
@@ -11,6 +12,7 @@ public sealed class TemporalExtentResponse
 
     public string? StartTimeField { get; init; }
 
+    // Null when the layer represents instants only.
     public string? EndTimeField { get; init; }
 
     public string? Min { get; init; }

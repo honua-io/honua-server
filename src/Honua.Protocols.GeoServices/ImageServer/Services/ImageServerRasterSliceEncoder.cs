@@ -15,6 +15,7 @@ internal static class ImageServerRasterSliceEncoder
     private const string TiffContentType = "image/tiff";
     private const int DefaultJpegQuality = 75;
 
+    // JPEG has no alpha channel, so transparent NoData pixels are flattened to black.
     public static (byte[] Data, string ContentType) EncodeJpeg(byte[] rgba, int width, int height, int? quality)
     {
         ArgumentNullException.ThrowIfNull(rgba);
