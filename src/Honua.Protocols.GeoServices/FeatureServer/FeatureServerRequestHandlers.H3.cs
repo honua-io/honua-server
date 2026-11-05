@@ -634,10 +634,6 @@ internal static partial class FeatureServerEndpoints
         return false;
     }
 
-    /// <summary>
-    /// Parses a GeoJSON Polygon string (H3 cell boundary) into an Esri-compatible
-    /// <see cref="GeoServicesGeometry"/> with Rings. Returns null on parse failure.
-    /// </summary>
     private static GeoServicesGeometry? TryParseH3CellGeometry(string geoJsonStr)
     {
         try

@@ -74,9 +74,7 @@ public sealed class LegendEntry
     [JsonPropertyName("label")]
     public required string Label { get; init; }
 
-    /// <summary>
-    /// Esri-compatible URL to the swatch. Always empty when <see cref="ImageData"/> is set.
-    /// </summary>
+    // Empty when the swatch bytes travel inline in ImageData.
     [JsonPropertyName("url")]
     public string Url { get; init; } = string.Empty;
 

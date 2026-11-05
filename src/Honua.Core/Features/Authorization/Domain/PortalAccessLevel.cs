@@ -51,7 +51,6 @@ public static class PortalAccessLevelExtensions
     /// (<c>"private"</c>, <c>"org"</c>, or <c>"public"</c>).
     /// </summary>
     /// <param name="level">The access level.</param>
-    /// <returns>The Esri-compatible wire token.</returns>
     public static string ToWireName(this PortalAccessLevel level) => level switch
     {
         PortalAccessLevel.Public => "public",

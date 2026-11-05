@@ -169,7 +169,7 @@ item-search-related extensions remain tracked separately by issues #956 and
 
 ## GeoServices REST Validation Evidence
 
-These are Honua's Esri-compatible GeoServices REST validation suites. They are
+These are Honua's GeoServices REST validation suites. They are
 not OGC CITE suites, not official Esri certification evidence, and should be
 presented separately from OGC conformance claims. The inventory below covers all
 GeoServices REST validation tests currently present across the JavaScript,
@@ -186,5 +186,5 @@ browser, Python, and .NET test suites on `trunk`.
 NAServer is not included in the interoperability evidence count above. The
 repository currently has a minimal NAServer route-registration smoke slice, but
 it returns deterministic compatibility envelopes rather than real network
-analysis behavior, so it should not be presented as Esri-compatible NAServer
+analysis behavior, so it should not be presented as NAServer network-analysis
 validation.

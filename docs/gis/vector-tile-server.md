@@ -1,6 +1,6 @@
 # GeoServices REST — VectorTileServer
 
-Honua exposes an Esri-compatible **VectorTileServer** adapter under
+Honua exposes a GeoServices REST **VectorTileServer** adapter under
 `/rest/services/{serviceId}/VectorTileServer`. It is a thin protocol adapter over the shared
 vector-tile, style, and metadata pipelines — it parses Esri-shaped requests, resolves the service
 by **name** against the Metadata v2 graph, and formats Esri/Mapbox-compatible responses. It does
