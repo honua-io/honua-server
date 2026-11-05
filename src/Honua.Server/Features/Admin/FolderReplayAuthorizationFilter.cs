@@ -17,8 +17,10 @@ internal sealed class FolderReplayAuthorizationFilter : IEndpointFilter
     public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext invocation, EndpointFilterDelegate next)
     {
         var context = invocation.HttpContext;
-        if (!await IsApprovedReplayAsync(invocation).ConfigureAwait(false))
+        if (!context.User.IsInRole(AdminApiKeyPermission.ApprovedOperationRole))
             return await next(invocation).ConfigureAwait(false);
+        if (!await IsApprovedReplayAsync(invocation).ConfigureAwait(false))
+            return Results.Problem(statusCode: StatusCodes.Status403Forbidden, detail: "Folder operation replay authorization failed.");
         var transportPrincipal = context.User;
         var identity = new ClaimsIdentity(transportPrincipal.Identity as ClaimsIdentity);
         foreach (var role in identity.FindAll(ClaimTypes.Role).ToArray()) identity.RemoveClaim(role);

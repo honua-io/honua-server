@@ -60,11 +60,15 @@ public sealed class FolderReplayAuthorizationFilterTests
         var context = Context(scenario);
         context.RequestServices = services;
         var original = context.User;
-        await InvokeWithLineageAsync(context, scenario, invocation =>
+        var invoked = false;
+        var result = await InvokeWithLineageAsync(context, scenario, invocation =>
         {
+            invoked = true;
             invocation.HttpContext.User.IsInRole(OperationPolicyBuiltInRules.FullAdministratorRole).Should().Be(delegated);
             return ValueTask.FromResult<object?>(null);
         });
+        invoked.Should().Be(delegated || scenario == "ordinary");
+        if (!invoked) result.Should().BeAssignableTo<IStatusCodeHttpResult>().Which.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
         context.User.Should().BeSameAs(original, "delegation must end with the folder invocation");
     }
 
@@ -167,7 +171,7 @@ public sealed class FolderReplayAuthorizationFilterTests
         return context;
     }
 
-    private static async Task InvokeWithLineageAsync(HttpContext context, string scenario, EndpointFilterDelegate next)
+    private static async Task<object?> InvokeWithLineageAsync(HttpContext context, string scenario, EndpointFilterDelegate next)
     {
         var clock = new ReplayClock();
         var lineage = new OperationLineageAttestationStore(clock);
@@ -177,12 +181,14 @@ public sealed class FolderReplayAuthorizationFilterTests
         context.Request.Headers[OperationLineageHeaders.Attestation] = scenario == "forged" ? "invalid" : token;
         context.Request.Headers[OperationLineageHeaders.ProposalId] = "forged-proposal";
         if (scenario == "ordinary") context.Request.Headers.Remove(OperationLineageHeaders.Attestation);
+        object? result = null;
         var middleware = new OperationLineageAttestationMiddleware(async current =>
         {
-            await new FolderReplayAuthorizationFilter().InvokeAsync(EndpointFilterInvocationContext.Create(current, "folder",
+            result = await new FolderReplayAuthorizationFilter().InvokeAsync(EndpointFilterInvocationContext.Create(current, "folder",
                 new FolderRequest { Name = scenario == "changed-body" ? "Unapproved" : "Approved" }, current), next);
         });
         await middleware.InvokeAsync(context, lineage);
+        return result;
     }
 
     private sealed class ReplayClock : TimeProvider
