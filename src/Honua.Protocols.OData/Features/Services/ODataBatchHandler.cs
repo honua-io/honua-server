@@ -15,19 +15,6 @@ using Honua.Protocols.OData.Models;
 
 namespace Honua.Protocols.OData.Services;
 
-/// <summary>
-/// Handles OData v4 $batch operations with support for atomicity groups.
-/// </summary>
-/// <remarks>
-/// Implementation is split across partials for maintainability:
-/// <list type="bullet">
-/// <item><see href="ODataBatchHandler.Dependencies.cs"/> — dependency ordering and Content-ID resolution.</item>
-/// <item><see href="ODataBatchHandler.ChangeSet.cs"/> — atomicity-group (change-set) processing.</item>
-/// <item><see href="ODataBatchHandler.Dispatch.cs"/> — per-request dispatch, URL normalization, path parsing, access validation.</item>
-/// <item><see href="ODataBatchHandler.Edit.cs"/> — edit-batch construction, body materialization, precondition checks.</item>
-/// <item><see href="ODataBatchHandler.Response.cs"/> — response assembly, ETag computation, error formatting.</item>
-/// </list>
-/// </remarks>
 internal sealed partial class ODataBatchHandler
 {
     private const string NonAtomicGroupKey = "__non-atomic__";
@@ -49,9 +36,6 @@ internal sealed partial class ODataBatchHandler
     private readonly ILogger _logger;
     private readonly Dictionary<int, AxisOrder> _axisOrderCache = new();
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="ODataBatchHandler"/> class.
-    /// </summary>
     public ODataBatchHandler(
         ODataBatchDependencies dependencies,
         IETagService etagService,
@@ -79,9 +63,6 @@ internal sealed partial class ODataBatchHandler
         MetadataV2Resource Resource,
         MetadataV2Service? Service);
 
-    /// <summary>
-    /// Processes a batch request and returns the aggregated response.
-    /// </summary>
     public async Task<ODataBatchResponse> ProcessBatchAsync(
         HttpContext context,
         ODataBatchRequest batchRequest,
@@ -214,38 +195,15 @@ internal sealed partial class ODataBatchHandler
 
     private static partial class Log
     {
-        /// <summary>
-        /// Logs when an OData batch request fails to parse.
-        /// </summary>
-        /// <param name="logger">The logger instance.</param>
-        /// <param name="requestId">The identifier of the batch request that failed to parse.</param>
-        /// <param name="exception">The exception that caused the parsing failure.</param>
         [LoggerMessage(EventId = 3100, Level = LogLevel.Warning, Message = "Batch request {RequestId} failed to parse.")]
         public static partial void BatchRequestParseFailed(ILogger logger, string requestId, Exception exception);
 
-        /// <summary>
-        /// Logs when a batch read request fails during processing.
-        /// </summary>
-        /// <param name="logger">The logger instance.</param>
-        /// <param name="requestId">The identifier of the batch request that failed to read.</param>
-        /// <param name="exception">The exception that caused the read failure.</param>
         [LoggerMessage(EventId = 3101, Level = LogLevel.Warning, Message = "Batch read request {RequestId} failed.")]
         public static partial void BatchReadFailed(ILogger logger, string requestId, Exception exception);
 
-        /// <summary>
-        /// Logs when an atomic batch group fails, requiring all operations in the group to be rolled back.
-        /// </summary>
-        /// <param name="logger">The logger instance.</param>
-        /// <param name="exception">The exception that caused the atomic group failure.</param>
         [LoggerMessage(EventId = 3102, Level = LogLevel.Error, Message = "Batch atomic group failed.")]
         public static partial void BatchAtomicGroupFailed(ILogger logger, Exception exception);
 
-        /// <summary>
-        /// Logs when a single request within a batch operation fails.
-        /// </summary>
-        /// <param name="logger">The logger instance.</param>
-        /// <param name="requestId">The identifier of the single request that failed.</param>
-        /// <param name="exception">The exception that caused the request failure.</param>
         [LoggerMessage(EventId = 3103, Level = LogLevel.Warning, Message = "Batch single request {RequestId} failed.")]
         public static partial void BatchSingleRequestFailed(ILogger logger, string requestId, Exception exception);
     }

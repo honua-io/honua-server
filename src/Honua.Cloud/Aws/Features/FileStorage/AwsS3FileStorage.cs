@@ -16,7 +16,7 @@ namespace Honua.FileStorage;
 
 internal sealed class AwsS3FileStorage : CloudFileStorageBase
 {
-    /// <summary>S3 rejects one PutObject larger than 5 GiB. Multipart is required above that.</summary>
+    // S3 rejects one PutObject larger than 5 GiB, so those objects use multipart upload.
     internal const long S3SinglePutMaxBytes = 5L * 1024 * 1024 * 1024;
 
     private const int DefaultPartBytes = 16 * 1024 * 1024;
@@ -36,9 +36,6 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
     {
     }
 
-    /// <summary>
-    /// Test seam. Production construction passes <see langword="null"/> and builds the SDK client.
-    /// </summary>
     internal AwsS3FileStorage(
         IOptions<CloudStorageOptions> options,
         ILogger<AwsS3FileStorage> logger,
@@ -667,17 +664,9 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
         return new AmazonS3Client(config);
     }
 
-    /// <summary>
-    /// A single PUT is unsafe when the object is larger than 5 GiB or its length is not known.
-    /// Conditional cache writes stay on PutObject; those objects are small.
-    /// </summary>
     internal static bool RequiresMultipartUpload(bool conditional, long? knownLength)
         => !conditional && knownLength is null or > S3SinglePutMaxBytes;
 
-    /// <summary>
-    /// Part size that stays under S3's 10,000-part cap for <paramref name="knownLength"/>.
-    /// Unknown lengths use <see cref="DefaultPartBytes"/>, which covers the 50 GiB import default.
-    /// </summary>
     internal static int MultipartPartSize(long? knownLength)
     {
         long part = DefaultPartBytes;

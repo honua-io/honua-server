@@ -6,9 +6,6 @@ using Honua.Core.Features.Raster.Domain;
 
 namespace Honua.Protocols.Ogc.Classic.Wcs20;
 
-/// <summary>
-/// Cohesive canonical raster backend for WCS coverage metadata and pixel reads.
-/// </summary>
 internal sealed class Wcs20CoverageBackend(
     IRasterStore rasterStore,
     IZarrStore zarrStore,

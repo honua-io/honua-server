@@ -258,6 +258,7 @@ internal static class McpServiceCollectionExtensions
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, RemoveStudioLayerTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, SetStudioLayerStyleTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, SetStudioLayerVisibilityTool>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, SetStudioMapStyleTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, SetStudioViewTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, AddStudioWidgetTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, RemoveStudioWidgetTool>());

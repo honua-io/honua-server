@@ -8,9 +8,6 @@ using Honua.Protocols.OData.Models;
 
 namespace Honua.Protocols.OData.Services;
 
-/// <summary>
-/// Converts between OData spatial payloads and WKB geometries.
-/// </summary>
 internal static class ODataGeometryConverter
 {
     private const string InvalidGeometryPayloadMessage = "Invalid geometry payload.";

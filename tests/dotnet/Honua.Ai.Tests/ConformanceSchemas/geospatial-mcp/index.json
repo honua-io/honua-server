@@ -490,6 +490,14 @@
       "notes": "Honua extension (honua-server#3199): shows or hides a composed layer, generation-checked. The persisted counterpart of the ADR-0030 'setVisibility' action verb, so a client-local toggle is no longer overwritten by the next draft sync. Pending formalization in the standard's map/app composition family."
     },
     {
+      "standardName": "studio_set_map_style",
+      "referenceToolName": "honua_studio_set_map_style",
+      "family": "Studio composition and lifecycle (Honua extension)",
+      "schema": "tools/studio_set_map_style.schema.json",
+      "implementationStatus": "implemented",
+      "notes": "Honua extension: replaces a map/app-family Studio draft's map style with an edited MapLibre style that keeps the draft's authorized sources and render-layer bindings, generation-checked. Pending formalization in the standard's map/app composition family."
+    },
+    {
       "standardName": "studio_set_view",
       "referenceToolName": "honua_studio_set_view",
       "family": "Studio composition and lifecycle (Honua extension)",

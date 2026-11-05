@@ -230,9 +230,9 @@ def build_matrix(
     parity_by_service = {service["id"]: service for service in parity.get("services", [])}
     crosswalks = capability_keys.get("crosswalks", {})
 
-    esri_compat_by_capability: dict[str, list[str]] = {}
+    geoservices_services_by_capability: dict[str, list[str]] = {}
     for row in crosswalks.get("geoservicesCompatMatrix", []):
-        esri_compat_by_capability.setdefault(row["capability"], []).append(row["serviceId"])
+        geoservices_services_by_capability.setdefault(row["capability"], []).append(row["serviceId"])
 
     esri_assess_by_capability: dict[str, list[str]] = {}
     for row in crosswalks.get("geoservicesAssess", []):
@@ -269,7 +269,7 @@ def build_matrix(
                 cite_entries.append({"suite": cite_suite, **cite_suites[cite_suite]})
 
         parity_entries = []
-        for service_id in esri_compat_by_capability.get(key, []):
+        for service_id in geoservices_services_by_capability.get(key, []):
             service = parity_by_service.get(service_id)
             if service:
                 parity_entries.append(

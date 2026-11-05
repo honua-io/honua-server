@@ -6,21 +6,10 @@ using NetTopologySuite.Features;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// <c>statistics.frequency</c> executor (#2140). Computes how often each distinct
-/// combination of <c>frequencyFields</c> occurs, matching Esri's <c>Frequency</c>.
-/// Emits a TABLE (null-geometry FeatureCollection) with one row per distinct
-/// combination carrying the field values, a <c>FREQUENCY</c> count, and an optional
-/// <c>SUM_&lt;field&gt;</c> for every field in <c>summaryFields</c>. A null value is
-/// treated as its own distinct combination component. The <c>input</c> layer is
-/// supplied inline as a <c>data:application/geo+json;base64</c> data URI. Pure
-/// managed — no GDAL/GEOS native dependency.
-/// </summary>
 internal sealed class StatisticsFrequencyExecutor(
     IOptionsMonitor<GeoprocessingExecutorOptions> options)
     : FeatureCollectionTransformExecutor(options)
 {
-    /// <summary>The canonical process id this executor handles.</summary>
     internal const string HandledProcessId = "statistics.frequency";
 
     protected override string ProcessId => HandledProcessId;

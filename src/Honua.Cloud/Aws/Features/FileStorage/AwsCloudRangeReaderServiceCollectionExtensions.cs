@@ -9,12 +9,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.FileStorage;
 
-/// <summary>
-/// Registers the AWS S3 byte-range reader (<see cref="AwsS3RangeReader"/>) used by
-/// the COG / PMTiles range-proxy pipelines. Carved out of Honua.Server's
-/// CogServiceCollectionExtensions so the AWSSDK.S3 surface stays confined to
-/// Honua.Aws per the cloud-SDK isolation contract.
-/// </summary>
 internal static class AwsCloudRangeReaderServiceCollectionExtensions
 {
     public static IServiceCollection AddAwsCloudRangeReader(

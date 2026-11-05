@@ -8,11 +8,6 @@ using Honua.Ai.Protocols.Mcp.Models;
 
 namespace Honua.Ai.Protocols.Mcp.Tools;
 
-/// <summary>
-/// MCP tool that performs structural and policy validation for an analysis plan.
-/// Delegates to <see cref="IGeoprocessingJobService.ValidatePlan"/> so the MCP surface
-/// shares its decision logic with the gRPC and GPServer adapters.
-/// </summary>
 internal sealed class ValidatePlanTool : IMcpTool
 {
     public const string ToolName = "honua_validate_plan";

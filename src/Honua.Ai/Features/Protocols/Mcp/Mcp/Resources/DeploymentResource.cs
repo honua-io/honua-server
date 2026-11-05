@@ -9,13 +9,6 @@ using Honua.Ai.Protocols.Mcp.Models;
 
 namespace Honua.Ai.Protocols.Mcp.Resources;
 
-/// <summary>
-/// MCP resource for <c>honua://deployments/{deploymentId}</c>. Reads a
-/// <see cref="Deployment"/> through the canonical deployment store and surfaces
-/// provenance edges back to the originating published service, map package, or
-/// app package that backs the deployment, plus the append-only transition audit
-/// trail so agents can observe lifecycle state changes without subscribing.
-/// </summary>
 internal sealed class DeploymentResource : IMcpResource
 {
     public const string Template = McpResourceUris.DeploymentsPrefix + "{deploymentId}";

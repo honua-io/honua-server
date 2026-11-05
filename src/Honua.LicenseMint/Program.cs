@@ -15,10 +15,8 @@ namespace Honua.LicenseMint;
 // synthesized global `Program` type that would collide with Honua.Server's
 // `Program` when both assemblies are referenced by Honua.Server.Tests.
 
-/// <summary>Entry point for the offline license-mint CLI.</summary>
 internal static class LicenseMintProgram
 {
-    /// <summary>Process entry point.</summary>
     public static int Main(string[] args) => CliRunner.Run(args);
 }
 
@@ -482,7 +480,6 @@ internal static class CliRunner
     }
 }
 
-/// <summary>A user-facing CLI error that maps to a clean exit code without a stack trace.</summary>
 internal sealed class CliException : Exception
 {
     public CliException(string message) : base(message)
@@ -490,7 +487,6 @@ internal sealed class CliException : Exception
     }
 }
 
-/// <summary>Minimal <c>--flag value</c> argument parser for the mint CLI.</summary>
 internal sealed class ArgMap
 {
     private static readonly HashSet<string> BooleanSwitches = new(StringComparer.OrdinalIgnoreCase)

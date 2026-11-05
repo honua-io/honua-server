@@ -98,26 +98,11 @@ internal static class PostgresDataSourceFactory
         return limits;
     }
 
-    /// <summary>
-    /// Idle lifetime applied on Lambda when <c>Limits:Connections:ConnectionIdleLifetimeSeconds</c>
-    /// is unset. Matches the connection-string lifetime honua-iac puts on the RDS Proxy cell and
-    /// stays at or above the default pruning interval.
-    /// </summary>
     internal const int LambdaIdleConnectionLifetimeSeconds = 60;
 
-    /// <summary>
-    /// Total connection lifetime applied on Lambda when
-    /// <c>Limits:Connections:ConnectionLifetimeSeconds</c> is unset. It stays below the 60 s RDS
-    /// Proxy idle-client timeout that honua-iac sets on small cells, so no pooled connection
-    /// handed out on Lambda can be one the proxy has already closed.
-    /// </summary>
+    // On Lambda the pooled connection lifetime stays under the RDS Proxy idle-client timeout so a handed-out connection is not one the proxy has already closed.
     internal const int LambdaConnectionLifetimeSeconds = 45;
 
-    /// <summary>
-    /// Pool and query ceiling applied on Lambda when those limits are unset. A frozen instance
-    /// serves one request at a time and may open a second pool, so the long-lived default of 200
-    /// is not a safe implicit cap. An explicit configuration value still wins.
-    /// </summary>
     internal const int LambdaUnsetMaxConnectionPoolSize = 4;
 
     public static NpgsqlDataSource Create(
@@ -133,12 +118,7 @@ internal static class PostgresDataSourceFactory
         return Track(builder.Build());
     }
 
-    /// <summary>
-    /// Builds a data source for a bound (secure-connection) source database. Bound sources
-    /// always use <see cref="DatabaseSessionSettingsMode.Connection"/>: their role is not the
-    /// primary database role an operator configures for <c>role-defaults</c>.
-    /// <paramref name="releaseSessionOnClose"/> has the same meaning as on <see cref="Configure"/>.
-    /// </summary>
+    // Bound sources use connection-level session settings. Their role is not the primary database role configured for role-defaults.
     public static NpgsqlDataSource CreateForBoundSource(
         string connectionString,
         ConnectionLimits limits,
@@ -158,14 +138,6 @@ internal static class PostgresDataSourceFactory
         return Track(builder.Build());
     }
 
-    /// <summary>
-    /// Closes the idle physical connections of every data source this factory has built, plus
-    /// the connection-string pools that bare <see cref="NpgsqlConnection"/> instances use.
-    /// In-use connections are closed when returned instead of being reused, and every pool
-    /// stays usable (the next open connects afresh). A data source that was already disposed
-    /// is skipped.
-    /// </summary>
-    /// <returns>The number of data-source pools that were cleared.</returns>
     public static int ReleasePooledConnections()
     {
         var cleared = 0;
@@ -192,14 +164,7 @@ internal static class PostgresDataSourceFactory
         return dataSource;
     }
 
-    /// <summary>
-    /// Applies pool limits, keepalive and session settings to <paramref name="builder"/>.
-    /// With <paramref name="releaseSessionOnClose"/>, a source whose session settings are applied
-    /// by a per-connection <c>SET</c> is built unpooled, so closing the logical connection ends
-    /// the physical session. Behind RDS Proxy that <c>SET</c> pins the proxy session, and a frozen
-    /// Lambda never prunes its pool, so a pooled pinned connection would hold a proxy backend
-    /// until the proxy's idle-client timeout (honua-server#6760).
-    /// </summary>
+    // A source that applies session settings with SET is unpooled on Lambda, because that SET pins an RDS Proxy backend and a frozen Lambda never prunes its pool.
     public static void Configure(
         NpgsqlDataSourceBuilder builder,
         bool schemaHeadersEnabled,
@@ -344,13 +309,6 @@ internal static class PostgresDataSourceFactory
         }
     }
 
-    /// <summary>
-    /// Resolves the schema embedded in the default search_path, or <see langword="null"/>
-    /// when none applies. Schema-header mode owns search_path per request, and only
-    /// values that pass the <see cref="SchemaSearchPath.IsValidIdentifier"/> allow-list
-    /// are accepted (SQL-injection guard — the value is later interpolated as a quoted
-    /// identifier).
-    /// </summary>
     internal static string? ResolveSearchPathSchema(bool schemaHeadersEnabled, string? defaultSchema)
     {
         if (!schemaHeadersEnabled &&
@@ -363,12 +321,6 @@ internal static class PostgresDataSourceFactory
         return null;
     }
 
-    /// <summary>
-    /// Builds the libpq <c>options</c> startup parameter carrying the session settings.
-    /// Used only for multiplexing and schema-header modes — RDS Proxy and
-    /// transaction-mode poolers reject this startup parameter, so the default path uses
-    /// <see cref="BuildSessionSettingsSql"/> instead.
-    /// </summary>
     internal static string BuildSessionSettingsStartupOptions(ConnectionLimits limits, string? searchPathSchema)
     {
         ArgumentNullException.ThrowIfNull(limits);
@@ -385,12 +337,7 @@ internal static class PostgresDataSourceFactory
         return options;
     }
 
-    /// <summary>
-    /// Builds the <c>SET</c> batch executed by the physical-connection initializer on
-    /// the default (non-multiplexing) path. Plain SET statements after connect are
-    /// compatible with AWS RDS Proxy and pgbouncer, unlike the <c>options</c> startup
-    /// parameter (issue #1638).
-    /// </summary>
+    // Session settings are applied with SET after connect, because the options startup parameter is incompatible with RDS Proxy and pgbouncer.
     internal static string BuildSessionSettingsSql(ConnectionLimits limits, string? searchPathSchema)
     {
         ArgumentNullException.ThrowIfNull(limits);
@@ -418,15 +365,7 @@ internal static class PostgresDataSourceFactory
             (int)limits.StatementTimeout.TotalSeconds,
             (int)limits.IdleInTransactionTimeout.TotalSeconds);
 
-    /// <summary>
-    /// Resolves the effective multiplexing setting.
-    /// Schema headers always force multiplexing off regardless of config.
-    /// Accepted values are <c>"auto"</c>, <c>"true"</c>, and <c>"false"</c>
-    /// (case-insensitive). Null, empty, and unrecognized values fall back to
-    /// the documented default (<c>"false"</c>) so a typo cannot silently
-    /// enable multiplexing; the configuration validation system
-    /// rejects unrecognized values at startup as a paired fail-fast guard.
-    /// </summary>
+    // An unrecognized multiplexing value falls back to off, so a typo cannot turn multiplexing on.
     internal static bool ResolveMultiplexing(string? multiplexingSetting, bool schemaHeadersEnabled)
     {
         if (schemaHeadersEnabled)

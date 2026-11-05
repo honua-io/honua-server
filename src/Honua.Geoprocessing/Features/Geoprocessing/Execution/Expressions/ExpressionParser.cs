@@ -3,23 +3,13 @@
 
 namespace Honua.Geoprocessing.Execution.Expressions;
 
-/// <summary>
-/// Recursive-descent / precedence-climbing parser that turns the lexer's token
-/// stream into the immutable <see cref="ExpressionNode"/> tree. Only the fixed
-/// grammar documented on <see cref="ExpressionEngine"/> is accepted; function names
-/// are validated against the whitelist at parse time so an unknown function is
-/// rejected before any evaluation. Depth is bounded by
-/// <see cref="ExpressionEngine.MaxDepth"/> to prevent stack exhaustion.
-/// </summary>
 internal sealed class ExpressionParser(IReadOnlyList<ExpressionToken> tokens)
 {
     private int _position;
     private int _depth;
 
-    /// <summary>Parses a full expression starting at the current position.</summary>
     public ExpressionNode ParseExpression() => ParseTernary();
 
-    /// <summary>Asserts the token stream is fully consumed (only <see cref="ExpressionTokenKind.End"/> remains).</summary>
     public void ExpectEnd()
     {
         if (Current.Kind != ExpressionTokenKind.End)

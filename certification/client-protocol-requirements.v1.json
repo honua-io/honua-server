@@ -17,27 +17,27 @@
   "delegatedClients": [
     {
       "canonicalClient": "ArcGIS API for Python",
-      "delegation": "honua-esri-compat#74/#75 owns the licensed Esri lanes; joined by evidence reference."
+      "delegation": "This repository does not certify ArcGIS clients."
     },
     {
       "canonicalClient": "ArcGIS Maps SDK for .NET",
-      "delegation": "honua-esri-compat#74/#75 owns the licensed Esri lanes; joined by evidence reference."
+      "delegation": "This repository does not certify ArcGIS clients."
     },
     {
       "canonicalClient": "ArcGIS Pro",
-      "delegation": "honua-esri-compat#74/#75 owns the licensed Esri lanes; joined by evidence reference."
+      "delegation": "This repository does not certify ArcGIS clients."
     },
     {
       "canonicalClient": "ArcGIS Pro/arcpy",
-      "delegation": "honua-esri-compat#74/#75 owns the licensed Esri lanes; joined by evidence reference."
+      "delegation": "This repository does not certify ArcGIS clients."
     },
     {
       "canonicalClient": "ArcGIS REST contract client",
-      "delegation": "honua-esri-compat#74/#75 owns the licensed Esri lanes; joined by evidence reference."
+      "delegation": "This repository does not certify ArcGIS clients."
     },
     {
       "canonicalClient": "ArcGIS REST protocol client",
-      "delegation": "honua-esri-compat#74/#75 owns the licensed Esri lanes; joined by evidence reference."
+      "delegation": "This repository does not certify ArcGIS clients."
     },
     {
       "canonicalClient": "OGC CITE",
@@ -147,10 +147,6 @@
     "sdk-js": {
       "repository": "honua-io/honua-sdk-js",
       "commit": "c99e71197dd940ed952aecb024c6de273456f2ae"
-    },
-    "esri-compat": {
-      "repository": "honua-io/honua-esri-compat",
-      "commit": "ece4c3a2f68557fe8329e9932de36193d0732894"
     },
     "cloud-native-guide": {
       "repository": "cloudnativegeo/cloud-optimized-geospatial-formats-guide",

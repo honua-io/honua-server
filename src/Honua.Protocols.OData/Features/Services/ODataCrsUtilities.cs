@@ -7,9 +7,6 @@ using Honua.Protocols.OData.Models;
 
 namespace Honua.Protocols.OData.Services;
 
-/// <summary>
-/// Helpers for resolving CRS details for OData spatial payloads.
-/// </summary>
 internal static class ODataCrsUtilities
 {
     private const string CrsTypeName = "name";

@@ -10,130 +10,78 @@ using Honua.Geoprocessing.LocalRunner;
 
 namespace Honua.Geoprocessing.CustomCode;
 
-/// <summary>
-/// One <c>honua.gp.events/v1</c> record as written by the custom-code harnesses, the
-/// local runners, and the devkit (<c>docs/reference/gp-harness-events.v1.md</c>). A line
-/// that is not a v1 record parses as <see cref="Kind"/> <c>text</c> with the raw line in
-/// <see cref="Text"/>, so a tool that writes junk into the channel degrades to text.
-/// </summary>
 public sealed record HarnessEvent
 {
-    /// <summary>The schema version (<c>1</c>), or <c>0</c> for a text line.</summary>
     public int Version { get; init; }
 
-    /// <summary>The journal sequence number.</summary>
     public long Sequence { get; init; }
 
-    /// <summary>The wall-clock time the record was written, when parseable.</summary>
     public DateTimeOffset? At { get; init; }
 
-    /// <summary>Milliseconds since the harness started its monotonic clock.</summary>
     public long? ElapsedMs { get; init; }
 
-    /// <summary>The attempt identity.</summary>
     public string Attempt { get; init; } = "1";
 
-    /// <summary>
-    /// Correlation id copied from the worker environment, when the journal recorded one.
-    /// Ingestion does not trust this value; the admitted job is the source.
-    /// </summary>
     public string? Correlation { get; init; }
 
-    /// <summary>
-    /// 32-hex trace id copied from the worker environment, when the journal recorded one.
-    /// Ingestion does not trust this value; the admitted job is the source.
-    /// </summary>
     public string? Trace { get; init; }
 
-    /// <summary>phase, progress, log, artifact, failure, truncated, terminal, or text.</summary>
     public required string Kind { get; init; }
 
-    /// <summary>The phase label, when the record carries one.</summary>
     public string? Phase { get; init; }
 
-    /// <summary>Progress percent for <c>progress</c> records.</summary>
     public double? Percent { get; init; }
 
-    /// <summary>info or warning for <c>log</c> records.</summary>
     public string? Level { get; init; }
 
-    /// <summary>The log message.</summary>
     public string? Message { get; init; }
 
-    /// <summary>The artifact name for <c>artifact</c> records.</summary>
     public string? ArtifactName { get; init; }
 
-    /// <summary>The artifact size for <c>artifact</c> records.</summary>
     public long? ArtifactSizeBytes { get; init; }
 
-    /// <summary>The artifact digest, when recorded.</summary>
     public string? ArtifactSha256 { get; init; }
 
-    /// <summary>The artifact destination, when recorded.</summary>
     public string? ArtifactUri { get; init; }
 
-    /// <summary>The error type for <c>failure</c> records.</summary>
     public string? ErrorType { get; init; }
 
-    /// <summary>The error message for <c>failure</c> records.</summary>
     public string? ErrorMessage { get; init; }
 
-    /// <summary>The terminal status for <c>terminal</c> records.</summary>
     public string? Status { get; init; }
 
-    /// <summary>The process exit code for <c>terminal</c> records.</summary>
     public int? ExitCode { get; init; }
 
-    /// <summary>Records dropped by the journal cap, for <c>truncated</c> records.</summary>
     public int? Dropped { get; init; }
 
-    /// <summary>The raw line for <c>text</c> records.</summary>
     public string? Text { get; init; }
 }
 
-/// <summary>
-/// The server half of the <c>honua.gp.events/v1</c> contract: parses a harness journal,
-/// forwards it as bounded <see cref="ExecutionLogEntry"/> records (overflow becomes one
-/// truncation entry, never a silent drop), reads measured durations back out of the
-/// forwarded metadata so the step view can label them, and writes the devkit's local
-/// run evidence in the same shape.
-/// </summary>
+// Journal overflow becomes one truncation entry and is never a silent drop.
 public static class HarnessEvents
 {
-    /// <summary>The schema identifier.</summary>
     public const string Schema = "honua.gp.events/v1";
 
-    /// <summary>The <c>v</c> value every record carries.</summary>
     public const int SchemaVersion = 1;
 
-    /// <summary>The reserved artifact name the harnesses upload beside the tool's artifacts.</summary>
     public const string FileName = "honua-events.v1.jsonl";
 
-    /// <summary>Metadata key: the schema version on a forwarded entry.</summary>
     public const string VersionKey = "honua.event.v";
 
-    /// <summary>Metadata key: the record kind on a forwarded entry.</summary>
     public const string KindKey = "honua.event.kind";
 
-    /// <summary>Metadata key: the journal sequence on a forwarded entry.</summary>
     public const string SequenceKey = "honua.event.seq";
 
-    /// <summary>Metadata key: the attempt on a forwarded entry.</summary>
     public const string AttemptKey = "honua.event.attempt";
 
-    /// <summary>Metadata key: the harness-measured elapsed milliseconds on a forwarded entry.</summary>
     public const string ElapsedKey = "honua.event.elapsedMs";
 
-    /// <summary>Metadata key: progress percent on a forwarded entry.</summary>
     public const string PercentKey = "honua.event.percent";
 
-    /// <summary>Metadata key: dropped-record count on a truncation entry.</summary>
     public const string DroppedKey = "honua.event.dropped";
 
-    /// <summary>Default forwarded-entry cap per job.</summary>
     public const int DefaultMaxEntries = 1000;
 
-    /// <summary>Default forwarded-bytes cap per job (messages plus metadata values).</summary>
     public const long DefaultMaxBytes = 256 * 1024;
 
     private static readonly HashSet<string> Kinds = new(StringComparer.Ordinal)
@@ -141,16 +89,12 @@ public static class HarnessEvents
         "phase", "progress", "log", "artifact", "failure", "truncated", "terminal"
     };
 
-    /// <summary>Parses journal text; every non-empty line yields one event.</summary>
-    /// <param name="text">The journal contents.</param>
     public static IReadOnlyList<HarnessEvent> Parse(string text)
     {
         ArgumentNullException.ThrowIfNull(text);
         return Parse(text.Split('\n'));
     }
 
-    /// <summary>Parses journal lines; every non-empty line yields one event.</summary>
-    /// <param name="lines">The journal lines.</param>
     public static IReadOnlyList<HarnessEvent> Parse(IEnumerable<string> lines)
     {
         ArgumentNullException.ThrowIfNull(lines);
@@ -231,17 +175,7 @@ public static class HarnessEvents
     private static double? Double(JsonElement element, string name)
         => element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Number && value.TryGetDouble(out var number) ? number : null;
 
-    /// <summary>
-    /// Maps harness events to job log entries under a count and byte cap. Messages pass
-    /// through <see cref="WorkspacePathSanitizer.SanitizeForClient"/> so quoted, truncated,
-    /// and escaped credentials are redacted before they reach the store. When the cap is
-    /// hit, one warning entry discloses how many events were not forwarded; the
-    /// <c>terminal</c> record is forwarded regardless.
-    /// </summary>
-    /// <param name="events">The parsed events, in journal order.</param>
-    /// <param name="fallbackTimestamp">Timestamp for records without a parseable <c>at</c>.</param>
-    /// <param name="maxEntries">Entry cap.</param>
-    /// <param name="maxBytes">Byte cap over messages and metadata values.</param>
+    // Messages are redacted before they are stored, and the terminal record is forwarded even after the cap.
     public static IReadOnlyList<ExecutionLogEntry> ToExecutionLogEntries(
         IReadOnlyList<HarnessEvent> events,
         DateTimeOffset fallbackTimestamp,
@@ -417,13 +351,6 @@ public static class HarnessEvents
         };
     }
 
-    /// <summary>
-    /// The harness-measured duration between a forwarded event and the next one, or
-    /// <c>null</c> when either side lacks the measured clock (the caller then infers
-    /// from log timestamps and must say so).
-    /// </summary>
-    /// <param name="entry">The entry whose duration is wanted.</param>
-    /// <param name="next">The following entry, when there is one.</param>
     public static long? MeasuredDurationMs(ExecutionLogEntry entry, ExecutionLogEntry? next)
     {
         ArgumentNullException.ThrowIfNull(entry);
@@ -443,15 +370,6 @@ public static class HarnessEvents
                long.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out elapsed);
     }
 
-    /// <summary>
-    /// Writes a devkit run as v1 JSON Lines: the phase timeline, the executor's log
-    /// entries, the published artifacts, and the terminal record, so a local
-    /// <c>honua-gp-devkit run</c> leaves the same evidence shape as a remote job.
-    /// </summary>
-    /// <param name="writer">The destination.</param>
-    /// <param name="result">The run outcome.</param>
-    /// <param name="phases">The phase timeline reported during the run.</param>
-    /// <param name="attempt">The attempt label (<c>devkit</c> by default).</param>
     public static void WriteDevkitRun(TextWriter writer, LocalRunResult result, IReadOnlyList<LocalRunPhase> phases, string attempt = "devkit")
     {
         ArgumentNullException.ThrowIfNull(writer);

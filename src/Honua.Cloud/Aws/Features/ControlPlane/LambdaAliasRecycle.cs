@@ -7,15 +7,8 @@ using Amazon.Lambda.Model;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Recycles a published Lambda alias without substituting a different image or configuration.
-/// Lambda has no restart API, and publishing an unchanged function returns the current version.
-/// The executor sets only the function description so the next publish is a new version, and
-/// moves the alias only when that version still matches the serving workload.
-/// </summary>
 internal interface ILambdaAliasRecycle
 {
-    /// <summary>Returns the image digest that remains on the alias.</summary>
     Task<string> RecycleAsync(
         string functionName,
         string aliasName,
@@ -24,7 +17,6 @@ internal interface ILambdaAliasRecycle
         CancellationToken cancellationToken = default);
 }
 
-/// <summary>Request bodies for a Lambda alias recycle. The description write carries no other configuration.</summary>
 internal static class LambdaAliasRecycleRequests
 {
     public static UpdateFunctionConfigurationRequest ForceNewRevision(string functionName, string description)
@@ -47,7 +39,6 @@ internal static class LambdaAliasRecycleRequests
         };
 }
 
-/// <summary>Fails closed unless the image reference is unchanged. The alias is not moved when this throws.</summary>
 internal static class LambdaImageGuard
 {
     public const string ChangedMessage = "Lambda restart changed the function image. The alias was not moved.";
@@ -73,9 +64,6 @@ internal static class LambdaImageGuard
     }
 }
 
-/// <summary>
-/// Serving workload of one Lambda version. Description is omitted: it is the only field a restart may change.
-/// </summary>
 internal sealed record LambdaWorkloadSnapshot
 {
     public required string Image { get; init; }
@@ -230,7 +218,6 @@ internal sealed record LambdaWorkloadSnapshot
     }
 }
 
-/// <summary>Compares two Lambda versions without treating the restart description as workload drift.</summary>
 internal static class LambdaWorkloadIdentity
 {
     public const string DivergedMessage =
@@ -333,7 +320,6 @@ internal interface ILambdaFunctionControl
     Task MoveAliasAsync(string functionName, string aliasName, string functionVersion, string revisionId, CancellationToken cancellationToken);
 }
 
-/// <summary>Decides the recycle. A configuration mismatch throws before the description write.</summary>
 internal static class LambdaAliasRecycleExecution
 {
     public static async Task<string> ExecuteAsync(
@@ -443,7 +429,6 @@ internal static class LambdaAliasRecycleExecution
     }
 }
 
-/// <summary>Process-credential Lambda client for governed alias recycle.</summary>
 internal sealed class AwsSdkLambdaAliasRecycle : ILambdaAliasRecycle
 {
     public async Task<string> RecycleAsync(
@@ -454,6 +439,7 @@ internal sealed class AwsSdkLambdaAliasRecycle : ILambdaAliasRecycle
         CancellationToken cancellationToken = default)
     {
         using var client = AwsSdkLambdaAliasClient.CreateClient(region, serviceUrl);
+        // Lambda has no restart API, and publishing an unchanged function returns the current version, so only the description changes.
         var description = "honua-workload-restart:" + DateTimeOffset.UtcNow.ToString(
             "yyyyMMddHHmmssfffffff",
             CultureInfo.InvariantCulture);

@@ -14,10 +14,7 @@ internal sealed record GeoprocessingImportContentSummary(
     long FeatureCount,
     FeatureArtifactSpatialReference SpatialReference);
 
-/// <summary>
-/// Writes a bounded GeoJSON import source from an already authorized job output.
-/// It never fetches a URI and never opens a caller-supplied path.
-/// </summary>
+// The writer never fetches a URI and never opens a caller-supplied path.
 internal static class GeoprocessingImportArtifactWriter
 {
     private static readonly byte[] CollectionPrefix = "{\"type\":\"FeatureCollection\",\"features\":["u8.ToArray();

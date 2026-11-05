@@ -358,10 +358,6 @@ internal sealed partial class AwsEcsAlbDeployBackend
             BuildWeights(target.CanaryTargetGroupArn!, 0, target.StableTargetGroupArn!, 100), target.Region, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Clones the serving task definition onto the digest, and runs the product migrate-only
-    /// task first when the deployment names one. Returns before any listener-rule write.
-    /// </summary>
     private async Task<PreparedTaskDefinition> PrepareReleaseImageAsync(
         WorkflowOperationRecord operation,
         DeployOperationSpec spec,

@@ -7,11 +7,6 @@ using Honua.Core.Features.ControlPlane.Domain;
 
 namespace Honua.Geoprocessing;
 
-/// <summary>
-/// Canonical bounded lifecycle projection over <see cref="IGeoprocessingJobService"/>.
-/// Protocol adapters translate these outcomes and never coordinate stores, queues, workers,
-/// notifiers, or remote compute backends directly.
-/// </summary>
 internal sealed partial class GeoprocessingJobTerminalService : IGeoprocessingJobTerminalService
 {
     private static readonly TimeSpan InitialPollDelay = TimeSpan.FromMilliseconds(50);
@@ -23,7 +18,6 @@ internal sealed partial class GeoprocessingJobTerminalService : IGeoprocessingJo
     private readonly Func<TimeSpan, CancellationTokenSource> _timeoutSourceFactory;
     private readonly ILogger<GeoprocessingJobTerminalService> _logger;
 
-    /// <summary>Creates the production terminal service.</summary>
     public GeoprocessingJobTerminalService(
         IGeoprocessingJobService jobs,
         TimeProvider timeProvider,

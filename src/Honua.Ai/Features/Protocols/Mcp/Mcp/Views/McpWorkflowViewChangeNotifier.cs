@@ -6,19 +6,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Ai.Protocols.Mcp.Views;
 
-/// <summary>
-/// Keeps view membership fresh for live sessions (honua-server#3428). When the
-/// server-profile view configuration changes, every active session is told to
-/// re-read its tool list by broadcasting <c>notifications/tools/list_changed</c>
-/// — the same notification the catalog-mutating publish path emits, so an HTTP
-/// client and an SDK stdio proxy observe an identical refresh signal.
-/// </summary>
-/// <remarks>
-/// View <em>revision</em> changes ship with the binary (a view definition is
-/// server-authored code, digest-pinned by <see cref="McpWorkflowViewProjection.RevisionDigest"/>),
-/// and identity changes already re-mint a session. The remaining runtime axis is
-/// the profile configuration, which this notifier watches.
-/// </remarks>
 internal sealed class McpWorkflowViewChangeNotifier : IHostedService, IDisposable
 {
     private readonly IOptionsMonitor<McpWorkflowViewOptions> _options;
@@ -34,7 +21,6 @@ internal sealed class McpWorkflowViewChangeNotifier : IHostedService, IDisposabl
         _publisher = publisher ?? throw new ArgumentNullException(nameof(publisher));
     }
 
-    /// <inheritdoc />
     public Task StartAsync(CancellationToken cancellationToken)
     {
         _lastDefaultView = _options.CurrentValue.DefaultView;
@@ -42,7 +28,6 @@ internal sealed class McpWorkflowViewChangeNotifier : IHostedService, IDisposabl
         return Task.CompletedTask;
     }
 
-    /// <inheritdoc />
     public Task StopAsync(CancellationToken cancellationToken)
     {
         _subscription?.Dispose();
@@ -50,15 +35,8 @@ internal sealed class McpWorkflowViewChangeNotifier : IHostedService, IDisposabl
         return Task.CompletedTask;
     }
 
-    /// <inheritdoc />
     public void Dispose() => _subscription?.Dispose();
 
-    /// <summary>
-    /// Broadcasts <c>tools/list_changed</c> when the effective profile default
-    /// view actually changed. Exposed for tests so the refresh contract can be
-    /// asserted without a configuration-reload harness.
-    /// </summary>
-    /// <returns>The number of sessions notified; <c>0</c> when nothing changed.</returns>
     internal int OnOptionsChanged(McpWorkflowViewOptions changed)
     {
         ArgumentNullException.ThrowIfNull(changed);

@@ -11,11 +11,6 @@ using Microsoft.Extensions.Hosting;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Reconciles durable execution-job records against pluggable batch-compute backends.
-/// Mirrors the deploy-workflow reconciler for the run-to-completion job lifecycle
-/// so that optional distributed executors plug in behind the canonical runtime.
-/// </summary>
 internal sealed partial class ExecutionJobReconciler(
     IExecutionJobStore jobStore,
     IEnumerable<IBatchComputeBackend> backends,
@@ -743,9 +738,6 @@ internal sealed partial class ExecutionJobReconciler(
     }
 }
 
-/// <summary>
-/// Background worker that continuously reconciles active execution jobs against their batch-compute backend.
-/// </summary>
 internal sealed class ExecutionJobReconcilerBackgroundService(
     IExecutionJobStore jobStore,
     IExecutionJobReconciler reconciler,

@@ -20,7 +20,6 @@ using NetTopologySuite.IO;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>Runs bounded routing solves through the canonical provider and shared job publication fence.</summary>
 internal sealed class RoutingJobExecutor(
     IServiceScopeFactory scopeFactory,
     IOptionsMonitor<GeoprocessingExecutorOptions> options,

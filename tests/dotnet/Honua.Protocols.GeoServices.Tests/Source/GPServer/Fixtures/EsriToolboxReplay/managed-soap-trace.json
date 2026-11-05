@@ -1,7 +1,7 @@
 {
   "source": "working-tree-managed-diagnostic",
   "image": "sha256:1b4600cce5f2d885ec54b8d18ca3329fd27fe08c6ce8446961caf2f36a855788",
-  "workflow_run": "https://github.com/honua-io/honua-esri-compat/actions/runs/34741056478",
+  "workflow_run": "34741056478",
   "capture_window_utc": [
     "2026-09-13T05:44:00Z",
     "2026-09-13T05:50:00Z"

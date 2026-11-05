@@ -13,16 +13,6 @@ using NetTopologySuite.IO;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// Production <see cref="IJobExecutor"/> for the <c>geometry.clip</c> process.
-/// Slice 2 of #1031 — companion to <see cref="GeometryBufferJobExecutor"/>.
-///
-/// Clips a target geometry to the axis-aligned bounding envelope of a
-/// supplied clip geometry. The catalog declares the clip parameter as
-/// <c>clipEnvelopeWkb</c> and explicitly states that the bounding envelope
-/// is used (not the polygon itself), so this executor materializes the
-/// clip envelope and intersects the target with it.
-/// </summary>
 internal sealed partial class GeometryClipJobExecutor : IProcessExecutor
 {
     internal const string HandledProcessId = "geometry.clip";
@@ -38,10 +28,6 @@ internal sealed partial class GeometryClipJobExecutor : IProcessExecutor
         _logger = logger;
     }
 
-    /// <summary>
-    /// The single process id this executor handles, surfaced through
-    /// <see cref="IProcessExecutor"/> so the dispatcher auto-registers it (#2122).
-    /// </summary>
     public IReadOnlySet<string> ProcessIds { get; } =
         new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
 
@@ -264,11 +250,6 @@ internal sealed partial class GeometryClipJobExecutor : IProcessExecutor
     }
 }
 
-/// <summary>
-/// Shared GeoJSON Feature writer for the slice 2 vector executors. Centralizes
-/// the artifact payload shape so the dispatcher, OGC API Processes, and
-/// GeoServices GPServer surfaces see a uniform document.
-/// </summary>
 internal static class GeometryFeatureWriter
 {
     private const string DataUriPrefix = "data:application/geo+json;base64,";

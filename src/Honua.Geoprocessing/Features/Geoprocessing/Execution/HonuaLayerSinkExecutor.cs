@@ -19,20 +19,6 @@ using NetTopologySuite.IO;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// <c>sink.honua-layer</c> executor. Loads the input FeatureCollection into a named layer
-/// in the Honua <em>catalog</em> database via the optional <see cref="IHonuaLayerSink"/>
-/// capability (replace/append/upsert load modes plus the reserved
-/// <c>__pipeline_batch_id</c> rollback tag). The capability is the seam that keeps the
-/// geoprocessing dispatcher decoupled from the catalog <c>NpgsqlDataSource</c>: this
-/// executor depends only on the abstraction, never on a database type.
-/// </summary>
-/// <remarks>
-/// In a lean, Postgres-free deployment the capability is not registered, so
-/// <see cref="_sink"/> resolves to <see langword="null"/> and the node fails closed with a
-/// clear "unavailable in this deployment" message — rather than forcing the dispatcher to
-/// take a Postgres dependency or leaking catalog credentials through plan parameters.
-/// </remarks>
 internal sealed partial class HonuaLayerSinkExecutor : IProcessExecutor
 {
     internal const string HandledProcessId = "sink.honua-layer";
@@ -54,14 +40,11 @@ internal sealed partial class HonuaLayerSinkExecutor : IProcessExecutor
         _sink = sink;
     }
 
-    /// <inheritdoc />
     public IReadOnlySet<string> ProcessIds { get; } =
         new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
 
-    /// <inheritdoc />
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 
-    /// <inheritdoc />
     public async Task<JobExecutionResult> ExecuteAsync(
         ExecutionJobRecord job,
         IJobExecutionContext context,
@@ -247,17 +230,7 @@ internal sealed partial class HonuaLayerSinkExecutor : IProcessExecutor
         return JobExecutionResult.Succeeded() with { CompletedWithCommittedEffects = true };
     }
 
-    /// <summary>
-    /// Authorizes the resolved <c>schema.table</c> destination before any DDL/DML runs
-    /// (#4625). Generic <c>Process.Execute</c> permission (the only gate this node had) says
-    /// nothing about whether the submitter may write to THIS destination — <c>sink.honua-layer</c>
-    /// accepted arbitrary caller-supplied schema/table text and PostgresHonuaLayerSink wrote
-    /// through it with only SQL-injection-shaped identifier validation, no target authorization.
-    /// </summary>
-    /// <returns>
-    /// <see langword="null"/> when the destination is authorized; otherwise a safe,
-    /// no-provider-detail denial reason for the job-failure message.
-    /// </returns>
+    // Process.Execute does not authorize this table, so the resolved destination is checked before any DDL or DML.
     private async Task<string?> AuthorizeDestinationAsync(
         string schema, string table, CancellationToken cancellationToken)
     {
@@ -317,11 +290,6 @@ internal sealed partial class HonuaLayerSinkExecutor : IProcessExecutor
               "existing authorized catalog layer instead, or have an administrator create it first.";
     }
 
-    /// <summary>
-    /// Finds the storage-layer id of the relational catalog layer whose resolved schema/table
-    /// matches the requested destination, or <see langword="null"/> when no existing layer
-    /// resolves there (a brand-new destination).
-    /// </summary>
     internal static int? FindExistingLayerId(MetadataV2GraphSnapshot snapshot, string schema, string table)
     {
         foreach (var binding in snapshot.Graph.StorageBindings)

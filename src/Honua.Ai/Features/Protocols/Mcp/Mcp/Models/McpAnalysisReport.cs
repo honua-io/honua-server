@@ -6,12 +6,6 @@ using Honua.Core.Features.Reporting.Domain;
 
 namespace Honua.Ai.Protocols.Mcp.Models;
 
-/// <summary>
-/// MCP wire envelope for <c>honua://jobs/{jobId}/report</c>. Mirrors
-/// <see cref="AnalysisReport"/> verbatim — the polymorphic section list reuses
-/// the Core <see cref="AnalysisReportSection"/> types so the wire shape stays
-/// in lock-step with the contract version.
-/// </summary>
 internal sealed class McpAnalysisReport
 {
     [JsonPropertyName("reportId")]
@@ -60,10 +54,6 @@ internal sealed class McpAnalysisReport
     public McpAnalysisReportRenderUris RenderUris { get; set; } = new();
 }
 
-/// <summary>
-/// Pointers to the Markdown / HTML render endpoints so an MCP client can
-/// dereference rendered output directly.
-/// </summary>
 internal sealed class McpAnalysisReportRenderUris
 {
     [JsonPropertyName("markdown")]

@@ -12,27 +12,8 @@ using NetTopologySuite.IO;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// Production <see cref="IJobExecutor"/> for the <c>geometry.make-valid</c>
-/// process. Closes a catalog-honesty gap on trunk: the process was advertised
-/// in <see cref="BuiltInProcessCatalog"/> (and flagged synchronous by
-/// <c>GPServerExecutionPolicy</c> / first-slice automated by
-/// <c>ProcessMigrationEvidenceClassifier</c>) but had no job executor, so a
-/// workflow/codemod submitting it as a job could never reach it.
-///
-/// Repairs an invalid input geometry — fixing self-intersections, duplicate
-/// vertices, and ring orientation — using the managed NetTopologySuite
-/// <see cref="GeometryFixer"/>, the GEOS-free analogue of PostGIS
-/// <c>ST_MakeValid</c>. WKB in, a single GeoJSON Feature out on the canonical
-/// <c>data:application/geo+json;base64,</c> envelope, matching the rest of the
-/// deterministic single-geometry <c>geometry.*</c> family.
-/// </summary>
 internal sealed partial class GeometryMakeValidJobExecutor : IProcessExecutor
 {
-    /// <summary>
-    /// The single process id this executor handles. Matches the catalog
-    /// entry in <see cref="BuiltInProcessCatalog"/>.
-    /// </summary>
     internal const string HandledProcessId = "geometry.make-valid";
 
     private readonly IOptionsMonitor<GeoprocessingExecutorOptions> _options;
@@ -46,10 +27,6 @@ internal sealed partial class GeometryMakeValidJobExecutor : IProcessExecutor
         _logger = logger;
     }
 
-    /// <summary>
-    /// The single process id this executor handles, surfaced through
-    /// <see cref="IProcessExecutor"/> so the dispatcher auto-registers it (#2122).
-    /// </summary>
     public IReadOnlySet<string> ProcessIds { get; } =
         new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
 

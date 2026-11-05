@@ -14,17 +14,6 @@ using NetTopologySuite.IO;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// Production <see cref="IJobExecutor"/> for the <c>geometry.project</c>
-/// process. Slice 2 of #1031 — companion to <see cref="GeometryBufferJobExecutor"/>.
-///
-/// Reprojects an input geometry between SRIDs that are supported by the
-/// in-memory <see cref="CoordinateTransformer"/> path (identity, Web
-/// Mercator aliases, and WGS 84 ↔ Web Mercator). Datum-shift transforms
-/// requiring <c>ST_Transform</c> are explicitly rejected here so the
-/// first-slice executor remains deterministic without a PostGIS round-trip;
-/// those pairs are tracked as a follow-on.
-/// </summary>
 internal sealed partial class GeometryProjectJobExecutor : IProcessExecutor
 {
     internal const string HandledProcessId = "geometry.project";
@@ -40,10 +29,6 @@ internal sealed partial class GeometryProjectJobExecutor : IProcessExecutor
         _logger = logger;
     }
 
-    /// <summary>
-    /// The single process id this executor handles, surfaced through
-    /// <see cref="IProcessExecutor"/> so the dispatcher auto-registers it (#2122).
-    /// </summary>
     public IReadOnlySet<string> ProcessIds { get; } =
         new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
 

@@ -9,12 +9,6 @@ using Honua.Infrastructure;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Baseline batch-compute adapter that maps canonical execution-job semantics onto
-/// the in-process worker substrate. Bridges progress published by existing workers
-/// (geoprocessing, import) back through the canonical reconciler without introducing
-/// a second dispatch path.
-/// </summary>
 internal sealed class LocalBatchComputeBackend(
     IUniversalProgressStore progressStore,
     IEnumerable<IJobCancellationNotifier> cancellationNotifiers) : IBatchComputeBackend

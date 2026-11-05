@@ -16,7 +16,6 @@ using NetTopologySuite.IO;
 namespace Honua.Protocols.GeoServices.FeatureServer.Services;
 
 /// <summary>
-/// Formats query results as Esri-compatible Protocol Buffer (PBF) responses.
 /// Implements the FeatureCollectionPBuffer schema from github.com/Esri/arcgis-pbf.
 /// </summary>
 /// <remarks>
@@ -44,12 +43,7 @@ internal sealed class PbfQueryFormatter
         _geometryLimits = limitsOptions?.Value?.Geometry ?? new GeometryLimits();
     }
 
-    /// <summary>
-    /// Formats a <c>returnCountOnly=true</c> result as an Esri-compatible PBF response
-    /// (<c>FeatureCollectionPBuffer</c> with the <c>countResult</c> arm of the
-    /// <c>QueryResult</c> oneof), mirroring how the feature path emits protobuf so that
-    /// <c>f=pbf</c> on the count path returns <c>application/x-protobuf</c> rather than JSON.
-    /// </summary>
+    // returnCountOnly with f=pbf emits FeatureCollectionPBuffer countResult, not JSON.
     public static (byte[] response, string contentType) FormatCountAsPbf(long count)
     {
         // Schema (github.com/Esri/arcgis-pbf FeatureCollection.proto):
@@ -92,13 +86,7 @@ internal sealed class PbfQueryFormatter
         }
     }
 
-    /// <summary>
-    /// Formats a <c>returnIdsOnly=true</c> result as an Esri-compatible PBF response
-    /// (<c>FeatureCollectionPBuffer</c> with the <c>idsResult</c> arm of the
-    /// <c>QueryResult</c> oneof), mirroring how the count path emits protobuf so that
-    /// <c>f=pbf</c> on the ids-only path returns <c>application/x-protobuf</c> rather than
-    /// silently degrading to JSON (#1824).
-    /// </summary>
+    // returnIdsOnly with f=pbf emits FeatureCollectionPBuffer idsResult, not JSON.
     public static (byte[] response, string contentType) FormatIdsAsPbf(
         string objectIdFieldName,
         IReadOnlyList<long> objectIds)
@@ -148,13 +136,7 @@ internal sealed class PbfQueryFormatter
         }
     }
 
-    /// <summary>
-    /// Formats a <c>returnExtentOnly=true</c> result as an Esri-compatible PBF response
-    /// (<c>FeatureCollectionPBuffer</c> with the <c>extentCountResult</c> arm of the
-    /// <c>QueryResult</c> oneof), mirroring how the count path emits protobuf so that
-    /// <c>f=pbf</c> on the extent-only path returns <c>application/x-protobuf</c> rather
-    /// than silently degrading to JSON (#1824).
-    /// </summary>
+    // returnExtentOnly with f=pbf emits FeatureCollectionPBuffer extentCountResult, not JSON.
     public static (byte[] response, string contentType) FormatExtentAsPbf(
         double xmin,
         double ymin,

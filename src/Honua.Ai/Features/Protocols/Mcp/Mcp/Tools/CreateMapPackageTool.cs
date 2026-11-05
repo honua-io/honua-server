@@ -10,34 +10,9 @@ using Honua.Ai.Protocols.Mcp.Models;
 
 namespace Honua.Ai.Protocols.Mcp.Tools;
 
-/// <summary>
-/// MCP tool that creates a <c>MapPackage</c> draft deterministically from the
-/// structured geospatial-mcp <c>create_map_package</c> selectors (ADR-0076,
-/// honua-server#3255).
-/// </summary>
-/// <remarks>
-/// <para>
-/// It performs no model inference: the tool is a thin protocol adapter that
-/// parses the wire arguments, maps them onto a canonical
-/// <see cref="MapPackageDraftRequest"/>, and delegates every validation and
-/// composition rule to the shared <see cref="IMapPackageDraftFactory"/> in
-/// <c>Honua.Core</c>. Three defects of the previous prompt-driven implementation
-/// are closed here: <c>prompt</c> is no longer required (or accepted),
-/// <c>sourceBindings</c> is parsed rather than rejected, and <c>initialView</c>
-/// is honored rather than advertised and silently dropped.
-/// </para>
-/// <para>
-/// The factory arrives by constructor injection, deliberately. ADR-0076 records
-/// why: the previous implementation resolved its collaborator through a nullable
-/// <c>RequestServices.GetService&lt;T&gt;()</c>, so removing the registration
-/// still compiled and left the tool advertised but permanently returning
-/// <c>capability_unavailable</c>. A constructor dependency turns that same
-/// mistake into a startup failure.
-/// </para>
-/// </remarks>
+// The factory is a constructor dependency so a missing registration fails at startup instead of advertising a tool that always returns unavailable.
 internal sealed class CreateMapPackageTool : IMcpTool
 {
-    /// <summary>The tool name published in <c>tools/list</c>.</summary>
     public const string ToolName = "honua_create_map_package";
 
     private readonly IGeoprocessingJobService _jobService;
@@ -45,7 +20,6 @@ internal sealed class CreateMapPackageTool : IMcpTool
     private readonly IPackageDraftStore _draftStore;
     private readonly ILogger<CreateMapPackageTool> _logger;
 
-    /// <summary>Initializes a new instance of the <see cref="CreateMapPackageTool"/> class.</summary>
     public CreateMapPackageTool(
         IGeoprocessingJobService jobService,
         IMapPackageDraftFactory drafts,
@@ -58,13 +32,10 @@ internal sealed class CreateMapPackageTool : IMcpTool
         _logger = logger;
     }
 
-    /// <inheritdoc />
     public string Name => ToolName;
 
-    /// <inheritdoc />
     public string WorkflowFamily => McpTelemetry.WorkflowFamily.Execution;
 
-    /// <inheritdoc />
     public McpToolDescriptor Describe() => new()
     {
         Name = ToolName,
@@ -82,7 +53,6 @@ internal sealed class CreateMapPackageTool : IMcpTool
         Annotations = McpToolAnnotationSets.Write("Create map package", destructive: false, idempotent: false)
     };
 
-    /// <inheritdoc />
     public async Task<McpToolsCallResult> InvokeAsync(
         HttpContext httpContext,
         JsonElement? arguments,
@@ -173,12 +143,6 @@ internal sealed class CreateMapPackageTool : IMcpTool
         };
     }
 
-    /// <summary>
-    /// The standard declares <c>crs</c> as a string or an integer EPSG code.
-    /// Normalizing the integer spelling to <c>EPSG:&lt;code&gt;</c> is a
-    /// wire-shape concern and belongs in the adapter; the CRS grammar itself is
-    /// validated by the shared factory.
-    /// </summary>
     private static string? NormalizeCrs(JsonElement? crs) => crs?.ValueKind switch
     {
         JsonValueKind.String => crs.Value.GetString(),

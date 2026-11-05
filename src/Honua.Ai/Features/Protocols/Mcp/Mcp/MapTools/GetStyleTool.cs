@@ -12,26 +12,8 @@ using Honua.Ai.Protocols.Mcp.Tools;
 
 namespace Honua.Ai.Protocols.Mcp.MapTools;
 
-/// <summary>
-/// MCP tool that inspects styles served through the canonical OGC API - Styles
-/// surface (ADR-0048). It is a thin, read-only adapter over the styleId-keyed
-/// <see cref="IStyleCatalog"/> and the neutral <see cref="IOgcStyleProjection"/>
-/// encoding projection — the same seams the <c>/ogc/styles</c> endpoints drive —
-/// so no style storage, conversion, or catalog logic is reimplemented here.
-///
-/// <para>
-/// Three modes, none of which mutate server state:
-/// <list type="bullet">
-///   <item><description>With <c>styleId</c>: resolves that single StyleRef.</description></item>
-///   <item><description>With <c>serviceId</c>+<c>layerId</c>: resolves the primary/default
-///     StyleRef bound to that published layer.</description></item>
-///   <item><description>With none: lists the available styles (a discovery catalog).</description></item>
-/// </list>
-/// </para>
-/// </summary>
 internal sealed class GetStyleTool : IMcpTool
 {
-    /// <summary>The advertised <c>tools/list</c> name of this tool.</summary>
     public const string ToolName = "honua_get_style";
 
     private const string ToolDescription =
@@ -52,13 +34,10 @@ internal sealed class GetStyleTool : IMcpTool
         _logger = logger;
     }
 
-    /// <inheritdoc />
     public string Name => ToolName;
 
-    /// <inheritdoc />
     public string WorkflowFamily => McpTelemetry.WorkflowFamily.Results;
 
-    /// <inheritdoc />
     public McpToolDescriptor Describe() => new()
     {
         Name = ToolName,
@@ -69,7 +48,6 @@ internal sealed class GetStyleTool : IMcpTool
         Annotations = McpToolAnnotationSets.ReadOnly("Get style")
     };
 
-    /// <inheritdoc />
     public async Task<McpToolsCallResult> InvokeAsync(
         HttpContext httpContext,
         JsonElement? arguments,
@@ -120,12 +98,6 @@ internal sealed class GetStyleTool : IMcpTool
             SummarizeStyleOutput);
     }
 
-    /// <summary>
-    /// One-line, information-bearing text summary emitted when the serialized
-    /// style payload is large (a big discovery catalog, or an inlined stylesheet
-    /// body): the essential identifiers and next-step hints live in text while
-    /// the full payload rides in <c>structuredContent</c> (MCP A1 token policy).
-    /// </summary>
     private static string SummarizeStyleOutput(McpGetStyleOutput output)
     {
         if (output.Styles is { } styles)

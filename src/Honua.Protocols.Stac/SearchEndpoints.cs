@@ -11,6 +11,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Federation.Services;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Core.Features.Validation;
 using Honua.Core.Queries.Filters;
 using Honua.Infrastructure.Filtering;
 using Honua.Infrastructure.Helpers;
@@ -28,18 +29,12 @@ using Honua.Core.Abstractions.Features.Rasters.Abstractions;
 
 namespace Honua.Protocols.Stac;
 
-/// <summary>
-/// STAC Item Search endpoint (GET and POST).
-/// </summary>
 internal static class SearchEndpoints
 {
     private const int Wgs84Srid = 4326;
     private const int MaxItemIdCount = 512;
     private delegate bool TryParseDelegate<TValue>(string input, out TValue value);
 
-    /// <summary>
-    /// Maps the STAC search endpoints.
-    /// </summary>
     public static IEndpointRouteBuilder MapStacSearchEndpoints(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapGet("/stac/search", HandleSearchGet)
@@ -878,12 +873,6 @@ internal static class SearchEndpoints
     private static bool ExceedsGlobalCandidateBudget(int currentCount, int incomingCount)
         => incomingCount > MaxItemIdCount - currentCount;
 
-    /// <summary>
-    /// Computes the per-collection read window (<c>offset + pageLimit</c>) for a
-    /// cross-collection sort. The window is refused when <c>offset + limit</c>
-    /// exceeds <see cref="StacConstants.MaxSearchLimit"/>, so a reader is never
-    /// asked for more than <c>MaxSearchLimit + 1</c> rows.
-    /// </summary>
     private static bool TryGetCrossCollectionWindow(int offset, int effectiveLimit, int pageLimit, out int window)
     {
         window = 0;
@@ -1131,12 +1120,6 @@ internal static class SearchEndpoints
         return true;
     }
 
-    /// <summary>
-    /// Resolves the STAC Item Search canonical fields to the source attribute that
-    /// produces the same value as the item mapper. The queryables documents advertise
-    /// <c>id</c> and <c>datetime</c> even when neither is a physical column; rejecting
-    /// those names here made the advertised Sort extension unusable (#4147).
-    /// </summary>
     private static bool TryResolveCanonicalSortField(
         MetadataV2Resource resource,
         string requestedField,
@@ -1590,32 +1573,20 @@ internal static class SearchEndpoints
 
     private static bool TryParseBbox(string bbox, out ImmutableArray<double> values, out string? error)
     {
-        var parts = bbox.Split(',', StringSplitOptions.None | StringSplitOptions.TrimEntries);
-        if (parts.Length is not 4 and not 6)
+        values = default;
+        var parsed = BoundingBoxOrdinates.Parse(bbox);
+        if (!parsed.Succeeded)
         {
-            values = default;
-            error = "bbox must contain four or six numeric values.";
+            error = "bbox must contain four or six finite numeric values.";
             return false;
         }
 
-        var parsed = new double[parts.Length];
-        for (var i = 0; i < parts.Length; i++)
+        if (!StacFilterHelpers.TryExtractBbox2D(parsed.Ordinates, out _, out _, out _, out _, out error))
         {
-            if (!double.TryParse(parts[i], NumberStyles.Float, CultureInfo.InvariantCulture, out parsed[i]))
-            {
-                values = default;
-                error = "bbox contains an invalid numeric value.";
-                return false;
-            }
-        }
-
-        if (!StacFilterHelpers.TryExtractBbox2D(parsed, out _, out _, out _, out _, out error))
-        {
-            values = default;
             return false;
         }
 
-        values = ImmutableArray.Create(parsed);
+        values = ImmutableArray.Create(parsed.Ordinates);
         error = null;
         return true;
     }
@@ -2080,11 +2051,6 @@ internal static class SearchEndpoints
         return string.Join("&", query);
     }
 
-    /// <summary>
-    /// Parses an opaque POST-search continuation token (as emitted in the
-    /// <c>next</c> link body) into the offset of the next page. A null/empty
-    /// token means "start at the first page" (offset 0).
-    /// </summary>
     private static bool TryParseContinuationToken(string? token, out int offset)
     {
         if (string.IsNullOrWhiteSpace(token))
@@ -2096,11 +2062,6 @@ internal static class SearchEndpoints
         return StacContinuationTokens.TryParse(token, out offset);
     }
 
-    /// <summary>
-    /// Builds a spec-conformant POST <c>next</c> link for POST item-search:
-    /// <c>method: POST</c>, <c>merge: true</c>, and a JSON <c>body</c> carrying
-    /// the continuation token that is merged with the originating request body.
-    /// </summary>
     private static Link CreatePostNextLink(string stacBase, int nextOffset)
     {
         var token = StacContinuationTokens.Prefix + nextOffset.ToString(CultureInfo.InvariantCulture);

@@ -54,28 +54,6 @@ public sealed class ImportExportTileOperationsRegistrationTests
         descriptor.ImplementationInstance.Should().BeSameAs(NullTileCacheKeyIndex.Instance);
     }
 
-    /// <summary>
-    /// Regression guard for the release-train boot crash in honua-release run 32279881347
-    /// (gate_e2e / slice1): every e2e driver reported BLOCKED because the server never came up with
-    /// <c>Cannot consume scoped service &apos;IMetadataV2GraphProvider&apos; from singleton
-    /// &apos;ITileCacheJobService&apos;</c>.
-    /// <para>
-    /// The failure is CONFIGURATION-GATED, which is exactly why nothing caught it. Three things have
-    /// to line up: (1) the host validates the container — ASP.NET only turns on
-    /// <c>ValidateOnBuild</c>/<c>ValidateScopes</c> in the Development environment, which the e2e
-    /// harness compose sets; (2) <see cref="IConnectionMultiplexer"/> is in the collection, which is
-    /// what gates <c>ITileCacheJobService</c> in at all, and which in turn needs a reachable
-    /// <c>ConnectionStrings:Redis</c> AND a <c>caching.redis</c> entitlement
-    /// (<c>Licensing:DevGrantEdition=Pro/Enterprise</c>); and (3) the metadata graph provider is the
-    /// scoped Postgres one rather than the singleton the file-backed dev/test path registers. Drop
-    /// any one of the three — as the honua-esri-compat stack does by leaving Redis behind an opt-in
-    /// compose profile — and the identical image boots clean.
-    /// </para>
-    /// <para>
-    /// So this test pins the crashing combination, not the default one: a container-validation test
-    /// against the default configuration passes even with the bug present.
-    /// </para>
-    /// </summary>
     [UnitTest]
     public void AddTileOperations_RedisEntitledWithScopedMetadataGraphProvider_ContainerValidates()
     {

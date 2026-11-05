@@ -6,7 +6,6 @@ using NetTopologySuite.Geometries;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>Producer-owned output coordinate frame. A feature property is not this frame.</summary>
 internal sealed record FeatureArtifactSpatialReference(string State, int? Srid)
 {
     internal const string MemberName = "honua:spatialReference";
@@ -80,7 +79,6 @@ internal sealed record FeatureArtifactSpatialReference(string State, int? Srid)
     }
 }
 
-/// <summary>Tracks one output frame without treating a GeoJSON reader's default as producer evidence.</summary>
 internal sealed class FeatureArtifactSpatialReferenceAccumulator
 {
     private int? _srid;

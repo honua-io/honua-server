@@ -19,74 +19,16 @@ using NetTopologySuite.Index.Strtree;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// <c>enrichment.enrich</c> executor (#2283): the asynchronous batch counterpart of
-/// the synchronous <c>POST /api/enrich</c> endpoint, running as a canonical
-/// geoprocessing job so submission, status, results, and dismissal all flow through
-/// the existing process/job runtime (OGC API Processes <c>/ogc/processes/jobs</c>,
-/// GPServer) instead of an enrichment-local lifecycle.
-///
-/// <para>
-/// The enrichment dataset is resolved by <c>datasetId</c> through the neutral
-/// <see cref="IEnrichmentDatasetResolver"/> seam — the same merged
-/// managed/configuration catalog the sync endpoint uses — and the dataset's
-/// minimum-edition tier plus the shared <c>analytics.spatial-join</c> entitlement
-/// are enforced before any layer read. The target features come from EITHER a
-/// registered catalog layer (<c>layerId</c>, streamed through the
-/// <c>source.honua-layer</c> connector with optional <c>where</c>/<c>bbox</c>
-/// windowing) OR a staged inline FeatureCollection (<c>input</c>, a
-/// <c>data:application/geo+json;base64</c> data URI) — closing the sync endpoint's
-/// inline-source and over-limit deferrals. The dataset's backing layer is always
-/// streamed through the connector.
-/// </para>
-///
-/// <para>
-/// The join computation is the shared <see cref="SpatialJoinSupport"/> used by
-/// <c>analytics.spatial-join</c> (JOIN_COUNT + carried-attribute arrays + numeric
-/// aggregates; managed NTS predicates, CRS-unit distances, no geodesic
-/// conversion), plus a <c>nearest-neighbor</c> method that annotates each target
-/// with the single closest dataset feature's carried attributes and a
-/// <c>NEAR_DIST</c> planar distance. The published artifact is the canonical
-/// FeatureCollection envelope with the dataset id, title, and attribution injected
-/// as foreign members so downstream consumers can comply with the data provider's
-/// terms.
-/// </para>
-/// </summary>
 internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
 {
-    /// <summary>The dotted process id this executor handles.</summary>
     internal const string HandledProcessId = "enrichment.enrich";
 
-    /// <summary>Attribute holding the planar distance to the nearest dataset feature.</summary>
     internal const string NearDistanceAttribute = "NEAR_DIST";
 
-    /// <summary>
-    /// Step input carrying the enrichment dataset's backing layer id AS AUTHORIZED AT
-    /// SUBMISSION (honua-server#3043 review). Written exclusively by
-    /// <see cref="GeoprocessingLayerAccessGuard"/>, which strips any caller-supplied value
-    /// before stamping the layer it actually authorized; the executor refuses to read a
-    /// dataset that no longer resolves to that layer, closing the window where an admin
-    /// re-points a managed dataset at a restricted layer while the job is queued. Not a
-    /// declared catalog parameter — it is an internal binding, never part of the public
-    /// process description.
-    /// </summary>
+    // The backing layer id is stamped at submission after any caller value is stripped, and a dataset that resolves to a different layer is refused.
     internal const string AuthorizedDatasetLayerInput = "authorizedDatasetLayerId";
 
-    /// <summary>
-    /// Step input carrying the caller-selected SOURCE layer as authorized at submission, the
-    /// counterpart of <see cref="AuthorizedDatasetLayerInput"/> for the other layer an
-    /// enrichment job reads (honua-server#3043 review).
-    /// </summary>
-    /// <remarks>
-    /// Without it, a background submission re-authorized the source layer against the SUBMITTING
-    /// identity — for the workflow reconcile tick that is the orchestrator principal carrying the
-    /// wildcard <c>admin</c> role — so a source layer publication never saw, such as one supplied
-    /// through a ForEach placeholder, was authorized against admin rather than against the human
-    /// who published the workflow. Written exclusively by
-    /// <see cref="GeoprocessingLayerAccessGuard"/>, which strips any caller-supplied value first.
-    /// Not a declared catalog parameter — an internal binding, never part of the public process
-    /// description.
-    /// </remarks>
+    // The source layer is pinned at submission so a later run under the orchestrator admin role cannot authorize a different layer.
     internal const string AuthorizedSourceLayerInput = "authorizedSourceLayerId";
 
     // Enrichment compute is a curated facade over spatial join, so it shares the
@@ -96,28 +38,12 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
 
     private const string HonuaLayerSourceId = "source.honua-layer";
 
-    /// <summary>
-    /// The single CRS both layers are streamed in and the artifact is published in:
-    /// EPSG:4326. Pinning one CRS is what makes a cross-SRID join correct, and GeoJSON
-    /// is WGS 84 by specification (RFC 7946), so publishing projected ordinates would
-    /// be misread by every standard consumer. Distances are therefore evaluated in
-    /// degrees — the same "CRS units, no geodesic conversion" contract the other managed
-    /// analytics executors document.
-    /// </summary>
+    // Both layers are pinned to EPSG:4326 because GeoJSON is WGS 84, so distances are in degrees with no geodesic conversion.
     private const int JoinSrid = 4326;
 
-    /// <summary>
-    /// Default per-layer admission cap. Enforced while streaming so an oversized
-    /// selection fails fast with an actionable message instead of exhausting worker
-    /// memory before the artifact-size check.
-    /// </summary>
     private const int DefaultMaxInputFeatures = 250_000;
 
-    /// <summary>
-    /// Hard operator ceiling for the per-layer admission cap. A caller may only lower
-    /// the cap; it can never be raised past this, so no single job can disable the
-    /// guard and exhaust the worker.
-    /// </summary>
+    // A caller may lower the admission cap and cannot raise it past this ceiling.
     private const int MaxInputFeaturesCeiling = 1_000_000;
 
     private readonly IServiceScopeFactory _serviceScopeFactory;
@@ -128,7 +54,6 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
     private readonly long _maxInputBytes;
     private IReadOnlySet<string>? _processIds;
 
-    /// <summary>Initializes a new instance of the <see cref="EnrichmentJobExecutor"/> class.</summary>
     public EnrichmentJobExecutor(
         IServiceScopeFactory serviceScopeFactory,
         IOptionsMonitor<GeoprocessingExecutorOptions> options,
@@ -147,14 +72,11 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
         _maxInputBytes = limits.Analytics.MaxInputBytes;
     }
 
-    /// <inheritdoc />
     public IReadOnlySet<string> ProcessIds =>
         _processIds ??= new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
 
-    /// <inheritdoc />
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 
-    /// <inheritdoc />
     public async Task<JobExecutionResult> ExecuteAsync(
         ExecutionJobRecord job,
         IJobExecutionContext context,
@@ -382,11 +304,6 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
         return JobExecutionResult.Succeeded();
     }
 
-    /// <summary>
-    /// Verifies that the dataset resolved at EXECUTION still points at the layer the
-    /// submit-time gate authorized. Returns a failure message, or null when the binding
-    /// matches.
-    /// </summary>
     private string? CheckAuthorizedDatasetLayer(
         StepInputReader inputs,
         EnrichmentDatasetDefinition dataset,
@@ -411,12 +328,6 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
             + $"{authorizedLayerId}. Resubmit so the current layer is authorized.";
     }
 
-    /// <summary>
-    /// Enforces the shared enrichment entitlement and the dataset's minimum-edition
-    /// tier from the deployment's license state, mirroring the synchronous
-    /// endpoint's <c>LicenseGate</c> + minimum-edition checks. Returns a failure
-    /// message, or null when the caller is entitled.
-    /// </summary>
     private static string? CheckLicenseGate(IServiceProvider services, EnrichmentDatasetDefinition dataset)
     {
         var entitlementService = services.GetService<ILicenseEntitlementService>();
@@ -442,10 +353,6 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
         return null;
     }
 
-    /// <summary>
-    /// Returns the name of the first supplied source-layer windowing filter, or null when
-    /// none is present. Only meaningful on the inline branch, where these have no effect.
-    /// </summary>
     private static string? FindLayerOnlySourceFilter(StepInputReader inputs)
     {
         if (inputs.TryGet("where", out _))
@@ -789,21 +696,6 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
         return members;
     }
 
-    /// <summary>The resolved enrichment join behavior for one job.</summary>
-    /// <param name="MethodName">Effective enrichment method name, echoed as artifact provenance.</param>
-    /// <param name="Nearest">Whether the nearest-neighbor method was requested.</param>
-    /// <param name="Predicate">Effective spatial predicate for the join methods.</param>
-    /// <param name="Distance">Within-distance threshold in CRS units (0 when unused).</param>
-    /// <param name="CarryFields">Dataset attributes carried onto each enriched feature.</param>
-    /// <param name="Stats">Aggregates computed over the matched dataset features.</param>
-    /// <param name="MaxInputFeatures">
-    /// Per-layer admission cap enforced WHILE streaming, so an oversized selection fails
-    /// fast instead of exhausting worker memory before the artifact-size check.
-    /// </param>
-    /// <param name="MaxCarriedMatchValues">
-    /// Cumulative ceiling on carried match values across the whole operation. This bounds
-    /// join-method Cartesian growth and nearest-neighbor annotations alike.
-    /// </param>
     private sealed record EnrichmentPlan(
         string MethodName,
         bool Nearest,

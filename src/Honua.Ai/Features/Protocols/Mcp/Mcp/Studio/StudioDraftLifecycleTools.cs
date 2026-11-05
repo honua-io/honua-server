@@ -16,17 +16,8 @@ using Honua.Ai.Protocols.Mcp.Tools;
 
 namespace Honua.Ai.Protocols.Mcp.Studio;
 
-/// <summary>
-/// MCP tool that creates a mutable Studio package lifecycle draft
-/// (honua-server#3002, REQ-001). Delegates entirely to
-/// <see cref="Honua.Core.Features.Studio.Abstractions.IStudioPackageLifecycleService.CreateDraftAsync"/> —
-/// the same canonical service <c>POST /api/v*/studio/package-drafts</c>
-/// uses — so an external MCP client and the in-app Studio AI proxy compose
-/// against the identical draft the Studio UI observes (AD-8).
-/// </summary>
 internal sealed class CreateStudioDraftTool : StudioDraftToolBase, IMcpTool
 {
-    /// <summary>The tool name published in <c>tools/list</c>.</summary>
     public const string ToolName = "honua_studio_create_draft";
 
     private readonly ILogger<CreateStudioDraftTool> _typedLogger;
@@ -37,13 +28,10 @@ internal sealed class CreateStudioDraftTool : StudioDraftToolBase, IMcpTool
         _typedLogger = logger;
     }
 
-    /// <inheritdoc />
     public string Name => ToolName;
 
-    /// <inheritdoc />
     public string WorkflowFamily => McpTelemetry.WorkflowFamily.Lifecycle;
 
-    /// <inheritdoc />
     public McpToolDescriptor Describe() => new()
     {
         Name = ToolName,
@@ -60,7 +48,6 @@ internal sealed class CreateStudioDraftTool : StudioDraftToolBase, IMcpTool
         Annotations = McpToolAnnotationSets.Write("Create Studio draft", destructive: false, idempotent: false)
     };
 
-    /// <inheritdoc />
     public async Task<McpToolsCallResult> InvokeAsync(
         HttpContext httpContext, JsonElement? arguments, CancellationToken cancellationToken)
     {
@@ -214,13 +201,8 @@ internal sealed class CreateStudioDraftTool : StudioDraftToolBase, IMcpTool
     }
 }
 
-/// <summary>
-/// MCP tool that reads a Studio package lifecycle draft by id
-/// (honua-server#3002, REQ-001).
-/// </summary>
 internal sealed class GetStudioDraftTool : StudioDraftToolBase, IMcpTool
 {
-    /// <summary>The tool name published in <c>tools/list</c>.</summary>
     public const string ToolName = "honua_studio_get_draft";
 
     private readonly ILogger<GetStudioDraftTool> _typedLogger;
@@ -231,13 +213,10 @@ internal sealed class GetStudioDraftTool : StudioDraftToolBase, IMcpTool
         _typedLogger = logger;
     }
 
-    /// <inheritdoc />
     public string Name => ToolName;
 
-    /// <inheritdoc />
     public string WorkflowFamily => McpTelemetry.WorkflowFamily.Lifecycle;
 
-    /// <inheritdoc />
     public McpToolDescriptor Describe() => new()
     {
         Name = ToolName,
@@ -248,7 +227,6 @@ internal sealed class GetStudioDraftTool : StudioDraftToolBase, IMcpTool
         Annotations = McpToolAnnotationSets.ReadOnly("Get Studio draft")
     };
 
-    /// <inheritdoc />
     public async Task<McpToolsCallResult> InvokeAsync(
         HttpContext httpContext, JsonElement? arguments, CancellationToken cancellationToken)
     {
@@ -282,17 +260,9 @@ internal sealed class GetStudioDraftTool : StudioDraftToolBase, IMcpTool
         ?? throw new GeoprocessingValidationException("'draftId' is required.");
 }
 
-/// <summary>
-/// MCP tool that replaces a Studio package lifecycle draft's editable fields
-/// with optimistic-generation checking (honua-server#3002, REQ-001). Scoped
-/// narrower than the REST admin surface — see
-/// <see cref="McpStudioUpdateDraftArgument"/> — it never accepts
-/// <c>publicationIntent</c>, so publish signals can only ever be recorded
-/// through <see cref="ProposeStudioPublicationTool"/> (REQ-003/REQ-009).
-/// </summary>
+// This updater never accepts publicationIntent, so a publish signal can only be recorded through the propose tool.
 internal sealed class UpdateStudioDraftTool : StudioDraftToolBase, IMcpTool
 {
-    /// <summary>The tool name published in <c>tools/list</c>.</summary>
     public const string ToolName = "honua_studio_update_draft";
 
     private readonly ILogger<UpdateStudioDraftTool> _typedLogger;
@@ -303,13 +273,10 @@ internal sealed class UpdateStudioDraftTool : StudioDraftToolBase, IMcpTool
         _typedLogger = logger;
     }
 
-    /// <inheritdoc />
     public string Name => ToolName;
 
-    /// <inheritdoc />
     public string WorkflowFamily => McpTelemetry.WorkflowFamily.Lifecycle;
 
-    /// <inheritdoc />
     public McpToolDescriptor Describe() => new()
     {
         Name = ToolName,
@@ -330,7 +297,6 @@ internal sealed class UpdateStudioDraftTool : StudioDraftToolBase, IMcpTool
         Annotations = McpToolAnnotationSets.Write("Update Studio draft", destructive: false, idempotent: false)
     };
 
-    /// <inheritdoc />
     public async Task<McpToolsCallResult> InvokeAsync(
         HttpContext httpContext, JsonElement? arguments, CancellationToken cancellationToken)
     {
@@ -421,19 +387,9 @@ internal sealed class UpdateStudioDraftTool : StudioDraftToolBase, IMcpTool
     }
 }
 
-/// <summary>
-/// MCP tool that validates a Studio package lifecycle draft's CURRENT
-/// envelope (honua-server#3002, REQ-001). Genuinely read-only (PR #3016
-/// review): unlike the REST admin surface's <c>POST .../validate</c>, this
-/// tool calls the pure <see cref="Honua.Core.Features.Studio.Abstractions.IStudioPackageValidator"/>
-/// directly and does NOT persist the result or advance the draft's
-/// generation — so its <c>readOnlyHint: true</c> annotation is honest and a
-/// concurrent composition-mutation call's expected generation is never
-/// invalidated by a validate call racing it.
-/// </summary>
+// Validate does not persist or advance the generation, so a concurrent mutation keeps its expected generation.
 internal sealed class ValidateStudioDraftTool : StudioDraftToolBase, IMcpTool
 {
-    /// <summary>The tool name published in <c>tools/list</c>.</summary>
     public const string ToolName = "honua_studio_validate_draft";
 
     private readonly ILogger<ValidateStudioDraftTool> _typedLogger;
@@ -444,13 +400,10 @@ internal sealed class ValidateStudioDraftTool : StudioDraftToolBase, IMcpTool
         _typedLogger = logger;
     }
 
-    /// <inheritdoc />
     public string Name => ToolName;
 
-    /// <inheritdoc />
     public string WorkflowFamily => McpTelemetry.WorkflowFamily.Lifecycle;
 
-    /// <inheritdoc />
     public McpToolDescriptor Describe() => new()
     {
         Name = ToolName,
@@ -465,7 +418,6 @@ internal sealed class ValidateStudioDraftTool : StudioDraftToolBase, IMcpTool
         Annotations = McpToolAnnotationSets.ReadOnly("Validate Studio draft")
     };
 
-    /// <inheritdoc />
     public async Task<McpToolsCallResult> InvokeAsync(
         HttpContext httpContext, JsonElement? arguments, CancellationToken cancellationToken)
     {
@@ -501,18 +453,9 @@ internal sealed class ValidateStudioDraftTool : StudioDraftToolBase, IMcpTool
     }
 }
 
-/// <summary>
-/// MCP tool that builds a preview plan for a Studio package lifecycle draft's
-/// CURRENT envelope (honua-server#3002, REQ-001). Genuinely read-only (PR
-/// #3016 review): mirrors <c>StudioPackageLifecycleService.PreviewPlanAsync</c>'s
-/// projection (validate, then classify synchronous vs job-backed by family)
-/// without calling it, because that method persists a refreshed validation
-/// summary through the store first. For job-backed families (gp/etl/workflow)
-/// the plan is planning-only — it does not submit or execute a job.
-/// </summary>
+// Preview does not call the method that persists a validation summary, so the read-only hint stays honest.
 internal sealed class PreviewStudioDraftTool : StudioDraftToolBase, IMcpTool
 {
-    /// <summary>The tool name published in <c>tools/list</c>.</summary>
     public const string ToolName = "honua_studio_preview_draft";
 
     private readonly ILogger<PreviewStudioDraftTool> _typedLogger;
@@ -523,13 +466,10 @@ internal sealed class PreviewStudioDraftTool : StudioDraftToolBase, IMcpTool
         _typedLogger = logger;
     }
 
-    /// <inheritdoc />
     public string Name => ToolName;
 
-    /// <inheritdoc />
     public string WorkflowFamily => McpTelemetry.WorkflowFamily.Lifecycle;
 
-    /// <inheritdoc />
     public McpToolDescriptor Describe() => new()
     {
         Name = ToolName,
@@ -545,7 +485,6 @@ internal sealed class PreviewStudioDraftTool : StudioDraftToolBase, IMcpTool
         Annotations = McpToolAnnotationSets.ReadOnly("Preview Studio draft")
     };
 
-    /// <inheritdoc />
     public async Task<McpToolsCallResult> InvokeAsync(
         HttpContext httpContext, JsonElement? arguments, CancellationToken cancellationToken)
     {

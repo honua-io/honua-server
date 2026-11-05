@@ -7,22 +7,10 @@ using NetTopologySuite.Index.Strtree;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// <c>overlay.intersect</c> executor (#2206). Layer-aware intersect: emits the
-/// pairwise geometric intersection of every <c>input</c> feature with every
-/// overlapping <c>overlay</c> feature, carrying the input attributes and merging
-/// the overlay attributes (overlay keys that collide with input keys are prefixed
-/// <c>OVERLAY_</c>). This is the parity counterpart to Esri's
-/// <c>Intersect_analysis</c> over two layers addressed inline. An in-memory
-/// <see cref="STRtree{T}"/> indexes the overlay layer so the pairing is not a full
-/// cross product. Pure managed NetTopologySuite overlay — no GDAL/GEOS native
-/// dependency.
-/// </summary>
 internal sealed class OverlayIntersectExecutor(
     IOptionsMonitor<GeoprocessingExecutorOptions> options)
     : FeatureCollectionTransformExecutor(options)
 {
-    /// <summary>The canonical process id this executor handles.</summary>
     internal const string HandledProcessId = "overlay.intersect";
 
     private const string OverlayPrefix = "OVERLAY_";

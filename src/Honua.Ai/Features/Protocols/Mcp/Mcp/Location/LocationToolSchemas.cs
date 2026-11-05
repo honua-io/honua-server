@@ -5,32 +5,20 @@ using System.Text.Json;
 
 namespace Honua.Ai.Protocols.Mcp.Location;
 
-/// <summary>
-/// JSON-schema documents advertised in <c>tools/list</c> for the geocode and
-/// route tools. Schemas are immutable <see cref="JsonElement"/> values parsed
-/// at type-load time to keep the MCP surface AOT-safe.
-/// </summary>
 internal static class LocationToolSchemas
 {
-    /// <summary>Lower bound (inclusive) for <c>maxResults</c>.</summary>
     public const int MinGeocodeResults = 1;
 
-    /// <summary>Upper bound (inclusive) for <c>maxResults</c>.</summary>
     public const int MaxGeocodeResults = 50;
 
-    /// <summary>Default candidate count when <c>maxResults</c> is omitted.</summary>
     public const int DefaultGeocodeResults = 5;
 
-    /// <summary>Minimum number of stops required to solve a route.</summary>
     public const int MinRouteStops = 2;
 
-    /// <summary>Maximum number of stops accepted per route solve.</summary>
     public const int MaxRouteStops = 25;
 
-    /// <summary>Minimum number of addresses accepted per batch geocode call.</summary>
     public const int MinBatchAddresses = 1;
 
-    /// <summary>Maximum number of addresses accepted per batch geocode call.</summary>
     public const int MaxBatchAddresses = 100;
 
     private const string GeocodeArgumentSchemaJson = """
@@ -142,19 +130,10 @@ internal static class LocationToolSchemas
         }
         """;
 
-    /// <summary>
-    /// Schema for <see cref="McpGeocodeArgument"/>.
-    /// </summary>
     public static readonly JsonElement GeocodeArgumentSchema = Parse(GeocodeArgumentSchemaJson);
 
-    /// <summary>
-    /// Schema for <see cref="McpGeocodeAddressesArgument"/>.
-    /// </summary>
     public static readonly JsonElement GeocodeAddressesArgumentSchema = Parse(GeocodeAddressesArgumentSchemaJson);
 
-    /// <summary>
-    /// Schema for <see cref="McpRouteArgument"/>.
-    /// </summary>
     public static readonly JsonElement RouteArgumentSchema = Parse(RouteArgumentSchemaJson);
 
     private static JsonElement Parse(string json)

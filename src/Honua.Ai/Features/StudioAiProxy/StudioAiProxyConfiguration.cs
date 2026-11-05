@@ -6,91 +6,57 @@ using Org.BouncyCastle.Crypto.Parameters;
 
 namespace Honua.Ai.StudioAiProxy;
 
-/// <summary>
-/// Configuration for the provider-agnostic Studio AI proxy (honua-server#3000). Operators declare
-/// any number of arbitrarily-named providers, each pointing at one of the three adapter
-/// <see cref="StudioAiProxyProviderOptions.Kind"/> values. This is what makes OpenRouter, LiteLLM,
-/// Ollama, and vLLM all reachable through the single <c>openai</c> kind — they differ only by
-/// <see cref="StudioAiProxyProviderOptions.Endpoint"/>.
-/// </summary>
 public sealed class StudioAiProxyConfiguration
 {
-    /// <summary>Operator approvals for model data disclosure; classification is an operator workload assertion, not content detection.</summary>
     public Honua.Core.Features.Security.AiDisclosurePolicyOptions Disclosure { get; set; } = new();
 
-    /// <summary>The configuration section name.</summary>
     public const string SectionName = "StudioAiProxy";
 
-    /// <summary>Adapter kind for the Anthropic Messages API.</summary>
     public const string AnthropicKind = "anthropic";
 
-    /// <summary>Adapter kind for any OpenAI-compatible <c>/chat/completions</c> endpoint.</summary>
     public const string OpenAiKind = "openai";
 
-    /// <summary>Adapter kind for AWS Bedrock (bridges the existing Bedrock chat-client plumbing).</summary>
     public const string BedrockKind = "bedrock";
 
-    /// <summary>Default AWS region for a <see cref="BedrockKind"/> provider when none is configured.</summary>
     public const string DefaultBedrockRegion = "us-east-1";
 
-    /// <summary>Whether the feature is enabled. Default: false.</summary>
     public bool Enabled { get; set; }
 
-    /// <summary>The provider name used when a chat/capabilities request does not name one.</summary>
     public string DefaultProvider { get; set; } = string.Empty;
 
-    /// <summary>
-    /// Maximum accepted prompt size in UTF-16 characters, counting message content, the system prompt,
-    /// assistant tool-call arguments and every tool definition (re-sent and re-counted each round).
-    /// Oversized requests are rejected before any provider is called. The default admits a setup-view
-    /// Studio map lifecycle (about 17 KB of Studio tool definitions plus a growing transcript) with
-    /// headroom; 32,000 refused it at propose (honua-server#4919).
-    /// </summary>
+    // The default leaves headroom for about 17 KB of Studio tool definitions plus a growing transcript.
     public int MaxPromptCharacters { get; set; } = 128_000;
 
-    /// <summary>Maximum UTF-8 bytes accepted by the Studio AI chat HTTP route.</summary>
     public int MaxRequestBytes { get; set; } = 1_048_576;
 
-    /// <summary>Maximum serialized provider-event bytes accepted for one response.</summary>
     public int MaxResponseBytes { get; set; } = 4_194_304;
 
-    /// <summary>Maximum serialized bytes accepted for one provider event.</summary>
     public int MaxEventBytes { get; set; } = 262_144;
 
-    /// <summary>Maximum provider events accepted for one response.</summary>
     public int MaxResponseEventCount { get; set; } = 4_096;
 
-    /// <summary>Maximum UTF-8 argument bytes accumulated for one streamed tool call.</summary>
     public int MaxToolArgumentBytes { get; set; } = 262_144;
 
-    /// <summary>Operator-named provider blocks.</summary>
     public Dictionary<string, StudioAiProxyProviderOptions> Providers { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>Transcript-provenance signing policy.</summary>
     public StudioAiTranscriptSigningOptions TranscriptSigning { get; set; } = new();
 
-    /// <summary>Returns the configured options for the named provider, or null when absent.</summary>
     public StudioAiProxyProviderOptions? GetProvider(string name)
         => Providers.TryGetValue(name, out var options) ? options : null;
 }
 
-/// <summary>Ed25519 signing configuration. Private material is accepted only by reference.</summary>
 public sealed class StudioAiTranscriptSigningOptions
 {
-    /// <summary>Stable signer identity placed in every envelope.</summary>
     public string KeyId { get; set; } = string.Empty;
 
-    /// <summary>Secret-provider reference resolving to a base64-encoded 32-byte Ed25519 seed.</summary>
+    // The reference resolves to a base64-encoded 32-byte Ed25519 seed.
     public string PrivateKeyReference { get; set; } = string.Empty;
 
-    /// <summary>Validity of a newly issued transcript.</summary>
     public int LifetimeSeconds { get; set; } = 900;
 
-    /// <summary>Previous/future public keys published during rotation overlap.</summary>
     public List<StudioAiTranscriptVerificationKeyOptions> OverlapKeys { get; set; } = [];
 }
 
-/// <summary>Configured public key retained for an explicit verification overlap window.</summary>
 public sealed class StudioAiTranscriptVerificationKeyOptions
 {
     public string KeyId { get; set; } = string.Empty;
@@ -100,67 +66,32 @@ public sealed class StudioAiTranscriptVerificationKeyOptions
     public bool Revoked { get; set; }
 }
 
-/// <summary>Per-provider connection options for the Studio AI proxy.</summary>
 public sealed class StudioAiProxyProviderOptions
 {
-    /// <summary>
-    /// Which adapter this provider routes through: <see cref="StudioAiProxyConfiguration.AnthropicKind"/>,
-    /// <see cref="StudioAiProxyConfiguration.OpenAiKind"/>, or <see cref="StudioAiProxyConfiguration.BedrockKind"/>.
-    /// </summary>
     public string Kind { get; set; } = string.Empty;
 
-    /// <summary>
-    /// API base URL. For the <c>openai</c> kind this is the base that <c>/chat/completions</c> is
-    /// appended to (so it covers OpenRouter/LiteLLM/Ollama/vLLM/LM Studio via config alone). For
-    /// <c>anthropic</c> it is the Messages API base. Not used by <c>bedrock</c>, which targets the
-    /// regional Bedrock runtime endpoint derived from <see cref="Region"/>.
-    /// </summary>
     public string Endpoint { get; set; } = string.Empty;
 
-    /// <summary>The model identifier to use.</summary>
     public string Model { get; set; } = string.Empty;
 
-    /// <summary>
-    /// AWS region for a <c>bedrock</c> provider (for example <c>us-east-1</c>). Ignored by the other
-    /// kinds. When empty, the Bedrock adapter falls back to <see cref="StudioAiProxyConfiguration.DefaultBedrockRegion"/>.
-    /// </summary>
     public string Region { get; set; } = string.Empty;
 
-    /// <summary>
-    /// API key for the provider, or a secret reference resolved via <c>ISecretProvider</c>. May also
-    /// be supplied via a per-provider environment variable (for example
-    /// <c>HONUA_STUDIOAI_MYPROVIDER_API_KEY</c>). A local <c>openai</c>-kind endpoint (Ollama/vLLM)
-    /// typically needs none; a <c>bedrock</c> provider typically relies on the AWS credential chain
-    /// instead and needs no key either.
-    /// </summary>
     public string ApiKey { get; set; } = string.Empty;
 
     // Set only by the environment fallback in PostConfigure so the resolver can distinguish a
     // trusted environment-bound credential from a hosted inline literal.
     internal bool ApiKeyFromEnvironment { get; set; }
 
-    /// <summary>HTTP request timeout in seconds, applied as a ceiling over the whole streamed call.</summary>
     public int TimeoutSeconds { get; set; } = 120;
 
-    /// <summary>Maximum tokens for the model response when a request does not override it.</summary>
     public int MaxTokens { get; set; } = 4096;
 
-    /// <summary>
-    /// Whether this provider is willing to accept tool/function-call definitions. All three adapters
-    /// support tools; this exists so an operator can pin a model known not to tool-call reliably and
-    /// have that reflected honestly in <c>GET /api/v1/studio/ai/capabilities</c>.
-    /// </summary>
+    // SupportsTools records whether the configured model tool-calls reliably, even though every adapter can send tools.
     public bool SupportsTools { get; set; } = true;
 }
 
-/// <summary>
-/// Validates <see cref="StudioAiProxyConfiguration"/> at startup. Every declared provider is
-/// validated in full (not just the default) — unlike a single-default-slot feature, every entry an
-/// operator adds here is presumed intended for use (Studio clients can name it explicitly).
-/// </summary>
 public sealed class StudioAiProxyConfigurationValidator : ConfigurationValidator<StudioAiProxyConfiguration>
 {
-    /// <inheritdoc />
     protected override void PerformFeatureSpecificValidation(StudioAiProxyConfiguration options, List<string> errors)
     {
         if (!options.Enabled)

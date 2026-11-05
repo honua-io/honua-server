@@ -16,34 +16,15 @@ using Microsoft.AspNetCore.WebUtilities;
 
 namespace Honua.Protocols.SensorThings;
 
-/// <summary>
-/// Maps OGC SensorThings API (STA v1.1) read endpoints under <c>/sta/v1.1</c>.
-/// The query surface reuses the shared OData <c>$filter</c> parser; entity
-/// envelopes are STA-conformance-shaped (<c>@iot.id</c>/<c>@iot.selfLink</c>/
-/// <c>@iot.navigationLink</c>, <c>value</c> arrays, <c>@iot.nextLink</c> paging).
-/// </summary>
-/// <remarks>
-/// Every request's system query options are turned into a <see cref="StaQueryPlan"/>
-/// before the store is touched. An option the plan cannot honour fails the request —
-/// 400 when it is malformed or names an unknown property, 501 when it is recognised but
-/// unimplemented — rather than being dropped (STA 1.1 Req 28-35, OData 4.0 §8.2.1).
-/// </remarks>
+// A SensorThings system query option the plan cannot honour fails the request instead of being ignored.
 internal static partial class SensorThingsEndpoints
 {
     internal const string BasePath = "/sta/v1.1";
 
-    /// <summary>Logging category marker for SensorThings endpoints.</summary>
     internal sealed class SensorThingsEndpointsLog
     {
     }
 
-    /// <summary>Maps all SensorThings API read endpoints.</summary>
-    /// <remarks>
-    /// Routes are declared with literal path strings (not interpolated over
-    /// the <c>BasePath</c>/entity-set variables) so the source-scan governance
-    /// in <c>EndpointRegistryDriftTests</c> can anchor every
-    /// <c>EndpointRegistry</c> entry to a concrete <c>MapGet</c> call.
-    /// </remarks>
     public static IEndpointRouteBuilder MapSensorThingsEndpoints(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapGet("/sta/v1.1", HandleServiceRoot)

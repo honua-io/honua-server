@@ -18,22 +18,6 @@ using Honua.Ai.Protocols.Mcp.Tools;
 
 namespace Honua.Ai.Protocols.Mcp.MapTools;
 
-/// <summary>
-/// MCP tool that renders a map image for one or more published layers and
-/// returns it as a fetchable artifact reference (<c>resource_link</c> href) by
-/// default, or as an inline base64 <c>image</c> content block when the caller
-/// opts in via <c>maxInlineBytes</c> and the encoded image fits. Thin adapter
-/// over the canonical <see cref="IRasterMapRenderer"/> pipeline — the same
-/// renderer the OGC API Maps / MapServer export / WMS GetMap surfaces drive —
-/// so no rasterization or styling logic is reimplemented here. Layers are
-/// resolved through the same Metadata v2 snapshot the GeoServices surfaces use
-/// and passed bottom-to-top. Each layer renders with its currently applied style:
-/// the primary binding in the styleId-keyed style catalog (what
-/// <c>honua_apply_style_preset</c> writes), or the layer's stored default style when
-/// no catalog style is applied. Style constructs the server rasterizer cannot draw
-/// are reported per layer as <c>unsupported-style-construct</c> rather than silently
-/// replaced by the default style.
-/// </summary>
 internal sealed class RenderMapTool : IMcpTool
 {
     public const string ToolName = "honua_render_map";

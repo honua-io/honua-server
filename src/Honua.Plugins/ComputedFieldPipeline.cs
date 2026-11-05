@@ -11,16 +11,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Plugins;
 
-/// <summary>
-/// Default <see cref="IComputedFieldPipeline"/>. Aggregates the registered
-/// <see cref="IComputedFieldProvider"/>s, runs them in deterministic plugin-id order at the query
-/// projection seam, and gates the whole thing behind the Enterprise <c>plugin.sdk</c> entitlement
-/// plus the operator kill-switch. When unlicensed/disabled it returns features unchanged.
-/// Provider failures are isolated and logged — a faulting computed field is omitted, never failing
-/// the query. A provider that faults repeatedly is auto-disabled by the per-plugin circuit breaker
-/// so a misbehaving computed field stops being retried on every queried feature. Per-provider
-/// execution metrics are emitted via <see cref="PluginMetrics"/>.
-/// </summary>
 internal sealed partial class ComputedFieldPipeline : IComputedFieldPipeline
 {
     private const string ExtensionPoint = "compute";
@@ -44,10 +34,8 @@ internal sealed partial class ComputedFieldPipeline : IComputedFieldPipeline
         _enabledByConfig = options.Value.Enabled;
     }
 
-    /// <inheritdoc />
     public bool HasComputedFields => _enabledByConfig && _providers.Length > 0;
 
-    /// <inheritdoc />
     public async ValueTask<Feature> ProjectAsync(
         Feature feature,
         ComputedFieldContext context,

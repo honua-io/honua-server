@@ -7,9 +7,6 @@ using Honua.Protocols.OData.Models;
 
 namespace Honua.Protocols.OData.Services;
 
-/// <summary>
-/// Dependency ordering and Content-ID reference resolution for the OData $batch handler.
-/// </summary>
 internal sealed partial class ODataBatchHandler
 {
     private static bool HasDependencies(ImmutableArray<ODataBatchRequestItem> requests)

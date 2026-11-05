@@ -9,13 +9,6 @@ using Xunit;
 
 namespace Honua.Architecture.Tests.FeatureCatalog;
 
-/// <summary>
-/// Drift guard for the capability-crosswalk artifact (#2893): every crosswalk
-/// source key from the four evidence vocabularies (honua-esri-assess,
-/// client-interop, esri-compat parity, geobench) maps to exactly one canonical
-/// capability key, and every known Esri hard lock-in is an explicit
-/// <c>not-supported</c> marker rather than a silent gap.
-/// </summary>
 [Trait("Category", "Architecture")]
 public sealed class CapabilityCrosswalkDriftTests
 {
@@ -57,7 +50,7 @@ public sealed class CapabilityCrosswalkDriftTests
     }
 
     [ArchitectureTest]
-    public void EveryEsriCompatMatrixCrosswalkRow_ResolvesToACanonicalCapability()
+    public void EveryGeoservicesCompatMatrixCrosswalkRow_ResolvesToACanonicalCapability()
     {
         var document = LoadCapabilityKeys();
         var canonicalKeys = CapabilityKeyCatalog.All.Select(c => c.Key).ToHashSet(StringComparer.Ordinal);

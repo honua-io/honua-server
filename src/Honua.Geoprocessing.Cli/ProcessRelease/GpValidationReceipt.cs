@@ -6,7 +6,6 @@ using Honua.Geoprocessing.Release;
 
 namespace Honua.Geoprocessing.Cli.Release;
 
-/// <summary>Validates candidate-bound test results before asserting a passing receipt in a lock.</summary>
 internal static class GpValidationReceipt
 {
     public static string? Validate(string path, string name, string sourceSha, string runtimeDigest, List<string> errors)

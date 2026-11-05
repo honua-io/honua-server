@@ -10,27 +10,6 @@ using NtsGeometry = NetTopologySuite.Geometries.Geometry;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// <c>analytics.cluster-managed</c> executor. A job-dispatchable, managed
-/// (NetTopologySuite) spatial-clustering counterpart to trunk's
-/// <c>analytics.cluster</c>, which runs only synchronously through the
-/// layer-scoped PostGIS <c>SpatialAnalytics</c> protocol (Pro-gated, not routed
-/// through the geoprocessing job dispatcher). Like
-/// <see cref="ManagedSpatialJoinExecutor"/>, this is the
-/// workflow/codemod-reachable counterpart that runs against an INLINE
-/// FeatureCollection (no Postgres dependency) so the lean dispatcher can
-/// construct it unconditionally.
-///
-/// Supports DBSCAN and K-Means modes. Each input feature is preserved
-/// one-to-one with a <c>CLUSTER_ID</c> attribute appended; DBSCAN noise points
-/// are emitted with <c>CLUSTER_ID = -1</c>. Distances are evaluated in the
-/// CRS units of the supplied feature geometries (the same convention used by
-/// the managed <c>geometry.buffer</c> executor — geodesic distance requires a
-/// CRS authority lookup that the lean dispatcher cannot perform).
-///
-/// Features whose geometry is null or empty are dropped before clustering and
-/// are not emitted. Non-point geometries cluster on their centroid.
-/// </summary>
 internal sealed class ManagedClusterExecutor(
     IOptionsMonitor<GeoprocessingExecutorOptions> options)
     : FeatureCollectionTransformExecutor(options)
@@ -117,22 +96,7 @@ internal sealed class ManagedClusterExecutor(
         return materialized;
     }
 
-    /// <summary>
-    /// Classic DBSCAN over an in-memory <see cref="STRtree{T}"/> neighbor index.
-    /// Returns one label per input point: cluster ids start at 0; noise points
-    /// get <see cref="NoiseClusterId"/>. Density-reachability is expanded
-    /// breadth-first from each seed core point.
-    ///
-    /// Candidates are labeled at ENQUEUE time so each point is queued at most
-    /// once per cluster — without this, a dense neighborhood can re-enqueue
-    /// the same Unassigned point from every overlapping core point's neighbor
-    /// scan and queue storage / dequeue work grow quadratically on exactly the
-    /// high-density inputs DBSCAN is meant to handle. Noise-then-border reclaim
-    /// is preserved: a candidate already labeled <see cref="NoiseClusterId"/>
-    /// is re-labeled to the current cluster but NOT re-queued, because a noise
-    /// point has fewer than minPoints neighbors by definition and so cannot be
-    /// a core point of any cluster.
-    /// </summary>
+    // Candidates are labeled when they are enqueued so a dense neighborhood cannot queue the same point once per overlapping core.
     private static int[] RunDbscan(
         List<MaterializedPoint> points,
         double eps,
@@ -198,15 +162,6 @@ internal sealed class ManagedClusterExecutor(
         return labels;
     }
 
-    /// <summary>
-    /// Walks the candidate neighbor list and either (a) labels + enqueues each
-    /// Unassigned candidate exactly once or (b) relabels each NoiseClusterId
-    /// candidate into the current cluster as a border-point reclaim WITHOUT
-    /// enqueueing it (noise points have &lt; minPoints neighbors by definition
-    /// and so cannot be core). Candidates already assigned to any cluster
-    /// (including this one) are skipped — this is the dedup guard that keeps
-    /// dense neighborhoods from re-queueing the same point repeatedly.
-    /// </summary>
     private static void AssignAndEnqueueNewMembers(
         Queue<int> queue,
         int[] labels,
@@ -235,12 +190,6 @@ internal sealed class ManagedClusterExecutor(
         }
     }
 
-    /// <summary>
-    /// Lloyd's K-Means iterating to a fixed point or
-    /// <see cref="MaxKMeansIterations"/>. Initial centroids are seeded
-    /// deterministically by stepping through the input at evenly spaced indices
-    /// so reruns over the same input produce identical labels.
-    /// </summary>
     private static int[] RunKMeans(
         List<MaterializedPoint> points,
         int k,

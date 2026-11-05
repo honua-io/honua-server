@@ -5,18 +5,9 @@ using Honua.Core.Features.Geoprocessing.Domain;
 
 namespace Honua.Geoprocessing;
 
-/// <summary>
-/// Builds the rate-limit principal for a geoprocessing submission from the durable owner
-/// and tenant partition, not from a display name.
-/// </summary>
 internal static class ExecutionAdmissionIdentity
 {
-    /// <summary>
-    /// Returns the principal id charged by <see cref="ExecutionAdmissionEvaluator"/>.
-    /// A durable owner is tenant-scoped when a partition is present. A tenant without a
-    /// durable owner is still charged, so a name-less token cannot skip the rate gate.
-    /// Both missing fails closed.
-    /// </summary>
+    // A tenant with no durable owner is still charged so a nameless token cannot skip the rate gate.
     public static string ResolveRatePrincipal(string? ownerId, string? partitionKey)
     {
         var owner = string.IsNullOrWhiteSpace(ownerId) ? null : ownerId.Trim();

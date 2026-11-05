@@ -37,9 +37,6 @@ using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.Servic
 
 namespace Honua.Protocols.Ogc.Classic.Wfs20.Services;
 
-/// <summary>
-/// Core handler for WFS 2.0 operations backed by the shared catalog and feature stores.
-/// </summary>
 internal sealed partial class Wfs20Handler
 {
 
@@ -432,24 +429,9 @@ internal sealed partial class Wfs20Handler
 
     private static string FormatCrs(int srid) => $"urn:ogc:def:crs:EPSG::{srid}";
 
-    /// <summary>
-    /// The OGC CRS84 URN: WGS 84 with an explicit longitude/latitude axis order.
-    /// </summary>
     private const string Crs84Urn = "urn:ogc:def:crs:OGC:1.3:CRS84";
 
-    /// <summary>
-    /// Formats the CRS identifier that matches both the output SRID and the axis
-    /// order the geometry is actually serialized in.
-    /// </summary>
-    /// <remarks>
-    /// <c>urn:ogc:def:crs:EPSG::4326</c> declares latitude first. When a client
-    /// asks for CRS84 the server correctly writes longitude first, but labelling
-    /// those ordinates with the EPSG URN produced a self-contradictory document:
-    /// a conforming GML reader would decode the longitude as a latitude. Emitting
-    /// the CRS84 URN keeps <c>srsName</c> and the coordinate order consistent.
-    /// Every other SRID, and the default latitude/longitude EPSG:4326 response,
-    /// are unaffected.
-    /// </remarks>
+    // A CRS84 response is labelled with the CRS84 URN, because the EPSG:4326 URN declares latitude first and a conforming reader would swap the axes.
     private static string FormatCrs(int srid, AxisOrder axisOrder)
         => srid == SpatialReference.WGS84.Wkid && axisOrder == AxisOrder.EastNorth
             ? Crs84Urn

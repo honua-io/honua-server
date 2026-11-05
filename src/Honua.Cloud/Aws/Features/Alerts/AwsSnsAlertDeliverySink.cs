@@ -9,9 +9,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Alerts;
 
-/// <summary>
-/// Thin adapter around <see cref="IAmazonSimpleNotificationService"/> for testability.
-/// </summary>
 internal interface ISnsPublisher
 {
     Task<SnsPublishResult> PublishAsync(

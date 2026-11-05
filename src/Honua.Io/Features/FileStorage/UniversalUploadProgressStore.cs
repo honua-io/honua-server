@@ -6,9 +6,6 @@ using Honua.Core.Features.Infrastructure.Domain;
 
 namespace Honua.FileStorage;
 
-/// <summary>
-/// Upload progress store adapter backed by the universal progress store.
-/// </summary>
 internal sealed class UniversalUploadProgressStore : IUploadProgressStore
 {
     private readonly IUniversalProgressStore _progressStore;

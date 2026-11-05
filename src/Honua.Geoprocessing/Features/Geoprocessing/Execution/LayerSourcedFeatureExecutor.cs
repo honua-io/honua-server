@@ -18,42 +18,10 @@ using NtsGeometry = NetTopologySuite.Geometries.Geometry;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// Shared base for the <b>layer-aware</b> managed vector operations that execute as a
-/// SINGLE dispatched geoprocessing job over a Honua catalog layer (#2322, #2325).
-///
-/// <para>
-/// The geoprocessing job runtime is single-step: a dispatched job runs exactly one
-/// executor reading the plan's step-0 inputs (there is no in-job step chaining — a
-/// <c>source.honua-layer -&gt; op -&gt; sink</c> DAG only runs through the workflow
-/// orchestration engine as one child job per node). The per-operation OGC API -
-/// Processes projections (#1382) for the layer-scoped analytics/generalization/
-/// conversion ops advertise a <c>layerId</c> input and are submitted as a single
-/// job, so they cannot consume an inline FeatureCollection produced by a separate
-/// upstream node. This base closes that gap by fusing the layer read with the
-/// managed op in one executor: it resolves the <c>source.honua-layer</c>
-/// <see cref="IDagFeatureSource"/> (REUSING the canonical query pipeline through the
-/// same provider-resolution pattern as <see cref="RemoteSourceExecutor"/>), streams
-/// the layer's features, hands them to the concrete op, and publishes the canonical
-/// FeatureCollection artifact — mirroring how the inline <c>overlay.*</c> layer-aware
-/// executors emit their result, but sourcing the input layer itself.
-/// </para>
-///
-/// <para>
-/// In a lean, catalog-free deployment no <c>source.honua-layer</c> connector is
-/// registered, so the executor fails closed with a clear, actionable message rather
-/// than taking a Postgres dependency in the dispatcher assembly.
-/// </para>
-/// </summary>
 internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
 {
-    /// <summary>The <see cref="IDagFeatureSource.SourceId"/> this base reads from.</summary>
     private protected const string HonuaLayerSourceId = "source.honua-layer";
 
-    /// <summary>
-    /// A provable lower bound on the GeoJSON bytes one coordinate occupies: <c>[x,y]</c> is at
-    /// least five characters even with single-digit ordinates, before any separator (#4629).
-    /// </summary>
     private protected const long MinSerializedBytesPerVertex = 5;
 
     private readonly IServiceScopeFactory _serviceScopeFactory;
@@ -79,28 +47,17 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
         Limits = limitsOptions?.Value ?? new LimitsOptions();
     }
 
-    /// <summary>The single dotted process id this executor handles (e.g. <c>analytics.buffer-aggregate</c>).</summary>
     protected abstract string ProcessId { get; }
 
-    /// <summary>Shared executor options (artifact caps, output roots).</summary>
     private protected IOptionsMonitor<GeoprocessingExecutorOptions> Options { get; }
 
-    /// <summary>
-    /// Canonical system limits (input feature counts, per-geometry vertex ceilings) shared
-    /// with the synchronous SpatialAnalytics/DataEnrichment request handlers and FeatureServer
-    /// edit validation, so a dispatched GP job admits input under the same budget its
-    /// synchronous sibling would (#4629).
-    /// </summary>
     private protected LimitsOptions Limits { get; }
 
-    /// <inheritdoc />
     public IReadOnlySet<string> ProcessIds =>
         _processIds ??= new HashSet<string>(StringComparer.Ordinal) { ProcessId };
 
-    /// <inheritdoc />
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 
-    /// <inheritdoc />
     public async Task<JobExecutionResult> ExecuteAsync(
         ExecutionJobRecord job,
         IJobExecutionContext context,
@@ -279,19 +236,6 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
         return JobExecutionResult.Succeeded();
     }
 
-    /// <summary>
-    /// Applies the concrete layer-aware operation to the streamed source features,
-    /// returning the output feature set. Throw <see cref="TransformInputException"/>
-    /// for caller-supplied parameter errors so they surface as a classified
-    /// <c>Invalid ... inputs</c> failure.
-    ///
-    /// <para>
-    /// Single-layer ops override this synchronous hook. A two-layer op (for example
-    /// <c>analytics.spatial-join</c>, which resolves a second catalog layer through
-    /// the same <c>source.honua-layer</c> connector) overrides
-    /// <see cref="ApplyCoreAsync"/> instead and leaves this default in place.
-    /// </para>
-    /// </summary>
     protected virtual List<IFeature> Apply(
         List<IFeature> source,
         StepInputReader inputs,
@@ -299,33 +243,14 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
         => throw new NotSupportedException(
             $"{GetType().Name} must override {nameof(Apply)} or {nameof(ApplyCoreAsync)}.");
 
-    /// <summary>
-    /// Asynchronous apply seam. The default delegates to the synchronous
-    /// <see cref="Apply"/> over the already-streamed target layer. A two-layer op
-    /// overrides this to resolve and read an additional catalog layer (via
-    /// <see cref="LayerOpContext.LayerSource"/> and <see cref="ReadLayerAsync"/>)
-    /// before computing its output. Throw <see cref="TransformInputException"/> for
-    /// caller-supplied parameter errors so they surface as a classified
-    /// <c>Invalid ... inputs</c> failure.
-    /// </summary>
     private protected virtual Task<List<IFeature>> ApplyCoreAsync(
         LayerOpContext context,
         StepInputReader inputs,
         CancellationToken cancellationToken)
         => Task.FromResult(Apply(context.Features, inputs, cancellationToken));
 
-    /// <summary>
-    /// The resolved inputs a concrete layer-aware op computes over: the streamed
-    /// target-layer <see cref="Features"/>, the resolved <see cref="LayerSource"/>
-    /// connector (so a two-layer op can read a second catalog layer through the same
-    /// connector), and the executor's request-scoped <see cref="Services"/> provider (so
-    /// an op can resolve additional shared services — for example the CRS-aware
-    /// <c>IGeometryOperationService</c> or catalog metadata provider — within the same
-    /// scope <see cref="LayerSource"/> was resolved from).
-    /// </summary>
     private protected readonly struct LayerOpContext
     {
-        /// <summary>Creates a context over the streamed target features, connector, and scope.</summary>
         public LayerOpContext(List<IFeature> features, IDagFeatureSource layerSource, IServiceProvider services)
         {
             Features = features;
@@ -333,38 +258,14 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
             Services = services;
         }
 
-        /// <summary>The streamed features of the primary (target) layer.</summary>
         public List<IFeature> Features { get; }
 
-        /// <summary>The resolved <c>source.honua-layer</c> connector for further layer reads.</summary>
         public IDagFeatureSource LayerSource { get; }
 
-        /// <summary>The executor's request-scoped service provider.</summary>
         public IServiceProvider Services { get; }
     }
 
-    /// <summary>
-    /// Streams every feature the resolved <paramref name="source"/> returns for
-    /// <paramref name="request"/> into an in-memory NetTopologySuite feature list.
-    /// Shared by the base's primary layer read, by two-layer ops that resolve a
-    /// second catalog layer through the same connector, and by the standalone
-    /// <c>enrichment.enrich</c> executor (#2283).
-    ///
-    /// <para>
-    /// The optional <paramref name="maxVerticesPerGeometry"/> charges a per-geometry vertex
-    /// ceiling independently of <paramref name="maxFeatures"/> (#4629): a feature-count cap
-    /// alone does not bound a single deliberately oversized geometry (one feature, millions of
-    /// vertices), so this fails closed as soon as the oversized geometry streams in.
-    /// </para>
-    ///
-    /// <para>
-    /// <paramref name="maxGeometryBytes"/> and <paramref name="maxInputBytes"/> charge the
-    /// serialized size of each geometry and the cumulative geometry+attribute payload (#4629)
-    /// BEFORE the geometry is parsed into NetTopologySuite objects, so neither a single huge
-    /// geometry nor a moderate count of large features is materialized past its budget.
-    /// </para>
-    /// <para><paramref name="maxTotalVertices"/> caps cumulative vertices across the complete streamed layer.</para>
-    /// </summary>
+    // Size is charged before the geometry is parsed so an oversized feature is never materialized past its budget.
     internal static async Task<List<IFeature>> ReadLayerAsync(
         IDagFeatureSource source,
         DagSourceRequest request,
@@ -438,10 +339,6 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
         return features;
     }
 
-    /// <summary>
-    /// Serialized-size estimate of a streamed feature's attributes for the input byte budget:
-    /// key and string lengths as written, a fixed width for scalars.
-    /// </summary>
     private static long EstimateAttributeBytes(IEnumerable<KeyValuePair<string, object?>> attributes, long budget)
     {
         long bytes = 0;
@@ -541,11 +438,6 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
         }
     }
 
-    /// <summary>
-    /// Reads and validates a non-negative catalog layer id from the input at
-    /// <paramref name="key"/> (for example <c>layerId</c> for the target layer or
-    /// <c>joinLayerId</c> for a spatial-join reference layer).
-    /// </summary>
     private protected static int RequireLayerId(StepInputReader inputs, string key)
     {
         if (!inputs.TryGet(key, out var raw)
@@ -559,13 +451,6 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
         return value;
     }
 
-    /// <summary>
-    /// Hook for a concrete op to add operation-specific fields to the layer read
-    /// request (for example <c>conversion.feature-project</c> requesting server-side
-    /// reprojection to the target SRID via <see cref="DagSourceRequest.OutputSrid"/>).
-    /// The base has already populated the common windowing fields. The default is a
-    /// no-op. Throw <see cref="TransformInputException"/> for invalid inputs.
-    /// </summary>
     protected virtual DagSourceRequest CustomizeRequest(DagSourceRequest request, StepInputReader inputs)
         => request;
 
@@ -643,21 +528,9 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
     private static string? ReadNonBlank(StepInputReader inputs, string key)
         => inputs.TryGet(key, out var raw) && !string.IsNullOrWhiteSpace(raw) ? raw : null;
 
-    /// <summary>
-    /// The catalog layer whose schema an <c>outStatistics</c> request aggregates over. The
-    /// target layer by default; a two-layer op that aggregates matched rows of a second layer
-    /// (<c>analytics.spatial-join</c>) overrides this.
-    /// </summary>
     private protected virtual int? ResolveStatisticsLayerId(StepInputReader inputs, DagSourceRequest request)
         => request.LayerId;
 
-    /// <summary>
-    /// Rejects, BEFORE any layer read, an <c>outStatistics</c> request that is malformed or that
-    /// names a field the aggregated layer does not have (#4624). Without this a misspelled field
-    /// produced a well-formed artifact with a null aggregate column — an ignored statistic
-    /// indistinguishable from "no values". Skipped when catalog metadata (or the layer's schema)
-    /// is unavailable; the parse itself always runs.
-    /// </summary>
     private async Task ValidateStatisticsAsync(
         IServiceProvider services,
         StepInputReader inputs,

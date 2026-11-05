@@ -8,33 +8,6 @@ using NetTopologySuite.Geometries;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// <c>analytics.density-managed</c> executor. A job-dispatchable, managed
-/// (NetTopologySuite) density-binning counterpart to trunk's
-/// <c>analytics.density</c>, which runs only synchronously through the
-/// layer-scoped PostGIS <c>SpatialAnalytics</c> protocol. Like
-/// <see cref="ManagedSpatialJoinExecutor"/>, this is the
-/// workflow/codemod-reachable counterpart that runs against an INLINE
-/// FeatureCollection so the lean dispatcher can construct it unconditionally
-/// without a Postgres dependency.
-///
-/// Snaps every input geometry's point representative (centroid for non-point
-/// inputs) onto a square or pointy-top hex grid of <c>cellSize</c> CRS units
-/// and emits one feature per non-empty cell. The output geometry is the cell
-/// polygon. Each cell carries:
-/// <list type="bullet">
-///   <item><c>COUNT</c>: the number of input features in the cell.</item>
-///   <item><c>SUM_&lt;weightField&gt;</c>: when <c>weightField</c> is supplied
-///   and parses as numeric, the sum of that field over the input features in
-///   the cell. Non-numeric / missing values are skipped (not zero-substituted)
-///   so the sum reflects what was actually observed.</item>
-/// </list>
-///
-/// <c>cellSize</c> is treated as CRS units (the same convention as the
-/// managed <c>geometry.buffer</c> executor). Geodesic conversion is not
-/// performed here; callers operating on a geographic CRS must supply a
-/// cellSize already in the layer's coordinate units.
-/// </summary>
 internal sealed class ManagedDensityExecutor(
     IOptionsMonitor<GeoprocessingExecutorOptions> options)
     : FeatureCollectionTransformExecutor(options)
@@ -124,13 +97,7 @@ internal sealed class ManagedDensityExecutor(
         => (CheckedIndex(Math.Floor(x / cellSize), x, y, cellSize),
             CheckedIndex(Math.Floor(y / cellSize), x, y, cellSize));
 
-    /// <summary>
-    /// Validates that a fractional cell index is finite and within a bounded
-    /// range before casting to <see cref="int"/>, throwing the same input
-    /// exception used elsewhere in this executor when it is not. This prevents a
-    /// silent <see cref="int"/> overflow for large coordinate / small cellSize
-    /// combinations.
-    /// </summary>
+    // The cell index is checked before the cast so a large coordinate over a small cell cannot overflow silently.
     private static int CheckedIndex(double index, double x, double y, double cellSize)
     {
         if (!double.IsFinite(index) || Math.Abs(index) > MaxCellIndexMagnitude)
@@ -160,12 +127,6 @@ internal sealed class ManagedDensityExecutor(
         });
     }
 
-    /// <summary>
-    /// Pointy-top hex assignment using axial coordinates derived from the
-    /// flat-axis hex grid. <c>cellSize</c> is the hex "size" (centre to
-    /// corner distance); the grid is laid out so neighbours share full edges
-    /// — the standard layout returned by the redblobgames hex reference.
-    /// </summary>
     private static (int Col, int Row) AssignHex(double x, double y, double cellSize)
     {
         // Axial coordinates (q, r) for a pointy-top hex grid.
@@ -194,10 +155,6 @@ internal sealed class ManagedDensityExecutor(
         return factory.CreatePolygon(corners);
     }
 
-    /// <summary>
-    /// Rounds fractional axial coordinates (q, r) to the nearest hex centre.
-    /// Cube-coordinate rounding correction keeps q + r + s = 0 after the round.
-    /// </summary>
     private static (int Col, int Row) RoundAxial(double q, double r, double x, double y, double cellSize)
     {
         var s = -q - r;

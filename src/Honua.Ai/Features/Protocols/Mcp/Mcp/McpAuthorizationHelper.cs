@@ -11,22 +11,10 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Ai.Protocols.Mcp;
 
-/// <summary>
-/// Shared authentication helpers for MCP tool and resource handlers.
-/// Tools delegate to <see cref="Honua.Geoprocessing.IGeoprocessingJobService.EnsureCallerAuthorizedAsync(System.Security.Claims.ClaimsPrincipal, Honua.Core.Features.Authorization.Domain.OperatorResourceType, Honua.Core.Features.Authorization.Domain.OperatorOperation, System.Threading.CancellationToken)"/>
-/// for operator-grant checks; this helper adapts the MCP request context into
-/// the same <see cref="ClaimsPrincipal"/> shape the domain service expects.
-/// </summary>
 internal static class McpAuthorizationHelper
 {
     private const string AnonymousPrincipalScheme = "anonymous";
 
-    /// <summary>
-    /// Resolves the caller's <see cref="ClaimsPrincipal"/> from the HTTP context.
-    /// Throws <see cref="Geoprocessing.GeoprocessingAuthorizationException"/> when
-    /// the request does not carry an authenticated principal so that authentication
-    /// errors flow through the same exception channel as domain auth failures.
-    /// </summary>
     public static ClaimsPrincipal EnsurePrincipal(HttpContext context)
     {
         var principal = context.User;
@@ -38,26 +26,11 @@ internal static class McpAuthorizationHelper
         return principal;
     }
 
-    /// <summary>
-    /// Resolves the framework's scheme-qualified immutable actor id for audit and
-    /// deferred approval ownership. Display names are never used when a durable
-    /// subject or API-key identity is present.
-    /// </summary>
+    // Display names are never used once a durable subject or API-key identity is present.
     public static string ResolveActorId(ClaimsPrincipal principal)
         => CanonicalSecurityActor.Resolve(principal)?.ActorId
             ?? throw new InvalidOperationException("The authenticated MCP actor has no canonical identity.");
 
-    /// <summary>
-    /// Resolves the stable principal key an MCP session is bound to at
-    /// <c>initialize</c> and re-checked on every subsequent request (A3 session
-    /// binding; honua-server#2537). Returns
-    /// <see cref="McpSessionManager.AnonymousPrincipalKey"/> for an unauthenticated
-    /// caller — this mirrors the existing endpoint auth posture (the surface allows
-    /// anonymous handshake methods; a session established anonymously stays
-    /// anonymous) and never invents a new authentication requirement. For an
-    /// authenticated caller the key prefixes the authentication scheme to the
-    /// normalized name-identifier claim, falling back to the identity name.
-    /// </summary>
     public static string ResolvePrincipalKey(ClaimsPrincipal? principal)
     {
         var identity = ResolveAuthenticatedIdentity(principal);
@@ -88,16 +61,7 @@ internal static class McpAuthorizationHelper
             ? AnonymousPrincipalScheme
             : identity.AuthenticationType;
 
-    /// <summary>
-    /// Resolves the immutable MCP session binding from the framework-authenticated
-    /// actor, the effective tenant selected by tenant policy, and the OAuth scope
-    /// ceiling. Bearer sessions additionally include a one-way fingerprint of the
-    /// authority-bearing claims validated for this request, so every token-derived
-    /// authority dimension remains part of the binding while a refreshed access token
-    /// carrying the same authority keeps using its session (honua-server#4909).
-    /// Client-supplied issuer, subject, tenant, and scope values are never read from
-    /// request headers or parameters.
-    /// </summary>
+    // The binding uses the framework-authenticated actor, the policy-resolved tenant, and the scope ceiling, including API-key identities, never request headers or parameters.
     public static string? ResolveSessionBindingKey(HttpContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -166,11 +130,6 @@ internal static class McpAuthorizationHelper
         return CanonicalSecurityActor.ResolveAuthorityFingerprint(context.User);
     }
 
-    /// <summary>
-    /// Rejects a bearer-authenticated tool call when tenant policy did not resolve
-    /// an effective tenant. Discovery remains available, but no tool implementation
-    /// may observe the deployment's default database/schema in this state.
-    /// </summary>
     public static async Task EnsureBearerDataTenantAsync(HttpContext context, string target)
     {
         ArgumentNullException.ThrowIfNull(context);

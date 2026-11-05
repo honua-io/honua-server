@@ -8,9 +8,6 @@ using Honua.Core.Features.FeatureStore.Domain;
 
 namespace Honua.Protocols.Ogc.Classic.Wfs20.Services;
 
-/// <summary>
-/// Converts between GML and domain feature formats for WFS 2.0 operations.
-/// </summary>
 internal sealed class Wfs20FeatureFormatConverter : IWfs20FeatureFormatConverter
 {
     private static readonly XNamespace GmlNamespace = "http://www.opengis.net/gml/3.2";
@@ -21,7 +18,6 @@ internal sealed class Wfs20FeatureFormatConverter : IWfs20FeatureFormatConverter
         _logger = logger;
     }
 
-    /// <inheritdoc />
     public Feature ConvertGmlToFeature(XElement gmlElement)
     {
         ArgumentNullException.ThrowIfNull(gmlElement);
@@ -47,7 +43,6 @@ internal sealed class Wfs20FeatureFormatConverter : IWfs20FeatureFormatConverter
         );
     }
 
-    /// <inheritdoc />
     public GmlFeature ConvertFeatureToGml(Feature feature)
     {
         // Convert WKB geometry to GML if present
@@ -64,7 +59,6 @@ internal sealed class Wfs20FeatureFormatConverter : IWfs20FeatureFormatConverter
         );
     }
 
-    /// <inheritdoc />
     public string? ExtractGeometry(XElement gmlElement)
     {
         ArgumentNullException.ThrowIfNull(gmlElement);
@@ -99,7 +93,6 @@ internal sealed class Wfs20FeatureFormatConverter : IWfs20FeatureFormatConverter
         }
     }
 
-    /// <inheritdoc />
     public Dictionary<string, object?> ExtractAttributes(XElement gmlElement)
     {
         ArgumentNullException.ThrowIfNull(gmlElement);
@@ -121,7 +114,6 @@ internal sealed class Wfs20FeatureFormatConverter : IWfs20FeatureFormatConverter
         return attributes;
     }
 
-    /// <inheritdoc />
     public object? ConvertAttributeValue(string value, Type expectedType)
     {
         if (string.IsNullOrEmpty(value))

@@ -7,18 +7,11 @@ using Honua.Infrastructure.Rendering;
 
 namespace Honua.Protocols.Ogc.Common;
 
-/// <summary>
-/// Transforms extent coordinates to CRS84 for OGC API spec compliance.
-/// </summary>
 internal static class OgcExtentTransformer
 {
     private const double EarthRadius = SpatialConstants.EarthRadius;
     private const double MaxLatitude = SpatialConstants.WebMercatorMaxLatitude;
 
-    /// <summary>
-    /// Transforms a coordinate pair to CRS84 (lon/lat in degrees).
-    /// Returns <c>false</c> when a reliable in-memory transform is not available.
-    /// </summary>
     public static bool TryTransformToCrs84(double x, double y, int fromSrid, out (double Lon, double Lat) coordinate)
     {
         if (fromSrid == 4326)

@@ -30,13 +30,8 @@ public sealed class NoHonuaServerGeoServicesVersionTests
         "Honua.Core.Features.Collaboration.FeatureLocks.FeatureVersionConflictError",
     };
 
-    /// <summary>
-    /// Every type registered in a <c>Honua.Server</c> source-generated
-    /// <see cref="JsonSerializerContext"/>, paired with the <see cref="JsonTypeInfo"/> production
-    /// uses to serialize it. The set is DERIVED by reflecting over every context in the host
-    /// assembly, so newly added Esri-compatible service models (GeocodeServer and any future
-    /// server-hosted service metadata) are covered without touching this test.
-    /// </summary>
+    // Reflects over every JsonSerializerContext in the host assembly, so a newly registered
+    // GeoServices REST service model is covered without editing this test.
     private static IEnumerable<(string TypeName, JsonTypeInfo TypeInfo)> SerializableTypes()
     {
         // Anchor on a known Honua.Server type to locate the host assembly, then discover every
@@ -99,7 +94,7 @@ public sealed class NoHonuaServerGeoServicesVersionTests
                 wireNames.Should().NotContain(
                     wireName => string.Equals(wireName, forbidden, StringComparison.OrdinalIgnoreCase),
                     $"{typeName} must not advertise an ArcGIS Server/Portal version (no '{forbidden}'); "
-                    + "Honua is an independent Esri-compatible server and does not impersonate an ArcGIS release.");
+                    + "Honua is an independent GeoServices REST server and does not impersonate an ArcGIS release.");
             }
         }
     }

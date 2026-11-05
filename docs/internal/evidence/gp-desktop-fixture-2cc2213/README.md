@@ -4,7 +4,7 @@ Evidence identifier for the owned fixture on `nightly-2cc2213`. Ruling B keeps
 #4614 open until a native ArcGIS Pro UI receipt exists. No desktop UI pass is
 claimed here. Every receipt records `desktop_ui_exercised: false`.
 
-Runner, licence, and session setup stay in private `honua-esri-compat`.
+Runner, licence, and session setup are not in this repository.
 
 | Identity | Value |
 |---|---|
@@ -21,8 +21,8 @@ Receipts are under
 
 | Receipt | Run | Result |
 |---|---|---|
-| `candidate-2cc2213-arcpy-and-sdk-scalar-verified.json` | [35131473081](https://github.com/honua-io/honua-esri-compat/actions/runs/35131473081) | Pass. ArcGIS SDK 2.4.3 and ArcPy 3.7.1 each import 119 advertised tasks and return area 12. |
-| `candidate-2cc2213-arcpy-complex-values-verified.json` | [35131750779](https://github.com/honua-io/honua-esri-compat/actions/runs/35131750779) | Pass. Six ArcPy complex-value checks. |
+| `candidate-2cc2213-arcpy-and-sdk-scalar-verified.json` | 35131473081 | Pass. ArcGIS SDK 2.4.3 and ArcPy 3.7.1 each import 119 advertised tasks and return area 12. |
+| `candidate-2cc2213-arcpy-complex-values-verified.json` | 35131750779 | Pass. Six ArcPy complex-value checks. |
 | `candidate-2cc2213-soap-auth-controls-verified.json` | local probe retained with the fixture | Pass. 24/24. Authorized job area 12. Anonymous, unknown key, and unknown bearer callers receive 401. Malformed authorized input returns 400. |
 
 ## Still open

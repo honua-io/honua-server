@@ -29,5 +29,5 @@ Recorded outcomes:
 
 The pinned candidate cannot contain this fix. A post-fix run on a release image
 happens when the candidate is re-pinned past the merge. Native Pro confirmation
-is evidence identifier `desktop-arcgis` in honua-esri-compat and is not linked
+is not certified in this repository. Lane id `desktop-arcgis`. It is not linked
 here.

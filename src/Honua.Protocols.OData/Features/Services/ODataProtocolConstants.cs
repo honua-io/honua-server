@@ -5,9 +5,6 @@ using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Protocols.OData.Services;
 
-/// <summary>
-/// OData protocol identifiers and metadata-v2 protocol checks local to the OData adapter.
-/// </summary>
 internal static class ODataProtocolConstants
 {
     public const string ProtocolName = "OData";

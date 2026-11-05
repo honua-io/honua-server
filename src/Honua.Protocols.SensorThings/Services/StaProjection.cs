@@ -5,18 +5,8 @@ using System.Text.Json.Nodes;
 
 namespace Honua.Protocols.SensorThings.Services;
 
-/// <summary>
-/// Applies a validated <c>$select</c> projection to an already-serialized STA entity or
-/// entity set. The projection runs over the JSON the source-generated context produced, so
-/// the wire shape of an unprojected response is unchanged and no reflection-based
-/// serialization is introduced (#4201).
-/// </summary>
 internal static class StaProjection
 {
-    /// <summary>
-    /// Keeps only <paramref name="members"/> on each entity inside an entity-set envelope,
-    /// leaving the envelope annotations (<c>@iot.count</c>, <c>@iot.nextLink</c>) intact.
-    /// </summary>
     public static JsonObject ProjectEntitySet(JsonObject entitySet, IReadOnlyList<string> members)
     {
         ArgumentNullException.ThrowIfNull(entitySet);
@@ -35,11 +25,6 @@ internal static class StaProjection
         return entitySet;
     }
 
-    /// <summary>
-    /// Keeps only <paramref name="members"/> on a single entity. A selected navigation
-    /// property keeps both its <c>@iot.navigationLink</c> and, when the same request
-    /// expanded it, the inline entity.
-    /// </summary>
     public static JsonObject ProjectEntity(JsonObject entity, IReadOnlyList<string> members)
     {
         ArgumentNullException.ThrowIfNull(entity);

@@ -87,12 +87,6 @@ internal sealed record PostgresSchemaConfiguration(
         => MetadataSchemas.Any(metadataSchema =>
             string.Equals(metadataSchema, schema, StringComparison.OrdinalIgnoreCase));
 
-    /// <summary>
-    /// Resolves the schema an import writes into: the operational default when none is requested,
-    /// otherwise the requested schema, which must be one of the operational schemas
-    /// (<see cref="ImportTargetSchemaPolicy"/>). Returns the configured spelling of the schema.
-    /// </summary>
-    /// <exception cref="ArgumentException">The schema is not a valid identifier or not an operational schema.</exception>
     public string ResolveImportTargetSchema(string? requestedSchema)
     {
         var schema = string.IsNullOrWhiteSpace(requestedSchema)
@@ -107,11 +101,6 @@ internal sealed record PostgresSchemaConfiguration(
         return EnsureImportTargetSchemaAllowed(schema, nameof(requestedSchema));
     }
 
-    /// <summary>
-    /// Returns the configured spelling of <paramref name="schema"/> when it may be an import target,
-    /// and throws when it is not one of the operational schemas or is reserved.
-    /// </summary>
-    /// <exception cref="ArgumentException">The schema is not an operational schema or is reserved.</exception>
     public string EnsureImportTargetSchemaAllowed(string schema, string parameterName)
     {
         IReadOnlyList<string> operationalSchemas = [DefaultOperationalSchema, .. OperationalSchemas];

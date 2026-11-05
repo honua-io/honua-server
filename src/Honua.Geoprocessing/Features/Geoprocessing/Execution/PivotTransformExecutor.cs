@@ -8,21 +8,6 @@ using NetTopologySuite.Features;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// <c>transform.pivot</c> executor. Reshapes a long (tall) FeatureCollection into a
-/// wide one: rows sharing the same <c>groupBy</c> key are collapsed into a single
-/// output feature, and the distinct values of the <c>pivotField</c> column become
-/// new attribute columns whose value is taken from the <c>valueField</c> column.
-/// Pure managed — no native dependency. The geometry of the first row in each group
-/// is carried onto the pivoted output feature.
-/// </summary>
-/// <remarks>
-/// Bounded memory: one accumulator per group key holds the carried group-key values
-/// plus the pivoted cells discovered so far, so peak memory is proportional to the
-/// wide output, not the long input (which is itself bounded by
-/// <see cref="GeoprocessingExecutorOptions.MaxArtifactBytes"/>). When two input rows
-/// map to the same (group, pivot) cell the later value wins (last-write-wins).
-/// </remarks>
 internal sealed class PivotTransformExecutor(
     IOptionsMonitor<GeoprocessingExecutorOptions> options)
     : FeatureCollectionTransformExecutor(options)
@@ -152,13 +137,6 @@ internal sealed class PivotTransformExecutor(
     }
 }
 
-/// <summary>
-/// <c>transform.unpivot</c> executor. The inverse reshape: a wide FeatureCollection
-/// is melted into a long one. For each input feature and each column listed in
-/// <c>fields</c>, one output feature is emitted carrying the <c>keep</c> columns
-/// plus two new columns — <c>nameField</c> (the source column name) and
-/// <c>valueField</c> (its value) — reusing the input geometry. Pure managed.
-/// </summary>
 internal sealed class UnpivotTransformExecutor(
     IOptionsMonitor<GeoprocessingExecutorOptions> options)
     : FeatureCollectionTransformExecutor(options)

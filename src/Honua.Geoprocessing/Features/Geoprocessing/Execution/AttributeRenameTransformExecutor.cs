@@ -7,13 +7,6 @@ using NetTopologySuite.Features;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// <c>transform.attribute-rename</c> executor. Renames one attribute key to another
-/// on every feature, preserving the value and geometry. Features that do not carry
-/// the <c>from</c> attribute pass through unchanged. Ported from the GeoETL baseline
-/// AttributeRenameTransform onto the #1185 process/executor contract. Streams: a
-/// per-feature map with no cross-feature state, so it processes the input lazily.
-/// </summary>
 internal sealed class AttributeRenameTransformExecutor(
     IOptionsMonitor<GeoprocessingExecutorOptions> options)
     : FeatureCollectionTransformExecutor(options)

@@ -6,21 +6,10 @@ using NetTopologySuite.Features;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// <c>overlay.merge</c> executor (#2139). Combines the <c>input</c> and <c>merge</c>
-/// FeatureCollections into a single NEW output, concatenating features and carrying
-/// each feature's own attributes through (the union-schema behaviour of Esri's
-/// <c>Merge</c>; absent fields are simply not present on a given feature). Both
-/// inputs are supplied inline as <c>data:application/geo+json;base64</c> data URIs.
-/// Use <see cref="DataManagementAppendExecutor"/> when appending INTO an existing
-/// target schema rather than producing a new merged output. Pure managed
-/// NetTopologySuite — no GDAL/GEOS native dependency.
-/// </summary>
 internal sealed class OverlayMergeExecutor(
     IOptionsMonitor<GeoprocessingExecutorOptions> options)
     : FeatureCollectionTransformExecutor(options)
 {
-    /// <summary>The canonical process id this executor handles.</summary>
     internal const string HandledProcessId = "overlay.merge";
 
     protected override string ProcessId => HandledProcessId;

@@ -6,13 +6,6 @@ using NetTopologySuite.Features;
 
 namespace Honua.Geoprocessing.Testing;
 
-/// <summary>
-/// Diffs the non-geometry attributes of two GeoJSON features (GP Devkit P6, issue #2127):
-/// the same key set, with numeric values compared within
-/// <see cref="GoldenTolerance.Numeric"/> and everything else compared by invariant string
-/// form. Differences are appended to the caller's list with a located path so a failing
-/// golden points at the exact property.
-/// </summary>
 internal static class AttributeGoldenComparer
 {
     public static void Compare(

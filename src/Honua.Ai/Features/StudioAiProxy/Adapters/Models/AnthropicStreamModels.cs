@@ -6,10 +6,6 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Ai.StudioAiProxy.Adapters.Models;
 
-/// <summary>
-/// Anthropic Messages API request with <c>stream: true</c>. The proxy supports tool-free turns,
-/// multiple tools, and any tool-choice mode.
-/// </summary>
 internal sealed class AnthropicProxyRequest
 {
     [JsonPropertyName("model")]
@@ -73,13 +69,7 @@ internal sealed class AnthropicProxyToolChoice
     public string? Name { get; set; }
 }
 
-/// <summary>
-/// One decoded Anthropic SSE <c>data:</c> frame. Anthropic's streaming protocol sends a matching
-/// <c>event: &lt;type&gt;</c> line before each <c>data:</c> line, but the payload's own
-/// <see cref="Type"/> field already carries the same discriminator, so the adapter only needs to
-/// parse <c>data:</c> lines. All fields below are null except the ones the given <see cref="Type"/>
-/// populates — see https://docs.anthropic.com/en/api/messages-streaming for the frame shapes.
-/// </summary>
+// Only data lines are parsed because the payload type field already carries the same discriminator as the event line.
 internal sealed class AnthropicStreamFrame
 {
     [JsonPropertyName("type")]
@@ -125,7 +115,6 @@ internal sealed class AnthropicStreamContentBlock
     public string? Name { get; set; }
 }
 
-/// <summary>A <c>content_block_delta</c> / <c>message_delta</c> payload's <c>delta</c> object.</summary>
 internal sealed class AnthropicStreamDelta
 {
     [JsonPropertyName("type")]

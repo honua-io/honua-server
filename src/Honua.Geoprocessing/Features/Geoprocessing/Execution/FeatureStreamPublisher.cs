@@ -7,11 +7,6 @@ using NetTopologySuite.Features;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// Keeps small feature collections inline and stages larger managed outputs in the
-/// shared persistent output store. Buffer decisions use actual serialized UTF-8 bytes;
-/// temporary spill files are deleted after staging or any unsuccessful publication.
-/// </summary>
 internal static class FeatureStreamPublisher
 {
     internal readonly record struct PublishResult(string ArtifactReference, long OutputCount);

@@ -5,9 +5,6 @@ using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Protocols.Stac.Services;
 
-/// <summary>
-/// STAC protocol identifiers and metadata-v2 protocol checks local to the STAC adapter.
-/// </summary>
 internal static class StacProtocolConstants
 {
     public const string ProtocolName = "Stac";

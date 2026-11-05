@@ -109,11 +109,6 @@ internal static partial class WmsRequestHandlers
             .AppendLine("</Dimension>");
     }
 
-    /// <summary>
-    /// Pre-fetches temporal extent ranges for all time-aware layers concurrently.
-    /// Returns a dictionary keyed by <see cref="WmsLayer.StorageLayerId"/> so the
-    /// capabilities loop can emit dimensions without issuing a DB round-trip per layer.
-    /// </summary>
     private static async Task<Dictionary<int, MetadataV2TemporalRange>> PrefetchTemporalRangesAsync(
         HttpContext context,
         IReadOnlyList<WmsLayer> layers,
@@ -163,12 +158,6 @@ internal static partial class WmsRequestHandlers
         return dict;
     }
 
-    /// <summary>
-    /// Resolves which layers GetLegendGraphic can actually serve, so LegendURL is
-    /// advertised per-layer rather than blanket-asserted (capability honesty, #2803).
-    /// A layer qualifies only when its resolved style plan — the same plan GetMap
-    /// renders from — yields symbology the swatch renderer paints.
-    /// </summary>
     private static async Task<Dictionary<int, (int Width, int Height)>> PrefetchLegendDimensionsAsync(
         HttpContext context,
         IReadOnlyList<WmsLayer> layers,
@@ -215,13 +204,6 @@ internal static partial class WmsRequestHandlers
         return dimensions;
     }
 
-    /// <summary>
-    /// Resolves a single layer's temporal range, degrading gracefully when the
-    /// underlying aggregate query fails (e.g. the configured time column holds
-    /// values the temporal cast cannot parse). A per-layer failure logs a warning
-    /// and yields <c>null</c> so the layer is advertised without a TIME dimension
-    /// rather than failing the whole capabilities document (honua-server#1911).
-    /// </summary>
     private static async Task<MetadataV2TemporalRange?> ResolveTemporalRangeSafeAsync(
         HttpContext context,
         WmsLayer layer,
@@ -256,14 +238,6 @@ internal static partial class WmsRequestHandlers
         }
     }
 
-    /// <summary>
-    /// The WMS 1.3.0 resolution value that declares a temporal interval continuous.
-    /// </summary>
-    /// <remarks>
-    /// Annex C defines a dimension extent as <c>min/max/resolution</c>. A resolution of
-    /// <c>0</c> means the interval is continuous; an ISO 8601 duration would mean the
-    /// values are discrete and spaced by that period.
-    /// </remarks>
     private const string ContinuousTemporalResolution = "0";
 
     private static void AppendWmsTemporalDimension(
@@ -429,11 +403,8 @@ internal static partial class WmsRequestHandlers
             .AppendLine("</Name>");
         sb.Append("    <Title>").Append(EscapeXml(serviceTitle)).AppendLine("</Title>");
         sb.Append("    <Abstract>").Append(EscapeXml(serviceAbstract)).AppendLine("</Abstract>");
-        sb.AppendLine("    <KeywordList>");
-        sb.AppendLine("      <Keyword>WMS</Keyword>");
-        sb.AppendLine("      <Keyword>OGC</Keyword>");
-        sb.Append("      <Keyword>").Append(EscapeXml(service.Metadata.Name ?? serviceId)).AppendLine("</Keyword>");
-        sb.AppendLine("    </KeywordList>");
+        AppendWmsKeywords(sb, service.Metadata.Keywords
+            .Prepend(service.Metadata.Name ?? serviceId).Prepend("OGC").Prepend("WMS"), "    ");
         AppendWmsOnlineResource(sb, "    ", wmsEndpoint, isWms111);
         sb.AppendLine("    <ContactInformation>");
         sb.AppendLine("      <ContactPersonPrimary>");
@@ -549,9 +520,7 @@ internal static partial class WmsRequestHandlers
             sb.Append("        <Name>").Append(EscapeXml(layerName)).AppendLine("</Name>");
             sb.Append("        <Title>").Append(EscapeXml(resourceTitle)).AppendLine("</Title>");
             sb.Append("        <Abstract>").Append(EscapeXml(layerAbstract)).AppendLine("</Abstract>");
-            sb.AppendLine("        <KeywordList>");
-            sb.Append("          <Keyword>").Append(EscapeXml(layerName)).AppendLine("</Keyword>");
-            sb.AppendLine("        </KeywordList>");
+            AppendWmsKeywords(sb, layer.Resource.Metadata.Keywords.Prepend(layerName), "        ");
             sb.Append("        <").Append(crsElementName).AppendLine(">EPSG:4326</" + crsElementName + ">");
             sb.Append("        <").Append(crsElementName).AppendLine(">EPSG:3857</" + crsElementName + ">");
             if (!isWms111)
@@ -611,13 +580,6 @@ internal static partial class WmsRequestHandlers
         return sb.ToString();
     }
 
-    /// <summary>
-    /// CRS84 bbox for one V2 resource: reads <see cref="MetadataV2ResourceSpatial.Bbox"/>
-    /// in the resource's spatial reference and reprojects to CRS84 via
-    /// <see cref="OgcExtentTransformer.TryTransformExtentToCrs84Async"/> (which
-    /// short-circuits the 4326 case). Returns null when the resource has no bbox or
-    /// the transform fails — the caller falls back to the root extent.
-    /// </summary>
     private static async Task<Wgs84Extent?> TryGetLayerWgs84ExtentAsync(
         MetadataV2Resource resource,
         ICoordinateTransformService? coordinateTransformService,
@@ -652,12 +614,6 @@ internal static partial class WmsRequestHandlers
             Math.Max(transformed.Value.MinLat, transformed.Value.MaxLat));
     }
 
-    /// <summary>
-    /// Union of per-resource CRS84 bboxes. V2 carries no service-level extent, so the
-    /// root <c>Layer</c>'s bbox is the bounding union of every accessible resource that
-    /// declares a bbox. Returns null when no resource declares one, in which case
-    /// capabilities omits the root extent (matches the WCS V2 port).
-    /// </summary>
     private static async Task<Wgs84Extent?> TryComputeRootWgs84ExtentAsync(
         IReadOnlyList<WmsLayer> layers,
         ICoordinateTransformService? coordinateTransformService,
@@ -744,6 +700,16 @@ internal static partial class WmsRequestHandlers
         return Task.CompletedTask;
     }
 
+    private static void AppendWmsKeywords(StringBuilder builder, IEnumerable<string> keywords, string indent)
+    {
+        builder.Append(indent).AppendLine("<KeywordList>");
+        foreach (var keyword in keywords.Where(keyword => !string.IsNullOrWhiteSpace(keyword)).Distinct(StringComparer.Ordinal))
+        {
+            builder.Append(indent).Append("  <Keyword>").Append(EscapeXml(keyword)).AppendLine("</Keyword>");
+        }
+        builder.Append(indent).AppendLine("</KeywordList>");
+    }
+
     private static void AppendWmsGeographicBoundingBox(
         StringBuilder sb,
         double minX,
@@ -819,10 +785,8 @@ internal static partial class WmsRequestHandlers
             .AppendLine("\" />");
     }
 
-    /// <summary>CRS84 (lon/lat) bbox computed from a resource's bbox.</summary>
     private readonly record struct Wgs84Extent(double MinLon, double MinLat, double MaxLon, double MaxLat);
 
-    /// <summary>World-wide CRS84 fallback used when no resource on the service declares a bbox.</summary>
     private static readonly Wgs84Extent WorldWgs84Extent = new(-180d, -90d, 180d, 90d);
 
     private readonly record struct CiteWmsDimensionDefinition(

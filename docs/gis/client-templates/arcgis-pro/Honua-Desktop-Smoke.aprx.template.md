@@ -1,7 +1,7 @@
 # ArcGIS Pro desktop smoke artifact
 
 The project artifact name is `Honua-Desktop-Smoke.aprx`. How that project is
-built, and any runner or licence setup, stays in private `honua-esri-compat`
+built, and any runner or licence setup, is not in this repository
 (ruling R30).
 
 Public evidence identifier: lane `desktop-arcgis`, envelopes

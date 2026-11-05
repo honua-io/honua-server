@@ -1185,19 +1185,10 @@ internal sealed partial class Wfs20Handler
 </xsd:schema>
 """;
 
-    /// <summary>
-    /// XML nesting allowed while rewriting a Filter Encoding 1.1 filter. The rewrite runs before
-    /// <see cref="Fes20Parser"/> applies the shared expression-depth guard, so it is bounded here:
-    /// the shared expression limit plus room for GML geometry nested inside a spatial operand.
-    /// </summary>
+    // The Filter Encoding 1.1 rewrite is depth-bounded here because it runs before the shared expression-depth guard.
     private const int MaxLegacyFilterElementDepth = FilterExpressionNormalizer.MaxExpressionDepth + 16;
 
-    /// <summary>
-    /// Rewrites a WFS 2.0 FILTER that uses the Filter Encoding 1.1 <c>ogc:Filter</c> encoding
-    /// into FES 2.0, using the same rewrite as the WFS 1.x endpoints. Many clients keep sending
-    /// that encoding after negotiating WFS 2.0.0. Any other filter is returned unchanged, so FES
-    /// 2.0 input and malformed XML still reach <see cref="Fes20Parser"/> as before.
-    /// </summary>
+    // A WFS 2.0 FILTER that still uses Filter Encoding 1.1 is rewritten, because many clients keep sending that encoding after negotiating 2.0.0.
     internal static string? NormalizeOgcFilterEncoding(string? filter)
     {
         // Cheap pre-check: an element can only be in the ogc namespace if the namespace URI

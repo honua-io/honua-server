@@ -12,22 +12,12 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Parameter keys used on <see cref="ExecutionJobSpec.Parameters"/> to drive AWS Batch submissions.
-/// </summary>
 internal static class AwsBatchParameterKeys
 {
     public const string JobDefinitionArn = "batch.job_definition_arn";
     public const string JobQueueArn = "batch.job_queue_arn";
     public const string Region = "batch.region";
 
-    /// <summary>
-    /// Optional, config-driven AWS Batch endpoint override. When set (for example to a LocalStack
-    /// Pro Batch endpoint or a real-cloud integration endpoint) it is forwarded to the SDK as a
-    /// ServiceURL; when unset the SDK uses the default regional endpoint, so production behaviour
-    /// is unchanged. Batch emulation requires LocalStack Pro, so this is primarily for paid/real
-    /// integration coverage rather than the free CI tier.
-    /// </summary>
     public const string ServiceUrl = "batch.service_url";
     public const string TimeoutSeconds = "batch.timeout_seconds";
     public const string Vcpus = "batch.vcpus";
@@ -36,39 +26,14 @@ internal static class AwsBatchParameterKeys
     public const string RetryAttempts = "batch.retry_attempts";
     public const string ShareIdentifier = "batch.share_identifier";
 
-    /// <summary>
-    /// Per-tier job-definition ARN keys exposed by the honua-iac serverless module's
-    /// fixed job-definition pool (honua-iac#70). The pool mints four job definitions that
-    /// differ only by ephemeral (scratch) storage — the one knob AWS Batch SubmitJob cannot
-    /// override. The runtime selects a tier by the job's ephemeral-storage floor and submits
-    /// against that tier's ARN. The suffix is the tier id (<c>s</c>/<c>m</c>/<c>l</c>/<c>xl</c>):
-    /// <c>batch.job_definition_arn.s</c> = 20 GiB, <c>.m</c> = 50 GiB, <c>.l</c> = 100 GiB,
-    /// <c>.xl</c> = 200 GiB.
-    /// </summary>
     public const string JobDefinitionArnTierPrefix = JobDefinitionArn + ".";
 
-    /// <summary>
-    /// Optional per-job ephemeral (scratch) storage need, in GiB, used to pick a job-definition
-    /// tier from the pool. Sourced from the GP job's request. Absent or non-positive values fall
-    /// back to the smallest tier (<c>s</c>, 20 GiB).
-    /// </summary>
     public const string EphemeralGib = "batch.ephemeral_gib";
 }
 
-/// <summary>
-/// Resolves the effective AWS Batch job-definition ARN for a job by selecting a size tier from
-/// the honua-iac job-definition pool (honua-iac#70) by the job's ephemeral-storage need.
-/// </summary>
-/// <remarks>
-/// The pool's four tiers differ only by ephemeral (scratch) storage, the one knob SubmitJob
-/// cannot override: <c>s</c>=20, <c>m</c>=50, <c>l</c>=100, <c>xl</c>=200 GiB. vCPU/memory/
-/// timeout/retry stay SubmitJob overrides and are unaffected by tier selection. The
-/// ephemeral-need ceilings are inclusive and mirror the honua-devops sizing-hint boundaries
-/// exactly (<c>≤20→s</c>, <c>≤50→m</c>, <c>≤100→l</c>, <c>≤200→xl</c>, <c>&gt;200</c> rejected).
-/// </remarks>
+// SubmitJob cannot override ephemeral storage, so each storage tier needs its own job definition.
 internal static class AwsBatchJobDefinitionTierSelector
 {
-    /// <summary>Smallest tier (Fargate default ephemeral storage of 20 GiB).</summary>
     internal const string DefaultTier = "s";
 
     private const int CeilingSmall = 20;
@@ -76,19 +41,6 @@ internal static class AwsBatchJobDefinitionTierSelector
     private const int CeilingLarge = 100;
     private const int CeilingExtraLarge = 200;
 
-    /// <summary>
-    /// Resolves the job-definition ARN the backend should submit against.
-    /// </summary>
-    /// <remarks>
-    /// Back-compat: when no per-tier keys are configured the single
-    /// <see cref="AwsBatchParameterKeys.JobDefinitionArn"/> is required and returned unchanged,
-    /// preserving existing non-tiered ControlPlane:ExecutionWorkloads configs. When tier keys are
-    /// present, the job's ephemeral need selects the tier and that tier's ARN is returned.
-    /// </remarks>
-    /// <exception cref="InvalidOperationException">
-    /// Thrown when neither tier keys nor a single ARN are configured, when the ephemeral need
-    /// exceeds the 200 GiB pool ceiling, or when the selected tier's ARN is not configured.
-    /// </exception>
     public static string ResolveJobDefinitionArn(IReadOnlyDictionary<string, string> parameters)
     {
         ArgumentNullException.ThrowIfNull(parameters);
@@ -121,12 +73,6 @@ internal static class AwsBatchJobDefinitionTierSelector
             + $"but parameter '{tierKey}' is not configured.");
     }
 
-    /// <summary>
-    /// Maps an ephemeral-storage need (GiB) to a pool tier id using inclusive ceilings that mirror
-    /// the honua-devops sizing-hint boundaries: <c>≤20→s</c>, <c>≤50→m</c>, <c>≤100→l</c>,
-    /// <c>≤200→xl</c>. A need above 200 GiB exceeds the Fargate/pool ceiling and is rejected.
-    /// </summary>
-    /// <exception cref="InvalidOperationException">Thrown when the need exceeds 200 GiB.</exception>
     public static string MapEphemeralGibToTier(int ephemeralGib)
     {
         if (ephemeralGib <= CeilingSmall)
@@ -154,20 +100,11 @@ internal static class AwsBatchJobDefinitionTierSelector
             + "Fargate/job-definition pool ceiling (largest tier 'xl').");
     }
 
-    /// <summary>
-    /// True when the parameters carry at least one per-tier job-definition ARN key, signalling the
-    /// tiered honua-iac contract rather than a single-ARN config.
-    /// </summary>
     private static bool HasTierKeys(IReadOnlyDictionary<string, string> parameters)
         => parameters.Any(entry =>
             entry.Key.StartsWith(AwsBatchParameterKeys.JobDefinitionArnTierPrefix, StringComparison.Ordinal)
             && !string.IsNullOrWhiteSpace(entry.Value));
 
-    /// <summary>
-    /// Reads the job's ephemeral need (GiB) from <see cref="AwsBatchParameterKeys.EphemeralGib"/>.
-    /// Absent, unparseable, or non-positive values default to the smallest tier's 20 GiB so a job
-    /// with no hint lands on <c>s</c>.
-    /// </summary>
     private static int ResolveEphemeralGib(IReadOnlyDictionary<string, string> parameters)
     {
         if (parameters.TryGetValue(AwsBatchParameterKeys.EphemeralGib, out var raw)
@@ -182,16 +119,8 @@ internal static class AwsBatchJobDefinitionTierSelector
     }
 }
 
-/// <summary>
-/// Pure mapping from AWS Batch job status strings to <see cref="ExecutionJobStatus"/>.
-/// </summary>
 internal static class AwsBatchStateMapper
 {
-    /// <summary>
-    /// Reason string attached to AWS Batch cancel and terminate requests. The reason surfaces
-    /// back via DescribeJobs.StatusReason once AWS reaches FAILED, letting the adapter distinguish
-    /// operator-initiated cancellation from real workload failures.
-    /// </summary>
     public const string CancelReason = "Cancelled by Honua control plane";
 
     public static ExecutionJobStatus MapStatus(string? awsStatus)
@@ -214,10 +143,6 @@ internal static class AwsBatchStateMapper
         };
     }
 
-    /// <summary>
-    /// Maps AWS Batch status, promoting FAILED to Cancelled when the provider's statusReason
-    /// indicates the failure was caused by a cancel/terminate request we issued.
-    /// </summary>
     public static ExecutionJobStatus MapStatusWithReason(string? awsStatus, string? statusReason)
     {
         var mapped = MapStatus(awsStatus);
@@ -256,39 +181,23 @@ internal static class AwsBatchStateMapper
     }
 }
 
-/// <summary>
-/// Operator attestations for the execution contracts supported by exact AWS Batch job-definition
-/// identities. Job-definition revisions are immutable worker artifacts, so callers should key the
-/// map by the same ARN (including revision) selected through the workload parameters.
-/// </summary>
 internal sealed class AwsBatchExecutionOptions
 {
-    /// <summary>Configuration section name.</summary>
     public const string SectionName = "ControlPlane:AwsBatch";
 
-    /// <summary>Maximum custom-code queue/start wait, in seconds; enforced before user source executes.</summary>
     public int CustomCodeMaxQueueWaitSeconds { get; set; } = 3600;
 
-    /// <summary>
-    /// Job-definition contract attestations. Each ARN/revision is stored as an entry value instead
-    /// of a dictionary key because colons in an ARN are configuration-path delimiters.
-    /// </summary>
+    // Each job-definition ARN is stored as an entry value because a colon in an ARN is a configuration-path delimiter.
     public List<AwsBatchJobDefinitionContractOptions> JobDefinitions { get; set; } = [];
 }
 
-/// <summary>An exact AWS Batch job-definition identity and its supported execution contract.</summary>
 internal sealed class AwsBatchJobDefinitionContractOptions
 {
-    /// <summary>Exact job-definition ARN/revision selected by the workload.</summary>
     public string JobDefinition { get; set; } = string.Empty;
 
-    /// <summary>Highest execution contract understood by that immutable worker definition.</summary>
     public int MaxSupportedContractVersion { get; set; } = 1;
 }
 
-/// <summary>
-/// AWS Batch execution adapter behind the canonical batch-compute boundary.
-/// </summary>
 internal sealed partial class AwsBatchComputeBackend(
     IAwsBatchJobClient batchClient,
     IOptions<AwsBatchExecutionOptions> options,
@@ -297,21 +206,8 @@ internal sealed partial class AwsBatchComputeBackend(
 {
     internal const string AdapterBackendName = "honua-aws-batch";
 
-    /// <summary>
-    /// Sentinel prefix stored in <see cref="ExecutionJobRecord.ProviderOperationId"/> when a
-    /// SubmitJob call failed with a transport-ambiguous error. The remainder is the deterministic
-    /// AWS Batch job name, which reconciliation resolves to a concrete provider job id via
-    /// <see cref="IAwsBatchJobClient.ListJobsByNameAsync"/>. Using a sentinel keeps the record
-    /// nonterminal (so the reconciler takes the Observe path) without pretending we have a real
-    /// provider id.
-    /// </summary>
     internal const string PendingSubmissionMarkerPrefix = "aws-batch-pending:";
 
-    /// <summary>
-    /// Bounded grace window the reconciler allows for an uncertain submit before transitioning
-    /// to a terminal state. Mirrors <c>AzureBatchComputeBackend.MissingRegistrationGracePeriod</c>
-    /// so operators get the same "provider never acknowledged submission" semantics across backends.
-    /// </summary>
     internal static TimeSpan PendingDiscoveryGracePeriod => TimeSpan.FromMinutes(2);
 
     internal AwsBatchComputeBackend(
@@ -352,15 +248,6 @@ internal sealed partial class AwsBatchComputeBackend(
         return false;
     }
 
-    /// <summary>
-    /// True when the durable record has already crossed the remote-start boundary but is
-    /// missing a concrete provider id. Happens when a crash or CAS conflict lost the
-    /// post-start write in <c>ExecutionJobSubmissionHelper.StartOnRemoteBackendAsync</c>
-    /// after AWS Batch accepted (or may have accepted) the submission. Without this
-    /// recovery path, observe/cancel would short-circuit to "not submitted yet" and orphan
-    /// the real provider job. The per-attempt job name is deterministic, so reconciliation
-    /// can rediscover the job via ListJobsByName.
-    /// </summary>
     internal static bool TryDeriveOrphanedSubmissionName(ExecutionJobRecord job, out string jobName)
     {
         if (!string.IsNullOrWhiteSpace(job.ProviderOperationId))
@@ -382,12 +269,7 @@ internal sealed partial class AwsBatchComputeBackend(
         return true;
     }
 
-    /// <summary>
-    /// Identifies SDK failures and independently cancelled provider requests (such as
-    /// transport deadlines). A cancelled request does not prove the provider job stopped
-    /// or that a submission was rejected. Caller cancellation must still propagate so
-    /// host shutdown and lease loss retain the reconciler's ownership semantics.
-    /// </summary>
+    // A cancelled provider call does not prove the job stopped, but the caller's own cancellation still has to propagate.
     private static bool IsProviderRequestException(Exception ex, CancellationToken cancellationToken)
         => ex is AmazonServiceException or AmazonClientException
             || (ex is OperationCanceledException && !cancellationToken.IsCancellationRequested);

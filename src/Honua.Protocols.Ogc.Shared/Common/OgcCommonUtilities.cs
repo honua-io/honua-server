@@ -17,14 +17,8 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Protocols.Ogc.Common;
 
-/// <summary>
-/// Format option for content negotiation.
-/// </summary>
 internal readonly record struct FormatOption(string QueryValue, string MediaType, string Title);
 
-/// <summary>
-/// Shared utilities for OGC API responses.
-/// </summary>
 internal static class OgcCommonUtilities
 {
     private static readonly IReadOnlyDictionary<string, string> _featureFormatParameters =
@@ -60,16 +54,10 @@ internal static class OgcCommonUtilities
         MediaTypes.Html
     ];
 
-    /// <summary>
-    /// Supported metadata formats.
-    /// </summary>
     public static readonly ImmutableArray<FormatOption> MetadataFormats = ImmutableArray.Create(
         new FormatOption("json", MediaTypes.Json, "JSON"),
         new FormatOption("html", MediaTypes.Html, "HTML"));
 
-    /// <summary>
-    /// Validates query parameters against allowed set.
-    /// </summary>
     public static BadRequest<string>? ValidateQueryParameters(HttpRequest request, IReadOnlySet<string> allowedParameters)
     {
         var validator = request.HttpContext.RequestServices.GetRequiredService<ICommonQueryValidator>();
@@ -80,9 +68,6 @@ internal static class OgcCommonUtilities
         return error == null ? null : TypedResults.BadRequest(error);
     }
 
-    /// <summary>
-    /// Determines output format from request parameters and headers.
-    /// </summary>
     public static bool TryGetOutputFormat(
         string? formatParameter,
         HttpContext context,
@@ -104,9 +89,6 @@ internal static class OgcCommonUtilities
             out error);
     }
 
-    /// <summary>
-    /// Determines output format from request parameters and Accept negotiation.
-    /// </summary>
     public static bool TryGetOutputFormat(
         string? formatParameter,
         HttpContext context,
@@ -161,9 +143,6 @@ internal static class OgcCommonUtilities
         return false;
     }
 
-    /// <summary>
-    /// Creates a standardized error response for invalid format negotiation.
-    /// </summary>
     public static IResult CreateFormatError(HttpContext context, IResult? formatError)
     {
         if (formatError is BadRequest<string> badRequest)
@@ -179,9 +158,6 @@ internal static class OgcCommonUtilities
         return StandardErrorHelpers.CreateBadRequest(context, "Invalid format.");
     }
 
-    /// <summary>
-    /// Gets a query parameter value, optionally trimmed.
-    /// </summary>
     public static string? GetQueryValue(HttpRequest request, string key, bool trim = true)
     {
         if (!request.Query.TryGetValue(key, out var values))
@@ -198,9 +174,6 @@ internal static class OgcCommonUtilities
         return trim ? value.Trim() : value;
     }
 
-    /// <summary>
-    /// Builds URL with format parameter.
-    /// </summary>
     public static string BuildUrlWithFormat(HttpRequest request, string basePath, string? formatValue)
     {
         var queryBuilder = new List<string>();
@@ -226,9 +199,6 @@ internal static class OgcCommonUtilities
         return queryBuilder.Count > 0 ? $"{basePath}?{string.Join("&", queryBuilder)}" : basePath;
     }
 
-    /// <summary>
-    /// Builds format-specific links for content negotiation.
-    /// </summary>
     public static ImmutableArray<Link> BuildFormatLinks(
         HttpRequest request,
         string basePath,
@@ -262,9 +232,6 @@ internal static class OgcCommonUtilities
         return links.ToImmutableArray();
     }
 
-    /// <summary>
-    /// Adds alternate format links to existing link collection.
-    /// </summary>
     public static ImmutableArray<Link> AddAlternateLinks(
         ImmutableArray<Link> existing,
         HttpRequest request,
@@ -291,9 +258,6 @@ internal static class OgcCommonUtilities
         return builder.ToImmutableArray();
     }
 
-    /// <summary>
-    /// Formats metadata response with HTML option.
-    /// </summary>
     public static IResult FormatMetadataResponse<T>(
         T payload,
         JsonTypeInfo<T> typeInfo,
@@ -406,19 +370,8 @@ internal static class OgcCommonUtilities
         }
     }
 
-    /// <summary>
-    /// Upper bound on parallel collection projection workers. Caps fan-out when mapping a
-    /// service's resources into collection DTOs so a large catalog cannot exhaust the thread
-    /// pool or overwhelm the feature store with concurrent extent probes.
-    /// </summary>
     internal const int MaxCollectionProjectionConcurrency = 8;
 
-    /// <summary>
-    /// Projects a source list into collection DTOs with bounded concurrency, preserving input
-    /// order. Shared by the OGC API Features and STAC collection-listing surfaces, which both
-    /// map a service's resources into per-collection metadata (each projection probes the
-    /// feature store for extents), so the fan-out control lives in the neutral OGC foundation.
-    /// </summary>
     public static async Task<ImmutableArray<TProjection>> ProjectWithLimitedConcurrencyAsync<TSource, TProjection>(
         IReadOnlyList<TSource> source,
         Func<TSource, CancellationToken, Task<TProjection>> projector,

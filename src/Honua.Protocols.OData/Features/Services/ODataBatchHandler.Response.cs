@@ -8,11 +8,6 @@ using Honua.Protocols.OData.Models;
 
 namespace Honua.Protocols.OData.Services;
 
-/// <summary>
-/// Response assembly and error formatting for the OData $batch handler.
-/// Builds OData feature payloads, computes ETags, and wraps batch sub-request
-/// results into the success / error envelope shape consumed by the batch writer.
-/// </summary>
 internal sealed partial class ODataBatchHandler
 {
     private Dictionary<string, object?> FeatureToBody(

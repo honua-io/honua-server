@@ -9,14 +9,10 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Ai.NlQuery;
 
-/// <summary>
-/// Orchestrates the end-to-end NL query pipeline: provider invocation → plan compilation → filter AST.
-/// </summary>
 internal sealed class NlQueryOrchestrator(
     INlQueryPlanProvider planProvider,
     ILogger<NlQueryOrchestrator> logger) : INlQueryOrchestrator
 {
-    /// <inheritdoc />
     public async Task<NlQueryOrchestrationResult> ExecuteAsync(
         NlQueryPlanRequest request,
         CancellationToken cancellationToken = default)

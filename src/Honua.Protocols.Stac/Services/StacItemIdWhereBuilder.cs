@@ -8,9 +8,6 @@ using Honua.Infrastructure.Stac;
 
 namespace Honua.Protocols.Stac.Services;
 
-/// <summary>
-/// Builds provider-neutral GeoServices SQL predicates for routed STAC item identifiers.
-/// </summary>
 internal static class StacItemIdWhereBuilder
 {
     public static ImmutableArray<MetadataV2Field> GetCandidateFields(MetadataV2Resource resource)
@@ -39,10 +36,6 @@ internal static class StacItemIdWhereBuilder
         return ImmutableArray.Create(source.Field, primary);
     }
 
-    /// <summary>
-    /// Attribute names an unbound item lookup may match. A configured identity field
-    /// replaces the canonical <c>stac_id</c>/<c>item_id</c>/<c>id</c> list.
-    /// </summary>
     public static IReadOnlyList<string> UnboundAttributeNames(MetadataV2Resource resource)
     {
         var source = StacItemIdentity.Resolve(resource);

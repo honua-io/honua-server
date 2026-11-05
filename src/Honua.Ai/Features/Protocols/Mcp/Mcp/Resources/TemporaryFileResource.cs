@@ -9,11 +9,7 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Ai.Protocols.Mcp.Resources;
 
-/// <summary>
-/// Reads the exact temporary artifact URLs emitted by map rendering through the
-/// canonical store, retaining its ownership and expiration checks. Never fetches
-/// a caller-supplied URL or opens a caller-supplied filesystem path.
-/// </summary>
+// Reads go through the canonical store and never follow a caller-supplied URL or filesystem path.
 internal sealed class TemporaryFileResource : IMcpResource
 {
     public const string UriPrefix = "honua://temporary-files/";

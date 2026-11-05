@@ -8,30 +8,17 @@ using Honua.Protocols.OData.Models;
 
 namespace Honua.Protocols.OData.Services;
 
-/// <summary>
-/// Log category for OData metadata operations.
-/// </summary>
 internal sealed class ODataMetadataLog;
 
-/// <summary>
-/// Service for handling OData metadata and service document operations.
-/// Provides dynamic CSDL generation from Metadata v2 canonical resources and fallback static metadata.
-/// </summary>
 internal sealed partial class ODataMetadataService
 {
     private readonly ILogger<ODataMetadataLog> _logger;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="ODataMetadataService"/> class.
-    /// </summary>
     public ODataMetadataService(ILogger<ODataMetadataLog> logger)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <summary>
-    /// Generates the OData service document for the given base URL.
-    /// </summary>
     [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Kept as an instance method to preserve the current service API shape.")]
     public ServiceDocument GenerateServiceDocument(string baseUrl)
     {
@@ -56,11 +43,6 @@ internal sealed partial class ODataMetadataService
         };
     }
 
-    /// <summary>
-    /// Generates the OData CSDL metadata document directly from a sequence of canonical
-    /// V2 resources. Falls back to the static metadata document if generation fails for
-    /// any reason.
-    /// </summary>
     [System.Diagnostics.CodeAnalysis.SuppressMessage(
         "Performance",
         "CA1822:Mark members as static",
@@ -82,9 +64,6 @@ internal sealed partial class ODataMetadataService
         }
     }
 
-    /// <summary>
-    /// Returns static fallback metadata when dynamic generation fails.
-    /// </summary>
     private static string GetStaticMetadata()
     {
         return """
@@ -304,16 +283,8 @@ internal sealed partial class ODataMetadataService
         return names.OrderBy(name => name, StringComparer.OrdinalIgnoreCase).ToArray();
     }
 
-    /// <summary>
-    /// Logging methods for OData metadata operations.
-    /// </summary>
     private static partial class Log
     {
-        /// <summary>
-        /// Logs when dynamic OData metadata generation fails and falls back to static metadata.
-        /// </summary>
-        /// <param name="logger">The logger instance.</param>
-        /// <param name="exception">The exception that caused the failure.</param>
         [LoggerMessage(EventId = 3000, Level = LogLevel.Warning, Message = "Failed to generate dynamic OData metadata, using static metadata.")]
         public static partial void MetadataFallback(ILogger logger, Exception exception);
     }

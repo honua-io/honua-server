@@ -21,11 +21,6 @@ using Microsoft.Net.Http.Headers;
 
 namespace Honua.Protocols.Scene;
 
-/// <summary>
-/// HTTP endpoints that serve hosted OGC 3D Tiles tilesets so CesiumJS clients
-/// can load <c>tileset.json</c> and resolve relative content URIs without any
-/// URL rewriting on the client side.
-/// </summary>
 internal static partial class SceneEndpoints
 {
     private const string ScenesTag = "Scenes";
@@ -687,10 +682,6 @@ internal static partial class SceneEndpoints
     }
 }
 
-/// <summary>
-/// Telemetry constants for scene endpoints. Kept local because the protocol
-/// name is server-side only and not useful in <see cref="HonuaTelemetry"/>.
-/// </summary>
 internal static class SceneTelemetry
 {
     public const string Protocol = "Scene-3DTiles";

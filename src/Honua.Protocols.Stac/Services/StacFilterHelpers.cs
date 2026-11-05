@@ -11,9 +11,6 @@ using NetTopologySuite.IO;
 
 namespace Honua.Protocols.Stac.Services;
 
-/// <summary>
-/// Helpers for converting STAC search parameters to Honua query filters.
-/// </summary>
 internal static class StacFilterHelpers
 {
     private static readonly GeometryFactory Wgs84Factory = new(new PrecisionModel(), 4326);
@@ -23,11 +20,6 @@ internal static class StacFilterHelpers
 
     private static WKBWriter GetWkbWriter() => _wkbWriter ??= new WKBWriter();
 
-    /// <summary>
-    /// Parses a STAC bbox parameter into a <see cref="SpatialFilter"/>.
-    /// Supports 2D (west,south,east,north) and 3D (west,south,minZ,east,north,maxZ)
-    /// shapes; elevation is validated but not applied to the 2D feature filter.
-    /// </summary>
     public static SpatialFilter? ParseBbox(string bbox)
     {
         var parts = bbox.Split(',', StringSplitOptions.None | StringSplitOptions.TrimEntries);
@@ -135,10 +127,6 @@ internal static class StacFilterHelpers
         return true;
     }
 
-    /// <summary>
-    /// Creates a <see cref="SpatialFilter"/> from pre-parsed bbox coordinates.
-    /// Avoids the string round-trip when the caller already has numeric values.
-    /// </summary>
     public static SpatialFilter CreateBboxSpatialFilter(double west, double south, double east, double north)
     {
         Geometry geometry;
@@ -168,9 +156,6 @@ internal static class StacFilterHelpers
                 new Coordinate(minX, minY)
             ]);
 
-    /// <summary>
-    /// Parses a GeoJSON geometry from a STAC intersects parameter into a spatial filter.
-    /// </summary>
     public static bool TryCreateIntersectsSpatialFilter(
         string? intersectsGeoJson,
         IGeometryService geometryService,
@@ -204,24 +189,9 @@ internal static class StacFilterHelpers
         }
     }
 
-    /// <summary>
-    /// Validates the syntax of an RFC 3339 datetime or interval string without requiring a
-    /// temporal field on the resource.  Returns <see langword="true"/> when the value is
-    /// syntactically valid; <see langword="false"/> when the format is wrong.
-    /// </summary>
     public static bool IsValidDatetimeSyntax(string datetime)
         => ParseDatetimeWithField(datetime, "_syntax_check_") is not null;
 
-    /// <summary>
-    /// Parses an RFC 3339 datetime or interval into a <see cref="TemporalFilter"/> bound to the
-    /// resource's temporal field.  Returns <see langword="null"/> when the resource has no
-    /// resolvable temporal field (the caller must exclude that layer from temporal results).
-    /// </summary>
-    /// <remarks>
-    /// Use <see cref="IsValidDatetimeSyntax"/> to validate syntax independently of per-resource
-    /// field resolution so that a syntactically invalid value can be rejected up front (400) while
-    /// a resource without a temporal field contributes no matches to the search.
-    /// </remarks>
     public static TemporalFilter? ParseDatetime(string datetime, MetadataV2Resource resource)
     {
         ArgumentNullException.ThrowIfNull(resource);
@@ -235,14 +205,6 @@ internal static class StacFilterHelpers
         return ParseDatetimeWithField(datetime, timeField, endTimeField);
     }
 
-    /// <summary>
-    /// Resolves the start temporal field for the resource and, when present, a distinct end
-    /// temporal field via <paramref name="endTimeField"/>.  When the resource declares an
-    /// explicit start time field the configured end time field is propagated (matching the
-    /// OGC/GeoServices construction) so interval rows are filtered as
-    /// <c>[start, end]</c> rather than as instants. The fallback schema scan also recognizes a
-    /// typed start_datetime/end_datetime pair; other fallback fields represent instants.
-    /// </summary>
     internal static string? ResolveTemporalField(MetadataV2Resource resource, out string? endTimeField)
     {
         endTimeField = null;

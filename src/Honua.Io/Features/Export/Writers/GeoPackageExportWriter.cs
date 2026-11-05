@@ -12,10 +12,6 @@ using WkbReader = NetTopologySuite.IO.WKBReader;
 
 namespace Honua.Io.Export.Writers;
 
-/// <summary>
-/// Writes features as an OGC GeoPackage (.gpkg) file.
-/// Creates spec-compliant metadata tables and inserts features in batched transactions.
-/// </summary>
 internal static class GeoPackageExportWriter
 {
     private const int BatchSize = 1000;
@@ -324,10 +320,7 @@ internal static class GeoPackageExportWriter
         _ => SqliteType.Text
     };
 
-    /// <summary>
-    /// Encodes WKB geometry as GeoPackage standard binary (header + WKB payload).
-    /// See OGC 12-128r16 §6.2.3.
-    /// </summary>
+    // GeoPackage geometry is a standard binary header plus WKB, per OGC 12-128r16 section 6.2.3.
     private static byte[] ToGpkgBinary(byte[] wkb, int srid)
     {
         // GeoPackage binary header: GP (2 bytes) + version (1) + flags (1) + srs_id (4) + optional envelope + WKB

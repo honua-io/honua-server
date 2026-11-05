@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using Honua.Core.Features.Shared.Models;
+using Honua.Core.Features.Validation;
 using Honua.Infrastructure.Services;
 using Honua.Protocols.Ogc.Common;
 
@@ -10,17 +11,6 @@ using Honua.Protocols.Ogc.Common;
 namespace Honua.Protocols.Ogc.Shared;
 #pragma warning restore CA1716
 
-/// <summary>
-/// 2D/3D bounding box parsed from an OGC KVP value.
-/// </summary>
-/// <remarks>
-/// <para>For 2D inputs the Z components are <c>null</c>. The 3D form follows the
-/// OGC API Common ordering of <c>minX,minY,minZ,maxX,maxY,maxZ</c>.</para>
-/// <para>When a CRS suffix is supplied as a fifth or seventh comma-separated
-/// token (e.g. <c>"10,10,20,20,EPSG:4326"</c>) it is exposed verbatim via
-/// <see cref="CrsToken"/>; callers can then feed it through
-/// <see cref="OgcParameterValidator.TryParseCrs"/>.</para>
-/// </remarks>
 internal readonly record struct OgcBbox(
     double MinX,
     double MinY,
@@ -33,31 +23,11 @@ internal readonly record struct OgcBbox(
     public bool Is3D => MinZ.HasValue && MaxZ.HasValue;
 }
 
-/// <summary>
-/// Shared, protocol-neutral kernel for parsing OGC KVP request parameters.
-/// </summary>
-/// <remarks>
-/// <para>All methods are pure (no I/O, no logging). They produce concise error
-/// strings suitable for embedding either in an OWS <c>ExceptionReport</c>
-/// (WMS/WFS/WMTS/WCS) <c>ExceptionText</c> element or in the <c>detail</c>
-/// field of a problem+json (OGC API) response.</para>
-/// <para>This validator unifies behaviour previously duplicated across
-/// <c>WmsRequestHandlers</c>, <c>Wcs20Handler</c>, <c>WmtsRequestHandlers</c>,
-/// and the OGC API endpoints. Existing low-level helpers
-/// (<see cref="SpatialReferenceHelpers"/>, <see cref="RasterParsingHelpers"/>,
-/// <see cref="OgcTemporalFilterParser"/>) remain the canonical building blocks
-/// and are not duplicated here.</para>
-/// </remarks>
 internal static class OgcParameterValidator
 {
     private const int MaxBboxLength = 256;
     private const int MaxLayersLength = 4096;
 
-    /// <summary>
-    /// Parses an OGC KVP bounding-box string. Supports the canonical 4-token
-    /// (2D) and 6-token (3D) forms, and tolerates an optional trailing CRS
-    /// identifier (5- or 7-token forms used by WMS/WFS 1.1.0+).
-    /// </summary>
     public static bool TryParseBbox(string? input, out OgcBbox bbox, out string error)
     {
         bbox = default;
@@ -89,16 +59,14 @@ internal static class OgcParameterValidator
             _ => 0,
         };
 
-        var coords = new double[numericCount];
-        for (var i = 0; i < numericCount; i++)
+        var parsed = BoundingBoxOrdinates.Parse(parts[..numericCount]);
+        if (!parsed.Succeeded)
         {
-            if (!double.TryParse(parts[i], NumberStyles.Float, CultureInfo.InvariantCulture, out coords[i]) ||
-                !double.IsFinite(coords[i]))
-            {
-                error = "BBOX coordinates must be finite numeric values.";
-                return false;
-            }
+            error = "BBOX coordinates must be finite numeric values.";
+            return false;
         }
+
+        var coords = parsed.Ordinates;
 
         string? crsToken = null;
         if (parts.Length == numericCount + 1)
@@ -147,11 +115,6 @@ internal static class OgcParameterValidator
         }
     }
 
-    /// <summary>
-    /// Parses a CRS identifier (EPSG code, OGC URI, OGC URN, or CRS84).
-    /// On success <paramref name="crsUri"/> is the canonical OGC URI form, so
-    /// callers can compare CRS values without re-implementing normalisation.
-    /// </summary>
     public static bool TryParseCrs(string? input, out string crsUri, out string error)
     {
         crsUri = string.Empty;
@@ -173,11 +136,6 @@ internal static class OgcParameterValidator
         return true;
     }
 
-    /// <summary>
-    /// Parses a VERSION (or ACCEPTVERSIONS member) value and confirms it is in
-    /// the supplied set of supported versions. Comparison is case-insensitive
-    /// to match OWS Common rules.
-    /// </summary>
     public static bool TryParseVersion(
         string? input,
         IReadOnlyList<string> supported,
@@ -209,10 +167,6 @@ internal static class OgcParameterValidator
         return false;
     }
 
-    /// <summary>
-    /// Parses a comma-separated LAYERS / COVERAGES / COVERAGEID parameter into
-    /// an ordered, de-duplicated list. Empty tokens are rejected.
-    /// </summary>
     public static bool TryParseLayers(
         string? input,
         out IReadOnlyList<string> layers,
@@ -260,12 +214,6 @@ internal static class OgcParameterValidator
         return true;
     }
 
-    /// <summary>
-    /// Parses an RFC 3339 datetime instant or interval (closed or open-ended).
-    /// Wraps <see cref="OgcTemporalFilterParser.TryParseRange"/> and exposes
-    /// non-nullable start / nullable end semantics for protocols that need an
-    /// explicit instant when no interval is supplied.
-    /// </summary>
     public static bool TryParseTime(
         string? input,
         out DateTimeOffset start,
@@ -309,10 +257,6 @@ internal static class OgcParameterValidator
         return true;
     }
 
-    /// <summary>
-    /// Parses a FORMAT (or media-type-like) parameter and confirms it is in
-    /// the supplied list of supported values. Comparison is case-insensitive.
-    /// </summary>
     public static bool TryParseFormat(
         string? input,
         IReadOnlyList<string> supported,

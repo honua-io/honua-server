@@ -7,33 +7,23 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Protocols.SensorThings.Streaming;
 
-/// <summary>
-/// A single frame pushed to an observation-stream client. Either a heartbeat (keep-alive)
-/// or a newly-ingested observation rendered in a compact, STA-shaped form.
-/// </summary>
 public sealed record ObservationStreamFrame
 {
-    /// <summary>True when this frame is a keep-alive heartbeat rather than an observation.</summary>
     [JsonIgnore]
     public bool IsHeartbeat { get; init; }
 
-    /// <summary>Observation identifier (<c>@iot.id</c>).</summary>
     [JsonPropertyName("@iot.id")]
     public long IotId { get; init; }
 
-    /// <summary>Identifier of the owning datastream.</summary>
     [JsonPropertyName("datastreamId")]
     public long DatastreamId { get; init; }
 
-    /// <summary>Phenomenon time (ISO-8601).</summary>
     [JsonPropertyName("phenomenonTime")]
     public string? PhenomenonTime { get; init; }
 
-    /// <summary>The numeric measurement result.</summary>
     [JsonPropertyName("result")]
     public System.Text.Json.JsonElement Result { get; init; }
 
-    /// <summary>Builds a frame from a persisted observation.</summary>
     public static ObservationStreamFrame FromObservation(SensorThingsObservation observation)
     {
         var start = Services.StaEntityMapper.FormatInstant(observation.PhenomenonTime);
@@ -49,33 +39,25 @@ public sealed record ObservationStreamFrame
         };
     }
 
-    /// <summary>Builds a keep-alive heartbeat frame.</summary>
     public static ObservationStreamFrame Heartbeat() => new() { IsHeartbeat = true };
 }
 
-/// <summary>Status frame emitted on the SSE/WebSocket handshake and on a terminal gap.</summary>
 public sealed record ObservationStreamStatus
 {
-    /// <summary>This stream does not retain a cursor. A gap means the client must rebaseline.</summary>
     public const string EphemeralSemantics = "ephemeral";
 
-    /// <summary>Connection status token (e.g. <c>connected</c> or <c>gap</c>).</summary>
     [JsonPropertyName("status")]
     public required string Status { get; init; }
 
-    /// <summary>The datastream id this stream is scoped to, or null for all.</summary>
     [JsonPropertyName("datastreamId")]
     public long? DatastreamId { get; init; }
 
-    /// <summary>Delivery contract. <c>ephemeral</c> means overflow ends the session instead of replaying.</summary>
     [JsonPropertyName("semantics")]
     public string? Semantics { get; init; }
 
-    /// <summary>Why a terminal status was emitted, for example <c>slow-consumer</c>.</summary>
     [JsonPropertyName("reason")]
     public string? Reason { get; init; }
 
-    /// <summary>Handshake frame. Semantics are advertised on every successful connect.</summary>
     public static ObservationStreamStatus Connected(long? datastreamId) => new()
     {
         Status = "connected",
@@ -83,7 +65,6 @@ public sealed record ObservationStreamStatus
         Semantics = EphemeralSemantics,
     };
 
-    /// <summary>Terminal gap. The frames that did not fit are not replayed.</summary>
     public static ObservationStreamStatus SlowConsumerGap(long? datastreamId) => new()
     {
         Status = "gap",
@@ -93,10 +74,8 @@ public sealed record ObservationStreamStatus
     };
 }
 
-/// <summary>Redis pub/sub envelope used to fan observation frames out across nodes.</summary>
 internal sealed record ClusterBroadcastDto(string OriginInstanceId, ObservationStreamFrame Frame, ObservationStreamScope? Scope);
 
-/// <summary>Source-generated JSON context for observation-stream frames.</summary>
 [JsonSourceGenerationOptions(DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(ObservationStreamFrame))]
 [JsonSerializable(typeof(ObservationStreamStatus))]
@@ -105,7 +84,6 @@ internal sealed partial class ObservationStreamJsonContext : System.Text.Json.Se
 {
 }
 
-/// <summary>Source-generated log messages for the observation-stream transport.</summary>
 internal static partial class ObservationStreamLog
 {
     [LoggerMessage(EventId = 5100, Level = LogLevel.Debug, Message = "Observation stream session {SessionId} created ({Transport}, datastream {DatastreamId}).")]

@@ -7,12 +7,6 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Ai.Protocols.Mcp.MapTools;
 
-/// <summary>
-/// AOT-compatible source-generated JSON context for the catalog / feature-query
-/// / map-render MCP DTOs. Kept separate from the core MCP JSON context so the
-/// map-tools feature slice owns its own serializer surface — mirrors the
-/// location slice's <c>LocationJsonContext</c>.
-/// </summary>
 [JsonSerializable(typeof(McpListLayersArgument))]
 [JsonSerializable(typeof(McpListLayersOutput))]
 [JsonSerializable(typeof(McpLayerSummary))]

@@ -101,7 +101,7 @@ internal static class StudioMcpSchemas
             "center": { "type": "array", "minItems": {{StudioCompositionViewBounds.CenterOrdinateCount}}, "maxItems": {{StudioCompositionViewBounds.CenterOrdinateCount}}, "items": { "type": "number" }, "description": "Viewport center [x, y]." },
             "zoom": { "type": "number", "minimum": {{Number(StudioCompositionViewBounds.MinZoom)}}, "maximum": {{Number(StudioCompositionViewBounds.MaxZoom)}}, "description": "Map zoom." },
             "pitch": { "type": "number", "minimum": {{Number(StudioCompositionViewBounds.MinPitch)}}, "maximum": {{Number(StudioCompositionViewBounds.MaxPitch)}}, "description": "Map pitch." },
-            "bearing": { "type": "number", "description": "Map bearing." },
+            "bearing": { "type": "number", "minimum": {{Number(StudioCompositionViewBounds.MinBearing)}}, "exclusiveMaximum": {{Number(StudioCompositionViewBounds.MaxBearingExclusive)}}, "description": "Map bearing." },
             "crs": { "type": "string", "maxLength": 100, "description": "Coordinate reference system (e.g. EPSG:4326)." }
           }
         }
@@ -319,7 +319,21 @@ internal static class StudioMcpSchemas
             "draftId": { "type": "string", "format": "uuid", "description": "Studio package draft id (map/app/dashboard family)." },
             "generation": { "type": "integer", "minimum": 1, "description": "Expected current draft generation (optimistic concurrency)." },
             "layerId": { "type": "string", "minLength": 1, "maxLength": 200, "description": "Id of the layer to style." },
-            "styleRef": { "type": ["string", "null"], "maxLength": 200, "description": "Style reference (catalog styleId or inline style key). Omit or set null to clear the binding." }
+            "styleRef": { "type": ["string", "null"], "maxLength": 200, "description": "Style reference (catalog styleId or inline style key). Omit or set null to clear the binding." },
+            "styleBody": { "type": "object", "description": "Inline paint/layout overrides keyed by layerId or '<layerId>__outline'. Not with styleRef." }
+          }
+        }
+        """;
+
+    private const string SetMapStyleArgumentSchemaJson = """
+        {
+          "type": "object",
+          "required": ["draftId", "generation", "mapSpec"],
+          "additionalProperties": false,
+          "properties": {
+            "draftId": { "type": "string", "format": "uuid", "description": "Studio package draft id (map/app/dashboard family)." },
+            "generation": { "type": "integer", "minimum": 1, "description": "Expected current draft generation (optimistic concurrency)." },
+            "mapSpec": { "type": "object", "description": "Edited MapLibre v8 style; only layers, name, metadata, transition, light, lights and fog may change." }
           }
         }
         """;
@@ -413,6 +427,8 @@ internal static class StudioMcpSchemas
 
     /// <summary>Schema for <see cref="McpStudioSetLayerVisibilityArgument"/>.</summary>
     public static readonly JsonElement SetLayerVisibilityArgumentSchema = Parse(SetLayerVisibilityArgumentSchemaJson);
+
+    public static readonly JsonElement SetMapStyleArgumentSchema = Parse(SetMapStyleArgumentSchemaJson);
 
     /// <summary>Schema for <see cref="McpStudioSetViewArgument"/>.</summary>
     public static readonly JsonElement SetViewArgumentSchema = Parse(SetViewArgumentSchemaJson);

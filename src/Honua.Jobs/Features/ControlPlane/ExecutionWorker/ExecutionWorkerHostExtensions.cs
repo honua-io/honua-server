@@ -6,10 +6,8 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.ControlPlane;
 
-/// <summary>Shared assigned-operation composition for managed and native worker hosts.</summary>
 internal static class ExecutionWorkerHostExtensions
 {
-    /// <summary>Replaces persistent queue consumption with one fenced assigned operation.</summary>
     internal static IServiceCollection AddAssignedExecutionWorker(
         this IServiceCollection services, ExecutionWorkerLaunch launch)
     {
@@ -52,7 +50,6 @@ internal static class ExecutionWorkerHostExtensions
         return services;
     }
 
-    /// <summary>Resolves the durable outcome before disposing the worker's service provider.</summary>
     internal static async Task<int> RunExecutionWorkerAsync(
         this IHost host, CancellationToken cancellationToken = default)
     {

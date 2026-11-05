@@ -6,11 +6,6 @@ using Honua.Ai.Protocols.Mcp.Models;
 
 namespace Honua.Ai.Protocols.Mcp.Resources;
 
-/// <summary>
-/// MCP resource for <c>honua://jobs/{jobId}</c>. Delegates to
-/// <see cref="IGeoprocessingJobService.GetJobAsync"/> for authorization and
-/// record lookup, then serializes the record as a structured MCP job resource.
-/// </summary>
 internal sealed class JobStatusResource : IMcpResource
 {
     public const string Template = McpResourceUris.JobsPrefix + "{jobId}";

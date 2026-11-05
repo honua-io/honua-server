@@ -8,9 +8,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Db.Postgres.Features.Infrastructure.Transforms;
 
-/// <summary>
-/// PostGIS-backed coordinate transform service with fast in-memory path for common SRID pairs.
-/// </summary>
 internal sealed partial class PostGisCoordinateTransformService : ICoordinateTransformService
 {
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
@@ -24,7 +21,6 @@ internal sealed partial class PostGisCoordinateTransformService : ICoordinateTra
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <inheritdoc />
     public async ValueTask<(double MinX, double MinY, double MaxX, double MaxY)?> TransformExtentAsync(
         double minX, double minY, double maxX, double maxY,
         int fromSrid, int toSrid,
@@ -47,7 +43,6 @@ internal sealed partial class PostGisCoordinateTransformService : ICoordinateTra
             .ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public async ValueTask<(double MinX, double MinY, double MaxX, double MaxY)?> TransformExtentAsync(
         double minX, double minY, double maxX, double maxY,
         int fromSrid, int toSrid,
@@ -73,7 +68,6 @@ internal sealed partial class PostGisCoordinateTransformService : ICoordinateTra
             .ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public async ValueTask<(double X, double Y)?> TransformPointAsync(
         double x, double y,
         int fromSrid, int toSrid,
@@ -96,7 +90,6 @@ internal sealed partial class PostGisCoordinateTransformService : ICoordinateTra
             .ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public async ValueTask<(double X, double Y)?> TransformPointAsync(
         double x, double y,
         int fromSrid, int toSrid,
@@ -121,7 +114,6 @@ internal sealed partial class PostGisCoordinateTransformService : ICoordinateTra
             .ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public async ValueTask<bool> TransformPointsAsync(
         double[] xs,
         double[] ys,

@@ -16,7 +16,7 @@ namespace Honua.Core.Features.FileImport.Domain;
 /// <summary>
 /// Supported vector file formats for import using NetTopologySuite
 /// </summary>
-[JsonConverter(typeof(SupportedFileFormatJsonConverter))]
+[JsonConverter(typeof(JsonStringEnumConverter<SupportedFileFormat>))]
 public enum SupportedFileFormat
 {
     /// <summary>

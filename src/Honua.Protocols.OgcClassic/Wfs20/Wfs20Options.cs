@@ -7,9 +7,6 @@ internal sealed class Wfs20Options
 {
     public const string SectionName = "Wfs20";
 
-    /// <summary>
-    /// Controls whether GetFeature computes an exact numberMatched value for finite page reads.
-    /// </summary>
     public Wfs20NumberMatchedPolicy NumberMatchedPolicy { get; set; } = Wfs20NumberMatchedPolicy.Exact;
 }
 

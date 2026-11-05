@@ -3,15 +3,6 @@
 
 namespace Honua.Protocols.Scene;
 
-/// <summary>
-/// Source-generated logging events for scene access envelope issuance and
-/// validation. EventId range 8410–8419. No log entry contains the raw token,
-/// HMAC value, signing key, storage credential, or absolute filesystem path.
-/// The <see cref="OptionsMisconfigured"/> reason is constructed from
-/// well-known option keys (e.g. <c>Honua:SceneAccessSigning:SigningKey</c>)
-/// and bounded constants — never from caller-supplied or sensitive values —
-/// so it is safe to log verbatim.
-/// </summary>
 internal static partial class SceneAccessLog
 {
     [LoggerMessage(EventId = 8410, Level = LogLevel.Information,

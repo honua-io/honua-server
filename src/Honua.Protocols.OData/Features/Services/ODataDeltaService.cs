@@ -6,10 +6,6 @@ using System.Text;
 
 namespace Honua.Protocols.OData.Services;
 
-/// <summary>
-/// Provides encoding and decoding of OData $deltatoken values for change tracking.
-/// Tokens encode the defining query state so delta links remain opaque and round-trip safe.
-/// </summary>
 internal static class ODataDeltaService
 {
     private const char Separator = '|';
@@ -38,11 +34,6 @@ internal static class ODataDeltaService
         public bool? Count { get; init; }
     }
 
-    /// <summary>
-    /// Encodes a delta token from the defining query state.
-    /// </summary>
-    /// <param name="state">The opaque delta state.</param>
-    /// <returns>A Base64Url-encoded delta token string.</returns>
     public static string Encode(DeltaQueryState state)
     {
         var payload = string.Join(
@@ -61,13 +52,6 @@ internal static class ODataDeltaService
         return Base64UrlEncode(payload);
     }
 
-    /// <summary>
-    /// Attempts to decode a $deltatoken into its defining query state.
-    /// </summary>
-    /// <param name="token">The opaque $deltatoken string.</param>
-    /// <param name="state">The decoded query state.</param>
-    /// <param name="errorMessage">An error message if decoding fails.</param>
-    /// <returns>true if decoding succeeded; false otherwise.</returns>
     public static bool TryDecode(
         string token,
         out DeltaQueryState state,
@@ -100,13 +84,6 @@ internal static class ODataDeltaService
         return true;
     }
 
-    /// <summary>
-    /// Generates a delta link URL for inclusion in OData responses.
-    /// </summary>
-    /// <param name="request">The current HTTP request.</param>
-    /// <param name="baseUrl">The resolved base URL.</param>
-    /// <param name="state">The defining query state to encode.</param>
-    /// <returns>A complete delta link URL string.</returns>
     public static string GenerateDeltaLink(
         HttpRequest request,
         string baseUrl,
@@ -116,26 +93,9 @@ internal static class ODataDeltaService
         return $"{baseUrl}{request.Path}?$deltatoken={token}";
     }
 
-    /// <summary>
-    /// The OData property name the delta "changed since" predicate targets.
-    /// </summary>
-    /// <remarks>
-    /// This is the reserved audit-trail system alias (DatabaseSchema.UpdatedColumn)
-    /// that the shared filter pipeline maps to the physical <c>updated_at</c> "last
-    /// modified" column on managed feature tables. The alias resolves to the bare
-    /// system column when the resource does not declare a queryable of the same name,
-    /// so the delta filter applies again without reintroducing #1415's bug (treating
-    /// an arbitrary <c>updated_at</c> attribute field name as a bare timestamp
-    /// column). The predicate previously used the literal physical name
-    /// <c>updated_at</c>, which #1415 stopped mapping to a column, silently dropping
-    /// the delta filter (it was swallowed during filter translation, returning all
-    /// rows instead of only those changed since the token timestamp).
-    /// </remarks>
+    // "updated" is the reserved alias that reaches the system column. The physical name updated_at can drop this predicate during translation.
     private const string SystemUpdatedField = "updated";
 
-    /// <summary>
-    /// Builds the defining OData filter used by a delta request.
-    /// </summary>
     public static string BuildDeltaFilter(string? filter, DateTimeOffset timestamp, DateTimeOffset? upperBoundTimestamp = null)
     {
         var encodedTimestamp = timestamp.ToString("O", CultureInfo.InvariantCulture);

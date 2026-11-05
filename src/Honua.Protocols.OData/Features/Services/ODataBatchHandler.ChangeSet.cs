@@ -12,10 +12,6 @@ using Honua.ServiceDefaults;
 
 namespace Honua.Protocols.OData.Services;
 
-/// <summary>
-/// Atomicity-group (change-set) processing for the OData $batch handler.
-/// Executes all writes in a change-set as a single transactional unit with rollback on failure.
-/// </summary>
 internal sealed partial class ODataBatchHandler
 {
     private async Task<ImmutableArray<ODataBatchResponseItem>> ProcessAtomicGroupAsync(

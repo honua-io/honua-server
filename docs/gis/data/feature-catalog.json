@@ -2937,6 +2937,24 @@
       "capability": "admin.control-plane"
     },
     {
+      "id": "get-api-v1-admin-metadata-layers-layerid-discovery",
+      "route": "/api/v1/admin/metadata/layers/{layerId}/discovery",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.AdminDiscoveryMetadataEndpointsTests.Discovery_GlobalLayerId_DoesNotUsePublicationLocalId",
+        "Honua.Server.Tests.Features.Admin.AdminDiscoveryMetadataEndpointsTests.Discovery_LegacyPublicationIdentifier_ReturnsStoredLocalId",
+        "Honua.Server.Tests.Features.Admin.AdminDiscoveryMetadataEndpointsTests.Discovery_UnknownTarget_ReturnsNotFound",
+        "Honua.Server.Tests.Features.Admin.AdminDiscoveryMetadataEndpointsTests.Discovery_WithoutAdminCredentials_RejectsReadAndWrite",
+        "Honua.Server.Tests.Features.Admin.AdminDiscoveryMetadataEndpointsTests.UpdateLayer_RoundTripsThroughProtocolAndPreservesOtherMetadata"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
+    },
+    {
       "id": "get-api-v1-admin-metadata-layers-layerid-drawing-info",
       "route": "/api/v1/admin/metadata/layers/{layerId}/drawing-info",
       "method": "GET",
@@ -4380,6 +4398,22 @@
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "preview",
       "capability": "fieldops.offline-sync"
+    },
+    {
+      "id": "get-api-v1-admin-services-servicename-discovery",
+      "route": "/api/v1/admin/services/{serviceName}/discovery",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.AdminDiscoveryMetadataEndpointsTests.Discovery_UnknownTarget_ReturnsNotFound",
+        "Honua.Server.Tests.Features.Admin.AdminDiscoveryMetadataEndpointsTests.Discovery_WithoutAdminCredentials_RejectsReadAndWrite",
+        "Honua.Server.Tests.Features.Admin.AdminDiscoveryMetadataEndpointsTests.UpdateService_UnrelatedProtocolEditPreservesDiscovery"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
     },
     {
       "id": "get-api-v1-admin-services-servicename-layers-layerid-export",
@@ -6150,6 +6184,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.Mcp.StudioLayerVisibilityMcpToolTests.SetLayerVisibility_AfterToolCall_SurvivesADraftSyncReadBack",
+        "Honua.Server.Tests.Features.Protocols.Mcp.StudioMapStyleMcpToolTests.SetMapStyle_AfterToolCall_SurvivesADraftSyncReadBack",
         "Honua.Server.Tests.Features.Protocols.Mcp.StudioMcpOwnershipParityIntegrationTests.RestAndMcp_ApplyTheSameOwnerAndCrossUserDenialRules",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.EndUserAuthorization_FlagOff_NonAdminScopedKeyDenied",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.EndUserAuthorization_FlagOn_OwnerCrudSucceeds_CrossUserDenied_ElevatedGatedOnGrant",
@@ -7386,6 +7421,7 @@
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishedLayer_WithServiceGovernanceDefaults_ProjectsFallbacksAcrossProtocols",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.RefreshLayerExtents_WithProjectedSource_RecomputesLayerAndServiceExtentInWgs84",
         "Honua.Server.Tests.Features.API.EndpointCoverageTests.OgcApi_GetCollection_ShouldReturnCollectionMetadata",
+        "Honua.Server.Tests.Features.Admin.AdminDiscoveryMetadataEndpointsTests.UpdateLayer_RoundTripsThroughProtocolAndPreservesOtherMetadata",
         "Honua.Server.Tests.Features.Admin.ServiceSettingsEndpointsTests.LegacyLayer_WithoutSourceGovernance_OmitsOptionalProjectionFields",
         "Honua.Server.Tests.Features.Admin.ServiceSettingsEndpointsTests.UpdateProtocols_DisableOgcFeatures_BlocksOgcCollectionMetadata",
         "Honua.Server.Tests.Features.Infrastructure.LayerEnablementIntegrationTests.DisabledLayer_ReturnsNotFoundAcrossProtocols",
@@ -8274,6 +8310,8 @@
       "protocol": "nested-standard",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.AdminDiscoveryMetadataEndpointsTests.UpdateLayer_RoundTripsThroughProtocolAndPreservesOtherMetadata",
+        "Honua.Server.Tests.Features.Admin.AdminDiscoveryMetadataEndpointsTests.UpdateService_UnrelatedProtocolEditPreservesDiscovery",
         "Honua.Server.Tests.Features.Infrastructure.Errors.StandardErrorResponseFormatterTests.FormatError_WmsAliasPath_ReturnsServiceExceptionReport",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsLayerBoundsTests.Wms_GetMap_DuplicateLayers_QueriesFeatureReaderOnce",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsLayerBoundsTests.Wms_GetMap_LayersOverCap_ReturnsInvalidParameterValue",
@@ -20219,6 +20257,8 @@
         "Honua.Server.Tests.Features.Protocols.Mcp.StudioLayerVisibilityMcpToolTests.SetLayerVisibility_WhenGenerationIsStale_SurfacesFailedPreconditionLikeSiblingCompositionTools",
         "Honua.Server.Tests.Features.Protocols.Mcp.StudioLayerVisibilityMcpToolTests.SetLayerVisibility_WithUnknownLayerOrMissingVisible_SurfacesTypedToolErrors",
         "Honua.Server.Tests.Features.Protocols.Mcp.StudioLayerVisibilityMcpToolTests.SetVisibilityInteraction_BoundToADraft_DispatchesThroughTheServerToolEndToEnd",
+        "Honua.Server.Tests.Features.Protocols.Mcp.StudioMapStyleMcpToolTests.SetMapStyle_AfterToolCall_SurvivesADraftSyncReadBack",
+        "Honua.Server.Tests.Features.Protocols.Mcp.StudioMapStyleMcpToolTests.SetView_WithABearingOutOfBounds_SurfacesAnOutOfBoundsViolationWithoutWriting",
         "Honua.Server.Tests.Features.StudioAi.StudioAiProxyEndpointsTests.PostChat_SuppliedSession_BindsToVerifiedOwnerBeforeAdmissionOrSse",
         "Honua.Server.Tests.Features.StudioAi.StudioAiProxyEndpointsTests.StudioAiProxy_FlagOn_SameNonAdminBearerReachesProxyAndMcpDiscovery",
         "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.AdminEndpoint_OidcEnabled_DistributedCacheWithoutRedis_FallsBackToMemoryReplayProtection",
@@ -25260,6 +25300,28 @@
       "capability": "admin.control-plane"
     },
     {
+      "id": "put-api-v1-admin-metadata-layers-layerid-discovery",
+      "route": "/api/v1/admin/metadata/layers/{layerId}/discovery",
+      "method": "PUT",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.AdminDiscoveryMetadataEndpointsConcurrencyTests.UpdateDiscovery_ConcurrentCommit_ReturnsConflictWithoutOverwriting",
+        "Honua.Server.Tests.Features.Admin.AdminDiscoveryMetadataEndpointsTests.Discovery_GlobalLayerId_DoesNotUsePublicationLocalId",
+        "Honua.Server.Tests.Features.Admin.AdminDiscoveryMetadataEndpointsTests.Discovery_LegacyPublicationIdentifier_ReturnsStoredLocalId",
+        "Honua.Server.Tests.Features.Admin.AdminDiscoveryMetadataEndpointsTests.Discovery_UnknownTarget_ReturnsNotFound",
+        "Honua.Server.Tests.Features.Admin.AdminDiscoveryMetadataEndpointsTests.Discovery_WithoutAdminCredentials_RejectsReadAndWrite",
+        "Honua.Server.Tests.Features.Admin.AdminDiscoveryMetadataEndpointsTests.UpdateDiscovery_InvalidInput_DoesNotMutate",
+        "Honua.Server.Tests.Features.Admin.AdminDiscoveryMetadataEndpointsTests.UpdateDiscovery_NullTextAndEmptyKeywords_ClearsOnlyDiscovery",
+        "Honua.Server.Tests.Features.Admin.AdminDiscoveryMetadataEndpointsTests.UpdateDiscovery_WithStaleEtag_RejectsOverwrite",
+        "Honua.Server.Tests.Features.Admin.AdminDiscoveryMetadataEndpointsTests.UpdateLayer_RoundTripsThroughProtocolAndPreservesOtherMetadata"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
+    },
+    {
       "id": "put-api-v1-admin-metadata-layers-layerid-drawing-info",
       "route": "/api/v1/admin/metadata/layers/{layerId}/drawing-info",
       "method": "PUT",
@@ -25318,6 +25380,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.AdminDiscoveryMetadataEndpointsTests.UpdateLayer_RoundTripsThroughProtocolAndPreservesOtherMetadata",
         "Honua.Server.Tests.Features.Admin.AdminLayerAuthoringEndpointsTests.PutPopupInfo_ThenGet_RoundTripsStoredDocument",
         "Honua.Server.Tests.Features.Admin.AdminLayerAuthoringEndpointsTests.PutPopupInfo_WithNonObjectBody_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Admin.AdminLayerSharedLayerIndexTests.SetPopupInfo_LayerIdSharedByTwoResources_Returns409AndChangesNeither"
@@ -25554,6 +25617,25 @@
       "capability": "admin.control-plane"
     },
     {
+      "id": "put-api-v1-admin-services-servicename-discovery",
+      "route": "/api/v1/admin/services/{serviceName}/discovery",
+      "method": "PUT",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.AdminDiscoveryMetadataEndpointsConcurrencyTests.UpdateDiscovery_ConcurrentCommit_ReturnsConflictWithoutOverwriting",
+        "Honua.Server.Tests.Features.Admin.AdminDiscoveryMetadataEndpointsTests.Discovery_UnknownTarget_ReturnsNotFound",
+        "Honua.Server.Tests.Features.Admin.AdminDiscoveryMetadataEndpointsTests.Discovery_WithoutAdminCredentials_RejectsReadAndWrite",
+        "Honua.Server.Tests.Features.Admin.AdminDiscoveryMetadataEndpointsTests.UpdateDiscovery_NullTextAndEmptyKeywords_ClearsOnlyDiscovery",
+        "Honua.Server.Tests.Features.Admin.AdminDiscoveryMetadataEndpointsTests.UpdateDiscovery_WithStaleEtag_RejectsOverwrite",
+        "Honua.Server.Tests.Features.Admin.AdminDiscoveryMetadataEndpointsTests.UpdateService_UnrelatedProtocolEditPreservesDiscovery"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
+    },
+    {
       "id": "put-api-v1-admin-services-servicename-layers-layerid-metadata",
       "route": "/api/v1/admin/services/{serviceName}/layers/{layerId}/metadata",
       "method": "PUT",
@@ -25619,6 +25701,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AdminAuthorizationTests.PutServiceProtocols_WithoutAuth_Returns401",
+        "Honua.Server.Tests.Features.Admin.AdminDiscoveryMetadataEndpointsTests.UpdateService_UnrelatedProtocolEditPreservesDiscovery",
         "Honua.Server.Tests.Features.Admin.ServiceSettingsEndpointsTests.UpdateProtocols_DisableFeatureServer_BlocksFeatureServerLayerMetadata",
         "Honua.Server.Tests.Features.Admin.ServiceSettingsEndpointsTests.UpdateProtocols_DisableFeatureServer_BlocksFeatureServerServiceMetadata",
         "Honua.Server.Tests.Features.Admin.ServiceSettingsEndpointsTests.UpdateProtocols_DisableFeatureServer_BlocksLayerTiles",

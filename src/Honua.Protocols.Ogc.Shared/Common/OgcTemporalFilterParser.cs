@@ -9,12 +9,6 @@ namespace Honua.Protocols.Ogc.Common;
 
 internal static class OgcTemporalFilterParser
 {
-    /// <summary>
-    /// Resolves the start/end temporal fields from the V2 resource via
-    /// <see cref="MetadataV2SpatialExtensions.ReadTemporalFields"/> and the resource schema
-    /// fields, defaulting to the first DateTime/Date schema field when the resource declares
-    /// no explicit temporal-field configuration.
-    /// </summary>
     public static bool TryParse(
         string? datetime,
         MetadataV2Resource resource,
@@ -56,14 +50,6 @@ internal static class OgcTemporalFilterParser
         return true;
     }
 
-    /// <summary>
-    /// Parses an OGC API datetime parameter (RFC 3339 instant or interval) into a
-    /// (start, end) pair without requiring a layer. Supported forms: instant,
-    /// <c>start/end</c>, <c>../end</c>, <c>start/..</c>. For an instant T both
-    /// <paramref name="start"/> and <paramref name="end"/> are set to T. Delegates to
-    /// the neutral <see cref="Iso8601TemporalIntervalParser"/> in <c>Honua.Core</c> so
-    /// the OGC adapters and the coverage/datacube tile path share one implementation.
-    /// </summary>
     public static bool TryParseRange(
         string? datetime,
         out DateTimeOffset? start,

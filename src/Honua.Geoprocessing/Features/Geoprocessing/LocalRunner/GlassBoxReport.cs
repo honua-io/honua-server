@@ -8,33 +8,14 @@ using Honua.Core.Features.Geoprocessing.Domain;
 
 namespace Honua.Geoprocessing.LocalRunner;
 
-/// <summary>
-/// A lightweight, dev-only preview of a single published artifact for the GP Devkit
-/// glass box (issue #2128): the artifact's media type, decoded byte size, and a short
-/// human-readable head — the first N GeoJSON features for a managed geometry op, or the
-/// leading bytes/text for a GDAL op — so the author can eyeball the output without
-/// opening it in a desktop GIS.
-/// </summary>
 public sealed record ArtifactPreview
 {
-    /// <summary>The artifact's media type (e.g. <c>application/geo+json</c>, <c>text/csv</c>).</summary>
     public required string MediaType { get; init; }
 
-    /// <summary>The decoded artifact size in bytes.</summary>
     public required long SizeBytes { get; init; }
 
-    /// <summary>A short, human-readable summary of the artifact's head content.</summary>
     public required string Summary { get; init; }
 
-    /// <summary>
-    /// Builds a preview for a canonical <c>data:&lt;media&gt;;base64,&lt;payload&gt;</c>
-    /// artifact reference. For a GeoJSON artifact the summary lists the first
-    /// <paramref name="maxFeatures"/> features (geometry type + a couple of properties);
-    /// otherwise it shows the leading printable text or a byte/hex head.
-    /// </summary>
-    /// <param name="artifact">The artifact reference the executor published.</param>
-    /// <param name="maxFeatures">Maximum number of GeoJSON features to enumerate.</param>
-    /// <param name="maxTextChars">Maximum number of characters for the text/byte head.</param>
     public static ArtifactPreview FromArtifact(string artifact, int maxFeatures = 3, int maxTextChars = 240)
     {
         ArgumentNullException.ThrowIfNull(artifact);
@@ -196,31 +177,13 @@ public sealed record ArtifactPreview
     }
 }
 
-/// <summary>
-/// The fully-transparent dev-mode "glass box" view of a single local run (issue #2128).
-/// It is only populated when the caller opts a run into glass-box mode; otherwise the
-/// run stays on the production-equivalent sanitized path and this is <c>null</c>. It
-/// surfaces the UNSANITIZED native command(s) with their real scratch paths and FULL
-/// stdout/stderr, the phase timeline, and an artifact preview, plus a "repro locally"
-/// hint a developer can paste to re-run the exact command against the intermediate files.
-/// </summary>
 public sealed record GlassBoxReport
 {
-    /// <summary>
-    /// The fully unsanitized native GDAL invocations captured during the run, in order.
-    /// Empty for a purely managed op (which shells out to no native tool).
-    /// </summary>
     public IReadOnlyList<GlassBoxCommand> Commands { get; init; } = [];
 
-    /// <summary>The phase/timeline the executor reported, with per-phase elapsed timing.</summary>
     public IReadOnlyList<LocalRunPhase> Timeline { get; init; } = [];
 
-    /// <summary>Previews of the published artifacts, in order.</summary>
     public IReadOnlyList<ArtifactPreview> ArtifactPreviews { get; init; } = [];
 
-    /// <summary>
-    /// The real (unredacted) scratch working directories the native tools ran in — where a
-    /// developer can find the intermediate files. Empty for a purely managed op.
-    /// </summary>
     public IReadOnlyList<string> ScratchDirectories { get; init; } = [];
 }

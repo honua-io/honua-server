@@ -14,10 +14,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Protocols.Scene;
 
-/// <summary>
-/// Public SDK-compatible scene discovery endpoints. Management stays on
-/// /api/v1/admin/scenes; these routes only advertise renderable scene metadata.
-/// </summary>
 internal static partial class SceneDiscoveryEndpoints
 {
     private const string ScenesTag = "Scenes";

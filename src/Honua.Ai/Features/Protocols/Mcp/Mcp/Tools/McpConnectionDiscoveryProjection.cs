@@ -9,10 +9,7 @@ using Honua.Geoprocessing;
 
 namespace Honua.Ai.Protocols.Mcp.Tools;
 
-/// <summary>
-/// MCP wire shapes for the canonical connection discovery reads. Project only these fields,
-/// even if the REST response later acquires additional credential or connection metadata.
-/// </summary>
+// Only these fields are projected, so later REST credential metadata cannot leak onto the MCP wire.
 internal static class McpConnectionDiscoveryProjection
 {
     internal const string ConnectionsOperationId = "admin.connections.list";

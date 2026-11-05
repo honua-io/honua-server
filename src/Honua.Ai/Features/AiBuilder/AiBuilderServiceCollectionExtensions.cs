@@ -8,15 +8,8 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Ai.AiBuilder;
 
-/// <summary>
-/// DI registration for deterministic AI-builder fixture replay services.
-/// </summary>
 internal static class AiBuilderServiceCollectionExtensions
 {
-    /// <summary>
-    /// Registers the embedded AI-builder fixture catalog used by deterministic
-    /// planning and contract tests.
-    /// </summary>
     public static IServiceCollection AddAiBuilderFixtures(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
@@ -25,19 +18,7 @@ internal static class AiBuilderServiceCollectionExtensions
         return services;
     }
 
-    /// <summary>
-    /// Registers the deterministic fixture-backed planner behind the
-    /// <c>honua_plan_analysis</c> MCP tool.
-    /// </summary>
-    /// <remarks>
-    /// ADR-0076 (honua-server#3255) removed the live, provider-backed planner
-    /// along with the <c>WorkflowGeneration</c> seam it rode on: the server no
-    /// longer performs model inference of its own as part of executing a
-    /// capability, so there is no longer a live lane to select between. The
-    /// deterministic replay is the only planner, which is why this registration
-    /// is unconditional rather than config-gated. Hosts can still call
-    /// <c>services.Replace(...)</c> afterwards to substitute an implementation.
-    /// </remarks>
+    // Registration is unconditional because the deterministic replay is the only planner.
     public static IServiceCollection AddAiBuilderPlanAnalysis(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);

@@ -29,14 +29,5 @@ internal sealed class StacSearchDependencies
     public Cql2FilterProcessor FilterProcessor { get; }
     public ILogger<StacEndpoints.StacEndpointsLog> Logger { get; }
 
-    /// <summary>
-    /// Resolves a layer's published COG so search results advertise it exactly as the
-    /// items endpoint does. Optional: absent, search behaves as it did before.
-    /// </summary>
-    /// <remarks>
-    /// Search spans collections, so a caller resolves per layer and should memoise -
-    /// each lookup confirms the artifact against storage, and a page can revisit the
-    /// same layer many times.
-    /// </remarks>
     public ICogArtifactLocator? CogArtifactLocator { get; }
 }

@@ -5,26 +5,13 @@ using Honua.Core.Features.AuditLog.Abstractions;
 
 namespace Honua.Plugins;
 
-/// <summary>
-/// Emits plugin execution / lifecycle audit events (issue #1562). Phase 1 audited only the
-/// edit-rejection case; this helper records the fuller lifecycle — a plugin auto-disabled by the
-/// failure-isolation circuit breaker, its subsequent recovery, and background-service start/stop —
-/// so an operator can reconstruct what a plugin did and when it was parked, without leaking plugin
-/// internals to clients.
-/// </summary>
-/// <remarks>
-/// Lifecycle events are recorded as <see cref="AuditEventType.AdminAction"/> against a synthetic
-/// <c>plugin</c> resource keyed by plugin id. The system itself is the actor (these are host-driven
-/// transitions, not user actions). Failures to write the audit log are swallowed: auditing a
-/// best-effort lifecycle transition must never become a new failure source.
-/// </remarks>
+// A failure to write the audit log is swallowed, so recording a lifecycle transition cannot become a new failure.
 internal static class PluginExecutionAudit
 {
     private const string SystemActor = "system";
     private const string PluginResourceType = "plugin";
     private const string NoCorrelation = "-";
 
-    /// <summary>Audits a plugin being auto-disabled by the circuit breaker after repeated faults.</summary>
     public static Task RecordAutoDisabledAsync(
         IAuditLog auditLog,
         string pluginId,
@@ -38,7 +25,6 @@ internal static class PluginExecutionAudit
             details: $"Plugin '{pluginId}' {extensionPoint} extension point auto-disabled after repeated failures.",
             cancellationToken);
 
-    /// <summary>Audits a previously auto-disabled plugin recovering and being re-enabled.</summary>
     public static Task RecordRecoveredAsync(
         IAuditLog auditLog,
         string pluginId,
@@ -52,7 +38,6 @@ internal static class PluginExecutionAudit
             details: $"Plugin '{pluginId}' {extensionPoint} extension point recovered and was re-enabled.",
             cancellationToken);
 
-    /// <summary>Audits a plugin background service starting.</summary>
     public static Task RecordBackgroundStartedAsync(
         IAuditLog auditLog,
         string pluginId,
@@ -65,7 +50,6 @@ internal static class PluginExecutionAudit
             details: $"Plugin '{pluginId}' background service started.",
             cancellationToken);
 
-    /// <summary>Audits a plugin background service faulting and being disabled.</summary>
     public static Task RecordBackgroundFaultedAsync(
         IAuditLog auditLog,
         string pluginId,

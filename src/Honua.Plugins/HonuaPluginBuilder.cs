@@ -10,13 +10,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Plugins;
 
-/// <summary>
-/// Default <see cref="IHonuaPluginBuilder"/>. Registers each plugin as a singleton and routes
-/// the extension-point interfaces it implements to that same instance so a plugin that is, say,
-/// both a validator and an edit hook is constructed once. Enforces the declarative capability
-/// model: a plugin that implements a capability-gated extension point must declare the matching
-/// <see cref="PluginCapability"/> on its <c>[Plugin]</c> manifest, or registration fails fast.
-/// </summary>
 internal sealed class HonuaPluginBuilder(IServiceCollection services) : IHonuaPluginBuilder
 {
     private readonly IServiceCollection _services = services ?? throw new ArgumentNullException(nameof(services));

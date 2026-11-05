@@ -20,13 +20,8 @@ namespace Honua.Protocols.SensorThings;
 
 internal static partial class SensorThingsEndpoints
 {
-    /// <summary>Request-wide cap on entities materialized by <c>$expand</c>.</summary>
     internal const int MaxExpandedEntities = 10_000;
 
-    /// <summary>
-    /// Request-wide cap on entity queries, including the root page. The cap leaves room for a
-    /// one-level expand of a full root page and stops exponential navigation.
-    /// </summary>
     internal const int MaxExpansionQueries = 8_192;
 
     private sealed record Resource(string Set, long? Id, string? ParentSet = null, long? ParentId = null, string? Navigation = null, string? Property = null, bool Raw = false, bool Reference = false);
@@ -85,7 +80,6 @@ internal static partial class SensorThingsEndpoints
 
     private readonly record struct PathShape(string Set, bool Collection);
 
-    /// <summary>Structural path shape, with no database lookup.</summary>
     private static PathShape DescribePath(string? path)
     {
         var segments = (path ?? string.Empty)[BasePath.Length..].Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
@@ -172,10 +166,6 @@ internal static partial class SensorThingsEndpoints
         return (segment[..open], id);
     }
 
-    /// <summary>
-    /// Rejects cyclic catch-all navigation before any store read. The cap is the same
-    /// one <c>$expand</c> already enforces.
-    /// </summary>
     private static void EnsureNavigationDepth(string path)
     {
         if (path.Length < BasePath.Length) return;
@@ -389,7 +379,6 @@ internal static partial class SensorThingsEndpoints
         }
     }
 
-    /// <summary>Counts expand queries and related entities for one read. The root page is not charged as entities.</summary>
     private sealed class ExpansionBudget
     {
         private int _entitiesRemaining = MaxExpandedEntities;

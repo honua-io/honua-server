@@ -6,7 +6,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Features.Infrastructure;
 
-/// <summary>Shares one explicitly owned connection across sequential mutation and audit leases.</summary>
 internal static class PostgresMutationTransaction
 {
     private static readonly AsyncLocal<Context?> Current = new();

@@ -33,23 +33,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Geoprocessing;
 
-/// <summary>
-/// Shared implementation of geoprocessing job lifecycle operations.
-/// Consumed by gRPC (<see cref="HonuaProcessService"/>) and REST
-/// (<c>GPServerEndpoints</c>) adapters.
-/// </summary>
-/// <remarks>
-/// The service owns the durable job state (<see cref="IExecutionJobStore"/>,
-/// <see cref="IUniversalProgressStore"/>), the worker cancellation notifiers, and the
-/// process catalog, and orchestrates submit/cancel/read lifecycles. The remaining
-/// cross-cutting concerns are delegated to four cohesive collaborators —
-/// <see cref="GeoprocessingJobAuthorizer"/> (authorization/approval),
-/// <see cref="GeoprocessingJobDispatcher"/> (admission/queue/workload/backend plus the
-/// approval-lane proposal routing that owns the <see cref="IOperationGateway"/>),
-/// <see cref="CustomCodeJobSubmissionGate"/> (custom-code token gate), and
-/// <see cref="GeoprocessingJobArtifactService"/> (raster input + result-package artifacts) —
-/// so the orchestration here stays focused while behavior is preserved exactly.
-/// </remarks>
 internal sealed class GeoprocessingJobService : IGeoprocessingJobService
 {
     private readonly IExecutionJobStore? _jobStore;
@@ -66,11 +49,6 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     private readonly RbacOptions _rbacOptions;
     private readonly DurableJobSubstrateOptions _substrateOptions;
 
-    /// <summary>
-    /// Production constructor. Composes the durable stores and process catalog with the four
-    /// delegating sub-services. The sub-services are registered in DI alongside this type; the
-    /// approval-lane operation gateway is owned by the <see cref="GeoprocessingJobDispatcher"/>.
-    /// </summary>
     public GeoprocessingJobService(
         IUniversalProgressStore progressStore,
         IEnumerable<IJobCancellationNotifier> cancellationNotifiers,
@@ -101,12 +79,6 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         _jobStore = jobStore;
     }
 
-    /// <summary>
-    /// Collaborator-level constructor that composes the delegating sub-services from their raw
-    /// dependencies and forwards to the production constructor. Retained so existing call sites
-    /// (and direct unit-test construction) can wire the individual collaborators without
-    /// building the sub-services by hand. Not used by DI, which binds the production constructor.
-    /// </summary>
     internal GeoprocessingJobService(
         IUniversalProgressStore progressStore,
         IEnumerable<IJobCancellationNotifier> cancellationNotifiers,
@@ -456,12 +428,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             submitterSecurityContext, inheritsSubmitterSecurityContext: true,
             processCatalog: _processCatalog, cancellationToken: cancellationToken);
 
-    /// <summary>
-    /// Allows a staged raster source only when its full object identity can be traced to a
-    /// succeeded upstream job in the same workflow run and under the same submitter identity.
-    /// The descriptor's public security-context strings remain correlation metadata; they are
-    /// never sufficient authorization on their own.
-    /// </summary>
+    // Security-context strings on a staged raster are correlation metadata and are never authorization by themselves.
     private async Task EnsureTypedRasterExecutionSupportedAsync(
         AnalysisPlan plan,
         IReadOnlyDictionary<string, string>? protocolMetadata,
@@ -606,17 +573,6 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             && source.DeclaredPixelScale == grid.PixelScale;
     }
 
-    /// <summary>
-    /// Shared submit pipeline for both the caller-initiated submit path and the
-    /// approval-resume path. When <paramref name="resumingApproved"/> is true the
-    /// caller is the operation gateway replaying a proposal that already cleared the
-    /// approval gate at proposal-creation time. That approval is not requested twice,
-    /// but baseline execute authorization is rechecked against the revalidated submitter
-    /// principal (ADR-0064, #2814). Structural, executability, and catalog validation
-    /// always run, and so do the RESOURCE gates — mutating-process tier and per-layer
-    /// read — which are re-evaluated against the persisted submitter snapshot because
-    /// their answer can change while a proposal waits (honua-server#3046 review).
-    /// </summary>
     private async Task<ExecutionJobRecord> SubmitJobCoreAsync(
         AnalysisPlan plan,
         string? idempotencyKey,
@@ -1579,17 +1535,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     // Helpers
     // -----------------------------------------------------------------------
 
-    /// <summary>
-    /// Enforces that job state, results, and cancellation are scoped to the
-    /// principal that submitted the job (threat-model residual #1576). A coarse
-    /// <c>Job</c>-level grant authorizes the operation class; this check pins the
-    /// specific record to its submitter so one authenticated user cannot read or
-    /// cancel another user's jobs. Jobs without a recorded submitter are readable
-    /// only by <c>admin</c> (#2753 closed the prior any-caller read of ownerless
-    /// jobs), and the conventional <c>admin</c> role retains visibility within the
-    /// effective tenant. Denials surface as not-found so cross-tenant/principal probing cannot
-    /// confirm that a job identifier exists.
-    /// </summary>
+    // A job the caller does not own is reported as not found so probing cannot confirm the identifier exists.
     private void EnsureJobOwnership(ExecutionJobRecord job, ClaimsPrincipal principal)
     {
         if (IsJobReadable(job, principal))
@@ -1726,18 +1672,6 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         return OperationPriority.Normal;
     }
 
-    /// <summary>
-    /// Resolves the runtime profile a job for <paramref name="plan"/> must run
-    /// under, read DATA-DRIVEN from the process catalog rather than hard-coded
-    /// here. Each <see cref="ProcessDefinition"/> declares its required
-    /// <see cref="ProcessDefinition.RuntimeProfile"/> (managed by default; native
-    /// for the out-of-process GDAL <c>gdal.*</c> family). The effective job profile
-    /// is the first non-managed profile among the plan's processes — a single plan
-    /// step that requires the native worker forces the whole job onto the native
-    /// profile so the claim fence routes it to the GDAL worker and away from the
-    /// lean dispatcher. Returns <c>null</c> (managed/default) when no process
-    /// requires a specialized profile, leaving the spec profile-agnostic.
-    /// </summary>
     private static string? ResolveRequiredRuntimeProfile(
         AnalysisPlan plan,
         IProcessCatalog processCatalog)
@@ -1778,15 +1712,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         return null;
     }
 
-    /// <summary>
-    /// Returns <c>true</c> when an otherwise-managed <paramref name="step"/> carries
-    /// inputs that force it onto the native worker profile. Currently this covers
-    /// <c>transform.reproject</c> jobs whose <c>fromSrid</c>/<c>toSrid</c> pair is a
-    /// datum/grid shift the lean executor cannot serve (see
-    /// <see cref="ManagedReprojectFastPath"/>). When the SRID inputs are missing or
-    /// unparseable, escalation is declined so the managed executor produces the
-    /// canonical input-validation error rather than silently routing native.
-    /// </summary>
+    // Missing or unparseable SRIDs stay on the managed executor so it returns the input-validation error instead of routing to the native worker.
     private static bool RequiresNativeRuntimeEscalation(AnalysisPlanStep step)
     {
         if (!string.Equals(step.ProcessId, ReprojectTransformExecutor.HandledProcessId, StringComparison.Ordinal))
@@ -1809,12 +1735,6 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         return ManagedReprojectFastPath.RequiresNativeWorker(fromSrid, toSrid);
     }
 
-    /// <summary>
-    /// Resolves the effective per-job <see cref="GpResourceProfile"/>: the heaviest catalog-derived
-    /// default across the plan's steps, overridden field-by-field by any explicit
-    /// <c>gp.resource.*</c> request values. Custom-code jobs are param-driven (no catalog process),
-    /// so they take only the explicit request values.
-    /// </summary>
     private static GpResourceProfile ResolveResourceProfile(
         AnalysisPlan plan,
         IReadOnlyDictionary<string, string> specParams,
@@ -2011,11 +1931,6 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             $"Plan failed catalog validation: {first.Code} — {first.Message}");
     }
 
-    /// <summary>
-    /// Derives the distinct artifact kinds the plan's Geoprocess steps produce from the
-    /// process catalog. Used by the dry-run path when the plan does not declare its own
-    /// <see cref="AnalysisPlan.Outputs"/> so the estimate reflects real process outputs.
-    /// </summary>
     private List<ArtifactKind> DeriveArtifactKinds(AnalysisPlan plan)
     {
         var kinds = new List<ArtifactKind>();
@@ -2043,12 +1958,6 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         return kinds;
     }
 
-    /// <summary>
-    /// Derives the observable side effects the plan would produce: durable writes from
-    /// mutating processes (<see cref="ProcessExecutionTier.Mutating"/>) and sink steps.
-    /// Read-only analytic plans return an empty set (before the no-estimate disclosure the
-    /// dry-run path appends).
-    /// </summary>
     private List<string> DeriveSideEffects(AnalysisPlan plan)
     {
         var sideEffects = new List<string>();
@@ -2094,15 +2003,6 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         return false;
     }
 
-    /// <summary>
-    /// Returns the durable job store, or refuses with a receipt that names the actual composition
-    /// cause (honua-release#202) rather than always blaming an absent Redis. Gates on store
-    /// presence only: reading and cancelling an already-persisted job stays serviceable without a
-    /// queue, and the incomplete-substrate case is reported by the capability manifest, which
-    /// requires the full runnable substrate before advertising <c>jobs.runner</c>. The queue is
-    /// therefore reported as absent here — when the store is missing, the cause is decided by the
-    /// configuration facts on <see cref="DurableJobSubstrateOptions"/>, not by the queue.
-    /// </summary>
     private IExecutionJobStore RequireJobStore()
         => _jobStore ?? throw GeoprocessingStoreUnavailableException.ForCause(
             _substrateOptions.Classify(jobStorePresent: false, jobQueuePresent: false));

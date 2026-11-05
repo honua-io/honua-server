@@ -11,21 +11,8 @@ using Proto = Geospatial.V1;
 
 namespace Honua.Geoprocessing;
 
-/// <summary>
-/// gRPC service implementation for typed geoprocessing execution and job lifecycle management.
-/// Thin proto-to-domain translator that delegates to <see cref="IGeoprocessingJobService"/> and,
-/// for cancellation, the canonical <see cref="IGeoprocessingJobTerminalService"/> so this adapter
-/// reports the same truthful, non-fabricated cancellation outcome as the OGC API Processes and
-/// GPServer adapters (#4630) instead of manufacturing a terminal state the runtime never confirmed.
-/// </summary>
 internal sealed partial class HonuaProcessService : Proto.ProcessService.ProcessServiceBase
 {
-    /// <summary>
-    /// Bounded budget for a single cancellation request, matching the OGC API Processes
-    /// (<c>Honua.Protocols.OgcApi.Processes</c>) and GPServer
-    /// (<c>Honua.Protocols.GeoServices.GPServer</c>) adapters so all three protocol surfaces make
-    /// the same confirm-or-report-nonterminal tradeoff.
-    /// </summary>
     private static readonly TimeSpan CancelTimeout = TimeSpan.FromSeconds(30);
 
     private readonly IGeoprocessingJobService _jobService;
@@ -275,10 +262,6 @@ internal sealed partial class HonuaProcessService : Proto.ProcessService.Process
         }
     }
 
-    /// <summary>
-    /// Projects the canonical job's ACTUAL status onto the response — never a fabricated terminal
-    /// state — via the same <c>ToProtoJobState</c> mapping every other job-lifecycle response uses.
-    /// </summary>
     private static Proto.CancelJobResponse ToProtoCancelJobResponse(
         string jobId, ExecutionJobRecord? job, ServerCallContext context)
     {
@@ -414,13 +397,7 @@ internal sealed partial class HonuaProcessService : Proto.ProcessService.Process
         }
     }
 
-    /// <summary>
-    /// Projects the capability-unavailable receipt (honua-release#202) onto gRPC trailing
-    /// metadata. gRPC has no problem+json extension members, so the fields ride trailers under the
-    /// same <c>honua-</c> prefix the admission path already uses; a client reads them without
-    /// parsing the status detail. Keys are lower-case because gRPC metadata keys are
-    /// case-insensitive and normalised to lower-case on the wire.
-    /// </summary>
+    // Trailer names are lower-case because gRPC metadata keys are normalised to lower-case on the wire.
     private static global::Grpc.Core.Metadata BuildCapabilityUnavailableTrailers(
         GeoprocessingStoreUnavailableException exception)
     {

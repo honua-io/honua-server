@@ -18,10 +18,6 @@ using Microsoft.Net.Http.Headers;
 
 namespace Honua.Protocols.OData;
 
-/// <summary>
-/// Handler for OData $batch operations with atomicity group support and cache invalidation.
-/// Coordinates batch processing and manages transaction boundaries for feature operations.
-/// </summary>
 internal sealed partial class ODataBatchOperationHandler(
     ODataBatchDependencies batchDependencies,
     ILogger<ODataBatchOperationHandler> logger)
@@ -36,9 +32,6 @@ internal sealed partial class ODataBatchOperationHandler(
     private readonly ODataBatchDependencies _batchDependencies = batchDependencies ?? throw new ArgumentNullException(nameof(batchDependencies));
     private readonly ILogger<ODataBatchOperationHandler> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
-    /// <summary>
-    /// Handles OData $batch request for executing multiple operations.
-    /// </summary>
     public async Task<IResult> HandleBatchRequestAsync(
         HttpContext context,
         CancellationToken cancellationToken = default)
@@ -634,9 +627,6 @@ internal sealed partial class ODataBatchOperationHandler(
         }
     }
 
-    /// <summary>
-    /// Invalidates cache for layers modified in the batch operation
-    /// </summary>
     private async Task InvalidateCacheForBatchAsync(
         HttpContext context,
         ODataBatchRequest batchRequest,
@@ -693,9 +683,6 @@ internal sealed partial class ODataBatchOperationHandler(
         }
     }
 
-    /// <summary>
-    /// Determines if the HTTP method is a mutation operation
-    /// </summary>
     private static bool IsMutationMethod(string? method)
     {
         return method != null &&
@@ -705,9 +692,6 @@ internal sealed partial class ODataBatchOperationHandler(
                 method.Equals("PUT", StringComparison.OrdinalIgnoreCase));
     }
 
-    /// <summary>
-    /// Attempts to resolve layer ID from an OData batch request
-    /// </summary>
     private static bool TryResolveLayerId(ODataBatchRequestItem request, out int layerId)
     {
         layerId = default;
@@ -864,9 +848,6 @@ internal sealed partial class ODataBatchOperationHandler(
             out objectId);
     }
 
-    /// <summary>
-    /// Logging methods for OData batch operations.
-    /// </summary>
     private static partial class Log
     {
         [LoggerMessage(EventId = 3011, Level = LogLevel.Warning, Message = "OData batch request parse failed.")]

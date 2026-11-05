@@ -6,12 +6,6 @@ using System.Text.Json;
 
 namespace Honua.ControlPlane.Lambda;
 
-/// <summary>
-/// Forwards a single reconcile / backstop request to the in-process Honua.Server host running under
-/// the AWS Lambda Web Adapter, over the loopback HTTP port the adapter exposes. This is the seam that
-/// lets the thin event entrypoint reuse the server's fully-wired reconcile graph without re-composing
-/// the deep reconciler + store + backend dependency tree in this project.
-/// </summary>
 internal sealed class ReconcileForwarder(HttpClient httpClient, ReconcileForwarderOptions options)
 {
     private const string BatchEventPath = "/internal/control-plane/events/batch-job-state-change";
@@ -20,10 +14,6 @@ internal sealed class ReconcileForwarder(HttpClient httpClient, ReconcileForward
     private const string EventTokenHeader = "X-Honua-ControlPlane-Token";
     private const string ScheduledTickTokenHeader = "X-Honua-Control-Plane-Token";
 
-    /// <summary>
-    /// Posts a Batch state-change reconcile for one provider job id. No-op when the id is null/blank
-    /// (a malformed or terminal event resolves to no active job).
-    /// </summary>
     public async Task ReconcileBatchEventAsync(string? providerOperationId, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(providerOperationId))
@@ -35,17 +25,12 @@ internal sealed class ReconcileForwarder(HttpClient httpClient, ReconcileForward
         await PostAsync(uri, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>Posts a single backstop sweep request.</summary>
     public async Task RunBackstopAsync(CancellationToken cancellationToken)
     {
         var uri = $"{options.BaseAddress.TrimEnd('/')}{BackstopPath}";
         await PostAsync(uri, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Posts one periodic tick of <paramref name="kind"/> to the scheduled-tick route, which
-    /// validates the kind and runs it through the server's scheduled-tick dispatcher.
-    /// </summary>
     public async Task RunScheduledTickAsync(string kind, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(kind);
@@ -80,26 +65,14 @@ internal sealed class ReconcileForwarder(HttpClient httpClient, ReconcileForward
     }
 }
 
-/// <summary>Configuration for <see cref="ReconcileForwarder"/>, sourced from Lambda env vars.</summary>
 internal sealed class ReconcileForwarderOptions
 {
-    /// <summary>Loopback base address of the LWA-fronted host. Defaults to the adapter's port.</summary>
     public required string BaseAddress { get; init; }
 
-    /// <summary>Optional shared secret sent as the control-plane event token header.</summary>
     public string? EventToken { get; init; }
 
-    /// <summary>
-    /// Shared secret for the scheduled-tick route. The bootstrap and the co-located server read the
-    /// same Lambda environment, so this is the server's own <c>ControlPlane__ScheduledTickToken</c>.
-    /// </summary>
     public string? ScheduledTickToken { get; init; }
 
-    /// <summary>
-    /// Builds options from the Lambda environment: <c>AWS_LWA_PORT</c>/<c>PORT</c> (default 8080) for
-    /// the loopback address, <c>ControlPlane__EventToken</c> / <c>HONUA_CONTROL_PLANE_EVENT_TOKEN</c> for the event/backstop secret and
-    /// <c>ControlPlane__ScheduledTickToken</c> for the scheduled-tick secret.
-    /// </summary>
     public static ReconcileForwarderOptions FromEnvironment(IReadOnlyDictionary<string, string?> env)
     {
         var port = FirstNonEmpty(env, "AWS_LWA_PORT", "PORT") ?? "8080";

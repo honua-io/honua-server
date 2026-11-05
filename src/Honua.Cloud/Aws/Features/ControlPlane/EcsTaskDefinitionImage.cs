@@ -5,18 +5,8 @@ using Amazon.ECS.Model;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Clones an ECS task definition so a release image rollout changes one container image
-/// and keeps every other field. Registering that clone is how a digest becomes a revision
-/// ECS can run. Dropping secrets, environment, or log configuration would change the service.
-/// </summary>
 internal static class EcsTaskDefinitionImage
 {
-    /// <summary>
-    /// Builds a register request from <paramref name="source"/> with <paramref name="containerName"/>
-    /// set to <paramref name="image"/>. Throws <see cref="InvalidOperationException"/> when the
-    /// container is missing or ambiguous, before any register call.
-    /// </summary>
     public static RegisterTaskDefinitionRequest CloneWithImage(
         TaskDefinition source,
         string containerName,
@@ -85,11 +75,6 @@ internal static class EcsTaskDefinitionImage
         };
     }
 
-    /// <summary>
-    /// Picks the container whose image a release may replace. An explicit name wins.
-    /// Otherwise the container named <c>honua</c>, otherwise the only container.
-    /// Anything else fails closed.
-    /// </summary>
     public static string? SelectContainerName(IReadOnlyList<string> containerNames, string? requestedName)
     {
         if (!string.IsNullOrWhiteSpace(requestedName))

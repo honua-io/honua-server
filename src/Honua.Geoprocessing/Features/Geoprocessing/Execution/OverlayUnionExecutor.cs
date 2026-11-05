@@ -7,22 +7,10 @@ using NtsGeometry = NetTopologySuite.Geometries.Geometry;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// <c>overlay.union</c> executor (#2206). Layer-aware planar union: computes the
-/// full topological overlay of the <c>input</c> and <c>overlay</c> layers,
-/// emitting three disjoint piece sets — input-only (input geometry minus the
-/// overlay union, with input attributes), overlay-only (overlay geometry minus the
-/// input union, with overlay attributes), and the pairwise intersections (with
-/// input + overlay attributes merged, overlay collisions prefixed
-/// <c>OVERLAY_</c>). This mirrors Esri's <c>Union_analysis</c> on two layers
-/// addressed inline. Pure managed NetTopologySuite overlay — no GDAL/GEOS native
-/// dependency.
-/// </summary>
 internal sealed class OverlayUnionExecutor(
     IOptionsMonitor<GeoprocessingExecutorOptions> options)
     : FeatureCollectionTransformExecutor(options)
 {
-    /// <summary>The canonical process id this executor handles.</summary>
     internal const string HandledProcessId = "overlay.union";
 
     private const string OverlayPrefix = "OVERLAY_";

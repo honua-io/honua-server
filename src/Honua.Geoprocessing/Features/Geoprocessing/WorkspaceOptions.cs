@@ -6,71 +6,32 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Geoprocessing;
 
-/// <summary>
-/// Configuration options for workspace lifecycle management.
-/// </summary>
 public sealed class WorkspaceOptions
 {
-    /// <summary>
-    /// Configuration section name.
-    /// </summary>
     public const string SectionName = "Geoprocessing:Workspace";
 
-    /// <summary>
-    /// How frequently the cleanup service runs. Default: 15 minutes.
-    /// </summary>
     public TimeSpan CleanupInterval { get; set; } = TimeSpan.FromMinutes(15);
 
-    /// <summary>
-    /// Grace period after expiration before a workspace is deleted. Default: 1 hour.
-    /// Allows promotion of artifacts from recently-expired workspaces.
-    /// </summary>
+    // The grace period lets artifacts be promoted out of a workspace that has just expired.
     public TimeSpan CleanupGracePeriod { get; set; } = TimeSpan.FromHours(1);
 
-    /// <summary>
-    /// Whether the automatic cleanup background service is enabled.
-    /// </summary>
     public bool EnableAutomaticCleanup { get; set; } = true;
 
-    /// <summary>
-    /// Maximum number of workspaces to process per cleanup sweep to bound memory usage.
-    /// </summary>
     public int MaxCleanupBatchSize { get; set; } = 100;
 
-    /// <summary>
-    /// Default time-to-live override for scratch workspaces. Null uses the built-in default.
-    /// </summary>
     public TimeSpan? ScratchDefaultTtl { get; set; }
 
-    /// <summary>
-    /// Default time-to-live override for temp layer workspaces. Null uses the built-in default.
-    /// </summary>
     public TimeSpan? TempLayerDefaultTtl { get; set; }
 
-    /// <summary>
-    /// Default time-to-live override for result collection workspaces. Null uses the built-in default.
-    /// </summary>
     public TimeSpan? ResultCollectionDefaultTtl { get; set; }
 
-    /// <summary>
-    /// Maximum workspace count per owner. Null uses the built-in default.
-    /// </summary>
     public int? MaxWorkspaceCount { get; set; }
 
-    /// <summary>
-    /// Maximum artifact count per owner. Null uses the built-in default.
-    /// </summary>
     public int? MaxArtifactCount { get; set; }
 
-    /// <summary>
-    /// Maximum storage bytes per owner. Null uses the built-in default.
-    /// </summary>
     public long? MaxStorageBytes { get; set; }
 }
 
-/// <summary>
-/// Validates <see cref="WorkspaceOptions"/> at startup to surface configuration errors early.
-/// </summary>
 internal sealed class WorkspaceOptionsValidator : IValidateOptions<WorkspaceOptions>
 {
     public ValidateOptionsResult Validate(string? name, WorkspaceOptions options)

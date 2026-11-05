@@ -9,29 +9,6 @@ using NetTopologySuite.Features;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// <c>transform.computed-field</c> executor. Adds a new attribute derived from the
-/// existing attributes. Two modes are supported and both are fully AOT-safe (no
-/// reflection, no runtime code generation):
-/// <list type="bullet">
-/// <item>
-/// The legacy fixed operation set selected via <c>op</c>: <c>concat</c>,
-/// <c>add</c>, <c>subtract</c>, <c>multiply</c>, <c>divide</c>, <c>const</c>.
-/// Rows whose arithmetic operands are non-numeric are dropped as row-level data
-/// errors. This path is unchanged for back-compatibility.
-/// </item>
-/// <item>
-/// The <c>op=expression</c> mode (or supplying the <c>expression</c> parameter)
-/// evaluates a whitelisted expression such as
-/// <c>upper(trim(name)) + "-" + cast(year, string)</c> through the
-/// <see cref="ExpressionEngine"/>: a parsed AST over arithmetic, string,
-/// conditional, comparison/logical, math, date, and field-reference primitives.
-/// The expression is parsed once and evaluated per feature.
-/// </item>
-/// </list>
-/// Ported from the GeoETL baseline ComputedFieldTransform onto the #1185
-/// process/executor contract. Streams: a per-feature map with no cross-feature state.
-/// </summary>
 internal sealed class ComputedFieldTransformExecutor(
     IOptionsMonitor<GeoprocessingExecutorOptions> options)
     : FeatureCollectionTransformExecutor(options)
@@ -132,11 +109,6 @@ internal sealed class ComputedFieldTransformExecutor(
         }
     }
 
-    /// <summary>
-    /// Adapts a NetTopologySuite <see cref="IAttributesTable"/> to the expression
-    /// engine's field-reference context. Only named-attribute lookups are exposed —
-    /// the grammar has no path to arbitrary members.
-    /// </summary>
     private sealed class AttributesExpressionContext(IAttributesTable attributes) : IExpressionContext
     {
         public bool TryGetField(string name, out object? value)

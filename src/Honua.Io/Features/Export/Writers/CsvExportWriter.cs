@@ -10,10 +10,6 @@ using NetTopologySuite.IO;
 
 namespace Honua.Io.Export.Writers;
 
-/// <summary>
-/// Writes features as CSV with WKT geometry column.
-/// Streams directly to output — O(1) memory regardless of export size.
-/// </summary>
 internal static class CsvExportWriter
 {
     private const int FlushInterval = 32;

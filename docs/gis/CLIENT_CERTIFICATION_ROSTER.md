@@ -138,14 +138,14 @@ A customer cannot leave Esri without these. Regression in an activated Tier 0 la
 | Client | Status | Activation | Target | Required tier | Runtime | Protocol surfaces | Owning issue |
 |---|---|---|---|---|---|---|---|
 | `desktop-qgis` QGIS Desktop LTR (PyQGIS) | active | activated | 2026.1 | nightly | linux-container | `ogc-features`, `wfs` | [honua-server#3434](https://github.com/honua-io/honua-server/issues/3434) |
-| `desktop-arcgis` ArcGIS Pro (arcpy + honua_gp shim parity) | planned | awaiting-runtime | 2026.2 | none | windows-license | `featureserver`, `mapserver`, `imageserver`, `geometryserver`, `version-management-server`, `portal`, `ogc-features`, `wfs`, `wms`, `wmts` | [honua-esri-compat#75](https://github.com/honua-io/honua-esri-compat/issues/75) |
+| `desktop-arcgis` ArcGIS Pro (arcpy + honua_gp shim parity) | planned | awaiting-runtime | 2026.2 | none | windows-license | `featureserver`, `mapserver`, `imageserver`, `geometryserver`, `version-management-server`, `portal`, `ogc-features`, `wfs`, `wms`, `wmts` | [honua-server#3389](https://github.com/honua-io/honua-server/issues/3389) |
 | `js` OpenLayers | active | activated | 2026.1 | nightly | browser-playwright | `ogc-features`, `ogc-maps`, `mvt`, `wfs`, `wms`, `wmts` | [honua-server#3434](https://github.com/honua-io/honua-server/issues/3434) |
 | `js-maplibre` MapLibre GL JS | active | activated | 2026.1 | nightly | browser-playwright | `mvt`, `ogc-maps`, `ogc-tiles` | [honua-server#3434](https://github.com/honua-io/honua-server/issues/3434) |
 | `js-cesium` CesiumJS | active | activated | 2026.1 | nightly | browser-playwright | `wms`, `wmts`, `ogc-tiles`, `ogc-maps` | [honua-server#3434](https://github.com/honua-io/honua-server/issues/3434) |
-| `esri-js-maps-sdk` ArcGIS Maps SDK for JavaScript | active | awaiting-federation | 2026.2 | none | browser-playwright | `featureserver`, `mapserver`, `portal` | [honua-esri-compat#74](https://github.com/honua-io/honua-esri-compat/issues/74) |
+| `esri-js-maps-sdk` ArcGIS Maps SDK for JavaScript | active | awaiting-federation | 2026.2 | none | browser-playwright | `featureserver`, `mapserver`, `portal` | [honua-server#3389](https://github.com/honua-io/honua-server/issues/3389) |
 | `cli` GDAL / OGR (ogr2ogr) | active | activated | 2026.1 | nightly | linux-container | `ogc-features`, `wfs`, `admin-api` | [honua-server#3434](https://github.com/honua-io/honua-server/issues/3434) |
-| `esri-arcgis-python` ArcGIS API for Python | active | awaiting-federation | 2026.2 | none | linux-container | `featureserver`, `portal` | [honua-esri-compat#74](https://github.com/honua-io/honua-esri-compat/issues/74) |
-| `esri-dotnet` ArcGIS Maps SDK for .NET | planned | awaiting-runtime | 2026.2 | none | windows-license | `featureserver`, `mapserver` | [honua-esri-compat#75](https://github.com/honua-io/honua-esri-compat/issues/75) |
+| `esri-arcgis-python` ArcGIS API for Python | active | awaiting-federation | 2026.2 | none | linux-container | `featureserver`, `portal` | [honua-server#3389](https://github.com/honua-io/honua-server/issues/3389) |
+| `esri-dotnet` ArcGIS Maps SDK for .NET | planned | awaiting-runtime | 2026.2 | none | windows-license | `featureserver`, `mapserver` | [honua-server#3389](https://github.com/honua-io/honua-server/issues/3389) |
 | `honua-sdks` Honua SDKs (JavaScript, Python, .NET) | active | activated | 2026.1 | nightly | linux-container | `featureserver`, `mapserver`, `ogc-features`, `ogc-maps`, `ogc-tiles`, `odata`, `mvt`, `wfs`, `wms`, `wmts`, `admin-api`, `stac` | [honua-server#3434](https://github.com/honua-io/honua-server/issues/3434) |
 | `ogc-cite` OGC CITE / TEAM Engine (14 suites) | active | activated | 2026.1 | release | linux-container | `wfs`, `wms`, `wmts`, `wcs`, `gml`, `kml`, `gpkg`, `ogc-tiles` | [honua-server#3434](https://github.com/honua-io/honua-server/issues/3434) |
 | `geoservices-rest-stub` GeoServices REST + Portal facade stub | active | activated | 2026.1 | nightly | linux-container | `featureserver`, `mapserver`, `portal` | [honua-server#3434](https://github.com/honua-io/honua-server/issues/3434) |
@@ -231,17 +231,17 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
 - **Required tier**: none (intended on activation: release)
 - **Roster origin**: artifact; artifact status Built, unrun
 - **Lane binding**: desktop-arcgis (planned-lane)
-- **Client version policy**: ArcGIS Pro build is the build named on the `desktop-arcgis` evidence identifier in honua-esri-compat. Evidence is content-addressed.
+- **Client version policy**: This repository does not certify ArcGIS clients.
 - **Protocol surfaces**: `featureserver`, `mapserver`, `imageserver`, `geometryserver`, `version-management-server`, `portal`, `ogc-features`, `wfs`, `wms`, `wmts`
 - **Applicable operation families**: `CERT-CONN`, `CERT-AUTH`, `CERT-DISC`, `CERT-SCHM`, `CERT-QFLT`, `CERT-PAGE`, `CERT-GEOM`, `CERT-ERRH`, `CERT-RNDR`, `CERT-PRTL`
 - **Structurally not applicable**: (none)
 - **Scenario facets**: `positive`, `invalid-credential`, `insufficient-role`, `cross-tenant`, `pagination-limit`, `metadata`, `media-schema`
-- **Licensing**: entitlement-bound - desktop entitlement detail stays in honua-esri-compat. This roster does not configure it.
+- **Licensing**: entitlement-bound - This repository does not certify ArcGIS clients.
 - **Runtime**: windows-license
 - **Fixture projection**: canonical-client-fixture - Esri-owned fixtures must project onto the #3393 canonical fixture before federation.
 - **Evidence producer**: (none)
-- **Owning issue**: https://github.com/honua-io/honua-esri-compat/issues/75
-- **Notes**: The 2026.1 gate (#3434) joins honua-esri-compat evidence by reference rather than activating this lane. Activation targets 2026.2 via workstream A of #3389. No desktop receipt is linked from this repo.
+- **Owning issue**: https://github.com/honua-io/honua-server/issues/3389
+- **Notes**: This repository does not certify ArcGIS clients.
 
 ### `js` - OpenLayers
 
@@ -318,7 +318,7 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
 - **Required tier**: none (intended on activation: release)
 - **Roster origin**: artifact; artifact status Partial
 - **Lane binding**: (none) (external-producer)
-- **Client version policy**: CDN/npm-pinned ArcGIS Maps SDK for JavaScript version recorded by the honua-esri-compat sdk_matrix/jsapi run.
+- **Client version policy**: This repository does not certify ArcGIS clients.
 - **Protocol surfaces**: `featureserver`, `mapserver`, `portal`
 - **Applicable operation families**: `CERT-CONN`, `CERT-AUTH`, `CERT-DISC`, `CERT-SCHM`, `CERT-QFLT`, `CERT-PAGE`, `CERT-GEOM`, `CERT-ERRH`, `CERT-RNDR`, `CERT-PRTL`
 - **Structurally not applicable**: (none)
@@ -326,9 +326,9 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
 - **Licensing**: proprietary-no-cost - Vendor-licensed but installable without a paid seat or activation.
 - **Runtime**: browser-playwright
 - **Fixture projection**: canonical-client-fixture - Esri-owned fixtures must project onto the #3393 canonical fixture before federation.
-- **Evidence producer**: honua-esri-compat (sdk_matrix/jsapi)
-- **Owning issue**: https://github.com/honua-io/honua-esri-compat/issues/74
-- **Notes**: This is the client customers port from, but its evidence is produced in honua-esri-compat and is not yet federated into this registry, so it declares requiredTier `none` and can neither pass nor block a honua-server gate.
+- **Evidence producer**: This repository does not certify ArcGIS clients.
+- **Owning issue**: https://github.com/honua-io/honua-server/issues/3389
+- **Notes**: This repository does not certify ArcGIS clients. Required tier `none`: it can neither pass nor block a gate.
 
 ### `cli` - GDAL / OGR (ogr2ogr)
 
@@ -359,7 +359,7 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
 - **Required tier**: none (intended on activation: nightly)
 - **Roster origin**: artifact; artifact status Live
 - **Lane binding**: (none) (external-producer)
-- **Client version policy**: pip/conda pin of `arcgis` in the honua-esri-compat arcgis_python lane image.
+- **Client version policy**: This repository does not certify ArcGIS clients.
 - **Protocol surfaces**: `featureserver`, `portal`
 - **Applicable operation families**: `CERT-CONN`, `CERT-AUTH`, `CERT-DISC`, `CERT-SCHM`, `CERT-QFLT`, `CERT-PAGE`, `CERT-GEOM`, `CERT-ERRH`, `CERT-RNDR`, `CERT-PRTL`
 - **Structurally not applicable**: (none)
@@ -367,8 +367,8 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
 - **Licensing**: proprietary-no-cost - Vendor-licensed but installable without a paid seat or activation.
 - **Runtime**: linux-container
 - **Fixture projection**: canonical-client-fixture - Esri-owned fixtures must project onto the #3393 canonical fixture before federation.
-- **Evidence producer**: honua-esri-compat (arcgis_python)
-- **Owning issue**: https://github.com/honua-io/honua-esri-compat/issues/74
+- **Evidence producer**: This repository does not certify ArcGIS clients.
+- **Owning issue**: https://github.com/honua-io/honua-server/issues/3389
 - **Notes**: The license-free Esri lane. Live upstream, but not yet joined to this registry's expected pairs, so it declares requiredTier `none`.
 
 ### `esri-dotnet` - ArcGIS Maps SDK for .NET
@@ -388,7 +388,7 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
 - **Runtime**: windows-license
 - **Fixture projection**: canonical-client-fixture - Esri-owned fixtures must project onto the #3393 canonical fixture before federation.
 - **Evidence producer**: (none)
-- **Owning issue**: https://github.com/honua-io/honua-esri-compat/issues/75
+- **Owning issue**: https://github.com/honua-io/honua-server/issues/3389
 - **Notes**: The second of the two rows the tier tables mark 'Built, unrun'. Unblocked by the same Windows host that unblocks desktop-arcgis and the BI lanes, but it has no plannedLanes row in client-certification-matrix.v1.json yet.
 
 ### `honua-sdks` - Honua SDKs (JavaScript, Python, .NET)

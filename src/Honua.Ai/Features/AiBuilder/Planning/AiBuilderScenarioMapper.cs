@@ -7,12 +7,6 @@ using Honua.Ai.Protocols.Mcp.Models;
 
 namespace Honua.Ai.AiBuilder.Planning;
 
-/// <summary>
-/// Pure mapping helpers from a parsed <see cref="AiBuilderScenario"/> JSON
-/// envelope to the wire-format <see cref="McpPlanAnalysisOutput"/>. Kept in
-/// one place so unit tests can pin the contract translation without spinning
-/// up the full planner service.
-/// </summary>
 internal static class AiBuilderScenarioMapper
 {
     public static McpPlanAnalysisOutput ToPlanAnalysisOutput(AiBuilderScenario scenario)
@@ -143,15 +137,6 @@ internal static class AiBuilderScenarioMapper
         };
     }
 
-    /// <summary>
-    /// Normalises the fixture's free-form <c>kind</c> strings into the
-    /// canonical <see cref="Honua.Core.Features.Geoprocessing.Domain.AnalysisPlanStepKind"/>
-    /// names that <c>Honua.Ai.Protocols.Mcp.Tools.McpToolHelpers.ToDomainPlan</c>
-    /// accepts. Anything not recognised falls through to <c>Geoprocess</c> so
-    /// the wire output never carries an invalid step kind — the operations
-    /// dashboard's specialised kinds (service, report, package, …) are kept
-    /// in the spec-draft output, not the analysis plan.
-    /// </summary>
     private static string NormalizeStepKind(string? raw)
     {
         if (string.IsNullOrWhiteSpace(raw))

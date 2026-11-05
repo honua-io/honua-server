@@ -7,11 +7,6 @@ using Honua.Core.Features.Geoprocessing.Domain;
 
 namespace Honua.Geoprocessing;
 
-/// <summary>
-/// Owns the exhaustive execution classification for the built-in process catalog.
-/// Protocol adapters consume the stamped <see cref="ProcessDefinition"/> metadata;
-/// migration-evidence tiers do not participate in runtime eligibility decisions.
-/// </summary>
 internal static class ProcessExecutionCapabilityCatalog
 {
     private static readonly FrozenSet<string> JobProcessIds = IdSet(
@@ -138,23 +133,10 @@ internal static class ProcessExecutionCapabilityCatalog
         "geometry.snap",
         "conversion.geometry-format");
 
-    /// <summary>
-    /// Processes advertised for discovery that cannot execute on ANY entry point, keyed by
-    /// process id with the canonical operator-facing reason.
-    ///
-    /// <para>
-    /// This set is EMPTY and must stay empty: the 2026-09-06 catalog entry-point ruling
-    /// admits no third state between "implemented" and "not advertised" — an operation is
-    /// either callable on a declared entry point or it is absent from the catalog. The
-    /// machinery is retained because <see cref="Classify"/> is exhaustive and fail-closed,
-    /// so a future addition that lands here is refused by the gate instead of quietly
-    /// becoming an advertised dead end (#4409).
-    /// </para>
-    /// </summary>
+    // This set stays empty because an advertised process that cannot run is refused instead of becoming a dead end.
     internal static readonly FrozenDictionary<string, string> UnavailableReasons =
         FrozenDictionary<string, string>.Empty;
 
-    /// <summary>Stamps one raw built-in definition with its required canonical classification.</summary>
     public static ProcessDefinition Classify(ProcessDefinition definition)
     {
         ArgumentNullException.ThrowIfNull(definition);
@@ -230,15 +212,9 @@ internal static class ProcessExecutionCapabilityCatalog
         };
     }
 
-    /// <summary>Whether the process may be submitted through OGC API Processes.</summary>
     public static bool IsOgcCallable(ProcessDefinition definition)
         => ProcessExecutionEligibility.IsJobCallable(definition);
 
-    /// <summary>
-    /// Whether the process is composable as a workflow DAG node. Job and workflow-only
-    /// processes both compile into an analysis-plan step; protocol-only processes have no
-    /// dispatcher executor and must not be offered to a graph author.
-    /// </summary>
     public static bool IsWorkflowComposable(ProcessDefinition definition)
         => ProcessExecutionEligibility.Declares(definition, ProcessEntryPoints.Workflow);
 

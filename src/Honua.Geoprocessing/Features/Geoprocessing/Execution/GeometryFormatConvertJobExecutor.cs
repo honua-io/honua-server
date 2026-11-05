@@ -13,26 +13,9 @@ using NetTopologySuite.IO;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// Production <see cref="IProcessExecutor"/> for the <c>conversion.geometry-format</c>
-/// process (#3936). The catalog advertised the operation before any execution path
-/// existed: it was classified protocol-only, and no owning protocol endpoint ever
-/// implemented the conversion, so every caller reached a capability error.
-///
-/// The executor re-encodes one input geometry into an advertised interchange
-/// encoding. The input is WKB or PostGIS EWKB; the SRID carried by an EWKB input is
-/// the only SRID the process knows, because the catalog declares no <c>srid</c>
-/// parameter. That SRID is preserved into the encodings that can carry it
-/// (<c>ewkt</c>, and <c>wkb</c>, which round-trips as EWKB) and is reported on the
-/// result envelope for the encodings that cannot (<c>wkt</c>, <c>geojson</c>).
-/// Coordinates are never transformed — this is a re-encoding, not a reprojection.
-/// </summary>
+// This re-encodes and never transforms coordinates, and an EWKB SRID is the only CRS available because the catalog declares no srid parameter.
 internal sealed partial class GeometryFormatConvertJobExecutor : IProcessExecutor
 {
-    /// <summary>
-    /// The single process id this executor handles. Matches the catalog entry
-    /// in <see cref="BuiltInProcessCatalog"/>.
-    /// </summary>
     internal const string HandledProcessId = "conversion.geometry-format";
 
     private const string ScalarDataUriPrefix = "data:application/json;base64,";
@@ -48,14 +31,11 @@ internal sealed partial class GeometryFormatConvertJobExecutor : IProcessExecuto
         _logger = logger;
     }
 
-    /// <inheritdoc />
     public IReadOnlySet<string> ProcessIds { get; } =
         new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
 
-    /// <inheritdoc />
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 
-    /// <inheritdoc />
     public async Task<JobExecutionResult> ExecuteAsync(
         ExecutionJobRecord job,
         IJobExecutionContext context,
@@ -159,13 +139,9 @@ internal sealed partial class GeometryFormatConvertJobExecutor : IProcessExecuto
         return JobExecutionResult.Succeeded();
     }
 
-    /// <summary>The only CRS RFC 7946 GeoJSON may carry.</summary>
+    // RFC 7946 GeoJSON carries only WGS 84.
     private const int Wgs84Srid = 4326;
 
-    /// <summary>
-    /// Re-encodes <paramref name="geometry"/> into <paramref name="target"/> and reports
-    /// whether the artifact carries the value as text or as base64 bytes.
-    /// </summary>
     private static (string Value, string Encoding) Encode(Geometry geometry, string target)
     {
         switch (target)
@@ -201,12 +177,7 @@ internal sealed partial class GeometryFormatConvertJobExecutor : IProcessExecuto
         }
     }
 
-    /// <summary>
-    /// Builds a WKT writer that emits exactly the ordinates the geometry carries.
-    /// NTS takes the output DIMENSION on the constructor and the ordinate mask as a
-    /// property, and rejects a mask the dimension cannot hold, so both are derived
-    /// from the same inspection.
-    /// </summary>
+    // NTS rejects an ordinate mask its dimension cannot hold, so both come from the same inspection.
     private static WKTWriter CreateWktWriter(Geometry geometry)
     {
         var ordinates = OutputOrdinates(geometry);
@@ -230,13 +201,7 @@ internal sealed partial class GeometryFormatConvertJobExecutor : IProcessExecuto
         return ordinates;
     }
 
-    /// <summary>
-    /// Applies RFC 7946 section 3.1.6 winding: exterior rings counter-clockwise, holes
-    /// clockwise. Stored data is frequently clockwise-exterior (Esri applyEdits,
-    /// shapefile imports); the query path enforces the same rule in SQL with
-    /// <c>ST_ForcePolygonCCW</c>, and this is the managed counterpart for the
-    /// conversion path. Non-polygonal geometry passes through unchanged.
-    /// </summary>
+    // Exterior rings are forced counter-clockwise because stored polygons are often clockwise and RFC 7946 requires the opposite.
     private static Geometry EnforceRightHandRule(Geometry geometry) => geometry switch
     {
         Polygon polygon => geometry.Factory.CreatePolygon(
@@ -256,12 +221,6 @@ internal sealed partial class GeometryFormatConvertJobExecutor : IProcessExecuto
     private static LinearRing OrientRing(LinearRing ring, bool counterClockwise) =>
         ring.IsCCW == counterClockwise ? ring : (LinearRing)((Geometry)ring).Reverse();
 
-    /// <summary>
-    /// Whether ANY coordinate in the geometry carries a finite ordinate. Inspecting
-    /// only the first coordinate silently drops the ordinate from every later vertex
-    /// when the first one happens to be 2D — including a mixed-dimension collection
-    /// whose first member is planar.
-    /// </summary>
     private static bool HasOrdinate(Geometry geometry, Ordinate ordinate) =>
         geometry.Coordinates
             .Select(coordinate => ordinate == Ordinate.Z ? coordinate.Z : coordinate.M)
