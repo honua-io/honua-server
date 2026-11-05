@@ -75,58 +75,22 @@ public sealed class FileBackedLicenseServiceStopTests
         await stopping;
     }
 
-    [UnitTest]
-    public async Task StopAsync_RevalidationFaulted_SurfacesException()
+    public static TheoryData<Exception, CancellationToken> RevalidationFaults { get; } = new()
+    {
+        { new InvalidOperationException("license source failed"), CancellationToken.None },
+        { new OperationCanceledException("license source canceled the read"), CancellationToken.None },
+        { new InvalidOperationException("license source failed"), new CancellationToken(canceled: true) },
+        { new OperationCanceledException("license source canceled the read"), new CancellationToken(canceled: true) },
+    };
+
+    [UnitTheory]
+    [MemberData(nameof(RevalidationFaults))]
+    public async Task StopAsync_RevalidationFault_SurfacesException(Exception failure, CancellationToken hostShutdown)
     {
         await using var running = await RunningLicenseService.StartAsync();
-        var failure = new InvalidOperationException("license source failed");
         running.ReplaceRevalidation(Task.FromException(failure));
 
-        var thrown = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => running.Service.StopAsync(CancellationToken.None));
-
-        thrown.Should().BeSameAs(failure);
-    }
-
-    [UnitTest]
-    public async Task StopAsync_RevalidationFaultedWithCancellationException_SurfacesException()
-    {
-        await using var running = await RunningLicenseService.StartAsync();
-        var failure = new OperationCanceledException("license source canceled the read");
-        running.ReplaceRevalidation(Task.FromException(failure));
-
-        var thrown = await Assert.ThrowsAsync<OperationCanceledException>(
-            () => running.Service.StopAsync(CancellationToken.None));
-
-        thrown.Should().BeSameAs(failure);
-    }
-
-    [UnitTest]
-    public async Task StopAsync_RevalidationFaultedWhenHostShutdownCancelled_SurfacesException()
-    {
-        await using var running = await RunningLicenseService.StartAsync();
-        var failure = new InvalidOperationException("license source failed");
-        running.ReplaceRevalidation(Task.FromException(failure));
-        using var hostShutdown = new CancellationTokenSource();
-        hostShutdown.Cancel();
-
-        var thrown = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => running.Service.StopAsync(hostShutdown.Token));
-
-        thrown.Should().BeSameAs(failure);
-    }
-
-    [UnitTest]
-    public async Task StopAsync_CancellationFaultWhenHostShutdownCancelled_SurfacesException()
-    {
-        await using var running = await RunningLicenseService.StartAsync();
-        var failure = new OperationCanceledException("license source canceled the read");
-        running.ReplaceRevalidation(Task.FromException(failure));
-        using var hostShutdown = new CancellationTokenSource();
-        hostShutdown.Cancel();
-
-        var thrown = await Assert.ThrowsAsync<OperationCanceledException>(
-            () => running.Service.StopAsync(hostShutdown.Token));
+        var thrown = await Assert.ThrowsAsync(failure.GetType(), () => running.Service.StopAsync(hostShutdown));
 
         thrown.Should().BeSameAs(failure);
     }
