@@ -7,9 +7,6 @@ using Honua.Core.Features.Infrastructure.Monitoring;
 
 namespace Honua.Db.Postgres.Features.Infrastructure.Monitoring;
 
-/// <summary>
-/// Provides database performance metrics backed by Postgres feature store instrumentation.
-/// </summary>
 internal sealed class PostgresDatabasePerformanceMetricsProvider : IDatabasePerformanceMetricsProvider
 {
     private readonly IFeatureCacheManager _cacheManager;

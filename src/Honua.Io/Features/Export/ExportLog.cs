@@ -3,10 +3,6 @@
 
 namespace Honua.Io.Export;
 
-/// <summary>
-/// Source-generated log messages for the data export feature.
-/// Event IDs: 7750-7759.
-/// </summary>
 internal static partial class ExportLog
 {
     [LoggerMessage(7750, LogLevel.Information,
@@ -51,7 +47,4 @@ internal static partial class ExportLog
     public static partial void ScratchDirectoryCleanupFailed(ILogger logger, string path, Exception exception);
 }
 
-/// <summary>
-/// Marker class for DI logger resolution in export endpoints.
-/// </summary>
 internal sealed class ExportEndpointsLog;

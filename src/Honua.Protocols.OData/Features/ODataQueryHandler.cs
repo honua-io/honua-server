@@ -28,10 +28,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Protocols.OData;
 
-/// <summary>
-/// Handler for OData query operations on layers and features.
-/// Handles standard OData query parameters ($filter, $select, $orderby, $top, $skip, $count, $expand).
-/// </summary>
 internal sealed partial class ODataQueryHandler(
     ODataQueryDependencies dependencies,
     ILogger<ODataQueryHandler> logger)
@@ -50,9 +46,6 @@ internal sealed partial class ODataQueryHandler(
     private readonly CacheOptions _cacheOptions = dependencies.CacheOptions;
     private readonly ILogger<ODataQueryHandler> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
-    /// <summary>
-    /// Handles OData layers collection request
-    /// </summary>
     public async Task<IResult> HandleGetLayersAsync(
         HttpContext context,
         [FromQuery(Name = "$filter")] string? filter = null,
@@ -231,9 +224,6 @@ internal sealed partial class ODataQueryHandler(
         }
     }
 
-    /// <summary>
-    /// Handles OData single layer request
-    /// </summary>
     public async Task<IResult> HandleGetLayerAsync(
         HttpContext context,
         int layerId,
@@ -322,9 +312,6 @@ internal sealed partial class ODataQueryHandler(
         }
     }
 
-    /// <summary>
-    /// Handles OData layers $count request
-    /// </summary>
     public async Task<IResult> HandleGetLayersCountAsync(
         HttpContext context,
         [FromQuery(Name = "$filter")] string? filter = null,
@@ -385,9 +372,6 @@ internal sealed partial class ODataQueryHandler(
         }
     }
 
-    /// <summary>
-    /// Handles OData features collection request with non-streaming implementation for small result sets
-    /// </summary>
     public async Task<IResult> HandleGetFeaturesNonStreamingAsync(
         HttpContext context,
         int layerId,
@@ -797,12 +781,6 @@ internal sealed partial class ODataQueryHandler(
         }
     }
 
-    /// <summary>
-    /// Handles an OData <c>$top=0</c> request: returns a 200 with an empty <c>value</c>
-    /// array and no <c>@odata.nextLink</c>. When <c>$count=true</c> the true total is
-    /// computed with a dedicated count query so the empty page still reports the count,
-    /// independent of any data-page TotalCount fidelity.
-    /// </summary>
     private async Task<IResult> HandleEmptyFeaturesPageAsync(
         HttpContext context,
         Activity? featureActivity,
@@ -868,9 +846,6 @@ internal sealed partial class ODataQueryHandler(
             contentType: ODataUtilityService.GetODataContentType(context.Request, format));
     }
 
-    /// <summary>
-    /// Writes a materialized query result as GeoParquet using the shared cloud-native writer.
-    /// </summary>
     private IResult WriteGeoParquetResult(
         HttpContext context,
         MetadataV2Resource resource,
@@ -1025,9 +1000,6 @@ internal sealed partial class ODataQueryHandler(
            value.Contains("odata.metadata=minimal", StringComparison.OrdinalIgnoreCase);
 
 
-    /// <summary>
-    /// Logging methods for OData query operations.
-    /// </summary>
     private static partial class Log
     {
         [LoggerMessage(EventId = 3001, Level = LogLevel.Warning, Message = "Invalid OData layers query.")]

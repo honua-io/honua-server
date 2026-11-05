@@ -11,19 +11,10 @@ using Honua.Geoprocessing.Release;
 
 namespace Honua.Geoprocessing.Cli;
 
-/// <summary>
-/// <c>honua-gp-devkit reproduce &lt;bundle&gt;</c> (honua-server#6220). Parses a diagnostic
-/// bundle, pins the recorded source SHA and release lock when they are present, and runs
-/// the exported inputs through <see cref="GeoprocessingLocalRunner"/>. Production writes,
-/// credentials, connection strings and output paths are never reused. A missing or changed
-/// input or artifact refuses the run. Exit 0 means the local outcome matched the recorded
-/// one, including a recorded failure.
-/// </summary>
 internal static partial class GpReproduceCommand
 {
     private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
 
-    /// <summary>Catalog used to bind exported bytes the way each executor reads them.</summary>
     private static readonly BuiltInProcessCatalog ProcessCatalog = new(logger: null);
 
     private static readonly HashSet<string> AbsentArtifactAvailability = new(StringComparer.OrdinalIgnoreCase)
@@ -36,12 +27,6 @@ internal static partial class GpReproduceCommand
         "partial", "unavailable",
     };
 
-    /// <summary>Runs the verb.</summary>
-    /// <param name="args">Everything after <c>reproduce</c>.</param>
-    /// <param name="output">Standard output sink.</param>
-    /// <param name="error">Error output sink.</param>
-    /// <param name="cancellationToken">Cooperative cancellation.</param>
-    /// <returns>0 when the recorded outcome was reproduced, 1 when it was not, 2 on usage error.</returns>
     public static async Task<int> RunAsync(
         string[] args,
         TextWriter output,
@@ -501,13 +486,6 @@ internal static partial class GpReproduceCommand
         return Encoding.UTF8.GetBytes(artifact);
     }
 
-    /// <summary>
-    /// Turns exported input bytes into the string the executor reads.
-    /// A document or data-URI parameter stays UTF-8 even when the media type is
-    /// <c>application/geo+json</c>. A parameter the executor base64-decodes stays
-    /// base64 even when the media type is <c>application/json</c>. Every other
-    /// parameter follows the media type, so a text/plain WKB value is not re-encoded.
-    /// </summary>
     internal static string ToParameter(string processId, GpDiagnosticInput input, byte[] bytes)
     {
         var parameter = ProcessCatalog.GetProcess(processId)?.Parameters

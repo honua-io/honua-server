@@ -14,19 +14,12 @@ using Honua.Protocols.OData.Models;
 
 namespace Honua.Protocols.OData.Services;
 
-/// <summary>
-/// Service for handling common OData utilities including error responses, headers, and URL generation.
-/// Provides shared functionality across OData operations.
-/// </summary>
 internal static class ODataUtilityService
 {
     internal const string TrackChangesContinuationParameter = "honua_track_changes";
     internal const string TrackChangesSnapshotParameter = "honua_track_changes_snapshot";
     internal const string TrackChangesPreferenceValue = "odata.track-changes";
 
-    /// <summary>
-    /// OData JSON content type with minimal metadata
-    /// </summary>
     private const string ODataMediaType = "application/json";
     private const string ODataMetadataMinimal = "minimal";
     private const string ODataMetadataFull = "full";
@@ -35,9 +28,6 @@ internal static class ODataUtilityService
     // "odata.metadata", not "metadata" (which is the OData 3.0 convention).
     private const string ODataContentType = $"{ODataMediaType};odata.metadata={ODataMetadataMinimal}";
 
-    /// <summary>
-    /// GeoParquet content type emitted for <c>$format=parquet</c> exports.
-    /// </summary>
     public const string ParquetContentType = "application/vnd.apache.parquet";
 
     private static readonly FrozenSet<string> _allowedFormats = new[]
@@ -87,9 +77,6 @@ internal static class ODataUtilityService
         }
         .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>
-    /// Sets required OData headers on the HTTP response.
-    /// </summary>
     public static void SetODataHeaders(HttpContext context, string? etag = null)
     {
         ODataProtocolHeaders.SetVersionHeader(context);
@@ -99,10 +86,6 @@ internal static class ODataUtilityService
         }
     }
 
-    /// <summary>
-    /// Creates an OData v4 compliant error response using standardized error handling.
-    /// See: https://docs.oasis-open.org/odata/odata-json-format/v4.01/odata-json-format-v4.01.html#sec_ErrorResponseBody
-    /// </summary>
     public static IResult CreateODataError(
         HttpContext context,
         string code,
@@ -134,14 +117,6 @@ internal static class ODataUtilityService
             });
     }
 
-    /// <summary>
-    /// Creates an OData error response using standardized error handling.
-    /// </summary>
-    /// <param name="context">The HTTP context.</param>
-    /// <param name="detail">The error detail message.</param>
-    /// <param name="statusCode">The HTTP status code.</param>
-    /// <param name="additionalDetails">Optional additional details.</param>
-    /// <returns>A standardized OData error response.</returns>
     public static IResult CreateStandardODataError(HttpContext context, string detail, int statusCode = 400, IReadOnlyList<string>? additionalDetails = null)
     {
         var errorResponse = statusCode switch
@@ -159,13 +134,6 @@ internal static class ODataUtilityService
         return StandardErrorResponseFormatter.FormatError(context, errorResponse);
     }
 
-    /// <summary>
-    /// Generates the @odata.nextLink URL for pagination support.
-    /// When useSkipToken is true, the skip value is encoded as an opaque Base64Url cursor
-    /// that includes a query fingerprint to prevent token reuse across different queries.
-    /// A <see langword="null"/> <c>top</c> omits <c>$top</c> so the next page uses the server
-    /// page size (see <see cref="TryGetContinuationTop"/>).
-    /// </summary>
     public static string GenerateNextLink(
         HttpRequest request,
         int nextSkip,
@@ -263,9 +231,6 @@ internal static class ODataUtilityService
         return $"{baseUrl}{request.Path}?{string.Join("&", queryParams)}";
     }
 
-    /// <summary>
-    /// Generates a @odata.deltaLink URL for change tracking support.
-    /// </summary>
     public static string GenerateDeltaLink(
         HttpRequest request,
         ODataDeltaService.DeltaQueryState state)
@@ -276,9 +241,6 @@ internal static class ODataUtilityService
             state);
     }
 
-    /// <summary>
-    /// Generates a paged next link for delta responses.
-    /// </summary>
     public static string GenerateDeltaNextLink(
         HttpRequest request,
         ODataDeltaService.DeltaQueryState deltaState,
@@ -311,16 +273,9 @@ internal static class ODataUtilityService
         return $"{baseUrl}{request.Path}?{string.Join("&", queryParams)}";
     }
 
-    /// <summary>
-    /// Gets a timeout-aware cancellation token from the HTTP context.
-    /// Prefers the limits timeout token if available, otherwise uses request cancellation.
-    /// </summary>
     public static CancellationToken GetTimeoutAwareCancellationToken(HttpContext context)
         => TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
 
-    /// <summary>
-    /// Builds an OData context URL for the given base URL and entity type.
-    /// </summary>
     public static string BuildContextUrl(
         string baseUrl,
         string entityType,
@@ -339,9 +294,6 @@ internal static class ODataUtilityService
         return $"{baseUrl}/odata/$metadata#{segment}{suffix}";
     }
 
-    /// <summary>
-    /// Creates a standardized OData response with proper context and metadata.
-    /// </summary>
     public static ODataResponse CreateODataResponse(
         string baseUrl,
         string entityType,
@@ -361,9 +313,6 @@ internal static class ODataUtilityService
         };
     }
 
-    /// <summary>
-    /// Creates a standardized OData feature response for single feature operations.
-    /// </summary>
     public static ODataFeatureResponse CreateODataFeatureResponse(
         string baseUrl,
         long objectId,
@@ -381,17 +330,11 @@ internal static class ODataUtilityService
         };
     }
 
-    /// <summary>
-    /// Extracts the base URL from an HTTP request.
-    /// </summary>
     public static string GetBaseUrl(HttpRequest request)
     {
         return BaseUrlResolver.GetBaseUrl(request);
     }
 
-    /// <summary>
-    /// Gets the OData content type for responses.
-    /// </summary>
     public static string GetODataContentType()
     {
         return ODataContentType;
@@ -448,9 +391,6 @@ internal static class ODataUtilityService
         return _allowedFormats;
     }
 
-    /// <summary>
-    /// Returns true when the requested <c>$format</c> selects GeoParquet output.
-    /// </summary>
     public static bool IsParquetFormat(string? format)
         => !string.IsNullOrWhiteSpace(format) && _parquetFormats.Contains(format.Trim());
 
@@ -486,30 +426,12 @@ internal static class ODataUtilityService
         return false;
     }
 
-    /// <summary>
-    /// Checks if pagination should be applied based on result size and current parameters.
-    /// </summary>
-    /// <param name="resultCount">Number of items returned in this page.</param>
-    /// <param name="currentSkip">Current offset into the full result set.</param>
-    /// <param name="totalCount">Total number of items matching the query.</param>
-    /// <param name="top">Effective server page size (may be server-capped).</param>
     public static bool ShouldPaginate(int resultCount, int currentSkip, long totalCount, int? top)
     {
         return (long)currentSkip + resultCount < totalCount;
     }
 
-    /// <summary>
-    /// Resolves the <c>$top</c> an ordinary collection continuation carries (#5464). OData 4.01
-    /// Part 1 §11.2.6.3 makes a client <c>$top</c> a ceiling on the whole requested collection,
-    /// and §11.2.6.7 next links only page within that collection, so the server page size
-    /// (<c>OData:MaxPageSize</c>) must not replace it. The continuation carries the budget left
-    /// after this page; a request without <c>$top</c> has no ceiling, so its continuation omits
-    /// <c>$top</c> and the next page again uses the server page size.
-    /// </summary>
-    /// <param name="requestedTop">The client <c>$top</c>, or <see langword="null"/> when absent.</param>
-    /// <param name="returnedCount">Number of items returned in this page.</param>
-    /// <param name="continuationTop">The <c>$top</c> for the next link, or <see langword="null"/> to omit it.</param>
-    /// <returns><see langword="false"/> when the requested <c>$top</c> is spent and no next link may be emitted.</returns>
+    // A client $top is a ceiling on the whole collection, so a next link carries the remaining budget instead of replacing it with the server page size.
     public static bool TryGetContinuationTop(int? requestedTop, int returnedCount, out int? continuationTop)
     {
         continuationTop = null;
@@ -528,58 +450,37 @@ internal static class ODataUtilityService
         return true;
     }
 
-    /// <summary>
-    /// Calculates the next skip value for pagination.
-    /// </summary>
     public static int CalculateNextSkip(int currentSkip, int? top)
     {
         var currentTop = top ?? 1000;
         return currentSkip + currentTop;
     }
 
-    /// <summary>
-    /// Creates location header value for created resources.
-    /// </summary>
     public static string CreateLocationHeader(string baseUrl, int layerId, long objectId)
     {
         return $"{baseUrl}/odata/Features(LayerId={layerId},ObjectId={objectId})";
     }
 
-    /// <summary>
-    /// Creates OData-EntityId header value for created resources.
-    /// </summary>
     public static string CreateODataEntityId(string baseUrl, int layerId, long objectId)
     {
         return $"{baseUrl}/odata/Features(LayerId={layerId},ObjectId={objectId})";
     }
 
-    /// <summary>
-    /// Validates that a layer ID is positive.
-    /// </summary>
     public static bool IsValidLayerId(int layerId)
     {
         return layerId > 0;
     }
 
-    /// <summary>
-    /// Validates that an object ID is positive.
-    /// </summary>
     public static bool IsValidObjectId(long objectId)
     {
         return objectId > 0;
     }
 
-    /// <summary>
-    /// Gets the proper HTTP status code for an OData CRUD result.
-    /// </summary>
     public static int GetStatusCodeForCrudResult<T>(ODataCrudResult<T> result)
     {
         return result.StatusCode;
     }
 
-    /// <summary>
-    /// Creates an IResult from an OData CRUD result with proper headers.
-    /// </summary>
     public static IResult CreateResultFromCrudResult<T>(
         HttpContext context,
         ODataCrudResult<T> crudResult,
@@ -653,10 +554,6 @@ internal static class ODataUtilityService
         return payload;
     }
 
-    /// <summary>
-    /// Projects the OData Layer entity directly off the canonical resource and the
-    /// publication's layer index.
-    /// </summary>
     public static Dictionary<string, object?> BuildLayerPayload(
         MetadataV2Resource resource,
         int layerIndex)
@@ -787,11 +684,6 @@ internal static class ODataUtilityService
         return $"{sanitized}_r{relationshipId}";
     }
 
-    /// <summary>
-    /// V2 overload of <see cref="BuildRelationshipMetadataName(string, int)"/> where the
-    /// relationship identifier is the canonical string id from
-    /// <see cref="MetadataV2Relationship.Id"/> rather than the v1 integer id.
-    /// </summary>
     public static string BuildRelationshipMetadataNameForV2(string relationshipName, string relationshipId)
     {
         var sanitizedName = SanitizeIdentifier(relationshipName);
@@ -814,9 +706,6 @@ internal static class ODataUtilityService
         _ => "Error"
     };
 
-    /// <summary>
-    /// Determines if an HTTP method supports a request body.
-    /// </summary>
     public static bool MethodSupportsBody(string method)
     {
         return method.Equals("POST", StringComparison.OrdinalIgnoreCase) ||
@@ -878,16 +767,6 @@ internal static class ODataUtilityService
         return value;
     }
 
-    /// <summary>
-    /// Produces deterministic UTF-8 JSON bytes for ETag computation by walking the
-    /// key-sorted <see cref="NormalizeForEtag(object?)"/> structure with a manual
-    /// <see cref="Utf8JsonWriter"/>. This replaces the reflection-based
-    /// <c>JsonSerializer.SerializeToUtf8Bytes(object)</c> overload, which throws
-    /// "Reflection-based serialization has been disabled" under <c>PublishAot=true</c>
-    /// and previously 500'd every OData write on AOT images (#1647).
-    /// </summary>
-    /// <param name="payload">The feature payload to canonicalize for ETag hashing.</param>
-    /// <returns>Canonical UTF-8 JSON bytes with object keys sorted for stability.</returns>
     public static byte[] SerializeForEtag(IReadOnlyDictionary<string, object?> payload)
     {
         ArgumentNullException.ThrowIfNull(payload);
@@ -1191,9 +1070,6 @@ internal static class ODataUtilityService
     private static bool IsUnsupportedMetadataLevel(string level)
         => string.Equals(level, ODataMetadataFull, StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>
-    /// Validates an OData feature request for required fields.
-    /// </summary>
     public static (bool isValid, string? errorMessage) ValidateFeatureRequest(ODataFeatureRequest? request, string method)
     {
         if (!MethodSupportsBody(method))

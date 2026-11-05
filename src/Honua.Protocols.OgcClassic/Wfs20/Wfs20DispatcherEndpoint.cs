@@ -14,9 +14,6 @@ using Honua.Protocols.Ogc.Classic.Wfs20.Services;
 
 namespace Honua.Protocols.Ogc.Classic.Wfs20;
 
-/// <summary>
-/// WFS 2.0 dispatcher endpoint that routes requests based on the 'request' parameter
-/// </summary>
 internal static class Wfs20DispatcherEndpoint
 {
     internal const string ParsedXmlDocumentItemKey = "__honua_wfs20_parsed_xml_document";
@@ -64,12 +61,6 @@ internal static class Wfs20DispatcherEndpoint
         }
     }
 
-    /// <summary>
-    /// Maps implemented WFS operation names to their handler methods.
-    /// This is the single source of truth: <see cref="ImplementedOperations"/> is derived from
-    /// its keys, and the dispatcher looks up handlers here instead of using a separate switch.
-    /// Excludes stubs (e.g. Transaction) that return "not implemented".
-    /// </summary>
     private static readonly Dictionary<string, WfsOperationHandler> _operationHandlers =
         new(StringComparer.OrdinalIgnoreCase)
         {
@@ -84,11 +75,6 @@ internal static class Wfs20DispatcherEndpoint
             ["DropStoredQuery"] = HandleDropStoredQuery,
         };
 
-    /// <summary>
-    /// WFS operations that have full handler implementations.
-    /// Derived from <see cref="_operationHandlers"/> to guarantee consistency with dispatch logic.
-    /// Used by architecture drift tests to verify <c>OperationRegistry</c> stays in sync.
-    /// </summary>
     internal static readonly IReadOnlySet<string> ImplementedOperations =
         new HashSet<string>(_operationHandlers.Keys, StringComparer.OrdinalIgnoreCase);
 
@@ -101,9 +87,6 @@ internal static class Wfs20DispatcherEndpoint
         };
 
     private static readonly string[] SupportedHttpMethods = new[] { "GET", "POST" };
-    /// <summary>
-    /// Maps the single WFS 2.0 dispatcher endpoint
-    /// </summary>
     internal static IEndpointRouteBuilder MapWfs20DispatcherEndpoint(this IEndpointRouteBuilder endpoints)
     {
         // Single WFS endpoint that dispatches based on request parameter.
@@ -133,11 +116,6 @@ internal static class Wfs20DispatcherEndpoint
         return endpoints;
     }
 
-    /// <summary>
-    /// Rejects HEAD only for the KVP operations that mutate features or stored-query state.
-    /// Discovery and query operations on the same route retain normal GET-equivalent HEAD
-    /// behavior.
-    /// </summary>
     private static bool ShouldRejectHead(HttpContext context)
     {
         var operation = context.Request.Query[Wfs20Utilities.ParameterNames.Request]
@@ -146,9 +124,6 @@ internal static class Wfs20DispatcherEndpoint
         return operation is not null && HeadRejectedKvpOperations.Contains(operation);
     }
 
-    /// <summary>
-    /// Handles all WFS 2.0 requests and dispatches to appropriate operation handler
-    /// </summary>
     private static async Task<IResult> HandleWfsRequest(
         HttpContext context,
         Wfs20Handler handler,
@@ -366,9 +341,6 @@ internal static class Wfs20DispatcherEndpoint
         }
     }
 
-    /// <summary>
-    /// Handles GetCapabilities operation
-    /// </summary>
     private static async Task<IResult> HandleGetCapabilities(
         HttpContext context,
         WfsRequestParameters parameters,
@@ -468,9 +440,6 @@ internal static class Wfs20DispatcherEndpoint
         return Results.Content(xml, "application/xml", System.Text.Encoding.UTF8);
     }
 
-    /// <summary>
-    /// Handles DescribeFeatureType operation
-    /// </summary>
     private static async Task<IResult> HandleDescribeFeatureType(
         HttpContext context,
         WfsRequestParameters parameters,
@@ -546,9 +515,6 @@ internal static class Wfs20DispatcherEndpoint
         }
     }
 
-    /// <summary>
-    /// Handles GetFeature operation
-    /// </summary>
     private static async Task<IResult> HandleGetFeature(
         HttpContext context,
         WfsRequestParameters parameters,
@@ -627,9 +593,6 @@ internal static class Wfs20DispatcherEndpoint
         }
     }
 
-    /// <summary>
-    /// Handles GetPropertyValue operation
-    /// </summary>
     private static async Task<IResult> HandleGetPropertyValue(
         HttpContext context,
         WfsRequestParameters parameters,
@@ -701,9 +664,6 @@ internal static class Wfs20DispatcherEndpoint
         }
     }
 
-    /// <summary>
-    /// Handles Transaction operation
-    /// </summary>
     private static async Task<IResult> HandleTransaction(
         HttpContext context,
         WfsRequestParameters parameters,
@@ -1519,16 +1479,6 @@ internal static class Wfs20DispatcherEndpoint
     private static void SetRawValue(Dictionary<string, string> values, string key, string value)
         => values[key] = value.Trim();
 
-    /// <summary>
-    /// Builds the WFS 2.0 GetCapabilities XML by hand from the typed <see cref="WfsCapabilities"/>
-    /// model. Replaces XmlSerializer for this path, which fails under PublishAot=true (no runtime
-    /// code generation). The output mirrors the XmlSerializer rendering: the default (wfs/2.0)
-    /// namespace plus an explicit wfs prefix bound to the same URI and ows/fes/gml/honua/xlink/xsd/xsi
-    /// declarations, version, updateSequence and
-    /// xsi:schemaLocation attributes, and the same ServiceIdentification / ServiceProvider /
-    /// OperationsMetadata / FeatureTypeList / Filter_Capabilities content the model carries
-    /// (including SECTIONS filtering, already applied upstream by leaving properties null).
-    /// </summary>
     private static string BuildCapabilitiesXml(WfsCapabilities capabilities)
     {
         var settings = new XmlWriterSettings

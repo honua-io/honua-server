@@ -5,9 +5,6 @@ using Microsoft.AspNetCore.Routing;
 
 namespace Honua.FileStorage;
 
-/// <summary>
-/// Placeholder for FileStorage feature endpoints.
-/// </summary>
 internal static class FileStorageEndpoints
 {
     public static IEndpointRouteBuilder MapFileStorageEndpoints(this IEndpointRouteBuilder endpoints)

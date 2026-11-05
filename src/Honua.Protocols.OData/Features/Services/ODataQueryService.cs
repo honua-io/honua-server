@@ -13,19 +13,12 @@ using Honua.Infrastructure.Validation;
 
 namespace Honua.Protocols.OData.Services;
 
-/// <summary>
-/// Service for handling OData query operations including filtering, ordering, pagination, and field selection.
-/// Converts OData query parameters to SQL fragments and handles query result processing.
-/// </summary>
 internal sealed partial class ODataQueryService
 {
     private readonly IFilterExpressionService _filterExpressionService;
     private readonly IQueryParameterAdapter<ODataQueryParameters> _queryParameterAdapter;
     private readonly IQueryProcessor _queryProcessor;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="ODataQueryService"/> class.
-    /// </summary>
     public ODataQueryService(
         IFilterExpressionService filterExpressionService,
         IQueryParameterAdapter<ODataQueryParameters> queryParameterAdapter,
@@ -36,11 +29,6 @@ internal sealed partial class ODataQueryService
         _queryProcessor = queryProcessor ?? throw new ArgumentNullException(nameof(queryProcessor));
     }
 
-    /// <summary>
-    /// Routes OData query parameters through the V2 <see cref="IQueryParameterAdapter{TProtocolParams}.ConvertAsync(TProtocolParams, MetadataV2Resource, CancellationToken)"/>
-    /// path and the V2 <see cref="IQueryProcessor"/> overloads so $filter SQL translation
-    /// and $select validation honour the canonical resource's <see cref="MetadataV2Resource.SchemaFields"/>.
-    /// </summary>
     public async Task<(FeatureQuery Query, string? Error)> BuildFeatureQueryAsync(
         string? filter,
         string? orderby,
@@ -105,9 +93,6 @@ internal sealed partial class ODataQueryService
         return (featureQuery, null);
     }
 
-    /// <summary>
-    /// Applies basic filtering to projected OData layer payloads.
-    /// </summary>
     public IEnumerable<Dictionary<string, object?>> ApplyBasicFilter(
         IEnumerable<Dictionary<string, object?>> layerPayloads,
         string filter)
@@ -131,9 +116,6 @@ internal sealed partial class ODataQueryService
         return layerPayloads.Where(payload => EvaluateLayerPayloadFilter(parseResult.Expression, payload));
     }
 
-    /// <summary>
-    /// Applies field selection to result objects using an AOT-compatible approach.
-    /// </summary>
     [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Kept as an instance method to preserve the current service API shape.")]
     public object[] ApplyFieldSelection(Dictionary<string, object?>[] data, string select)
     {
@@ -170,11 +152,6 @@ internal sealed partial class ODataQueryService
         }).ToArray();
     }
 
-    /// <summary>
-    /// Parses the OData filter, then routes through the V2 <see cref="IFilterExpressionService.Translate(FilterExpression?, MetadataV2Resource)"/>
-    /// path so SQL translation honours the resource's <see cref="MetadataV2Resource.SchemaFields"/>
-    /// (typed field set) instead of the v1 layer's attribute fields.
-    /// </summary>
     public SqlFragment? ConvertODataFilterToSqlFragment(string? odataFilter, MetadataV2Resource resource)
     {
         ArgumentNullException.ThrowIfNull(resource);

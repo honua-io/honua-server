@@ -9,9 +9,6 @@ using Microsoft.AspNetCore.Http;
 
 namespace Honua.Protocols.Ogc.Common;
 
-/// <summary>
-/// Shared helper for serving OpenAPI specs in OGC endpoints.
-/// </summary>
 internal static class OgcOpenApiSpecUtilities
 {
     private const int MaxCacheEntries = 50;

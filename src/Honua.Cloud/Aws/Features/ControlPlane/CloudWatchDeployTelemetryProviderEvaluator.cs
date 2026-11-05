@@ -7,33 +7,15 @@ using Honua.Cloud.Aws.Features;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// One CloudWatch signal read: the newest finite datapoint, or none. <see cref="SeriesAbsent"/> is
-/// set only when <c>GetMetricData</c> completed and the expression matched no series or returned no
-/// datapoints, which is how CloudWatch reports an error-count metric (ALB
-/// <c>HTTPCode_Target_5XX_Count</c>, Lambda <c>Errors</c>) for an error-free window. A partial or
-/// failed result, or a non-finite datapoint, is never <see cref="SeriesAbsent"/>.
-/// </summary>
 internal readonly record struct CloudWatchSignalReading(double? Value, bool SeriesAbsent)
 {
-    /// <summary>A completed read that matched no series or returned no datapoints.</summary>
     public static CloudWatchSignalReading Absent { get; } = new(null, SeriesAbsent: true);
 
-    /// <summary>A read that produced no usable value and no proof that the series is empty.</summary>
     public static CloudWatchSignalReading Unavailable { get; } = new(null, SeriesAbsent: false);
 }
 
-/// <summary>
-/// Thin seam over the AWS CloudWatch <c>GetMetricData</c> API so the deploy telemetry gate can be
-/// unit-tested without a live AWS account. The production implementation is
-/// <see cref="AwsSdkCloudWatchMetricClient"/>; tests substitute a fake.
-/// </summary>
 internal interface ICloudWatchMetricClient
 {
-    /// <summary>
-    /// Evaluates a single CloudWatch metric-math expression over the supplied window and returns
-    /// the most recent datapoint, or no value when CloudWatch returned no datapoints.
-    /// </summary>
     Task<CloudWatchSignalReading> GetExpressionReadingAsync(
         string? region,
         string expression,
@@ -78,16 +60,9 @@ internal sealed class AwsSdkCloudWatchMetricClient : ICloudWatchMetricClient
         return SelectSignalReading(response);
     }
 
-    /// <summary>
-    /// Reads the single signal value out of a <c>GetMetricData</c> response. Visible for testing.
-    /// </summary>
     internal static double? SelectSignalValue(GetMetricDataResponse response)
         => SelectSignalReading(response).Value;
 
-    /// <summary>
-    /// Reads the single signal out of a <c>GetMetricData</c> response and classifies an empty answer.
-    /// Visible for testing.
-    /// </summary>
     internal static CloudWatchSignalReading SelectSignalReading(GetMetricDataResponse response)
     {
         // More data pages mean this page is not the whole answer; never read it as an empty series.
@@ -148,14 +123,6 @@ internal sealed class AwsSdkCloudWatchMetricClient : ICloudWatchMetricClient
     }
 }
 
-/// <summary>
-/// CloudWatch-backed deploy telemetry provider. Selected when a telemetry connection's
-/// <c>Provider</c> is <c>cloudwatch</c>. The policy's error-rate / latency / sample-count query
-/// strings are interpreted as CloudWatch metric-math expressions (for example
-/// <c>SELECT AVG(...)</c> Metrics Insights or arithmetic over metric ids). Thresholds and the
-/// promote/rollback/wait decision are shared with every other provider via
-/// <c>DeployTelemetryProviderEvaluation</c>, so only the query dialect differs from Prometheus.
-/// </summary>
 internal sealed class CloudWatchDeployTelemetryProviderEvaluator(
     ICloudWatchMetricClient metricClient) : IDeployTelemetryProviderEvaluator
 {

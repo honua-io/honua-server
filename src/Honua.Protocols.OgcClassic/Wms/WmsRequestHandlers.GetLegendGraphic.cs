@@ -24,21 +24,10 @@ internal static partial class WmsRequestHandlers
     private const int MaxLegendSwatchDimension = 256;
     private const int MaxLegendEntries = 64;
 
-    /// <summary>
-    /// Style layer types the raster pipeline actually paints. A style layer of any
-    /// other type (symbol, background, heatmap) draws nothing in GetMap, so it must
-    /// not contribute a legend entry — a swatch for it would advertise symbology the
-    /// map never renders.
-    /// </summary>
+    // Legend entries are limited to style layers the raster pipeline paints, so a swatch is not advertised for symbology GetMap never draws.
     private static bool IsLegendRenderableStyleLayer(MapLibreStyleLayer styleLayer)
         => LegendImageComposer.IsRenderableStyleLayer(styleLayer);
 
-    /// <summary>
-    /// Whether a layer's resolved style plan can produce a legend that matches GetMap.
-    /// An empty plan qualifies: GetMap falls back to the geometry-typed default paints
-    /// and the swatch renderer draws from that same default. A plan whose every layer
-    /// is unpainted (symbol/background only) does not.
-    /// </summary>
     private static bool SupportsLegend(RasterStylePlan stylePlan)
         => LegendImageComposer.SupportsStylePlan(stylePlan);
 
@@ -224,13 +213,6 @@ internal static partial class WmsRequestHandlers
         return true;
     }
 
-    /// <summary>
-    /// Maps the WMS SCALE parameter (a scale denominator) onto the canonical zoom the style
-    /// pipeline gates minzoom/maxzoom with, via the shared <see cref="RenderZoom"/> derivation
-    /// GetMap and every other render path uses — so a legend gates at the zoom the map draws at
-    /// rather than at one derived independently here. Absent SCALE leaves the zoom underivable,
-    /// which is what GetMap does with no zoom context: every style layer contributes.
-    /// </summary>
     private static bool TryParseLegendScale(IQueryCollection query, out RenderZoom zoom, out string error)
     {
         zoom = RenderZoom.NotDerivable("the GetLegendGraphic request supplied no SCALE");

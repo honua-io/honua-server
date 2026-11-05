@@ -23,9 +23,6 @@ using Honua.ServiceDefaults;
 
 namespace Honua.Protocols.Ogc.Classic.Wfs20.Services;
 
-/// <summary>
-/// WFS 2.0 GetPropertyValue operation handling. Split from <see cref="Wfs20Handler"/> as part of audit #1144.
-/// </summary>
 internal sealed partial class Wfs20Handler
 {
     public async Task<IResult> HandleGetPropertyValueAsync(

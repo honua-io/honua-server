@@ -6,21 +6,9 @@ using Amazon.Runtime;
 
 namespace Honua.Alerts;
 
-/// <summary>
-/// Shared exception-classification helpers for the AWS-backed alert delivery
-/// sinks (SNS, SQS). Centralizes the retryable/non-retryable decision so both
-/// sinks stay consistent.
-/// </summary>
 internal static class AwsAlertDeliveryHelpers
 {
-    /// <summary>
-    /// Classifies a delivery exception so permanent client errors (HTTP 4xx — for
-    /// example a &gt;256KB payload or an invalid message attribute) are reported as
-    /// non-retryable. Retrying those never succeeds and only causes the alert
-    /// pipeline to loop and lose work. Transient failures (HTTP 5xx, throttling,
-    /// request timeouts, and pre-request network errors that never reached AWS)
-    /// stay retryable.
-    /// </summary>
+    // Permanent client errors are not retried, because retrying a 4xx only loops the alert pipeline.
     internal static bool IsRetryable(Exception ex)
     {
         // AmazonClientException covers SDK-side failures that never reached AWS

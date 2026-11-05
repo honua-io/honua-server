@@ -3,10 +3,6 @@
 
 namespace Honua.Protocols.Stac.Services;
 
-/// <summary>
-/// Raised when a requested STAC item id matches more than one feature.
-/// Callers map this to HTTP 409.
-/// </summary>
 internal sealed class StacItemIdConflictException : Exception
 {
     public StacItemIdConflictException(string message)

@@ -6,74 +6,36 @@ using Honua.Core.Features.WorkflowPackages.Domain;
 
 namespace Honua.Geoprocessing.Cli.Publish;
 
-/// <summary>
-/// Parsed options for the <c>honua gp publish</c> verb.
-/// </summary>
 internal sealed record GpPublishOptions
 {
-    /// <summary>The workflow or process id to publish.</summary>
     public required string Id { get; init; }
 
-    /// <summary>Server root URL. Defaults to the local quickstart (<c>http://localhost:8080</c>).</summary>
     public string Server { get; init; } = "http://localhost:8080";
 
-    /// <summary>Admin API key sent as <c>X-API-Key</c>.</summary>
     public string? ApiKey { get; init; }
 
-    /// <summary>Bearer token sent as <c>Authorization: Bearer</c>.</summary>
     public string? BearerToken { get; init; }
 
-    /// <summary>Author message stamped onto the package metadata.</summary>
     public string? Message { get; init; }
 
-    /// <summary>Validate + dry-run only; never create a publication.</summary>
     public bool DryRun { get; init; }
 
-    /// <summary>Also publish the created version to a process-endpoint target.</summary>
     public bool Publish { get; init; }
 
-    /// <summary>Explicit workflow graph JSON file, overriding fixture/process resolution.</summary>
     public string? File { get; init; }
 
-    /// <summary>Wrap a single registered process into a one-node graph.</summary>
     public bool AsProcessNode { get; init; }
 
-    /// <summary>Override the package name (defaults to the id).</summary>
     public string? Name { get; init; }
 
-    /// <summary>Override the package namespace.</summary>
     public string? Namespace { get; init; }
 
-    /// <summary>Fixture root holding <c>&lt;id&gt;/workflow.json</c>. Defaults to <c>samples/gp</c>.</summary>
     // Both segments are compile-time literals, so Path.Combine cannot drop either here.
     public string FixtureRoot { get; init; } = Path.Join("samples", "gp");
 }
 
-/// <summary>
-/// Implements the <c>honua gp publish</c> verb: it builds the WorkflowPackage/WorkflowGraph
-/// payload a locally-authored workflow maps to and drives the Console workflow-package REST
-/// surface (save → version → validate → dry-run → optional publish), mirroring the Console UI.
-/// </summary>
-/// <remarks>
-/// This bridges the devkit's local loop to the GitOps cross-env path: publishing creates an
-/// immutable, versioned package in the store and emits a metadata release package for promotion
-/// through the GitOps approval path. It does NOT deploy across environments and does NOT auto-promote
-/// — promotion is governed/approval-gated (honua-devops is plan + PR-first, submitImmediately=false).
-/// </remarks>
 internal static class GpPublishCommand
 {
-    /// <summary>
-    /// Parses the publish args, resolves the id to a graph, and drives the REST sequence.
-    /// </summary>
-    /// <param name="args">The verb's options (everything after <c>publish</c>).</param>
-    /// <param name="processIds">Registered process ids, used to detect code processes.</param>
-    /// <param name="catalog">Process catalog, used to seed default parameters for process nodes.</param>
-    /// <param name="clientFactory">
-    /// Factory producing the REST client for an <c>(server, apiKey, bearer)</c> tuple. Injected so
-    /// offline tests can supply a faked transport; production uses the default factory.
-    /// </param>
-    /// <param name="output">Standard output sink.</param>
-    /// <param name="error">Error output sink.</param>
     public static async Task<int> RunAsync(
         string[] args,
         IReadOnlySet<string> processIds,
@@ -254,9 +216,6 @@ internal static class GpPublishCommand
         }
     }
 
-    /// <summary>
-    /// Parses the publish verb's options. Exposed to tests.
-    /// </summary>
     internal static GpPublishOptions ParseOptions(string[] args)
     {
         if (args.Length == 0)

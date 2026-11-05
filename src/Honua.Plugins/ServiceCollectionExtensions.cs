@@ -11,27 +11,8 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Plugins;
 
-/// <summary>
-/// DI registration for the Honua plugin/extension SDK (issues #347, #1562).
-/// </summary>
 public static class ServiceCollectionExtensions
 {
-    /// <summary>
-    /// Registers the plugin edit pipeline, computed-field pipeline, output-format registry,
-    /// background-service host, any read-only data-store providers, and any compile-time plugins
-    /// supplied via <paramref name="configure"/>. The pipelines and the output-format registry are
-    /// always registered (as no-ops when no plugins are present or the Enterprise <c>plugin.sdk</c>
-    /// entitlement is inactive) so protocol/export handlers can depend on
-    /// <see cref="IPluginEditPipeline"/> / <see cref="IComputedFieldPipeline"/> /
-    /// <see cref="IFeatureOutputFormatRegistry"/> unconditionally. Data-store plugins are registered
-    /// as additional <c>IFeatureDataProvider</c>s picked up by the server's existing provider
-    /// registry/router (issue #2856, ADR-0067). Declared inter-plugin dependencies and
-    /// minimum-server-version constraints are validated at registration time and fail fast.
-    /// </summary>
-    /// <param name="services">The service collection.</param>
-    /// <param name="configuration">Application configuration (binds the <c>Plugins</c> section).</param>
-    /// <param name="configure">Optional callback to register plugin types via the builder.</param>
-    /// <returns>The same service collection for chaining.</returns>
     public static IServiceCollection AddHonuaPlugins(
         this IServiceCollection services,
         IConfiguration configuration,
@@ -84,17 +65,6 @@ public static class ServiceCollectionExtensions
         return services;
     }
 
-    /// <summary>
-    /// Binds a per-plugin configuration section (<c>Plugins:&lt;pluginId&gt;:*</c>) to an options
-    /// type with validation. This gives plugins isolated, namespaced configuration beyond the
-    /// global <c>Plugins:Enabled</c> kill-switch. Options are validated eagerly at startup
-    /// (<c>ValidateOnStart</c>) so misconfiguration fails fast.
-    /// </summary>
-    /// <typeparam name="TOptions">The plugin options POCO (uses DataAnnotations for validation).</typeparam>
-    /// <param name="services">The service collection.</param>
-    /// <param name="configuration">Application configuration.</param>
-    /// <param name="pluginId">The plugin id whose section to bind.</param>
-    /// <returns>The same service collection for chaining.</returns>
     [UnconditionalSuppressMessage(
         "Trimming",
         "IL2026:RequiresUnreferencedCode",

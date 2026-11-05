@@ -16,11 +16,6 @@ namespace Honua.Protocols.Ogc.Common;
 
 internal static class OgcFeatureIdentifierResolver
 {
-    /// <summary>
-    /// Maximum number of values accepted in the <c>ids</c> query parameter, aligned
-    /// with the 1000-operation batch transaction cap. Prevents arbitrarily large IN
-    /// clauses/parameter lists from a single query string.
-    /// </summary>
     private const int MaxIdsCount = 1000;
 
     private static readonly SqlFragment NoMatchingIdsFilter = new("FALSE", Array.Empty<object?>());
@@ -92,10 +87,6 @@ internal static class OgcFeatureIdentifierResolver
         => Convert.ToString(GetPublicId(feature, resource), CultureInfo.InvariantCulture)
            ?? feature.Id.ToString(CultureInfo.InvariantCulture);
 
-    /// <summary>
-    /// Resolves the public id field from the resource's primary id field, falling
-    /// back to <c>id</c> for parity with legacy OGC feature-id behaviour.
-    /// </summary>
     public static string? FormatPayloadPublicId(
         IReadOnlyDictionary<string, object?>? properties,
         MetadataV2Resource resource)
@@ -259,16 +250,6 @@ internal static class OgcFeatureIdentifierResolver
         return null;
     }
 
-    /// <summary>
-    /// Resolves a set of public feature ids to their existing rows with at most two
-    /// provider round trips (one <see cref="FeatureQuery.ObjectIds"/> fast-path query
-    /// for canonical internal object ids plus one IN-filter query over the public id
-    /// field), instead of one <see cref="ResolveAsync(IFeatureReader, IQueryProcessor, MetadataV2GraphSnapshot, MetadataV2Publication, MetadataV2Resource, string, CancellationToken)"/> lookup per id. Ids that do not
-    /// resolve are simply absent from the result, so callers keep per-id error
-    /// semantics. Public id field types whose values cannot be matched back to input
-    /// tokens by invariant comparison (uuid, boolean, temporal, json, binary, geometry)
-    /// fall back to per-id <see cref="ResolveAsync(IFeatureReader, IQueryProcessor, MetadataV2GraphSnapshot, MetadataV2Publication, MetadataV2Resource, string, CancellationToken)"/> calls with identical semantics.
-    /// </summary>
     public static async Task<IReadOnlyDictionary<string, ResolvedFeature>> ResolveManyAsync(
         IFeatureReader featureReader,
         IQueryProcessor queryProcessor,
@@ -445,12 +426,6 @@ internal static class OgcFeatureIdentifierResolver
             or PublicIdFieldType.Double
             or PublicIdFieldType.Float;
 
-    /// <summary>
-    /// Normalizes a public id value (input token literal or attribute value read back
-    /// from a feature row) to an invariant string key so batched IN-filter results can
-    /// be matched back to the originating tokens (e.g. token <c>"007"</c> and attribute
-    /// value <c>7L</c> both normalize to <c>"7"</c> for integer id fields).
-    /// </summary>
     private static string? NormalizeBatchKey(PublicIdField idField, object? value)
     {
         var formatted = FormatPayloadId(value);

@@ -6,15 +6,8 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Protocols.OData;
 
-/// <summary>
-/// OData v4 endpoints providing intermediate conformance level.
-/// Supports $filter, $select, $orderby, $top, $skip, $count, and CRUD operations.
-/// </summary>
 internal static partial class ODataEndpoints
 {
-    /// <summary>
-    /// Maps OData v4 endpoints
-    /// </summary>
     public static IEndpointRouteBuilder MapODataEndpoints(this IEndpointRouteBuilder endpoints)
     {
         // OData service document

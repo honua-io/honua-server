@@ -373,11 +373,6 @@ internal static partial class WmsRequestHandlers
         return Results.Content(body, PlainTextMimeType, Encoding.UTF8, StatusCodes.Status200OK);
     }
 
-    /// <summary>
-    /// Maps a horizontal pixel column to its map X coordinate for GetFeatureInfo, using the
-    /// wrap-aware effective width so a dateline-crossing geographic BBOX (which GetMap supports)
-    /// inverts correctly and folds a result past the world's positive edge back into range (#2739).
-    /// </summary>
     internal static double ComputeGetFeatureInfoMapX(SkiaMapRenderer.RenderExtent extent, double pixelX, int imageWidth)
     {
         var effectiveWidth = CoordinateTransformer.GetEffectiveWidth(extent);
@@ -385,12 +380,6 @@ internal static partial class WmsRequestHandlers
         return FoldWrappedLongitude(normalizedMapX, extent);
     }
 
-    /// <summary>
-    /// Folds a longitude that the inverse pixel-to-map math produced past the world's positive
-    /// edge back into the canonical world range for a wrapped (antimeridian-crossing) extent.
-    /// Mirrors <c>CoordinateTransformer.NormalizeLongitude</c>, which folds the opposite direction
-    /// in the forward map-to-pixel transform. Non-wrapped extents are returned unchanged (#2739).
-    /// </summary>
     private static double FoldWrappedLongitude(double value, SkiaMapRenderer.RenderExtent extent)
     {
         if (CoordinateTransformer.TryGetWrappedWorldWidth(extent, out var worldWidth))
@@ -405,15 +394,6 @@ internal static partial class WmsRequestHandlers
         return value;
     }
 
-    /// <summary>
-    /// Builds a WMS GetFeatureInfo GML response (INFO_FORMAT
-    /// <c>application/vnd.ogc.gml</c>). Emits an OGC FeatureInfoResponse wrapping
-    /// one element per identified feature with its visible attributes as child
-    /// elements. This mirrors the MapServer/GeoServer <c>msGMLOutput</c> shape the
-    /// WMS 1.1.1 GML FeatureInfo conformance class (ets-wms11
-    /// <c>wms:wms-getfeatureinfo</c>) expects: a well-formed XML document whose
-    /// content type matches the advertised GML format.
-    /// </summary>
     private static string BuildWmsGmlFeatureInfo(
         IReadOnlyList<OgcClassicFeatureInfoFeature> features,
         string schemaUrl)
@@ -458,12 +438,6 @@ internal static partial class WmsRequestHandlers
 
     private static string BuildWmsGmlFeatureInfoSchema() => WmsGmlFeatureInfoSchema;
 
-    /// <summary>
-    /// Normalizes an arbitrary layer/attribute name into a safe XML element
-    /// NCName: strips a namespace prefix, replaces non name-char runs with '_',
-    /// and prefixes a leading non-letter so the result is always a valid element
-    /// name. Falls back to <c>field</c> when nothing usable remains.
-    /// </summary>
     private static string ToGmlElementName(string name)
     {
         if (string.IsNullOrWhiteSpace(name))

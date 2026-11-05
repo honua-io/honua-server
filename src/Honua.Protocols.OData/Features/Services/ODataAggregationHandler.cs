@@ -17,10 +17,6 @@ using Honua.Protocols.OData.Models;
 
 namespace Honua.Protocols.OData.Services;
 
-/// <summary>
-/// Handles OData v4 $apply aggregation operations.
-/// Supports aggregate, groupby, filter, and compute transformations.
-/// </summary>
 internal sealed class ODataAggregationHandler
 {
     private readonly IFeatureReader _featureReader;
@@ -28,9 +24,6 @@ internal sealed class ODataAggregationHandler
     private readonly ODataQueryService _queryService;
     private readonly int _maxInputRows;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="ODataAggregationHandler"/> class.
-    /// </summary>
     public ODataAggregationHandler(
         IFeatureReader featureReader,
         IStreamingFeatureStore? streamingFeatureStore,
@@ -43,9 +36,6 @@ internal sealed class ODataAggregationHandler
         _maxInputRows = Math.Clamp(maxInputRows, 1, 100000);
     }
 
-    /// <summary>
-    /// Processes an aggregation query using $apply.
-    /// </summary>
     public async Task<ODataAggregationResult> ProcessAggregationAsync(
         int layerId,
         MetadataV2Resource resource,
@@ -123,13 +113,6 @@ internal sealed class ODataAggregationHandler
     private Honua.Core.Exceptions.ValidationException InputLimitExceeded() => new(
         $"$apply exceeds the maximum input row count of {_maxInputRows}. Narrow the query with $filter or filter().");
 
-    /// <summary>
-    /// Splits an OData <c>$apply</c> expression into its pipeline transformation segments on each
-    /// top-level <c>/</c> separator. Slashes inside parentheses or single-quoted literals (e.g. a
-    /// <c>geography'…'</c> WKT value) are preserved, so a segment is never split mid-expression.
-    /// </summary>
-    /// <param name="applyExpression">The raw <c>$apply</c> expression.</param>
-    /// <returns>The trimmed, non-empty pipeline segments in evaluation order (always at least one).</returns>
     public static IReadOnlyList<string> SplitApplyTransforms(string applyExpression)
     {
         ArgumentNullException.ThrowIfNull(applyExpression);
@@ -175,10 +158,6 @@ internal sealed class ODataAggregationHandler
         return trimmed.Count > 0 ? trimmed : new List<string> { applyExpression.Trim() };
     }
 
-    /// <summary>
-    /// Parses an OData $apply expression.
-    /// Supports: aggregate, groupby, filter, compute
-    /// </summary>
     public static ParsedAggregation ParseApplyExpression(string expression)
     {
         var trimmed = expression.Trim();

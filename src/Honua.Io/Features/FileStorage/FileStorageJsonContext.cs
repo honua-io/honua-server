@@ -6,9 +6,6 @@ using Honua.Core.Features.Infrastructure.Domain;
 
 namespace Honua.FileStorage;
 
-/// <summary>
-/// JSON source generation context for local file storage metadata.
-/// </summary>
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     WriteIndented = true)]

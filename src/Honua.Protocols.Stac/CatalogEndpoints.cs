@@ -13,14 +13,8 @@ using Honua.Protocols.Stac.Services;
 
 namespace Honua.Protocols.Stac;
 
-/// <summary>
-/// STAC Catalog landing page endpoint.
-/// </summary>
 internal static class CatalogEndpoints
 {
-    /// <summary>
-    /// Maps the STAC catalog root endpoint.
-    /// </summary>
     public static IEndpointRouteBuilder MapStacCatalogEndpoints(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapGet("/stac", HandleGetCatalog)

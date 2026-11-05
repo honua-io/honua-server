@@ -3,9 +3,6 @@
 
 namespace Honua.Io.Export;
 
-/// <summary>
-/// Background service that processes queued export jobs for large datasets.
-/// </summary>
 internal sealed class ExportBackgroundService : BackgroundService
 {
     private static readonly TimeSpan WorkerRestartDelay = TimeSpan.FromSeconds(5);

@@ -17,11 +17,6 @@ internal enum ODataComputeOperator
     Modulo
 }
 
-/// <summary>
-/// Optional unary numeric function wrapped around a <c>$compute</c> expression
-/// (OData v4 canonical numeric functions). <see cref="None"/> means the raw
-/// arithmetic value is emitted with no rounding.
-/// </summary>
 internal enum ODataComputeFunction
 {
     None,
@@ -40,23 +35,6 @@ internal readonly record struct ODataComputeExpression(
     ODataComputeFunction Function,
     string Alias);
 
-/// <summary>
-/// Shared evaluator for OData <c>$compute</c> expressions. It is the single source of
-/// truth for the compute grammar so the <c>$compute</c> query option and the
-/// <c>$apply=compute(...)</c> transform stay behaviorally identical.
-/// </summary>
-/// <remarks>
-/// Grammar (per comma-separated segment):
-/// <code>
-///   [func(] operand [ op operand ] [)] as alias
-/// </code>
-/// where <c>op</c> is <c>add</c>, <c>sub</c>, <c>mul</c>, <c>div</c>, or <c>mod</c>,
-/// <c>func</c> is the optional canonical numeric function <c>floor</c>, <c>ceiling</c>,
-/// or <c>round</c>, and each operand is a field name or a numeric literal. The optional
-/// <c>floor</c> wrapper makes histogram binning first-class — e.g.
-/// <c>floor(population div 100000) as bin</c> — instead of requiring the
-/// <c>x sub (x mod w)</c> arithmetic workaround.
-/// </remarks>
 internal static partial class ODataComputeService
 {
     public static bool TryParse(
@@ -102,10 +80,6 @@ internal static partial class ODataComputeService
         return true;
     }
 
-    /// <summary>
-    /// Parses a single <c>$compute</c> segment. Public so the <c>$apply=compute(...)</c>
-    /// transform can reuse the exact same grammar instead of re-implementing it.
-    /// </summary>
     public static bool TryParseSegment(
         string segment,
         out ODataComputeExpression expression,
@@ -181,11 +155,6 @@ internal static partial class ODataComputeService
         }
     }
 
-    /// <summary>
-    /// Evaluates a single compute expression against a value bag, returning the numeric
-    /// result (or <see langword="null"/> when an operand is missing or a divide/modulo by
-    /// zero occurs).
-    /// </summary>
     public static double? Evaluate(
         IReadOnlyDictionary<string, object?> values,
         ODataComputeExpression expression)

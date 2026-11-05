@@ -8,10 +8,6 @@ using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Protocols.OData.Services;
 
-/// <summary>
-/// Resolves OData feature operations through the provider selected by a layer's
-/// Metadata v2 storage binding.
-/// </summary>
 internal sealed class ODataFeatureProviderResolver(
     IFeatureReader fallbackReader,
     IFeatureWriter fallbackWriter,

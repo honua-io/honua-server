@@ -8,15 +8,11 @@ using Honua.Core.Features.FeatureStore.Domain;
 
 namespace Honua.Protocols.Ogc.Classic.Wfs20.Services;
 
-/// <summary>
-/// Implementation of GML 3.2 serialization for WFS 2.0 responses.
-/// </summary>
 internal sealed class GmlSerializer : IGmlSerializer
 {
     private static readonly XNamespace GmlNamespace = "http://www.opengis.net/gml/3.2";
     private static readonly XNamespace WfsNamespace = "http://www.opengis.net/wfs/2.0";
 
-    /// <inheritdoc />
     public XElement SerializeFeature(GmlFeature feature, string featureTypeName, string namespaceUri)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(featureTypeName);
@@ -47,7 +43,6 @@ internal sealed class GmlSerializer : IGmlSerializer
         return featureElement;
     }
 
-    /// <inheritdoc />
     public XElement SerializeFeatureCollection(
         IEnumerable<GmlFeature> features,
         string featureTypeName,
@@ -87,7 +82,6 @@ internal sealed class GmlSerializer : IGmlSerializer
         return collection;
     }
 
-    /// <inheritdoc />
     public XElement? SerializeGeometry(string? geometryGml)
     {
         if (string.IsNullOrEmpty(geometryGml))

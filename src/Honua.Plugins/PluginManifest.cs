@@ -6,27 +6,8 @@ using Honua.Plugins.Abstractions;
 
 namespace Honua.Plugins;
 
-/// <summary>
-/// A single declared dependency of a plugin: the id of another plugin and an optional minimum
-/// semantic version the dependent requires. Parsed from the <c>DependsOnCsv</c> entries on the
-/// <see cref="PluginAttribute"/> (e.g. <c>"geometry-rules@&gt;=1.2.0"</c>).
-/// </summary>
-/// <param name="Id">The depended-on plugin id.</param>
-/// <param name="MinimumVersion">Optional minimum version constraint; <see langword="null"/> for any version.</param>
 public sealed record PluginDependency(string Id, Version? MinimumVersion);
 
-/// <summary>
-/// The resolved manifest of a single plugin, captured at startup from its <c>[Plugin]</c>
-/// attribute. Carries identity, the requested <see cref="PluginCapability"/> set, parsed
-/// dependency constraints, and a minimum server version. Used to enforce the in-process security
-/// model and dependency resolution before any plugin code runs.
-/// </summary>
-/// <param name="Id">Stable plugin identifier.</param>
-/// <param name="Version">Plugin semantic version.</param>
-/// <param name="Description">Optional human-readable description.</param>
-/// <param name="Capabilities">Declared capability flags.</param>
-/// <param name="Dependencies">Parsed dependency constraints.</param>
-/// <param name="MinimumServerVersion">Optional minimum server version; <see langword="null"/> when unconstrained.</param>
 public sealed record PluginManifest(
     string Id,
     Version Version,
@@ -35,13 +16,6 @@ public sealed record PluginManifest(
     ImmutableArray<PluginDependency> Dependencies,
     Version? MinimumServerVersion)
 {
-    /// <summary>
-    /// Builds a <see cref="PluginManifest"/> from a plugin's <see cref="PluginAttribute"/>,
-    /// validating that the version strings are well-formed semantic versions.
-    /// </summary>
-    /// <param name="attribute">The plugin's attribute.</param>
-    /// <returns>The parsed manifest.</returns>
-    /// <exception cref="InvalidOperationException">When a version string is not a valid version.</exception>
     public static PluginManifest FromAttribute(PluginAttribute attribute)
     {
         ArgumentNullException.ThrowIfNull(attribute);
@@ -111,9 +85,5 @@ public sealed record PluginManifest(
         return version;
     }
 
-    /// <summary>
-    /// Formats the manifest version using the conventional dotted notation.
-    /// </summary>
-    /// <returns>The version string.</returns>
     public string VersionString() => Version.ToString();
 }

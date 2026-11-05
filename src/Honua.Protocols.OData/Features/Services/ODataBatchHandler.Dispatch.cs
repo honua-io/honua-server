@@ -17,12 +17,6 @@ using Microsoft.AspNetCore.WebUtilities;
 
 namespace Honua.Protocols.OData.Services;
 
-/// <summary>
-/// Per-request dispatch for the OData $batch handler: routes a single sub-request to the
-/// appropriate handler (query, CRUD, streaming) and builds the per-request HttpContext.
-/// Also hosts the URL normalization, path parsing, access validation, and collection
-/// query-option parsing helpers that the dispatcher and atomic group rely on.
-/// </summary>
 internal sealed partial class ODataBatchHandler
 {
     private async Task<ODataBatchResponseItem> ProcessSingleRequestAsync(

@@ -9,18 +9,8 @@ using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Protocols.Ogc.Common;
 
-/// <summary>
-/// Neutral OGC queryables/temporal-extent helpers shared by the OGC API Features
-/// adapter and the STAC Filter Extension. Both surfaces derive a queryable property
-/// set from a Metadata V2 resource schema and build a collection temporal extent from
-/// the configured temporal fields, so the behavior lives in the shared OGC foundation
-/// rather than being reached across protocol adapters.
-/// </summary>
 internal static class OgcQueryablesUtilities
 {
-    /// <summary>
-    /// Determines whether a Metadata V2 field is queryable for simple parameter filtering.
-    /// </summary>
     public static bool IsSimpleQueryableField(MetadataV2Field field)
     {
         ArgumentNullException.ThrowIfNull(field);
@@ -36,13 +26,6 @@ internal static class OgcQueryablesUtilities
             or MetadataV2FieldType.Uuid;
     }
 
-    /// <summary>
-    /// Builds a temporal extent from the Metadata V2 temporal declaration and feature store values.
-    /// </summary>
-    /// <param name="resource">V2 resource carrying the temporal field declaration.</param>
-    /// <param name="layerIndex">Service-local integer layer id used by the feature reader.</param>
-    /// <param name="featureReader">Feature reader providing the extent probe.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
     public static async Task<TemporalExtent?> BuildTemporalExtentAsync(
         MetadataV2Resource resource,
         int layerIndex,
@@ -102,13 +85,6 @@ internal static class OgcQueryablesUtilities
         };
     }
 
-    /// <summary>
-    /// Resolves the start/end temporal field names + canonical types from a V2 resource.
-    /// Reads <see cref="MetadataV2Resource.Temporal"/> for the configured field names and
-    /// looks up the field type in <see cref="MetadataV2Resource.SchemaFields"/>. Returns
-    /// false when no start field is declared, the start field is not present in the schema,
-    /// or the schema field type is not a recognized temporal type.
-    /// </summary>
     public static bool TryResolveTemporalFieldsV2(
         MetadataV2Resource resource,
         out string? startFieldName,

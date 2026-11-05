@@ -7,20 +7,7 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Features.Infrastructure;
 
-/// <summary>
-/// Wraps a database connection to invoke a release callback when disposed.
-/// Used by <see cref="Caching.CachingDatabaseConnectionProvider"/> to enforce
-/// MaxConcurrentQueries — the gate slot is acquired before opening the connection
-/// and released when the connection is returned (disposed).
-/// </summary>
-/// <remarks>
-/// The wrapper relays <see cref="DbConnection.StateChange"/> events from the
-/// inner <see cref="NpgsqlConnection"/> so that code subscribing to the wrapper
-/// (for example
-/// <see cref="Monitoring.DbConnectionTracking.Track"/>) sees Closed/Broken
-/// transitions and can decrement active-connection telemetry. Without the
-/// relay, a subscriber on the wrapper would never receive the close signal.
-/// </remarks>
+// StateChange is relayed from the inner connection, or a subscriber on the wrapper never sees Closed and the active-connection count sticks.
 internal sealed class SemaphoreReleasingConnection : DbConnection
 {
     private readonly NpgsqlConnection _inner;
